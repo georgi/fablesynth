@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FABLESYNTH — Wavetable Synthesizer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Cpath d='M4 20 Q8 8 12 16 T20 14 T28 18' stroke='%234de8ff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="power-overlay">
+  <div class="po-inner">
+    <div class="po-brand">FABLE<em>SYNTH</em></div>
+    <div class="po-model">WT‑1 &nbsp;·&nbsp; WAVETABLE SYNTHESIS ENGINE</div>
+    <button id="power-on" aria-label="power on">
+      <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="105 27" stroke-dashoffset="-13" stroke-linecap="round"/><line x1="24" y1="6" x2="24" y2="22" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="po-hint">power on · headphones recommended</div>
+    <div class="po-error" id="po-error" hidden></div>
+  </div>
+</div>
+
+<main id="rack">
+  <header class="top-bar">
+    <div class="brand">FABLE<em>SYNTH</em><small>WT‑1</small></div>
+    <div class="preset-bar">
+      <button class="pb-btn" id="preset-prev" aria-label="previous preset">◂</button>
+      <select id="preset-select" aria-label="preset"></select>
+      <button class="pb-btn" id="preset-next" aria-label="next preset">▸</button>
+      <button class="pb-btn pb-save" id="preset-save">SAVE</button>
+    </div>
+    <div class="hud">
+      <div class="hud-cell"><canvas id="scope"></canvas><span>SCOPE</span></div>
+      <div class="hud-cell"><canvas id="spectrum"></canvas><span>SPECTRUM</span></div>
+    </div>
+    <div class="status">
+      <div class="status-row"><span class="led" id="midi-led"></span>MIDI</div>
+      <div class="status-row"><span id="voice-count">0</span>VOICES</div>
+    </div>
+    <div id="master-knob"></div>
+  </header>
+
+  <div class="panels">
+    <!-- row 1 -->
+    <section class="panel panel-osc" id="panel-oscA" data-accent="a" style="grid-area:oscA">
+      <div class="panel-head"><span class="ph-power" id="oscA-power"></span><h2>OSC A</h2><span class="ph-stepper" id="oscA-table"></span></div>
+      <div class="osc-body">
+        <canvas class="wt3d" id="wt3d-A"></canvas>
+        <div id="oscA-pos" class="pos-holder"></div>
+        <div class="osc-knobs" id="oscA-knobs"></div>
+      </div>
+    </section>
+
+    <section class="panel panel-osc" id="panel-oscB" data-accent="b" style="grid-area:oscB">
+      <div class="panel-head"><span class="ph-power" id="oscB-power"></span><h2>OSC B</h2><span class="ph-stepper" id="oscB-table"></span></div>
+      <div class="osc-body">
+        <canvas class="wt3d" id="wt3d-B"></canvas>
+        <div id="oscB-pos" class="pos-holder"></div>
+        <div class="osc-knobs" id="oscB-knobs"></div>
+      </div>
+    </section>
+
+    <section class="panel panel-util" style="grid-area:util">
+      <div class="util-block">
+        <div class="panel-head"><span class="ph-power" id="sub-power"></span><h2>SUB</h2><span class="ph-stepper" id="sub-shape"></span></div>
+        <div class="util-knobs" id="sub-knobs"></div>
+      </div>
+      <div class="util-block">
+        <div class="panel-head"><span class="ph-power" id="noise-power"></span><h2>NOISE</h2><span class="ph-stepper" id="noise-type"></span></div>
+        <div class="util-knobs" id="noise-knobs"></div>
+      </div>
+    </section>
+
+    <!-- row 2 -->
+    <section class="panel panel-filter" data-accent="f" style="grid-area:filter">
+      <div class="panel-head"><span class="ph-power" id="filter-power"></span><h2>FILTER</h2><span class="ph-stepper" id="filter-type"></span></div>
+      <canvas class="filter-curve" id="filter-curve"></canvas>
+      <div class="knob-row" id="filter-knobs"></div>
+    </section>
+
+    <section class="panel panel-env" style="grid-area:env1">
+      <div class="panel-head"><h2>AMP ENV</h2></div>
+      <canvas class="env-curve" id="env1-curve"></canvas>
+      <div class="knob-row" id="env1-knobs"></div>
+    </section>
+
+    <section class="panel panel-env" style="grid-area:env2">
+      <div class="panel-head"><h2>MOD ENV</h2></div>
+      <canvas class="env-curve" id="env2-curve"></canvas>
+      <div class="knob-row" id="env2-knobs"></div>
+    </section>
+
+    <section class="panel panel-lfos" style="grid-area:lfos">
+      <div class="lfo-block">
+        <div class="panel-head"><h2>LFO 1</h2><span class="ph-stepper" id="lfo1-shape"></span></div>
+        <canvas class="lfo-curve" id="lfo1-curve"></canvas>
+        <div class="knob-row" id="lfo1-knobs"></div>
+      </div>
+      <div class="lfo-block">
+        <div class="panel-head"><h2>LFO 2</h2><span class="ph-stepper" id="lfo2-shape"></span></div>
+        <canvas class="lfo-curve" id="lfo2-curve"></canvas>
+        <div class="knob-row" id="lfo2-knobs"></div>
+      </div>
+    </section>
+
+    <!-- row 3 -->
+    <section class="panel panel-matrix" style="grid-area:matrix">
+      <div class="panel-head"><h2>MOD MATRIX</h2></div>
+      <div class="matrix-rows" id="matrix-rows"></div>
+    </section>
+
+    <section class="panel panel-fx" style="grid-area:fx">
+      <div class="fx-module" data-fx="drive">
+        <div class="panel-head"><span class="ph-power" id="fx-drive-power"></span><h2>DRIVE</h2></div>
+        <div class="knob-row" id="fx-drive-knobs"></div>
+      </div>
+      <div class="fx-module" data-fx="chorus">
+        <div class="panel-head"><span class="ph-power" id="fx-chorus-power"></span><h2>CHORUS</h2></div>
+        <div class="knob-row" id="fx-chorus-knobs"></div>
+      </div>
+      <div class="fx-module" data-fx="delay">
+        <div class="panel-head"><span class="ph-power" id="fx-delay-power"></span><h2>DELAY</h2></div>
+        <div class="knob-row" id="fx-delay-knobs"></div>
+      </div>
+      <div class="fx-module" data-fx="reverb">
+        <div class="panel-head"><span class="ph-power" id="fx-reverb-power"></span><h2>REVERB</h2></div>
+        <div class="knob-row" id="fx-reverb-knobs"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="kb-bar">
+    <div class="kb-side">
+      <div class="oct-ctl">
+        <button id="oct-down" aria-label="octave down">−</button>
+        <span id="oct-label">C4</span>
+        <button id="oct-up" aria-label="octave up">+</button>
+      </div>
+      <div id="glide-knob"></div>
+    </div>
+    <div id="keyboard"></div>
+  </footer>
+</main>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
