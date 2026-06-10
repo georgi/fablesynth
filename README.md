@@ -3,11 +3,9 @@
 A Serum-style wavetable synthesizer that runs entirely in the browser. Zero
 dependencies, no build step — vanilla JS, Web Audio and an AudioWorklet DSP core.
 
-![](docs/screenshot.png)
+[![](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
 
-<video src="https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4" controls muted width="100%"></video>
-
-[▶ Watch the demo (with sound)](docs/fablesynth.mp4)
+**[▶ Watch the 20-second demo (with sound)](docs/fablesynth.mp4)**
 
 ## Run it
 
