@@ -5,7 +5,7 @@ dependencies, no build step — vanilla JS, Web Audio and an AudioWorklet DSP co
 
 [![](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
 
-**[▶ Watch the 20-second demo (with sound)](docs/fablesynth.mp4)**
+https://github.com/user-attachments/assets/0855c756-2155-4dd3-b353-fe80abd48db9
 
 ## Run it
 
