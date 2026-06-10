@@ -5,6 +5,10 @@ dependencies, no build step — vanilla JS, Web Audio and an AudioWorklet DSP co
 
 ![](docs/screenshot.png)
 
+<video src="https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4" controls muted width="100%"></video>
+
+[▶ Watch the demo (with sound)](docs/fablesynth.mp4)
+
 ## Run it
 
 AudioWorklet requires a real HTTP origin (not `file://`):
