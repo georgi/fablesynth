@@ -24,7 +24,11 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
 - **2 wavetable oscillators** — 6 procedural tables (PRIME, BLOOM, PULSE, VOX,
   CHIME, GLITCH), each 16 morphable frames × 2048 samples. Tables are built from
   harmonic spectra and rendered into **9 band-limited mip levels** via inverse
-  FFT, so high notes never alias (the same trick Serum uses).
+  FFT, so high notes never alias (the same trick Serum uses). Mip transitions
+  are **crossfaded** inside the 0.475·sr guard band, so glides and pitch bends
+  never step in brightness — worst measured non-harmonic content is −92 dB:
+
+  ![](docs/spectrum-saw.png)
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
@@ -33,7 +37,8 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
 - **2 ADSR envelopes** (amp + mod), **2 LFOs** (5 shapes), **4-slot mod matrix**
   (LFOs / mod env / velocity / note → wavetable position, cutoff, pitch, amp,
   pan, osc levels).
-- **8-voice polyphony** with smart voice stealing, glide, pitch-bend.
+- **8-voice polyphony** with smart voice stealing, glide, pitch-bend, and a
+  per-voice DC blocker so saturation stages never see offset.
 - **FX chain** — tanh drive, stereo chorus, ping-pong delay, convolution reverb
   (generated impulse), safety limiter.
 - Live **3D wavetable views** show the actual modulated frame position streamed
