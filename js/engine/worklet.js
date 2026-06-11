@@ -75,13 +75,16 @@ class LFO {
 }
 
 // Per-oscillator runtime state inside a voice
+const DC_R = 0.9998; // ~3.5 Hz highpass — removes DC without touching bass
+
 function makeOscState() {
   return {
     phases: new Float64Array(MAXUNI),
     incs: new Float64Array(MAXUNI),
     gl: new Float32Array(MAXUNI),
     gr: new Float32Array(MAXUNI),
-    uni: 1, off0: 0, off1: 0, ft: 0, gain: 0, mask: 0, data: null, posSm: -1,
+    uni: 1, off0: 0, off1: 0, off0b: 0, off1b: 0, mipBlend: 0,
+    ft: 0, gain: 0, mask: 0, size: 0, data: null, posSm: -1,
   };
 }
 
@@ -96,6 +99,7 @@ class Voice {
     this.pb = [0, 0, 0, 0, 0, 0, 0]; // pink noise filter state
     this.f = new Float64Array(8); // svf states: 2 stages x 2 ch x (ic1,ic2)
     this.cutSm = 0;
+    this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
   }
   get active() { return this.ampEnv.state !== 0; }
 
@@ -113,6 +117,7 @@ class Voice {
     this.subPhase = 0;
     this.f.fill(0);
     this.cutSm = 0;
+    this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
   }
   noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); }
   kill() { this.gate = false; this.ampEnv.kill(); this.modEnv.kill(); }
@@ -174,13 +179,6 @@ class FableProcessor extends AudioWorkletProcessor {
     for (const v of this.voices) if (v.gate && v.note === n) v.noteOff();
   }
 
-  mipFor(cps, mips) {
-    const hMax = 0.475 / Math.max(1e-6, cps);
-    let m = 0, h = 1024;
-    while (h > hMax && m < mips - 1) { h >>= 1; m++; }
-    return m;
-  }
-
   // Configure one oscillator's per-block render state. Returns true if audible.
   setupOsc(o, pre, voice, mPos, mPitch, mLvl, mPan) {
     const p = this.p;
@@ -212,9 +210,28 @@ class FableProcessor extends AudioWorkletProcessor {
 
     const cps = freq / sampleRate;
     const maxRatio = Math.pow(2, (det * 50) / 1200);
-    const mip = this.mipFor(cps * maxRatio, table.mips);
+
+    // Continuous mip selection. mipF is the exact (real-valued) mip the pitch
+    // calls for; ceil(mipF) is the alias-free choice. For the first W octaves
+    // above a mip boundary we crossfade from the finer mip — which is still
+    // alias-free there, because mips are built against 0.475*sr while Nyquist
+    // is 0.5*sr (0.5/0.475 = 2^0.074 of headroom). Result: glides and bends
+    // never step in brightness, and static pitches never fold.
+    const W = 0.07;
+    const mipF = Math.log2((cps * maxRatio * 1024) / 0.475);
+    let mip = 0, mipBlend = 0;
+    if (mipF > 0) {
+      mip = Math.min(table.mips - 1, Math.ceil(mipF));
+      const over = mipF - (mip - 1); // octaves above the previous boundary
+      if (over < W) mipBlend = 1 - over / W;
+    }
+    const fineMip = mip > 0 ? mip - 1 : 0;
+
     o.off0 = (f0 * table.mips + mip) * table.size;
     o.off1 = (f1 * table.mips + mip) * table.size;
+    o.off0b = (f0 * table.mips + fineMip) * table.size;
+    o.off1b = (f1 * table.mips + fineMip) * table.size;
+    o.mipBlend = mipBlend;
     o.data = table.data;
     o.mask = table.mask;
     o.size = table.size;
@@ -237,25 +254,54 @@ class FableProcessor extends AudioWorkletProcessor {
   renderOsc(o, tmpL, tmpR, n) {
     const data = o.data, mask = o.mask, size = o.size, ft = o.ft, g = o.gain;
     const off0 = o.off0, off1 = o.off1;
-    for (let u = 0; u < o.uni; u++) {
-      let ph = o.phases[u];
-      const inc = o.incs[u];
-      const gl = o.gl[u] * g, gr = o.gr[u] * g;
-      for (let i = 0; i < n; i++) {
-        const idx = ph | 0;
-        const frac = ph - idx;
-        const i2 = (idx + 1) & mask;
-        const a = data[off0 + idx]; const a2 = data[off0 + i2];
-        const b = data[off1 + idx]; const b2 = data[off1 + i2];
-        const s0 = a + frac * (a2 - a);
-        const s1 = b + frac * (b2 - b);
-        const s = s0 + ft * (s1 - s0);
-        tmpL[i] += s * gl;
-        tmpR[i] += s * gr;
-        ph += inc;
-        if (ph >= size) ph -= size;
+    const blend = o.mipBlend;
+    if (blend < 0.001) {
+      // fast path — single mip, no crossfade
+      for (let u = 0; u < o.uni; u++) {
+        let ph = o.phases[u];
+        const inc = o.incs[u];
+        const gl = o.gl[u] * g, gr = o.gr[u] * g;
+        for (let i = 0; i < n; i++) {
+          const idx = ph | 0;
+          const frac = ph - idx;
+          const i2 = (idx + 1) & mask;
+          const s0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
+          const s1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
+          const s = s0 + ft * (s1 - s0);
+          tmpL[i] += s * gl;
+          tmpR[i] += s * gr;
+          ph += inc;
+          if (ph >= size) ph -= size;
+        }
+        o.phases[u] = ph;
       }
-      o.phases[u] = ph;
+    } else {
+      // crossfade path — blend coarse mip with finer mip near mip boundary
+      const off0b = o.off0b, off1b = o.off1b;
+      for (let u = 0; u < o.uni; u++) {
+        let ph = o.phases[u];
+        const inc = o.incs[u];
+        const gl = o.gl[u] * g, gr = o.gr[u] * g;
+        for (let i = 0; i < n; i++) {
+          const idx = ph | 0;
+          const frac = ph - idx;
+          const i2 = (idx + 1) & mask;
+          // coarse mip
+          const sc0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
+          const sc1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
+          const sc = sc0 + ft * (sc1 - sc0);
+          // fine mip (richer, may alias slightly near the boundary)
+          const sf0 = data[off0b + idx] + frac * (data[off0b + i2] - data[off0b + idx]);
+          const sf1 = data[off1b + idx] + frac * (data[off1b + i2] - data[off1b + idx]);
+          const sf = sf0 + ft * (sf1 - sf0);
+          const s = sc + blend * (sf - sc);
+          tmpL[i] += s * gl;
+          tmpR[i] += s * gr;
+          ph += inc;
+          if (ph >= size) ph -= size;
+        }
+        o.phases[u] = ph;
+      }
     }
   }
 
@@ -429,9 +475,15 @@ class FableProcessor extends AudioWorkletProcessor {
           }
         }
       }
+      // Per-voice DC blocker (1-pole highpass, ~3.5 Hz) — removes DC before
+      // it reaches the FX chain's saturator where it would cause asymmetric clipping.
+      const yL = sl - v.dcxL + DC_R * v.dcyL;
+      const yR = sr - v.dcxR + DC_R * v.dcyR;
+      v.dcxL = sl; v.dcyL = yL;
+      v.dcxR = sr; v.dcyR = yR;
       const amp = v.ampEnv.process() * v.velGain * ampFactor;
-      L[i] += sl * amp;
-      R[i] += sr * amp;
+      L[i] += yL * amp;
+      R[i] += yR * amp;
     }
 
     // advance block-rate modulators
