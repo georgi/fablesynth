@@ -1,9 +1,16 @@
-// Factory presets. Each entry overrides defaults from params.js.
+// Factory presets. Each entry overrides defaults from params.ts.
 // Table indices: 0 PRIME, 1 BLOOM, 2 PULSE, 3 VOX, 4 CHIME, 5 GLITCH
 // Mod sources: 0 —, 1 LFO1, 2 LFO2, 3 MODENV, 4 VELO, 5 NOTE
 // Mod dests:   0 —, 1 A POS, 2 B POS, 3 CUTOFF, 4 PITCH, 5 AMP, 6 PAN, 7 A LVL, 8 B LVL
 
-export const FACTORY_PRESETS = [
+import type { ParamValues } from './params';
+
+export interface Preset {
+  name: string;
+  params: Partial<ParamValues>;
+}
+
+export const FACTORY_PRESETS: Preset[] = [
   { name: 'INIT', params: {} },
 
   {
@@ -111,15 +118,15 @@ export const FACTORY_PRESETS = [
 
 const LS_KEY = 'fablesynth.userPresets';
 
-export function loadUserPresets() {
+export function loadUserPresets(): Preset[] {
   try {
-    return JSON.parse(localStorage.getItem(LS_KEY)) || [];
+    return JSON.parse(localStorage.getItem(LS_KEY) as string) || [];
   } catch {
     return [];
   }
 }
 
-export function saveUserPreset(name, params) {
+export function saveUserPreset(name: string, params: ParamValues): Preset[] {
   const list = loadUserPresets().filter((p) => p.name !== name);
   list.push({ name, params: { ...params } });
   localStorage.setItem(LS_KEY, JSON.stringify(list));

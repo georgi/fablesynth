@@ -1,7 +1,8 @@
 # FABLESYNTH WT‑1
 
-A Serum-style wavetable synthesizer that runs entirely in the browser. Zero
-dependencies, no build step — vanilla JS, Web Audio and an AudioWorklet DSP core.
+A Serum-style wavetable synthesizer that runs entirely in the browser. Built
+with TypeScript, React and Zustand on top of Web Audio and an AudioWorklet DSP
+core, with custom (dependency-free) UI components.
 
 [![](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
 
@@ -9,13 +10,16 @@ https://github.com/user-attachments/assets/0855c756-2155-4dd3-b353-fe80abd48db9
 
 ## Run it
 
-AudioWorklet requires a real HTTP origin (not `file://`):
-
 ```sh
 cd fablesynth
-python3 -m http.server 8000
-# open http://localhost:8000
+npm install
+npm run dev
+# open the printed http://localhost:5173
 ```
+
+`npm run build` produces a static bundle in `dist/` (`npm run preview` serves it).
+AudioWorklet requires a real HTTP origin (not `file://`), which the dev/preview
+servers provide.
 
 Click the power button (this is also the browser audio-unlock gesture) and play.
 
@@ -61,11 +65,15 @@ localStorage.
 ## Code layout
 
 ```
-js/engine/worklet.js     DSP core (AudioWorklet thread): voices, oscillators,
-                         filter, envelopes, LFOs, mod matrix
-js/engine/wavetables.js  FFT + procedural wavetable/mipmap generation
-js/engine/synth.js       AudioContext, FX graph, param routing
-js/params.js             single source of truth for every parameter
-js/ui/                   knobs, steppers, sliders, keyboard, canvas displays
-js/main.js               wiring, presets, MIDI, render loop
+src/engine/worklet.js      DSP core (AudioWorklet thread): voices, oscillators,
+                           filter, envelopes, LFOs, mod matrix
+src/engine/wavetables.ts   FFT + procedural wavetable/mipmap generation
+src/engine/synth.ts        AudioContext, FX graph, param routing
+src/params.ts              single source of truth for every parameter
+src/presets.ts             factory + localStorage user presets
+src/store.ts               Zustand store: param state + transport, engine glue
+src/components/            knobs, steppers, sliders, keyboard, canvas displays
+src/components/panels/     the rack layout (oscillators, filter, env, fx, …)
+src/hooks/                 computer-keyboard + MIDI input
+src/App.tsx                top-level composition
 ```

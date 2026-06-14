@@ -1,12 +1,12 @@
 // Canonical parameter definitions. Every knob, preset and engine param keys off this.
 // curve: 'lin' | 'log' (geometric min..max) | 'int'
 
-export const fmtHz = (v) => (v >= 1000 ? (v / 1000).toFixed(2) + ' kHz' : v.toFixed(v < 100 ? 1 : 0) + ' Hz');
-export const fmtSec = (v) => (v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(2) + ' s');
-export const fmtPct = (v) => Math.round(v * 100) + '%';
-export const fmtPan = (v) => (Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R'));
-export const fmtSigned = (v) => (v > 0 ? '+' : '') + Math.round(v);
-export const fmtBi = (v) => (v > 0 ? '+' : '') + Math.round(v * 100);
+export const fmtHz = (v: number) => (v >= 1000 ? (v / 1000).toFixed(2) + ' kHz' : v.toFixed(v < 100 ? 1 : 0) + ' Hz');
+export const fmtSec = (v: number) => (v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(2) + ' s');
+export const fmtPct = (v: number) => Math.round(v * 100) + '%';
+export const fmtPan = (v: number) => (Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R'));
+export const fmtSigned = (v: number) => (v > 0 ? '+' : '') + Math.round(v);
+export const fmtBi = (v: number) => (v > 0 ? '+' : '') + Math.round(v * 100);
 
 export const TABLE_NAMES = ['PRIME', 'BLOOM', 'PULSE', 'VOX', 'CHIME', 'GLITCH'];
 export const FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH'];
@@ -16,7 +16,25 @@ export const NOISE_TYPES = ['WHITE', 'PINK'];
 export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
 export const MOD_DESTS = ['—', 'A POS', 'B POS', 'CUTOFF', 'PITCH', 'AMP', 'PAN', 'A LVL', 'B LVL'];
 
-function oscParams(prefix, defOn, defTable) {
+export type Curve = 'lin' | 'log' | 'int';
+export type ParamType = 'bool' | 'enum';
+
+export interface ParamDef {
+  id: string;
+  label?: string;
+  min?: number;
+  max?: number;
+  def: number;
+  curve?: Curve;
+  fmt?: (v: number) => string;
+  type?: ParamType;
+  options?: string[];
+}
+
+export type ParamId = string;
+export type ParamValues = Record<ParamId, number>;
+
+function oscParams(prefix: string, defOn: number, defTable: number): ParamDef[] {
   return [
     { id: `${prefix}.on`, type: 'bool', def: defOn },
     { id: `${prefix}.table`, type: 'enum', options: TABLE_NAMES, def: defTable },
@@ -32,7 +50,7 @@ function oscParams(prefix, defOn, defTable) {
   ];
 }
 
-function matSlot(n) {
+function matSlot(n: number): ParamDef[] {
   return [
     { id: `mat${n}.src`, type: 'enum', options: MOD_SOURCES, def: 0 },
     { id: `mat${n}.dst`, type: 'enum', options: MOD_DESTS, def: 0 },
@@ -40,7 +58,7 @@ function matSlot(n) {
   ];
 }
 
-export const PARAM_DEFS = [
+export const PARAM_DEFS: ParamDef[] = [
   ...oscParams('oscA', 1, 0),
   ...oscParams('oscB', 0, 1),
 
@@ -95,22 +113,26 @@ export const PARAM_DEFS = [
   { id: 'master.glide', label: 'GLIDE', min: 0, max: 0.5, def: 0, curve: 'lin', fmt: fmtSec },
 ];
 
-export const PARAMS = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));
+export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));
 
-export function defaultParams() {
-  const o = {};
+export function defaultParams(): ParamValues {
+  const o: ParamValues = {};
   for (const d of PARAM_DEFS) o[d.id] = d.def;
   return o;
 }
 
 // normalized [0,1] <-> value mapping
-export function normToValue(def, n) {
+export function normToValue(def: ParamDef, n: number): number {
   n = Math.min(1, Math.max(0, n));
-  if (def.curve === 'log') return def.min * Math.pow(def.max / def.min, n);
-  const v = def.min + (def.max - def.min) * n;
+  const min = def.min as number;
+  const max = def.max as number;
+  if (def.curve === 'log') return min * Math.pow(max / min, n);
+  const v = min + (max - min) * n;
   return def.curve === 'int' ? Math.round(v) : v;
 }
-export function valueToNorm(def, v) {
-  if (def.curve === 'log') return Math.log(v / def.min) / Math.log(def.max / def.min);
-  return (v - def.min) / (def.max - def.min);
+export function valueToNorm(def: ParamDef, v: number): number {
+  const min = def.min as number;
+  const max = def.max as number;
+  if (def.curve === 'log') return Math.log(v / min) / Math.log(max / min);
+  return (v - min) / (max - min);
 }

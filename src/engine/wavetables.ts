@@ -8,8 +8,17 @@ export const FRAMES = 16;
 export const MIPS = 9; // maxHarm: 1024,512,...,4
 export const VIZ_N = 128; // points per frame kept for visualization
 
+export interface GeneratedTable {
+  name: string;
+  frames: number;
+  mips: number;
+  size: number;
+  data: Float32Array;
+  viz: Float32Array;
+}
+
 // ---------- FFT (iterative radix-2, complex, in-place) ----------
-export function fft(re, im, inverse) {
+export function fft(re: Float64Array, im: Float64Array, inverse: boolean): void {
   const n = re.length;
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
@@ -44,7 +53,7 @@ export function fft(re, im, inverse) {
 }
 
 // Add harmonic k with amplitude a, phase ph (cosine convention) to a spectrum.
-function setHarm(re, im, k, a, ph) {
+function setHarm(re: Float64Array, im: Float64Array, k: number, a: number, ph: number): void {
   re[k] += a * Math.cos(ph);
   im[k] += a * Math.sin(ph);
   re[SIZE - k] += a * Math.cos(ph);
@@ -57,10 +66,10 @@ const SINE_PH = -Math.PI / 2; // sin(x) == cos(x - pi/2)
 // Each spec returns, for frame position t in [0,1], either a spectrum builder
 // (fills re/im) or a time-domain frame (then FFT'd to a spectrum).
 
-function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
 
 // PRIME: sine -> triangle -> saw -> square
-function specPrime(t, re, im) {
+function specPrime(t: number, re: Float64Array, im: Float64Array): void {
   const seg = Math.min(2.9999, t * 3);
   const s = seg | 0, f = seg - s;
   for (let k = 1; k <= 1024; k++) {
@@ -75,7 +84,7 @@ function specPrime(t, re, im) {
 }
 
 // BLOOM: fundamental blossoming into a bright shimmering stack
-function specBloom(t, re, im) {
+function specBloom(t: number, re: Float64Array, im: Float64Array): void {
   const n = 1 + Math.floor(t * t * 220);
   for (let k = 1; k <= 1024; k++) {
     const roll = Math.exp(-Math.pow(k / n, 4));
@@ -87,7 +96,7 @@ function specBloom(t, re, im) {
 }
 
 // PULSE: PWM, duty 50% -> 6%
-function specPulse(t, re, im) {
+function specPulse(t: number, re: Float64Array, im: Float64Array): void {
   const d = 0.5 - 0.44 * t;
   for (let k = 1; k <= 1024; k++) {
     const a = (2 / (k * Math.PI)) * Math.sin(Math.PI * k * d);
@@ -105,7 +114,7 @@ const VOWELS = [
 ];
 const F_AMPS = [1, 0.55, 0.32];
 const F_BW = [95, 120, 160];
-function specVox(t, re, im) {
+function specVox(t: number, re: Float64Array, im: Float64Array): void {
   const pos = t * 4;
   const v = Math.min(3, pos | 0), f = pos - v;
   const F = [0, 1, 2].map((j) => lerp(VOWELS[v][j], VOWELS[v + 1][j], f));
@@ -122,7 +131,7 @@ function specVox(t, re, im) {
 
 // CHIME: sparse metallic partials, hum -> bright strike
 const PARTIALS = [1, 2, 3, 5, 7, 9, 13, 16, 19, 24];
-function specChime(t, re, im) {
+function specChime(t: number, re: Float64Array, im: Float64Array): void {
   for (let j = 0; j < PARTIALS.length; j++) {
     const k = PARTIALS[j];
     const base = 1 / Math.pow(j + 1, 0.8);
@@ -134,7 +143,7 @@ function specChime(t, re, im) {
 }
 
 // GLITCH: bit-crushed / sample-held sine pair (time domain, then band-limited)
-function waveGlitch(t, out) {
+function waveGlitch(t: number, out: Float64Array): void {
   const levels = lerp(40, 2.4, t);
   const hold = 1 + Math.round(t * 40);
   let held = 0;
@@ -150,7 +159,13 @@ function waveGlitch(t, out) {
   }
 }
 
-const SPECS = [
+interface TableSpec {
+  name: string;
+  spectrum?: (t: number, re: Float64Array, im: Float64Array) => void;
+  wave?: (t: number, out: Float64Array) => void;
+}
+
+const SPECS: TableSpec[] = [
   { name: 'PRIME', spectrum: specPrime },
   { name: 'BLOOM', spectrum: specBloom },
   { name: 'PULSE', spectrum: specPulse },
@@ -160,7 +175,7 @@ const SPECS = [
 ];
 
 // ---------- generation ----------
-export function generateTables() {
+export function generateTables(): GeneratedTable[] {
   const re = new Float64Array(SIZE);
   const im = new Float64Array(SIZE);
   const wre = new Float64Array(SIZE);
@@ -177,7 +192,7 @@ export function generateTables() {
       if (spec.spectrum) {
         spec.spectrum(t, re, im);
       } else {
-        spec.wave(t, tmp);
+        spec.wave!(t, tmp);
         for (let i = 0; i < SIZE; i++) { re[i] = tmp[i]; im[i] = 0; }
         fft(re, im, false);
       }
