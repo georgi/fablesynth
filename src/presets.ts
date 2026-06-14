@@ -114,6 +114,105 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.7,
     },
   },
+
+  // ---- Iconic Serum-style sounds ----------------------------------------
+
+  {
+    // Detuned twin-saw Reese: the staple drum'n'bass / neuro foundation.
+    name: 'REESE BASS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 4, 'oscA.detune': 0.5, 'oscA.spread': 0.35, 'oscA.level': 0.85,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.semi': -12, 'oscB.unison': 2, 'oscB.detune': 0.28, 'oscB.level': 0.5,
+      'sub.on': 1, 'sub.level': 0.5, 'sub.oct': -1,
+      'filter.type': 1, 'filter.cutoff': 520, 'filter.res': 0.26, 'filter.drive': 0.3, 'filter.key': 0.2,
+      'env1.a': 0.005, 'env1.d': 0.4, 'env1.s': 0.85, 'env1.r': 0.18,
+      'lfo1.shape': 0, 'lfo1.rate': 0.16,
+      'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.18,
+      'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.12,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.35, 'fx.drive.mix': 0.7,
+    },
+  },
+
+  {
+    // The legendary stacked-fifths saw lead — second osc a fifth up.
+    name: 'POWER FIFTHS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 3, 'oscA.detune': 0.22, 'oscA.spread': 0.7, 'oscA.level': 0.7,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.semi': 7, 'oscB.unison': 3, 'oscB.detune': 0.22, 'oscB.spread': 0.7, 'oscB.level': 0.55,
+      'sub.on': 1, 'sub.level': 0.35,
+      'filter.type': 0, 'filter.cutoff': 6500, 'filter.res': 0.12, 'filter.env': 0.3, 'filter.key': 0.3,
+      'env1.a': 0.005, 'env1.d': 0.6, 'env1.s': 0.8, 'env1.r': 0.35,
+      'env2.a': 0.005, 'env2.d': 0.3, 'env2.s': 0, 'env2.r': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.35,
+      'fx.delay.on': 1, 'fx.delay.time': 0.33, 'fx.delay.fb': 0.32, 'fx.delay.mix': 0.22,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.26,
+    },
+  },
+
+  {
+    // Talking dubstep growl: LFO sweeps the vowel table + cutoff into drive.
+    name: 'GROWL BASS',
+    params: {
+      'oscA.table': 3, 'oscA.pos': 0.15, 'oscA.unison': 2, 'oscA.detune': 0.14, 'oscA.spread': 0.5, 'oscA.level': 0.85,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': -1, 'oscB.level': 0.5,
+      'sub.on': 1, 'sub.level': 0.55, 'sub.oct': -1,
+      'filter.type': 1, 'filter.cutoff': 650, 'filter.res': 0.45, 'filter.drive': 0.5,
+      'env1.a': 0.004, 'env1.d': 0.3, 'env1.s': 0.9, 'env1.r': 0.12,
+      'lfo1.shape': 1, 'lfo1.rate': 5.5,
+      'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.7,
+      'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.4,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.55, 'fx.drive.mix': 0.85,
+    },
+  },
+
+  {
+    // Wide future-bass chord stab — 7-voice supersaw under a bloom layer.
+    name: 'FUTURE CHORD',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 7, 'oscA.detune': 0.32, 'oscA.spread': 1, 'oscA.level': 0.72,
+      'oscB.on': 1, 'oscB.table': 1, 'oscB.pos': 0.4, 'oscB.unison': 3, 'oscB.detune': 0.24, 'oscB.spread': 0.8, 'oscB.level': 0.4,
+      'filter.type': 0, 'filter.cutoff': 8000, 'filter.res': 0.08, 'filter.env': 0.25, 'filter.key': 0.2,
+      'env1.a': 0.02, 'env1.d': 0.5, 'env1.s': 0.85, 'env1.r': 0.6,
+      'lfo1.shape': 0, 'lfo1.rate': 0.5,
+      'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.3,
+      'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.5,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.68, 'fx.reverb.mix': 0.42,
+    },
+  },
+
+  {
+    // Aggressive riddim screech — square-wave hook clamped by a fast LFO + drive.
+    name: 'SCREECH LEAD',
+    params: {
+      'oscA.table': 2, 'oscA.pos': 0.7, 'oscA.unison': 3, 'oscA.detune': 0.3, 'oscA.spread': 0.7, 'oscA.level': 0.78,
+      'oscB.on': 1, 'oscB.table': 5, 'oscB.pos': 0.4, 'oscB.level': 0.4,
+      'filter.type': 2, 'filter.cutoff': 1800, 'filter.res': 0.6, 'filter.drive': 0.4,
+      'env1.a': 0.004, 'env1.d': 0.4, 'env1.s': 0.85, 'env1.r': 0.15,
+      'lfo1.shape': 3, 'lfo1.rate': 8,
+      'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.5,
+      'mat2.src': 1, 'mat2.dst': 2, 'mat2.amt': 0.4,
+      'mat3.src': 4, 'mat3.dst': 3, 'mat3.amt': 0.3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.6, 'fx.drive.mix': 0.8,
+      'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.18,
+    },
+  },
+
+  {
+    // Hardstyle "donk" stab: hollow pulse with a mod-env pitch blip on attack.
+    name: 'DONK STAB',
+    params: {
+      'oscA.table': 2, 'oscA.pos': 0.25, 'oscA.level': 0.85,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 1, 'oscB.oct': 1, 'oscB.level': 0.28,
+      'sub.on': 1, 'sub.level': 0.4,
+      'filter.type': 0, 'filter.cutoff': 3500, 'filter.res': 0.3, 'filter.env': 0.5, 'filter.key': 0.3,
+      'env1.a': 0.002, 'env1.d': 0.16, 'env1.s': 0, 'env1.r': 0.1,
+      'env2.a': 0.002, 'env2.d': 0.05, 'env2.s': 0, 'env2.r': 0.05,
+      'mat1.src': 3, 'mat1.dst': 4, 'mat1.amt': 0.25,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.3, 'fx.drive.mix': 0.6,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.2,
+    },
+  },
 ];
 
 const LS_KEY = 'fablesynth.userPresets';
