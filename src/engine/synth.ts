@@ -2,21 +2,75 @@
 // Param routing: 'fx.*' and 'master.volume' drive native nodes here; everything
 // else is forwarded to the worklet.
 
-import { generateTables } from './wavetables.js';
-import { defaultParams } from '../params.js';
+import { generateTables } from './wavetables';
+import { defaultParams, type ParamValues } from '../params';
+// The DSP core runs in the audio render thread. `?url` makes Vite copy it
+// verbatim and hand us the served URL for `audioWorklet.addModule`.
+import workletUrl from './worklet.js?url';
+
+export interface VizMessage {
+  t: 'viz';
+  a: number;
+  b: number;
+  n: number;
+}
+
+export interface VizTable {
+  name: string;
+  frames: number;
+  viz: Float32Array;
+}
+
+interface WetDry {
+  dry: GainNode;
+  wet: GainNode;
+}
 
 export class SynthEngine {
+  params: ParamValues;
+  tables: VizTable[] | null; // [{name, frames, viz}] kept for visualization
+  onviz: ((d: VizMessage) => void) | null;
+  ready: boolean;
+
+  ctx!: AudioContext;
+  node!: AudioWorkletNode;
+
+  fxInput!: GainNode;
+  driveShaper!: WaveShaperNode;
+  drivePre!: GainNode;
+  driveMix!: WetDry;
+  chDelay1!: DelayNode;
+  chDelay2!: DelayNode;
+  chLfo!: OscillatorNode;
+  chDepth1!: GainNode;
+  chDepth2!: GainNode;
+  chorusMix!: WetDry;
+  dlL!: DelayNode;
+  dlR!: DelayNode;
+  dlFb!: GainNode;
+  dlFb2!: GainNode;
+  dlDamp!: BiquadFilterNode;
+  delayMix!: WetDry;
+  convolver!: ConvolverNode;
+  verbMix!: WetDry;
+  verbTimer!: ReturnType<typeof setTimeout> | 0;
+  masterGain!: GainNode;
+  limiter!: DynamicsCompressorNode;
+  scopeAnalyser!: AnalyserNode;
+  specAnalyser!: AnalyserNode;
+
   constructor() {
     this.params = defaultParams();
-    this.tables = null; // [{name, frames, viz}] kept for visualization
+    this.tables = null;
     this.onviz = null;
     this.ready = false;
   }
 
-  async init() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  async init(): Promise<void> {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
-    await ctx.audioWorklet.addModule('js/engine/worklet.js');
+    await ctx.audioWorklet.addModule(workletUrl);
 
     const full = generateTables();
     this.tables = full.map((t) => ({ name: t.name, frames: t.frames, viz: t.viz }));
@@ -26,8 +80,8 @@ export class SynthEngine {
       numberOfOutputs: 1,
       outputChannelCount: [2],
     });
-    this.node.port.onmessage = (e) => {
-      if (e.data.t === 'viz' && this.onviz) this.onviz(e.data);
+    this.node.port.onmessage = (e: MessageEvent) => {
+      if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.node.port.postMessage(
@@ -42,7 +96,7 @@ export class SynthEngine {
   }
 
   // ---------- FX graph ----------
-  mkWetDry(input, output) {
+  mkWetDry(input: AudioNode, output: AudioNode): WetDry {
     const dry = this.ctx.createGain();
     const wet = this.ctx.createGain();
     input.connect(dry).connect(output);
@@ -50,7 +104,7 @@ export class SynthEngine {
     return { dry, wet };
   }
 
-  buildFx() {
+  buildFx(): void {
     const ctx = this.ctx;
     this.fxInput = ctx.createGain();
 
@@ -136,7 +190,7 @@ export class SynthEngine {
     this.masterGain.connect(this.specAnalyser);
   }
 
-  renderImpulse() {
+  renderImpulse(): void {
     const size = this.params['fx.reverb.size'];
     const dur = 0.5 + size * 4.5;
     const sr = this.ctx.sampleRate;
@@ -153,7 +207,7 @@ export class SynthEngine {
     this.convolver.buffer = buf;
   }
 
-  setMix(mix, on, amount) {
+  setMix(mix: WetDry, on: number, amount: number): void {
     const t = this.ctx.currentTime;
     const wet = on ? Math.sin((amount * Math.PI) / 2) : 0;
     const dry = on ? Math.cos((amount * Math.PI) / 2) : 1;
@@ -161,7 +215,7 @@ export class SynthEngine {
     mix.dry.gain.setTargetAtTime(dry, t, 0.02);
   }
 
-  applyAllFx() {
+  applyAllFx(): void {
     const p = this.params;
     const t = this.ctx.currentTime;
 
@@ -196,7 +250,7 @@ export class SynthEngine {
   }
 
   // ---------- param + note API ----------
-  setParam(id, v) {
+  setParam(id: string, v: number): void {
     this.params[id] = v;
     if (!this.ready) return;
     if (id.startsWith('fx.') || id === 'master.volume') {
@@ -210,15 +264,15 @@ export class SynthEngine {
     }
   }
 
-  applyAllParams() {
+  applyAllParams(): void {
     if (!this.ready) return;
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.applyAllFx();
     this.renderImpulse();
   }
 
-  noteOn(n, vel = 1) { if (this.ready) this.node.port.postMessage({ t: 'on', n, v: vel }); }
-  noteOff(n) { if (this.ready) this.node.port.postMessage({ t: 'off', n }); }
-  bend(semis) { if (this.ready) this.node.port.postMessage({ t: 'bend', s: semis }); }
-  panic() { if (this.ready) this.node.port.postMessage({ t: 'panic' }); }
+  noteOn(n: number, vel = 1): void { if (this.ready) this.node.port.postMessage({ t: 'on', n, v: vel }); }
+  noteOff(n: number): void { if (this.ready) this.node.port.postMessage({ t: 'off', n }); }
+  bend(semis: number): void { if (this.ready) this.node.port.postMessage({ t: 'bend', s: semis }); }
+  panic(): void { if (this.ready) this.node.port.postMessage({ t: 'panic' }); }
 }
