@@ -10,6 +10,20 @@
 
 const NVOICES = 8;
 const MAXUNI = 7;
+// Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
+// so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
+const COMB_MAX = 4096;
+
+// Vowel formants (A-E-I-O-U), reused from the VOX wavetable voicing. The VOWEL
+// filter is a 3-band bandpass bank tuned to these, morphed by the CUTOFF knob.
+const VOWELS = [
+  [730, 1090, 2440],
+  [530, 1840, 2480],
+  [390, 1990, 2550],
+  [570, 840, 2410],
+  [440, 1020, 2240],
+];
+const F_AMPS = [1, 0.55, 0.32];
 
 class Env {
   constructor() {
@@ -86,6 +100,31 @@ function lcosh(z) {
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
 }
 
+// Per-voice runtime state for one filter (both the persistent DSP state and the
+// block-rate coefficients). Kept allocation-free so coef updates never trigger GC.
+function makeFilterState() {
+  return {
+    svf: new Float64Array(8),   // SVF: 2 stages x 2 ch x (ic1, ic2)
+    fmt: new Float64Array(12),  // formant: 2 ch x 3 bands x (s1, s2)
+    combL: new Float32Array(COMB_MAX),
+    combR: new Float32Array(COMB_MAX),
+    combW: 0,
+    cutSm: 0,
+    satXL: 0, satXR: 0,         // ADAA drive: previous input per channel
+    ftype: 0, twoPole: false,
+    a1: 0, a2: 0, a3: 0, k1: 0, // SVF coefs
+    combLen: 1, combFb: 0,      // comb coefs
+    fc: new Float64Array(9),    // formant biquad coefs: 3 bands x (b0, a1, a2)
+    famp: new Float64Array(3),
+  };
+}
+
+function resetFilterState(fs) {
+  fs.svf.fill(0); fs.fmt.fill(0);
+  fs.combL.fill(0); fs.combR.fill(0); fs.combW = 0;
+  fs.cutSm = 0; fs.satXL = 0; fs.satXR = 0;
+}
+
 function makeOscState() {
   return {
     phases: new Float64Array(MAXUNI),
@@ -106,10 +145,8 @@ class Voice {
     this.oA = makeOscState(); this.oB = makeOscState();
     this.subPhase = 0;
     this.pb = [0, 0, 0, 0, 0, 0, 0]; // pink noise filter state
-    this.f = new Float64Array(8); // svf states: 2 stages x 2 ch x (ic1,ic2)
-    this.cutSm = 0;
+    this.f1 = makeFilterState(); this.f2 = makeFilterState();
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
-    this.satXL = 0; this.satXR = 0; // ADAA drive: previous input per channel
   }
   get active() { return this.ampEnv.state !== 0; }
 
@@ -125,10 +162,8 @@ class Voice {
     }
     this.oA.posSm = -1; this.oB.posSm = -1;
     this.subPhase = 0;
-    this.f.fill(0);
-    this.cutSm = 0;
+    resetFilterState(this.f1); resetFilterState(this.f2);
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
-    this.satXL = this.satXR = 0;
   }
   noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); }
   kill() { this.gate = false; this.ampEnv.kill(); this.modEnv.kill(); }
@@ -147,6 +182,13 @@ class FableProcessor extends AudioWorkletProcessor {
     this.vizCount = 0;
     this.tmpL = new Float32Array(128);
     this.tmpR = new Float32Array(128);
+    // filter routing scratch: osc-B split source + each filter's output
+    this.bL = new Float32Array(128);
+    this.bR = new Float32Array(128);
+    this.f1L = new Float32Array(128);
+    this.f1R = new Float32Array(128);
+    this.f2L = new Float32Array(128);
+    this.f2R = new Float32Array(128);
     this.port.onmessage = (e) => this.onMsg(e.data);
   }
 
@@ -316,6 +358,167 @@ class FableProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // Compute one filter's block-rate coefficients. CUTOFF is shared across all
+  // types: it sets corner frequency (SVF), comb pitch (COMB) or vowel morph
+  // position (VOWEL). RES sets resonance / feedback / formant sharpness.
+  setupFilter(fs, pre, v, e2, mCut, mRes) {
+    const p = this.p;
+    const ftype = p[pre + '.type'] | 0;
+    fs.ftype = ftype;
+
+    let fc = p[pre + '.cutoff'] *
+      Math.pow(2, p[pre + '.env'] * 4 * e2 + (p[pre + '.key'] * (v.note - 60)) / 12 + mCut * 5);
+    fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
+    if (fs.cutSm <= 0) fs.cutSm = fc;
+    fs.cutSm += (fc - fs.cutSm) * 0.5;
+    const cut = fs.cutSm;
+    const res = Math.min(0.999, Math.max(0, p[pre + '.res'] + mRes));
+
+    if (ftype <= 4) {
+      // Cytomic SVF
+      fs.twoPole = ftype === 1; // LP24 = two cascaded stages
+      const g = Math.tan((Math.PI * cut) / sampleRate);
+      const k = 2 - 1.93 * res;
+      fs.k1 = k;
+      fs.a1 = 1 / (1 + g * (g + k));
+      fs.a2 = g * fs.a1;
+      fs.a3 = g * fs.a2;
+    } else if (ftype === 5) {
+      // tuned feedback comb: delay length tracks cutoff pitch, RES -> feedback
+      let len = sampleRate / cut;
+      len = Math.min(COMB_MAX - 2, Math.max(1, len));
+      fs.combLen = len;
+      fs.combFb = res * 0.97; // < 1 keeps the resonator stable
+    } else {
+      // VOWEL: 3-band bandpass bank, CUTOFF morphs A-E-I-O-U on a log axis
+      const norm = Math.min(0.999, Math.max(0, Math.log(cut / 20) / Math.log(1000)));
+      const pos = norm * 4;
+      const vi = Math.min(3, pos | 0);
+      const fr = pos - vi;
+      const q = 2 + res * 22; // higher RES -> narrower, more vocal formants
+      for (let j = 0; j < 3; j++) {
+        const f0 = Math.min(sampleRate * 0.45, VOWELS[vi][j] + (VOWELS[vi + 1][j] - VOWELS[vi][j]) * fr);
+        const w0 = (2 * Math.PI * f0) / sampleRate;
+        const alpha = Math.sin(w0) / (2 * q);
+        const a0 = 1 + alpha;
+        fs.fc[j * 3] = alpha / a0;             // b0 (b1 = 0, b2 = -b0): 0 dB peak BPF
+        fs.fc[j * 3 + 1] = (-2 * Math.cos(w0)) / a0; // a1
+        fs.fc[j * 3 + 2] = (1 - alpha) / a0;   // a2
+        fs.famp[j] = F_AMPS[j];
+      }
+    }
+  }
+
+  // Apply one filter (optional ADAA drive + the selected type) to a stereo block,
+  // reading in*, writing out*. Stage 1 saturates in -> out, stage 2 filters in place.
+  runFilter(fs, inL, inR, outL, outR, drive, n) {
+    // -- drive (anti-aliased tanh via ADAA), or a plain copy when disabled --
+    if (drive > 0.005) {
+      const dg = 1 + drive * 7;
+      const dcomp = 1 / Math.pow(dg, 0.55);
+      const kF = dcomp / dg;
+      let xpL = fs.satXL, xpR = fs.satXR;
+      let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
+      for (let i = 0; i < n; i++) {
+        const aL = inL[i], aR = inR[i];
+        const dxL = aL - xpL;
+        const FL = kF * lcosh(dg * aL);
+        // |Δx| tiny → ADAA is numerically unstable; fall back to midpoint tanh.
+        outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
+        xpL = aL; FpL = FL;
+        const dxR = aR - xpR;
+        const FR = kF * lcosh(dg * aR);
+        outR[i] = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+        xpR = aR; FpR = FR;
+      }
+      fs.satXL = xpL; fs.satXR = xpR;
+    } else {
+      for (let i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
+      if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }
+    }
+
+    const ftype = fs.ftype;
+    if (ftype <= 4) {
+      const a1 = fs.a1, a2 = fs.a2, a3 = fs.a3, k1 = fs.k1;
+      const F = fs.svf;
+      for (let ch = 0; ch < 2; ch++) {
+        const buf = ch === 0 ? outL : outR;
+        const o1 = ch * 2;
+        let ic1 = F[o1], ic2 = F[o1 + 1];
+        for (let i = 0; i < n; i++) {
+          const x = buf[i];
+          const v3 = x - ic2;
+          const v1 = a1 * ic1 + a2 * v3;
+          const v2 = ic2 + a2 * ic1 + a3 * v3;
+          ic1 = 2 * v1 - ic1;
+          ic2 = 2 * v2 - ic2;
+          switch (ftype) {
+            case 0: case 1: buf[i] = v2; break;       // LP
+            case 2: buf[i] = k1 * v1; break;          // BP (unity peak-ish)
+            case 3: buf[i] = x - k1 * v1 - v2; break; // HP
+            default: buf[i] = x - k1 * v1; break;     // notch
+          }
+        }
+        F[o1] = ic1; F[o1 + 1] = ic2;
+      }
+      if (fs.twoPole) {
+        for (let ch = 0; ch < 2; ch++) {
+          const buf = ch === 0 ? outL : outR;
+          const o1 = 4 + ch * 2;
+          let ic1 = F[o1], ic2 = F[o1 + 1];
+          for (let i = 0; i < n; i++) {
+            const x = buf[i];
+            const v3 = x - ic2;
+            const v1 = a1 * ic1 + a2 * v3;
+            const v2 = ic2 + a2 * ic1 + a3 * v3;
+            ic1 = 2 * v1 - ic1;
+            ic2 = 2 * v2 - ic2;
+            buf[i] = v2;
+          }
+          F[o1] = ic1; F[o1 + 1] = ic2;
+        }
+      }
+    } else if (ftype === 5) {
+      // resonant comb: y = (1-fb)·x + fb·y[n-len], fractional read for tuning
+      const len = fs.combLen, fb = fs.combFb, g0 = 1 - fb;
+      const cl = fs.combL, cr = fs.combR;
+      let w = fs.combW;
+      for (let i = 0; i < n; i++) {
+        let rd = w - len;
+        rd = ((rd % COMB_MAX) + COMB_MAX) % COMB_MAX;
+        const i0 = rd | 0;
+        const frac = rd - i0;
+        const i1 = i0 + 1 < COMB_MAX ? i0 + 1 : 0;
+        const yL = g0 * outL[i] + fb * (cl[i0] + frac * (cl[i1] - cl[i0]));
+        const yR = g0 * outR[i] + fb * (cr[i0] + frac * (cr[i1] - cr[i0]));
+        cl[w] = yL; cr[w] = yR;
+        outL[i] = yL; outR[i] = yR;
+        w = w + 1 < COMB_MAX ? w + 1 : 0;
+      }
+      fs.combW = w;
+    } else {
+      // VOWEL: parallel bank of 3 bandpass biquads (transposed direct form II)
+      const fc = fs.fc, fa = fs.famp, z = fs.fmt;
+      for (let ch = 0; ch < 2; ch++) {
+        const buf = ch === 0 ? outL : outR;
+        const zb = ch * 6;
+        for (let i = 0; i < n; i++) {
+          const x = buf[i];
+          let acc = 0.04 * x; // slight broadband floor, matching the VOX voicing
+          for (let j = 0; j < 3; j++) {
+            const b0 = fc[j * 3], ca1 = fc[j * 3 + 1], ca2 = fc[j * 3 + 2];
+            const zi = zb + j * 2;
+            const y = b0 * x + z[zi];
+            z[zi] = z[zi + 1] - ca1 * y; // s1 (b1 = 0)
+            z[zi + 1] = -b0 * x - ca2 * y; // s2 (b2 = -b0)
+            acc += fa[j] * y;
+          }
+          buf[i] = acc * 0.8;
+        }
+      }
+    }
+  }
+
   renderVoice(v, L, R, n) {
     const p = this.p;
 
@@ -337,6 +540,7 @@ class FableProcessor extends AudioWorkletProcessor {
 
     // matrix destinations
     let mPosA = 0, mPosB = 0, mCut = 0, mPitch = 0, mAmp = 0, mPan = 0, mLvlA = 0, mLvlB = 0;
+    let mCut2 = 0, mRes2 = 0;
     for (let s = 1; s <= 4; s++) {
       const src = p['mat' + s + '.src'] | 0;
       const dst = p['mat' + s + '.dst'] | 0;
@@ -351,16 +555,25 @@ class FableProcessor extends AudioWorkletProcessor {
         case 6: mPan += x; break;
         case 7: mLvlA += x; break;
         case 8: mLvlB += x; break;
+        case 9: mCut2 += x; break;
+        case 10: mRes2 += x; break;
       }
     }
 
+    // SPLIT routing sends osc A through filter 1 and osc B through filter 2, so
+    // they need separate source buffers; every other routing sums into one path.
+    const route = p['filter.route'] | 0;
+    const split = route === 2;
+
     const tmpL = this.tmpL, tmpR = this.tmpR;
     tmpL.fill(0, 0, n); tmpR.fill(0, 0, n);
+    const bL = this.bL, bR = this.bR;
+    if (split) { bL.fill(0, 0, n); bR.fill(0, 0, n); }
 
     const aOn = this.setupOsc(v.oA, 'oscA', v, mPosA, mPitch, mLvlA, mPan);
     const bOn = this.setupOsc(v.oB, 'oscB', v, mPosB, mPitch, mLvlB, mPan);
     if (aOn) this.renderOsc(v.oA, tmpL, tmpR, n);
-    if (bOn) this.renderOsc(v.oB, tmpL, tmpR, n);
+    if (bOn) this.renderOsc(v.oB, split ? bL : tmpL, split ? bR : tmpR, n);
 
     // sub oscillator (polyblep square or sine)
     if (p['sub.on']) {
@@ -422,90 +635,45 @@ class FableProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // filter coefficients (block rate, smoothed)
-    const filtOn = !!p['filter.on'];
-    let g1 = 0, k1 = 0, a1 = 0, a2 = 0, a3 = 0, ftype = 0, twoPole = false;
-    if (filtOn) {
-      ftype = p['filter.type'] | 0;
-      twoPole = ftype === 1; // LP24
-      let fc = p['filter.cutoff'] *
-        Math.pow(2, p['filter.env'] * 4 * e2 + (p['filter.key'] * (v.note - 60)) / 12 + mCut * 5);
-      fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
-      if (v.cutSm <= 0) v.cutSm = fc;
-      v.cutSm += (fc - v.cutSm) * 0.5;
-      g1 = Math.tan((Math.PI * v.cutSm) / sampleRate);
-      const res = p['filter.res'];
-      k1 = 2 - 1.93 * res;
-      a1 = 1 / (1 + g1 * (g1 + k1));
-      a2 = g1 * a1;
-      a3 = g1 * a2;
+    // ---- per-voice filters with routing ----
+    const f1on = !!p['filter.on'];
+    const f2on = !!p['filter2.on'];
+    if (f1on) this.setupFilter(v.f1, 'filter', v, e2, mCut, 0);
+    if (f2on) this.setupFilter(v.f2, 'filter2', v, e2, mCut2, mRes2);
+
+    const f1L = this.f1L, f1R = this.f1R, f2L = this.f2L, f2R = this.f2R;
+    const dr1 = p['filter.drive'], dr2 = p['filter2.drive'];
+    let oL, oR; // routed output buffers feeding the DC blocker + amp
+
+    if (split) {
+      // osc A (+ sub/noise) -> F1, osc B -> F2, summed. Bypassed filters pass dry.
+      if (f1on) this.runFilter(v.f1, tmpL, tmpR, f1L, f1R, dr1, n);
+      if (f2on) this.runFilter(v.f2, bL, bR, f2L, f2R, dr2, n);
+      const aL = f1on ? f1L : tmpL, aR = f1on ? f1R : tmpR;
+      const sL = f2on ? f2L : bL, sR = f2on ? f2R : bR;
+      for (let i = 0; i < n; i++) { f1L[i] = aL[i] + sL[i]; f1R[i] = aR[i] + sR[i]; }
+      oL = f1L; oR = f1R;
+    } else if (route === 1) {
+      // parallel: both filters see the same signal, outputs summed
+      if (f1on) this.runFilter(v.f1, tmpL, tmpR, f1L, f1R, dr1, n);
+      if (f2on) this.runFilter(v.f2, tmpL, tmpR, f2L, f2R, dr2, n);
+      if (f1on && f2on) {
+        for (let i = 0; i < n; i++) { f1L[i] += f2L[i]; f1R[i] += f2R[i]; }
+        oL = f1L; oR = f1R;
+      } else if (f1on) { oL = f1L; oR = f1R; }
+      else if (f2on) { oL = f2L; oR = f2R; }
+      else { oL = tmpL; oR = tmpR; } // both bypassed -> dry
+    } else {
+      // serial: F1 -> F2, each bypassed when off
+      let cL = tmpL, cR = tmpR;
+      if (f1on) { this.runFilter(v.f1, cL, cR, f1L, f1R, dr1, n); cL = f1L; cR = f1R; }
+      if (f2on) { this.runFilter(v.f2, cL, cR, f2L, f2R, dr2, n); cL = f2L; cR = f2R; }
+      oL = cL; oR = cR;
     }
-    const drive = p['filter.drive'];
-    const dg = 1 + drive * 7;
-    const dcomp = 1 / Math.pow(dg, 0.55);
-    const useDrive = drive > 0.005;
 
     const ampFactor = Math.min(2, Math.max(0, 1 + mAmp));
-    const F = v.f;
-
-    // Anti-aliased drive (first-order ADAA of dcomp·tanh(dg·x)). A plain
-    // per-sample tanh folds the harmonics it creates back below Nyquist —
-    // broadband aliasing that would undo the oscillators' band-limiting. ADAA
-    // outputs the average of the nonlinearity over [x[n-1], x[n]] via its
-    // antiderivative A(x) = (dcomp/dg)·ln(cosh(dg·x)), which suppresses that
-    // aliasing by ~10–20 dB at no oversampling cost (Parker/Välimäki; the same
-    // trick Surge XT and Vital use on their shapers).
-let kF = 0;
-let xpL = v.satXL, xpR = v.satXR;
-let FpL = 0, FpR = 0;
-if (useDrive) { kF = dcomp / dg; FpL = kF * lcosh(dg * xpL); FpR = kF * lcosh(dg * xpR); }
-
     for (let i = 0; i < n; i++) {
-      let sl = tmpL[i], sr = tmpR[i];
-      if (useDrive) {
-        const inL = sl, inR = sr;
-        const dxL = inL - xpL;
-        const FL = kF * lcosh(dg * inL);
-        // |Δx| tiny → ADAA is numerically unstable; fall back to midpoint tanh.
-        sl = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (inL + xpL));
-        xpL = inL; FpL = FL;
-        const dxR = inR - xpR;
-        const FR = kF * lcosh(dg * inR);
-        sr = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (inR + xpR));
-        xpR = inR; FpR = FR;
-      }
-      if (filtOn) {
-        // stage 1, both channels (Simper SVF)
-        for (let ch = 0; ch < 2; ch++) {
-          const x = ch === 0 ? sl : sr;
-          const o1 = ch * 2;
-          const v3 = x - F[o1 + 1];
-          const v1 = a1 * F[o1] + a2 * v3;
-          const v2 = F[o1 + 1] + a2 * F[o1] + a3 * v3;
-          F[o1] = 2 * v1 - F[o1];
-          F[o1 + 1] = 2 * v2 - F[o1 + 1];
-          let y;
-          switch (ftype) {
-            case 0: case 1: y = v2; break;            // LP
-            case 2: y = k1 * v1; break;               // BP (unity peak-ish)
-            case 3: y = x - k1 * v1 - v2; break;      // HP
-            default: y = x - k1 * v1; break;          // notch
-          }
-          if (ch === 0) sl = y; else sr = y;
-        }
-        if (twoPole) {
-          for (let ch = 0; ch < 2; ch++) {
-            const x = ch === 0 ? sl : sr;
-            const o1 = 4 + ch * 2;
-            const v3 = x - F[o1 + 1];
-            const v1 = a1 * F[o1] + a2 * v3;
-            const v2 = F[o1 + 1] + a2 * F[o1] + a3 * v3;
-            F[o1] = 2 * v1 - F[o1];
-            F[o1 + 1] = 2 * v2 - F[o1 + 1];
-            if (ch === 0) sl = v2; else sr = v2;
-          }
-        }
-      }
+      const sl = oL[i], sr = oR[i];
       // Per-voice DC blocker (1-pole highpass, ~3.5 Hz) — removes DC before
       // it reaches the FX chain's saturator where it would cause asymmetric clipping.
       const yL = sl - v.dcxL + DC_R * v.dcyL;
@@ -516,10 +684,6 @@ if (useDrive) { kF = dcomp / dg; FpL = kF * lcosh(dg * xpL); FpR = kF * lcosh(dg
       L[i] += yL * amp;
       R[i] += yR * amp;
     }
-if (n > 0) {
-  v.satXL = useDrive ? xpL : tmpL[n - 1];
-  v.satXR = useDrive ? xpR : tmpR[n - 1];
-}
 
     // advance block-rate modulators
     v.lfo1.advance(p['lfo1.rate'], n);

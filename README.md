@@ -45,14 +45,17 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
-- **Filter** — per-voice Simper (Cytomic) zero-delay state-variable filter:
-  LP12, LP24, BP, HP, Notch, with envelope amount and key tracking. The `tanh`
-  drive is **anti-aliased** (first-order antiderivative anti-aliasing, ADAA),
-  so pushing DRIVE on bright material doesn't fold harmonics back down the way
-  a naive per-sample saturator would.
+- **Dual per-voice filter** — two independent filters, each offering the Simper
+  (Cytomic) zero-delay state-variable types (LP12, LP24, BP, HP, Notch) plus a
+  tuned **comb** (CUTOFF sets pitch, RES sets feedback) and a **vowel/formant**
+  filter (CUTOFF morphs A-E-I-O-U), all with envelope amount and key tracking.
+  They route **serial** (F1→F2), **parallel** (summed) or **split** (osc A→F1,
+  osc B→F2). The `tanh` drive is **anti-aliased** (first-order antiderivative
+  anti-aliasing, ADAA), so pushing DRIVE on bright material doesn't fold
+  harmonics back down the way a naive per-sample saturator would.
 - **2 ADSR envelopes** (amp + mod), **2 LFOs** (5 shapes), **4-slot mod matrix**
-  (LFOs / mod env / velocity / note → wavetable position, cutoff, pitch, amp,
-  pan, osc levels).
+  (LFOs / mod env / velocity / note → wavetable position, F1/F2 cutoff, F2
+  resonance, pitch, amp, pan, osc levels).
 - **8-voice polyphony** with smart voice stealing, glide, pitch-bend, and a
   per-voice DC blocker so saturation stages never see offset.
 - **FX chain** — tanh drive, stereo chorus, ping-pong delay, convolution reverb
