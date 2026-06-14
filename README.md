@@ -36,8 +36,11 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
-- **Filter** — per-voice Simper state-variable filter: LP12, LP24, BP, HP,
-  Notch, with drive (tanh), envelope amount and key tracking.
+- **Filter** — per-voice Simper (Cytomic) zero-delay state-variable filter:
+  LP12, LP24, BP, HP, Notch, with envelope amount and key tracking. The `tanh`
+  drive is **anti-aliased** (first-order antiderivative anti-aliasing, ADAA),
+  so pushing DRIVE on bright material doesn't fold harmonics back down the way
+  a naive per-sample saturator would.
 - **2 ADSR envelopes** (amp + mod), **2 LFOs** (5 shapes), **4-slot mod matrix**
   (LFOs / mod env / velocity / note → wavetable position, cutoff, pitch, amp,
   pan, osc levels).

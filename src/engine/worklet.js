@@ -77,6 +77,15 @@ class LFO {
 // Per-oscillator runtime state inside a voice
 const DC_R = 0.9998; // ~3.5 Hz highpass — removes DC without touching bass
 
+// Numerically stable ln(cosh(z)) — the antiderivative of tanh, used by the
+// anti-aliased (ADAA) saturator below. cosh overflows for |z| > ~710, so we
+// fold large arguments to |z| - ln2 + log1p(e^-2|z|). Exact for small z too
+// (ln cosh 0 = 0), so it is safe across the whole drive range.
+function lcosh(z) {
+  const a = Math.abs(z);
+  return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
+}
+
 function makeOscState() {
   return {
     phases: new Float64Array(MAXUNI),
@@ -100,6 +109,7 @@ class Voice {
     this.f = new Float64Array(8); // svf states: 2 stages x 2 ch x (ic1,ic2)
     this.cutSm = 0;
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
+    this.satXL = 0; this.satXR = 0; // ADAA drive: previous input per channel
   }
   get active() { return this.ampEnv.state !== 0; }
 
@@ -118,6 +128,7 @@ class Voice {
     this.f.fill(0);
     this.cutSm = 0;
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
+    this.satXL = this.satXR = 0;
   }
   noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); }
   kill() { this.gate = false; this.ampEnv.kill(); this.modEnv.kill(); }
@@ -437,11 +448,30 @@ class FableProcessor extends AudioWorkletProcessor {
     const ampFactor = Math.min(2, Math.max(0, 1 + mAmp));
     const F = v.f;
 
+    // Anti-aliased drive (first-order ADAA of dcomp·tanh(dg·x)). A plain
+    // per-sample tanh folds the harmonics it creates back below Nyquist —
+    // broadband aliasing that would undo the oscillators' band-limiting. ADAA
+    // outputs the average of the nonlinearity over [x[n-1], x[n]] via its
+    // antiderivative F(x) = (dcomp/dg)·ln(cosh(dg·x)), which suppresses that
+    // aliasing by ~10–20 dB at no oversampling cost (Parker/Välimäki; the same
+    // trick Surge XT and Vital use on their shapers).
+    const kF = dcomp / dg;
+    let xpL = v.satXL, xpR = v.satXR;
+    let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
+
     for (let i = 0; i < n; i++) {
       let sl = tmpL[i], sr = tmpR[i];
       if (useDrive) {
-        sl = Math.tanh(sl * dg) * dcomp;
-        sr = Math.tanh(sr * dg) * dcomp;
+        const inL = sl, inR = sr;
+        const dxL = inL - xpL;
+        const FL = kF * lcosh(dg * inL);
+        // |Δx| tiny → ADAA is numerically unstable; fall back to midpoint tanh.
+        sl = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (inL + xpL));
+        xpL = inL; FpL = FL;
+        const dxR = inR - xpR;
+        const FR = kF * lcosh(dg * inR);
+        sr = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (inR + xpR));
+        xpR = inR; FpR = FR;
       }
       if (filtOn) {
         // stage 1, both channels (Simper SVF)
@@ -485,6 +515,7 @@ class FableProcessor extends AudioWorkletProcessor {
       L[i] += yL * amp;
       R[i] += yR * amp;
     }
+    if (useDrive) { v.satXL = xpL; v.satXR = xpR; }
 
     // advance block-rate modulators
     v.lfo1.advance(p['lfo1.rate'], n);
