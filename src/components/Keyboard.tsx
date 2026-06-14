@@ -1,6 +1,7 @@
 // On-screen piano keyboard. Mouse/touch with Y-position velocity; glissando
 // while held. Held state (incl. computer-key / MIDI notes) comes from the store.
 
+import type * as React from 'react';
 import { useRef } from 'react';
 import { useStore } from '../store';
 

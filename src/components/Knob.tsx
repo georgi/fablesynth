@@ -1,6 +1,7 @@
 // SVG rotary knob. Drag vertically (shift = fine), scroll wheel, double-click
 // to reset, arrow keys when focused. Bipolar params sweep from 12 o'clock.
 
+import type * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { PARAMS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';

@@ -1,6 +1,7 @@
 // Vertical slider used for wavetable position, with a "ghost" marker that
 // tracks the live modulated position coming back from the DSP thread.
 
+import type * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { PARAMS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';
@@ -69,7 +70,10 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
       tabIndex={0}
       role="slider"
       aria-label="wavetable position"
+      aria-valuemin={def.min}
+      aria-valuemax={def.max}
       aria-valuenow={Number(value.toFixed(3))}
+      aria-valuetext={def.fmt ? def.fmt(value) : value.toFixed(2)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
