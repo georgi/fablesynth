@@ -5,27 +5,51 @@ import { FilterView } from '../displays/FilterView';
 import { ACCENTS } from '../../constants';
 import { useStore } from '../../store';
 
+function FilterBlock({ prefix, label }: { prefix: string; label: string }) {
+  const on = useStore((s) => s.params[`${prefix}.on`]);
+  return (
+    <div className={`filter-block${on ? '' : ' off'}`}>
+      <div className="filter-subhead">
+        <PowerButton paramId={`${prefix}.on`} />
+        <span className="fb-label">{label}</span>
+        <Stepper paramId={`${prefix}.type`} accent="f" />
+      </div>
+      <div className="knob-row">
+        <Knob paramId={`${prefix}.cutoff`} size="md" accent="f" />
+        <Knob paramId={`${prefix}.res`} size="sm" accent="f" />
+        <Knob paramId={`${prefix}.drive`} size="sm" accent="f" />
+        <Knob paramId={`${prefix}.env`} size="sm" accent="f" />
+        <Knob paramId={`${prefix}.key`} size="sm" accent="f" />
+      </div>
+    </div>
+  );
+}
+
 export function FilterPanel() {
-  const type = useStore((s) => s.params['filter.type']);
-  const cutoff = useStore((s) => s.params['filter.cutoff']);
-  const res = useStore((s) => s.params['filter.res']);
-  const on = useStore((s) => s.params['filter.on']);
+  const t1 = useStore((s) => s.params['filter.type']);
+  const c1 = useStore((s) => s.params['filter.cutoff']);
+  const r1 = useStore((s) => s.params['filter.res']);
+  const on1 = useStore((s) => s.params['filter.on']);
+  const t2 = useStore((s) => s.params['filter2.type']);
+  const c2 = useStore((s) => s.params['filter2.cutoff']);
+  const r2 = useStore((s) => s.params['filter2.res']);
+  const on2 = useStore((s) => s.params['filter2.on']);
+  const route = useStore((s) => s.params['filter.route']);
+
+  const filters = [
+    { type: t1, cutoff: c1, res: r1, on: !!on1 },
+    { type: t2, cutoff: c2, res: r2, on: !!on2 },
+  ];
 
   return (
     <section className="panel panel-filter" data-accent="f" style={{ gridArea: 'filter' }}>
       <div className="panel-head">
-        <span className="ph-power"><PowerButton paramId="filter.on" /></span>
-        <h2>FILTER</h2>
-        <span className="ph-stepper"><Stepper paramId="filter.type" /></span>
+        <h2>FILTERS</h2>
+        <span className="ph-stepper"><Stepper paramId="filter.route" accent="f" /></span>
       </div>
-      <FilterView className="filter-curve" type={type} cutoff={cutoff} res={res} on={!!on} accent={ACCENTS.f} />
-      <div className="knob-row" id="filter-knobs">
-        <Knob paramId="filter.cutoff" size="lg" accent="f" />
-        <Knob paramId="filter.res" size="md" accent="f" />
-        <Knob paramId="filter.drive" size="sm" accent="f" />
-        <Knob paramId="filter.env" size="sm" accent="f" />
-        <Knob paramId="filter.key" size="sm" accent="f" />
-      </div>
+      <FilterView className="filter-curve" filters={filters} route={route | 0} accent={ACCENTS.f} />
+      <FilterBlock prefix="filter" label="F1" />
+      <FilterBlock prefix="filter2" label="F2" />
     </section>
   );
 }

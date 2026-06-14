@@ -4,10 +4,16 @@
 // Mod dests:   0 —, 1 A POS, 2 B POS, 3 CUTOFF, 4 PITCH, 5 AMP, 6 PAN, 7 A LVL, 8 B LVL
 
 import type { ParamValues } from './params';
+import type { SerializedUserTable } from './engine/usertables';
 
 export interface Preset {
   name: string;
   params: Partial<ParamValues>;
+  // Optional embedded user wavetables. When present they define the table pool
+  // the preset's `*.table` indices (>= TABLE_NAMES.length) address. Factory
+  // presets omit this and only use the 6 procedural tables. See
+  // engine/usertables.ts for the serialization format.
+  tables?: SerializedUserTable[];
 }
 
 export const FACTORY_PRESETS: Preset[] = [
@@ -126,9 +132,11 @@ export function loadUserPresets(): Preset[] {
   }
 }
 
-export function saveUserPreset(name: string, params: ParamValues): Preset[] {
+export function saveUserPreset(name: string, params: ParamValues, tables: SerializedUserTable[] = []): Preset[] {
   const list = loadUserPresets().filter((p) => p.name !== name);
-  list.push({ name, params: { ...params } });
+  const preset: Preset = { name, params: { ...params } };
+  if (tables.length) preset.tables = tables;
+  list.push(preset);
   localStorage.setItem(LS_KEY, JSON.stringify(list));
   return list;
 }

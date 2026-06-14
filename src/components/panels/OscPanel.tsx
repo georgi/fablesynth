@@ -19,6 +19,9 @@ export function OscPanel({ prefix, accentKey, title, gridArea }: OscPanelProps) 
   const pos = useStore((s) => s.params[`${prefix}.pos`]);
   const powered = useStore((s) => s.powered);
   const modPos = useStore((s) => (prefix === 'oscA' ? s.modPosA : s.modPosB));
+  const userTables = useStore((s) => s.userTables); // re-render when the pool changes
+  const openEditor = useStore((s) => s.openEditor);
+  void userTables;
 
   const table = powered && engine.tables ? engine.tables[tableIndex | 0] : null;
 
@@ -27,7 +30,10 @@ export function OscPanel({ prefix, accentKey, title, gridArea }: OscPanelProps) 
       <div className="panel-head">
         <span className="ph-power"><PowerButton paramId={`${prefix}.on`} /></span>
         <h2>{title}</h2>
-        <span className="ph-stepper"><Stepper paramId={`${prefix}.table`} /></span>
+        <span className="ph-stepper">
+          <button className="wt-edit" aria-label="edit wavetable" title="import / draw wavetable" onClick={() => openEditor(prefix)}>✎</button>
+          <Stepper paramId={`${prefix}.table`} />
+        </span>
       </div>
       <div className="osc-body">
         <WavetableView className="wt3d" table={table} pos={pos} modPos={modPos} accent={ACCENTS[accentKey]} />

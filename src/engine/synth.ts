@@ -2,7 +2,7 @@
 // Param routing: 'fx.*' and 'master.volume' drive native nodes here; everything
 // else is forwarded to the worklet.
 
-import { generateTables } from './wavetables';
+import { generateTables, type GeneratedTable } from './wavetables';
 import { defaultParams, type ParamValues } from '../params';
 // The DSP core runs in the audio render thread. `?url` makes Vite copy it
 // verbatim and hand us the served URL for `audioWorklet.addModule`.
@@ -28,7 +28,9 @@ interface WetDry {
 
 export class SynthEngine {
   params: ParamValues;
-  tables: VizTable[] | null; // [{name, frames, viz}] kept for visualization
+  tables: VizTable[] | null; // combined [{name, frames, viz}] kept for visualization
+  procTables: GeneratedTable[]; // procedural tables (full mip data)
+  userTables: GeneratedTable[]; // imported / drawn tables (full mip data)
   onviz: ((d: VizMessage) => void) | null;
   ready: boolean;
 
@@ -62,6 +64,8 @@ export class SynthEngine {
   constructor() {
     this.params = defaultParams();
     this.tables = null;
+    this.procTables = [];
+    this.userTables = [];
     this.onviz = null;
     this.ready = false;
   }
@@ -72,8 +76,8 @@ export class SynthEngine {
     this.ctx = ctx;
     await ctx.audioWorklet.addModule(workletUrl);
 
-    const full = generateTables();
-    this.tables = full.map((t) => ({ name: t.name, frames: t.frames, viz: t.viz }));
+    this.procTables = generateTables();
+    this.refreshViz();
 
     this.node = new AudioWorkletNode(ctx, 'fable-wt', {
       numberOfInputs: 0,
@@ -84,15 +88,41 @@ export class SynthEngine {
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
-    this.node.port.postMessage(
-      { t: 'tables', list: full.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.buffer })) },
-      full.map((t) => t.data.buffer)
-    );
+    this.ready = true;
+    this.pushTables();
 
     this.buildFx();
     this.node.connect(this.fxInput);
     this.applyAllFx();
-    this.ready = true;
+  }
+
+  // Combined table list (procedural first, then user) — the index space the
+  // oscA/oscB.table params address.
+  allTables(): GeneratedTable[] {
+    return [...this.procTables, ...this.userTables];
+  }
+
+  // Rebuild the lightweight viz list used by the WavetableView displays.
+  refreshViz(): void {
+    this.tables = this.allTables().map((t) => ({ name: t.name, frames: t.frames, viz: t.viz }));
+  }
+
+  // Send the full mip data of every table to the worklet. Buffers are copied
+  // (sliced) rather than transferred so the originals stay intact and can be
+  // re-sent whenever the user-table set changes.
+  pushTables(): void {
+    if (!this.ready) return;
+    const all = this.allTables();
+    this.node.port.postMessage(
+      { t: 'tables', list: all.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.slice().buffer })) }
+    );
+  }
+
+  // Replace the user-table set and push it to the worklet + refresh viz.
+  setUserTables(tables: GeneratedTable[]): void {
+    this.userTables = tables;
+    this.refreshViz();
+    this.pushTables();
   }
 
   // ---------- FX graph ----------

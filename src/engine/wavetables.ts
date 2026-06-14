@@ -174,6 +174,39 @@ const SPECS: TableSpec[] = [
   { name: 'GLITCH', wave: waveGlitch },
 ];
 
+// ---------- band-limiting ----------
+// Turn one frame's full-band spectrum (re/im, SIZE bins, DC + Nyquist already
+// zeroed) into every mip level for frame f. Mip m keeps harmonics 1..(1024>>m);
+// each level is inverse-FFT'd back to the time domain. The mip-0 peak sets a
+// single per-frame normalization (0.92 headroom) shared by all levels so the
+// brightness ladder stays amplitude-matched. wre/wim are reused scratch.
+// Shared verbatim by the procedural tables and the user-import / draw modes.
+function bandlimitFrame(
+  re: Float64Array, im: Float64Array,
+  data: Float32Array, viz: Float32Array, f: number,
+  wre: Float64Array, wim: Float64Array,
+): void {
+  let scale = 1;
+  for (let m = 0; m < MIPS; m++) {
+    const maxHarm = 1024 >> m;
+    for (let i = 0; i < SIZE; i++) { wre[i] = re[i]; wim[i] = im[i]; }
+    for (let k = maxHarm + 1; k <= SIZE - maxHarm - 1; k++) { wre[k] = 0; wim[k] = 0; }
+    fft(wre, wim, true);
+
+    if (m === 0) {
+      let peak = 1e-9;
+      for (let i = 0; i < SIZE; i++) peak = Math.max(peak, Math.abs(wre[i]));
+      scale = 0.92 / peak;
+    }
+    const off = (f * MIPS + m) * SIZE;
+    for (let i = 0; i < SIZE; i++) data[off + i] = wre[i] * scale;
+    if (m === 0) {
+      const step = SIZE / VIZ_N;
+      for (let i = 0; i < VIZ_N; i++) viz[f * VIZ_N + i] = wre[(i * step) | 0] * scale;
+    }
+  }
+}
+
 // ---------- generation ----------
 export function generateTables(): GeneratedTable[] {
   const re = new Float64Array(SIZE);
@@ -198,27 +231,35 @@ export function generateTables(): GeneratedTable[] {
       }
       re[0] = 0; im[0] = 0; // kill DC
       re[SIZE / 2] = 0; im[SIZE / 2] = 0;
-
-      let scale = 1;
-      for (let m = 0; m < MIPS; m++) {
-        const maxHarm = 1024 >> m;
-        for (let i = 0; i < SIZE; i++) { wre[i] = re[i]; wim[i] = im[i]; }
-        for (let k = maxHarm + 1; k <= SIZE - maxHarm - 1; k++) { wre[k] = 0; wim[k] = 0; }
-        fft(wre, wim, true);
-
-        if (m === 0) {
-          let peak = 1e-9;
-          for (let i = 0; i < SIZE; i++) peak = Math.max(peak, Math.abs(wre[i]));
-          scale = 0.92 / peak;
-        }
-        const off = (f * MIPS + m) * SIZE;
-        for (let i = 0; i < SIZE; i++) data[off + i] = wre[i] * scale;
-        if (m === 0) {
-          const step = SIZE / VIZ_N;
-          for (let i = 0; i < VIZ_N; i++) viz[f * VIZ_N + i] = wre[(i * step) | 0] * scale;
-        }
-      }
+      bandlimitFrame(re, im, data, viz, f, wre, wim);
     }
     return { name: spec.name, frames: FRAMES, mips: MIPS, size: SIZE, data, viz };
   });
+}
+
+// Build a band-limited table from raw single-cycle time-domain frames. Each
+// input frame is SIZE samples (one cycle); it is FFT'd to a spectrum and then
+// run through the same band-limit / mip pipeline as the procedural tables, so
+// imported and drawn tables anti-alias identically. Frame count is arbitrary
+// (the engine + worklet read frames/mips/size off the table). Used by the
+// user-wavetable import (audio) and draw modes.
+export function buildUserTable(name: string, frames: Float32Array[]): GeneratedTable {
+  const nf = Math.max(1, frames.length);
+  const data = new Float32Array(nf * MIPS * SIZE);
+  const viz = new Float32Array(nf * VIZ_N);
+  const re = new Float64Array(SIZE);
+  const im = new Float64Array(SIZE);
+  const wre = new Float64Array(SIZE);
+  const wim = new Float64Array(SIZE);
+
+  for (let f = 0; f < nf; f++) {
+    const src = frames[f];
+    re.fill(0); im.fill(0);
+    for (let i = 0; i < SIZE; i++) re[i] = src ? src[i] || 0 : 0;
+    fft(re, im, false);
+    re[0] = 0; im[0] = 0; // kill DC
+    re[SIZE / 2] = 0; im[SIZE / 2] = 0;
+    bandlimitFrame(re, im, data, viz, f, wre, wim);
+  }
+  return { name, frames: nf, mips: MIPS, size: SIZE, data, viz };
 }

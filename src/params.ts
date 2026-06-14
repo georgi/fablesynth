@@ -9,12 +9,15 @@ export const fmtSigned = (v: number) => (v > 0 ? '+' : '') + Math.round(v);
 export const fmtBi = (v: number) => (v > 0 ? '+' : '') + Math.round(v * 100);
 
 export const TABLE_NAMES = ['PRIME', 'BLOOM', 'PULSE', 'VOX', 'CHIME', 'GLITCH'];
-export const FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH'];
+// SVF types keep indices 0..4; comb + vowel are appended so existing presets stay valid.
+export const FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH', 'COMB', 'VOWEL'];
+export const FILTER_ROUTES = ['SERIAL', 'PARALLEL', 'SPLIT'];
 export const LFO_SHAPES = ['SINE', 'TRI', 'SAW', 'SQR', 'S&H'];
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
 export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
-export const MOD_DESTS = ['—', 'A POS', 'B POS', 'CUTOFF', 'PITCH', 'AMP', 'PAN', 'A LVL', 'B LVL'];
+// Indices 0..8 are frozen for preset compatibility; F2 destinations are appended.
+export const MOD_DESTS = ['—', 'A POS', 'B POS', 'F1 CUT', 'PITCH', 'AMP', 'PAN', 'A LVL', 'B LVL', 'F2 CUT', 'F2 RES'];
 
 export type Curve = 'lin' | 'log' | 'int';
 export type ParamType = 'bool' | 'enum';
@@ -50,6 +53,20 @@ function oscParams(prefix: string, defOn: number, defTable: number): ParamDef[] 
   ];
 }
 
+// One filter's parameter set. For COMB the cutoff knob tunes the comb pitch and
+// RES sets feedback; for VOWEL cutoff morphs A-E-I-O-U and RES sharpens the formants.
+function filterParams(prefix: string, defOn: number, defType: number, defCut: number): ParamDef[] {
+  return [
+    { id: `${prefix}.on`, type: 'bool', def: defOn },
+    { id: `${prefix}.type`, type: 'enum', options: FILTER_TYPES, def: defType },
+    { id: `${prefix}.cutoff`, label: 'CUTOFF', min: 20, max: 20000, def: defCut, curve: 'log', fmt: fmtHz },
+    { id: `${prefix}.res`, label: 'RES', min: 0, max: 1, def: 0.18, curve: 'lin', fmt: fmtPct },
+    { id: `${prefix}.drive`, label: 'DRIVE', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+    { id: `${prefix}.env`, label: 'ENV', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
+    { id: `${prefix}.key`, label: 'KEY', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  ];
+}
+
 function matSlot(n: number): ParamDef[] {
   return [
     { id: `mat${n}.src`, type: 'enum', options: MOD_SOURCES, def: 0 },
@@ -70,13 +87,9 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'noise.type', type: 'enum', options: NOISE_TYPES, def: 0 },
   { id: 'noise.level', label: 'LEVEL', min: 0, max: 1, def: 0.25, curve: 'lin', fmt: fmtPct },
 
-  { id: 'filter.on', type: 'bool', def: 1 },
-  { id: 'filter.type', type: 'enum', options: FILTER_TYPES, def: 1 },
-  { id: 'filter.cutoff', label: 'CUTOFF', min: 20, max: 20000, def: 9000, curve: 'log', fmt: fmtHz },
-  { id: 'filter.res', label: 'RES', min: 0, max: 1, def: 0.18, curve: 'lin', fmt: fmtPct },
-  { id: 'filter.drive', label: 'DRIVE', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
-  { id: 'filter.env', label: 'ENV', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
-  { id: 'filter.key', label: 'KEY', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  ...filterParams('filter', 1, 1, 9000),
+  { id: 'filter.route', type: 'enum', options: FILTER_ROUTES, def: 0 },
+  ...filterParams('filter2', 0, 0, 2000),
 
   { id: 'env1.a', label: 'ATK', min: 0.001, max: 8, def: 0.004, curve: 'log', fmt: fmtSec },
   { id: 'env1.d', label: 'DEC', min: 0.005, max: 10, def: 0.25, curve: 'log', fmt: fmtSec },

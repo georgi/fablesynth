@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { PowerOverlay } from './components/PowerOverlay';
+import { WavetableEditor } from './components/WavetableEditor';
 import { TopBar } from './components/panels/TopBar';
 import { OscPanel } from './components/panels/OscPanel';
 import { UtilPanel } from './components/panels/UtilPanel';
@@ -28,6 +29,7 @@ export function App() {
   return (
     <>
       <PowerOverlay />
+      <WavetableEditor />
       <main id="rack">
         <TopBar />
         <div className="panels">
