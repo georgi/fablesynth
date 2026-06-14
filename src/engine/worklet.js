@@ -455,9 +455,10 @@ class FableProcessor extends AudioWorkletProcessor {
     // antiderivative F(x) = (dcomp/dg)·ln(cosh(dg·x)), which suppresses that
     // aliasing by ~10–20 dB at no oversampling cost (Parker/Välimäki; the same
     // trick Surge XT and Vital use on their shapers).
-    const kF = dcomp / dg;
-    let xpL = v.satXL, xpR = v.satXR;
-    let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
+let kF = 0;
+let xpL = v.satXL, xpR = v.satXR;
+let FpL = 0, FpR = 0;
+if (useDrive) { kF = dcomp / dg; FpL = kF * lcosh(dg * xpL); FpR = kF * lcosh(dg * xpR); }
 
     for (let i = 0; i < n; i++) {
       let sl = tmpL[i], sr = tmpR[i];
