@@ -452,7 +452,7 @@ class FableProcessor extends AudioWorkletProcessor {
     // per-sample tanh folds the harmonics it creates back below Nyquist —
     // broadband aliasing that would undo the oscillators' band-limiting. ADAA
     // outputs the average of the nonlinearity over [x[n-1], x[n]] via its
-    // antiderivative F(x) = (dcomp/dg)·ln(cosh(dg·x)), which suppresses that
+    // antiderivative A(x) = (dcomp/dg)·ln(cosh(dg·x)), which suppresses that
     // aliasing by ~10–20 dB at no oversampling cost (Parker/Välimäki; the same
     // trick Surge XT and Vital use on their shapers).
 let kF = 0;
