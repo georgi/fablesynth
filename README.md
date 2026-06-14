@@ -33,6 +33,15 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
   never step in brightness — worst measured non-harmonic content is −92 dB:
 
   ![](docs/spectrum-saw.png)
+- **User wavetables** — the ✎ button on either oscillator opens the wavetable
+  editor. Import an audio file (single-cycle, autocorrelation pitch
+  **auto-detect**, or fixed cycle length — sliced into 2048-sample frames with
+  resampling) or **draw** a single cycle on a canvas. Every imported/drawn frame
+  runs through the *same* FFT band-limit + 9-level mip pipeline as the procedural
+  tables (`buildUserTable` in `wavetables.ts`), so they anti-alias identically.
+  User tables join the registry, appear in the OSC A/B table selector, and the 3D
+  view renders them unchanged. They persist in `localStorage` and are embedded in
+  saved presets, so a preset is self-contained.
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
@@ -71,7 +80,11 @@ localStorage.
 src/engine/worklet.js      DSP core (AudioWorklet thread): voices, oscillators,
                            filter, envelopes, LFOs, mod matrix
 src/engine/wavetables.ts   FFT + procedural wavetable/mipmap generation
+                           (+ buildUserTable: shared band-limit for user tables)
+src/engine/usertables.ts   user wavetables: audio import (resample, autocorr
+                           cycle detect), draw mode, base64-Float32 (de)serialize
 src/engine/synth.ts        AudioContext, FX graph, param routing
+src/components/WavetableEditor.tsx  import / draw modal
 src/params.ts              single source of truth for every parameter
 src/presets.ts             factory + localStorage user presets
 src/store.ts               Zustand store: param state + transport, engine glue

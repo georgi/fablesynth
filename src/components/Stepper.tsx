@@ -13,7 +13,12 @@ export function Stepper({ paramId, label, accent }: StepperProps) {
   const def = PARAMS[paramId];
   const value = useStore((s) => s.params[paramId]);
   const setParam = useStore((s) => s.setParam);
-  const options = def.options as string[];
+  // Table steppers extend their fixed procedural options with the live
+  // user-table pool so imported/drawn tables are selectable.
+  const userTables = useStore((s) => s.userTables);
+  const options = paramId.endsWith('.table')
+    ? [...(def.options as string[]), ...userTables.map((u) => u.name)]
+    : (def.options as string[]);
   const index = Math.min(options.length - 1, Math.max(0, value | 0));
 
   const step = (d: number) => {

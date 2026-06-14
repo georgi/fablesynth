@@ -5,8 +5,12 @@
 
 import { create } from 'zustand';
 import { SynthEngine } from './engine/synth';
-import { defaultParams, type ParamValues } from './params';
+import { defaultParams, TABLE_NAMES, type ParamValues } from './params';
 import { FACTORY_PRESETS, loadUserPresets, saveUserPreset, type Preset } from './presets';
+import {
+  loadUserTablePool, saveUserTablePool, serializeUserTable, deserializeUserTable,
+  type UserTable,
+} from './engine/usertables';
 
 // Singleton audio engine (created once, initialized on power-on).
 export const engine = new SynthEngine();
@@ -34,12 +38,19 @@ interface SynthStore {
   activeNotes: Set<number>;
   userPresets: Preset[];
   presetValue: string;
+  userTables: UserTable[];
+  editorOsc: 'oscA' | 'oscB' | null;
 
   setParam: (id: string, v: number) => void;
   applyPreset: (presetParams: Partial<ParamValues>) => void;
   loadPresetByValue: (val: string) => void;
   stepPreset: (d: number) => void;
   savePreset: (name: string) => void;
+
+  addUserTable: (u: UserTable) => void;
+  deleteUserTable: (poolIndex: number) => void;
+  openEditor: (osc: 'oscA' | 'oscB') => void;
+  closeEditor: () => void;
 
   powerOn: () => Promise<void>;
   playNote: (n: number, vel: number) => void;
@@ -61,6 +72,8 @@ export const useStore = create<SynthStore>((set, get) => ({
   activeNotes: new Set<number>(),
   userPresets: loadUserPresets(),
   presetValue: 'f0',
+  userTables: loadUserTablePool(),
+  editorOsc: null,
 
   setParam: (id, v) => {
     engine.setParam(id, v);
@@ -76,8 +89,16 @@ export const useStore = create<SynthStore>((set, get) => ({
   },
 
   loadPresetByValue: (val) => {
-    if (val[0] === 'f') get().applyPreset(FACTORY_PRESETS[+val.slice(1)].params);
-    else get().applyPreset(get().userPresets[+val.slice(1)].params);
+    const preset = val[0] === 'f' ? FACTORY_PRESETS[+val.slice(1)] : get().userPresets[+val.slice(1)];
+    // A preset is self-describing: if it carries user tables, they become the
+    // active pool so the table indices in its params resolve deterministically.
+    if (preset.tables && preset.tables.length) {
+      const userTables = preset.tables.map(deserializeUserTable);
+      saveUserTablePool(userTables);
+      engine.setUserTables(userTables.map((t) => t.table));
+      set({ userTables });
+    }
+    get().applyPreset(preset.params);
     set({ presetValue: val });
   },
 
@@ -89,14 +110,43 @@ export const useStore = create<SynthStore>((set, get) => ({
   },
 
   savePreset: (name) => {
-    const userPresets = saveUserPreset(name, get().params);
+    // Embed the current user-table pool so the preset is portable on its own.
+    const tables = get().userTables.map(serializeUserTable);
+    const userPresets = saveUserPreset(name, get().params, tables);
     const opts = presetOptions(userPresets);
     const found = opts.find((o) => o.name === name);
     set({ userPresets, presetValue: found ? found.value : get().presetValue });
   },
 
+  addUserTable: (u) => {
+    const userTables = [...get().userTables, u];
+    saveUserTablePool(userTables);
+    engine.setUserTables(userTables.map((t) => t.table));
+    set({ userTables });
+    const osc = get().editorOsc;
+    if (osc) get().setParam(`${osc}.table`, TABLE_NAMES.length + userTables.length - 1);
+  },
+
+  deleteUserTable: (poolIndex) => {
+    const userTables = get().userTables.filter((_, i) => i !== poolIndex);
+    saveUserTablePool(userTables);
+    engine.setUserTables(userTables.map((t) => t.table));
+    set({ userTables });
+    // Repair osc table references around the removed slot.
+    const removed = TABLE_NAMES.length + poolIndex;
+    for (const id of ['oscA.table', 'oscB.table']) {
+      const v = get().params[id] | 0;
+      if (v === removed) get().setParam(id, 0);
+      else if (v > removed) get().setParam(id, v - 1);
+    }
+  },
+
+  openEditor: (osc) => set({ editorOsc: osc }),
+  closeEditor: () => set({ editorOsc: null }),
+
   powerOn: async () => {
     await engine.init();
+    engine.setUserTables(get().userTables.map((t) => t.table));
     engine.onviz = (d) => set({
       voiceCount: d.n,
       modPosA: d.a >= 0 ? d.a : -1,
