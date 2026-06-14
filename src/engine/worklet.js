@@ -516,7 +516,10 @@ if (useDrive) { kF = dcomp / dg; FpL = kF * lcosh(dg * xpL); FpR = kF * lcosh(dg
       L[i] += yL * amp;
       R[i] += yR * amp;
     }
-    if (useDrive) { v.satXL = xpL; v.satXR = xpR; }
+if (n > 0) {
+  v.satXL = useDrive ? xpL : tmpL[n - 1];
+  v.satXR = useDrive ? xpR : tmpR[n - 1];
+}
 
     // advance block-rate modulators
     v.lfo1.advance(p['lfo1.rate'], n);
