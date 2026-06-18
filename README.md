@@ -1,27 +1,29 @@
 # FABLESYNTH WT‑1
 
-A Serum-style wavetable synthesizer that runs entirely in the browser. Built
-with TypeScript, React and Zustand on top of Web Audio and an AudioWorklet DSP
-core, with custom (dependency-free) UI components.
+A Serum-style wavetable synthesizer plugin — **VST3 · AU · Standalone** for
+macOS, Windows and Linux. Two morphing wavetable oscillators, a dual
+zero-delay filter, deep modulation and a full FX rack, with a live 3D view of
+the wavetable terrain. Built in C++ on JUCE.
 
-[![](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
+[![FableSynth plugin editor](juce/docs/plugin_editor.png)](juce/docs/plugin_editor.png)
 
-https://github.com/user-attachments/assets/0855c756-2155-4dd3-b353-fe80abd48db9
+## Download & install
 
-## Run it
+Grab the zip for your platform from the
+[**latest release**](https://github.com/georgi/fablesynth/releases/latest), then
+drop the plugin in the right folder:
 
-```sh
-cd fablesynth
-npm install
-npm run dev
-# open the printed http://localhost:5173
-```
+| Platform | VST3 | AU | Standalone |
+| --- | --- | --- | --- |
+| **macOS** | `~/Library/Audio/Plug-Ins/VST3/` | `~/Library/Audio/Plug-Ins/Components/` | drag `FableSynth.app` to Applications |
+| **Windows** | `C:\Program Files\Common Files\VST3\` | — | run `FableSynth.exe` |
+| **Linux** | `~/.vst3/` | — | run `./FableSynth` |
 
-`npm run build` produces a static bundle in `dist/` (`npm run preview` serves it).
-AudioWorklet requires a real HTTP origin (not `file://`), which the dev/preview
-servers provide.
+Then rescan plugins in your DAW. macOS builds are **universal** (Apple Silicon +
+Intel) and ad-hoc signed; on first launch you may need to right-click → Open, or
+clear quarantine with `xattr -dr com.apple.quarantine <path>`.
 
-Click the power button (this is also the browser audio-unlock gesture) and play.
+> Building from source instead? See [`juce/README.md`](juce/README.md).
 
 ## Engine
 
@@ -33,15 +35,12 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
   never step in brightness — worst measured non-harmonic content is −92 dB:
 
   ![](docs/spectrum-saw.png)
-- **User wavetables** — the ✎ button on either oscillator opens the wavetable
-  editor. Import an audio file (single-cycle, autocorrelation pitch
+- **User wavetables** — import an audio file (single-cycle, autocorrelation pitch
   **auto-detect**, or fixed cycle length — sliced into 2048-sample frames with
-  resampling) or **draw** a single cycle on a canvas. Every imported/drawn frame
-  runs through the *same* FFT band-limit + 9-level mip pipeline as the procedural
-  tables (`buildUserTable` in `wavetables.ts`), so they anti-alias identically.
-  User tables join the registry, appear in the OSC A/B table selector, and the 3D
-  view renders them unchanged. They persist in `localStorage` and are embedded in
-  saved presets, so a preset is self-contained.
+  resampling) or **draw** a single cycle. Every imported/drawn frame runs through
+  the *same* FFT band-limit + 9-level mip pipeline as the procedural tables
+  (`buildUserTable`), so they anti-alias identically. *(Import/draw UI is
+  web-only today; the band-limit pipeline is ported and ready in the plugin.)*
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
@@ -58,13 +57,44 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
   resonance, pitch, amp, pan, osc levels).
 - **8-voice polyphony** with smart voice stealing, glide, pitch-bend, and a
   per-voice DC blocker so saturation stages never see offset.
-- **FX chain** — tanh drive, stereo chorus, ping-pong delay, convolution reverb
-  (generated impulse), safety limiter.
+- **FX chain** — tanh drive, stereo chorus, ping-pong delay, reverb, safety
+  limiter.
 - Live **3D wavetable views** show the actual modulated frame position streamed
   back from the DSP thread, plus oscilloscope, spectrum analyser and filter
   response displays.
 
-## Controls
+The live 3D wavetable terrain for both oscillators (the highlighted line is the
+frame currently playing, tracked from the DSP thread):
+
+![Wavetable views](juce/docs/wavetable_view.png)
+
+## The web prototype
+
+FableSynth started as a synth that runs **entirely in the browser** — the
+oscillators, filters and modulation are an AudioWorklet DSP core in TypeScript,
+the rack is React + Zustand with custom dependency-free UI. The plugin is a
+faithful C++/JUCE port of that engine: the DSP is reimplemented one-to-one as
+JUCE-independent pure C++, with the same parameters, the same 20 factory presets
+and the same signal flow, so a patch sounds the same in either.
+
+The web app is still the place to **import and draw user wavetables**, and it's
+the quickest way to try the synth with nothing to install:
+
+[![](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
+
+https://github.com/user-attachments/assets/0855c756-2155-4dd3-b353-fe80abd48db9
+
+```sh
+cd fablesynth
+npm install
+npm run dev
+# open the printed http://localhost:5173
+```
+
+`npm run build` produces a static bundle in `dist/` (`npm run preview` serves it).
+AudioWorklet requires a real HTTP origin (not `file://`), which the dev/preview
+servers provide. Click the power button (also the browser audio-unlock gesture)
+and play.
 
 | Input | Action |
 | --- | --- |
@@ -74,10 +104,13 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
 | MIDI | plug in a controller — notes + pitch bend (Chrome/Edge) |
 | On-screen keys | click/touch, vertical position = velocity, drag for glissando |
 
-Presets: 8 factory patches via the header selector, `SAVE` stores your own in
-localStorage.
-
 ## Code layout
+
+The **plugin** (C++/JUCE) lives in [`juce/`](juce/) — see
+[`juce/README.md`](juce/README.md) for the DSP/UI source map and the headless
+verification harness.
+
+The **web prototype** (TypeScript):
 
 ```
 src/engine/worklet.js      DSP core (AudioWorklet thread): voices, oscillators,

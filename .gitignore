@@ -2,3 +2,7 @@
 node_modules
 dist
 *.tsbuildinfo
+
+# JUCE / C++ build artifacts
+juce/build/
+build/
