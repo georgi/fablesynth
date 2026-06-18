@@ -289,8 +289,8 @@ code {
   letter-spacing: 0.01em;
   color: #f1f5fc;
 }
-.section-head { margin-bottom: clamp(40px, 6vh, 72px); max-width: 22ch; }
-.section-head h2 { max-width: 16ch; }
+.section-head { margin-bottom: clamp(40px, 6vh, 72px); max-width: 38ch; }
+.section-head h2 { max-width: 30ch; }
 
 /* ---------- two surfaces ---------- */
 
