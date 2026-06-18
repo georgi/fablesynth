@@ -10,6 +10,8 @@ FableAudioProcessor::FableAudioProcessor()
     const auto& info = paramInfo();
     for (int i = 0; i < NUM_PARAMS; ++i)
         rawParams[i] = apvts.getRawParameterValue(info[i].pid);
+    // Procedural wavetables are sample-rate independent: build once.
+    tables = generateTables();
 }
 
 // Build the APVTS layout from the single canonical descriptor table, using the
@@ -40,7 +42,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
 
 void FableAudioProcessor::prepareToPlay(double sampleRate, int) {
     engine.prepare(sampleRate);
-    engine.setTables(generateTables());
+    engine.setTables(tables);
     fx.prepare(sampleRate);
     prepared = true;
 }
@@ -84,6 +86,10 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         juce::FloatVectorOperations::add(L, R, n);
         juce::FloatVectorOperations::multiply(L, 0.5f, n);
     }
+
+    // Publish the live modulated wavetable positions for the editor.
+    vizPosA.store((float)engine.vizA, std::memory_order_relaxed);
+    vizPosB.store((float)engine.vizB, std::memory_order_relaxed);
 }
 
 void FableAudioProcessor::setCurrentProgram(int index) {

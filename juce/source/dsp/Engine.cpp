@@ -550,14 +550,13 @@ void Engine::renderBlock(float* L, float* R, int n) {
     std::fill(L, L + n, 0.0f);
     std::fill(R, R + n, 0.0f);
     int act = 0;
-    bool haveViz = false;
     for (auto& v : voices_) {
         if (!v.active()) continue;
-        renderVoice(v, L, R, n);
-        if (v.gate || !haveViz) haveViz = true;
+        renderVoice(v, L, R, n);   // updates vizA/vizB to this voice's wt positions
         act++;
     }
     vizActive = act;
+    if (act == 0) { vizA = -1; vizB = -1; } // idle -> let the UI fall back to the knob
 }
 
 void Engine::render(float* L, float* R, int n) {

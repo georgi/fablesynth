@@ -23,8 +23,10 @@ source/dsp/Params.{h,cpp}      single source of truth for every parameter
                                (port of params.ts) — drives APVTS + defaults
 source/dsp/Presets.{h,cpp}     20 factory presets        (port of presets.ts)
 source/PluginProcessor.{h,cpp} JUCE AudioProcessor + APVTS <-> engine bridge
-source/PluginEditor.{h,cpp}    preset bar + generic parameter panel
+source/PluginEditor.{h,cpp}    preset bar + 2 live wavetable views + param panel
+source/WavetableView.{h,cpp}   live 3D wavetable terrain (port of WavetableView.tsx)
 test/engine_test.cpp           headless DSP verification harness (no JUCE)
+test/plugin_host_test.cpp      plugin-boundary test + PNG snapshot of the views
 ```
 
 ### Mapping notes
@@ -72,8 +74,17 @@ g++ -std=c++17 -O2 -o engine_test test/engine_test.cpp \
 # or: cmake --build build --target engine_test && ctest --test-dir build
 ```
 
+## Wavetable visualization
+The editor shows the signature **live 3D wavetable terrain** for both
+oscillators (`WavetableView`, a port of `WavetableView.tsx`): every frame drawn
+in perspective with the currently-playing, modulated frame highlighted. The DSP
+thread publishes the smoothed modulated frame position per oscillator via
+atomics (`Engine::vizA/vizB` -> `FableAudioProcessor::getVizPos`), which the
+view reads on a 30 Hz timer (falling back to the POS knob when idle). The
+plugin-boundary test renders both views to a PNG headlessly to verify drawing.
+
 ## Not ported (web-only)
 User-wavetable **audio import / draw** UI (the `buildUserTable` band-limit
-pipeline *is* ported and ready), the 3D wavetable/scope/spectrum visualizers,
-and on-screen keyboard — these are browser-UI concerns; the plugin exposes the
-full synth engine to the host instead.
+pipeline *is* ported and ready), the scope / spectrum / filter-response
+displays, and the on-screen keyboard — these are browser-UI concerns; the
+plugin exposes the full synth engine + wavetable views to the host instead.

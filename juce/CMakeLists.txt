@@ -35,6 +35,7 @@ if(FABLE_BUILD_PLUGIN)
     target_sources(FableSynth PRIVATE
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
+        source/WavetableView.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp
@@ -64,6 +65,7 @@ if(FABLE_BUILD_PLUGIN)
         test/plugin_host_test.cpp
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
+        source/WavetableView.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp

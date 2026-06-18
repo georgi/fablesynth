@@ -38,11 +38,20 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // ---- wavetable visualization feed (read on the message thread) ----
+    // Tables are generated once and never mutated at runtime, so the editor can
+    // read their viz frames directly. The live modulated frame position per
+    // oscillator is published from the audio thread via atomics (-1 = idle).
+    const std::vector<fable::GeneratedTable>& getTables() const { return tables; }
+    float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
     fable::Engine engine;
     fable::Fx fx;
+    std::vector<fable::GeneratedTable> tables;   // procedural tables (+ viz frames)
+    std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
     juce::AudioBuffer<float> scratchR; // mono-output downmix scratch
     std::array<std::atomic<float>*, fable::NUM_PARAMS> rawParams{};
     int currentProgram = 0;
