@@ -5,6 +5,7 @@
 #include "../source/PluginProcessor.h"
 #include "../source/PluginEditor.h"
 #include "../source/WavetableView.h"
+#include "../source/ui/WavetableEditor.h"
 #include <cmath>
 #include <cstdio>
 
@@ -38,6 +39,15 @@ static void snapshotViews(FableAudioProcessor& proc, const juce::File& out) {
     panel.addAndMakeVisible(a);
     panel.addAndMakeVisible(b);
     writePng(panel.createComponentSnapshot(panel.getLocalBounds()), out);
+}
+
+// Render the user-wavetable editor overlay (import/draw modal) to a PNG, proving
+// the new editing UI instantiates and paints headlessly.
+static void snapshotWavetableEditor(FableAudioProcessor& proc, const juce::File& out) {
+    fui::WavetableEditor ed(proc);
+    ed.setSize(900, 700);
+    ed.openFor(0);
+    writePng(ed.createComponentSnapshot(ed.getLocalBounds()), out);
 }
 
 int main(int argc, char** argv) {
@@ -128,6 +138,7 @@ int main(int argc, char** argv) {
     dir.createDirectory();
     snapshotViews(proc, dir.getChildFile("wavetable_view.png"));
     snapshotEditor(proc, dir.getChildFile("plugin_editor.png"));
+    snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     return fail == 0 ? 0 : 1;

@@ -9,6 +9,7 @@
 #include "../source/dsp/Wavetables.h"
 #include "../source/dsp/Presets.h"
 #include "../source/dsp/Params.h"
+#include "../source/dsp/UserTables.h"
 
 #include <cmath>
 #include <cstdio>
@@ -188,6 +189,43 @@ int main() {
         }
         check(bad == 0, "every preset finite / bounded / audible",
               std::to_string(factoryPresets().size() - bad) + " ok");
+    }
+
+    printf("\n== 7. User wavetables (import / draw) ==\n");
+    {
+        // Drawn single cycle: a sine over DRAW_N points -> 1 band-limited frame.
+        std::vector<float> pts(256);
+        for (int i = 0; i < 256; i++) pts[i] = std::sin(2 * M_PI * i / 256.0);
+        auto frame = frameFromDrawing(pts);
+        auto drawn = makeUserTable("DRAW", {frame});
+        bool drawOk = drawn.frames == 1 && (int)drawn.wave.size() == SIZE
+                    && !drawn.table.data.empty();
+        bool drawFinite = true;
+        for (float v : drawn.table.data) if (!std::isfinite(v)) drawFinite = false;
+        check(drawOk && drawFinite, "drawn table builds 1 band-limited frame");
+
+        // Fixed-length slice of a longer clip -> several frames, capped.
+        std::vector<float> clip(2048 * 5);
+        for (int i = 0; i < (int)clip.size(); i++) clip[i] = std::sin(2 * M_PI * i / 2048.0);
+        auto sliced = makeUserTable("SLICE", sliceToFrames(clip, 2048.0));
+        check(sliced.frames == 5, "fixed-length slice yields 5 frames",
+              std::to_string(sliced.frames));
+
+        // wave round-trip (persistence path) preserves frame count + builds.
+        auto rebuilt = userTableFromWave("SLICE", sliced.frames, sliced.wave);
+        check(rebuilt.frames == 5 && !rebuilt.table.data.empty(), "wave round-trip rebuilds table");
+
+        // The engine plays a user table addressed past the procedural slots.
+        Engine eng; eng.prepare(sr);
+        std::vector<GeneratedTable> all = tables;     // 6 procedural
+        all.push_back(drawn.table);                   // user slot -> index 6
+        eng.setTables(all);
+        auto p = defaultParams();
+        p[OSCA_BASE + OSC_TABLE] = (float)tables.size(); // select the user table
+        eng.setParams(p);
+        auto buf = renderNote(eng, 60, 0.4, sr);
+        check(finite(buf) && rms(buf, (int)(0.05 * sr)) > 1e-3,
+              "engine renders a user table", "rms=" + std::to_string(rms(buf, (int)(0.05 * sr))));
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());

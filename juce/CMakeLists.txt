@@ -39,11 +39,13 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/Controls.cpp
         source/ui/Displays.cpp
         source/ui/Panels.cpp
+        source/ui/WavetableEditor.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp
         source/dsp/Params.cpp
-        source/dsp/Presets.cpp)
+        source/dsp/Presets.cpp
+        source/dsp/UserTables.cpp)
 
     target_compile_definitions(FableSynth PUBLIC
         JUCE_WEB_BROWSER=0
@@ -87,11 +89,13 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/Controls.cpp
         source/ui/Displays.cpp
         source/ui/Panels.cpp
+        source/ui/WavetableEditor.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp
         source/dsp/Params.cpp
-        source/dsp/Presets.cpp)
+        source/dsp/Presets.cpp
+        source/dsp/UserTables.cpp)
     target_compile_definitions(plugin_host_test PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(plugin_host_test PRIVATE
@@ -109,7 +113,8 @@ add_executable(engine_test
     source/dsp/Wavetables.cpp
     source/dsp/Fx.cpp
     source/dsp/Params.cpp
-    source/dsp/Presets.cpp)
+    source/dsp/Presets.cpp
+    source/dsp/UserTables.cpp)
 target_compile_features(engine_test PRIVATE cxx_std_17)
 
 enable_testing()

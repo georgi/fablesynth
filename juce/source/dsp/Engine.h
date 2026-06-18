@@ -11,6 +11,7 @@
 #include "Wavetables.h"
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 namespace fable {
@@ -135,6 +136,11 @@ private:
 
     ParamArray p_ = defaultParams();
     std::vector<EngineTable> tables_;
+    // Guards tables_ so the message thread can swap in new tables (user import /
+    // delete / preset load) while the audio thread renders. setTables builds the
+    // replacement off-lock and only holds the lock for the O(1) swap; render
+    // try-locks and emits one block of silence on the rare collision.
+    std::mutex tablesMutex_;
     std::array<Voice, NVOICES> voices_;
     double sr_ = 48000;
     double bend_ = 0;

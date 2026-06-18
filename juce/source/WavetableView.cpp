@@ -38,10 +38,9 @@ void WavetableView::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(0xff1c222c));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
-    const auto& tables = proc.getTables();
-    const int idx = tableIndex();
-    if (idx < 0 || idx >= (int)tables.size()) return;
-    const auto& t = tables[idx];
+    const auto* tp = proc.tableAt(tableIndex());
+    if (!tp) return; // empty user slot -> nothing to draw
+    const auto& t = *tp;
     const int frames = t.frames;
     if (frames < 1 || t.viz.empty()) return;
     const float* viz = t.viz.data();

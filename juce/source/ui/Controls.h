@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Theme.h"
+#include <functional>
 
 // Custom rack controls — faithful ports of the web components:
 //   Knob.tsx, Stepper.tsx, PowerButton.tsx, VSlider.tsx
@@ -47,9 +48,17 @@ public:
     Stepper(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent);
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    // Optional dynamic overrides for table steppers: cycle only over the live
+    // count of selectable tables and show the live (user) table name. Default
+    // (unset) uses the param's fixed choice list.
+    std::function<int()>               countProvider;
+    std::function<juce::String(int)>   nameProvider;
 private:
     void timerCallback() override;
     void step(int d);
+    int  choiceCount() const;
+    juce::String displayName() const;
     juce::AudioProcessorValueTreeState& apvts;
     juce::String id;
     juce::AudioParameterChoice* choice = nullptr;

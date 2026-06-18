@@ -24,13 +24,23 @@ static juce::Array<juce::Component*> ptrs(juce::OwnedArray<Knob>& a) {
 }
 
 // ===================== OscPanel =====================
-OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int oscIndex, juce::String pre, Accent ac, juce::String t)
-    : title(t), prefix(pre), accent(ac),
+OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pre, Accent ac, juce::String t)
+    : oscIndex(osc), title(t), prefix(pre), accent(ac),
       power(s, pre + ".on", ac), tableStep(s, pre + ".table", ac),
-      wt(proc, oscIndex, accentColour(ac)),
-      pos(s, pre + ".pos", ac, [&proc, oscIndex] { return proc.getVizPos(oscIndex); }) {
+      wt(proc, osc, accentColour(ac)),
+      pos(s, pre + ".pos", ac, [&proc, osc] { return proc.getVizPos(osc); }) {
     addAndMakeVisible(power); addAndMakeVisible(tableStep);
     addAndMakeVisible(wt); addAndMakeVisible(pos);
+    // The table stepper cycles only over the procedural + live user tables and
+    // shows each table's live name (the param itself reserves fixed USER slots).
+    tableStep.countProvider = [&proc] { return proc.numTables(); };
+    tableStep.nameProvider  = [&proc](int idx) { return proc.tableName(idx); };
+    // ✎ edit button — opens the import / draw editor for this oscillator.
+    editBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+    editBtn.setColour(juce::TextButton::textColourOffId, accentColour(ac));
+    editBtn.setTooltip("import / draw wavetable");
+    editBtn.onClick = [this] { if (onEditTable) onEditTable(oscIndex); };
+    addAndMakeVisible(editBtn);
     const char* ids[] = {".oct", ".semi", ".fine", ".unison", ".detune", ".spread", ".level", ".pan"};
     for (int i = 0; i < 8; ++i) {
         auto* k = new Knob(s, pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac);
@@ -46,8 +56,10 @@ void OscPanel::resized() {
     auto head = r.removeFromTop(20);
     power.setBounds(head.removeFromLeft(17).withSizeKeepingCentre(15, 15));
     head.removeFromLeft(4);
-    auto right = head.removeFromRight(120);
+    auto right = head.removeFromRight(138);
     tableStep.setBounds(right.removeFromRight(100).withSizeKeepingCentre(100, 18));
+    right.removeFromRight(4);
+    editBtn.setBounds(right.removeFromRight(18).withSizeKeepingCentre(18, 18));
     titleArea = head;
     r.removeFromTop(8);
     auto knobRow = r.removeFromBottom(62);
