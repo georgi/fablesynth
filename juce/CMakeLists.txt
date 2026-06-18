@@ -36,6 +36,9 @@ if(FABLE_BUILD_PLUGIN)
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
         source/WavetableView.cpp
+        source/ui/Controls.cpp
+        source/ui/Displays.cpp
+        source/ui/Panels.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp
@@ -66,6 +69,9 @@ if(FABLE_BUILD_PLUGIN)
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
         source/WavetableView.cpp
+        source/ui/Controls.cpp
+        source/ui/Displays.cpp
+        source/ui/Panels.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp

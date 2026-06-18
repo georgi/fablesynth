@@ -83,12 +83,4 @@ void WavetableView::paint(juce::Graphics& g) {
             g.strokePath(path, juce::PathStrokeType(1.0f));
         }
     }
-
-    // header label + table name
-    g.setColour(accent.withAlpha(0.85f));
-    g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-    g.drawText(label, 8, 6, 80, 14, juce::Justification::left);
-    g.setColour(juce::Colour(0xff8893a8));
-    g.setFont(juce::Font(juce::FontOptions(11.0f)));
-    g.drawText(juce::String(t.name), (int)w - 88, 6, 80, 14, juce::Justification::right);
 }

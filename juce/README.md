@@ -34,11 +34,27 @@ source/dsp/Params.{h,cpp}      single source of truth for every parameter
                                (port of params.ts) — drives APVTS + defaults
 source/dsp/Presets.{h,cpp}     20 factory presets        (port of presets.ts)
 source/PluginProcessor.{h,cpp} JUCE AudioProcessor + APVTS <-> engine bridge
-source/PluginEditor.{h,cpp}    preset bar + 2 live wavetable views + param panel
+source/PluginEditor.{h,cpp}    the rack: scaled, pixel-faithful CSS-grid layout
 source/WavetableView.{h,cpp}   live 3D wavetable terrain (port of WavetableView.tsx)
+source/ui/Theme.h              palette + panel drawing (port of index.css :root)
+source/ui/Controls.{h,cpp}     knob / stepper / power LED / vertical slider
+source/ui/Displays.{h,cpp}     scope, spectrum, filter, env + LFO views
+source/ui/Panels.{h,cpp}       osc / util / filter / env / lfo / matrix / fx / top bar
 test/engine_test.cpp           headless DSP verification harness (no JUCE)
-test/plugin_host_test.cpp      plugin-boundary test + PNG snapshot of the views
+test/plugin_host_test.cpp      plugin-boundary test + PNG snapshot of the editor
 ```
+
+## User interface
+
+The editor is an exact replica of the web rack (`src/components`, `src/index.css`):
+the same dark machined-hardware panels, cyan/amber/violet accents, custom rotary
+knobs (−135°→135° arc, bipolar from centre), enum steppers, power LEDs, the
+wavetable POS slider with modulated ghost, the mod-matrix selectors and the FX
+rack. Every visualization is ported too — the live oscilloscope and spectrum
+analyser (fed from a post-FX ring buffer), the filter-response curve, the ADSR
+and LFO views, and the 3D wavetable terrain. The whole rack is laid out at a
+fixed logical size matching the CSS grid and scaled to the plugin window, so it
+stays pixel-faithful at any size.
 
 ### Mapping notes
 - **Parameters** use a flat float array indexed by an enum (no string hashing in
@@ -95,7 +111,6 @@ view reads on a 30 Hz timer (falling back to the POS knob when idle). The
 plugin-boundary test renders both views to a PNG headlessly to verify drawing.
 
 ## Not ported (web-only)
-User-wavetable **audio import / draw** UI (the `buildUserTable` band-limit
-pipeline *is* ported and ready), the scope / spectrum / filter-response
-displays, and the on-screen keyboard — these are browser-UI concerns; the
-plugin exposes the full synth engine + wavetable views to the host instead.
+User-wavetable **audio import / draw** modal (the `buildUserTable` band-limit
+pipeline *is* ported and ready) and the on-screen keyboard / power-on overlay —
+these are browser-input concerns; the plugin receives notes from the host.

@@ -44,7 +44,14 @@ void FableAudioProcessor::prepareToPlay(double sampleRate, int) {
     engine.prepare(sampleRate);
     engine.setTables(tables);
     fx.prepare(sampleRate);
+    currentSr.store(sampleRate);
     prepared = true;
+}
+
+void FableAudioProcessor::readScope(float* dst, int n) const {
+    int w = scopeW.load(std::memory_order_relaxed);
+    for (int i = 0; i < n; ++i)
+        dst[i] = scopeBuf[(size_t)((w - n + i) & (kScopeSize - 1))];
 }
 
 bool FableAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -65,10 +72,10 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // MIDI -> note / bend events.
     for (const auto meta : midi) {
         const auto m = meta.getMessage();
-        if (m.isNoteOn())        engine.noteOn(m.getNoteNumber(), m.getFloatVelocity());
+        if (m.isNoteOn())        { engine.noteOn(m.getNoteNumber(), m.getFloatVelocity()); midiGlow.store(20); }
         else if (m.isNoteOff())  engine.noteOff(m.getNoteNumber());
         else if (m.isAllNotesOff() || m.isAllSoundOff()) engine.panic();
-        else if (m.isPitchWheel()) engine.pitchBend((m.getPitchWheelValue() - 8192) / 8192.0 * 2.0);
+        else if (m.isPitchWheel()) { engine.pitchBend((m.getPitchWheelValue() - 8192) / 8192.0 * 2.0); midiGlow.store(20); }
     }
 
     if (buffer.getNumChannels() > 1) {
@@ -90,6 +97,18 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // Publish the live modulated wavetable positions for the editor.
     vizPosA.store((float)engine.vizA, std::memory_order_relaxed);
     vizPosB.store((float)engine.vizB, std::memory_order_relaxed);
+
+    // HUD feeds: voice count, MIDI led decay, and the post-FX scope ring buffer.
+    voiceCount.store(engine.vizActive, std::memory_order_relaxed);
+    if (int g = midiGlow.load(); g > 0) midiGlow.store(g - 1);
+    {
+        const float* l0 = buffer.getReadPointer(0);
+        const float* r0 = buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : l0;
+        int w = scopeW.load(std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i)
+            scopeBuf[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
+        scopeW.store(w + n, std::memory_order_relaxed);
+    }
 }
 
 void FableAudioProcessor::setCurrentProgram(int index) {

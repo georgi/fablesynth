@@ -22,7 +22,7 @@ static void writePng(const juce::Image& img, const juce::File& out) {
 // panel) to a PNG via JUCE's headless software renderer.
 static void snapshotEditor(FableAudioProcessor& proc, const juce::File& out) {
     std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-    ed->setSize(640, 860);
+    ed->setSize(1400, 1053); // logical rack size — full-resolution render
     writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
 }
 

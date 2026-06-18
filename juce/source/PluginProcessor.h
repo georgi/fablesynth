@@ -45,6 +45,13 @@ public:
     const std::vector<fable::GeneratedTable>& getTables() const { return tables; }
     float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
 
+    // ---- HUD feeds (scope / spectrum / voices / MIDI led) ----
+    int    getVoiceCount() const { return voiceCount.load(); }
+    bool   getMidiActive() const { return midiGlow.load() > 0; }
+    double getCurrentSr()  const { return currentSr.load(); }
+    // Copy the most recent n post-FX mono samples (oldest -> newest) into dst.
+    void   readScope(float* dst, int n) const;
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
@@ -53,6 +60,14 @@ private:
     std::vector<fable::GeneratedTable> tables;   // procedural tables (+ viz frames)
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
     juce::AudioBuffer<float> scratchR; // mono-output downmix scratch
+
+    // HUD feeds
+    static constexpr int kScopeSize = 4096; // power of two
+    std::array<float, kScopeSize> scopeBuf{};
+    std::atomic<int> scopeW{0};
+    std::atomic<int> voiceCount{0};
+    std::atomic<int> midiGlow{0};
+    std::atomic<double> currentSr{48000.0};
     std::array<std::atomic<float>*, fable::NUM_PARAMS> rawParams{};
     int currentProgram = 0;
     bool prepared = false;

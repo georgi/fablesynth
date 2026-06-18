@@ -2,25 +2,38 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
-#include "WavetableView.h"
+#include "ui/Panels.h"
+#include "ui/LookAndFeel.h"
 
-// Functional editor: a preset bar above JUCE's generic parameter panel, which
-// auto-binds every APVTS parameter. (The bespoke 3D-wavetable rack UI lives in
-// the web build; this exposes the full engine for host/DAW use.)
+// The rack: all panels laid out at a fixed logical size matching the web CSS
+// grid. The editor scales it to the window so the layout stays pixel-faithful.
+class Rack : public juce::Component {
+public:
+    static constexpr int LW = 1400, LH = 1053;
+    Rack(juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
+    void resized() override;
+private:
+    juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
+    fui::TopBar  topBar;
+    fui::OscPanel oscA, oscB;
+    fui::UtilPanel util;
+    fui::FilterPanel filter;
+    fui::EnvPanel env1, env2;
+    fui::LfoPanel lfos;
+    fui::MatrixPanel matrix;
+    fui::FxPanel fx;
+};
+
 class FableAudioProcessorEditor : public juce::AudioProcessorEditor {
 public:
     explicit FableAudioProcessorEditor(FableAudioProcessor&);
-    ~FableAudioProcessorEditor() override = default;
+    ~FableAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
-    FableAudioProcessor& proc;
-    juce::Label title;
-    juce::ComboBox presets;
-    WavetableView viewA, viewB;
-    juce::GenericAudioProcessorEditor generic;
-
+    fui::DarkLNF lnf;
+    Rack rack;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FableAudioProcessorEditor)
 };
