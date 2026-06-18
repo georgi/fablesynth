@@ -3,14 +3,238 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FABLESYNTH — Wavetable Synthesizer</title>
+<title>FableSynth WT-1 · Wavetable Synthesizer · VST3 · AU · Browser</title>
+<meta name="description" content="A Serum-class wavetable synthesizer. Two morphing oscillators, a dual zero-delay filter, deep modulation and a full FX rack. Play it in the browser, or run it in your DAW as VST3, AU or Standalone.">
+<meta property="og:title" content="FableSynth WT-1">
+<meta property="og:description" content="Serum-class wavetable synthesis. In your browser, in your DAW.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="./media/plugin-editor.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Cpath d='M4 20 Q8 8 12 16 T20 14 T28 18' stroke='%234de8ff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/landing/landing.css">
 </head>
 <body>
-<div id="root"></div>
-<script type="module" src="/src/main.tsx"></script>
+
+<header class="nav" id="nav">
+  <a class="nav-mark" href="#top" aria-label="FableSynth home">
+    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0b0d12"/><path d="M4 20 Q8 8 12 16 T20 14 T28 18" stroke="#4de8ff" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+    <span>FABLESYNTH</span>
+  </a>
+  <nav class="nav-links" aria-label="Primary">
+    <a href="#engine">Engine</a>
+    <a href="#precision">Precision</a>
+    <a href="#formats">Formats</a>
+    <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn btn-launch" href="./app/">Launch <span aria-hidden="true">→</span></a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <canvas class="hero-canvas" id="wt-canvas" aria-hidden="true"></canvas>
+    <div class="hero-veil" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <p class="kicker">WT-1 · WAVETABLE SYNTHESIZER</p>
+      <h1 class="hero-title">FABLE<span class="title-break">SYNTH</span></h1>
+      <p class="hero-lede">
+        Serum-class wavetable synthesis. Two morphing oscillators, a dual
+        zero-delay filter, deep modulation and a full FX rack, drawn as a
+        machined console that shows you the signal.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="./app/">
+          Launch in browser <span aria-hidden="true">→</span>
+        </a>
+        <a class="btn btn-ghost" href="#formats">Download the plugin</a>
+      </div>
+      <p class="hero-foot">No install. Web Audio. <span class="dot" aria-hidden="true"></span> Or VST3 · AU · Standalone for your DAW.</p>
+    </div>
+    <div class="scroll-hint" aria-hidden="true"><span></span></div>
+  </section>
+
+  <!-- ============ TWO SURFACES ============ -->
+  <section class="band surfaces" id="surfaces">
+    <div class="surfaces-copy reveal">
+      <p class="kicker">ONE ENGINE, TWO WAYS IN</p>
+      <h2>Play it in a tab.<br>Track it in your DAW.</h2>
+      <p class="prose">
+        The browser build and the plugin run the same DSP core, sample for
+        sample. Prototype a patch in a tab, then load the VST3 and it sounds
+        identical: same parameters, same twenty factory presets, same signal
+        flow. The C++/JUCE plugin is a one-to-one port of the AudioWorklet
+        engine, not a lookalike.
+      </p>
+      <div class="surfaces-cta">
+        <a class="btn btn-primary" href="./app/">Open the browser synth <span aria-hidden="true">→</span></a>
+        <a class="link-inline" href="#formats">or grab the plugin</a>
+      </div>
+    </div>
+    <figure class="surfaces-shot reveal">
+      <img src="./media/plugin-editor.png" width="1200" loading="lazy"
+           alt="The FableSynth plugin editor: a dark machined rack with two oscillator panels in cyan and amber, a violet dual-filter section, envelopes, LFOs, a four-slot mod matrix and an FX rack.">
+      <figcaption>The plugin editor: a pixel-faithful replica of the web rack.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ ENGINE ============ -->
+  <section class="band engine" id="engine">
+    <div class="section-head reveal">
+      <p class="kicker">INSIDE THE ENGINE</p>
+      <h2>Everything a wavetable patch needs, voiced eight ways.</h2>
+    </div>
+
+    <div class="spec-strip reveal" role="list" aria-label="Engine at a glance">
+      <div role="listitem"><b>2</b><span>morphing oscillators</span></div>
+      <div role="listitem"><b>6</b><span>procedural tables</span></div>
+      <div role="listitem"><b>9</b><span>band-limited mips</span></div>
+      <div role="listitem"><b>8</b><span>voices, stolen smart</span></div>
+      <div role="listitem"><b>7</b><span>unison per osc</span></div>
+      <div role="listitem"><b>20</b><span>factory presets</span></div>
+    </div>
+
+    <div class="feature-rows">
+      <article class="feature reveal" data-accent="a">
+        <figure class="feature-media">
+          <img src="./media/wavetable-view.png" width="900" loading="lazy"
+               alt="Two 3D wavetable terrains, cyan and amber, each waveform frame drawn in perspective with the playing frame highlighted.">
+        </figure>
+        <div class="feature-text">
+          <h3>Wavetables you can watch move</h3>
+          <p class="prose">
+            Six procedural tables, sixteen morphable frames each, rendered into
+            nine band-limited mip levels by inverse FFT so high notes never
+            alias. The live 3D terrain shows the exact frame playing, streamed
+            from the DSP thread. Import a sample or draw a cycle and it runs the
+            same band-limit pipeline.
+          </p>
+        </div>
+      </article>
+
+      <article class="feature feature-flip reveal" data-accent="f">
+        <div class="feature-text">
+          <h3>A dual filter with teeth</h3>
+          <p class="prose">
+            Two independent zero-delay state-variable filters (the Cytomic
+            topology), plus a tuned comb and an A-E-I-O-U vowel bank. Route them
+            serial, parallel or split per oscillator. The <code>tanh</code> drive
+            is anti-aliased with first-order ADAA, so pushing it on bright
+            material doesn't fold harmonics back down.
+          </p>
+        </div>
+        <ul class="spec-list" aria-label="Filter modes">
+          <li><span>LP12 / LP24</span><em>state-variable</em></li>
+          <li><span>BP · HP · Notch</span><em>state-variable</em></li>
+          <li><span>COMB</span><em>cutoff = pitch, res = feedback</em></li>
+          <li><span>VOWEL</span><em>cutoff morphs A→E→I→O→U</em></li>
+        </ul>
+      </article>
+
+      <article class="feature reveal" data-accent="b">
+        <div class="feature-pair">
+          <div>
+            <h3>Modulate anything</h3>
+            <p class="prose">
+              Two ADSR envelopes, two LFOs in five shapes, and a four-slot mod
+              matrix wiring LFOs, the mod envelope, velocity and note straight
+              to wavetable position, filter cutoff and resonance, pitch, amp,
+              pan and oscillator levels.
+            </p>
+          </div>
+          <div>
+            <h3>Then finish it</h3>
+            <p class="prose">
+              A real FX rack closes the chain: <code>tanh</code> drive, stereo
+              chorus, a ping-pong delay, reverb and a safety limiter. Per-voice
+              DC blocking keeps every saturation stage honest.
+            </p>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ PRECISION ============ -->
+  <section class="band precision" id="precision">
+    <figure class="precision-shot reveal">
+      <img src="./media/spectrum-saw.png" width="1100" loading="lazy"
+           alt="Spectrum analysis of a high sawtooth: clean harmonic spikes with the non-harmonic noise floor measured at minus ninety-two decibels.">
+    </figure>
+    <div class="precision-copy reveal">
+      <p class="kicker">NO ALIASING. MEASURED.</p>
+      <h2>Worst non-harmonic content: <span class="readout">&minus;92&nbsp;dB</span></h2>
+      <p class="prose">
+        Mip transitions are crossfaded inside the 0.475·sr guard band, so glides
+        and pitch bends never step in brightness, the same trick Serum uses. The
+        headless harness verifies it on every build: wavetable correctness, the
+        anti-aliasing floor, every filter type, the full FX chain and all twenty
+        presets.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ FORMATS / DOWNLOAD ============ -->
+  <section class="band formats" id="formats">
+    <div class="section-head reveal">
+      <p class="kicker">GET IT</p>
+      <h2>Runs where you work.</h2>
+    </div>
+
+    <div class="formats-grid">
+      <a class="format-card format-feature reveal" href="./app/" data-accent="a">
+        <p class="format-tag">PLAY NOW</p>
+        <h3>In the browser</h3>
+        <p>No install, no account. Click power and play, with a computer-keyboard or MIDI controller.</p>
+        <span class="format-go">Launch the synth <span aria-hidden="true">→</span></span>
+      </a>
+
+      <div class="format-card reveal">
+        <p class="format-tag">macOS</p>
+        <h3>VST3 · AU · App</h3>
+        <p>Universal binary, Apple Silicon and Intel. For Ableton, Logic, Bitwig and friends.</p>
+        <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
+      </div>
+
+      <div class="format-card reveal">
+        <p class="format-tag">Windows</p>
+        <h3>VST3 · App</h3>
+        <p>64-bit VST3 and a standalone build. Drop it in your common VST3 folder and rescan.</p>
+        <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
+      </div>
+
+      <div class="format-card reveal">
+        <p class="format-tag">Linux</p>
+        <h3>VST3 · App</h3>
+        <p>Native VST3 and standalone, built on Ubuntu for broad glibc compatibility.</p>
+        <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+
+    <p class="formats-note reveal">
+      Builds are produced and signed by CI on every release.
+      Prefer to compile it yourself? The full C++/JUCE source and build
+      instructions live on <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">GitHub</a>.
+    </p>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-mark">
+    <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0b0d12"/><path d="M4 20 Q8 8 12 16 T20 14 T28 18" stroke="#4de8ff" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+    <span>FABLESYNTH <em>WT-1</em></span>
+  </div>
+  <nav class="foot-links" aria-label="Footer">
+    <a href="./app/">Browser synth</a>
+    <a href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Releases</a>
+    <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">Source</a>
+  </nav>
+  <p class="foot-fine">Built with Web Audio, C++ and JUCE.</p>
+</footer>
+
+<script type="module" src="/src/landing/main.ts"></script>
 </body>
 </html>

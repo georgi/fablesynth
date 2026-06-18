@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-18T00:00:00Z",
+  "title": "Design System: FableSynth WT-1",
+  "extensions": {
+    "colorMeta": {
+      "signal-cyan": {
+        "role": "primary",
+        "displayName": "Signal Cyan",
+        "canonical": "oklch(86% 0.12 205)",
+        "tonalRamp": ["oklch(20% 0.05 205)", "oklch(30% 0.07 205)", "oklch(42% 0.09 205)", "oklch(54% 0.11 205)", "oklch(66% 0.12 205)", "oklch(78% 0.13 205)", "oklch(88% 0.11 205)", "oklch(95% 0.05 205)"]
+      },
+      "signal-amber": {
+        "role": "secondary",
+        "displayName": "Signal Amber",
+        "canonical": "oklch(78% 0.14 55)",
+        "tonalRamp": ["oklch(22% 0.05 55)", "oklch(33% 0.08 55)", "oklch(45% 0.11 55)", "oklch(56% 0.13 55)", "oklch(67% 0.15 55)", "oklch(78% 0.15 55)", "oklch(88% 0.10 55)", "oklch(95% 0.04 55)"]
+      },
+      "signal-violet": {
+        "role": "tertiary",
+        "displayName": "Signal Violet",
+        "canonical": "oklch(72% 0.15 295)",
+        "tonalRamp": ["oklch(22% 0.06 295)", "oklch(33% 0.09 295)", "oklch(44% 0.12 295)", "oklch(55% 0.15 295)", "oklch(66% 0.16 295)", "oklch(76% 0.15 295)", "oklch(86% 0.10 295)", "oklch(94% 0.04 295)"]
+      },
+      "signal-slate": {
+        "role": "tertiary",
+        "displayName": "Signal Slate",
+        "canonical": "oklch(75% 0.04 255)",
+        "tonalRamp": ["oklch(25% 0.02 255)", "oklch(35% 0.03 255)", "oklch(45% 0.04 255)", "oklch(55% 0.04 255)", "oklch(65% 0.04 255)", "oklch(76% 0.04 255)", "oklch(86% 0.03 255)", "oklch(94% 0.02 255)"]
+      },
+      "void": {
+        "role": "neutral",
+        "displayName": "Void",
+        "canonical": "oklch(13% 0.012 260)",
+        "tonalRamp": ["oklch(12% 0.012 260)", "oklch(18% 0.012 260)", "oklch(24% 0.012 260)", "oklch(32% 0.012 260)", "oklch(45% 0.01 260)", "oklch(60% 0.008 260)", "oklch(80% 0.006 260)", "oklch(92% 0.005 260)"]
+      },
+      "text-ice": {
+        "role": "neutral",
+        "displayName": "Ice Text",
+        "canonical": "oklch(91% 0.02 255)",
+        "tonalRamp": ["oklch(30% 0.02 255)", "oklch(42% 0.02 255)", "oklch(54% 0.02 255)", "oklch(64% 0.02 255)", "oklch(74% 0.02 255)", "oklch(83% 0.02 255)", "oklch(91% 0.02 255)", "oklch(97% 0.01 255)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Power-on wordmark and hero lockup only. Michroma, rare and large." },
+      "title": { "displayName": "Title", "purpose": "Panel and section nameplates. The only other place Michroma appears." },
+      "body": { "displayName": "Body / Readout", "purpose": "Base readout text, status lines, preset names. IBM Plex Mono." },
+      "label": { "displayName": "Label", "purpose": "Knob labels, units, sub-labels. Tiny tracked uppercase mono." }
+    },
+    "shadows": [
+      { "name": "panel-lift", "value": "inset 0 1px 0 rgba(255,255,255,0.05), 0 10px 26px rgba(0,0,0,0.45)", "purpose": "The gentle seat of a module panel: inner top highlight plus soft drop." },
+      { "name": "arc-glow", "value": "drop-shadow(0 0 4px rgba(77,232,255,0.7))", "purpose": "Colored bloom on a knob's live value arc; uses the section accent." },
+      { "name": "led-bloom", "value": "0 0 8px rgba(77,232,255,1)", "purpose": "An active status LED, in the section accent." },
+      { "name": "power-bloom", "value": "0 0 10px rgba(77,232,255,0.7)", "purpose": "The powered-on transport button." },
+      { "name": "socket-inset", "value": "inset 0 0 2px rgba(0,0,0,0.7)", "purpose": "Recessed seat of an unlit LED." }
+    ],
+    "motion": [
+      { "name": "ease-quick", "value": "0.15s ease", "purpose": "Border, color and value-reveal transitions on controls." },
+      { "name": "ease-tactile", "value": "0.2s ease", "purpose": "Knob body and background shifts on hover/drag." },
+      { "name": "ease-glow", "value": "0.3s ease", "purpose": "Box-shadow / glow fade on state change." },
+      { "name": "fade-overlay", "value": "0.65s ease", "purpose": "Power-on overlay and visibility fades." },
+      { "name": "power-pulse", "value": "@keyframes: 0% box-shadow 0 0 0 0 rgba(77,232,255,0.28); 70% 0 0 0 26px rgba(77,232,255,0); 100% 0 0 0 0", "purpose": "Radiating ring pulse from the power button on activation." }
+    ],
+    "breakpoints": [
+      { "name": "rack", "value": "fixed logical grid scaled to fit; the rack keeps proportions rather than reflowing." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Knob",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Signature rotary control: machined body, glowing accent value arc, white pointer, hover-revealed value.",
+      "html": "<div class=\"ds-knob\" style=\"--ac:#4de8ff\"><svg viewBox=\"0 0 56 56\" width=\"56\" height=\"56\"><circle class=\"ds-k-body\" cx=\"28\" cy=\"28\" r=\"19\"/><path class=\"ds-k-track\" d=\"M14.5 39 A19 19 0 1 1 41.5 39\"/><path class=\"ds-k-arc\" d=\"M14.5 39 A19 19 0 0 1 28 9\"/><line class=\"ds-k-ptr\" x1=\"28\" y1=\"28\" x2=\"28\" y2=\"13\"/></svg><span class=\"ds-k-value\">0.42</span><span class=\"ds-k-label\">CUTOFF</span></div>",
+      "css": ".ds-knob { display:inline-flex; flex-direction:column; align-items:center; gap:1px; cursor:ns-resize; font-family:'IBM Plex Mono',monospace; } .ds-knob svg { overflow:visible; } .ds-k-body { fill:#161b25; stroke:rgba(255,255,255,0.1); stroke-width:1.5; transition:fill 0.2s; } .ds-knob:hover .ds-k-body { fill:#1b2130; } .ds-k-track { fill:none; stroke:rgba(255,255,255,0.09); stroke-width:5; stroke-linecap:round; } .ds-k-arc { fill:none; stroke:var(--ac); stroke-width:5; stroke-linecap:round; filter:drop-shadow(0 0 4px color-mix(in srgb, var(--ac) 70%, transparent)); } .ds-k-ptr { stroke:#e8edf7; stroke-width:4; stroke-linecap:round; } .ds-k-label { font-size:8px; letter-spacing:0.16em; color:#6b768c; margin-top:3px; text-transform:uppercase; } .ds-k-value { font-size:9px; color:#dfe6f3; opacity:0; transition:opacity 0.15s; height:11px; } .ds-knob:hover .ds-k-value { opacity:1; }"
+    },
+    {
+      "name": "Stepper",
+      "kind": "custom",
+      "refersTo": "stepper-value",
+      "description": "Enum selector with minus/plus buttons and an accent value pill.",
+      "html": "<div class=\"ds-stepper\"><span class=\"ds-st-label\">WAVE</span><button class=\"ds-st-btn\">−</button><span class=\"ds-st-value\">BLOOM</span><button class=\"ds-st-btn\">+</button></div>",
+      "css": ".ds-stepper { display:inline-flex; align-items:center; gap:4px; font-family:'IBM Plex Mono',monospace; --ac:#4de8ff; } .ds-st-label { font-size:8px; color:#6b768c; letter-spacing:0.14em; margin-right:2px; } .ds-st-btn { width:18px; height:18px; padding:0; border:1px solid rgba(255,255,255,0.07); border-radius:4px; background:#11141c; color:#6b768c; font-size:9px; cursor:pointer; line-height:1; transition:color 0.15s, border-color 0.15s; } .ds-st-btn:hover { color:var(--ac); border-color:var(--ac); } .ds-st-value { min-width:52px; text-align:center; font-size:10px; letter-spacing:0.1em; color:var(--ac); background:#0a0d13; border:1px solid rgba(255,255,255,0.07); border-radius:4px; padding:3px 6px; }"
+    },
+    {
+      "name": "Module Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "A rack module: gradient body, hairline border, nameplate header, panel-lift shadow.",
+      "html": "<section class=\"ds-panel\"><h3 class=\"ds-panel-title\">OSC A</h3><div class=\"ds-panel-body\">module contents</div></section>",
+      "css": ".ds-panel { border:1px solid rgba(255,255,255,0.07); border-radius:12px; background:linear-gradient(180deg,#181c26,#0d1017); box-shadow:inset 0 1px 0 rgba(255,255,255,0.05), 0 10px 26px rgba(0,0,0,0.45); padding:14px; color:#dfe6f3; } .ds-panel-title { font-family:Michroma,'Avenir Next',sans-serif; font-size:17px; letter-spacing:0.1em; color:#dfe6f3; margin:0 0 10px; } .ds-panel-body { font-family:'IBM Plex Mono',monospace; font-size:12px; color:#6b768c; }"
+    },
+    {
+      "name": "Display Well",
+      "kind": "custom",
+      "refersTo": "display-well",
+      "description": "Recessed visualization box for scopes, the 3D wavetable terrain, spectrum and curves.",
+      "html": "<div class=\"ds-well\"><svg viewBox=\"0 0 120 60\" width=\"100%\" height=\"60\" preserveAspectRatio=\"none\"><path d=\"M0 30 Q15 6 30 30 T60 30 T90 30 T120 30\" stroke=\"#4de8ff\" stroke-width=\"1.5\" fill=\"none\" filter=\"drop-shadow(0 0 3px rgba(77,232,255,0.6))\"/></svg></div>",
+      "css": ".ds-well { border:1px solid rgba(255,255,255,0.07); border-radius:9px; background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent 30%), #07090e; padding:0; overflow:hidden; line-height:0; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Utility button: hairline border, dim text, accent on hover.",
+      "html": "<button class=\"ds-btn-ghost\">SAVE</button>",
+      "css": ".ds-btn-ghost { font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.12em; color:#dfe6f3; background:#0d1017; border:1px solid rgba(255,255,255,0.07); border-radius:6px; padding:6px 10px; cursor:pointer; transition:border-color 0.15s, color 0.15s; } .ds-btn-ghost:hover { color:#4de8ff; border-color:#4de8ff; } .ds-btn-ghost:focus-visible { outline:1px solid #4de8ff; outline-offset:2px; }"
+    },
+    {
+      "name": "Status LED",
+      "kind": "custom",
+      "refersTo": "led-on",
+      "description": "8px status dot: dim recessed socket when off, accent fill with bloom when on.",
+      "html": "<span class=\"ds-led ds-led-on\"></span>",
+      "css": ".ds-led { display:inline-block; width:8px; height:8px; border-radius:9999px; background:#11141c; box-shadow:inset 0 0 2px rgba(0,0,0,0.7); } .ds-led-on { background:#4de8ff; box-shadow:0 0 8px #4de8ff; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night-Lab Console",
+    "overview": "FableSynth is a dark studio console seen in a low-lit room, an instrument lit by its own signal. The chassis is near-black machined metal washed by a single cold radial glow; the only color comes from powered elements, the way a real desk only lights up where current flows. Cyan, amber and violet are voltage made visible: osc A, osc B and the filter each carry a fixed hue so your eye tracks signal flow without reading a label. Density is deliberate and high, for someone in flow, not a marketing surface. Depth is hybrid: base surfaces are flat and tonal, while the controls you actually touch carry the tactile shadow and glow that invite the hand.",
+    "keyCharacteristics": [
+      "Near-black blue-black chassis lit by one cold radial glow.",
+      "Three fixed signal hues (cyan / amber / violet) that mean osc A / osc B / filter.",
+      "Two type voices: Michroma nameplates, IBM Plex Mono readouts, tracked caps.",
+      "High, deliberate density; exact grids; no wasted space.",
+      "Hybrid depth: flat tonal surfaces, tactile glowing controls."
+    ],
+    "rules": [
+      { "name": "The Signal-Color Rule", "body": "A saturated hue must mean something. Cyan = osc A, amber = osc B, violet = filter, slate = neutral sections. Never apply a signal color decoratively, and never let two sections claim the same hue.", "section": "colors" },
+      { "name": "The No Pure Black Rule", "body": "The darkest surface is #06070b, a tinted blue-black. Pure #000 and pure #fff are forbidden; even the pointer is #e8edf7.", "section": "colors" },
+      { "name": "The Two-Voice Rule", "body": "Michroma for nameplates, IBM Plex Mono for everything else. A third typeface is forbidden. Hierarchy comes from size, tracking and case.", "section": "typography" },
+      { "name": "The Tracked-Caps Rule", "body": "Labels are uppercase with positive letter-spacing (0.14em and up). Lowercase label text reads as web-app, not instrument.", "section": "typography" },
+      { "name": "The Glow-Means-On Rule", "body": "A colored glow signals energized state (powered, active, focused), never decoration. An idle control does not glow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the chassis blue-black (#06070b) lit by a single cold radial glow; surfaces tonal and flat.",
+      "Do reserve each saturated hue for its signal: cyan = osc A, amber = osc B, violet = filter, slate = neutral sections.",
+      "Do set all labels in tracked uppercase IBM Plex Mono (+0.14em or more); Michroma only for nameplates.",
+      "Do spend depth on operated controls: radial knob bodies, glowing value arcs, recessed value wells, blooming LEDs.",
+      "Do glow only to signal an energized state.",
+      "Do keep density high and grids exact; this is an instrument for someone in flow."
+    ],
+    "donts": [
+      "Don't ship skeuomorphic hardware: no woodgrain, brushed-metal photos, fake screws or beveled rack ears.",
+      "Don't drift toward a generic dark SaaS dashboard: no rounded card grids, no Inter, no single-blue admin accent, no oceans of empty padding.",
+      "Don't let it look like a flat unstyled Web Audio demo: no default browser range inputs, no identity-free controls.",
+      "Don't use a colored border-left/border-right stripe as an accent; use the full hairline, a tint, or the section accent on the control itself.",
+      "Don't introduce a third typeface or a fourth saturated hue.",
+      "Don't use pure #000 or #fff, anywhere, ever.",
+      "Don't glow decoratively; an idle control is dark."
+    ]
+  }
+}
