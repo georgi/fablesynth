@@ -214,34 +214,49 @@ void WavetableEditor::chooseFile() {
     chooser = std::make_unique<juce::FileChooser>("Select an audio file",
                                                   juce::File{}, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
     auto fcFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
-    chooser->launchAsync(fcFlags, [this](const juce::FileChooser& fc) {
+    // SafePointer guards against the editor being torn down while the OS dialog
+    // is open (the callback would otherwise touch a destroyed component).
+    juce::Component::SafePointer<WavetableEditor> safe(this);
+    chooser->launchAsync(fcFlags, [safe](const juce::FileChooser& fc) {
+        if (safe == nullptr) return;
+        auto* self = safe.getComponent();
         auto file = fc.getResult();
         if (file == juce::File{}) return;
-        std::unique_ptr<juce::AudioFormatReader> reader(formatMgr.createReaderFor(file));
-        if (!reader) { statusLabel.setText("decode failed", juce::dontSendNotification); return; }
-        int n = (int)reader->lengthInSamples;
+        std::unique_ptr<juce::AudioFormatReader> reader(self->formatMgr.createReaderFor(file));
+        if (!reader) { self->statusLabel.setText("decode failed", juce::dontSendNotification); return; }
+        // Cap how much we pull into memory so a very long clip can't blow up the
+        // allocation (analysis only needs a bounded window anyway).
+        constexpr int kMaxImportSamples = 1 << 22; // ~4M samples (~95 s @ 44.1k)
+        int n = (int)juce::jmin((juce::int64)kMaxImportSamples, reader->lengthInSamples);
         juce::AudioBuffer<float> buf((int)reader->numChannels, juce::jmax(1, n));
         reader->read(&buf, 0, n, 0, true, true);
         const float* const* chans = buf.getArrayOfReadPointers();
-        audioSamples = fable::mixToMono(chans, buf.getNumChannels(), n);
-        audioSr = reader->sampleRate;
-        hasAudio = true;
-        if (nameField.getText().isEmpty())
-            nameField.setText(file.getFileNameWithoutExtension().toUpperCase().substring(0, 14),
-                              juce::dontSendNotification);
-        statusLabel.setText(juce::String(n / juce::jmax(1.0, audioSr), 2) + " s | "
-                            + juce::String((int)audioSr) + " Hz | " + juce::String(n) + " samples",
+        self->audioSamples = fable::mixToMono(chans, buf.getNumChannels(), n);
+        self->audioSr = reader->sampleRate;
+        self->hasAudio = true;
+        if (self->nameField.getText().isEmpty())
+            self->nameField.setText(file.getFileNameWithoutExtension().toUpperCase().substring(0, 14),
+                                    juce::dontSendNotification);
+        self->statusLabel.setText(juce::String(n / juce::jmax(1.0, self->audioSr), 2) + " s | "
+                            + juce::String((int)self->audioSr) + " Hz | " + juce::String(n) + " samples",
                             juce::dontSendNotification);
     });
 }
 
 void WavetableEditor::commit(fable::UserTable u) {
     int idx = proc.addUserTable(std::move(u));
-    if (idx >= 0) {
-        // Assign the new table to the oscillator that opened the editor.
-        if (auto* p = proc.apvts.getParameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
-            p->setValueNotifyingHost(p->convertTo0to1((float)idx));
+    if (idx < 0) {
+        // Pool is full — keep the editor open and surface why, rather than
+        // closing as if the table had been added.
+        setTab(Tab::Audio); // the status line lives on the audio tab
+        statusLabel.setText("table pool full (max " + juce::String(proc.maxUserTables())
+                            + ") — delete one first", juce::dontSendNotification);
+        refreshList();
+        return;
     }
+    // Assign the new table to the oscillator that opened the editor.
+    if (auto* p = proc.apvts.getParameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
+        p->setValueNotifyingHost(p->convertTo0to1((float)idx));
     close();
 }
 

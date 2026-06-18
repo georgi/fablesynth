@@ -229,10 +229,16 @@ void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
             int frames = (int)t.getProperty("frames", 1);
             juce::MemoryOutputStream raw;
             if (juce::Base64::convertFromBase64(raw, t.getProperty("wave", "").toString())) {
-                int n = (int)(raw.getDataSize() / sizeof(float));
-                std::vector<float> wave(n);
-                std::memcpy(wave.data(), raw.getData(), n * sizeof(float));
-                userTables.push_back(fable::userTableFromWave(name.toStdString(), frames, wave));
+                // Don't trust the persisted size: cap the decoded float count to
+                // what a valid table can hold so corrupt/hostile state can't
+                // trigger a huge allocation. userTableFromWave clamps frames too.
+                size_t maxFloats = (size_t)fable::MAX_FRAMES * fable::SIZE;
+                int n = (int)std::min((size_t)(raw.getDataSize() / sizeof(float)), maxFloats);
+                if (n > 0) {
+                    std::vector<float> wave((size_t)n);
+                    std::memcpy(wave.data(), raw.getData(), (size_t)n * sizeof(float));
+                    userTables.push_back(fable::userTableFromWave(name.toStdString(), frames, wave));
+                }
             }
         }
     }

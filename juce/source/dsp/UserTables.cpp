@@ -6,15 +6,21 @@ namespace fable {
 
 // ---------- construction ----------
 UserTable makeUserTable(const std::string& name, const std::vector<std::vector<float>>& frames) {
-    int nf = std::max(1, std::min(MAX_FRAMES, (int)frames.size()));
+    int avail = (int)frames.size();
+    int nf = std::max(1, std::min(MAX_FRAMES, avail)); // always at least 1 frame
     UserTable u;
     u.name = name;
     u.frames = nf;
     u.wave.assign((size_t)nf * SIZE, 0.0f);
-    std::vector<std::vector<float>> use(frames.begin(), frames.begin() + nf);
+    // Take the available frames (zero-padding if the caller passed none), never
+    // reading past the input — frames.begin() + nf is UB when frames is empty.
+    std::vector<std::vector<float>> use;
+    use.reserve(nf);
     for (int f = 0; f < nf; ++f)
-        for (int i = 0; i < SIZE && i < (int)use[f].size(); ++i)
-            u.wave[(size_t)f * SIZE + i] = use[f][i];
+        use.push_back(f < avail ? frames[(size_t)f] : std::vector<float>(SIZE, 0.0f));
+    for (int f = 0; f < nf; ++f)
+        for (int i = 0; i < SIZE && i < (int)use[(size_t)f].size(); ++i)
+            u.wave[(size_t)f * SIZE + i] = use[(size_t)f][i];
     u.table = buildUserTable(name, use);
     return u;
 }
