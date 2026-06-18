@@ -26,7 +26,7 @@ if(FABLE_BUILD_PLUGIN)
         COMPANY_NAME "FableSynth"
         PLUGIN_MANUFACTURER_CODE Fabl
         PLUGIN_CODE Fwt1
-        FORMATS VST3 Standalone
+        FORMATS AU VST3 Standalone
         IS_SYNTH TRUE
         NEEDS_MIDI_INPUT TRUE
         EDITOR_WANTS_KEYBOARD_FOCUS TRUE
@@ -59,6 +59,21 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+    # On macOS, JUCE regenerates moduleinfo.json as a post-build step *after* the
+    # bundle is code-signed, which invalidates the signature seal. Hosts with a
+    # hardened scanner then refuse to load the plugin ("a sealed resource is
+    # missing or invalid" — e.g. Ableton silently skips it). Re-sign (ad-hoc)
+    # after all of JUCE's post-build steps so the seal matches the contents.
+    if(APPLE)
+        foreach(fmt VST3 AU Standalone)
+            if(TARGET FableSynth_${fmt})
+                add_custom_command(TARGET FableSynth_${fmt} POST_BUILD
+                    COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:FableSynth_${fmt}>"
+                    VERBATIM)
+            endif()
+        endforeach()
+    endif()
 
     # Plugin-boundary verification harness (instantiates the real processor).
     # Compiles the plugin + JUCE modules into its own console exe so there are no
