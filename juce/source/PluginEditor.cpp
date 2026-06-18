@@ -16,6 +16,8 @@ Rack::Rack(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
     addAndMakeVisible(oscA); addAndMakeVisible(oscB); addAndMakeVisible(util);
     addAndMakeVisible(filter); addAndMakeVisible(env1); addAndMakeVisible(env2);
     addAndMakeVisible(lfos); addAndMakeVisible(matrix); addAndMakeVisible(fx);
+    oscA.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
+    oscB.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
 }
 
 juce::Rectangle<int> Rack::colArea(int c0, int span, int y, int h) const {
@@ -49,10 +51,14 @@ void Rack::resized() {
 
 // ---- Editor ----
 FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), rack(p.apvts, p) {
+    : juce::AudioProcessorEditor(p), rack(p.apvts, p), wtEditor(p) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     rack.setBounds(0, 0, Rack::LW, Rack::LH);
+
+    // The editor overlay sits above the (scaled) rack and fills the window.
+    addChildComponent(wtEditor);
+    rack.onEditTable = [this](int osc) { wtEditor.openFor(osc); };
 
     setResizable(true, true);
     if (auto* c = getConstrainer())
@@ -76,4 +82,5 @@ void FableAudioProcessorEditor::resized() {
     const float dx = (getWidth() - Rack::LW * sc) * 0.5f;
     const float dy = (getHeight() - Rack::LH * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
+    wtEditor.setBounds(getLocalBounds());
 }

@@ -114,11 +114,20 @@ Stepper::Stepper(juce::AudioProcessorValueTreeState& s, const juce::String& para
     styleBtn(next, +1);
     startTimerHz(20);
 }
+int Stepper::choiceCount() const {
+    if (countProvider) return juce::jmax(1, countProvider());
+    return choice ? choice->choices.size() : 1;
+}
+juce::String Stepper::displayName() const {
+    if (!choice) return "-";
+    if (nameProvider) return nameProvider(choice->getIndex());
+    return choice->getCurrentChoiceName();
+}
 void Stepper::timerCallback() { if (choice && choice->getIndex() != lastIndex) { lastIndex = choice->getIndex(); repaint(); } }
 void Stepper::step(int d) {
     if (!choice) return;
-    int n = choice->choices.size();
-    int idx = (choice->getIndex() + d + n) % n;
+    int n = choiceCount();
+    int idx = ((choice->getIndex() % n) + d + n) % n;
     choice->setValueNotifyingHost(choice->convertTo0to1((float)idx));
     repaint();
 }
@@ -135,7 +144,7 @@ void Stepper::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
     g.setColour(accent);
     g.setFont(monoFont(10.0f));
-    drawSpaced(g, choice ? choice->getCurrentChoiceName() : "-", r, 0.8f, juce::Justification::centred);
+    drawSpaced(g, displayName(), r, 0.8f, juce::Justification::centred);
 }
 
 // ======================= PowerButton =======================

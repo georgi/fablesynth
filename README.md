@@ -39,8 +39,9 @@ clear quarantine with `xattr -dr com.apple.quarantine <path>`.
   **auto-detect**, or fixed cycle length — sliced into 2048-sample frames with
   resampling) or **draw** a single cycle. Every imported/drawn frame runs through
   the *same* FFT band-limit + 9-level mip pipeline as the procedural tables
-  (`buildUserTable`), so they anti-alias identically. *(Import/draw UI is
-  web-only today; the band-limit pipeline is ported and ready in the plugin.)*
+  (`buildUserTable`), so they anti-alias identically. The import/draw editor (the
+  **✎** button on each oscillator) is available in **both** the web app and the
+  plugin; in the VST, user tables are saved with the plugin/DAW project state.
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).

@@ -10,7 +10,7 @@ using V = std::vector<std::string>;
 // Helpers mirroring the param-group factories in params.ts.
 void addOsc(std::vector<ParamInfo>& v, const std::string& pre, int base, float defOn, float defTable) {
     v.push_back({base + OSC_ON,     pre + ".on",     "ON",     0, 1, defOn,    Curve::Int, Kind::Bool, nullptr});
-    v.push_back({base + OSC_TABLE,  pre + ".table",  "TABLE",  0, (float)TABLE_NAMES.size() - 1, defTable, Curve::Int, Kind::Enum, &TABLE_NAMES});
+    v.push_back({base + OSC_TABLE,  pre + ".table",  "TABLE",  0, (float)tableSlotNames().size() - 1, defTable, Curve::Int, Kind::Enum, &tableSlotNames()});
     v.push_back({base + OSC_POS,    pre + ".pos",    "POS",    0, 1, 0,        Curve::Lin, Kind::Float, nullptr});
     v.push_back({base + OSC_OCT,    pre + ".oct",    "OCT",   -3, 3, 0,        Curve::Int, Kind::Float, nullptr});
     v.push_back({base + OSC_SEMI,   pre + ".semi",   "SEMI", -12, 12, 0,       Curve::Int, Kind::Float, nullptr});

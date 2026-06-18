@@ -15,6 +15,25 @@ namespace fable {
 
 // ---- enum / option label tables (mirror src/constants.ts) ----
 inline const std::vector<std::string> TABLE_NAMES   = {"PRIME", "BLOOM", "PULSE", "VOX", "CHIME", "GLITCH"};
+
+// Max imported/drawn tables an instance can hold. The oscillator TABLE param
+// reserves this many slots after the procedural names so user tables stay
+// addressable (and automatable) by a stable index. Mirrors the web's
+// "procedural + user pool" indexing.
+constexpr int MAX_USER_TABLES = 16;
+
+// The full TABLE selector option list: the procedural names followed by fixed
+// "USER n" slots. The Stepper shows the live user-table name for filled slots;
+// the engine reads the raw index and falls silent for empty slots.
+inline const std::vector<std::string>& tableSlotNames() {
+    static const std::vector<std::string> v = [] {
+        std::vector<std::string> out = TABLE_NAMES;
+        for (int i = 0; i < MAX_USER_TABLES; ++i) out.push_back("USER " + std::to_string(i + 1));
+        return out;
+    }();
+    return v;
+}
+
 inline const std::vector<std::string> FILTER_TYPES  = {"LP 12", "LP 24", "BP 12", "HP 12", "NOTCH", "COMB", "VOWEL"};
 inline const std::vector<std::string> FILTER_ROUTES = {"SERIAL", "PARALLEL", "SPLIT"};
 inline const std::vector<std::string> LFO_SHAPES    = {"SINE", "TRI", "SAW", "SQR", "S&H"};

@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cmath>
+#include <cstring>
 
 using namespace fable;
 
@@ -42,10 +44,61 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
 
 void FableAudioProcessor::prepareToPlay(double sampleRate, int) {
     engine.prepare(sampleRate);
-    engine.setTables(tables);
+    rebuildEngineTables();
     fx.prepare(sampleRate);
     currentSr.store(sampleRate);
     prepared = true;
+}
+
+// ---- table addressing & user-table management (message thread) ----
+const fable::GeneratedTable* FableAudioProcessor::tableAt(int idx) const {
+    if (idx < 0) return nullptr;
+    if (idx < (int)tables.size()) return &tables[(size_t)idx];
+    int u = idx - (int)tables.size();
+    if (u < (int)userTables.size()) return &userTables[(size_t)u].table;
+    return nullptr; // empty user slot
+}
+
+juce::String FableAudioProcessor::tableName(int idx) const {
+    if (idx >= 0 && idx < (int)fable::tableSlotNames().size())
+        if (idx < (int)tables.size())
+            return juce::String(fable::TABLE_NAMES[(size_t)idx]);
+    int u = idx - (int)tables.size();
+    if (u >= 0 && u < (int)userTables.size())
+        return juce::String(userTables[(size_t)u].name);
+    if (idx >= 0 && idx < (int)fable::tableSlotNames().size())
+        return juce::String(fable::tableSlotNames()[(size_t)idx]); // empty "USER n"
+    return "-";
+}
+
+void FableAudioProcessor::rebuildEngineTables() {
+    std::vector<fable::GeneratedTable> all;
+    all.reserve(tables.size() + userTables.size());
+    for (const auto& t : tables) all.push_back(t);
+    for (const auto& u : userTables) all.push_back(u.table);
+    engine.setTables(all); // thread-safe swap; safe to call while audio renders
+}
+
+int FableAudioProcessor::addUserTable(fable::UserTable table) {
+    if ((int)userTables.size() >= fable::MAX_USER_TABLES) return -1;
+    userTables.push_back(std::move(table));
+    rebuildEngineTables();
+    return (int)tables.size() + (int)userTables.size() - 1;
+}
+
+void FableAudioProcessor::deleteUserTable(int poolIndex) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return;
+    userTables.erase(userTables.begin() + poolIndex);
+    rebuildEngineTables();
+    // Repair oscillator TABLE references around the removed slot (mirrors the web).
+    const int removed = (int)tables.size() + poolIndex;
+    for (const char* id : {"oscA.table", "oscB.table"}) {
+        if (auto* p = apvts.getParameter(id)) {
+            int v = (int)std::round(p->convertFrom0to1(p->getValue()));
+            int nv = v == removed ? 0 : (v > removed ? v - 1 : v);
+            if (nv != v) p->setValueNotifyingHost(p->convertTo0to1((float)nv));
+        }
+    }
 }
 
 void FableAudioProcessor::readScope(float* dst, int n) const {
@@ -134,14 +187,59 @@ const juce::String FableAudioProcessor::getProgramName(int index) {
 }
 
 void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
-    if (auto state = apvts.copyState(); state.isValid())
-        if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
+    auto state = apvts.copyState();
+    if (!state.isValid()) return;
+    // Wrap the parameter tree plus the user-table pool so both round-trip with
+    // the host project. Each table stores its raw single-cycle frames (base64
+    // little-endian float); the band-limited pyramid is rebuilt on load.
+    juce::ValueTree root("FABLESTATE");
+    root.appendChild(state, nullptr);
+    juce::ValueTree pool("USERTABLES");
+    for (const auto& u : userTables) {
+        juce::ValueTree t("TABLE");
+        t.setProperty("name", juce::String(u.name), nullptr);
+        t.setProperty("frames", u.frames, nullptr);
+        t.setProperty("wave", juce::Base64::toBase64(u.wave.data(),
+                       u.wave.size() * sizeof(float)), nullptr);
+        pool.appendChild(t, nullptr);
+    }
+    root.appendChild(pool, nullptr);
+    if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
 }
 
 void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
-    if (auto xml = getXmlFromBinary(data, sizeInBytes))
-        if (xml->hasTagName(apvts.state.getType()))
-            apvts.replaceState(juce::ValueTree::fromXml(*xml));
+    auto xml = getXmlFromBinary(data, sizeInBytes);
+    if (!xml) return;
+
+    juce::ValueTree params, pool;
+    if (xml->hasTagName("FABLESTATE")) {
+        auto root = juce::ValueTree::fromXml(*xml);
+        params = root.getChildWithName(apvts.state.getType());
+        pool   = root.getChildWithName("USERTABLES");
+    } else if (xml->hasTagName(apvts.state.getType())) {
+        params = juce::ValueTree::fromXml(*xml); // legacy: bare parameter tree
+    }
+
+    // Restore user tables first so the engine has them before params apply.
+    userTables.clear();
+    if (pool.isValid()) {
+        for (int i = 0; i < pool.getNumChildren() && (int)userTables.size() < fable::MAX_USER_TABLES; ++i) {
+            auto t = pool.getChild(i);
+            juce::String name = t.getProperty("name", "USER");
+            int frames = (int)t.getProperty("frames", 1);
+            juce::MemoryOutputStream raw;
+            if (juce::Base64::convertFromBase64(raw, t.getProperty("wave", "").toString())) {
+                int n = (int)(raw.getDataSize() / sizeof(float));
+                std::vector<float> wave(n);
+                std::memcpy(wave.data(), raw.getData(), n * sizeof(float));
+                userTables.push_back(fable::userTableFromWave(name.toStdString(), frames, wave));
+            }
+        }
+    }
+    rebuildEngineTables();
+
+    if (params.isValid())
+        apvts.replaceState(params);
 }
 
 juce::AudioProcessorEditor* FableAudioProcessor::createEditor() {

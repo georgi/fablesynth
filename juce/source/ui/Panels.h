@@ -19,9 +19,14 @@ public:
     OscPanel(APVTS&, FableAudioProcessor&, int oscIndex, juce::String prefix, Accent, juce::String title);
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    // Fired when the wavetable edit (✎) button is clicked; argument is the osc
+    // index. The editor wires this to open the WavetableEditor overlay.
+    std::function<void(int)> onEditTable;
 private:
+    int oscIndex;
     juce::String title, prefix; Accent accent;
-    PowerButton power; Stepper tableStep; WavetableView wt; VSlider pos;
+    PowerButton power; juce::TextButton editBtn{"E"}; Stepper tableStep; WavetableView wt; VSlider pos;
     juce::OwnedArray<Knob> knobs;
     juce::Rectangle<int> titleArea;
 };

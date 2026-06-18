@@ -5,6 +5,7 @@
 #include "dsp/Fx.h"
 #include "dsp/Params.h"
 #include "dsp/Presets.h"
+#include "dsp/UserTables.h"
 
 // FableSynth VST/AU processor. Owns the JUCE-independent DSP core (Engine + Fx)
 // and bridges the APVTS parameter tree + MIDI to it.
@@ -39,11 +40,25 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
     // ---- wavetable visualization feed (read on the message thread) ----
-    // Tables are generated once and never mutated at runtime, so the editor can
-    // read their viz frames directly. The live modulated frame position per
-    // oscillator is published from the audio thread via atomics (-1 = idle).
+    // The live modulated frame position per oscillator is published from the
+    // audio thread via atomics (-1 = idle).
     const std::vector<fable::GeneratedTable>& getTables() const { return tables; }
     float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
+
+    // ---- table addressing (procedural slots 0..5, then user tables) ----
+    // The oscillator TABLE param is an index into this combined space. Returns
+    // nullptr for an empty user slot so callers can fall back / draw nothing.
+    int  numTables() const { return (int)tables.size() + (int)userTables.size(); }
+    const fable::GeneratedTable* tableAt(int idx) const;
+    juce::String tableName(int idx) const;
+
+    // ---- user wavetables (import / draw), all on the message thread ----
+    // Source-of-truth pool; persisted in plugin state and pushed to the engine.
+    const std::vector<fable::UserTable>& getUserTables() const { return userTables; }
+    int  maxUserTables() const { return fable::MAX_USER_TABLES; }
+    // Add a freshly built table; returns its combined table index (or -1 if full).
+    int  addUserTable(fable::UserTable table);
+    void deleteUserTable(int poolIndex);
 
     // ---- HUD feeds (scope / spectrum / voices / MIDI led) ----
     int    getVoiceCount() const { return voiceCount.load(); }
@@ -55,9 +70,13 @@ public:
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
+    // Rebuild the engine's table set from procedural + user tables (message thread).
+    void rebuildEngineTables();
+
     fable::Engine engine;
     fable::Fx fx;
     std::vector<fable::GeneratedTable> tables;   // procedural tables (+ viz frames)
+    std::vector<fable::UserTable> userTables;    // imported / drawn tables
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
     juce::AudioBuffer<float> scratchR; // mono-output downmix scratch
 

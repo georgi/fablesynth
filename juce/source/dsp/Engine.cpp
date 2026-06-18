@@ -93,13 +93,18 @@ void Engine::prepare(double sampleRate) {
 }
 
 void Engine::setTables(const std::vector<GeneratedTable>& tables) {
-    tables_.clear();
+    // Build the replacement off-lock (the heavy copy), then swap under the lock
+    // so the audio thread is never blocked on allocation.
+    std::vector<EngineTable> next;
+    next.reserve(tables.size());
     for (const auto& t : tables) {
         EngineTable e;
         e.frames = t.frames; e.mips = t.mips; e.size = t.size; e.mask = t.size - 1;
         e.data = t.data;
-        tables_.push_back(std::move(e));
+        next.push_back(std::move(e));
     }
+    std::lock_guard<std::mutex> lk(tablesMutex_);
+    tables_.swap(next);
 }
 
 void Engine::noteOn(int n, double vel) {
@@ -560,6 +565,16 @@ void Engine::renderBlock(float* L, float* R, int n) {
 }
 
 void Engine::render(float* L, float* R, int n) {
+    // Hold the table lock for the whole block: setupOsc caches a raw pointer into
+    // a table's sample data, so the table set must not be swapped mid-render. If
+    // the message thread is swapping tables right now, emit silence this block.
+    std::unique_lock<std::mutex> lk(tablesMutex_, std::try_to_lock);
+    if (!lk.owns_lock()) {
+        std::fill(L, L + n, 0.0f);
+        std::fill(R, R + n, 0.0f);
+        vizActive = 0; vizA = -1; vizB = -1;
+        return;
+    }
     int off = 0;
     while (off < n) {
         int chunk = std::min(128, n - off);
