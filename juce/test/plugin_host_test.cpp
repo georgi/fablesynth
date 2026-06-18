@@ -3,13 +3,32 @@
 // MIDI chord, process blocks — confirming the parameter bridge + MIDI handling
 // + engine + FX all work together through the JUCE plugin surface.
 #include "../source/PluginProcessor.h"
+#include "../source/PluginEditor.h"
 #include "../source/WavetableView.h"
 #include <cmath>
 #include <cstdio>
 
+static void writePng(const juce::Image& img, const juce::File& out) {
+    if (auto stream = out.createOutputStream()) {
+        stream->setPosition(0); stream->truncate();
+        juce::PNGImageFormat png;
+        png.writeImageToStream(img, *stream);
+        printf("  wrote %s (%dx%d)\n", out.getFullPathName().toRawUTF8(),
+               img.getWidth(), img.getHeight());
+    }
+}
+
+// Render the full plugin editor (preset bar + both wavetable views + parameter
+// panel) to a PNG via JUCE's headless software renderer.
+static void snapshotEditor(FableAudioProcessor& proc, const juce::File& out) {
+    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    ed->setSize(640, 860);
+    writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
+}
+
 // Render the two live wavetable views to a PNG (headless software renderer),
-// proving the visualization actually draws. Optional path via argv[1].
-static void snapshotViews(FableAudioProcessor& proc, const char* path) {
+// proving the visualization actually draws.
+static void snapshotViews(FableAudioProcessor& proc, const juce::File& out) {
     WavetableView a(proc, 0, juce::Colour(0xff4de8ff));
     WavetableView b(proc, 1, juce::Colour(0xffffa14d));
     juce::Component panel;
@@ -18,14 +37,7 @@ static void snapshotViews(FableAudioProcessor& proc, const char* path) {
     b.setBounds(0, 196, 560, 184);
     panel.addAndMakeVisible(a);
     panel.addAndMakeVisible(b);
-    auto img = panel.createComponentSnapshot(panel.getLocalBounds());
-    juce::File out(juce::File::getCurrentWorkingDirectory().getChildFile(path));
-    if (auto stream = out.createOutputStream()) {
-        stream->setPosition(0); stream->truncate();
-        juce::PNGImageFormat png;
-        png.writeImageToStream(img, *stream);
-        printf("  wrote wavetable snapshot: %s\n", out.getFullPathName().toRawUTF8());
-    }
+    writePng(panel.createComponentSnapshot(panel.getLocalBounds()), out);
 }
 
 int main(int argc, char** argv) {
@@ -99,14 +111,23 @@ int main(int argc, char** argv) {
     proc.setStateInformation(state.getData(), (int)state.getSize());
     check(std::abs(uni() - 7.0f) < 0.5f, "state save/restore round-trips (oscA.unison=7)", uni());
 
-    // Re-trigger a note so the viz feed is live, then snapshot the views to PNG.
+    // Re-trigger a chord so the viz feed is live, then snapshot to PNG.
+    proc.setCurrentProgram(1); // VELVET PAD — both oscs on, evolving table
     for (int b = 0; b < 30; ++b) {
         buf.clear();
         juce::MidiBuffer midi;
-        if (b == 0) midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        if (b == 0) {
+            midi.addEvent(juce::MidiMessage::noteOn(1, 48, 0.9f), 0);
+            midi.addEvent(juce::MidiMessage::noteOn(1, 55, 0.9f), 0);
+            midi.addEvent(juce::MidiMessage::noteOn(1, 60, 0.9f), 0);
+        }
         proc.processBlock(buf, midi);
     }
-    snapshotViews(proc, argc > 1 ? argv[1] : "wavetable_view.png");
+    juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
+                            : juce::File::getCurrentWorkingDirectory());
+    dir.createDirectory();
+    snapshotViews(proc, dir.getChildFile("wavetable_view.png"));
+    snapshotEditor(proc, dir.getChildFile("plugin_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     return fail == 0 ? 0 : 1;

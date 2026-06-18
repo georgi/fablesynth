@@ -4,6 +4,17 @@ A faithful C++/JUCE port of the FableSynth web wavetable synth. The DSP core
 is reimplemented one-to-one from the AudioWorklet engine; the parameters,
 presets and signal flow match the web build so a patch sounds the same.
 
+![FableSynth plugin editor](docs/plugin_editor.png)
+
+The live 3D wavetable terrain for both oscillators (the highlighted line is the
+frame currently playing, tracked from the DSP thread):
+
+![Wavetable views](docs/wavetable_view.png)
+
+> Both images are rendered headlessly by `plugin_host_test` via JUCE's software
+> renderer (`./plugin_host_test <output-dir>`), so they always reflect the
+> current build.
+
 ## Architecture
 
 The DSP is **JUCE-independent pure C++** so it can be unit-tested headless and

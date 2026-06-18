@@ -70,9 +70,12 @@ A faithful C++/JUCE port of the engine lives in [`juce/`](juce/) — builds as a
 **VST3 · AU · Standalone** plugin. The DSP core (oscillators, dual filter,
 envelopes, LFOs, mod matrix, FX) is reimplemented one-to-one from the
 AudioWorklet engine as JUCE-independent pure C++, with the same parameters and
-20 factory presets. It ships a headless verification harness (wavetable
-correctness, anti-aliasing floor, every filter type, FX, all presets) and a
-plugin-boundary test. See [`juce/README.md`](juce/README.md) to build and verify.
+20 factory presets, and the live 3D wavetable views. It ships a headless
+verification harness (wavetable correctness, anti-aliasing floor, every filter
+type, FX, all presets) and a plugin-boundary test. See
+[`juce/README.md`](juce/README.md) to build and verify.
+
+[![FableSynth plugin editor](juce/docs/plugin_editor.png)](juce/README.md)
 
 ## Controls
 
