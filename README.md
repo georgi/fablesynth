@@ -64,6 +64,16 @@ Click the power button (this is also the browser audio-unlock gesture) and play.
   back from the DSP thread, plus oscilloscope, spectrum analyser and filter
   response displays.
 
+## JUCE / VST port
+
+A faithful C++/JUCE port of the engine lives in [`juce/`](juce/) — builds as a
+**VST3 · AU · Standalone** plugin. The DSP core (oscillators, dual filter,
+envelopes, LFOs, mod matrix, FX) is reimplemented one-to-one from the
+AudioWorklet engine as JUCE-independent pure C++, with the same parameters and
+20 factory presets. It ships a headless verification harness (wavetable
+correctness, anti-aliasing floor, every filter type, FX, all presets) and a
+plugin-boundary test. See [`juce/README.md`](juce/README.md) to build and verify.
+
 ## Controls
 
 | Input | Action |
