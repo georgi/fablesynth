@@ -16,6 +16,7 @@ namespace fui {
 class DrawPad : public juce::Component {
 public:
     static constexpr int DRAW_N = 256;
+    enum class Brush { Pen, Smooth };
     explicit DrawPad(juce::Colour accent);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -23,11 +24,35 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     void clear();
     void setAccent(juce::Colour c) { accent = c; repaint(); }
+    void setBrush(Brush b) { brush = b; }
+    void setSnap(bool s) { snap = s; }
+    void setReadOnly(bool ro) { readOnly = ro; repaint(); }
+    void seed(int kind);                 // 0 sine 1 saw 2 square 3 tri
+    void setPoints(const std::vector<float>& p); // load frame 0 (downsampled)
     const std::vector<float>& points() const { return pts; }
 private:
     void paintAt(juce::Point<float>);
+    void smoothAround(int idx, int rad = 7);
     std::vector<float> pts;
     int lastIdx = -1;
+    juce::Colour accent;
+    Brush brush = Brush::Pen;
+    bool snap = false;
+    bool readOnly = false;
+};
+
+// Read-only preview of the candidate wavetable (the frames the current settings
+// would produce). Draws the frames as a small perspective terrain, like the
+// rack's WavetableView, so you can see what you're about to create.
+class TablePreview : public juce::Component {
+public:
+    explicit TablePreview(juce::Colour ac) : accent(ac) {}
+    void setAccent(juce::Colour c) { accent = c; repaint(); }
+    void setFrames(std::vector<std::vector<float>> f) { frames = std::move(f); repaint(); }
+    void clear() { frames.clear(); repaint(); }
+    void paint(juce::Graphics&) override;
+private:
+    std::vector<std::vector<float>> frames;
     juce::Colour accent;
 };
 
@@ -49,6 +74,8 @@ private:
     void setTab(Tab);
     void setMode(AudioMode);
     void chooseFile();
+    std::vector<std::vector<float>> framesFromCurrentSettings() const;
+    void updatePreview();
     void createFromAudio();
     void createFromDraw();
     void commit(fable::UserTable);
@@ -81,6 +108,7 @@ private:
     juce::TextEditor fixedField;
     juce::Label statusLabel;
     juce::Label hintLabel;
+    TablePreview audioPreview{col::acA};
     juce::TextButton createAudioBtn{"CREATE TABLE"};
 
     // draw tab

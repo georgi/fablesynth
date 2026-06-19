@@ -9,12 +9,13 @@ DrawPad::DrawPad(juce::Colour ac) : pts(DRAW_N, 0.0f), accent(ac) {}
 void DrawPad::clear() { std::fill(pts.begin(), pts.end(), 0.0f); lastIdx = -1; repaint(); }
 
 void DrawPad::paintAt(juce::Point<float> p) {
+    if (readOnly) return;
     const float w = (float)getWidth(), h = (float)getHeight();
     if (w <= 0 || h <= 0) return;
     int idx = juce::jlimit(0, DRAW_N - 1, (int)std::round((p.x / w) * (DRAW_N - 1)));
     float val = juce::jlimit(-1.0f, 1.0f, 1.0f - 2.0f * (p.y / h));
+    if (snap) val = std::round(val * 8.0f) / 8.0f;
     if (lastIdx >= 0 && lastIdx != idx) {
-        // interpolate across skipped indices for a continuous line
         int lo = juce::jmin(lastIdx, idx), hi = juce::jmax(lastIdx, idx);
         float v0 = pts[lastIdx];
         for (int i = lo; i <= hi; ++i) {
@@ -24,12 +25,42 @@ void DrawPad::paintAt(juce::Point<float> p) {
     } else {
         pts[idx] = val;
     }
+    if (brush == Brush::Smooth) smoothAround(idx);
     lastIdx = idx;
     repaint();
 }
-void DrawPad::mouseDown(const juce::MouseEvent& e) { lastIdx = -1; paintAt(e.position); }
-void DrawPad::mouseDrag(const juce::MouseEvent& e) { paintAt(e.position); }
+void DrawPad::mouseDown(const juce::MouseEvent& e) { if (readOnly) return; lastIdx = -1; paintAt(e.position); }
+void DrawPad::mouseDrag(const juce::MouseEvent& e) { if (readOnly) return; paintAt(e.position); }
 void DrawPad::mouseUp(const juce::MouseEvent&) { lastIdx = -1; }
+
+void DrawPad::smoothAround(int idx, int rad) {
+    auto src = pts;
+    const int n = (int)pts.size();
+    for (int i = juce::jmax(0, idx - rad); i <= juce::jmin(n - 1, idx + rad); ++i) {
+        float s = 0; int cnt = 0;
+        for (int j = -2; j <= 2; ++j) { int k = i + j; if (k >= 0 && k < n) { s += src[(size_t)k]; ++cnt; } }
+        pts[(size_t)i] = s / cnt;
+    }
+}
+
+void DrawPad::seed(int kind) {
+    for (int i = 0; i < DRAW_N; ++i) {
+        const float x = (float)i / DRAW_N; float v = 0;
+        if (kind == 0) v = std::sin(2.0f * juce::MathConstants<float>::pi * x);
+        else if (kind == 1) v = 2 * x - 1;
+        else if (kind == 2) v = x < 0.5f ? 0.9f : -0.9f;
+        else v = 1 - 4 * std::abs(x - 0.5f);
+        pts[(size_t)i] = v;
+    }
+    lastIdx = -1; repaint();
+}
+
+void DrawPad::setPoints(const std::vector<float>& p) {
+    if (p.empty()) return;
+    for (int i = 0; i < DRAW_N; ++i)
+        pts[(size_t)i] = p[(size_t)juce::jlimit(0, (int)p.size() - 1, (int)((float)i / DRAW_N * (int)p.size()))];
+    lastIdx = -1; repaint();
+}
 
 void DrawPad::paint(juce::Graphics& g) {
     auto b = getLocalBounds().toFloat();
@@ -47,6 +78,44 @@ void DrawPad::paint(juce::Graphics& g) {
     g.strokePath(path, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour(accent);
     g.strokePath(path, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
+// ============================ TablePreview ============================
+void TablePreview::paint(juce::Graphics& g) {
+    auto b = getLocalBounds().toFloat();
+    drawDisplayBox(g, b, 6.0f);
+    if (frames.empty()) {
+        g.setColour(col::textDim);
+        g.setFont(monoFont(9.0f));
+        g.drawText("load an audio file to preview", getLocalBounds(), juce::Justification::centred);
+        return;
+    }
+    const int nf = (int)frames.size();
+    const float w = b.getWidth(), h = b.getHeight();
+    const float depthX = w * 0.20f, depthY = h * 0.40f;
+    const float waveW = w * 0.70f, waveAmp = h * 0.18f;
+    const float x0 = w * 0.06f, y0 = h * 0.80f;
+    const int maxDraw = juce::jmin(nf, 48); // cap drawn rows for cheap repaint
+    constexpr int PTS = 160;               // downsample each frame for drawing
+    for (int k = maxDraw - 1; k >= 0; --k) { // back-to-front
+        const int f = (nf == 1) ? 0 : (int)std::round((float)k / (maxDraw - 1) * (nf - 1));
+        const float d = (maxDraw == 1) ? 1.0f : (float)k / (maxDraw - 1);
+        const auto& frame = frames[(size_t)f];
+        const int n = (int)frame.size();
+        if (n < 2) continue;
+        const float ox = x0 + d * depthX, oy = y0 - d * depthY;
+        juce::Path path;
+        for (int i = 0; i < PTS; ++i) {
+            const int si = (int)((float)i / (PTS - 1) * (n - 1));
+            const float x = ox + (i / (float)(PTS - 1)) * waveW;
+            const float y = oy - frame[(size_t)si] * waveAmp;
+            if (i == 0) path.startNewSubPath(x, y);
+            else        path.lineTo(x, y);
+        }
+        g.setColour(accent.withAlpha(0.18f + d * 0.72f));
+        g.strokePath(path, juce::PathStrokeType(d > 0.85f ? 1.6f : 1.0f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
 }
 
 // ============================ Row ============================
@@ -122,7 +191,10 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     fixedField.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff0a0d13));
     fixedField.setColour(juce::TextEditor::textColourId, col::text);
     fixedField.setInputRestrictions(6, "0123456789");
+    fixedField.onTextChange = [this] { updatePreview(); };
     addAndMakeVisible(fixedField);
+
+    addChildComponent(audioPreview);
 
     statusLabel.setFont(monoFont(10.0f));
     statusLabel.setColour(juce::Label::textColourId, col::textDim);
@@ -170,10 +242,12 @@ void WavetableEditor::openFor(int osc) {
     mode = AudioMode::Single;
     hasAudio = false;
     drawPad.setAccent(accent());
+    audioPreview.setAccent(accent());
     audioSamples.clear();
     nameField.setText("", juce::dontSendNotification);
     statusLabel.setText("load an audio file to begin", juce::dontSendNotification);
     drawPad.clear();
+    audioPreview.clear();
     setTab(Tab::Audio);
     setMode(AudioMode::Single);
     refreshList();
@@ -196,6 +270,7 @@ void WavetableEditor::setTab(Tab t) {
     fileBtn.setVisible(audio); modeSingle.setVisible(audio); modeAuto.setVisible(audio);
     modeFixed.setVisible(audio); statusLabel.setVisible(audio); hintLabel.setVisible(audio);
     createAudioBtn.setVisible(audio);
+    audioPreview.setVisible(audio);
     fixedLabel.setVisible(audio && mode == AudioMode::Fixed);
     fixedField.setVisible(audio && mode == AudioMode::Fixed);
     drawPad.setVisible(!audio); drawHint.setVisible(!audio);
@@ -207,6 +282,8 @@ void WavetableEditor::setMode(AudioMode m) {
     mode = m;
     fixedLabel.setVisible(tab == Tab::Audio && m == AudioMode::Fixed);
     fixedField.setVisible(tab == Tab::Audio && m == AudioMode::Fixed);
+    layoutPanel();   // showing/hiding the CYCLE row shifts the layout
+    updatePreview(); // the slicing mode changes the frames
     repaint();
 }
 
@@ -240,7 +317,21 @@ void WavetableEditor::chooseFile() {
         self->statusLabel.setText(juce::String(n / juce::jmax(1.0, self->audioSr), 2) + " s | "
                             + juce::String((int)self->audioSr) + " Hz | " + juce::String(n) + " samples",
                             juce::dontSendNotification);
+        self->updatePreview();
     });
+}
+
+std::vector<std::vector<float>> WavetableEditor::framesFromCurrentSettings() const {
+    if (!hasAudio || audioSamples.empty()) return {};
+    if (mode == AudioMode::Single) return fable::singleCycleFrame(audioSamples);
+    if (mode == AudioMode::Auto)
+        return fable::sliceToFrames(audioSamples, fable::detectCycleLength(audioSamples, audioSr));
+    int len = juce::jmax(2, fixedField.getText().getIntValue());
+    return fable::sliceToFrames(audioSamples, (double)len);
+}
+
+void WavetableEditor::updatePreview() {
+    if (tab == Tab::Audio) audioPreview.setFrames(framesFromCurrentSettings());
 }
 
 void WavetableEditor::commit(fable::UserTable u) {
@@ -267,17 +358,8 @@ static std::string finalName(const juce::String& raw) {
 }
 
 void WavetableEditor::createFromAudio() {
-    if (!hasAudio || audioSamples.empty()) return;
-    std::vector<std::vector<float>> frames;
-    if (mode == AudioMode::Single) {
-        frames = fable::singleCycleFrame(audioSamples);
-    } else if (mode == AudioMode::Auto) {
-        double cyc = fable::detectCycleLength(audioSamples, audioSr);
-        frames = fable::sliceToFrames(audioSamples, cyc);
-    } else {
-        int len = juce::jmax(2, fixedField.getText().getIntValue());
-        frames = fable::sliceToFrames(audioSamples, (double)len);
-    }
+    auto frames = framesFromCurrentSettings();
+    if (frames.empty()) return;
     commit(fable::makeUserTable(finalName(nameField.getText()), frames));
 }
 
@@ -345,7 +427,9 @@ void WavetableEditor::layoutPanel() {
         statusLabel.setBounds(panel.removeFromTop(18));
         panel.removeFromTop(6);
         hintLabel.setBounds(panel.removeFromTop(46));
-        panel.removeFromTop(8);
+        panel.removeFromTop(10);
+        audioPreview.setBounds(panel.removeFromTop(140));
+        panel.removeFromTop(10);
         createAudioBtn.setBounds(panel.removeFromTop(30));
     } else {
         drawPad.setBounds(panel.removeFromTop(180));
