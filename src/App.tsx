@@ -38,7 +38,7 @@ export function App() {
           <UtilPanel />
           <FilterPanel />
           <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
-          <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" />
+          <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
           <LfoPanel />
           <MatrixPanel />
           <FxPanel />

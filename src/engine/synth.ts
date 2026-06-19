@@ -3,7 +3,7 @@
 // else is forwarded to the worklet.
 
 import { generateTables, type GeneratedTable } from './wavetables';
-import { defaultParams, type ParamValues } from '../params';
+import { defaultParams, type ModConnection, type ParamValues } from '../params';
 // The DSP core runs in the audio render thread. `?url` makes Vite copy it
 // verbatim and hand us the served URL for `audioWorklet.addModule`.
 import workletUrl from './worklet.js?url';
@@ -28,6 +28,7 @@ interface WetDry {
 
 export class SynthEngine {
   params: ParamValues;
+  mods: ModConnection[];
   tables: VizTable[] | null; // combined [{name, frames, viz}] kept for visualization
   procTables: GeneratedTable[]; // procedural tables (full mip data)
   userTables: GeneratedTable[]; // imported / drawn tables (full mip data)
@@ -63,6 +64,7 @@ export class SynthEngine {
 
   constructor() {
     this.params = defaultParams();
+    this.mods = [];
     this.tables = null;
     this.procTables = [];
     this.userTables = [];
@@ -88,6 +90,7 @@ export class SynthEngine {
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
+    this.node.port.postMessage({ t: 'mods', list: this.mods });
     this.ready = true;
     this.pushTables();
 
@@ -294,9 +297,16 @@ export class SynthEngine {
     }
   }
 
+  // Replace the modulation routing and push it to the DSP thread.
+  setMods(mods: ModConnection[]): void {
+    this.mods = mods;
+    if (this.ready) this.node.port.postMessage({ t: 'mods', list: mods });
+  }
+
   applyAllParams(): void {
     if (!this.ready) return;
     this.node.port.postMessage({ t: 'init', params: this.params });
+    this.node.port.postMessage({ t: 'mods', list: this.mods });
     this.applyAllFx();
     this.renderImpulse();
   }

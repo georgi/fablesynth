@@ -53,9 +53,13 @@ clear quarantine with `xattr -dr com.apple.quarantine <path>`.
   osc B→F2). The `tanh` drive is **anti-aliased** (first-order antiderivative
   anti-aliasing, ADAA), so pushing DRIVE on bright material doesn't fold
   harmonics back down the way a naive per-sample saturator would.
-- **2 ADSR envelopes** (amp + mod), **2 LFOs** (5 shapes), **4-slot mod matrix**
-  (LFOs / mod env / velocity / note → wavetable position, F1/F2 cutoff, F2
-  resonance, pitch, amp, pan, osc levels).
+- **2 ADSR envelopes** (amp + mod), **2 LFOs** (5 shapes) and **Serum-style mod
+  assignment** — drag any source (LFOs / mod env / velocity / note) straight onto
+  a knob or the wavetable POS slider to create a route, then drag the colored
+  ring it grows to set the depth. Each control can carry several routes, and the
+  mod matrix lists every connection (including the global pitch / amp / pan
+  targets) for direct editing. Destinations: wavetable position, F1/F2 cutoff, F2
+  resonance, pitch, amp, pan, osc levels.
 - **8-voice polyphony** with smart voice stealing, glide, pitch-bend, and a
   per-voice DC blocker so saturation stages never see offset.
 - **FX chain** — tanh drive, stereo chorus, ping-pong delay, reverb, safety

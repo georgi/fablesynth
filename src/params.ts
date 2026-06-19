@@ -19,6 +19,33 @@ export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
 // Indices 0..8 are frozen for preset compatibility; F2 destinations are appended.
 export const MOD_DESTS = ['—', 'A POS', 'B POS', 'F1 CUT', 'PITCH', 'AMP', 'PAN', 'A LVL', 'B LVL', 'F2 CUT', 'F2 RES'];
 
+// A single modulation route: a source (MOD_SOURCES index) drives a destination
+// (MOD_DESTS index) by `amt` (-1..1). Serum-style — any number of routes, built
+// by dragging a source onto a control rather than filling fixed matrix slots.
+export interface ModConnection {
+  src: number;
+  dst: number;
+  amt: number;
+}
+
+// Tint per MOD_SOURCES index. Each source reuses the accent of the panel it
+// lives in (LFO 1 cyan, LFO 2 amber, MOD ENV violet, velocity/note slate) so a
+// mod ring's color tells you where the movement comes from at a glance.
+export const SOURCE_COLORS = ['', '#4de8ff', '#ffa14d', '#b18cff', '#9fb4d8', '#9fb4d8'];
+
+// Which MOD_DESTS slot a given knob/slider drives — used for drag-to-assign and
+// the on-control modulation rings. Pitch/amp/pan are global (no single control)
+// and so are only assignable from the matrix list, not by dragging onto a knob.
+export const DEST_OF_PARAM: Record<string, number> = {
+  'oscA.pos': 1,
+  'oscB.pos': 2,
+  'filter.cutoff': 3,
+  'oscA.level': 7,
+  'oscB.level': 8,
+  'filter2.cutoff': 9,
+  'filter2.res': 10,
+};
+
 export type Curve = 'lin' | 'log' | 'int';
 export type ParamType = 'bool' | 'enum';
 
@@ -67,14 +94,6 @@ function filterParams(prefix: string, defOn: number, defType: number, defCut: nu
   ];
 }
 
-function matSlot(n: number): ParamDef[] {
-  return [
-    { id: `mat${n}.src`, type: 'enum', options: MOD_SOURCES, def: 0 },
-    { id: `mat${n}.dst`, type: 'enum', options: MOD_DESTS, def: 0 },
-    { id: `mat${n}.amt`, label: 'AMT', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
-  ];
-}
-
 export const PARAM_DEFS: ParamDef[] = [
   ...oscParams('oscA', 1, 0),
   ...oscParams('oscB', 0, 1),
@@ -104,8 +123,6 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'lfo1.rate', label: 'RATE', min: 0.02, max: 30, def: 2, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
   { id: 'lfo2.shape', type: 'enum', options: LFO_SHAPES, def: 0 },
   { id: 'lfo2.rate', label: 'RATE', min: 0.02, max: 30, def: 5, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
-
-  ...matSlot(1), ...matSlot(2), ...matSlot(3), ...matSlot(4),
 
   { id: 'fx.drive.on', type: 'bool', def: 0 },
   { id: 'fx.drive.amt', label: 'AMOUNT', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },

@@ -3,12 +3,16 @@
 // Mod sources: 0 —, 1 LFO1, 2 LFO2, 3 MODENV, 4 VELO, 5 NOTE
 // Mod dests:   0 —, 1 A POS, 2 B POS, 3 CUTOFF, 4 PITCH, 5 AMP, 6 PAN, 7 A LVL, 8 B LVL
 
-import type { ParamValues } from './params';
+import type { ModConnection, ParamValues } from './params';
 import type { SerializedUserTable } from './engine/usertables';
 
 export interface Preset {
   name: string;
   params: Partial<ParamValues>;
+  // Modulation routes. Factory presets omit this and encode routes in `mat*`
+  // params (migrated on load); user presets saved by the current build store
+  // them here explicitly. See store.ts `resolvePresetMods`.
+  mods?: ModConnection[];
   // Optional embedded user wavetables. When present they define the table pool
   // the preset's `*.table` indices (>= TABLE_NAMES.length) address. Factory
   // presets omit this and only use the 6 procedural tables. See
@@ -326,9 +330,10 @@ export function loadUserPresets(): Preset[] {
   }
 }
 
-export function saveUserPreset(name: string, params: ParamValues, tables: SerializedUserTable[] = []): Preset[] {
+export function saveUserPreset(name: string, params: ParamValues, mods: ModConnection[] = [], tables: SerializedUserTable[] = []): Preset[] {
   const list = loadUserPresets().filter((p) => p.name !== name);
   const preset: Preset = { name, params: { ...params } };
+  if (mods.length) preset.mods = mods.map((m) => ({ ...m }));
   if (tables.length) preset.tables = tables;
   list.push(preset);
   localStorage.setItem(LS_KEY, JSON.stringify(list));

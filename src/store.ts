@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { SynthEngine } from './engine/synth';
-import { defaultParams, TABLE_NAMES, type ParamValues } from './params';
+import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
 import { FACTORY_PRESETS, loadUserPresets, saveUserPreset, type Preset } from './presets';
 import {
   loadUserTablePool, saveUserTablePool, serializeUserTable, deserializeUserTable,
@@ -21,6 +21,28 @@ export interface PresetOption {
   group: 'FACTORY' | 'USER';
 }
 
+// Resolve a preset into clean params + a modulation list. Presets saved by the
+// new build carry `mods` explicitly; older/factory presets encode routes in
+// `mat1..4.*` params, which we lift into the list and strip so the param map
+// stays clean. The per-route scaling is unchanged, so the sound is identical.
+function resolvePresetMods(
+  presetParams: Partial<ParamValues>,
+  explicit?: ModConnection[],
+): { params: ParamValues; mods: ModConnection[] } {
+  const merged = { ...defaultParams(), ...presetParams } as ParamValues;
+  const mods: ModConnection[] = explicit ? explicit.map((m) => ({ ...m })) : [];
+  for (let s = 1; s <= 4; s++) {
+    const src = merged[`mat${s}.src`] | 0;
+    const dst = merged[`mat${s}.dst`] | 0;
+    const amt = merged[`mat${s}.amt`] || 0;
+    if (!explicit && src && dst) mods.push({ src, dst, amt });
+    delete merged[`mat${s}.src`];
+    delete merged[`mat${s}.dst`];
+    delete merged[`mat${s}.amt`];
+  }
+  return { params: merged, mods };
+}
+
 export function presetOptions(userPresets: Preset[]): PresetOption[] {
   const opts: PresetOption[] = FACTORY_PRESETS.map((p, i) => ({ value: 'f' + i, name: p.name, group: 'FACTORY' as const }));
   userPresets.forEach((p, i) => opts.push({ value: 'u' + i, name: p.name, group: 'USER' }));
@@ -29,6 +51,8 @@ export function presetOptions(userPresets: Preset[]): PresetOption[] {
 
 interface SynthStore {
   params: ParamValues;
+  mods: ModConnection[];
+  modDrag: number; // source being dragged (MOD_SOURCES index), 0 = none
   powered: boolean;
   voiceCount: number;
   modPosA: number;
@@ -42,7 +66,11 @@ interface SynthStore {
   editorOsc: 'oscA' | 'oscB' | null;
 
   setParam: (id: string, v: number) => void;
-  applyPreset: (presetParams: Partial<ParamValues>) => void;
+  addMod: (src: number, dst: number, amt?: number) => void;
+  updateMod: (index: number, patch: Partial<ModConnection>) => void;
+  removeMod: (index: number) => void;
+  setModDrag: (src: number) => void;
+  applyPreset: (presetParams: Partial<ParamValues>, mods?: ModConnection[]) => void;
   loadPresetByValue: (val: string) => void;
   stepPreset: (d: number) => void;
   savePreset: (name: string) => void;
@@ -63,6 +91,8 @@ interface SynthStore {
 
 export const useStore = create<SynthStore>((set, get) => ({
   params: defaultParams(),
+  mods: [],
+  modDrag: 0,
   powered: false,
   voiceCount: 0,
   modPosA: -1,
@@ -80,11 +110,33 @@ export const useStore = create<SynthStore>((set, get) => ({
     set((s) => ({ params: { ...s.params, [id]: v } }));
   },
 
-  applyPreset: (presetParams) => {
-    const merged = { ...defaultParams(), ...presetParams } as ParamValues;
+  addMod: (src, dst, amt = 0.3) => {
+    if (!src || !dst) return;
+    const mods = [...get().mods, { src, dst, amt }];
+    engine.setMods(mods);
+    set({ mods });
+  },
+
+  updateMod: (index, patch) => {
+    const mods = get().mods.map((m, i) => (i === index ? { ...m, ...patch } : m));
+    engine.setMods(mods);
+    set({ mods });
+  },
+
+  removeMod: (index) => {
+    const mods = get().mods.filter((_, i) => i !== index);
+    engine.setMods(mods);
+    set({ mods });
+  },
+
+  setModDrag: (src) => set({ modDrag: src }),
+
+  applyPreset: (presetParams, presetMods) => {
+    const { params, mods } = resolvePresetMods(presetParams, presetMods);
     engine.panic();
-    engine.params = { ...merged };
-    set({ params: merged });
+    engine.params = { ...params };
+    engine.mods = mods.map((m) => ({ ...m }));
+    set({ params, mods });
     engine.applyAllParams();
   },
 
@@ -98,7 +150,7 @@ export const useStore = create<SynthStore>((set, get) => ({
       engine.setUserTables(userTables.map((t) => t.table));
       set({ userTables });
     }
-    get().applyPreset(preset.params);
+    get().applyPreset(preset.params, preset.mods);
     set({ presetValue: val });
   },
 
@@ -112,7 +164,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   savePreset: (name) => {
     // Embed the current user-table pool so the preset is portable on its own.
     const tables = get().userTables.map(serializeUserTable);
-    const userPresets = saveUserPreset(name, get().params, tables);
+    const userPresets = saveUserPreset(name, get().params, get().mods, tables);
     const opts = presetOptions(userPresets);
     const found = opts.find((o) => o.name === name);
     set({ userPresets, presetValue: found ? found.value : get().presetValue });
