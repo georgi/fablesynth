@@ -1,5 +1,6 @@
 #include "WavetableEditor.h"
 #include "../dsp/UserTables.h"
+#include "../dsp/FrameOps.h"
 
 namespace fui {
 
@@ -137,6 +138,65 @@ void TableThumb::paint(juce::Graphics& g) {
     }
     g.setColour(selected ? accent : juce::Colour(0xff8893a8));
     g.strokePath(p, juce::PathStrokeType(1.2f));
+}
+
+// ============================ FrameStrip ============================
+FrameStrip::FrameStrip() {
+    addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+    addBtn.setColour(juce::TextButton::textColourOffId, col::acA);
+    addBtn.onClick = [this] { if (onAdd) onAdd(); };
+    addAndMakeVisible(addBtn);
+}
+void FrameStrip::setFrames(const std::vector<std::vector<float>>& frames, int cur, juce::Colour ac, bool ro) {
+    count = (int)frames.size(); current = cur; accent = ac; readOnly = ro;
+    thumbs.clear();
+    for (int i = 0; i < count; ++i) {
+        auto* t = new TableThumb();
+        std::vector<float> viz = fable::framePoints(frames[(size_t)i], fable::VIZ_N);
+        t->setData(viz, accent, i == current);
+        thumbs.add(t);
+        addChildComponent(t);
+        t->setVisible(true);
+    }
+    addBtn.setVisible(!readOnly && count < fable::MAX_FRAMES);
+    resized();
+    repaint();
+}
+int FrameStrip::indexAtX(int x) const {
+    int i = x / (cellW + gap);
+    return juce::jlimit(0, juce::jmax(0, count - 1), i);
+}
+void FrameStrip::resized() {
+    int x = 0;
+    for (int i = 0; i < thumbs.size(); ++i) { thumbs[i]->setBounds(x, 2, cellW, getHeight() - 4); x += cellW + gap; }
+    addBtn.setBounds(x, 2, 30, getHeight() - 4);
+}
+void FrameStrip::mouseDown(const juce::MouseEvent& e) {
+    int i = indexAtX(e.x);
+    if (i == current && !readOnly && count > 1) {
+        auto cell = juce::Rectangle<int>(current * (cellW + gap), 2, cellW, getHeight() - 4);
+        if (e.x >= cell.getRight() - 12 && e.y <= cell.getY() + 14) { if (onDelete) onDelete(i); return; }
+    }
+    if (i < count && onSelect) onSelect(i);
+    dragFrom = readOnly ? -1 : i;
+}
+void FrameStrip::mouseDrag(const juce::MouseEvent& e) {
+    if (dragFrom < 0) return;
+    int to = indexAtX(e.x);
+    if (to != dragFrom && onReorder) { onReorder(dragFrom, to); dragFrom = to; }
+}
+void FrameStrip::mouseUp(const juce::MouseEvent&) { dragFrom = -1; }
+void FrameStrip::paint(juce::Graphics& g) {
+    // selected-cell outline + a small delete affordance on the current cell.
+    if (current < 0 || current >= count) return;
+    auto r = juce::Rectangle<int>(current * (cellW + gap), 2, cellW, getHeight() - 4).toFloat();
+    g.setColour(accent.withAlpha(0.55f));
+    g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.2f);
+    if (!readOnly && count > 1) {
+        g.setColour(juce::Colour(0xffc46b6b));
+        g.setFont(monoFont(10.0f));
+        g.drawText("x", r.removeFromRight(12).removeFromTop(12), juce::Justification::centred);
+    }
 }
 
 // ============================ LibRow ============================

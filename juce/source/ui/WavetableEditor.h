@@ -71,6 +71,32 @@ private:
     std::vector<float> viz; juce::Colour accent; bool selected = false;
 };
 
+// Horizontal strip of frame thumbnails: click-select, [+] duplicate current,
+// [✕] delete selected, pointer-drag to reorder.
+class FrameStrip : public juce::Component {
+public:
+    FrameStrip();
+    void paint(juce::Graphics&) override;
+    void resized() override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void setFrames(const std::vector<std::vector<float>>& frames, int current, juce::Colour accent, bool readOnly);
+    std::function<void(int)> onSelect;
+    std::function<void()>    onAdd;
+    std::function<void(int)> onDelete;
+    std::function<void(int,int)> onReorder;
+private:
+    int indexAtX(int x) const;     // which cell x falls in
+    int cellW = 46, gap = 5;
+    int count = 0, current = 0;
+    bool readOnly = false;
+    juce::Colour accent;
+    juce::OwnedArray<TableThumb> thumbs;
+    juce::TextButton addBtn{"+"};
+    int dragFrom = -1;
+};
+
 class WavetableEditor : public juce::Component {
 public:
     explicit WavetableEditor(FableAudioProcessor&);
