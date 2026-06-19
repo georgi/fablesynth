@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#06070b;}
+  input::placeholder{color:#4a5366;}
+  *::-webkit-scrollbar{width:9px;height:9px}
+  *::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:5px}
+  *::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.18)}
+  *::-webkit-scrollbar-track{background:transparent}
+  @keyframes wtline{0%,100%{opacity:.5}50%{opacity:1}}
+</style>
+</helmet>
+
+<div data-screen-label="Wavetable Editor" style="min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:30px;box-sizing:border-box;background:radial-gradient(1100px 640px at 50% -8%,#11141d 0%,#06070b 62%),#06070b;color:#dfe6f3;font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:12px;-webkit-font-smoothing:antialiased;">
+
+  <div style="position:relative;width:1180px;max-width:100%;height:min(760px,94vh);display:flex;flex-direction:column;border:1px solid rgba(255,255,255,0.08);border-radius:14px;overflow:hidden;background:linear-gradient(180deg,#161a24,#0c0f16);box-shadow:0 30px 80px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.05)">
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#4de8ff,transparent);animation:wtline 3.6s ease-in-out infinite;z-index:5"></div>
+
+    <!-- HEADER -->
+    <header style="display:flex;align-items:center;gap:14px;padding:15px 18px;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <h1 style="margin:0;font-family:Michroma,sans-serif;font-size:14px;font-weight:400;letter-spacing:0.14em;color:#4de8ff;text-shadow:0 0 14px rgba(77,232,255,0.4)">WAVETABLE</h1>
+      <span style="color:#6b768c;font-size:13px">&rarr;</span>
+      <span style="display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 12px;border:1px solid rgba(77,232,255,0.3);border-radius:7px;background:#0a0d13;color:#4de8ff;font-size:11px;letter-spacing:0.12em;cursor:pointer">{{ target }}<span style="color:#6b768c">&#9662;</span></span>
+      <button onClick="{{ noop }}" style="margin-left:auto;width:30px;height:30px;border:1px solid rgba(255,255,255,0.08);border-radius:7px;background:#11141c;color:#9fb4d8;font-family:inherit;font-size:13px;cursor:pointer">&#10005;</button>
+    </header>
+
+    <!-- BODY -->
+    <div style="flex:1;display:flex;min-height:0">
+
+      <!-- LIBRARY (CRUD) -->
+      <aside style="width:306px;flex:none;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,0.06);background:rgba(0,0,0,0.18)">
+        <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 10px">
+          <span style="font-family:Michroma,sans-serif;font-size:10px;letter-spacing:0.2em;color:#9fb4d8">LIBRARY</span>
+          <span style="color:#6b768c;font-size:9px;letter-spacing:0.12em">{{ libCount }} TABLES</span>
+          <button onClick="{{ onNew }}" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 11px;border:1px solid rgba(77,232,255,0.4);border-radius:7px;background:linear-gradient(180deg,rgba(77,232,255,0.16),rgba(77,232,255,0.05));color:#4de8ff;font-family:inherit;font-size:10px;letter-spacing:0.1em;cursor:pointer;box-shadow:0 0 14px rgba(77,232,255,0.18)">&#65291; NEW</button>
+        </div>
+        <div style="padding:0 16px 10px">
+          <div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border:1px solid rgba(255,255,255,0.08);border-radius:7px;background:#07090e">
+            <span style="color:#6b768c;font-size:12px">&#9906;</span>
+            <input placeholder="search tables" style="flex:1;min-width:0;border:none;background:transparent;color:#dfe6f3;font-size:11px;outline:none" />
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0 10px 14px">
+          <sc-if value="{{ showFactory }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:8px 6px 6px;font-size:9px;letter-spacing:0.22em;color:#5b6679">FACTORY</div>
+            <sc-for list="{{ factoryTables }}" as="row" hint-placeholder-count="4">
+              <div onClick="{{ row.onSelect }}" style="{{ row.rowStyle }}">
+                <canvas id="{{ row.thumbId }}" style="width:46px;height:28px;flex:none;border:1px solid rgba(255,255,255,0.07);border-radius:5px;background:#07090e"></canvas>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:11px;letter-spacing:0.04em;color:#dfe6f3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ row.name }}</div>
+                  <div style="font-size:9px;letter-spacing:0.1em;color:#6b768c;margin-top:2px">{{ row.frames }} &middot; FACTORY</div>
+                </div>
+                <button onClick="{{ row.onDup }}" title="duplicate" style="width:22px;height:22px;flex:none;border:1px solid rgba(255,255,255,0.08);border-radius:5px;background:#11141c;color:#6b768c;font-family:inherit;font-size:11px;cursor:pointer">&#10697;</button>
+              </div>
+            </sc-for>
+          </sc-if>
+          <div style="padding:12px 6px 6px;font-size:9px;letter-spacing:0.22em;color:#5b6679">USER</div>
+          <sc-for list="{{ userTables }}" as="row" hint-placeholder-count="3">
+            <div onClick="{{ row.onSelect }}" style="{{ row.rowStyle }}">
+              <canvas id="{{ row.thumbId }}" style="width:46px;height:28px;flex:none;border:1px solid rgba(255,255,255,0.07);border-radius:5px;background:#07090e"></canvas>
+              <div style="flex:1;min-width:0">
+                <sc-if value="{{ row.editing }}" hint-placeholder-val="{{ false }}">
+                  <input value="{{ row.renameVal }}" onInput="{{ row.onRenameInput }}" onBlur="{{ row.onCommit }}" onKeyDown="{{ row.onKey }}" onClick="{{ row.stop }}" style="width:100%;height:22px;padding:0 6px;box-sizing:border-box;border:1px solid rgba(77,232,255,0.4);border-radius:4px;background:#0a0d13;color:#4de8ff;font-family:inherit;font-size:11px;outline:none" />
+                </sc-if>
+                <sc-if value="{{ row.notEditing }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size:11px;letter-spacing:0.04em;color:#dfe6f3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ row.name }}</div>
+                  <div style="font-size:9px;letter-spacing:0.1em;color:#6b768c;margin-top:2px">{{ row.frames }}</div>
+                </sc-if>
+              </div>
+              <div style="display:flex;gap:4px;flex:none">
+                <button onClick="{{ row.onRename }}" title="rename" style="width:22px;height:22px;border:1px solid rgba(255,255,255,0.08);border-radius:5px;background:#11141c;color:#6b768c;font-family:inherit;font-size:10px;cursor:pointer">&#9998;</button>
+                <button onClick="{{ row.onDup }}" title="duplicate" style="width:22px;height:22px;border:1px solid rgba(255,255,255,0.08);border-radius:5px;background:#11141c;color:#6b768c;font-family:inherit;font-size:11px;cursor:pointer">&#10697;</button>
+                <button onClick="{{ row.onDelete }}" title="delete" style="width:22px;height:22px;border:1px solid rgba(255,90,90,0.2);border-radius:5px;background:#11141c;color:#c46b6b;font-family:inherit;font-size:11px;cursor:pointer">&#10005;</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </aside>
+
+      <!-- EDITOR -->
+      <section style="flex:1;display:flex;flex-direction:column;min-width:0;padding:16px 18px 18px">
+        <div style="display:flex;gap:10px;margin-bottom:14px">
+          <button onClick="{{ onTabDraw }}" style="{{ tabDrawStyle }}">DRAW</button>
+          <button onClick="{{ onTabImport }}" style="{{ tabImportStyle }}">IMPORT AUDIO</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <span style="font-size:10px;letter-spacing:0.18em;color:#6b768c;width:42px">NAME</span>
+          <input value="{{ name }}" onInput="{{ onName }}" placeholder="untitled table" style="flex:1;height:34px;padding:0 12px;box-sizing:border-box;border:1px solid rgba(255,255,255,0.1);border-radius:7px;background:#07090e;color:#dfe6f3;font-size:12px;letter-spacing:0.06em;outline:none" />
+        </div>
+
+        <!-- DRAW PANE -->
+        <sc-if value="{{ isDraw }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+            <canvas id="wt_draw" onMouseDown="{{ onDrawDown }}" onMouseMove="{{ onDrawMove }}" onMouseUp="{{ onDrawUp }}" onTouchStart="{{ onDrawDown }}" onTouchMove="{{ onDrawMove }}" onTouchEnd="{{ onDrawUp }}" style="flex:1;min-height:0;width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:#07090e;cursor:crosshair;touch-action:none;display:block"></canvas>
+            <div style="font-size:10px;letter-spacing:0.06em;color:#6b768c;margin:9px 2px 11px">Drag across the field to draw one cycle. Band-limited on commit. &rarr; 1 frame.</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:9px;letter-spacing:0.16em;color:#5b6679;margin-right:2px">SEED</span>
+              <sc-for list="{{ seedButtons }}" as="b" hint-placeholder-count="4">
+                <button onClick="{{ b.on }}" style="height:30px;padding:0 13px;border:1px solid rgba(255,255,255,0.08);border-radius:7px;background:#11141c;color:#9fb4d8;font-family:inherit;font-size:10px;letter-spacing:0.1em;cursor:pointer">{{ b.label }}</button>
+              </sc-for>
+              <span style="width:1px;height:22px;background:rgba(255,255,255,0.08);margin:0 4px"></span>
+              <button onClick="{{ onBrushPen }}" style="{{ brushPenStyle }}">PEN</button>
+              <button onClick="{{ onBrushSmooth }}" style="{{ brushSmoothStyle }}">SMOOTH</button>
+              <button onClick="{{ onSnap }}" style="{{ snapStyle }}">SNAP</button>
+              <button onClick="{{ onClear }}" style="margin-left:auto;height:34px;padding:0 18px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:#11141c;color:#9fb4d8;font-family:inherit;font-size:11px;letter-spacing:0.12em;cursor:pointer">CLEAR</button>
+              <button onClick="{{ onCreate }}" style="height:34px;padding:0 22px;border:1px solid rgba(77,232,255,0.5);border-radius:8px;background:linear-gradient(180deg,rgba(77,232,255,0.2),rgba(77,232,255,0.06));color:#4de8ff;font-family:inherit;font-size:11px;letter-spacing:0.12em;cursor:pointer;box-shadow:0 0 18px rgba(77,232,255,0.22)">{{ createLabel }}</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- IMPORT PANE -->
+        <sc-if value="{{ isImport }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+            <button onClick="{{ onChooseFile }}" style="height:38px;border:1px dashed rgba(255,255,255,0.18);border-radius:8px;background:#0a0d13;color:#9fb4d8;font-family:inherit;font-size:11px;letter-spacing:0.08em;cursor:pointer;margin-bottom:12px">{{ fileLabel }}</button>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <sc-for list="{{ sliceOpts }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.on }}" style="{{ s.style }}">{{ s.label }}</button>
+              </sc-for>
+              <sc-if value="{{ showFixed }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 10px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:#07090e">
+                  <input value="{{ fixedLen }}" onInput="{{ onFixedLen }}" style="width:50px;border:none;background:transparent;color:#4de8ff;font-family:inherit;font-size:11px;text-align:right;outline:none" />
+                  <span style="font-size:9px;color:#6b768c;letter-spacing:0.1em">SAMPLES</span>
+                </div>
+              </sc-if>
+            </div>
+            <div style="flex:1;min-height:0;position:relative;border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:#07090e;overflow:hidden">
+              <canvas id="wt_import" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
+              <sc-if value="{{ noFile }}" hint-placeholder-val="{{ true }}">
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5b6679;font-size:11px;letter-spacing:0.1em">load an audio file to preview</div>
+              </sc-if>
+              <sc-if value="{{ hasFile }}" hint-placeholder-val="{{ false }}">
+                <span style="position:absolute;top:9px;left:11px;font-size:9px;letter-spacing:0.18em;color:#4de8ff">{{ frameInfo }}</span>
+              </sc-if>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;margin-top:12px">
+              <span style="font-size:10px;line-height:1.5;color:#6b768c;letter-spacing:0.03em;flex:1">SINGLE CYCLE: whole clip = 1 frame &middot; AUTO-DETECT: estimate pitch, slice per cycle &middot; FIXED LEN: slice every N samples. Up to 64 frames.</span>
+              <button onClick="{{ onCreateImport }}" style="height:34px;padding:0 22px;border:1px solid rgba(77,232,255,0.5);border-radius:8px;background:linear-gradient(180deg,rgba(77,232,255,0.2),rgba(77,232,255,0.06));color:#4de8ff;font-family:inherit;font-size:11px;letter-spacing:0.12em;cursor:pointer;box-shadow:0 0 18px rgba(77,232,255,0.22)">CREATE TABLE</button>
+            </div>
+          </div>
+        </sc-if>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1180,&quot;height&quot;:780},&quot;target&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;OSC A&quot;,&quot;options&quot;:[&quot;OSC A&quot;,&quot;OSC B&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;defaultTab&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;draw&quot;,&quot;options&quot;:[&quot;draw&quot;,&quot;import&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;snapToGrid&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showFactory&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  AC = '#4de8ff';
+
+  state = {
+    mode: 'draw',
+    slice: 'single',
+    fixedLen: 2048,
+    brush: 'pen',
+    snap: false,
+    file: null,
+    selectedId: null,
+    renameId: null,
+    renameVal: '',
+    name: '',
+    tables: [
+      { id: 'f1', name: 'BASIC SHAPES', frames: 4, seed: 'shapes', factory: true },
+      { id: 'f2', name: 'GROWL', frames: 16, seed: 'growl-z', factory: true },
+      { id: 'f3', name: 'VOX FORMANT', frames: 8, seed: 'voxformant', factory: true },
+      { id: 'f4', name: 'GLASS', frames: 12, seed: 'glass-shard', factory: true },
+      { id: 'u1', name: 'ASDASD', frames: 1, seed: 'asdasd' },
+      { id: 'u2', name: 'VELVET SWEEP', frames: 24, seed: 'velvet-q' },
+      { id: 'u3', name: 'USER', frames: 1, seed: 'user-three' },
+    ],
+  };
+
+  // ---------- math / waveforms ----------
+  hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  rng(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
+  genWave(seed, N, bright) {
+    N = N || 256; bright = bright == null ? 0.5 : bright;
+    const r = this.rng(this.hash(seed));
+    const K = Math.max(3, Math.floor(3 + bright * 22));
+    const amps = []; for (let k = 1; k <= K; k++) amps.push((r() * 2 - 1) * Math.exp(-k * (0.55 - bright * 0.4)) / k);
+    const out = new Float32Array(N); let peak = 1e-6;
+    for (let i = 0; i < N; i++) { const x = i / N; let s = 0; for (let k = 1; k <= K; k++) s += amps[k - 1] * Math.sin(2 * Math.PI * k * x); out[i] = s; peak = Math.max(peak, Math.abs(s)); }
+    for (let i = 0; i < N; i++) out[i] /= peak;
+    return out;
+  }
+  shape(kind, N) {
+    N = N || 256; const o = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const x = i / N; let v = 0;
+      if (kind === 'sine') v = Math.sin(2 * Math.PI * x);
+      else if (kind === 'saw') v = 2 * x - 1;
+      else if (kind === 'square') v = x < 0.5 ? 0.9 : -0.9;
+      else if (kind === 'tri') v = 1 - 4 * Math.abs(x - 0.5);
+      o[i] = v;
+    }
+    return o;
+  }
+  getWave(t) { if (!t.wave) t.wave = this.genWave(t.seed, 256, 0.55); return t.wave; }
+
+  // ---------- library CRUD ----------
+  selectTable(id) {
+    const t = this.state.tables.find((x) => x.id === id); if (!t) return;
+    this.draw = this.getWave(t).slice();
+    this.lastIdx = null;
+    this.setState({ selectedId: id, name: t.name, mode: 'draw' });
+  }
+  newTable() {
+    this.draw = this.shape('sine'); this.lastIdx = null;
+    this.setState({ selectedId: null, name: '', mode: 'draw', renameId: null });
+  }
+  deleteTable(id) {
+    const tables = this.state.tables.filter((t) => t.id !== id);
+    const patch = { tables };
+    if (this.state.selectedId === id) { this.draw = this.shape('sine'); patch.selectedId = null; patch.name = ''; }
+    this.setState(patch);
+  }
+  duplicate(id) {
+    const t = this.state.tables.find((x) => x.id === id); if (!t) return;
+    const w = this.getWave(t).slice();
+    const nt = { id: 'u' + (this._uid++), name: t.name + ' COPY', frames: t.frames, wave: w, factory: false };
+    this.draw = w.slice(); this.lastIdx = null;
+    this.setState({ tables: [...this.state.tables, nt], selectedId: nt.id, name: nt.name, mode: 'draw' });
+  }
+  commitRename() {
+    const id = this.state.renameId; if (!id) return;
+    const nm = (this.state.renameVal || 'UNTITLED').trim() || 'UNTITLED';
+    const tables = this.state.tables.map((t) => (t.id === id ? { ...t, name: nm } : t));
+    const patch = { tables, renameId: null };
+    if (this.state.selectedId === id) patch.name = nm;
+    this.setState(patch);
+  }
+  createFromDraw() {
+    const nm = (this.state.name || 'UNTITLED').trim() || 'UNTITLED';
+    const sel = this.state.tables.find((t) => t.id === this.state.selectedId);
+    if (sel && !sel.factory) {
+      const tables = this.state.tables.map((t) => (t.id === sel.id ? { ...t, name: nm, frames: 1, wave: this.draw.slice() } : t));
+      this.setState({ tables, name: nm });
+    } else {
+      const nt = { id: 'u' + (this._uid++), name: nm, frames: 1, wave: this.draw.slice(), factory: false };
+      this.setState({ tables: [...this.state.tables, nt], selectedId: nt.id, name: nm });
+    }
+  }
+  frameCount() {
+    const s = this.state.slice;
+    if (s === 'single') return 1;
+    if (s === 'auto') return 23;
+    return Math.min(64, Math.max(1, Math.ceil(96000 / Math.max(64, this.state.fixedLen))));
+  }
+  createFromImport() {
+    if (!this.state.file) return;
+    const nm = (this.state.name || this.state.file.replace(/\.[^.]+$/, '')).trim().toUpperCase() || 'IMPORT';
+    const n = this.frameCount();
+    const nt = { id: 'u' + (this._uid++), name: nm, frames: n, seed: this.state.file + '_' + n, factory: false };
+    this.setState({ tables: [...this.state.tables, nt], selectedId: nt.id, name: nm, mode: 'draw' });
+    this.draw = this.getWave(nt).slice(); this.lastIdx = null;
+  }
+
+  // ---------- drawing ----------
+  paint(e) {
+    const c = document.getElementById('wt_draw'); if (!c) return;
+    const r = c.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    let px = Math.min(1, Math.max(0, (cx - r.left) / r.width));
+    let val = Math.min(1, Math.max(-1, 1 - 2 * (cy - r.top) / r.height));
+    if (this.state.snap) val = Math.round(val * 8) / 8;
+    const N = this.draw.length;
+    const idx = Math.round(px * (N - 1));
+    if (this.lastIdx == null) { this.lastIdx = idx; this.lastVal = val; }
+    const a = Math.min(this.lastIdx, idx), b = Math.max(this.lastIdx, idx);
+    for (let i = a; i <= b; i++) {
+      const t = idx === this.lastIdx ? 1 : (i - this.lastIdx) / (idx - this.lastIdx);
+      this.draw[i] = this.lastVal + (val - this.lastVal) * t;
+    }
+    this.lastIdx = idx; this.lastVal = val;
+    if (this.state.brush === 'smooth') this.smoothAround(idx, 7);
+    this.renderDraw();
+  }
+  smoothAround(idx, rad) {
+    const d = this.draw, N = d.length, src = d.slice();
+    for (let i = Math.max(0, idx - rad); i <= Math.min(N - 1, idx + rad); i++) {
+      let s = 0, n = 0;
+      for (let j = -2; j <= 2; j++) { const k = i + j; if (k >= 0 && k < N) { s += src[k]; n++; } }
+      d[i] = s / n;
+    }
+  }
+
+  // ---------- canvas helpers ----------
+  cv(c) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const r = c.getBoundingClientRect();
+    const w = Math.max(10, r.width), h = Math.max(10, r.height);
+    if (c.width !== ((w * dpr) | 0) || c.height !== ((h * dpr) | 0)) { c.width = (w * dpr) | 0; c.height = (h * dpr) | 0; }
+    const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+  renderDraw() {
+    const c = document.getElementById('wt_draw'); if (!c || !this.draw) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.045)'; ctx.lineWidth = 1;
+    for (let i = 1; i < 8; i++) { const x = w * i / 8; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let i = 1; i < 4; i++) { const y = h * i / 4; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    const d = this.draw, N = d.length;
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) { const x = i / (N - 1) * w; const y = h / 2 - d[i] * h * 0.42; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = this.AC; ctx.lineWidth = 2; ctx.shadowColor = this.AC; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.lineTo(w, h / 2); ctx.lineTo(0, h / 2); ctx.closePath();
+    const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, this.AC + '33'); g.addColorStop(1, this.AC + '00');
+    ctx.fillStyle = g; ctx.fill();
+  }
+  buildImport() {
+    if (!this.state.file) { this.importFrames = null; return; }
+    const n = Math.min(64, this.frameCount());
+    this.importFrames = [];
+    for (let f = 0; f < n; f++) { const b = n < 2 ? 0.5 : 0.2 + 0.72 * (f / (n - 1)); this.importFrames.push(this.genWave(this.state.file + '#' + f, 160, b)); }
+  }
+  renderImport() {
+    const c = document.getElementById('wt_import'); if (!c) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    this.buildImport();
+    if (!this.importFrames) return;
+    const F = this.importFrames.length;
+    const dX = w * 0.18, dY = h * 0.34, wW = w * 0.7, amp = h * 0.16, x0 = w * 0.07, y0 = h * 0.74;
+    for (let f = F - 1; f >= 0; f--) {
+      const d = F < 2 ? 0 : f / (F - 1); const ox = x0 + d * dX, oy = y0 - d * dY; const fr = this.importFrames[f]; const N = fr.length;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) { const x = ox + i / (N - 1) * wW; const y = oy - fr[i] * amp; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      const front = f >= F - 1;
+      if (front) { ctx.strokeStyle = this.AC; ctx.globalAlpha = 1; ctx.lineWidth = 1.8; ctx.shadowColor = this.AC; ctx.shadowBlur = 12; }
+      else { ctx.strokeStyle = '#5b6a86'; ctx.globalAlpha = 0.18 + d * 0.14; ctx.lineWidth = 1; }
+      ctx.stroke(); ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+  }
+  renderThumbs() {
+    this.state.tables.forEach((t) => {
+      const c = document.getElementById('thumb_' + t.id); if (!c) return;
+      const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+      const wave = this.getWave(t), N = wave.length;
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+      const sel = t.id === this.state.selectedId;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) { const x = i / (N - 1) * w; const y = h / 2 - wave[i] * h * 0.38; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.strokeStyle = sel ? this.AC : '#8893a8'; ctx.lineWidth = 1.3;
+      if (sel) { ctx.shadowColor = this.AC; ctx.shadowBlur = 6; } ctx.stroke(); ctx.shadowBlur = 0;
+    });
+  }
+  renderActive() {
+    this.renderThumbs();
+    if (this.state.mode === 'import') this.renderImport(); else this.renderDraw();
+  }
+
+  // ---------- style helpers ----------
+  tabStyle(active) {
+    return { flex: '1', height: '42px', border: '1px solid ' + (active ? 'rgba(77,232,255,0.5)' : 'rgba(255,255,255,0.08)'), borderRadius: '9px', background: active ? 'linear-gradient(180deg,rgba(77,232,255,0.18),rgba(77,232,255,0.04))' : '#0e121a', color: active ? '#4de8ff' : '#9fb4d8', fontFamily: 'inherit', fontSize: '12px', letterSpacing: '0.18em', cursor: 'pointer', boxShadow: active ? '0 0 20px rgba(77,232,255,0.18)' : 'none' };
+  }
+  toggleStyle(active, h, pad) {
+    return { height: (h || 30) + 'px', padding: '0 ' + (pad || 13) + 'px', border: '1px solid ' + (active ? 'rgba(77,232,255,0.45)' : 'rgba(255,255,255,0.08)'), borderRadius: '7px', background: active ? 'linear-gradient(180deg,rgba(77,232,255,0.18),rgba(77,232,255,0.05))' : '#11141c', color: active ? '#4de8ff' : '#9fb4d8', fontFamily: 'inherit', fontSize: '10px', letterSpacing: '0.1em', cursor: 'pointer' };
+  }
+  rowStyle(sel) {
+    return { display: 'flex', alignItems: 'center', gap: '9px', padding: '7px 8px', borderRadius: '8px', marginBottom: '4px', cursor: 'pointer', border: '1px solid ' + (sel ? 'rgba(77,232,255,0.45)' : 'transparent'), background: sel ? 'rgba(77,232,255,0.08)' : 'transparent', boxShadow: sel ? '0 0 16px rgba(77,232,255,0.12),inset 0 0 0 1px rgba(77,232,255,0.08)' : 'none' };
+  }
+  rowFor(t) {
+    const sel = t.id === this.state.selectedId;
+    const editing = t.id === this.state.renameId;
+    return {
+      id: t.id, name: t.name, frames: t.frames + 'f', thumbId: 'thumb_' + t.id,
+      editing, notEditing: !editing, renameVal: this.state.renameVal, rowStyle: this.rowStyle(sel),
+      onSelect: () => this.selectTable(t.id),
+      onDup: (e) => { e.stopPropagation(); this.duplicate(t.id); },
+      onDelete: (e) => { e.stopPropagation(); this.deleteTable(t.id); },
+      onRename: (e) => { e.stopPropagation(); this.setState({ renameId: t.id, renameVal: t.name }); },
+      onRenameInput: (e) => this.setState({ renameVal: e.target.value }),
+      onCommit: () => this.commitRename(),
+      onKey: (e) => { if (e.key === 'Enter') this.commitRename(); if (e.key === 'Escape') this.setState({ renameId: null }); },
+      stop: (e) => e.stopPropagation(),
+    };
+  }
+
+  renderVals() {
+    const sel = this.state.tables.find((t) => t.id === this.state.selectedId);
+    const sliceDef = [['single', 'SINGLE CYCLE'], ['auto', 'AUTO-DETECT'], ['fixed', 'FIXED LEN']];
+    const n = this.frameCount();
+    return {
+      noop: () => {},
+      target: this.props.target ?? 'OSC A',
+      libCount: this.state.tables.length,
+      showFactory: this.props.showFactory !== false,
+      factoryTables: this.state.tables.filter((t) => t.factory).map((t) => this.rowFor(t)),
+      userTables: this.state.tables.filter((t) => !t.factory).map((t) => this.rowFor(t)),
+      onNew: () => this.newTable(),
+
+      isDraw: this.state.mode === 'draw',
+      isImport: this.state.mode === 'import',
+      tabDrawStyle: this.tabStyle(this.state.mode === 'draw'),
+      tabImportStyle: this.tabStyle(this.state.mode === 'import'),
+      onTabDraw: () => this.setState({ mode: 'draw' }),
+      onTabImport: () => this.setState({ mode: 'import' }),
+
+      name: this.state.name,
+      onName: (e) => this.setState({ name: e.target.value }),
+      createLabel: sel && !sel.factory ? 'UPDATE TABLE' : 'CREATE TABLE',
+
+      seedButtons: [
+        { label: 'SINE', on: () => { this.draw = this.shape('sine'); this.renderDraw(); } },
+        { label: 'SAW', on: () => { this.draw = this.shape('saw'); this.renderDraw(); } },
+        { label: 'SQUARE', on: () => { this.draw = this.shape('square'); this.renderDraw(); } },
+        { label: 'TRI', on: () => { this.draw = this.shape('tri'); this.renderDraw(); } },
+      ],
+      brushPenStyle: this.toggleStyle(this.state.brush === 'pen'),
+      brushSmoothStyle: this.toggleStyle(this.state.brush === 'smooth'),
+      snapStyle: this.toggleStyle(this.state.snap),
+      onBrushPen: () => this.setState({ brush: 'pen' }),
+      onBrushSmooth: () => this.setState({ brush: 'smooth' }),
+      onSnap: () => this.setState({ snap: !this.state.snap }),
+      onClear: () => { this.draw = new Float32Array(256); this.lastIdx = null; this.renderDraw(); },
+      onCreate: () => this.createFromDraw(),
+      onDrawDown: (e) => { if (e.cancelable) e.preventDefault(); this._drawing = true; this.lastIdx = null; this.paint(e); },
+      onDrawMove: (e) => { if (this._drawing) { if (e.cancelable) e.preventDefault(); this.paint(e); } },
+      onDrawUp: () => { this._drawing = false; this.lastIdx = null; },
+
+      fileLabel: this.state.file ? 'FILE: ' + this.state.file + '   (change\u2026)' : 'CHOOSE FILE\u2026',
+      noFile: !this.state.file,
+      hasFile: !!this.state.file,
+      onChooseFile: () => { this.setState({ file: 'vox_take_03.wav' }); },
+      sliceOpts: sliceDef.map(([k, label]) => ({ label, style: this.toggleStyle(this.state.slice === k, 34, 16), on: () => this.setState({ slice: k }) })),
+      showFixed: this.state.slice === 'fixed',
+      fixedLen: this.state.fixedLen,
+      onFixedLen: (e) => { let v = parseInt(String(e.target.value).replace(/\D/g, ''), 10); if (!v) v = 64; this.setState({ fixedLen: Math.min(8192, Math.max(64, v)) }); },
+      frameInfo: n + (n === 1 ? ' FRAME' : ' FRAMES') + (this.state.slice === 'fixed' ? ' \u00b7 ' + this.state.fixedLen + ' SAMPLES' : ''),
+      onCreateImport: () => this.createFromImport(),
+    };
+  }
+
+  componentDidMount() {
+    this._uid = 100;
+    this.AC = '#4de8ff';
+    this.draw = this.shape('sine');
+    this.setState({ mode: this.props.defaultTab === 'import' ? 'import' : 'draw', snap: !!this.props.snapToGrid });
+    this._up = () => { this._drawing = false; this.lastIdx = null; };
+    window.addEventListener('mouseup', this._up);
+    window.addEventListener('touchend', this._up);
+    this._rs = () => this.renderActive();
+    window.addEventListener('resize', this._rs);
+    setTimeout(() => this.renderActive(), 0);
+    setTimeout(() => this.renderActive(), 160);
+  }
+  componentDidUpdate() { this.renderActive(); }
+  componentWillUnmount() {
+    window.removeEventListener('mouseup', this._up);
+    window.removeEventListener('touchend', this._up);
+    window.removeEventListener('resize', this._rs);
+  }
+}
+</script>
+</body>
+</html>
