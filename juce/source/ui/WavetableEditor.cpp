@@ -153,6 +153,7 @@ void FrameStrip::setFrames(const std::vector<std::vector<float>>& frames, int cu
         auto* t = new TableThumb();
         std::vector<float> viz = fable::framePoints(frames[(size_t)i], fable::VIZ_N);
         t->setData(viz, accent, i == current);
+        t->setInterceptsMouseClicks(false, false); // clicks/drag go to the strip
         thumbs.add(t);
         addChildComponent(t);
         t->setVisible(true);
@@ -200,10 +201,15 @@ void FrameStrip::paint(juce::Graphics& g) {
 
 // ============================ LibRow ============================
 WavetableEditor::LibRow::LibRow(bool factory, juce::Colour accent) : accentColour(accent), isFactory(factory) {
+    // Display-only children must not eat clicks, or only the bare gaps between
+    // them would reach the row's mouseDown (-> onSelect).
     addAndMakeVisible(thumb);
+    thumb.setInterceptsMouseClicks(false, false);
     name.setFont(monoFont(11.0f)); name.setColour(juce::Label::textColourId, col::text);
+    name.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(name);
     sub.setFont(monoFont(9.0f)); sub.setColour(juce::Label::textColourId, col::textDim);
+    sub.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(sub);
     renameField.setFont(monoFont(11.0f));
     renameField.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff0a0d13));
