@@ -56,6 +56,17 @@ private:
     juce::Colour accent;
 };
 
+// Mini frame-0 waveform for a library row.
+class TableThumb : public juce::Component {
+public:
+    void setData(const std::vector<float>& v, juce::Colour ac, bool sel) {
+        viz = v; accent = ac; selected = sel; repaint();
+    }
+    void paint(juce::Graphics&) override;
+private:
+    std::vector<float> viz; juce::Colour accent; bool selected = false;
+};
+
 class WavetableEditor : public juce::Component {
 public:
     explicit WavetableEditor(FableAudioProcessor&);
@@ -119,13 +130,20 @@ private:
 
     // user-table list — one Row per pooled table (name + frame count + delete).
     juce::Label listHeader{{}, "USER TABLES"};
-    struct Row : public juce::Component {
-        Row(const juce::String& text, std::function<void()> onDelete);
+    struct LibRow : public juce::Component {
+        LibRow(bool factory, juce::Colour accent);
         void resized() override;
-        juce::Label info;
-        juce::TextButton del{"X"};
+        TableThumb thumb;
+        juce::Label name;
+        juce::Label sub;       // "4f · FACTORY" or "1f"
+        juce::TextButton rename{"✎"}, dup{"⎘"}, del{"✕"};
+        bool isFactory;
     };
-    juce::OwnedArray<Row> listRows;
+    juce::OwnedArray<LibRow> libRows;
+    juce::TextEditor searchField;
+    juce::Label libTitle{{}, "LIBRARY"};
+    juce::TextButton newBtn{"+ NEW"};
+    juce::String selectedId; // "f<i>" / "u<i>" / empty
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WavetableEditor)
 };

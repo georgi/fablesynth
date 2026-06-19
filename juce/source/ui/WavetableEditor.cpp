@@ -118,21 +118,51 @@ void TablePreview::paint(juce::Graphics& g) {
     }
 }
 
-// ============================ Row ============================
-WavetableEditor::Row::Row(const juce::String& text, std::function<void()> onDelete) {
-    info.setText(text, juce::dontSendNotification);
-    info.setFont(monoFont(11.0f));
-    info.setColour(juce::Label::textColourId, col::text);
-    addAndMakeVisible(info);
-    del.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a1f2b));
-    del.setColour(juce::TextButton::textColourOffId, col::textDim);
-    del.onClick = std::move(onDelete);
-    addAndMakeVisible(del);
+// ============================ TableThumb ============================
+void TableThumb::paint(juce::Graphics& g) {
+    auto b = getLocalBounds().toFloat();
+    drawDisplayBox(g, b, 4.0f);
+    const int N = juce::jmin((int)viz.size(), fable::VIZ_N);
+    if (N < 2) return;
+    const float w = b.getWidth(), h = b.getHeight();
+    juce::Path p;
+    for (int i = 0; i < N; ++i) {
+        float x = (float)i / (N - 1) * w;
+        float y = h * 0.5f - viz[(size_t)i] * h * 0.38f;
+        if (i == 0) p.startNewSubPath(x, y); else p.lineTo(x, y);
+    }
+    g.setColour(selected ? accent : juce::Colour(0xff8893a8));
+    g.strokePath(p, juce::PathStrokeType(1.2f));
 }
-void WavetableEditor::Row::resized() {
+
+// ============================ LibRow ============================
+WavetableEditor::LibRow::LibRow(bool factory, juce::Colour accent) : isFactory(factory) {
+    addAndMakeVisible(thumb);
+    name.setFont(monoFont(11.0f)); name.setColour(juce::Label::textColourId, col::text);
+    addAndMakeVisible(name);
+    sub.setFont(monoFont(9.0f)); sub.setColour(juce::Label::textColourId, col::textDim);
+    addAndMakeVisible(sub);
+    for (auto* b : { &rename, &dup, &del }) {
+        b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+        b->setColour(juce::TextButton::textColourOffId, col::textDim);
+    }
+    addAndMakeVisible(dup);
+    if (!factory) { addAndMakeVisible(rename); addAndMakeVisible(del); }
+    juce::ignoreUnused(accent);
+}
+void WavetableEditor::LibRow::resized() {
     auto r = getLocalBounds();
-    del.setBounds(r.removeFromRight(28).reduced(2));
-    info.setBounds(r);
+    thumb.setBounds(r.removeFromLeft(46).reduced(0, 1));
+    r.removeFromLeft(8);
+    auto btns = r.removeFromRight(isFactory ? 24 : 72);
+    if (!isFactory) {
+        rename.setBounds(btns.removeFromLeft(22).reduced(1));
+        btns.removeFromLeft(2);
+    }
+    dup.setBounds(btns.removeFromLeft(22).reduced(1));
+    if (!isFactory) { btns.removeFromLeft(2); del.setBounds(btns.reduced(1)); }
+    name.setBounds(r.removeFromTop(r.getHeight() / 2));
+    sub.setBounds(r);
 }
 
 // ============================ WavetableEditor ============================
