@@ -517,12 +517,12 @@ void WavetableEditor::selectUser(int i) {
     if (i < 0 || i >= (int)pool.size()) return;
     selectedId = "u" + juce::String(i);
     nameField.setText(juce::String(pool[(size_t)i].name), juce::dontSendNotification);
-    const bool editable = pool[(size_t)i].frames == 1;
-    readOnlySel = !editable; drawPad.setReadOnly(!editable);
-    if (editable) {
-        std::vector<float> frame(pool[(size_t)i].wave.begin(), pool[(size_t)i].wave.begin() + fable::SIZE);
-        drawPad.setPoints(frame);
-    }
+    // User tables are always editable. Frame 0 loads into the single-cycle pad;
+    // drawing + UPDATE collapses a multi-frame table to one cycle (the hint
+    // warns "-> 1 frame"). Selecting just to assign loses nothing.
+    readOnlySel = false; drawPad.setReadOnly(false);
+    std::vector<float> frame(pool[(size_t)i].wave.begin(), pool[(size_t)i].wave.begin() + fable::SIZE);
+    drawPad.setPoints(frame);
     setTab(Tab::Draw);
     assignTable((int)proc.factoryTables().size() + i);
     refreshLibrary();

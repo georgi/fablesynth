@@ -169,10 +169,12 @@ export function WavetableEditor() {
     const ut = userTables[i];
     setSelectedId('u' + i);
     setName(ut.name);
-    const editable = ut.frames === 1;
-    setReadOnly(!editable);
+    // User tables are always editable. Frame 0 loads into the single-cycle pad;
+    // drawing + UPDATE collapses a multi-frame table to one cycle (the hint
+    // warns "→ 1 frame"). Selecting just to assign loses nothing.
+    setReadOnly(false);
     setTab('draw');
-    if (editable) loadPoints(ut.wave, 1);
+    loadPoints(ut.wave, ut.frames);
     assign(TABLE_NAMES.length + i);
   };
 
