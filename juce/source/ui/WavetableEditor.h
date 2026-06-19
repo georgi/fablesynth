@@ -168,6 +168,18 @@ private:
     bool snapOn = false;
     bool readOnlySel = false;
 
+    // frame list (canonical SIZE each); the pad edits frames[currentFrame].
+    std::vector<std::vector<float>> frames{ std::vector<float>((size_t)fable::SIZE, 0.0f) };
+    int currentFrame = 0;
+    void loadFrames(std::vector<std::vector<float>> fs);
+    void gotoFrame(int i);
+    void syncCurrentFrame();
+    void addFrameOp();
+    void deleteFrameOp(int i);
+    void reorderFrameOp(int from, int to);
+    FrameStrip frameStrip;
+    TablePreview stackPreview{col::acA};
+
     // library — factory + user rows with thumbnail + actions.
     struct LibRow : public juce::Component {
         LibRow(bool factory, juce::Colour accent);

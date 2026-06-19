@@ -332,9 +332,8 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     addChildComponent(drawHint);
     styleBtn(clearBtn);
     clearBtn.onClick = [this] {
-        drawPad.clear();
-        selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
-        refreshLibrary();
+        if (readOnlySel) return;
+        drawPad.clear(); // fires onEdit -> syncCurrentFrame
     };
     addChildComponent(clearBtn);
     styleBtn(createDrawBtn);
@@ -351,9 +350,8 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     seedLabel.setColour(juce::Label::textColourId, col::textDim);
     addChildComponent(seedLabel);
     auto seedTo = [this](int kind) {
-        drawPad.seed(kind);
-        selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
-        refreshLibrary();
+        if (readOnlySel) return;
+        drawPad.seed(kind); // fires onEdit -> syncCurrentFrame
     };
     styleTool(seedSine);   seedSine.onClick   = [seedTo] { seedTo(0); };
     styleTool(seedSaw);    seedSaw.onClick    = [seedTo] { seedTo(1); };
@@ -370,15 +368,14 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     newBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     newBtn.setColour(juce::TextButton::textColourOffId, col::text);
     newBtn.onClick = [this] {
-        // Create a fresh single-cycle (sine) user table, append it to the USER
-        // section, assign it to this osc, and select it for editing.
-        drawPad.seed(0);
-        std::vector<std::vector<float>> frames{ fable::frameFromDrawing(drawPad.points()) };
-        const int idx = (int)proc.getUserTables().size(); // appended at this pool index
-        if (proc.addUserTable(fable::makeUserTable("USER", frames)) < 0) return; // pool full
+        std::vector<std::vector<float>> fs{ fable::frameFromDrawing(
+            [this]{ drawPad.seed(0); return drawPad.points(); }()) };
+        const int idx = (int)proc.getUserTables().size();
+        if (proc.addUserTable(fable::makeUserTable("USER", fs)) < 0) return;
         selectedId = "u" + juce::String(idx); readOnlySel = false; drawPad.setReadOnly(false);
         nameField.setText("USER", juce::dontSendNotification);
         assignTable((int)proc.factoryTables().size() + idx);
+        loadFrames(fs);
         setTab(Tab::Draw);
         refreshLibrary();
     };
@@ -389,6 +386,14 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     searchField.setTextToShowWhenEmpty("search tables", col::textDim);
     searchField.onTextChange = [this] { refreshLibrary(); };
     addAndMakeVisible(searchField);
+
+    drawPad.onEdit = [this] { syncCurrentFrame(); };
+    addChildComponent(frameStrip);
+    frameStrip.onSelect  = [this](int i) { gotoFrame(i); };
+    frameStrip.onAdd     = [this] { addFrameOp(); };
+    frameStrip.onDelete  = [this](int i) { deleteFrameOp(i); };
+    frameStrip.onReorder = [this](int a, int b) { reorderFrameOp(a, b); };
+    addChildComponent(stackPreview);
 
     setVisible(false);
 }
@@ -408,10 +413,12 @@ void WavetableEditor::openFor(int osc) {
     drawPad.setBrush(DrawPad::Brush::Pen);
     drawPad.setSnap(false);
     audioPreview.setAccent(accent());
+    stackPreview.setAccent(accent());
     audioSamples.clear();
     nameField.setText("", juce::dontSendNotification);
     statusLabel.setText("load an audio file to begin", juce::dontSendNotification);
     drawPad.clear();
+    loadFrames({ std::vector<float>((size_t)fable::SIZE, 0.0f) });
     audioPreview.clear();
     setTab(Tab::Draw);
     setMode(AudioMode::Single);
@@ -444,14 +451,16 @@ void WavetableEditor::setTab(Tab t) {
     seedSine.setVisible(!audio); seedSaw.setVisible(!audio);
     seedSquare.setVisible(!audio); seedTri.setVisible(!audio);
     brushPen.setVisible(!audio); brushSmooth.setVisible(!audio); snapBtn.setVisible(!audio);
+    frameStrip.setVisible(!audio);
+    stackPreview.setVisible(!audio);
     if (!audio) {
         drawHint.setText(readOnlySel
-            ? "Read-only (multi-frame / factory). Duplicate to edit."
-            : "Drag to draw one cycle. Band-limited on commit. -> 1 frame.",
+            ? "Read-only (factory). Duplicate to edit."
+            : "Drag to draw the selected frame. POS morphs through frames on play.",
             juce::dontSendNotification);
-        createDrawBtn.setButtonText(selectedId.isNotEmpty() && selectedId[0] == 'u' && !readOnlySel
-            ? "UPDATE TABLE" : "CREATE TABLE");
+        createDrawBtn.setButtonText(selectedId.isNotEmpty() && selectedId[0] == 'u' ? "UPDATE TABLE" : "CREATE TABLE");
         createDrawBtn.setEnabled(!readOnlySel);
+        frameStrip.setFrames(frames, currentFrame, accent(), readOnlySel);
     }
     layoutPanel();
     repaint();
@@ -537,18 +546,17 @@ static std::string finalName(const juce::String& raw) {
 }
 
 void WavetableEditor::createFromAudio() {
-    auto frames = framesFromCurrentSettings();
-    if (frames.empty()) return;
-    commit(fable::makeUserTable(finalName(nameField.getText()), frames));
+    auto fs = framesFromCurrentSettings();
+    if (fs.empty()) return;
+    selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
+    loadFrames(std::move(fs));
+    setTab(Tab::Draw);
 }
 
 void WavetableEditor::createFromDraw() {
     if (readOnlySel) return;
-    std::vector<std::vector<float>> frames{ fable::frameFromDrawing(drawPad.points()) };
     auto u = fable::makeUserTable(finalName(nameField.getText()), frames);
     if (selectedId.isNotEmpty() && selectedId[0] == 'u') {
-        // True in-place update: keep the pool index (and thus row selection + any
-        // osc references) stable. Stay open so the user can keep refining.
         const int idx = selectedId.substring(1).getIntValue();
         proc.updateUserTable(idx, std::move(u));
         assignTable((int)proc.factoryTables().size() + idx);
@@ -563,14 +571,53 @@ void WavetableEditor::assignTable(int combinedIndex) {
         p->setValueNotifyingHost(p->convertTo0to1((float)combinedIndex));
 }
 
+void WavetableEditor::loadFrames(std::vector<std::vector<float>> fs) {
+    if (fs.empty()) fs.emplace_back((size_t)fable::SIZE, 0.0f);
+    frames = std::move(fs);
+    currentFrame = 0;
+    drawPad.setPoints(frames[0]);
+    frameStrip.setFrames(frames, currentFrame, accent(), readOnlySel);
+    stackPreview.setFrames(frames); stackPreview.setCurrent(currentFrame);
+}
+void WavetableEditor::gotoFrame(int i) {
+    currentFrame = juce::jlimit(0, (int)frames.size() - 1, i);
+    drawPad.setPoints(frames[(size_t)currentFrame]);
+    frameStrip.setFrames(frames, currentFrame, accent(), readOnlySel);
+    stackPreview.setCurrent(currentFrame);
+}
+void WavetableEditor::syncCurrentFrame() {
+    if (readOnlySel || currentFrame < 0 || currentFrame >= (int)frames.size()) return;
+    frames[(size_t)currentFrame] = fable::frameFromDrawing(drawPad.points());
+    frameStrip.setFrames(frames, currentFrame, accent(), readOnlySel);
+    stackPreview.setFrames(frames); stackPreview.setCurrent(currentFrame);
+}
+void WavetableEditor::addFrameOp() {
+    if (readOnlySel) return;
+    auto next = fable::duplicateFrame(frames, currentFrame);
+    if (next.size() == frames.size()) { statusLabel.setText("max " + juce::String(fable::MAX_FRAMES) + " frames", juce::dontSendNotification); return; }
+    frames = std::move(next);
+    gotoFrame(currentFrame + 1);
+}
+void WavetableEditor::deleteFrameOp(int i) {
+    if (readOnlySel) return;
+    auto next = fable::deleteFrame(frames, i);
+    if (next.size() == frames.size()) return;
+    frames = std::move(next);
+    gotoFrame(juce::jmin(i, (int)frames.size() - 1));
+}
+void WavetableEditor::reorderFrameOp(int from, int to) {
+    if (readOnlySel) return;
+    frames = fable::moveFrame(frames, from, to);
+    gotoFrame(to);
+}
+
 void WavetableEditor::selectFactory(int i) {
     const auto& fac = proc.factoryTables();
     if (i < 0 || i >= (int)fac.size()) return;
     selectedId = "f" + juce::String(i);
     nameField.setText(juce::String(fac[(size_t)i].name), juce::dontSendNotification);
     readOnlySel = true; drawPad.setReadOnly(true);
-    auto frames = fable::framesFromGenerated(fac[(size_t)i]);
-    if (!frames.empty()) drawPad.setPoints(frames[0]);
+    loadFrames(fable::framesFromGenerated(fac[(size_t)i]));
     setTab(Tab::Draw);
     assignTable(i);
     refreshLibrary();
@@ -581,12 +628,8 @@ void WavetableEditor::selectUser(int i) {
     if (i < 0 || i >= (int)pool.size()) return;
     selectedId = "u" + juce::String(i);
     nameField.setText(juce::String(pool[(size_t)i].name), juce::dontSendNotification);
-    // User tables are always editable. Frame 0 loads into the single-cycle pad;
-    // drawing + UPDATE collapses a multi-frame table to one cycle (the hint
-    // warns "-> 1 frame"). Selecting just to assign loses nothing.
     readOnlySel = false; drawPad.setReadOnly(false);
-    std::vector<float> frame(pool[(size_t)i].wave.begin(), pool[(size_t)i].wave.begin() + fable::SIZE);
-    drawPad.setPoints(frame);
+    loadFrames(fable::framesFromWave(pool[(size_t)i].wave, pool[(size_t)i].frames));
     setTab(Tab::Draw);
     assignTable((int)proc.factoryTables().size() + i);
     refreshLibrary();
@@ -724,23 +767,26 @@ void WavetableEditor::layoutPanel() {
         panel.removeFromTop(10);
         createAudioBtn.setBounds(panel.removeFromTop(30));
     } else {
-        // Tools row (bottom) + hint, then the pad flexes to fill the rest.
+        // Tools row (bottom) + hint, then strip, then [pad | stack] fill the rest.
         auto tools = panel.removeFromBottom(34);
         createDrawBtn.setBounds(tools.removeFromRight(150).reduced(2, 0));
         tools.removeFromRight(6);
         clearBtn.setBounds(tools.removeFromRight(70).reduced(2, 0));
         tools.removeFromRight(8);
         seedLabel.setBounds(tools.removeFromLeft(40));
-        auto tool = [&tools](juce::Component& c, int w) {
-            c.setBounds(tools.removeFromLeft(w).reduced(2, 0));
-        };
+        auto tool = [&tools](juce::Component& c, int w) { c.setBounds(tools.removeFromLeft(w).reduced(2, 0)); };
         tool(seedSine, 58); tool(seedSaw, 50); tool(seedSquare, 72); tool(seedTri, 50);
         tools.removeFromLeft(8);
         tool(brushPen, 50); tool(brushSmooth, 72); tool(snapBtn, 56);
         panel.removeFromBottom(8);
         drawHint.setBounds(panel.removeFromBottom(16));
-        panel.removeFromBottom(6);
-        drawPad.setBounds(panel); // fills the remaining column
+        panel.removeFromBottom(8);
+        frameStrip.setBounds(panel.removeFromBottom(34));
+        panel.removeFromBottom(8);
+        auto stack = panel.removeFromRight(220);
+        stackPreview.setBounds(stack);
+        panel.removeFromRight(12);
+        drawPad.setBounds(panel); // fills the rest
     }
     repaint();
 }
