@@ -16,7 +16,7 @@
 // -> slice into `frames` chunks of SIZE -> buildUserTable. This same blob is
 // embedded in presets (Preset.tables) and in the localStorage table pool.
 
-import { SIZE, buildUserTable, type GeneratedTable } from './wavetables';
+import { SIZE, MIPS, buildUserTable, type GeneratedTable } from './wavetables';
 
 export const MAX_FRAMES = 64; // cap on imported frame count (memory + UI)
 
@@ -186,4 +186,17 @@ export function frameFromDrawing(points: number[]): Float32Array {
     frame[i] = a + frac * (b - a);
   }
   return frame;
+}
+
+// ---------- factory -> editable copy ----------
+// Pull a GeneratedTable's source single-cycle frames (mip-0, full-band) back
+// out as SIZE-sample Float32Arrays, so a factory table can be duplicated into
+// an editable user table that re-band-limits identically via makeUserTable.
+export function framesFromGenerated(t: GeneratedTable): Float32Array[] {
+  const frames: Float32Array[] = [];
+  for (let f = 0; f < t.frames; f++) {
+    const off = (f * MIPS + 0) * SIZE;
+    frames.push(t.data.slice(off, off + SIZE));
+  }
+  return frames;
 }
