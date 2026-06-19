@@ -306,9 +306,15 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     newBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     newBtn.setColour(juce::TextButton::textColourOffId, col::text);
     newBtn.onClick = [this] {
+        // Create a fresh single-cycle (sine) user table, append it to the USER
+        // section, assign it to this osc, and select it for editing.
         drawPad.seed(0);
-        selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
-        nameField.setText("", juce::dontSendNotification);
+        std::vector<std::vector<float>> frames{ fable::frameFromDrawing(drawPad.points()) };
+        const int idx = (int)proc.getUserTables().size(); // appended at this pool index
+        if (proc.addUserTable(fable::makeUserTable("USER", frames)) < 0) return; // pool full
+        selectedId = "u" + juce::String(idx); readOnlySel = false; drawPad.setReadOnly(false);
+        nameField.setText("USER", juce::dontSendNotification);
+        assignTable((int)proc.factoryTables().size() + idx);
         setTab(Tab::Draw);
         refreshLibrary();
     };

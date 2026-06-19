@@ -208,6 +208,21 @@ export function WavetableEditor() {
     setSelectedId(null); setReadOnly(false);
     setDrawVersion((v) => v + 1);
   };
+
+  // + NEW: create a fresh single-cycle (sine) user table, append it to the USER
+  // section, assign it to this osc, and select it for editing.
+  const newTable = () => {
+    const pts = seedShape('sine');
+    const u = makeUserTable('USER', [frameFromDrawing(pts)]);
+    const idx = userTables.length; // addUserTable appends at this pool index
+    addUserTable(u);               // persists + re-pushes engine + assigns to osc
+    pointsRef.current = pts;
+    setSelectedId('u' + idx);
+    setName('USER');
+    setReadOnly(false);
+    setTab('draw');
+    setDrawVersion((v) => v + 1);
+  };
   const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     drawingRef.current = true; lastIdxRef.current = -1;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -231,7 +246,7 @@ export function WavetableEditor() {
             accent={accentColor}
             onSelectFactory={selectFactory}
             onSelectUser={selectUser}
-            onNew={() => { applySeed('sine'); setName(''); }}
+            onNew={newTable}
             onRename={renameUserTable}
             onDuplicateUser={duplicateUserTable}
             onDuplicateFactory={duplicateFactoryTable}
