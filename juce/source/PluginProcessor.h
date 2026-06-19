@@ -60,6 +60,7 @@ public:
     int  addUserTable(fable::UserTable table);
     void deleteUserTable(int poolIndex);
     void renameUserTable(int poolIndex, std::string name);
+    void updateUserTable(int poolIndex, fable::UserTable u); // in-place replace, keeps index
     int  duplicateUserTable(int poolIndex);   // returns new combined index, or -1
     int  duplicateFactoryTable(int factoryIndex); // returns new combined index, or -1
     const std::vector<fable::GeneratedTable>& factoryTables() const { return tables; }

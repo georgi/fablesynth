@@ -51,6 +51,7 @@ interface SynthStore {
   addUserTable: (u: UserTable) => void;
   deleteUserTable: (poolIndex: number) => void;
   renameUserTable: (poolIndex: number, name: string) => void;
+  updateUserTable: (poolIndex: number, u: UserTable) => void;
   duplicateUserTable: (poolIndex: number) => void;
   duplicateFactoryTable: (factoryIndex: number) => void;
   openEditor: (osc: 'oscA' | 'oscB') => void;
@@ -156,6 +157,17 @@ export const useStore = create<SynthStore>((set, get) => ({
     const nm = (name.trim().toUpperCase() || 'USER').slice(0, 14);
     const userTables = get().userTables.map((t, i) => (i === poolIndex ? { ...t, name: nm } : t));
     saveUserTablePool(userTables);
+    set({ userTables });
+  },
+
+  // In-place replace of an existing user table's waveform (and name), keeping
+  // its pool index — so the editor's row selection and any osc references to
+  // that table stay valid (unlike delete+add, which would shift indices).
+  updateUserTable: (poolIndex, u) => {
+    if (poolIndex < 0 || poolIndex >= get().userTables.length) return;
+    const userTables = get().userTables.map((t, i) => (i === poolIndex ? u : t));
+    saveUserTablePool(userTables);
+    engine.setUserTables(userTables.map((t) => t.table));
     set({ userTables });
   },
 

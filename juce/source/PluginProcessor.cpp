@@ -108,6 +108,14 @@ void FableAudioProcessor::renameUserTable(int poolIndex, std::string name) {
     userTables[(size_t)poolIndex].name = s.substring(0, 14).toStdString();
 }
 
+void FableAudioProcessor::updateUserTable(int poolIndex, fable::UserTable u) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return;
+    // In-place replace keeps the pool index (and thus the combined .table index
+    // every oscillator/preset references) stable — unlike delete+add.
+    userTables[(size_t)poolIndex] = std::move(u);
+    rebuildEngineTables();
+}
+
 int FableAudioProcessor::duplicateUserTable(int poolIndex) {
     if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return -1;
     const auto& src = userTables[(size_t)poolIndex];

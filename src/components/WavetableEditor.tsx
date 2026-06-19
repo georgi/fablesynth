@@ -33,6 +33,7 @@ export function WavetableEditor() {
   const deleteUserTable = useStore((s) => s.deleteUserTable);
   const closeEditor = useStore((s) => s.closeEditor);
   const renameUserTable = useStore((s) => s.renameUserTable);
+  const updateUserTable = useStore((s) => s.updateUserTable);
   const duplicateUserTable = useStore((s) => s.duplicateUserTable);
   const duplicateFactoryTable = useStore((s) => s.duplicateFactoryTable);
   const setParam = useStore((s) => s.setParam);
@@ -132,9 +133,10 @@ export function WavetableEditor() {
     const u = makeUserTable(finalName, [frame]);
     if (selectedId && selectedId[0] === 'u' && !readOnly) {
       const idx = +selectedId.slice(1);
-      // UPDATE in place: replace then keep assignment.
-      deleteUserTable(idx);
-      addUserTable(u); // appended at end; addUserTable assigns to osc
+      // True in-place update: keep the pool index (and thus row selection + any
+      // osc references) stable. Stay open so the user can keep refining.
+      updateUserTable(idx, u);
+      assign(TABLE_NAMES.length + idx);
     } else {
       commit(u);
     }

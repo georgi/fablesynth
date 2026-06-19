@@ -477,9 +477,13 @@ void WavetableEditor::createFromDraw() {
     std::vector<std::vector<float>> frames{ fable::frameFromDrawing(drawPad.points()) };
     auto u = fable::makeUserTable(finalName(nameField.getText()), frames);
     if (selectedId.isNotEmpty() && selectedId[0] == 'u') {
-        // UPDATE in place: delete then re-add (addUserTable appends + assigns).
+        // True in-place update: keep the pool index (and thus row selection + any
+        // osc references) stable. Stay open so the user can keep refining.
         const int idx = selectedId.substring(1).getIntValue();
-        proc.deleteUserTable(idx);
+        proc.updateUserTable(idx, std::move(u));
+        assignTable((int)proc.factoryTables().size() + idx);
+        refreshLibrary();
+        return;
     }
     commit(std::move(u));
 }
