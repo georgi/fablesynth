@@ -22,12 +22,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     for (const auto& d : paramInfo()) {
         juce::ParameterID pid(d.pid, 1);
+        // Host-facing name MUST be unique: repeated blocks share short labels
+        // (both LFOs are "SHAPE"/"RATE", both oscs "POS", etc.). A DAW that keys
+        // automation / MIDI-learn / its generic editor by name would otherwise
+        // alias them (move one "SHAPE" -> both move). Derive a unique name from
+        // the id; the plugin's own UI still uses the short ParamInfo.label.
+        juce::String name = juce::String(d.pid).replaceCharacter('.', ' ').toUpperCase();
         if (d.kind == Kind::Bool) {
-            layout.add(std::make_unique<juce::AudioParameterBool>(pid, d.label, d.def != 0.0f));
+            layout.add(std::make_unique<juce::AudioParameterBool>(pid, name, d.def != 0.0f));
         } else if (d.kind == Kind::Enum) {
             juce::StringArray choices;
             for (const auto& s : *d.options) choices.add(s);
-            layout.add(std::make_unique<juce::AudioParameterChoice>(pid, d.label, choices, (int)d.def));
+            layout.add(std::make_unique<juce::AudioParameterChoice>(pid, name, choices, (int)d.def));
         } else {
             // Custom range whose 0..1 mapping matches normToValue / valueToNorm.
             ParamInfo info = d;
@@ -36,7 +42,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
                 [info](float, float, float n) { return normToValue(info, n); },
                 [info](float, float, float v) { return valueToNorm(info, v); });
             if (d.curve == Curve::Int) range.interval = 1.0f;
-            layout.add(std::make_unique<juce::AudioParameterFloat>(pid, d.label, range, d.def));
+            layout.add(std::make_unique<juce::AudioParameterFloat>(pid, name, range, d.def));
         }
     }
     return layout;

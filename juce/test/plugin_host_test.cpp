@@ -8,6 +8,8 @@
 #include "../source/ui/WavetableEditor.h"
 #include <cmath>
 #include <cstdio>
+#include <set>
+#include <string>
 
 static void writePng(const juce::Image& img, const juce::File& out) {
     if (auto stream = out.createOutputStream()) {
@@ -145,6 +147,22 @@ int main(int argc, char** argv) {
         float v2 = proc.apvts.getRawParameterValue("lfo2.shape")->load();
         check(std::abs(v1 - 2.0f) < 0.5f, "lfo1.shape = SAW", v1);
         check(std::abs(v2 - 3.0f) < 0.5f, "lfo2.shape = SQR independently (no alias)", v2);
+    }
+
+    // Every host-facing parameter NAME must be unique. Repeated blocks share
+    // short labels ("SHAPE", "RATE", ...); a DAW that keys MIDI-learn / generic
+    // automation by name would alias them, making one LFO's shape appear mapped
+    // to both. (The plugin's own UI keys by id and is unaffected either way.)
+    {
+        std::set<juce::String> seen;
+        juce::String dup;
+        for (auto* p : proc.getParameters()) {
+            auto nm = p->getName(128);
+            if (!seen.insert(nm).second && dup.isEmpty()) dup = nm;
+        }
+        std::string msg = dup.isEmpty() ? "all host parameter names unique"
+                                        : ("duplicate parameter name: " + dup.toStdString());
+        check(dup.isEmpty(), msg.c_str(), 0);
     }
 
     juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
