@@ -215,6 +215,18 @@ int main() {
         auto rebuilt = userTableFromWave("SLICE", sliced.frames, sliced.wave);
         check(rebuilt.frames == 5 && !rebuilt.table.data.empty(), "wave round-trip rebuilds table");
 
+        {
+            // framesFromGenerated round-trips a factory table's frame count and a
+            // re-built copy is finite + non-silent.
+            auto factory = generateTables();
+            auto frames = framesFromGenerated(factory[0]);
+            check((int)frames.size() == factory[0].frames, "framesFromGenerated frame count");
+            check(frames[0].size() == (size_t)SIZE, "framesFromGenerated frame width");
+            auto copy = makeUserTable("COPY", frames);
+            check(copy.frames == factory[0].frames, "duplicated factory frame count");
+            check(finite(copy.table.data) && peak(copy.table.data) > 0.1f, "duplicated factory audible");
+        }
+
         // The engine plays a user table addressed past the procedural slots.
         Engine eng; eng.prepare(sr);
         std::vector<GeneratedTable> all = tables;     // 6 procedural

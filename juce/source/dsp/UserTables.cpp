@@ -40,6 +40,16 @@ UserTable userTableFromWave(const std::string& name, int frames, const std::vect
     return makeUserTable(name, fr);
 }
 
+std::vector<std::vector<float>> framesFromGenerated(const GeneratedTable& t) {
+    std::vector<std::vector<float>> frames;
+    frames.reserve((size_t)t.frames);
+    for (int f = 0; f < t.frames; ++f) {
+        const int off = (f * t.mips + 0) * t.size;
+        frames.emplace_back(t.data.begin() + off, t.data.begin() + off + t.size);
+    }
+    return frames;
+}
+
 // ---------- audio analysis ----------
 std::vector<float> mixToMono(const float* const* channels, int numChannels, int n) {
     std::vector<float> out(std::max(0, n), 0.0f);
