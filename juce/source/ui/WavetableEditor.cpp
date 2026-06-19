@@ -6,7 +6,7 @@ namespace fui {
 // ============================ DrawPad ============================
 DrawPad::DrawPad(juce::Colour ac) : pts(DRAW_N, 0.0f), accent(ac) {}
 
-void DrawPad::clear() { std::fill(pts.begin(), pts.end(), 0.0f); lastIdx = -1; repaint(); }
+void DrawPad::clear() { std::fill(pts.begin(), pts.end(), 0.0f); lastIdx = -1; repaint(); if (onEdit) onEdit(); }
 
 void DrawPad::paintAt(juce::Point<float> p) {
     if (readOnly) return;
@@ -28,6 +28,7 @@ void DrawPad::paintAt(juce::Point<float> p) {
     if (brush == Brush::Smooth) smoothAround(idx);
     lastIdx = idx;
     repaint();
+    if (onEdit) onEdit();
 }
 void DrawPad::mouseDown(const juce::MouseEvent& e) { if (readOnly) return; lastIdx = -1; paintAt(e.position); }
 void DrawPad::mouseDrag(const juce::MouseEvent& e) { if (readOnly) return; paintAt(e.position); }
@@ -53,6 +54,7 @@ void DrawPad::seed(int kind) {
         pts[(size_t)i] = v;
     }
     lastIdx = -1; repaint();
+    if (onEdit) onEdit();
 }
 
 void DrawPad::setPoints(const std::vector<float>& p) {
@@ -112,8 +114,10 @@ void TablePreview::paint(juce::Graphics& g) {
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
         }
-        g.setColour(accent.withAlpha(0.18f + d * 0.72f));
-        g.strokePath(path, juce::PathStrokeType(d > 0.85f ? 1.6f : 1.0f,
+        const bool isCur = (f == current);
+        if (isCur) { g.setColour(accent); }
+        else       { g.setColour(accent.withAlpha(0.18f + d * 0.4f)); }
+        g.strokePath(path, juce::PathStrokeType(isCur ? 1.8f : 1.0f,
                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 }

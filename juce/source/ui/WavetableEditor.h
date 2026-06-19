@@ -28,6 +28,7 @@ public:
     Brush getBrush() const { return brush; }
     void setSnap(bool s) { snap = s; }
     void setReadOnly(bool ro) { readOnly = ro; repaint(); }
+    std::function<void()> onEdit; // called after any draw / seed / clear edit
     void seed(int kind);                 // 0 sine 1 saw 2 square 3 tri
     void setPoints(const std::vector<float>& p); // load frame 0 (downsampled)
     const std::vector<float>& points() const { return pts; }
@@ -50,11 +51,13 @@ public:
     explicit TablePreview(juce::Colour ac) : accent(ac) {}
     void setAccent(juce::Colour c) { accent = c; repaint(); }
     void setFrames(std::vector<std::vector<float>> f) { frames = std::move(f); repaint(); }
+    void setCurrent(int c) { current = c; repaint(); }
     void clear() { frames.clear(); repaint(); }
     void paint(juce::Graphics&) override;
 private:
     std::vector<std::vector<float>> frames;
     juce::Colour accent;
+    int current = -1;
 };
 
 // Mini frame-0 waveform for a library row.
