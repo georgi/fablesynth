@@ -25,6 +25,7 @@ public:
     void clear();
     void setAccent(juce::Colour c) { accent = c; repaint(); }
     void setBrush(Brush b) { brush = b; }
+    Brush getBrush() const { return brush; }
     void setSnap(bool s) { snap = s; }
     void setReadOnly(bool ro) { readOnly = ro; repaint(); }
     void seed(int kind);                 // 0 sine 1 saw 2 square 3 tri
@@ -90,7 +91,11 @@ private:
     void createFromAudio();
     void createFromDraw();
     void commit(fable::UserTable);
-    void refreshList();
+    void refreshLibrary();
+    void selectFactory(int i);
+    void selectUser(int i);
+    void assignTable(int combinedIndex);
+    void layoutLibrary(juce::Rectangle<int> area);
     void layoutPanel();
     juce::Rectangle<int> panelBounds() const;
     juce::Colour accent() const;
@@ -127,16 +132,27 @@ private:
     juce::Label drawHint;
     juce::TextButton clearBtn{"CLEAR"};
     juce::TextButton createDrawBtn{"CREATE TABLE"};
+    // seed/brush/snap tool buttons
+    juce::TextButton seedSine{"SINE"}, seedSaw{"SAW"}, seedSquare{"SQUARE"}, seedTri{"TRI"};
+    juce::TextButton brushPen{"PEN"}, brushSmooth{"SMOOTH"}, snapBtn{"SNAP"};
+    juce::Label seedLabel{{}, "SEED"};
+    bool snapOn = false;
+    bool readOnlySel = false;
 
-    // user-table list — one Row per pooled table (name + frame count + delete).
-    juce::Label listHeader{{}, "USER TABLES"};
+    // library — factory + user rows with thumbnail + actions.
     struct LibRow : public juce::Component {
         LibRow(bool factory, juce::Colour accent);
         void resized() override;
+        void paint(juce::Graphics&) override;
+        void mouseDown(const juce::MouseEvent&) override;
+        std::function<void()> onSelect;
+        juce::Colour accentColour;
+        bool selected = false;
         TableThumb thumb;
         juce::Label name;
         juce::Label sub;       // "4f · FACTORY" or "1f"
-        juce::TextButton rename{"✎"}, dup{"⎘"}, del{"✕"};
+        juce::TextEditor renameField;
+        juce::TextButton rename{"E"}, dup{"D"}, del{"X"};
         bool isFactory;
     };
     juce::OwnedArray<LibRow> libRows;
@@ -144,6 +160,7 @@ private:
     juce::Label libTitle{{}, "LIBRARY"};
     juce::TextButton newBtn{"+ NEW"};
     juce::String selectedId; // "f<i>" / "u<i>" / empty
+    int dividerX = 0;        // x of the library/editor divider (panel-relative absolute)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WavetableEditor)
 };

@@ -136,12 +136,17 @@ void TableThumb::paint(juce::Graphics& g) {
 }
 
 // ============================ LibRow ============================
-WavetableEditor::LibRow::LibRow(bool factory, juce::Colour accent) : isFactory(factory) {
+WavetableEditor::LibRow::LibRow(bool factory, juce::Colour accent) : accentColour(accent), isFactory(factory) {
     addAndMakeVisible(thumb);
     name.setFont(monoFont(11.0f)); name.setColour(juce::Label::textColourId, col::text);
     addAndMakeVisible(name);
     sub.setFont(monoFont(9.0f)); sub.setColour(juce::Label::textColourId, col::textDim);
     addAndMakeVisible(sub);
+    renameField.setFont(monoFont(11.0f));
+    renameField.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff0a0d13));
+    renameField.setColour(juce::TextEditor::textColourId, accent);
+    renameField.setInputRestrictions(14);
+    addChildComponent(renameField);
     for (auto* b : { &rename, &dup, &del }) {
         b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
         b->setColour(juce::TextButton::textColourOffId, col::textDim);
@@ -161,8 +166,19 @@ void WavetableEditor::LibRow::resized() {
     }
     dup.setBounds(btns.removeFromLeft(22).reduced(1));
     if (!isFactory) { btns.removeFromLeft(2); del.setBounds(btns.reduced(1)); }
-    name.setBounds(r.removeFromTop(r.getHeight() / 2));
-    sub.setBounds(r);
+    auto info = r;
+    name.setBounds(info.removeFromTop(info.getHeight() / 2));
+    sub.setBounds(info);
+    renameField.setBounds(r.withSizeKeepingCentre(r.getWidth(), 22));
+}
+void WavetableEditor::LibRow::mouseDown(const juce::MouseEvent&) { if (onSelect) onSelect(); }
+void WavetableEditor::LibRow::paint(juce::Graphics& g) {
+    if (!selected) return;
+    auto b = getLocalBounds().toFloat();
+    g.setColour(accentColour.withAlpha(0.08f));
+    g.fillRoundedRectangle(b, 8.0f);
+    g.setColour(accentColour.withAlpha(0.45f));
+    g.drawRoundedRectangle(b.reduced(0.5f), 8.0f, 1.0f);
 }
 
 // ============================ WavetableEditor ============================
@@ -251,15 +267,58 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
                      juce::dontSendNotification);
     addChildComponent(drawHint);
     styleBtn(clearBtn);
-    clearBtn.onClick = [this] { drawPad.clear(); };
+    clearBtn.onClick = [this] {
+        drawPad.clear();
+        selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
+        refreshLibrary();
+    };
     addChildComponent(clearBtn);
     styleBtn(createDrawBtn);
     createDrawBtn.onClick = [this] { createFromDraw(); };
     addChildComponent(createDrawBtn);
 
-    listHeader.setFont(monoFont(9.0f));
-    listHeader.setColour(juce::Label::textColourId, col::textDim);
-    addAndMakeVisible(listHeader);
+    // draw tools — seed shapes, brush, snap.
+    auto styleTool = [this](juce::TextButton& b) {
+        b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+        b.setColour(juce::TextButton::textColourOffId, col::textDim);
+        addChildComponent(b);
+    };
+    seedLabel.setFont(monoFont(9.0f));
+    seedLabel.setColour(juce::Label::textColourId, col::textDim);
+    addChildComponent(seedLabel);
+    auto seedTo = [this](int kind) {
+        drawPad.seed(kind);
+        selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
+        refreshLibrary();
+    };
+    styleTool(seedSine);   seedSine.onClick   = [seedTo] { seedTo(0); };
+    styleTool(seedSaw);    seedSaw.onClick    = [seedTo] { seedTo(1); };
+    styleTool(seedSquare); seedSquare.onClick = [seedTo] { seedTo(2); };
+    styleTool(seedTri);    seedTri.onClick    = [seedTo] { seedTo(3); };
+    styleTool(brushPen);   brushPen.onClick   = [this] { drawPad.setBrush(DrawPad::Brush::Pen); repaint(); };
+    styleTool(brushSmooth);brushSmooth.onClick= [this] { drawPad.setBrush(DrawPad::Brush::Smooth); repaint(); };
+    styleTool(snapBtn);    snapBtn.onClick    = [this] { snapOn = !snapOn; drawPad.setSnap(snapOn); repaint(); };
+
+    // library — title, count, search, + NEW.
+    libTitle.setFont(dispFont(10.0f));
+    libTitle.setColour(juce::Label::textColourId, col::textDim);
+    addAndMakeVisible(libTitle);
+    newBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+    newBtn.setColour(juce::TextButton::textColourOffId, col::text);
+    newBtn.onClick = [this] {
+        drawPad.seed(0);
+        selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false);
+        nameField.setText("", juce::dontSendNotification);
+        setTab(Tab::Draw);
+        refreshLibrary();
+    };
+    addAndMakeVisible(newBtn);
+    searchField.setFont(monoFont(11.0f));
+    searchField.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff07090e));
+    searchField.setColour(juce::TextEditor::textColourId, col::text);
+    searchField.setTextToShowWhenEmpty("search tables", col::textDim);
+    searchField.onTextChange = [this] { refreshLibrary(); };
+    addAndMakeVisible(searchField);
 
     setVisible(false);
 }
@@ -268,19 +327,25 @@ juce::Colour WavetableEditor::accent() const { return oscIndex == 0 ? col::acA :
 
 void WavetableEditor::openFor(int osc) {
     oscIndex = osc;
-    tab = Tab::Audio;
+    tab = Tab::Draw;
     mode = AudioMode::Single;
     hasAudio = false;
+    selectedId = {};
+    readOnlySel = false;
+    snapOn = false;
     drawPad.setAccent(accent());
+    drawPad.setReadOnly(false);
+    drawPad.setBrush(DrawPad::Brush::Pen);
+    drawPad.setSnap(false);
     audioPreview.setAccent(accent());
     audioSamples.clear();
     nameField.setText("", juce::dontSendNotification);
     statusLabel.setText("load an audio file to begin", juce::dontSendNotification);
     drawPad.clear();
     audioPreview.clear();
-    setTab(Tab::Audio);
+    setTab(Tab::Draw);
     setMode(AudioMode::Single);
-    refreshList();
+    refreshLibrary();
     setVisible(true);
     toFront(true);
     resized();
@@ -305,6 +370,20 @@ void WavetableEditor::setTab(Tab t) {
     fixedField.setVisible(audio && mode == AudioMode::Fixed);
     drawPad.setVisible(!audio); drawHint.setVisible(!audio);
     clearBtn.setVisible(!audio); createDrawBtn.setVisible(!audio);
+    seedLabel.setVisible(!audio);
+    seedSine.setVisible(!audio); seedSaw.setVisible(!audio);
+    seedSquare.setVisible(!audio); seedTri.setVisible(!audio);
+    brushPen.setVisible(!audio); brushSmooth.setVisible(!audio); snapBtn.setVisible(!audio);
+    if (!audio) {
+        drawHint.setText(readOnlySel
+            ? "Read-only (multi-frame / factory). Duplicate to edit."
+            : "Drag to draw one cycle. Band-limited on commit. -> 1 frame.",
+            juce::dontSendNotification);
+        createDrawBtn.setButtonText(selectedId.isNotEmpty() && selectedId[0] == 'u' && !readOnlySel
+            ? "UPDATE TABLE" : "CREATE TABLE");
+        createDrawBtn.setEnabled(!readOnlySel);
+    }
+    layoutPanel();
     repaint();
 }
 
@@ -372,7 +451,7 @@ void WavetableEditor::commit(fable::UserTable u) {
         setTab(Tab::Audio); // the status line lives on the audio tab
         statusLabel.setText("table pool full (max " + juce::String(proc.maxUserTables())
                             + ") — delete one first", juce::dontSendNotification);
-        refreshList();
+        refreshLibrary();
         return;
     }
     // Assign the new table to the oscillator that opened the editor.
@@ -394,44 +473,153 @@ void WavetableEditor::createFromAudio() {
 }
 
 void WavetableEditor::createFromDraw() {
+    if (readOnlySel) return;
     std::vector<std::vector<float>> frames{ fable::frameFromDrawing(drawPad.points()) };
-    commit(fable::makeUserTable(finalName(nameField.getText()), frames));
+    auto u = fable::makeUserTable(finalName(nameField.getText()), frames);
+    if (selectedId.isNotEmpty() && selectedId[0] == 'u') {
+        // UPDATE in place: delete then re-add (addUserTable appends + assigns).
+        const int idx = selectedId.substring(1).getIntValue();
+        proc.deleteUserTable(idx);
+    }
+    commit(std::move(u));
 }
 
-void WavetableEditor::refreshList() {
-    listRows.clear();
+void WavetableEditor::assignTable(int combinedIndex) {
+    if (auto* p = proc.apvts.getParameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
+        p->setValueNotifyingHost(p->convertTo0to1((float)combinedIndex));
+}
+
+void WavetableEditor::selectFactory(int i) {
+    const auto& fac = proc.factoryTables();
+    if (i < 0 || i >= (int)fac.size()) return;
+    selectedId = "f" + juce::String(i);
+    nameField.setText(juce::String(fac[(size_t)i].name), juce::dontSendNotification);
+    readOnlySel = true; drawPad.setReadOnly(true);
+    auto frames = fable::framesFromGenerated(fac[(size_t)i]);
+    if (!frames.empty()) drawPad.setPoints(frames[0]);
+    setTab(Tab::Draw);
+    assignTable(i);
+    refreshLibrary();
+}
+
+void WavetableEditor::selectUser(int i) {
+    const auto& pool = proc.getUserTables();
+    if (i < 0 || i >= (int)pool.size()) return;
+    selectedId = "u" + juce::String(i);
+    nameField.setText(juce::String(pool[(size_t)i].name), juce::dontSendNotification);
+    const bool editable = pool[(size_t)i].frames == 1;
+    readOnlySel = !editable; drawPad.setReadOnly(!editable);
+    if (editable) {
+        std::vector<float> frame(pool[(size_t)i].wave.begin(), pool[(size_t)i].wave.begin() + fable::SIZE);
+        drawPad.setPoints(frame);
+    }
+    setTab(Tab::Draw);
+    assignTable((int)proc.factoryTables().size() + i);
+    refreshLibrary();
+}
+
+void WavetableEditor::refreshLibrary() {
+    libRows.clear();
+    const juce::String q = searchField.getText().trim().toUpperCase();
+    auto matches = [&q](const juce::String& nm) { return q.isEmpty() || nm.toUpperCase().contains(q); };
+
+    const auto& fac = proc.factoryTables();
+    for (int i = 0; i < (int)fac.size(); ++i) {
+        const juce::String nm(fac[(size_t)i].name);
+        if (!matches(nm)) continue;
+        const juce::String id = "f" + juce::String(i);
+        auto* row = new LibRow(true, accent());
+        row->selected = (selectedId == id);
+        row->name.setText(nm, juce::dontSendNotification);
+        row->sub.setText(juce::String(fac[(size_t)i].frames) + "f - FACTORY", juce::dontSendNotification);
+        std::vector<float> viz(fac[(size_t)i].viz.begin(),
+                               fac[(size_t)i].viz.begin() + juce::jmin((int)fac[(size_t)i].viz.size(), fable::VIZ_N));
+        row->thumb.setData(viz, accent(), row->selected);
+        row->onSelect = [this, i] { selectFactory(i); };
+        row->dup.onClick = [this, i] { int ni = proc.duplicateFactoryTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
+        libRows.add(row);
+        addAndMakeVisible(row);
+    }
+
     const auto& pool = proc.getUserTables();
     for (int i = 0; i < (int)pool.size(); ++i) {
-        juce::String text = juce::String(pool[(size_t)i].name) + "   " + juce::String(pool[(size_t)i].frames) + "f";
-        auto* row = new Row(text, [this, i] {
+        const juce::String nm(pool[(size_t)i].name);
+        if (!matches(nm)) continue;
+        const juce::String id = "u" + juce::String(i);
+        auto* row = new LibRow(false, accent());
+        row->selected = (selectedId == id);
+        row->name.setText(nm, juce::dontSendNotification);
+        row->sub.setText(juce::String(pool[(size_t)i].frames) + "f", juce::dontSendNotification);
+        const auto& vz = pool[(size_t)i].table.viz;
+        std::vector<float> viz(vz.begin(), vz.begin() + juce::jmin((int)vz.size(), fable::VIZ_N));
+        row->thumb.setData(viz, accent(), row->selected);
+        row->onSelect = [this, i] { selectUser(i); };
+        row->dup.onClick = [this, i] { int ni = proc.duplicateUserTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
+        row->del.onClick = [this, i] {
             proc.deleteUserTable(i);
-            refreshList();
-            layoutPanel();
-        });
-        listRows.add(row);
+            if (selectedId == ("u" + juce::String(i))) { selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false); }
+            refreshLibrary();
+        };
+        // inline rename: swap a TextEditor over the name slot, commit on focus loss / Enter.
+        auto* re = &row->renameField;
+        auto* nameLbl = &row->name;
+        auto* subLbl = &row->sub;
+        row->rename.onClick = [this, i, re, nameLbl, subLbl] {
+            re->setText(nameLbl->getText(), juce::dontSendNotification);
+            nameLbl->setVisible(false); subLbl->setVisible(false);
+            re->setVisible(true); re->grabKeyboardFocus(); re->selectAll();
+            auto commit = [this, i, re] {
+                proc.renameUserTable(i, re->getText().toStdString());
+                refreshLibrary();
+            };
+            re->onReturnKey = commit;
+            re->onFocusLost = commit;
+            re->onEscapeKey = [this] { refreshLibrary(); };
+        };
+        libRows.add(row);
         addAndMakeVisible(row);
     }
     layoutPanel();
 }
 
 juce::Rectangle<int> WavetableEditor::panelBounds() const {
-    const int w = juce::jmin(520, getWidth() - 40);
-    const int h = juce::jmin(620, getHeight() - 40);
+    const int w = juce::jmin(1180, getWidth() - 40);
+    const int h = juce::jmin(760, getHeight() - 40);
     return juce::Rectangle<int>(0, 0, w, h).withCentre(getLocalBounds().getCentre());
 }
 
 void WavetableEditor::resized() { layoutPanel(); }
 
+void WavetableEditor::layoutLibrary(juce::Rectangle<int> area) {
+    area = area.reduced(10, 8);
+    auto top = area.removeFromTop(26);
+    libTitle.setBounds(top.removeFromLeft(120));
+    newBtn.setBounds(top.removeFromRight(70));
+    area.removeFromTop(6);
+    searchField.setBounds(area.removeFromTop(30));
+    area.removeFromTop(8);
+    for (auto* row : libRows) {
+        if (area.getHeight() < 40) { row->setBounds({}); continue; }
+        row->setBounds(area.removeFromTop(42));
+        area.removeFromTop(4);
+    }
+}
+
 void WavetableEditor::layoutPanel() {
-    auto panel = panelBounds().reduced(18);
+    auto full = panelBounds();
+    auto head = full.removeFromTop(50);
+    closeBtn.setBounds(head.removeFromRight(48).removeFromLeft(30).withSizeKeepingCentre(30, 30));
 
-    auto head = panel.removeFromTop(26);
-    closeBtn.setBounds(head.removeFromRight(24).reduced(2));
-    panel.removeFromTop(8);
+    auto lib = full.removeFromLeft(306);
+    dividerX = lib.getRight();
+    layoutLibrary(lib);
 
+    auto panel = full.reduced(18);
+
+    // DRAW first (mockup), then IMPORT AUDIO.
     auto tabs = panel.removeFromTop(24);
-    tabAudio.setBounds(tabs.removeFromLeft(tabs.getWidth() / 2).reduced(2, 0));
-    tabDraw.setBounds(tabs.reduced(2, 0));
+    tabDraw.setBounds(tabs.removeFromLeft(tabs.getWidth() / 2).reduced(2, 0));
+    tabAudio.setBounds(tabs.reduced(2, 0));
     panel.removeFromTop(10);
 
     auto nameRow = panel.removeFromTop(22);
@@ -462,21 +650,23 @@ void WavetableEditor::layoutPanel() {
         panel.removeFromTop(10);
         createAudioBtn.setBounds(panel.removeFromTop(30));
     } else {
-        drawPad.setBounds(panel.removeFromTop(180));
-        panel.removeFromTop(6);
-        drawHint.setBounds(panel.removeFromTop(16));
-        panel.removeFromTop(8);
-        auto row = panel.removeFromTop(30);
-        clearBtn.setBounds(row.removeFromLeft(row.getWidth() / 3).reduced(2, 0));
-        createDrawBtn.setBounds(row.reduced(2, 0));
-    }
-
-    panel.removeFromTop(14);
-    listHeader.setBounds(panel.removeFromTop(16));
-    for (auto* row : listRows) {
-        if (panel.getHeight() < 24) break;
-        row->setBounds(panel.removeFromTop(22));
-        panel.removeFromTop(4);
+        // Tools row (bottom) + hint, then the pad flexes to fill the rest.
+        auto tools = panel.removeFromBottom(34);
+        createDrawBtn.setBounds(tools.removeFromRight(150).reduced(2, 0));
+        tools.removeFromRight(6);
+        clearBtn.setBounds(tools.removeFromRight(70).reduced(2, 0));
+        tools.removeFromRight(8);
+        seedLabel.setBounds(tools.removeFromLeft(40));
+        auto tool = [&tools](juce::Component& c, int w) {
+            c.setBounds(tools.removeFromLeft(w).reduced(2, 0));
+        };
+        tool(seedSine, 58); tool(seedSaw, 50); tool(seedSquare, 72); tool(seedTri, 50);
+        tools.removeFromLeft(8);
+        tool(brushPen, 50); tool(brushSmooth, 72); tool(snapBtn, 56);
+        panel.removeFromBottom(8);
+        drawHint.setBounds(panel.removeFromBottom(16));
+        panel.removeFromBottom(6);
+        drawPad.setBounds(panel); // fills the remaining column
     }
     repaint();
 }
@@ -486,18 +676,25 @@ void WavetableEditor::paint(juce::Graphics& g) {
 
     auto pb = panelBounds().toFloat();
     drawPanel(g, pb, 12.0f);
-    // accent top edge
+    // accent top edge (scanline)
     g.setColour(accent());
     g.fillRect(pb.getX() + 12.0f, pb.getY(), pb.getWidth() - 24.0f, 2.0f);
+
+    // header (50px) — title left, divider below.
+    g.setColour(juce::Colours::white.withAlpha(0.08f));
+    g.fillRect(pb.getX() + 12.0f, pb.getY() + 50.0f, pb.getWidth() - 24.0f, 1.0f);
+    // library / editor divider.
+    g.setColour(juce::Colours::white.withAlpha(0.08f));
+    g.fillRect((float)dividerX, pb.getY() + 50.0f, 1.0f, pb.getHeight() - 50.0f);
 
     // header title
     g.setColour(accent());
     g.setFont(dispFont(13.0f));
-    auto titleArea = juce::Rectangle<int>((int)pb.getX() + 18, (int)pb.getY() + 16, (int)pb.getWidth() - 60, 22);
+    auto titleArea = juce::Rectangle<int>((int)pb.getX() + 18, (int)pb.getY() + 14, (int)pb.getWidth() - 80, 22);
     drawSpaced(g, juce::String("WAVETABLE -> ") + (oscIndex == 0 ? "OSC A" : "OSC B"),
                titleArea, 1.0f, juce::Justification::centredLeft);
 
-    // highlight the active tab / mode underline
+    // highlight the active tab / mode / tool underline
     auto underline = [&](juce::Component& c, bool on) {
         if (!c.isVisible()) return;
         if (!on) return;
@@ -511,6 +708,10 @@ void WavetableEditor::paint(juce::Graphics& g) {
         underline(modeSingle, mode == AudioMode::Single);
         underline(modeAuto,   mode == AudioMode::Auto);
         underline(modeFixed,  mode == AudioMode::Fixed);
+    } else {
+        underline(brushPen,    drawPad.getBrush() == DrawPad::Brush::Pen);
+        underline(brushSmooth, drawPad.getBrush() == DrawPad::Brush::Smooth);
+        underline(snapBtn,     snapOn);
     }
 }
 
