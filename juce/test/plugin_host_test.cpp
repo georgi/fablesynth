@@ -133,6 +133,20 @@ int main(int argc, char** argv) {
         }
         proc.processBlock(buf, midi);
     }
+    // --- LFO shape parameter independence: lfo1.shape must not alias lfo2.shape ---
+    // (set distinct shapes so the editor snapshot also shows them differently).
+    {
+        auto* p1 = proc.apvts.getParameter("lfo1.shape");
+        auto* p2 = proc.apvts.getParameter("lfo2.shape");
+        check(p1 && p2 && p1 != p2, "lfo1.shape / lfo2.shape are distinct params", (p1 && p2 && p1 != p2) ? 1 : 0);
+        if (auto* c1 = dynamic_cast<juce::AudioParameterChoice*>(p1)) c1->setValueNotifyingHost(c1->convertTo0to1(2.0f)); // SAW
+        if (auto* c2 = dynamic_cast<juce::AudioParameterChoice*>(p2)) c2->setValueNotifyingHost(c2->convertTo0to1(3.0f)); // SQR
+        float v1 = proc.apvts.getRawParameterValue("lfo1.shape")->load();
+        float v2 = proc.apvts.getRawParameterValue("lfo2.shape")->load();
+        check(std::abs(v1 - 2.0f) < 0.5f, "lfo1.shape = SAW", v1);
+        check(std::abs(v2 - 3.0f) < 0.5f, "lfo2.shape = SQR independently (no alias)", v2);
+    }
+
     juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
                             : juce::File::getCurrentWorkingDirectory());
     dir.createDirectory();
