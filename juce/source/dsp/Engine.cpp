@@ -62,7 +62,10 @@ double Lfo::valueOff(int shape, double off) const {
 }
 void Lfo::advance(double rate, int n, double sr) {
     elapsed += n;
-    phase += (rate * n) / sr;
+    // NaN guard (mirrors the web LFO): a non-finite rate must not latch a sticky
+    // NaN phase that would never recover.
+    double d = (rate * n) / sr;
+    if (std::isfinite(d)) phase += d;
     if (phase >= 1) { phase -= std::floor(phase); hold = rng->next() * 2 - 1; }
 }
 
@@ -100,6 +103,22 @@ double Engine::lfoHz(int base) const {
     if (p_[base + LFO_SYNC] != 0)
         return (bpm_ / 60.0) * lfoDivFactor((int)p_[base + LFO_SYNCRATE]);
     return p_[base + LFO_RATE];
+}
+
+// Update a free-running global LFO once per block. When synced AND the host is
+// playing, the phase is derived from the transport position so a synced cycle
+// starts on the downbeat (ppq = quarter notes, factor = cycles per beat). When
+// unsynced — or synced but stopped — it free-runs at its Hz so movement
+// continues. (Retrig LFOs are per-voice / note-aligned and skip this.)
+void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
+    if (p_[base + LFO_SYNC] != 0 && playing_) {
+        double ph = ppqChunk * lfoDivFactor((int)p_[base + LFO_SYNCRATE]);
+        ph -= std::floor(ph);
+        if (ph < g.phase) g.hold = rng_.next() * 2 - 1; // grid wrap -> new S&H value
+        g.phase = ph;
+    } else {
+        g.advance(lfoHz(base), n, sr_);
+    }
 }
 
 void Engine::setTables(const std::vector<GeneratedTable>& tables) {
@@ -564,9 +583,14 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     vizA = v.oA.posSm; vizB = v.oB.posSm;
 }
 
-void Engine::renderBlock(float* L, float* R, int n) {
+void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     std::fill(L, L + n, 0.0f);
     std::fill(R, R + n, 0.0f);
+
+    // Update the global (free-run / transport-locked) LFOs before voices read them.
+    updateGlobalLfo(gLfo1_, LFO1_BASE, ppqChunk, n);
+    updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n);
+
     int act = 0;
     for (auto& v : voices_) {
         if (!v.active()) continue;
@@ -575,10 +599,6 @@ void Engine::renderBlock(float* L, float* R, int n) {
     }
     vizActive = act;
     if (act == 0) { vizA = -1; vizB = -1; } // idle -> let the UI fall back to the knob
-
-    // Free-running LFOs advance once per block regardless of active voices.
-    gLfo1_.advance(lfoHz(LFO1_BASE), n, sr_);
-    gLfo2_.advance(lfoHz(LFO2_BASE), n, sr_);
 }
 
 void Engine::render(float* L, float* R, int n) {
@@ -593,9 +613,10 @@ void Engine::render(float* L, float* R, int n) {
         return;
     }
     int off = 0;
+    const double beatsPerSample = (bpm_ / 60.0) / sr_;
     while (off < n) {
         int chunk = std::min(128, n - off);
-        renderBlock(L + off, R + off, chunk);
+        renderBlock(L + off, R + off, chunk, ppq_ + off * beatsPerSample);
         off += chunk;
     }
 }

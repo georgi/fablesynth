@@ -29,15 +29,16 @@ public:
     LfoView(juce::AudioProcessorValueTreeState&, const juce::String& shapeId,
             const juce::String& rateId, const juce::String& syncId,
             const juce::String& syncRateId, juce::Colour accent,
-            std::function<double()> bpmProvider);
+            std::function<HostTransport()> transportProvider);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override { repaint(); }
-    float currentRate() const;   // effective Hz (free or synced)
+    float currentRate(const HostTransport&) const;   // effective Hz (free or synced)
+    bool  synced() const;
     juce::AudioProcessorValueTreeState& apvts;
     juce::String shapeId, rateId, syncId, syncRateId;
     juce::Colour accent;
-    std::function<double()> bpm;
+    std::function<HostTransport()> transport;
     juce::uint32 t0;
 };
 

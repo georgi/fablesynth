@@ -11,6 +11,7 @@
 #include "Wavetables.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <mutex>
 #include <vector>
@@ -120,7 +121,15 @@ public:
     void noteOn(int note, double vel);
     void noteOff(int note);
     void pitchBend(double semis) { bend_ = semis; }
-    void setBpm(double b) { bpm_ = (b > 1.0 ? b : 120.0); }
+    // Clamp to a sane musical range; non-finite or <=1 falls back to 120. The
+    // upper bound keeps a degenerate host tempo from making the per-block LFO
+    // phase step exceed a cycle.
+    void setBpm(double b) { bpm_ = (std::isfinite(b) && b > 1.0) ? std::min(b, 1000.0) : 120.0; }
+    // Host transport for synced-LFO phase locking: ppq = quarter notes since the
+    // song origin, playing = host transport running. When playing, a synced
+    // free-run LFO derives its phase from ppq so it lines up with the downbeat.
+    // ppq is sanitised so a non-finite host position can't latch a NaN phase.
+    void setTransport(double ppq, bool playing) { ppq_ = std::isfinite(ppq) ? ppq : 0.0; playing_ = playing; }
     void panic() { for (auto& v : voices_) v.kill(); }
 
     // Render the summed (pre-FX) voice mix into L/R. Chunks internally to the
@@ -138,8 +147,9 @@ private:
     void runFilter(FilterState& fs, const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n);
     void renderVoice(Voice& v, float* L, float* R, int n);
-    void renderBlock(float* L, float* R, int n); // n <= 128
+    void renderBlock(float* L, float* R, int n, double ppqChunk); // n <= 128
     double lfoHz(int base) const;
+    void updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n);
 
     ParamArray p_ = defaultParams();
     std::vector<EngineTable> tables_;
@@ -156,6 +166,8 @@ private:
     Rng    rng_;
     Lfo    gLfo1_, gLfo2_;             // free-running (retrig=0) global LFO phases
     double bpm_ = 120;
+    double ppq_ = 0;                  // host transport position (quarter notes)
+    bool   playing_ = false;          // host transport running
 
     // per-block scratch (128)
     float tmpL_[128], tmpR_[128];

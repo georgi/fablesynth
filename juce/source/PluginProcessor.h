@@ -7,6 +7,14 @@
 #include "dsp/Presets.h"
 #include "dsp/UserTables.h"
 
+// Host transport snapshot for the LFO displays: tempo, song position, and
+// whether the transport is running. The synced-LFO dot tracks ppq when playing.
+struct HostTransport {
+    double bpm = 120.0;
+    double ppq = 0.0;
+    bool   playing = false;
+};
+
 // FableSynth VST/AU processor. Owns the JUCE-independent DSP core (Engine + Fx)
 // and bridges the APVTS parameter tree + MIDI to it.
 class FableAudioProcessor : public juce::AudioProcessor {
@@ -45,9 +53,11 @@ public:
     const std::vector<fable::GeneratedTable>& getTables() const { return tables; }
     float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
 
-    // Last host tempo seen by processBlock (fallback 120). The LFO displays read
-    // this so a synced LFO's animation matches its actual rate.
-    float getHostBpm() const { return hostBpm.load(); }
+    // Full transport snapshot for the LFO displays (tempo + position + running).
+    // The synced-LFO dot tracks ppq while playing so it sits on the beat grid.
+    HostTransport getTransport() const {
+        return { hostBpm.load(), hostPpq.load(), hostPlaying.load() };
+    }
 
     // ---- table addressing (procedural slots 0..5, then user tables) ----
     // The oscillator TABLE param is an index into this combined space. Returns
@@ -88,6 +98,8 @@ private:
     std::vector<fable::UserTable> userTables;    // imported / drawn tables
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
     std::atomic<float> hostBpm{120.0f};
+    std::atomic<double> hostPpq{0.0};
+    std::atomic<bool> hostPlaying{false};
     juce::AudioBuffer<float> scratchR; // mono-output downmix scratch
 
     // HUD feeds

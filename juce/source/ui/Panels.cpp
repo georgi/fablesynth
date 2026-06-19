@@ -186,10 +186,10 @@ void EnvPanel::resized() {
 }
 
 // ===================== LfoPanel =====================
-LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac, std::function<double()> bpmProvider)
+LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac, std::function<HostTransport()> transportProvider)
     : title(t),
       shape(s, id + ".shape", Accent::N),
-      view(s, id + ".shape", id + ".rate", id + ".sync", id + ".syncrate", accentColour(ac), std::move(bpmProvider)),
+      view(s, id + ".shape", id + ".rate", id + ".sync", id + ".syncrate", accentColour(ac), std::move(transportProvider)),
       syncRate(s, id + ".syncrate", ac),
       rate(s, id + ".rate", Knob::Sm, ac),
       rise(s, id + ".rise", Knob::Sm, ac),
@@ -233,8 +233,8 @@ void LfoPanel::Block::layout(juce::Rectangle<int> r) {
 
 void LfoPanel::Block::paintTitle(juce::Graphics& g) { paintHeaderTitle(g, titleArea, title, col::text); }
 
-LfoPanel::LfoPanel(APVTS& s, std::function<double()> bpmProvider)
-    : apvts(s), l1(s, "lfo1", "LFO 1", Accent::A, bpmProvider), l2(s, "lfo2", "LFO 2", Accent::B, bpmProvider) {
+LfoPanel::LfoPanel(APVTS& s, std::function<HostTransport()> transportProvider)
+    : apvts(s), l1(s, "lfo1", "LFO 1", Accent::A, transportProvider), l2(s, "lfo2", "LFO 2", Accent::B, transportProvider) {
     for (auto* b : { &l1, &l2 }) {
         addAndMakeVisible(b->shape);
         addAndMakeVisible(b->view);

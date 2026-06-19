@@ -289,6 +289,30 @@ int main() {
         eng.render(bl.data(), br.data(), 2048);
         check(finite(bl) && peak(bl) < 4.0f, "engine finite/bounded with synced free-run LFO",
               "peak=" + std::to_string(peak(bl)));
+
+        // Transport phase-lock: a synced free-run LFO derives its phase from the
+        // host position, so two transport spots a whole number of cycles apart
+        // give identical modulation (downbeat alignment, independent of elapsed
+        // time). SAW shape keeps it deterministic; route LFO1 -> A POS.
+        auto firstPos = [&](double ppq) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = 2;   // SAW
+            q[LFO1_BASE + LFO_SYNC] = 1; q[LFO1_BASE + LFO_SYNCRATE] = 2; q[LFO1_BASE + LFO_RETRIG] = 0; // 1/4, free-run
+            q[MAT1_BASE + MAT_SRC] = 1; q[MAT1_BASE + MAT_DST] = 1; q[MAT1_BASE + MAT_AMT] = 1.0f;       // LFO1 -> A POS
+            e.setBpm(120); e.setTransport(ppq, true);
+            e.noteOn(60, 1.0);
+            std::vector<float> a(128), b(128);
+            e.render(a.data(), b.data(), 128);
+            return e.vizA;
+        };
+        // 1/4 = 1 cycle per beat, so ppq 0 and ppq 4 are 4 cycles apart -> same phase.
+        check(std::abs(firstPos(0.0) - firstPos(4.0)) < 1e-6, "synced LFO phase locks to transport (downbeat aligned)");
+        check(std::abs(firstPos(0.0) - firstPos(0.5)) > 1e-3, "synced LFO phase varies within the bar");
+
+        eng.setTransport(2.0, true);
+        eng.render(bl.data(), br.data(), 2048);
+        check(finite(bl) && peak(bl) < 4.0f, "engine finite/bounded with transport-locked LFO");
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());

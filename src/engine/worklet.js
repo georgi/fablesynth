@@ -189,6 +189,10 @@ class FableProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < NVOICES; i++) this.voices.push(new Voice());
     this.bend = 0;
     this.bpm = 120;
+    // Virtual transport: beats (quarter notes) since audio start. Standalone has
+    // no host transport, so synced LFOs phase-lock to this clock (downbeat = t0).
+    // Accumulated (not samples*bpm) so a tempo change doesn't rescale the past.
+    this.transportBeats = 0;
     this.gLfo1 = new LFO(); this.gLfo1.reset();
     this.gLfo2 = new LFO(); this.gLfo2.reset();
     this.lastPitch = 60;
@@ -219,7 +223,7 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'on': this.noteOn(d.n, d.v); break;
       case 'off': this.noteOff(d.n); break;
       case 'bend': this.bend = d.s; break;
-      case 'bpm': this.bpm = d.v > 1 ? d.v : 120; break;
+      case 'bpm': this.bpm = d.v > 1 ? Math.min(d.v, 1000) : 120; break;
       case 'panic': for (const v of this.voices) v.kill(); break;
     }
   }
@@ -542,6 +546,22 @@ class FableProcessor extends AudioWorkletProcessor {
     return this.p[pre + '.rate'];
   }
 
+  // Free-running global LFO phase, updated once per block. When synced, the
+  // phase is derived from the transport position (ppq, in quarter notes) so a
+  // synced LFO cycle starts on the downbeat. Unsynced LFOs free-run at their Hz.
+  // (Retrig LFOs are per-voice and note-aligned, so they bypass this.)
+  updateGlobalLfo(g, pre, ppq, n) {
+    if (this.p[pre + '.sync']) {
+      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[pre + '.syncrate'] | 0));
+      let ph = ppq * LFO_DIV_F[i];
+      ph -= Math.floor(ph);
+      if (ph < g.phase) g.hold = Math.random() * 2 - 1; // grid wrap -> new S&H value
+      g.phase = ph;
+    } else {
+      g.advance(this.p[pre + '.rate'], n);
+    }
+  }
+
   renderVoice(v, L, R, n) {
     const p = this.p;
 
@@ -725,6 +745,13 @@ class FableProcessor extends AudioWorkletProcessor {
     if (R !== L) R.fill(0);
     const n = L.length;
 
+    // Update the global (free-run/transport-locked) LFOs before voices read
+    // them. ppq = beats since audio start (block-start position).
+    const ppq = this.transportBeats;
+    this.updateGlobalLfo(this.gLfo1, 'lfo1', ppq, n);
+    this.updateGlobalLfo(this.gLfo2, 'lfo2', ppq, n);
+    this.transportBeats += (n / sampleRate) * (this.bpm / 60);
+
     let act = 0;
     let viz = null;
     for (const v of this.voices) {
@@ -733,10 +760,6 @@ class FableProcessor extends AudioWorkletProcessor {
       if (v.gate || !viz) viz = r;
       act++;
     }
-
-    // Free-running LFOs advance once per block regardless of active voices.
-    this.gLfo1.advance(this.lfoHz('lfo1'), n);
-    this.gLfo2.advance(this.lfoHz('lfo2'), n);
 
     this.vizCount += n;
     if (this.vizCount >= 2048) {
