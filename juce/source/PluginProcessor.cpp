@@ -101,6 +101,31 @@ void FableAudioProcessor::deleteUserTable(int poolIndex) {
     }
 }
 
+void FableAudioProcessor::renameUserTable(int poolIndex, std::string name) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return;
+    juce::String s = juce::String(name).trim().toUpperCase();
+    if (s.isEmpty()) s = "USER";
+    userTables[(size_t)poolIndex].name = s.substring(0, 14).toStdString();
+}
+
+int FableAudioProcessor::duplicateUserTable(int poolIndex) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return -1;
+    const auto& src = userTables[(size_t)poolIndex];
+    std::vector<std::vector<float>> frames;
+    for (int f = 0; f < src.frames; ++f)
+        frames.emplace_back(src.wave.begin() + (size_t)f * fable::SIZE,
+                            src.wave.begin() + (size_t)(f + 1) * fable::SIZE);
+    std::string nm = (src.name + " COPY").substr(0, 14);
+    return addUserTable(fable::makeUserTable(nm, frames));
+}
+
+int FableAudioProcessor::duplicateFactoryTable(int factoryIndex) {
+    if (factoryIndex < 0 || factoryIndex >= (int)tables.size()) return -1;
+    auto frames = fable::framesFromGenerated(tables[(size_t)factoryIndex]);
+    std::string nm = (tables[(size_t)factoryIndex].name + " COPY").substr(0, 14);
+    return addUserTable(fable::makeUserTable(nm, frames));
+}
+
 void FableAudioProcessor::readScope(float* dst, int n) const {
     int w = scopeW.load(std::memory_order_relaxed);
     for (int i = 0; i < n; ++i)

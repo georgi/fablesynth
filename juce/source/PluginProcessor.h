@@ -59,6 +59,10 @@ public:
     // Add a freshly built table; returns its combined table index (or -1 if full).
     int  addUserTable(fable::UserTable table);
     void deleteUserTable(int poolIndex);
+    void renameUserTable(int poolIndex, std::string name);
+    int  duplicateUserTable(int poolIndex);   // returns new combined index, or -1
+    int  duplicateFactoryTable(int factoryIndex); // returns new combined index, or -1
+    const std::vector<fable::GeneratedTable>& factoryTables() const { return tables; }
 
     // ---- HUD feeds (scope / spectrum / voices / MIDI led) ----
     int    getVoiceCount() const { return voiceCount.load(); }
