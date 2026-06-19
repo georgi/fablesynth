@@ -13,6 +13,7 @@ export const TABLE_NAMES = ['PRIME', 'BLOOM', 'PULSE', 'VOX', 'CHIME', 'GLITCH']
 export const FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH', 'COMB', 'VOWEL'];
 export const FILTER_ROUTES = ['SERIAL', 'PARALLEL', 'SPLIT'];
 export const LFO_SHAPES = ['SINE', 'TRI', 'SAW', 'SQR', 'S&H'];
+export const LFO_DIVS = ['1/1', '1/2', '1/4', '1/4.', '1/4T', '1/8', '1/8.', '1/8T', '1/16', '1/16T', '1/32'];
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
 export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
@@ -67,6 +68,18 @@ function filterParams(prefix: string, defOn: number, defType: number, defCut: nu
   ];
 }
 
+function lfoParams(prefix: string, defRate: number): ParamDef[] {
+  return [
+    { id: `${prefix}.shape`, type: 'enum', options: LFO_SHAPES, def: 0 },
+    { id: `${prefix}.rate`, label: 'RATE', min: 0.02, max: 30, def: defRate, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
+    { id: `${prefix}.sync`, type: 'bool', def: 0 },
+    { id: `${prefix}.syncrate`, type: 'enum', options: LFO_DIVS, def: 2 },
+    { id: `${prefix}.rise`, label: 'RISE', min: 0, max: 5, def: 0, curve: 'lin', fmt: fmtSec },
+    { id: `${prefix}.phase`, label: 'PHASE', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+    { id: `${prefix}.retrig`, type: 'bool', def: 1 },
+  ];
+}
+
 function matSlot(n: number): ParamDef[] {
   return [
     { id: `mat${n}.src`, type: 'enum', options: MOD_SOURCES, def: 0 },
@@ -100,10 +113,8 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'env2.s', label: 'SUS', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
   { id: 'env2.r', label: 'REL', min: 0.005, max: 12, def: 0.3, curve: 'log', fmt: fmtSec },
 
-  { id: 'lfo1.shape', type: 'enum', options: LFO_SHAPES, def: 0 },
-  { id: 'lfo1.rate', label: 'RATE', min: 0.02, max: 30, def: 2, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
-  { id: 'lfo2.shape', type: 'enum', options: LFO_SHAPES, def: 0 },
-  { id: 'lfo2.rate', label: 'RATE', min: 0.02, max: 30, def: 5, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
+  ...lfoParams('lfo1', 2),
+  ...lfoParams('lfo2', 5),
 
   ...matSlot(1), ...matSlot(2), ...matSlot(3), ...matSlot(4),
 

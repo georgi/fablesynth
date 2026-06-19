@@ -187,26 +187,83 @@ void EnvPanel::resized() {
 
 // ===================== LfoPanel =====================
 LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac)
-    : title(t), shape(s, id + ".shape", Accent::N), view(s, id + ".shape", id + ".rate", accentColour(ac)),
-      rate(s, id + ".rate", Knob::Md, ac) {}
+    : title(t),
+      shape(s, id + ".shape", Accent::N),
+      view(s, id + ".shape", id + ".rate", accentColour(ac)),
+      syncRate(s, id + ".syncrate", ac),
+      rate(s, id + ".rate", Knob::Sm, ac),
+      rise(s, id + ".rise", Knob::Sm, ac),
+      phase(s, id + ".phase", Knob::Sm, ac) {
+    syncBtn.setClickingTogglesState(true);
+    retrigBtn.setClickingTogglesState(true);
+    for (auto* b : { &syncBtn, &retrigBtn }) {
+        b->setColour(juce::TextButton::buttonOnColourId, accentColour(ac));
+        b->setColour(juce::TextButton::textColourOnId, col::bg);
+    }
+    syncAtt   = std::make_unique<APVTS::ButtonAttachment>(s, id + ".sync", syncBtn);
+    retrigAtt = std::make_unique<APVTS::ButtonAttachment>(s, id + ".retrig", retrigBtn);
+}
+
+void LfoPanel::Block::applySync(bool sync) {
+    lastSync = sync;
+    rate.setVisible(!sync);
+    syncRate.setVisible(sync);
+}
+
 void LfoPanel::Block::layout(juce::Rectangle<int> r) {
     auto head = r.removeFromTop(20);
     shape.setBounds(head.removeFromRight(90).withSizeKeepingCentre(90, 18));
     titleArea = head;
-    r.removeFromTop(6);
-    view.setBounds(r.removeFromTop(46));
-    r.removeFromTop(6);
-    rate.setBounds(r.removeFromTop(64).withSizeKeepingCentre(60, 64));
+    r.removeFromTop(5);
+    view.setBounds(r.removeFromTop(38));
+    r.removeFromTop(5);
+    auto tg = r.removeFromTop(18);
+    syncBtn.setBounds(tg.removeFromLeft(tg.getWidth() / 2).reduced(2, 0));
+    retrigBtn.setBounds(tg.reduced(2, 0));
+    r.removeFromTop(5);
+    auto row = r.removeFromTop(60);
+    int w = row.getWidth() / 3;
+    slot0 = row.removeFromLeft(w);
+    rate.setBounds(slot0.withSizeKeepingCentre(40, 56));
+    syncRate.setBounds(slot0.withSizeKeepingCentre(w - 4, 18));
+    rise.setBounds(row.removeFromLeft(w).withSizeKeepingCentre(40, 56));
+    phase.setBounds(row.withSizeKeepingCentre(40, 56));
+    applySync(lastSync);
 }
+
 void LfoPanel::Block::paintTitle(juce::Graphics& g) { paintHeaderTitle(g, titleArea, title, col::text); }
 
-LfoPanel::LfoPanel(APVTS& s) : l1(s, "lfo1", "LFO 1", Accent::A), l2(s, "lfo2", "LFO 2", Accent::B) {
-    for (auto* b : { &l1, &l2 }) { addAndMakeVisible(b->shape); addAndMakeVisible(b->view); addAndMakeVisible(b->rate); }
+LfoPanel::LfoPanel(APVTS& s)
+    : apvts(s), l1(s, "lfo1", "LFO 1", Accent::A), l2(s, "lfo2", "LFO 2", Accent::B) {
+    for (auto* b : { &l1, &l2 }) {
+        addAndMakeVisible(b->shape);
+        addAndMakeVisible(b->view);
+        addAndMakeVisible(b->syncBtn);
+        addAndMakeVisible(b->retrigBtn);
+        addAndMakeVisible(b->syncRate);
+        addAndMakeVisible(b->rate);
+        addAndMakeVisible(b->rise);
+        addAndMakeVisible(b->phase);
+    }
+    // Initialise swap state from current param values.
+    l1.applySync(s.getRawParameterValue("lfo1.sync")->load() != 0.0f);
+    l2.applySync(s.getRawParameterValue("lfo2.sync")->load() != 0.0f);
+    startTimerHz(15);
 }
+
+void LfoPanel::timerCallback() {
+    // Poll sync params and re-layout on change.
+    bool s1 = apvts.getRawParameterValue("lfo1.sync")->load() != 0.0f;
+    bool s2 = apvts.getRawParameterValue("lfo2.sync")->load() != 0.0f;
+    if (s1 != l1.lastSync) l1.applySync(s1);
+    if (s2 != l2.lastSync) l2.applySync(s2);
+}
+
 void LfoPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     l1.paintTitle(g); l2.paintTitle(g);
 }
+
 void LfoPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     auto left = r.removeFromLeft(r.getWidth() / 2);

@@ -9,6 +9,7 @@
 
 #include "Params.h"
 #include "Wavetables.h"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <mutex>
@@ -45,9 +46,13 @@ private:
 class Lfo {
 public:
     double phase = 0, hold = 0;
+    long   elapsed = 0;                 // samples since reset (for rise/fade-in)
     Rng*   rng = nullptr;
-    void   reset() { phase = 0; hold = rng->next() * 2 - 1; }
-    double value(int shape) const;
+    void   reset() { phase = 0; hold = rng->next() * 2 - 1; elapsed = 0; }
+    double valueOff(int shape, double off) const;       // reads frac(phase + off)
+    double riseGain(double riseSec, double sr) const {
+        return riseSec <= 0 ? 1.0 : std::min(1.0, (double)elapsed / (riseSec * sr));
+    }
     void   advance(double rate, int n, double sr);
 };
 
@@ -115,6 +120,7 @@ public:
     void noteOn(int note, double vel);
     void noteOff(int note);
     void pitchBend(double semis) { bend_ = semis; }
+    void setBpm(double b) { bpm_ = (b > 1.0 ? b : 120.0); }
     void panic() { for (auto& v : voices_) v.kill(); }
 
     // Render the summed (pre-FX) voice mix into L/R. Chunks internally to the
@@ -133,6 +139,7 @@ private:
                    float* outL, float* outR, double drive, int n);
     void renderVoice(Voice& v, float* L, float* R, int n);
     void renderBlock(float* L, float* R, int n); // n <= 128
+    double lfoHz(int base) const;
 
     ParamArray p_ = defaultParams();
     std::vector<EngineTable> tables_;
@@ -147,6 +154,8 @@ private:
     double lastPitch_ = 60;
     long   clock_ = 0;
     Rng    rng_;
+    Lfo    gLfo1_, gLfo2_;             // free-running (retrig=0) global LFO phases
+    double bpm_ = 120;
 
     // per-block scratch (128)
     float tmpL_[128], tmpR_[128];

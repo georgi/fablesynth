@@ -155,6 +155,13 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         if (rawParams[i]) p[i] = rawParams[i]->load();
     fx.setParams(p);
 
+    // Push host tempo for LFO sync (fallback 120 when absent/invalid).
+    double bpm = 120.0;
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition())
+            if (auto b = pos->getBpm()) bpm = *b;
+    engine.setBpm(bpm);
+
     // MIDI -> note / bend events.
     for (const auto meta : midi) {
         const auto m = meta.getMessage();

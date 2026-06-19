@@ -73,20 +73,30 @@ private:
     juce::Rectangle<int> titleArea;
 };
 
-class LfoPanel : public juce::Component {
+class LfoPanel : public juce::Component, private juce::Timer {
 public:
     explicit LfoPanel(APVTS&);
+    ~LfoPanel() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
+    void timerCallback() override;
     struct Block {
         Block(APVTS&, juce::String id, juce::String title, Accent);
         juce::String title;
-        Stepper shape; LfoView view; Knob rate;
-        juce::Rectangle<int> titleArea;
+        Stepper shape;
+        LfoView view;
+        juce::TextButton syncBtn{"SYNC"}, retrigBtn{"TRIG"};
+        std::unique_ptr<APVTS::ButtonAttachment> syncAtt, retrigAtt;
+        Stepper syncRate;
+        Knob rate, rise, phase;
+        bool lastSync = false;
+        juce::Rectangle<int> titleArea, slot0;   // slot0 = rate/div swap area
         void layout(juce::Rectangle<int>);
         void paintTitle(juce::Graphics&);
+        void applySync(bool sync);                // toggle rate/syncRate visibility
     };
+    APVTS& apvts;
     Block l1, l2;
 };
 

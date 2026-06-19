@@ -37,6 +37,14 @@ inline const std::vector<std::string>& tableSlotNames() {
 inline const std::vector<std::string> FILTER_TYPES  = {"LP 12", "LP 24", "BP 12", "HP 12", "NOTCH", "COMB", "VOWEL"};
 inline const std::vector<std::string> FILTER_ROUTES = {"SERIAL", "PARALLEL", "SPLIT"};
 inline const std::vector<std::string> LFO_SHAPES    = {"SINE", "TRI", "SAW", "SQR", "S&H"};
+inline const std::vector<std::string> LFO_DIVS      = {"1/1", "1/2", "1/4", "1/4.", "1/4T", "1/8", "1/8.", "1/8T", "1/16", "1/16T", "1/32"};
+
+// Cycles per beat (beat = quarter note) for each LFO_DIVS entry. Clamped.
+inline double lfoDivFactor(int i) {
+    static const double f[] = {0.25, 0.5, 1.0, 2.0 / 3.0, 1.5, 2.0, 4.0 / 3.0, 3.0, 4.0, 6.0, 8.0};
+    constexpr int n = (int)(sizeof(f) / sizeof(f[0]));
+    return f[i < 0 ? 0 : (i >= n ? n - 1 : i)];
+}
 inline const std::vector<std::string> SUB_SHAPES    = {"SINE", "SQR"};
 inline const std::vector<std::string> NOISE_TYPES   = {"WHITE", "PINK"};
 inline const std::vector<std::string> MOD_SOURCES   = {"-", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE"};
@@ -47,6 +55,7 @@ enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,
                  OSC_UNISON, OSC_DETUNE, OSC_SPREAD, OSC_LEVEL, OSC_PAN, OSC_NFIELDS };
 enum FiltField { FLT_ON, FLT_TYPE, FLT_CUTOFF, FLT_RES, FLT_DRIVE, FLT_ENV, FLT_KEY, FLT_NFIELDS };
 enum MatField  { MAT_SRC, MAT_DST, MAT_AMT, MAT_NFIELDS };
+enum LfoField  { LFO_SHAPE, LFO_RATE, LFO_SYNC, LFO_SYNCRATE, LFO_RISE, LFO_PHASE, LFO_RETRIG, LFO_NFIELDS };
 
 // ---- flat parameter index space ----
 // Block bases keep oscA/oscB and filter/filter2 layouts identical, so the
@@ -62,9 +71,9 @@ enum Pid : int {
     FILTER2_BASE,                             // 7 fields
     ENV1_BASE   = FILTER2_BASE + FLT_NFIELDS, // a,d,s,r
     ENV2_BASE   = ENV1_BASE + 4,
-    LFO1_BASE   = ENV2_BASE + 4,              // shape,rate
-    LFO2_BASE   = LFO1_BASE + 2,
-    MAT1_BASE   = LFO2_BASE + 2,              // 4 slots x 3
+    LFO1_BASE   = ENV2_BASE + 4,              // shape,rate,sync,syncrate,rise,phase,retrig
+    LFO2_BASE   = LFO1_BASE + LFO_NFIELDS,
+    MAT1_BASE   = LFO2_BASE + LFO_NFIELDS,    // 4 slots x 3
     MAT2_BASE   = MAT1_BASE + MAT_NFIELDS,
     MAT3_BASE   = MAT2_BASE + MAT_NFIELDS,
     MAT4_BASE   = MAT3_BASE + MAT_NFIELDS,

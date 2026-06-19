@@ -258,6 +258,39 @@ int main() {
         check(pad.size() == 256 && std::abs(pad[10] - 0.7f) < 1e-6f, "framePoints samples DRAW_N points");
     }
 
+    printf("\n== 9. LFO controls (sync / rise / phase / retrig) ==\n");
+    {
+        check(std::abs(lfoDivFactor(2) - 1.0) < 1e-9, "lfoDivFactor 1/4 = 1.0");
+        check(std::abs(lfoDivFactor(5) - 2.0) < 1e-9, "lfoDivFactor 1/8 = 2.0");
+        check(std::abs(lfoDivFactor(0) - 0.25) < 1e-9, "lfoDivFactor 1/1 = 0.25");
+
+        auto dp = defaultParams();
+        check(dp[LFO1_BASE + LFO_RETRIG] == 1.0f, "lfo retrig defaults on (legacy behaviour)");
+        check(dp[LFO1_BASE + LFO_SYNC] == 0.0f, "lfo sync defaults off");
+        check((int)dp[LFO1_BASE + LFO_SYNCRATE] == 2, "lfo syncrate defaults 1/4");
+
+        Rng rng; Lfo lf; lf.rng = &rng; lf.reset();
+        check(lf.riseGain(1.0, 48000) == 0.0, "rise gain 0 at note-on");
+        lf.advance(2.0, 24000, 48000);
+        check(std::abs(lf.riseGain(1.0, 48000) - 0.5) < 1e-6, "rise gain ~0.5 mid-ramp");
+        check(lf.riseGain(0.0, 48000) == 1.0, "rise gain 1 when rise=0");
+
+        // Engine renders finite/bounded audio with synced + free-running LFO routed to A POS.
+        Engine eng; eng.prepare(sr);
+        eng.setTables(tables);
+        auto& p = eng.params();
+        p = defaultParams();
+        p[LFO1_BASE + LFO_SYNC] = 1; p[LFO1_BASE + LFO_SYNCRATE] = 5; p[LFO1_BASE + LFO_RETRIG] = 0;
+        p[LFO1_BASE + LFO_RISE] = 0.2f;
+        p[MAT1_BASE + MAT_SRC] = 1; p[MAT1_BASE + MAT_DST] = 1; p[MAT1_BASE + MAT_AMT] = 1.0f; // LFO1 -> A POS
+        eng.setBpm(128);
+        eng.noteOn(60, 1.0);
+        std::vector<float> bl(2048), br(2048);
+        eng.render(bl.data(), br.data(), 2048);
+        check(finite(bl) && peak(bl) < 4.0f, "engine finite/bounded with synced free-run LFO",
+              "peak=" + std::to_string(peak(bl)));
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;
 }
