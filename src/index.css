@@ -520,11 +520,11 @@ body::before {
 .lfo-block { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .lfo-curve {
   width: 100%;
-  height: 46px;
+  height: 96px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: #07090e;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .lfo-block .knob-row { justify-content: center; }
 

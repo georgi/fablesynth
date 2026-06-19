@@ -211,17 +211,17 @@ void LfoPanel::Block::applySync(bool sync) {
 }
 
 void LfoPanel::Block::layout(juce::Rectangle<int> r) {
-    auto head = r.removeFromTop(20);
-    shape.setBounds(head.removeFromRight(90).withSizeKeepingCentre(90, 18));
+    auto head = r.removeFromTop(22);
+    shape.setBounds(head.removeFromRight(96).withSizeKeepingCentre(96, 18));
     titleArea = head;
-    r.removeFromTop(5);
-    view.setBounds(r.removeFromTop(38));
-    r.removeFromTop(5);
-    auto tg = r.removeFromTop(18);
+    r.removeFromTop(8);
+    view.setBounds(r.removeFromTop(110));   // tall shape visualization
+    r.removeFromTop(10);
+    auto tg = r.removeFromTop(22);
     syncBtn.setBounds(tg.removeFromLeft(tg.getWidth() / 2).reduced(2, 0));
     retrigBtn.setBounds(tg.reduced(2, 0));
-    r.removeFromTop(5);
-    auto row = r.removeFromTop(60);
+    r.removeFromTop(12);
+    auto row = r.removeFromTop(64);
     int w = row.getWidth() / 3;
     slot0 = row.removeFromLeft(w);
     rate.setBounds(slot0.withSizeKeepingCentre(40, 56));

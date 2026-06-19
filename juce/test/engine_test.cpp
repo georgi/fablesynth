@@ -313,6 +313,25 @@ int main() {
         eng.setTransport(2.0, true);
         eng.render(bl.data(), br.data(), 2048);
         check(finite(bl) && peak(bl) < 4.0f, "engine finite/bounded with transport-locked LFO");
+
+        // LFO shape audibly changes the modulation: route LFO1 -> PITCH and
+        // confirm SINE / SAW / SQR produce materially different output.
+        auto renderShape = [&](int shape) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = (float)shape;
+            q[LFO1_BASE + LFO_RATE] = 6.0f;
+            q[MAT1_BASE + MAT_SRC] = 1; q[MAT1_BASE + MAT_DST] = 4; q[MAT1_BASE + MAT_AMT] = 0.5f; // LFO1 -> PITCH
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto shSine = renderShape(0), shSaw = renderShape(2), shSqr = renderShape(3);
+        double dSaw = 0, dSqr = 0;
+        for (size_t i = 0; i < shSine.size(); ++i) { dSaw += std::abs(shSine[i] - shSaw[i]); dSqr += std::abs(shSine[i] - shSqr[i]); }
+        check(dSaw > 1.0 && dSqr > 1.0, "LFO shape changes modulated output (sine vs saw/sqr differ)",
+              "dSaw=" + std::to_string(dSaw) + " dSqr=" + std::to_string(dSqr));
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
