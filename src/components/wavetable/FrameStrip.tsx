@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { setupCanvas } from '../displays/canvas';
 import { framePoints } from './frames';
+import { MAX_FRAMES } from '../../engine/usertables';
 
 function FrameThumb({ frame, accent, on }: { frame: Float32Array; accent: string; on: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -62,7 +63,8 @@ export function FrameStrip({ frames, current, accent, readOnly, onSelect, onAdd,
             ) : null}
           </div>
         ))}
-        {!readOnly ? <button className="wte-frame-add" aria-label="add frame" onClick={onAdd}>＋</button> : null}
+        {!readOnly && frames.length < MAX_FRAMES
+          ? <button className="wte-frame-add" aria-label="add frame" onClick={onAdd}>＋</button> : null}
       </div>
       <span className="wte-frames-count">{frames.length}f</span>
     </div>

@@ -62,7 +62,7 @@ export function WavetableEditor() {
   const drawingRef = useRef(false);
   const lastIdxRef = useRef(-1);
   const [drawVersion, setDrawVersion] = useState(0); // repaint pad
-  const [frameVersion, setFrameVersion] = useState(0); // repaint strip + stack
+  const [, setFrameVersion] = useState(0); // bump to re-render the strip + stack from framesRef
 
   const accentColor = ACCENTS[editorOsc === 'oscB' ? 'b' : 'a'];
 
@@ -218,8 +218,7 @@ export function WavetableEditor() {
     }
     if (brush === 'smooth') smoothAround(pts, idx);
     lastIdxRef.current = idx;
-    syncCurrentFrame();
-    setDrawVersion((v) => v + 1);
+    setDrawVersion((v) => v + 1); // live pad repaint; strip/stack sync on stroke end
   };
 
   const applySeed = (kind: Seed) => {
@@ -262,7 +261,7 @@ export function WavetableEditor() {
   const reorderFrame = (from: number, to: number) => {
     if (readOnly) return;
     framesRef.current = moveFrame(framesRef.current, from, to);
-    setCurrent(to);
+    setCurrent(Math.max(0, Math.min(framesRef.current.length - 1, to)));
     setFrameVersion((v) => v + 1);
   };
   const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -271,7 +270,9 @@ export function WavetableEditor() {
     paint(e);
   };
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => { if (drawingRef.current) paint(e); };
-  const onUp = () => { drawingRef.current = false; lastIdxRef.current = -1; };
+  // Sync the edited frame into the list once, at stroke end — avoids resampling
+  // + remounting the strip/stack on every pointer move.
+  const onUp = () => { drawingRef.current = false; lastIdxRef.current = -1; if (!readOnly) syncCurrentFrame(); };
 
   return (
     <div className="wte-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
@@ -309,11 +310,11 @@ export function WavetableEditor() {
                 <div className="wte-edit-row">
                   <canvas ref={drawRef} className={'wte-draw' + (readOnly ? ' ro' : '')}
                     onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp} />
-                  <StackPreview frames={framesRef.current} current={current} accent={accentColor} key={frameVersion} />
+                  <StackPreview frames={framesRef.current} current={current} accent={accentColor} />
                 </div>
                 <FrameStrip
                   frames={framesRef.current} current={current} accent={accentColor} readOnly={readOnly}
-                  onSelect={gotoFrame} onAdd={addFrame} onDelete={removeFrame} onReorder={reorderFrame} key={'fs' + frameVersion}
+                  onSelect={gotoFrame} onAdd={addFrame} onDelete={removeFrame} onReorder={reorderFrame}
                 />
                 <p className="wte-hint">
                   {readOnly

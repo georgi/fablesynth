@@ -854,8 +854,8 @@ body::before {
 .wte-editor .wte-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 
 /* frame editing */
-.wte-edit-row { display: flex; gap: 12px; flex: 1; min-height: 0; }
-.wte-edit-row .wte-draw { flex: 1; min-height: 0; height: auto; }
+.wte-edit-row { display: flex; gap: 12px; flex: 1; min-height: 0; min-width: 0; }
+.wte-edit-row .wte-draw { flex: 1; min-height: 0; min-width: 0; height: auto; }
 .wte-stack {
   width: 220px; flex: none; border: 1px solid var(--line);
   border-radius: 10px; background: #07090e;

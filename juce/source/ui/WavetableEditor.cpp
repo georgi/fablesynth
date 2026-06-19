@@ -28,12 +28,11 @@ void DrawPad::paintAt(juce::Point<float> p) {
     }
     if (brush == Brush::Smooth) smoothAround(idx);
     lastIdx = idx;
-    repaint();
-    if (onEdit) onEdit();
+    repaint(); // live pad repaint; the frame sync fires once on mouseUp
 }
 void DrawPad::mouseDown(const juce::MouseEvent& e) { if (readOnly) return; lastIdx = -1; paintAt(e.position); }
 void DrawPad::mouseDrag(const juce::MouseEvent& e) { if (readOnly) return; paintAt(e.position); }
-void DrawPad::mouseUp(const juce::MouseEvent&) { lastIdx = -1; }
+void DrawPad::mouseUp(const juce::MouseEvent&) { lastIdx = -1; if (onEdit) onEdit(); }
 
 void DrawPad::smoothAround(int idx, int rad) {
     auto src = pts;

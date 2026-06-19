@@ -48,7 +48,11 @@ inline std::vector<float> framePoints(const Frame& frame, int n) {
 }
 
 // Split a packed user-table wave (frameCount*SIZE) into independent SIZE frames.
+// Clamps frameCount to what `wave` can actually hold, so a malformed pair can't
+// read past the buffer.
 inline std::vector<Frame> framesFromWave(const std::vector<float>& wave, int frameCount) {
+    const int fit = (int)(wave.size() / (size_t)SIZE);
+    frameCount = std::max(0, std::min(frameCount, fit));
     std::vector<Frame> out;
     for (int f = 0; f < frameCount; ++f)
         out.emplace_back(wave.begin() + (size_t)f * SIZE, wave.begin() + (size_t)(f + 1) * SIZE);
