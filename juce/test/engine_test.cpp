@@ -10,6 +10,7 @@
 #include "../source/dsp/Presets.h"
 #include "../source/dsp/Params.h"
 #include "../source/dsp/UserTables.h"
+#include "../source/dsp/FrameOps.h"
 
 #include <cmath>
 #include <cstdio>
@@ -238,6 +239,23 @@ int main() {
         auto buf = renderNote(eng, 60, 0.4, sr);
         check(finite(buf) && rms(buf, (int)(0.05 * sr)) > 1e-3,
               "engine renders a user table", "rms=" + std::to_string(rms(buf, (int)(0.05 * sr))));
+    }
+
+    printf("\n== 8. FrameOps (frame-list editing) ==\n");
+    {
+        // FrameOps — duplicate/delete/move on a frame list, and pad-downsample.
+        using Frame = std::vector<float>;
+        std::vector<Frame> fs{ Frame(SIZE, 0.1f), Frame(SIZE, 0.2f), Frame(SIZE, 0.3f) };
+        auto dup = fable::duplicateFrame(fs, 1);
+        check(dup.size() == 4 && dup[2][0] == 0.2f, "duplicateFrame inserts copy after i");
+        auto del = fable::deleteFrame(fs, 0);
+        check(del.size() == 2 && del[0][0] == 0.2f, "deleteFrame removes i");
+        auto one = std::vector<Frame>{ Frame(SIZE, 0.5f) };
+        check(fable::deleteFrame(one, 0).size() == 1, "deleteFrame refuses last frame");
+        auto mv = fable::moveFrame(fs, 0, 2);
+        check(mv.size() == 3 && mv[2][0] == 0.1f, "moveFrame relocates frame");
+        auto pad = fable::framePoints(Frame(SIZE, 0.7f), 256);
+        check(pad.size() == 256 && std::abs(pad[10] - 0.7f) < 1e-6f, "framePoints samples DRAW_N points");
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
