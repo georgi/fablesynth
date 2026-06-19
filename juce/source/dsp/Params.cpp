@@ -67,10 +67,17 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({ENV2_BASE + 2, "env2.s", "SUS", 0,      1,  0,      Curve::Lin, Kind::Float, nullptr});
     v.push_back({ENV2_BASE + 3, "env2.r", "REL", 0.005f, 12, 0.3f,   Curve::Log, Kind::Float, nullptr});
 
-    v.push_back({LFO1_BASE + 0, "lfo1.shape", "SHAPE", 0, (float)LFO_SHAPES.size() - 1, 0, Curve::Int, Kind::Enum, &LFO_SHAPES});
-    v.push_back({LFO1_BASE + 1, "lfo1.rate",  "RATE",  0.02f, 30, 2, Curve::Log, Kind::Float, nullptr});
-    v.push_back({LFO2_BASE + 0, "lfo2.shape", "SHAPE", 0, (float)LFO_SHAPES.size() - 1, 0, Curve::Int, Kind::Enum, &LFO_SHAPES});
-    v.push_back({LFO2_BASE + 1, "lfo2.rate",  "RATE",  0.02f, 30, 5, Curve::Log, Kind::Float, nullptr});
+    auto addLfo = [&](const std::string& pre, int base, float defRate) {
+        v.push_back({base + LFO_SHAPE,    pre + ".shape",    "SHAPE", 0, (float)LFO_SHAPES.size() - 1, 0, Curve::Int, Kind::Enum, &LFO_SHAPES});
+        v.push_back({base + LFO_RATE,     pre + ".rate",     "RATE",  0.02f, 30, defRate, Curve::Log, Kind::Float, nullptr});
+        v.push_back({base + LFO_SYNC,     pre + ".sync",     "SYNC",  0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+        v.push_back({base + LFO_SYNCRATE, pre + ".syncrate", "DIV",   0, (float)LFO_DIVS.size() - 1, 2, Curve::Int, Kind::Enum, &LFO_DIVS});
+        v.push_back({base + LFO_RISE,     pre + ".rise",     "RISE",  0, 5, 0, Curve::Lin, Kind::Float, nullptr});
+        v.push_back({base + LFO_PHASE,    pre + ".phase",    "PHASE", 0, 1, 0, Curve::Lin, Kind::Float, nullptr});
+        v.push_back({base + LFO_RETRIG,   pre + ".retrig",   "RETRIG",0, 1, 1, Curve::Int, Kind::Bool, nullptr});
+    };
+    addLfo("lfo1", LFO1_BASE, 2);
+    addLfo("lfo2", LFO2_BASE, 5);
 
     addMat(v, 1, MAT1_BASE);
     addMat(v, 2, MAT2_BASE);

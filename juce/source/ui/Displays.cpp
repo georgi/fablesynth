@@ -1,4 +1,5 @@
 #include "Displays.h"
+#include "../dsp/Params.h"   // fable::lfoDivFactor
 #include <cmath>
 
 namespace fui {
@@ -51,9 +52,26 @@ void EnvView::paint(juce::Graphics& g) {
 
 // ===================== LfoView =====================
 LfoView::LfoView(juce::AudioProcessorValueTreeState& s, const juce::String& sh,
-                 const juce::String& ra, juce::Colour ac)
-    : apvts(s), shapeId(sh), rateId(ra), accent(ac), t0(juce::Time::getMillisecondCounter()) {
+                 const juce::String& ra, const juce::String& sy, const juce::String& sr,
+                 juce::Colour ac, std::function<HostTransport()> transportProvider)
+    : apvts(s), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
+      transport(std::move(transportProvider)), t0(juce::Time::getMillisecondCounter()) {
     startTimerHz(30);
+}
+bool LfoView::synced() const {
+    auto* syncP = apvts.getParameter(syncId);
+    return syncP && syncP->getValue() >= 0.5f;
+}
+// Effective LFO rate in Hz: synced division * host tempo when sync is on, else
+// the free RATE param. Mirrors Engine::lfoHz so the dot tracks the real speed.
+float LfoView::currentRate(const HostTransport& tr) const {
+    if (synced()) {
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        int idx = srP ? srP->getIndex() : 2;
+        return (float)((tr.bpm / 60.0) * fable::lfoDivFactor(idx));
+    }
+    auto* rp = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(rateId));
+    return rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
 }
 static float lfoFn(int shape, float p) {
     switch (shape) {
@@ -71,10 +89,10 @@ static float shVal(int s) {
 }
 void LfoView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
+    const HostTransport tr = transport ? transport() : HostTransport{};
     auto* sp = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(shapeId));
-    auto* rp = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(rateId));
     int shape = sp ? sp->getIndex() : 0;
-    float rate = rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
+    float rate = currentRate(tr);
 
     const float w = (float)getWidth(), h = (float)getHeight();
     const float pad = 5, W = w - pad * 2, mid = h / 2, amp = h / 2 - pad;
@@ -97,8 +115,18 @@ void LfoView::paint(juce::Graphics& g) {
     g.setColour(accent.withAlpha(0.9f));
     g.strokePath(path, juce::PathStrokeType(1.5f));
 
-    // free-running phase dot
-    float phase = std::fmod((juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
+    // Phase dot: when synced and the host is playing, lock to the transport
+    // position so the dot sits on the beat grid (matching the audio downbeat);
+    // otherwise free-run at the effective rate.
+    float phase;
+    if (synced() && tr.playing) {
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        int idx = srP ? srP->getIndex() : 2;
+        double ph = tr.ppq * fable::lfoDivFactor(idx);
+        phase = (float)(ph - std::floor(ph));
+    } else {
+        phase = std::fmod((juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
+    }
     float y;
     if (shape == 4) y = mid - shVal((int)std::floor(phase * 8)) * amp * 0.9f;
     else            y = mid - lfoFn(shape, phase) * amp * 0.9f;

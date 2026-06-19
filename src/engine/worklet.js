@@ -15,6 +15,10 @@ const MAXUNI = 7;
 // so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
 const COMB_MAX = 4096;
 
+// LFO note-division factors (cycles per beat, beat = quarter note). Index maps
+// to params.ts LFO_DIVS.
+const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
+
 // Vowel formants (A-E-I-O-U), reused from the VOX wavetable voicing. The VOWEL
 // filter is a 3-band bandpass bank tuned to these, morphed by the CUTOFF knob.
 const VOWELS = [
@@ -71,10 +75,11 @@ class Env {
 }
 
 class LFO {
-  constructor() { this.phase = 0; this.hold = 0; }
-  reset() { this.phase = 0; this.hold = Math.random() * 2 - 1; }
-  value(shape) {
-    const p = this.phase;
+  constructor() { this.phase = 0; this.hold = 0; this.elapsed = 0; }
+  reset() { this.phase = 0; this.hold = Math.random() * 2 - 1; this.elapsed = 0; }
+  // Read the shape at a wrapped phase offset (for the start-phase control).
+  valueOff(shape, off) {
+    let p = this.phase + off; p -= Math.floor(p);
     switch (shape | 0) {
       case 0: return Math.sin(2 * Math.PI * p);
       case 1: return 1 - 4 * Math.abs(p - 0.5);
@@ -83,8 +88,14 @@ class LFO {
       default: return this.hold;
     }
   }
+  // Fade-in gain, per-voice, keyed off note-on (samples since reset).
+  riseGain(riseSec) { return riseSec <= 0 ? 1 : Math.min(1, this.elapsed / (riseSec * sampleRate)); }
   advance(rate, n) {
-    this.phase += (rate * n) / sampleRate;
+    this.elapsed += n;
+    // NaN guard: a non-finite rate (e.g. params not yet initialised when the
+    // free-running global LFO advances) would latch phase to a sticky NaN.
+    const d = (rate * n) / sampleRate;
+    if (Number.isFinite(d)) this.phase += d;
     if (this.phase >= 1) { this.phase -= Math.floor(this.phase); this.hold = Math.random() * 2 - 1; }
   }
 }
@@ -179,6 +190,13 @@ class FableProcessor extends AudioWorkletProcessor {
     this.voices = [];
     for (let i = 0; i < NVOICES; i++) this.voices.push(new Voice());
     this.bend = 0;
+    this.bpm = 120;
+    // Virtual transport: beats (quarter notes) since audio start. Standalone has
+    // no host transport, so synced LFOs phase-lock to this clock (downbeat = t0).
+    // Accumulated (not samples*bpm) so a tempo change doesn't rescale the past.
+    this.transportBeats = 0;
+    this.gLfo1 = new LFO(); this.gLfo1.reset();
+    this.gLfo2 = new LFO(); this.gLfo2.reset();
     this.lastPitch = 60;
     this.clock = 0;
     this.vizCount = 0;
@@ -208,6 +226,7 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'on': this.noteOn(d.n, d.v); break;
       case 'off': this.noteOff(d.n); break;
       case 'bend': this.bend = d.s; break;
+      case 'bpm': this.bpm = d.v > 1 ? Math.min(d.v, 1000) : 120; break;
       case 'panic': for (const v of this.voices) v.kill(); break;
     }
   }
@@ -522,6 +541,30 @@ class FableProcessor extends AudioWorkletProcessor {
     }
   }
 
+  lfoHz(pre) {
+    if (this.p[pre + '.sync']) {
+      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[pre + '.syncrate'] | 0));
+      return (this.bpm / 60) * LFO_DIV_F[i];
+    }
+    return this.p[pre + '.rate'];
+  }
+
+  // Free-running global LFO phase, updated once per block. When synced, the
+  // phase is derived from the transport position (ppq, in quarter notes) so a
+  // synced LFO cycle starts on the downbeat. Unsynced LFOs free-run at their Hz.
+  // (Retrig LFOs are per-voice and note-aligned, so they bypass this.)
+  updateGlobalLfo(g, pre, ppq, n) {
+    if (this.p[pre + '.sync']) {
+      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[pre + '.syncrate'] | 0));
+      let ph = ppq * LFO_DIV_F[i];
+      ph -= Math.floor(ph);
+      if (ph < g.phase) g.hold = Math.random() * 2 - 1; // grid wrap -> new S&H value
+      g.phase = ph;
+    } else {
+      g.advance(this.p[pre + '.rate'], n);
+    }
+  }
+
   renderVoice(v, L, R, n) {
     const p = this.p;
 
@@ -536,8 +579,9 @@ class FableProcessor extends AudioWorkletProcessor {
     } else v.pitch = v.note;
 
     // mod sources (block rate)
-    const l1 = v.lfo1.value(p['lfo1.shape']);
-    const l2 = v.lfo2.value(p['lfo2.shape']);
+    const rt1 = !!p['lfo1.retrig'], rt2 = !!p['lfo2.retrig'];
+    const l1 = (rt1 ? v.lfo1 : this.gLfo1).valueOff(p['lfo1.shape'], p['lfo1.phase']) * v.lfo1.riseGain(p['lfo1.rise']);
+    const l2 = (rt2 ? v.lfo2 : this.gLfo2).valueOff(p['lfo2.shape'], p['lfo2.phase']) * v.lfo2.riseGain(p['lfo2.rise']);
     const e2 = v.modEnv.level;
     const srcs = [0, l1, l2, e2, v.vel, (v.note - 60) / 24];
 
@@ -693,8 +737,8 @@ class FableProcessor extends AudioWorkletProcessor {
     }
 
     // advance block-rate modulators
-    v.lfo1.advance(p['lfo1.rate'], n);
-    v.lfo2.advance(p['lfo2.rate'], n);
+    v.lfo1.advance(this.lfoHz('lfo1'), n);
+    v.lfo2.advance(this.lfoHz('lfo2'), n);
     v.modEnv.processBlock(n);
 
     return { posA: v.oA.posSm, posB: v.oB.posSm };
@@ -707,6 +751,13 @@ class FableProcessor extends AudioWorkletProcessor {
     L.fill(0);
     if (R !== L) R.fill(0);
     const n = L.length;
+
+    // Update the global (free-run/transport-locked) LFOs before voices read
+    // them. ppq = beats since audio start (block-start position).
+    const ppq = this.transportBeats;
+    this.updateGlobalLfo(this.gLfo1, 'lfo1', ppq, n);
+    this.updateGlobalLfo(this.gLfo2, 'lfo2', ppq, n);
+    this.transportBeats += (n / sampleRate) * (this.bpm / 60);
 
     let act = 0;
     let viz = null;

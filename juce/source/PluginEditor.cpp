@@ -9,7 +9,7 @@ Rack::Rack(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
       filter(s),
       env1(s, "env1", "AMP ENV", juce::Colour(0xffe8edf7), fui::Accent::N),
       env2(s, "env2", "MOD ENV", juce::Colour(0xffb18cff), fui::Accent::F),
-      lfos(s),
+      lfos(s, [proc = &p] { return proc->getTransport(); }),
       matrix(s),
       fx(s) {
     addAndMakeVisible(topBar);

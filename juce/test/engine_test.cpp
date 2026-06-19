@@ -10,6 +10,7 @@
 #include "../source/dsp/Presets.h"
 #include "../source/dsp/Params.h"
 #include "../source/dsp/UserTables.h"
+#include "../source/dsp/FrameOps.h"
 
 #include <cmath>
 #include <cstdio>
@@ -215,6 +216,18 @@ int main() {
         auto rebuilt = userTableFromWave("SLICE", sliced.frames, sliced.wave);
         check(rebuilt.frames == 5 && !rebuilt.table.data.empty(), "wave round-trip rebuilds table");
 
+        {
+            // framesFromGenerated round-trips a factory table's frame count and a
+            // re-built copy is finite + non-silent.
+            auto factory = generateTables();
+            auto frames = framesFromGenerated(factory[0]);
+            check((int)frames.size() == factory[0].frames, "framesFromGenerated frame count");
+            check(frames[0].size() == (size_t)SIZE, "framesFromGenerated frame width");
+            auto copy = makeUserTable("COPY", frames);
+            check(copy.frames == factory[0].frames, "duplicated factory frame count");
+            check(finite(copy.table.data) && peak(copy.table.data) > 0.1f, "duplicated factory audible");
+        }
+
         // The engine plays a user table addressed past the procedural slots.
         Engine eng; eng.prepare(sr);
         std::vector<GeneratedTable> all = tables;     // 6 procedural
@@ -226,6 +239,99 @@ int main() {
         auto buf = renderNote(eng, 60, 0.4, sr);
         check(finite(buf) && rms(buf, (int)(0.05 * sr)) > 1e-3,
               "engine renders a user table", "rms=" + std::to_string(rms(buf, (int)(0.05 * sr))));
+    }
+
+    printf("\n== 8. FrameOps (frame-list editing) ==\n");
+    {
+        // FrameOps — duplicate/delete/move on a frame list, and pad-downsample.
+        using Frame = std::vector<float>;
+        std::vector<Frame> fs{ Frame(SIZE, 0.1f), Frame(SIZE, 0.2f), Frame(SIZE, 0.3f) };
+        auto dup = fable::duplicateFrame(fs, 1);
+        check(dup.size() == 4 && dup[2][0] == 0.2f, "duplicateFrame inserts copy after i");
+        auto del = fable::deleteFrame(fs, 0);
+        check(del.size() == 2 && del[0][0] == 0.2f, "deleteFrame removes i");
+        auto one = std::vector<Frame>{ Frame(SIZE, 0.5f) };
+        check(fable::deleteFrame(one, 0).size() == 1, "deleteFrame refuses last frame");
+        auto mv = fable::moveFrame(fs, 0, 2);
+        check(mv.size() == 3 && mv[2][0] == 0.1f, "moveFrame relocates frame");
+        auto pad = fable::framePoints(Frame(SIZE, 0.7f), 256);
+        check(pad.size() == 256 && std::abs(pad[10] - 0.7f) < 1e-6f, "framePoints samples DRAW_N points");
+    }
+
+    printf("\n== 9. LFO controls (sync / rise / phase / retrig) ==\n");
+    {
+        check(std::abs(lfoDivFactor(2) - 1.0) < 1e-9, "lfoDivFactor 1/4 = 1.0");
+        check(std::abs(lfoDivFactor(5) - 2.0) < 1e-9, "lfoDivFactor 1/8 = 2.0");
+        check(std::abs(lfoDivFactor(0) - 0.25) < 1e-9, "lfoDivFactor 1/1 = 0.25");
+
+        auto dp = defaultParams();
+        check(dp[LFO1_BASE + LFO_RETRIG] == 1.0f, "lfo retrig defaults on (legacy behaviour)");
+        check(dp[LFO1_BASE + LFO_SYNC] == 0.0f, "lfo sync defaults off");
+        check((int)dp[LFO1_BASE + LFO_SYNCRATE] == 2, "lfo syncrate defaults 1/4");
+
+        Rng rng; Lfo lf; lf.rng = &rng; lf.reset();
+        check(lf.riseGain(1.0, 48000) == 0.0, "rise gain 0 at note-on");
+        lf.advance(2.0, 24000, 48000);
+        check(std::abs(lf.riseGain(1.0, 48000) - 0.5) < 1e-6, "rise gain ~0.5 mid-ramp");
+        check(lf.riseGain(0.0, 48000) == 1.0, "rise gain 1 when rise=0");
+
+        // Engine renders finite/bounded audio with synced + free-running LFO routed to A POS.
+        Engine eng; eng.prepare(sr);
+        eng.setTables(tables);
+        auto& p = eng.params();
+        p = defaultParams();
+        p[LFO1_BASE + LFO_SYNC] = 1; p[LFO1_BASE + LFO_SYNCRATE] = 5; p[LFO1_BASE + LFO_RETRIG] = 0;
+        p[LFO1_BASE + LFO_RISE] = 0.2f;
+        p[MAT1_BASE + MAT_SRC] = 1; p[MAT1_BASE + MAT_DST] = 1; p[MAT1_BASE + MAT_AMT] = 1.0f; // LFO1 -> A POS
+        eng.setBpm(128);
+        eng.noteOn(60, 1.0);
+        std::vector<float> bl(2048), br(2048);
+        eng.render(bl.data(), br.data(), 2048);
+        check(finite(bl) && peak(bl) < 4.0f, "engine finite/bounded with synced free-run LFO",
+              "peak=" + std::to_string(peak(bl)));
+
+        // Transport phase-lock: a synced free-run LFO derives its phase from the
+        // host position, so two transport spots a whole number of cycles apart
+        // give identical modulation (downbeat alignment, independent of elapsed
+        // time). SAW shape keeps it deterministic; route LFO1 -> A POS.
+        auto firstPos = [&](double ppq) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = 2;   // SAW
+            q[LFO1_BASE + LFO_SYNC] = 1; q[LFO1_BASE + LFO_SYNCRATE] = 2; q[LFO1_BASE + LFO_RETRIG] = 0; // 1/4, free-run
+            q[MAT1_BASE + MAT_SRC] = 1; q[MAT1_BASE + MAT_DST] = 1; q[MAT1_BASE + MAT_AMT] = 1.0f;       // LFO1 -> A POS
+            e.setBpm(120); e.setTransport(ppq, true);
+            e.noteOn(60, 1.0);
+            std::vector<float> a(128), b(128);
+            e.render(a.data(), b.data(), 128);
+            return e.vizA;
+        };
+        // 1/4 = 1 cycle per beat, so ppq 0 and ppq 4 are 4 cycles apart -> same phase.
+        check(std::abs(firstPos(0.0) - firstPos(4.0)) < 1e-6, "synced LFO phase locks to transport (downbeat aligned)");
+        check(std::abs(firstPos(0.0) - firstPos(0.5)) > 1e-3, "synced LFO phase varies within the bar");
+
+        eng.setTransport(2.0, true);
+        eng.render(bl.data(), br.data(), 2048);
+        check(finite(bl) && peak(bl) < 4.0f, "engine finite/bounded with transport-locked LFO");
+
+        // LFO shape audibly changes the modulation: route LFO1 -> PITCH and
+        // confirm SINE / SAW / SQR produce materially different output.
+        auto renderShape = [&](int shape) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = (float)shape;
+            q[LFO1_BASE + LFO_RATE] = 6.0f;
+            q[MAT1_BASE + MAT_SRC] = 1; q[MAT1_BASE + MAT_DST] = 4; q[MAT1_BASE + MAT_AMT] = 0.5f; // LFO1 -> PITCH
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto shSine = renderShape(0), shSaw = renderShape(2), shSqr = renderShape(3);
+        double dSaw = 0, dSqr = 0;
+        for (size_t i = 0; i < shSine.size(); ++i) { dSaw += std::abs(shSine[i] - shSaw[i]); dSqr += std::abs(shSine[i] - shSqr[i]); }
+        check(dSaw > 1.0 && dSqr > 1.0, "LFO shape changes modulated output (sine vs saw/sqr differ)",
+              "dSaw=" + std::to_string(dSaw) + " dSqr=" + std::to_string(dSqr));
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());

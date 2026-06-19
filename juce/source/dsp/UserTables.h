@@ -32,6 +32,11 @@ UserTable makeUserTable(const std::string& name, const std::vector<std::vector<f
 // e.g. when restoring from persisted plugin state.
 UserTable userTableFromWave(const std::string& name, int frames, const std::vector<float>& wave);
 
+// Pull a GeneratedTable's source single-cycle frames (mip-0, full-band) back
+// out as SIZE-sample frames — used to duplicate a factory table into an
+// editable user table that re-band-limits identically via makeUserTable.
+std::vector<std::vector<float>> framesFromGenerated(const GeneratedTable& t);
+
 // ---------- audio analysis ----------
 // Average all channels to mono. channels[c] points to n samples.
 std::vector<float> mixToMono(const float* const* channels, int numChannels, int n);

@@ -9,8 +9,9 @@ import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from
 import { FACTORY_PRESETS, loadUserPresets, saveUserPreset, type Preset } from './presets';
 import {
   loadUserTablePool, saveUserTablePool, serializeUserTable, deserializeUserTable,
-  type UserTable,
+  makeUserTable, framesFromGenerated, type UserTable,
 } from './engine/usertables';
+import { generateTables, SIZE, type GeneratedTable } from './engine/wavetables';
 
 // Singleton audio engine (created once, initialized on power-on).
 export const engine = new SynthEngine();
@@ -77,6 +78,10 @@ interface SynthStore {
 
   addUserTable: (u: UserTable) => void;
   deleteUserTable: (poolIndex: number) => void;
+  renameUserTable: (poolIndex: number, name: string) => void;
+  updateUserTable: (poolIndex: number, u: UserTable) => void;
+  duplicateUserTable: (poolIndex: number) => void;
+  duplicateFactoryTable: (factoryIndex: number) => void;
   openEditor: (osc: 'oscA' | 'oscB') => void;
   closeEditor: () => void;
 
@@ -87,6 +92,13 @@ interface SynthStore {
   bend: (semis: number) => void;
   setOctave: (o: number) => void;
   setMidiActive: (on: boolean) => void;
+}
+
+// Factory tables regenerated once for the editor's library/duplicate needs.
+let factoryTablesCache: GeneratedTable[] | null = null;
+export function factoryTables(): GeneratedTable[] {
+  if (!factoryTablesCache) factoryTablesCache = generateTables();
+  return factoryTablesCache;
 }
 
 export const useStore = create<SynthStore>((set, get) => ({
@@ -191,6 +203,40 @@ export const useStore = create<SynthStore>((set, get) => ({
       if (v === removed) get().setParam(id, 0);
       else if (v > removed) get().setParam(id, v - 1);
     }
+  },
+
+  renameUserTable: (poolIndex, name) => {
+    const nm = (name.trim().toUpperCase() || 'USER').slice(0, 14);
+    const userTables = get().userTables.map((t, i) => (i === poolIndex ? { ...t, name: nm } : t));
+    saveUserTablePool(userTables);
+    set({ userTables });
+  },
+
+  // In-place replace of an existing user table's waveform (and name), keeping
+  // its pool index — so the editor's row selection and any osc references to
+  // that table stay valid (unlike delete+add, which would shift indices).
+  updateUserTable: (poolIndex, u) => {
+    if (poolIndex < 0 || poolIndex >= get().userTables.length) return;
+    const userTables = get().userTables.map((t, i) => (i === poolIndex ? u : t));
+    saveUserTablePool(userTables);
+    engine.setUserTables(userTables.map((t) => t.table));
+    set({ userTables });
+  },
+
+  duplicateUserTable: (poolIndex) => {
+    const src = get().userTables[poolIndex];
+    if (!src) return;
+    const frames: Float32Array[] = [];
+    for (let f = 0; f < src.frames; f++) frames.push(src.wave.slice(f * SIZE, (f + 1) * SIZE));
+    const copy = makeUserTable((src.name + ' COPY').slice(0, 14), frames);
+    get().addUserTable(copy); // appends, persists, re-pushes engine, assigns to osc
+  },
+
+  duplicateFactoryTable: (factoryIndex) => {
+    const ft = factoryTables()[factoryIndex];
+    if (!ft) return;
+    const copy = makeUserTable((ft.name + ' COPY').slice(0, 14), framesFromGenerated(ft));
+    get().addUserTable(copy);
   },
 
   openEditor: (osc) => set({ editorOsc: osc }),

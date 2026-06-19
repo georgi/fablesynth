@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px">
+  <svg viewBox="0 0 80 80" width="{{ w }}" height="{{ w }}" style="display:block;overflow:visible">
+    <circle cx="40" cy="40" r="26" fill="#161b25" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"></circle>
+    <path d="{{ track }}" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="5" stroke-linecap="round"></path>
+    <path d="{{ arc }}" fill="none" stroke="{{ color }}" stroke-width="5" stroke-linecap="round" style="filter:drop-shadow(0 0 4px {{ glow }})"></path>
+    <line x1="40" y1="40" x2="40" y2="17" transform="rotate({{ deg }} 40 40)" stroke="#e8edf7" stroke-width="4" stroke-linecap="round"></line>
+  </svg>
+  <div style="font-size:8px;letter-spacing:0.16em;color:#6b768c;margin-top:2px;min-height:10px;text-align:center">{{ label }}</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:80,&quot;height&quot;:92},&quot;w&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:56,&quot;tsType&quot;:&quot;number&quot;},&quot;track&quot;:{&quot;editor&quot;:null,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;arc&quot;:{&quot;editor&quot;:null,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;color&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#9fb4d8&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;glow&quot;:{&quot;editor&quot;:null,&quot;default&quot;:&quot;#9fb4d899&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;deg&quot;:{&quot;editor&quot;:&quot;float&quot;,&quot;default&quot;:0,&quot;tsType&quot;:&quot;number&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;OCT&quot;,&quot;tsType&quot;:&quot;string&quot;}}"></script>
+</body>
+</html>

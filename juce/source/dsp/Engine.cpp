@@ -49,8 +49,9 @@ double Env::process() {
 }
 
 // ---------------- Lfo ----------------
-double Lfo::value(int shape) const {
-    double p = phase;
+double Lfo::valueOff(int shape, double off) const {
+    double p = phase + off;
+    p -= std::floor(p);
     switch (shape) {
         case 0: return std::sin(2 * PI * p);
         case 1: return 1 - 4 * std::abs(p - 0.5);
@@ -60,7 +61,11 @@ double Lfo::value(int shape) const {
     }
 }
 void Lfo::advance(double rate, int n, double sr) {
-    phase += (rate * n) / sr;
+    elapsed += n;
+    // NaN guard (mirrors the web LFO): a non-finite rate must not latch a sticky
+    // NaN phase that would never recover.
+    double d = (rate * n) / sr;
+    if (std::isfinite(d)) phase += d;
     if (phase >= 1) { phase -= std::floor(phase); hold = rng->next() * 2 - 1; }
 }
 
@@ -90,6 +95,30 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
 void Engine::prepare(double sampleRate) {
     sr_ = sampleRate;
     for (auto& v : voices_) { v.lfo1.rng = &rng_; v.lfo2.rng = &rng_; }
+    gLfo1_.rng = &rng_; gLfo2_.rng = &rng_;
+    gLfo1_.reset(); gLfo2_.reset();
+}
+
+double Engine::lfoHz(int base) const {
+    if (p_[base + LFO_SYNC] != 0)
+        return (bpm_ / 60.0) * lfoDivFactor((int)p_[base + LFO_SYNCRATE]);
+    return p_[base + LFO_RATE];
+}
+
+// Update a free-running global LFO once per block. When synced AND the host is
+// playing, the phase is derived from the transport position so a synced cycle
+// starts on the downbeat (ppq = quarter notes, factor = cycles per beat). When
+// unsynced — or synced but stopped — it free-runs at its Hz so movement
+// continues. (Retrig LFOs are per-voice / note-aligned and skip this.)
+void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
+    if (p_[base + LFO_SYNC] != 0 && playing_) {
+        double ph = ppqChunk * lfoDivFactor((int)p_[base + LFO_SYNCRATE]);
+        ph -= std::floor(ph);
+        if (ph < g.phase) g.hold = rng_.next() * 2 - 1; // grid wrap -> new S&H value
+        g.phase = ph;
+    } else {
+        g.advance(lfoHz(base), n, sr_);
+    }
 }
 
 void Engine::setTables(const std::vector<GeneratedTable>& tables) {
@@ -402,8 +431,11 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         v.pitch += (v.note - v.pitch) * c;
     } else v.pitch = v.note;
 
-    double l1 = v.lfo1.value((int)p_[LFO1_BASE + 0]);
-    double l2 = v.lfo2.value((int)p_[LFO2_BASE + 0]);
+    bool   rt1 = p_[LFO1_BASE + LFO_RETRIG] != 0, rt2 = p_[LFO2_BASE + LFO_RETRIG] != 0;
+    double l1 = (rt1 ? v.lfo1 : gLfo1_).valueOff((int)p_[LFO1_BASE + LFO_SHAPE], p_[LFO1_BASE + LFO_PHASE])
+                * v.lfo1.riseGain(p_[LFO1_BASE + LFO_RISE], sr_);
+    double l2 = (rt2 ? v.lfo2 : gLfo2_).valueOff((int)p_[LFO2_BASE + LFO_SHAPE], p_[LFO2_BASE + LFO_PHASE])
+                * v.lfo2.riseGain(p_[LFO2_BASE + LFO_RISE], sr_);
     double e2 = v.modEnv.level;
     double srcs[6] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0};
 
@@ -544,16 +576,21 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         R[i] += (float)(yR * amp);
     }
 
-    v.lfo1.advance(p_[LFO1_BASE + 1], n, sr_);
-    v.lfo2.advance(p_[LFO2_BASE + 1], n, sr_);
+    v.lfo1.advance(lfoHz(LFO1_BASE), n, sr_);
+    v.lfo2.advance(lfoHz(LFO2_BASE), n, sr_);
     v.modEnv.processBlock(n);
 
     vizA = v.oA.posSm; vizB = v.oB.posSm;
 }
 
-void Engine::renderBlock(float* L, float* R, int n) {
+void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     std::fill(L, L + n, 0.0f);
     std::fill(R, R + n, 0.0f);
+
+    // Update the global (free-run / transport-locked) LFOs before voices read them.
+    updateGlobalLfo(gLfo1_, LFO1_BASE, ppqChunk, n);
+    updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n);
+
     int act = 0;
     for (auto& v : voices_) {
         if (!v.active()) continue;
@@ -576,9 +613,10 @@ void Engine::render(float* L, float* R, int n) {
         return;
     }
     int off = 0;
+    const double beatsPerSample = (bpm_ / 60.0) / sr_;
     while (off < n) {
         int chunk = std::min(128, n - off);
-        renderBlock(L + off, R + off, chunk);
+        renderBlock(L + off, R + off, chunk, ppq_ + off * beatsPerSample);
         off += chunk;
     }
 }

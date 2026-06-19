@@ -56,7 +56,9 @@ void WavetableView::paint(juce::Graphics& g) {
     const float posF = show * (frames - 1);
 
     for (int f = frames - 1; f >= 0; --f) {
-        const float d = (float)f / (frames - 1);
+        // Single-frame tables (drawn / single-cycle import) have frames == 1;
+        // guard the depth ratio so it doesn't become 0/0 (NaN coords -> blank).
+        const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
         const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));

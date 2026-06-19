@@ -22,12 +22,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     for (const auto& d : paramInfo()) {
         juce::ParameterID pid(d.pid, 1);
+        // Host-facing name MUST be unique: repeated blocks share short labels
+        // (both LFOs are "SHAPE"/"RATE", both oscs "POS", etc.). A DAW that keys
+        // automation / MIDI-learn / its generic editor by name would otherwise
+        // alias them (move one "SHAPE" -> both move). Derive a unique name from
+        // the id; the plugin's own UI still uses the short ParamInfo.label.
+        juce::String name = juce::String(d.pid).replaceCharacter('.', ' ').toUpperCase();
         if (d.kind == Kind::Bool) {
-            layout.add(std::make_unique<juce::AudioParameterBool>(pid, d.label, d.def != 0.0f));
+            layout.add(std::make_unique<juce::AudioParameterBool>(pid, name, d.def != 0.0f));
         } else if (d.kind == Kind::Enum) {
             juce::StringArray choices;
             for (const auto& s : *d.options) choices.add(s);
-            layout.add(std::make_unique<juce::AudioParameterChoice>(pid, d.label, choices, (int)d.def));
+            layout.add(std::make_unique<juce::AudioParameterChoice>(pid, name, choices, (int)d.def));
         } else {
             // Custom range whose 0..1 mapping matches normToValue / valueToNorm.
             ParamInfo info = d;
@@ -36,7 +42,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
                 [info](float, float, float n) { return normToValue(info, n); },
                 [info](float, float, float v) { return valueToNorm(info, v); });
             if (d.curve == Curve::Int) range.interval = 1.0f;
-            layout.add(std::make_unique<juce::AudioParameterFloat>(pid, d.label, range, d.def));
+            layout.add(std::make_unique<juce::AudioParameterFloat>(pid, name, range, d.def));
         }
     }
     return layout;
@@ -101,6 +107,39 @@ void FableAudioProcessor::deleteUserTable(int poolIndex) {
     }
 }
 
+void FableAudioProcessor::renameUserTable(int poolIndex, std::string name) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return;
+    juce::String s = juce::String(name).trim().toUpperCase();
+    if (s.isEmpty()) s = "USER";
+    userTables[(size_t)poolIndex].name = s.substring(0, 14).toStdString();
+}
+
+void FableAudioProcessor::updateUserTable(int poolIndex, fable::UserTable u) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return;
+    // In-place replace keeps the pool index (and thus the combined .table index
+    // every oscillator/preset references) stable — unlike delete+add.
+    userTables[(size_t)poolIndex] = std::move(u);
+    rebuildEngineTables();
+}
+
+int FableAudioProcessor::duplicateUserTable(int poolIndex) {
+    if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return -1;
+    const auto& src = userTables[(size_t)poolIndex];
+    std::vector<std::vector<float>> frames;
+    for (int f = 0; f < src.frames; ++f)
+        frames.emplace_back(src.wave.begin() + (size_t)f * fable::SIZE,
+                            src.wave.begin() + (size_t)(f + 1) * fable::SIZE);
+    std::string nm = (src.name + " COPY").substr(0, 14);
+    return addUserTable(fable::makeUserTable(nm, frames));
+}
+
+int FableAudioProcessor::duplicateFactoryTable(int factoryIndex) {
+    if (factoryIndex < 0 || factoryIndex >= (int)tables.size()) return -1;
+    auto frames = fable::framesFromGenerated(tables[(size_t)factoryIndex]);
+    std::string nm = (tables[(size_t)factoryIndex].name + " COPY").substr(0, 14);
+    return addUserTable(fable::makeUserTable(nm, frames));
+}
+
 void FableAudioProcessor::readScope(float* dst, int n) const {
     int w = scopeW.load(std::memory_order_relaxed);
     for (int i = 0; i < n; ++i)
@@ -121,6 +160,22 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     for (int i = 0; i < NUM_PARAMS; ++i)
         if (rawParams[i]) p[i] = rawParams[i]->load();
     fx.setParams(p);
+
+    // Push host tempo + transport for LFO sync and downbeat phase-locking
+    // (fallbacks when the host provides nothing: 120 BPM, position 0, stopped).
+    double bpm = 120.0, ppq = 0.0;
+    bool playing = false;
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition()) {
+            if (auto b = pos->getBpm()) bpm = *b;
+            if (auto q = pos->getPpqPosition()) ppq = *q;
+            playing = pos->getIsPlaying();
+        }
+    engine.setBpm(bpm);
+    engine.setTransport(ppq, playing);
+    hostBpm.store((float)bpm, std::memory_order_relaxed);
+    hostPpq.store(ppq, std::memory_order_relaxed);
+    hostPlaying.store(playing, std::memory_order_relaxed);
 
     // MIDI -> note / bend events.
     for (const auto meta : midi) {

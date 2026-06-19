@@ -6,3 +6,6 @@ dist
 # JUCE / C++ build artifacts
 juce/build/
 build/
+
+# Redundant compressed copy of design-handoff/ (the extracted dir is tracked)
+Synthesizer mockup design-handoff.zip
