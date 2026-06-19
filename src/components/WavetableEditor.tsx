@@ -10,12 +10,16 @@ import { useStore, engine, factoryTables } from '../store';
 import { setupCanvas } from './displays/canvas';
 import {
   makeUserTable, mixToMono, detectCycleLength, sliceToFrames, singleCycleFrame,
-  frameFromDrawing, MAX_FRAMES, type UserTable,
+  framesFromGenerated, MAX_FRAMES, type UserTable,
 } from '../engine/usertables';
 import { ACCENTS } from '../constants';
 import { TABLE_NAMES } from '../params';
 import { TableLibrary } from './wavetable/TableLibrary';
 import { DRAW_N, seedShape, snapValue, smoothAround, type Seed, type Brush } from './wavetable/drawmodel';
+import { framePoints, duplicateAt, deleteAt, moveFrame, framesFromWave } from './wavetable/frames';
+import { FrameStrip } from './wavetable/FrameStrip';
+import { StackPreview } from './wavetable/StackPreview';
+import { frameFromDrawing } from '../engine/usertables';
 
 type Tab = 'audio' | 'draw';
 type AudioMode = 'single' | 'auto' | 'fixed';
@@ -44,18 +48,21 @@ export function WavetableEditor() {
   const [fixedLen, setFixedLen] = useState(2048);
   const [audio, setAudio] = useState<{ samples: Float32Array; sr: number; label: string } | null>(null);
   const [status, setStatus] = useState('');
-  // working table: which library entry is loaded/assigned. 'u<i>' is editable
-  // (1-frame only); 'f<i>' and multi-frame user tables load read-only.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [brush, setBrush] = useState<Brush>('pen');
   const [snap, setSnap] = useState(false);
+  const [readOnly, setReadOnly] = useState(false); // factory only
 
   const drawRef = useRef<HTMLCanvasElement>(null);
-  const pointsRef = useRef<number[]>(new Array(DRAW_N).fill(0));
+  // The frame list at canonical SIZE. The pad edits the current frame; untouched
+  // frames keep their exact samples (lossless select / reorder / assign).
+  const framesRef = useRef<Float32Array[]>([new Float32Array(2048)]);
+  const pointsRef = useRef<number[]>(new Array(DRAW_N).fill(0)); // current frame in pad space
+  const [current, setCurrent] = useState(0);
   const drawingRef = useRef(false);
   const lastIdxRef = useRef(-1);
-  const [drawVersion, setDrawVersion] = useState(0); // force canvas repaint
-  const [readOnly, setReadOnly] = useState(false); // pad locked (multi-frame/factory)
+  const [drawVersion, setDrawVersion] = useState(0); // repaint pad
+  const [frameVersion, setFrameVersion] = useState(0); // repaint strip + stack
 
   const accentColor = ACCENTS[editorOsc === 'oscB' ? 'b' : 'a'];
 
@@ -64,8 +71,10 @@ export function WavetableEditor() {
     if (editorOsc) {
       setTab('draw'); setName(''); setMode('single'); setAudio(null); setStatus('');
       setSelectedId(null); setReadOnly(false); setBrush('pen'); setSnap(false);
+      framesRef.current = [new Float32Array(2048)];
+      setCurrent(0);
       pointsRef.current = new Array(DRAW_N).fill(0);
-      setDrawVersion((v) => v + 1);
+      setDrawVersion((v) => v + 1); setFrameVersion((v) => v + 1);
     }
   }, [editorOsc]);
 
@@ -117,24 +126,21 @@ export function WavetableEditor() {
   const createFromAudio = () => {
     if (!audio) return;
     let frames: Float32Array[];
-    if (mode === 'single') {
-      frames = singleCycleFrame(audio.samples);
-    } else if (mode === 'auto') {
-      const cyc = detectCycleLength(audio.samples, audio.sr);
-      frames = sliceToFrames(audio.samples, cyc);
-    } else {
-      frames = sliceToFrames(audio.samples, Math.max(2, fixedLen | 0));
-    }
-    commit(makeUserTable(finalName, frames));
+    if (mode === 'single') frames = singleCycleFrame(audio.samples);
+    else if (mode === 'auto') frames = sliceToFrames(audio.samples, detectCycleLength(audio.samples, audio.sr));
+    else frames = sliceToFrames(audio.samples, Math.max(2, fixedLen | 0));
+    // Land the sliced frames in the editor (uncommitted) so they can be tweaked
+    // in the strip before CREATE. New table (not editing an existing one).
+    setSelectedId(null); setReadOnly(false);
+    loadFrames(frames.slice(0, MAX_FRAMES));
+    setTab('draw');
   };
 
   const createFromDraw = () => {
-    const frame = frameFromDrawing(pointsRef.current);
-    const u = makeUserTable(finalName, [frame]);
-    if (selectedId && selectedId[0] === 'u' && !readOnly) {
+    if (readOnly) return;
+    const u = makeUserTable(finalName, framesRef.current);
+    if (selectedId && selectedId[0] === 'u') {
       const idx = +selectedId.slice(1);
-      // True in-place update: keep the pool index (and thus row selection + any
-      // osc references) stable. Stay open so the user can keep refining.
       updateUserTable(idx, u);
       assign(TABLE_NAMES.length + idx);
     } else {
@@ -146,13 +152,27 @@ export function WavetableEditor() {
     if (editorOsc) setParam(`${editorOsc}.table`, combinedIndex);
   };
 
-  const loadPoints = (wave: Float32Array, frames: number) => {
-    // populate the pad from frame 0 (downsample SIZE -> DRAW_N)
-    const step = wave.length / frames / DRAW_N;
-    const pts = new Array(DRAW_N).fill(0);
-    for (let i = 0; i < DRAW_N; i++) pts[i] = wave[Math.floor(i * step)] || 0;
-    pointsRef.current = pts;
+  // Load the whole frame list, show frame 0 in the pad.
+  const loadFrames = (frames: Float32Array[]) => {
+    framesRef.current = frames.length ? frames : [new Float32Array(2048)];
+    setCurrent(0);
+    pointsRef.current = framePoints(framesRef.current[0]);
     setDrawVersion((v) => v + 1);
+    setFrameVersion((v) => v + 1);
+  };
+
+  // Switch which frame the pad edits (no write-back — untouched frames stay exact).
+  const gotoFrame = (i: number) => {
+    const f = Math.max(0, Math.min(framesRef.current.length - 1, i));
+    setCurrent(f);
+    pointsRef.current = framePoints(framesRef.current[f]);
+    setDrawVersion((v) => v + 1);
+  };
+
+  // Write the pad's current curve back into the current frame (called on edit).
+  const syncCurrentFrame = () => {
+    framesRef.current = framesRef.current.map((fr, i) => (i === current ? frameFromDrawing(pointsRef.current) : fr));
+    setFrameVersion((v) => v + 1);
   };
 
   const selectFactory = (i: number) => {
@@ -161,20 +181,17 @@ export function WavetableEditor() {
     setName(ft.name);
     setReadOnly(true);
     setTab('draw');
-    loadPoints(ft.data.slice(0, ft.size), 1); // show frame 0 (read-only)
-    assign(i); // factory tables occupy [0, TABLE_NAMES.length)
+    loadFrames(framesFromGenerated(ft)); // all frames, read-only
+    assign(i);
   };
 
   const selectUser = (i: number) => {
     const ut = userTables[i];
     setSelectedId('u' + i);
     setName(ut.name);
-    // User tables are always editable. Frame 0 loads into the single-cycle pad;
-    // drawing + UPDATE collapses a multi-frame table to one cycle (the hint
-    // warns "→ 1 frame"). Selecting just to assign loses nothing.
     setReadOnly(false);
     setTab('draw');
-    loadPoints(ut.wave, ut.frames);
+    loadFrames(framesFromWave(ut.wave, ut.frames)); // all frames, editable
     assign(TABLE_NAMES.length + i);
   };
 
@@ -201,29 +218,52 @@ export function WavetableEditor() {
     }
     if (brush === 'smooth') smoothAround(pts, idx);
     lastIdxRef.current = idx;
+    syncCurrentFrame();
     setDrawVersion((v) => v + 1);
   };
 
   const applySeed = (kind: Seed) => {
     if (readOnly) return;
     pointsRef.current = seedShape(kind);
-    setSelectedId(null); setReadOnly(false);
+    syncCurrentFrame();
     setDrawVersion((v) => v + 1);
   };
 
-  // + NEW: create a fresh single-cycle (sine) user table, append it to the USER
-  // section, assign it to this osc, and select it for editing.
   const newTable = () => {
-    const pts = seedShape('sine');
-    const u = makeUserTable('USER', [frameFromDrawing(pts)]);
-    const idx = userTables.length; // addUserTable appends at this pool index
-    addUserTable(u);               // persists + re-pushes engine + assigns to osc
-    pointsRef.current = pts;
+    const frames = [frameFromDrawing(seedShape('sine'))];
+    const u = makeUserTable('USER', frames);
+    const idx = userTables.length;
+    addUserTable(u);
     setSelectedId('u' + idx);
     setName('USER');
     setReadOnly(false);
     setTab('draw');
-    setDrawVersion((v) => v + 1);
+    loadFrames(frames);
+  };
+
+  const addFrame = () => {
+    if (readOnly) return;
+    const next = duplicateAt(framesRef.current, current);
+    if (next === framesRef.current) { setStatus(`max ${MAX_FRAMES} frames`); return; }
+    framesRef.current = next;
+    gotoFrame(current + 1);
+    setFrameVersion((v) => v + 1);
+  };
+
+  const removeFrame = (i: number) => {
+    if (readOnly) return;
+    const next = deleteAt(framesRef.current, i);
+    if (next === framesRef.current) return;
+    framesRef.current = next;
+    gotoFrame(Math.min(i, next.length - 1));
+    setFrameVersion((v) => v + 1);
+  };
+
+  const reorderFrame = (from: number, to: number) => {
+    if (readOnly) return;
+    framesRef.current = moveFrame(framesRef.current, from, to);
+    setCurrent(to);
+    setFrameVersion((v) => v + 1);
   };
   const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     drawingRef.current = true; lastIdxRef.current = -1;
@@ -266,12 +306,19 @@ export function WavetableEditor() {
 
             {tab === 'draw' ? (
               <div className="wte-body">
-                <canvas ref={drawRef} className={'wte-draw' + (readOnly ? ' ro' : '')}
-                  onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp} />
+                <div className="wte-edit-row">
+                  <canvas ref={drawRef} className={'wte-draw' + (readOnly ? ' ro' : '')}
+                    onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp} />
+                  <StackPreview frames={framesRef.current} current={current} accent={accentColor} key={frameVersion} />
+                </div>
+                <FrameStrip
+                  frames={framesRef.current} current={current} accent={accentColor} readOnly={readOnly}
+                  onSelect={gotoFrame} onAdd={addFrame} onDelete={removeFrame} onReorder={reorderFrame} key={'fs' + frameVersion}
+                />
                 <p className="wte-hint">
                   {readOnly
-                    ? 'Read-only (multi-frame / factory). Duplicate to edit.'
-                    : 'Drag to draw one cycle. Band-limited on commit. → 1 frame.'}
+                    ? 'Read-only (factory). Duplicate to edit.'
+                    : 'Drag to draw the selected frame. POS morphs through frames on play.'}
                 </p>
                 <div className="wte-tools">
                   <span className="wte-tools-label">SEED</span>
@@ -283,9 +330,9 @@ export function WavetableEditor() {
                   <button className={brush === 'pen' ? 'on' : ''} onClick={() => setBrush('pen')}>PEN</button>
                   <button className={brush === 'smooth' ? 'on' : ''} onClick={() => setBrush('smooth')}>SMOOTH</button>
                   <button className={snap ? 'on' : ''} onClick={() => setSnap((s) => !s)}>SNAP</button>
-                  <button className="wte-clear" onClick={() => { pointsRef.current = new Array(DRAW_N).fill(0); setSelectedId(null); setReadOnly(false); setDrawVersion((v) => v + 1); }}>CLEAR</button>
+                  <button className="wte-clear" onClick={() => { pointsRef.current = new Array(DRAW_N).fill(0); syncCurrentFrame(); setDrawVersion((v) => v + 1); }}>CLEAR</button>
                   <button className="wte-create" disabled={readOnly} onClick={createFromDraw}>
-                    {selectedId && selectedId[0] === 'u' && !readOnly ? 'UPDATE TABLE' : 'CREATE TABLE'}
+                    {selectedId && selectedId[0] === 'u' ? 'UPDATE TABLE' : 'CREATE TABLE'}
                   </button>
                 </div>
               </div>
@@ -312,7 +359,7 @@ export function WavetableEditor() {
                   SINGLE CYCLE: whole clip = 1 frame. AUTO-DETECT: estimate pitch, slice per cycle.
                   FIXED LEN: slice every N samples. Up to {MAX_FRAMES} frames.
                 </p>
-                <button className="wte-create" disabled={!audio} onClick={createFromAudio}>CREATE TABLE</button>
+                <button className="wte-create" disabled={!audio} onClick={createFromAudio}>LOAD FRAMES →</button>
               </div>
             )}
           </section>
