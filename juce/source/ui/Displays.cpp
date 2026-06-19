@@ -1,4 +1,5 @@
 #include "Displays.h"
+#include "../dsp/Params.h"   // fable::lfoDivFactor
 #include <cmath>
 
 namespace fui {
@@ -51,9 +52,24 @@ void EnvView::paint(juce::Graphics& g) {
 
 // ===================== LfoView =====================
 LfoView::LfoView(juce::AudioProcessorValueTreeState& s, const juce::String& sh,
-                 const juce::String& ra, juce::Colour ac)
-    : apvts(s), shapeId(sh), rateId(ra), accent(ac), t0(juce::Time::getMillisecondCounter()) {
+                 const juce::String& ra, const juce::String& sy, const juce::String& sr,
+                 juce::Colour ac, std::function<double()> bpmProvider)
+    : apvts(s), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
+      bpm(std::move(bpmProvider)), t0(juce::Time::getMillisecondCounter()) {
     startTimerHz(30);
+}
+// Effective LFO rate in Hz: synced division * host tempo when sync is on, else
+// the free RATE param. Mirrors Engine::lfoHz so the dot tracks the real speed.
+float LfoView::currentRate() const {
+    auto* syncP = apvts.getParameter(syncId);
+    if (syncP && syncP->getValue() >= 0.5f) {
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        int idx = srP ? srP->getIndex() : 2;
+        double b = bpm ? bpm() : 120.0;
+        return (float)((b / 60.0) * fable::lfoDivFactor(idx));
+    }
+    auto* rp = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(rateId));
+    return rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
 }
 static float lfoFn(int shape, float p) {
     switch (shape) {
@@ -72,9 +88,8 @@ static float shVal(int s) {
 void LfoView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     auto* sp = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(shapeId));
-    auto* rp = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(rateId));
     int shape = sp ? sp->getIndex() : 0;
-    float rate = rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
+    float rate = currentRate();
 
     const float w = (float)getWidth(), h = (float)getHeight();
     const float pad = 5, W = w - pad * 2, mid = h / 2, amp = h / 2 - pad;

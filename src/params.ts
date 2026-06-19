@@ -14,6 +14,12 @@ export const FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH', 'COMB'
 export const FILTER_ROUTES = ['SERIAL', 'PARALLEL', 'SPLIT'];
 export const LFO_SHAPES = ['SINE', 'TRI', 'SAW', 'SQR', 'S&H'];
 export const LFO_DIVS = ['1/1', '1/2', '1/4', '1/4.', '1/4T', '1/8', '1/8.', '1/8T', '1/16', '1/16T', '1/32'];
+// Cycles per beat (beat = quarter note) for each LFO_DIVS entry. Mirrors
+// LFO_DIV_F in engine/worklet.js — keep the two in sync.
+export const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
+// The standalone web build has no host transport; synced LFOs (and their
+// displays) lock to this tempo. Mirrors the worklet's default bpm.
+export const SYNC_BPM = 120;
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
 export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];

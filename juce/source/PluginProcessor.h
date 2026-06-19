@@ -45,6 +45,10 @@ public:
     const std::vector<fable::GeneratedTable>& getTables() const { return tables; }
     float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
 
+    // Last host tempo seen by processBlock (fallback 120). The LFO displays read
+    // this so a synced LFO's animation matches its actual rate.
+    float getHostBpm() const { return hostBpm.load(); }
+
     // ---- table addressing (procedural slots 0..5, then user tables) ----
     // The oscillator TABLE param is an index into this combined space. Returns
     // nullptr for an empty user slot so callers can fall back / draw nothing.
@@ -83,6 +87,7 @@ private:
     std::vector<fable::GeneratedTable> tables;   // procedural tables (+ viz frames)
     std::vector<fable::UserTable> userTables;    // imported / drawn tables
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
+    std::atomic<float> hostBpm{120.0f};
     juce::AudioBuffer<float> scratchR; // mono-output downmix scratch
 
     // HUD feeds

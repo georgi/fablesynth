@@ -161,6 +161,7 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         if (auto pos = ph->getPosition())
             if (auto b = pos->getBpm()) bpm = *b;
     engine.setBpm(bpm);
+    hostBpm.store((float)bpm, std::memory_order_relaxed);
 
     // MIDI -> note / bend events.
     for (const auto meta : midi) {

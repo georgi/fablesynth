@@ -22,17 +22,22 @@ private:
     float last[4] = {-1, -1, -1, -1};
 };
 
-// LFO waveform + free-running phase dot.
+// LFO waveform + free-running phase dot. The dot animates at the LFO's actual
+// speed: the host-tempo-synced division when sync is on, else the free RATE.
 class LfoView : public juce::Component, private juce::Timer {
 public:
     LfoView(juce::AudioProcessorValueTreeState&, const juce::String& shapeId,
-            const juce::String& rateId, juce::Colour accent);
+            const juce::String& rateId, const juce::String& syncId,
+            const juce::String& syncRateId, juce::Colour accent,
+            std::function<double()> bpmProvider);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override { repaint(); }
+    float currentRate() const;   // effective Hz (free or synced)
     juce::AudioProcessorValueTreeState& apvts;
-    juce::String shapeId, rateId;
+    juce::String shapeId, rateId, syncId, syncRateId;
     juce::Colour accent;
+    std::function<double()> bpm;
     juce::uint32 t0;
 };
 

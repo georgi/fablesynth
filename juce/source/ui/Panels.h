@@ -75,14 +75,14 @@ private:
 
 class LfoPanel : public juce::Component, private juce::Timer {
 public:
-    explicit LfoPanel(APVTS&);
+    LfoPanel(APVTS&, std::function<double()> bpmProvider);
     ~LfoPanel() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
     void timerCallback() override;
     struct Block {
-        Block(APVTS&, juce::String id, juce::String title, Accent);
+        Block(APVTS&, juce::String id, juce::String title, Accent, std::function<double()> bpmProvider);
         juce::String title;
         Stepper shape;
         LfoView view;
