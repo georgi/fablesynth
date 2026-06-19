@@ -852,3 +852,37 @@ body::before {
 .wte-tools .wte-clear { margin-left: auto; }
 .wte-tools .wte-create { width: auto; height: 34px; padding: 0 22px; }
 .wte-editor .wte-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+
+/* frame editing */
+.wte-edit-row { display: flex; gap: 12px; flex: 1; min-height: 0; }
+.wte-edit-row .wte-draw { flex: 1; min-height: 0; height: auto; }
+.wte-stack {
+  width: 220px; flex: none; border: 1px solid var(--line);
+  border-radius: 10px; background: #07090e;
+}
+.wte-frames { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; }
+.wte-frames-label { font-size: 9px; letter-spacing: 0.16em; color: #5b6679; flex: none; }
+.wte-frames-count { font-size: 9px; letter-spacing: 0.12em; color: var(--text-dim); flex: none; }
+.wte-frames-row {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px;
+  overflow-x: auto; padding: 4px 2px;
+}
+.wte-frame {
+  position: relative; flex: none; width: 44px; height: 30px;
+  border: 1px solid var(--line); border-radius: 5px; background: #07090e; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; touch-action: none;
+}
+.wte-frame.on { border-color: color-mix(in srgb, var(--ac) 55%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ac) 22%, transparent); }
+.wte-frame.drag { opacity: 0.6; }
+.wte-frame-c { width: 40px; height: 26px; display: block; }
+.wte-frame-x {
+  position: absolute; top: -6px; right: -6px; width: 15px; height: 15px; line-height: 1;
+  border: 1px solid rgba(255,90,90,0.4); border-radius: 50%; background: #11141c;
+  color: #c46b6b; font-size: 9px; cursor: pointer; padding: 0;
+}
+.wte-frame-add {
+  flex: none; width: 30px; height: 30px; border: 1px dashed var(--line);
+  border-radius: 5px; background: transparent; color: var(--ac); font-size: 14px; cursor: pointer;
+}
+.wte-frame-add:hover { border-color: var(--ac); }
