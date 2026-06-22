@@ -23,8 +23,55 @@ export const SYNC_BPM = 120;
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
 export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
-// Indices 0..8 are frozen for preset compatibility; F2 destinations are appended.
-export const MOD_DESTS = ['—', 'A POS', 'B POS', 'F1 CUT', 'PITCH', 'AMP', 'PAN', 'A LVL', 'B LVL', 'F2 CUT', 'F2 RES'];
+// Modulation destinations (append-only; indices 0..10 keep their exact meaning so
+// factory presets sound unchanged). dstTarget() below is the canonical map from a
+// dst index to either a paramId (per-param dest) or a global token. Must match the
+// C++ MOD_DESTS list in juce/source/dsp/Params.h index-for-index.
+export const MOD_DESTS = [
+  '—', 'A POS', 'B POS', 'F1 CUT', 'PITCH', 'AMP', 'PAN', 'A LVL', 'B LVL', 'F2 CUT', 'F2 RES',
+  'A DETUNE', 'A SPREAD', 'A PAN', 'B DETUNE', 'B SPREAD', 'B PAN',
+  'F1 RES', 'F1 DRIVE', 'F1 ENV', 'F1 KEY', 'F2 DRIVE', 'F2 ENV', 'F2 KEY',
+  'SUB LVL', 'NOISE LVL',
+];
+
+// Global modulation tokens (no single owning control — assignable only from the
+// matrix list). Per-param dests resolve to a paramId string instead. Mirrors the
+// C++ DstSentinel enum (DST_PITCH/AMP/PAN/NONE) in Params.h.
+export type GlobalDst = 'pitch' | 'amp' | 'pan' | 'none';
+
+// Canonical dst index -> target. Returns a paramId string for per-param dests, or
+// a GlobalDst token for none/PITCH/AMP/PAN. Mirrors C++ dstTarget() exactly so the
+// two engines route identically. Keep in sync with MOD_DESTS above.
+export function dstTarget(dst: number): ParamId | GlobalDst {
+  switch (dst | 0) {
+    case 1: return 'oscA.pos';
+    case 2: return 'oscB.pos';
+    case 3: return 'filter.cutoff';
+    case 4: return 'pitch';
+    case 5: return 'amp';
+    case 6: return 'pan';
+    case 7: return 'oscA.level';
+    case 8: return 'oscB.level';
+    case 9: return 'filter2.cutoff';
+    case 10: return 'filter2.res';
+    case 11: return 'oscA.detune';
+    case 12: return 'oscA.spread';
+    case 13: return 'oscA.pan';
+    case 14: return 'oscB.detune';
+    case 15: return 'oscB.spread';
+    case 16: return 'oscB.pan';
+    case 17: return 'filter.res';
+    case 18: return 'filter.drive';
+    case 19: return 'filter.env';
+    case 20: return 'filter.key';
+    case 21: return 'filter2.drive';
+    case 22: return 'filter2.env';
+    case 23: return 'filter2.key';
+    case 24: return 'sub.level';
+    case 25: return 'noise.level';
+    default: return 'none';
+  }
+}
 
 // A single modulation route: a source (MOD_SOURCES index) drives a destination
 // (MOD_DESTS index) by `amt` (-1..1). Serum-style — any number of routes, built
@@ -51,6 +98,21 @@ export const DEST_OF_PARAM: Record<string, number> = {
   'oscB.level': 8,
   'filter2.cutoff': 9,
   'filter2.res': 10,
+  'oscA.detune': 11,
+  'oscA.spread': 12,
+  'oscA.pan': 13,
+  'oscB.detune': 14,
+  'oscB.spread': 15,
+  'oscB.pan': 16,
+  'filter.res': 17,
+  'filter.drive': 18,
+  'filter.env': 19,
+  'filter.key': 20,
+  'filter2.drive': 21,
+  'filter2.env': 22,
+  'filter2.key': 23,
+  'sub.level': 24,
+  'noise.level': 25,
 };
 
 export type Curve = 'lin' | 'log' | 'int';

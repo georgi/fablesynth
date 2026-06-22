@@ -43,9 +43,17 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
     editBtn.onClick = [this] { if (onEditTable) onEditTable(oscIndex); };
     addAndMakeVisible(editBtn);
     const char* ids[] = {".oct", ".semi", ".fine", ".unison", ".detune", ".spread", ".level", ".pan"};
-    // The LEVEL knob (index 6) is a mod target: dest 7 (A LVL) / 8 (B LVL).
+    // Continuous knobs are mod targets (A/B per osc): DETUNE (4) → 11/14,
+    // SPREAD (5) → 12/15, LEVEL (6) → 7/8, PAN (7) → 13/16. OCT/SEMI/FINE/UNISON
+    // are discrete steppers → not modulatable (modDest 0).
     for (int i = 0; i < 8; ++i) {
-        int modDest = (i == 6) ? (osc == 0 ? 7 : 8) : 0;
+        int modDest = 0;
+        switch (i) {
+            case 4: modDest = osc == 0 ? 11 : 14; break; // DETUNE → A/B DETUNE
+            case 5: modDest = osc == 0 ? 12 : 15; break; // SPREAD → A/B SPREAD
+            case 6: modDest = osc == 0 ?  7 :  8; break; // LEVEL  → A/B LVL
+            case 7: modDest = osc == 0 ? 13 : 16; break; // PAN    → A/B PAN
+        }
         auto* k = new Knob(s, pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac, true, modDest);
         knobs.add(k); addAndMakeVisible(k);
     }
@@ -80,8 +88,11 @@ void OscPanel::resized() {
 UtilPanel::UtilPanel(APVTS& s)
     : subPow(s, "sub.on", Accent::N), noisePow(s, "noise.on", Accent::N),
       subShape(s, "sub.shape", Accent::N), noiseType(s, "noise.type", Accent::N),
-      subOct(s, "sub.oct", Knob::Sm, Accent::N), subLevel(s, "sub.level", Knob::Sm, Accent::N),
-      noiseLevel(s, "noise.level", Knob::Sm, Accent::N) {
+      subOct(s, "sub.oct", Knob::Sm, Accent::N),
+      // Continuous level knobs are mod targets: SUB LVL → 24, NOISE LVL → 25.
+      // sub.oct is a discrete octave knob → not modulatable (modDest 0).
+      subLevel(s, "sub.level", Knob::Sm, Accent::N, true, 24),
+      noiseLevel(s, "noise.level", Knob::Sm, Accent::N, true, 25) {
     addAndMakeVisible(subPow); addAndMakeVisible(noisePow);
     addAndMakeVisible(subShape); addAndMakeVisible(noiseType);
     addAndMakeVisible(subOct); addAndMakeVisible(subLevel); addAndMakeVisible(noiseLevel);
@@ -117,15 +128,15 @@ void UtilPanel::resized() {
 }
 
 // ===================== FilterPanel =====================
-FilterPanel::Block::Block(APVTS& s, juce::String prefix, juce::String lbl, int cutoffDest, int resDest)
+FilterPanel::Block::Block(APVTS& s, juce::String prefix, juce::String lbl,
+                          int cutoffDest, int resDest, int driveDest, int envDest, int keyDest)
     : label(lbl), power(s, prefix + ".on", Accent::F), type(s, prefix + ".type", Accent::F) {
     const char* ids[] = {".cutoff", ".res", ".drive", ".env", ".key"};
-    // CUTOFF (index 0) → cutoffDest (3 = F1 CUT / 9 = F2 CUT); RES (index 1) →
-    // resDest (10 = F2 RES; F1 RES has no global dest → 0).
-    for (int i = 0; i < 5; ++i) {
-        int modDest = (i == 0) ? cutoffDest : (i == 1) ? resDest : 0;
-        knobs.add(new Knob(s, prefix + ids[i], i == 0 ? Knob::Md : Knob::Sm, Accent::F, true, modDest));
-    }
+    // Every continuous knob is a mod target (per filter): CUTOFF (0) → 3/9,
+    // RES (1) → 17/10, DRIVE (2) → 18/21, ENV (3) → 19/22, KEY (4) → 20/23.
+    const int dests[] = {cutoffDest, resDest, driveDest, envDest, keyDest};
+    for (int i = 0; i < 5; ++i)
+        knobs.add(new Knob(s, prefix + ids[i], i == 0 ? Knob::Md : Knob::Sm, Accent::F, true, dests[i]));
 }
 void FilterPanel::Block::layout(juce::Rectangle<int> r) {
     auto head = r.removeFromTop(18);
@@ -144,7 +155,9 @@ void FilterPanel::Block::paintLabel(juce::Graphics& g) {
 
 FilterPanel::FilterPanel(APVTS& s)
     : route(s, "filter.route", Accent::F), view(s, col::acF),
-      f1(s, "filter", "F1", 3, 0), f2(s, "filter2", "F2", 9, 10) {
+      // dst indices per §9: F1 cut/res/drive/env/key = 3/17/18/19/20;
+      //                      F2 cut/res/drive/env/key = 9/10/21/22/23.
+      f1(s, "filter", "F1", 3, 17, 18, 19, 20), f2(s, "filter2", "F2", 9, 10, 21, 22, 23) {
     addAndMakeVisible(route); addAndMakeVisible(view);
     for (auto* b : { &f1, &f2 }) {
         addAndMakeVisible(b->power); addAndMakeVisible(b->type);

@@ -48,7 +48,14 @@ inline double lfoDivFactor(int i) {
 inline const std::vector<std::string> SUB_SHAPES    = {"SINE", "SQR"};
 inline const std::vector<std::string> NOISE_TYPES   = {"WHITE", "PINK"};
 inline const std::vector<std::string> MOD_SOURCES   = {"—", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE"};
-inline const std::vector<std::string> MOD_DESTS     = {"—", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES"};
+// Modulation destinations (append-only; indices 0..10 keep their exact meaning so
+// factory presets sound unchanged). dstTarget() below is the canonical map from a
+// dst index to either a flat Pid (per-param dest) or a negative global sentinel.
+inline const std::vector<std::string> MOD_DESTS     = {
+    "—", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES",
+    "A DETUNE", "A SPREAD", "A PAN", "B DETUNE", "B SPREAD", "B PAN",
+    "F1 RES", "F1 DRIVE", "F1 ENV", "F1 KEY", "F2 DRIVE", "F2 ENV", "F2 KEY",
+    "SUB LVL", "NOISE LVL"};
 
 // ---- field offsets within a repeated block ----
 enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,
@@ -105,6 +112,43 @@ enum Pid : int {
 inline constexpr int oscBase(int i)  { return i == 0 ? OSCA_BASE : OSCB_BASE; }
 inline constexpr int fltBase(int i)  { return i == 0 ? FILTER1_BASE : FILTER2_BASE; }
 inline constexpr int matBase(int s)  { return MAT1_BASE + (s - 1) * MAT_NFIELDS; } // s = 1..16
+
+// ---- modulation destination -> target (canonical, juce-free) ----
+// Per-param dests return a flat Pid; "none" and the three global dests return a
+// negative sentinel handled directly by the engine (PITCH/AMP/PAN math unchanged).
+enum DstSentinel : int { DST_NONE = -1, DST_PITCH = -2, DST_AMP = -3, DST_PAN = -4 };
+
+inline constexpr int dstTarget(int dst) {
+    switch (dst) {
+        case 0:  return DST_NONE;
+        case 1:  return OSCA_BASE   + OSC_POS;
+        case 2:  return OSCB_BASE   + OSC_POS;
+        case 3:  return FILTER1_BASE + FLT_CUTOFF;
+        case 4:  return DST_PITCH;
+        case 5:  return DST_AMP;
+        case 6:  return DST_PAN;
+        case 7:  return OSCA_BASE   + OSC_LEVEL;
+        case 8:  return OSCB_BASE   + OSC_LEVEL;
+        case 9:  return FILTER2_BASE + FLT_CUTOFF;
+        case 10: return FILTER2_BASE + FLT_RES;
+        case 11: return OSCA_BASE   + OSC_DETUNE;
+        case 12: return OSCA_BASE   + OSC_SPREAD;
+        case 13: return OSCA_BASE   + OSC_PAN;
+        case 14: return OSCB_BASE   + OSC_DETUNE;
+        case 15: return OSCB_BASE   + OSC_SPREAD;
+        case 16: return OSCB_BASE   + OSC_PAN;
+        case 17: return FILTER1_BASE + FLT_RES;
+        case 18: return FILTER1_BASE + FLT_DRIVE;
+        case 19: return FILTER1_BASE + FLT_ENV;
+        case 20: return FILTER1_BASE + FLT_KEY;
+        case 21: return FILTER2_BASE + FLT_DRIVE;
+        case 22: return FILTER2_BASE + FLT_ENV;
+        case 23: return FILTER2_BASE + FLT_KEY;
+        case 24: return SUB_LEVEL;
+        case 25: return NOISE_LEVEL;
+        default: return DST_NONE;
+    }
+}
 
 using ParamArray = std::array<float, NUM_PARAMS>;
 

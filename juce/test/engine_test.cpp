@@ -401,6 +401,78 @@ int main() {
               "dAccum=" + std::to_string(dAccum));
     }
 
+    printf("\n== 11. Generic mod destinations (per-param curve rules) ==\n");
+    {
+        // A NEW per-param destination (F1 RES, dst 17) must modulate. Route VELO
+        // (a per-voice constant source) -> F1 RES at a strong amt; two FRESH engines
+        // render the identical patch — one with the route, one without — so any diff
+        // is purely the new dest taking effect. Use a resonant LP24 so a resonance
+        // change is audible, and a low cutoff so the resonant peak dominates.
+        auto renderRes = [&](bool on) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[FILTER1_BASE + FLT_TYPE]   = 1;      // LP24
+            q[FILTER1_BASE + FLT_CUTOFF] = 600.0f; // low cutoff so RES peak is exposed
+            q[FILTER1_BASE + FLT_RES]    = 0.2f;   // base resonance
+            if (on) {
+                q[MAT5_BASE + MAT_SRC] = 4;        // VELO (constant per voice)
+                q[MAT5_BASE + MAT_DST] = 17;       // F1 RES (new dest)
+                q[MAT5_BASE + MAT_AMT] = 0.7f;     // Lin width-1: res += 0.7 -> ~0.9
+            }
+            e.noteOn(60, 1.0);                     // vel 1.0 -> x = 1.0*0.7 = 0.7
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto resOff = renderRes(false), resOn = renderRes(true);
+        check(finite(resOff) && finite(resOn) && peak(resOn) < 8.0f,
+              "mat5 -> F1 RES (new dest) output finite/bounded", "peak=" + std::to_string(peak(resOn)));
+        double resDiff = 0;
+        for (size_t i = 0; i < resOn.size(); ++i) resDiff += std::abs(resOn[i] - resOff[i]);
+        check(resDiff > 1.0, "new dest F1 RES (dst 17) audibly modulates (deterministic diff vs off)",
+              "diff=" + std::to_string(resDiff));
+
+        // An EXISTING destination (F1 CUT, dst 3) must still obey its documented Log
+        // rule: effective cutoff = base * 2^(x*5), D=5. Probe by equivalence — render
+        // a route F1 CUT via VELO at amt a over base Cb, and render WITHOUT a route
+        // but with the base cutoff pre-set to Cb*2^(a*5). If pm[CUTOFF] == Cb*2^(x*5)
+        // exactly, the two fresh engines produce a bit-identical buffer (env/key are 0
+        // by default, so the exponent reduces to the route term alone).
+        const double Cb = 1000.0, amt = 0.3;        // x = vel(1.0)*0.3 = 0.3
+        const double expectedFc = Cb * std::pow(2.0, amt * 5.0); // 1000 * 2^1.5 ~= 2828 Hz
+        auto renderCut = [&](double baseCut, bool route) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[FILTER1_BASE + FLT_TYPE]   = 1;       // LP24
+            q[FILTER1_BASE + FLT_CUTOFF] = (float)baseCut;
+            if (route) {
+                q[MAT5_BASE + MAT_SRC] = 4;         // VELO
+                q[MAT5_BASE + MAT_DST] = 3;         // F1 CUT (existing dest, Log rule)
+                q[MAT5_BASE + MAT_AMT] = (float)amt;
+            }
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto routed   = renderCut(Cb, true);              // base 1000, modulated +1.5 oct
+        auto direct   = renderCut(expectedFc, false);     // base pre-set to 1000*2^1.5
+        bool cutMatch = routed.size() == direct.size();
+        double cutErr = 0;
+        for (size_t i = 0; cutMatch && i < routed.size(); ++i) cutErr += std::abs(routed[i] - direct[i]);
+        check(cutMatch && cutErr < 1e-6,
+              "existing dest F1 CUT obeys base*2^(x*5): routed cutoff == direct " +
+              std::to_string((int)expectedFc) + " Hz", "err=" + std::to_string(cutErr));
+
+        // Sanity: the modulated cutoff genuinely differs from the un-modulated base
+        // (so the equivalence above isn't trivially comparing two identical patches).
+        auto baseline = renderCut(Cb, false);             // base 1000, no route
+        double cutMove = 0;
+        for (size_t i = 0; i < routed.size(); ++i) cutMove += std::abs(routed[i] - baseline[i]);
+        check(cutMove > 1.0, "F1 CUT route moves the cutoff away from its base value",
+              "move=" + std::to_string(cutMove));
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;
 }

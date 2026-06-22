@@ -160,7 +160,9 @@ void Engine::noteOff(int n) {
 }
 
 // Configure one oscillator's per-block render state. Returns true if audible.
-bool Engine::setupOsc(OscState& o, int base, Voice& v, double mPos, double mPitch, double mLvl, double mPan) {
+// Reads the modulated snapshot pm for the per-param dests (pos/level/pan/detune/
+// spread); pitch and the pan global offset stay as direct additive terms.
+bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan) {
     if (p_[base + OSC_ON] < 0.5) return false;
     int ti = (int)p_[base + OSC_TABLE];
     if (ti < 0 || ti >= (int)tables_.size()) return false;
@@ -171,16 +173,16 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, double mPos, double mPitc
     double freq = 440 * std::pow(2.0, (basePitch - 69) / 12);
     if (freq <= 0 || freq > sr_ * 0.45) return false;
 
-    double level = std::min(1.2, std::max(0.0, (double)p_[base + OSC_LEVEL] + mLvl));
+    double level = std::min(1.2, std::max(0.0, pm[base + OSC_LEVEL]));
     level *= level;
     if (level < 1e-5) return false;
 
     int uni = std::max(1, std::min(MAXUNI, (int)p_[base + OSC_UNISON]));
-    double det = p_[base + OSC_DETUNE];
-    double spr = p_[base + OSC_SPREAD];
-    double basePan = std::max(-1.0, std::min(1.0, (double)p_[base + OSC_PAN] + mPan));
+    double det = pm[base + OSC_DETUNE];
+    double spr = pm[base + OSC_SPREAD];
+    double basePan = std::max(-1.0, std::min(1.0, pm[base + OSC_PAN] + mPan));
 
-    double pos = std::min(1.0, std::max(0.0, (double)p_[base + OSC_POS] + mPos));
+    double pos = std::min(1.0, std::max(0.0, pm[base + OSC_POS]));
     if (o.posSm < 0) o.posSm = pos;
     o.posSm += (pos - o.posSm) * 0.35;
     double posF = o.posSm * (table.frames - 1);
@@ -272,17 +274,19 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
     }
 }
 
-void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, double mRes) {
+void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, const double* pm) {
     int ftype = (int)p_[base + FLT_TYPE];
     fs.ftype = ftype;
 
-    double fc = p_[base + FLT_CUTOFF] *
-        std::pow(2.0, p_[base + FLT_ENV] * 4 * e2 + (p_[base + FLT_KEY] * (v.note - 60)) / 12.0 + mCut * 5);
+    // cutoff modulation is folded into pm (Log rule, D=5) -> pm[CUTOFF] already
+    // carries the *2^(x*5) factor, so the env/key formula matches the legacy math.
+    double fc = pm[base + FLT_CUTOFF] *
+        std::pow(2.0, pm[base + FLT_ENV] * 4 * e2 + (pm[base + FLT_KEY] * (v.note - 60)) / 12.0);
     fc = std::min(sr_ * 0.45, std::max(20.0, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
     fs.cutSm += (fc - fs.cutSm) * 0.5;
     double cut = fs.cutSm;
-    double res = std::min(0.999, std::max(0.0, (double)p_[base + FLT_RES] + mRes));
+    double res = std::min(0.999, std::max(0.0, pm[base + FLT_RES]));
 
     if (ftype <= 4) {
         fs.twoPole = ftype == 1;
@@ -439,26 +443,39 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     double e2 = v.modEnv.level;
     double srcs[6] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0};
 
-    double mPosA = 0, mPosB = 0, mCut = 0, mPitch = 0, mAmp = 0, mPan = 0, mLvlA = 0, mLvlB = 0;
-    double mCut2 = 0, mRes2 = 0;
+    // Accumulate routes: globals (pitch/amp/pan) stay as direct offsets with their
+    // existing math; per-param dests sum into modAccum[targetPid] and are folded
+    // into the pm_ snapshot below via the curve rules.
+    double mPitch = 0, mAmp = 0, mPan = 0;
+    double modAccum[NUM_PARAMS] = {0};
     for (int s = 1; s <= MOD_MATRIX_SIZE; s++) {
         int b = matBase(s);
         int src = (int)p_[b + MAT_SRC];
         int dst = (int)p_[b + MAT_DST];
         if (!src || !dst) continue;
         double x = srcs[src] * p_[b + MAT_AMT];
-        switch (dst) {
-            case 1: mPosA += x; break;
-            case 2: mPosB += x; break;
-            case 3: mCut += x; break;
-            case 4: mPitch += x; break;
-            case 5: mAmp += x; break;
-            case 6: mPan += x; break;
-            case 7: mLvlA += x; break;
-            case 8: mLvlB += x; break;
-            case 9: mCut2 += x; break;
-            case 10: mRes2 += x; break;
+        int target = dstTarget(dst);
+        switch (target) {
+            case DST_NONE:  break;
+            case DST_PITCH: mPitch += x; break;
+            case DST_AMP:   mAmp += x; break;
+            case DST_PAN:   mPan += x; break;
+            default:        modAccum[target] += x; break;
         }
+    }
+
+    // Build the per-voice modulated snapshot: copy p_ then apply each targeted
+    // param's curve rule. Lin Float: pm = p + x*(hi-lo) (reproduces POS/LEVEL/RES
+    // width-1 exactly). Log Float: pm = p * 2^(x*D), D=5 (reproduces CUTOFF). Int/
+    // Enum/Bool are never destinations, so they pass through untouched.
+    std::copy(p_.begin(), p_.end(), pm_);
+    const auto& info = paramInfo();
+    for (int P = 0; P < NUM_PARAMS; P++) {
+        double x = modAccum[P];
+        if (x == 0) continue;
+        const ParamInfo& d = info[P];
+        if (d.curve == Curve::Log)      pm_[P] = (double)p_[P] * std::pow(2.0, x * 5.0);
+        else if (d.curve == Curve::Lin) pm_[P] = (double)p_[P] + x * ((double)d.max - (double)d.min);
     }
 
     int route = (int)p_[FILTER_ROUTE];
@@ -468,14 +485,14 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     std::fill(tmpR_, tmpR_ + n, 0.0f);
     if (split) { std::fill(bL_, bL_ + n, 0.0f); std::fill(bR_, bR_ + n, 0.0f); }
 
-    bool aOn = setupOsc(v.oA, OSCA_BASE, v, mPosA, mPitch, mLvlA, mPan);
-    bool bOn = setupOsc(v.oB, OSCB_BASE, v, mPosB, mPitch, mLvlB, mPan);
+    bool aOn = setupOsc(v.oA, OSCA_BASE, v, pm_, mPitch, mPan);
+    bool bOn = setupOsc(v.oB, OSCB_BASE, v, pm_, mPitch, mPan);
     if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n);
     if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n);
 
     // sub oscillator
     if (p_[SUB_ON] > 0.5) {
-        double lvl = p_[SUB_LEVEL] * p_[SUB_LEVEL] * 0.3;
+        double lvl = pm_[SUB_LEVEL] * pm_[SUB_LEVEL] * 0.3;
         if (lvl > 1e-6) {
             double sf = 440 * std::pow(2.0, (v.pitch + bend_ + p_[SUB_OCT] * 12 + mPitch * 12 - 69) / 12.0);
             double inc = sf / sr_;
@@ -506,7 +523,7 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
 
     // noise
     if (p_[NOISE_ON] > 0.5) {
-        double lvl = p_[NOISE_LEVEL] * p_[NOISE_LEVEL] * 0.35;
+        double lvl = pm_[NOISE_LEVEL] * pm_[NOISE_LEVEL] * 0.35;
         if (lvl > 1e-6) {
             if ((int)p_[NOISE_TYPE] == 1) {
                 double* b = v.pb;
@@ -535,10 +552,10 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     // ---- per-voice filters with routing ----
     bool f1on = p_[FILTER1_BASE + FLT_ON] > 0.5;
     bool f2on = p_[FILTER2_BASE + FLT_ON] > 0.5;
-    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, mCut, 0);
-    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, mCut2, mRes2);
+    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, pm_);
+    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, pm_);
 
-    double dr1 = p_[FILTER1_BASE + FLT_DRIVE], dr2 = p_[FILTER2_BASE + FLT_DRIVE];
+    double dr1 = pm_[FILTER1_BASE + FLT_DRIVE], dr2 = pm_[FILTER2_BASE + FLT_DRIVE];
     float* oL; float* oR;
 
     if (split) {

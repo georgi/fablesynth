@@ -50,9 +50,11 @@ public:
     void resized() override;
 private:
     struct Block {
-        // cutoffDest / resDest = mod-matrix dest indices for this filter's CUTOFF
-        // and RES knobs (0 = not a mod target).
-        Block(APVTS&, juce::String prefix, juce::String label, int cutoffDest, int resDest);
+        // cutoffDest / resDest / driveDest / envDest / keyDest = mod-matrix dest
+        // indices for this filter's CUTOFF/RES/DRIVE/ENV/KEY knobs (all continuous,
+        // all mod targets).
+        Block(APVTS&, juce::String prefix, juce::String label,
+              int cutoffDest, int resDest, int driveDest, int envDest, int keyDest);
         juce::String label;
         PowerButton power; Stepper type;
         juce::OwnedArray<Knob> knobs;

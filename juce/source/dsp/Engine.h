@@ -141,9 +141,9 @@ public:
     double vizA = -1, vizB = -1; int vizActive = 0;
 
 private:
-    bool setupOsc(OscState& o, int base, Voice& v, double mPos, double mPitch, double mLvl, double mPan);
+    bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan);
     void renderOsc(OscState& o, float* tmpL, float* tmpR, int n);
-    void setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, double mRes);
+    void setupFilter(FilterState& fs, int base, Voice& v, double e2, const double* pm);
     void runFilter(FilterState& fs, const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n);
     void renderVoice(Voice& v, float* L, float* R, int n);
@@ -168,6 +168,11 @@ private:
     double bpm_ = 120;
     double ppq_ = 0;                  // host transport position (quarter notes)
     bool   playing_ = false;          // host transport running
+
+    // Per-voice modulated parameter snapshot: p_ with each route's offset folded in
+    // (Lin/Log curve rules from the design contract). Reused per voice — no per-call
+    // allocation. Reading pm_ for non-modulated fields is safe (pm_ == p_ there).
+    double pm_[NUM_PARAMS];
 
     // per-block scratch (128)
     float tmpL_[128], tmpR_[128];
