@@ -129,6 +129,7 @@ private:
     struct Row : public juce::Component {
         Row(APVTS&, int slot);
         void resized() override;
+        void paint(juce::Graphics&) override; // ▸ arrow between src and dst
         int slot;
         juce::ComboBox src, dst;
         std::unique_ptr<APVTS::ComboBoxAttachment> srcAtt, dstAtt;
@@ -136,7 +137,11 @@ private:
         juce::TextButton remove{juce::String::fromUTF8("\xc3\x97")}; // ×
     };
     APVTS& apvts;
-    juce::OwnedArray<Row> rows;          // indexed [slot-1]
+    // Rows live in a scrollable viewport: fixed-height rows that scroll once the
+    // active routes exceed the panel height (the 16-slot pool can fill the list).
+    juce::Viewport viewport;
+    juce::Component rowsHolder;
+    juce::OwnedArray<Row> rows;          // indexed [slot-1]; children of rowsHolder
     juce::OwnedArray<ModSourceChip> chips;
     juce::TextButton addBtn{"+ ADD ROUTE"};
     std::vector<int> lastVisible;        // cached visible-slot vector (diffed by timer)

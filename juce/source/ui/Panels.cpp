@@ -334,6 +334,13 @@ void MatrixPanel::Row::resized() {
     rr.removeFromLeft(14); // arrow gutter
     dst.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), juce::jmin(26, rowH)));
 }
+void MatrixPanel::Row::paint(juce::Graphics& g) {
+    g.setColour(col::textDim);
+    g.setFont(monoFont(11.0f));
+    auto sb = src.getBounds();
+    g.drawText(juce::String::fromUTF8("\xe2\x96\xb8"), // ▸
+               sb.getRight(), sb.getY(), 14, sb.getHeight(), juce::Justification::centred);
+}
 
 MatrixPanel::MatrixPanel(APVTS& s) : apvts(s) {
     // All 16 rows constructed up front so the combobox attachments stay stable;
@@ -341,8 +348,12 @@ MatrixPanel::MatrixPanel(APVTS& s) : apvts(s) {
     for (int i = 1; i <= fable::MOD_MATRIX_SIZE; ++i) {
         auto* row = new Row(s, i);
         rows.add(row);
-        addChildComponent(row); // hidden until rowVisible
+        rowsHolder.addChildComponent(row); // hidden until rowVisible
     }
+    // Scrollable row list: rows can exceed the panel height once many slots fill.
+    viewport.setViewedComponent(&rowsHolder, false);
+    viewport.setScrollBarsShown(true, false); // vertical only
+    addAndMakeVisible(viewport);
     // Header source chips: LFO1=1, LFO2=2, MOD ENV=3, VELO=4, NOTE=5.
     for (int srcIdx = 1; srcIdx <= 5; ++srcIdx) {
         auto* chip = new ModSourceChip(srcIdx, juce::String(fable::MOD_SOURCES[(size_t)srcIdx]), false);
@@ -381,18 +392,19 @@ void MatrixPanel::timerCallback() {
 }
 
 void MatrixPanel::relayoutRows() {
-    // Show only currently-visible slots; hide the rest. Lay them top-down.
+    // Fixed-height rows stacked in the holder; the viewport scrolls vertically
+    // once their total height exceeds the visible area.
     for (auto* row : rows) row->setVisible(false);
-    auto area = rowsArea;
+    const int rowH = 28, gap = 7;
     int n = (int)lastVisible.size();
-    if (n == 0) return;
-    int rowH = juce::jmin(28, (area.getHeight() - (n - 1) * 7) / juce::jmax(1, n));
-    rowH = juce::jmax(20, rowH);
+    int vpW = viewport.getWidth(), vpH = viewport.getHeight();
+    int neededH = n > 0 ? n * rowH + (n - 1) * gap : 0;
+    bool vscroll = neededH > vpH;
+    int holderW = vpW - (vscroll ? viewport.getScrollBarThickness() : 0);
+    rowsHolder.setSize(holderW, juce::jmax(neededH, vpH));
     for (int i = 0; i < n; ++i) {
         auto* row = rows[lastVisible[(size_t)i] - 1];
-        auto rr = area.removeFromTop(rowH);
-        if (i < n - 1) area.removeFromTop(7);
-        row->setBounds(rr);
+        row->setBounds(0, i * (rowH + gap), holderW, rowH);
         row->setVisible(true);
     }
 }
@@ -400,18 +412,7 @@ void MatrixPanel::relayoutRows() {
 void MatrixPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, "MOD MATRIX", col::text);
-    // arrow glyph between src/dst for each visible row
-    g.setColour(col::textDim);
-    g.setFont(monoFont(11.0f));
-    for (int slot : lastVisible) {
-        auto* row = rows[slot - 1];
-        if (!row->isVisible()) continue;
-        auto rb = row->getBounds();
-        auto sb = row->src.getBounds(); // local to row
-        g.drawText(juce::String::fromUTF8("\xe2\x96\xb8"), // ▸
-                   rb.getX() + sb.getRight(), rb.getY() + sb.getY(),
-                   14, sb.getHeight(), juce::Justification::centred);
-    }
+    // (each Row paints its own ▸ arrow between src and dst, so it scrolls correctly)
     if (lastVisible.empty()) {
         g.setColour(col::textDim);
         g.setFont(monoFont(10.0f));
@@ -442,6 +443,7 @@ void MatrixPanel::resized() {
     addBtn.setBounds(addArea.withSizeKeepingCentre(juce::jmin(140, addArea.getWidth()), 22));
     r.removeFromBottom(6);
     rowsArea = r;
+    viewport.setBounds(rowsArea);
     relayoutRows();
 }
 

@@ -242,6 +242,23 @@ int main(int argc, char** argv) {
         check(newFinite && newPeak < 1.5f, "renders cleanly with mat6 -> SUB LVL (new dest) active", newPeak);
     }
 
+    // --- Many active routes: the mod-matrix list must scroll, not clip/overflow ---
+    {
+        auto setReal = [&](const juce::String& id, float real) {
+            if (auto* pr = proc.apvts.getParameter(id)) pr->setValueNotifyingHost(pr->convertTo0to1(real));
+        };
+        // Fill 12 of the 16 slots so the row list exceeds the panel height.
+        for (int slot = 1; slot <= 12; ++slot) {
+            setReal("mat" + juce::String(slot) + ".src", (float)(1 + (slot % 5))); // LFO1..NOTE
+            setReal("mat" + juce::String(slot) + ".dst", (float)slot);             // dsts 1..12
+            setReal("mat" + juce::String(slot) + ".amt", 0.4f);
+        }
+        int active = 0;
+        for (int slot = 1; slot <= 12; ++slot)
+            if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() != 0.0f) active++;
+        check(active == 12, "12 mod-matrix routes active (list overflows -> scrollable viewport)", (float)active);
+    }
+
     juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
                             : juce::File::getCurrentWorkingDirectory());
     dir.createDirectory();
@@ -249,6 +266,7 @@ int main(int argc, char** argv) {
     snapshotEditor(proc, dir.getChildFile("plugin_editor.png"));
     snapshotEditor(proc, dir.getChildFile("plugin_editor_mat5.png")); // editor with mat5 route assigned
     snapshotEditor(proc, dir.getChildFile("plugin_editor_newdest.png")); // editor with mat6 -> SUB LVL (new dest)
+    snapshotEditor(proc, dir.getChildFile("plugin_editor_matrixfull.png")); // 12 routes -> scrollable matrix
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
