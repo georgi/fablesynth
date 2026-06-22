@@ -441,7 +441,7 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
 
     double mPosA = 0, mPosB = 0, mCut = 0, mPitch = 0, mAmp = 0, mPan = 0, mLvlA = 0, mLvlB = 0;
     double mCut2 = 0, mRes2 = 0;
-    for (int s = 1; s <= 4; s++) {
+    for (int s = 1; s <= MOD_MATRIX_SIZE; s++) {
         int b = matBase(s);
         int src = (int)p_[b + MAT_SRC];
         int dst = (int)p_[b + MAT_DST];

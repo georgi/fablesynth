@@ -47,7 +47,7 @@ inline double lfoDivFactor(int i) {
 }
 inline const std::vector<std::string> SUB_SHAPES    = {"SINE", "SQR"};
 inline const std::vector<std::string> NOISE_TYPES   = {"WHITE", "PINK"};
-inline const std::vector<std::string> MOD_SOURCES   = {"-", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE"};
+inline const std::vector<std::string> MOD_SOURCES   = {"—", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE"};
 inline const std::vector<std::string> MOD_DESTS     = {"-", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES"};
 
 // ---- field offsets within a repeated block ----
@@ -55,6 +55,10 @@ enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,
                  OSC_UNISON, OSC_DETUNE, OSC_SPREAD, OSC_LEVEL, OSC_PAN, OSC_NFIELDS };
 enum FiltField { FLT_ON, FLT_TYPE, FLT_CUTOFF, FLT_RES, FLT_DRIVE, FLT_ENV, FLT_KEY, FLT_NFIELDS };
 enum MatField  { MAT_SRC, MAT_DST, MAT_AMT, MAT_NFIELDS };
+
+// Fixed mod-matrix pool size — shared by the engine, params and UI. Kept juce-free
+// (no juce types in the DSP header) and mirrored by MOD_MATRIX_SIZE in the web.
+constexpr int MOD_MATRIX_SIZE = 16;
 enum LfoField  { LFO_SHAPE, LFO_RATE, LFO_SYNC, LFO_SYNCRATE, LFO_RISE, LFO_PHASE, LFO_RETRIG, LFO_NFIELDS };
 
 // ---- flat parameter index space ----
@@ -73,11 +77,23 @@ enum Pid : int {
     ENV2_BASE   = ENV1_BASE + 4,
     LFO1_BASE   = ENV2_BASE + 4,              // shape,rate,sync,syncrate,rise,phase,retrig
     LFO2_BASE   = LFO1_BASE + LFO_NFIELDS,
-    MAT1_BASE   = LFO2_BASE + LFO_NFIELDS,    // 4 slots x 3
+    MAT1_BASE   = LFO2_BASE + LFO_NFIELDS,    // 16 slots x 3
     MAT2_BASE   = MAT1_BASE + MAT_NFIELDS,
     MAT3_BASE   = MAT2_BASE + MAT_NFIELDS,
     MAT4_BASE   = MAT3_BASE + MAT_NFIELDS,
-    FXDRIVE_ON = MAT4_BASE + MAT_NFIELDS,     // on,amt,mix
+    MAT5_BASE   = MAT4_BASE + MAT_NFIELDS,
+    MAT6_BASE   = MAT5_BASE + MAT_NFIELDS,
+    MAT7_BASE   = MAT6_BASE + MAT_NFIELDS,
+    MAT8_BASE   = MAT7_BASE + MAT_NFIELDS,
+    MAT9_BASE   = MAT8_BASE + MAT_NFIELDS,
+    MAT10_BASE  = MAT9_BASE + MAT_NFIELDS,
+    MAT11_BASE  = MAT10_BASE + MAT_NFIELDS,
+    MAT12_BASE  = MAT11_BASE + MAT_NFIELDS,
+    MAT13_BASE  = MAT12_BASE + MAT_NFIELDS,
+    MAT14_BASE  = MAT13_BASE + MAT_NFIELDS,
+    MAT15_BASE  = MAT14_BASE + MAT_NFIELDS,
+    MAT16_BASE  = MAT15_BASE + MAT_NFIELDS,
+    FXDRIVE_ON = MAT16_BASE + MAT_NFIELDS,    // on,amt,mix
     FXDRIVE_AMT, FXDRIVE_MIX,
     FXCHORUS_ON, FXCHORUS_RATE, FXCHORUS_DEPTH, FXCHORUS_MIX,
     FXDELAY_ON, FXDELAY_TIME, FXDELAY_FB, FXDELAY_MIX,
@@ -88,7 +104,7 @@ enum Pid : int {
 
 inline constexpr int oscBase(int i)  { return i == 0 ? OSCA_BASE : OSCB_BASE; }
 inline constexpr int fltBase(int i)  { return i == 0 ? FILTER1_BASE : FILTER2_BASE; }
-inline constexpr int matBase(int s)  { return MAT1_BASE + (s - 1) * MAT_NFIELDS; } // s = 1..4
+inline constexpr int matBase(int s)  { return MAT1_BASE + (s - 1) * MAT_NFIELDS; } // s = 1..16
 
 using ParamArray = std::array<float, NUM_PARAMS>;
 

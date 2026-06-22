@@ -4,9 +4,10 @@
 // and fully editable here.
 
 import type * as React from 'react';
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { MOD_SOURCES, MOD_DESTS, SOURCE_COLORS, fmtBi } from '../../params';
 import { useStore } from '../../store';
+import { MOD_MATRIX_SIZE } from '../../store/slotHelpers';
 import { ModSourceChip } from '../ModSourceChip';
 
 const A0 = -135, A1 = 135;
@@ -76,10 +77,23 @@ function ModSelect({ value, options, onChange }: { value: number; options: strin
 }
 
 export function MatrixPanel() {
-  const mods = useStore((s) => s.mods);
-  const addMod = useStore((s) => s.addMod);
-  const updateMod = useStore((s) => s.updateMod);
-  const removeMod = useStore((s) => s.removeMod);
+  const params = useStore((s) => s.params);
+  const addRoute = useStore((s) => s.addRoute);
+  const updateSlot = useStore((s) => s.updateSlot);
+  const clearSlot = useStore((s) => s.clearSlot);
+
+  // Rows are a view over the 16 fixed slots: show one for every slot that has a
+  // source OR a destination set (rowVisible), keyed by its absolute slot number
+  // so editing one slot never disturbs another's React state.
+  const rows = useMemo(() => {
+    const out: { slot: number; src: number; dst: number; amt: number }[] = [];
+    for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
+      const src = params[`mat${s}.src`] | 0;
+      const dst = params[`mat${s}.dst`] | 0;
+      if (src !== 0 || dst !== 0) out.push({ slot: s, src, dst, amt: params[`mat${s}.amt`] || 0 });
+    }
+    return out;
+  }, [params]);
 
   return (
     <section className="panel panel-matrix" style={{ gridArea: 'matrix' }}>
@@ -91,19 +105,19 @@ export function MatrixPanel() {
       <p className="mx-hint">Drag a source onto any knob or POS, or add a route below.</p>
 
       <div className="matrix-rows">
-        {mods.map((m, i) => (
-          <div className="mx-row" key={i}>
-            <AmtKnob amt={m.amt} color={SOURCE_COLORS[m.src]} onChange={(a) => updateMod(i, { amt: a })} />
-            <ModSelect value={m.src} options={MOD_SOURCES} onChange={(v) => updateMod(i, { src: v })} />
+        {rows.map((r) => (
+          <div className="mx-row" key={r.slot}>
+            <AmtKnob amt={r.amt} color={SOURCE_COLORS[r.src]} onChange={(a) => updateSlot(r.slot, { amt: a })} />
+            <ModSelect value={r.src} options={MOD_SOURCES} onChange={(v) => updateSlot(r.slot, { src: v })} />
             <span className="mx-arrow">▸</span>
-            <ModSelect value={m.dst} options={MOD_DESTS} onChange={(v) => updateMod(i, { dst: v })} />
-            <button className="mx-del" aria-label="remove route" title="remove" onClick={() => removeMod(i)}>×</button>
+            <ModSelect value={r.dst} options={MOD_DESTS} onChange={(v) => updateSlot(r.slot, { dst: v })} />
+            <button className="mx-del" aria-label="remove route" title="remove" onClick={() => clearSlot(r.slot)}>×</button>
           </div>
         ))}
-        {!mods.length && <p className="mx-empty">No modulation routes yet.</p>}
+        {!rows.length && <p className="mx-empty">No modulation routes yet.</p>}
       </div>
 
-      <button className="mx-add" onClick={() => addMod(1, 1, 0)}>+ ADD ROUTE</button>
+      <button className="mx-add" onClick={() => addRoute(1, 0)}>+ ADD ROUTE</button>
     </section>
   );
 }

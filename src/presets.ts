@@ -1,17 +1,21 @@
 // Factory presets. Each entry overrides defaults from params.ts.
 // Table indices: 0 PRIME, 1 BLOOM, 2 PULSE, 3 VOX, 4 CHIME, 5 GLITCH
 // Mod sources: 0 —, 1 LFO1, 2 LFO2, 3 MODENV, 4 VELO, 5 NOTE
-// Mod dests:   0 —, 1 A POS, 2 B POS, 3 CUTOFF, 4 PITCH, 5 AMP, 6 PAN, 7 A LVL, 8 B LVL
+// Mod dests:   0 —, 1 A POS, 2 B POS, 3 F1 CUT, 4 PITCH, 5 AMP, 6 PAN, 7 A LVL,
+//              8 B LVL, 9 F2 CUT, 10 F2 RES
 
-import type { ModConnection, ParamValues } from './params';
+import { defaultParams, type ModConnection, type ParamValues } from './params';
+import { MOD_MATRIX_SIZE } from './store/slotHelpers';
 import type { SerializedUserTable } from './engine/usertables';
 
 export interface Preset {
   name: string;
   params: Partial<ParamValues>;
-  // Modulation routes. Factory presets omit this and encode routes in `mat*`
-  // params (migrated on load); user presets saved by the current build store
-  // them here explicitly. See store.ts `resolvePresetMods`.
+  // Modulation routes from older user presets. Routes now live entirely in the
+  // `mat{n}.*` params (params-as-truth); factory presets encode them there and
+  // current saves carry them in `params`. This optional array is kept only so
+  // pre-existing user presets still load — `resolvePresetMods` expands it into
+  // slots in order (truncating beyond 16). See `resolvePresetMods` below.
   mods?: ModConnection[];
   // Optional embedded user wavetables. When present they define the table pool
   // the preset's `*.table` indices (>= TABLE_NAMES.length) address. Factory
@@ -320,6 +324,35 @@ export const FACTORY_PRESETS: Preset[] = [
   },
 ];
 
+// Resolve a preset into a clean, complete param map (params-as-truth). Modulation
+// lives entirely in the 16 fixed `mat{n}.*` slots now. Factory presets already
+// encode their routes in `mat1..4.*` params; we keep those and zero `mat5..16`.
+// User presets saved by older builds carry an explicit `mods[]` array — we expand
+// it into slots in order (truncating anything beyond 16) and zero the rest. The
+// per-route scaling is unchanged, so the sound is identical.
+export function resolvePresetMods(
+  presetParams: Partial<ParamValues>,
+  explicit?: ModConnection[],
+): ParamValues {
+  const merged = { ...defaultParams(), ...presetParams } as ParamValues;
+  if (explicit) {
+    for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
+      const m = explicit[s - 1];
+      merged[`mat${s}.src`] = m ? m.src | 0 : 0;
+      merged[`mat${s}.dst`] = m ? m.dst | 0 : 0;
+      merged[`mat${s}.amt`] = m ? m.amt || 0 : 0;
+    }
+  } else {
+    // Factory preset: mat1..4 stay as authored; zero the remaining slots.
+    for (let s = 5; s <= MOD_MATRIX_SIZE; s++) {
+      merged[`mat${s}.src`] = 0;
+      merged[`mat${s}.dst`] = 0;
+      merged[`mat${s}.amt`] = 0;
+    }
+  }
+  return merged;
+}
+
 const LS_KEY = 'fablesynth.userPresets';
 
 export function loadUserPresets(): Preset[] {
@@ -330,10 +363,11 @@ export function loadUserPresets(): Preset[] {
   }
 }
 
-export function saveUserPreset(name: string, params: ParamValues, mods: ModConnection[] = [], tables: SerializedUserTable[] = []): Preset[] {
+export function saveUserPreset(name: string, params: ParamValues, tables: SerializedUserTable[] = []): Preset[] {
   const list = loadUserPresets().filter((p) => p.name !== name);
+  // Routes live in the `mat*` params now, so the full param map already carries
+  // them — no separate `mods` array to embed.
   const preset: Preset = { name, params: { ...params } };
-  if (mods.length) preset.mods = mods.map((m) => ({ ...m }));
   if (tables.length) preset.tables = tables;
   list.push(preset);
   localStorage.setItem(LS_KEY, JSON.stringify(list));

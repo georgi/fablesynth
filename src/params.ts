@@ -113,6 +113,16 @@ function lfoParams(prefix: string, defRate: number): ParamDef[] {
   ];
 }
 
+// One mod-matrix slot (mat1..mat16): a source enum, a dest enum and a bipolar
+// amount. Mirrors the C++ addMat order in Params.cpp so preset ids line up 1:1.
+function matParams(n: number): ParamDef[] {
+  return [
+    { id: `mat${n}.src`, type: 'enum', options: MOD_SOURCES, def: 0 },
+    { id: `mat${n}.dst`, type: 'enum', options: MOD_DESTS, def: 0 },
+    { id: `mat${n}.amt`, label: 'AMT', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
+  ];
+}
+
 export const PARAM_DEFS: ParamDef[] = [
   ...oscParams('oscA', 1, 0),
   ...oscParams('oscB', 0, 1),
@@ -140,6 +150,8 @@ export const PARAM_DEFS: ParamDef[] = [
 
   ...lfoParams('lfo1', 2),
   ...lfoParams('lfo2', 5),
+
+  ...Array.from({ length: 16 }, (_, i) => matParams(i + 1)).flat(),
 
   { id: 'fx.drive.on', type: 'bool', def: 0 },
   { id: 'fx.drive.amt', label: 'AMOUNT', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },

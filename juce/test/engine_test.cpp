@@ -334,6 +334,73 @@ int main() {
               "dSaw=" + std::to_string(dSaw) + " dSqr=" + std::to_string(dSqr));
     }
 
+    printf("\n== 10. Mod matrix beyond slot 4 (16-slot pool) ==\n");
+    {
+        // A slot past the legacy 4 (mat5) must modulate its dest. Two FRESH engines
+        // render the identical patch — one with mat5 -> PITCH at a high amt, one with
+        // mat5 off — so any diff is purely the slot taking effect. The engine is
+        // deterministic (seeded RNG + deterministic LFO), so a fresh-vs-fresh diff is
+        // reproducible run to run.
+        auto renderMat5 = [&](bool on) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = 2;       // SAW — deterministic, audibly sweeps pitch
+            q[LFO1_BASE + LFO_RATE]  = 6.0f;
+            q[LFO1_BASE + LFO_RETRIG] = 1;      // per-voice phase, reset at note-on (deterministic)
+            if (on) {
+                q[MAT5_BASE + MAT_SRC] = 1;     // LFO 1
+                q[MAT5_BASE + MAT_DST] = 4;     // PITCH
+                q[MAT5_BASE + MAT_AMT] = 0.9f;  // high depth
+            }
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto off = renderMat5(false), on = renderMat5(true);
+        check(finite(off) && finite(on) && peak(on) < 4.0f, "mat5 -> PITCH output finite/bounded",
+              "peak=" + std::to_string(peak(on)));
+        double diff = 0;
+        for (size_t i = 0; i < on.size(); ++i) diff += std::abs(on[i] - off[i]);
+        check(diff > 1.0, "mat5 (slot > 4) audibly modulates PITCH (deterministic diff vs off)",
+              "diff=" + std::to_string(diff));
+
+        // A fresh engine rendering the same on-patch must reproduce the exact buffer
+        // (no time-dependent state) — the diff above is deterministic.
+        auto on2 = renderMat5(true);
+        bool identical = on.size() == on2.size();
+        for (size_t i = 0; identical && i < on.size(); ++i) if (on[i] != on2[i]) identical = false;
+        check(identical, "mat5 modulation is reproducible across fresh engines");
+
+        // Multiple routes to one dest accumulate (engine sums per-dest), and the
+        // result stays finite/bounded even when three high-amt slots stack on PITCH.
+        auto renderRoutes = [&](int count) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = 2; q[LFO1_BASE + LFO_RATE] = 6.0f; q[LFO1_BASE + LFO_RETRIG] = 1;
+            q[LFO2_BASE + LFO_SHAPE] = 0; q[LFO2_BASE + LFO_RATE] = 4.0f; q[LFO2_BASE + LFO_RETRIG] = 1;
+            // Three distinct slots, mixed sources, all targeting PITCH (dst 4).
+            const int bases[3] = { MAT6_BASE, MAT9_BASE, MAT14_BASE };
+            const int srcsIdx[3] = { 1, 2, 4 };  // LFO 1, LFO 2, VELO
+            for (int i = 0; i < count; ++i) {
+                q[bases[i] + MAT_SRC] = (float)srcsIdx[i];
+                q[bases[i] + MAT_DST] = 4;        // PITCH
+                q[bases[i] + MAT_AMT] = 0.8f;
+            }
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto r1 = renderRoutes(1), r3 = renderRoutes(3);
+        check(finite(r3) && peak(r3) < 4.0f, "3 routes -> PITCH accumulate finite/bounded",
+              "peak=" + std::to_string(peak(r3)));
+        double dAccum = 0;
+        for (size_t i = 0; i < r1.size(); ++i) dAccum += std::abs(r3[i] - r1[i]);
+        check(dAccum > 1.0, "stacking routes on one dest changes output (accumulation, not last-wins)",
+              "dAccum=" + std::to_string(dAccum));
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;
 }

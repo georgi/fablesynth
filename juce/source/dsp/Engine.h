@@ -1,7 +1,7 @@
 // FableSynth DSP core — C++ port of src/engine/worklet.js.
 // 8-voice polyphonic wavetable engine: 2 morphing oscillators (unison), sub +
 // noise, dual per-voice filter (SVF / comb / vowel) with ADAA drive, 2 ADSR
-// envelopes, 2 LFOs, a 4-slot mod matrix, glide and voice stealing.
+// envelopes, 2 LFOs, a 16-slot mod matrix, glide and voice stealing.
 //
 // JUCE-independent on purpose: the engine is a plain C++ object so it can be
 // driven by the plugin AND exercised by a headless test harness.

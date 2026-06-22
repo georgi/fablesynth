@@ -7,6 +7,7 @@ import type * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';
+import { useModsByDest } from '../hooks/useModsByDest';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 const clampAmt = (n: number) => Math.min(1, Math.max(-1, n));
@@ -17,10 +18,11 @@ interface VSliderProps {
   ghost: number; // live modulated position 0..1, -1 = hidden
 }
 
-// A draggable modulation-depth band rising from the current value.
-function PosModBand({ index, amt, src, baseNorm }: { index: number; amt: number; src: number; baseNorm: number }) {
-  const updateMod = useStore((s) => s.updateMod);
-  const removeMod = useStore((s) => s.removeMod);
+// A draggable modulation-depth band rising from the current value. `slotNum` is
+// the absolute slot (1..16) the band edits in the fixed mod pool.
+function PosModBand({ slotNum, amt, src, baseNorm }: { slotNum: number; amt: number; src: number; baseNorm: number }) {
+  const updateSlot = useStore((s) => s.updateSlot);
+  const clearSlot = useStore((s) => s.clearSlot);
   const elRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; amt: number } | null>(null);
 
@@ -42,13 +44,13 @@ function PosModBand({ index, amt, src, baseNorm }: { index: number; amt: number;
         if (!drag.current) return;
         e.stopPropagation();
         const dy = drag.current.y - e.clientY;
-        updateMod(index, { amt: clampAmt(drag.current.amt + dy * (e.shiftKey ? 0.0008 : 0.004)) });
+        updateSlot(slotNum, { amt: clampAmt(drag.current.amt + dy * (e.shiftKey ? 0.0008 : 0.004)) });
       }}
       onPointerUp={(e) => {
         drag.current = null;
         try { elRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
       }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeMod(index); }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); clearSlot(slotNum); }}
     />
   );
 }
@@ -60,10 +62,9 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
   const norm = clamp01(valueToNorm(def, value));
 
   const dest = DEST_OF_PARAM[paramId];
-  const mods = useStore((s) => s.mods);
-  const addMod = useStore((s) => s.addMod);
+  const addRoute = useStore((s) => s.addRoute);
   const modDrag = useStore((s) => s.modDrag);
-  const myMods = dest ? mods.map((m, i) => ({ m, i })).filter(({ m }) => m.dst === dest) : [];
+  const myMods = useModsByDest(dest);
   const dropActive = dest && modDrag > 0;
 
   const elRef = useRef<HTMLDivElement>(null);
@@ -129,13 +130,13 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
       onDrop={dest ? (e) => {
         e.preventDefault();
         const src = parseInt(e.dataTransfer.getData('mod-src') || '0', 10);
-        if (src) addMod(src, dest);
+        if (src) addRoute(src, dest);
       } : undefined}
     >
       <div className="vs-track" ref={trackRef}>
         <div className="vs-fill" style={{ height: `${pct}%` }} />
-        {myMods.map(({ m, i }) => (
-          <PosModBand key={i} index={i} amt={m.amt} src={m.src} baseNorm={norm} />
+        {myMods.map((m) => (
+          <PosModBand key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} />
         ))}
         <div
           className="vs-ghost"

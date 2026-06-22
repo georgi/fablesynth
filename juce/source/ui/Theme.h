@@ -28,6 +28,21 @@ inline juce::Colour accentColour(Accent a) {
                  case Accent::F: return col::acF; default: return col::acN; }
 }
 
+// Tint per MOD_SOURCES index — single home for the mod-source palette (mirrors
+// the web's SOURCE_COLORS in params.ts). Index 0 (the "—" no-source) is
+// transparent; LFO 1 cyan, LFO 2 amber, MOD ENV violet, VELO/NOTE slate.
+// Out-of-range indices fall back to transparent.
+inline juce::Colour modSourceColour(int srcIndex) {
+    switch (srcIndex) {
+        case 1:  return juce::Colour(0xff4de8ff);
+        case 2:  return juce::Colour(0xffffa14d);
+        case 3:  return juce::Colour(0xffb18cff);
+        case 4:  return juce::Colour(0xff9fb4d8);
+        case 5:  return juce::Colour(0xff9fb4d8);
+        default: return juce::Colours::transparentBlack;
+    }
+}
+
 // Panel: rounded rect, vertical gradient + top inner highlight + drop shadow.
 inline void drawPanel(juce::Graphics& g, juce::Rectangle<float> r, float radius = 12.0f) {
     juce::DropShadow(juce::Colours::black.withAlpha(0.4f), 18, {0, 8}).drawForRectangle(

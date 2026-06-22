@@ -2,15 +2,21 @@
 // Protocol (port messages in):
 //   {t:'init', params:{id:value,...}}
 //   {t:'tables', list:[{frames,mips,size,buf:ArrayBuffer}]}
-//   {t:'p', k, v}                    single param change
-//   {t:'mods', list:[{src,dst,amt}]} modulation routing (Serum-style assignment)
+//   {t:'p', k, v}                    single param change (incl. mat{n}.src/.dst/.amt)
 //   {t:'on', n, v} {t:'off', n}      note events (n=midi note, v=0..1)
 //   {t:'bend', s}                    pitch bend in semitones
 //   {t:'panic'}
+//
+// Modulation is a fixed pool of 16 slots (mat1..mat16), each {src,dst,amt}, read
+// straight from `this.p` — no separate routing message. The per-destination
+// scaling matches the VST exactly, so the two engines sound identical.
 // Out: {t:'viz', a, b, n}            modulated wt positions + active voice count
 
 const NVOICES = 8;
 const MAXUNI = 7;
+// Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
+// in the params/slot helpers and the VST's MOD_MATRIX_SIZE.
+const MOD_MATRIX_SIZE = 16;
 // Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
 // so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
 const COMB_MAX = 4096;
@@ -185,7 +191,6 @@ class FableProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.p = Object.create(null);
-    this.mods = [];
     this.tables = [];
     this.voices = [];
     for (let i = 0; i < NVOICES; i++) this.voices.push(new Voice());
@@ -216,7 +221,6 @@ class FableProcessor extends AudioWorkletProcessor {
     switch (d.t) {
       case 'init': Object.assign(this.p, d.params); break;
       case 'p': this.p[d.k] = d.v; break;
-      case 'mods': this.mods = d.list || []; break;
       case 'tables':
         this.tables = d.list.map((x) => ({
           frames: x.frames, mips: x.mips, size: x.size, mask: x.size - 1,
@@ -585,18 +589,17 @@ class FableProcessor extends AudioWorkletProcessor {
     const e2 = v.modEnv.level;
     const srcs = [0, l1, l2, e2, v.vel, (v.note - 60) / 24];
 
-    // modulation destinations — sum every route assigned to each target. The
-    // per-destination scaling below is unchanged from the fixed matrix, so the
-    // dynamic assignment list sounds identical to the old four-slot version.
+    // modulation destinations — sum every active slot assigned to each target.
+    // The 16 fixed slots are read straight from `this.p` (mat{n}.src/.dst/.amt);
+    // the per-destination scaling below matches the VST exactly, so both engines
+    // sound identical.
     let mPosA = 0, mPosB = 0, mCut = 0, mPitch = 0, mAmp = 0, mPan = 0, mLvlA = 0, mLvlB = 0;
     let mCut2 = 0, mRes2 = 0;
-    const mods = this.mods;
-    for (let i = 0; i < mods.length; i++) {
-      const m = mods[i];
-      const src = m.src | 0;
-      const dst = m.dst | 0;
+    for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
+      const src = p['mat' + s + '.src'] | 0;
+      const dst = p['mat' + s + '.dst'] | 0;
       if (!src || !dst) continue;
-      const x = srcs[src] * m.amt;
+      const x = srcs[src] * (p['mat' + s + '.amt'] || 0);
       switch (dst) {
         case 1: mPosA += x; break;
         case 2: mPosB += x; break;

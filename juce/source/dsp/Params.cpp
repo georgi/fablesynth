@@ -79,10 +79,7 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     addLfo("lfo1", LFO1_BASE, 2);
     addLfo("lfo2", LFO2_BASE, 5);
 
-    addMat(v, 1, MAT1_BASE);
-    addMat(v, 2, MAT2_BASE);
-    addMat(v, 3, MAT3_BASE);
-    addMat(v, 4, MAT4_BASE);
+    for (int i = 1; i <= 16; ++i) addMat(v, i, matBase(i));
 
     v.push_back({FXDRIVE_ON,     "fx.drive.on",    "ON",     0, 1, 0,     Curve::Int, Kind::Bool, nullptr});
     v.push_back({FXDRIVE_AMT,    "fx.drive.amt",   "AMOUNT", 0, 1, 0.3f,  Curve::Lin, Kind::Float, nullptr});

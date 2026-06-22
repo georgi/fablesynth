@@ -6,9 +6,10 @@
 // set the depth (right-click the ring to remove it).
 
 import type * as React from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';
+import { useModsByDest } from '../hooks/useModsByDest';
 
 const A0 = -135, A1 = 135;
 
@@ -33,9 +34,10 @@ export type KnobSize = 'lg' | 'md' | 'sm' | 'xs';
 
 // One modulation ring: an arc from the current value to where this route would
 // push it, in its source color. Vertical drag sets the depth; right-click removes.
-function ModRing({ index, amt, src, baseNorm, r }: { index: number; amt: number; src: number; baseNorm: number; r: number }) {
-  const updateMod = useStore((s) => s.updateMod);
-  const removeMod = useStore((s) => s.removeMod);
+// `slotNum` is the absolute slot (1..16) the ring edits in the fixed mod pool.
+function ModRing({ slotNum, amt, src, baseNorm, r }: { slotNum: number; amt: number; src: number; baseNorm: number; r: number }) {
+  const updateSlot = useStore((s) => s.updateSlot);
+  const clearSlot = useStore((s) => s.clearSlot);
   const ref = useRef<SVGPathElement>(null);
   const drag = useRef<{ y: number; amt: number } | null>(null);
 
@@ -57,13 +59,13 @@ function ModRing({ index, amt, src, baseNorm, r }: { index: number; amt: number;
         if (!drag.current) return;
         e.stopPropagation();
         const dy = drag.current.y - e.clientY;
-        updateMod(index, { amt: clampAmt(drag.current.amt + dy * (e.shiftKey ? 0.001 : 0.005)) });
+        updateSlot(slotNum, { amt: clampAmt(drag.current.amt + dy * (e.shiftKey ? 0.001 : 0.005)) });
       }}
       onPointerUp={(e) => {
         drag.current = null;
         try { ref.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
       }}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeMod(index); }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); clearSlot(slotNum); }}
     />
   );
 }
@@ -81,13 +83,9 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   const setParam = useStore((s) => s.setParam);
 
   const dest = DEST_OF_PARAM[paramId];
-  const mods = useStore((s) => s.mods);
-  const addMod = useStore((s) => s.addMod);
+  const addRoute = useStore((s) => s.addRoute);
   const modDrag = useStore((s) => s.modDrag);
-  const myMods = useMemo(
-    () => (dest ? mods.map((m, i) => ({ m, i })).filter(({ m }) => m.dst === dest) : []),
-    [mods, dest],
-  );
+  const myMods = useModsByDest(dest);
   const dropActive = dest && modDrag > 0;
 
   const bipolar = (def.min as number) < 0;
@@ -181,15 +179,15 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
       onDrop={dest ? (e) => {
         e.preventDefault();
         const src = parseInt(e.dataTransfer.getData('mod-src') || '0', 10);
-        if (src) addMod(src, dest);
+        if (src) addRoute(src, dest);
       } : undefined}
     >
       <svg viewBox="0 0 80 80">
         <circle className="k-body" cx="40" cy="40" r="26" />
         <path className="k-track" d={arcPath(40, 40, 33, A0, A1)} />
         <path className="k-arc" d={arcD} />
-        {myMods.map(({ m, i }, k) => (
-          <ModRing key={i} index={i} amt={m.amt} src={m.src} baseNorm={norm} r={38 + k * 3.4} />
+        {myMods.map((m, k) => (
+          <ModRing key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} r={38 + k * 3.4} />
         ))}
         <line className="k-ptr" x1="40" y1="40" x2="40" y2="17" transform={`rotate(${deg} 40 40)`} />
       </svg>

@@ -165,11 +165,49 @@ int main(int argc, char** argv) {
         check(dup.isEmpty(), msg.c_str(), 0);
     }
 
+    // --- Mod matrix slot > 4 via APVTS: assign mat5 -> PITCH and render ---
+    // Drive a slot past the legacy 4 through the host parameter bridge (set via
+    // convertTo0to1 like a DAW would), render a few blocks, then snapshot the
+    // editor so the matrix-list row + control mod rings paint. No crash = pass.
+    {
+        auto setParamReal = [&](const char* id, float real) {
+            if (auto* pr = proc.apvts.getParameter(id))
+                pr->setValueNotifyingHost(pr->convertTo0to1(real));
+        };
+        setParamReal("mat5.src", 1.0f); // LFO 1
+        setParamReal("mat5.dst", 4.0f); // PITCH
+        setParamReal("mat5.amt", 0.7f); // high depth, host-automatable
+        float s = proc.apvts.getRawParameterValue("mat5.src")->load();
+        float d = proc.apvts.getRawParameterValue("mat5.dst")->load();
+        float a = proc.apvts.getRawParameterValue("mat5.amt")->load();
+        check(std::abs(s - 1.0f) < 0.5f && std::abs(d - 4.0f) < 0.5f && std::abs(a - 0.7f) < 0.05f,
+              "mat5 (slot > 4) src/dst/amt set via APVTS convertTo0to1", a);
+
+        bool matFinite = true; float matPeak = 0;
+        for (int b = 0; b < 30; ++b) {
+            buf.clear();
+            juce::MidiBuffer midi;
+            if (b == 0) {
+                midi.addEvent(juce::MidiMessage::noteOn(1, 48, 0.9f), 0);
+                midi.addEvent(juce::MidiMessage::noteOn(1, 55, 0.9f), 0);
+            }
+            proc.processBlock(buf, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < block; ++i) {
+                    float v = buf.getSample(ch, i);
+                    if (!std::isfinite(v)) matFinite = false;
+                    matPeak = std::max(matPeak, std::abs(v));
+                }
+        }
+        check(matFinite && matPeak < 1.5f, "renders cleanly with mat5 -> PITCH active", matPeak);
+    }
+
     juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
                             : juce::File::getCurrentWorkingDirectory());
     dir.createDirectory();
     snapshotViews(proc, dir.getChildFile("wavetable_view.png"));
     snapshotEditor(proc, dir.getChildFile("plugin_editor.png"));
+    snapshotEditor(proc, dir.getChildFile("plugin_editor_mat5.png")); // editor with mat5 route assigned
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
