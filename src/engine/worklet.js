@@ -466,16 +466,18 @@ class FableProcessor extends AudioWorkletProcessor {
   // Compute one filter's block-rate coefficients. CUTOFF is shared across all
   // types: it sets corner frequency (SVF), comb pitch (COMB) or vowel morph
   // position (VOWEL). RES sets resonance / feedback / formant sharpness.
-  setupFilter(fs, pre, v, e2, pm) {
+  setupFilter(fs, pre, v, e2, mCut, pm) {
     const p = this.p;
     const k = pre + '.';
     const ftype = p[pre + '.type'] | 0;
     fs.ftype = ftype;
 
-    // cutoff modulation is folded into pm (Log rule, D=5) -> pm[cutoff] already
-    // carries the ×2^(x·5) factor, so the env/key formula matches the legacy math.
-    let fc = (pm[k + 'cutoff'] ?? p[k + 'cutoff']) *
-      Math.pow(2, (pm[k + 'env'] ?? p[k + 'env']) * 4 * e2 + ((pm[k + 'key'] ?? p[k + 'key']) * (v.note - 60)) / 12);
+    // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
+    // exponent stays in a single Math.pow — bit-identical to the legacy
+    // p[cutoff] × 2^(env·4·e2 + key·(note-60)/12 + x·5). env/key are still read from
+    // pm so THEY remain modulatable; the base cutoff is read straight from p.
+    let fc = p[k + 'cutoff'] *
+      Math.pow(2, (pm[k + 'env'] ?? p[k + 'env']) * 4 * e2 + ((pm[k + 'key'] ?? p[k + 'key']) * (v.note - 60)) / 12 + mCut * MOD_LOG_D);
     fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
     fs.cutSm += (fc - fs.cutSm) * 0.5;
@@ -700,6 +702,10 @@ class FableProcessor extends AudioWorkletProcessor {
     for (const id in accum) {
       const info = MOD_PARAM_INFO[id];
       if (!info) continue; // non-modulatable target — ignore (matches engine)
+      // The filter cutoff routes are NOT folded into pm: they are applied as the
+      // single-exponent mCut term inside setupFilter so the result is bit-identical
+      // to the legacy single Math.pow. All other Log/Lin dests fold here.
+      if (id === 'filter.cutoff' || id === 'filter2.cutoff') continue;
       const base = p[id];
       pm[id] = info.curve === 'log'
         ? base * Math.pow(2, accum[id] * MOD_LOG_D)
@@ -786,8 +792,8 @@ class FableProcessor extends AudioWorkletProcessor {
     // ---- per-voice filters with routing ----
     const f1on = !!p['filter.on'];
     const f2on = !!p['filter2.on'];
-    if (f1on) this.setupFilter(v.f1, 'filter', v, e2, pm);
-    if (f2on) this.setupFilter(v.f2, 'filter2', v, e2, pm);
+    if (f1on) this.setupFilter(v.f1, 'filter', v, e2, accum['filter.cutoff'] || 0, pm);
+    if (f2on) this.setupFilter(v.f2, 'filter2', v, e2, accum['filter2.cutoff'] || 0, pm);
 
     const f1L = this.f1L, f1R = this.f1R, f2L = this.f2L, f2R = this.f2R;
     const dr1 = pm['filter.drive'] ?? p['filter.drive'], dr2 = pm['filter2.drive'] ?? p['filter2.drive'];

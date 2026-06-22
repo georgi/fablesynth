@@ -274,14 +274,16 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
     }
 }
 
-void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, const double* pm) {
+void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm) {
     int ftype = (int)p_[base + FLT_TYPE];
     fs.ftype = ftype;
 
-    // cutoff modulation is folded into pm (Log rule, D=5) -> pm[CUTOFF] already
-    // carries the *2^(x*5) factor, so the env/key formula matches the legacy math.
-    double fc = pm[base + FLT_CUTOFF] *
-        std::pow(2.0, pm[base + FLT_ENV] * 4 * e2 + (pm[base + FLT_KEY] * (v.note - 60)) / 12.0);
+    // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
+    // exponent stays in a single std::pow — bit-identical to the legacy
+    // p[CUTOFF] * 2^(env*4*e2 + key*(note-60)/12 + x*5). env/key are still read from
+    // pm so THEY remain modulatable; the base cutoff is read straight from p_.
+    double fc = p_[base + FLT_CUTOFF] *
+        std::pow(2.0, pm[base + FLT_ENV] * 4 * e2 + (pm[base + FLT_KEY] * (v.note - 60)) / 12.0 + mCut * 5.0);
     fc = std::min(sr_ * 0.45, std::max(20.0, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
     fs.cutSm += (fc - fs.cutSm) * 0.5;
@@ -473,6 +475,10 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     for (int P = 0; P < NUM_PARAMS; P++) {
         double x = modAccum[P];
         if (x == 0) continue;
+        // The filter cutoff routes are NOT folded into pm_: they are applied as the
+        // single-exponent mCut term inside setupFilter so the result is IEEE-bit-
+        // identical to the legacy single pow. All other Log/Lin dests fold here.
+        if (P == FILTER1_BASE + FLT_CUTOFF || P == FILTER2_BASE + FLT_CUTOFF) continue;
         const ParamInfo& d = info[P];
         if (d.curve == Curve::Log)      pm_[P] = (double)p_[P] * std::pow(2.0, x * 5.0);
         else if (d.curve == Curve::Lin) pm_[P] = (double)p_[P] + x * ((double)d.max - (double)d.min);
@@ -552,8 +558,8 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     // ---- per-voice filters with routing ----
     bool f1on = p_[FILTER1_BASE + FLT_ON] > 0.5;
     bool f2on = p_[FILTER2_BASE + FLT_ON] > 0.5;
-    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, pm_);
-    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, pm_);
+    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, modAccum[FILTER1_BASE + FLT_CUTOFF], pm_);
+    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, modAccum[FILTER2_BASE + FLT_CUTOFF], pm_);
 
     double dr1 = pm_[FILTER1_BASE + FLT_DRIVE], dr2 = pm_[FILTER2_BASE + FLT_DRIVE];
     float* oL; float* oR;

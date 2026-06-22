@@ -143,7 +143,7 @@ public:
 private:
     bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan);
     void renderOsc(OscState& o, float* tmpL, float* tmpR, int n);
-    void setupFilter(FilterState& fs, int base, Voice& v, double e2, const double* pm);
+    void setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm);
     void runFilter(FilterState& fs, const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n);
     void renderVoice(Voice& v, float* L, float* R, int n);
