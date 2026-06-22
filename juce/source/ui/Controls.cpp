@@ -115,6 +115,8 @@ void Knob::mouseDown(const juce::MouseEvent& e) {
                 repaint();
                 return;
             }
+            grabbedAmt_ = matParams_[rings_[(size_t)i].slot - 1][2];
+            if (grabbedAmt_) grabbedAmt_->beginChangeGesture();
             lastY = e.position.y;
             return;
         }
@@ -126,8 +128,7 @@ void Knob::mouseDrag(const juce::MouseEvent& e) {
     if (grabbedRing_ >= 0 && grabbedRing_ < (int)rings_.size()) {
         float dy = lastY - e.position.y;
         lastY = e.position.y;
-        int slot = rings_[(size_t)grabbedRing_].slot;
-        if (auto* p = matParams_[slot - 1][2]) {
+        if (auto* p = grabbedAmt_) {
             float cur = p->convertFrom0to1(p->getValue());
             float next = juce::jlimit(-1.0f, 1.0f,
                                       cur + dy * (e.mods.isShiftDown() ? 0.001f : 0.005f));
@@ -142,7 +143,11 @@ void Knob::mouseDrag(const juce::MouseEvent& e) {
     nudge(dy * (e.mods.isShiftDown() ? 0.0008f : 0.005f));
 }
 void Knob::mouseUp(const juce::MouseEvent&) {
-    if (grabbedRing_ >= 0) { grabbedRing_ = -1; return; }
+    if (grabbedRing_ >= 0) {
+        if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
+        grabbedRing_ = -1;
+        return;
+    }
     if (param) param->endChangeGesture();
 }
 void Knob::mouseDoubleClick(const juce::MouseEvent&) {
@@ -383,8 +388,12 @@ void VSlider::timerCallback() {
     if (dirty) repaint();
 }
 juce::Rectangle<float> VSlider::trackArea() const {
-    return getLocalBounds().toFloat().withTrimmedBottom(14)
-        .withSizeKeepingCentre(9, (float)getHeight() - 14);
+    // Left-anchor the 9px track (with a small inset for the wider handle/ghost
+    // overhang) so depth bands grow rightward into the column's spare width,
+    // keeping every band inside getLocalBounds() and therefore grabbable.
+    constexpr float kTrackInset = 7.0f;
+    auto b = getLocalBounds().toFloat().withTrimmedBottom(14);
+    return { b.getX() + kTrackInset, b.getY(), 9.0f, b.getHeight() };
 }
 void VSlider::moveTo(float y) {
     auto t = trackArea();
@@ -414,7 +423,9 @@ void VSlider::mouseDown(const juce::MouseEvent& e) {
                 repaint();
                 return;
             }
-            lastNorm = e.position.y; // reuse as last-Y for the band drag
+            grabbedAmt_ = matParams_[rings_[(size_t)i].slot - 1][2];
+            if (grabbedAmt_) grabbedAmt_->beginChangeGesture();
+            lastY = e.position.y; // dedicated last-Y for the band drag (lastNorm is the timer's)
             return;
         }
     }
@@ -423,10 +434,9 @@ void VSlider::mouseDown(const juce::MouseEvent& e) {
 }
 void VSlider::mouseDrag(const juce::MouseEvent& e) {
     if (grabbedRing_ >= 0 && grabbedRing_ < (int)rings_.size()) {
-        float dy = lastNorm - e.position.y; // lastNorm holds previous Y here
-        lastNorm = e.position.y;
-        int slot = rings_[(size_t)grabbedRing_].slot;
-        if (auto* p = matParams_[slot - 1][2]) {
+        float dy = lastY - e.position.y; // dedicated last-Y for the band drag
+        lastY = e.position.y;
+        if (auto* p = grabbedAmt_) {
             float cur = p->convertFrom0to1(p->getValue());
             float next = juce::jlimit(-1.0f, 1.0f,
                                       cur + dy * (e.mods.isShiftDown() ? 0.001f : 0.005f));
@@ -439,7 +449,11 @@ void VSlider::mouseDrag(const juce::MouseEvent& e) {
     moveTo(e.position.y);
 }
 void VSlider::mouseUp(const juce::MouseEvent&) {
-    if (grabbedRing_ >= 0) { grabbedRing_ = -1; lastNorm = -1; return; }
+    if (grabbedRing_ >= 0) {
+        if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
+        grabbedRing_ = -1;
+        return;
+    }
     if (param) param->endChangeGesture();
 }
 void VSlider::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) {

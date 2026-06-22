@@ -66,7 +66,10 @@ void OscPanel::resized() {
     titleArea = head;
     r.removeFromTop(8);
     auto knobRow = r.removeFromBottom(62);
-    auto posCol = r.removeFromRight(34);
+    // Wide enough for the 7px handle inset + 9px track + 3px gap + up to 6
+    // stacked 6px depth bands (7+9+3+36=55), so every routed source's side
+    // band paints in-bounds and stays grabbable / right-click-clearable.
+    auto posCol = r.removeFromRight(56);
     r.removeFromRight(8);
     wt.setBounds(r);
     pos.setBounds(posCol);
@@ -355,6 +358,7 @@ std::vector<int> MatrixPanel::visibleSlots() const {
 }
 
 void MatrixPanel::timerCallback() {
+    addBtn.setEnabled(fui::findFreeSlot(apvts) > 0); // grey out ADD ROUTE when the 16-slot pool is full
     auto cur = visibleSlots();
     if (cur != lastVisible) {
         lastVisible = cur;

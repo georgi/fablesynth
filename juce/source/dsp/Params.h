@@ -48,7 +48,7 @@ inline double lfoDivFactor(int i) {
 inline const std::vector<std::string> SUB_SHAPES    = {"SINE", "SQR"};
 inline const std::vector<std::string> NOISE_TYPES   = {"WHITE", "PINK"};
 inline const std::vector<std::string> MOD_SOURCES   = {"—", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE"};
-inline const std::vector<std::string> MOD_DESTS     = {"-", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES"};
+inline const std::vector<std::string> MOD_DESTS     = {"—", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES"};
 
 // ---- field offsets within a repeated block ----
 enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,

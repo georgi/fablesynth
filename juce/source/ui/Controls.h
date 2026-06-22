@@ -58,6 +58,7 @@ private:
     struct Ring { int slot, src; float amt; };
     std::vector<Ring> rings_;
     int  grabbedRing_ = -1;
+    juce::RangedAudioParameter* grabbedAmt_ = nullptr; // amt param being depth-dragged
     juce::uint64 lastRingSig_ = ~(juce::uint64)0;
     // Cached mat src/dst/amt params (16 slots x 3 = 48), indexed [slot-1][field].
     juce::RangedAudioParameter* matParams_[16][3] = {};
@@ -135,7 +136,7 @@ private:
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;
     std::function<float()> ghost;
-    float lastNorm = -1, lastGhost = -2;
+    float lastNorm = -1, lastGhost = -2, lastY = 0;
 
     // ---- modulation target state ----
     int  modDest_ = 0;
@@ -143,6 +144,7 @@ private:
     struct Ring { int slot, src; float amt; };
     std::vector<Ring> rings_;
     int  grabbedRing_ = -1;
+    juce::RangedAudioParameter* grabbedAmt_ = nullptr; // amt param being depth-dragged
     juce::uint64 lastRingSig_ = ~(juce::uint64)0;
     juce::RangedAudioParameter* matParams_[16][3] = {};
 };

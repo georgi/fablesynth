@@ -325,11 +325,13 @@ export const FACTORY_PRESETS: Preset[] = [
 ];
 
 // Resolve a preset into a clean, complete param map (params-as-truth). Modulation
-// lives entirely in the 16 fixed `mat{n}.*` slots now. Factory presets already
-// encode their routes in `mat1..4.*` params; we keep those and zero `mat5..16`.
-// User presets saved by older builds carry an explicit `mods[]` array — we expand
-// it into slots in order (truncating anything beyond 16) and zero the rest. The
-// per-route scaling is unchanged, so the sound is identical.
+// lives entirely in the 16 fixed `mat{n}.*` slots now. Routes ride in `params`:
+// factory presets author them in `mat*` and current user saves persist all 16
+// slots there, so the `{ ...defaultParams(), ...presetParams }` spread already
+// yields the authored slots plus 0 for every unauthored one — no extra zeroing.
+// User presets saved by OLDER builds carry an explicit `mods[]` array instead; we
+// expand it into slots in order (truncating anything beyond 16) and zero the rest.
+// The per-route scaling is unchanged, so the sound is identical.
 export function resolvePresetMods(
   presetParams: Partial<ParamValues>,
   explicit?: ModConnection[],
@@ -341,13 +343,6 @@ export function resolvePresetMods(
       merged[`mat${s}.src`] = m ? m.src | 0 : 0;
       merged[`mat${s}.dst`] = m ? m.dst | 0 : 0;
       merged[`mat${s}.amt`] = m ? m.amt || 0 : 0;
-    }
-  } else {
-    // Factory preset: mat1..4 stay as authored; zero the remaining slots.
-    for (let s = 5; s <= MOD_MATRIX_SIZE; s++) {
-      merged[`mat${s}.src`] = 0;
-      merged[`mat${s}.dst`] = 0;
-      merged[`mat${s}.amt`] = 0;
     }
   }
   return merged;
