@@ -42,6 +42,8 @@ clear quarantine with `xattr -dr com.apple.quarantine <path>`.
   (`buildUserTable`), so they anti-alias identically. The import/draw editor (the
   **✎** button on each oscillator) is available in **both** the web app and the
   plugin; in the VST, user tables are saved with the plugin/DAW project state.
+
+  ![The wavetable import / draw editor (here targeting OSC A)](docs/wavetable_editor.png)
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
