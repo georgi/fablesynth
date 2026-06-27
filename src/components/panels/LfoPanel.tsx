@@ -1,6 +1,7 @@
 import { Knob } from '../Knob';
 import { Stepper } from '../Stepper';
 import { LFOView } from '../displays/LFOView';
+import { ModSourceChip } from '../ModSourceChip';
 import { ACCENTS } from '../../constants';
 import { LFO_DIV_F, SYNC_BPM } from '../../params';
 import { useStore } from '../../store';
@@ -15,7 +16,7 @@ function Toggle({ id, label }: { id: string; label: string }) {
   );
 }
 
-function LfoBlock({ id, title, accentKey }: { id: 'lfo1' | 'lfo2'; title: string; accentKey: 'a' | 'b' }) {
+function LfoBlock({ id, src, title, accentKey }: { id: 'lfo1' | 'lfo2'; src: number; title: string; accentKey: 'a' | 'b' }) {
   const shape = useStore((s) => s.params[`${id}.shape`]);
   const rate = useStore((s) => s.params[`${id}.rate`]);
   const sync = useStore((s) => s.params[`${id}.sync`]);
@@ -28,6 +29,7 @@ function LfoBlock({ id, title, accentKey }: { id: 'lfo1' | 'lfo2'; title: string
   return (
     <div className="lfo-block" data-accent={accentKey}>
       <div className="panel-head">
+        <ModSourceChip src={src} compact />
         <h2>{title}</h2>
         <span className="ph-stepper"><Stepper paramId={`${id}.shape`} /></span>
       </div>
@@ -50,8 +52,8 @@ function LfoBlock({ id, title, accentKey }: { id: 'lfo1' | 'lfo2'; title: string
 export function LfoPanel() {
   return (
     <section className="panel panel-lfos" style={{ gridArea: 'lfos' }}>
-      <LfoBlock id="lfo1" title="LFO 1" accentKey="a" />
-      <LfoBlock id="lfo2" title="LFO 2" accentKey="b" />
+      <LfoBlock id="lfo1" src={1} title="LFO 1" accentKey="a" />
+      <LfoBlock id="lfo2" src={2} title="LFO 2" accentKey="b" />
     </section>
   );
 }

@@ -1,5 +1,6 @@
 #include "Controls.h"
 #include "Format.h"
+#include "Modulation.h"
 #include <cmath>
 
 namespace fui {
@@ -7,20 +8,73 @@ namespace fui {
 static constexpr double A0 = -135.0, A1 = 135.0; // knob sweep (degrees, 0 = up)
 static float clamp01(float x) { return juce::jlimit(0.0f, 1.0f, x); }
 
+// Cache the 48 mat src/dst/amt RangedAudioParameters into a [16][3] table so a
+// mod-target control can read active slots every timer tick without string
+// lookups. Shared by Knob and VSlider.
+static void cacheMatParams(juce::AudioProcessorValueTreeState& s,
+                           juce::RangedAudioParameter* (&table)[16][3]) {
+    const char* fields[] = {".src", ".dst", ".amt"};
+    for (int slot = 0; slot < 16; ++slot)
+        for (int f = 0; f < 3; ++f)
+            table[slot][f] = dynamic_cast<juce::RangedAudioParameter*>(
+                s.getParameter("mat" + juce::String(slot + 1) + fields[f]));
+}
+static float matRealValue(juce::RangedAudioParameter* p) {
+    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
+}
+
 // ======================= Knob =======================
 Knob::Knob(juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
-           Size sz, Accent ac, bool showLbl)
-    : apvts(s), id(paramId), accent(accentColour(ac)), size(sz), showLabel(showLbl) {
+           Size sz, Accent ac, bool showLbl, int modDest)
+    : apvts(s), id(paramId), accent(accentColour(ac)), size(sz), showLabel(showLbl),
+      modDest_(modDest) {
     param = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
     const auto& info = fable::paramInfo()[fable::idFromString(id.toStdString())];
     bipolar = info.min < 0;
     midNorm = fable::valueToNorm(info, 0.0f);
     label = juce::String(info.label).toUpperCase();
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    if (modDest_ > 0) cacheMatParams(apvts, matParams_);
     startTimerHz(30);
 }
 
-void Knob::timerCallback() { if (norm() != lastNorm) { lastNorm = norm(); repaint(); } }
+// Cheap signature of this dest's active slots (slot + src + quantized amt), so
+// timerCallback only rebuilds rings_ when something actually changed.
+juce::uint64 Knob::ringSignature() const {
+    juce::uint64 h = 1469598103934665603ull; // FNV-1a basis
+    auto mix = [&h](juce::uint64 v) { h = (h ^ v) * 1099511628211ull; };
+    for (int slot = 0; slot < 16; ++slot) {
+        int src = (int)matRealValue(matParams_[slot][0]);
+        int dst = (int)matRealValue(matParams_[slot][1]);
+        if (src != 0 && dst == modDest_) {
+            int amtq = (int)std::lround(matRealValue(matParams_[slot][2]) * 1000.0f);
+            mix((juce::uint64)((slot + 1) & 0xFF));
+            mix((juce::uint64)(src & 0xFF));
+            mix((juce::uint64)(amtq & 0xFFFF));
+        }
+    }
+    return h;
+}
+
+void Knob::rebuildRings() {
+    rings_.clear();
+    for (int slot = 0; slot < 16; ++slot) {
+        int src = (int)matRealValue(matParams_[slot][0]);
+        int dst = (int)matRealValue(matParams_[slot][1]);
+        if (src != 0 && dst == modDest_)
+            rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]) });
+    }
+}
+
+void Knob::timerCallback() {
+    bool dirty = false;
+    if (norm() != lastNorm) { lastNorm = norm(); dirty = true; }
+    if (modDest_ > 0) {
+        auto sig = ringSignature();
+        if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
+    }
+    if (dirty) repaint();
+}
 
 void Knob::nudge(float d) {
     if (!param) return;
@@ -28,21 +82,100 @@ void Knob::nudge(float d) {
     repaint();
 }
 
+// Knob body / ring geometry — shared by paint and ring hit-test so the two stay
+// in lockstep. Returns centre, body radius, the ring gap and the per-ring
+// thickness; rings stack outward starting at bodyR + gap.
+namespace {
+struct KnobGeom { float cx, cy, bodyR, ringGap, ringThk; };
+KnobGeom knobGeom(int w, int h, bool showLabel, int sizePx) {
+    const float avail = (float)juce::jmin(w, h - (showLabel ? 13 : 0));
+    const float dia = juce::jmin(avail, (float)sizePx);
+    const float scale = dia / 80.0f;
+    return { w * 0.5f, dia * 0.5f + 1.0f, 26.0f * scale, 6.0f * scale, 4.0f * scale };
+}
+}
+
 void Knob::mouseDown(const juce::MouseEvent& e) {
+    grabbedRing_ = -1;
+    if (modDest_ > 0 && !rings_.empty()) {
+        auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
+        float dx = e.position.x - gm.cx, dy = e.position.y - gm.cy;
+        float dist = std::sqrt(dx * dx + dy * dy);
+        float inner = gm.bodyR + gm.ringGap;
+        float outer = inner + (float)rings_.size() * gm.ringThk;
+        if (dist >= inner && dist <= outer) {
+            int i = (int)std::floor((dist - inner) / gm.ringThk);
+            i = juce::jlimit(0, (int)rings_.size() - 1, i);
+            grabbedRing_ = i;
+            if (e.mods.isRightButtonDown()) {
+                int slot = rings_[(size_t)i].slot;
+                fui::clearSlot(apvts, slot);
+                lastRingSig_ = ~(juce::uint64)0; // force ring rebuild next tick
+                grabbedRing_ = -1;
+                repaint();
+                return;
+            }
+            grabbedAmt_ = matParams_[rings_[(size_t)i].slot - 1][2];
+            if (grabbedAmt_) grabbedAmt_->beginChangeGesture();
+            lastY = e.position.y;
+            return;
+        }
+    }
     if (param) param->beginChangeGesture();
     lastY = e.position.y;
 }
 void Knob::mouseDrag(const juce::MouseEvent& e) {
+    if (grabbedRing_ >= 0 && grabbedRing_ < (int)rings_.size()) {
+        float dy = lastY - e.position.y;
+        lastY = e.position.y;
+        if (auto* p = grabbedAmt_) {
+            float cur = p->convertFrom0to1(p->getValue());
+            float next = juce::jlimit(-1.0f, 1.0f,
+                                      cur + dy * (e.mods.isShiftDown() ? 0.001f : 0.005f));
+            p->setValueNotifyingHost(p->convertTo0to1(next));
+        }
+        lastRingSig_ = ~(juce::uint64)0;
+        repaint();
+        return;
+    }
     float dy = lastY - e.position.y;
     lastY = e.position.y;
     nudge(dy * (e.mods.isShiftDown() ? 0.0008f : 0.005f));
 }
-void Knob::mouseUp(const juce::MouseEvent&) { if (param) param->endChangeGesture(); }
+void Knob::mouseUp(const juce::MouseEvent&) {
+    if (grabbedRing_ >= 0) {
+        if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
+        grabbedRing_ = -1;
+        return;
+    }
+    if (param) param->endChangeGesture();
+}
 void Knob::mouseDoubleClick(const juce::MouseEvent&) {
     if (param) param->setValueNotifyingHost(param->getDefaultValue());
 }
 void Knob::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) {
     nudge((w.deltaY > 0 ? 1.0f : -1.0f) * (e.mods.isShiftDown() ? 0.005f : 0.03f));
+}
+
+// ---- Knob drag-target (mod-source chips) ----
+static int parseModSrc(const juce::var& d) {
+    auto s = d.toString();
+    if (!s.startsWith("mod-src:")) return 0;
+    return s.fromFirstOccurrenceOf(":", false, false).getIntValue();
+}
+bool Knob::isInterestedInDragSource(const SourceDetails& d) {
+    return modDest_ > 0 && d.description.toString().startsWith("mod-src:");
+}
+void Knob::itemDragEnter(const SourceDetails&) { dragHover_ = true; repaint(); }
+void Knob::itemDragExit(const SourceDetails&)  { dragHover_ = false; repaint(); }
+void Knob::itemDropped(const SourceDetails& d) {
+    dragHover_ = false;
+    int src = parseModSrc(d.description);
+    if (src > 0 && modDest_ > 0) {
+        fui::addRoute(apvts, src, modDest_);
+        lastRingSig_ = ~(juce::uint64)0; // force rebuild next tick
+    }
+    repaint();
 }
 
 void Knob::paint(juce::Graphics& g) {
@@ -84,6 +217,37 @@ void Knob::paint(juce::Graphics& g) {
     juce::Point<float> tip(cx + ptrLen * std::sin(rad), cy - ptrLen * std::cos(rad));
     g.setColour(col::ptr);
     g.drawLine({ {cx, cy}, tip }, 4 * scale);
+
+    // modulation rings: one arc per active slot whose dst == modDest, from the
+    // current value angle to the angle at clamp(currentNorm + amt) (bipolar),
+    // stacked at increasing radii just outside the body. Source-colored.
+    if (modDest_ > 0) {
+        const float ringGap = 6.0f * scale, ringThk = 4.0f * scale;
+        for (size_t i = 0; i < rings_.size(); ++i) {
+            const auto& ring = rings_[i];
+            float toNorm = clamp01(n + ring.amt);
+            double dFrom = A0 + (A1 - A0) * n;
+            double dTo   = A0 + (A1 - A0) * toNorm;
+            float rr = bodyR + ringGap + (float)i * ringThk + ringThk * 0.5f;
+            auto c = modSourceColour(ring.src);
+            if (std::abs(dTo - dFrom) < 0.01) { // zero-depth: a tick so it's visible
+                dTo = dFrom + (ring.amt >= 0 ? 0.8 : -0.8);
+                c = c.withAlpha(0.4f);
+            }
+            juce::Path ringArc;
+            ringArc.addCentredArc(cx, cy, rr, rr, 0, degToRad(dFrom), degToRad(dTo), true);
+            g.setColour(c);
+            g.strokePath(ringArc, juce::PathStrokeType(ringThk * 0.7f,
+                         juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+        }
+    }
+
+    // drop-target highlight while a compatible source chip hovers
+    if (dragHover_) {
+        float hr = bodyR + 6.0f * scale + (float)juce::jmax((size_t)1, rings_.size()) * 4.0f * scale;
+        g.setColour(accent.withAlpha(0.7f));
+        g.drawEllipse(cx - hr, cy - hr, hr * 2, hr * 2, 1.6f * scale);
+    }
 
     // label / value
     if (showLabel) {
@@ -181,28 +345,117 @@ void PowerButton::paint(juce::Graphics& g) {
 
 // ======================= VSlider =======================
 VSlider::VSlider(juce::AudioProcessorValueTreeState& s, const juce::String& paramId, Accent ac,
-                 std::function<float()> ghostFn)
-    : apvts(s), id(paramId), accent(accentColour(ac)), ghost(std::move(ghostFn)) {
+                 std::function<float()> ghostFn, int modDest)
+    : apvts(s), id(paramId), accent(accentColour(ac)), ghost(std::move(ghostFn)),
+      modDest_(modDest) {
     param = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    if (modDest_ > 0) cacheMatParams(apvts, matParams_);
     startTimerHz(30);
+}
+juce::uint64 VSlider::ringSignature() const {
+    juce::uint64 h = 1469598103934665603ull;
+    auto mix = [&h](juce::uint64 v) { h = (h ^ v) * 1099511628211ull; };
+    for (int slot = 0; slot < 16; ++slot) {
+        int src = (int)matRealValue(matParams_[slot][0]);
+        int dst = (int)matRealValue(matParams_[slot][1]);
+        if (src != 0 && dst == modDest_) {
+            int amtq = (int)std::lround(matRealValue(matParams_[slot][2]) * 1000.0f);
+            mix((juce::uint64)((slot + 1) & 0xFF));
+            mix((juce::uint64)(src & 0xFF));
+            mix((juce::uint64)(amtq & 0xFFFF));
+        }
+    }
+    return h;
+}
+void VSlider::rebuildRings() {
+    rings_.clear();
+    for (int slot = 0; slot < 16; ++slot) {
+        int src = (int)matRealValue(matParams_[slot][0]);
+        int dst = (int)matRealValue(matParams_[slot][1]);
+        if (src != 0 && dst == modDest_)
+            rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]) });
+    }
 }
 void VSlider::timerCallback() {
     float n = param ? param->getValue() : 0.0f, gh = ghost ? ghost() : -1.0f;
-    if (n != lastNorm || gh != lastGhost) { lastNorm = n; lastGhost = gh; repaint(); }
+    bool dirty = false;
+    if (n != lastNorm || gh != lastGhost) { lastNorm = n; lastGhost = gh; dirty = true; }
+    if (modDest_ > 0) {
+        auto sig = ringSignature();
+        if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
+    }
+    if (dirty) repaint();
 }
 juce::Rectangle<float> VSlider::trackArea() const {
-    return getLocalBounds().toFloat().withTrimmedBottom(14)
-        .withSizeKeepingCentre(9, (float)getHeight() - 14);
+    // Left-anchor the 9px track (with a small inset for the wider handle/ghost
+    // overhang) so depth bands grow rightward into the column's spare width,
+    // keeping every band inside getLocalBounds() and therefore grabbable.
+    constexpr float kTrackInset = 7.0f;
+    auto b = getLocalBounds().toFloat().withTrimmedBottom(14);
+    return { b.getX() + kTrackInset, b.getY(), 9.0f, b.getHeight() };
 }
 void VSlider::moveTo(float y) {
     auto t = trackArea();
     if (param) param->setValueNotifyingHost(clamp01(1.0f - (y - t.getY()) / t.getHeight()));
     repaint();
 }
-void VSlider::mouseDown(const juce::MouseEvent& e) { if (param) param->beginChangeGesture(); moveTo(e.position.y); }
-void VSlider::mouseDrag(const juce::MouseEvent& e) { moveTo(e.position.y); }
-void VSlider::mouseUp(const juce::MouseEvent&) { if (param) param->endChangeGesture(); }
+// Depth-band layout: each active slot gets a vertical band just to the right of
+// the track, stacked outward. Width matches the ring-thickness idea on the knob.
+namespace { constexpr float kBandGap = 3.0f, kBandThk = 6.0f; }
+
+void VSlider::mouseDown(const juce::MouseEvent& e) {
+    grabbedRing_ = -1;
+    if (modDest_ > 0 && !rings_.empty()) {
+        auto t = trackArea();
+        float inner = t.getRight() + kBandGap;
+        float outer = inner + (float)rings_.size() * kBandThk;
+        if (e.position.x >= inner && e.position.x <= outer
+            && e.position.y >= t.getY() && e.position.y <= t.getBottom()) {
+            int i = (int)std::floor((e.position.x - inner) / kBandThk);
+            i = juce::jlimit(0, (int)rings_.size() - 1, i);
+            grabbedRing_ = i;
+            if (e.mods.isRightButtonDown()) {
+                int slot = rings_[(size_t)i].slot;
+                fui::clearSlot(apvts, slot);
+                lastRingSig_ = ~(juce::uint64)0;
+                grabbedRing_ = -1;
+                repaint();
+                return;
+            }
+            grabbedAmt_ = matParams_[rings_[(size_t)i].slot - 1][2];
+            if (grabbedAmt_) grabbedAmt_->beginChangeGesture();
+            lastY = e.position.y; // dedicated last-Y for the band drag (lastNorm is the timer's)
+            return;
+        }
+    }
+    if (param) param->beginChangeGesture();
+    moveTo(e.position.y);
+}
+void VSlider::mouseDrag(const juce::MouseEvent& e) {
+    if (grabbedRing_ >= 0 && grabbedRing_ < (int)rings_.size()) {
+        float dy = lastY - e.position.y; // dedicated last-Y for the band drag
+        lastY = e.position.y;
+        if (auto* p = grabbedAmt_) {
+            float cur = p->convertFrom0to1(p->getValue());
+            float next = juce::jlimit(-1.0f, 1.0f,
+                                      cur + dy * (e.mods.isShiftDown() ? 0.001f : 0.005f));
+            p->setValueNotifyingHost(p->convertTo0to1(next));
+        }
+        lastRingSig_ = ~(juce::uint64)0;
+        repaint();
+        return;
+    }
+    moveTo(e.position.y);
+}
+void VSlider::mouseUp(const juce::MouseEvent&) {
+    if (grabbedRing_ >= 0) {
+        if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
+        grabbedRing_ = -1;
+        return;
+    }
+    if (param) param->endChangeGesture();
+}
 void VSlider::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) {
     if (param) { param->setValueNotifyingHost(clamp01(param->getValue() + (w.deltaY > 0 ? 0.03f : -0.03f))); repaint(); }
 }
@@ -235,10 +488,48 @@ void VSlider::paint(juce::Graphics& g) {
     g.setColour(accent.withAlpha(0.55f));
     g.drawRoundedRectangle(handle, 3.0f, 1.0f);
 
+    // modulation depth bands: one vertical band per active slot beside the
+    // track, from the current pos to current + amt, source-colored, stacked.
+    if (modDest_ > 0) {
+        for (size_t i = 0; i < rings_.size(); ++i) {
+            const auto& ring = rings_[i];
+            float toNorm = clamp01(n + ring.amt);
+            float y0 = t.getBottom() - n * t.getHeight();
+            float y1 = t.getBottom() - toNorm * t.getHeight();
+            float bx = t.getRight() + kBandGap + (float)i * kBandThk;
+            auto top = juce::jmin(y0, y1), bot = juce::jmax(y0, y1);
+            if (bot - top < 1.5f) { top -= 1.0f; bot += 1.0f; } // visible tick at zero
+            g.setColour(modSourceColour(ring.src).withAlpha(0.85f));
+            g.fillRect(juce::Rectangle<float>(bx, top, kBandThk - 1.0f, bot - top));
+        }
+    }
+
+    // drop-target highlight while a compatible source chip hovers
+    if (dragHover_) {
+        g.setColour(accent.withAlpha(0.7f));
+        g.drawRoundedRectangle(t.expanded(3.0f), 6.0f, 1.6f);
+    }
+
     // POS label
     g.setColour(col::textDim);
     g.setFont(monoFont(8.0f));
     drawSpaced(g, "POS", getLocalBounds().removeFromBottom(12), 1.0f, juce::Justification::centred);
+}
+
+// ---- VSlider drag-target (mod-source chips) ----
+bool VSlider::isInterestedInDragSource(const SourceDetails& d) {
+    return modDest_ > 0 && d.description.toString().startsWith("mod-src:");
+}
+void VSlider::itemDragEnter(const SourceDetails&) { dragHover_ = true; repaint(); }
+void VSlider::itemDragExit(const SourceDetails&)  { dragHover_ = false; repaint(); }
+void VSlider::itemDropped(const SourceDetails& d) {
+    dragHover_ = false;
+    int src = parseModSrc(d.description);
+    if (src > 0 && modDest_ > 0) {
+        fui::addRoute(apvts, src, modDest_);
+        lastRingSig_ = ~(juce::uint64)0;
+    }
+    repaint();
 }
 
 } // namespace fui

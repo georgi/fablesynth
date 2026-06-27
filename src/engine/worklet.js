@@ -2,14 +2,92 @@
 // Protocol (port messages in):
 //   {t:'init', params:{id:value,...}}
 //   {t:'tables', list:[{frames,mips,size,buf:ArrayBuffer}]}
-//   {t:'p', k, v}                    single param change
+//   {t:'p', k, v}                    single param change (incl. mat{n}.src/.dst/.amt)
 //   {t:'on', n, v} {t:'off', n}      note events (n=midi note, v=0..1)
 //   {t:'bend', s}                    pitch bend in semitones
 //   {t:'panic'}
+//
+// Modulation is a fixed pool of 16 slots (mat1..mat16), each {src,dst,amt}, read
+// straight from `this.p` — no separate routing message. The per-destination
+// scaling matches the VST exactly, so the two engines sound identical.
 // Out: {t:'viz', a, b, n}            modulated wt positions + active voice count
 
 const NVOICES = 8;
 const MAXUNI = 7;
+// Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
+// in the params/slot helpers and the VST's MOD_MATRIX_SIZE.
+const MOD_MATRIX_SIZE = 16;
+
+// Generic modulation log-curve depth: a full route swings a Log param ×2^(x·D),
+// i.e. ±D octaves. D=5 reproduces the legacy CUTOFF scaling exactly. Mirrors the
+// engine's `std::pow(2, x*5)` and the design contract (D=5).
+const MOD_LOG_D = 5;
+
+// Canonical dst index -> target. Mirrors dstTarget() in params.ts / Params.h
+// index-for-index. Per-param dests hold the modulated paramId; the three globals
+// and "none" hold a sentinel handled directly below. Globals keep their legacy
+// math (pitch ±12 semis, amp gain, pan add); per-param dests fold into pm via the
+// Lin/Log curve rule. Index 0 (none) is intentionally absent (skipped by src/dst
+// guard). Keep in sync with MOD_DESTS.
+const DST_PITCH = '\0pitch', DST_AMP = '\0amp', DST_PAN = '\0pan';
+const DST_TARGET = [
+  null,            // 0 — (unused; guarded out)
+  'oscA.pos',      // 1  A POS
+  'oscB.pos',      // 2  B POS
+  'filter.cutoff', // 3  F1 CUT
+  DST_PITCH,       // 4  PITCH (global)
+  DST_AMP,         // 5  AMP   (global)
+  DST_PAN,         // 6  PAN   (global)
+  'oscA.level',    // 7  A LVL
+  'oscB.level',    // 8  B LVL
+  'filter2.cutoff',// 9  F2 CUT
+  'filter2.res',   // 10 F2 RES
+  'oscA.detune',   // 11 A DETUNE
+  'oscA.spread',   // 12 A SPREAD
+  'oscA.pan',      // 13 A PAN
+  'oscB.detune',   // 14 B DETUNE
+  'oscB.spread',   // 15 B SPREAD
+  'oscB.pan',      // 16 B PAN
+  'filter.res',    // 17 F1 RES
+  'filter.drive',  // 18 F1 DRIVE
+  'filter.env',    // 19 F1 ENV
+  'filter.key',    // 20 F1 KEY
+  'filter2.drive', // 21 F2 DRIVE
+  'filter2.env',   // 22 F2 ENV
+  'filter2.key',   // 23 F2 KEY
+  'sub.level',     // 24 SUB LVL
+  'noise.level',   // 25 NOISE LVL
+];
+
+// Per-param curve + range for every modulatable target, mirroring PARAM_DEFS in
+// params.ts (curve + min/max). Used to fold a route sum x into the modulated value:
+//   Lin: pm = p + x·(hi−lo)   (width-1 lin reproduces POS/LEVEL/RES exactly)
+//   Log: pm = p · 2^(x·D)     (D=5 reproduces CUTOFF exactly)
+// Kept local because the worklet runs in the render thread with no imports.
+const MOD_PARAM_INFO = {
+  'oscA.pos':       { curve: 'lin', lo: 0, hi: 1 },
+  'oscB.pos':       { curve: 'lin', lo: 0, hi: 1 },
+  'oscA.level':     { curve: 'lin', lo: 0, hi: 1 },
+  'oscB.level':     { curve: 'lin', lo: 0, hi: 1 },
+  'oscA.detune':    { curve: 'lin', lo: 0, hi: 1 },
+  'oscB.detune':    { curve: 'lin', lo: 0, hi: 1 },
+  'oscA.spread':    { curve: 'lin', lo: 0, hi: 1 },
+  'oscB.spread':    { curve: 'lin', lo: 0, hi: 1 },
+  'oscA.pan':       { curve: 'lin', lo: -1, hi: 1 },
+  'oscB.pan':       { curve: 'lin', lo: -1, hi: 1 },
+  'filter.cutoff':  { curve: 'log', lo: 20, hi: 20000 },
+  'filter2.cutoff': { curve: 'log', lo: 20, hi: 20000 },
+  'filter.res':     { curve: 'lin', lo: 0, hi: 1 },
+  'filter2.res':    { curve: 'lin', lo: 0, hi: 1 },
+  'filter.drive':   { curve: 'lin', lo: 0, hi: 1 },
+  'filter2.drive':  { curve: 'lin', lo: 0, hi: 1 },
+  'filter.env':     { curve: 'lin', lo: -1, hi: 1 },
+  'filter2.env':    { curve: 'lin', lo: -1, hi: 1 },
+  'filter.key':     { curve: 'lin', lo: 0, hi: 1 },
+  'filter2.key':    { curve: 'lin', lo: 0, hi: 1 },
+  'sub.level':      { curve: 'lin', lo: 0, hi: 1 },
+  'noise.level':    { curve: 'lin', lo: 0, hi: 1 },
+};
 // Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
 // so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
 const COMB_MAX = 4096;
@@ -207,6 +285,11 @@ class FableProcessor extends AudioWorkletProcessor {
     this.f1R = new Float32Array(128);
     this.f2L = new Float32Array(128);
     this.f2R = new Float32Array(128);
+    // Per-voice modulation scratch (reused per render — no per-call allocation).
+    // _modAccum: route sum keyed by targeted paramId. _pm: the modulated snapshot,
+    // holding only overridden paramIds; read via pmv(pre+'.field') with `p` fallback.
+    this._modAccum = Object.create(null);
+    this._pm = Object.create(null);
     this.port.onmessage = (e) => this.onMsg(e.data);
   }
 
@@ -252,7 +335,9 @@ class FableProcessor extends AudioWorkletProcessor {
   }
 
   // Configure one oscillator's per-block render state. Returns true if audible.
-  setupOsc(o, pre, voice, mPos, mPitch, mLvl, mPan) {
+  // Reads the modulated snapshot `pm` for the per-param dests (pos/level/pan/detune/
+  // spread); pitch and the pan global offset stay as direct additive terms.
+  setupOsc(o, pre, voice, pm, mPitch, mPan) {
     const p = this.p;
     if (!p[pre + '.on']) return false;
     const table = this.tables[p[pre + '.table'] | 0];
@@ -262,17 +347,18 @@ class FableProcessor extends AudioWorkletProcessor {
     const freq = 440 * Math.pow(2, (basePitch - 69) / 12);
     if (freq <= 0 || freq > sampleRate * 0.45) return false;
 
-    let level = Math.min(1.2, Math.max(0, p[pre + '.level'] + mLvl));
+    const k = pre + '.';
+    let level = Math.min(1.2, Math.max(0, pm[k + 'level'] ?? p[k + 'level']));
     level *= level;
     if (level < 1e-5) return false;
 
     const uni = Math.max(1, Math.min(MAXUNI, p[pre + '.unison'] | 0));
-    const det = p[pre + '.detune'];
-    const spr = p[pre + '.spread'];
-    const basePan = Math.max(-1, Math.min(1, p[pre + '.pan'] + mPan));
+    const det = pm[k + 'detune'] ?? p[k + 'detune'];
+    const spr = pm[k + 'spread'] ?? p[k + 'spread'];
+    const basePan = Math.max(-1, Math.min(1, (pm[k + 'pan'] ?? p[k + 'pan']) + mPan));
 
     // position smoothing (avoids zipper on fast morph modulation)
-    let pos = Math.min(1, Math.max(0, p[pre + '.pos'] + mPos));
+    let pos = Math.min(1, Math.max(0, pm[k + 'pos'] ?? p[k + 'pos']));
     if (o.posSm < 0) o.posSm = pos;
     o.posSm += (pos - o.posSm) * 0.35;
     const posF = o.posSm * (table.frames - 1);
@@ -380,18 +466,23 @@ class FableProcessor extends AudioWorkletProcessor {
   // Compute one filter's block-rate coefficients. CUTOFF is shared across all
   // types: it sets corner frequency (SVF), comb pitch (COMB) or vowel morph
   // position (VOWEL). RES sets resonance / feedback / formant sharpness.
-  setupFilter(fs, pre, v, e2, mCut, mRes) {
+  setupFilter(fs, pre, v, e2, mCut, pm) {
     const p = this.p;
+    const k = pre + '.';
     const ftype = p[pre + '.type'] | 0;
     fs.ftype = ftype;
 
-    let fc = p[pre + '.cutoff'] *
-      Math.pow(2, p[pre + '.env'] * 4 * e2 + (p[pre + '.key'] * (v.note - 60)) / 12 + mCut * 5);
+    // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
+    // exponent stays in a single Math.pow — bit-identical to the legacy
+    // p[cutoff] × 2^(env·4·e2 + key·(note-60)/12 + x·5). env/key are still read from
+    // pm so THEY remain modulatable; the base cutoff is read straight from p.
+    let fc = p[k + 'cutoff'] *
+      Math.pow(2, (pm[k + 'env'] ?? p[k + 'env']) * 4 * e2 + ((pm[k + 'key'] ?? p[k + 'key']) * (v.note - 60)) / 12 + mCut * MOD_LOG_D);
     fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
     fs.cutSm += (fc - fs.cutSm) * 0.5;
     const cut = fs.cutSm;
-    const res = Math.min(0.999, Math.max(0, p[pre + '.res'] + mRes));
+    const res = Math.min(0.999, Math.max(0, pm[k + 'res'] ?? p[k + 'res']));
 
     if (ftype <= 4) {
       // Cytomic SVF
@@ -582,26 +673,43 @@ class FableProcessor extends AudioWorkletProcessor {
     const e2 = v.modEnv.level;
     const srcs = [0, l1, l2, e2, v.vel, (v.note - 60) / 24];
 
-    // matrix destinations
-    let mPosA = 0, mPosB = 0, mCut = 0, mPitch = 0, mAmp = 0, mPan = 0, mLvlA = 0, mLvlB = 0;
-    let mCut2 = 0, mRes2 = 0;
-    for (let s = 1; s <= 4; s++) {
+    // modulation destinations — sum every active slot assigned to each target.
+    // The 16 fixed slots are read straight from `this.p` (mat{n}.src/.dst/.amt).
+    // Globals (pitch/amp/pan) keep their legacy additive math; per-param dests
+    // accumulate a route sum keyed by paramId, then fold into a per-voice modulated
+    // snapshot `pm` via the Lin/Log curve rule. This mirrors the VST engine exactly,
+    // so both engines sound identical (existing dests included).
+    let mPitch = 0, mAmp = 0, mPan = 0;
+    const accum = this._modAccum;
+    for (const k in accum) delete accum[k];
+    for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
       const src = p['mat' + s + '.src'] | 0;
       const dst = p['mat' + s + '.dst'] | 0;
       if (!src || !dst) continue;
-      const x = srcs[src] * p['mat' + s + '.amt'];
-      switch (dst) {
-        case 1: mPosA += x; break;
-        case 2: mPosB += x; break;
-        case 3: mCut += x; break;
-        case 4: mPitch += x; break;
-        case 5: mAmp += x; break;
-        case 6: mPan += x; break;
-        case 7: mLvlA += x; break;
-        case 8: mLvlB += x; break;
-        case 9: mCut2 += x; break;
-        case 10: mRes2 += x; break;
-      }
+      const x = srcs[src] * (p['mat' + s + '.amt'] || 0);
+      const target = DST_TARGET[dst];
+      if (target === DST_PITCH) mPitch += x;
+      else if (target === DST_AMP) mAmp += x;
+      else if (target === DST_PAN) mPan += x;
+      else if (target) accum[target] = (accum[target] || 0) + x;
+    }
+
+    // Build the per-voice modulated snapshot: pm overrides only the targeted
+    // paramIds (everything else reads through `p`). Lin: pm = p + x·(hi−lo);
+    // Log: pm = p · 2^(x·D), D=5. Matches the engine's pm_ build.
+    const pm = this._pm;
+    for (const k in pm) delete pm[k];
+    for (const id in accum) {
+      const info = MOD_PARAM_INFO[id];
+      if (!info) continue; // non-modulatable target — ignore (matches engine)
+      // The filter cutoff routes are NOT folded into pm: they are applied as the
+      // single-exponent mCut term inside setupFilter so the result is bit-identical
+      // to the legacy single Math.pow. All other Log/Lin dests fold here.
+      if (id === 'filter.cutoff' || id === 'filter2.cutoff') continue;
+      const base = p[id];
+      pm[id] = info.curve === 'log'
+        ? base * Math.pow(2, accum[id] * MOD_LOG_D)
+        : base + accum[id] * (info.hi - info.lo);
     }
 
     // SPLIT routing sends osc A through filter 1 and osc B through filter 2, so
@@ -614,14 +722,15 @@ class FableProcessor extends AudioWorkletProcessor {
     const bL = this.bL, bR = this.bR;
     if (split) { bL.fill(0, 0, n); bR.fill(0, 0, n); }
 
-    const aOn = this.setupOsc(v.oA, 'oscA', v, mPosA, mPitch, mLvlA, mPan);
-    const bOn = this.setupOsc(v.oB, 'oscB', v, mPosB, mPitch, mLvlB, mPan);
+    const aOn = this.setupOsc(v.oA, 'oscA', v, pm, mPitch, mPan);
+    const bOn = this.setupOsc(v.oB, 'oscB', v, pm, mPitch, mPan);
     if (aOn) this.renderOsc(v.oA, tmpL, tmpR, n);
     if (bOn) this.renderOsc(v.oB, split ? bL : tmpL, split ? bR : tmpR, n);
 
     // sub oscillator (polyblep square or sine)
     if (p['sub.on']) {
-      const lvl = p['sub.level'] * p['sub.level'] * 0.3;
+      const subLvl = pm['sub.level'] ?? p['sub.level'];
+      const lvl = subLvl * subLvl * 0.3;
       if (lvl > 1e-6) {
         const sf = 440 * Math.pow(2, (v.pitch + this.bend + p['sub.oct'] * 12 + mPitch * 12 - 69) / 12);
         const inc = sf / sampleRate;
@@ -653,7 +762,8 @@ class FableProcessor extends AudioWorkletProcessor {
 
     // noise
     if (p['noise.on']) {
-      const lvl = p['noise.level'] * p['noise.level'] * 0.35;
+      const noiseLvl = pm['noise.level'] ?? p['noise.level'];
+      const lvl = noiseLvl * noiseLvl * 0.35;
       if (lvl > 1e-6) {
         if ((p['noise.type'] | 0) === 1) {
           const b = v.pb;
@@ -682,11 +792,11 @@ class FableProcessor extends AudioWorkletProcessor {
     // ---- per-voice filters with routing ----
     const f1on = !!p['filter.on'];
     const f2on = !!p['filter2.on'];
-    if (f1on) this.setupFilter(v.f1, 'filter', v, e2, mCut, 0);
-    if (f2on) this.setupFilter(v.f2, 'filter2', v, e2, mCut2, mRes2);
+    if (f1on) this.setupFilter(v.f1, 'filter', v, e2, accum['filter.cutoff'] || 0, pm);
+    if (f2on) this.setupFilter(v.f2, 'filter2', v, e2, accum['filter2.cutoff'] || 0, pm);
 
     const f1L = this.f1L, f1R = this.f1R, f2L = this.f2L, f2R = this.f2R;
-    const dr1 = p['filter.drive'], dr2 = p['filter2.drive'];
+    const dr1 = pm['filter.drive'] ?? p['filter.drive'], dr2 = pm['filter2.drive'] ?? p['filter2.drive'];
     let oL, oR; // routed output buffers feeding the DC blocker + amp
 
     if (split) {

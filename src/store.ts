@@ -5,8 +5,9 @@
 
 import { create } from 'zustand';
 import { SynthEngine } from './engine/synth';
-import { defaultParams, TABLE_NAMES, type ParamValues } from './params';
-import { FACTORY_PRESETS, loadUserPresets, saveUserPreset, type Preset } from './presets';
+import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
+import { FACTORY_PRESETS, loadUserPresets, resolvePresetMods, saveUserPreset, type Preset } from './presets';
+import { findFreeSlot, setMatSlot, clearSlot as clearSlotIn, MOD_DEFAULT_AMT } from './store/slotHelpers';
 import {
   loadUserTablePool, saveUserTablePool, serializeUserTable, deserializeUserTable,
   makeUserTable, framesFromGenerated, type UserTable,
@@ -30,6 +31,7 @@ export function presetOptions(userPresets: Preset[]): PresetOption[] {
 
 interface SynthStore {
   params: ParamValues;
+  modDrag: number; // source being dragged (MOD_SOURCES index), 0 = none
   powered: boolean;
   voiceCount: number;
   modPosA: number;
@@ -43,7 +45,15 @@ interface SynthStore {
   editorOsc: 'oscA' | 'oscB' | null;
 
   setParam: (id: string, v: number) => void;
-  applyPreset: (presetParams: Partial<ParamValues>) => void;
+  // Modulation routing over the 16 fixed `mat{n}` slots (params-as-truth):
+  // addRoute allocates the next free slot; updateSlot/clearSlot edit a slot by
+  // its absolute number (1..16). All route through setParam so the engine stays
+  // in sync exactly like any other param change.
+  addRoute: (src: number, dst: number, amt?: number) => void;
+  updateSlot: (slot: number, patch: Partial<ModConnection>) => void;
+  clearSlot: (slot: number) => void;
+  setModDrag: (src: number) => void;
+  applyPreset: (presetParams: Partial<ParamValues>, mods?: ModConnection[]) => void;
   loadPresetByValue: (val: string) => void;
   stepPreset: (d: number) => void;
   savePreset: (name: string) => void;
@@ -75,6 +85,7 @@ export function factoryTables(): GeneratedTable[] {
 
 export const useStore = create<SynthStore>((set, get) => ({
   params: defaultParams(),
+  modDrag: 0,
   powered: false,
   voiceCount: 0,
   modPosA: -1,
@@ -92,11 +103,40 @@ export const useStore = create<SynthStore>((set, get) => ({
     set((s) => ({ params: { ...s.params, [id]: v } }));
   },
 
-  applyPreset: (presetParams) => {
-    const merged = { ...defaultParams(), ...presetParams } as ParamValues;
+  // Allocate the next fully-empty slot and write the route into it. The matrix
+  // ADD ROUTE button passes dst=0 to claim a slot that is editable but inactive
+  // until a destination is chosen.
+  addRoute: (src, dst, amt = MOD_DEFAULT_AMT) => {
+    const slot = findFreeSlot(get().params);
+    if (!slot) return; // pool full
+    const next = { ...get().params };
+    setMatSlot(next, slot, { src, dst, amt });
+    get().setParam(`mat${slot}.src`, next[`mat${slot}.src`]);
+    get().setParam(`mat${slot}.dst`, next[`mat${slot}.dst`]);
+    get().setParam(`mat${slot}.amt`, next[`mat${slot}.amt`]);
+  },
+
+  updateSlot: (slot, patch) => {
+    if (patch.src !== undefined) get().setParam(`mat${slot}.src`, patch.src);
+    if (patch.dst !== undefined) get().setParam(`mat${slot}.dst`, patch.dst);
+    if (patch.amt !== undefined) get().setParam(`mat${slot}.amt`, patch.amt);
+  },
+
+  clearSlot: (slot) => {
+    const next = { ...get().params };
+    clearSlotIn(next, slot);
+    get().setParam(`mat${slot}.src`, next[`mat${slot}.src`]);
+    get().setParam(`mat${slot}.dst`, next[`mat${slot}.dst`]);
+    get().setParam(`mat${slot}.amt`, next[`mat${slot}.amt`]);
+  },
+
+  setModDrag: (src) => set({ modDrag: src }),
+
+  applyPreset: (presetParams, presetMods) => {
+    const params = resolvePresetMods(presetParams, presetMods);
     engine.panic();
-    engine.params = { ...merged };
-    set({ params: merged });
+    engine.params = { ...params };
+    set({ params });
     engine.applyAllParams();
   },
 
@@ -110,7 +150,7 @@ export const useStore = create<SynthStore>((set, get) => ({
       engine.setUserTables(userTables.map((t) => t.table));
       set({ userTables });
     }
-    get().applyPreset(preset.params);
+    get().applyPreset(preset.params, preset.mods);
     set({ presetValue: val });
   },
 
@@ -123,6 +163,7 @@ export const useStore = create<SynthStore>((set, get) => ({
 
   savePreset: (name) => {
     // Embed the current user-table pool so the preset is portable on its own.
+    // Routes are in the `mat*` params, so the param map alone is self-describing.
     const tables = get().userTables.map(serializeUserTable);
     const userPresets = saveUserPreset(name, get().params, tables);
     const opts = presetOptions(userPresets);

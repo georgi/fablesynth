@@ -334,6 +334,216 @@ int main() {
               "dSaw=" + std::to_string(dSaw) + " dSqr=" + std::to_string(dSqr));
     }
 
+    printf("\n== 10. Mod matrix beyond slot 4 (16-slot pool) ==\n");
+    {
+        // A slot past the legacy 4 (mat5) must modulate its dest. Two FRESH engines
+        // render the identical patch — one with mat5 -> PITCH at a high amt, one with
+        // mat5 off — so any diff is purely the slot taking effect. The engine is
+        // deterministic (seeded RNG + deterministic LFO), so a fresh-vs-fresh diff is
+        // reproducible run to run.
+        auto renderMat5 = [&](bool on) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = 2;       // SAW — deterministic, audibly sweeps pitch
+            q[LFO1_BASE + LFO_RATE]  = 6.0f;
+            q[LFO1_BASE + LFO_RETRIG] = 1;      // per-voice phase, reset at note-on (deterministic)
+            if (on) {
+                q[MAT5_BASE + MAT_SRC] = 1;     // LFO 1
+                q[MAT5_BASE + MAT_DST] = 4;     // PITCH
+                q[MAT5_BASE + MAT_AMT] = 0.9f;  // high depth
+            }
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto off = renderMat5(false), on = renderMat5(true);
+        check(finite(off) && finite(on) && peak(on) < 4.0f, "mat5 -> PITCH output finite/bounded",
+              "peak=" + std::to_string(peak(on)));
+        double diff = 0;
+        for (size_t i = 0; i < on.size(); ++i) diff += std::abs(on[i] - off[i]);
+        check(diff > 1.0, "mat5 (slot > 4) audibly modulates PITCH (deterministic diff vs off)",
+              "diff=" + std::to_string(diff));
+
+        // A fresh engine rendering the same on-patch must reproduce the exact buffer
+        // (no time-dependent state) — the diff above is deterministic.
+        auto on2 = renderMat5(true);
+        bool identical = on.size() == on2.size();
+        for (size_t i = 0; identical && i < on.size(); ++i) if (on[i] != on2[i]) identical = false;
+        check(identical, "mat5 modulation is reproducible across fresh engines");
+
+        // Multiple routes to one dest accumulate (engine sums per-dest), and the
+        // result stays finite/bounded even when three high-amt slots stack on PITCH.
+        auto renderRoutes = [&](int count) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[LFO1_BASE + LFO_SHAPE] = 2; q[LFO1_BASE + LFO_RATE] = 6.0f; q[LFO1_BASE + LFO_RETRIG] = 1;
+            q[LFO2_BASE + LFO_SHAPE] = 0; q[LFO2_BASE + LFO_RATE] = 4.0f; q[LFO2_BASE + LFO_RETRIG] = 1;
+            // Three distinct slots, mixed sources, all targeting PITCH (dst 4).
+            const int bases[3] = { MAT6_BASE, MAT9_BASE, MAT14_BASE };
+            const int srcsIdx[3] = { 1, 2, 4 };  // LFO 1, LFO 2, VELO
+            for (int i = 0; i < count; ++i) {
+                q[bases[i] + MAT_SRC] = (float)srcsIdx[i];
+                q[bases[i] + MAT_DST] = 4;        // PITCH
+                q[bases[i] + MAT_AMT] = 0.8f;
+            }
+            e.noteOn(60, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto r1 = renderRoutes(1), r3 = renderRoutes(3);
+        check(finite(r3) && peak(r3) < 4.0f, "3 routes -> PITCH accumulate finite/bounded",
+              "peak=" + std::to_string(peak(r3)));
+        double dAccum = 0;
+        for (size_t i = 0; i < r1.size(); ++i) dAccum += std::abs(r3[i] - r1[i]);
+        check(dAccum > 1.0, "stacking routes on one dest changes output (accumulation, not last-wins)",
+              "dAccum=" + std::to_string(dAccum));
+    }
+
+    printf("\n== 11. Generic mod destinations (per-param curve rules) ==\n");
+    {
+        // A NEW per-param destination (F1 RES, dst 17) must modulate. Route VELO
+        // (a per-voice constant source) -> F1 RES at a strong amt; two FRESH engines
+        // render the identical patch — one with the route, one without — so any diff
+        // is purely the new dest taking effect. Use a resonant LP24 so a resonance
+        // change is audible, and a low cutoff so the resonant peak dominates.
+        auto renderRes = [&](bool on) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[FILTER1_BASE + FLT_TYPE]   = 1;      // LP24
+            q[FILTER1_BASE + FLT_CUTOFF] = 600.0f; // low cutoff so RES peak is exposed
+            q[FILTER1_BASE + FLT_RES]    = 0.2f;   // base resonance
+            if (on) {
+                q[MAT5_BASE + MAT_SRC] = 4;        // VELO (constant per voice)
+                q[MAT5_BASE + MAT_DST] = 17;       // F1 RES (new dest)
+                q[MAT5_BASE + MAT_AMT] = 0.7f;     // Lin width-1: res += 0.7 -> ~0.9
+            }
+            e.noteOn(60, 1.0);                     // vel 1.0 -> x = 1.0*0.7 = 0.7
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto resOff = renderRes(false), resOn = renderRes(true);
+        check(finite(resOff) && finite(resOn) && peak(resOn) < 8.0f,
+              "mat5 -> F1 RES (new dest) output finite/bounded", "peak=" + std::to_string(peak(resOn)));
+        double resDiff = 0;
+        for (size_t i = 0; i < resOn.size(); ++i) resDiff += std::abs(resOn[i] - resOff[i]);
+        check(resDiff > 1.0, "new dest F1 RES (dst 17) audibly modulates (deterministic diff vs off)",
+              "diff=" + std::to_string(resDiff));
+
+        // Data-driven sweep: EVERY new per-param destination must modulate. For each
+        // dst, two FRESH engines render an identical patch (route off vs VELO src=4
+        // amt 0.7 -> that dst). VELO is a per-voice constant (=1.0) so x = 0.7 exactly;
+        // a deterministic finite non-zero diff proves the dst reaches a synthesis read
+        // site (guards against a reintroduced p_ read at any site). The base patch is
+        // tuned so every knob is audible: both oscs on with unison>1 (detune/spread/
+        // pan), a sustaining modEnv + filters on (env/key), serial F1->F2 both on (F2
+        // dests), sub + noise on (sub/noise level).
+        auto buildSweepPatch = [&]() {
+            auto q = defaultParams();
+            // both oscillators on, unison>1 so detune/spread/pan are audible
+            q[OSCA_BASE + OSC_ON] = 1; q[OSCA_BASE + OSC_UNISON] = 5;
+            q[OSCA_BASE + OSC_DETUNE] = 0.3f; q[OSCA_BASE + OSC_SPREAD] = 0.5f;
+            q[OSCB_BASE + OSC_ON] = 1; q[OSCB_BASE + OSC_UNISON] = 5;
+            q[OSCB_BASE + OSC_DETUNE] = 0.3f; q[OSCB_BASE + OSC_SPREAD] = 0.5f;
+            q[OSCB_BASE + OSC_LEVEL] = 0.75f;
+            // both filters on, serial route (F1 -> F2), resonant LP24 with low cutoff
+            // so res/drive/env/key all move the sound; modEnv sustains so env is live.
+            q[FILTER_ROUTE] = 0;                    // SERIAL
+            q[FILTER1_BASE + FLT_ON] = 1; q[FILTER1_BASE + FLT_TYPE] = 1; // LP24
+            q[FILTER1_BASE + FLT_CUTOFF] = 800.0f; q[FILTER1_BASE + FLT_RES] = 0.3f;
+            q[FILTER1_BASE + FLT_DRIVE] = 0.2f;
+            q[FILTER2_BASE + FLT_ON] = 1; q[FILTER2_BASE + FLT_TYPE] = 1; // LP24
+            q[FILTER2_BASE + FLT_CUTOFF] = 1200.0f; q[FILTER2_BASE + FLT_RES] = 0.3f;
+            q[FILTER2_BASE + FLT_DRIVE] = 0.2f;
+            q[ENV2_BASE + 2] = 0.8f;                // modEnv sustain > 0 -> env term live
+            // sub + noise on so their level dests are audible
+            q[SUB_ON] = 1; q[SUB_LEVEL] = 0.5f;
+            q[NOISE_ON] = 1; q[NOISE_LEVEL] = 0.3f;
+            return q;
+        };
+        auto renderSweep = [&](int dst, bool on) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = buildSweepPatch();
+            if (on) {
+                q[MAT5_BASE + MAT_SRC] = 4;         // VELO (constant per voice = 1.0)
+                q[MAT5_BASE + MAT_DST] = (float)dst;
+                q[MAT5_BASE + MAT_AMT] = 0.7f;      // x = 1.0 * 0.7 = 0.7
+            }
+            // note 72 (!= 60) so the filter KEY dests have a nonzero (note-60) term.
+            e.noteOn(72, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        struct DstCase { int dst; const char* name; };
+        const DstCase newDests[] = {
+            {11, "A DETUNE"}, {14, "B DETUNE"},
+            {12, "A SPREAD"}, {15, "B SPREAD"},
+            {13, "A PAN"},    {16, "B PAN"},
+            {17, "F1 RES"},   {18, "F1 DRIVE"}, {19, "F1 ENV"}, {20, "F1 KEY"},
+            {10, "F2 RES"},   {21, "F2 DRIVE"}, {22, "F2 ENV"}, {23, "F2 KEY"},
+            {24, "SUB LVL"},  {25, "NOISE LVL"},
+        };
+        for (const auto& c : newDests) {
+            auto dOff = renderSweep(c.dst, false), dOn = renderSweep(c.dst, true);
+            double diff = 0;
+            for (size_t i = 0; i < dOn.size(); ++i) diff += std::abs(dOn[i] - dOff[i]);
+            check(finite(dOn) && finite(dOff) && diff > 1e-6,
+                  std::string("new dest ") + c.name + " (dst " + std::to_string(c.dst) +
+                  ") modulates (finite + deterministic non-zero diff)",
+                  "diff=" + std::to_string(diff));
+        }
+
+        // An EXISTING destination (F1 CUT, dst 3) must still obey its documented Log
+        // rule: effective cutoff = base * 2^(x*5), D=5, AS PART OF the single legacy
+        // exponent base * 2^(env*4*e2 + key*(note-60)/12 + x*5). Probe by equivalence:
+        // render a route F1 CUT via VELO at amt a over base Cb, and render WITHOUT a
+        // route but with the base cutoff pre-set to Cb*2^(a*5). With ENV/KEY nonzero
+        // and a note != 60, the env+key terms are nonzero so this exercises the full
+        // single-pow path; multiplying the BASE cutoff by 2^(a*5) is mathematically
+        // (and bit-) identical to adding a*5 inside the one std::pow, so the two fresh
+        // engines must produce a bit-identical buffer.
+        const double Cb = 1000.0, amt = 0.3;        // x = vel(1.0)*0.3 = 0.3
+        const double expectedFc = Cb * std::pow(2.0, amt * 5.0); // 1000 * 2^1.5 ~= 2828 Hz
+        const int cutNote = 72;                     // != 60 so the key term is nonzero
+        auto renderCut = [&](double baseCut, bool route) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto& q = e.params(); q = defaultParams();
+            q[FILTER1_BASE + FLT_TYPE]   = 1;       // LP24
+            q[FILTER1_BASE + FLT_CUTOFF] = (float)baseCut;
+            q[FILTER1_BASE + FLT_ENV]    = 0.6f;    // nonzero -> exercises the env term
+            q[FILTER1_BASE + FLT_KEY]    = 0.6f;    // nonzero + note 72 -> key term nonzero
+            if (route) {
+                q[MAT5_BASE + MAT_SRC] = 4;         // VELO
+                q[MAT5_BASE + MAT_DST] = 3;         // F1 CUT (existing dest, Log rule)
+                q[MAT5_BASE + MAT_AMT] = (float)amt;
+            }
+            e.noteOn(cutNote, 1.0);
+            std::vector<float> a(8192), b(8192);
+            e.render(a.data(), b.data(), 8192);
+            return a;
+        };
+        auto routed   = renderCut(Cb, true);              // base 1000, modulated +1.5 oct
+        auto direct   = renderCut(expectedFc, false);     // base pre-set to 1000*2^1.5
+        bool cutMatch = routed.size() == direct.size();
+        double cutErr = 0;
+        for (size_t i = 0; cutMatch && i < routed.size(); ++i) cutErr += std::abs(routed[i] - direct[i]);
+        check(cutMatch && cutErr < 1e-6,
+              "existing dest F1 CUT obeys base*2^(x*5) inside the single env/key pow: "
+              "routed cutoff == direct " + std::to_string((int)expectedFc) + " Hz "
+              "(env=key=0.6, note 72)", "err=" + std::to_string(cutErr));
+
+        // Sanity: the modulated cutoff genuinely differs from the un-modulated base
+        // (so the equivalence above isn't trivially comparing two identical patches).
+        auto baseline = renderCut(Cb, false);             // base 1000, no route
+        double cutMove = 0;
+        for (size_t i = 0; i < routed.size(); ++i) cutMove += std::abs(routed[i] - baseline[i]);
+        check(cutMove > 1.0, "F1 CUT route moves the cutoff away from its base value",
+              "move=" + std::to_string(cutMove));
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;
 }

@@ -28,7 +28,8 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
     : oscIndex(osc), title(t), prefix(pre), accent(ac),
       power(s, pre + ".on", ac), tableStep(s, pre + ".table", ac),
       wt(proc, osc, accentColour(ac)),
-      pos(s, pre + ".pos", ac, [&proc, osc] { return proc.getVizPos(osc); }) {
+      // POS slider is a mod target: dest 1 (oscA POS) / 2 (oscB POS).
+      pos(s, pre + ".pos", ac, [&proc, osc] { return proc.getVizPos(osc); }, osc == 0 ? 1 : 2) {
     addAndMakeVisible(power); addAndMakeVisible(tableStep);
     addAndMakeVisible(wt); addAndMakeVisible(pos);
     // The table stepper cycles only over the procedural + live user tables and
@@ -42,8 +43,18 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
     editBtn.onClick = [this] { if (onEditTable) onEditTable(oscIndex); };
     addAndMakeVisible(editBtn);
     const char* ids[] = {".oct", ".semi", ".fine", ".unison", ".detune", ".spread", ".level", ".pan"};
+    // Continuous knobs are mod targets (A/B per osc): DETUNE (4) → 11/14,
+    // SPREAD (5) → 12/15, LEVEL (6) → 7/8, PAN (7) → 13/16. OCT/SEMI/FINE/UNISON
+    // are discrete steppers → not modulatable (modDest 0).
     for (int i = 0; i < 8; ++i) {
-        auto* k = new Knob(s, pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac);
+        int modDest = 0;
+        switch (i) {
+            case 4: modDest = osc == 0 ? 11 : 14; break; // DETUNE → A/B DETUNE
+            case 5: modDest = osc == 0 ? 12 : 15; break; // SPREAD → A/B SPREAD
+            case 6: modDest = osc == 0 ?  7 :  8; break; // LEVEL  → A/B LVL
+            case 7: modDest = osc == 0 ? 13 : 16; break; // PAN    → A/B PAN
+        }
+        auto* k = new Knob(s, pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac, true, modDest);
         knobs.add(k); addAndMakeVisible(k);
     }
 }
@@ -63,7 +74,10 @@ void OscPanel::resized() {
     titleArea = head;
     r.removeFromTop(8);
     auto knobRow = r.removeFromBottom(62);
-    auto posCol = r.removeFromRight(34);
+    // Wide enough for the 7px handle inset + 9px track + 3px gap + up to 6
+    // stacked 6px depth bands (7+9+3+36=55), so every routed source's side
+    // band paints in-bounds and stays grabbable / right-click-clearable.
+    auto posCol = r.removeFromRight(56);
     r.removeFromRight(8);
     wt.setBounds(r);
     pos.setBounds(posCol);
@@ -74,8 +88,11 @@ void OscPanel::resized() {
 UtilPanel::UtilPanel(APVTS& s)
     : subPow(s, "sub.on", Accent::N), noisePow(s, "noise.on", Accent::N),
       subShape(s, "sub.shape", Accent::N), noiseType(s, "noise.type", Accent::N),
-      subOct(s, "sub.oct", Knob::Sm, Accent::N), subLevel(s, "sub.level", Knob::Sm, Accent::N),
-      noiseLevel(s, "noise.level", Knob::Sm, Accent::N) {
+      subOct(s, "sub.oct", Knob::Sm, Accent::N),
+      // Continuous level knobs are mod targets: SUB LVL → 24, NOISE LVL → 25.
+      // sub.oct is a discrete octave knob → not modulatable (modDest 0).
+      subLevel(s, "sub.level", Knob::Sm, Accent::N, true, 24),
+      noiseLevel(s, "noise.level", Knob::Sm, Accent::N, true, 25) {
     addAndMakeVisible(subPow); addAndMakeVisible(noisePow);
     addAndMakeVisible(subShape); addAndMakeVisible(noiseType);
     addAndMakeVisible(subOct); addAndMakeVisible(subLevel); addAndMakeVisible(noiseLevel);
@@ -111,11 +128,15 @@ void UtilPanel::resized() {
 }
 
 // ===================== FilterPanel =====================
-FilterPanel::Block::Block(APVTS& s, juce::String prefix, juce::String lbl)
+FilterPanel::Block::Block(APVTS& s, juce::String prefix, juce::String lbl,
+                          int cutoffDest, int resDest, int driveDest, int envDest, int keyDest)
     : label(lbl), power(s, prefix + ".on", Accent::F), type(s, prefix + ".type", Accent::F) {
     const char* ids[] = {".cutoff", ".res", ".drive", ".env", ".key"};
+    // Every continuous knob is a mod target (per filter): CUTOFF (0) → 3/9,
+    // RES (1) → 17/10, DRIVE (2) → 18/21, ENV (3) → 19/22, KEY (4) → 20/23.
+    const int dests[] = {cutoffDest, resDest, driveDest, envDest, keyDest};
     for (int i = 0; i < 5; ++i)
-        knobs.add(new Knob(s, prefix + ids[i], i == 0 ? Knob::Md : Knob::Sm, Accent::F));
+        knobs.add(new Knob(s, prefix + ids[i], i == 0 ? Knob::Md : Knob::Sm, Accent::F, true, dests[i]));
 }
 void FilterPanel::Block::layout(juce::Rectangle<int> r) {
     auto head = r.removeFromTop(18);
@@ -134,7 +155,9 @@ void FilterPanel::Block::paintLabel(juce::Graphics& g) {
 
 FilterPanel::FilterPanel(APVTS& s)
     : route(s, "filter.route", Accent::F), view(s, col::acF),
-      f1(s, "filter", "F1"), f2(s, "filter2", "F2") {
+      // dst indices per §9: F1 cut/res/drive/env/key = 3/17/18/19/20;
+      //                      F2 cut/res/drive/env/key = 9/10/21/22/23.
+      f1(s, "filter", "F1", 3, 17, 18, 19, 20), f2(s, "filter2", "F2", 9, 10, 21, 22, 23) {
     addAndMakeVisible(route); addAndMakeVisible(view);
     for (auto* b : { &f1, &f2 }) {
         addAndMakeVisible(b->power); addAndMakeVisible(b->type);
@@ -161,12 +184,16 @@ void FilterPanel::resized() {
 }
 
 // ===================== EnvPanel =====================
-EnvPanel::EnvPanel(APVTS& s, juce::String base, juce::String t, juce::Colour viewAccent, Accent knobAccent)
+EnvPanel::EnvPanel(APVTS& s, juce::String base, juce::String t, juce::Colour viewAccent, Accent knobAccent, int modSrc)
     : title(t), view(s, base, viewAccent) {
     addAndMakeVisible(view);
     const char* ids[] = {".a", ".d", ".s", ".r"};
     for (int i = 0; i < 4; ++i) knobs.add(new Knob(s, base + ids[i], Knob::Sm, knobAccent));
     for (auto* k : knobs) addAndMakeVisible(k);
+    if (modSrc > 0) {
+        srcChip = std::make_unique<ModSourceChip>(modSrc, juce::String(fable::MOD_SOURCES[(size_t)modSrc]), true);
+        addAndMakeVisible(*srcChip);
+    }
 }
 void EnvPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
@@ -175,6 +202,7 @@ void EnvPanel::paint(juce::Graphics& g) {
 void EnvPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     titleArea = r.removeFromTop(20);
+    if (srcChip) srcChip->setBounds(titleArea.removeFromRight(22).withSizeKeepingCentre(20, 16));
     r.removeFromTop(6);
     view.setBounds(r.removeFromTop(62));
     r.removeFromTop(8);
@@ -186,8 +214,10 @@ void EnvPanel::resized() {
 }
 
 // ===================== LfoPanel =====================
-LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac, std::function<HostTransport()> transportProvider)
+LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac,
+                       std::function<HostTransport()> transportProvider, int modSrc)
     : title(t),
+      srcChip(modSrc, juce::String(fable::MOD_SOURCES[(size_t)modSrc]), true),
       shape(s, id + ".shape", Accent::N),
       view(s, id + ".shape", id + ".rate", id + ".sync", id + ".syncrate", accentColour(ac), std::move(transportProvider)),
       syncRate(s, id + ".syncrate", ac),
@@ -213,6 +243,8 @@ void LfoPanel::Block::applySync(bool sync) {
 void LfoPanel::Block::layout(juce::Rectangle<int> r) {
     auto head = r.removeFromTop(22);
     shape.setBounds(head.removeFromRight(96).withSizeKeepingCentre(96, 18));
+    head.removeFromRight(6);
+    srcChip.setBounds(head.removeFromRight(22).withSizeKeepingCentre(20, 16));
     titleArea = head;
     r.removeFromTop(8);
     view.setBounds(r.removeFromTop(110));   // tall shape visualization
@@ -234,8 +266,11 @@ void LfoPanel::Block::layout(juce::Rectangle<int> r) {
 void LfoPanel::Block::paintTitle(juce::Graphics& g) { paintHeaderTitle(g, titleArea, title, col::text); }
 
 LfoPanel::LfoPanel(APVTS& s, std::function<HostTransport()> transportProvider)
-    : apvts(s), l1(s, "lfo1", "LFO 1", Accent::A, transportProvider), l2(s, "lfo2", "LFO 2", Accent::B, transportProvider) {
+    : apvts(s),
+      l1(s, "lfo1", "LFO 1", Accent::A, transportProvider, 1),
+      l2(s, "lfo2", "LFO 2", Accent::B, transportProvider, 2) {
     for (auto* b : { &l1, &l2 }) {
+        addAndMakeVisible(b->srcChip);
         addAndMakeVisible(b->shape);
         addAndMakeVisible(b->view);
         addAndMakeVisible(b->syncBtn);
@@ -274,49 +309,142 @@ void LfoPanel::resized() {
 }
 
 // ===================== MatrixPanel =====================
-MatrixPanel::Row::Row(APVTS& s, int slot) {
+MatrixPanel::Row::Row(APVTS& s, int sl) : slot(sl) {
     juce::String base = "mat" + juce::String(slot);
     for (int i = 0; i < (int)fable::MOD_SOURCES.size(); ++i) src.addItem(fable::MOD_SOURCES[i], i + 1);
     for (int i = 0; i < (int)fable::MOD_DESTS.size(); ++i) dst.addItem(fable::MOD_DESTS[i], i + 1);
     srcAtt = std::make_unique<APVTS::ComboBoxAttachment>(s, base + ".src", src);
     dstAtt = std::make_unique<APVTS::ComboBoxAttachment>(s, base + ".dst", dst);
     amt = std::make_unique<Knob>(s, base + ".amt", Knob::Xs, Accent::N, false);
+    remove.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+    remove.setColour(juce::TextButton::textColourOffId, col::textDim);
+    remove.setTooltip("remove route");
+    remove.onClick = [&s, sl] { fui::clearSlot(s, sl); };
+    addAndMakeVisible(src); addAndMakeVisible(dst); addAndMakeVisible(*amt); addAndMakeVisible(remove);
 }
-MatrixPanel::MatrixPanel(APVTS& s) {
-    for (int i = 1; i <= 4; ++i) {
+void MatrixPanel::Row::resized() {
+    auto rr = getLocalBounds();
+    int rowH = rr.getHeight();
+    remove.setBounds(rr.removeFromRight(20).withSizeKeepingCentre(18, juce::jmin(18, rowH)));
+    rr.removeFromRight(4);
+    amt->setBounds(rr.removeFromRight(34).withSizeKeepingCentre(34, rowH));
+    rr.removeFromRight(6);
+    int half = (rr.getWidth() - 14) / 2;
+    src.setBounds(rr.removeFromLeft(half).withSizeKeepingCentre(half, juce::jmin(26, rowH)));
+    rr.removeFromLeft(14); // arrow gutter
+    dst.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), juce::jmin(26, rowH)));
+}
+void MatrixPanel::Row::paint(juce::Graphics& g) {
+    g.setColour(col::textDim);
+    g.setFont(monoFont(11.0f));
+    auto sb = src.getBounds();
+    g.drawText(juce::String::fromUTF8("\xe2\x96\xb8"), // ▸
+               sb.getRight(), sb.getY(), 14, sb.getHeight(), juce::Justification::centred);
+}
+
+MatrixPanel::MatrixPanel(APVTS& s) : apvts(s) {
+    // All 16 rows constructed up front so the combobox attachments stay stable;
+    // visibility is toggled per slot (rowVisible) by the diffing timer.
+    for (int i = 1; i <= fable::MOD_MATRIX_SIZE; ++i) {
         auto* row = new Row(s, i);
         rows.add(row);
-        addAndMakeVisible(row->src); addAndMakeVisible(row->dst); addAndMakeVisible(*row->amt);
+        rowsHolder.addChildComponent(row); // hidden until rowVisible
+    }
+    // Scrollable row list: rows can exceed the panel height once many slots fill.
+    viewport.setViewedComponent(&rowsHolder, false);
+    viewport.setScrollBarsShown(true, false); // vertical only
+    addAndMakeVisible(viewport);
+    // Header source chips: LFO1=1, LFO2=2, MOD ENV=3, VELO=4, NOTE=5.
+    for (int srcIdx = 1; srcIdx <= 5; ++srcIdx) {
+        auto* chip = new ModSourceChip(srcIdx, juce::String(fable::MOD_SOURCES[(size_t)srcIdx]), false);
+        chips.add(chip);
+        addAndMakeVisible(chip);
+    }
+    addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+    addBtn.setColour(juce::TextButton::textColourOffId, col::text);
+    addBtn.onClick = [this] { fui::addRoute(apvts, 1, 0); }; // src=LFO 1, dst=— (inactive)
+    addAndMakeVisible(addBtn);
+    lastVisible = visibleSlots();
+    startTimerHz(3); // low rate: diff visible slots before rebuilding to avoid flicker
+}
+
+std::vector<int> MatrixPanel::visibleSlots() const {
+    std::vector<int> out;
+    for (int slot = 1; slot <= fable::MOD_MATRIX_SIZE; ++slot) {
+        auto rv = [&](const char* f) {
+            auto* p = dynamic_cast<juce::RangedAudioParameter*>(
+                apvts.getParameter("mat" + juce::String(slot) + f));
+            return p ? (int)p->convertFrom0to1(p->getValue()) : 0;
+        };
+        if (rv(".src") != 0 || rv(".dst") != 0) out.push_back(slot); // rowVisible (§9)
+    }
+    return out;
+}
+
+void MatrixPanel::timerCallback() {
+    addBtn.setEnabled(fui::findFreeSlot(apvts) > 0); // grey out ADD ROUTE when the 16-slot pool is full
+    auto cur = visibleSlots();
+    if (cur != lastVisible) {
+        lastVisible = cur;
+        relayoutRows();
+        repaint();
     }
 }
+
+void MatrixPanel::relayoutRows() {
+    // Fixed-height rows stacked in the holder; the viewport scrolls vertically
+    // once their total height exceeds the visible area.
+    for (auto* row : rows) row->setVisible(false);
+    const int rowH = 28, gap = 7;
+    int n = (int)lastVisible.size();
+    int vpW = viewport.getWidth(), vpH = viewport.getHeight();
+    int neededH = n > 0 ? n * rowH + (n - 1) * gap : 0;
+    bool vscroll = neededH > vpH;
+    int holderW = vpW - (vscroll ? viewport.getScrollBarThickness() : 0);
+    rowsHolder.setSize(holderW, juce::jmax(neededH, vpH));
+    for (int i = 0; i < n; ++i) {
+        auto* row = rows[lastVisible[(size_t)i] - 1];
+        row->setBounds(0, i * (rowH + gap), holderW, rowH);
+        row->setVisible(true);
+    }
+}
+
 void MatrixPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, "MOD MATRIX", col::text);
-    g.setColour(col::textDim);
-    g.setFont(monoFont(11.0f));
-    for (auto* row : rows) {
-        auto a = row->src.getBounds();
-        g.drawText(">", row->src.getRight(), a.getY(), 14, a.getHeight(), juce::Justification::centred);
+    // (each Row paints its own ▸ arrow between src and dst, so it scrolls correctly)
+    if (lastVisible.empty()) {
+        g.setColour(col::textDim);
+        g.setFont(monoFont(10.0f));
+        g.drawText("Drag a source onto a control, or ADD ROUTE.",
+                   rowsArea, juce::Justification::centredTop);
     }
 }
+
 void MatrixPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     titleArea = r.removeFromTop(20);
     r.removeFromTop(6);
-    int n = rows.size();
-    int rowH = juce::jmin(28, (r.getHeight() - (n - 1) * 7) / n);
-    for (int i = 0; i < n; ++i) {
-        auto* row = rows[i];
-        auto rr = r.removeFromTop(rowH);
-        if (i < n - 1) r.removeFromTop(7);
-        auto amtA = rr.removeFromRight(34);
-        row->amt->setBounds(amtA.withSizeKeepingCentre(34, rowH));
-        rr.removeFromRight(6);
-        int half = (rr.getWidth() - 14) / 2;
-        row->src.setBounds(rr.removeFromLeft(half).withSizeKeepingCentre(half, 26));
-        rr.removeFromLeft(14);
-        row->dst.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), 26));
+    // header chip strip
+    chipArea = r.removeFromTop(20);
+    {
+        auto cr = chipArea;
+        int n = chips.size();
+        int gap = 5;
+        int cw = (cr.getWidth() - gap * (n - 1)) / juce::jmax(1, n);
+        for (int i = 0; i < n; ++i) {
+            chips[i]->setBounds(cr.removeFromLeft(cw).withSizeKeepingCentre(cw, 18));
+            cr.removeFromLeft(gap);
+        }
     }
+    r.removeFromTop(6);
+    // ADD ROUTE button pinned at the bottom
+    addArea = r.removeFromBottom(24);
+    addBtn.setBounds(addArea.withSizeKeepingCentre(juce::jmin(140, addArea.getWidth()), 22));
+    r.removeFromBottom(6);
+    rowsArea = r;
+    viewport.setBounds(rowsArea);
+    relayoutRows();
 }
 
 // ===================== FxPanel =====================

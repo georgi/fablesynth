@@ -8,7 +8,7 @@ Rack::Rack(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
       util(s),
       filter(s),
       env1(s, "env1", "AMP ENV", juce::Colour(0xffe8edf7), fui::Accent::N),
-      env2(s, "env2", "MOD ENV", juce::Colour(0xffb18cff), fui::Accent::F),
+      env2(s, "env2", "MOD ENV", juce::Colour(0xffb18cff), fui::Accent::F, 3), // MOD ENV = mod src 3
       lfos(s, [proc = &p] { return proc->getTransport(); }),
       matrix(s),
       fx(s) {

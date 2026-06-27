@@ -1,12 +1,16 @@
 // Vertical slider used for wavetable position, with a "ghost" marker that
-// tracks the live modulated position coming back from the DSP thread.
+// tracks the live modulated position coming back from the DSP thread. It is also
+// a Serum-style mod target: drop a source chip to assign it, and the colored
+// depth band it grows can be dragged (right-click to remove).
 
 import type * as React from 'react';
 import { useEffect, useRef } from 'react';
-import { PARAMS, normToValue, valueToNorm } from '../params';
+import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';
+import { useModsByDest } from '../hooks/useModsByDest';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const clampAmt = (n: number) => Math.min(1, Math.max(-1, n));
 
 interface VSliderProps {
   paramId: string;
@@ -14,11 +18,54 @@ interface VSliderProps {
   ghost: number; // live modulated position 0..1, -1 = hidden
 }
 
+// A draggable modulation-depth band rising from the current value. `slotNum` is
+// the absolute slot (1..16) the band edits in the fixed mod pool.
+function PosModBand({ slotNum, amt, src, baseNorm }: { slotNum: number; amt: number; src: number; baseNorm: number }) {
+  const updateSlot = useStore((s) => s.updateSlot);
+  const clearSlot = useStore((s) => s.clearSlot);
+  const elRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; amt: number } | null>(null);
+
+  const top = clamp01(baseNorm + amt);
+  const lo = Math.min(baseNorm, top);
+  const hi = Math.max(baseNorm, top);
+
+  return (
+    <div
+      ref={elRef}
+      className="vs-mod"
+      style={{ bottom: `${lo * 100}%`, height: `${(hi - lo) * 100}%`, ['--src' as string]: SOURCE_COLORS[src] }}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        drag.current = { y: e.clientY, amt };
+        elRef.current?.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        e.stopPropagation();
+        const dy = drag.current.y - e.clientY;
+        updateSlot(slotNum, { amt: clampAmt(drag.current.amt + dy * (e.shiftKey ? 0.0008 : 0.004)) });
+      }}
+      onPointerUp={(e) => {
+        drag.current = null;
+        try { elRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); clearSlot(slotNum); }}
+    />
+  );
+}
+
 export function VSlider({ paramId, accent, ghost }: VSliderProps) {
   const def = PARAMS[paramId];
   const value = useStore((s) => s.params[paramId]);
   const setParam = useStore((s) => s.setParam);
   const norm = clamp01(valueToNorm(def, value));
+
+  const dest = DEST_OF_PARAM[paramId];
+  const addRoute = useStore((s) => s.addRoute);
+  const modDrag = useStore((s) => s.modDrag);
+  const myMods = useModsByDest(dest);
+  const dropActive = dest && modDrag > 0;
 
   const elRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -65,7 +112,7 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
   return (
     <div
       ref={elRef}
-      className="vslider"
+      className={`vslider${dest ? ' vslider-mod' : ''}${dropActive ? ' mod-target' : ''}`}
       data-accent={accent}
       tabIndex={0}
       role="slider"
@@ -79,9 +126,18 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
       onKeyDown={onKeyDown}
+      onDragOver={dest ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } : undefined}
+      onDrop={dest ? (e) => {
+        e.preventDefault();
+        const src = parseInt(e.dataTransfer.getData('mod-src') || '0', 10);
+        if (src) addRoute(src, dest);
+      } : undefined}
     >
       <div className="vs-track" ref={trackRef}>
         <div className="vs-fill" style={{ height: `${pct}%` }} />
+        {myMods.map((m) => (
+          <PosModBand key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} />
+        ))}
         <div
           className="vs-ghost"
           style={ghost < 0 ? { opacity: 0 } : { opacity: 1, bottom: `${ghost * 100}%` }}

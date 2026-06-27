@@ -1,6 +1,7 @@
 #pragma once
 #include "Controls.h"
 #include "Displays.h"
+#include "Modulation.h"
 #include "../WavetableView.h"
 #include "../PluginProcessor.h"
 
@@ -49,7 +50,11 @@ public:
     void resized() override;
 private:
     struct Block {
-        Block(APVTS&, juce::String prefix, juce::String label);
+        // cutoffDest / resDest / driveDest / envDest / keyDest = mod-matrix dest
+        // indices for this filter's CUTOFF/RES/DRIVE/ENV/KEY knobs (all continuous,
+        // all mod targets).
+        Block(APVTS&, juce::String prefix, juce::String label,
+              int cutoffDest, int resDest, int driveDest, int envDest, int keyDest);
         juce::String label;
         PowerButton power; Stepper type;
         juce::OwnedArray<Knob> knobs;
@@ -64,12 +69,16 @@ private:
 
 class EnvPanel : public juce::Component {
 public:
-    EnvPanel(APVTS&, juce::String base, juce::String title, juce::Colour viewAccent, Accent knobAccent);
+    // modSrc > 0 adds a draggable ModSourceChip in the header (e.g. MOD ENV = 3);
+    // the env's knobs are never mod targets (modDest 0).
+    EnvPanel(APVTS&, juce::String base, juce::String title, juce::Colour viewAccent,
+             Accent knobAccent, int modSrc = 0);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
     juce::String title;
     EnvView view; juce::OwnedArray<Knob> knobs;
+    std::unique_ptr<ModSourceChip> srcChip;
     juce::Rectangle<int> titleArea;
 };
 
@@ -82,8 +91,12 @@ public:
 private:
     void timerCallback() override;
     struct Block {
-        Block(APVTS&, juce::String id, juce::String title, Accent, std::function<HostTransport()> transportProvider);
+        // modSrc = this LFO's mod-source index (1 = LFO 1, 2 = LFO 2) for the
+        // draggable header chip.
+        Block(APVTS&, juce::String id, juce::String title, Accent,
+              std::function<HostTransport()> transportProvider, int modSrc);
         juce::String title;
+        ModSourceChip srcChip;
         Stepper shape;
         LfoView view;
         juce::TextButton syncBtn{"SYNC"}, retrigBtn{"TRIG"};
@@ -100,20 +113,39 @@ private:
     Block l1, l2;
 };
 
-class MatrixPanel : public juce::Component {
+class MatrixPanel : public juce::Component, private juce::Timer {
 public:
     explicit MatrixPanel(APVTS&);
+    ~MatrixPanel() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
-    struct Row {
+    void timerCallback() override;
+    void relayoutRows();                 // place only the currently-visible rows
+    std::vector<int> visibleSlots() const; // slots with rowVisible() (§9), in order
+
+    // One row per slot 1..16 (all constructed up front so combobox attachments
+    // stay stable); only rows whose slot is rowVisible() are shown.
+    struct Row : public juce::Component {
         Row(APVTS&, int slot);
+        void resized() override;
+        void paint(juce::Graphics&) override; // ▸ arrow between src and dst
+        int slot;
         juce::ComboBox src, dst;
         std::unique_ptr<APVTS::ComboBoxAttachment> srcAtt, dstAtt;
         std::unique_ptr<Knob> amt;
+        juce::TextButton remove{juce::String::fromUTF8("\xc3\x97")}; // ×
     };
-    juce::OwnedArray<Row> rows;
-    juce::Rectangle<int> titleArea;
+    APVTS& apvts;
+    // Rows live in a scrollable viewport: fixed-height rows that scroll once the
+    // active routes exceed the panel height (the 16-slot pool can fill the list).
+    juce::Viewport viewport;
+    juce::Component rowsHolder;
+    juce::OwnedArray<Row> rows;          // indexed [slot-1]; children of rowsHolder
+    juce::OwnedArray<ModSourceChip> chips;
+    juce::TextButton addBtn{"+ ADD ROUTE"};
+    std::vector<int> lastVisible;        // cached visible-slot vector (diffed by timer)
+    juce::Rectangle<int> titleArea, chipArea, addArea, rowsArea;
 };
 
 class FxPanel : public juce::Component {

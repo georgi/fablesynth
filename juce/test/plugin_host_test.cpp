@@ -165,11 +165,108 @@ int main(int argc, char** argv) {
         check(dup.isEmpty(), msg.c_str(), 0);
     }
 
+    // --- Mod matrix slot > 4 via APVTS: assign mat5 -> PITCH and render ---
+    // Drive a slot past the legacy 4 through the host parameter bridge (set via
+    // convertTo0to1 like a DAW would), render a few blocks, then snapshot the
+    // editor so the matrix-list row + control mod rings paint. No crash = pass.
+    {
+        auto setParamReal = [&](const char* id, float real) {
+            if (auto* pr = proc.apvts.getParameter(id))
+                pr->setValueNotifyingHost(pr->convertTo0to1(real));
+        };
+        setParamReal("mat5.src", 1.0f); // LFO 1
+        setParamReal("mat5.dst", 4.0f); // PITCH
+        setParamReal("mat5.amt", 0.7f); // high depth, host-automatable
+        float s = proc.apvts.getRawParameterValue("mat5.src")->load();
+        float d = proc.apvts.getRawParameterValue("mat5.dst")->load();
+        float a = proc.apvts.getRawParameterValue("mat5.amt")->load();
+        check(std::abs(s - 1.0f) < 0.5f && std::abs(d - 4.0f) < 0.5f && std::abs(a - 0.7f) < 0.05f,
+              "mat5 (slot > 4) src/dst/amt set via APVTS convertTo0to1", a);
+
+        bool matFinite = true; float matPeak = 0;
+        for (int b = 0; b < 30; ++b) {
+            buf.clear();
+            juce::MidiBuffer midi;
+            if (b == 0) {
+                midi.addEvent(juce::MidiMessage::noteOn(1, 48, 0.9f), 0);
+                midi.addEvent(juce::MidiMessage::noteOn(1, 55, 0.9f), 0);
+            }
+            proc.processBlock(buf, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < block; ++i) {
+                    float v = buf.getSample(ch, i);
+                    if (!std::isfinite(v)) matFinite = false;
+                    matPeak = std::max(matPeak, std::abs(v));
+                }
+        }
+        check(matFinite && matPeak < 1.5f, "renders cleanly with mat5 -> PITCH active", matPeak);
+    }
+
+    // --- New generic destination via APVTS: assign mat6 -> SUB LVL (dst 24) ---
+    // Drive a NEW per-param destination (added by the generic-destinations feature)
+    // through the host parameter bridge exactly as a DAW would (convertTo0to1),
+    // enable the sub osc so the route actually modulates a synthesis knob, render a
+    // few blocks, then snapshot the editor so the matrix row + the SUB LEVEL knob's
+    // mod ring paint. No crash / finite output = pass.
+    {
+        auto setParamReal = [&](const char* id, float real) {
+            if (auto* pr = proc.apvts.getParameter(id))
+                pr->setValueNotifyingHost(pr->convertTo0to1(real));
+        };
+        setParamReal("sub.on", 1.0f);   // enable the sub so SUB LVL is an active synthesis path
+        setParamReal("mat6.src", 1.0f); // LFO 1
+        setParamReal("mat6.dst", 24.0f); // SUB LVL (new generic destination)
+        setParamReal("mat6.amt", 0.6f);  // host-automatable depth
+        float s = proc.apvts.getRawParameterValue("mat6.src")->load();
+        float d = proc.apvts.getRawParameterValue("mat6.dst")->load();
+        float a = proc.apvts.getRawParameterValue("mat6.amt")->load();
+        check(std::abs(s - 1.0f) < 0.5f && std::abs(d - 24.0f) < 0.5f && std::abs(a - 0.6f) < 0.05f,
+              "mat6 -> SUB LVL (new dest) src/dst/amt set via APVTS convertTo0to1", d);
+
+        bool newFinite = true; float newPeak = 0;
+        for (int b = 0; b < 30; ++b) {
+            buf.clear();
+            juce::MidiBuffer midi;
+            if (b == 0) {
+                midi.addEvent(juce::MidiMessage::noteOn(1, 40, 0.9f), 0);
+                midi.addEvent(juce::MidiMessage::noteOn(1, 47, 0.9f), 0);
+            }
+            proc.processBlock(buf, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < block; ++i) {
+                    float v = buf.getSample(ch, i);
+                    if (!std::isfinite(v)) newFinite = false;
+                    newPeak = std::max(newPeak, std::abs(v));
+                }
+        }
+        check(newFinite && newPeak < 1.5f, "renders cleanly with mat6 -> SUB LVL (new dest) active", newPeak);
+    }
+
+    // --- Many active routes: the mod-matrix list must scroll, not clip/overflow ---
+    {
+        auto setReal = [&](const juce::String& id, float real) {
+            if (auto* pr = proc.apvts.getParameter(id)) pr->setValueNotifyingHost(pr->convertTo0to1(real));
+        };
+        // Fill 12 of the 16 slots so the row list exceeds the panel height.
+        for (int slot = 1; slot <= 12; ++slot) {
+            setReal("mat" + juce::String(slot) + ".src", (float)(1 + (slot % 5))); // LFO1..NOTE
+            setReal("mat" + juce::String(slot) + ".dst", (float)slot);             // dsts 1..12
+            setReal("mat" + juce::String(slot) + ".amt", 0.4f);
+        }
+        int active = 0;
+        for (int slot = 1; slot <= 12; ++slot)
+            if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() != 0.0f) active++;
+        check(active == 12, "12 mod-matrix routes active (list overflows -> scrollable viewport)", (float)active);
+    }
+
     juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
                             : juce::File::getCurrentWorkingDirectory());
     dir.createDirectory();
     snapshotViews(proc, dir.getChildFile("wavetable_view.png"));
     snapshotEditor(proc, dir.getChildFile("plugin_editor.png"));
+    snapshotEditor(proc, dir.getChildFile("plugin_editor_mat5.png")); // editor with mat5 route assigned
+    snapshotEditor(proc, dir.getChildFile("plugin_editor_newdest.png")); // editor with mat6 -> SUB LVL (new dest)
+    snapshotEditor(proc, dir.getChildFile("plugin_editor_matrixfull.png")); // 12 routes -> scrollable matrix
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");

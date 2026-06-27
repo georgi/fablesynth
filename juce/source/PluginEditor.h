@@ -28,7 +28,8 @@ private:
     fui::FxPanel fx;
 };
 
-class FableAudioProcessorEditor : public juce::AudioProcessorEditor {
+class FableAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                  public juce::DragAndDropContainer {
 public:
     explicit FableAudioProcessorEditor(FableAudioProcessor&);
     ~FableAudioProcessorEditor() override;

@@ -9,11 +9,14 @@
 namespace fui {
 
 // ---- rotary knob ----------------------------------------------------------
-class Knob : public juce::Component, private juce::Timer {
+// modDest > 0 turns the knob into a modulation target: it accepts source-chip
+// drops (juce::DragAndDropTarget), paints one depth ring per slot whose dst ==
+// modDest, and lets the rings be depth-dragged / right-click-cleared.
+class Knob : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
 public:
     enum Size { Lg, Md, Sm, Xs };
     Knob(juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
-         Size sz, Accent accent, bool showLabel = true);
+         Size sz, Accent accent, bool showLabel = true, int modDest = 0);
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -22,12 +25,20 @@ public:
     void mouseDoubleClick(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
+    // juce::DragAndDropTarget
+    bool isInterestedInDragSource(const SourceDetails&) override;
+    void itemDragEnter(const SourceDetails&) override;
+    void itemDragExit(const SourceDetails&) override;
+    void itemDropped(const SourceDetails&) override;
+
     static int svgPx(Size s) { return s == Lg ? 74 : s == Md ? 56 : s == Sm ? 44 : 34; }
 
 private:
     void  timerCallback() override;
     void  nudge(float deltaNorm);
     float norm() const { return param ? param->getValue() : 0.0f; }
+    void  rebuildRings();                 // refresh rings_ from active slots
+    juce::uint64 ringSignature() const;   // cheap hash of this dest's active slots
 
     juce::AudioProcessorValueTreeState& apvts;
     juce::String id;
@@ -40,6 +51,17 @@ private:
     juce::String label;
     bool  dragging = false;
     float lastY = 0, lastNorm = -1;
+
+    // ---- modulation target state ----
+    int  modDest_ = 0;
+    bool dragHover_ = false;
+    struct Ring { int slot, src; float amt; };
+    std::vector<Ring> rings_;
+    int  grabbedRing_ = -1;
+    juce::RangedAudioParameter* grabbedAmt_ = nullptr; // amt param being depth-dragged
+    juce::uint64 lastRingSig_ = ~(juce::uint64)0;
+    // Cached mat src/dst/amt params (16 slots x 3 = 48), indexed [slot-1][field].
+    juce::RangedAudioParameter* matParams_[16][3] = {};
 };
 
 // ---- enum stepper  (◂ VALUE ▸) -------------------------------------------
@@ -84,25 +106,47 @@ private:
 };
 
 // ---- vertical slider (wavetable POS, with modulated ghost) -----------------
-class VSlider : public juce::Component, private juce::Timer {
+// modDest > 0 turns the slider into a modulation target: it accepts source-chip
+// drops, paints a side depth band per slot whose dst == modDest, and lets each
+// band be depth-dragged / right-click-cleared.
+class VSlider : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
 public:
     VSlider(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent,
-            std::function<float()> ghostProvider);
+            std::function<float()> ghostProvider, int modDest = 0);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    // juce::DragAndDropTarget
+    bool isInterestedInDragSource(const SourceDetails&) override;
+    void itemDragEnter(const SourceDetails&) override;
+    void itemDragExit(const SourceDetails&) override;
+    void itemDropped(const SourceDetails&) override;
 private:
     void timerCallback() override;
     void moveTo(float y);
     juce::Rectangle<float> trackArea() const;
+    void rebuildRings();
+    juce::uint64 ringSignature() const;
+
     juce::AudioProcessorValueTreeState& apvts;
     juce::String id;
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;
     std::function<float()> ghost;
-    float lastNorm = -1, lastGhost = -2;
+    float lastNorm = -1, lastGhost = -2, lastY = 0;
+
+    // ---- modulation target state ----
+    int  modDest_ = 0;
+    bool dragHover_ = false;
+    struct Ring { int slot, src; float amt; };
+    std::vector<Ring> rings_;
+    int  grabbedRing_ = -1;
+    juce::RangedAudioParameter* grabbedAmt_ = nullptr; // amt param being depth-dragged
+    juce::uint64 lastRingSig_ = ~(juce::uint64)0;
+    juce::RangedAudioParameter* matParams_[16][3] = {};
 };
 
 } // namespace fui

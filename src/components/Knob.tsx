@@ -1,10 +1,15 @@
 // SVG rotary knob. Drag vertically (shift = fine), scroll wheel, double-click
 // to reset, arrow keys when focused. Bipolar params sweep from 12 o'clock.
+//
+// Knobs that map to a modulation destination double as Serum-style mod targets:
+// drop a source chip on one to assign it, then drag the colored ring it grows to
+// set the depth (right-click the ring to remove it).
 
 import type * as React from 'react';
 import { useEffect, useRef } from 'react';
-import { PARAMS, normToValue, valueToNorm } from '../params';
+import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';
+import { useModsByDest } from '../hooks/useModsByDest';
 
 const A0 = -135, A1 = 135;
 
@@ -22,8 +27,48 @@ function arcPath(cx: number, cy: number, r: number, from: number, to: number): s
 }
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const clampAmt = (n: number) => Math.min(1, Math.max(-1, n));
+const degOf = (n: number) => A0 + (A1 - A0) * clamp01(n);
 
 export type KnobSize = 'lg' | 'md' | 'sm' | 'xs';
+
+// One modulation ring: an arc from the current value to where this route would
+// push it, in its source color. Vertical drag sets the depth; right-click removes.
+// `slotNum` is the absolute slot (1..16) the ring edits in the fixed mod pool.
+function ModRing({ slotNum, amt, src, baseNorm, r }: { slotNum: number; amt: number; src: number; baseNorm: number; r: number }) {
+  const updateSlot = useStore((s) => s.updateSlot);
+  const clearSlot = useStore((s) => s.clearSlot);
+  const ref = useRef<SVGPathElement>(null);
+  const drag = useRef<{ y: number; amt: number } | null>(null);
+
+  const d = arcPath(40, 40, r, degOf(baseNorm), degOf(baseNorm + amt));
+
+  return (
+    <path
+      ref={ref}
+      className="k-mod"
+      d={d}
+      style={{ color: SOURCE_COLORS[src] }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        drag.current = { y: e.clientY, amt };
+        ref.current?.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        e.stopPropagation();
+        const dy = drag.current.y - e.clientY;
+        updateSlot(slotNum, { amt: clampAmt(drag.current.amt + dy * (e.shiftKey ? 0.001 : 0.005)) });
+      }}
+      onPointerUp={(e) => {
+        drag.current = null;
+        try { ref.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); clearSlot(slotNum); }}
+    />
+  );
+}
 
 interface KnobProps {
   paramId: string;
@@ -36,6 +81,12 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   const def = PARAMS[paramId];
   const value = useStore((s) => s.params[paramId]);
   const setParam = useStore((s) => s.setParam);
+
+  const dest = DEST_OF_PARAM[paramId];
+  const addRoute = useStore((s) => s.addRoute);
+  const modDrag = useStore((s) => s.modDrag);
+  const myMods = useModsByDest(dest);
+  const dropActive = dest && modDrag > 0;
 
   const bipolar = (def.min as number) < 0;
   const norm = clamp01(valueToNorm(def, value));
@@ -109,7 +160,7 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   return (
     <div
       ref={elRef}
-      className={`knob knob-${size}`}
+      className={`knob knob-${size}${dest ? ' knob-mod' : ''}${dropActive ? ' mod-target' : ''}${myMods.length ? ' has-mod' : ''}`}
       data-accent={accent}
       tabIndex={0}
       role="slider"
@@ -124,11 +175,20 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
       onPointerCancel={onPointerEnd}
       onDoubleClick={() => setParam(paramId, def.def)}
       onKeyDown={onKeyDown}
+      onDragOver={dest ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } : undefined}
+      onDrop={dest ? (e) => {
+        e.preventDefault();
+        const src = parseInt(e.dataTransfer.getData('mod-src') || '0', 10);
+        if (src) addRoute(src, dest);
+      } : undefined}
     >
       <svg viewBox="0 0 80 80">
         <circle className="k-body" cx="40" cy="40" r="26" />
         <path className="k-track" d={arcPath(40, 40, 33, A0, A1)} />
         <path className="k-arc" d={arcD} />
+        {myMods.map((m, k) => (
+          <ModRing key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} r={38 + k * 3.4} />
+        ))}
         <line className="k-ptr" x1="40" y1="40" x2="40" y2="17" transform={`rotate(${deg} 40 40)`} />
       </svg>
       <div className="k-label">{labelText}</div>
