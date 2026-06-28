@@ -268,6 +268,8 @@ void Knob::paint(juce::Graphics& g) {
 Stepper::Stepper(juce::AudioProcessorValueTreeState& s, const juce::String& paramId, Accent ac)
     : apvts(s), id(paramId), accent(accentColour(ac)) {
     choice = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id));
+    if (!choice)
+        ranged = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
     auto styleBtn = [this](juce::TextButton& b, int dir) {
         b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
         b.setColour(juce::TextButton::textColourOffId, col::textDim);
@@ -283,17 +285,40 @@ int Stepper::choiceCount() const {
     return choice ? choice->choices.size() : 1;
 }
 juce::String Stepper::displayName() const {
-    if (!choice) return "-";
-    if (nameProvider) return nameProvider(choice->getIndex());
-    return choice->getCurrentChoiceName();
+    if (choice) {
+        if (nameProvider) return nameProvider(choice->getIndex());
+        return choice->getCurrentChoiceName();
+    }
+    if (ranged)
+        return juce::String((int)std::lround(ranged->convertFrom0to1(ranged->getValue())));
+    return "-";
 }
-void Stepper::timerCallback() { if (choice && choice->getIndex() != lastIndex) { lastIndex = choice->getIndex(); repaint(); } }
+void Stepper::timerCallback() {
+    if (choice) {
+        if (choice->getIndex() != lastIndex) { lastIndex = choice->getIndex(); repaint(); }
+        return;
+    }
+    if (ranged) {
+        float v = ranged->getValue();
+        if (v != lastValue) { lastValue = v; repaint(); }
+    }
+}
 void Stepper::step(int d) {
-    if (!choice) return;
-    int n = choiceCount();
-    int idx = ((choice->getIndex() % n) + d + n) % n;
-    choice->setValueNotifyingHost(choice->convertTo0to1((float)idx));
-    repaint();
+    if (choice) {
+        int n = choiceCount();
+        int idx = ((choice->getIndex() % n) + d + n) % n;
+        choice->setValueNotifyingHost(choice->convertTo0to1((float)idx));
+        repaint();
+        return;
+    }
+    if (ranged) {
+        const auto& r = ranged->getNormalisableRange();
+        float stepBy = r.interval > 0.0f ? r.interval : 1.0f;
+        float cur  = ranged->convertFrom0to1(ranged->getValue());
+        float next = juce::jlimit(r.start, r.end, cur + (float)d * stepBy);
+        ranged->setValueNotifyingHost(ranged->convertTo0to1(next));
+        repaint();
+    }
 }
 void Stepper::resized() {
     auto r = getLocalBounds();

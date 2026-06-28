@@ -84,9 +84,13 @@ private:
     juce::AudioProcessorValueTreeState& apvts;
     juce::String id;
     juce::AudioParameterChoice* choice = nullptr;
+    // Set when the param is not a choice (e.g. unison: AudioParameterFloat with
+    // Int curve, range 1-16). Drives an integer-range stepping mode.
+    juce::RangedAudioParameter* ranged = nullptr;
     juce::Colour accent;
     juce::TextButton prev{"<"}, next{">"};
     int lastIndex = -1;
+    float lastValue = -1.0f;   // normalized value cache for the numeric mode
 };
 
 // ---- power LED toggle -----------------------------------------------------
