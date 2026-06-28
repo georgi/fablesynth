@@ -32,6 +32,7 @@ export const MOD_DESTS = [
   'A DETUNE', 'A SPREAD', 'A PAN', 'B DETUNE', 'B SPREAD', 'B PAN',
   'F1 RES', 'F1 DRIVE', 'F1 ENV', 'F1 KEY', 'F2 DRIVE', 'F2 ENV', 'F2 KEY',
   'SUB LVL', 'NOISE LVL',
+  'A BLEND', 'B BLEND',
 ];
 
 // Global modulation tokens (no single owning control — assignable only from the
@@ -69,6 +70,8 @@ export function dstTarget(dst: number): ParamId | GlobalDst {
     case 23: return 'filter2.key';
     case 24: return 'sub.level';
     case 25: return 'noise.level';
+    case 26: return 'oscA.blend';
+    case 27: return 'oscB.blend';
     default: return 'none';
   }
 }
@@ -113,6 +116,8 @@ export const DEST_OF_PARAM: Record<string, number> = {
   'filter2.key': 23,
   'sub.level': 24,
   'noise.level': 25,
+  'oscA.blend': 26,
+  'oscB.blend': 27,
 };
 
 export type Curve = 'lin' | 'log' | 'int';
@@ -141,9 +146,10 @@ function oscParams(prefix: string, defOn: number, defTable: number): ParamDef[] 
     { id: `${prefix}.oct`, label: 'OCT', min: -3, max: 3, def: 0, curve: 'int', fmt: fmtSigned },
     { id: `${prefix}.semi`, label: 'SEMI', min: -12, max: 12, def: 0, curve: 'int', fmt: fmtSigned },
     { id: `${prefix}.fine`, label: 'FINE', min: -100, max: 100, def: 0, curve: 'int', fmt: fmtSigned },
-    { id: `${prefix}.unison`, label: 'UNI', min: 1, max: 7, def: 1, curve: 'int', fmt: (v) => String(Math.round(v)) },
+    { id: `${prefix}.unison`, label: 'UNI', min: 1, max: 16, def: 1, curve: 'int', fmt: (v) => String(Math.round(v)) },
     { id: `${prefix}.detune`, label: 'DETUNE', min: 0, max: 1, def: 0.2, curve: 'lin', fmt: fmtPct },
     { id: `${prefix}.spread`, label: 'SPREAD', min: 0, max: 1, def: 0.6, curve: 'lin', fmt: fmtPct },
+    { id: `${prefix}.blend`, label: 'BLEND', min: 0, max: 1, def: 1.0, curve: 'lin', fmt: fmtPct },
     { id: `${prefix}.level`, label: 'LEVEL', min: 0, max: 1, def: 0.75, curve: 'lin', fmt: fmtPct },
     { id: `${prefix}.pan`, label: 'PAN', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtPan },
   ];
