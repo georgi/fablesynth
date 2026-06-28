@@ -13,7 +13,7 @@
 // Out: {t:'viz', a, b, n}            modulated wt positions + active voice count
 
 const NVOICES = 8;
-const MAXUNI = 7;
+const MAXUNI = 16;
 // Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
 // in the params/slot helpers and the VST's MOD_MATRIX_SIZE.
 const MOD_MATRIX_SIZE = 16;
@@ -57,6 +57,8 @@ const DST_TARGET = [
   'filter2.key',   // 23 F2 KEY
   'sub.level',     // 24 SUB LVL
   'noise.level',   // 25 NOISE LVL
+  'oscA.blend',    // 26 A BLEND
+  'oscB.blend',    // 27 B BLEND
 ];
 
 // Per-param curve + range for every modulatable target, mirroring PARAM_DEFS in
@@ -73,6 +75,8 @@ const MOD_PARAM_INFO = {
   'oscB.detune':    { curve: 'lin', lo: 0, hi: 1 },
   'oscA.spread':    { curve: 'lin', lo: 0, hi: 1 },
   'oscB.spread':    { curve: 'lin', lo: 0, hi: 1 },
+  'oscA.blend':     { curve: 'lin', lo: 0, hi: 1 },
+  'oscB.blend':     { curve: 'lin', lo: 0, hi: 1 },
   'oscA.pan':       { curve: 'lin', lo: -1, hi: 1 },
   'oscB.pan':       { curve: 'lin', lo: -1, hi: 1 },
   'filter.cutoff':  { curve: 'log', lo: 20, hi: 20000 },
@@ -355,6 +359,7 @@ class FableProcessor extends AudioWorkletProcessor {
     const uni = Math.max(1, Math.min(MAXUNI, p[pre + '.unison'] | 0));
     const det = pm[k + 'detune'] ?? p[k + 'detune'];
     const spr = pm[k + 'spread'] ?? p[k + 'spread'];
+    const blend = pm[k + 'blend'] ?? p[k + 'blend'];
     const basePan = Math.max(-1, Math.min(1, (pm[k + 'pan'] ?? p[k + 'pan']) + mPan));
 
     // position smoothing (avoids zipper on fast morph modulation)
@@ -394,18 +399,27 @@ class FableProcessor extends AudioWorkletProcessor {
     o.mask = table.mask;
     o.size = table.size;
     o.uni = uni;
-    o.gain = (level * 0.32) / Math.sqrt(uni);
 
+    // BLEND: weight outer (most-detuned) voices vs. the center. weight_u =
+    // 1-(1-blend)*|sprd_u|. blend=1 => all weights 1 (identical to legacy).
+    // Loudness held ~constant by normalising on sqrt of the sum of squared
+    // weights instead of the raw voice count.
+    let sumW2 = 0;
     for (let u = 0; u < uni; u++) {
       const sprd = uni > 1 ? (u / (uni - 1)) * 2 - 1 : 0;
       const cents = sprd * det * 50;
       const ratio = Math.pow(2, cents / 1200);
       o.incs[u] = cps * ratio * table.size;
+      const weight = 1 - (1 - blend) * Math.abs(sprd);
+      sumW2 += weight * weight;
       const pan = Math.max(-1, Math.min(1, sprd * spr + basePan));
       const a = ((pan + 1) * Math.PI) / 4;
-      o.gl[u] = Math.cos(a);
-      o.gr[u] = Math.sin(a);
+      o.gl[u] = Math.cos(a) * weight;
+      o.gr[u] = Math.sin(a) * weight;
     }
+    // `|| 1` guards uni=2,blend=0 (both endpoints -> sumW2=0). Matches the JUCE
+    // `sumW2 > 0 ? sumW2 : 1` predicate exactly, so the engines stay in lockstep.
+    o.gain = (level * 0.32) / Math.sqrt(sumW2 || 1);
     return true;
   }
 
