@@ -420,6 +420,18 @@ body::before {
   justify-content: space-between;
   align-items: flex-start;
 }
+/* unison stepper lives in the knob row: stack label over a compact ◂ N ▸ so it
+   reads like the neighboring knobs instead of blowing out the flex row width. */
+.osc-knobs .stepper {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 2px 3px;
+}
+.osc-knobs .st-label { grid-column: 1 / -1; margin: 0; }
+.osc-knobs .st-value { min-width: 24px; padding: 3px 4px; }
+.osc-knobs .st-btn { width: 16px; height: 16px; }
 
 /* vertical slider */
 .vslider {

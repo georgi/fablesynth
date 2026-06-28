@@ -44,9 +44,10 @@ export function OscPanel({ prefix, accentKey, title, gridArea }: OscPanelProps) 
           <Knob paramId={`${prefix}.oct`} size="sm" accent={accentKey} />
           <Knob paramId={`${prefix}.semi`} size="sm" accent={accentKey} />
           <Knob paramId={`${prefix}.fine`} size="sm" accent={accentKey} />
-          <Knob paramId={`${prefix}.unison`} size="sm" accent={accentKey} />
+          <Stepper paramId={`${prefix}.unison`} label="UNI" accent={accentKey} />
           <Knob paramId={`${prefix}.detune`} size="sm" accent={accentKey} />
           <Knob paramId={`${prefix}.spread`} size="sm" accent={accentKey} />
+          <Knob paramId={`${prefix}.blend`} size="sm" accent={accentKey} />
           <Knob paramId={`${prefix}.level`} size="md" accent={accentKey} />
           <Knob paramId={`${prefix}.pan`} size="sm" accent={accentKey} />
         </div>
