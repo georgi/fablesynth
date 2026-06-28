@@ -180,6 +180,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     int uni = std::max(1, std::min(MAXUNI, (int)p_[base + OSC_UNISON]));
     double det = pm[base + OSC_DETUNE];
     double spr = pm[base + OSC_SPREAD];
+    double blend = std::min(1.0, std::max(0.0, pm[base + OSC_BLEND]));
     double basePan = std::max(-1.0, std::min(1.0, pm[base + OSC_PAN] + mPan));
 
     double pos = std::min(1.0, std::max(0.0, pm[base + OSC_POS]));
@@ -212,18 +213,26 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     o.mask = table.mask;
     o.size = table.size;
     o.uni = uni;
-    o.gain = (level * 0.32) / std::sqrt((double)uni);
-
+    double sumW2 = 0;
     for (int u = 0; u < uni; u++) {
         double sprd = uni > 1 ? (double)u / (uni - 1) * 2 - 1 : 0;
         double cents = sprd * det * 50;
         double ratio = std::pow(2.0, cents / 1200);
         o.incs[u] = cps * ratio * table.size;
+        // BLEND: outer (most-detuned) voices fade relative to the center.
+        // blend==1 -> weight==1 for all voices -> sumW2==uni -> gain identical
+        // to the legacy /sqrt(uni) path (preset back-compat).
+        double weight = 1 - (1 - blend) * std::fabs(sprd);
+        sumW2 += weight * weight;
         double pan = std::max(-1.0, std::min(1.0, sprd * spr + basePan));
         double a = ((pan + 1) * PI) / 4;
-        o.gl[u] = (float)std::cos(a);
-        o.gr[u] = (float)std::sin(a);
+        o.gl[u] = (float)(std::cos(a) * weight);
+        o.gr[u] = (float)(std::sin(a) * weight);
     }
+    // Guard sumW2==0 (uni=2, blend=0: both voices at |sprd|=1 -> weight 0).
+    // Predicate matches the web's `sumW2 || 1` exactly (swaps to 1 only at 0),
+    // so the two engines stay in lockstep at low blend.
+    o.gain = (level * 0.32) / std::sqrt(sumW2 > 0.0 ? sumW2 : 1.0);
     return true;
 }
 

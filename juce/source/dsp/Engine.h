@@ -19,7 +19,7 @@
 namespace fable {
 
 constexpr int NVOICES  = 8;
-constexpr int MAXUNI   = 7;
+constexpr int MAXUNI   = 16;
 constexpr int COMB_MAX = 4096;
 
 // Fast deterministic RNG (xorshift32) — replaces Math.random() for noise,

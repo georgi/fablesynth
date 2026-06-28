@@ -544,6 +544,127 @@ int main() {
               "move=" + std::to_string(cutMove));
     }
 
+    printf("\n== 12. Unison BLEND & 16-voice ==\n");
+    {
+        check(defaultParams()[OSCA_BASE + OSC_BLEND] == 1.0f,
+              "oscA.blend defaults to 1.0 (preset back-compat)");
+
+        // Render oscA only (bare oscillators, no filter), fast attack + full
+        // sustain, and return stereo buffers. Uses the verified harness param
+        // API: build a ParamArray, then eng.setParams(p).
+        auto renderUni = [&](int uni, float blend, float detune, float spread,
+                             int note, std::vector<float>& L, std::vector<float>& R) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto p = defaultParams();
+            p[OSCA_BASE + OSC_ON]     = 1;
+            p[OSCA_BASE + OSC_UNISON] = (float)uni;
+            p[OSCA_BASE + OSC_BLEND]  = blend;
+            p[OSCA_BASE + OSC_DETUNE] = detune;
+            p[OSCA_BASE + OSC_SPREAD] = spread;
+            p[OSCA_BASE + OSC_PAN]    = 0;
+            p[OSCA_BASE + OSC_LEVEL]  = 0.8f;
+            p[OSCB_BASE + OSC_ON]     = 0;                 // oscA only
+            p[FILTER1_BASE + FLT_ON]  = 0;                 // bare oscillators
+            p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f; // fast attack, full sustain
+            e.setParams(p);
+            e.noteOn(note, 1.0);
+            int n = (int)(0.5 * sr);
+            L.assign(n, 0.0f); R.assign(n, 0.0f);
+            e.render(L.data(), R.data(), n);
+        };
+        // Mean stereo power (L^2 + R^2) over the steady-state tail (skip attack).
+        auto totalPower = [&](const std::vector<float>& L, const std::vector<float>& R) {
+            int start = (int)(0.1 * sr); double s = 0; int cnt = 0;
+            for (int i = start; i < (int)L.size(); i++) {
+                s += (double)L[i] * L[i] + (double)R[i] * R[i]; cnt++;
+            }
+            return cnt ? s / cnt : 0.0;
+        };
+
+        std::vector<float> L1, R1, L0, R0, Lu1, Ru1;
+
+        // (1) Regression: at uni=1 the single voice sits at sprd=0, so its weight
+        // is 1-(1-b)*0 = 1 for ANY blend -> blend is a perfect no-op. Fresh engines
+        // share a deterministic RNG seed (Engine.h: s = 0x9e3779b9u), so the two
+        // renders are sample-for-sample identical. This proves the new weight/
+        // normalization reduces exactly to the legacy single-voice path.
+        renderUni(1, 1.0f, 0.3f, 0.5f, 69, L1, R1);
+        renderUni(1, 0.0f, 0.3f, 0.5f, 69, L0, R0);
+        bool uni1Identical = L1.size() == L0.size();
+        for (size_t i = 0; uni1Identical && i < L1.size(); i++)
+            if (L1[i] != L0[i] || R1[i] != R0[i]) uni1Identical = false;
+        check(uni1Identical,
+              "blend is a sample-exact no-op at uni=1 (single voice at sprd=0, weight=1)");
+
+        // (2) blend=0, uni=4 ~= single voice loudness. Equal-power panning
+        // (gl^2+gr^2=1) + normalization on sqrt(Sum w^2) make total stereo power
+        // independent of uni/blend. Assert within 3 dB.
+        renderUni(4, 0.0f, 0.4f, 0.6f, 69, L0, R0);
+        renderUni(1, 1.0f, 0.4f, 0.6f, 69, Lu1, Ru1);
+        double pBlend0 = totalPower(L0, R0), pUni1 = totalPower(Lu1, Ru1);
+        double collapseDb = 10.0 * std::log10(pBlend0 / pUni1);
+        check(std::abs(collapseDb) < 3.0,
+              "blend=0 uni=4 ~= single voice (uni=1) loudness (within 3 dB)",
+              "delta=" + std::to_string(collapseDb) + " dB");
+
+        // (3) Loudness ~constant across the blend sweep at uni=4. Assert within 6 dB.
+        renderUni(4, 1.0f, 0.4f, 0.6f, 69, L1, R1);
+        double pBlend1 = totalPower(L1, R1);
+        double sweepDb = 10.0 * std::log10(pBlend0 / pBlend1);
+        check(std::abs(sweepDb) < 6.0,
+              "loudness ~constant across blend at uni=4 (total power within 6 dB)",
+              "delta=" + std::to_string(sweepDb) + " dB");
+
+        // (4) uni=2, blend=0 degenerate: both voices are endpoints (|sprd|=1 ->
+        // weight 0 -> sumW2=0). The divide-by-zero guard must keep output finite.
+        // (Near-silent by design; we only assert it never blows up to NaN/Inf.)
+        {
+            std::vector<float> L, R;
+            renderUni(2, 0.0f, 0.4f, 0.6f, 69, L, R);
+            check(finite(L) && finite(R), "uni=2 blend=0 stays finite (sumW2=0 guard)");
+        }
+
+        // (5) 16-voice render must not alias. aliasFloorDb scores any energy off
+        // the exact-harmonic comb as "alias", so detune (which legitimately places
+        // partials between harmonics) would false-fail. Use detune=0 to isolate the
+        // band-limited mip path for 16 summed voices; reuse the -55 dB threshold.
+        {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto p = defaultParams();
+            p[OSCA_BASE + OSC_POS]    = 0.66f;            // saw-rich frame
+            p[OSCA_BASE + OSC_UNISON] = 16;               // worst-case voice count
+            p[OSCA_BASE + OSC_BLEND]  = 1.0f;             // all 16 voices at full level
+            p[OSCA_BASE + OSC_DETUNE] = 0.0f;             // isolate aliasing from detune sidebands
+            p[OSCA_BASE + OSC_SPREAD] = 0.0f;
+            p[OSCA_BASE + OSC_PAN]    = 0;
+            p[FILTER1_BASE + FLT_ON]  = 0;
+            p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f;
+            e.setParams(p);
+            for (int note : {96, 103, 108}) {             // C7, G7, C8
+                double f0 = 440.0 * std::pow(2.0, (note - 69) / 12.0);
+                auto buf = renderNote(e, note, 0.4, sr);
+                int N = 16384;
+                double db = aliasFloorDb(buf.data() + (buf.size() - N), N, sr, f0);
+                check(db < -55.0, "16-voice alias floor low @ note " + std::to_string(note),
+                      std::to_string(db) + " dB");
+                e.panic();
+                std::vector<float> flush((size_t)(sr * 0.2), 0);
+                e.render(flush.data(), flush.data(), 0);
+            }
+        }
+
+        // (6) 16 voices at MAX detune (dense-cluster worst case): the alias metric
+        // is not meaningful (detune sidebands count as inharmonic), so only assert
+        // the render stays finite and bounded.
+        {
+            std::vector<float> L, R;
+            renderUni(16, 1.0f, 1.0f, 1.0f, 103, L, R);   // G7, max detune+spread
+            check(finite(L) && finite(R) && peak(L) < 4.0f && peak(R) < 4.0f,
+                  "16-voice max-detune render finite/bounded",
+                  "peakL=" + std::to_string(peak(L)));
+        }
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;
 }
