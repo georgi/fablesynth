@@ -44,6 +44,11 @@ double Env::process() {
             level -= level * cr;
             if (level < 1e-4) { level = 0; state = 0; }
             break;
+        case 5:
+            // steal fade: ~2 ms to silence, then the voice is free for its pending note
+            level -= level * 0.12;
+            if (level < 1e-4) { level = 0; state = 0; }
+            break;
     }
     return level;
 }
@@ -84,7 +89,9 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
     ampEnv.trigger(); modEnv.trigger();
     lfo1.rng = &rng; lfo2.rng = &rng;
     lfo1.reset(); lfo2.reset();
-    for (int i = 0; i < MAXUNI; i++) { oA.phases[i] = rng.next(); oB.phases[i] = rng.next(); }
+    // Start phase is in SAMPLES (0..SIZE): scale the random draw to a full
+    // cycle so unison voices (and osc A vs B) decorrelate at note start.
+    for (int i = 0; i < MAXUNI; i++) { oA.phases[i] = rng.next() * SIZE; oB.phases[i] = rng.next() * SIZE; }
     oA.posSm = -1; oB.posSm = -1;
     subPhase = 0;
     f1.reset(); f2.reset();
@@ -151,12 +158,26 @@ void Engine::noteOn(int n, double vel) {
     }
     double glide = p_[MASTER_GLIDE];
     double start = glide > 0.001 ? lastPitch_ : n;
-    voice->noteOn(n, vel, start, clock_++, rng_);
     lastPitch_ = n;
+    if (voice->ampEnv.state != 0 && voice->ampEnv.level > 1e-3) {
+        // Steal / same-note retrigger of an audible voice: hard-resetting phases
+        // and filter state under a hot envelope clicks. Fade out instead (Env
+        // state 5) and start the note once the voice reaches silence.
+        voice->pendNote = n; voice->pendVel = vel; voice->pendStart = start;
+        voice->hasPending = true;
+        voice->gate = false;
+        voice->ampEnv.state = 5;
+    } else {
+        voice->noteOn(n, vel, start, clock_++, rng_);
+    }
 }
 
 void Engine::noteOff(int n) {
-    for (auto& v : voices_) if (v.gate && v.note == n) v.noteOff();
+    for (auto& v : voices_) {
+        // A note released before its steal fade finished must not start at all.
+        if (v.hasPending && v.pendNote == n) v.hasPending = false;
+        if (v.gate && v.note == n) v.noteOff();
+    }
 }
 
 // Configure one oscillator's per-block render state. Returns true if audible.
@@ -171,7 +192,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     double basePitch = v.pitch + bend_ + p_[base + OSC_OCT] * 12 + p_[base + OSC_SEMI]
                      + p_[base + OSC_FINE] / 100.0 + mPitch * 12;
     double freq = 440 * std::pow(2.0, (basePitch - 69) / 12);
-    if (freq <= 0 || freq > sr_ * 0.45) return false;
+    if (!(freq > 0 && freq <= sr_ * 0.45)) return false; // inverted: NaN-safe
 
     double level = std::min(1.2, std::max(0.0, pm[base + OSC_LEVEL]));
     level *= level;
@@ -192,7 +213,9 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     o.ft = posF - f0;
 
     double cps = freq / sr_;
-    double maxRatio = std::pow(2.0, (det * 50) / 1200);
+    // |det|: the widest unison ratio is 2^(|det|*50/1200) regardless of sign
+    // (mirrors the web engine's mip-headroom fix).
+    double maxRatio = std::pow(2.0, (std::abs(det) * 50) / 1200);
 
     const double W = 0.07;
     double mipF = std::log2((cps * maxRatio * 1024) / 0.475);
@@ -625,6 +648,10 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
 
     int act = 0;
     for (auto& v : voices_) {
+        if (!v.active() && v.hasPending) {
+            v.hasPending = false;
+            v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_);
+        }
         if (!v.active()) continue;
         renderVoice(v, L, R, n);   // updates vizA/vizB to this voice's wt positions
         act++;

@@ -13,7 +13,7 @@ namespace fable {
 
 constexpr int SIZE   = 2048;
 constexpr int FRAMES = 16;
-constexpr int MIPS   = 9;   // maxHarm: 1024,512,...,4
+constexpr int MIPS   = 11;  // maxHarm: 1024,512,...,1 — coarsest mip is a pure sine, so even fundamentals at the 0.45*sr pitch guard can't fold
 constexpr int VIZ_N  = 128; // points per frame kept for visualization
 
 struct GeneratedTable {

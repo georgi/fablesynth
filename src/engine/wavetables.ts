@@ -5,7 +5,7 @@
 
 export const SIZE = 2048;
 export const FRAMES = 16;
-export const MIPS = 9; // maxHarm: 1024,512,...,4
+export const MIPS = 11; // maxHarm: 1024,512,...,1 — coarsest mip is a pure sine, so even fundamentals at the 0.45*sr pitch guard can't fold
 export const VIZ_N = 128; // points per frame kept for visualization
 
 export interface GeneratedTable {
