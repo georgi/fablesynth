@@ -120,6 +120,7 @@ private:
     Biquad dcL_, dcR_;
     double limEnv_ = 0;
     double limAtk_ = 0, limRel_ = 0;
+    double limMakeup_ = 1; // WebAudio-spec makeup gain, computed in prepare()
 };
 
 } // namespace fable

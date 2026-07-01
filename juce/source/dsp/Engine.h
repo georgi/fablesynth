@@ -90,6 +90,10 @@ class Voice {
 public:
     int    note = 60; double vel = 1; bool gate = false; long age = 0;
     double pitch = 60, velGain = 0;
+    // Note queued behind a steal fade (Env state 5); fired by renderBlock once
+    // the fading voice reaches silence. Mirrors the worklet's voice.pending.
+    bool   hasPending = false;
+    int    pendNote = 60; double pendVel = 1, pendStart = 60;
     Env    ampEnv, modEnv;
     Lfo    lfo1, lfo2;
     OscState oA, oB;
@@ -101,7 +105,7 @@ public:
     bool   active() const { return ampEnv.state != 0; }
     void   noteOn(int n, double v, double startPitch, long a, Rng& rng);
     void   noteOff() { gate = false; ampEnv.release(); modEnv.release(); }
-    void   kill()    { gate = false; ampEnv.kill(); modEnv.kill(); }
+    void   kill()    { gate = false; hasPending = false; ampEnv.kill(); modEnv.kill(); }
 };
 
 // Engine table view — mirrors the worklet's {frames,mips,size,mask,data}.

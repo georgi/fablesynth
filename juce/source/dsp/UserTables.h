@@ -2,7 +2,7 @@
 // pyramid build. C++ port of the analysis half of src/engine/usertables.ts.
 //
 // A user table is described by its *source* single-cycle frames (frames x SIZE
-// samples). The 9-level band-limited mip pyramid the engine plays is rebuilt
+// samples). The 11-level band-limited mip pyramid the engine plays is rebuilt
 // from those frames with buildUserTable (see Wavetables.h) — so only the raw
 // frames need persisting, and they always anti-alias with the current code.
 //

@@ -1,9 +1,9 @@
 // User wavetables — audio import, single-cycle draw, and (de)serialization.
 //
 // A user table is stored by its *source* single-cycle frames only (frames x
-// SIZE samples). The 9-level band-limited mip pyramid the engine actually plays
+// SIZE samples). The 11-level band-limited mip pyramid the engine actually plays
 // is rebuilt from those frames with `buildUserTable` on load — so it is never
-// persisted, keeping the on-disk form ~9x smaller and always matching the
+// persisted, keeping the on-disk form ~11x smaller and always matching the
 // current band-limiting code.
 //
 // ---------- serialization format ----------

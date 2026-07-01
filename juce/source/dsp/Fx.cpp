@@ -6,6 +6,10 @@ namespace fable {
 
 static constexpr double PI = 3.14159265358979323846;
 
+// Safety-limiter static curve: threshold -8 dB (~0.398), ratio 14. Shared by
+// the gain computer in process() and the WebAudio-matching makeup gain.
+static constexpr double kLimThr = 0.398, kLimRatio = 14.0;
+
 // ---------------- Biquad designs (RBJ cookbook) ----------------
 void Biquad::lowpass(double freq, double q, double sr) {
     double w0 = 2 * PI * std::min(freq, sr * 0.49) / sr;
@@ -78,6 +82,12 @@ void Fx::prepare(double sampleRate) {
     // Limiter envelope coefficients (attack 2ms, release 220ms).
     limAtk_ = 1 - std::exp(-1.0 / (0.002 * sr_));
     limRel_ = 1 - std::exp(-1.0 / (0.22 * sr_));
+
+    // WebAudio's DynamicsCompressor applies spec-defined makeup gain
+    // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
+    // node, so match it here or the plugin sits ~4.5 dB under the web app.
+    double c1 = std::pow(1.0 / kLimThr, 1.0 / kLimRatio - 1.0);
+    limMakeup_ = std::pow(1.0 / c1, 0.6);
 }
 
 void Fx::reset() {
@@ -219,16 +229,15 @@ void Fx::process(float* L, float* R, int n) {
             double peak = std::max(std::abs((double)l), std::abs((double)r));
             double coef = peak > limEnv_ ? limAtk_ : limRel_;
             limEnv_ += (peak - limEnv_) * coef;
-            // static curve: threshold -8 dB (~0.398), knee 4 dB, ratio 14
-            double thr = 0.398;
+            // static curve: threshold -8 dB, ratio 14 (hard knee; the web's
+            // knee=4 only differs inside a 4 dB window below threshold)
             double gain = 1.0;
-            if (limEnv_ > thr) {
-                double over = limEnv_ / thr;                 // linear overshoot
-                double reduced = std::pow(over, 1.0 / 14.0 - 1.0); // ratio 14
-                gain = reduced;
+            if (limEnv_ > kLimThr) {
+                double over = limEnv_ / kLimThr;             // linear overshoot
+                gain = std::pow(over, 1.0 / kLimRatio - 1.0);
             }
-            l *= (float)gain;
-            r *= (float)gain;
+            l *= (float)(gain * limMakeup_);
+            r *= (float)(gain * limMakeup_);
         }
 
         L[i] = l; R[i] = r;

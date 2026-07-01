@@ -149,6 +149,12 @@ class Env {
         if (this.level < 1e-4) { this.level = 0; this.state = 0; }
         break;
       }
+      case 5: {
+        // steal fade: ~2 ms to silence, then the voice is free for its pending note
+        this.level -= this.level * 0.12;
+        if (this.level < 1e-4) { this.level = 0; this.state = 0; }
+        break;
+      }
     }
     return this.level;
   }
@@ -233,6 +239,7 @@ class Voice {
   constructor() {
     this.note = 60; this.vel = 1; this.gate = false; this.age = 0;
     this.pitch = 60; this.velGain = 0;
+    this.pending = null; // {n, vel, start} queued behind a steal fade (Env state 5)
     this.ampEnv = new Env(); this.modEnv = new Env();
     this.lfo1 = new LFO(); this.lfo2 = new LFO();
     this.oA = makeOscState(); this.oB = makeOscState();
@@ -250,8 +257,10 @@ class Voice {
     this.ampEnv.trigger(); this.modEnv.trigger();
     this.lfo1.reset(); this.lfo2.reset();
     for (let i = 0; i < MAXUNI; i++) {
-      this.oA.phases[i] = phaseRandA ? Math.random() : 0;
-      this.oB.phases[i] = phaseRandB ? Math.random() : 0;
+      // Start phase is in SAMPLES (all tables are 2048 wide): scale the random
+      // draw to a full cycle so unison voices (and osc A vs B) decorrelate.
+      this.oA.phases[i] = phaseRandA ? Math.random() * 2048 : 0;
+      this.oB.phases[i] = phaseRandB ? Math.random() * 2048 : 0;
     }
     this.oA.posSm = -1; this.oB.posSm = -1;
     this.subPhase = 0;
@@ -259,7 +268,7 @@ class Voice {
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
   }
   noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); }
-  kill() { this.gate = false; this.ampEnv.kill(); this.modEnv.kill(); }
+  kill() { this.gate = false; this.pending = null; this.ampEnv.kill(); this.modEnv.kill(); }
 }
 
 class FableProcessor extends AudioWorkletProcessor {
@@ -299,8 +308,12 @@ class FableProcessor extends AudioWorkletProcessor {
 
   onMsg(d) {
     switch (d.t) {
-      case 'init': Object.assign(this.p, d.params); break;
-      case 'p': this.p[d.k] = d.v; break;
+      // Non-finite param values are dropped at this single choke point: a NaN
+      // that reached `p` would latch into phases / env levels and stick there.
+      case 'init':
+        for (const k in d.params) { const v = d.params[k]; if (Number.isFinite(v)) this.p[k] = v; }
+        break;
+      case 'p': if (Number.isFinite(d.v)) this.p[d.k] = d.v; break;
       case 'tables':
         this.tables = d.list.map((x) => ({
           frames: x.frames, mips: x.mips, size: x.size, mask: x.size - 1,
@@ -330,12 +343,25 @@ class FableProcessor extends AudioWorkletProcessor {
     }
     const glide = this.p['master.glide'] || 0;
     const start = glide > 0.001 ? this.lastPitch : n;
-    voice.noteOn(n, vel, start, this.clock++, 1, 1);
     this.lastPitch = n;
+    if (voice.ampEnv.state !== 0 && voice.ampEnv.level > 1e-3) {
+      // Steal / same-note retrigger of an audible voice: hard-resetting phases
+      // and filter state under a hot envelope clicks. Fade out instead (Env
+      // state 5) and start the note once the voice reaches silence.
+      voice.pending = { n, vel, start };
+      voice.gate = false;
+      voice.ampEnv.state = 5;
+    } else {
+      voice.noteOn(n, vel, start, this.clock++, 1, 1);
+    }
   }
 
   noteOff(n) {
-    for (const v of this.voices) if (v.gate && v.note === n) v.noteOff();
+    for (const v of this.voices) {
+      // A note released before its steal fade finished must not start at all.
+      if (v.pending && v.pending.n === n) v.pending = null;
+      if (v.gate && v.note === n) v.noteOff();
+    }
   }
 
   // Configure one oscillator's per-block render state. Returns true if audible.
@@ -349,17 +375,17 @@ class FableProcessor extends AudioWorkletProcessor {
 
     const basePitch = voice.pitch + this.bend + p[pre + '.oct'] * 12 + p[pre + '.semi'] + p[pre + '.fine'] / 100 + mPitch * 12;
     const freq = 440 * Math.pow(2, (basePitch - 69) / 12);
-    if (freq <= 0 || freq > sampleRate * 0.45) return false;
+    if (!(freq > 0 && freq <= sampleRate * 0.45)) return false; // inverted: NaN-safe
 
     const k = pre + '.';
     let level = Math.min(1.2, Math.max(0, pm[k + 'level'] ?? p[k + 'level']));
     level *= level;
-    if (level < 1e-5) return false;
+    if (!(level >= 1e-5)) return false; // inverted: NaN-safe
 
     const uni = Math.max(1, Math.min(MAXUNI, p[pre + '.unison'] | 0));
     const det = pm[k + 'detune'] ?? p[k + 'detune'];
     const spr = pm[k + 'spread'] ?? p[k + 'spread'];
-    const blend = pm[k + 'blend'] ?? p[k + 'blend'];
+    const blend = Math.min(1, Math.max(0, pm[k + 'blend'] ?? p[k + 'blend'])); // clamp matches JUCE
     const basePan = Math.max(-1, Math.min(1, (pm[k + 'pan'] ?? p[k + 'pan']) + mPan));
 
     // position smoothing (avoids zipper on fast morph modulation)
@@ -372,7 +398,10 @@ class FableProcessor extends AudioWorkletProcessor {
     o.ft = posF - f0;
 
     const cps = freq / sampleRate;
-    const maxRatio = Math.pow(2, (det * 50) / 1200);
+    // |det|: modulation can push detune negative; the widest unison ratio is
+    // 2^(|det|*50/1200) regardless of sign, and underestimating it would pick
+    // a mip one notch too fine (the alias headroom is only 0.074 oct).
+    const maxRatio = Math.pow(2, (Math.abs(det) * 50) / 1200);
 
     // Continuous mip selection. mipF is the exact (real-valued) mip the pitch
     // calls for; ceil(mipF) is the alias-free choice. For the first W octaves
@@ -492,6 +521,7 @@ class FableProcessor extends AudioWorkletProcessor {
     // pm so THEY remain modulatable; the base cutoff is read straight from p.
     let fc = p[k + 'cutoff'] *
       Math.pow(2, (pm[k + 'env'] ?? p[k + 'env']) * 4 * e2 + ((pm[k + 'key'] ?? p[k + 'key']) * (v.note - 60)) / 12 + mCut * MOD_LOG_D);
+    if (!Number.isFinite(fc)) fc = 20; // JUCE's std::max(20.0, NaN) also yields 20
     fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
     fs.cutSm += (fc - fs.cutSm) * 0.5;
@@ -879,6 +909,11 @@ class FableProcessor extends AudioWorkletProcessor {
     let act = 0;
     let viz = null;
     for (const v of this.voices) {
+      if (!v.active && v.pending) {
+        const pd = v.pending;
+        v.pending = null;
+        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, 1, 1);
+      }
       if (!v.active) continue;
       const r = this.renderVoice(v, L, R, n);
       if (v.gate || !viz) viz = r;
