@@ -30,6 +30,7 @@ private:
     PowerButton power; juce::TextButton editBtn{"E"}; Stepper tableStep, unisonStep; WavetableView wt; VSlider pos;
     juce::OwnedArray<Knob> knobs;
     juce::Rectangle<int> titleArea;
+    juce::Rectangle<int> uniLabelArea;   // UNI caption above the unison stepper
 };
 
 class UtilPanel : public juce::Component {

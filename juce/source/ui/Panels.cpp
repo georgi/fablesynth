@@ -46,7 +46,8 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
     // Continuous knobs are mod targets (A/B per osc): DETUNE (3) → 11/14,
     // SPREAD (4) → 12/15, BLEND (5) → 26/27, LEVEL (6) → 7/8, PAN (7) → 13/16.
     // OCT/SEMI/FINE are discrete steppers → not modulatable (modDest 0);
-    // UNISON is now the header stepper (unisonStep), not a knob.
+    // UNISON is the compact stepper in the knob row between FINE and DETUNE
+    // (unisonStep — same cell the web UI uses; laid out in resized()).
     for (int i = 0; i < 8; ++i) {
         int modDest = 0;
         switch (i) {
@@ -63,6 +64,11 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
 void OscPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, title, accentColour(accent));
+    // UNI caption stacked over the unison stepper in the knob row — mirrors the
+    // web's .osc-knobs .st-label (label row above the compact ◂ N ▸ strip).
+    g.setColour(col::textDim);
+    g.setFont(monoFont(8.0f));
+    drawSpaced(g, "UNI", uniLabelArea, 1.2f, juce::Justification::centred);
 }
 void OscPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
@@ -73,8 +79,6 @@ void OscPanel::resized() {
     tableStep.setBounds(right.removeFromRight(100).withSizeKeepingCentre(100, 18));
     right.removeFromRight(4);
     editBtn.setBounds(right.removeFromRight(18).withSizeKeepingCentre(18, 18));
-    head.removeFromRight(6);
-    unisonStep.setBounds(head.removeFromRight(52).withSizeKeepingCentre(52, 18));
     titleArea = head;
     r.removeFromTop(8);
     auto knobRow = r.removeFromBottom(62);
@@ -85,7 +89,18 @@ void OscPanel::resized() {
     r.removeFromRight(8);
     wt.setBounds(r);
     pos.setBounds(posCol);
-    layoutKnobRow(knobRow, ptrs(knobs));
+    // 9 cells mirroring the web knob row: OCT SEMI FINE UNI DETUNE SPREAD BLEND
+    // LEVEL PAN — the unison stepper takes the cell between FINE and DETUNE.
+    auto row = ptrs(knobs);
+    row.insert(3, &unisonStep);
+    layoutKnobRow(knobRow, row);
+    // The stepper is an 18px ◂ N ▸ strip, not a knob: stack the UNI caption
+    // (painted in paint()) over a compact strip centred in its cell.
+    auto cell = unisonStep.getBounds();
+    auto stack = cell.withSizeKeepingCentre(cell.getWidth(), 32);
+    uniLabelArea = stack.removeFromTop(12);
+    stack.removeFromTop(2);
+    unisonStep.setBounds(stack.withSizeKeepingCentre(juce::jmin(56, stack.getWidth()), 18));
 }
 
 // ===================== UtilPanel =====================
