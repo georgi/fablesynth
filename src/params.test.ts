@@ -32,13 +32,15 @@ const EXPECTED: Array<[number, string, ReturnType<typeof dstTarget>]> = [
   [23, 'F2 KEY', 'filter2.key'],
   [24, 'SUB LVL', 'sub.level'],
   [25, 'NOISE LVL', 'noise.level'],
+  [26, 'A BLEND', 'oscA.blend'],
+  [27, 'B BLEND', 'oscB.blend'],
 ];
 
 const GLOBALS: GlobalDst[] = ['none', 'pitch', 'amp', 'pan'];
 
 describe('MOD_DESTS', () => {
-  it('has exactly 26 entries (0..25) with the contract labels', () => {
-    expect(MOD_DESTS).toHaveLength(26);
+  it('has exactly 28 entries (0..27) with the contract labels', () => {
+    expect(MOD_DESTS).toHaveLength(28);
     expect(MOD_DESTS).toEqual(EXPECTED.map(([, label]) => label));
   });
 
@@ -57,7 +59,7 @@ describe('dstTarget', () => {
   });
 
   it('treats out-of-range / negative indices as "none"', () => {
-    expect(dstTarget(26)).toBe('none');
+    expect(dstTarget(28)).toBe('none');
     expect(dstTarget(-1)).toBe('none');
     expect(dstTarget(999)).toBe('none');
   });
@@ -116,5 +118,31 @@ describe('mod curve rules', () => {
     expect(log(1000, 1)).toBeCloseTo(32000, 6); // 1000 * 2^5
     expect(log(1000, -1)).toBeCloseTo(31.25, 6); // 1000 * 2^-5
     expect(log(440, 0)).toBeCloseTo(440, 12); // identity at x=0
+  });
+});
+
+describe('unison + blend (Serum-style unison)', () => {
+  it('raises the unison voice cap to 16 on both oscillators', () => {
+    expect(PARAMS['oscA.unison'].max).toBe(16);
+    expect(PARAMS['oscB.unison'].max).toBe(16);
+    expect(PARAMS['oscA.unison'].min).toBe(1);
+  });
+
+  it('adds a per-osc BLEND param defaulting to 1.0 over 0..1 (lin)', () => {
+    for (const id of ['oscA.blend', 'oscB.blend']) {
+      const def = PARAMS[id];
+      expect(def, id).toBeDefined();
+      expect(def.def).toBe(1.0);
+      expect(def.min).toBe(0);
+      expect(def.max).toBe(1);
+      expect(def.curve).toBe('lin');
+    }
+  });
+
+  it('wires BLEND as mod dest 26 (A) / 27 (B), both directions', () => {
+    expect(dstTarget(26)).toBe('oscA.blend');
+    expect(dstTarget(27)).toBe('oscB.blend');
+    expect(DEST_OF_PARAM['oscA.blend']).toBe(26);
+    expect(DEST_OF_PARAM['oscB.blend']).toBe(27);
   });
 });

@@ -15,9 +15,10 @@ void addOsc(std::vector<ParamInfo>& v, const std::string& pre, int base, float d
     v.push_back({base + OSC_OCT,    pre + ".oct",    "OCT",   -3, 3, 0,        Curve::Int, Kind::Float, nullptr});
     v.push_back({base + OSC_SEMI,   pre + ".semi",   "SEMI", -12, 12, 0,       Curve::Int, Kind::Float, nullptr});
     v.push_back({base + OSC_FINE,   pre + ".fine",   "FINE",-100, 100, 0,      Curve::Int, Kind::Float, nullptr});
-    v.push_back({base + OSC_UNISON, pre + ".unison", "UNI",    1, 7, 1,        Curve::Int, Kind::Float, nullptr});
+    v.push_back({base + OSC_UNISON, pre + ".unison", "UNI",    1, 16, 1,       Curve::Int, Kind::Float, nullptr});
     v.push_back({base + OSC_DETUNE, pre + ".detune", "DETUNE", 0, 1, 0.2f,     Curve::Lin, Kind::Float, nullptr});
     v.push_back({base + OSC_SPREAD, pre + ".spread", "SPREAD", 0, 1, 0.6f,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({base + OSC_BLEND,  pre + ".blend",  "BLEND",  0, 1, 1.0f,     Curve::Lin, Kind::Float, nullptr});
     v.push_back({base + OSC_LEVEL,  pre + ".level",  "LEVEL",  0, 1, 0.75f,    Curve::Lin, Kind::Float, nullptr});
     v.push_back({base + OSC_PAN,    pre + ".pan",    "PAN",   -1, 1, 0,        Curve::Lin, Kind::Float, nullptr});
 }

@@ -55,11 +55,11 @@ inline const std::vector<std::string> MOD_DESTS     = {
     "—", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES",
     "A DETUNE", "A SPREAD", "A PAN", "B DETUNE", "B SPREAD", "B PAN",
     "F1 RES", "F1 DRIVE", "F1 ENV", "F1 KEY", "F2 DRIVE", "F2 ENV", "F2 KEY",
-    "SUB LVL", "NOISE LVL"};
+    "SUB LVL", "NOISE LVL", "A BLEND", "B BLEND"};
 
 // ---- field offsets within a repeated block ----
 enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,
-                 OSC_UNISON, OSC_DETUNE, OSC_SPREAD, OSC_LEVEL, OSC_PAN, OSC_NFIELDS };
+                 OSC_UNISON, OSC_DETUNE, OSC_SPREAD, OSC_LEVEL, OSC_PAN, OSC_BLEND, OSC_NFIELDS };
 enum FiltField { FLT_ON, FLT_TYPE, FLT_CUTOFF, FLT_RES, FLT_DRIVE, FLT_ENV, FLT_KEY, FLT_NFIELDS };
 enum MatField  { MAT_SRC, MAT_DST, MAT_AMT, MAT_NFIELDS };
 
@@ -146,6 +146,8 @@ inline constexpr int dstTarget(int dst) {
         case 23: return FILTER2_BASE + FLT_KEY;
         case 24: return SUB_LEVEL;
         case 25: return NOISE_LEVEL;
+        case 26: return OSCA_BASE   + OSC_BLEND;
+        case 27: return OSCB_BASE   + OSC_BLEND;
         default: return DST_NONE;
     }
 }

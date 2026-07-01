@@ -26,11 +26,11 @@ static juce::Array<juce::Component*> ptrs(juce::OwnedArray<Knob>& a) {
 // ===================== OscPanel =====================
 OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pre, Accent ac, juce::String t)
     : oscIndex(osc), title(t), prefix(pre), accent(ac),
-      power(s, pre + ".on", ac), tableStep(s, pre + ".table", ac),
+      power(s, pre + ".on", ac), tableStep(s, pre + ".table", ac), unisonStep(s, pre + ".unison", ac),
       wt(proc, osc, accentColour(ac)),
       // POS slider is a mod target: dest 1 (oscA POS) / 2 (oscB POS).
       pos(s, pre + ".pos", ac, [&proc, osc] { return proc.getVizPos(osc); }, osc == 0 ? 1 : 2) {
-    addAndMakeVisible(power); addAndMakeVisible(tableStep);
+    addAndMakeVisible(power); addAndMakeVisible(tableStep); addAndMakeVisible(unisonStep);
     addAndMakeVisible(wt); addAndMakeVisible(pos);
     // The table stepper cycles only over the procedural + live user tables and
     // shows each table's live name (the param itself reserves fixed USER slots).
@@ -42,15 +42,18 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
     editBtn.setTooltip("import / draw wavetable");
     editBtn.onClick = [this] { if (onEditTable) onEditTable(oscIndex); };
     addAndMakeVisible(editBtn);
-    const char* ids[] = {".oct", ".semi", ".fine", ".unison", ".detune", ".spread", ".level", ".pan"};
-    // Continuous knobs are mod targets (A/B per osc): DETUNE (4) → 11/14,
-    // SPREAD (5) → 12/15, LEVEL (6) → 7/8, PAN (7) → 13/16. OCT/SEMI/FINE/UNISON
-    // are discrete steppers → not modulatable (modDest 0).
+    const char* ids[] = {".oct", ".semi", ".fine", ".detune", ".spread", ".blend", ".level", ".pan"};
+    // Continuous knobs are mod targets (A/B per osc): DETUNE (3) → 11/14,
+    // SPREAD (4) → 12/15, BLEND (5) → 26/27, LEVEL (6) → 7/8, PAN (7) → 13/16.
+    // OCT/SEMI/FINE are discrete steppers → not modulatable (modDest 0);
+    // UNISON is the compact stepper in the knob row between FINE and DETUNE
+    // (unisonStep — same cell the web UI uses; laid out in resized()).
     for (int i = 0; i < 8; ++i) {
         int modDest = 0;
         switch (i) {
-            case 4: modDest = osc == 0 ? 11 : 14; break; // DETUNE → A/B DETUNE
-            case 5: modDest = osc == 0 ? 12 : 15; break; // SPREAD → A/B SPREAD
+            case 3: modDest = osc == 0 ? 11 : 14; break; // DETUNE → A/B DETUNE
+            case 4: modDest = osc == 0 ? 12 : 15; break; // SPREAD → A/B SPREAD
+            case 5: modDest = osc == 0 ? 26 : 27; break; // BLEND  → A/B BLEND
             case 6: modDest = osc == 0 ?  7 :  8; break; // LEVEL  → A/B LVL
             case 7: modDest = osc == 0 ? 13 : 16; break; // PAN    → A/B PAN
         }
@@ -61,6 +64,11 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
 void OscPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, title, accentColour(accent));
+    // UNI caption stacked over the unison stepper in the knob row — mirrors the
+    // web's .osc-knobs .st-label (label row above the compact ◂ N ▸ strip).
+    g.setColour(col::textDim);
+    g.setFont(monoFont(8.0f));
+    drawSpaced(g, "UNI", uniLabelArea, 1.2f, juce::Justification::centred);
 }
 void OscPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
@@ -81,7 +89,18 @@ void OscPanel::resized() {
     r.removeFromRight(8);
     wt.setBounds(r);
     pos.setBounds(posCol);
-    layoutKnobRow(knobRow, ptrs(knobs));
+    // 9 cells mirroring the web knob row: OCT SEMI FINE UNI DETUNE SPREAD BLEND
+    // LEVEL PAN — the unison stepper takes the cell between FINE and DETUNE.
+    auto row = ptrs(knobs);
+    row.insert(3, &unisonStep);
+    layoutKnobRow(knobRow, row);
+    // The stepper is an 18px ◂ N ▸ strip, not a knob: stack the UNI caption
+    // (painted in paint()) over a compact strip centred in its cell.
+    auto cell = unisonStep.getBounds();
+    auto stack = cell.withSizeKeepingCentre(cell.getWidth(), 32);
+    uniLabelArea = stack.removeFromTop(12);
+    stack.removeFromTop(2);
+    unisonStep.setBounds(stack.withSizeKeepingCentre(juce::jmin(56, stack.getWidth()), 18));
 }
 
 // ===================== UtilPanel =====================
