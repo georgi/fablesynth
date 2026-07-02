@@ -38,9 +38,14 @@ public:
     void drawButtonBackground(juce::Graphics& g, juce::Button& b, const juce::Colour&,
                               bool over, bool down) override {
         auto r = b.getLocalBounds().toFloat();
-        g.setColour(juce::Colour(0xff11141c));
+        // Toggle buttons (SYNC / TRIG) carry their own buttonOnColourId — a bright
+        // accent fill paired with a dark textColourOnId for contrast. Without this
+        // branch the fill never changed, so the on-state's dark text landed on the
+        // same dark off-state fill and read as unreadable / deactivated.
+        bool on = b.getToggleState();
+        g.setColour(on ? b.findColour(juce::TextButton::buttonOnColourId) : juce::Colour(0xff11141c));
         g.fillRoundedRectangle(r, 6.0f);
-        g.setColour(over || down ? col::acA : col::line);
+        g.setColour(on ? b.findColour(juce::TextButton::buttonOnColourId) : (over || down ? col::acA : col::line));
         g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 1.0f);
     }
     juce::Font getTextButtonFont(juce::TextButton&, int) override { return monoFont(11.0f); }
