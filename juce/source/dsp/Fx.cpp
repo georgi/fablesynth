@@ -33,10 +33,6 @@ void Biquad::highpass(double freq, double q, double sr) {
     a1 = (-2 * cw) / a0;
     a2 = (1 - alpha) / a0;
 }
-void Biquad::onepoleLP(double freq, double sr) {
-    double x = std::exp(-2 * PI * std::min(freq, sr * 0.49) / sr);
-    b0 = 1 - x; b1 = 0; b2 = 0; a1 = -x; a2 = 0;
-}
 
 // ---------------- Freeverb tuning (classic constants, scaled to sr) ----------------
 static const int COMB_TUNE[8]   = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617};
@@ -77,7 +73,7 @@ void Fx::prepare(double sampleRate) {
     upR_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
     downL_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
     downR_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
-    dlDamp_.onepoleLP(4500, sr_);
+    dlDamp_.lowpass(4500, 0.707, sr_);
 
     // Limiter envelope coefficients (attack 2ms, release 220ms).
     limAtk_ = 1 - std::exp(-1.0 / (0.002 * sr_));
