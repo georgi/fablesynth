@@ -38,7 +38,8 @@ void WavetableView::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(0xff1c222c));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
-    const auto* tp = proc.tableAt(tableIndex());
+    const int idx = tableIndex();
+    const auto* tp = proc.tableAt(idx);
     if (!tp) return; // empty user slot -> nothing to draw
     const auto& t = *tp;
     const int frames = t.frames;
@@ -53,15 +54,13 @@ void WavetableView::paint(juce::Graphics& g) {
     const float depthX = w * 0.22f, depthY = h * 0.42f;
     const float waveW = w * 0.68f, waveAmp = h * 0.17f;
     const float x0 = w * 0.06f, y0 = h * 0.78f;
-    const float posF = show * (frames - 1);
 
-    for (int f = frames - 1; f >= 0; --f) {
+    const auto buildPath = [&](int f) {
         // Single-frame tables (drawn / single-cycle import) have frames == 1;
         // guard the depth ratio so it doesn't become 0/0 (NaN coords -> blank).
         const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
-        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
 
         juce::Path path;
         for (int i = 0; i < N; ++i) {
@@ -70,18 +69,46 @@ void WavetableView::paint(juce::Graphics& g) {
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
         }
+        return path;
+    };
 
-        if (near > 0.02f) {
-            // bloom pass approximates the canvas shadowBlur, then the bright line
-            g.setColour(accent.withAlpha(near * 0.22f));
-            g.strokePath(path, juce::PathStrokeType(3.0f + near * 5.0f,
-                         juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-            g.setColour(accent.withAlpha(0.25f + near * 0.75f));
-            g.strokePath(path, juce::PathStrokeType(1.0f + near * 1.4f,
-                         juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        } else {
-            g.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
-            g.strokePath(path, juce::PathStrokeType(1.0f));
+    const int cw = getWidth(), ch = getHeight();
+    const int gen = proc.getTablesGeneration();
+    const bool cacheValid = cacheTable == idx && cacheGen == gen && cacheW == cw && cacheH == ch;
+    if (!cacheValid) {
+        farCache = (cw > 0 && ch > 0) ? juce::Image(juce::Image::ARGB, cw * 2, ch * 2, true)
+                                      : juce::Image();
+        if (farCache.isValid()) {
+            juce::Graphics cg(farCache);
+            cg.addTransform(juce::AffineTransform::scale(2.0f));
+            for (int f = frames - 1; f >= 0; --f) {
+                const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+                cg.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
+                cg.strokePath(buildPath(f), juce::PathStrokeType(1.0f));
+            }
         }
+        cacheTable = idx;
+        cacheGen = gen;
+        cacheW = cw;
+        cacheH = ch;
+    }
+
+    if (farCache.isValid())
+        g.drawImage(farCache, getLocalBounds().toFloat());
+
+    const float posF = show * (frames - 1);
+    // The near frame keeps its cached grey hairline underneath; the glow pass hides it.
+    for (int f = frames - 1; f >= 0; --f) {
+        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
+        if (near <= 0.02f) continue;
+
+        auto path = buildPath(f);
+        // bloom pass approximates the canvas shadowBlur, then the bright line
+        g.setColour(accent.withAlpha(near * 0.22f));
+        g.strokePath(path, juce::PathStrokeType(3.0f + near * 5.0f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(accent.withAlpha(0.25f + near * 0.75f));
+        g.strokePath(path, juce::PathStrokeType(1.0f + near * 1.4f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 }

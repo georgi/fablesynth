@@ -60,9 +60,10 @@ public:
     ScopeView(FableAudioProcessor&, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override; // repaints only while audio is present
     FableAudioProcessor& proc;
     juce::Colour accent;
+    bool wasActive_ = true;
 };
 
 // Spectrum analyser (post-FX, FFT with smoothing).
@@ -71,13 +72,14 @@ public:
     SpectrumView(FableAudioProcessor&, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override; // repaints while audio present or bars still falling
     FableAudioProcessor& proc;
     juce::Colour accent;
     static constexpr int kOrder = 11, kFFT = 1 << kOrder; // 2048
     juce::dsp::FFT fft{kOrder};
     juce::dsp::WindowingFunction<float> window{kFFT, juce::dsp::WindowingFunction<float>::hann};
     std::array<float, kFFT> smoothed{};
+    bool wasActive_ = true, decaying_ = true;
 };
 
 } // namespace fui

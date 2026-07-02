@@ -24,6 +24,8 @@ private:
     juce::String label;
     float lastShown = -2.0f;
     int   lastTable = -1;
+    juce::Image farCache;
+    int cacheTable = -1, cacheGen = -1, cacheW = 0, cacheH = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WavetableView)
 };

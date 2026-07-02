@@ -13,7 +13,8 @@ FableAudioProcessor::FableAudioProcessor()
     for (int i = 0; i < NUM_PARAMS; ++i)
         rawParams[i] = apvts.getRawParameterValue(info[i].pid);
     // Procedural wavetables are sample-rate independent: build once.
-    tables = generateTables();
+    for (auto& g : generateTables())
+        tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
 }
 
 // Build the APVTS layout from the single canonical descriptor table, using the
@@ -62,9 +63,9 @@ void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
 // ---- table addressing & user-table management (message thread) ----
 const fable::GeneratedTable* FableAudioProcessor::tableAt(int idx) const {
     if (idx < 0) return nullptr;
-    if (idx < (int)tables.size()) return &tables[(size_t)idx];
+    if (idx < (int)tables.size()) return tables[(size_t)idx].get();
     int u = idx - (int)tables.size();
-    if (u < (int)userTables.size()) return &userTables[(size_t)u].table;
+    if (u < (int)userTables.size()) return userTables[(size_t)u].table.get();
     return nullptr; // empty user slot
 }
 
@@ -81,11 +82,12 @@ juce::String FableAudioProcessor::tableName(int idx) const {
 }
 
 void FableAudioProcessor::rebuildEngineTables() {
-    std::vector<fable::GeneratedTable> all;
+    ++tablesGen;
+    std::vector<fable::TablePtr> all;
     all.reserve(tables.size() + userTables.size());
     for (const auto& t : tables) all.push_back(t);
     for (const auto& u : userTables) all.push_back(u.table);
-    engine.setTables(all); // thread-safe swap; safe to call while audio renders
+    engine.setTables(std::move(all)); // thread-safe swap; shares data, copies nothing
 }
 
 int FableAudioProcessor::addUserTable(fable::UserTable table) {
@@ -138,8 +140,8 @@ int FableAudioProcessor::duplicateUserTable(int poolIndex) {
 
 int FableAudioProcessor::duplicateFactoryTable(int factoryIndex) {
     if (factoryIndex < 0 || factoryIndex >= (int)tables.size()) return -1;
-    auto frames = fable::framesFromGenerated(tables[(size_t)factoryIndex]);
-    std::string nm = (tables[(size_t)factoryIndex].name + " COPY").substr(0, 14);
+    auto frames = fable::framesFromGenerated(*tables[(size_t)factoryIndex]);
+    std::string nm = (tables[(size_t)factoryIndex]->name + " COPY").substr(0, 14);
     return addUserTable(fable::makeUserTable(nm, frames));
 }
 
