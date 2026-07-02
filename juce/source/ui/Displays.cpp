@@ -222,6 +222,17 @@ void FilterView::paint(juce::Graphics& g) {
 
 // ===================== ScopeView =====================
 ScopeView::ScopeView(FableAudioProcessor& p, juce::Colour ac) : proc(p), accent(ac) { startTimerHz(30); }
+void ScopeView::timerCallback() {
+    // Silent output draws the same flat line every frame: skip the repaint until
+    // audio returns. One extra paint after the transition draws the final flat line.
+    std::array<float, 2048> buf;
+    proc.readScope(buf.data(), (int)buf.size());
+    float peak = 0;
+    for (float v : buf) peak = std::max(peak, std::abs(v));
+    bool active = peak > 1.0e-5f;
+    if (active || wasActive_) repaint();
+    wasActive_ = active;
+}
 void ScopeView::paint(juce::Graphics& g) {
     const int N = 2048;
     std::array<float, 2048> buf;
@@ -241,6 +252,17 @@ void ScopeView::paint(juce::Graphics& g) {
 
 // ===================== SpectrumView =====================
 SpectrumView::SpectrumView(FableAudioProcessor& p, juce::Colour ac) : proc(p), accent(ac) { startTimerHz(30); }
+void SpectrumView::timerCallback() {
+    std::array<float, kFFT> buf;
+    proc.readScope(buf.data(), kFFT);
+    float peak = 0;
+    for (float v : buf) peak = std::max(peak, std::abs(v));
+    bool active = peak > 1.0e-5f;
+    // decaying_: the smoothing runs in paint, so keep painting after the input
+    // stops until every bar has fallen below the -100 dB display floor.
+    if (active || wasActive_ || decaying_) repaint();
+    wasActive_ = active;
+}
 void SpectrumView::paint(juce::Graphics& g) {
     std::array<float, kFFT * 2> fftData{};
     proc.readScope(fftData.data(), kFFT);
@@ -250,12 +272,15 @@ void SpectrumView::paint(juce::Graphics& g) {
     // byte spectrum with WebAudio-like smoothing (smoothingTimeConstant 0.82).
     const float minDb = -100, maxDb = -30, smoothing = 0.82f;
     std::array<float, kFFT / 2> bytes;
+    float maxSm = 0;
     for (int i = 0; i < kFFT / 2; i++) {
         float mag = fftData[i] / kFFT;
         smoothed[i] = smoothing * smoothed[i] + (1 - smoothing) * mag;
+        maxSm = std::max(maxSm, smoothed[i]);
         float db = juce::Decibels::gainToDecibels(smoothed[i] + 1e-9f);
         bytes[i] = juce::jlimit(0.0f, 1.0f, (db - minDb) / (maxDb - minDb)) * 255.0f;
     }
+    decaying_ = maxSm > 1.0e-5f; // 1e-5 == the -100 dB floor where bars are zero
 
     const float w = (float)getWidth(), h = (float)getHeight();
     const int bars = 48;

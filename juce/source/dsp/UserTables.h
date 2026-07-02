@@ -22,7 +22,7 @@ struct UserTable {
     std::string        name;
     int                frames = 0;
     std::vector<float> wave;   // length frames*SIZE — source single-cycle frames
-    GeneratedTable     table;  // rebuilt band-limited pyramid (runtime only)
+    TablePtr           table;  // rebuilt band-limited pyramid (runtime, shared with the engine)
 };
 
 // Build a runtime UserTable from a flat list of single-cycle frames.

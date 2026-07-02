@@ -39,7 +39,14 @@ public:
     void   release() { if (state != 0) state = 4; }
     void   kill()    { state = 0; level = 0; }
     double process();
-    double processBlock(int n) { for (int i = 0; i < n; i++) process(); return level; }
+    // Block advance for block-rate consumers. Idle (0) and sustain (3) are
+    // fixed points of process(), so they skip the loop — exact, not approximate.
+    double processBlock(int n) {
+        if (state == 0) return level;
+        if (state == 3) { level = s; return level; }
+        for (int i = 0; i < n; i++) process();
+        return level;
+    }
 private:
     double a_ = -1, d_ = -1, r_ = -1, sr_ = -1; // last-set values (coef cache key)
 };
@@ -76,11 +83,15 @@ struct FilterState {
 struct OscState {
     double phases[MAXUNI] = {0};
     double incs[MAXUNI]   = {0};
+    double ratios[MAXUNI] = {0};
     float  gl[MAXUNI]     = {0};
     float  gr[MAXUNI]     = {0};
     int    uni = 1;
     int    off0 = 0, off1 = 0, off0b = 0, off1b = 0;
     double mipBlend = 0, ft = 0, gain = 0;
+    double sumW2 = 0;
+    int    cacheUni = -1;
+    double cacheDet = 0, cacheSpr = 0, cacheBlend = 0, cachePan = 0;
     int    mask = 0, size = 0;
     const float* data = nullptr;
     double posSm = -1;
@@ -109,15 +120,18 @@ public:
 };
 
 // Engine table view — mirrors the worklet's {frames,mips,size,mask,data}.
+// Shares the source table's sample data (src keeps it alive): swapping the
+// pool moves pointers, never the multi-MB float pyramids.
 struct EngineTable {
     int frames = 0, mips = 0, size = 0, mask = 0;
-    std::vector<float> data;
+    const float* data = nullptr; // = src->data.data(); nullptr marks an empty slot
+    TablePtr src;
 };
 
 class Engine {
 public:
     void prepare(double sampleRate);
-    void setTables(const std::vector<GeneratedTable>& tables);
+    void setTables(std::vector<TablePtr> tables);
     void setParam(int id, float v) { p_[id] = v; }
     void setParams(const ParamArray& p) { p_ = p; }
     ParamArray& params() { return p_; }
@@ -159,8 +173,9 @@ private:
     std::vector<EngineTable> tables_;
     // Guards tables_ so the message thread can swap in new tables (user import /
     // delete / preset load) while the audio thread renders. setTables builds the
-    // replacement off-lock and only holds the lock for the O(1) swap; render
-    // try-locks and emits one block of silence on the rare collision.
+    // replacement off-lock (pointer copies — sample data is shared, never
+    // duplicated) and only holds the lock for the O(1) swap; render try-locks
+    // and emits one block of silence on the rare collision.
     std::mutex tablesMutex_;
     std::array<Voice, NVOICES> voices_;
     double sr_ = 48000;

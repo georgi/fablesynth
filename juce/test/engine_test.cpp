@@ -75,13 +75,13 @@ static double aliasFloorDb(const float* x, int N, double sr, double f0) {
 
 int main() {
     const double sr = 48000;
-    auto tables = generateTables();
+    auto gen = generateTables();
 
     printf("\n== 1. Wavetable generation ==\n");
     {
-        bool ok = tables.size() == 6;
+        bool ok = gen.size() == 6;
         bool noNan = true, normOk = true;
-        for (auto& t : tables) {
+        for (auto& t : gen) {
             for (float v : t.data) if (!std::isfinite(v)) noNan = false;
             // mip-0 frame peak should be ~0.92 (normalization headroom)
             float pk = 0;
@@ -92,6 +92,9 @@ int main() {
         check(noNan, "no NaN/Inf in table data");
         check(normOk, "mip-0 frames peak-normalized to ~0.92");
     }
+    // The engine takes shared table pointers (pool swaps share, never copy).
+    std::vector<TablePtr> tables;
+    for (auto& g : gen) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
 
     printf("\n== 2. Live note produces audio ==\n");
     {
@@ -200,9 +203,9 @@ int main() {
         auto frame = frameFromDrawing(pts);
         auto drawn = makeUserTable("DRAW", {frame});
         bool drawOk = drawn.frames == 1 && (int)drawn.wave.size() == SIZE
-                    && !drawn.table.data.empty();
+                    && !drawn.table->data.empty();
         bool drawFinite = true;
-        for (float v : drawn.table.data) if (!std::isfinite(v)) drawFinite = false;
+        for (float v : drawn.table->data) if (!std::isfinite(v)) drawFinite = false;
         check(drawOk && drawFinite, "drawn table builds 1 band-limited frame");
 
         // Fixed-length slice of a longer clip -> several frames, capped.
@@ -214,7 +217,7 @@ int main() {
 
         // wave round-trip (persistence path) preserves frame count + builds.
         auto rebuilt = userTableFromWave("SLICE", sliced.frames, sliced.wave);
-        check(rebuilt.frames == 5 && !rebuilt.table.data.empty(), "wave round-trip rebuilds table");
+        check(rebuilt.frames == 5 && !rebuilt.table->data.empty(), "wave round-trip rebuilds table");
 
         {
             // framesFromGenerated round-trips a factory table's frame count and a
@@ -225,12 +228,12 @@ int main() {
             check(frames[0].size() == (size_t)SIZE, "framesFromGenerated frame width");
             auto copy = makeUserTable("COPY", frames);
             check(copy.frames == factory[0].frames, "duplicated factory frame count");
-            check(finite(copy.table.data) && peak(copy.table.data) > 0.1f, "duplicated factory audible");
+            check(finite(copy.table->data) && peak(copy.table->data) > 0.1f, "duplicated factory audible");
         }
 
         // The engine plays a user table addressed past the procedural slots.
         Engine eng; eng.prepare(sr);
-        std::vector<GeneratedTable> all = tables;     // 6 procedural
+        auto all = tables;                            // 6 procedural
         all.push_back(drawn.table);                   // user slot -> index 6
         eng.setTables(all);
         auto p = defaultParams();

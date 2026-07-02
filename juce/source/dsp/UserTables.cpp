@@ -21,7 +21,7 @@ UserTable makeUserTable(const std::string& name, const std::vector<std::vector<f
     for (int f = 0; f < nf; ++f)
         for (int i = 0; i < SIZE && i < (int)use[(size_t)f].size(); ++i)
             u.wave[(size_t)f * SIZE + i] = use[(size_t)f][i];
-    u.table = buildUserTable(name, use);
+    u.table = std::make_shared<const GeneratedTable>(buildUserTable(name, use));
     return u;
 }
 

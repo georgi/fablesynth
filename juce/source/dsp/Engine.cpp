@@ -130,15 +130,19 @@ void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
     }
 }
 
-void Engine::setTables(const std::vector<GeneratedTable>& tables) {
-    // Build the replacement off-lock (the heavy copy), then swap under the lock
-    // so the audio thread is never blocked on allocation.
+void Engine::setTables(std::vector<TablePtr> tables) {
+    // Build the replacement off-lock, then swap under the lock so the audio
+    // thread is never blocked. The old set (and any table it held the last
+    // reference to) is freed here on the message thread after the unlock.
     std::vector<EngineTable> next;
     next.reserve(tables.size());
-    for (const auto& t : tables) {
+    for (auto& t : tables) {
         EngineTable e;
-        e.frames = t.frames; e.mips = t.mips; e.size = t.size; e.mask = t.size - 1;
-        e.data = t.data;
+        if (t) {
+            e.frames = t->frames; e.mips = t->mips; e.size = t->size; e.mask = t->size - 1;
+            e.data = t->data.data();
+            e.src = std::move(t);
+        }
         next.push_back(std::move(e));
     }
     std::lock_guard<std::mutex> lk(tablesMutex_);
@@ -190,6 +194,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     int ti = (int)p_[base + OSC_TABLE];
     if (ti < 0 || ti >= (int)tables_.size()) return false;
     const EngineTable& table = tables_[ti];
+    if (!table.data) return false; // empty slot
 
     double basePitch = v.pitch + bend_ + p_[base + OSC_OCT] * 12 + p_[base + OSC_SEMI]
                      + p_[base + OSC_FINE] / 100.0 + mPitch * 12;
@@ -234,30 +239,39 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     o.off0b = (f0 * table.mips + fineMip) * table.size;
     o.off1b = (f1 * table.mips + fineMip) * table.size;
     o.mipBlend = mipBlend;
-    o.data = table.data.data();
+    o.data = table.data;
     o.mask = table.mask;
     o.size = table.size;
     o.uni = uni;
-    double sumW2 = 0;
-    for (int u = 0; u < uni; u++) {
-        double sprd = uni > 1 ? (double)u / (uni - 1) * 2 - 1 : 0;
-        double cents = sprd * det * 50;
-        double ratio = std::pow(2.0, cents / 1200);
-        o.incs[u] = cps * ratio * table.size;
-        // BLEND: outer (most-detuned) voices fade relative to the center.
-        // blend==1 -> weight==1 for all voices -> sumW2==uni -> gain identical
-        // to the legacy /sqrt(uni) path (preset back-compat).
-        double weight = 1 - (1 - blend) * std::fabs(sprd);
-        sumW2 += weight * weight;
-        double pan = std::max(-1.0, std::min(1.0, sprd * spr + basePan));
-        double a = ((pan + 1) * PI) / 4;
-        o.gl[u] = (float)(std::cos(a) * weight);
-        o.gr[u] = (float)(std::sin(a) * weight);
+    if (o.cacheUni != uni || o.cacheDet != det || o.cacheSpr != spr || o.cacheBlend != blend || o.cachePan != basePan) {
+        double sumW2 = 0;
+        for (int u = 0; u < uni; u++) {
+            double sprd = uni > 1 ? (double)u / (uni - 1) * 2 - 1 : 0;
+            double cents = sprd * det * 50;
+            double ratio = std::pow(2.0, cents / 1200);
+            o.ratios[u] = ratio;
+            // BLEND: outer (most-detuned) voices fade relative to the center.
+            // blend==1 -> weight==1 for all voices -> sumW2==uni -> gain identical
+            // to the legacy /sqrt(uni) path (preset back-compat).
+            double weight = 1 - (1 - blend) * std::fabs(sprd);
+            sumW2 += weight * weight;
+            double pan = std::max(-1.0, std::min(1.0, sprd * spr + basePan));
+            double a = ((pan + 1) * PI) / 4;
+            o.gl[u] = (float)(std::cos(a) * weight);
+            o.gr[u] = (float)(std::sin(a) * weight);
+        }
+        o.sumW2 = sumW2;
+        o.cacheUni = uni;
+        o.cacheDet = det;
+        o.cacheSpr = spr;
+        o.cacheBlend = blend;
+        o.cachePan = basePan;
     }
+    for (int u = 0; u < uni; u++) o.incs[u] = cps * o.ratios[u] * table.size;
     // Guard sumW2==0 (uni=2, blend=0: both voices at |sprd|=1 -> weight 0).
     // Predicate matches the web's `sumW2 || 1` exactly (swaps to 1 only at 0),
     // so the two engines stay in lockstep at low blend.
-    o.gain = (level * 0.32) / std::sqrt(sumW2 > 0.0 ? sumW2 : 1.0);
+    o.gain = (level * 0.32) / std::sqrt(o.sumW2 > 0.0 ? o.sumW2 : 1.0);
     return true;
 }
 
@@ -385,9 +399,7 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
     if (ftype <= 4) {
         double a1 = fs.a1, a2 = fs.a2, a3 = fs.a3, k1 = fs.k1;
         double* F = fs.svf;
-        for (int ch = 0; ch < 2; ch++) {
-            float* buf = ch == 0 ? outL : outR;
-            int o1 = ch * 2;
+        auto runSvf = [&](float* buf, int o1, auto out) {
             double ic1 = F[o1], ic2 = F[o1 + 1];
             for (int i = 0; i < n; i++) {
                 double x = buf[i];
@@ -396,31 +408,31 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
                 double v2 = ic2 + a2 * ic1 + a3 * v3;
                 ic1 = 2 * v1 - ic1;
                 ic2 = 2 * v2 - ic2;
-                switch (ftype) {
-                    case 0: case 1: buf[i] = (float)v2; break;
-                    case 2: buf[i] = (float)(k1 * v1); break;
-                    case 3: buf[i] = (float)(x - k1 * v1 - v2); break;
-                    default: buf[i] = (float)(x - k1 * v1); break;
-                }
+                buf[i] = (float)out(x, v1, v2);
             }
             F[o1] = ic1; F[o1 + 1] = ic2;
+        };
+        auto outV2 = [](double, double, double v2) { return v2; };
+        switch (ftype) {
+            case 0:
+            case 1:
+                for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, ch * 2, outV2);
+                break;
+            case 2:
+                for (int ch = 0; ch < 2; ch++)
+                    runSvf(ch == 0 ? outL : outR, ch * 2, [&](double, double v1, double) { return k1 * v1; });
+                break;
+            case 3:
+                for (int ch = 0; ch < 2; ch++)
+                    runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double v2) { return x - k1 * v1 - v2; });
+                break;
+            default:
+                for (int ch = 0; ch < 2; ch++)
+                    runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double) { return x - k1 * v1; });
+                break;
         }
         if (fs.twoPole) {
-            for (int ch = 0; ch < 2; ch++) {
-                float* buf = ch == 0 ? outL : outR;
-                int o1 = 4 + ch * 2;
-                double ic1 = F[o1], ic2 = F[o1 + 1];
-                for (int i = 0; i < n; i++) {
-                    double x = buf[i];
-                    double v3 = x - ic2;
-                    double v1 = a1 * ic1 + a2 * v3;
-                    double v2 = ic2 + a2 * ic1 + a3 * v3;
-                    ic1 = 2 * v1 - ic1;
-                    ic2 = 2 * v2 - ic2;
-                    buf[i] = (float)v2;
-                }
-                F[o1] = ic1; F[o1 + 1] = ic2;
-            }
+            for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, 4 + ch * 2, outV2);
         }
     } else if (ftype == 5) {
         double len = fs.combLen, fb = fs.combFb, g0 = 1 - fb;
@@ -428,7 +440,8 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
         int w = fs.combW;
         for (int i = 0; i < n; i++) {
             double rd = w - len;
-            rd = std::fmod(std::fmod(rd, (double)COMB_MAX) + COMB_MAX, (double)COMB_MAX);
+            // w in [0, COMB_MAX), len in [1, COMB_MAX-2] => rd in (-COMB_MAX, COMB_MAX).
+            if (rd < 0) rd += COMB_MAX;
             int i0 = (int)rd;
             double frac = rd - i0;
             int i1 = i0 + 1 < COMB_MAX ? i0 + 1 : 0;

@@ -620,9 +620,9 @@ void WavetableEditor::selectFactory(int i) {
     const auto& fac = proc.factoryTables();
     if (i < 0 || i >= (int)fac.size()) return;
     selectedId = "f" + juce::String(i);
-    nameField.setText(juce::String(fac[(size_t)i].name), juce::dontSendNotification);
+    nameField.setText(juce::String(fac[(size_t)i]->name), juce::dontSendNotification);
     readOnlySel = true; drawPad.setReadOnly(true);
-    loadFrames(fable::framesFromGenerated(fac[(size_t)i]));
+    loadFrames(fable::framesFromGenerated(*fac[(size_t)i]));
     setTab(Tab::Draw);
     assignTable(i);
     refreshLibrary();
@@ -647,15 +647,15 @@ void WavetableEditor::refreshLibrary() {
 
     const auto& fac = proc.factoryTables();
     for (int i = 0; i < (int)fac.size(); ++i) {
-        const juce::String nm(fac[(size_t)i].name);
+        const juce::String nm(fac[(size_t)i]->name);
         if (!matches(nm)) continue;
         const juce::String id = "f" + juce::String(i);
         auto* row = new LibRow(true, accent());
         row->selected = (selectedId == id);
         row->name.setText(nm, juce::dontSendNotification);
-        row->sub.setText(juce::String(fac[(size_t)i].frames) + "f - FACTORY", juce::dontSendNotification);
-        std::vector<float> viz(fac[(size_t)i].viz.begin(),
-                               fac[(size_t)i].viz.begin() + juce::jmin((int)fac[(size_t)i].viz.size(), fable::VIZ_N));
+        row->sub.setText(juce::String(fac[(size_t)i]->frames) + "f - FACTORY", juce::dontSendNotification);
+        std::vector<float> viz(fac[(size_t)i]->viz.begin(),
+                               fac[(size_t)i]->viz.begin() + juce::jmin((int)fac[(size_t)i]->viz.size(), fable::VIZ_N));
         row->thumb.setData(viz, accent(), row->selected);
         row->onSelect = [this, i] { selectFactory(i); };
         row->dup.onClick = [this, i] { int ni = proc.duplicateFactoryTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
@@ -672,7 +672,7 @@ void WavetableEditor::refreshLibrary() {
         row->selected = (selectedId == id);
         row->name.setText(nm, juce::dontSendNotification);
         row->sub.setText(juce::String(pool[(size_t)i].frames) + "f", juce::dontSendNotification);
-        const auto& vz = pool[(size_t)i].table.viz;
+        const auto& vz = pool[(size_t)i].table->viz;
         std::vector<float> viz(vz.begin(), vz.begin() + juce::jmin((int)vz.size(), fable::VIZ_N));
         row->thumb.setData(viz, accent(), row->selected);
         row->onSelect = [this, i] { selectUser(i); };

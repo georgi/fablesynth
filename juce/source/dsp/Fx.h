@@ -92,9 +92,10 @@ private:
     double sr_ = 48000;
 
     // drive
-    float driveK_ = 1, drivePre_ = 1;
+    float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;
     Smooth driveWet_, driveDry_;
     Biquad upL_, upR_, downL_, downR_; // 2x oversampling filters
+    bool driveOff_ = false, driveGated_ = false;
     inline float shape(float x) const;
 
     // chorus
@@ -102,17 +103,20 @@ private:
     float  chRate_ = 0.6f, chDepth_ = 0.5f;
     Smooth chWet_, chDry_;
     DelayLine chDl1_, chDl2_;
+    bool chorusOff_ = false, chorusGated_ = false;
 
     // delay
     Smooth dlTime_, dlFb_, dlWet_, dlDry_;
     DelayLine dlL_, dlR_;
     Biquad dlDamp_;
+    bool delayOff_ = false, delayGated_ = false;
 
     // reverb
     std::array<FvComb, 8> combL_, combR_;
     std::array<FvAllpass, 4> apL_, apR_;
     Smooth verbWet_, verbDry_;
     float roomSize_ = 0.84f;
+    bool verbOff_ = false, verbGated_ = false;
 
     // master + limiter
     Smooth masterGain_;

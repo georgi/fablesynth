@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,11 @@ struct GeneratedTable {
     std::vector<float> data;  // frames*mips*size, frame-major then mip-major
     std::vector<float> viz;   // frames*VIZ_N (mip-0 downsample, for UI)
 };
+
+// Tables are shared (not copied) between the processor's pool and the engine:
+// a table's pyramid is multiple MB, and the pool is rebuilt on every user-table
+// edit / state load, so ownership passes around as pointer copies.
+using TablePtr = std::shared_ptr<const GeneratedTable>;
 
 // In-place iterative radix-2 complex FFT (re/im length must be a power of two).
 void fft(double* re, double* im, int n, bool inverse);

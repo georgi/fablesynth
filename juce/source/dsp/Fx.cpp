@@ -106,8 +106,10 @@ void Fx::setParams(const ParamArray& p) {
     // drive
     float amt = p[FXDRIVE_AMT];
     driveK_ = 1 + amt * 24;
+    driveNorm_ = 1.0f / std::tanh(driveK_);
     drivePre_ = 1 + amt * 2;
     bool dOn = p[FXDRIVE_ON] > 0.5f;
+    driveOff_ = !dOn;
     driveWet_.target = mixGate(dOn, p[FXDRIVE_MIX], true);
     driveDry_.target = mixGate(dOn, p[FXDRIVE_MIX], false);
 
@@ -115,6 +117,7 @@ void Fx::setParams(const ParamArray& p) {
     chRate_ = p[FXCHORUS_RATE];
     chDepth_ = p[FXCHORUS_DEPTH];
     bool cOn = p[FXCHORUS_ON] > 0.5f;
+    chorusOff_ = !cOn;
     chWet_.target = mixGate(cOn, p[FXCHORUS_MIX] * 0.8f, true);
     chDry_.target = mixGate(cOn, p[FXCHORUS_MIX] * 0.8f, false);
 
@@ -122,6 +125,7 @@ void Fx::setParams(const ParamArray& p) {
     dlTime_.target = p[FXDELAY_TIME];
     dlFb_.target = p[FXDELAY_FB];
     bool delOn = p[FXDELAY_ON] > 0.5f;
+    delayOff_ = !delOn;
     dlWet_.target = mixGate(delOn, p[FXDELAY_MIX] * 0.85f, true);
     dlDry_.target = mixGate(delOn, p[FXDELAY_MIX] * 0.85f, false);
 
@@ -135,6 +139,7 @@ void Fx::setParams(const ParamArray& p) {
         combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
     }
     bool rOn = p[FXREVERB_ON] > 0.5f;
+    verbOff_ = !rOn;
     verbWet_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, true);
     verbDry_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, false);
 
@@ -144,15 +149,46 @@ void Fx::setParams(const ParamArray& p) {
 
 float Fx::shape(float x) const {
     float c = std::max(-1.0f, std::min(1.0f, x));
-    return (float)(std::tanh(c * driveK_) / std::tanh(driveK_));
+    return std::tanh(c * driveK_) * driveNorm_;
 }
 
 void Fx::process(float* L, float* R, int n) {
+    // Gate only when OFF; mix==0 while ON must keep state accumulation alive.
+    bool driveGate = driveOff_ && driveWet_.target == 0.0f && std::abs(driveWet_.cur) < 1.0e-6f;
+    bool chorusGate = chorusOff_ && chWet_.target == 0.0f && std::abs(chWet_.cur) < 1.0e-6f;
+    bool delayGate = delayOff_ && dlWet_.target == 0.0f && std::abs(dlWet_.cur) < 1.0e-6f;
+    bool verbGate = verbOff_ && verbWet_.target == 0.0f && std::abs(verbWet_.cur) < 1.0e-6f;
+
+    if (driveGate && !driveGated_) {
+        driveWet_.snap(0); driveDry_.snap(1);
+        upL_.reset(); upR_.reset(); downL_.reset(); downR_.reset();
+    }
+    if (chorusGate && !chorusGated_) {
+        chWet_.snap(0); chDry_.snap(1);
+        chDl1_.reset(); chDl2_.reset();
+    }
+    if (delayGate && !delayGated_) {
+        dlWet_.snap(0); dlDry_.snap(1);
+        dlL_.reset(); dlR_.reset(); dlDamp_.reset();
+    }
+    if (verbGate && !verbGated_) {
+        verbWet_.snap(0); verbDry_.snap(1);
+        for (auto& c : combL_) { std::fill(c.buf.begin(), c.buf.end(), 0.0f); c.filt = 0.0f; }
+        for (auto& c : combR_) { std::fill(c.buf.begin(), c.buf.end(), 0.0f); c.filt = 0.0f; }
+        for (auto& a : apL_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+        for (auto& a : apR_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+    }
+
+    driveGated_ = driveGate;
+    chorusGated_ = chorusGate;
+    delayGated_ = delayGate;
+    verbGated_ = verbGate;
+
     for (int i = 0; i < n; i++) {
         float l = L[i], r = R[i];
 
         // ---- drive (2x oversampled tanh waveshaper) ----
-        {
+        if (!driveGated_) {
             float wet = driveWet_.next(), dry = driveDry_.next();
             // upsample (zero-stuff x2, gain 2), shape, downsample
             float u0 = (float)upL_.process(2.0 * drivePre_ * l);
@@ -170,7 +206,7 @@ void Fx::process(float* L, float* R, int n) {
         }
 
         // ---- chorus (two modulated taps, stereo) ----
-        {
+        if (!chorusGated_) {
             chPhase_ += chRate_ / sr_;
             if (chPhase_ >= 1) chPhase_ -= 1;
             double lfo = std::sin(2 * PI * chPhase_);
@@ -188,7 +224,7 @@ void Fx::process(float* L, float* R, int n) {
         }
 
         // ---- ping-pong delay ----
-        {
+        if (!delayGated_) {
             double dt = dlTime_.next() * sr_;
             float fb = dlFb_.next();
             float dL = dlL_.read(dt);
@@ -202,7 +238,7 @@ void Fx::process(float* L, float* R, int n) {
         }
 
         // ---- reverb (Freeverb) ----
-        {
+        if (!verbGated_) {
             float input = (l + r) * 0.015f; // fixed input gain (Freeverb convention)
             float outL = 0, outR = 0;
             for (int c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }

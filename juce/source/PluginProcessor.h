@@ -50,8 +50,8 @@ public:
     // ---- wavetable visualization feed (read on the message thread) ----
     // The live modulated frame position per oscillator is published from the
     // audio thread via atomics (-1 = idle).
-    const std::vector<fable::GeneratedTable>& getTables() const { return tables; }
     float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
+    int getTablesGeneration() const { return tablesGen.load(); }
 
     // Full transport snapshot for the LFO displays (tempo + position + running).
     // The synced-LFO dot tracks ppq while playing so it sits on the beat grid.
@@ -77,7 +77,7 @@ public:
     void updateUserTable(int poolIndex, fable::UserTable u); // in-place replace, keeps index
     int  duplicateUserTable(int poolIndex);   // returns new combined index, or -1
     int  duplicateFactoryTable(int factoryIndex); // returns new combined index, or -1
-    const std::vector<fable::GeneratedTable>& factoryTables() const { return tables; }
+    const std::vector<fable::TablePtr>& factoryTables() const { return tables; }
 
     // ---- HUD feeds (scope / spectrum / voices / MIDI led) ----
     int    getVoiceCount() const { return voiceCount.load(); }
@@ -94,8 +94,9 @@ private:
 
     fable::Engine engine;
     fable::Fx fx;
-    std::vector<fable::GeneratedTable> tables;   // procedural tables (+ viz frames)
+    std::vector<fable::TablePtr> tables;         // procedural tables (+ viz frames)
     std::vector<fable::UserTable> userTables;    // imported / drawn tables
+    std::atomic<int> tablesGen{0};
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
     std::atomic<float> hostBpm{120.0f};
     std::atomic<double> hostPpq{0.0};
