@@ -41,7 +41,7 @@ public:
     double process();
     double processBlock(int n) { for (int i = 0; i < n; i++) process(); return level; }
 private:
-    double a_ = -1, d_ = -1, r_ = -1; // last-set values (coef cache key)
+    double a_ = -1, d_ = -1, r_ = -1, sr_ = -1; // last-set values (coef cache key)
 };
 
 class Lfo {

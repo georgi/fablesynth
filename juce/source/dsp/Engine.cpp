@@ -22,8 +22,10 @@ static inline double lcosh(double z) {
 // ---------------- Env ----------------
 void Env::set(double a, double d, double sus, double r, double sr) {
     s = sus;
-    if (a != a_ || d != d_ || r != r_) {
-        a_ = a; d_ = d; r_ = r;
+    // sr is part of the key: hosts can re-prepare at a new sample rate, and the
+    // coefficients below bake it in (the web worklet's sr is immutable).
+    if (a != a_ || d != d_ || r != r_ || sr != sr_) {
+        a_ = a; d_ = d; r_ = r; sr_ = sr;
         ca = 1 - std::exp(-1 / (std::max(0.0008, a) * sr));
         cd = 1 - std::exp(-1 / (std::max(0.002, d / 4.5) * sr));
         cr = 1 - std::exp(-1 / (std::max(0.002, r / 4.5) * sr));
@@ -634,8 +636,6 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     v.lfo1.advance(lfoHz(LFO1_BASE), n, sr_);
     v.lfo2.advance(lfoHz(LFO2_BASE), n, sr_);
     v.modEnv.processBlock(n);
-
-    vizA = v.oA.posSm; vizB = v.oB.posSm;
 }
 
 void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
@@ -647,13 +647,17 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n);
 
     int act = 0;
+    bool vizSet = false;
     for (auto& v : voices_) {
         if (!v.active() && v.hasPending) {
             v.hasPending = false;
             v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_);
         }
         if (!v.active()) continue;
-        renderVoice(v, L, R, n);   // updates vizA/vizB to this voice's wt positions
+        renderVoice(v, L, R, n);
+        // Prefer held voices for the POS viz, like the worklet's `if (v.gate ||
+        // !viz)`: release tails must not yank the indicator off the held note.
+        if (v.gate || !vizSet) { vizA = v.oA.posSm; vizB = v.oB.posSm; vizSet = true; }
         act++;
     }
     vizActive = act;
