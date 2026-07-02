@@ -27,12 +27,13 @@ inline juce::String formatParam(const juce::String& pid, float v) {
     auto ends = [&](const char* s) { return pid.endsWith(s); };
     if (ends(".cutoff"))                              return fmtHz(v);
     if (ends(".rate"))                               return juce::String(v, 2) + " Hz";
-    if (ends(".a") || ends(".d") || ends(".r")
+    if (ends(".a") || ends(".d") || ends(".r") || ends(".rise")
         || ends(".time") || pid == "master.glide")   return fmtSec(v);
     if (ends(".pan"))                                return fmtPan(v);
     if (ends(".oct") || ends(".semi") || ends(".fine")) return fmtSigned(v);
     if (ends(".unison"))                             return juce::String(juce::roundToInt(v));
-    if (ends(".env") || ends(".amt"))                return fmtBi(v);
+    // .amt is bipolar only on the mod matrix; fx.drive.amt is a plain percent.
+    if (ends(".env") || (ends(".amt") && pid.startsWith("mat"))) return fmtBi(v);
     return fmtPct(v); // pos, detune, spread, level, res, drive, key, sus, depth, mix, fb, size, volume
 }
 

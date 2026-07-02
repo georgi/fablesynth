@@ -38,11 +38,11 @@ export function EnvView({ a, d, s, r, accent, className }: EnvViewProps) {
 
     ctx.beginPath();
     ctx.moveTo(X(0), Y(0));
+    // x* are pixel coords; y* are normalized 0..1 and mapped through Y() here.
     const curve = (x0: number, y0: number, x1: number, y1: number, bend: number) => {
-      ctx.quadraticCurveTo(x0 + (x1 - x0) * bend, y1 + (y0 - y1) * (1 - bend) * 0.2, x1, y1);
+      ctx.quadraticCurveTo(x0 + (x1 - x0) * bend, Y(y1 + (y0 - y1) * (1 - bend) * 0.2), x1, Y(y1));
     };
-    curve(X(0), 0, X(ta), 1, 0.35); ctx.lineTo(X(ta), Y(1));
-    ctx.moveTo(X(ta), Y(1));
+    curve(X(0), 0, X(ta), 1, 0.35);
     curve(X(ta), 1, X(ta + td), s, 0.3);
     ctx.lineTo(X(ta + td + hold), Y(s));
     curve(X(ta + td + hold), s, X(total), 0, 0.3);

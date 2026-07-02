@@ -167,7 +167,8 @@ export const useStore = create<SynthStore>((set, get) => ({
     const tables = get().userTables.map(serializeUserTable);
     const userPresets = saveUserPreset(name, get().params, tables);
     const opts = presetOptions(userPresets);
-    const found = opts.find((o) => o.name === name);
+    // USER only: a factory preset with the same name sorts first in opts.
+    const found = opts.find((o) => o.group === 'USER' && o.name === name);
     set({ userPresets, presetValue: found ? found.value : get().presetValue });
   },
 

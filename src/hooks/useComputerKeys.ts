@@ -14,7 +14,9 @@ export function useComputerKeys() {
   const panic = useStore((s) => s.panic);
 
   useEffect(() => {
-    const held = new Set<number>();
+    // Keyed by physical key (e.code), not note number: the octave can change
+    // while a key is held, and the note-off must match the note that sounded.
+    const held = new Map<string, number>();
 
     const keydown = (e: KeyboardEvent) => {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -27,21 +29,20 @@ export function useComputerKeys() {
       const off = KEYMAP[e.code];
       if (off === undefined) return;
       const note = 60 + octave * 12 + off;
-      if (held.has(note)) return;
-      held.add(note);
+      if (held.has(e.code)) return;
+      held.set(e.code, note);
       playNote(note, 0.85);
     };
 
     const keyup = (e: KeyboardEvent) => {
-      const off = KEYMAP[e.code];
-      if (off === undefined) return;
-      const { octave } = useStore.getState();
-      const note = 60 + octave * 12 + off;
-      if (held.delete(note)) playNote(note, 0);
+      const note = held.get(e.code);
+      if (note === undefined) return;
+      held.delete(e.code);
+      playNote(note, 0);
     };
 
     const blur = () => {
-      for (const n of held) playNote(n, 0);
+      for (const n of held.values()) playNote(n, 0);
       held.clear();
     };
 

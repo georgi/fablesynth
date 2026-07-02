@@ -29,7 +29,6 @@ struct Biquad {
     double z1 = 0, z2 = 0;
     void   lowpass(double freq, double q, double sr);
     void   highpass(double freq, double q, double sr);
-    void   onepoleLP(double freq, double sr); // sets as 1st-order LP
     inline double process(double x) {
         double y = b0 * x + z1;
         z1 = b1 * x - a1 * y + z2;

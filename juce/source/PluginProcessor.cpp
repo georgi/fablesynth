@@ -48,10 +48,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
     return layout;
 }
 
-void FableAudioProcessor::prepareToPlay(double sampleRate, int) {
+void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
     rebuildEngineTables();
     fx.prepare(sampleRate);
+    // Pre-size the mono-downmix scratch so processBlock never allocates on the
+    // audio thread (its setSize call keeps existing storage when it fits).
+    scratchR.setSize(1, samplesPerBlock);
     currentSr.store(sampleRate);
     prepared = true;
 }

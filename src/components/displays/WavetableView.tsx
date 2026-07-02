@@ -56,7 +56,8 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
       const posF = show * (frames - 1);
 
       for (let f = frames - 1; f >= 0; f--) {
-        const d = f / (frames - 1);
+        // Single-frame tables would make this 0/0 (NaN coords -> blank view).
+        const d = frames > 1 ? f / (frames - 1) : 0;
         const ox = x0 + d * depthX;
         const oy = y0 - d * depthY;
         const near = Math.max(0, 1 - Math.abs(f - posF));
