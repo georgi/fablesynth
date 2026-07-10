@@ -4,6 +4,7 @@
 //
 // Exits non-zero if any check fails.
 #include "../source/drum/dsp/DrumParams.h"
+#include "../source/drum/dsp/DrumTables.h"
 
 #include <cmath>
 #include <cstdio>
@@ -54,6 +55,27 @@ int main() {
     // log-curve mapping identical to web: flt.cut min 20 max 20000, norm 0.5 -> sqrt(20*20000)
     const auto& cut = info[dpid(0, DP_FLT_CUT)];
     check(std::abs(normToValue(cut, 0.5f) - std::sqrt(20.0f * 20000.0f)) < 1.0f, "log curve midpoint");
+
+    printf("\n== 2. Drum tables ==\n");
+    auto dt = generateDrumTables();
+    check(dt.size() == 4, "4 drum tables");
+    check(dt[0].name == "THUD" && dt[1].name == "CRACK" && dt[2].name == "TINE" && dt[3].name == "GRIT", "names/order");
+    // Web-reference overall peaks (vitest run of src/drum/engine/drumtables.ts):
+    // buildUserTable normalizes each frame's mip 0 to 0.92; coarser mips share
+    // that frame scale, so band-truncation overshoot can exceed 0.92.
+    const float kWebPeaks[] = { 1.073356f, 0.922846f, 0.941088f, 1.245046f };
+    for (int ti = 0; ti < (int)dt.size(); ti++) {
+        auto& t = dt[ti];
+        check(t.frames == FRAMES && t.size == SIZE && t.mips == MIPS, t.name + " geometry");
+        check(finite(t.data) && (int)t.data.size() == t.frames * t.mips * t.size, t.name + " data valid");
+        float pk0 = 0;  // peak over mip-0 slices only — the normalization target
+        for (int f = 0; f < t.frames; f++)
+            for (int i = 0; i < t.size; i++)
+                pk0 = std::max(pk0, std::abs(t.data[(f * t.mips + 0) * t.size + i]));
+        check(std::abs(pk0 - 0.92f) < 1e-4f, t.name + " mip0 normalized to 0.92", std::to_string(pk0));
+        float pk = peak(t.data);
+        check(std::abs(pk - kWebPeaks[ti]) < 2e-3f, t.name + " overall peak matches web", std::to_string(pk));
+    }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");
     return g_fail ? 1 : 0;
