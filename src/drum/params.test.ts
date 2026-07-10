@@ -44,4 +44,9 @@ describe('drum params', () => {
     expect(DMOD_SOURCES).toHaveLength(4);
     expect(DMOD_DESTS).toHaveLength(10);
   });
+
+  it('has 15 built-in table names: 4 drum + 6 synth + 5 sample-derived TR-808, appended at the end', () => {
+    expect(DRUM_TABLE_NAMES).toHaveLength(15);
+    expect(DRUM_TABLE_NAMES.slice(10)).toEqual(['808SD', '808CP', '808CH', '808OH', '808CY']);
+  });
 });
