@@ -6,7 +6,8 @@
 //
 // JUCE-independent on purpose (same discipline as Engine.h): plain C++ so it
 // is driven by the plugin AND exercised by the headless test harness.
-// The sequencer (play/stop/patterns/chain/swing) is added in Task 4.
+// Includes the sample-accurate step sequencer (play/stop/patterns/chain/
+// swing/bpm-override) ported from the worklet's process()/fireStep().
 #pragma once
 
 #include "DrumParams.h"
@@ -49,7 +50,15 @@ public:
     void panic();
     void selectPad(int i);                          // viz target
 
-    // Task 4 adds: play/stop/setPatterns/setChain/setBpmOverride/step queries.
+    // ---- sequencer (worklet onMsg 'play'/'stop'/'pats'/'chain' + fireStep) ----
+    void play();                                    // step=-1, chainPos=0, samplesToNext=0
+    void stop();
+    bool isPlaying() const { return playing_; }
+    void setPatterns(const uint8_t* data, int n);   // n must be 4*16*16; copies
+    void setChain(const int* list, int n);          // ignores empty; clamps entries + chainPos
+    void setBpmOverride(double bpm);                // host tempo; <= 0 clears the override
+    int  currentStep() const { return step_; }      // -1 when stopped
+    int  currentPattern() const { return chain_[(size_t)chainPos_]; }
 
     // Render n samples into 5 stereo buses. outs[b][0]=L, outs[b][1]=R;
     // render() zero-fills all 10 buffers first, then pads accumulate into
@@ -111,6 +120,17 @@ private:
                           float* outL, float* outR, double drive, int n);
     double ampEnv(const PadVoice& v, int padI, int i) const;
     void renderPad(PadVoice& v, int padI, float* L, float* R, int off, int n);
+    void fireStep();               // js:493-518
+
+    // sequencer state (js:82-89)
+    std::vector<uint8_t> pats_ =
+        std::vector<uint8_t>(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+    std::vector<int> chain_ { 0 };
+    int    chainPos_ = 0;
+    bool   playing_ = false;
+    int    step_ = -1;
+    double samplesToNext_ = 0;
+    double bpmOverride_ = 0;       // > 0: host tempo wins over DG_SEQ_BPM
 
     DrumParamArray p_ = defaultDrumParams();
     uint32_t hits_ = 0;

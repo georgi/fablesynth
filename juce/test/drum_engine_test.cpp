@@ -41,6 +41,27 @@ static int crossings(const std::vector<float>& v, int a, int b) {
         if ((v[i - 1] < 0.0f) != (v[i] < 0.0f)) c++;
     return c;
 }
+// Attack starts: samples where |x| exceeds thr after >= quiet quiet samples.
+// The buffer start counts as quiet, so a hit at sample 0 is an onset.
+static std::vector<int> onsets(const std::vector<float>& v, float thr = 1e-4f, int quiet = 1000) {
+    std::vector<int> out;
+    int q = quiet;
+    for (int i = 0; i < (int)v.size(); i++) {
+        if (std::fabs(v[i]) > thr) {
+            if (q >= quiet) out.push_back(i);
+            q = 0;
+        } else {
+            q++;
+        }
+    }
+    return out;
+}
+static std::string onsetsStr(const std::vector<int>& o) {
+    std::string s = "onsets:";
+    for (int x : o) s += " " + std::to_string(x);
+    return s;
+}
+static bool near(int a, int b, int tol) { return std::abs(a - b) <= tol; }
 
 // ---- anti-aliasing measurement (copied from engine_test.cpp): ratio of ----
 // ---- non-harmonic to harmonic energy over a Hann-windowed FFT          ----
@@ -249,6 +270,102 @@ int main() {
         double f0 = 440.0 * std::pow(2.0, (60 + 24 - 69) / 12.0);
         double fdb = aliasFloorDb(ab.data() + 4800, 32768, 48000, f0);
         check(fdb < -55.0, "GRIT +24st alias floor < -55 dB", std::to_string(fdb) + " dB");
+    }
+
+    printf("\n== 4. Sequencer ==\n");
+    {
+        // timing: bpm 120 @ 48k -> 6000-sample steps; pad0 on steps 0 (accent) and 4
+        DrumEngine se; se.prepare(48000); se.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        pats[pidx(0, 0, 0)] = 2;
+        pats[pidx(0, 0, 4)] = 1;
+        se.setPatterns(pats.data(), (int)pats.size());
+        se.setParam(DG_SEQ_BPM, 120.0f);
+        se.setParam(DG_MASTER_SWING, 0.0f);
+        se.setParam(dpid(0, DP_AENV_DEC), 0.02f);   // short blips -> measurable onsets
+        se.setParam(dpid(1, DP_AENV_DEC), 0.02f);
+        check(!se.isPlaying() && se.currentStep() == -1, "stopped by default");
+        se.play();
+        check(se.isPlaying(), "isPlaying after play()");
+        auto sout = renderMain(se, 48000);
+        auto on = onsets(sout);
+        check(on.size() == 2 && near(on[0], 0, 64) && near(on[1], 24000, 64),
+              "bpm 120: onsets at steps 0 and 4", onsetsStr(on));
+        check(se.currentStep() == 7, "currentStep after 8 steps",
+              std::to_string(se.currentStep()));
+
+        // swing 1 delays odd steps by 0.667 * 6000: pad on step 1 fires at 6000+4002
+        std::fill(pats.begin(), pats.end(), 0);
+        pats[pidx(0, 0, 1)] = 1;
+        se.setPatterns(pats.data(), (int)pats.size());
+        se.setParam(DG_MASTER_SWING, 1.0f);
+        se.play();
+        sout = renderMain(se, 18000);
+        on = onsets(sout);
+        check(on.size() == 1 && near(on[0], 10002, 64),
+              "swing 1 delays odd step by 0.667*dur", onsetsStr(on));
+
+        // chain [0,1]: bar 1 = empty pattern A, bar 2 = pattern B (pad1 step 0)
+        std::fill(pats.begin(), pats.end(), 0);
+        pats[pidx(1, 1, 0)] = 2;
+        se.setPatterns(pats.data(), (int)pats.size());
+        se.setParam(DG_MASTER_SWING, 0.0f);
+        const int chainAB[2] = { 0, 1 };
+        se.setChain(chainAB, 2);
+        se.play();
+        check(se.currentPattern() == 0, "chain starts at pattern A");
+        sout = renderMain(se, 16 * 6000 + 12000);
+        on = onsets(sout);
+        check(on.size() == 1 && near(on[0], 96000, 64),
+              "chain advances to pattern B in bar 2", onsetsStr(on));
+        check(se.currentPattern() == 1, "currentPattern reports chain[1]");
+
+        // stop(): no further steps fire; step query resets
+        se.stop();
+        check(!se.isPlaying() && se.currentStep() == -1, "stop resets step to -1");
+        check(rms(renderMain(se, 24000)) < 1e-6, "silent after stop");
+
+        // bpm override 240 (beyond the 60..200 param clamp) -> 3000-sample steps
+        std::fill(pats.begin(), pats.end(), 0);
+        pats[pidx(0, 0, 0)] = 2;
+        pats[pidx(0, 0, 4)] = 1;
+        se.setPatterns(pats.data(), (int)pats.size());
+        const int chainA[1] = { 0 };
+        se.setChain(chainA, 1);
+        se.setBpmOverride(240.0);
+        se.play();
+        sout = renderMain(se, 24000);
+        on = onsets(sout);
+        check(on.size() == 2 && near(on[0], 0, 64) && near(on[1], 12000, 64),
+              "bpm override 240 halves the step", onsetsStr(on));
+
+        // clearing the override (<= 0) restores DG_SEQ_BPM timing
+        se.setBpmOverride(0.0);
+        se.play();
+        sout = renderMain(se, 48000);
+        on = onsets(sout);
+        check(on.size() == 2 && near(on[1], 24000, 64),
+              "override <= 0 restores param bpm", onsetsStr(on));
+        se.stop();
+    }
+    {
+        // multi-out: pad 0 routed to AUX 2 lands on bus 2 only; MAIN stays silent
+        DrumEngine me; me.prepare(48000); me.setTables(allTables());
+        me.setParam(dpid(0, DP_OUT), 2.0f);
+        me.trigger(0, 1.0f);
+        auto bufs = renderBuses(me, 12000);
+        check(rms(bufs[2 * 2 + 0]) > 1e-4 && rms(bufs[2 * 2 + 1]) > 1e-4,
+              "pad routed to AUX 2", "rmsL=" + std::to_string(rms(bufs[2 * 2 + 0])));
+        double leak = 0;
+        for (int b = 0; b < DR_NBUSES; b++) {
+            if (b == 2) continue;
+            leak = std::max(leak, rms(bufs[b * 2 + 0]));
+            leak = std::max(leak, rms(bufs[b * 2 + 1]));
+        }
+        check(leak < 1e-6, "other buses silent (incl. MAIN)", std::to_string(leak));
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");

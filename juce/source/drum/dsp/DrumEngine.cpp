@@ -83,6 +83,56 @@ void DrumEngine::trigger(int padI, float vel) {
     hits_ |= 1u << padI;
 }
 
+// ---- sequencer control (worklet onMsg 'pats'/'chain'/'play'/'stop', js:110-120) ----
+void DrumEngine::play() {
+    playing_ = true; step_ = -1; chainPos_ = 0; samplesToNext_ = 0;
+}
+
+void DrumEngine::stop() {
+    playing_ = false; step_ = -1;
+}
+
+void DrumEngine::setPatterns(const uint8_t* data, int n) {
+    if (data && n == (int)pats_.size())
+        std::copy(data, data + n, pats_.begin());
+}
+
+void DrumEngine::setChain(const int* list, int n) {
+    if (!list || n <= 0) return;                    // ignore empty (js:112)
+    chain_.assign(list, list + n);
+    for (int& c : chain_)                           // js does `x|0`; C++ additionally
+        c = std::max(0, std::min(DR_NPATTERNS - 1, c));   // clamps for memory safety
+    chainPos_ = std::min(chainPos_, (int)chain_.size() - 1);
+}
+
+void DrumEngine::setBpmOverride(double bpm) {
+    bpmOverride_ = bpm > 0 ? bpm : 0;
+}
+
+// ---- fireStep (js:493-518). The host-tempo override bypasses the 60..200 ----
+// ---- param clamp — the sequencer follows whatever the DAW runs at.       ----
+void DrumEngine::fireStep() {
+    double pbpm = p_[DG_SEQ_BPM] != 0 ? (double)p_[DG_SEQ_BPM] : 126.0;
+    double bpm = bpmOverride_ > 0 ? bpmOverride_ : clampd(pbpm, 60.0, 200.0);
+    double dur = (60.0 / bpm / 4.0) * sr_;
+    double swing = p_[DG_MASTER_SWING];
+    if (step_ + 1 >= DR_STEPS) {                    // bar wrap advances the chain
+        step_ = -1;
+        chainPos_ = (chainPos_ + 1) % (int)chain_.size();
+    }
+    int s = (step_ + 1) % DR_STEPS;
+    int pat = chain_[(size_t)chainPos_];
+    for (int i = 0; i < DR_NPADS; i++) {
+        uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
+        if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+    }
+    step_ = s;
+    double offNow = (s % 2 == 1) ? swing * DR_SWING_MAX * dur : 0.0;
+    int sNext = (s + 1) % DR_STEPS;
+    double offNext = (sNext % 2 == 1) ? swing * DR_SWING_MAX * dur : 0.0;
+    samplesToNext_ = dur - offNow + offNext;
+}
+
 // ---- padMod (js:145-169) ----
 DrumEngine::Mod DrumEngine::padMod(int padI, const PadVoice& v) const {
     Mod m;
@@ -412,9 +462,10 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     if (v.active && !v.choking && v.t >= end && v.ampLevel < 1e-4) v.kill();
 }
 
-// ---- process (js:456-491), Task 3 version: no sequencer yet. Chunks to ----
-// ---- <=128 samples so padMod's block-rate env matches the worklet's    ----
-// ---- 128-sample process cadence regardless of the host buffer size.    ----
+// ---- process (js:456-491). Chunks to <=128 samples so padMod's block-  ----
+// ---- rate env matches the worklet's 128-sample process cadence, and    ----
+// ---- additionally splits at step boundaries (samplesToNext) so steps   ----
+// ---- fire sample-accurately regardless of the host buffer size.        ----
 void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     for (int b = 0; b < DR_NBUSES; b++)
         for (int c = 0; c < 2; c++)
@@ -431,12 +482,17 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     int pos = 0;
     while (pos < n) {
         int run = std::min(128, n - pos);
+        if (playing_) {                              // js:465-469
+            if (samplesToNext_ <= 0) fireStep();
+            run = std::min(run, (int)std::ceil(samplesToNext_));
+        }
         for (int i = 0; i < DR_NPADS; i++) {
             PadVoice& v = voices_[i];
             if (!v.active) continue;
             int out = std::max(0, std::min(DR_NBUSES - 1, (int)p_[dpid(i, DP_OUT)]));
             renderPad(v, i, outs[out][0], outs[out][1], pos, run);
         }
+        if (playing_) samplesToNext_ -= run;         // js:475
         pos += run;
     }
 
