@@ -7,12 +7,21 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 static int g_fail = 0;
 static void check(bool c, const char* msg, double val = 0) {
     printf("  [%s] %s (%.5f)\n", c ? "PASS" : "FAIL", msg, val);
     if (!c) g_fail++;
 }
+
+// Exposes AudioProcessor's protected static XML<->binary packing so the
+// legacy-state test can hand-craft a bare-APVTS blob (never instantiated).
+struct BinPacker : juce::AudioProcessor {
+    static void pack(const juce::XmlElement& xml, juce::MemoryBlock& dest) {
+        copyXmlToBinary(xml, dest);
+    }
+};
 
 // Minimal host playhead reporting a fixed tempo (bpm-only sync, per spec).
 struct MockPlayHead : juce::AudioPlayHead {
@@ -143,6 +152,74 @@ int main() {
 
     // ---- 7. everything rendered finite ----
     check(allFinite, "all bus outputs finite");
+
+    // ---- 8. full state round-trip into a fresh processor ----
+    // Mutate params + every piece of non-param session state, save, restore
+    // into a second instance, and verify all of it comes back.
+    printf("\n== state round-trip ==\n");
+    if (auto* p = proc.apvts.getParameter("pad3.flt.cut"))
+        p->setValueNotifyingHost(p->convertTo0to1(1234.0f));
+    proc.setStep(0, 3, 7, 2);
+    proc.setChain({ 0, 1 });
+    proc.setPadName(3, "ZAP");
+    proc.setSelectedPad(3);
+    std::vector<float> sine((size_t)fable::SIZE);
+    for (int i = 0; i < fable::SIZE; ++i)
+        sine[(size_t)i] = (float)std::sin(2.0 * juce::MathConstants<double>::pi * i / fable::SIZE);
+    const int userIdx = proc.addUserTableForPad(2, fable::makeUserTable("IMP", { sine }));
+    check(userIdx >= 10, "user table appended after the 10 factory tables", userIdx);
+    float padTable = proc.apvts.getRawParameterValue("pad2.oscA.table")->load();
+    check((int)std::lround(padTable) == userIdx, "import points pad2 oscA.table at it", padTable);
+
+    juce::MemoryBlock state;
+    proc.getStateInformation(state);
+    check(state.getSize() > 0, "state serialises", (double)state.getSize());
+
+    DrumAudioProcessor proc2;
+    // Fresh instance boots on TR-VOID; prove the restore actually changes it.
+    check(proc2.getPadName(3) != "ZAP", "fresh instance differs before restore");
+    check(proc2.numTables() == 10, "fresh instance has no user tables", proc2.numTables());
+    proc2.setStateInformation(state.getData(), (int)state.getSize());
+
+    float cut2 = proc2.apvts.getRawParameterValue("pad3.flt.cut")->load();
+    check(std::abs(cut2 - 1234.0f) < 2.0f, "pad3.flt.cut round-trips", cut2);
+    check(proc2.getStep(0, 3, 7) == 2, "step (pat 0, pad 3, step 7) = accent round-trips",
+          proc2.getStep(0, 3, 7));
+    check(proc2.getChain() == std::vector<int>({ 0, 1 }), "chain {0,1} round-trips");
+    check(proc2.getPadName(3) == "ZAP", "pad name ZAP round-trips");
+    check(proc2.getSelectedPad() == 3, "selected pad 3 round-trips", proc2.getSelectedPad());
+    check(proc2.numTables() == proc.numTables(), "user table pool size round-trips",
+          proc2.numTables());
+    check(proc2.tableName(userIdx) == "IMP", "user table name IMP round-trips");
+    float padTable2 = proc2.apvts.getRawParameterValue("pad2.oscA.table")->load();
+    check((int)std::lround(padTable2) == userIdx, "pad2 oscA.table index round-trips", padTable2);
+    check(proc2.tableAt(userIdx) != nullptr, "restored user table resolves in the engine list");
+
+    // ---- 9. kit programs beyond TR-VOID ----
+    printf("\n== kit programs ==\n");
+    check(proc2.getProgramName(1) == "ROOM ONE", "program 1 is ROOM ONE");
+    check(proc2.getProgramName(2) == "BITCRUSH", "program 2 is BITCRUSH");
+    proc2.setCurrentProgram(1);
+    check(proc2.getCurrentProgram() == 1, "current program tracks", proc2.getCurrentProgram());
+    float bpm1 = proc2.apvts.getRawParameterValue("seq.bpm")->load();
+    check(std::abs(bpm1 - 116.0f) < 0.5f, "ROOM ONE applies seq.bpm=116", bpm1);
+
+    // ---- 10. legacy tolerance: a bare APVTS tree loads without crashing ----
+    printf("\n== legacy state ==\n");
+    {
+        DrumAudioProcessor proc3;
+        auto bare = proc3.apvts.copyState(); // no DR1STATE wrapper, no DRUM child
+        bare.setProperty(juce::Identifier("nonsense"), 42, nullptr);
+        juce::MemoryBlock legacy;
+        if (auto xml = bare.createXml()) BinPacker::pack(*xml, legacy);
+        check(legacy.getSize() > 0, "legacy blob built", (double)legacy.getSize());
+        proc3.setStateInformation(legacy.getData(), (int)legacy.getSize());
+        check(proc3.getParameters().size() > 0, "processor alive after legacy load");
+        // Garbage bytes must not crash either.
+        const char junk[] = "not a state blob";
+        proc3.setStateInformation(junk, (int)sizeof(junk));
+        check(proc3.getName() == "FableSynth DR-1", "processor alive after garbage load");
+    }
 
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
