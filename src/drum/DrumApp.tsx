@@ -1,9 +1,13 @@
+import { AmpEnvPanel } from './components/AmpEnvPanel';
 import { DrumPowerOverlay } from './components/DrumPowerOverlay';
+import { FilterSection } from './components/FilterSection';
 import { Header } from './components/Header';
+import { ModPanel } from './components/ModPanel';
 import { PadGrid } from './components/PadGrid';
 import { PadStrip } from './components/PadStrip';
 import { NoiseSection } from './components/NoiseSection';
 import { OscSection } from './components/OscSection';
+import { PitchEnvPanel } from './components/PitchEnvPanel';
 import { SelBar } from './components/SelBar';
 import { useDrumKeys } from './hooks/useDrumKeys';
 import { useDrumMidi } from './hooks/useDrumMidi';
@@ -29,7 +33,12 @@ export function DrumApp() {
               <OscSection osc="oscB" />
               <NoiseSection />
             </div>
-            <div id="dr-editrow" />
+            <div id="dr-editrow">
+              <PitchEnvPanel />
+              <AmpEnvPanel />
+              <FilterSection />
+              <ModPanel />
+            </div>
           </div>
         </div>
         <div id="dr-stepseq" />
