@@ -80,6 +80,10 @@ if(FABLE_BUILD_PLUGIN)
     # Shared between the FableDrum plugin and the drum_host_test console app.
     set(FABLE_DRUM_SOURCES
         source/drum/DrumProcessor.cpp
+        source/drum/DrumEditor.cpp
+        source/drum/ui/DrumHeader.cpp
+        source/ui/Controls.cpp
+        source/ui/Modulation.cpp
         source/drum/dsp/DrumParams.cpp
         source/drum/dsp/DrumTables.cpp
         source/drum/dsp/DrumEngine.cpp

@@ -4,6 +4,7 @@
 // sequencer via kit program 0 (TR-VOID), and host-tempo sync through a mock
 // AudioPlayHead. Modeled on plugin_host_test.cpp.
 #include "../source/drum/DrumProcessor.h"
+#include "../source/drum/DrumEditor.h"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -34,7 +35,17 @@ struct MockPlayHead : juce::AudioPlayHead {
     }
 };
 
-int main() {
+static void writePng(const juce::Image& img, const juce::File& out) {
+    if (auto stream = out.createOutputStream()) {
+        stream->setPosition(0); stream->truncate();
+        juce::PNGImageFormat png;
+        png.writeImageToStream(img, *stream);
+        printf("  wrote %s (%dx%d)\n", out.getFullPathName().toRawUTF8(),
+               img.getWidth(), img.getHeight());
+    }
+}
+
+int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI juceInit; // message manager for the processor
 
     DrumAudioProcessor proc;
@@ -219,6 +230,38 @@ int main() {
         const char junk[] = "not a state blob";
         proc3.setStateInformation(junk, (int)sizeof(junk));
         check(proc3.getName() == "FableSynth DR-1", "processor alive after garbage load");
+    }
+
+    // ---- 11. editor: headless full-rack render to PNG (Task 9 shell) ----
+    printf("\n== editor snapshot ==\n");
+    {
+        juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
+                                : juce::File::getCurrentWorkingDirectory());
+        std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        check(dynamic_cast<DrumEditor*>(ed.get()) != nullptr, "createEditor returns DrumEditor");
+        ed->setSize(DrumRack::LW, DrumRack::LH); // logical rack size — 1:1 render
+        juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
+        check(img.isValid() && img.getWidth() == DrumRack::LW && img.getHeight() == DrumRack::LH,
+              "snapshot rendered at 1460x880", img.getWidth());
+        const juce::File out = dir.getChildFile("drum_editor.png");
+        writePng(img, out);
+        check(out.existsAsFile() && out.getSize() > 0, "drum_editor.png written",
+              (double)out.getSize());
+        // Non-blank: section-centre pixels must differ from the bare editor
+        // background sampled at the rack's outer padding (x=8 is left of every
+        // panel, which starts at x=18).
+        struct Probe { const char* name; int x, y; };
+        const Probe probes[] = {
+            { "header",    700,  54 },
+            { "pad grid",  194, 287 },
+            { "osc row",   910, 264 },
+            { "step seq",  730, 665 },
+            { "fx rack",   730, 792 },
+        };
+        for (const auto& p : probes) {
+            const juce::Colour bg = img.getPixelAt(8, p.y);
+            check(img.getPixelAt(p.x, p.y) != bg, p.name, (double)p.x);
+        }
     }
 
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");

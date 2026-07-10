@@ -1,4 +1,5 @@
 #include "DrumProcessor.h"
+#include "DrumEditor.h"
 #include "dsp/DrumTables.h"
 #include <cmath>
 #include <cstring>
@@ -480,8 +481,7 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
 // ---- editor -------------------------------------------------------------------
 
 juce::AudioProcessorEditor* DrumAudioProcessor::createEditor() {
-    // Temporary generic editor until Task 9 lands the real DrumEditor.
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new DrumEditor(*this);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
