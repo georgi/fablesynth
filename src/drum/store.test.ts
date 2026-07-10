@@ -4,11 +4,25 @@ import { useDrumStore } from './store';
 import { patIdx } from './seq';
 import { defaultDrumParams } from './params';
 
+if (typeof localStorage === 'undefined') {
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      get length() { return store.size; },
+      clear: () => store.clear(),
+      getItem: (key: string) => store.get(key) ?? null,
+      key: (index: number) => [...store.keys()][index] ?? null,
+      removeItem: (key: string) => store.delete(key),
+      setItem: (key: string, value: string) => store.set(key, value),
+    } satisfies Storage,
+  });
+}
+
 describe('drum store', () => {
   beforeEach(() => {
     localStorage.clear();
     useDrumStore.setState({
-      params: defaultDrumParams(), sel: 0, editPattern: 0, chain: [0], chaining: false,
+      params: defaultDrumParams(), sel: 0, editPattern: 0, chain: [0], chaining: false, chainFresh: false,
       patterns: new Uint8Array(4 * 16 * 16),
     });
   });

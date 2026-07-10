@@ -15,23 +15,6 @@ import { FACTORY_KITS, kitToState, loadUserKits, saveUserKit, stateToKit, type K
 import { defaultDrumParams, pad } from './params';
 import { cycleStep, makeEmptyPatterns, patIdx, type Patterns } from './seq';
 
-// The focused store test runs in Vitest's plain Node environment. Keep the
-// same guarded storage fallback used by kits.test.ts so the browser path is
-// untouched while user-kit persistence remains testable.
-if (typeof localStorage === 'undefined') {
-  const storage = new Map<string, string>();
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: {
-      get length() { return storage.size; },
-      clear: () => storage.clear(),
-      getItem: (key: string) => storage.get(key) ?? null,
-      key: (index: number) => [...storage.keys()][index] ?? null,
-      removeItem: (key: string) => storage.delete(key),
-      setItem: (key: string, value: string) => storage.set(key, value),
-    } satisfies Storage,
-  });
-}
-
 export const drumEngine = new DrumEngine();
 
 export interface KitOption {
@@ -56,6 +39,7 @@ export interface DrumStore {
   patterns: Patterns;
   chain: number[];
   chaining: boolean;
+  chainFresh: boolean;
   editPattern: number;
   playing: boolean;
   curStep: number;
@@ -92,14 +76,13 @@ export interface DrumStore {
   importPadTable: (padI: number, table: GeneratedTable) => void;
 }
 
-let chainFresh = false;
-
 export const useDrumStore = create<DrumStore>((set, get) => ({
   params: defaultDrumParams(),
   sel: 0,
   patterns: makeEmptyPatterns(),
   chain: [0],
   chaining: false,
+  chainFresh: false,
   editPattern: 0,
   playing: false,
   curStep: -1,
@@ -124,12 +107,12 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   selectPad: (i) => {
     drumEngine.selectPad(i);
     drumEngine.trigger(i, 0.8);
-    set((state) => ({ sel: i, hitTick: { ...state.hitTick, [i]: Date.now() } }));
+    set((state) => ({ sel: i, hitTick: { ...state.hitTick, [i]: performance.now() } }));
   },
 
   triggerPad: (i, vel) => {
     drumEngine.trigger(i, vel);
-    set((state) => ({ hitTick: { ...state.hitTick, [i]: Date.now() } }));
+    set((state) => ({ hitTick: { ...state.hitTick, [i]: performance.now() } }));
   },
 
   toggleStep: (step) => {
@@ -153,13 +136,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
 
   setChaining: (on) => {
     if (on) {
-      chainFresh = true;
-      set({ chaining: true });
+      set({ chaining: true, chainFresh: true });
       return;
     }
-    chainFresh = false;
     const chain = get().chain.length ? get().chain : [get().editPattern];
-    set({ chaining: false, chain });
+    set({ chaining: false, chainFresh: false, chain });
     drumEngine.setChain(chain);
   },
 
@@ -168,9 +149,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       get().setEditPattern(i);
       return;
     }
-    const chain = chainFresh ? [i] : [...get().chain, i];
-    chainFresh = false;
-    set({ chain, editPattern: i });
+    const chain = get().chainFresh ? [i] : [...get().chain, i];
+    set({ chain, chainFresh: false, editPattern: i });
     drumEngine.setChain(chain);
   },
 
@@ -199,7 +179,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     if (userTables.length) drumEngine.setUserTables(userTables);
     drumEngine.onstep = (data) => set((state) => {
       const hitTick = { ...state.hitTick };
-      const now = Date.now();
+      const now = performance.now();
       data.hits.forEach((hit) => { hitTick[hit] = now; });
       return { curStep: data.s, curPat: data.pat, hitTick };
     });
