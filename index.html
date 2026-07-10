@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FableSynth WT-1 · Wavetable Synthesizer · VST3 · AU · Browser</title>
-<meta name="description" content="A Serum-class wavetable synthesizer built to get you to a sound you love fast. Play it free in your browser, or run it in your DAW as VST3, AU or Standalone.">
+<meta name="description" content="A Serum-class wavetable synthesizer built to get you to a sound you love fast. Play it free in your browser, or run it in your DAW as VST3, AU or Standalone. Plus DR-1, a 16-pad wavetable drum machine.">
 <meta property="og:title" content="FableSynth WT-1">
-<meta property="og:description" content="Serum-class wavetable synthesis. In your browser, in your DAW.">
+<meta property="og:description" content="Serum-class wavetable synthesis. In your browser, in your DAW. Plus DR-1, a 16-pad wavetable drum machine.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="./media/plugin-editor.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Cpath d='M4 20 Q8 8 12 16 T20 14 T28 18' stroke='%234de8ff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -25,6 +25,7 @@
   <nav class="nav-links" aria-label="Primary">
     <a href="#engine">Engine</a>
     <a href="#precision">Sound</a>
+    <a href="#drum">DR-1</a>
     <a href="#formats">Formats</a>
     <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">GitHub</a>
     <a class="btn btn-launch" href="./app/">Launch <span aria-hidden="true">→</span></a>
@@ -189,6 +190,48 @@
     </div>
   </section>
 
+  <!-- ============ DR-1 DRUM MACHINE ============ -->
+  <section class="band drum" id="drum" data-accent="b">
+    <div class="section-head reveal">
+      <p class="kicker">NEW · DR-1 DRUM MACHINE</p>
+      <h2>Same engine.<br>Now it hits.</h2>
+    </div>
+
+    <figure class="drum-shot reveal">
+      <img src="./media/dr1-editor.png" width="1200" loading="lazy"
+           alt="The DR-1 drum machine: a 4×4 pad grid on the left, dual wavetable oscillator and noise editors with glowing terrain views, pitch and amp envelopes, filter and mod matrix, a 16-step sequencer and a master FX rack.">
+      <figcaption>DR-1: sixteen pads, every sound synthesized live — no samples.</figcaption>
+    </figure>
+
+    <div class="drum-grid">
+      <div class="drum-copy reveal">
+        <p class="prose">
+          DR-1 puts the WT-1 wavetable engine behind sixteen drum pads. Every
+          kick, snare and hat is synthesized live from morphing wavetables —
+          there isn't a single sample in it — so any sound can be retuned,
+          reshaped or mangled as deep as you like. Drop a WAV on a pad and it
+          becomes a wavetable too.
+        </p>
+        <p class="prose">
+          Sketch grooves in the 16-step sequencer with accents and swing, chain
+          patterns into longer phrases, and keep hats tight with choke groups.
+          Kits save in your browser, and it plays from your computer keyboard
+          or a MIDI pad controller.
+        </p>
+        <div class="surfaces-cta">
+          <a class="btn btn-primary" href="./drum/">Launch DR-1 <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <ul class="spec-list reveal" aria-label="DR-1 at a glance">
+        <li><span>16 PADS</span><em>2 wavetable osc + noise each</em></li>
+        <li><span>SEQUENCER</span><em>16 steps · accents · swing · 4 chainable patterns</em></li>
+        <li><span>PER-PAD SHAPING</span><em>pitch &amp; amp envelopes, filter, mod matrix</em></li>
+        <li><span>MASTER FX</span><em>drive · compressor · chorus · delay · reverb</em></li>
+        <li><span>DROP A WAV</span><em>any sample becomes a wavetable</em></li>
+      </ul>
+    </div>
+  </section>
+
   <!-- ============ FORMATS / DOWNLOAD ============ -->
   <section class="band formats" id="formats">
     <div class="section-head reveal">
@@ -202,6 +245,13 @@
         <h3>In the browser</h3>
         <p>No install, no account. Click power and play, with a computer-keyboard or MIDI controller.</p>
         <span class="format-go">Launch the synth <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="format-card format-feature reveal" href="./drum/" data-accent="b">
+        <p class="format-tag">PLAY NOW</p>
+        <h3>DR-1 drum machine</h3>
+        <p>Sixteen pads of sample-free wavetable drums with a 16-step sequencer, in the same browser.</p>
+        <span class="format-go">Launch DR-1 <span aria-hidden="true">→</span></span>
       </a>
 
       <div class="format-card reveal">
@@ -242,6 +292,7 @@
   </div>
   <nav class="foot-links" aria-label="Footer">
     <a href="./app/">Browser synth</a>
+    <a href="./drum/">DR-1 drums</a>
     <a href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Releases</a>
     <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">Source</a>
   </nav>

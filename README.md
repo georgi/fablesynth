@@ -113,11 +113,33 @@ and play.
 
 ## DR-1 drum machine (web)
 
-DR-1 is a 16-pad wavetable drum machine and FableSynth's third web surface,
-served from `drum/index.html`. Every sound is fully synthesized with no samples,
-and its 16-step sequencer supports accents, swing, pattern chaining and choke
-groups. Kits persist in `localStorage`, so saved sounds survive a reload. A
-JUCE port is planned.
+DR-1 is a 16-pad drum machine built on the same wavetable engine — FableSynth's
+third web surface, served at `/drum/` (`npm run dev`, then open
+`http://localhost:5173/drum/`). Every sound is **fully synthesized, no
+samples**: each pad is a complete drum voice you can retune, reshape or mangle.
+A JUCE port is planned.
+
+![The DR-1 drum machine](docs/dr1.png)
+
+- **16 pads**, each with **2 wavetable oscillators** (4 drum tables — THUD,
+  CRACK, TINE, GRIT — plus WT-1's six procedural tables, with the same POS
+  morphing and up to 7-voice unison) and a **noise** layer with color control.
+- **Per-pad shaping** — pitch envelope (±48 st), AHD amp envelope with
+  adjustable curve, a switchable filter (LP12/LP24/BP/HP/Notch) with drive, and
+  a **4-slot mod matrix** (MOD ENV / VELO / RAND → wavetable pos, pitch, cutoff,
+  levels …). Velocity→level and velocity→mod amounts per pad.
+- **Drop a WAV on a pad** and it's sliced into a wavetable through the same
+  band-limit pipeline as WT-1 user tables — any sample becomes a synthesized,
+  retunable drum.
+- **16-step sequencer** — tap steps through off → on → accent, 4 patterns (A–D)
+  per kit with **pattern chaining**, swing, and 60–200 BPM.
+- **Choke groups** (4) so open/closed hats cut each other, and per-pad output
+  routing (MAIN + 4 aux buses).
+- **Master FX** — drive, bus compressor, chorus, delay, reverb.
+- **Kits** — 3 factory kits (TR-VOID, ROOM ONE, BITCRUSH); saved kits persist in
+  `localStorage`, including patterns, chains and any dropped-in wavetables.
+- **Play it** — pads map to `Z X C V / A S D F / Q W E R / 1 2 3 4` (bottom row
+  = pads 1–4), `Esc` stops, and MIDI notes 36–51 (C1 up) trigger pads 1–16.
 
 ## Code layout
 
@@ -143,4 +165,19 @@ src/components/            knobs, steppers, sliders, keyboard, canvas displays
 src/components/panels/     the rack layout (oscillators, filter, env, fx, …)
 src/hooks/                 computer-keyboard + MIDI input
 src/App.tsx                top-level composition
+```
+
+The **DR-1 drum machine** (TypeScript, third vite entry at `drum/index.html`):
+
+```
+src/drum/engine/worklet-drum.js  DSP core (AudioWorklet thread): 16 one-shot pad
+                                 voices, sample-accurate sequencer, choke groups
+src/drum/engine/drumtables.ts    the 4 drum wavetables (THUD, CRACK, TINE, GRIT)
+src/drum/engine/drum-synth.ts    AudioContext, drum worklet + master FX graph
+src/drum/params.ts               canonical per-pad + global parameter table
+src/drum/seq.ts                  pattern data model + swing/step timing math
+src/drum/kits.ts                 factory kits + localStorage user kits
+src/drum/store.ts                Zustand store: params, patterns, chain, transport
+src/drum/components/             pads, panels, step sequencer, FX rack
+src/drum/hooks/                  computer-keyboard + MIDI pad input
 ```
