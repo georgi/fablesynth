@@ -22,7 +22,7 @@ if(FABLE_BUILD_PLUGIN)
     endif()
 
     juce_add_plugin(FableSynth
-        PRODUCT_NAME "FableSynth"
+        PRODUCT_NAME "FableSynth WT-1"
         COMPANY_NAME "FableSynth"
         PLUGIN_MANUFACTURER_CODE Fabl
         PLUGIN_CODE Fwt1
@@ -63,18 +63,73 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+    # ---- FableSynth DR-1 (drum machine) — second plugin target in the same
+    # project. Shares the WT-1 DSP sources (Wavetables/Params/UserTables/Fx)
+    # by direct source inclusion; its own core lives in source/drum/.
+    juce_add_plugin(FableDrum
+        PRODUCT_NAME "FableSynth DR-1"
+        COMPANY_NAME "FableSynth"
+        PLUGIN_MANUFACTURER_CODE Fabl
+        PLUGIN_CODE Fdr1
+        FORMATS AU VST3 Standalone
+        IS_SYNTH TRUE
+        NEEDS_MIDI_INPUT TRUE
+        EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+        COPY_PLUGIN_AFTER_BUILD FALSE)
+
+    # Shared between the FableDrum plugin and the drum_host_test console app.
+    set(FABLE_DRUM_SOURCES
+        source/drum/DrumProcessor.cpp
+        source/drum/DrumEditor.cpp
+        source/drum/ui/DrumHeader.cpp
+        source/drum/ui/PadGrid.cpp
+        source/drum/ui/PadStrip.cpp
+        source/drum/ui/DrumPanels.cpp
+        source/drum/ui/StepSeqView.cpp
+        source/drum/ui/DrumFxRack.cpp
+        source/ui/Controls.cpp
+        source/ui/Modulation.cpp
+        source/drum/dsp/DrumParams.cpp
+        source/drum/dsp/DrumTables.cpp
+        source/drum/dsp/DrumEngine.cpp
+        source/drum/dsp/DrumFx.cpp
+        source/drum/dsp/DrumKits.cpp
+        source/dsp/Wavetables.cpp
+        source/dsp/Params.cpp
+        source/dsp/UserTables.cpp
+        source/dsp/Fx.cpp)
+
+    target_sources(FableDrum PRIVATE ${FABLE_DRUM_SOURCES})
+
+    target_compile_definitions(FableDrum PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0)
+
+    juce_generate_juce_header(FableDrum)
+
+    target_link_libraries(FableDrum PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags)
+
     # On macOS, JUCE regenerates moduleinfo.json as a post-build step *after* the
     # bundle is code-signed, which invalidates the signature seal. Hosts with a
     # hardened scanner then refuse to load the plugin ("a sealed resource is
     # missing or invalid" — e.g. Ableton silently skips it). Re-sign (ad-hoc)
     # after all of JUCE's post-build steps so the seal matches the contents.
     if(APPLE)
-        foreach(fmt VST3 AU Standalone)
-            if(TARGET FableSynth_${fmt})
-                add_custom_command(TARGET FableSynth_${fmt} POST_BUILD
-                    COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:FableSynth_${fmt}>"
-                    VERBATIM)
-            endif()
+        foreach(tgt FableSynth FableDrum)
+            foreach(fmt VST3 AU Standalone)
+                if(TARGET ${tgt}_${fmt})
+                    add_custom_command(TARGET ${tgt}_${fmt} POST_BUILD
+                        COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:${tgt}_${fmt}>"
+                        VERBATIM)
+                endif()
+            endforeach()
         endforeach()
     endif()
 
@@ -106,6 +161,20 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     add_test(NAME plugin_host_test COMMAND plugin_host_test)
+
+    # DR-1 plugin-boundary harness (instantiates the real DrumAudioProcessor).
+    juce_add_console_app(drum_host_test PRODUCT_NAME "drum_host_test")
+    target_sources(drum_host_test PRIVATE
+        test/drum_host_test.cpp
+        ${FABLE_DRUM_SOURCES})
+    target_compile_definitions(drum_host_test PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(drum_host_test PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME drum_host_test COMMAND drum_host_test)
 endif()
 
 # ---- Headless DSP verification harness (no JUCE) ----
@@ -119,5 +188,20 @@ add_executable(engine_test
     source/dsp/UserTables.cpp)
 target_compile_features(engine_test PRIVATE cxx_std_17)
 
+# ---- DR-1 headless DSP verification harness (no JUCE) ----
+add_executable(drum_engine_test
+    test/drum_engine_test.cpp
+    source/drum/dsp/DrumParams.cpp
+    source/drum/dsp/DrumTables.cpp
+    source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumFx.cpp
+    source/drum/dsp/DrumKits.cpp
+    source/dsp/Fx.cpp
+    source/dsp/Params.cpp
+    source/dsp/Wavetables.cpp
+    source/dsp/UserTables.cpp)
+target_compile_features(drum_engine_test PRIVATE cxx_std_17)
+
 enable_testing()
 add_test(NAME engine_test COMMAND engine_test)
+add_test(NAME drum_engine_test COMMAND drum_engine_test)

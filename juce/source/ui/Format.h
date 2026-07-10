@@ -25,6 +25,18 @@ inline juce::String fmtPan(float v) {
 
 inline juce::String formatParam(const juce::String& pid, float v) {
     auto ends = [&](const char* s) { return pid.endsWith(s); };
+    // DR-1 per-pad params ("pad<i>.…", src/drum/params.ts fmt column). No WT-1
+    // id starts with "pad", so this block never changes WT-1 read-outs.
+    if (pid.startsWith("pad")) {
+        if (ends(".tune") || ends("penv.amt"))            return fmtSigned(v) + " ST";
+        if (ends(".fine"))                                return fmtSigned(v) + " CT";
+        if (ends(".att") || ends(".hold") || ends(".dec")) return fmtSec(v);
+        if (ends(".cut"))                                 return fmtHz(v);
+        if (ends(".unison"))                              return juce::String(juce::roundToInt(v));
+        if (ends(".color") || ends(".amt"))               return fmtBi(v);
+        if (ends(".pan"))                                 return fmtPan(v);
+        return fmtPct(v); // pos, phase, detune, level, res, drive, lvl, v2l, v2m, curve
+    }
     if (ends(".cutoff"))                              return fmtHz(v);
     if (ends(".rate"))                               return juce::String(v, 2) + " Hz";
     if (ends(".a") || ends(".d") || ends(".r") || ends(".rise")

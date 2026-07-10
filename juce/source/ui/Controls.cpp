@@ -8,6 +8,21 @@ namespace fui {
 static constexpr double A0 = -135.0, A1 = 135.0; // knob sweep (degrees, 0 = up)
 static float clamp01(float x) { return juce::jlimit(0.0f, 1.0f, x); }
 
+// See Controls.h — pre-WT-1-table metadata resolver installed by the DR-1
+// editor. Zero-initialised before any dynamic initialisation, so an installer
+// running from a static initialiser in another TU is safe.
+static ParamInfoResolver g_infoResolver = nullptr;
+void setParamInfoResolver(ParamInfoResolver r) { g_infoResolver = r; }
+
+// Metadata for a control's parameter id: the installed resolver first (DR-1
+// ids), then the WT-1 table (unchanged behaviour when no resolver is set).
+static const fable::ParamInfo& lookupInfo(const juce::String& id) {
+    if (g_infoResolver)
+        if (const auto* info = g_infoResolver(id.toStdString()))
+            return *info;
+    return fable::paramInfo()[(size_t)fable::idFromString(id.toStdString())];
+}
+
 // Cache the 48 mat src/dst/amt RangedAudioParameters into a [16][3] table so a
 // mod-target control can read active slots every timer tick without string
 // lookups. Shared by Knob and VSlider.
@@ -29,7 +44,7 @@ Knob::Knob(juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
     : apvts(s), id(paramId), accent(accentColour(ac)), size(sz), showLabel(showLbl),
       modDest_(modDest) {
     param = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
-    const auto& info = fable::paramInfo()[fable::idFromString(id.toStdString())];
+    const auto& info = lookupInfo(id);
     bipolar = info.min < 0;
     midNorm = fable::valueToNorm(info, 0.0f);
     label = juce::String(info.label).toUpperCase();

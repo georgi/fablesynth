@@ -102,6 +102,7 @@ int main(int argc, char** argv) {
         if (!c) fail++;
     };
     printf("\n== Plugin-boundary test (FableAudioProcessor, preset HYPER SAW) ==\n");
+    check(proc.getName() == "FableSynth WT-1", "plugin name is FableSynth WT-1", 0);
     check(finite, "output finite", 0);
     check(rms > 1e-3, "audio present (RMS > 0)", rms);
     check(peak < 1.5f, "output bounded by limiter", peak);

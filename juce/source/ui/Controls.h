@@ -8,6 +8,15 @@
 // All bind directly to an APVTS parameter by id.
 namespace fui {
 
+// Optional ParamInfo resolver consulted before the WT-1 fable::paramInfo()
+// table when a control looks up its parameter metadata. The DR-1 editor
+// installs a fable::drumParamInfo() lookup so the shared controls resolve its
+// parameter ids (e.g. "master.swing", "pad3.lvl"); it is never installed in
+// WT-1 binaries, so WT-1 behaviour is untouched. Return nullptr for unknown
+// ids to fall through to the WT-1 table.
+using ParamInfoResolver = const fable::ParamInfo* (*)(const std::string&);
+void setParamInfoResolver(ParamInfoResolver);
+
 // ---- rotary knob ----------------------------------------------------------
 // modDest > 0 turns the knob into a modulation target: it accepts source-chip
 // drops (juce::DragAndDropTarget), paints one depth ring per slot whose dst ==

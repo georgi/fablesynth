@@ -1,7 +1,8 @@
 name: Release
 
-# Build the FableSynth plugin (VST3 + Standalone on every OS, AU on macOS) for
-# macOS, Windows and Linux and attach the zips to a GitHub release.
+# Build both FableSynth plugins — WT-1 (FableSynth) and DR-1 (FableDrum) —
+# (VST3 + Standalone on every OS, AU on macOS) for macOS, Windows and Linux
+# and attach the zips to a GitHub release.
 #
 # Push a tag like `v1.0.0` to cut a release, or run the workflow manually
 # (workflow_dispatch) to produce downloadable build artifacts without a release.
@@ -51,7 +52,7 @@ jobs:
 
       - name: Build plugin
         working-directory: juce
-        run: cmake --build build --config Release --target FableSynth_All --parallel
+        run: cmake --build build --config Release --target FableSynth_All FableDrum_All --parallel
 
       # ---- Package (one zip per platform: VST3 + Standalone, plus AU on macOS) ----
 
@@ -61,10 +62,21 @@ jobs:
         run: |
           stage="FableSynth-macOS"
           mkdir -p "$stage"
-          ditto VST3/FableSynth.vst3        "$stage/FableSynth.vst3"
-          ditto AU/FableSynth.component      "$stage/FableSynth.component"
-          ditto Standalone/FableSynth.app    "$stage/FableSynth.app"
+          ditto "VST3/FableSynth WT-1.vst3"      "$stage/FableSynth WT-1.vst3"
+          ditto "AU/FableSynth WT-1.component"   "$stage/FableSynth WT-1.component"
+          ditto "Standalone/FableSynth WT-1.app" "$stage/FableSynth WT-1.app"
           ditto -c -k --keepParent "$stage" "$GITHUB_WORKSPACE/FableSynth-macOS.zip"
+
+      - name: Package DR-1 (macOS)
+        if: runner.os == 'macOS'
+        working-directory: juce/build/FableDrum_artefacts/Release
+        run: |
+          stage="FableSynth-DR1-macOS"
+          mkdir -p "$stage"
+          ditto "VST3/FableSynth DR-1.vst3"      "$stage/FableSynth DR-1.vst3"
+          ditto "AU/FableSynth DR-1.component"   "$stage/FableSynth DR-1.component"
+          ditto "Standalone/FableSynth DR-1.app" "$stage/FableSynth DR-1.app"
+          ditto -c -k --keepParent "$stage" "$GITHUB_WORKSPACE/FableSynth-DR1-macOS.zip"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -72,9 +84,19 @@ jobs:
         run: |
           stage="FableSynth-Linux"
           mkdir -p "$stage"
-          cp -R VST3/FableSynth.vst3 "$stage/"
-          cp Standalone/FableSynth   "$stage/"
+          cp -R "VST3/FableSynth WT-1.vst3" "$stage/"
+          cp "Standalone/FableSynth WT-1"   "$stage/"
           zip -r "$GITHUB_WORKSPACE/FableSynth-Linux.zip" "$stage"
+
+      - name: Package DR-1 (Linux)
+        if: runner.os == 'Linux'
+        working-directory: juce/build/FableDrum_artefacts/Release
+        run: |
+          stage="FableSynth-DR1-Linux"
+          mkdir -p "$stage"
+          cp -R "VST3/FableSynth DR-1.vst3" "$stage/"
+          cp "Standalone/FableSynth DR-1"   "$stage/"
+          zip -r "$GITHUB_WORKSPACE/FableSynth-DR1-Linux.zip" "$stage"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -83,9 +105,20 @@ jobs:
         run: |
           $stage = "FableSynth-Windows"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item -Recurse VST3/FableSynth.vst3 $stage/
-          Copy-Item Standalone/FableSynth.exe     $stage/
+          Copy-Item -Recurse "VST3/FableSynth WT-1.vst3" $stage/
+          Copy-Item "Standalone/FableSynth WT-1.exe"     $stage/
           Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-Windows.zip" -Force
+
+      - name: Package DR-1 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: juce/build/FableDrum_artefacts/Release
+        run: |
+          $stage = "FableSynth-DR1-Windows"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse "VST3/FableSynth DR-1.vst3" $stage/
+          Copy-Item "Standalone/FableSynth DR-1.exe"     $stage/
+          Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-DR1-Windows.zip" -Force
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -112,17 +145,19 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
-            ## FableSynth WT-1 — ${{ github.ref_name }}
+            ## FableSynth — ${{ github.ref_name }}
 
-            Wavetable synthesizer plugin (VST3 · AU · Standalone).
+            Two plugins (VST3 · AU · Standalone):
+            - **WT-1** — wavetable synthesizer (`FableSynth-<platform>.zip`)
+            - **DR-1** — 16-pad wavetable drum machine with 5-bus multi-out (`FableSynth-DR1-<platform>.zip`)
 
-            **Download the zip for your platform below, then install:**
+            **Download the zip(s) for your platform below, then install:**
 
             | Platform | VST3 | AU | Standalone |
             | --- | --- | --- | --- |
             | macOS | `~/Library/Audio/Plug-Ins/VST3/` | `~/Library/Audio/Plug-Ins/Components/` | drag the `.app` to Applications |
-            | Windows | `C:\Program Files\Common Files\VST3\` | — | run `FableSynth.exe` |
-            | Linux | `~/.vst3/` | — | run `./FableSynth` |
+            | Windows | `C:\Program Files\Common Files\VST3\` | — | run the `.exe` |
+            | Linux | `~/.vst3/` | — | run the binary |
 
             macOS builds are **universal** (Apple Silicon + Intel) and ad-hoc
             signed. On first launch macOS may warn the binary is unsigned —

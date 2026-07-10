@@ -4,6 +4,9 @@ A faithful C++/JUCE port of the FableSynth web wavetable synth. The DSP core
 is reimplemented one-to-one from the AudioWorklet engine; the parameters,
 presets and signal flow match the web build so a patch sounds the same.
 
+The same CMake project also builds **FableSynth DR-1**, the 16-pad drum
+machine — see [FableSynth DR-1](#fablesynth-dr-1--drum-machine) below.
+
 ![FableSynth plugin editor](docs/plugin_editor.png)
 
 The live 3D wavetable terrain for both oscillators (the highlighted line is the
@@ -85,7 +88,9 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-Artifacts land in `build/FableSynth_artefacts/Release/` (`VST3/`, `Standalone/`).
+One build produces both plugins: WT-1 artifacts land in
+`build/FableSynth_artefacts/Release/` and DR-1 artifacts in
+`build/FableDrum_artefacts/Release/` (`VST3/`, `AU/`, `Standalone/` each).
 
 ## Verify the audio engine
 
@@ -114,3 +119,122 @@ plugin-boundary test renders both views to a PNG headlessly to verify drawing.
 User-wavetable **audio import / draw** modal (the `buildUserTable` band-limit
 pipeline *is* ported and ready) and the on-screen keyboard / power-on overlay —
 these are browser-input concerns; the plugin receives notes from the host.
+
+---
+
+# FableSynth DR-1 — drum machine
+
+A faithful C++/JUCE port of the DR-1 web drum machine (`src/drum/`, the
+lockstep reference): 16 fully synthesized pads — two morphing wavetable
+oscillators plus noise per pad, no samples — a 16-step sequencer with pattern
+chaining, choke groups, master FX, and the three factory kits. Ships as a
+second plugin from the same build: **VST3 · AU · Standalone**, product name
+"FableSynth DR-1".
+
+![FableSynth DR-1 editor](docs/drum_editor.png)
+
+> Rendered headlessly by `drum_host_test` via JUCE's software renderer
+> (`./drum_host_test <output-dir>`), so it always reflects the current build.
+
+## What the plugin adds over the web build
+
+- **Real 5-bus multi-out** — the plugin declares five stereo output buses
+  (MAIN + AUX 1–4). Each pad's OUT selector routes it to a bus for separate
+  processing in the DAW mixer; master FX run on MAIN only, exactly like the
+  web routing. Hosts that only take stereo just use MAIN.
+- **Host transport lock** — when the host transport rolls (and reports tempo
+  + song position), the sequencer is slaved to the playhead: steps derive
+  from PPQ, so mid-bar starts, loops and relocates land sample-accurately,
+  the pattern chain follows the host bar index, and host stop stops the
+  sequencer. The header shows SYNC and the internal play button yields while
+  the host owns the clock. With the host stopped (or tempo-only hosts, or
+  Standalone) DR-1's own play button and BPM knob drive the internal clock.
+- **Drop-WAV pad import** — drop an audio file on a pad and it's sliced into a
+  wavetable through the *same* `buildUserTable` band-limit + mip pipeline as
+  WT-1 user tables, then assigned to that pad's OSC A. Imported tables are
+  saved in the plugin/DAW project state.
+- **Kit programs** — TR-VOID / ROOM ONE / BITCRUSH are exposed as host
+  programs, so DAWs can switch kits natively.
+
+## Architecture
+
+Same split as WT-1: a **JUCE-independent pure C++** DSP core under
+`source/drum/dsp/` (namespace `fable`, headless-testable with bare `g++`),
+wrapped by a thin processor and a pixel-faithful editor. Shared infrastructure
+(`Params`, `Wavetables`, `UserTables`, the `Fx.h` building blocks, the `fui::`
+controls and theme) is reused from the WT-1 sources, never copied.
+
+```
+source/drum/dsp/DrumParams.{h,cpp}  788-param definition table: 16 pads x 48
+                                    fields + sequencer/FX globals (port of
+                                    src/drum/params.ts)
+source/drum/dsp/DrumTables.{h,cpp}  THUD/CRACK/TINE/GRIT drum wavetables via the
+                                    shared band-limit pipeline (drumtables.ts)
+source/drum/dsp/DrumEngine.{h,cpp}  16 one-shot pad voices: 2 morphing wavetable
+                                    oscillators (unison) + noise, pitch/AHD amp/
+                                    mod envelopes, switchable SVF with drive,
+                                    4-slot mod matrix, choke groups, and the
+                                    sample-accurate swing sequencer with 5-bus
+                                    routing                (port of worklet-drum.js)
+source/drum/dsp/DrumFx.{h,cpp}      drive -> bus compressor -> chorus -> ping-pong
+                                    delay -> reverb -> DC block -> limiter, on
+                                    MAIN only              (port of drum-synth.ts)
+source/drum/dsp/DrumKits.{h,cpp}    TR-VOID / ROOM ONE / BITCRUSH (port of kits.ts)
+source/drum/DrumProcessor.{h,cpp}   JUCE AudioProcessor: APVTS, 5 stereo buses,
+                                    MIDI pads (notes 36-51), host tempo sync, kit
+                                    programs, full session state (patterns, chain,
+                                    pad names, imported wavetables)
+source/drum/DrumEditor.{h,cpp}      the rack shell — fixed 1460x880 logical grid,
+                                    scaled to the window (port of the CSS layout)
+source/drum/ui/DrumHeader.*         kit stepper, scope, BPM + SYNC, swing/volume
+source/drum/ui/PadGrid.*            4x4 pad grid: click/QWERTY audition, hit LEDs,
+                                    drop-WAV import target
+source/drum/ui/PadStrip.*           per-pad LVL/PAN/V-LVL/V-MOD + choke/out steppers
+source/drum/ui/DrumPanels.*         osc A/B terrains, noise, pitch/amp env, filter,
+                                    mod matrix — rebound live to the selected pad
+source/drum/ui/StepSeqView.*        16-step lane, patterns A-D, chain builder,
+                                    playhead + accent states
+source/drum/ui/DrumFxRack.*         master FX rack + OUT bus routing summary
+test/drum_engine_test.cpp           headless DSP verification harness (no JUCE)
+test/drum_host_test.cpp             plugin-boundary test (buses, MIDI, sync, state,
+                                    kits, UI) + PNG snapshot of the editor
+```
+
+### Mapping notes
+
+- **Web constants are exact**: plain/accent velocities 0.72/1.0, swing max
+  0.667, choke fade coefficient 0.12, 16-sample mod subblocks, the 10-entry table order
+  (THUD CRACK TINE GRIT + the six WT-1 tables), and the same value<->norm
+  curves in the APVTS as the web knobs.
+- **Bus compressor**: WebAudio's `DynamicsCompressorNode` doesn't exist
+  outside the browser, so it's reimplemented to the node's spec semantics —
+  ratio 4, soft knee 9 dB, attack 3 ms, release 250 ms, and the spec's
+  implicit makeup gain — driven by the THRESH/MAKEUP knobs.
+- **Reverb**: the web build's convolution reverb (generated exponential-noise
+  impulse) is approximated by the same Freeverb network as WT-1, tuned by
+  SIZE — real-time-safe with an equivalent diffuse tail.
+
+## Build & verify
+
+Built by the same configure/build as WT-1 (above). Artifacts:
+`build/FableDrum_artefacts/Release/{VST3,AU,Standalone}/` →
+`FableSynth DR-1.vst3` / `.component` / `.app`.
+
+The headless harness builds without JUCE — proof the DSP core stays
+JUCE-free — and checks the parameter table, drum wavetables, every pad voice
+stage, the sequencer/swing/choke math, the FX chain and all three kits:
+```sh
+cd juce
+g++ -std=c++17 -O2 -o drum_engine_test test/drum_engine_test.cpp \
+  source/drum/dsp/*.cpp source/dsp/Fx.cpp source/dsp/Wavetables.cpp \
+  source/dsp/UserTables.cpp source/dsp/Params.cpp
+./drum_engine_test   # -> ALL PASS
+```
+
+The plugin-boundary test drives the real `DrumAudioProcessor` the way a DAW
+would (5-bus layout, MIDI pads, AUX routing, host-tempo playhead, state
+round-trip, kit programs) and renders the editor snapshot above:
+```sh
+cmake --build build --target drum_host_test
+ctest --test-dir build --output-on-failure   # runs all 4 test targets
+```
