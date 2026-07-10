@@ -111,13 +111,23 @@ and play.
 | MIDI | plug in a controller — notes + pitch bend (Chrome/Edge) |
 | On-screen keys | click/touch, vertical position = velocity, drag for glissando |
 
-## DR-1 drum machine (web)
+## DR-1 drum machine
 
-DR-1 is a 16-pad drum machine built on the same wavetable engine — FableSynth's
-third web surface, served at `/drum/` (`npm run dev`, then open
-`http://localhost:5173/drum/`). Every sound is **fully synthesized, no
-samples**: each pad is a complete drum voice you can retune, reshape or mangle.
-A JUCE port is planned.
+DR-1 is a 16-pad drum machine built on the same wavetable engine. Every sound
+is **fully synthesized, no samples**: each pad is a complete drum voice you can
+retune, reshape or mangle. It comes in two forms:
+
+- **Plugin** — **FableSynth DR-1** (VST3 · AU · Standalone), a faithful
+  C++/JUCE port built from the same [`juce/`](juce/) project as WT-1, adding
+  real **5-bus multi-out** (MAIN + AUX 1–4 as separate DAW mixer channels),
+  **host tempo sync**, and **drop-WAV pad import** saved with the project
+  state. See [`juce/README.md`](juce/README.md#fablesynth-dr-1--drum-machine).
+- **Web app** — served at `/drum/` (`npm run dev`, then open
+  `http://localhost:5173/drum/`).
+
+[![The FableSynth DR-1 plugin](juce/docs/drum_editor.png)](juce/docs/drum_editor.png)
+
+The web build:
 
 ![The DR-1 drum machine](docs/dr1.png)
 
@@ -143,9 +153,9 @@ A JUCE port is planned.
 
 ## Code layout
 
-The **plugin** (C++/JUCE) lives in [`juce/`](juce/) — see
-[`juce/README.md`](juce/README.md) for the DSP/UI source map and the headless
-verification harness.
+The **plugins** (C++/JUCE — WT-1 and DR-1) live in [`juce/`](juce/) — see
+[`juce/README.md`](juce/README.md) for the DSP/UI source maps and the headless
+verification harnesses.
 
 The **web prototype** (TypeScript):
 
