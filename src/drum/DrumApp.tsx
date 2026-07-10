@@ -1,6 +1,7 @@
 import { AmpEnvPanel } from './components/AmpEnvPanel';
 import { DrumPowerOverlay } from './components/DrumPowerOverlay';
 import { FilterSection } from './components/FilterSection';
+import { FxRack } from './components/FxRack';
 import { Header } from './components/Header';
 import { ModPanel } from './components/ModPanel';
 import { PadGrid } from './components/PadGrid';
@@ -9,6 +10,7 @@ import { NoiseSection } from './components/NoiseSection';
 import { OscSection } from './components/OscSection';
 import { PitchEnvPanel } from './components/PitchEnvPanel';
 import { SelBar } from './components/SelBar';
+import { StepSeq } from './components/StepSeq';
 import { useDrumKeys } from './hooks/useDrumKeys';
 import { useDrumMidi } from './hooks/useDrumMidi';
 
@@ -41,8 +43,8 @@ export function DrumApp() {
             </div>
           </div>
         </div>
-        <div id="dr-stepseq" />
-        <div id="dr-fxrack" />
+        <div id="dr-stepseq"><StepSeq /></div>
+        <div id="dr-fxrack"><FxRack /></div>
       </main>
     </>
   );

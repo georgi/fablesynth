@@ -12,10 +12,11 @@ import {
 import type { GeneratedTable } from '../engine/wavetables';
 import { DrumEngine } from './engine/drum-synth';
 import { FACTORY_KITS, kitToState, loadUserKits, saveUserKit, stateToKit, type Kit } from './kits';
-import { defaultDrumParams, pad } from './params';
-import { cycleStep, makeEmptyPatterns, patIdx, type Patterns } from './seq';
+import { pad } from './params';
+import { cycleStep, patIdx, type Patterns } from './seq';
 
 export const drumEngine = new DrumEngine();
+const initialKitState = kitToState(FACTORY_KITS[0]);
 
 export interface KitOption {
   value: string;
@@ -77,10 +78,10 @@ export interface DrumStore {
 }
 
 export const useDrumStore = create<DrumStore>((set, get) => ({
-  params: defaultDrumParams(),
+  params: initialKitState.params,
   sel: 0,
-  patterns: makeEmptyPatterns(),
-  chain: [0],
+  patterns: initialKitState.patterns,
+  chain: initialKitState.chain,
   chaining: false,
   chainFresh: false,
   editPattern: 0,
@@ -91,7 +92,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   midiActive: false,
   kitValue: 'f0',
   userKits: loadUserKits(),
-  padNames: FACTORY_KITS[0].padNames.slice(),
+  padNames: initialKitState.padNames,
   hitTick: {},
   mode: 'step',
   modPosA: -1,
@@ -184,6 +185,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       return { curStep: data.s, curPat: data.pat, hitTick };
     });
     drumEngine.onviz = (data) => set({ modPosA: data.a, modPosB: data.b, envLevel: data.env });
+    drumEngine.params = { ...get().params };
+    drumEngine.applyAllParams();
     drumEngine.setPatterns(get().patterns);
     drumEngine.setChain(get().chain);
     set({ powered: true });
