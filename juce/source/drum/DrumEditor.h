@@ -3,6 +3,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumProcessor.h"
 #include "ui/DrumHeader.h"
+#include "ui/PadGrid.h"
+#include "ui/PadStrip.h"
 #include "../ui/LookAndFeel.h"
 
 // The DR-1 rack: all sections laid out at a fixed logical size matching the
@@ -25,7 +27,9 @@ private:
     };
 
     fui::DrumHeader header;
-    Placeholder pads{"PAD GRID"}, padStrip{"PAD STRIP"}, selBar{"SELECT BAR"},
+    fui::PadGrid pads;
+    fui::PadStrip padStrip;
+    Placeholder selBar{"SELECT BAR"},
                 oscRow{"OSC A / OSC B / NOISE"},
                 editRow{"PITCH ENV / AMP ENV / FILTER / MOD"},
                 stepSeq{"STEP SEQ"}, fxRack{"FX RACK / OUT"};

@@ -21,9 +21,11 @@ void DrumRack::Placeholder::paint(juce::Graphics& g) {
     fui::drawSpaced(g, label, getLocalBounds(), 2.0f, juce::Justification::centred);
 }
 
-DrumRack::DrumRack(DrumAudioProcessor& p) : header(p) {
+DrumRack::DrumRack(DrumAudioProcessor& p) : header(p), pads(p), padStrip(p) {
     addAndMakeVisible(header);
-    for (auto* c : { &pads, &padStrip, &selBar, &oscRow, &editRow, &stepSeq, &fxRack })
+    addAndMakeVisible(pads);
+    addAndMakeVisible(padStrip);
+    for (auto* c : { &selBar, &oscRow, &editRow, &stepSeq, &fxRack })
         addAndMakeVisible(*c);
 }
 
@@ -42,6 +44,7 @@ void DrumRack::resized() {
 DrumEditor::DrumEditor(DrumAudioProcessor& p)
     : juce::AudioProcessorEditor(p), rack(p) {
     setLookAndFeel(&lnf);
+    setWantsKeyboardFocus(true); // QWERTY pad map (PadGrid key-listens on us)
     addAndMakeVisible(rack);
     rack.setBounds(0, 0, DrumRack::LW, DrumRack::LH);
 

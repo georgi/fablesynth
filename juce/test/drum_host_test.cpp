@@ -264,6 +264,48 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ---- 12. pad grid: drop-WAV import + QWERTY trigger (Task 10) ----
+    printf("\n== pad grid ==\n");
+    {
+        // Write a 440 Hz sine WAV to a temp file — the "dropped" payload.
+        juce::TemporaryFile tmp(".wav");
+        {
+            juce::WavAudioFormat wavFmt;
+            std::unique_ptr<juce::AudioFormatWriter> writer(wavFmt.createWriterFor(
+                tmp.getFile().createOutputStream().release(), 48000.0, 1, 16, {}, 0));
+            check(writer != nullptr, "temp WAV writer created");
+            const int nsamp = 48000 / 2; // 0.5 s
+            juce::AudioBuffer<float> wave(1, nsamp);
+            for (int i = 0; i < nsamp; ++i)
+                wave.setSample(0, i, 0.8f * (float)std::sin(2.0 * juce::MathConstants<double>::pi
+                                                            * 440.0 * i / 48000.0));
+            if (writer) { writer->writeFromAudioSampleBuffer(wave, 0, nsamp); writer->flush(); }
+        }
+
+        fui::PadGrid grid(proc);
+        grid.setBounds(0, 0, 352, 369);
+        check(grid.isInterestedInFileDrag({ tmp.getFile().getFullPathName() }),
+              "grid accepts .wav drags");
+        check(!grid.isInterestedInFileDrag({ "notes.txt" }), "grid rejects non-audio drags");
+
+        const int before = proc.numTables();
+        const auto tile0 = grid.tileBounds(0).getCentre();  // pad 01, bottom-left
+        check(grid.padAt(tile0) == 0, "tile centre hit-tests to pad 0", grid.padAt(tile0));
+        grid.filesDropped({ tmp.getFile().getFullPathName() }, tile0.x, tile0.y);
+        check(proc.numTables() == before + 1, "drop grew the table pool", proc.numTables());
+        const float pad0Table = proc.apvts.getRawParameterValue("pad0.oscA.table")->load();
+        check((int)std::lround(pad0Table) == before,
+              "pad0.oscA.table points at the imported table", pad0Table);
+        check(proc.tableAt(before) != nullptr, "imported table resolves");
+
+        // QWERTY: 'z' = pad 0 (useDrumKeys zxcv row) -> trigger reaches the engine.
+        proc.consumeHitFlags();
+        check(grid.keyPressed(juce::KeyPress('z', {}, 'z'), nullptr), "'z' key handled");
+        render(2, -1, 0);
+        check((proc.consumeHitFlags() & 1u) != 0, "'z' triggered pad 0 (hit flag)");
+        check(!grid.keyPressed(juce::KeyPress('m', {}, 'm'), nullptr), "unmapped key ignored");
+    }
+
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }
