@@ -8,8 +8,10 @@
 //     #dr-pads        (18, 103)  352 x 369
 //     #dr-padstrip    (18, 481)  352 x 119
 //     #dr-selbar      (379,103) 1063 x 31
-//     #dr-oscrow      (379,143) 1063 x 243
-//     #dr-editrow     (379,395) 1063 x 209
+//     #dr-oscrow      (379,143) 1063 x 243  cols 1fr 1fr 196px, 9px gaps
+//       OSC A (379,143,424) OSC B (812,143,425) NOISE (1246,143,196)
+//     #dr-editrow     (379,395) 1063 x 209  cols 1fr 1.15fr 1.15fr 1.3fr, 9px gaps
+//       PITCH (379,395,225) AMP (613,395,259) FLT (881,395,259) MOD (1149,395,293)
 //   #dr-stepseq       (18, 613) 1424 x 105
 //   #dr-fxrack        (18, 727) 1424 x 131
 
@@ -21,11 +23,16 @@ void DrumRack::Placeholder::paint(juce::Graphics& g) {
     fui::drawSpaced(g, label, getLocalBounds(), 2.0f, juce::Justification::centred);
 }
 
-DrumRack::DrumRack(DrumAudioProcessor& p) : header(p), pads(p), padStrip(p) {
+DrumRack::DrumRack(DrumAudioProcessor& p)
+    : header(p), pads(p), padStrip(p), oscA(p, 0), oscB(p, 1), noise(p),
+      pitchEnv(p), ampEnv(p), filter(p), mod(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(pads);
     addAndMakeVisible(padStrip);
-    for (auto* c : { &selBar, &oscRow, &editRow, &stepSeq, &fxRack })
+    for (auto* c : std::initializer_list<juce::Component*>{
+             &oscA, &oscB, &noise, &pitchEnv, &ampEnv, &filter, &mod })
+        addAndMakeVisible(*c);
+    for (auto* c : { &selBar, &stepSeq, &fxRack })
         addAndMakeVisible(*c);
 }
 
@@ -34,8 +41,13 @@ void DrumRack::resized() {
     pads.setBounds(18, 103, 352, 369);
     padStrip.setBounds(18, 481, 352, 119);
     selBar.setBounds(379, 103, 1063, 31);
-    oscRow.setBounds(379, 143, 1063, 243);
-    editRow.setBounds(379, 395, 1063, 209);
+    oscA.setBounds(379, 143, 424, 243);
+    oscB.setBounds(812, 143, 425, 243);
+    noise.setBounds(1246, 143, 196, 243);
+    pitchEnv.setBounds(379, 395, 225, 209);
+    ampEnv.setBounds(613, 395, 259, 209);
+    filter.setBounds(881, 395, 259, 209);
+    mod.setBounds(1149, 395, 293, 209);
     stepSeq.setBounds(18, 613, 1424, 105);
     fxRack.setBounds(18, 727, 1424, 131);
 }

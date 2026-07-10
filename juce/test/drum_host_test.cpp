@@ -257,11 +257,35 @@ int main(int argc, char** argv) {
             { "osc row",   910, 264 },
             { "step seq",  730, 665 },
             { "fx rack",   730, 792 },
+            // Task 11 pad editor panels (centres of view/knob areas)
+            { "osc A terrain",   560, 230 },
+            { "noise view",     1344, 230 },
+            { "pitch env view",  490, 458 },
+            { "amp env view",    742, 458 },
+            { "filter view",    1010, 458 },
+            { "mod rows",       1200, 452 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);
             check(img.getPixelAt(p.x, p.y) != bg, p.name, (double)p.x);
         }
+
+        // Task 11: selection rebinding — switching pads destroys and recreates
+        // every pad-bound control headlessly, then the rack still renders.
+        // (setSelectedPad broadcasts async; deliver it now, no dispatch loop.)
+        proc.setSelectedPad(7);
+        proc.selectionBroadcaster.dispatchPendingMessages();
+        check(proc.getSelectedPad() == 7, "pad 7 selected for rebind");
+        juce::Image img2 = ed->createComponentSnapshot(ed->getLocalBounds());
+        check(img2.isValid() && img2.getWidth() == DrumRack::LW,
+              "snapshot after pad-7 rebind renders");
+        for (const auto& p : probes) {
+            const juce::Colour bg = img2.getPixelAt(8, p.y);
+            check(img2.getPixelAt(p.x, p.y) != bg,
+                  (juce::String("rebound ") + p.name).toRawUTF8(), (double)p.x);
+        }
+        proc.setSelectedPad(3); // restore the state the round-trip section set
+        proc.selectionBroadcaster.dispatchPendingMessages();
     }
 
     // ---- 12. pad grid: drop-WAV import + QWERTY trigger (Task 10) ----

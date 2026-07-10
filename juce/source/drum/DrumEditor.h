@@ -5,6 +5,7 @@
 #include "ui/DrumHeader.h"
 #include "ui/PadGrid.h"
 #include "ui/PadStrip.h"
+#include "ui/DrumPanels.h"
 #include "../ui/LookAndFeel.h"
 
 // The DR-1 rack: all sections laid out at a fixed logical size matching the
@@ -29,9 +30,13 @@ private:
     fui::DrumHeader header;
     fui::PadGrid pads;
     fui::PadStrip padStrip;
+    fui::DrumOscPanel oscA, oscB;
+    fui::DrumNoisePanel noise;
+    fui::DrumPitchEnvPanel pitchEnv;
+    fui::DrumAmpEnvPanel ampEnv;
+    fui::DrumFilterPanel filter;
+    fui::DrumModPanel mod;
     Placeholder selBar{"SELECT BAR"},
-                oscRow{"OSC A / OSC B / NOISE"},
-                editRow{"PITCH ENV / AMP ENV / FILTER / MOD"},
                 stepSeq{"STEP SEQ"}, fxRack{"FX RACK / OUT"};
 };
 
