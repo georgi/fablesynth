@@ -116,11 +116,16 @@ describe('drum sequencer', () => {
     h.send({ t: 'chain', list: [0, 1] }); // A then B
     h.send({ t: 'play' });
     const dur = stepDurSamples(126, 48000);
+    const barSamples = (60 / 126 / 4) * 48000 * 16;
     const barBlocks = Math.ceil((dur * 16) / 128);
     const bar1 = h.render(barBlocks);
     const bar2 = h.render(barBlocks);
-    expect(peak(bar1.L)).toBe(0); // pattern A is empty
-    expect(peak(bar2.L)).toBeGreaterThan(0.01); // chain moved to B
+    const boundary = Math.floor(barSamples);
+    const afterBoundary = new Float32Array(bar1.L.length - boundary + bar2.L.length);
+    afterBoundary.set(bar1.L.slice(boundary));
+    afterBoundary.set(bar2.L, bar1.L.length - boundary);
+    expect(peak(bar1.L.slice(0, boundary))).toBe(0); // pattern A is empty up to the true bar boundary
+    expect(peak(afterBoundary)).toBeGreaterThan(0.01); // chain moved to B at the boundary
     h.send({ t: 'stop' });
     h.render(barBlocks * 2); // drain tails
     const after = h.render(barBlocks);

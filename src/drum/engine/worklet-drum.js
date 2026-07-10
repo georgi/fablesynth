@@ -134,8 +134,8 @@ class DrumProcessor extends AudioWorkletProcessor {
     const v = this.voices[padI];
     v.trigger(Math.max(0, Math.min(1, Number.isFinite(vel) ? vel : 1)));
     const pre = 'pad' + padI + '.';
-    const phaseA = Math.max(0, Math.min(1, this.p[pre + 'oscA.phase'])) * 2048;
-    const phaseB = Math.max(0, Math.min(1, this.p[pre + 'oscB.phase'])) * 2048;
+    const phaseA = (Math.max(0, Math.min(1, this.p[pre + 'oscA.phase'])) * 2048) % 2048;
+    const phaseB = (Math.max(0, Math.min(1, this.p[pre + 'oscB.phase'])) * 2048) % 2048;
     for (let i = 0; i < MAXUNI; i++) {
       v.oA.phases[i] = phaseA;
       v.oB.phases[i] = phaseB;
@@ -464,17 +464,6 @@ class DrumProcessor extends AudioWorkletProcessor {
       let run = n - pos;
       if (this.playing) {
         if (this.samplesToNext <= 0) {
-          // Keep a wrapped chain's new bar out of the render quantum that owned
-          // the old bar. Intra-bar boundaries still split at their exact sample;
-          // a wrap reached mid-quantum is armed for sample 0 of the next quantum.
-          if (this.step === STEPS - 1 && pos > 0) {
-            for (let i = 0; i < NPADS; i++) {
-              const v = this.voices[i];
-              if (v.active) this.renderPad(v, i, L, R, pos, n - pos);
-            }
-            pos = n;
-            continue;
-          }
           this.fireStep();
         }
         run = Math.min(run, Math.ceil(this.samplesToNext));
