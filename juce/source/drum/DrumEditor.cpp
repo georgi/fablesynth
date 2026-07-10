@@ -25,15 +25,15 @@ void DrumRack::Placeholder::paint(juce::Graphics& g) {
 
 DrumRack::DrumRack(DrumAudioProcessor& p)
     : header(p), pads(p), padStrip(p), oscA(p, 0), oscB(p, 1), noise(p),
-      pitchEnv(p), ampEnv(p), filter(p), mod(p) {
+      pitchEnv(p), ampEnv(p), filter(p), mod(p), selBar(p), stepSeq(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(pads);
     addAndMakeVisible(padStrip);
     for (auto* c : std::initializer_list<juce::Component*>{
-             &oscA, &oscB, &noise, &pitchEnv, &ampEnv, &filter, &mod })
+             &oscA, &oscB, &noise, &pitchEnv, &ampEnv, &filter, &mod,
+             &selBar, &stepSeq })
         addAndMakeVisible(*c);
-    for (auto* c : { &selBar, &stepSeq, &fxRack })
-        addAndMakeVisible(*c);
+    addAndMakeVisible(fxRack);
 }
 
 void DrumRack::resized() {

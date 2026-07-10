@@ -85,6 +85,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/ui/PadGrid.cpp
         source/drum/ui/PadStrip.cpp
         source/drum/ui/DrumPanels.cpp
+        source/drum/ui/StepSeqView.cpp
         source/ui/Controls.cpp
         source/ui/Modulation.cpp
         source/drum/dsp/DrumParams.cpp

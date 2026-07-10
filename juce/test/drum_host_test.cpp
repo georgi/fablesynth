@@ -330,6 +330,53 @@ int main(int argc, char** argv) {
         check(!grid.keyPressed(juce::KeyPress('m', {}, 'm'), nullptr), "unmapped key ignored");
     }
 
+    // ---- 13. step sequencer view: tap cycle + chain builder (Task 12) ----
+    // Drives the same handlers a mouse click hits (StepSeq.tsx / store.ts port).
+    printf("\n== step seq view ==\n");
+    {
+        fui::StepSeqView seq(proc);
+        seq.setBounds(0, 0, 1424, 105);
+        proc.setSelectedPad(0);
+        proc.selectionBroadcaster.dispatchPendingMessages();
+        proc.setEditPattern(0);
+
+        // Tap cycle on (pattern 0, pad 0, step 3): 1 -> 2 -> 0 -> 1.
+        proc.setStep(0, 0, 3, 1);
+        seq.toggleStep(3);
+        check(proc.getStep(0, 0, 3) == 2, "tap cycles ON -> ACCENT", proc.getStep(0, 0, 3));
+        seq.toggleStep(3);
+        check(proc.getStep(0, 0, 3) == 0, "tap cycles ACCENT -> OFF", proc.getStep(0, 0, 3));
+        seq.toggleStep(3);
+        check(proc.getStep(0, 0, 3) == 1, "tap cycles OFF -> ON", proc.getStep(0, 0, 3));
+        // The tap edits the selected pad's lane in the edit pattern only.
+        check(proc.getStep(0, 1, 3) == 0, "other pads untouched");
+        check(seq.stepBounds(3).getCentre().y > 47, "step tiles sit in the row band",
+              seq.stepBounds(3).getCentre().y);
+
+        // Pattern click outside chain mode: selects for editing AND resets the
+        // chain to just that pattern (store.setEditPattern).
+        seq.patternClick(1);
+        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}");
+
+        // Chain builder: toggle on -> first click replaces, later clicks append,
+        // toggle off commits (store.chainClick / setChaining).
+        seq.setChaining(true);
+        check(seq.isChaining(), "CHAIN toggle latches on");
+        seq.patternClick(0);
+        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh");
+        seq.patternClick(3);
+        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends");
+        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
+              proc.getEditPattern());
+        seq.setChaining(false);
+        check(!seq.isChaining(), "CHAIN toggle latches off");
+        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off");
+
+        seq.patternClick(0); // restore pattern A / chain {A}
+        check(proc.getChain() == std::vector<int>({ 0 }), "post-chain click resets to {A}");
+    }
+
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }
