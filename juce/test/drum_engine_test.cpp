@@ -5,6 +5,7 @@
 // Exits non-zero if any check fails.
 #include "../source/drum/dsp/DrumParams.h"
 #include "../source/drum/dsp/DrumTables.h"
+#include "../source/drum/dsp/SampledTables.gen.h"
 #include "../source/drum/dsp/DrumEngine.h"
 #include "../source/drum/dsp/DrumFx.h"
 #include "../source/drum/dsp/DrumKits.h"
@@ -117,6 +118,8 @@ static const std::vector<TablePtr>& allTables() {
             out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
         for (auto& t : generateTables())
             out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
+        for (auto& t : generateSampledDrumTables())
+            out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
         return out;
     }();
     return tabs;
@@ -167,6 +170,8 @@ int main() {
     printf("\n== 2. Drum tables ==\n");
     auto dt = generateDrumTables();
     check(dt.size() == 4, "4 drum tables");
+    check(generateSampledDrumTables().size() == 5, "5 sampled drum tables");
+    check(allTables().size() == 15, "15 tables total (4 drum + 6 synth + 5 sampled)");
     check(dt[0].name == "THUD" && dt[1].name == "CRACK" && dt[2].name == "TINE" && dt[3].name == "GRIT", "names/order");
     // Web-reference overall peaks (vitest run of src/drum/engine/drumtables.ts):
     // buildUserTable normalizes each frame's mip 0 to 0.92; coarser mips share

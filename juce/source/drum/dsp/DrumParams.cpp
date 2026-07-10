@@ -6,7 +6,7 @@
 
 namespace fable {
 
-const std::vector<std::string> DRUM_TABLE_NAMES  = {"THUD", "CRACK", "TINE", "GRIT", "PRIME", "BLOOM", "PULSE", "VOX", "CHIME", "GLITCH"};
+const std::vector<std::string> DRUM_TABLE_NAMES  = {"THUD", "CRACK", "TINE", "GRIT", "PRIME", "BLOOM", "PULSE", "VOX", "CHIME", "GLITCH", "808SD", "808CP", "808CH", "808OH", "808CY"};
 const std::vector<std::string> DRUM_FILTER_TYPES = {"LP 12", "LP 24", "BP 12", "HP 12", "NOTCH"};
 const std::vector<std::string> DMOD_SOURCES      = {"—", "MOD ENV", "VELO", "RAND"};
 const std::vector<std::string> DMOD_DESTS        = {"—", "A POS", "B POS", "LEVEL", "CUTOFF", "PITCH", "A FINE", "B FINE", "NOISE LVL", "RES"};
