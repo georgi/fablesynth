@@ -124,6 +124,7 @@ add_executable(drum_engine_test
     test/drum_engine_test.cpp
     source/drum/dsp/DrumParams.cpp
     source/drum/dsp/DrumTables.cpp
+    source/drum/dsp/DrumEngine.cpp
     source/dsp/Params.cpp
     source/dsp/Wavetables.cpp
     source/dsp/UserTables.cpp)

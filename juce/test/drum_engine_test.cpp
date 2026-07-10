@@ -5,11 +5,15 @@
 // Exits non-zero if any check fails.
 #include "../source/drum/dsp/DrumParams.h"
 #include "../source/drum/dsp/DrumTables.h"
+#include "../source/drum/dsp/DrumEngine.h"
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <vector>
 #include <string>
+
+using namespace fable;
 
 static int g_fail = 0;
 static void check(bool cond, const std::string& name, const std::string& detail = "") {
@@ -29,6 +33,70 @@ static double rms(const std::vector<float>& v, int start = 0) {
 }
 static float peak(const std::vector<float>& v) {
     float p = 0; for (float x : v) p = std::max(p, std::abs(x)); return p;
+}
+// Sign changes in v[a..b) — a cheap pitch proxy for the pitch-env check.
+static int crossings(const std::vector<float>& v, int a, int b) {
+    int c = 0;
+    for (int i = a + 1; i < b && i < (int)v.size(); i++)
+        if ((v[i - 1] < 0.0f) != (v[i] < 0.0f)) c++;
+    return c;
+}
+
+// ---- anti-aliasing measurement (copied from engine_test.cpp): ratio of ----
+// ---- non-harmonic to harmonic energy over a Hann-windowed FFT          ----
+static double aliasFloorDb(const float* x, int N, double sr, double f0) {
+    std::vector<double> re(N), im(N, 0.0);
+    for (int i = 0; i < N; i++) {
+        double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1)); // Hann
+        re[i] = x[i] * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    auto mag2 = [&](int k) { return re[k] * re[k] + im[k] * im[k]; };
+
+    double binHz = sr / N;
+    int halfWin = 6;                 // bins around each harmonic counted as "signal"
+    int loBin = (int)(40 / binHz);   // ignore DC / sub-bass leakage
+    std::vector<char> isHarm(N / 2, 0);
+    for (int k = 1; k * f0 < sr * 0.5; k++) {
+        int b = (int)std::round(k * f0 / binHz);
+        for (int j = b - halfWin; j <= b + halfWin; j++)
+            if (j >= 0 && j < N / 2) isHarm[j] = 1;
+    }
+    double harm = 0, alias = 0;
+    for (int k = loBin; k < N / 2; k++) (isHarm[k] ? harm : alias) += mag2(k);
+    if (harm <= 0) return 0;
+    return 10 * std::log10(alias / harm);
+}
+
+// Full DR-1 table list: 4 drum tables followed by the 6 WT-1 procedural
+// tables (matches DRUM_TABLE_NAMES). Built once — the pyramids are shared.
+static const std::vector<TablePtr>& allTables() {
+    static const std::vector<TablePtr> tabs = [] {
+        std::vector<TablePtr> out;
+        for (auto& t : generateDrumTables())
+            out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
+        for (auto& t : generateTables())
+            out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
+        return out;
+    }();
+    return tabs;
+}
+
+// Render n samples into all 5 stereo buses; returns 10 buffers indexed
+// [bus*2 + ch]. render() zero-fills, so fresh vectors arrive untouched.
+static std::vector<std::vector<float>> renderBuses(DrumEngine& e, int n) {
+    std::vector<std::vector<float>> bufs(DR_NBUSES * 2);
+    float* outs[DR_NBUSES][2];
+    for (int b = 0; b < DR_NBUSES; b++)
+        for (int c = 0; c < 2; c++) {
+            bufs[b * 2 + c].assign(n, 0.0f);
+            outs[b][c] = bufs[b * 2 + c].data();
+        }
+    e.render(outs, n);
+    return bufs;
+}
+static std::vector<float> renderMain(DrumEngine& e, int n) {
+    return renderBuses(e, n)[0];   // MAIN L
 }
 
 int main() {
@@ -75,6 +143,112 @@ int main() {
         check(std::abs(pk0 - 0.92f) < 1e-4f, t.name + " mip0 normalized to 0.92", std::to_string(pk0));
         float pk = peak(t.data);
         check(std::abs(pk - kWebPeaks[ti]) < 2e-3f, t.name + " overall peak matches web", std::to_string(pk));
+    }
+
+    printf("\n== 3. DrumEngine voice path ==\n");
+    {
+        DrumEngine eng; eng.prepare(48000);
+        eng.setTables(allTables());
+
+        // silence without a trigger
+        check(rms(renderMain(eng, 24000)) < 1e-6, "silent before trigger");
+
+        // trigger produces audio; hit flags + viz publish
+        eng.selectPad(0);
+        eng.trigger(0, 1.0f);
+        check(eng.consumeHits() == 1u, "hit flag set for pad 0");
+        check(eng.consumeHits() == 0u, "hit flags consumed");
+        auto head = renderMain(eng, 4800);
+        check(finite(head) && rms(head) > 1e-4, "pad 0 trigger produces audio",
+              "rms=" + std::to_string(rms(head)));
+        check(eng.vizEnv > 0.0f && eng.vizA >= 0.0f, "viz publishes active pad",
+              "env=" + std::to_string(eng.vizEnv) + " a=" + std::to_string(eng.vizA));
+
+        // accent louder than plain (v2l default 0.6)
+        eng.panic(); eng.trigger(1, DR_PLAIN_VEL);  double rp = rms(renderMain(eng, 12000));
+        eng.panic(); eng.trigger(1, DR_ACCENT_VEL); double ra = rms(renderMain(eng, 12000));
+        check(ra > rp * 1.05, "accent > plain", std::to_string(ra) + " vs " + std::to_string(rp));
+
+        // amp env: one-shot AHD decays to silence (default dec 0.24 s)
+        eng.panic(); eng.trigger(0, 1.0f); renderMain(eng, 48000);
+        check(rms(renderMain(eng, 48000)) < 1e-5, "voice ends after AHD");
+
+        // pitch env: +24 st -> higher zero-crossing rate early vs late
+        eng.setParam(dpid(2, DP_PENV_AMT), 24.0f);
+        eng.setParam(dpid(2, DP_PENV_DEC), 0.2f);
+        eng.setParam(dpid(2, DP_AENV_DEC), 2.0f);
+        eng.panic(); eng.trigger(2, 1.0f);
+        auto pev = renderMain(eng, 16000);
+        int early = crossings(pev, 0, 2400), late = crossings(pev, 12000, 14400);
+        check(early * 2 > late * 3, "pitch env raises early pitch",
+              std::to_string(early) + " vs " + std::to_string(late));
+
+        // filter: LP at 100 Hz kills a +24 st osc
+        eng.setParam(dpid(3, DP_OSCA_TUNE), 24.0f);
+        eng.panic(); eng.trigger(3, 1.0f); double rOff = rms(renderMain(eng, 12000));
+        eng.setParam(dpid(3, DP_FLT_ON), 1.0f);
+        eng.setParam(dpid(3, DP_FLT_CUT), 100.0f);
+        eng.panic(); eng.trigger(3, 1.0f); double rOn = rms(renderMain(eng, 12000));
+        check(rOn < rOff * 0.5 && rOff > 1e-4, "LP 100 Hz attenuates",
+              std::to_string(rOn) + " vs " + std::to_string(rOff));
+
+        // mod matrix: MOD ENV -> CUTOFF (amt -1 = -5 octaves) changes the output
+        eng.setParam(dpid(6, DP_FLT_ON), 1.0f);
+        eng.setParam(dpid(6, DP_FLT_CUT), 2000.0f);
+        eng.setParam(dpid(6, DP_MOD1_SRC), 1.0f);   // MOD ENV
+        eng.setParam(dpid(6, DP_MOD1_DST), 4.0f);   // CUTOFF
+        eng.panic(); eng.trigger(6, 1.0f); auto m0 = renderMain(eng, 12000);
+        eng.setParam(dpid(6, DP_MOD1_AMT), -1.0f);
+        eng.panic(); eng.trigger(6, 1.0f); auto m1 = renderMain(eng, 12000);
+        double dsum = 0;
+        for (int i = 0; i < 12000; i++) { double d = (double)m0[i] - m1[i]; dsum += d * d; }
+        check(std::sqrt(dsum / 12000) > 1e-4, "mod env -> cutoff moves filter",
+              std::to_string(std::sqrt(dsum / 12000)));
+
+        // choke: pads 4+5 in group 1; triggering 5 silences 4's long tail
+        eng.panic();
+        eng.setParam(dpid(4, DP_CHOKE), 1.0f); eng.setParam(dpid(5, DP_CHOKE), 1.0f);
+        eng.setParam(dpid(4, DP_AENV_DEC), 2.0f);
+        eng.trigger(4, 1.0f); renderMain(eng, 4800);
+        eng.trigger(5, 1.0f);
+        eng.setParam(dpid(5, DP_OSCA_LEVEL), 0.0f);   // mute 5 so we only hear 4's tail
+        auto tail = renderMain(eng, 4800);
+        check(rms(tail, 2400) < 1e-4, "choke silences group peer",
+              std::to_string(rms(tail, 2400)));
+    }
+    {
+        // determinism: two identical engines produce identical output (seeded Rng)
+        DrumEngine e1, e2; e1.prepare(48000); e2.prepare(48000);
+        e1.setTables(allTables()); e2.setTables(allTables());
+        e1.trigger(0, 1); e2.trigger(0, 1);
+        auto o1 = renderMain(e1, 12000), o2 = renderMain(e2, 12000);
+        bool same = true;
+        for (int i = 0; i < 12000; i++) if (o1[i] != o2[i]) { same = false; break; }
+        check(same, "deterministic render (seeded RNG)");
+    }
+    {
+        // NaN/denormal scan: all 16 pads at once, 2 s, every bus finite + bounded
+        DrumEngine ne; ne.prepare(48000); ne.setTables(allTables());
+        for (int i = 0; i < DR_NPADS; i++) ne.trigger(i, 1.0f);
+        check(ne.consumeHits() == 0xFFFFu, "all 16 hit flags set");
+        auto bufs = renderBuses(ne, 96000);
+        bool ok = true; float pk = 0;
+        for (auto& b : bufs) { ok = ok && finite(b); pk = std::max(pk, peak(b)); }
+        check(ok && pk < 4.0f, "16-pad render finite + bounded", "peak=" + std::to_string(pk));
+    }
+    {
+        // anti-aliasing: GRIT (worst case) at +24 st, no filter/noise -> mips wired
+        DrumEngine ae; ae.prepare(48000); ae.setTables(allTables());
+        ae.setParam(dpid(0, DP_OSCA_TABLE), 3.0f);    // GRIT
+        ae.setParam(dpid(0, DP_OSCA_TUNE), 24.0f);
+        ae.setParam(dpid(0, DP_OSCA_DETUNE), 0.0f);
+        ae.setParam(dpid(0, DP_AENV_DEC), 4.0f);      // long tail for a clean FFT
+        ae.setParam(dpid(0, DP_AENV_CURVE), 0.0f);
+        ae.trigger(0, 1.0f);
+        auto ab = renderMain(ae, 48000);
+        double f0 = 440.0 * std::pow(2.0, (60 + 24 - 69) / 12.0);
+        double fdb = aliasFloorDb(ab.data() + 4800, 32768, 48000, f0);
+        check(fdb < -55.0, "GRIT +24st alias floor < -55 dB", std::to_string(fdb) + " dB");
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");
