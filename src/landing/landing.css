@@ -444,9 +444,11 @@ figcaption {
 
 .formats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 16px;
 }
+.formats-grid .format-card { grid-column: span 2; }
+.formats-grid .format-feature { grid-column: span 3; }
 .format-card {
   display: flex;
   flex-direction: column;
@@ -464,13 +466,12 @@ figcaption {
   box-shadow: 0 30px 60px -40px rgba(0, 0, 0, 0.9);
 }
 .format-feature {
-  grid-column: span 1;
   background:
-    radial-gradient(130% 120% at 100% 0%, color-mix(in srgb, var(--cyan) 16%, transparent), transparent 55%),
+    radial-gradient(130% 120% at 100% 0%, color-mix(in srgb, var(--ac) 16%, transparent), transparent 55%),
     linear-gradient(180deg, var(--panel-hi), var(--panel-lo));
-  border-color: color-mix(in srgb, var(--cyan) 30%, transparent);
+  border-color: color-mix(in srgb, var(--ac) 30%, transparent);
 }
-.format-feature:hover { border-color: var(--cyan); }
+.format-feature:hover { border-color: var(--ac); }
 .format-tag {
   font-size: 10px;
   letter-spacing: 0.26em;
@@ -478,7 +479,7 @@ figcaption {
   color: var(--dim);
   margin: 0;
 }
-.format-feature .format-tag { color: var(--cyan); }
+.format-feature .format-tag { color: var(--ac); }
 .format-card h3 {
   font-family: var(--disp);
   font-size: 17px;
@@ -503,7 +504,7 @@ figcaption {
 }
 .format-go span { transition: transform 0.4s var(--ease); }
 .format-card:hover .format-go span { transform: translateX(4px); }
-.format-feature .format-go { color: var(--cyan); }
+.format-feature .format-go { color: var(--ac); }
 
 .formats-note {
   margin: clamp(36px, 5vh, 56px) 0 0;
@@ -513,6 +514,38 @@ figcaption {
 }
 .formats-note a { color: var(--dim-2); border-bottom: 1px solid var(--line-2); }
 .formats-note a:hover { color: var(--cyan); border-color: var(--cyan); }
+
+/* ---------- DR-1 drum machine ---------- */
+
+.drum-shot {
+  margin: 0 0 clamp(40px, 6vh, 72px);
+  position: relative;
+}
+.drum-shot img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+}
+.drum-shot::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 15px;
+  pointer-events: none;
+  box-shadow: 0 0 80px -20px color-mix(in srgb, var(--ac) 25%, transparent);
+}
+.drum-shot figcaption { margin-top: 14px; }
+.drum-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(36px, 6vw, 80px);
+  align-items: start;
+}
+.drum-copy .prose + .prose { margin-top: 1em; }
 
 /* ---------- footer ---------- */
 
@@ -556,19 +589,21 @@ figcaption {
 
 @media (max-width: 880px) {
   .nav-links > a:not(.btn) { display: none; }
-  .surfaces, .precision { grid-template-columns: 1fr; }
+  .surfaces, .precision, .drum-grid { grid-template-columns: 1fr; }
   .precision .precision-shot { order: 2; }
   .feature, .feature-pair { grid-template-columns: 1fr; }
   .feature-flip .feature-text { order: 0; }
   .feature-media { order: -1; }
   .spec-strip { grid-template-columns: repeat(3, 1fr); }
   .formats-grid { grid-template-columns: 1fr 1fr; }
-  .format-feature { grid-column: 1 / -1; }
+  .formats-grid .format-card { grid-column: span 1; }
+  .formats-grid .format-feature { grid-column: 1 / -1; }
 }
 
 @media (max-width: 480px) {
   .spec-strip { grid-template-columns: repeat(2, 1fr); }
   .formats-grid { grid-template-columns: 1fr; }
+  .formats-grid .format-card, .formats-grid .format-feature { grid-column: auto; }
   .cta-row { flex-direction: column; align-items: stretch; }
   .cta-row .btn { justify-content: center; }
 }
