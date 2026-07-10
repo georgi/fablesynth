@@ -18,7 +18,7 @@
 - Exact web constants everywhere: PLAIN_VEL 0.72, ACCENT_VEL 1.0, SWING_MAX 0.667, CHOKE_FADE 0.12, BASE_NOTE 60, DC_R 0.9998, MOD_LOG_D 5, 16-sample mod subblocks, table order THUD CRACK TINE GRIT PRIME BLOOM PULSE VOX CHIME GLITCH.
 - Plugin identity: product name "FableSynth DR-1", target `FableDrum`, `PLUGIN_CODE Fdr1`, `PLUGIN_MANUFACTURER_CODE Fabl`, formats AU VST3 Standalone, IS_SYNTH, NEEDS_MIDI_INPUT.
 - Every task ends with: run its tests (expected output stated), then `git commit`.
-- Build commands: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` then `cmake --build build` (run from `juce/`). Headless: `g++ -std=c++17 -O2 -o /tmp/drum_engine_test test/drum_engine_test.cpp source/drum/dsp/*.cpp source/dsp/Wavetables.cpp source/dsp/UserTables.cpp source/dsp/Params.cpp && /tmp/drum_engine_test`.
+- Build commands: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` then `cmake --build build` (run from `juce/`). Headless: `g++ -std=c++17 -O2 -o /tmp/drum_engine_test test/drum_engine_test.cpp source/drum/dsp/*.cpp source/dsp/Fx.cpp source/dsp/Wavetables.cpp source/dsp/UserTables.cpp source/dsp/Params.cpp && /tmp/drum_engine_test` (Fx.cpp supplies the shared Biquad/Freeverb primitives DrumFx reuses).
 - If a build or test fails, fix it before moving on. Never commit red.
 
 ---
