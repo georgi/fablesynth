@@ -264,6 +264,9 @@ int main(int argc, char** argv) {
             { "amp env view",    742, 458 },
             { "filter view",    1010, 458 },
             { "mod rows",       1200, 452 },
+            // Task 13 FX rack + OUT panel (DRIVE knob body / MAIN route dot)
+            { "fx drive knob",    89, 787 },
+            { "out main dot",   1256, 772 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);

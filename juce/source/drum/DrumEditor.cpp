@@ -16,16 +16,9 @@
 //   #dr-fxrack        (18, 727) 1424 x 131
 
 // ---- DrumRack ----
-void DrumRack::Placeholder::paint(juce::Graphics& g) {
-    fui::drawPanel(g, getLocalBounds().toFloat());
-    g.setColour(fui::col::textDim);
-    g.setFont(fui::monoFont(9.0f));
-    fui::drawSpaced(g, label, getLocalBounds(), 2.0f, juce::Justification::centred);
-}
-
 DrumRack::DrumRack(DrumAudioProcessor& p)
     : header(p), pads(p), padStrip(p), oscA(p, 0), oscB(p, 1), noise(p),
-      pitchEnv(p), ampEnv(p), filter(p), mod(p), selBar(p), stepSeq(p) {
+      pitchEnv(p), ampEnv(p), filter(p), mod(p), selBar(p), stepSeq(p), fxRack(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(pads);
     addAndMakeVisible(padStrip);

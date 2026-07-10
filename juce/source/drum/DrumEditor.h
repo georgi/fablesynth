@@ -7,6 +7,7 @@
 #include "ui/PadStrip.h"
 #include "ui/DrumPanels.h"
 #include "ui/StepSeqView.h"
+#include "ui/DrumFxRack.h"
 #include "../ui/LookAndFeel.h"
 
 // The DR-1 rack: all sections laid out at a fixed logical size matching the
@@ -19,15 +20,6 @@ public:
     void resized() override;
 
 private:
-    // Theme-painted stand-in for the section Task 13 mounts.
-    class Placeholder : public juce::Component {
-    public:
-        explicit Placeholder(juce::String l) : label(std::move(l)) {}
-        void paint(juce::Graphics&) override;
-    private:
-        juce::String label;
-    };
-
     fui::DrumHeader header;
     fui::PadGrid pads;
     fui::PadStrip padStrip;
@@ -39,7 +31,7 @@ private:
     fui::DrumModPanel mod;
     fui::SelBarView selBar;
     fui::StepSeqView stepSeq;
-    Placeholder fxRack{"FX RACK / OUT"};
+    fui::DrumFxRack fxRack;
 };
 
 class DrumEditor : public juce::AudioProcessorEditor,
