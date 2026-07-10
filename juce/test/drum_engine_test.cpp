@@ -7,6 +7,7 @@
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/DrumEngine.h"
 #include "../source/drum/dsp/DrumFx.h"
+#include "../source/drum/dsp/DrumKits.h"
 
 #include <cmath>
 #include <cstdio>
@@ -531,6 +532,88 @@ int main() {
         check(finite(L) && finite(R) && peak(L) < 4.0f && peak(R) < 4.0f,
               "all stages on: 2 s noise finite + bounded",
               "peak=" + std::to_string(std::max(peak(L), peak(R))));
+    }
+
+    printf("\n== 6. DrumKits ==\n");
+    {
+        const auto& kits = factoryKits();
+        check(kits.size() == 3, "3 factory kits");
+        check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
+              "kit names/order");
+
+        // Every override pid resolves and its value is within [min,max].
+        bool allResolve = true, allInRange = true;
+        std::string badPid;
+        for (const auto& kit : kits)
+            for (const auto& [pid, v] : kit.params) {
+                int id = drumIdFromString(pid);
+                if (id < 0) { allResolve = false; badPid = kit.name + ":" + pid; continue; }
+                const auto& pi = drumParamInfo()[(size_t)id];
+                if (v < pi.min || v > pi.max) {
+                    allInRange = false;
+                    badPid = kit.name + ":" + pid + "=" + std::to_string(v);
+                }
+            }
+        check(allResolve, "all override pids resolve", badPid);
+        check(allInRange, "all override values within [min,max]", badPid);
+
+        // Structural invariants shared by all kits.
+        for (const auto& kit : kits) {
+            check((int)kit.patterns.size() == DR_NPATTERNS * DR_NPADS * DR_STEPS,
+                  kit.name + " patterns 4*16*16");
+            check(kit.chain == std::vector<int>{0}, kit.name + " chain {0}");
+            check(kit.padNames[0] == "KICK" && kit.padNames[15] == "GLITCH",
+                  kit.name + " pad names");
+        }
+
+        // Kit values land on the right flat ids through applyKit.
+        auto findOverride = [](const DrumKit& k, const std::string& pid, float fallback) {
+            float out = fallback;
+            for (const auto& [p, v] : k.params) if (p == pid) out = v;
+            return out;
+        };
+        auto tv = applyKit(kits[0]);
+        check(tv[DG_SEQ_BPM] == 126.0f, "TR-VOID bpm 126");
+        check(tv[dpid(0, DP_OSCA_TUNE)] == -14.0f, "TR-VOID pad0 oscA.tune -14");
+        check(tv[dpid(5, DP_CHOKE)] == 1.0f && tv[dpid(6, DP_CHOKE)] == 1.0f &&
+              tv[dpid(5, DP_FLT_ON)] == 1.0f && tv[dpid(6, DP_FLT_ON)] == 1.0f,
+              "TR-VOID hats choke 1 + flt.on");
+        // Non-overridden params keep defaults.
+        check(tv[dpid(1, DP_PAN)] == defaultDrumParams()[dpid(1, DP_PAN)],
+              "applyKit keeps defaults elsewhere");
+
+        // Patterns: pad 0 hits on steps 0/4/8/12, accent (2) on step 0 only.
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        const auto& pats = kits[0].patterns;
+        bool kickOk = pats[pidx(0, 0, 0)] == 2 && pats[pidx(0, 0, 4)] == 1 &&
+                      pats[pidx(0, 0, 8)] == 1 && pats[pidx(0, 0, 12)] == 1;
+        for (int s = 0; s < DR_STEPS; s++)
+            if (s % 4 != 0 && pats[pidx(0, 0, s)] != 0) kickOk = false;
+        check(kickOk, "TR-VOID kick on 0/4/8/12, accent on 0");
+
+        auto ro = applyKit(kits[1]);
+        check(ro[DG_SEQ_BPM] == 116.0f, "ROOM ONE bpm 116");
+        check(findOverride(kits[1], "pad0.penv.amt", -999.0f) == 12.0f,
+              "ROOM ONE penv.amt = round(22 * 0.55)");
+
+        auto bc = applyKit(kits[2]);
+        bool allGrit = true;
+        for (int i = 0; i < DR_NPADS; i++)
+            if (bc[dpid(i, DP_OSCA_TABLE)] != 3.0f) allGrit = false;
+        check(allGrit && bc[DG_SEQ_BPM] == 140.0f, "BITCRUSH oscA.table 3 on all pads, bpm 140");
+
+        // End to end: TR-VOID into a DrumEngine, one bar of audio on MAIN.
+        DrumEngine ke; ke.prepare(48000); ke.setTables(allTables());
+        ke.setParams(tv);
+        ke.setPatterns(kits[0].patterns.data(), (int)kits[0].patterns.size());
+        ke.setChain(kits[0].chain.data(), (int)kits[0].chain.size());
+        ke.play();
+        auto bar = renderMain(ke, 96000);   // 1 bar @ 126 bpm ~ 91429 samples
+        check(finite(bar) && rms(bar) > 1e-4, "TR-VOID plays a bar on MAIN",
+              "rms=" + std::to_string(rms(bar)));
+        ke.stop();
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");
