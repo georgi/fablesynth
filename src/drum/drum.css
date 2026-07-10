@@ -1,0 +1,196 @@
+/* DR-1 shell and task-ready section layouts. Shared controls live in index.css. */
+
+#drum-rack {
+  max-width: 1460px;
+  min-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 18px 22px;
+}
+
+.dr-header {
+  gap: 12px;
+  min-height: 78px;
+  padding-block: 7px;
+}
+
+.dr-header .brand { flex: none; }
+.dr-kitbar { flex: none; }
+.dr-kitname {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 128px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0c0f16;
+  color: var(--ac-a);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.dr-mode { display: flex; gap: 4px; }
+.dr-mode .pb-btn {
+  min-width: 48px;
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.dr-mode .pb-btn.active {
+  border-color: var(--ac-a);
+  color: var(--ac-a);
+  box-shadow: inset 0 0 10px rgba(77, 232, 255, 0.08);
+}
+
+.dr-hud { margin-left: auto; }
+.dr-hud .hud-cell { width: 156px; }
+.dr-midi { flex: none; }
+.dr-tempo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.dr-tempo .st-value { min-width: 42px; }
+.dr-tempo > span {
+  color: var(--text-dim);
+  font-size: 7px;
+  letter-spacing: 0.22em;
+}
+.dr-master {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  height: 64px;
+}
+
+.dr-main {
+  display: grid;
+  grid-template-columns: 352px 1fr;
+  gap: 9px;
+}
+.dr-left,
+.dr-right {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* Empty slots keep the shell stable until Tasks 9-12 mount their panels. */
+#dr-pads,
+#dr-padstrip,
+#dr-selbar,
+#dr-oscrow,
+#dr-editrow,
+#dr-stepseq,
+#dr-fxrack {
+  min-width: 0;
+}
+#dr-stepseq,
+#dr-fxrack { margin-top: 9px; }
+
+.pad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.pad {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #1c212d, #10131b);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.pad:hover { border-color: rgba(77, 232, 255, 0.4); }
+.pad:active { transform: translateY(1px); }
+.pad.sel {
+  border-color: var(--ac-a);
+  box-shadow: 0 0 0 1px rgba(77, 232, 255, 0.3), inset 0 0 18px rgba(77, 232, 255, 0.06);
+}
+.pad-led {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #232936;
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.7);
+}
+.pad-led.on {
+  background: var(--ac-a);
+  box-shadow: 0 0 8px var(--ac-a);
+}
+
+.step-row {
+  display: flex;
+  gap: 6px;
+}
+.step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #171b25, #0d1017);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.step .acc,
+.step .fill {
+  position: absolute;
+  inset: 4px;
+  border-radius: 3px;
+  background: rgba(77, 232, 255, 0.22);
+}
+.step .acc {
+  background: rgba(77, 232, 255, 0.55);
+  box-shadow: inset 0 0 8px rgba(77, 232, 255, 0.25);
+}
+.step.cur {
+  border-color: var(--ac-b);
+  box-shadow: 0 0 0 1px rgba(255, 161, 77, 0.3), 0 0 8px rgba(255, 161, 77, 0.18);
+}
+
+.fx-rack {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr) 190px;
+  gap: 10px;
+}
+
+.mod-select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 26px;
+  padding: 0 24px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0c0f16 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6'%3E%3Cpath d='M0 0h8L4 6z' fill='%236b768c'/%3E%3C/svg%3E") no-repeat right 8px center;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.mod-select:focus-visible {
+  outline: 1px solid var(--ac-a);
+  outline-offset: 1px;
+}
+
+.dr-well {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #07090e;
+}
+.dr-label {
+  color: var(--text-dim);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+}
+.dr-spacer { flex: 1; }
