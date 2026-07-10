@@ -22,7 +22,7 @@ if(FABLE_BUILD_PLUGIN)
     endif()
 
     juce_add_plugin(FableSynth
-        PRODUCT_NAME "FableSynth"
+        PRODUCT_NAME "FableSynth WT-1"
         COMPANY_NAME "FableSynth"
         PLUGIN_MANUFACTURER_CODE Fabl
         PLUGIN_CODE Fwt1

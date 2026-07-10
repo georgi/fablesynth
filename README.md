@@ -15,9 +15,12 @@ drop the plugin in the right folder:
 
 | Platform | VST3 | AU | Standalone |
 | --- | --- | --- | --- |
-| **macOS** | `~/Library/Audio/Plug-Ins/VST3/` | `~/Library/Audio/Plug-Ins/Components/` | drag `FableSynth.app` to Applications |
-| **Windows** | `C:\Program Files\Common Files\VST3\` | — | run `FableSynth.exe` |
-| **Linux** | `~/.vst3/` | — | run `./FableSynth` |
+| **macOS** | `~/Library/Audio/Plug-Ins/VST3/` | `~/Library/Audio/Plug-Ins/Components/` | drag the `.app` to Applications |
+| **Windows** | `C:\Program Files\Common Files\VST3\` | — | run the `.exe` |
+| **Linux** | `~/.vst3/` | — | run the binary |
+
+The plugins ship as **FableSynth WT-1** (wavetable synth) and **FableSynth
+DR-1** (drum machine) — separate zips per platform.
 
 Then rescan plugins in your DAW. macOS builds are **universal** (Apple Silicon +
 Intel) and ad-hoc signed; on first launch you may need to right-click → Open, or

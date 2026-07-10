@@ -62,9 +62,9 @@ jobs:
         run: |
           stage="FableSynth-macOS"
           mkdir -p "$stage"
-          ditto VST3/FableSynth.vst3        "$stage/FableSynth.vst3"
-          ditto AU/FableSynth.component      "$stage/FableSynth.component"
-          ditto Standalone/FableSynth.app    "$stage/FableSynth.app"
+          ditto "VST3/FableSynth WT-1.vst3"      "$stage/FableSynth WT-1.vst3"
+          ditto "AU/FableSynth WT-1.component"   "$stage/FableSynth WT-1.component"
+          ditto "Standalone/FableSynth WT-1.app" "$stage/FableSynth WT-1.app"
           ditto -c -k --keepParent "$stage" "$GITHUB_WORKSPACE/FableSynth-macOS.zip"
 
       - name: Package DR-1 (macOS)
@@ -84,8 +84,8 @@ jobs:
         run: |
           stage="FableSynth-Linux"
           mkdir -p "$stage"
-          cp -R VST3/FableSynth.vst3 "$stage/"
-          cp Standalone/FableSynth   "$stage/"
+          cp -R "VST3/FableSynth WT-1.vst3" "$stage/"
+          cp "Standalone/FableSynth WT-1"   "$stage/"
           zip -r "$GITHUB_WORKSPACE/FableSynth-Linux.zip" "$stage"
 
       - name: Package DR-1 (Linux)
@@ -105,8 +105,8 @@ jobs:
         run: |
           $stage = "FableSynth-Windows"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item -Recurse VST3/FableSynth.vst3 $stage/
-          Copy-Item Standalone/FableSynth.exe     $stage/
+          Copy-Item -Recurse "VST3/FableSynth WT-1.vst3" $stage/
+          Copy-Item "Standalone/FableSynth WT-1.exe"     $stage/
           Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-Windows.zip" -Force
 
       - name: Package DR-1 (Windows)
