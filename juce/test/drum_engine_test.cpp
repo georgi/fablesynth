@@ -387,6 +387,129 @@ int main() {
         check(leak < 1e-6, "other buses silent (incl. MAIN)", std::to_string(leak));
     }
 
+    printf("\n== 4b. Host transport lock ==\n");
+    {
+        // Host-locked mode: setHostTransport(ppq, bpm, playing) per block drives
+        // the sequencer from song position — the internal play() is not used.
+        DrumEngine he; he.prepare(48000); he.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        // Render in host mode: feed ppq block-by-block like a DAW would.
+        // Returns MAIN L. blockSize deliberately not a divisor of step lengths.
+        auto renderHost = [](DrumEngine& e, double startPpq, double bpm, int total,
+                             bool playing = true, int block = 480) {
+            std::vector<float> acc; acc.reserve((size_t)total);
+            double ppq = startPpq;
+            const double ppqPerSample = bpm / 60.0 / 48000.0;
+            int done = 0;
+            while (done < total) {
+                int n = std::min(block, total - done);
+                e.setHostTransport(ppq, bpm, playing);
+                std::vector<float> bufs[DR_NBUSES][2];
+                float* outs[DR_NBUSES][2];
+                for (int b = 0; b < DR_NBUSES; b++)
+                    for (int c = 0; c < 2; c++) {
+                        bufs[b][c].assign((size_t)n, 0.0f);
+                        outs[b][c] = bufs[b][c].data();
+                    }
+                e.render(outs, n);
+                acc.insert(acc.end(), bufs[0][0].begin(), bufs[0][0].end());
+                ppq += n * ppqPerSample;
+                done += n;
+            }
+            return acc;
+        };
+
+        pats[pidx(0, 0, 0)] = 2;
+        pats[pidx(0, 0, 4)] = 1;
+        he.setPatterns(pats.data(), (int)pats.size());
+        he.setParam(DG_MASTER_SWING, 0.0f);
+        he.setParam(dpid(0, DP_AENV_DEC), 0.02f);
+        he.setParam(dpid(1, DP_AENV_DEC), 0.02f);
+
+        // 1. host playing drives steps without play(); bpm 120 -> 6000-sample steps
+        auto hout = renderHost(he, 0.0, 120.0, 48000);
+        auto hon = onsets(hout);
+        check(hon.size() == 2 && near(hon[0], 0, 64) && near(hon[1], 24000, 64),
+              "host-locked: steps 0 and 4 from ppq", onsetsStr(hon));
+        check(he.isPlaying(), "isPlaying true while host plays");
+
+        // 2. host stop: sequencer stops, step resets
+        auto hstop = renderHost(he, 2.0, 120.0, 24000, /*playing=*/false);
+        check(onsets(hstop).empty(), "no steps while host stopped");
+        check(!he.isPlaying() && he.currentStep() == -1, "host stop resets step");
+
+        // 3. position lock: starting at ppq 0.9 puts step 4 (ppq 1.0) at sample 2400
+        auto hmid = renderHost(he, 0.9, 120.0, 12000);
+        auto hmon = onsets(hmid);
+        check(hmon.size() == 1 && near(hmon[0], 2400, 64),
+              "host-locked: mid-bar start lands step 4 at ppq 1.0", onsetsStr(hmon));
+        renderHost(he, 3.9, 120.0, 4800, false);   // stop + let tails die
+
+        // 4. swing in host mode: odd step 1 at ppq 0.25 + 1*0.667*0.25 = 0.41675
+        std::fill(pats.begin(), pats.end(), 0);
+        pats[pidx(0, 0, 1)] = 1;
+        he.setPatterns(pats.data(), (int)pats.size());
+        he.setParam(DG_MASTER_SWING, 1.0f);
+        auto hsw = renderHost(he, 0.0, 120.0, 18000);
+        auto hswon = onsets(hsw);
+        check(hswon.size() == 1 && near(hswon[0], 10002, 64),
+              "host-locked swing delays odd step", onsetsStr(hswon));
+        he.setParam(DG_MASTER_SWING, 0.0f);
+        renderHost(he, 5.0, 120.0, 4800, false);
+
+        // 5. chain position derives from the bar index: chain {0,1}, pattern B
+        //    has pad1 at step 0 -> starting at bar 1 (ppq 4.0) fires it at 0
+        std::fill(pats.begin(), pats.end(), 0);
+        pats[pidx(1, 1, 0)] = 2;
+        he.setPatterns(pats.data(), (int)pats.size());
+        const int chAB[2] = { 0, 1 };
+        he.setChain(chAB, 2);
+        auto hbar = renderHost(he, 4.0, 120.0, 12000);
+        auto hbon = onsets(hbar);
+        check(hbon.size() == 1 && near(hbon[0], 0, 64),
+              "chain pattern from host bar index", onsetsStr(hbon));
+        check(he.currentPattern() == 1, "currentPattern follows host bar");
+        renderHost(he, 8.0, 120.0, 4800, false);
+
+        // 6. loop wrap: jumping back to ppq 4.0 re-fires the step, exactly once
+        auto hloop1 = renderHost(he, 4.0, 120.0, 6000);
+        auto hloop2 = renderHost(he, 4.0, 120.0, 6000);   // host looped back
+        check(onsets(hloop1).size() == 1 && onsets(hloop2).size() == 1,
+              "loop jump resyncs without double-fire");
+        renderHost(he, 8.0, 120.0, 4800, false);
+
+        // 7. host playing suppresses the internal transport: play() then host
+        //    start + stop leaves the sequencer stopped (host owns the clock)
+        const int chA[1] = { 0 };
+        he.setChain(chA, 1);
+        std::fill(pats.begin(), pats.end(), 0);
+        pats[pidx(0, 0, 0)] = 2;
+        he.setPatterns(pats.data(), (int)pats.size());
+        he.play();
+        renderHost(he, 0.0, 120.0, 12000);                 // host takes over
+        renderHost(he, 0.25 * 12000 / 24000.0 + 0.5, 120.0, 4800, false);
+        check(!he.isPlaying(), "host stop leaves sequencer stopped despite prior play()");
+        check(onsets(renderHost(he, 1.0, 120.0, 24000, false)).empty(),
+              "internal clock does not free-run after host stop");
+
+        // play() pressed WHILE the host is rolling is ignored too — the host
+        // owns the transport for as long as it reports playing
+        renderHost(he, 0.0, 120.0, 4800);
+        he.play();
+        renderHost(he, 0.1 + 0.0, 120.0, 100, false);   // host stops
+        check(!he.isPlaying(),
+              "play() during host roll does not arm the internal clock");
+
+        // 8. pre-roll: negative ppq fires nothing until the song start
+        auto hpre = renderHost(he, -0.5, 120.0, 24000);
+        auto hpon = onsets(hpre);
+        check(hpon.size() == 1 && near(hpon[0], 12000, 64),
+              "negative ppq waits for song start", onsetsStr(hpon));
+    }
+
     printf("\n== 5. DrumFx ==\n");
     const double fsr = 48000.0;
     // Every DrumFx test starts from all-stages-off (comp + reverb default ON).

@@ -24,13 +24,23 @@ struct BinPacker : juce::AudioProcessor {
     }
 };
 
-// Minimal host playhead reporting a fixed tempo (bpm-only sync, per spec).
+// Minimal host playhead. bpm-only by default (tempo sync); with reportPpq it
+// also reports song position + isPlaying, auto-advancing ppq once per
+// getPosition() call (= once per processBlock) like a rolling DAW transport.
 struct MockPlayHead : juce::AudioPlayHead {
     double bpm = 90.0;
+    bool   playing = true;
+    bool   reportPpq = false;
+    mutable double ppq = 0.0;
+    double ppqInc = 0.0;          // ppq advance per block while playing
     juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override {
         juce::AudioPlayHead::PositionInfo pos;
         pos.setBpm(bpm);
-        pos.setIsPlaying(true);
+        pos.setIsPlaying(playing);
+        if (reportPpq) {
+            pos.setPpqPosition(ppq);
+            if (playing) ppq += ppqInc;
+        }
         return pos;
     }
 };
@@ -160,6 +170,28 @@ int main(int argc, char** argv) {
     proc.setPlayHead(nullptr);
     render(2, -1, 0);
     check(!proc.isHostSynced(), "playhead removed -> sync drops");
+    render(60, -1, 0); // let tails die before the transport-lock checks
+
+    // ---- 6b. host transport lock: isPlaying + ppq slave the sequencer ----
+    // The host rolls -> DR-1 plays TR-VOID from song position with NO internal
+    // play; the host stops -> the sequencer stops.
+    MockPlayHead tph;
+    tph.bpm = 120.0; tph.reportPpq = true;
+    tph.ppqInc = (double)block / sr * (120.0 / 60.0);
+    proc.setPlayHead(&tph);
+    stepChanges = 0; lastStep = -1;
+    auto r6b = render((int)(2.0 * sr / block), -1, 0);   // 2 s, transport rolling
+    check(proc.isSeqPlaying(), "host transport -> sequencer reports playing");
+    check(r6b[0] > 1e-4, "host transport drives TR-VOID without internal play", r6b[0]);
+    // 2 s at 120 bpm = 16 step advances (8 steps/s)
+    check(stepChanges >= 13 && stepChanges <= 19,
+          "step count follows host position (~16 in 2 s)", stepChanges);
+    tph.playing = false;                                  // host hits stop
+    render(4, -1, 0);
+    check(!proc.isSeqPlaying(), "host stop -> sequencer stops");
+    check(proc.getCurrentStep() == -1, "host stop resets the step readout");
+    proc.setPlayHead(nullptr);
+    render(60, -1, 0); // decay
 
     // ---- 7. everything rendered finite ----
     check(allFinite, "all bus outputs finite");

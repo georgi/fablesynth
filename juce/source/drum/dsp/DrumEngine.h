@@ -53,12 +53,21 @@ public:
     // ---- sequencer (worklet onMsg 'play'/'stop'/'pats'/'chain' + fireStep) ----
     void play();                                    // step=-1, chainPos=0, samplesToNext=0
     void stop();
-    bool isPlaying() const { return playing_; }
+    bool isPlaying() const { return playing_ || hostPlaying_; }
     void setPatterns(const uint8_t* data, int n);   // n must be 4*16*16; copies
     void setChain(const int* list, int n);          // ignores empty; clamps entries + chainPos
     void setBpmOverride(double bpm);                // host tempo; <= 0 clears the override
     int  currentStep() const { return step_; }      // -1 when stopped
     int  currentPattern() const { return chain_[(size_t)chainPos_]; }
+
+    // ---- host transport lock (the standard JUCE AudioPlayHead behavior) ----
+    // Call once per block, before render(). While playing, the sequencer is
+    // slaved to song position: absolute 16th k fires at
+    //   p(k) = k*0.25 + (k odd ? swing*DR_SWING_MAX*0.25 : 0) ppq,
+    // the pattern is chain[(k/16) % chain.size()], and k < 0 (host pre-roll)
+    // never fires. Jumps/loops resync from ppq. Host playing suppresses the
+    // internal play()/stop() transport; host stop leaves the sequencer stopped.
+    void setHostTransport(double ppq, double bpm, bool playing);
 
     // Render n samples into 5 stereo buses. outs[b][0]=L, outs[b][1]=R;
     // render() zero-fills all 10 buffers first, then pads accumulate into
@@ -122,6 +131,11 @@ private:
     void renderPad(PadVoice& v, int padI, float* L, float* R, int off, int n);
     void fireStep();               // js:493-518
 
+    // host-lock helpers
+    double hostStepPpq(long k) const;   // p(k) with the current swing
+    void   hostResync();                // smallest k >= 0 with p(k) >= hostPpq_
+    void   fireHostStep(long k);        // trigger step k%16 of chain[(k/16) % len]
+
     // sequencer state (js:82-89)
     std::vector<uint8_t> pats_ =
         std::vector<uint8_t>(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
@@ -131,6 +145,14 @@ private:
     int    step_ = -1;
     double samplesToNext_ = 0;
     double bpmOverride_ = 0;       // > 0: host tempo wins over DG_SEQ_BPM
+
+    // host transport lock state
+    bool   hostPlaying_ = false;
+    bool   hostSynced_  = false;   // hostNextK_ valid for hostPpq_
+    double hostPpq_ = 0;           // ppq at the start of the next render block
+    double hostBpm_ = 120;
+    double hostEndPpq_ = 0;        // expected block-end ppq (continuity check)
+    long   hostNextK_ = 0;         // next absolute 16th to fire
 
     DrumParamArray p_ = defaultDrumParams();
     uint32_t hits_ = 0;

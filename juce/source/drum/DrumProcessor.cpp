@@ -263,13 +263,21 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         if (rawParams_[(size_t)i]) p[(size_t)i] = rawParams_[(size_t)i]->load();
     fx.setParams(p);
 
-    // Host tempo: bpm-only sync (spec). When the host reports a tempo it
-    // overrides seq.bpm; transport start/stop stays DR-1's own button.
+    // Host sync. A reported tempo overrides seq.bpm; a rolling transport that
+    // also reports song position slaves the whole sequencer to the host
+    // (steps derive from ppq — the standard JUCE AudioPlayHead behavior).
+    // Without ppq (or stopped) the internal play button drives the clock.
     bool synced = false; double bpm = 0;
+    bool hostRolling = false; double ppq = 0; bool hasPpq = false;
     if (auto* ph = getPlayHead())
-        if (auto pos = ph->getPosition())
+        if (auto pos = ph->getPosition()) {
             if (auto b = pos->getBpm()) { bpm = *b; synced = bpm > 0; }
+            hostRolling = pos->getIsPlaying();
+            if (auto q = pos->getPpqPosition()) { ppq = *q; hasPpq = true; }
+        }
     engine.setBpmOverride(synced ? bpm : 0.0);
+    engine.setHostTransport(ppq, synced ? bpm : 120.0,
+                            hostRolling && hasPpq && synced);
     hostSynced_.store(synced, std::memory_order_relaxed);
     hostBpm_.store(synced ? bpm : 0.0, std::memory_order_relaxed);
 

@@ -85,6 +85,7 @@ void DrumEngine::trigger(int padI, float vel) {
 
 // ---- sequencer control (worklet onMsg 'pats'/'chain'/'play'/'stop', js:110-120) ----
 void DrumEngine::play() {
+    if (hostPlaying_) return;          // host owns the transport while rolling
     playing_ = true; step_ = -1; chainPos_ = 0; samplesToNext_ = 0;
 }
 
@@ -107,6 +108,55 @@ void DrumEngine::setChain(const int* list, int n) {
 
 void DrumEngine::setBpmOverride(double bpm) {
     bpmOverride_ = bpm > 0 ? bpm : 0;
+}
+
+// ---- host transport lock ----
+// The DAW owns the clock: steps derive from song position (ppq), so loops,
+// jumps and mid-bar starts all land sample-accurately without local state.
+void DrumEngine::setHostTransport(double ppq, double bpm, bool playing) {
+    if (!std::isfinite(ppq)) ppq = 0;
+    if (!(std::isfinite(bpm) && bpm > 1.0)) bpm = 120;
+    if (playing && !hostPlaying_) {
+        playing_ = false;              // host takes over; internal transport yields
+        step_ = -1;
+        hostSynced_ = false;
+    }
+    if (playing && hostSynced_ && std::fabs(ppq - hostEndPpq_) > 1e-4)
+        hostSynced_ = false;           // loop / relocate -> resync from ppq
+    if (!playing && hostPlaying_)
+        step_ = -1;                    // host stopped
+    hostPlaying_ = playing;
+    hostPpq_ = ppq;
+    hostBpm_ = bpm;
+}
+
+// Nominal song position of absolute 16th k, with the current swing. Swing
+// shifts odd 16ths late by up to DR_SWING_MAX of a step (0.25 ppq), matching
+// fireStep()'s `dur - offNow + offNext` timing in the ppq domain.
+double DrumEngine::hostStepPpq(long k) const {
+    double swing = clampd((double)p_[DG_MASTER_SWING], 0.0, 1.0);
+    return (double)k * 0.25 + ((k & 1) ? swing * DR_SWING_MAX * 0.25 : 0.0);
+}
+
+// Smallest k >= 0 whose p(k) has not passed yet. k < 0 (pre-roll) never fires.
+void DrumEngine::hostResync() {
+    long k = (long)std::floor(hostPpq_ / 0.25) - 1;
+    if (k < 0) k = 0;
+    while (hostStepPpq(k) < hostPpq_ - 1e-9) k++;
+    hostNextK_ = k;
+    hostSynced_ = true;
+}
+
+void DrumEngine::fireHostStep(long k) {
+    int  s   = (int)(k % DR_STEPS);
+    long bar = k / DR_STEPS;
+    chainPos_ = (int)(bar % (long)chain_.size());
+    int pat = chain_[(size_t)chainPos_];
+    for (int i = 0; i < DR_NPADS; i++) {
+        uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
+        if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+    }
+    step_ = s;
 }
 
 // ---- fireStep (js:493-518). The host-tempo override bypasses the 60..200 ----
@@ -479,10 +529,28 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         return;
     }
 
+    // Host-locked mode: step times come from song position, not samplesToNext_.
+    const bool hostRun = hostPlaying_;
+    double ppqPerSample = 0, samplesPerPpq = 0;
+    if (hostRun) {
+        ppqPerSample = hostBpm_ / 60.0 / sr_;
+        samplesPerPpq = 1.0 / ppqPerSample;
+        if (!hostSynced_) hostResync();
+    }
+
     int pos = 0;
     while (pos < n) {
         int run = std::min(128, n - pos);
-        if (playing_) {                              // js:465-469
+        if (hostRun) {
+            // Fire every step due at/before pos; split the run at the next one.
+            for (;;) {
+                long fireAt = (long)std::ceil(
+                    (hostStepPpq(hostNextK_) - hostPpq_) * samplesPerPpq - 1e-9);
+                if (fireAt <= pos) { fireHostStep(hostNextK_++); continue; }
+                if (fireAt - pos < run) run = (int)(fireAt - pos);
+                break;
+            }
+        } else if (playing_) {                       // js:465-469
             if (samplesToNext_ <= 0) fireStep();
             run = std::min(run, (int)std::ceil(samplesToNext_));
         }
@@ -492,9 +560,10 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             int out = std::max(0, std::min(DR_NBUSES - 1, (int)p_[dpid(i, DP_OUT)]));
             renderPad(v, i, outs[out][0], outs[out][1], pos, run);
         }
-        if (playing_) samplesToNext_ -= run;         // js:475
+        if (!hostRun && playing_) samplesToNext_ -= run;   // js:475
         pos += run;
     }
+    if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
 
     const PadVoice& v = voices_[sel_];
     vizA = v.active ? (float)v.oA.posSm : -1.0f;

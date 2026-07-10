@@ -17,10 +17,15 @@ Decisions made during brainstorming:
 
 - **Multi-out is real in v1:** 5 stereo output buses (MAIN + AUX 1–4), per-pad
   routing via `pad.out`; master FX applies to MAIN only, AUX buses are dry.
-- **Host sync = tempo only:** BPM follows the host `AudioPlayHead` when
-  available (readout shows SYNC and locks); play/stop remains DR-1's own
-  transport button. No bar-position locking in v1. Standalone uses the
-  internal clock.
+- **Host sync = full transport lock** *(upgraded from tempo-only after v1
+  shipped, 2026-07-10 — Matti: "the clock should come from the host")*: BPM
+  follows the host `AudioPlayHead` (readout shows SYNC and locks), and when
+  the host transport rolls with a song position, the sequencer slaves to
+  PPQ — absolute 16th k fires at `k·0.25 + (k odd ? swing·0.667·0.25 : 0)`
+  ppq, the chain pattern is `chain[(k/16) % len]`, loops/jumps resync, host
+  pre-roll (ppq < 0) stays silent, and host stop stops the sequencer. The
+  internal play button drives the clock only while no host transport is
+  rolling (stopped host, tempo-only host, Standalone).
 - **Drop-WAV onto pads is in scope:** JUCE file drag-and-drop into the
   already-ported `UserTables::buildUserTable` pipeline, assigned to that
   pad's OSC A and serialized in host state.
@@ -256,8 +261,9 @@ the plugin next to the web DR-1.
 
 ## Out of scope (follow-ups)
 
-- Full host-transport lock (play/stop + PPQ bar-position sync, loop/jump
-  handling).
+- ~~Full host-transport lock (play/stop + PPQ bar-position sync, loop/jump
+  handling)~~ — **shipped 2026-07-10** (see the upgraded host-sync decision
+  above).
 - MIDI clock / MIDI start-stop, pattern switching via program change.
 - Song mode beyond the 4-pattern chain (unchanged from web).
 - Sample playback pads (DR-1 stays synthesis-only).

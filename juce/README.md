@@ -142,9 +142,13 @@ second plugin from the same build: **VST3 · AU · Standalone**, product name
   (MAIN + AUX 1–4). Each pad's OUT selector routes it to a bus for separate
   processing in the DAW mixer; master FX run on MAIN only, exactly like the
   web routing. Hosts that only take stereo just use MAIN.
-- **Host tempo sync** — when the host reports a tempo, the sequencer's step
-  clock follows the playhead BPM instead of `seq.bpm` and the header shows
-  SYNC. Remove the playhead (or run Standalone) and the BPM knob takes over.
+- **Host transport lock** — when the host transport rolls (and reports tempo
+  + song position), the sequencer is slaved to the playhead: steps derive
+  from PPQ, so mid-bar starts, loops and relocates land sample-accurately,
+  the pattern chain follows the host bar index, and host stop stops the
+  sequencer. The header shows SYNC and the internal play button yields while
+  the host owns the clock. With the host stopped (or tempo-only hosts, or
+  Standalone) DR-1's own play button and BPM knob drive the internal clock.
 - **Drop-WAV pad import** — drop an audio file on a pad and it's sliced into a
   wavetable through the *same* `buildUserTable` band-limit + mip pipeline as
   WT-1 user tables, then assigned to that pad's OSC A. Imported tables are
