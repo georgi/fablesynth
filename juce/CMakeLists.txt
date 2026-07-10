@@ -119,5 +119,15 @@ add_executable(engine_test
     source/dsp/UserTables.cpp)
 target_compile_features(engine_test PRIVATE cxx_std_17)
 
+# ---- DR-1 headless DSP verification harness (no JUCE) ----
+add_executable(drum_engine_test
+    test/drum_engine_test.cpp
+    source/drum/dsp/DrumParams.cpp
+    source/dsp/Params.cpp
+    source/dsp/Wavetables.cpp
+    source/dsp/UserTables.cpp)
+target_compile_features(drum_engine_test PRIVATE cxx_std_17)
+
 enable_testing()
 add_test(NAME engine_test COMMAND engine_test)
+add_test(NAME drum_engine_test COMMAND drum_engine_test)
