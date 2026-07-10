@@ -1,0 +1,313 @@
+// DR-1 FX chain. Stage code follows source/dsp/Fx.cpp (the WT-1 port of the
+// same web topology); the lockstep reference for constants and ordering is
+// src/drum/engine/drum-synth.ts:144-303.
+#include "DrumFx.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace fable {
+
+static constexpr double PI = 3.14159265358979323846;
+
+// Safety-limiter static curve: threshold -8 dB (~0.398), ratio 14 — identical
+// to the web limiter (drum-synth.ts) and WT-1's Fx.cpp.
+static constexpr double kLimThr = 0.398, kLimRatio = 14.0;
+
+// Bus compressor: fixed WebAudio node settings from drum-synth.ts buildFx()
+// (ratio 4, knee 9 dB, attack 3 ms, release 250 ms); threshold is DG_FXCOMP_THR.
+static constexpr double kCompRatio = 4.0, kCompKnee = 9.0;
+
+// WebAudio DynamicsCompressor static curve, in dB of gain reduction (<= 0):
+// below thr 0 dB; within [thr, thr+knee] quadratic transition; above, slope
+// 1/ratio - 1.
+static inline double compGainDb(double xDb, double thrDb) {
+    double over = xDb - thrDb;
+    if (over <= 0) return 0.0;
+    if (over < kCompKnee)
+        return (1.0 / kCompRatio - 1.0) * over * over / (2.0 * kCompKnee);
+    return (1.0 / kCompRatio - 1.0) * (over - kCompKnee * 0.5);
+}
+
+// ---------------- Freeverb tuning (classic constants, scaled to sr) ----------------
+static const int COMB_TUNE[8]   = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617};
+static const int AP_TUNE[4]     = {556, 441, 341, 225};
+static const int STEREO_SPREAD  = 23;
+
+void DrumFx::prepare(double sampleRate) {
+    sr_ = sampleRate;
+    double scale = sr_ / 44100.0;
+
+    for (int i = 0; i < 8; i++) {
+        combL_[i].prepare((int)(COMB_TUNE[i] * scale));
+        combR_[i].prepare((int)((COMB_TUNE[i] + STEREO_SPREAD) * scale));
+    }
+    for (int i = 0; i < 4; i++) {
+        apL_[i].prepare((int)(AP_TUNE[i] * scale));
+        apR_[i].prepare((int)((AP_TUNE[i] + STEREO_SPREAD) * scale));
+        apL_[i].feedback = apR_[i].feedback = 0.5f;
+    }
+
+    chDl1_.prepare((int)(0.05 * sr_));
+    chDl2_.prepare((int)(0.05 * sr_));
+    dlL_.prepare((int)(2.0 * sr_) + 4);
+    dlR_.prepare((int)(2.0 * sr_) + 4);
+
+    driveWet_.setTime(0.02, sr_); driveDry_.setTime(0.02, sr_);
+    compThrDb_.setTime(0.02, sr_); compMakeup_.setTime(0.02, sr_);
+    compWet_.setTime(0.02, sr_); compDry_.setTime(0.02, sr_);
+    chWet_.setTime(0.02, sr_); chDry_.setTime(0.02, sr_);
+    dlTime_.setTime(0.08, sr_); dlFb_.setTime(0.02, sr_);
+    dlWet_.setTime(0.02, sr_); dlDry_.setTime(0.02, sr_);
+    verbWet_.setTime(0.02, sr_); verbDry_.setTime(0.02, sr_);
+    masterGain_.setTime(0.02, sr_);
+    driveDry_.snap(1); compDry_.snap(1); chDry_.snap(1); dlDry_.snap(1); verbDry_.snap(1);
+
+    dcL_.highpass(8, 0.707, sr_);
+    dcR_.highpass(8, 0.707, sr_);
+    // 2x oversampling anti-image / anti-alias filters, cutoff just below base Nyquist.
+    upL_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
+    upR_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
+    downL_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
+    downR_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
+    dlDamp_.lowpass(4500, 0.707, sr_);
+
+    // Compressor envelope coefficients (attack 3 ms, release 250 ms).
+    compAtk_ = 1 - std::exp(-1.0 / (0.003 * sr_));
+    compRel_ = 1 - std::exp(-1.0 / (0.25 * sr_));
+
+    // Limiter envelope coefficients (attack 2 ms, release 220 ms).
+    limAtk_ = 1 - std::exp(-1.0 / (0.002 * sr_));
+    limRel_ = 1 - std::exp(-1.0 / (0.22 * sr_));
+
+    // WebAudio's DynamicsCompressor applies spec-defined makeup gain
+    // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
+    // node, so match it here or the plugin sits ~4.5 dB under the web app.
+    double c1 = std::pow(1.0 / kLimThr, 1.0 / kLimRatio - 1.0);
+    limMakeup_ = std::pow(1.0 / c1, 0.6);
+}
+
+void DrumFx::reset() {
+    chDl1_.reset(); chDl2_.reset(); dlL_.reset(); dlR_.reset();
+    for (auto& c : combL_) std::fill(c.buf.begin(), c.buf.end(), 0.0f);
+    for (auto& c : combR_) std::fill(c.buf.begin(), c.buf.end(), 0.0f);
+    for (auto& a : apL_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+    for (auto& a : apR_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+    dcL_.reset(); dcR_.reset(); dlDamp_.reset();
+    upL_.reset(); upR_.reset(); downL_.reset(); downR_.reset();
+    compEnv_ = 0;
+    limEnv_ = 0;
+}
+
+static inline float mixGate(bool on, float amount, bool wet) {
+    if (wet) return on ? (float)std::sin(amount * PI / 2) : 0.0f;
+    return on ? (float)std::cos(amount * PI / 2) : 1.0f;
+}
+
+void DrumFx::setParams(const DrumParamArray& p) {
+    // drive
+    float amt = p[DG_FXDRIVE_AMT];
+    driveK_ = 1 + amt * 24;
+    driveNorm_ = 1.0f / std::tanh(driveK_);
+    drivePre_ = 1 + amt * 2;
+    bool dOn = p[DG_FXDRIVE_ON] > 0.5f;
+    driveOff_ = !dOn;
+    driveWet_.target = mixGate(dOn, p[DG_FXDRIVE_MIX], true);
+    driveDry_.target = mixGate(dOn, p[DG_FXDRIVE_MIX], false);
+
+    // compressor — implicit spec makeup (from the static curve at 0 dBFS)
+    // times the explicit MAKEUP param; fully wet while ON (web setMix(.., 1)).
+    float thrDb = p[DG_FXCOMP_THR];
+    compThrDb_.target = thrDb;
+    double implicit = std::pow(10.0, -0.6 * compGainDb(0.0, thrDb) / 20.0);
+    compMakeup_.target = (float)(implicit * std::pow(10.0, p[DG_FXCOMP_GAIN] / 20.0));
+    bool kOn = p[DG_FXCOMP_ON] > 0.5f;
+    compOff_ = !kOn;
+    compWet_.target = mixGate(kOn, 1.0f, true);
+    compDry_.target = mixGate(kOn, 1.0f, false);
+
+    // chorus
+    chRate_ = p[DG_FXCHORUS_RATE];
+    chDepth_ = p[DG_FXCHORUS_DEPTH];
+    bool cOn = p[DG_FXCHORUS_ON] > 0.5f;
+    chorusOff_ = !cOn;
+    chWet_.target = mixGate(cOn, p[DG_FXCHORUS_MIX] * 0.8f, true);
+    chDry_.target = mixGate(cOn, p[DG_FXCHORUS_MIX] * 0.8f, false);
+
+    // delay
+    dlTime_.target = p[DG_FXDELAY_TIME];
+    dlFb_.target = p[DG_FXDELAY_FB];
+    bool delOn = p[DG_FXDELAY_ON] > 0.5f;
+    delayOff_ = !delOn;
+    dlWet_.target = mixGate(delOn, p[DG_FXDELAY_MIX] * 0.85f, true);
+    dlDry_.target = mixGate(delOn, p[DG_FXDELAY_MIX] * 0.85f, false);
+
+    // reverb — SIZE maps to roomsize/decay (longer & brighter tail with size)
+    float size = p[DG_FXREVERB_SIZE];
+    roomSize_ = 0.7f + size * 0.28f;
+    float damp = 0.4f - size * 0.2f;
+    for (int i = 0; i < 8; i++) {
+        combL_[i].feedback = combR_[i].feedback = roomSize_;
+        combL_[i].damp1 = combR_[i].damp1 = damp;
+        combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
+    }
+    bool rOn = p[DG_FXREVERB_ON] > 0.5f;
+    verbOff_ = !rOn;
+    verbWet_.target = mixGate(rOn, p[DG_FXREVERB_MIX] * 0.9f, true);
+    verbDry_.target = mixGate(rOn, p[DG_FXREVERB_MIX] * 0.9f, false);
+
+    float vol = p[DG_MASTER_VOLUME];
+    masterGain_.target = vol * vol * 1.6f;
+}
+
+float DrumFx::shape(float x) const {
+    float c = std::max(-1.0f, std::min(1.0f, x));
+    return std::tanh(c * driveK_) * driveNorm_;
+}
+
+void DrumFx::process(float* L, float* R, int n) {
+    // Gate only when OFF; mix==0 while ON must keep state accumulation alive.
+    bool driveGate = driveOff_ && driveWet_.target == 0.0f && std::abs(driveWet_.cur) < 1.0e-6f;
+    bool compGate = compOff_ && compWet_.target == 0.0f && std::abs(compWet_.cur) < 1.0e-6f;
+    bool chorusGate = chorusOff_ && chWet_.target == 0.0f && std::abs(chWet_.cur) < 1.0e-6f;
+    bool delayGate = delayOff_ && dlWet_.target == 0.0f && std::abs(dlWet_.cur) < 1.0e-6f;
+    bool verbGate = verbOff_ && verbWet_.target == 0.0f && std::abs(verbWet_.cur) < 1.0e-6f;
+
+    if (driveGate && !driveGated_) {
+        driveWet_.snap(0); driveDry_.snap(1);
+        upL_.reset(); upR_.reset(); downL_.reset(); downR_.reset();
+    }
+    if (compGate && !compGated_) {
+        compWet_.snap(0); compDry_.snap(1);
+        compEnv_ = 0;
+    }
+    if (chorusGate && !chorusGated_) {
+        chWet_.snap(0); chDry_.snap(1);
+        chDl1_.reset(); chDl2_.reset();
+    }
+    if (delayGate && !delayGated_) {
+        dlWet_.snap(0); dlDry_.snap(1);
+        dlL_.reset(); dlR_.reset(); dlDamp_.reset();
+    }
+    if (verbGate && !verbGated_) {
+        verbWet_.snap(0); verbDry_.snap(1);
+        for (auto& c : combL_) { std::fill(c.buf.begin(), c.buf.end(), 0.0f); c.filt = 0.0f; }
+        for (auto& c : combR_) { std::fill(c.buf.begin(), c.buf.end(), 0.0f); c.filt = 0.0f; }
+        for (auto& a : apL_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+        for (auto& a : apR_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+    }
+
+    driveGated_ = driveGate;
+    compGated_ = compGate;
+    chorusGated_ = chorusGate;
+    delayGated_ = delayGate;
+    verbGated_ = verbGate;
+
+    for (int i = 0; i < n; i++) {
+        float l = L[i], r = R[i];
+
+        // ---- drive (2x oversampled tanh waveshaper) ----
+        if (!driveGated_) {
+            float wet = driveWet_.next(), dry = driveDry_.next();
+            // upsample (zero-stuff x2, gain 2), shape, downsample
+            float u0 = (float)upL_.process(2.0 * drivePre_ * l);
+            float u1 = (float)upL_.process(0.0);
+            float s0 = shape(u0), s1 = shape(u1);
+            downL_.process(s0);
+            float dl = (float)downL_.process(s1);
+            float ru0 = (float)upR_.process(2.0 * drivePre_ * r);
+            float ru1 = (float)upR_.process(0.0);
+            float rs0 = shape(ru0), rs1 = shape(ru1);
+            downR_.process(rs0);
+            float dr = (float)downR_.process(rs1);
+            l = dry * l + wet * dl;
+            r = dry * r + wet * dr;
+        }
+
+        // ---- compressor (WebAudio DynamicsCompressor semantics) ----
+        if (!compGated_) {
+            double pk = std::max(std::abs((double)l), std::abs((double)r));
+            double coef = pk > compEnv_ ? compAtk_ : compRel_;
+            compEnv_ += (pk - compEnv_) * coef;
+            float thrDb = compThrDb_.next();
+            double g = 1.0;
+            if (compEnv_ > 1.0e-6)
+                g = std::pow(10.0, compGainDb(20.0 * std::log10(compEnv_), thrDb) / 20.0);
+            g *= compMakeup_.next();
+            float wet = compWet_.next(), dry = compDry_.next();
+            l = dry * l + wet * (float)(g * l);
+            r = dry * r + wet * (float)(g * r);
+        }
+
+        // ---- chorus (two modulated taps, stereo) ----
+        if (!chorusGated_) {
+            chPhase_ += chRate_ / sr_;
+            if (chPhase_ >= 1) chPhase_ -= 1;
+            double lfo = std::sin(2 * PI * chPhase_);
+            double depth = 0.0008 + chDepth_ * 0.0045;
+            float mono = 0.5f * (l + r);
+            chDl1_.write(mono);
+            chDl2_.write(mono);
+            double d1 = (0.012 + depth * lfo) * sr_;
+            double d2 = (0.017 - depth * 0.8 * lfo) * sr_;
+            float c1 = chDl1_.read(d1);
+            float c2 = chDl2_.read(d2);
+            float wet = chWet_.next(), dry = chDry_.next();
+            l = dry * l + wet * c1;
+            r = dry * r + wet * c2;
+        }
+
+        // ---- ping-pong delay ----
+        if (!delayGated_) {
+            double dt = dlTime_.next() * sr_;
+            float fb = dlFb_.next();
+            float dL = dlL_.read(dt);
+            float dR = dlR_.read(dt);
+            float mono = 0.5f * (l + r);
+            dlL_.write(mono + fb * dR);
+            dlR_.write((float)dlDamp_.process(fb * dL));
+            float wet = dlWet_.next(), dry = dlDry_.next();
+            l = dry * l + wet * dL;
+            r = dry * r + wet * dR;
+        }
+
+        // ---- reverb (Freeverb) ----
+        if (!verbGated_) {
+            float input = (l + r) * 0.015f; // fixed input gain (Freeverb convention)
+            float outL = 0, outR = 0;
+            for (int c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
+            for (int a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+            float wet = verbWet_.next(), dry = verbDry_.next();
+            l = dry * l + wet * outL;
+            r = dry * r + wet * outR;
+        }
+
+        // ---- master gain ----
+        float g = masterGain_.next();
+        l *= g; r *= g;
+
+        // ---- DC block ----
+        l = (float)dcL_.process(l);
+        r = (float)dcR_.process(r);
+
+        // ---- safety limiter (feed-forward peak compressor) ----
+        {
+            double peak = std::max(std::abs((double)l), std::abs((double)r));
+            double coef = peak > limEnv_ ? limAtk_ : limRel_;
+            limEnv_ += (peak - limEnv_) * coef;
+            // static curve: threshold -8 dB, ratio 14 (hard knee; the web's
+            // knee=4 only differs inside a 4 dB window below threshold)
+            double gain = 1.0;
+            if (limEnv_ > kLimThr) {
+                double over = limEnv_ / kLimThr;             // linear overshoot
+                gain = std::pow(over, 1.0 / kLimRatio - 1.0);
+            }
+            l *= (float)(gain * limMakeup_);
+            r *= (float)(gain * limMakeup_);
+        }
+
+        L[i] = l; R[i] = r;
+    }
+}
+
+} // namespace fable

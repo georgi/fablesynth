@@ -6,6 +6,7 @@
 #include "../source/drum/dsp/DrumParams.h"
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/DrumEngine.h"
+#include "../source/drum/dsp/DrumFx.h"
 
 #include <cmath>
 #include <cstdio>
@@ -87,6 +88,23 @@ static double aliasFloorDb(const float* x, int N, double sr, double f0) {
     for (int k = loBin; k < N / 2; k++) (isHarm[k] ? harm : alias) += mag2(k);
     if (harm <= 0) return 0;
     return 10 * std::log10(alias / harm);
+}
+
+// Windowed projection onto a single frequency — magnitude in dB. Used for
+// relative harmonic measurements (both tones share the same window).
+static double toneDb(const float* x, int N, double sr, double f) {
+    double re = 0, im = 0;
+    for (int i = 0; i < N; i++) {
+        double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1)); // Hann
+        double ph = 2 * M_PI * f * i / sr;
+        re += x[i] * w * std::cos(ph);
+        im -= x[i] * w * std::sin(ph);
+    }
+    return 20 * std::log10(std::sqrt(re * re + im * im) + 1e-30);
+}
+
+static std::vector<float> slice(const std::vector<float>& v, int a, int b) {
+    return std::vector<float>(v.begin() + a, v.begin() + b);
 }
 
 // Full DR-1 table list: 4 drum tables followed by the 6 WT-1 procedural
@@ -366,6 +384,153 @@ int main() {
             leak = std::max(leak, rms(bufs[b * 2 + 1]));
         }
         check(leak < 1e-6, "other buses silent (incl. MAIN)", std::to_string(leak));
+    }
+
+    printf("\n== 5. DrumFx ==\n");
+    const double fsr = 48000.0;
+    // Every DrumFx test starts from all-stages-off (comp + reverb default ON).
+    auto fxOff = [] {
+        auto p = defaultDrumParams();
+        p[DG_FXDRIVE_ON] = 0; p[DG_FXCOMP_ON] = 0; p[DG_FXCHORUS_ON] = 0;
+        p[DG_FXDELAY_ON] = 0; p[DG_FXREVERB_ON] = 0;
+        return p;
+    };
+    {
+        // passthrough-ish: stages off, volume 0.78 -> gain = 0.78^2*1.6 times the
+        // WebAudio-spec limiter makeup ((1/c(1))^0.6 at thr -8 dB ratio 14),
+        // matching Fx.cpp / the web DynamicsCompressor limiter.
+        DrumFx fx; fx.prepare(fsr);
+        fx.setParams(fxOff());
+        int n = (int)fsr;
+        std::vector<float> L(n), R(n);
+        for (int i = 0; i < n; i++)
+            L[i] = R[i] = 0.1f * (float)std::sin(2 * M_PI * 1000.0 * i / fsr);
+        double inRms = rms(L, n / 2);
+        fx.process(L.data(), R.data(), n);
+        double c1 = std::pow(1.0 / 0.398, 1.0 / 14.0 - 1.0);
+        double expect = 0.78 * 0.78 * 1.6 * std::pow(1.0 / c1, 0.6);
+        double got = rms(L, n / 2) / inRms;
+        check(finite(L) && std::abs(got - expect) < expect * 0.03,
+              "stages off: gain = vol^2 * 1.6 * limiter makeup",
+              std::to_string(got) + " vs " + std::to_string(expect));
+    }
+    {
+        // comp reduces crest factor: slow AM sine (0.04..0.34), thr -30 dB
+        auto renderAm = [&](bool compOn) {
+            DrumFx fx; fx.prepare(fsr);
+            auto p = fxOff();
+            if (compOn) {
+                p[DG_FXCOMP_ON] = 1;
+                p[DG_FXCOMP_THR] = -30.0f;
+                p[DG_FXCOMP_GAIN] = 0.0f;
+            }
+            fx.setParams(p);
+            int n = (int)(4 * fsr);
+            std::vector<float> L(n), R(n);
+            for (int i = 0; i < n; i++) {
+                double t = i / fsr;
+                double a = 0.19 + 0.15 * std::sin(2 * M_PI * 2.0 * t);
+                L[i] = R[i] = (float)(a * std::sin(2 * M_PI * 500.0 * t));
+            }
+            fx.process(L.data(), R.data(), n);
+            return slice(L, (int)fsr, n);   // skip smoother settle
+        };
+        auto amOff = renderAm(false), amOn = renderAm(true);
+        double crOff = peak(amOff) / rms(amOff), crOn = peak(amOn) / rms(amOn);
+        check(finite(amOn) && crOn < crOff * 0.9, "comp reduces crest factor",
+              std::to_string(crOn) + " vs " + std::to_string(crOff));
+    }
+    {
+        // drive on amt 1 mix 1: sine in -> 3rd harmonic rises above -40 dB rel f0
+        double f0 = 200.0 * fsr / 32768.0;   // FFT-bin aligned, ~293 Hz
+        auto thd3 = [&](bool driveOn) {
+            DrumFx fx; fx.prepare(fsr);
+            auto p = fxOff();
+            if (driveOn) {
+                p[DG_FXDRIVE_ON] = 1;
+                p[DG_FXDRIVE_AMT] = 1.0f;
+                p[DG_FXDRIVE_MIX] = 1.0f;
+            }
+            fx.setParams(p);
+            int n = 2 * (int)fsr;
+            std::vector<float> L(n), R(n);
+            for (int i = 0; i < n; i++)
+                L[i] = R[i] = 0.3f * (float)std::sin(2 * M_PI * f0 * i / fsr);
+            fx.process(L.data(), R.data(), n);
+            const float* tail = L.data() + (n - 32768);
+            return toneDb(tail, 32768, fsr, 3 * f0) - toneDb(tail, 32768, fsr, f0);
+        };
+        double h3Clean = thd3(false), h3Drive = thd3(true);
+        check(h3Clean < -60.0, "clean sine has no 3rd harmonic", std::to_string(h3Clean) + " dB");
+        check(h3Drive > -40.0, "drive amt 1 adds 3rd harmonic > -40 dB", std::to_string(h3Drive) + " dB");
+    }
+    {
+        // delay on: burst in -> echo lands at fx.delay.time (default 0.36 s)
+        DrumFx fx; fx.prepare(fsr);
+        auto p = fxOff();
+        p[DG_FXDELAY_ON] = 1;   // time 0.36, fb 0.35, mix 0.15 defaults
+        fx.setParams(p);
+        std::vector<float> z((int)fsr, 0.0f), z2 = z;
+        fx.process(z.data(), z2.data(), (int)z.size());   // settle time smoother
+        int n = 24000;
+        std::vector<float> L(n, 0.0f), R(n, 0.0f);
+        for (int i = 0; i < 128; i++)
+            L[i] = R[i] = 0.5f * (float)std::sin(2 * M_PI * 1000.0 * i / fsr);
+        fx.process(L.data(), R.data(), n);
+        auto quiet = slice(L, 10000, 16000);
+        auto echo = slice(L, 16900, 17700);   // 0.36 s * 48k = 17280
+        check(finite(L) && rms(echo) > 1e-5 && rms(echo) > 10 * rms(quiet),
+              "delay echo at 0.36 s",
+              "echo=" + std::to_string(rms(echo)) + " pre=" + std::to_string(rms(quiet)));
+    }
+    {
+        // reverb on: burst in -> audible tail at 1 s, decayed away by 6 s
+        DrumFx fx; fx.prepare(fsr);
+        auto p = fxOff();
+        p[DG_FXREVERB_ON] = 1;
+        p[DG_FXREVERB_SIZE] = 0.8f;
+        p[DG_FXREVERB_MIX] = 0.5f;
+        fx.setParams(p);
+        std::vector<float> z(24000, 0.0f), z2 = z;
+        fx.process(z.data(), z2.data(), (int)z.size());
+        int n = (int)(6.5 * fsr);
+        std::vector<float> L(n, 0.0f), R(n, 0.0f);
+        for (int i = 0; i < 240; i++)
+            L[i] = R[i] = 0.8f * (float)std::sin(2 * M_PI * 1000.0 * i / fsr);
+        fx.process(L.data(), R.data(), n);
+        double tail1 = rms(slice(L, (int)fsr, (int)(1.2 * fsr)));
+        double tail6 = rms(slice(L, (int)(6.0 * fsr), (int)(6.3 * fsr)));
+        check(finite(L) && tail1 > 1e-6, "reverb tail alive at 1 s", std::to_string(tail1));
+        check(tail6 < tail1 * 0.02, "reverb tail decayed by 6 s",
+              std::to_string(tail6) + " vs " + std::to_string(tail1));
+    }
+    {
+        // stress: every stage on, extreme settings, 2 s noise -> finite + bounded
+        DrumFx fx; fx.prepare(fsr);
+        auto p = defaultDrumParams();
+        p[DG_MASTER_VOLUME] = 1.0f;
+        p[DG_FXDRIVE_ON] = 1;  p[DG_FXDRIVE_AMT] = 1.0f;  p[DG_FXDRIVE_MIX] = 1.0f;
+        p[DG_FXCOMP_ON] = 1;   p[DG_FXCOMP_THR] = -40.0f; p[DG_FXCOMP_GAIN] = 12.0f;
+        p[DG_FXCHORUS_ON] = 1; p[DG_FXCHORUS_RATE] = 8.0f;
+        p[DG_FXCHORUS_DEPTH] = 1.0f; p[DG_FXCHORUS_MIX] = 1.0f;
+        p[DG_FXDELAY_ON] = 1;  p[DG_FXDELAY_TIME] = 0.02f;
+        p[DG_FXDELAY_FB] = 0.92f; p[DG_FXDELAY_MIX] = 1.0f;
+        p[DG_FXREVERB_ON] = 1; p[DG_FXREVERB_SIZE] = 1.0f; p[DG_FXREVERB_MIX] = 1.0f;
+        fx.setParams(p);
+        int n = 2 * (int)fsr;
+        std::vector<float> L(n), R(n);
+        uint32_t seed = 0x12345678u;
+        for (int i = 0; i < n; i++) {
+            seed = seed * 1664525u + 1013904223u;
+            float w = (float)((double)seed / 4294967296.0 * 2.0 - 1.0);
+            L[i] = 0.8f * w;
+            seed = seed * 1664525u + 1013904223u;
+            R[i] = 0.8f * (float)((double)seed / 4294967296.0 * 2.0 - 1.0);
+        }
+        fx.process(L.data(), R.data(), n);
+        check(finite(L) && finite(R) && peak(L) < 4.0f && peak(R) < 4.0f,
+              "all stages on: 2 s noise finite + bounded",
+              "peak=" + std::to_string(std::max(peak(L), peak(R))));
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");
