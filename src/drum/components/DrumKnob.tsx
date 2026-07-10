@@ -62,8 +62,9 @@ export function DrumKnob({ paramId, size = 'md', accent, label }: DrumKnobProps)
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
+    // nudge deliberately reads the latest value through normRef.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [paramId]);
 
   const lastYRef = useRef(0);
   const onPointerDown = (e: React.PointerEvent) => {
