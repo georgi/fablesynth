@@ -111,6 +111,14 @@ and play.
 | MIDI | plug in a controller — notes + pitch bend (Chrome/Edge) |
 | On-screen keys | click/touch, vertical position = velocity, drag for glissando |
 
+## DR-1 drum machine (web)
+
+DR-1 is a 16-pad wavetable drum machine and FableSynth's third web surface,
+served from `drum/index.html`. Every sound is fully synthesized with no samples,
+and its 16-step sequencer supports accents, swing, pattern chaining and choke
+groups. Kits persist in `localStorage`, so saved sounds survive a reload. A
+JUCE port is planned.
+
 ## Code layout
 
 The **plugin** (C++/JUCE) lives in [`juce/`](juce/) — see

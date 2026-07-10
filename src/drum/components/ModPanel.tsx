@@ -1,4 +1,4 @@
-import { DMOD_DESTS, DMOD_SOURCES, pad } from '../params';
+import { DMOD_DESTS, DMOD_SOURCES, DRUM_PARAMS, pad } from '../params';
 import { useDrumStore } from '../store';
 import { DrumKnob } from './DrumKnob';
 
@@ -41,14 +41,17 @@ function ModRow({ sel, route }: ModRowProps) {
 
 export function ModPanel() {
   const sel = useDrumStore((s) => s.sel);
+  const decayId = pad(sel, 'modenv.dec');
+  const decay = useDrumStore((s) => s.params[decayId]);
+  const decayText = DRUM_PARAMS[decayId].fmt?.(decay).toUpperCase() ?? String(decay);
 
   return (
     <section className="panel dr-edit-panel dr-mod-panel">
       <div className="panel-head dr-mod-head">
         <h2>MOD</h2>
         <div className="dr-mod-env">
-          <span className="panel-hint">MOD ENV</span>
-          <DrumKnob paramId={pad(sel, 'modenv.dec')} size="xs" label="" />
+          <span className="panel-hint">MOD ENV DEC {decayText}</span>
+          <DrumKnob paramId={decayId} size="xs" label="" />
         </div>
       </div>
       <div className="dr-mod-routes">

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AmpEnvPanel } from './components/AmpEnvPanel';
 import { DrumPowerOverlay } from './components/DrumPowerOverlay';
 import { FilterSection } from './components/FilterSection';
@@ -13,10 +14,19 @@ import { SelBar } from './components/SelBar';
 import { StepSeq } from './components/StepSeq';
 import { useDrumKeys } from './hooks/useDrumKeys';
 import { useDrumMidi } from './hooks/useDrumMidi';
+import { drumEngine, useDrumStore } from './store';
 
 export function DrumApp() {
   useDrumKeys();
   useDrumMidi();
+
+  // exposed for debugging / automated verification
+  useEffect(() => {
+    (window as unknown as { __fableDr: unknown }).__fableDr = {
+      engine: drumEngine,
+      store: useDrumStore,
+    };
+  }, []);
 
   return (
     <>

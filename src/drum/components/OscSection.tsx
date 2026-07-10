@@ -11,14 +11,15 @@ interface OscSectionProps {
 
 export function OscSection({ osc }: OscSectionProps) {
   const sel = useDrumStore((s) => s.sel);
-  const params = useDrumStore((s) => s.params);
+  const tableId = pad(sel, `${osc}.table`);
+  const posId = pad(sel, `${osc}.pos`);
+  const tableValue = useDrumStore((s) => s.params[tableId]);
+  const pos = useDrumStore((s) => s.params[posId]);
   const modPos = useDrumStore((s) => osc === 'oscA' ? s.modPosA : s.modPosB);
   const powered = useDrumStore((s) => s.powered);
   const accentKey = osc === 'oscA' ? 'a' : 'b';
   const accent = osc === 'oscA' ? '#4de8ff' : '#ffa14d';
-  const tableId = pad(sel, `${osc}.table`);
-  const posId = pad(sel, `${osc}.pos`);
-  const table = (powered ? drumEngine.tables : null)?.[params[tableId] | 0] ?? null;
+  const table = (powered ? drumEngine.tables : null)?.[tableValue | 0] ?? null;
 
   return (
     <section className="panel dr-osc-section" data-accent={accentKey}>
@@ -33,7 +34,7 @@ export function OscSection({ osc }: OscSectionProps) {
         <WavetableView
           className="dr-wavetable-view"
           table={table}
-          pos={params[posId]}
+          pos={pos}
           modPos={modPos}
           accent={accent}
         />
