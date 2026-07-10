@@ -1,4 +1,4 @@
-# FABLESYNTH WT‑1
+# FABLESYNTH WT‑1 and DR-1
 
 A Serum-style wavetable synthesizer plugin — **VST3 · AU · Standalone** for
 macOS, Windows and Linux. Two morphing wavetable oscillators, a dual
