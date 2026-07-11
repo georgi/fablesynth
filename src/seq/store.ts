@@ -7,7 +7,8 @@
 import { create } from 'zustand';
 import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
-  b64ToBytes, boundaryFrame, loadSession, saveSession, type SessionDoc, songPosition,
+  b64ToBytes, boundaryFrame, bytesToB64, emptyClipBytes, loadSession,
+  type PatchDoc, saveSession, type SessionDoc, songPosition,
 } from './protocol';
 import { factorySession } from './factory';
 import type { SeqRig } from './rig';
@@ -43,6 +44,9 @@ export interface SeqStore {
   launchScene: (s: number) => void;
   stopScene: (s: number) => void;
   togglePassThrough: (s: number, t: number) => void;
+  updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
+  createClip: (s: number, t: number) => void;
+  setTrackPatch: (t: number, patch: PatchDoc) => void;
   stopAll: () => void;
   toggleSceneMute: (s: number) => void;
   toggleTrackMute: (t: number) => void;
@@ -56,8 +60,9 @@ export interface SeqStore {
 
 const initialSession = loadSession(factorySession());
 
-// Decoded clip pattern bytes, keyed `${scene}:${track}` (session docs are
-// immutable in v1, so decode once).
+// Decoded clip pattern bytes, keyed `${scene}:${track}`. Session docs are
+// edited in place (clip editing actions below); the cache is refreshed on
+// every write so it never serves stale bytes.
 const clipBytes = new Map<string, Uint8Array>();
 function bytesFor(session: SessionDoc, s: number, t: number): Uint8Array | null {
   const clip = session.scenes[s]?.clips[t];
@@ -242,6 +247,51 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         });
         return { session: { ...st.session, scenes } };
       });
+      persist();
+    },
+
+    updateClipBytes: (s, t, bytes, bars) => {
+      const st = get();
+      const clip = st.session.scenes[s]?.clips[t];
+      if (!clip) return;
+      const scenes = st.session.scenes.map((sc, i) => {
+        if (i !== s) return sc;
+        const clips = sc.clips.slice();
+        clips[t] = { ...clip, bars, pattern: bytesToB64(bytes) };
+        return { ...sc, clips };
+      });
+      set({ session: { ...st.session, scenes } });
+      clipBytes.set(`${s}:${t}`, bytes);
+      persist();
+      // Live or pending on this track → hot-swap in the worklet. The worklet
+      // updates whichever exists (clip or clipPend), so no re-stamping.
+      if (st.rig && (st.owner[t] === s || st.queue[t] === s)) {
+        st.rig.devices[t].updateClip(bytes, bars);
+      }
+    },
+
+    createClip: (s, t) => {
+      const st = get();
+      if (!st.session.scenes[s] || st.session.scenes[s].clips[t]) return;
+      const bytes = emptyClipBytes(st.session.tracks[t].machine, 1);
+      const scenes = st.session.scenes.map((sc, i) => {
+        if (i !== s) return sc;
+        const clips = sc.clips.slice();
+        clips[t] = { name: 'NEW', bars: 1, pattern: bytesToB64(bytes) };
+        return { ...sc, clips };
+      });
+      set({ session: { ...st.session, scenes } });
+      clipBytes.set(`${s}:${t}`, bytes);
+      persist();
+    },
+
+    setTrackPatch: (t, patch) => {
+      set((st) => ({
+        session: {
+          ...st.session,
+          tracks: st.session.tracks.map((tr, i) => (i === t ? { ...tr, patch } : tr)),
+        },
+      }));
       persist();
     },
 

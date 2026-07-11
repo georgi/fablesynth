@@ -7,7 +7,7 @@ import type { SeqDevice } from './devices';
 import { STOP } from './model';
 import { barFrames } from './protocol';
 import type { SeqRig } from './rig';
-import { resetSeqStore, useSeqStore } from './store';
+import { clipPattern, resetSeqStore, useSeqStore } from './store';
 
 class FakeDevice implements SeqDevice {
   clips: Array<{ bars: number; atFrame: number; bytes: number }> = [];
@@ -255,6 +255,57 @@ describe('mute / solo / gains', () => {
     const last = rig.dev(0).tempos[rig.dev(0).tempos.length - 1];
     expect(last.swing).toBe(0.4);
     expect(last.anchor).toBe(anchor);
+  });
+});
+
+describe('clip editing', () => {
+  it('updateClipBytes rewrites the doc, cache and persists', () => {
+    const before = st().session.scenes[0].clips[0]!;
+    const bytes = new Uint8Array(2 * 256).fill(0);
+    bytes[0] = 1;
+    st().updateClipBytes(0, 0, bytes, 2);
+    const clip = st().session.scenes[0].clips[0]!;
+    expect(clip.bars).toBe(2);
+    expect(clip.pattern).not.toBe(before.pattern);
+    expect(clipPattern(st().session, 0, 0)![0]).toBe(1);
+  });
+
+  it('hot-swaps the device when the clip is live on its track', () => {
+    st().launch(0, 0);
+    rig.dev(0).onClipStart!(0); // ack → owner[0] = 0
+    st().updateClipBytes(0, 0, new Uint8Array(256), 1);
+    expect(rig.dev(0).updates).toEqual([{ bars: 1, bytes: 256 }]);
+  });
+
+  it('hot-swaps when the clip is queued, not yet live', () => {
+    st().launch(0, 0); // queued, no ack yet
+    st().updateClipBytes(0, 0, new Uint8Array(256), 1);
+    expect(rig.dev(0).updates).toHaveLength(1);
+  });
+
+  it('sends nothing when the clip is idle or another scene owns the track', () => {
+    st().launch(0, 1);
+    rig.dev(0).onClipStart!(0); // scene 1 owns track 0
+    st().updateClipBytes(0, 0, new Uint8Array(256), 1); // editing scene 0's clip
+    expect(rig.dev(0).updates).toHaveLength(0);
+  });
+
+  it('createClip writes a silent 1-bar clip into an empty cell only', () => {
+    const empty = st().session.scenes.findIndex((sc) => !sc.clips[1]);
+    expect(empty).toBeGreaterThanOrEqual(0);
+    st().createClip(empty, 1);
+    const clip = st().session.scenes[empty].clips[1]!;
+    expect(clip.bars).toBe(1);
+    expect(clipPattern(st().session, empty, 1)!.length).toBe(48); // BL1: 16*3
+    const again = st().session.scenes[empty].clips[1];
+    st().createClip(empty, 1); // no overwrite
+    expect(st().session.scenes[empty].clips[1]).toBe(again);
+  });
+
+  it('setTrackPatch swaps the patch doc in place', () => {
+    st().setTrackPatch(0, { kind: 'inline', data: { params: { x: 1 } } });
+    expect(st().session.tracks[0].patch).toEqual({ kind: 'inline', data: { params: { x: 1 } } });
+    expect(st().session.tracks[1].patch.kind).toBe('factory');
   });
 });
 
