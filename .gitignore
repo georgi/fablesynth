@@ -9,3 +9,6 @@ build/
 
 # Redundant compressed copy of design-handoff/ (the extracted dir is tracked)
 Synthesizer mockup design-handoff.zip
+
+# Claude Code session state (agent worktrees, local settings)
+.claude/
