@@ -75,14 +75,25 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
   }
 }
 
+// Hosted patch edits snapshot raw engine params ({ params }) — docs spec
+// 2026-07-12-sq4-device-focus-design.md §4. Pad names / user tables are v2.
+function inlineParams(patch: PatchDoc): Record<string, number> | null {
+  if (patch.kind !== 'inline') return null;
+  const data = patch.data as { params?: Record<string, number> } | null;
+  return data?.params ?? null;
+}
+
 export class Dr1Device extends EngineDevice<DrumEngine> {
   constructor() {
     super(new DrumEngine());
   }
 
   applyPatch(patch: PatchDoc): void {
-    // v1: factory kits only; inline kit payloads are a session-editing (v2)
-    // feature — fall back to kit 0 rather than playing an unpatched engine.
+    const inline = inlineParams(patch);
+    if (inline) {
+      this.applyParams(inline);
+      return;
+    }
     const index = patch.kind === 'factory' ? patch.index : 0;
     const kit = FACTORY_KITS[index] ?? FACTORY_KITS[0];
     this.applyParams(kitToState(kit).params);
@@ -95,6 +106,11 @@ export class Bl1Device extends EngineDevice<BassEngine> {
   }
 
   applyPatch(patch: PatchDoc): void {
+    const inline = inlineParams(patch);
+    if (inline) {
+      this.applyParams(inline);
+      return;
+    }
     const index = patch.kind === 'factory' ? patch.index : 0;
     const p = FACTORY_PATCHES[index] ?? FACTORY_PATCHES[0];
     this.applyParams(patchToState(p).params);
@@ -107,6 +123,11 @@ export class Wt1Device extends EngineDevice<SynthEngine> {
   }
 
   applyPatch(patch: PatchDoc): void {
+    const inline = inlineParams(patch);
+    if (inline) {
+      this.applyParams(inline);
+      return;
+    }
     const index = patch.kind === 'factory' ? patch.index : 0;
     const p = FACTORY_PRESETS[index] ?? FACTORY_PRESETS[0];
     this.applyParams(resolvePresetMods(p.params, p.mods));
