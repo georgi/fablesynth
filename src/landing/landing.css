@@ -291,6 +291,57 @@ code {
 }
 .section-head { margin-bottom: clamp(40px, 6vh, 72px); max-width: 38ch; }
 .section-head h2 { max-width: 30ch; }
+.section-head .prose { margin-top: 22px; }
+
+/* ---------- family ---------- */
+
+.family-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.family-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 30px 28px 26px;
+  border: 1px solid color-mix(in srgb, var(--ac) 26%, transparent);
+  border-radius: 16px;
+  background:
+    radial-gradient(130% 110% at 50% 0%, color-mix(in srgb, var(--ac) 12%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--panel-hi), var(--panel-lo));
+  transition: transform 0.45s var(--ease), border-color 0.3s, box-shadow 0.45s var(--ease);
+}
+.family-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--ac);
+  box-shadow: 0 30px 70px -40px color-mix(in srgb, var(--ac) 55%, rgba(0, 0, 0, 0.9));
+}
+.family-card .format-tag { color: var(--ac); }
+.family-card h3 {
+  font-family: var(--disp);
+  font-size: clamp(19px, 2.2vw, 26px);
+  color: #f1f5fc;
+  line-height: 1.2;
+}
+.family-card .prose { font-size: 14px; flex: 1; }
+.family-specs {
+  list-style: none;
+  margin: 4px 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.family-specs li {
+  padding: 9px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--dim-2);
+}
+.family-specs li:last-child { border-bottom: 1px solid var(--line); }
+.family-card .format-go { color: var(--ac); }
+.family-card:hover .format-go span { transform: translateX(4px); }
 
 /* ---------- two surfaces ---------- */
 
@@ -595,6 +646,7 @@ figcaption {
   .feature-flip .feature-text { order: 0; }
   .feature-media { order: -1; }
   .spec-strip { grid-template-columns: repeat(3, 1fr); }
+  .family-grid { grid-template-columns: 1fr; }
   .formats-grid { grid-template-columns: 1fr 1fr; }
   .formats-grid .format-card { grid-column: span 1; }
   .formats-grid .format-feature { grid-column: 1 / -1; }
