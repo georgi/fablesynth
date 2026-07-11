@@ -9,6 +9,7 @@
 #include "../source/drum/dsp/DrumEngine.h"
 #include "../source/drum/dsp/DrumFx.h"
 #include "../source/drum/dsp/DrumKits.h"
+#include "../source/drum/dsp/DrumPatches.h"
 
 #include <cmath>
 #include <cstdio>
@@ -742,6 +743,99 @@ int main() {
         check(finite(bar) && rms(bar) > 1e-4, "TR-VOID plays a bar on MAIN",
               "rms=" + std::to_string(rms(bar)));
         ke.stop();
+    }
+
+    printf("\n== 7. DrumPatches ==\n");
+    {
+        const auto& bank = factoryPatches();
+        // Bank parity with src/drum/patches.ts FACTORY_PATCHES (18 entries).
+        check(bank.size() == 18, "18 factory patches");
+        check(bank[0].name == "BD DEEP" && bank[3].name == "BD 808" &&
+              bank[8].name == "HH 808" && bank[11].name == "CY 808" &&
+              bank[17].name == "PC GLITCH", "patch names/order match web");
+
+        // Every override id resolves as a pad-relative field (never out/choke)
+        // and its value is within [min,max].
+        bool allResolve = true, allInRange = true, noRouting = true;
+        std::string bad;
+        for (const auto& p : bank)
+            for (const auto& [rel, v] : p.params) {
+                int f = drumIdFromString("pad0." + rel);
+                if (f < 0 || f >= DPAD_NFIELDS) { allResolve = false; bad = p.name + ":" + rel; continue; }
+                if (f == DP_CHOKE || f == DP_OUT) { noRouting = false; bad = p.name + ":" + rel; }
+                const auto& pi = drumParamInfo()[(size_t)f];
+                if (v < pi.min || v > pi.max) {
+                    allInRange = false;
+                    bad = p.name + ":" + rel + "=" + std::to_string(v);
+                }
+            }
+        check(allResolve, "all patch ids resolve as pad fields", bad);
+        check(allInRange, "all patch values within [min,max]", bad);
+        check(noRouting, "no patch touches out/choke", bad);
+        // Factory patches reference only built-in tables (index <= 14).
+        bool tablesOk = true;
+        for (const auto& p : bank)
+            for (const auto& [rel, v] : p.params)
+                if (rel == "oscA.table" || rel == "oscB.table")
+                    if (v < 0 || v > 14) tablesOk = false;
+        check(tablesOk, "factory patches use built-in tables only");
+
+        // Spot-check 3 patches against the hardcoded web values (patches.ts).
+        auto val = [](const PadPatch& p, const char* rel, float fallback) {
+            for (const auto& [r, v] : p.params) if (r == rel) return v;
+            return fallback;
+        };
+        const auto& bd = bank[0];   // BD DEEP
+        check(val(bd, "oscA.table", -1) == 0.0f && val(bd, "oscA.tune", 0) == -14.0f &&
+              val(bd, "penv.amt", 0) == 24.0f && val(bd, "penv.dec", 0) == 0.05f &&
+              val(bd, "aenv.dec", 0) == 0.42f && val(bd, "aenv.curve", 0) == 0.45f &&
+              val(bd, "lvl", 0) == 0.9f && bd.params.size() == 7,
+              "BD DEEP values match web");
+        const auto& hh = bank[8];   // HH 808
+        check(val(hh, "oscA.table", -1) == 12.0f && val(hh, "aenv.dec", 0) == 0.06f &&
+              val(hh, "flt.on", 0) == 1.0f && val(hh, "flt.type", -1) == 3.0f &&
+              val(hh, "flt.cut", 0) == 7200.0f && val(hh, "lvl", 0) == 0.7f &&
+              hh.params.size() == 6,
+              "HH 808 values match web");
+        const auto& cy = bank[11];  // CY 808
+        check(val(cy, "oscA.table", -1) == 14.0f && val(cy, "aenv.dec", 0) == 1.7f &&
+              val(cy, "aenv.curve", 0) == 0.25f && val(cy, "flt.on", 0) == 1.0f &&
+              val(cy, "flt.type", -1) == 3.0f && val(cy, "flt.cut", 0) == 3800.0f &&
+              val(cy, "lvl", 0) == 0.72f && cy.params.size() == 7,
+              "CY 808 values match web");
+
+        // applyPatchToPad(3, BD DEEP): every included pad3 field gets defaults
+        // ∪ overrides; pad3.out/choke and the other pads stay untouched.
+        auto pv = defaultDrumParams();
+        const auto d0 = pv;
+        // Dirty pad 2/3/4 state that must survive or be reset correctly.
+        pv[dpid(3, DP_OUT)] = 2.0f;                   // routing must survive
+        pv[dpid(3, DP_CHOKE)] = 4.0f;
+        pv[dpid(3, DP_NOISE_LEVEL)] = 0.77f;          // included, not overridden -> reset
+        pv[dpid(2, DP_OSCA_TUNE)] = 11.0f;            // neighbors must survive
+        pv[dpid(4, DP_AENV_DEC)] = 3.5f;
+        auto entries = applyPatchToPad(3, bd);
+        check((int)entries.size() == DPAD_NFIELDS - 2, "entries cover all included fields",
+              std::to_string(entries.size()));
+        bool inPad3 = true, hasRouting = false;
+        for (const auto& [id, v] : entries) {
+            (void)v;
+            if (id < dpid(3, 0) || id >= dpid(4, 0)) inPad3 = false;
+            if (id == dpid(3, DP_OUT) || id == dpid(3, DP_CHOKE)) hasRouting = true;
+        }
+        check(inPad3, "all entries target pad 3");
+        check(!hasRouting, "no entry for pad3.out/choke");
+        for (const auto& [id, v] : entries) pv[(size_t)id] = v;
+        check(pv[dpid(3, DP_OSCA_TUNE)] == -14.0f && pv[dpid(3, DP_PENV_AMT)] == 24.0f &&
+              pv[dpid(3, DP_AENV_DEC)] == 0.42f && pv[dpid(3, DP_LVL)] == 0.9f,
+              "overrides land on pad 3");
+        check(pv[dpid(3, DP_NOISE_LEVEL)] == d0[dpid(3, DP_NOISE_LEVEL)] &&
+              pv[dpid(3, DP_PAN)] == d0[dpid(3, DP_PAN)],
+              "non-overridden included fields reset to defaults");
+        check(pv[dpid(3, DP_OUT)] == 2.0f && pv[dpid(3, DP_CHOKE)] == 4.0f,
+              "pad3 out/choke untouched");
+        check(pv[dpid(2, DP_OSCA_TUNE)] == 11.0f && pv[dpid(4, DP_AENV_DEC)] == 3.5f,
+              "pad 2 / pad 4 untouched");
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");

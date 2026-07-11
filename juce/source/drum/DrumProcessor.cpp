@@ -1,5 +1,6 @@
 #include "DrumProcessor.h"
 #include "DrumEditor.h"
+#include "dsp/DrumPatches.h"
 #include "dsp/DrumTables.h"
 #include "dsp/SampledTables.gen.h"
 #include <cmath>
@@ -246,6 +247,23 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
         padNames_[(size_t)i] = juce::String(kit.padNames[(size_t)i]);
     shareSeqState(true, true);
     selectionBroadcaster.sendChangeMessage(); // pad names / bindings changed
+}
+
+// ---- pad patches -------------------------------------------------------------
+
+void DrumAudioProcessor::applyFactoryPatch(int index) {
+    const auto& bank = factoryPatches();
+    if (index < 0 || index >= (int)bank.size()) return;
+    const auto& info = drumParamInfo();
+    for (const auto& [id, v] : applyPatchToPad(selectedPad_, bank[(size_t)index])) {
+        if (auto* param = apvts.getParameter(info[(size_t)id].pid)) {
+            const auto& d = info[(size_t)id];
+            float norm = (d.kind == Kind::Bool) ? (v != 0.0f ? 1.0f : 0.0f)
+                       : (d.kind == Kind::Enum) ? param->convertTo0to1(v)
+                       : valueToNorm(d, v);
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, norm));
+        }
+    }
 }
 
 const juce::String DrumAudioProcessor::getProgramName(int index) {
