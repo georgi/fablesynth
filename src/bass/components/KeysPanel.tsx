@@ -28,8 +28,12 @@ export function KeysPanel() {
   const press = (semi: number) => (e: React.PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     e.preventDefault();
+    // Key the release to this pointer so overlapping touches stay legato:
+    // lifting one finger must only release its own note.
+    const pointerId = e.pointerId;
     noteOn(semi, 0.85);
-    const up = () => {
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       noteOff(semi);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);

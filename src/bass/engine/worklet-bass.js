@@ -328,7 +328,7 @@ class BassProcessor extends AudioWorkletProcessor {
     const gain = level * 0.35;
     if (gain < 1e-6) return;
     const oct = Math.max(-2, Math.min(-1, p['sub.oct'] | 0 || -1));
-    const freq = 440 * Math.pow(2, (noteRootAbs + 12 * (oct + 1) - 69) / 12);
+    const freq = 440 * Math.pow(2, (noteRootAbs + 12 * oct - 69) / 12);
     if (!(freq > 4 && freq <= sampleRate * 0.45)) return;
     const inc = freq / sampleRate;
     const square = (p['sub.shape'] | 0) === 1;

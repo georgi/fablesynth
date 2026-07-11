@@ -68,6 +68,30 @@ describe('bass voice', () => {
     expect(late).toBeGreaterThan(early * 1.4); // ~2x at the octave
   });
 
+  it('sub oscillator transposes -1/-2 octaves from the root', () => {
+    const subFreq = (oct: number): number => {
+      const p = defaultBassParams();
+      p['osc.level'] = 0; // sub only
+      p['sub.level'] = 1;
+      p['sub.shape'] = 0;
+      p['sub.oct'] = oct;
+      p['flt.cut'] = 20000;
+      p['flt.env'] = 0;
+      p['flt.drive'] = 0;
+      p['aenv.sus'] = 1;
+      const hs = boot(p);
+      hs.send({ t: 'noteon', semi: 24, vel: 1 }); // root C4 (MIDI 60)
+      hs.render(8); // skip the attack
+      const n = 64; // 8192 samples ≈ 171ms
+      return (crossings(hs.render(n).L) / (n * 128)) * 48000;
+    };
+    const root = 440 * Math.pow(2, (60 - 69) / 12); // ≈ 261.6 Hz
+    expect(subFreq(-1)).toBeGreaterThan(root / 2 * 0.9);
+    expect(subFreq(-1)).toBeLessThan(root / 2 * 1.1);
+    expect(subFreq(-2)).toBeGreaterThan(root / 4 * 0.9);
+    expect(subFreq(-2)).toBeLessThan(root / 4 * 1.1);
+  });
+
   it('retrigger (non-legato) jumps pitch immediately', () => {
     const p = defaultBassParams();
     p['slide.time'] = 0.4;
