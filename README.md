@@ -218,6 +218,9 @@ full launcher state machine, not yet wired to the instrument engines.
 
 - **Web app** — served at `/seq/` (`npm run dev`, then open
   `http://localhost:5173/seq/`).
+- **Engine hookup design** — the clip/session document schema, the shared
+  `currentFrame` timebase and the hosted worklet protocol that will drive
+  the real instruments are specified in [`docs/sq4-clips.md`](docs/sq4-clips.md).
 
 ## Code layout
 
