@@ -17,16 +17,24 @@
 namespace fui {
 
 // Selected-pad bar above the OSC row — port of SelBar.tsx: cyan LED,
-// "PAD NN" mini head, pad name, right-aligned morph hint.
+// "PAD NN" mini head, pad name, and a right-aligned factory patch stepper
+// (prev/next + name readout, kit-stepper styling from DrumHeader). Selecting
+// a pad resets the readout to "—" like the web store's selectPad.
 class SelBarView : public juce::Component, private juce::Timer {
 public:
     explicit SelBarView(DrumAudioProcessor&);
     ~SelBarView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
+    void resized() override;
 private:
     void timerCallback() override;    // repaint on selection / pad-name change
+    void stepPatch(int dir);          // cycle the factory bank onto the selected pad
     DrumAudioProcessor& proc;
+    juce::TextButton prevBtn{"<"}, nextBtn{">"};
+    juce::Rectangle<int> patchNameArea;
+    int patchIndex_ = -1;             // -1 = no patch selected -> "—"
     int lastSel_ = -1;
+    int lastProgram_ = -1;            // kit load clears the patch readout too
     juce::String lastName_;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelBarView)
 };

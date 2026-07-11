@@ -78,6 +78,11 @@ public:
     void setSelectedPad(int i);                       // notifies listeners
     juce::ChangeBroadcaster selectionBroadcaster;
 
+    // Apply factory pad patch `index` to the selected pad via the APVTS
+    // (same setValueNotifyingHost path as setCurrentProgram). out/choke and
+    // other pads are untouched.
+    void applyFactoryPatch(int index);
+
     // ---- tables (4 drum + 6 WT-1 procedural, then user slots) ----
     int numTables() const { return (int)tables_.size() + (int)userTables_.size(); }
     const fable::GeneratedTable* tableAt(int idx) const;

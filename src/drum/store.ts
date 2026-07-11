@@ -12,6 +12,10 @@ import {
 import type { GeneratedTable } from '../engine/wavetables';
 import { DrumEngine } from './engine/drum-synth';
 import { FACTORY_KITS, kitToState, loadUserKits, saveUserKit, stateToKit, type Kit } from './kits';
+import {
+  FACTORY_PATCHES, applyPatchToParams, extractPatch, loadUserPatches,
+  patchOptions, saveUserPatch, type PadPatch,
+} from './patches';
 import { pad } from './params';
 import { cycleStep, patIdx, type Patterns } from './seq';
 
@@ -49,6 +53,8 @@ export interface DrumStore {
   midiActive: boolean;
   kitValue: string;
   userKits: Kit[];
+  patchValue: string;
+  userPatches: PadPatch[];
   padNames: string[];
   hitTick: Record<number, number>;
   mode: 'step' | 'pads';
@@ -73,6 +79,9 @@ export interface DrumStore {
   saveKit: (name: string) => void;
   loadKitByValue: (value: string) => void;
   stepKit: (delta: number) => void;
+  applyPatchByValue: (value: string) => void;
+  stepPatch: (delta: number) => void;
+  savePatch: (name: string) => void;
   setParamsFromKit: (params: ParamValues) => void;
   importPadTable: (padI: number, table: GeneratedTable) => void;
 }
@@ -92,6 +101,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   midiActive: false,
   kitValue: 'f0',
   userKits: loadUserKits(),
+  patchValue: '',
+  userPatches: loadUserPatches(),
   padNames: initialKitState.padNames,
   hitTick: {},
   mode: 'step',
@@ -108,7 +119,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   selectPad: (i) => {
     drumEngine.selectPad(i);
     drumEngine.trigger(i, 0.8);
-    set((state) => ({ sel: i, hitTick: { ...state.hitTick, [i]: performance.now() } }));
+    set((state) => ({ sel: i, patchValue: '', hitTick: { ...state.hitTick, [i]: performance.now() } }));
   },
 
   triggerPad: (i, vel) => {
@@ -225,6 +236,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       editPattern: chain[0] ?? 0,
       userTables,
       kitValue: value,
+      patchValue: '',
     });
   },
 
@@ -235,6 +247,34 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     if (index < 0) index = 0;
     index = (index + delta + options.length) % options.length;
     get().loadKitByValue(options[index].value);
+  },
+
+  applyPatchByValue: (value) => {
+    const patch = value[0] === 'f'
+      ? FACTORY_PATCHES[Number(value.slice(1))]
+      : get().userPatches[Number(value.slice(1))];
+    if (!patch) return;
+    const entries = applyPatchToParams(get().params, get().sel, patch);
+    for (const [id, v] of Object.entries(entries)) get().setParam(id, v);
+    set({ patchValue: value });
+  },
+
+  stepPatch: (delta) => {
+    const options = patchOptions(get().userPatches);
+    if (!options.length) return;
+    let index = options.findIndex((option) => option.value === get().patchValue);
+    index = index < 0
+      ? (delta > 0 ? 0 : options.length - 1)
+      : (index + delta + options.length) % options.length;
+    get().applyPatchByValue(options[index].value);
+  },
+
+  savePatch: (name) => {
+    const state = get();
+    const patch = extractPatch(state.params, state.sel, name);
+    const userPatches = saveUserPatch(name, patch);
+    const savedIndex = userPatches.findIndex((entry) => entry.name === name);
+    set({ userPatches, patchValue: savedIndex >= 0 ? `u${savedIndex}` : state.patchValue });
   },
 
   setParamsFromKit: (params) => {

@@ -1,4 +1,5 @@
 #include "StepSeqView.h"
+#include "../dsp/DrumPatches.h"
 #include <cmath>
 
 namespace fui {
@@ -8,18 +9,53 @@ static const char* const kPatNames[fable::DR_NPATTERNS] = { "A", "B", "C", "D" }
 // ---- SelBarView -------------------------------------------------------------
 
 SelBarView::SelBarView(DrumAudioProcessor& p) : proc(p) {
-    setInterceptsMouseClicks(false, false);   // display only, like the web bar
+    setInterceptsMouseClicks(false, true);    // bar is display-only; buttons live
+    auto styleBtn = [this](juce::TextButton& b, int dir) {   // kit-stepper styling
+        b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+        b.setColour(juce::TextButton::textColourOffId, col::text);
+        b.onClick = [this, dir] { stepPatch(dir); };
+        addAndMakeVisible(b);
+    };
+    styleBtn(prevBtn, -1);
+    styleBtn(nextBtn, +1);
     startTimerHz(10);
 }
 
 void SelBarView::timerCallback() {
     const int sel = proc.getSelectedPad();
+    const int prog = proc.getCurrentProgram();
     auto name = proc.getPadName(sel);
-    if (sel != lastSel_ || name != lastName_) {
+    if (sel != lastSel_ || prog != lastProgram_ || name != lastName_) {
+        // Web store: selectPad and loadKitByValue both clear patchValue — a
+        // new pad or a freshly loaded kit isn't a known patch.
+        if (sel != lastSel_ || prog != lastProgram_) patchIndex_ = -1;
         lastSel_ = sel;
+        lastProgram_ = prog;
         lastName_ = name;
         repaint();
     }
+}
+
+void SelBarView::stepPatch(int dir) {
+    const int n = (int)fable::factoryPatches().size();
+    if (n == 0) return;
+    patchIndex_ = patchIndex_ < 0 ? (dir > 0 ? 0 : n - 1)
+                                  : ((patchIndex_ + dir) % n + n) % n;
+    proc.applyFactoryPatch(patchIndex_);
+    repaint();
+}
+
+void SelBarView::resized() {
+    // Right-aligned patch stepper: [PATCH 40] 4 [prev 22] 4 [name 104] 4 [next 22]
+    constexpr int w = 40 + 4 + 22 + 4 + 104 + 4 + 22;
+    auto strip = getLocalBounds().reduced(11, 0).removeFromRight(w)
+                     .withSizeKeepingCentre(w, 20);
+    strip.removeFromLeft(40 + 4);   // "PATCH" mini head drawn in paint()
+    prevBtn.setBounds(strip.removeFromLeft(22));
+    strip.removeFromLeft(4);
+    nextBtn.setBounds(strip.removeFromRight(22));
+    strip.removeFromRight(4);
+    patchNameArea = strip;
 }
 
 void SelBarView::paint(juce::Graphics& g) {
@@ -59,12 +95,25 @@ void SelBarView::paint(juce::Graphics& g) {
     g.setFont(monoFont(9.0f));
     drawSpaced(g, proc.getPadName(sel), row.removeFromLeft(170), 0.9f);
 
-    // .dr-sel-hint right-aligned — web "MOD ENV ▸ POS · THE MORPH AXIS";
-    // ASCII substitutes, the default mono font lacks U+25B8/U+00B7 glyphs.
-    g.setColour(col::textDim);
-    g.setFont(monoFont(7.0f));
-    drawSpaced(g, "MOD ENV > POS - THE MORPH AXIS", row, 1.05f,
-               juce::Justification::right);
+    // Patch stepper (web .dr-patchbar): "PATCH" mini head left of the prev
+    // button, current factory patch name in a dark well between the buttons.
+    g.setColour(col::text);
+    g.setFont(dispFont(8.0f));
+    drawSpaced(g, "PATCH",
+               { prevBtn.getX() - 44, patchNameArea.getY(), 40, patchNameArea.getHeight() },
+               1.3f, juce::Justification::centredRight);
+    g.setColour(juce::Colour(0xff0c0f16));
+    g.fillRoundedRectangle(patchNameArea.toFloat(), 6.0f);
+    g.setColour(col::line);
+    g.drawRoundedRectangle(patchNameArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
+    const auto& bank = fable::factoryPatches();
+    const juce::String patchName =
+        (patchIndex_ >= 0 && patchIndex_ < (int)bank.size())
+            ? juce::String(bank[(size_t)patchIndex_].name) : juce::String::fromUTF8("\xe2\x80\x94");
+    g.setColour(col::acA);
+    g.setFont(monoFont(9.0f));
+    drawSpaced(g, patchName, patchNameArea.reduced(8, 0), 0.8f,
+               juce::Justification::centred);
 }
 
 // ---- StepSeqView geometry ----------------------------------------------------
