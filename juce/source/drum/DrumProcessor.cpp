@@ -168,6 +168,7 @@ void DrumAudioProcessor::setSeqPlaying(bool on) {
 
 void DrumAudioProcessor::setSelectedPad(int i) {
     selectedPad_ = juce::jlimit(0, DR_NPADS - 1, i);
+    patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
     pushCmd(CmdSelect, selectedPad_, 0);
     selectionBroadcaster.sendChangeMessage();
 }
@@ -222,6 +223,7 @@ void DrumAudioProcessor::setPadName(int i, juce::String n) {
 void DrumAudioProcessor::setCurrentProgram(int index) {
     const auto& kits = factoryKits();
     if (index < 0 || index >= (int)kits.size()) return;
+    patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
     currentProgram_ = index;
     const DrumKit& kit = kits[(size_t)index];
 
@@ -440,6 +442,8 @@ void DrumAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
+
+    patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
 
     juce::ValueTree params, pool, drum;
     if (xml->hasTagName("DR1STATE")) {

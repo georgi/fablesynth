@@ -137,7 +137,10 @@ int main(int argc, char** argv) {
     // ---- 5. sequencer with TR-VOID (program 0) ----
     check(proc.getNumPrograms() == 3, "3 kit programs", proc.getNumPrograms());
     check(proc.getProgramName(0) == "TR-VOID", "program 0 is TR-VOID");
+    const auto patchRevisionBeforeKit = proc.getPatchContextRevision();
     proc.setCurrentProgram(0);
+    check(proc.getPatchContextRevision() != patchRevisionBeforeKit,
+          "reloading current kit invalidates patch readout");
     float bpmParam = proc.apvts.getRawParameterValue("seq.bpm")->load();
     check(std::abs(bpmParam - 126.0f) < 0.5f, "TR-VOID applies seq.bpm=126 to APVTS", bpmParam);
 
@@ -222,7 +225,10 @@ int main(int argc, char** argv) {
     // Fresh instance boots on TR-VOID; prove the restore actually changes it.
     check(proc2.getPadName(3) != "ZAP", "fresh instance differs before restore");
     check(proc2.numTables() == 15, "fresh instance has no user tables", proc2.numTables());
+    const auto patchRevisionBeforeRestore = proc2.getPatchContextRevision();
     proc2.setStateInformation(state.getData(), (int)state.getSize());
+    check(proc2.getPatchContextRevision() != patchRevisionBeforeRestore,
+          "state restore invalidates patch readout");
 
     float cut2 = proc2.apvts.getRawParameterValue("pad3.flt.cut")->load();
     check(std::abs(cut2 - 1234.0f) < 2.0f, "pad3.flt.cut round-trips", cut2);

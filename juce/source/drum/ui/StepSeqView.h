@@ -35,6 +35,7 @@ private:
     int patchIndex_ = -1;             // -1 = no patch selected -> "—"
     int lastSel_ = -1;
     int lastProgram_ = -1;            // kit load clears the patch readout too
+    uint32_t lastPatchContextRevision_ = 0;
     juce::String lastName_;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelBarView)
 };

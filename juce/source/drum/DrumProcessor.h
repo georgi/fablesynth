@@ -78,6 +78,10 @@ public:
     void setSelectedPad(int i);                       // notifies listeners
     juce::ChangeBroadcaster selectionBroadcaster;
 
+    // Changes whenever an operation makes the currently displayed patch name
+    // unknowable (pad selection, kit load, or host-state restore).
+    uint32_t getPatchContextRevision() const { return patchContextRevision_.load(); }
+
     // Apply factory pad patch `index` to the selected pad via the APVTS
     // (same setValueNotifyingHost path as setCurrentProgram). out/choke and
     // other pads are untouched.
@@ -133,6 +137,7 @@ private:
     int selectedPad_ = 0;
     int editPattern_ = 0;
     int currentProgram_ = 0;
+    std::atomic<uint32_t> patchContextRevision_{0};
 
     // atomics published from the audio thread
     std::atomic<bool> seqPlaying_{false};

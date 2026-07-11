@@ -9,6 +9,7 @@ static const char* const kPatNames[fable::DR_NPATTERNS] = { "A", "B", "C", "D" }
 // ---- SelBarView -------------------------------------------------------------
 
 SelBarView::SelBarView(DrumAudioProcessor& p) : proc(p) {
+    lastPatchContextRevision_ = proc.getPatchContextRevision();
     setInterceptsMouseClicks(false, true);    // bar is display-only; buttons live
     auto styleBtn = [this](juce::TextButton& b, int dir) {   // kit-stepper styling
         b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
@@ -24,13 +25,16 @@ SelBarView::SelBarView(DrumAudioProcessor& p) : proc(p) {
 void SelBarView::timerCallback() {
     const int sel = proc.getSelectedPad();
     const int prog = proc.getCurrentProgram();
+    const auto patchRevision = proc.getPatchContextRevision();
     auto name = proc.getPadName(sel);
-    if (sel != lastSel_ || prog != lastProgram_ || name != lastName_) {
-        // Web store: selectPad and loadKitByValue both clear patchValue — a
-        // new pad or a freshly loaded kit isn't a known patch.
-        if (sel != lastSel_ || prog != lastProgram_) patchIndex_ = -1;
+    if (sel != lastSel_ || prog != lastProgram_ || patchRevision != lastPatchContextRevision_
+        || name != lastName_) {
+        // The processor revision also catches same-pad selection, reloading the
+        // current kit, and host-state restores whose visible indices don't change.
+        if (patchRevision != lastPatchContextRevision_) patchIndex_ = -1;
         lastSel_ = sel;
         lastProgram_ = prog;
+        lastPatchContextRevision_ = patchRevision;
         lastName_ = name;
         repaint();
     }
