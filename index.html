@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FableSynth WT-1 · Wavetable Synthesizer · VST3 · AU · Browser</title>
-<meta name="description" content="A Serum-class wavetable synthesizer built to get you to a sound you love fast. Play it free in your browser, or run it in your DAW as VST3, AU or Standalone. Plus DR-1, a 16-pad wavetable drum machine.">
-<meta property="og:title" content="FableSynth WT-1">
-<meta property="og:description" content="Serum-class wavetable synthesis. In your browser, in your DAW. Plus DR-1, a 16-pad wavetable drum machine.">
+<title>FableSynth · WT-1 · DR-1 · BL-1 — One Wavetable Engine, Three Instruments</title>
+<meta name="description" content="A family of three instruments built on one Serum-class wavetable engine: WT-1 synthesizer, DR-1 drum machine and BL-1 acid bassline. Play them free in your browser, or run WT-1 in your DAW as VST3, AU or Standalone.">
+<meta property="og:title" content="FableSynth — One Wavetable Engine, Three Instruments">
+<meta property="og:description" content="WT-1 synth, DR-1 drums, BL-1 bassline — one Serum-class wavetable engine behind all three. In your browser, in your DAW.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="./media/plugin-editor.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Cpath d='M4 20 Q8 8 12 16 T20 14 T28 18' stroke='%234de8ff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -23,13 +23,13 @@
     <span>FABLESYNTH</span>
   </a>
   <nav class="nav-links" aria-label="Primary">
+    <a href="#family">Instruments</a>
     <a href="#engine">Engine</a>
-    <a href="#precision">Sound</a>
     <a href="#drum">DR-1</a>
+    <a href="#bass">BL-1</a>
     <a href="#formats">Formats</a>
     <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">GitHub</a>
-    <a class="btn btn-launch" href="./app/">Launch <span aria-hidden="true">→</span></a>
-    <a class="btn btn-launch" href="./drum/">DR-1 <span aria-hidden="true">→</span></a>
+    <a class="btn btn-launch" href="./app/">Launch WT-1 <span aria-hidden="true">→</span></a>
   </nav>
 </header>
 
@@ -40,22 +40,86 @@
     <canvas class="hero-canvas" id="wt-canvas" aria-hidden="true"></canvas>
     <div class="hero-veil" aria-hidden="true"></div>
     <div class="hero-inner">
-      <p class="kicker">WT-1 · WAVETABLE SYNTHESIZER</p>
+      <p class="kicker">ONE WAVETABLE ENGINE · THREE INSTRUMENTS</p>
       <h1 class="hero-title">FABLE<span class="title-break">SYNTH</span></h1>
       <p class="hero-lede">
-        Serum-class wavetable synthesis, built to get you to a sound you love
-        fast. Two morphing oscillators, a filter with real bite, modulation on
-        everything and a full FX rack.
+        A family of three instruments built on one Serum-class wavetable
+        engine. WT-1 for leads and pads, DR-1 for drums, BL-1 for acid
+        basslines — same morphing oscillators, same filters, same sound.
       </p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="./app/">
-          Launch in browser <span aria-hidden="true">→</span>
+        <a class="btn btn-primary" href="#family">
+          Meet the family <span aria-hidden="true">→</span>
         </a>
-        <a class="btn btn-ghost" href="#formats">Download the plugin</a>
+        <a class="btn btn-ghost" href="./app/">Launch WT-1 in browser</a>
       </div>
-      <p class="hero-foot">Free in your browser. <span class="dot" aria-hidden="true"></span> Or VST3, AU and Standalone for your DAW.</p>
+      <p class="hero-foot">All three free in your browser. <span class="dot" aria-hidden="true"></span> WT-1 also as VST3, AU and Standalone for your DAW.</p>
     </div>
     <div class="scroll-hint" aria-hidden="true"><span></span></div>
+  </section>
+
+  <!-- ============ THE FAMILY ============ -->
+  <section class="band family" id="family">
+    <div class="section-head reveal">
+      <p class="kicker">THE FAMILY</p>
+      <h2>Three instruments.<br>One engine.</h2>
+      <p class="prose">
+        Every FableSynth instrument runs the same band-limited wavetable
+        engine — the same morphing oscillators, the same filters, the same
+        clean top end. Learn one and you already know the other two; a patch
+        idea moves between them because underneath, they're the same synth.
+      </p>
+    </div>
+
+    <div class="family-grid">
+      <a class="family-card reveal" href="./app/" data-accent="a">
+        <p class="format-tag">WT-1 · SYNTHESIZER</p>
+        <h3>The flagship</h3>
+        <p class="prose">
+          Two morphing wavetable oscillators, a dual filter with real bite,
+          modulation on everything and a full FX rack. Leads, pads, keys —
+          the full-range instrument the engine was built for.
+        </p>
+        <ul class="family-specs" aria-label="WT-1 at a glance">
+          <li>2 osc · 7-voice unison</li>
+          <li>Dual filter · mod matrix</li>
+          <li>Browser · VST3 · AU · Standalone</li>
+        </ul>
+        <span class="format-go">Launch WT-1 <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="family-card reveal" href="./drum/" data-accent="b">
+        <p class="format-tag">DR-1 · DRUM MACHINE</p>
+        <h3>The rhythm section</h3>
+        <p class="prose">
+          The same engine behind sixteen pads. Every kick, snare and hat is
+          synthesized live from morphing wavetables — no samples — with a
+          16-step sequencer, swing and choke groups.
+        </p>
+        <ul class="family-specs" aria-label="DR-1 at a glance">
+          <li>16 pads · 2 osc + noise each</li>
+          <li>16-step sequencer · pattern chains</li>
+          <li>Browser</li>
+        </ul>
+        <span class="format-go">Launch DR-1 <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="family-card reveal" href="./bass/" data-accent="f">
+        <p class="format-tag">BL-1 · ACID BASSLINE</p>
+        <h3>The low end</h3>
+        <p class="prose">
+          The engine stripped down to one squelchy mono voice. A 16-step
+          pitch sequencer with accents and slides, a resonant filter made
+          for acid, and a bar-locked LFO that moves with your pattern.
+        </p>
+        <ul class="family-specs" aria-label="BL-1 at a glance">
+          <li>Mono voice · slides &amp; accents</li>
+          <li>16-step pitch sequencer</li>
+          <li>Browser</li>
+        </ul>
+        <span class="format-go">Launch BL-1 <span aria-hidden="true">→</span></span>
+      </a>
+    </div>
   </section>
 
   <!-- ============ TWO SURFACES ============ -->
@@ -84,8 +148,13 @@
   <!-- ============ ENGINE ============ -->
   <section class="band engine" id="engine">
     <div class="section-head reveal">
-      <p class="kicker">INSIDE THE ENGINE</p>
-      <h2>Everything a patch needs.</h2>
+      <p class="kicker">THE SHARED ENGINE</p>
+      <h2>One core.<br>Every instrument.</h2>
+      <p class="prose">
+        This is the engine inside all three instruments, shown here at full
+        stretch in WT-1. What follows is what DR-1 pads and the BL-1 voice
+        are made of too.
+      </p>
     </div>
 
     <div class="spec-strip reveal" role="list" aria-label="Engine at a glance">
@@ -120,7 +189,8 @@
             Import any audio file and FableSynth slices it into frames and finds
             the pitch for you, or draw a single cycle by hand. Either way it's
             band-limited exactly like the factory tables, so your own waveforms
-            stay clean and never alias — in the browser and in the plugin.
+            stay clean and never alias — in the browser, in the plugin, and on
+            a DR-1 pad.
           </p>
         </div>
         <figure class="feature-media">
@@ -183,9 +253,9 @@
       <h2>Bright up top.<br>Never brittle.</h2>
       <p class="prose">
         Plenty of synths turn harsh and grainy on high notes or fast slides.
-        FableSynth stays smooth and clear all the way up, so leads cut through
-        and pads shimmer without that brittle digital edge. Play anywhere on the
-        keyboard and trust what you hear.
+        The FableSynth engine stays smooth and clear all the way up — so WT-1
+        leads cut through, DR-1 hats stay crisp and BL-1 slides never fizz.
+        Play anywhere on the keyboard and trust what you hear.
       </p>
     </div>
   </section>
@@ -193,7 +263,7 @@
   <!-- ============ DR-1 DRUM MACHINE ============ -->
   <section class="band drum" id="drum" data-accent="b">
     <div class="section-head reveal">
-      <p class="kicker">NEW · DR-1 DRUM MACHINE</p>
+      <p class="kicker">DR-1 · DRUM MACHINE</p>
       <h2>Same engine.<br>Now it hits.</h2>
     </div>
 
@@ -228,6 +298,43 @@
         <li><span>PER-PAD SHAPING</span><em>pitch &amp; amp envelopes, filter, mod matrix</em></li>
         <li><span>MASTER FX</span><em>drive · compressor · chorus · delay · reverb</em></li>
         <li><span>DROP A WAV</span><em>any sample becomes a wavetable</em></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ BL-1 BASSLINE ============ -->
+  <section class="band bass" id="bass" data-accent="f">
+    <div class="section-head reveal">
+      <p class="kicker">BL-1 · ACID BASSLINE</p>
+      <h2>Same engine.<br>Now it squelches.</h2>
+    </div>
+
+    <div class="drum-grid">
+      <div class="drum-copy reveal">
+        <p class="prose">
+          BL-1 takes the same wavetable engine and strips it down to a single
+          mono voice built for acid. Program a bassline in the 16-step pitch
+          sequencer, mark steps with accents and slides, and ride the resonant
+          filter while the pattern runs — the classic 303 workflow, powered by
+          morphing wavetables instead of a fixed saw and square.
+        </p>
+        <p class="prose">
+          Because the oscillator is a wavetable, the tone goes places a
+          classic bassline box can't: sweep the table mid-pattern with the
+          bar-locked LFO and the groove moves in time with your song. Patches
+          save in your browser, and it plays from your computer keyboard or a
+          MIDI controller.
+        </p>
+        <div class="surfaces-cta">
+          <a class="btn btn-primary" href="./bass/">Launch BL-1 <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <ul class="spec-list reveal" aria-label="BL-1 at a glance">
+        <li><span>MONO VOICE</span><em>wavetable oscillator, built for bass</em></li>
+        <li><span>SEQUENCER</span><em>16-step pitch · accents · slides</em></li>
+        <li><span>FILTER</span><em>resonant &amp; squelchy, made for acid</em></li>
+        <li><span>BAR-LOCKED LFO</span><em>modulation in time with the pattern</em></li>
+        <li><span>SAME TABLES</span><em>the same factory wavetables as WT-1</em></li>
       </ul>
     </div>
   </section>
@@ -295,10 +402,10 @@
 <footer class="foot">
   <div class="foot-mark">
     <svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0b0d12"/><path d="M4 20 Q8 8 12 16 T20 14 T28 18" stroke="#4de8ff" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
-    <span>FABLESYNTH <em>WT-1</em></span>
+    <span>FABLESYNTH <em>WT-1 · DR-1 · BL-1</em></span>
   </div>
   <nav class="foot-links" aria-label="Footer">
-    <a href="./app/">Browser synth</a>
+    <a href="./app/">WT-1 synth</a>
     <a href="./drum/">DR-1 drums</a>
     <a href="./bass/">BL-1 bassline</a>
     <a href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Releases</a>
