@@ -91,6 +91,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/Modulation.cpp
         source/drum/dsp/DrumParams.cpp
         source/drum/dsp/DrumTables.cpp
+        source/drum/dsp/SampledTables.gen.cpp
         source/drum/dsp/DrumEngine.cpp
         source/drum/dsp/DrumFx.cpp
         source/drum/dsp/DrumKits.cpp
@@ -193,6 +194,7 @@ add_executable(drum_engine_test
     test/drum_engine_test.cpp
     source/drum/dsp/DrumParams.cpp
     source/drum/dsp/DrumTables.cpp
+    source/drum/dsp/SampledTables.gen.cpp
     source/drum/dsp/DrumEngine.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp

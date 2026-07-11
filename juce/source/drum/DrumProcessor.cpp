@@ -1,6 +1,7 @@
 #include "DrumProcessor.h"
 #include "DrumEditor.h"
 #include "dsp/DrumTables.h"
+#include "dsp/SampledTables.gen.h"
 #include <cmath>
 #include <cstring>
 
@@ -26,6 +27,8 @@ DrumAudioProcessor::DrumAudioProcessor()
     for (auto& g : generateDrumTables())
         tables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
     for (auto& g : generateTables())
+        tables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    for (auto& g : generateSampledDrumTables())
         tables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
 
     // Boot on TR-VOID like the web app (params + patterns + chain + names).

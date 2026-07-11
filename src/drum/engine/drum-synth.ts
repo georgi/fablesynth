@@ -4,6 +4,7 @@ import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { type ParamValues } from '../../params';
 import { defaultDrumParams } from '../params';
 import { generateDrumTables } from './drumtables';
+import { generateSampledDrumTables } from './sampledtables.gen';
 import workletUrl from './worklet-drum.js?url';
 
 export interface VizTable {
@@ -88,7 +89,7 @@ export class DrumEngine {
     this.ctx = ctx;
     await ctx.audioWorklet.addModule(workletUrl);
 
-    this.builtInTables = [...generateDrumTables(), ...generateTables()];
+    this.builtInTables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()];
     this.refreshViz();
 
     this.node = new AudioWorkletNode(ctx, 'fable-dr', {
