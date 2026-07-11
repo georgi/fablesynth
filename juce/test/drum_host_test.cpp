@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
     DrumAudioProcessor proc2;
     // Fresh instance boots on TR-VOID; prove the restore actually changes it.
     check(proc2.getPadName(3) != "ZAP", "fresh instance differs before restore");
-    check(proc2.numTables() == 10, "fresh instance has no user tables", proc2.numTables());
+    check(proc2.numTables() == 15, "fresh instance has no user tables", proc2.numTables());
     proc2.setStateInformation(state.getData(), (int)state.getSize());
 
     float cut2 = proc2.apvts.getRawParameterValue("pad3.flt.cut")->load();
