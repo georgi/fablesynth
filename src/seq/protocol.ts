@@ -54,6 +54,9 @@ export type PatchDoc =
 export interface SceneDoc {
   name: string;
   clips: (ClipDoc | null)[]; // one slot per track
+  // Empty slots act as Ableton-style stop buttons on scene launch; tracks
+  // listed here are pass-through instead (previous clip keeps playing).
+  pass?: number[];
 }
 
 export interface ClipDoc {

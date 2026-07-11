@@ -123,6 +123,9 @@ type PatchDoc =
 interface SceneDoc {
   name: string;
   clips: (ClipDoc | null)[];   // one slot per track, null = empty cell
+  pass?: number[];             // tracks whose empty cell is pass-through
+                               // (default: empty cells stop the track on
+                               // scene launch, Ableton stop-button style)
 }
 
 interface ClipDoc {
@@ -268,6 +271,10 @@ clock:
 - `stopTrack(t)`: `queue[t] = STOP` → `scheduleStop(boundary(quant))`.
 - `launchScene(s)` / `stopScene(s)` / `stopAll()`: per-track fan-out of the
   above, one shared boundary frame so the whole scene flips as one block.
+  Empty cells act as Ableton-style stop buttons: `launchScene` calls
+  `stopTrack` on uncovered tracks so a scene is a complete snapshot of what
+  plays. Tracks in `scene.pass` are pass-through instead — the previous
+  clip rides through the scene change (right-click an empty cell to toggle).
 - **Owner flips on the `clipstart`/`clipstop` acks**, not on a UI timer —
   the grid shows what is audible, with a 250 ms watchdog fallback if an ack
   is lost.
@@ -288,16 +295,21 @@ DROP A is live everywhere; the user taps BREAK's scene launch with quant
 `1 BAR`, bar boundary at frame **F**:
 
 ```
-tap        conductor: queue = {1:4, 2:4, 3:4}   (BREAK has no DRUMS clip)
-           bl1.scheduleClip(SUB HOLD bytes,  4, F)
-           wt1a.scheduleClip(GLASS SOLO bytes, 4, F)
+tap        conductor: queue = {0:STOP, 1:4, 2:4, 3:4}
+           dr1.scheduleStop(F)                  (BREAK has no DRUMS clip —
+           bl1.scheduleClip(SUB HOLD bytes,  4, F)   its empty cell is a
+           wt1a.scheduleClip(GLASS SOLO bytes, 4, F)  stop button)
            wt1b.scheduleClip(FOG SWELL bytes,  8, F)
 …          cells pulse QUEUED (UI from queue state)
-frame F    each worklet swaps pending→playing in the same block,
-           posts {t:'clipstart', frame:F}
-           conductor: owner = {0:2, 1:4, 2:4, 3:4}, queue = {}
-           DRUMS keeps playing FULL KIT A — scenes layer, latest wins per track
+frame F    each worklet swaps pending→playing (DR-1 stops) in the same
+           block, posts {t:'clipstart'|'clipstop', frame:F}
+           conductor: owner = {1:4, 2:4, 3:4}, queue = {}
+           only BREAK reads LIVE — a scene is a snapshot of what plays
 ```
+
+Had DRUMS been marked pass-through in BREAK (`scenes[4].pass = [0]`, the
+`≈` cell), no stop would be scheduled and FULL KIT A would ride through
+the scene change, still owned by DROP A (`LIVE 1/4`).
 
 Tap DRUMS' FULL KIT A cell again → `scheduleStop(F')` → at F' the DR-1
 posts `clipstop`, its pads ring out, the footer NOW row clears for DRUMS.

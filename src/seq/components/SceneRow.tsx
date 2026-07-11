@@ -21,10 +21,23 @@ function ClipCell({ s, t }: { s: number; t: number }) {
   const clip = session.scenes[s]?.clips[t];
   const style = { '--tc': tr.color } as React.CSSProperties;
 
+  // Ableton semantics: an empty cell is a stop button (fires on scene
+  // launch too); right-click removes it — pass-through lets the previous
+  // clip keep playing across the scene change.
   if (!clip) {
+    const pass = !!session.scenes[s]?.pass?.includes(t);
+    const { togglePassThrough } = useSeqStore.getState();
     return (
-      <button className="sq-cell sq-cell-empty" style={style} onClick={() => stopTrack(t)} title="Stop track">
-        <span>■</span>
+      <button
+        className={`sq-cell sq-cell-empty${pass ? ' pass' : ''}`}
+        style={style}
+        onClick={() => { if (!pass) stopTrack(t); }}
+        onContextMenu={(e) => { e.preventDefault(); togglePassThrough(s, t); }}
+        title={pass
+          ? 'Pass-through — previous clip rides through this scene · right-click to restore stop'
+          : 'Stop button — stops this track on scene launch · right-click for pass-through'}
+      >
+        <span>{pass ? '≈' : '■'}</span>
       </button>
     );
   }

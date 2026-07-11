@@ -40,7 +40,7 @@ export function SeqApp() {
         ))}
         <FooterRow />
         <div className="sq-hint">
-          TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO {quant} · SCENES LAYER — LATEST CLIP WINS EACH TRACK
+          TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO {quant} · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH
         </div>
       </main>
     </>

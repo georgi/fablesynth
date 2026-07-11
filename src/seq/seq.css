@@ -337,6 +337,15 @@
   font-size: 9px;
   letter-spacing: 0.2em;
 }
+.sq-cell-empty.pass {
+  border-style: dotted;
+  border-color: color-mix(in srgb, var(--tc) 28%, transparent);
+  cursor: default;
+}
+.sq-cell-empty.pass span {
+  color: color-mix(in srgb, var(--tc) 55%, #333a48);
+  font-size: 12px;
+}
 
 .sq-cell-body { opacity: 0.72; display: flex; flex-direction: column; gap: 6px; }
 .sq-cell.live .sq-cell-body { opacity: 1; }

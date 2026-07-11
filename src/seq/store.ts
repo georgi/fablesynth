@@ -42,6 +42,7 @@ export interface SeqStore {
   stopTrack: (t: number) => void;
   launchScene: (s: number) => void;
   stopScene: (s: number) => void;
+  togglePassThrough: (s: number, t: number) => void;
   stopAll: () => void;
   toggleSceneMute: (s: number) => void;
   toggleTrackMute: (t: number) => void;
@@ -207,10 +208,14 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       set((cur) => ({ queue: { ...cur.queue, [t]: STOP } }));
     },
 
+    // Empty cells are stop buttons (Ableton semantics): launching a scene
+    // stops uncovered tracks unless the cell is marked pass-through.
     launchScene: (s) => {
       const st = get();
-      st.session.scenes[s]?.clips.forEach((c, t) => {
+      const sc = st.session.scenes[s];
+      sc?.clips.forEach((c, t) => {
         if (c) st.launch(t, s);
+        else if (!sc.pass?.includes(t)) st.stopTrack(t);
       });
     },
 
@@ -224,6 +229,20 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     stopAll: () => {
       const st = get();
       st.session.tracks.forEach((_, t) => st.stopTrack(t));
+    },
+
+    togglePassThrough: (s, t) => {
+      set((st) => {
+        const scenes = st.session.scenes.map((sc, i) => {
+          if (i !== s) return sc;
+          const pass = sc.pass?.includes(t)
+            ? (sc.pass ?? []).filter((x) => x !== t)
+            : [...(sc.pass ?? []), t];
+          return { ...sc, pass };
+        });
+        return { session: { ...st.session, scenes } };
+      });
+      persist();
     },
 
     toggleSceneMute: (s) => {

@@ -177,6 +177,36 @@ describe('scene operations', () => {
     expect(rig.dev(3).clips).toHaveLength(1);
   });
 
+  it('launchScene stops tracks whose cell is empty (Ableton stop buttons)', () => {
+    st().launchScene(2); // DROP A: all four tracks
+    rig.devices.forEach((d) => (d as FakeDevice).onClipStart!(1));
+    st().launchScene(4); // BREAK: no drums clip
+    expect(rig.dev(0).stops).toHaveLength(1);
+    expect(st().queue[0]).toBe(STOP);
+  });
+
+  it('launchScene leaves idle empty tracks alone (stop is a no-op)', () => {
+    st().launchScene(4); // BREAK: no drums clip, drums never started
+    expect(rig.dev(0).stops).toHaveLength(0);
+    expect(st().queue[0]).toBeUndefined();
+  });
+
+  it('a pass-through empty cell lets the previous clip ride', () => {
+    st().launchScene(2);
+    rig.devices.forEach((d) => (d as FakeDevice).onClipStart!(1));
+    st().togglePassThrough(4, 0); // BREAK drums: remove the stop button
+    st().launchScene(4);
+    expect(rig.dev(0).stops).toHaveLength(0);
+    expect(st().owner[0]).toBe(2); // DROP A drums keep playing
+  });
+
+  it('togglePassThrough flips the session doc flag both ways', () => {
+    st().togglePassThrough(4, 0);
+    expect(st().session.scenes[4].pass).toContain(0);
+    st().togglePassThrough(4, 0);
+    expect(st().session.scenes[4].pass).not.toContain(0);
+  });
+
   it('stopScene stops only tracks owned by (or queued for) that scene', () => {
     st().launchScene(2);
     rig.devices.forEach((d) => (d as FakeDevice).onClipStart!(1));

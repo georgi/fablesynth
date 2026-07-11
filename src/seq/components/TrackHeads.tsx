@@ -21,7 +21,7 @@ export function TrackHeads() {
     <div className="sq-grid sq-heads">
       <div className="sq-scenes-card">
         <div className="sq-scenes-title">SCENES</div>
-        <div className="sq-scenes-sub">STACK FREELY · LATEST CLIP OWNS THE TRACK</div>
+        <div className="sq-scenes-sub">EMPTY CELLS STOP THEIR TRACK · ≈ PASSES THROUGH</div>
       </div>
       {tracks.map((tr, t) => {
         const audible = playing && isTrackAudible(t, owner, trackMute, sceneMute, solo);
