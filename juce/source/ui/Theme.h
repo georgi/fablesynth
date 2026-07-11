@@ -23,8 +23,16 @@ namespace col {
 }
 
 enum class Accent { A, B, F, N };
+
+// Overridable primary accent — the web keys everything off --ac-a so one CSS
+// override re-themes a whole machine (BL-1 sets acid green). A binary that
+// wants a different accent A sets this from a static initialiser (same
+// pattern as Controls' setParamInfoResolver); WT-1/DR-1 never touch it, so
+// their cyan stays byte-identical.
+inline juce::Colour& accentA() { static juce::Colour c = col::acA; return c; }
+
 inline juce::Colour accentColour(Accent a) {
-    switch (a) { case Accent::A: return col::acA; case Accent::B: return col::acB;
+    switch (a) { case Accent::A: return accentA(); case Accent::B: return col::acB;
                  case Accent::F: return col::acF; default: return col::acN; }
 }
 

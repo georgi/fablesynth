@@ -37,6 +37,15 @@ inline juce::String formatParam(const juce::String& pid, float v) {
         if (ends(".pan"))                                 return fmtPan(v);
         return fmtPct(v); // pos, phase, detune, level, res, drive, lvl, v2l, v2m, curve
     }
+    // BL-1 flat ids (src/bass/params.ts fmt column). Guarded to exact ids /
+    // prefixes WT-1 never uses, so WT-1 read-outs are untouched.
+    if (pid == "osc.tune")                           return fmtSigned(v) + " ST";
+    if (pid == "osc.fine")                           return fmtSigned(v) + " CT";
+    if (pid == "flt.cut")                            return fmtHz(v);
+    if (pid == "flt.env")                            return fmtBi(v);
+    if (pid == "seq.bpm")                            return juce::String(juce::roundToInt(v));
+    if (pid == "slide.time" || pid.startsWith("fenv.")
+        || (pid.startsWith("aenv.") && pid != "aenv.sus")) return fmtSec(v);
     if (ends(".cutoff"))                              return fmtHz(v);
     if (ends(".rate"))                               return juce::String(v, 2) + " Hz";
     if (ends(".a") || ends(".d") || ends(".r") || ends(".rise")

@@ -19,8 +19,9 @@ drop the plugin in the right folder:
 | **Windows** | `C:\Program Files\Common Files\VST3\` | — | run the `.exe` |
 | **Linux** | `~/.vst3/` | — | run the binary |
 
-The plugins ship as **FableSynth WT-1** (wavetable synth) and **FableSynth
-DR-1** (drum machine) — separate zips per platform.
+The plugins ship as **FableSynth WT-1** (wavetable synth), **FableSynth
+DR-1** (drum machine) and **FableSynth BL-1** (acid bassline) — separate zips
+per platform.
 
 Then rescan plugins in your DAW. macOS builds are **universal** (Apple Silicon +
 Intel) and ad-hoc signed; on first launch you may need to right-click → Open, or
@@ -160,8 +161,16 @@ BL-1 is a monophonic acid bassline machine built on the same wavetable
 engine — one last-note-priority voice with the classic 303 interplay of
 **accents** (one knob boosts level, filter-env peak and shortens its decay)
 and **slides** (tied steps glide the pitch while both envelopes keep
-running). Web app only for now, served at `/bass/` (`npm run dev`, then open
-`http://localhost:5173/bass/`).
+running). Two builds from one source of truth:
+
+- **Web app** — served at `/bass/` (`npm run dev`, then open
+  `http://localhost:5173/bass/`).
+- **Plugin** — **FableSynth BL-1** (VST3 · AU · Standalone), a faithful
+  C++/JUCE port of the same engine with host tempo sync and transport lock
+  (the DAW playhead drives the pitch sequencer sample-accurately), MIDI
+  audition of the mono voice, and the factory patches as host programs. Ships
+  from the same build as WT-1/DR-1 — see
+  [`juce/README.md`](juce/README.md#fablesynth-bl-1--acid-bassline-synth).
 
 ![The BL-1 acid bassline](docs/bl1.png)
 
@@ -187,7 +196,7 @@ running). Web app only for now, served at `/bass/` (`npm run dev`, then open
 
 ## Code layout
 
-The **plugins** (C++/JUCE — WT-1 and DR-1) live in [`juce/`](juce/) — see
+The **plugins** (C++/JUCE — WT-1, DR-1 and BL-1) live in [`juce/`](juce/) — see
 [`juce/README.md`](juce/README.md) for the DSP/UI source maps and the headless
 verification harnesses.
 

@@ -5,7 +5,9 @@ is reimplemented one-to-one from the AudioWorklet engine; the parameters,
 presets and signal flow match the web build so a patch sounds the same.
 
 The same CMake project also builds **FableSynth DR-1**, the 16-pad drum
-machine — see [FableSynth DR-1](#fablesynth-dr-1--drum-machine) below.
+machine — see [FableSynth DR-1](#fablesynth-dr-1--drum-machine) — and
+**FableSynth BL-1**, the acid bassline synth — see
+[FableSynth BL-1](#fablesynth-bl-1--acid-bassline-synth) below.
 
 ![FableSynth plugin editor](docs/plugin_editor.png)
 
@@ -88,9 +90,10 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-One build produces both plugins: WT-1 artifacts land in
-`build/FableSynth_artefacts/Release/` and DR-1 artifacts in
-`build/FableDrum_artefacts/Release/` (`VST3/`, `AU/`, `Standalone/` each).
+One build produces all three plugins: WT-1 artifacts land in
+`build/FableSynth_artefacts/Release/`, DR-1 artifacts in
+`build/FableDrum_artefacts/Release/` and BL-1 artifacts in
+`build/FableBass_artefacts/Release/` (`VST3/`, `AU/`, `Standalone/` each).
 
 ## Verify the audio engine
 
@@ -236,5 +239,119 @@ would (5-bus layout, MIDI pads, AUX routing, host-tempo playhead, state
 round-trip, kit programs) and renders the editor snapshot above:
 ```sh
 cmake --build build --target drum_host_test
-ctest --test-dir build --output-on-failure   # runs all 4 test targets
+ctest --test-dir build --output-on-failure   # runs all 6 test targets
+```
+
+---
+
+# FableSynth BL-1 — acid bassline synth
+
+A faithful C++/JUCE port of the BL-1 web bassline machine (`src/bass/`, the
+lockstep reference): one mono last-note-priority acid voice — morphing
+wavetable oscillator with unison + stereo spread, sine/square sub, SVF filter
+with ADAA drive, filter AD env with accent boost, amp ADSR, slide (one-pole
+glide), bar-locked LFO → cutoff — driven by a 16-step pitch sequencer with
+per-step octave / accent / slide and pattern chaining. Ships as a third
+plugin from the same build: **VST3 · AU · Standalone**, product name
+"FableSynth BL-1".
+
+![FableSynth BL-1 editor](docs/bass_editor.png)
+
+> Rendered headlessly by `bass_host_test` via JUCE's software renderer
+> (`./bass_host_test <output-dir>`), so it always reflects the current build.
+
+## What the plugin adds over the web build
+
+- **Host transport lock** — same contract as DR-1: when the host transport
+  rolls (tempo + song position reported), the pitch sequencer is slaved to
+  the playhead. Steps derive from PPQ (swing shifts odd 16ths late in the
+  PPQ domain), the chain follows the host bar index, gate ties and slides
+  land sample-accurately across loops and relocates, and host stop stops the
+  line. Tempo-only hosts override BPM; Standalone uses the internal clock.
+- **MIDI audition** — MIDI notes drive the same mono last-note/legato voice
+  path as the on-screen keyboard (root C2 = note 36); overlapping notes
+  slide. While the sequencer plays, it owns the voice — exactly the web rule.
+- **Patch programs** — ACID LINE / RUBBER SUB / NEON SQUELCH are exposed as
+  host programs (a patch is params + patterns + chain, like the web).
+
+## Architecture
+
+Same split as WT-1/DR-1: a **JUCE-independent pure C++** DSP core under
+`source/bass/dsp/` (namespace `fable`, headless-testable with bare `g++`),
+wrapped by a thin processor and a pixel-faithful editor. Shared
+infrastructure (`Params` curves, `Wavetables`, the `Fx.h` building blocks,
+the `fui::` controls and theme) is reused from the WT-1 sources, never
+copied. The editor re-themes the shared accent A to the BL-1 acid green the
+same way the web overrides `--ac-a`.
+
+```
+source/bass/dsp/BassParams.{h,cpp}   45-param definition table — flat ids, one
+                                     mono voice           (port of src/bass/params.ts)
+source/bass/dsp/BassEngine.{h,cpp}   the acid voice + sample-accurate pitch
+                                     sequencer: patterns/chain/swing, 303 gate
+                                     frac 0.55, slide ties, accent env boost,
+                                     bar-locked LFO       (port of worklet-bass.js)
+source/bass/dsp/BassFx.{h,cpp}       drive -> chorus -> ping-pong delay -> reverb
+                                     -> DC block -> limiter — no bus compressor,
+                                     accents live          (port of bass-synth.ts)
+source/bass/dsp/BassPatches.{h,cpp}  packed 3-byte step codec + ACID LINE /
+                                     RUBBER SUB / NEON SQUELCH (seq.ts + patches.ts)
+source/bass/BassProcessor.{h,cpp}    JUCE AudioProcessor: APVTS, stereo out, MIDI
+                                     audition, host tempo/transport sync, patch
+                                     programs, session state (patterns + chain)
+source/bass/BassEditor.{h,cpp}       the rack shell — fixed 1460x931 logical grid,
+                                     scaled to the window (port of bass.css)
+source/bass/ui/BassHeader.*          patch stepper, scope, BPM + SYNC, swing/volume
+source/bass/ui/BassPanels.*          osc terrain + POS slider, sub, live filter
+                                     response, dual-env view, LFO, accent/slide,
+                                     two-octave audition keyboard
+source/bass/ui/PitchSeqView.*        16-step x 12-lane pitch grid, per-step
+                                     oct/acc/slide rows, patterns A-D, chain
+                                     builder, RAND, slide connectors, playhead
+source/bass/ui/BassFxRack.*          DRIVE / CHORUS / DELAY / REVERB groups
+test/bass_engine_test.cpp            headless DSP verification harness (no JUCE)
+test/bass_host_test.cpp              plugin-boundary test (params, MIDI, sequencer,
+                                     sync, state, programs, UI) + editor PNG
+```
+
+### Mapping notes
+
+- **Web constants are exact**: plain/accent velocities 0.72/1.0, gate frac
+  0.55, swing max 0.667, filter-env span 5 octaves, LFO span 2 octaves,
+  accent gain 0.7 / decay-shorten 0.35, keytrack ref 60, and the same
+  value<->norm curves in the APVTS as the web knobs.
+- **The voice is a line-faithful port of `worklet-bass.js`** — the same
+  16-sample glide/osc subblocks, 128-sample filter/env quantum, Cytomic SVF
+  with the ADAA `lcosh` drive, polyblep square sub and per-voice DC blocker.
+  The LFO S&H uses the engine's seeded xorshift RNG instead of
+  `Math.random()` so tests are deterministic.
+- **FX**: same stage ports as WT-1/DR-1; the safety limiter matches the web
+  bass limiter's −6 dB threshold (WT-1/DR-1 use −8 dB) including the
+  WebAudio-spec implicit makeup gain. There is deliberately no bus
+  compressor ("accents live").
+
+## Build & verify
+
+Built by the same configure/build as WT-1 (above). Artifacts:
+`build/FableBass_artefacts/Release/{VST3,AU,Standalone}/` →
+`FableSynth BL-1.vst3` / `.component` / `.app`.
+
+The headless harness builds without JUCE and checks the parameter table, the
+packed pattern codec, the factory patches, audition/legato-slide behaviour,
+step timing / gate frac / swing, accent gain, slide ties, the host transport
+lock and the FX chain:
+```sh
+cd juce
+g++ -std=c++17 -O2 -o bass_engine_test test/bass_engine_test.cpp \
+  source/bass/dsp/*.cpp source/dsp/Fx.cpp source/dsp/Wavetables.cpp \
+  source/dsp/UserTables.cpp source/dsp/Params.cpp
+./bass_engine_test   # -> ALL PASS
+```
+
+The plugin-boundary test drives the real `BassAudioProcessor` the way a DAW
+would (MIDI, internal + host-locked sequencing, state round-trip, patch
+programs, the pitch-seq store semantics) and renders the editor snapshot:
+```sh
+cmake --build build --target bass_host_test
+ctest --test-dir build --output-on-failure
 ```
