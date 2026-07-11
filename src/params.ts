@@ -7,6 +7,11 @@ export const fmtPct = (v: number) => Math.round(v * 100) + '%';
 export const fmtPan = (v: number) => (Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R'));
 export const fmtSigned = (v: number) => (v > 0 ? '+' : '') + Math.round(v);
 export const fmtBi = (v: number) => (v > 0 ? '+' : '') + Math.round(v * 100);
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const fmtNote = (v: number) => {
+  const n = Math.round(v);
+  return NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
+};
 
 export const TABLE_NAMES = ['PRIME', 'BLOOM', 'PULSE', 'VOX', 'CHIME', 'GLITCH'];
 // SVF types keep indices 0..4; comb + vowel are appended so existing presets stay valid.
@@ -238,6 +243,13 @@ export const PARAM_DEFS: ParamDef[] = [
 
   { id: 'master.volume', label: 'MASTER', min: 0, max: 1, def: 0.75, curve: 'lin', fmt: fmtPct },
   { id: 'master.glide', label: 'GLIDE', min: 0, max: 0.5, def: 0, curve: 'lin', fmt: fmtSec },
+
+  // Note sequencer. seq.bpm also drives the worklet's virtual transport, so
+  // synced LFOs phase-lock to the sequencer tempo while it plays.
+  { id: 'seq.bpm', label: 'BPM', min: 60, max: 200, def: 120, curve: 'int', fmt: (v) => String(Math.round(v)) },
+  { id: 'seq.swing', label: 'SWING', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  { id: 'seq.gate', label: 'GATE', min: 0.1, max: 0.98, def: 0.55, curve: 'lin', fmt: fmtPct },
+  { id: 'seq.root', label: 'ROOT', min: 24, max: 72, def: 48, curve: 'int', fmt: fmtNote },
 ];
 
 export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));

@@ -9,6 +9,7 @@ import { EnvPanel } from './components/panels/EnvPanel';
 import { LfoPanel } from './components/panels/LfoPanel';
 import { MatrixPanel } from './components/panels/MatrixPanel';
 import { FxPanel } from './components/panels/FxPanel';
+import { SeqPanel } from './components/panels/SeqPanel';
 import { KeyboardBar } from './components/panels/KeyboardBar';
 import { useComputerKeys } from './hooks/useComputerKeys';
 import { useMidi } from './hooks/useMidi';
@@ -22,6 +23,7 @@ export function App() {
   useEffect(() => {
     (window as unknown as { __fable: unknown }).__fable = {
       engine,
+      store: useStore,
       applyPreset: useStore.getState().applyPreset,
     };
   }, []);
@@ -42,6 +44,7 @@ export function App() {
           <LfoPanel />
           <MatrixPanel />
           <FxPanel />
+          <SeqPanel />
         </div>
         <KeyboardBar />
       </main>

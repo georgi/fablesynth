@@ -6,17 +6,28 @@
 //   {t:'on', n, v} {t:'off', n}      note events (n=midi note, v=0..1)
 //   {t:'bend', s}                    pitch bend in semitones
 //   {t:'panic'}
+//   {t:'pats', data:Uint8Array} {t:'chain', list} {t:'play'} {t:'stop'}   note sequencer
 //
 // Modulation is a fixed pool of 16 slots (mat1..mat16), each {src,dst,amt}, read
 // straight from `this.p` — no separate routing message. The per-destination
 // scaling matches the VST exactly, so the two engines sound identical.
 // Out: {t:'viz', a, b, n}            modulated wt positions + active voice count
+//      {t:'step', s, pat}            per step while the sequencer plays
 
 const NVOICES = 8;
 const MAXUNI = 16;
 // Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
 // in the params/slot helpers and the VST's MOD_MATRIX_SIZE.
 const MOD_MATRIX_SIZE = 16;
+
+// Note sequencer constants — hand-copied from noteseq.ts (this module is
+// import-free); the parity test asserts they still match.
+const SEQ_STEPS = 16;
+const SEQ_NPATTERNS = 4;
+const SEQ_STRIDE = 3;
+const SEQ_ACCENT_VEL = 1.0;
+const SEQ_PLAIN_VEL = 0.72;
+const SEQ_SWING_MAX = 0.667;
 
 // Generic modulation log-curve depth: a full route swings a Log param ×2^(x·D),
 // i.e. ±D octaves. D=5 reproduces the legacy CUTOFF scaling exactly. Mirrors the
@@ -288,6 +299,16 @@ class FableProcessor extends AudioWorkletProcessor {
     this.gLfo2 = new LFO(); this.gLfo2.reset();
     this.lastPitch = 60;
     this.clock = 0;
+    // ---- note sequencer state ----
+    this.seqPlaying = false;
+    this.seqStep = -1;
+    this.seqPats = new Uint8Array(SEQ_NPATTERNS * SEQ_STEPS * SEQ_STRIDE);
+    for (let i = 2; i < this.seqPats.length; i += SEQ_STRIDE) this.seqPats[i] = 1; // oct byte: 1 = oct 0
+    this.seqChain = [0];
+    this.seqChainPos = 0;
+    this.seqToNext = 0; // samples until the next step fires
+    this.seqToGateOff = -1; // samples until the current step's gate closes (-1 = none/tied)
+    this.seqNote = -1; // midi note the sequencer is currently sounding (-1 = none)
     this.vizCount = 0;
     this.tmpL = new Float32Array(128);
     this.tmpR = new Float32Array(128);
@@ -312,8 +333,16 @@ class FableProcessor extends AudioWorkletProcessor {
       // that reached `p` would latch into phases / env levels and stick there.
       case 'init':
         for (const k in d.params) { const v = d.params[k]; if (Number.isFinite(v)) this.p[k] = v; }
+        if (Number.isFinite(this.p['seq.bpm'])) this.bpm = Math.min(1000, Math.max(1, this.p['seq.bpm']));
         break;
-      case 'p': if (Number.isFinite(d.v)) this.p[d.k] = d.v; break;
+      case 'p':
+        if (Number.isFinite(d.v)) {
+          this.p[d.k] = d.v;
+          // The web build has no host transport: while the sequencer is the
+          // tempo authority, synced LFOs follow it.
+          if (d.k === 'seq.bpm') this.bpm = Math.min(1000, Math.max(1, d.v));
+        }
+        break;
       case 'tables':
         this.tables = d.list.map((x) => ({
           frames: x.frames, mips: x.mips, size: x.size, mask: x.size - 1,
@@ -324,8 +353,99 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'off': this.noteOff(d.n); break;
       case 'bend': this.bend = d.s; break;
       case 'bpm': this.bpm = d.v > 1 ? Math.min(d.v, 1000) : 120; break;
-      case 'panic': for (const v of this.voices) v.kill(); break;
+      case 'pats': this.seqPats = new Uint8Array(d.data); break;
+      case 'chain':
+        if (Array.isArray(d.list) && d.list.length) {
+          this.seqChain = d.list.map((x) => x | 0);
+          this.seqChainPos = Math.min(this.seqChainPos, this.seqChain.length - 1);
+        }
+        break;
+      case 'play':
+        this.seqPlaying = true;
+        this.seqStep = -1;
+        this.seqChainPos = 0;
+        this.seqToNext = 0;
+        this.seqToGateOff = -1;
+        this.seqNote = -1;
+        break;
+      case 'stop':
+        this.seqPlaying = false;
+        this.seqStep = -1;
+        this.seqToGateOff = -1;
+        this.seqGateOff();
+        break;
+      case 'panic':
+        for (const v of this.voices) v.kill();
+        this.seqNote = -1;
+        this.seqToGateOff = -1;
+        break;
     }
+  }
+
+  // ---------- note sequencer ----------
+  seqRead(pat, s) {
+    const o = (pat * SEQ_STEPS + s) * SEQ_STRIDE;
+    const flags = this.seqPats[o];
+    return {
+      on: (flags & 1) !== 0,
+      acc: (flags & 2) !== 0,
+      tie: (flags & 4) !== 0,
+      semi: Math.min(11, this.seqPats[o + 1]) + 12 * (Math.min(2, this.seqPats[o + 2]) - 1),
+    };
+  }
+
+  seqGateOff() {
+    if (this.seqNote >= 0) {
+      this.noteOff(this.seqNote);
+      this.seqNote = -1;
+    }
+  }
+
+  // Legato retune of the sounding sequencer voice: no envelope retrigger; the
+  // renderVoice glide slew takes v.pitch to the new note (instant at GLIDE 0).
+  seqTie(n, vel) {
+    let voice = null;
+    for (const v of this.voices) {
+      if (v.gate && v.note === this.seqNote) { voice = v; break; }
+    }
+    if (!voice) { this.noteOn(n, vel); return; } // voice got stolen — retrigger
+    voice.note = n;
+    this.lastPitch = n;
+  }
+
+  seqFire() {
+    const bpm = Math.max(60, Math.min(200, this.p['seq.bpm'] || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const swing = Math.min(1, Math.max(0, this.p['seq.swing'] || 0));
+    if (this.seqStep + 1 >= SEQ_STEPS) {
+      this.seqStep = -1;
+      this.seqChainPos = (this.seqChainPos + 1) % this.seqChain.length;
+    }
+    const s = this.seqStep + 1;
+    const pat = this.seqChain[this.seqChainPos] | 0;
+    const st = this.seqRead(pat, s);
+
+    if (st.on) {
+      const root = (this.p['seq.root'] | 0) || 48;
+      const n = root + st.semi;
+      const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
+      if (st.tie && this.seqNote >= 0) this.seqTie(n, vel);
+      else { this.seqGateOff(); this.noteOn(n, vel); }
+      this.seqNote = n;
+      // hold through the step when the NEXT step ties in
+      const sN = (s + 1) % SEQ_STEPS;
+      const patN = sN === 0 ? this.seqChain[(this.seqChainPos + 1) % this.seqChain.length] | 0 : pat;
+      const stN = this.seqRead(patN, sN);
+      const gate = Math.min(0.98, Math.max(0.1, this.p['seq.gate'] || 0.55));
+      this.seqToGateOff = stN.on && stN.tie ? -1 : gate * dur;
+    }
+
+    this.seqStep = s;
+    const offNow = s % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
+    const sNext = (s + 1) % SEQ_STEPS;
+    const offNext = sNext % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
+    this.seqToNext = dur - offNow + offNext;
+    this.port.postMessage({ t: 'step', s, pat });
   }
 
   noteOn(n, vel) {
@@ -905,6 +1025,19 @@ class FableProcessor extends AudioWorkletProcessor {
     this.updateGlobalLfo(this.gLfo1, 'lfo1', ppq, n);
     this.updateGlobalLfo(this.gLfo2, 'lfo2', ppq, n);
     this.transportBeats += (n / sampleRate) * (this.bpm / 60);
+
+    // Advance the note sequencer. Events fire at block boundaries (the same
+    // resolution live note messages arrive at); step *durations* are counted
+    // in real samples so the clock never drifts. Gate-off runs before the
+    // fire so a full-length gate releases just ahead of its retrigger.
+    if (this.seqPlaying) {
+      if (this.seqToGateOff >= 0) {
+        this.seqToGateOff -= n;
+        if (this.seqToGateOff < 0) this.seqGateOff();
+      }
+      if (this.seqToNext <= 0) this.seqFire();
+      this.seqToNext -= n;
+    }
 
     let act = 0;
     let viz = null;

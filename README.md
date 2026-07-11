@@ -111,9 +111,19 @@ and play.
 | --- | --- |
 | Knobs | drag vertically · `shift` = fine · double-click = reset · scroll wheel |
 | Computer keys | `A W S E D F T G Y H U J K O L P ; '` play notes · `Z`/`X` octave |
-| `Esc` | panic (all notes off) |
+| `Esc` | panic (all notes off, stops the sequencer) |
 | MIDI | plug in a controller — notes + pitch bend (Chrome/Edge) |
 | On-screen keys | click/touch, vertical position = velocity, drag for glissando |
+
+The web rack also carries a **16-step note sequencer** (the NOTE SEQ panel,
+web-only for now): 12 note lanes per step with per-step octave (−1/0/+1),
+**accents** (full velocity — route VELO in the mod matrix to make them bite)
+and **ties** (legato retune of the sounding voice, no envelope retrigger; turn
+up GLIDE and a tie becomes a slide). Four patterns A–D with chaining, swing,
+gate length, a root-note stepper and RAND — the same workflow as the DR-1 and
+BL-1 sequencers, driving the full polyphonic engine. Synced LFOs lock to the
+sequencer tempo, and patterns persist in `localStorage`. This is the WT-1
+half of the groundwork for the FableSeq SQ-4 session launcher.
 
 ## DR-1 drum machine
 
@@ -228,6 +238,7 @@ src/engine/synth.ts        AudioContext, FX graph, param routing
 src/components/WavetableEditor.tsx  import / draw modal
 src/params.ts              single source of truth for every parameter
 src/presets.ts             factory + localStorage user presets
+src/noteseq.ts             16-step note-sequencer data model + timing math
 src/store.ts               Zustand store: param state + transport, engine glue
 src/components/            knobs, steppers, sliders, keyboard, canvas displays
 src/components/panels/     the rack layout (oscillators, filter, env, fx, …)

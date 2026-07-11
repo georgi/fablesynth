@@ -15,6 +15,12 @@ export interface VizMessage {
   n: number;
 }
 
+export interface StepMessage {
+  t: 'step';
+  s: number; // step index 0..15
+  pat: number; // pattern being played
+}
+
 export interface VizTable {
   name: string;
   frames: number;
@@ -32,6 +38,7 @@ export class SynthEngine {
   procTables: GeneratedTable[]; // procedural tables (full mip data)
   userTables: GeneratedTable[]; // imported / drawn tables (full mip data)
   onviz: ((d: VizMessage) => void) | null;
+  onstep: ((d: StepMessage) => void) | null;
   ready: boolean;
 
   ctx!: AudioContext;
@@ -67,6 +74,7 @@ export class SynthEngine {
     this.procTables = [];
     this.userTables = [];
     this.onviz = null;
+    this.onstep = null;
     this.ready = false;
   }
 
@@ -86,6 +94,7 @@ export class SynthEngine {
     });
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
+      else if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
@@ -305,4 +314,10 @@ export class SynthEngine {
   noteOff(n: number): void { if (this.ready) this.node.port.postMessage({ t: 'off', n }); }
   bend(semis: number): void { if (this.ready) this.node.port.postMessage({ t: 'bend', s: semis }); }
   panic(): void { if (this.ready) this.node.port.postMessage({ t: 'panic' }); }
+
+  // ---------- note sequencer ----------
+  setSeqPatterns(pats: Uint8Array): void { if (this.ready) this.node.port.postMessage({ t: 'pats', data: pats }); }
+  setSeqChain(list: number[]): void { if (this.ready) this.node.port.postMessage({ t: 'chain', list }); }
+  seqPlay(): void { if (this.ready) this.node.port.postMessage({ t: 'play' }); }
+  seqStop(): void { if (this.ready) this.node.port.postMessage({ t: 'stop' }); }
 }
