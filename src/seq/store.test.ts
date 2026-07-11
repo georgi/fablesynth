@@ -318,3 +318,41 @@ describe('pause', () => {
     expect(rig.suspended).toBe(false);
   });
 });
+
+describe('focus', () => {
+  it('starts in session mode and enters on a track head', () => {
+    expect(st().focus).toBeNull();
+    st().enterFocus(2);
+    expect(st().focus).toEqual({ track: 2, scene: 0 });
+  });
+
+  it('prefers the scene owning the track', () => {
+    st().launch(1, 3);
+    rig.dev(1).onClipStart!(0);
+    st().enterFocus(1);
+    expect(st().focus).toEqual({ track: 1, scene: 3 });
+  });
+
+  it('explicit scene wins (the ✎ path) and clamps to valid scenes', () => {
+    st().enterFocus(0, 2);
+    expect(st().focus).toEqual({ track: 0, scene: 2 });
+    st().focusScene(99);
+    expect(st().focus!.scene).toBe(st().session.scenes.length - 1);
+    st().focusScene(-5);
+    expect(st().focus!.scene).toBe(0);
+  });
+
+  it('remembers the last focused scene across exit/enter', () => {
+    st().enterFocus(0, 2);
+    st().exitFocus();
+    expect(st().focus).toBeNull();
+    st().enterFocus(3); // no owner on track 3, no explicit scene
+    expect(st().focus).toEqual({ track: 3, scene: 2 });
+  });
+
+  it('switching heads keeps the scene', () => {
+    st().enterFocus(0, 4);
+    st().enterFocus(1);
+    expect(st().focus).toEqual({ track: 1, scene: 4 });
+  });
+});

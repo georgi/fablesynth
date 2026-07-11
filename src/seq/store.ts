@@ -36,6 +36,7 @@ export interface SeqStore {
   swing: number;
   rig: SeqRig | null;
   anchor: number; // songStartFrame — beat zero of the shared timebase
+  focus: { track: number; scene: number } | null;
 
   powerOn: (rig?: SeqRig) => Promise<void>;
   togglePlay: () => void;
@@ -56,6 +57,9 @@ export interface SeqStore {
   setMasterVol: (v: number) => void;
   setSwing: (v: number) => void;
   tick: () => void; // UI clock — called from a rAF loop while powered
+  enterFocus: (t: number, s?: number) => void;
+  exitFocus: () => void;
+  focusScene: (s: number) => void;
 }
 
 const initialSession = loadSession(factorySession());
@@ -88,6 +92,12 @@ export const useSeqStore = create<SeqStore>((set, get) => {
   // it to owner (acks don't carry a clip identity; devices hold one pending
   // slot, so the last schedule is by construction the one that started).
   const lastScheduled: Record<number, number> = {};
+
+  // Scene to reopen on the next head-click focus (survives exit, not reload).
+  let lastFocusScene = 0;
+
+  const clampScene = (s: number): number =>
+    Math.max(0, Math.min(get().session.scenes.length - 1, s));
 
   const applyGains = () => {
     const st = get();
@@ -135,6 +145,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     swing: initialSession.swing,
     rig: null,
     anchor: 0,
+    focus: null,
 
     powerOn: async (rigIn?: SeqRig) => {
       const session = get().session;
@@ -345,6 +356,23 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const { beat, bar } = songPosition(st.rig.now(), st.anchor, st.session.bpm, st.rig.sampleRate);
       if (beat !== st.beat || bar !== st.bar) set({ beat, bar });
     },
+
+    enterFocus: (t, s) => {
+      const st = get();
+      const scene = s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene;
+      set({ focus: { track: t, scene: clampScene(scene) } });
+    },
+
+    exitFocus: () => {
+      const f = get().focus;
+      if (f) lastFocusScene = f.scene;
+      set({ focus: null });
+    },
+
+    focusScene: (s) => {
+      const f = get().focus;
+      if (f) set({ focus: { ...f, scene: clampScene(s) } });
+    },
   };
 });
 
@@ -368,5 +396,6 @@ export function resetSeqStore(): void {
     swing: 0,
     rig: null,
     anchor: 0,
+    focus: null,
   });
 }
