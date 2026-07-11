@@ -409,6 +409,19 @@ class FableProcessor extends AudioWorkletProcessor {
         this.clipPend = null; // a stop cancels a pending launch
         this.clipStopAt = +d.atFrame || 0;
         break;
+      case 'clipupdate': {
+        // Hosted hot-swap (SQ-4): replace pattern bytes in place. Position is
+        // derived arithmetic, so a live swap never moves the playhead.
+        const data = new Uint8Array(d.data);
+        const bars = Math.max(1, d.bars | 0);
+        if (this.clipPend) {
+          this.clipPend = { data, bars, at: this.clipPend.at };
+        } else if (this.clip) {
+          this.clip = { data, bars };
+          if (this.clipStep >= 0) this.clipStep %= bars * SEQ_STEPS;
+        }
+        break;
+      }
     }
   }
 

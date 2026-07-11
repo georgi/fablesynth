@@ -217,3 +217,83 @@ describe('bass sequencer', () => {
     expect(peak(after.L.slice(-2560))).toBeLessThan(1e-3);
   });
 });
+
+// The harness evaluates the worklet source with bare-global `currentFrame`
+// resolving via globalThis, like the real AudioWorkletGlobalScope.
+const g = globalThis as unknown as { currentFrame: number };
+
+function runBlocks(h: BassHarness, blocks: number): void {
+  for (let b = 0; b < blocks; b++) {
+    h.proc.process([], [[new Float32Array(128), new Float32Array(128)]]);
+    g.currentFrame += 128;
+  }
+}
+
+type ClipState = {
+  clip: { data: Uint8Array; bars: number } | null;
+  clipPend: { data: Uint8Array; bars: number; at: number } | null;
+  clipStep: number;
+};
+
+describe('clipupdate (hosted hot-swap)', () => {
+  it('swaps a live clip in place and preserves the play position', () => {
+    g.currentFrame = 0;
+    const h = makeBassProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(48), bars: 1, atFrame: 0 });
+    // step = 60/120/4*48000 = 6000 frames; 50 blocks = 6400 frames → step 1 fired
+    runBlocks(h, 50);
+    const p = h.proc as unknown as ClipState;
+    expect(p.clip).not.toBeNull();
+    const before = p.clipStep;
+    expect(before).toBeGreaterThanOrEqual(1);
+
+    const next = new Uint8Array(2 * 48);
+    next[0] = 1; // bar 0, step 0, flags byte
+    h.send({ t: 'clipupdate', data: next, bars: 2 });
+    expect(p.clip!.bars).toBe(2);
+    expect(p.clip!.data[0]).toBe(1);
+    expect(p.clipStep).toBe(before); // phase untouched
+
+    runBlocks(h, 50); // keeps ticking: pos messages continue past the swap
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('re-wraps clipStep when the clip shrinks below the current position', () => {
+    g.currentFrame = 0;
+    const h = makeBassProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(2 * 48), bars: 2, atFrame: 0 });
+    runBlocks(h, 900); // ~19 steps in → clipStep in bar 1
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBeGreaterThanOrEqual(16);
+    h.send({ t: 'clipupdate', data: new Uint8Array(48), bars: 1 });
+    expect(p.clipStep).toBeLessThan(16);
+  });
+
+  it('updates a pending clip without touching its launch frame', () => {
+    g.currentFrame = 0;
+    const h = makeBassProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'clip', data: new Uint8Array(48), bars: 1, atFrame: 96000 });
+    const p = h.proc as unknown as ClipState;
+    const next = new Uint8Array(48);
+    next[0] = 1; // step 0, flags byte
+    h.send({ t: 'clipupdate', data: next, bars: 1 });
+    expect(p.clipPend!.at).toBe(96000);
+    expect(p.clipPend!.data[0]).toBe(1);
+    expect(p.clip).toBeNull();
+  });
+
+  it('is a no-op when nothing is live or pending', () => {
+    const h = makeBassProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'clipupdate', data: new Uint8Array(48), bars: 1 });
+    const p = h.proc as unknown as ClipState;
+    expect(p.clip).toBeNull();
+    expect(p.clipPend).toBeNull();
+  });
+});
