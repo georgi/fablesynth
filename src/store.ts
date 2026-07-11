@@ -19,7 +19,7 @@ import {
 import { generateTables, SIZE, type GeneratedTable } from './engine/wavetables';
 
 // Singleton audio engine (created once, initialized on power-on).
-export const engine = new SynthEngine();
+export let engine = new SynthEngine();
 
 export interface PresetOption {
   value: string; // 'f<i>' factory | 'u<i>' user
@@ -37,6 +37,7 @@ interface SynthStore {
   params: ParamValues;
   modDrag: number; // source being dragged (MOD_SOURCES index), 0 = none
   powered: boolean;
+  hosted: boolean;
   voiceCount: number;
   modPosA: number;
   modPosB: number;
@@ -93,6 +94,7 @@ interface SynthStore {
   chainClick: (i: number) => void;
   seqPlay: () => void;
   seqStop: () => void;
+  attachHosted: (e: SynthEngine) => void;
 
   powerOn: () => Promise<void>;
   playNote: (n: number, vel: number) => void;
@@ -117,6 +119,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   params: defaultParams(),
   modDrag: 0,
   powered: false,
+  hosted: false,
   voiceCount: 0,
   modPosA: -1,
   modPosB: -1,
@@ -276,7 +279,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   _setPatterns(next: Patterns) {
     set({ patterns: next });
     engine.setSeqPatterns(next);
-    saveSeqState(next, get().chain);
+    if (!get().hosted) saveSeqState(next, get().chain);
   },
 
   toggleCell: (step, note) => {
@@ -347,13 +350,28 @@ export const useStore = create<SynthStore>((set, get) => ({
   },
 
   seqPlay: () => {
+    if (get().hosted) return;
     engine.seqPlay();
     set({ seqPlaying: true });
   },
 
   seqStop: () => {
+    if (get().hosted) return;
     engine.seqStop();
     set({ seqPlaying: false, curStep: -1 });
+  },
+
+  attachHosted: (e) => {
+    engine = e;
+    set({
+      hosted: true,
+      powered: true,
+      seqPlaying: false,
+      curStep: -1,
+      chaining: false,
+      chainFresh: false,
+      params: { ...e.params },
+    });
   },
 
   powerOn: async () => {

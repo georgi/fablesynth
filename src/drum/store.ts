@@ -19,7 +19,7 @@ import {
 import { pad } from './params';
 import { cycleStep, patIdx, type Patterns } from './seq';
 
-export const drumEngine = new DrumEngine();
+export let drumEngine = new DrumEngine();
 const initialKitState = kitToState(FACTORY_KITS[0]);
 
 export interface KitOption {
@@ -50,6 +50,7 @@ export interface DrumStore {
   curStep: number;
   curPat: number;
   powered: boolean;
+  hosted: boolean;
   midiActive: boolean;
   kitValue: string;
   userKits: Kit[];
@@ -75,6 +76,7 @@ export interface DrumStore {
   setPadName: (i: number, name: string) => void;
   play: () => void;
   stop: () => void;
+  attachHosted: (engine: DrumEngine) => void;
   powerOn: () => Promise<void>;
   saveKit: (name: string) => void;
   loadKitByValue: (value: string) => void;
@@ -98,6 +100,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   curStep: -1,
   curPat: 0,
   powered: false,
+  hosted: false,
   midiActive: false,
   kitValue: 'f0',
   userKits: loadUserKits(),
@@ -176,13 +179,30 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   }),
 
   play: () => {
+    if (get().hosted) return;
     drumEngine.play();
     set({ playing: true });
   },
 
   stop: () => {
+    if (get().hosted) return;
     drumEngine.stop();
     set({ playing: false, curStep: -1 });
+  },
+
+  // SQ-4 hosted mode: adopt the rig's running engine. The conductor owns the
+  // transport and the clip owns the patterns; this store keeps patch editing.
+  attachHosted: (engine) => {
+    drumEngine = engine;
+    set({
+      hosted: true,
+      powered: true,
+      playing: false,
+      curStep: -1,
+      chaining: false,
+      chainFresh: false,
+      params: { ...engine.params },
+    });
   },
 
   powerOn: async () => {
@@ -220,6 +240,16 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     if (!kit) return;
 
     const state = kitToState(kit);
+    if (get().hosted) {
+      // Hosted: a kit is a sound, not a song — params only, clip keeps its pattern.
+      const userTables = state.tables.map((table) => deserializeUserTable(table).table);
+      drumEngine.panic();
+      drumEngine.setUserTables(userTables);
+      drumEngine.params = { ...state.params };
+      drumEngine.applyAllParams();
+      set({ params: state.params, padNames: state.padNames, userTables, kitValue: value, patchValue: '' });
+      return;
+    }
     const userTables = state.tables.map((table) => deserializeUserTable(table).table);
     const chain = state.chain.length ? state.chain : [0];
     drumEngine.panic();
