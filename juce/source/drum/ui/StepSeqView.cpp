@@ -23,11 +23,14 @@ SelBarView::SelBarView(DrumAudioProcessor& p) : proc(p) {
 
 void SelBarView::timerCallback() {
     const int sel = proc.getSelectedPad();
+    const int prog = proc.getCurrentProgram();
     auto name = proc.getPadName(sel);
-    if (sel != lastSel_ || name != lastName_) {
-        // Web store.selectPad: a new pad isn't a known patch — reset readout.
-        if (sel != lastSel_) patchIndex_ = -1;
+    if (sel != lastSel_ || prog != lastProgram_ || name != lastName_) {
+        // Web store: selectPad and loadKitByValue both clear patchValue — a
+        // new pad or a freshly loaded kit isn't a known patch.
+        if (sel != lastSel_ || prog != lastProgram_) patchIndex_ = -1;
         lastSel_ = sel;
+        lastProgram_ = prog;
         lastName_ = name;
         repaint();
     }

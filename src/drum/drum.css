@@ -133,13 +133,6 @@
   letter-spacing: 0.1em;
   text-shadow: 0 0 9px rgba(77, 232, 255, 0.35);
 }
-.dr-sel-hint {
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: 7px;
-  letter-spacing: 0.15em;
-  white-space: nowrap;
-}
 .dr-patchbar {
   margin-left: auto;
   display: flex;
