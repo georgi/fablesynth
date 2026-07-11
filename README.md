@@ -1,4 +1,4 @@
-# FABLESYNTH WT‑1 and DR-1
+# FABLESYNTH WT‑1, DR-1 and BL-1
 
 A Serum-style wavetable synthesizer plugin — **VST3 · AU · Standalone** for
 macOS, Windows and Linux. Two morphing wavetable oscillators, a dual
@@ -154,6 +154,37 @@ The web build:
 - **Play it** — pads map to `Z X C V / A S D F / Q W E R / 1 2 3 4` (bottom row
   = pads 1–4), `Esc` stops, and MIDI notes 36–51 (C1 up) trigger pads 1–16.
 
+## BL-1 acid bassline
+
+BL-1 is a monophonic acid bassline machine built on the same wavetable
+engine — one last-note-priority voice with the classic 303 interplay of
+**accents** (one knob boosts level, filter-env peak and shortens its decay)
+and **slides** (tied steps glide the pitch while both envelopes keep
+running). Web app only for now, served at `/bass/` (`npm run dev`, then open
+`http://localhost:5173/bass/`).
+
+![The BL-1 acid bassline](docs/bl1.png)
+
+- **One wavetable oscillator** (WT-1's six procedural tables with POS
+  morphing and up to 7-voice unison with stereo spread) over a **sub
+  oscillator** (sine / polyblep square, −1/−2 oct).
+- **Zero-delay SVF filter** (LP12/LP24/BP/HP/Notch, LP 24 default) with ADAA
+  drive, resonance, key tracking and a snappy **AD filter envelope** (±5
+  octaves of sweep); amp is a full **ADSR**.
+- **Bar-locked LFO → cutoff** — synced divisions (1/1 … 1/32, dotted &
+  triplet), 5 shapes, phase locked to the sequencer transport.
+- **16-step pitch sequencer** — tap one of 12 note lanes per step, per-step
+  octave (−1/0/+1), accent and slide rows, glowing slide connectors, 4
+  patterns (A–D) with **chaining**, swing, RAND pattern generator, 60–200
+  BPM.
+- **FX** — post-accent drive, chorus, ping-pong delay, reverb. Deliberately
+  no bus compressor: accents stay live.
+- **Patches** — 3 factory patches (ACID LINE, RUBBER SUB, NEON SQUELCH);
+  saved patches (sound + patterns + chain) persist in `localStorage`.
+- **Play it** — two-octave on-screen keyboard (audition when stopped,
+  overlapping keys = legato slide), computer keys `A W S E D …` with `Z`/`X`
+  octave, `Esc` stops, MIDI in from C2 with last-note priority.
+
 ## Code layout
 
 The **plugins** (C++/JUCE — WT-1 and DR-1) live in [`juce/`](juce/) — see
@@ -193,4 +224,19 @@ src/drum/kits.ts                 factory kits + localStorage user kits
 src/drum/store.ts                Zustand store: params, patterns, chain, transport
 src/drum/components/             pads, panels, step sequencer, FX rack
 src/drum/hooks/                  computer-keyboard + MIDI pad input
+```
+
+The **BL-1 bassline** (TypeScript, fourth vite entry at `bass/index.html`):
+
+```
+src/bass/engine/worklet-bass.js  DSP core (AudioWorklet thread): mono acid voice
+                                 (osc + sub + SVF + envs + accent/slide),
+                                 sample-accurate pitch sequencer, synced LFO
+src/bass/engine/bass-synth.ts    AudioContext, bass worklet + master FX graph
+src/bass/params.ts               canonical parameter table
+src/bass/seq.ts                  pitch pattern data model (note/oct/acc/slide)
+src/bass/patches.ts              factory patches + localStorage user patches
+src/bass/store.ts                Zustand store: params, patterns, chain, transport
+src/bass/components/             osc/filter/env panels, keys, pitch seq, FX rack
+src/bass/hooks/                  computer-keyboard + MIDI note input
 ```

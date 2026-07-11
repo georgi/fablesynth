@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#06070b;}
+  a{color:#4dff9e;} a:hover{color:#b8ffd9;}
+</style>
+</helmet>
+
+<div data-screen-label="FableSynth BL-1" style="position:relative;min-height:100vh;width:100%;overflow-x:auto;background:radial-gradient(1200px 700px at 50% -10%, #11141d 0%, #06070b 60%), #06070b;color:#dfe6f3;font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:12px;-webkit-font-smoothing:antialiased;">
+  <div style="position:absolute;inset:0;z-index:50;pointer-events:none;opacity:0.05;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E&quot;);"></div>
+
+  <main style="max-width:1460px;min-width:1180px;margin:0 auto;padding:14px 18px 22px;position:relative;z-index:1">
+
+    <!-- ============ TOP BAR ============ -->
+    <header style="display:flex;align-items:center;gap:18px;padding:10px 16px;margin-bottom:9px;border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.45)">
+      <div style="font-family:Michroma,sans-serif;font-size:17px;letter-spacing:0.1em;white-space:nowrap;color:#dfe6f3">FABLE<span style="color:#4dff9e">SYNTH</span><span style="margin-left:10px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:#6b768c;letter-spacing:0.3em">BL-1</span></div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:8px;letter-spacing:0.22em;color:#6b768c">PATCH</span>
+        <button style="height:28px;min-width:28px;padding:0 8px;border:1px solid rgba(255,255,255,0.07);border-radius:6px;background:#11141c;color:#dfe6f3;font-family:inherit;font-size:11px;cursor:pointer">◂</button>
+        <div style="display:flex;align-items:center;height:28px;min-width:160px;padding:0 26px 0 12px;border:1px solid rgba(255,255,255,0.07);border-radius:6px;background:#11141c url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6'%3E%3Cpath d='M0 0h8L4 6z' fill='%236b768c'/%3E%3C/svg%3E&quot;) no-repeat right 10px center;color:#4dff9e;font-size:11px;letter-spacing:0.08em;cursor:pointer;white-space:nowrap;overflow:hidden">{{ patchName }}</div>
+        <button style="height:28px;min-width:28px;padding:0 8px;border:1px solid rgba(255,255,255,0.07);border-radius:6px;background:#11141c;color:#dfe6f3;font-family:inherit;font-size:11px;cursor:pointer">▸</button>
+        <button style="height:28px;padding:0 10px;border:1px solid rgba(255,255,255,0.07);border-radius:6px;background:#11141c;color:#dfe6f3;font-family:inherit;font-size:9px;letter-spacing:0.12em;cursor:pointer">SAVE</button>
+      </div>
+      <div style="font-size:8px;letter-spacing:0.2em;color:#6b768c;white-space:nowrap">MONO · LAST-NOTE<br>SLIDES RIDE THE ENVS</div>
+      <div style="display:flex;gap:10px;margin-left:auto">
+        <div style="position:relative;width:168px;height:46px;border:1px solid rgba(255,255,255,0.07);border-radius:8px;background:#07090e;overflow:hidden">
+          <canvas id="bl_scope" style="position:absolute;inset:0;width:100%;height:100%"></canvas>
+          <span style="position:absolute;top:3px;right:7px;font-size:7px;letter-spacing:0.26em;color:#6b768c">SCOPE</span>
+        </div>
+      </div>
+      <div style="font-size:9px;color:#6b768c;letter-spacing:0.18em">
+        <div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="width:7px;height:7px;border-radius:50%;background:#232936;box-shadow:inset 0 0 2px rgba(0,0,0,0.7)"></span>MIDI</div>
+        <div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="color:#4dff9e;min-width:24px;text-align:center">{{ bpm }}</span>BPM</div>
+      </div>
+      <div style="display:flex;gap:2px"><sc-for list="{{ masterKnobs }}" as="k" hint-placeholder-count="2"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="56px,66px"></dc-import></sc-for></div>
+    </header>
+
+    <!-- ============ EDITOR ROW 1: OSC / SUB / FILTER / ENV ============ -->
+    <div style="display:grid;grid-template-columns:1.5fr 0.62fr 1.15fr 1.25fr;gap:9px;margin-bottom:9px">
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#b8ffd9,#22b06a);box-shadow:0 0 10px rgba(77,255,158,0.7);border:1px solid rgba(77,255,158,0.6)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#4dff9e;text-shadow:0 0 12px rgba(77,255,158,0.45)">OSC</h2>
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px">
+            <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">◂</button>
+            <span style="min-width:52px;text-align:center;font-size:10px;letter-spacing:0.1em;color:#4dff9e;background:#0a0d13;border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:3px 6px">PRIME</span>
+            <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">▸</button>
+            <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:10px;cursor:pointer;line-height:1" title="Import / draw">✎</button>
+          </span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 36px;grid-template-rows:104px auto;gap:8px">
+          <canvas id="bl_wt" style="grid-column:1;grid-row:1;width:100%;height:100%;border:1px solid rgba(255,255,255,0.07);border-radius:9px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent 30%),#07090e"></canvas>
+          <div style="grid-column:2;grid-row:1;height:100%;display:flex;flex-direction:column;align-items:center">
+            <div style="position:relative;flex:1;width:9px;border-radius:5px;background:#0a0d13;border:1px solid rgba(255,255,255,0.07)">
+              <div style="position:absolute;bottom:0;left:0;right:0;height:35%;border-radius:0 0 5px 5px;background:linear-gradient(180deg,#4dff9e,rgba(77,255,158,0.2));opacity:0.55"></div>
+              <div style="position:absolute;left:50%;bottom:35%;width:22px;height:9px;transform:translate(-50%,50%);border-radius:3px;background:linear-gradient(180deg,#2b3344,#161b25);border:1px solid rgba(77,255,158,0.55);box-shadow:0 0 8px rgba(77,255,158,0.35)"></div>
+            </div>
+            <div style="font-size:8px;letter-spacing:0.14em;color:#6b768c;margin-top:5px">POS</div>
+          </div>
+          <div style="grid-column:1 / 3;display:flex;justify-content:space-between;align-items:flex-start;padding-top:2px">
+            <sc-for list="{{ oscKnobs }}" as="k" hint-placeholder-count="6"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for>
+          </div>
+        </div>
+      </section>
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:15px;height:15px;border-radius:50%;border:1px solid rgba(255,255,255,0.14);background:radial-gradient(circle at 40% 35%,#2a3140,#12151d)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">SUB</h2>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:8px">
+          <span style="display:inline-flex;align-items:center;gap:6px;justify-content:space-between">
+            <span style="font-size:8px;letter-spacing:0.18em;color:#6b768c">SHAPE</span>
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">◂</button>
+              <span style="min-width:46px;text-align:center;font-size:10px;letter-spacing:0.1em;color:#9fb4d8;background:#0a0d13;border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:3px 6px">SINE</span>
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">▸</button>
+            </span>
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:6px;justify-content:space-between">
+            <span style="font-size:8px;letter-spacing:0.18em;color:#6b768c">OCT</span>
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">◂</button>
+              <span style="min-width:46px;text-align:center;font-size:10px;letter-spacing:0.1em;color:#9fb4d8;background:#0a0d13;border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:3px 6px">−1</span>
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">▸</button>
+            </span>
+          </span>
+        </div>
+        <div style="display:flex;justify-content:center;align-items:flex-end;margin-top:auto"><sc-for list="{{ subKnobs }}" as="k" hint-placeholder-count="1"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="56px,66px"></dc-import></sc-for></div>
+      </section>
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#d8c6ff,#7d5fc0);box-shadow:0 0 10px rgba(177,140,255,0.7);border:1px solid rgba(177,140,255,0.6)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#b18cff;text-shadow:0 0 12px rgba(177,140,255,0.45)">FILTER</h2>
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px">
+            <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">◂</button>
+            <span style="min-width:44px;text-align:center;font-size:10px;letter-spacing:0.1em;color:#b18cff;background:#0a0d13;border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:3px 6px">LP 24</span>
+            <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">▸</button>
+          </span>
+        </div>
+        <canvas id="bl_flt" style="width:100%;height:104px;border:1px solid rgba(255,255,255,0.07);border-radius:9px;background:#07090e;margin-bottom:8px;display:block"></canvas>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start"><sc-for list="{{ filterKnobs }}" as="k" hint-placeholder-count="5"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for></div>
+      </section>
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">ENV</h2>
+          <span style="margin-left:auto;font-size:8px;letter-spacing:0.16em;color:#6b768c">FILTER AD · AMP ADSR</span>
+        </div>
+        <canvas id="bl_env" style="width:100%;height:104px;border:1px solid rgba(255,255,255,0.07);border-radius:9px;background:#07090e;margin-bottom:8px;display:block"></canvas>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start"><sc-for list="{{ envKnobs }}" as="k" hint-placeholder-count="6"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for></div>
+      </section>
+    </div>
+
+    <!-- ============ EDITOR ROW 2: LFO / ACCENT+SLIDE / KEYBOARD ============ -->
+    <div style="display:grid;grid-template-columns:290px 250px 1fr;gap:9px;margin-bottom:9px">
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">LFO</h2>
+          <span style="margin-left:auto;font-size:8px;letter-spacing:0.16em;color:#6b768c">→ CUTOFF · BAR-LOCKED</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:0">
+            <canvas id="bl_lfo" style="width:100%;height:44px;border:1px solid rgba(255,255,255,0.07);border-radius:8px;background:#07090e;display:block"></canvas>
+            <span style="display:inline-flex;align-items:center;gap:5px">
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">◂</button>
+              <span style="flex:1;text-align:center;font-size:10px;letter-spacing:0.1em;color:#4dff9e;background:#0a0d13;border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:3px 6px">1/8 ·</span>
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">▸</button>
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">◂</button>
+              <span style="flex:1;text-align:center;font-size:10px;letter-spacing:0.1em;color:#9fb4d8;background:#0a0d13;border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:3px 6px">SINE</span>
+              <button style="width:18px;height:18px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#11141c;color:#6b768c;font-size:9px;cursor:pointer;line-height:1">▸</button>
+            </span>
+          </div>
+          <sc-for list="{{ lfoKnobs }}" as="k" hint-placeholder-count="1"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="56px,66px"></dc-import></sc-for>
+        </div>
+      </section>
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#b8ffd9,#22b06a);box-shadow:0 0 10px rgba(77,255,158,0.7);border:1px solid rgba(77,255,158,0.6)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#4dff9e;text-shadow:0 0 12px rgba(77,255,158,0.45)">ACCENT · SLIDE</h2>
+        </div>
+        <div style="display:flex;justify-content:space-evenly;align-items:flex-start"><sc-for list="{{ accKnobs }}" as="k" hint-placeholder-count="2"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="56px,66px"></dc-import></sc-for></div>
+        <div style="text-align:center;font-size:7px;letter-spacing:0.18em;color:#6b768c;margin-top:2px">ONE KNOB · LEVEL + ENV + DECAY</div>
+      </section>
+
+      <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">KEYS</h2>
+          <span style="margin-left:auto;font-size:8px;letter-spacing:0.16em;color:#6b768c">AUDITION WHEN STOPPED · LEGATO = SLIDE</span>
+        </div>
+        <div style="position:relative;flex:1;min-height:66px">
+          <div style="position:absolute;inset:0;display:flex;gap:2px">
+            <sc-for list="{{ whiteKeys }}" as="key" hint-placeholder-count="14">
+              <button onClick="{{ key.press }}" style="flex:1;border:1px solid rgba(255,255,255,0.1);border-radius:0 0 4px 4px;background:{{ key.bg }};box-shadow:{{ key.glow }};cursor:pointer;min-width:0;padding:0"></button>
+            </sc-for>
+          </div>
+          <sc-for list="{{ blackKeys }}" as="key" hint-placeholder-count="10">
+            <button onClick="{{ key.press }}" style="position:absolute;top:0;height:58%;width:4.4%;left:{{ key.left }};border:1px solid rgba(0,0,0,0.7);border-radius:0 0 3px 3px;background:{{ key.bg }};box-shadow:{{ key.glow }};cursor:pointer;z-index:2;padding:0"></button>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ PITCH SEQUENCER ============ -->
+    <section style="border:1px solid rgba(77,255,158,0.16);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4),0 0 30px rgba(77,255,158,0.05);padding:10px 14px 12px;min-width:0;margin-bottom:9px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <button onClick="{{ togglePlay }}" style="width:34px;height:28px;border:1px solid rgba(77,255,158,0.55);border-radius:6px;background:#0e3122;color:#4dff9e;font-family:inherit;font-size:11px;cursor:pointer;box-shadow:0 0 10px rgba(77,255,158,0.25)">{{ playIcon }}</button>
+        <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">PITCH SEQ</h2>
+        <div style="display:flex;gap:5px">
+          <sc-for list="{{ patBtns }}" as="p" hint-placeholder-count="4">
+            <button onClick="{{ p.select }}" style="width:26px;height:24px;border:1px solid {{ p.border }};border-radius:5px;background:{{ p.bg }};color:{{ p.color }};font-family:inherit;font-size:9px;letter-spacing:0.08em;cursor:pointer">{{ p.name }}</button>
+          </sc-for>
+        </div>
+        <button style="height:24px;padding:0 10px;border:1px solid rgba(255,255,255,0.07);border-radius:5px;background:#11141c;color:#6b768c;font-family:inherit;font-size:9px;letter-spacing:0.12em;cursor:pointer">CHAIN A→B</button>
+        <button onClick="{{ randomize }}" style="height:24px;padding:0 10px;border:1px solid rgba(255,255,255,0.07);border-radius:5px;background:#11141c;color:#dfe6f3;font-family:inherit;font-size:9px;letter-spacing:0.12em;cursor:pointer">RAND</button>
+        <span style="margin-left:auto;font-size:8px;letter-spacing:0.16em;color:#6b768c">TAP LANE = NOTE · SLIDE TIES INTO STEP FROM PREV</span>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:stretch">
+        <div style="display:flex;flex-direction:column;width:36px;flex:none;font-size:7px;letter-spacing:0.14em;color:#6b768c;text-align:right;padding-right:2px">
+          <div style="height:143px;display:flex;flex-direction:column;justify-content:space-between;padding:2px 0"><span>B</span><span>NOTE</span><span>C</span></div>
+          <div style="height:20px;display:flex;align-items:center;justify-content:flex-end;margin-top:5px">OCT</div>
+          <div style="height:14px;display:flex;align-items:center;justify-content:flex-end;margin-top:4px;color:#ffa14d">ACC</div>
+          <div style="height:14px;display:flex;align-items:center;justify-content:flex-end;margin-top:4px;color:#4dff9e">SLD</div>
+        </div>
+
+        <div style="position:relative;flex:1;min-width:0">
+          <div style="display:flex;gap:5px">
+            <sc-for list="{{ steps }}" as="s" hint-placeholder-count="16">
+              <div style="position:relative;flex:1;min-width:0;display:flex;flex-direction:column">
+                <div style="display:flex;flex-direction:column;gap:1px;height:143px">
+                  <sc-for list="{{ s.cells }}" as="c" hint-placeholder-count="12">
+                    <button onClick="{{ c.click }}" style="flex:1;border:1px solid rgba(255,255,255,0.045);border-radius:2px;background:{{ c.bg }};box-shadow:{{ c.glow }};cursor:pointer;padding:0;min-width:0"></button>
+                  </sc-for>
+                </div>
+                <button onClick="{{ s.cycleOct }}" style="height:20px;margin-top:5px;border:1px solid rgba(255,255,255,0.07);border-radius:4px;background:#0c0f16;color:{{ s.octColor }};font-family:inherit;font-size:9px;letter-spacing:0.06em;cursor:pointer;padding:0">{{ s.octLabel }}</button>
+                <button onClick="{{ s.toggleAcc }}" style="height:14px;margin-top:4px;border:1px solid rgba(255,255,255,0.07);border-radius:3px;background:{{ s.accBg }};box-shadow:{{ s.accGlow }};cursor:pointer;padding:0"></button>
+                <button onClick="{{ s.toggleSlide }}" style="height:14px;margin-top:4px;border:1px solid rgba(255,255,255,0.07);border-radius:3px;background:{{ s.sldBg }};box-shadow:{{ s.sldGlow }};cursor:pointer;padding:0"></button>
+                <span style="text-align:center;font-size:7px;letter-spacing:0.1em;color:#6b768c;margin-top:4px">{{ s.num }}</span>
+                <div style="position:absolute;left:-2px;right:-2px;top:-2px;bottom:12px;border-radius:6px;border:1px solid rgba(77,255,158,0.85);box-shadow:0 0 12px rgba(77,255,158,0.35);pointer-events:none;opacity:{{ s.cur }}"></div>
+              </div>
+            </sc-for>
+          </div>
+          <svg viewBox="0 0 160 143" preserveAspectRatio="none" style="position:absolute;top:0;left:0;width:100%;height:143px;pointer-events:none;overflow:visible">
+            <sc-for list="{{ slideSegs }}" as="seg" hint-placeholder-count="3">
+              <line x1="{{ seg.x1 }}" y1="{{ seg.y1 }}" x2="{{ seg.x2 }}" y2="{{ seg.y2 }}" stroke="#4dff9e" stroke-width="1.4" opacity="0.75" vector-effect="non-scaling-stroke" style="filter:drop-shadow(0 0 3px rgba(77,255,158,0.8))"></line>
+            </sc-for>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FX RACK ============ -->
+    <section style="border:1px solid rgba(255,255,255,0.07);border-radius:12px;background:linear-gradient(180deg,#181c26,#0d1017);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 10px 26px rgba(0,0,0,0.4);padding:8px 12px 10px;min-width:0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div style="border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:8px 8px 4px;background:rgba(0,0,0,0.18);min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#b8ffd9,#22b06a);box-shadow:0 0 10px rgba(77,255,158,0.7);border:1px solid rgba(77,255,158,0.6)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">DRIVE</h2>
+          <span style="margin-left:auto;font-size:8px;letter-spacing:0.14em;color:#6b768c">POST-ACCENT</span>
+        </div>
+        <div style="display:flex;justify-content:space-evenly;align-items:flex-start"><sc-for list="{{ fxDrive }}" as="k" hint-placeholder-count="2"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for></div>
+      </div>
+      <div style="border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:8px 8px 4px;background:rgba(0,0,0,0.18);min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="width:15px;height:15px;border-radius:50%;border:1px solid rgba(255,255,255,0.14);background:radial-gradient(circle at 40% 35%,#2a3140,#12151d)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">CHORUS</h2>
+        </div>
+        <div style="display:flex;justify-content:space-evenly;align-items:flex-start"><sc-for list="{{ fxChorus }}" as="k" hint-placeholder-count="3"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for></div>
+      </div>
+      <div style="border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:8px 8px 4px;background:rgba(0,0,0,0.18);min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="width:15px;height:15px;border-radius:50%;border:1px solid rgba(255,255,255,0.14);background:radial-gradient(circle at 40% 35%,#2a3140,#12151d)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">DELAY</h2>
+          <span style="margin-left:auto;font-size:8px;letter-spacing:0.14em;color:#6b768c">PING-PONG · SYNC</span>
+        </div>
+        <div style="display:flex;justify-content:space-evenly;align-items:flex-start"><sc-for list="{{ fxDelay }}" as="k" hint-placeholder-count="3"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for></div>
+      </div>
+      <div style="border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:8px 8px 4px;background:rgba(0,0,0,0.18);min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#c9d6ee,#6f86b3);box-shadow:0 0 10px rgba(159,180,216,0.7);border:1px solid rgba(159,180,216,0.6)"></span>
+          <h2 style="margin:0;font-family:Michroma,sans-serif;font-size:10px;font-weight:400;letter-spacing:0.22em;color:#dfe6f3">REVERB</h2>
+          <span style="margin-left:auto;font-size:8px;letter-spacing:0.14em;color:#6b768c">NO COMP · ACCENTS LIVE</span>
+        </div>
+        <div style="display:flex;justify-content:space-evenly;align-items:flex-start"><sc-for list="{{ fxReverb }}" as="k" hint-placeholder-count="2"><dc-import name="FableKnob" w="{{ k.w }}" track="{{ k.track }}" arc="{{ k.arc }}" color="{{ k.color }}" glow="{{ k.glow }}" deg="{{ k.deg }}" label="{{ k.label }}" hint-size="44px,54px"></dc-import></sc-for></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1480,&quot;height&quot;:1000},&quot;patchName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;ACID LINE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;bpm&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:138,&quot;min&quot;:60,&quot;max&quot;:200,&quot;tsType&quot;:&quot;number&quot;},&quot;animate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  ACC = { g: '#4dff9e', a: '#ffa14d', f: '#b18cff', n: '#9fb4d8' };
+
+  constructor(p) {
+    super(p);
+    // step: { on, note (0-11), oct (-1/0/1), acc, slide }
+    const S = (on, note, oct, acc, slide) => ({ on: !!on, note: note || 0, oct: oct || 0, acc: !!acc, slide: !!slide });
+    const rest = () => S(0, 0, 0, 0, 0);
+    const A = [
+      S(1, 0, 0, 1, 0), S(1, 0, -1, 0, 0), rest(), S(1, 3, 0, 0, 1),
+      S(1, 0, 0, 0, 0), rest(), S(1, 7, 0, 1, 0), S(1, 6, 0, 0, 1),
+      S(1, 0, 0, 0, 0), rest(), S(1, 10, -1, 0, 0), S(1, 0, 0, 0, 1),
+      rest(), S(1, 3, 1, 1, 0), S(1, 0, 0, 0, 1), rest(),
+    ];
+    const B = [
+      S(1, 0, 0, 1, 0), rest(), S(1, 0, 0, 0, 0), S(1, 5, 0, 0, 1),
+      rest(), S(1, 0, -1, 0, 0), S(1, 7, 0, 0, 1), rest(),
+      S(1, 0, 0, 1, 0), S(1, 3, 0, 0, 0), rest(), S(1, 10, -1, 0, 1),
+      S(1, 0, 0, 0, 0), rest(), S(1, 12 % 12, 1, 1, 1), rest(),
+    ];
+    const empty = () => Array.from({ length: 16 }, rest);
+    this.state = { pats: { A, B, C: empty(), D: empty() }, cur: 'A', step: -1, playing: true, heldKey: -1 };
+    this.hits = [];
+  }
+
+  get model() {
+    if (this._m) return this._m;
+    const D = {};
+    const add = (id, min, max, curve, def, label) => { D[id] = { min, max, curve, def, label }; };
+    add('osc.tune', -24, 24, 'int', -12, 'TUNE'); add('osc.fine', -100, 100, 'int', 0, 'FINE');
+    add('osc.unison', 1, 7, 'int', 1, 'UNI'); add('osc.detune', 0, 1, 'lin', 0.2, 'DET');
+    add('osc.spread', 0, 1, 'lin', 0, 'SPRD'); add('osc.level', 0, 1, 'lin', 0.8, 'LVL');
+    add('sub.level', 0, 1, 'lin', 0.55, 'LVL');
+    add('flt.cut', 20, 20000, 'log', 340, 'CUT'); add('flt.res', 0, 1, 'lin', 0.62, 'RES');
+    add('flt.drive', 0, 1, 'lin', 0.45, 'DRIVE'); add('flt.env', -1, 1, 'lin', 0.7, 'ENV');
+    add('flt.track', 0, 1, 'lin', 0.3, 'TRACK');
+    add('fenv.att', 0.0005, 0.5, 'log', 0.001, 'F·ATT'); add('fenv.dec', 0.005, 4, 'log', 0.18, 'F·DEC');
+    add('aenv.att', 0.0005, 0.5, 'log', 0.001, 'ATT'); add('aenv.dec', 0.005, 4, 'log', 0.3, 'DEC');
+    add('aenv.sus', 0, 1, 'lin', 0.5, 'SUS'); add('aenv.rel', 0.005, 2, 'log', 0.08, 'REL');
+    add('acc.amt', 0, 1, 'lin', 0.7, 'ACC AMT'); add('slide.time', 0.01, 0.5, 'log', 0.06, 'SLD TIME');
+    add('lfo.depth', 0, 1, 'lin', 0.15, 'DEPTH');
+    add('fx.drive.amt', 0, 1, 'lin', 0.35, 'AMT'); add('fx.drive.mix', 0, 1, 'lin', 1, 'MIX');
+    add('fx.chorus.rate', 0.05, 8, 'log', 0.6, 'RATE'); add('fx.chorus.depth', 0, 1, 'lin', 0.3, 'DEPTH'); add('fx.chorus.mix', 0, 1, 'lin', 0.12, 'MIX');
+    add('fx.delay.time', 0.02, 1.5, 'log', 0.375, 'TIME'); add('fx.delay.fb', 0, 0.92, 'lin', 0.42, 'FDBK'); add('fx.delay.mix', 0, 1, 'lin', 0.18, 'MIX');
+    add('fx.reverb.size', 0, 1, 'lin', 0.3, 'SIZE'); add('fx.reverb.mix', 0, 1, 'lin', 0.1, 'MIX');
+    add('master.swing', 0, 1, 'lin', 0.3, 'SWING'); add('master.volume', 0, 1, 'lin', 0.78, 'VOL');
+    const PV = {};
+    for (const id in D) PV[id] = D[id].def;
+    this.TRACK = this.arcPath(40, 40, 33, -135, 135);
+    this._m = { D, PV };
+    return this._m;
+  }
+
+  arcPath(cx, cy, r, from, to) {
+    if (Math.abs(to - from) < 0.01) to = from + 0.01;
+    const p = (deg) => { const a = ((deg - 90) * Math.PI) / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+    const [x0, y0] = p(from), [x1, y1] = p(to);
+    const large = Math.abs(to - from) > 180 ? 1 : 0;
+    const sweep = to > from ? 1 : 0;
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} ${sweep} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+  v2n(d, v) {
+    if (d.curve === 'log') return Math.log(v / d.min) / Math.log(d.max / d.min);
+    return (v - d.min) / (d.max - d.min);
+  }
+  K(id, size, accent, labelOverride) {
+    const m = this.model; const d = m.D[id]; const v = m.PV[id];
+    const norm = Math.min(1, Math.max(0, this.v2n(d, v)));
+    const bip = d.min < 0;
+    const A0 = -135, A1 = 135;
+    const deg = A0 + (A1 - A0) * norm;
+    const arc = bip ? this.arcPath(40, 40, 33, 0, deg) : this.arcPath(40, 40, 33, A0, deg);
+    const w = { lg: 74, md: 56, sm: 44, xs: 34 }[size] || 44;
+    const col = this.ACC[accent] || '#9fb4d8';
+    return { label: labelOverride != null ? labelOverride : (d.label || ''), w, color: col, glow: col + '99', track: m.TRACK || this.TRACK, arc, deg };
+  }
+
+  bpm() { return this.props.bpm ?? 138; }
+  pat() { return this.state.pats[this.state.cur]; }
+  setStep(i, patch) {
+    const pats = { ...this.state.pats };
+    const arr = pats[this.state.cur].slice();
+    arr[i] = { ...arr[i], ...patch };
+    pats[this.state.cur] = arr;
+    this.setState({ pats });
+  }
+
+  renderVals() {
+    if (!this.TRACK) this.TRACK = this.arcPath(40, 40, 33, -135, 135);
+    const st = this.state;
+    const pat = this.pat();
+
+    // ---- sequencer columns ----
+    const steps = [];
+    for (let i = 0; i < 16; i++) {
+      const s = pat[i];
+      const cur = st.playing && i === st.step;
+      const cells = [];
+      for (let r = 0; r < 12; r++) {
+        const note = 11 - r; // top row = B
+        const active = s.on && s.note === note;
+        let bg = note === 0 ? '#0c1016' : '#0a0d13';
+        let glow = 'inset 0 1px 2px rgba(0,0,0,0.5)';
+        if (active) {
+          bg = s.acc ? 'linear-gradient(180deg,#a4ffd0,#2fbf76)' : 'linear-gradient(180deg,#3ddc8c,#1a8f57)';
+          glow = s.acc ? '0 0 12px rgba(77,255,158,0.75)' : '0 0 8px rgba(77,255,158,0.4)';
+        }
+        cells.push({
+          bg, glow,
+          click: () => {
+            const me = this.pat()[i];
+            if (me.on && me.note === note) this.setStep(i, { on: false, slide: false, acc: false });
+            else this.setStep(i, { on: true, note });
+          },
+        });
+      }
+      steps.push({
+        cells,
+        num: i + 1,
+        cur: cur ? 1 : 0,
+        octLabel: s.oct === 0 ? '0' : (s.oct > 0 ? '+1' : '−1'),
+        octColor: s.oct === 0 ? '#6b768c' : '#9fb4d8',
+        cycleOct: () => { const me = this.pat()[i]; this.setStep(i, { oct: me.oct >= 1 ? -1 : me.oct + 1 }); },
+        accBg: s.on && s.acc ? 'linear-gradient(180deg,#ffc98d,#cc7a2e)' : '#0a0d13',
+        accGlow: s.on && s.acc ? '0 0 8px rgba(255,161,77,0.6)' : 'inset 0 1px 2px rgba(0,0,0,0.5)',
+        toggleAcc: () => { const me = this.pat()[i]; if (me.on) this.setStep(i, { acc: !me.acc }); },
+        sldBg: s.on && s.slide ? 'linear-gradient(180deg,#7dffb8,#22a565)' : '#0a0d13',
+        sldGlow: s.on && s.slide ? '0 0 8px rgba(77,255,158,0.6)' : 'inset 0 1px 2px rgba(0,0,0,0.5)',
+        toggleSlide: () => { const me = this.pat()[i]; if (me.on) this.setStep(i, { slide: !me.slide }); },
+      });
+    }
+
+    // ---- slide connector lines (viewBox 0 0 160 143) ----
+    const slideSegs = [];
+    const yOf = (s) => ((11 - s.note) + 0.5) * (143 / 12) - s.oct * 4; // oct nudges line for contour read
+    for (let i = 1; i < 16; i++) {
+      const a = pat[i - 1], b = pat[i];
+      if (b.on && b.slide && a.on) {
+        slideSegs.push({
+          x1: ((i - 1 + 0.5) * 10).toFixed(1), y1: yOf(a).toFixed(1),
+          x2: ((i + 0.5) * 10).toFixed(1), y2: yOf(b).toFixed(1),
+        });
+      }
+    }
+
+    // ---- pattern buttons ----
+    const patBtns = ['A', 'B', 'C', 'D'].map((name) => {
+      const sel = st.cur === name;
+      return {
+        name,
+        select: () => this.setState({ cur: name }),
+        border: sel ? 'rgba(77,255,158,0.55)' : 'rgba(255,255,255,0.07)',
+        bg: sel ? '#0e3122' : '#11141c',
+        color: sel ? '#4dff9e' : '#6b768c',
+      };
+    });
+
+    // ---- keyboard ----
+    const curStep = st.playing && st.step >= 0 ? pat[st.step] : null;
+    let curSemi = -1;
+    if (curStep && curStep.on) { curSemi = curStep.note + 12 * (curStep.oct + 1); if (curSemi > 23) curSemi -= 12; }
+    if (!st.playing && st.heldKey >= 0) curSemi = st.heldKey;
+    const isBlackPC = { 1: 1, 3: 1, 6: 1, 8: 1, 10: 1 };
+    const whiteKeys = [], blackKeys = [];
+    const blackOff = { 1: 0.68, 3: 1.72, 6: 3.68, 8: 4.7, 10: 5.72 };
+    for (let semi = 0; semi < 24; semi++) {
+      const pc = semi % 12, oct = Math.floor(semi / 12);
+      const hot = semi === curSemi;
+      const press = () => { this.setState({ heldKey: semi }); setTimeout(() => this.setState({ heldKey: -1 }), 220); };
+      if (isBlackPC[pc]) {
+        blackKeys.push({
+          left: ((oct * 7 + blackOff[pc]) * (100 / 14)).toFixed(2) + '%',
+          bg: hot ? 'linear-gradient(180deg,#2fbf76,#14522f)' : 'linear-gradient(180deg,#222835,#0c0f15)',
+          glow: hot ? '0 0 10px rgba(77,255,158,0.7)' : '0 2px 4px rgba(0,0,0,0.6)',
+          press,
+        });
+      } else {
+        whiteKeys.push({
+          bg: hot ? 'linear-gradient(180deg,#7dffb8,#2fbf76)' : 'linear-gradient(180deg,#d7dee9,#a9b3c4)',
+          glow: hot ? '0 0 12px rgba(77,255,158,0.7)' : 'inset 0 -6px 10px rgba(0,0,0,0.18)',
+          press,
+        });
+      }
+    }
+
+    return {
+      patchName: this.props.patchName ?? 'ACID LINE',
+      bpm: this.bpm(),
+      playIcon: st.playing ? '■' : '▶',
+      togglePlay: () => { this.t0 = performance.now(); this.setState({ playing: !this.state.playing, step: -1 }); },
+      randomize: () => this.randPattern(),
+      steps, slideSegs, patBtns, whiteKeys, blackKeys,
+      masterKnobs: [this.K('master.swing', 'md', 'n'), this.K('master.volume', 'md', 'n')],
+      oscKnobs: ['tune', 'fine', 'unison', 'detune', 'spread', 'level'].map((f, ix) => this.K('osc.' + f, ix === 5 ? 'md' : 'sm', 'g')),
+      subKnobs: [this.K('sub.level', 'md', 'n')],
+      filterKnobs: [this.K('flt.cut', 'md', 'f'), this.K('flt.res', 'sm', 'f'), this.K('flt.drive', 'sm', 'f'), this.K('flt.env', 'sm', 'f'), this.K('flt.track', 'sm', 'f')],
+      envKnobs: [this.K('fenv.att', 'sm', 'g'), this.K('fenv.dec', 'sm', 'g'), this.K('aenv.att', 'sm', 'n'), this.K('aenv.dec', 'sm', 'n'), this.K('aenv.sus', 'sm', 'n'), this.K('aenv.rel', 'sm', 'n')],
+      lfoKnobs: [this.K('lfo.depth', 'md', 'g')],
+      accKnobs: [this.K('acc.amt', 'lg', 'g'), this.K('slide.time', 'md', 'n')],
+      fxDrive: [this.K('fx.drive.amt', 'sm', 'g'), this.K('fx.drive.mix', 'sm', 'g')],
+      fxChorus: [this.K('fx.chorus.rate', 'sm', 'n'), this.K('fx.chorus.depth', 'sm', 'n'), this.K('fx.chorus.mix', 'sm', 'n')],
+      fxDelay: [this.K('fx.delay.time', 'sm', 'n'), this.K('fx.delay.fb', 'sm', 'n'), this.K('fx.delay.mix', 'sm', 'n')],
+      fxReverb: [this.K('fx.reverb.size', 'sm', 'n'), this.K('fx.reverb.mix', 'sm', 'n')],
+    };
+  }
+
+  randPattern() {
+    const pool = [0, 0, 0, 3, 5, 7, 10];
+    const arr = [];
+    for (let i = 0; i < 16; i++) {
+      const on = Math.random() < 0.6;
+      arr.push({
+        on,
+        note: pool[(Math.random() * pool.length) | 0],
+        oct: Math.random() < 0.2 ? (Math.random() < 0.5 ? -1 : 1) : 0,
+        acc: on && Math.random() < 0.25,
+        slide: on && i > 0 && Math.random() < 0.22,
+      });
+    }
+    const pats = { ...this.state.pats };
+    pats[this.state.cur] = arr;
+    this.setState({ pats });
+  }
+
+  // ---------- canvas ----------
+  cv(c) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const r = c.getBoundingClientRect();
+    const w = Math.max(10, r.width), h = Math.max(10, r.height);
+    if (c.width !== ((w * dpr) | 0) || c.height !== ((h * dpr) | 0)) { c.width = (w * dpr) | 0; c.height = (h * dpr) | 0; }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+  byId(id) { return document.getElementById(id); }
+
+  genTerrain() {
+    const F = 16, N = 128, viz = new Float32Array(F * N);
+    for (let f = 0; f < F; f++) {
+      const t = f / (F - 1); const row = new Float32Array(N); let peak = 1e-9;
+      for (let i = 0; i < N; i++) {
+        const x = i / (N - 1); let s = 0;
+        // PRIME: saw-ish harmonic stack opening up with morph, soft-clipped
+        for (let k = 1; k <= 16; k++) {
+          const roll = 1 / k * (k === 1 ? 1 : Math.exp(-Math.pow(k - 1, 1.1) * (1 - t) * 0.45));
+          s += roll * Math.sin(2 * Math.PI * k * x);
+        }
+        s = Math.tanh(s * (0.9 + t * 1.4));
+        row[i] = s; peak = Math.max(peak, Math.abs(s));
+      }
+      for (let i = 0; i < N; i++) viz[f * N + i] = (row[i] / peak) * 0.92;
+    }
+    return { frames: F, N, viz };
+  }
+
+  drawTerrain(c, tbl, show, accent) {
+    if (!c) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    const { frames, N, viz } = tbl;
+    const depthX = w * 0.22, depthY = h * 0.42, waveW = w * 0.68, waveAmp = h * 0.17, x0 = w * 0.06, y0 = h * 0.78;
+    const posF = show * (frames - 1);
+    for (let f = frames - 1; f >= 0; f--) {
+      const d = f / (frames - 1); const ox = x0 + d * depthX; const oy = y0 - d * depthY;
+      const near = Math.max(0, 1 - Math.abs(f - posF));
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const x = ox + (i / (N - 1)) * waveW; const y = oy - viz[f * N + i] * waveAmp;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      if (near > 0.02) {
+        ctx.strokeStyle = accent; ctx.globalAlpha = 0.25 + near * 0.75; ctx.lineWidth = 1 + near * 1.4;
+        ctx.shadowColor = accent; ctx.shadowBlur = near * 14;
+      } else {
+        ctx.strokeStyle = '#8893a8'; ctx.globalAlpha = 0.16 + d * 0.1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  lfoPhase(t) {
+    // 1/8 dotted at current bpm
+    const period = (60000 / this.bpm()) * 0.75;
+    return ((t % period) / period) * Math.PI * 2;
+  }
+
+  drawFilter(t) {
+    const c = this.byId('bl_flt'); if (!c) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    const pad = 6, fmin = 20, fmax = 20000;
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+    [100, 1000, 10000].forEach((f) => {
+      const x = pad + (Math.log(f / fmin) / Math.log(fmax / fmin)) * (w - pad * 2);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    });
+    const wob = this.state.playing ? Math.sin(this.lfoPhase(t)) : 0;
+    // filter env sweep from recent (non-slid) hits
+    let env = 0;
+    const now = performance.now();
+    for (const hit of this.hits) {
+      const dt = (now - hit.t) / 1000;
+      const dec = hit.acc ? 0.11 : 0.18;
+      if (dt < 1) env = Math.max(env, (hit.acc ? 1.4 : 1) * Math.exp(-dt / dec));
+    }
+    const cutoff = 340 * Math.pow(2, wob * 0.7 + env * 2.4), res = 0.62;
+    const mag = (f) => { const q = 0.7 + res * 9; const wn = f / cutoff; const lp = 1 / Math.sqrt(Math.pow(1 - wn * wn, 2) + Math.pow(wn / q, 2)); return Math.pow(lp, 2); }; // ~24 dB slope
+    const toY = (m) => { const db = Math.max(-30, Math.min(24, 20 * Math.log10(Math.max(1e-6, m)))); return h * 0.45 - (db / 30) * h * 0.42; };
+    const plot = (stroke, width, glow) => {
+      ctx.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const f = fmin * Math.pow(fmax / fmin, i / 120); const x = pad + (i / 120) * (w - pad * 2); const y = toY(mag(f));
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.shadowColor = '#b18cff'; ctx.shadowBlur = glow; ctx.stroke(); ctx.shadowBlur = 0;
+    };
+    plot('rgba(177,140,255,0.28)', 1, 0);
+    plot('#b18cff', 1.8, 7);
+    ctx.fillStyle = '#6b768c'; ctx.font = '7px "IBM Plex Mono"';
+    ctx.fillText('LFO + ENV → CUT', pad + 2, 10);
+  }
+
+  drawEnv() {
+    const c = this.byId('bl_env'); if (!c) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    const pad = 6, W = w - 12, H = h - 14;
+    const X = (t) => pad + t * W, Y = (v) => pad + (1 - v) * H;
+    // filter env: AD, snappy
+    ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(0.015), Y(1));
+    for (let i = 0; i <= 80; i++) { const p = i / 80; ctx.lineTo(X(0.015 + p * 0.5), Y(Math.exp(-p * 5))); }
+    ctx.strokeStyle = '#4dff9e'; ctx.lineWidth = 1.6; ctx.shadowColor = '#4dff9e'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+    // accent-boosted ghost
+    ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(0.015), Y(1));
+    for (let i = 0; i <= 80; i++) { const p = i / 80; ctx.lineTo(X(0.015 + p * 0.34), Y(Math.exp(-p * 5))); }
+    ctx.strokeStyle = 'rgba(255,161,77,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+    // amp env: ADSR
+    ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(0.02), Y(1));
+    ctx.quadraticCurveTo(X(0.18), Y(0.55), X(0.42), Y(0.5));
+    ctx.lineTo(X(0.78), Y(0.5));
+    ctx.quadraticCurveTo(X(0.86), Y(0.08), X(1), Y(0));
+    ctx.strokeStyle = '#e8edf7'; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#6b768c'; ctx.font = '7px "IBM Plex Mono"';
+    ctx.fillStyle = '#4dff9e'; ctx.fillText('FILTER', pad + 2, 10);
+    ctx.fillStyle = 'rgba(255,161,77,0.8)'; ctx.fillText('ACCENT', pad + 40, 10);
+    ctx.fillStyle = '#9fb4d8'; ctx.fillText('AMP', pad + 84, 10);
+  }
+
+  drawLfo(c, t) {
+    if (!c) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    const ph0 = this.state.playing ? this.lfoPhase(t) : 0;
+    ctx.beginPath();
+    for (let i = 0; i <= 100; i++) {
+      const p = i / 100;
+      const y = h / 2 - Math.sin(p * Math.PI * 4 - ph0) * h * 0.34;
+      const x = p * w;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#4dff9e'; ctx.lineWidth = 1.3; ctx.globalAlpha = 0.9;
+    ctx.shadowColor = '#4dff9e'; ctx.shadowBlur = 5; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+
+  drawScope(c, t) {
+    if (!c) return;
+    const { ctx, w, h } = this.cv(c); ctx.clearRect(0, 0, w, h);
+    const now = performance.now();
+    let amp = this.state.playing ? 0.18 : 0.05;
+    for (const hit of this.hits) {
+      const dt = (now - hit.t) / 1000;
+      if (dt < 0.5) amp += (hit.acc ? 1 : 0.55) * Math.exp(-dt * 8);
+    }
+    amp = Math.min(1, amp);
+    const N = 260; ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const x = (i / (N - 1)) * w; const ph = (i / N) * Math.PI * 2 * 2 + t * 0.006;
+      const v = Math.sin(ph) * 0.55 + 0.3 * Math.sin(ph * 2 + 0.8) + 0.12 * Math.sin(ph * 7.3);
+      const y = h / 2 - v * h * 0.3 * amp;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#4dff9e'; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  posEnv(base) {
+    const now = performance.now();
+    let e = 0;
+    for (const hit of this.hits) {
+      const dt = (now - hit.t) / 1000;
+      if (dt < 0.6) e = Math.max(e, (hit.acc ? 0.6 : 0.4) * Math.exp(-dt * 9));
+    }
+    return Math.min(1, base + e);
+  }
+
+  drawAnim(t) {
+    this.drawTerrain(this.byId('bl_wt'), this.tbl, this.posEnv(0.3), '#4dff9e');
+    this.drawScope(this.byId('bl_scope'), t);
+    this.drawLfo(this.byId('bl_lfo'), t);
+    this.drawFilter(t);
+  }
+
+  tick() {
+    if (!this.state.playing || this.props.animate === false) return;
+    const dur = 60000 / this.bpm() / 4;
+    const s = Math.floor((performance.now() - this.t0) / dur) % 16;
+    if (s !== this.state.step) {
+      const st = this.pat()[s];
+      if (st.on && !st.slide) this.hits.push({ t: performance.now(), acc: st.acc });
+      if (this.hits.length > 8) this.hits.splice(0, this.hits.length - 8);
+      this.setState({ step: s });
+    }
+  }
+
+  componentDidMount() {
+    this.tbl = this.genTerrain();
+    this.t0 = performance.now();
+    const render = () => { this.drawEnv(); this.drawAnim(performance.now() - this.t0); };
+    setTimeout(render, 0);
+    setTimeout(render, 120);
+    this._rs = render;
+    window.addEventListener('resize', this._rs);
+    if (this.props.animate !== false) {
+      this._iv = setInterval(() => { this.tick(); this.drawAnim(performance.now() - this.t0); }, 33);
+    }
+  }
+  componentWillUnmount() {
+    if (this._iv) clearInterval(this._iv);
+    if (this._rs) window.removeEventListener('resize', this._rs);
+  }
+}
+</script>
+</body>
+</html>
