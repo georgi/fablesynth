@@ -1,8 +1,8 @@
 name: Release
 
-# Build both FableSynth plugins — WT-1 (FableSynth) and DR-1 (FableDrum) —
-# (VST3 + Standalone on every OS, AU on macOS) for macOS, Windows and Linux
-# and attach the zips to a GitHub release.
+# Build the FableSynth plugins — WT-1 (FableSynth), DR-1 (FableDrum) and
+# BL-1 (FableBass) — (VST3 + Standalone on every OS, AU on macOS) for macOS,
+# Windows and Linux and attach the zips to a GitHub release.
 #
 # Push a tag like `v1.0.0` to cut a release, or run the workflow manually
 # (workflow_dispatch) to produce downloadable build artifacts without a release.
@@ -52,7 +52,7 @@ jobs:
 
       - name: Build plugin
         working-directory: juce
-        run: cmake --build build --config Release --target FableSynth_All FableDrum_All --parallel
+        run: cmake --build build --config Release --target FableSynth_All FableDrum_All FableBass_All --parallel
 
       # ---- Package (one zip per platform: VST3 + Standalone, plus AU on macOS) ----
 
@@ -78,6 +78,17 @@ jobs:
           ditto "Standalone/FableSynth DR-1.app" "$stage/FableSynth DR-1.app"
           ditto -c -k --keepParent "$stage" "$GITHUB_WORKSPACE/FableSynth-DR1-macOS.zip"
 
+      - name: Package BL-1 (macOS)
+        if: runner.os == 'macOS'
+        working-directory: juce/build/FableBass_artefacts/Release
+        run: |
+          stage="FableSynth-BL1-macOS"
+          mkdir -p "$stage"
+          ditto "VST3/FableSynth BL-1.vst3"      "$stage/FableSynth BL-1.vst3"
+          ditto "AU/FableSynth BL-1.component"   "$stage/FableSynth BL-1.component"
+          ditto "Standalone/FableSynth BL-1.app" "$stage/FableSynth BL-1.app"
+          ditto -c -k --keepParent "$stage" "$GITHUB_WORKSPACE/FableSynth-BL1-macOS.zip"
+
       - name: Package (Linux)
         if: runner.os == 'Linux'
         working-directory: juce/build/FableSynth_artefacts/Release
@@ -97,6 +108,16 @@ jobs:
           cp -R "VST3/FableSynth DR-1.vst3" "$stage/"
           cp "Standalone/FableSynth DR-1"   "$stage/"
           zip -r "$GITHUB_WORKSPACE/FableSynth-DR1-Linux.zip" "$stage"
+
+      - name: Package BL-1 (Linux)
+        if: runner.os == 'Linux'
+        working-directory: juce/build/FableBass_artefacts/Release
+        run: |
+          stage="FableSynth-BL1-Linux"
+          mkdir -p "$stage"
+          cp -R "VST3/FableSynth BL-1.vst3" "$stage/"
+          cp "Standalone/FableSynth BL-1"   "$stage/"
+          zip -r "$GITHUB_WORKSPACE/FableSynth-BL1-Linux.zip" "$stage"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -119,6 +140,17 @@ jobs:
           Copy-Item -Recurse "VST3/FableSynth DR-1.vst3" $stage/
           Copy-Item "Standalone/FableSynth DR-1.exe"     $stage/
           Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-DR1-Windows.zip" -Force
+
+      - name: Package BL-1 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: juce/build/FableBass_artefacts/Release
+        run: |
+          $stage = "FableSynth-BL1-Windows"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse "VST3/FableSynth BL-1.vst3" $stage/
+          Copy-Item "Standalone/FableSynth BL-1.exe"     $stage/
+          Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-BL1-Windows.zip" -Force
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -147,9 +179,10 @@ jobs:
           body: |
             ## FableSynth — ${{ github.ref_name }}
 
-            Two plugins (VST3 · AU · Standalone):
+            Three plugins (VST3 · AU · Standalone):
             - **WT-1** — wavetable synthesizer (`FableSynth-<platform>.zip`)
             - **DR-1** — 16-pad wavetable drum machine with 5-bus multi-out (`FableSynth-DR1-<platform>.zip`)
+            - **BL-1** — acid bassline synth with 16-step pitch sequencer (`FableSynth-BL1-<platform>.zip`)
 
             **Download the zip(s) for your platform below, then install:**
 

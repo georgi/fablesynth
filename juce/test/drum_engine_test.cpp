@@ -145,8 +145,12 @@ static std::vector<float> renderMain(DrumEngine& e, int n) {
 
 int main() {
     using namespace fable;
-    // Silence unused-helper warnings until later tasks use them.
-    (void)finite; (void)rms; (void)peak;
+    // Silence unused-helper warnings until later tasks use them. Explicit
+    // function-pointer casts: newer glibc exposes a global ::finite, which
+    // makes a bare `(void)finite` ambiguous.
+    (void)static_cast<bool (*)(const std::vector<float>&)>(&finite);
+    (void)static_cast<double (*)(const std::vector<float>&, int)>(&rms);
+    (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
     check(DPAD_NFIELDS == 48, "48 per-pad fields");
