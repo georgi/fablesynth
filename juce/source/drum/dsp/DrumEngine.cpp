@@ -10,10 +10,15 @@
 
 namespace fable {
 
+// Keep the DSP portable across compilers: MSVC does not provide the
+// non-standard M_PI/M_LN2 macros unless an opt-in compatibility define is set.
+constexpr double kPi = 3.141592653589793238462643383279502884;
+constexpr double kLn2 = 0.693147180559945309417232121458176568;
+
 // js:23-26 — log-cosh for the ADAA drive antiderivative
 static inline double lcosh(double z) {
     double a = std::fabs(z);
-    return a + std::log1p(std::exp(-2.0 * a)) - M_LN2;
+    return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
 static inline double clampd(double v, double lo, double hi) {
@@ -267,7 +272,7 @@ bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
         double ratio = std::pow(2.0, cents / 1200.0);
         o.incs[u] = cps * ratio * table->size;
         double pan = clampd(sprd * spr, -1.0, 1.0);
-        double a = ((pan + 1) * M_PI) / 4;
+        double a = ((pan + 1) * kPi) / 4;
         o.gl[u] = (float)std::cos(a);
         o.gr[u] = (float)std::sin(a);
     }
@@ -341,7 +346,7 @@ void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes
     double res = clampd(p_[dpid(padI, DP_FLT_RES)] + mRes, 0.0, 0.999);
 
     fs.twoPole = ftype == 1;
-    double g = std::tan((M_PI * cut) / sr_);
+    double g = std::tan((kPi * cut) / sr_);
     double k = 2 - 1.93 * res;
     fs.k1 = k;
     fs.a1 = 1 / (1 + g * (g + k));
@@ -483,7 +488,7 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     double level = clampd(p_[dpid(padI, DP_LVL)] + m.level, 0.0, 1.0);
     double levelGain = level * level;
     double pan = clampd(p_[dpid(padI, DP_PAN)], -1.0, 1.0);
-    double panA = ((pan + 1) * M_PI) / 4;
+    double panA = ((pan + 1) * kPi) / 4;
     double panL = std::cos(panA), panR = std::sin(panA);
     for (int i = 0; i < n; i++) {
         const double xl = srcL[i], xr = srcR[i];
