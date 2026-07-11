@@ -297,7 +297,9 @@ git add src/drum/engine/drum-synth.ts src/bass/engine/bass-synth.ts src/engine/s
 git commit -m "feat(seq): updateClip on engines and the SeqDevice adapter"
 ```
 
----### Task 4: Seq store — clip editing actions
+---
+
+### Task 4: Seq store — clip editing actions
 
 **Files:**
 - Modify: `src/seq/store.ts`
@@ -800,7 +802,9 @@ git add src/drum/store.ts src/drum/store.test.ts src/bass/store.ts src/store.ts
 git commit -m "feat(seq): hosted mode in device stores — attachHosted + transport/persistence gates"
 ```
 
----### Task 8: Host bridge — codec helpers + the `DeviceView` wiring
+---
+
+### Task 8: Host bridge — codec helpers + the `DeviceView` wiring
 
 **Files:**
 - Create: `src/seq/hostBridge.ts`
