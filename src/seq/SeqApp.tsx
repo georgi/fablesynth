@@ -2,26 +2,27 @@ import { useEffect } from 'react';
 import { FooterRow } from './components/FooterRow';
 import { Header } from './components/Header';
 import { SceneRow } from './components/SceneRow';
+import { SqPowerOverlay } from './components/SqPowerOverlay';
 import { TrackHeads } from './components/TrackHeads';
-import { BEAT_MS, SCENES } from './model';
 import { useSeqStore } from './store';
 
 export function SeqApp() {
+  const session = useSeqStore((s) => s.session);
+  const powered = useSeqStore((s) => s.powered);
   const quant = useSeqStore((s) => s.quant);
 
-  // The beat clock. It keeps ticking while paused (onBeat no-ops), so
-  // resuming play continues on the grid instead of drifting.
+  // UI clock: beat dots / bar counter derive from the shared context-frame
+  // timebase (ctx.suspend freezes it, so pause is free).
   useEffect(() => {
-    let t: ReturnType<typeof setTimeout>;
+    if (!powered) return;
+    let raf = 0;
     const loop = () => {
-      t = setTimeout(() => {
-        useSeqStore.getState().onBeat();
-        loop();
-      }, BEAT_MS);
+      raf = requestAnimationFrame(loop);
+      useSeqStore.getState().tick();
     };
-    loop();
-    return () => clearTimeout(t);
-  }, []);
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [powered]);
 
   // exposed for debugging / automated verification
   useEffect(() => {
@@ -29,16 +30,19 @@ export function SeqApp() {
   }, []);
 
   return (
-    <main id="sq-rack">
-      <Header />
-      <TrackHeads />
-      {SCENES.map((_, s) => (
-        <SceneRow key={s} s={s} />
-      ))}
-      <FooterRow />
-      <div className="sq-hint">
-        TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO {quant} · SCENES LAYER — LATEST CLIP WINS EACH TRACK
-      </div>
-    </main>
+    <>
+      <SqPowerOverlay />
+      <main id="sq-rack">
+        <Header />
+        <TrackHeads />
+        {session.scenes.map((_, s) => (
+          <SceneRow key={s} s={s} />
+        ))}
+        <FooterRow />
+        <div className="sq-hint">
+          TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO {quant} · SCENES LAYER — LATEST CLIP WINS EACH TRACK
+        </div>
+      </main>
+    </>
   );
 }

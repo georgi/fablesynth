@@ -1,25 +1,24 @@
 // One scene row: the scene card (launch / mute / stop, per-track dots and a
-// live status line) followed by one clip cell per track.
+// live status line) followed by one clip cell per track. Cells preview the
+// clip's real pattern bytes; live cells sweep at the clip's actual length.
 
 import type * as React from 'react';
-import {
-  BAR_SEC, isTrackAudible, pad2, SCENES, STOP, stepsFor, TRACKS,
-} from '../model';
-import { useSeqStore } from '../store';
+import { isTrackAudible, pad2, previewSteps } from '../model';
+import { barSeconds } from '../protocol';
+import { clipPattern, useSeqStore } from '../store';
 
 function ClipCell({ s, t }: { s: number; t: number }) {
-  const tr = TRACKS[t];
-  const clip = SCENES[s].clips[t];
+  const session = useSeqStore((st) => st.session);
   const playing = useSeqStore((st) => st.playing);
   const live = useSeqStore((st) => st.owner[t] === s);
-  const queued = useSeqStore(
-    (st) => st.queue[t] === s || (st.queue[t] === STOP && st.owner[t] === s),
-  );
+  const queued = useSeqStore((st) => st.queue[t] === s || (st.queue[t] === -1 && st.owner[t] === s));
   const muted = useSeqStore(
     (st) => st.owner[t] === s && !isTrackAudible(t, st.owner, st.trackMute, st.sceneMute, st.solo),
   );
-  const { setClip, stopTrack } = useSeqStore.getState();
+  const { launch, stopTrack } = useSeqStore.getState();
 
+  const tr = session.tracks[t];
+  const clip = session.scenes[s]?.clips[t];
   const style = { '--tc': tr.color } as React.CSSProperties;
 
   if (!clip) {
@@ -30,6 +29,9 @@ function ClipCell({ s, t }: { s: number; t: number }) {
     );
   }
 
+  const bytes = clipPattern(session, s, t);
+  const steps = bytes ? previewSteps(tr.machine, bytes, clip.bars) : [];
+
   const cls = ['sq-cell'];
   if (live) cls.push('live');
   if (muted) cls.push('muted');
@@ -39,7 +41,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
     <button
       className={cls.join(' ')}
       style={style}
-      onClick={() => (live ? stopTrack(t) : setClip(t, s))}
+      onClick={() => (live ? stopTrack(t) : launch(t, s))}
       title={live ? 'Stop clip' : 'Launch clip'}
     >
       <div className="sq-cell-body">
@@ -53,18 +55,21 @@ function ClipCell({ s, t }: { s: number; t: number }) {
           ) : (
             <span className="sq-cell-idle">▶</span>
           )}
-          <span className="sq-cell-name">{clip.n}</span>
-          <span className="sq-cell-len">{clip.b}B</span>
+          <span className="sq-cell-name">{clip.name}</span>
+          <span className="sq-cell-len">{clip.bars}B</span>
         </div>
         <div className="sq-steps">
-          {stepsFor(t, s).map((sp, i) => (
+          {steps.map((sp, i) => (
             <span key={i} className={sp.on ? 'on' : ''} style={{ height: `${sp.h}px` }} />
           ))}
         </div>
         <div className="sq-cell-progress">
           {live && (
             <div
-              style={{ animationDuration: `${clip.b * BAR_SEC}s`, animationPlayState: aps }}
+              style={{
+                animationDuration: `${clip.bars * barSeconds(session.bpm)}s`,
+                animationPlayState: aps,
+              }}
             />
           )}
         </div>
@@ -76,9 +81,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
 }
 
 export function SceneRow({ s }: { s: number }) {
-  const sc = SCENES[s];
-  const clipTracks = sc.clips.map((c, t) => (c ? t : -1)).filter((t) => t >= 0);
-
+  const session = useSeqStore((st) => st.session);
   const owner = useSeqStore((st) => st.owner);
   const trackMute = useSeqStore((st) => st.trackMute);
   const sceneMute = useSeqStore((st) => st.sceneMute);
@@ -86,6 +89,8 @@ export function SceneRow({ s }: { s: number }) {
   const queued = useSeqStore((st) => Object.values(st.queue).includes(s));
   const { launchScene, stopScene, toggleSceneMute } = useSeqStore.getState();
 
+  const sc = session.scenes[s];
+  const clipTracks = sc.clips.map((c, t) => (c ? t : -1)).filter((t) => t >= 0);
   const owned = clipTracks.filter((t) => owner[t] === s);
   const muted = !!sceneMute[s];
   const liveAny = owned.length > 0;
@@ -129,7 +134,7 @@ export function SceneRow({ s }: { s: number }) {
           <button className="sq-mini" onClick={() => stopScene(s)} title="Stop scene">■</button>
         </div>
         <div className="sq-scene-dots">
-          {TRACKS.map((tr, t) => {
+          {session.tracks.map((tr, t) => {
             const has = !!sc.clips[t];
             const on = has && owner[t] === s
               && isTrackAudible(t, owner, trackMute, sceneMute, solo);
@@ -149,7 +154,7 @@ export function SceneRow({ s }: { s: number }) {
           </span>
         </div>
       </div>
-      {TRACKS.map((_, t) => (
+      {session.tracks.map((_, t) => (
         <ClipCell key={t} s={s} t={t} />
       ))}
     </div>

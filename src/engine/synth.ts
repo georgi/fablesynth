@@ -21,6 +21,20 @@ export interface StepMessage {
   pat: number; // pattern being played
 }
 
+// Hosted-mode options (SQ-4): share an AudioContext and route the engine's
+// output into a provided node instead of ctx.destination. Defaults keep the
+// standalone behavior byte-for-byte. See docs/sq4-clips.md §7.
+export interface EngineInitOpts {
+  ctx?: AudioContext;
+  output?: AudioNode;
+}
+
+export interface PosMessage {
+  t: 'pos';
+  step: number;
+  bar: number;
+}
+
 export interface VizTable {
   name: string;
   frames: number;
@@ -39,7 +53,11 @@ export class SynthEngine {
   userTables: GeneratedTable[]; // imported / drawn tables (full mip data)
   onviz: ((d: VizMessage) => void) | null;
   onstep: ((d: StepMessage) => void) | null;
+  onclipstart: ((frame: number) => void) | null;
+  onclipstop: ((frame: number) => void) | null;
+  onpos: ((d: PosMessage) => void) | null;
   ready: boolean;
+  output: AudioNode | null; // hosted-mode output (null = ctx.destination)
 
   ctx!: AudioContext;
   node!: AudioWorkletNode;
@@ -75,13 +93,18 @@ export class SynthEngine {
     this.userTables = [];
     this.onviz = null;
     this.onstep = null;
+    this.onclipstart = null;
+    this.onclipstop = null;
+    this.onpos = null;
     this.ready = false;
+    this.output = null;
   }
 
-  async init(): Promise<void> {
+  async init(opts: EngineInitOpts = {}): Promise<void> {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctor({ latencyHint: 'interactive' });
+    const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
+    this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.procTables = generateTables();
@@ -95,6 +118,9 @@ export class SynthEngine {
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
       else if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
+      else if (e.data.t === 'pos' && this.onpos) this.onpos(e.data as PosMessage);
+      else if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
+      else if (e.data.t === 'clipstop' && this.onclipstop) this.onclipstop(e.data.frame as number);
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
@@ -224,7 +250,7 @@ export class SynthEngine {
     this.specAnalyser.fftSize = 2048;
     this.specAnalyser.smoothingTimeConstant = 0.82;
 
-    verbOut.connect(this.masterGain).connect(dcBlock).connect(this.limiter).connect(ctx.destination);
+    verbOut.connect(this.masterGain).connect(dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
     this.masterGain.connect(this.scopeAnalyser);
     this.masterGain.connect(this.specAnalyser);
   }
@@ -320,4 +346,14 @@ export class SynthEngine {
   setSeqChain(list: number[]): void { if (this.ready) this.node.port.postMessage({ t: 'chain', list }); }
   seqPlay(): void { if (this.ready) this.node.port.postMessage({ t: 'play' }); }
   seqStop(): void { if (this.ready) this.node.port.postMessage({ t: 'stop' }); }
+
+  // ---------- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----------
+  setHostMode(on: boolean): void { if (this.ready) this.node.port.postMessage({ t: 'host', on: on ? 1 : 0 }); }
+  setTempo(bpm: number, swing: number, anchor: number): void {
+    if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
+  }
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame });
+  }
+  scheduleStop(atFrame: number): void { if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame }); }
 }

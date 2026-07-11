@@ -3,8 +3,10 @@
 Design for hooking the FableSeq SQ-4 session launcher up to the real
 instruments: how clips are represented, how they reach each machine, and how
 four independent AudioWorklet sequencers stay locked to one musical grid.
-This document is the contract for the implementation phases at the end; no
-code in this repo implements it yet beyond the pieces marked **exists**.
+Phases 1–3 of this contract are implemented: `src/seq/protocol.ts` (schema,
+codecs, boundary math), the hosted messages in the three worklets,
+`src/seq/devices.ts` + `src/seq/rig.ts` (adapters, shared-context graph) and
+the conductor in `src/seq/store.ts`. Phase 4 (session editing) is open.
 
 ## 1. Goals
 

@@ -1,15 +1,18 @@
-// SQ-4 top bar: logo, transport, launch quantize, beat dots + bar/BPM
-// readout, master scope and the swing/volume master knobs.
+// SQ-4 top bar: logo, transport (pause = ctx.suspend — everything resumes
+// in phase), launch quantize, beat dots + bar/BPM readout from the shared
+// timebase, master scope and the swing/volume master knobs.
 
-import { BPM, pad2 } from '../model';
+import { pad2 } from '../model';
 import { useSeqStore } from '../store';
 import { Scope } from './Scope';
 import { SeqKnob } from './SeqKnob';
 
 export function Header() {
   const playing = useSeqStore((s) => s.playing);
+  const powered = useSeqStore((s) => s.powered);
   const beat = useSeqStore((s) => s.beat);
   const bar = useSeqStore((s) => s.bar);
+  const bpm = useSeqStore((s) => s.session.bpm);
   const quant = useSeqStore((s) => s.quant);
   const swing = useSeqStore((s) => s.swing);
   const masterVol = useSeqStore((s) => s.masterVol);
@@ -26,11 +29,12 @@ export function Header() {
         <button
           className={`sq-play${playing ? ' on' : ''}`}
           onClick={togglePlay}
+          disabled={!powered}
           title="Play / pause clock"
         >
           {playing ? '❚❚' : '▶'}
         </button>
-        <button className="sq-stop" onClick={stopAll} title="Stop all clips">■</button>
+        <button className="sq-stop" onClick={stopAll} disabled={!powered} title="Stop all clips">■</button>
       </div>
 
       <div className="sq-quant">
@@ -47,7 +51,7 @@ export function Header() {
           ))}
         </div>
         <div className="sq-clock-line">
-          BAR <b>{pad2(bar)}</b> · <em>{BPM}</em> BPM
+          BAR <b>{pad2(bar)}</b> · <em>{bpm}</em> BPM
         </div>
       </div>
 
@@ -55,8 +59,8 @@ export function Header() {
         <Scope />
       </div>
       <div className="sq-master-knobs">
-        <SeqKnob value={swing} onChange={setSwing} label="SWING" defaultValue={0.42} />
-        <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" defaultValue={0.66} />
+        <SeqKnob value={swing} onChange={setSwing} label="SWING" defaultValue={0} />
+        <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" defaultValue={0.75} />
       </div>
     </header>
   );

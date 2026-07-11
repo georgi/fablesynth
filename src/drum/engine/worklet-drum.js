@@ -85,6 +85,15 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.step = -1;
     this.samplesToNext = 0;
     this.sel = 0;
+    // ---- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----
+    this.hosted = false;
+    this.hostBpm = 120;
+    this.hostSwing = 0;
+    this.clip = null; // { data: Uint8Array, bars } — byte per pad-step, bar-major
+    this.clipPend = null; // { data, bars, at }
+    this.clipStopAt = -1;
+    this.clipStep = -1; // absolute step within the clip
+    this.clipToNext = 0;
     this.vizCount = 0;
     this.tmpL = new Float32Array(128); this.tmpR = new Float32Array(128);
     this.fL = new Float32Array(128); this.fR = new Float32Array(128);
@@ -115,12 +124,76 @@ class DrumProcessor extends AudioWorkletProcessor {
         }
         break;
       case 'play':
+        if (this.hosted) break; // conductor owns the transport
         this.playing = true; this.step = -1; this.chainPos = 0; this.samplesToNext = 0;
         break;
       case 'stop': this.playing = false; this.step = -1; break;
       case 'sel': this.sel = Math.max(0, Math.min(NPADS - 1, d.pad | 0)); break;
-      case 'panic': for (const v of this.voices) v.kill(); break;
+      case 'panic':
+        for (const v of this.voices) v.kill();
+        this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        break;
+      case 'host': this.hosted = !!d.on; break;
+      case 'tempo':
+        if (Number.isFinite(d.bpm)) this.hostBpm = d.bpm;
+        if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
+        break;
+      case 'clip':
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
+        this.clipStopAt = -1;
+        break;
+      case 'clipstop':
+        this.clipPend = null;
+        this.clipStopAt = +d.atFrame || 0;
+        break;
     }
+  }
+
+  // ---------- hosted clip transport ----------
+  hostTick(n) {
+    const end = currentFrame + n;
+    if (this.clipStopAt >= 0 && this.clipStopAt < end) {
+      this.clipStopAt = -1;
+      if (this.clip) {
+        this.clip = null;
+        this.clipStep = -1;
+        // sounding pads ring out (design: DR-1 stop lets voices decay)
+      }
+      // ack even when nothing was playing — the stop may have targeted a
+      // pending-only launch and the conductor clears its STOP marker on this
+      this.port.postMessage({ t: 'clipstop', frame: currentFrame });
+    }
+    if (this.clipPend && this.clipPend.at < end) {
+      this.clip = this.clipPend;
+      this.clipPend = null;
+      this.clipStep = -1;
+      this.clipToNext = 0;
+      this.port.postMessage({ t: 'clipstart', frame: currentFrame });
+    }
+    if (this.clip) {
+      if (this.clipToNext <= 0) this.clipFire();
+      this.clipToNext -= n;
+    }
+  }
+
+  clipFire() {
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
+    const total = this.clip.bars * STEPS;
+    const abs = (this.clipStep + 1) % total;
+    const s = abs % STEPS;
+    const bar = (abs / STEPS) | 0;
+    for (let i = 0; i < NPADS; i++) {
+      const val = this.clip.data[(bar * NPADS + i) * STEPS + s];
+      if (val) this.trigger(i, val === 2 ? ACCENT_VEL : PLAIN_VEL);
+    }
+    this.clipStep = abs;
+    const offNow = s % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    const sNext = (s + 1) % STEPS;
+    const offNext = sNext % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    this.clipToNext = dur - offNow + offNext;
+    this.port.postMessage({ t: 'pos', step: s, bar });
   }
 
   trigger(padI, vel) {
@@ -459,10 +532,13 @@ class DrumProcessor extends AudioWorkletProcessor {
     L.fill(0); if (R !== L) R.fill(0);
     const n = L.length;
 
+    if (this.hosted) this.hostTick(n);
+    const standalone = this.playing && !this.hosted;
+
     let pos = 0;
     while (pos < n) {
       let run = n - pos;
-      if (this.playing) {
+      if (standalone) {
         if (this.samplesToNext <= 0) {
           this.fireStep();
         }
@@ -472,7 +548,7 @@ class DrumProcessor extends AudioWorkletProcessor {
         const v = this.voices[i];
         if (v.active) this.renderPad(v, i, L, R, pos, run);
       }
-      if (this.playing) this.samplesToNext -= run;
+      if (standalone) this.samplesToNext -= run;
       pos += run;
     }
 

@@ -36,6 +36,14 @@ interface WetDry {
   wet: GainNode;
 }
 
+// Hosted-mode options (SQ-4): share an AudioContext and route the engine's
+// output into a provided node instead of ctx.destination. Defaults keep the
+// standalone behavior byte-for-byte. See docs/sq4-clips.md §7.
+export interface EngineInitOpts {
+  ctx?: AudioContext;
+  output?: AudioNode;
+}
+
 export const isFxParam = (id: string): boolean => id.startsWith('fx.') || id === 'master.volume';
 
 export class BassEngine {
@@ -45,6 +53,10 @@ export class BassEngine {
   ready: boolean;
   onstep: ((d: BassStepMessage) => void) | null;
   onviz: ((d: BassVizMessage) => void) | null;
+  onclipstart: ((frame: number) => void) | null;
+  onclipstop: ((frame: number) => void) | null;
+  onpos: ((d: { step: number; bar: number }) => void) | null;
+  output: AudioNode | null; // hosted-mode output (null = ctx.destination)
 
   ctx!: AudioContext;
   node!: AudioWorkletNode;
@@ -80,12 +92,17 @@ export class BassEngine {
     this.ready = false;
     this.onstep = null;
     this.onviz = null;
+    this.onclipstart = null;
+    this.onclipstop = null;
+    this.onpos = null;
+    this.output = null;
   }
 
-  async init(): Promise<void> {
+  async init(opts: EngineInitOpts = {}): Promise<void> {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctor({ latencyHint: 'interactive' });
+    const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
+    this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.builtInTables = generateTables();
@@ -99,6 +116,9 @@ export class BassEngine {
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'step' && this.onstep) this.onstep(e.data as BassStepMessage);
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as BassVizMessage);
+      if (e.data.t === 'pos' && this.onpos) this.onpos({ step: e.data.step as number, bar: e.data.bar as number });
+      if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
+      if (e.data.t === 'clipstop' && this.onclipstop) this.onclipstop(e.data.frame as number);
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
@@ -205,7 +225,7 @@ export class BassEngine {
     this.scopeAnalyser = ctx.createAnalyser();
     this.scopeAnalyser.fftSize = 2048;
 
-    verbOut.connect(this.masterGain).connect(this.dcBlock).connect(this.limiter).connect(ctx.destination);
+    verbOut.connect(this.masterGain).connect(this.dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
     this.masterGain.connect(this.scopeAnalyser);
   }
 
@@ -319,5 +339,21 @@ export class BassEngine {
 
   panic(): void {
     if (this.ready) this.node.port.postMessage({ t: 'panic' });
+  }
+  // ---------- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----------
+  setHostMode(on: boolean): void {
+    if (this.ready) this.node.port.postMessage({ t: 'host', on: on ? 1 : 0 });
+  }
+
+  setTempo(bpm: number, swing: number, anchor: number): void {
+    if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
+  }
+
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame });
+  }
+
+  scheduleStop(atFrame: number): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame });
   }
 }

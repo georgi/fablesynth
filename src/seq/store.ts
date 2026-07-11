@@ -1,34 +1,48 @@
-// Zustand store for SQ-4. All launcher state lives here; the beat clock in
-// SeqApp calls onBeat() once per quarter note and queued launches resolve at
-// quantize boundaries.
+// The SQ-4 conductor (docs/sq4-clips.md §9). Owns all musical decisions:
+// the owner/queue launcher state, quantize boundary scheduling against the
+// shared context-frame timebase, and the track gain (fader × mute × solo)
+// math. Devices execute stamped commands and report back; owner flips on
+// their clipstart/clipstop acks so the grid shows what is audible.
 
 import { create } from 'zustand';
+import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
-  applyQueue, type OwnerMap, type Quant, QUANTS, type QueueMap, queueApplies,
-  SCENES, STOP, TRACKS,
-} from './model';
+  b64ToBytes, boundaryFrame, loadSession, saveSession, type SessionDoc, songPosition,
+} from './protocol';
+import { factorySession } from './factory';
+import type { SeqRig } from './rig';
+
+export interface TrackPos {
+  step: number;
+  bar: number;
+}
 
 export interface SeqStore {
-  playing: boolean;
-  beat: number; // 0..3 within the bar
-  bar: number; // 1-based, display only
+  session: SessionDoc;
+  powered: boolean;
+  playing: boolean; // context running (pause = ctx.suspend)
+  beat: number;
+  bar: number;
   owner: OwnerMap;
   queue: QueueMap;
+  pos: (TrackPos | null)[]; // per-track playhead from device pos messages
   sceneMute: Record<number, boolean>;
   trackMute: Record<number, boolean>;
   solo: Record<number, boolean>;
   quant: Quant;
-  trackVol: number[]; // 0..1 knob positions
+  trackVol: number[];
   masterVol: number;
   swing: number;
+  rig: SeqRig | null;
+  anchor: number; // songStartFrame — beat zero of the shared timebase
 
-  onBeat: () => void;
-  setClip: (t: number, v: number) => void;
+  powerOn: (rig?: SeqRig) => Promise<void>;
+  togglePlay: () => void;
+  launch: (t: number, s: number) => void;
+  stopTrack: (t: number) => void;
   launchScene: (s: number) => void;
   stopScene: (s: number) => void;
-  stopTrack: (t: number) => void;
   stopAll: () => void;
-  togglePlay: () => void;
   toggleSceneMute: (s: number) => void;
   toggleTrackMute: (t: number) => void;
   toggleSolo: (t: number) => void;
@@ -36,89 +50,254 @@ export interface SeqStore {
   setTrackVol: (t: number, v: number) => void;
   setMasterVol: (v: number) => void;
   setSwing: (v: number) => void;
+  tick: () => void; // UI clock — called from a rAF loop while powered
 }
 
-// The session opens mid-set with DROP A live on every track, so the surface
-// is moving the moment it loads.
-const INITIAL = {
-  playing: true,
-  beat: 0,
-  bar: 1,
-  owner: { 0: 2, 1: 2, 2: 2, 3: 2 } as OwnerMap,
-  queue: {} as QueueMap,
-  sceneMute: {},
-  trackMute: {},
-  solo: {},
-  quant: '1 BAR' as Quant,
-  trackVol: TRACKS.map((t) => t.vol),
-  masterVol: 0.66,
-  swing: 0.42,
-};
+const initialSession = loadSession(factorySession());
 
-export const useSeqStore = create<SeqStore>((set, get) => ({
-  ...INITIAL,
+// Decoded clip pattern bytes, keyed `${scene}:${track}` (session docs are
+// immutable in v1, so decode once).
+const clipBytes = new Map<string, Uint8Array>();
+function bytesFor(session: SessionDoc, s: number, t: number): Uint8Array | null {
+  const clip = session.scenes[s]?.clips[t];
+  if (!clip) return null;
+  const key = `${s}:${t}`;
+  let b = clipBytes.get(key);
+  if (!b) {
+    b = b64ToBytes(clip.pattern);
+    clipBytes.set(key, b);
+  }
+  return b;
+}
 
-  onBeat: () => {
+/** Preview bytes for the UI (null for empty cells). */
+export function clipPattern(session: SessionDoc, s: number, t: number): Uint8Array | null {
+  return bytesFor(session, s, t);
+}
+
+const gainCurve = (v: number) => v * v * 1.4;
+
+export const useSeqStore = create<SeqStore>((set, get) => {
+  // The scene most recently scheduled per track — the clipstart ack promotes
+  // it to owner (acks don't carry a clip identity; devices hold one pending
+  // slot, so the last schedule is by construction the one that started).
+  const lastScheduled: Record<number, number> = {};
+
+  const applyGains = () => {
     const st = get();
-    if (!st.playing) return;
-    const beat = (st.beat + 1) % 4;
-    const bar = st.bar + (beat === 0 ? 1 : 0);
-    let { owner, queue } = st;
-    if (Object.keys(queue).length && queueApplies(st.quant, beat)) {
-      owner = applyQueue(owner, queue);
-      queue = {};
+    if (!st.rig) return;
+    for (let t = 0; t < st.session.tracks.length; t++) {
+      const open = isTrackOpen(t, st.owner, st.trackMute, st.sceneMute, st.solo);
+      st.rig.setTrackGain(t, open ? gainCurve(st.trackVol[t]) : 0);
     }
-    set({ beat, bar, owner, queue });
-  },
+  };
 
-  // v is a scene index, or STOP. Launching also resumes the clock — tapping
-  // a clip while paused should always make something happen.
-  setClip: (t, v) => {
+  const boundary = (): number => {
     const st = get();
-    if (st.quant === 'OFF') {
-      set({ owner: applyQueue(st.owner, { [t]: v }), playing: true });
-    } else {
-      set({ queue: { ...st.queue, [t]: v }, playing: true });
+    if (!st.rig) return 0;
+    return boundaryFrame(st.quant, st.rig.now(), st.anchor, st.session.bpm, st.rig.sampleRate);
+  };
+
+  const resumeIfPaused = () => {
+    const st = get();
+    if (st.rig && !st.playing) {
+      void st.rig.resume();
+      set({ playing: true });
     }
-  },
+  };
 
-  launchScene: (s) => {
-    SCENES[s].clips.forEach((c, t) => {
-      if (c) get().setClip(t, s);
-    });
-  },
+  const persist = () => {
+    const st = get();
+    saveSession({ ...st.session, quant: st.quant, swing: st.swing });
+  };
 
-  stopScene: (s) => {
-    TRACKS.forEach((_, t) => {
-      if (get().owner[t] === s) get().setClip(t, STOP);
-    });
-  },
+  return {
+    session: initialSession,
+    powered: false,
+    playing: false,
+    beat: 0,
+    bar: 1,
+    owner: {},
+    queue: {},
+    pos: initialSession.tracks.map(() => null),
+    sceneMute: {},
+    trackMute: {},
+    solo: {},
+    quant: initialSession.quant,
+    trackVol: initialSession.tracks.map((t) => t.gain),
+    masterVol: 0.75,
+    swing: initialSession.swing,
+    rig: null,
+    anchor: 0,
 
-  stopTrack: (t) => get().setClip(t, STOP),
+    powerOn: async (rigIn?: SeqRig) => {
+      const session = get().session;
+      let rig = rigIn;
+      if (!rig) {
+        const { WebAudioRig } = await import('./rig');
+        const wr = new WebAudioRig();
+        await wr.init(session);
+        rig = wr;
+      }
+      // Transport starts at power-on: anchor one block ahead, tempo to all
+      // devices. Silence until the first clip launches, but the grid is live.
+      const anchor = rig.now() + 256;
+      rig.sendTempo(session.bpm, get().swing, anchor);
+      rig.setMasterGain(gainCurve(get().masterVol));
 
-  stopAll: () => set({ owner: {}, queue: {} }),
+      // Wire acks — owner flips exactly when the audio changed.
+      rig.devices.forEach((d, t) => {
+        d.onClipStart = () => {
+          set((st) => {
+            const owner = { ...st.owner, [t]: lastScheduled[t] };
+            const queue = { ...st.queue };
+            if (queue[t] === lastScheduled[t]) delete queue[t];
+            return { owner, queue };
+          });
+          applyGains();
+        };
+        d.onClipStop = () => {
+          set((st) => {
+            const owner = { ...st.owner };
+            delete owner[t];
+            const queue = { ...st.queue };
+            if (queue[t] === STOP) delete queue[t];
+            const pos = st.pos.slice();
+            pos[t] = null;
+            return { owner, queue, pos };
+          });
+        };
+        d.onPos = (step, bar) => {
+          set((st) => {
+            const pos = st.pos.slice();
+            pos[t] = { step, bar };
+            return { pos };
+          });
+        };
+      });
 
-  togglePlay: () => set((st) => ({ playing: !st.playing })),
+      set({ rig, anchor, powered: true, playing: true });
+      applyGains();
+    },
 
-  toggleSceneMute: (s) => set((st) => ({ sceneMute: { ...st.sceneMute, [s]: !st.sceneMute[s] } })),
-  toggleTrackMute: (t) => set((st) => ({ trackMute: { ...st.trackMute, [t]: !st.trackMute[t] } })),
-  toggleSolo: (t) => set((st) => ({ solo: { ...st.solo, [t]: !st.solo[t] } })),
+    togglePlay: () => {
+      const st = get();
+      if (!st.rig) return;
+      if (st.playing) void st.rig.suspend();
+      else void st.rig.resume();
+      set({ playing: !st.playing });
+    },
 
-  cycleQuant: (d) => set((st) => {
-    const ix = (QUANTS.indexOf(st.quant) + d + QUANTS.length) % QUANTS.length;
-    return { quant: QUANTS[ix] };
-  }),
+    launch: (t, s) => {
+      const st = get();
+      const bytes = bytesFor(st.session, s, t);
+      const clip = st.session.scenes[s]?.clips[t];
+      if (!st.rig || !bytes || !clip) return;
+      resumeIfPaused();
+      lastScheduled[t] = s;
+      st.rig.devices[t].scheduleClip(bytes, clip.bars, boundary());
+      set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
+    },
 
-  setTrackVol: (t, v) => set((st) => {
-    const trackVol = st.trackVol.slice();
-    trackVol[t] = v;
-    return { trackVol };
-  }),
-  setMasterVol: (v) => set({ masterVol: v }),
-  setSwing: (v) => set({ swing: v }),
-}));
+    stopTrack: (t) => {
+      const st = get();
+      if (!st.rig) return;
+      if (st.owner[t] == null && st.queue[t] == null) return;
+      st.rig.devices[t].scheduleStop(boundary());
+      set((cur) => ({ queue: { ...cur.queue, [t]: STOP } }));
+    },
 
-/** Reset to the opening state (used by tests). */
-export function resetSeqStore() {
-  useSeqStore.setState({ ...INITIAL, owner: { ...INITIAL.owner }, queue: {}, trackVol: TRACKS.map((t) => t.vol) });
+    launchScene: (s) => {
+      const st = get();
+      st.session.scenes[s]?.clips.forEach((c, t) => {
+        if (c) st.launch(t, s);
+      });
+    },
+
+    stopScene: (s) => {
+      const st = get();
+      st.session.tracks.forEach((_, t) => {
+        if (st.owner[t] === s || st.queue[t] === s) st.stopTrack(t);
+      });
+    },
+
+    stopAll: () => {
+      const st = get();
+      st.session.tracks.forEach((_, t) => st.stopTrack(t));
+    },
+
+    toggleSceneMute: (s) => {
+      set((st) => ({ sceneMute: { ...st.sceneMute, [s]: !st.sceneMute[s] } }));
+      applyGains();
+    },
+    toggleTrackMute: (t) => {
+      set((st) => ({ trackMute: { ...st.trackMute, [t]: !st.trackMute[t] } }));
+      applyGains();
+    },
+    toggleSolo: (t) => {
+      set((st) => ({ solo: { ...st.solo, [t]: !st.solo[t] } }));
+      applyGains();
+    },
+
+    cycleQuant: (d) => {
+      set((st) => {
+        const ix = (QUANTS.indexOf(st.quant) + d + QUANTS.length) % QUANTS.length;
+        return { quant: QUANTS[ix] };
+      });
+      persist();
+    },
+
+    setTrackVol: (t, v) => {
+      set((st) => {
+        const trackVol = st.trackVol.slice();
+        trackVol[t] = v;
+        return { trackVol };
+      });
+      applyGains();
+    },
+
+    setMasterVol: (v) => {
+      set({ masterVol: v });
+      get().rig?.setMasterGain(gainCurve(v));
+    },
+
+    // Swing is safe to change live: it only shifts intra-step offsets, never
+    // the anchor math (docs §3/§6).
+    setSwing: (v) => {
+      set({ swing: v });
+      const st = get();
+      st.rig?.sendTempo(st.session.bpm, v, st.anchor);
+      persist();
+    },
+
+    tick: () => {
+      const st = get();
+      if (!st.rig || !st.playing) return;
+      const { beat, bar } = songPosition(st.rig.now(), st.anchor, st.session.bpm, st.rig.sampleRate);
+      if (beat !== st.beat || bar !== st.bar) set({ beat, bar });
+    },
+  };
+});
+
+/** Reset launcher state (used by tests). */
+export function resetSeqStore(): void {
+  useSeqStore.setState({
+    session: factorySession(),
+    powered: false,
+    playing: false,
+    beat: 0,
+    bar: 1,
+    owner: {},
+    queue: {},
+    pos: initialSession.tracks.map(() => null),
+    sceneMute: {},
+    trackMute: {},
+    solo: {},
+    quant: '1 BAR',
+    trackVol: initialSession.tracks.map((t) => t.gain),
+    masterVol: 0.75,
+    swing: 0,
+    rig: null,
+    anchor: 0,
+  });
 }

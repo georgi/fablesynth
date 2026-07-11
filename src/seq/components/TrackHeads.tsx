@@ -1,12 +1,14 @@
 // Track header row: the SCENES label card plus one card per track with a
-// live LED, machine chip, mute/solo and a volume knob.
+// live LED, machine chip, mute/solo and a volume (fader) knob.
 
 import type * as React from 'react';
-import { isTrackAudible, TRACKS } from '../model';
+import { patchName } from '../devices';
+import { isTrackAudible } from '../model';
 import { useSeqStore } from '../store';
 import { SeqKnob } from './SeqKnob';
 
 export function TrackHeads() {
+  const tracks = useSeqStore((s) => s.session.tracks);
   const owner = useSeqStore((s) => s.owner);
   const playing = useSeqStore((s) => s.playing);
   const trackMute = useSeqStore((s) => s.trackMute);
@@ -21,17 +23,19 @@ export function TrackHeads() {
         <div className="sq-scenes-title">SCENES</div>
         <div className="sq-scenes-sub">STACK FREELY · LATEST CLIP OWNS THE TRACK</div>
       </div>
-      {TRACKS.map((tr, t) => {
+      {tracks.map((tr, t) => {
         const audible = playing && isTrackAudible(t, owner, trackMute, sceneMute, solo);
+        const machineLabel = tr.machine === 'DR1' ? 'DR-1' : tr.machine === 'BL1' ? 'BL-1' : 'WT-1';
+        const patchLabel = patchName(tr.machine, tr.patch);
         return (
-          <div key={tr.name} className="sq-track-head" style={{ '--tc': tr.color } as React.CSSProperties}>
+          <div key={t} className="sq-track-head" style={{ '--tc': tr.color } as React.CSSProperties}>
             <span className={`sq-led${audible ? ' on' : ''}`} />
             <div className="sq-track-id">
               <div className="sq-track-name-row">
                 <span className="sq-track-name">{tr.name}</span>
-                <span className="sq-machine-chip">{tr.machine}</span>
+                <span className="sq-machine-chip">{machineLabel}</span>
               </div>
-              <div className="sq-track-patch">{tr.patch}</div>
+              <div className="sq-track-patch">{patchLabel}</div>
             </div>
             <button
               className={`sq-mini sq-mute${trackMute[t] ? ' on' : ''}`}
@@ -47,7 +51,7 @@ export function TrackHeads() {
             >
               S
             </button>
-            <SeqKnob value={trackVol[t]} onChange={(v) => setTrackVol(t, v)} label="VOL" size="xs" defaultValue={tr.vol} />
+            <SeqKnob value={trackVol[t]} onChange={(v) => setTrackVol(t, v)} label="VOL" size="xs" defaultValue={tr.gain} />
           </div>
         );
       })}

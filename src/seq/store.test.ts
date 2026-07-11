@@ -1,189 +1,235 @@
+// Conductor tests: a FakeRig with recordable devices and a controllable
+// frame clock stands in for the WebAudio rig. Acks are fired manually to
+// assert the owner-flips-on-ack contract.
+
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  applyQueue, isTrackAudible, queueApplies, SCENES, seededRand, STOP, stepsFor, TRACKS,
-} from './model';
+import type { SeqDevice } from './devices';
+import { STOP } from './model';
+import { barFrames } from './protocol';
+import type { SeqRig } from './rig';
 import { resetSeqStore, useSeqStore } from './store';
 
+class FakeDevice implements SeqDevice {
+  clips: Array<{ bars: number; atFrame: number; bytes: number }> = [];
+  stops: number[] = [];
+  tempos: Array<{ bpm: number; swing: number; anchor: number }> = [];
+  onClipStart: ((frame: number) => void) | null = null;
+  onClipStop: ((frame: number) => void) | null = null;
+  onPos: ((step: number, bar: number) => void) | null = null;
+
+  async init(): Promise<void> {}
+  applyPatch(): void {}
+  setTempo(bpm: number, swing: number, anchor: number): void {
+    this.tempos.push({ bpm, swing, anchor });
+  }
+  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number): void {
+    this.clips.push({ bars, atFrame, bytes: pattern.length });
+  }
+  scheduleStop(atFrame: number): void {
+    this.stops.push(atFrame);
+  }
+  panic(): void {}
+}
+
+class FakeRig implements SeqRig {
+  sampleRate = 48000;
+  frame = 0;
+  devices: SeqDevice[] = [new FakeDevice(), new FakeDevice(), new FakeDevice(), new FakeDevice()];
+  trackAnalysers = null;
+  gains: Record<number, number> = {};
+  master = 0;
+  suspended = false;
+
+  now(): number { return this.frame; }
+  async suspend(): Promise<void> { this.suspended = true; }
+  async resume(): Promise<void> { this.suspended = false; }
+  setTrackGain(t: number, gain: number): void { this.gains[t] = gain; }
+  setMasterGain(gain: number): void { this.master = gain; }
+  sendTempo(bpm: number, swing: number, anchor: number): void {
+    for (const d of this.devices) d.setTempo(bpm, swing, anchor);
+  }
+  panic(): void {}
+
+  dev(t: number): FakeDevice { return this.devices[t] as FakeDevice; }
+}
+
+let rig: FakeRig;
 const st = () => useSeqStore.getState();
 
-/** Advance the clock n quarter-note beats. */
-const tick = (n = 1) => {
-  for (let i = 0; i < n; i++) st().onBeat();
-};
+beforeEach(async () => {
+  resetSeqStore();
+  rig = new FakeRig();
+  rig.frame = 1000;
+  await st().powerOn(rig);
+});
 
-beforeEach(() => resetSeqStore());
-
-describe('launcher primitives', () => {
-  it('applyQueue overwrites owners and STOP clears them', () => {
-    const owner = { 0: 2, 1: 2 };
-    const next = applyQueue(owner, { 0: 4, 1: STOP, 3: 1 });
-    expect(next).toEqual({ 0: 4, 3: 1 });
-    // input untouched
-    expect(owner).toEqual({ 0: 2, 1: 2 });
+describe('power-on', () => {
+  it('starts the transport: anchor ahead of now, tempo to every device', () => {
+    expect(st().powered).toBe(true);
+    expect(st().playing).toBe(true);
+    expect(st().anchor).toBeGreaterThan(1000);
+    for (let t = 0; t < 4; t++) {
+      expect(rig.dev(t).tempos).toHaveLength(1);
+      expect(rig.dev(t).tempos[0].bpm).toBe(122);
+    }
   });
 
-  it('queueApplies fires on every beat at 1/4 and only on the downbeat at 1 BAR', () => {
-    expect(queueApplies('1/4', 1)).toBe(true);
-    expect(queueApplies('1/4', 0)).toBe(true);
-    expect(queueApplies('1 BAR', 0)).toBe(true);
-    expect(queueApplies('1 BAR', 1)).toBe(false);
-    expect(queueApplies('OFF', 0)).toBe(false);
+  it('applies fader gains (silent tracks stay open until muted)', () => {
+    expect(rig.gains[0]).toBeGreaterThan(0);
+    expect(rig.master).toBeGreaterThan(0);
   });
 });
 
 describe('quantized launching', () => {
-  it('opens with DROP A owning all four tracks, playing at 1 BAR quantize', () => {
-    expect(st().playing).toBe(true);
-    expect(st().quant).toBe('1 BAR');
-    expect(st().owner).toEqual({ 0: 2, 1: 2, 2: 2, 3: 2 });
+  it('launch schedules the clip at the next bar boundary and queues in the UI', () => {
+    rig.frame = st().anchor + 10; // just past beat zero
+    st().launch(0, 2); // DROP A drums
+    const d = rig.dev(0);
+    expect(d.clips).toHaveLength(1);
+    const bar = barFrames(122, 48000);
+    expect(d.clips[0].atFrame).toBeCloseTo(st().anchor + bar, 6);
+    expect(d.clips[0].bars).toBe(2);
+    expect(d.clips[0].bytes).toBe(2 * 256);
+    expect(st().queue[0]).toBe(2);
+    expect(st().owner[0]).toBeUndefined(); // not yet — waits for the ack
   });
 
-  it('a launch at 1 BAR waits in the queue until the next downbeat', () => {
-    st().setClip(0, 3);
+  it('owner flips on the clipstart ack, not before', () => {
+    st().launch(0, 2);
+    rig.dev(0).onClipStart!(12345);
     expect(st().owner[0]).toBe(2);
+    expect(st().queue[0]).toBeUndefined();
+  });
+
+  it('re-launching before the boundary re-targets (device pending replaces)', () => {
+    st().launch(0, 2);
+    st().launch(0, 3);
+    expect(rig.dev(0).clips).toHaveLength(2);
     expect(st().queue[0]).toBe(3);
-    tick(3); // beats 1,2,3 — still inside the bar
-    expect(st().owner[0]).toBe(2);
-    tick(); // wraps to beat 0
+    rig.dev(0).onClipStart!(1);
     expect(st().owner[0]).toBe(3);
-    expect(st().queue).toEqual({});
   });
 
-  it('a launch at 1/4 applies on the very next beat', () => {
-    st().cycleQuant(1); // 1 BAR -> 1/4
-    expect(st().quant).toBe('1/4');
-    st().setClip(2, 4);
-    expect(st().owner[2]).toBe(2);
-    tick();
-    expect(st().owner[2]).toBe(4);
-  });
-
-  it('a launch with quantize OFF applies immediately', () => {
-    st().cycleQuant(-1); // 1 BAR -> OFF
+  it('quant OFF stamps atFrame 0 (= now)', () => {
+    st().cycleQuant(1);
+    st().cycleQuant(1); // 1 BAR -> 1/4 -> OFF
     expect(st().quant).toBe('OFF');
-    st().setClip(1, 4);
-    expect(st().owner[1]).toBe(4);
-    expect(st().queue).toEqual({});
+    st().launch(1, 2);
+    expect(rig.dev(1).clips[0].atFrame).toBe(0);
   });
 
-  it('re-launching before the boundary replaces the queued target', () => {
-    st().setClip(0, 3);
-    st().setClip(0, STOP);
-    tick(4);
+  it('launching an empty slot is a no-op', () => {
+    st().launch(0, 4); // BREAK has no drums
+    expect(rig.dev(0).clips).toHaveLength(0);
+  });
+
+  it('launching while paused resumes the context', () => {
+    st().togglePlay();
+    expect(rig.suspended).toBe(true);
+    st().launch(0, 2);
+    expect(rig.suspended).toBe(false);
+    expect(st().playing).toBe(true);
+  });
+});
+
+describe('stopping', () => {
+  it('stopTrack schedules a stop and clears on the clipstop ack', () => {
+    st().launch(0, 2);
+    rig.dev(0).onClipStart!(1);
+    st().stopTrack(0);
+    expect(rig.dev(0).stops).toHaveLength(1);
+    expect(st().queue[0]).toBe(STOP);
+    rig.dev(0).onClipStop!(2);
+    expect(st().owner[0]).toBeUndefined();
+    expect(st().queue[0]).toBeUndefined();
+  });
+
+  it('stopTrack on an idle track is a no-op', () => {
+    st().stopTrack(0);
+    expect(rig.dev(0).stops).toHaveLength(0);
+  });
+
+  it('a stop ack clears a pending-only launch that was cancelled', () => {
+    st().launch(0, 2);
+    st().stopTrack(0); // cancels the pending launch in the device
+    rig.dev(0).onClipStop!(1);
+    expect(st().queue[0]).toBeUndefined();
     expect(st().owner[0]).toBeUndefined();
   });
 
-  it('launching while paused resumes the clock', () => {
-    st().togglePlay();
-    expect(st().playing).toBe(false);
-    st().setClip(0, 0);
-    expect(st().playing).toBe(true);
-  });
-
-  it('the clock is inert while paused', () => {
-    st().setClip(0, 3);
-    st().togglePlay();
-    const { beat, bar } = st();
-    tick(8);
-    expect(st().beat).toBe(beat);
-    expect(st().bar).toBe(bar);
-    expect(st().owner[0]).toBe(2); // queue untouched too
+  it('stopAll fans out to every occupied track', () => {
+    st().launch(0, 2);
+    st().launch(1, 2);
+    rig.dev(0).onClipStart!(1);
+    st().stopAll();
+    expect(rig.dev(0).stops).toHaveLength(1);
+    expect(rig.dev(1).stops).toHaveLength(1); // pending-only also stopped
+    expect(rig.dev(2).stops).toHaveLength(0); // idle untouched
   });
 });
 
 describe('scene operations', () => {
-  it('launchScene queues only the tracks that have clips', () => {
-    st().launchScene(1); // BUILD has no LEAD clip
-    expect(st().queue).toEqual({ 0: 1, 1: 1, 3: 1 });
-    tick(4);
-    expect(st().owner).toEqual({ 0: 1, 1: 1, 2: 2, 3: 1 });
+  it('launchScene schedules only tracks with clips', () => {
+    st().launchScene(1); // BUILD: no LEAD clip
+    expect(rig.dev(0).clips).toHaveLength(1);
+    expect(rig.dev(1).clips).toHaveLength(1);
+    expect(rig.dev(2).clips).toHaveLength(0);
+    expect(rig.dev(3).clips).toHaveLength(1);
   });
 
-  it('stopScene stops only the tracks that scene owns', () => {
-    st().launchScene(4); // BREAK: bass/lead/pads
-    tick(4);
-    expect(st().owner).toEqual({ 0: 2, 1: 4, 2: 4, 3: 4 });
-    st().stopScene(4);
-    tick(4);
-    expect(st().owner).toEqual({ 0: 2 });
-  });
-
-  it('stopAll clears owners and pending queue immediately', () => {
-    st().setClip(0, 5);
-    st().stopAll();
-    expect(st().owner).toEqual({});
-    expect(st().queue).toEqual({});
-  });
-
-  it('bar counter advances once per four beats', () => {
-    expect(st().bar).toBe(1);
-    tick(4);
-    expect(st().bar).toBe(2);
-    expect(st().beat).toBe(0);
-  });
-
-  it('cycleQuant wraps in both directions', () => {
-    st().cycleQuant(1);
-    st().cycleQuant(1);
-    expect(st().quant).toBe('OFF');
-    st().cycleQuant(1);
-    expect(st().quant).toBe('1 BAR');
-    st().cycleQuant(-1);
-    expect(st().quant).toBe('OFF');
+  it('stopScene stops only tracks owned by (or queued for) that scene', () => {
+    st().launchScene(2);
+    rig.devices.forEach((d) => (d as FakeDevice).onClipStart!(1));
+    st().launch(0, 3); // drums re-queued to DROP B
+    rig.dev(0).onClipStart!(2);
+    st().stopScene(2);
+    expect(rig.dev(0).stops).toHaveLength(0); // now owned by scene 3
+    expect(rig.dev(1).stops).toHaveLength(1);
+    expect(rig.dev(2).stops).toHaveLength(1);
+    expect(rig.dev(3).stops).toHaveLength(1);
   });
 });
 
-describe('audibility (mute / solo / scene mute)', () => {
-  it('a track with no owner is silent', () => {
-    expect(isTrackAudible(0, {}, {}, {}, {})).toBe(false);
-  });
-
-  it('track mute silences only that track', () => {
+describe('mute / solo / gains', () => {
+  it('track mute closes the gain, unmute restores the fader value', () => {
+    const before = rig.gains[1];
     st().toggleTrackMute(1);
-    const s = st();
-    expect(isTrackAudible(0, s.owner, s.trackMute, s.sceneMute, s.solo)).toBe(true);
-    expect(isTrackAudible(1, s.owner, s.trackMute, s.sceneMute, s.solo)).toBe(false);
+    expect(rig.gains[1]).toBe(0);
+    st().toggleTrackMute(1);
+    expect(rig.gains[1]).toBeCloseTo(before, 9);
   });
 
-  it('solo silences every other track', () => {
+  it('solo closes every other track', () => {
     st().toggleSolo(2);
-    const s = st();
-    expect(isTrackAudible(2, s.owner, s.trackMute, s.sceneMute, s.solo)).toBe(true);
-    expect(isTrackAudible(0, s.owner, s.trackMute, s.sceneMute, s.solo)).toBe(false);
+    expect(rig.gains[2]).toBeGreaterThan(0);
+    expect(rig.gains[0]).toBe(0);
+    expect(rig.gains[1]).toBe(0);
+    expect(rig.gains[3]).toBe(0);
   });
 
-  it('scene mute silences tracks owned by that scene', () => {
-    st().toggleSceneMute(2); // DROP A owns everything
-    const s = st();
-    for (let t = 0; t < TRACKS.length; t++) {
-      expect(isTrackAudible(t, s.owner, s.trackMute, s.sceneMute, s.solo)).toBe(false);
-    }
+  it('scene mute closes tracks owned by that scene', () => {
+    st().launch(0, 2);
+    rig.dev(0).onClipStart!(1);
+    st().toggleSceneMute(2);
+    expect(rig.gains[0]).toBe(0);
+    expect(rig.gains[1]).toBeGreaterThan(0); // not owned by scene 2
+  });
+
+  it('swing changes go to devices live with the unchanged anchor', () => {
+    const anchor = st().anchor;
+    st().setSwing(0.4);
+    const last = rig.dev(0).tempos[rig.dev(0).tempos.length - 1];
+    expect(last.swing).toBe(0.4);
+    expect(last.anchor).toBe(anchor);
   });
 });
 
-describe('clip step previews', () => {
-  it('are deterministic and stable across calls', () => {
-    expect(stepsFor(0, 2)).toBe(stepsFor(0, 2)); // cached
-    const a = seededRand(42), b = seededRand(42);
-    expect(a()).toBe(b());
-  });
-
-  it('exist as 16 steps for every clip slot', () => {
-    SCENES.forEach((sc, s) => {
-      sc.clips.forEach((c, t) => {
-        if (!c) return;
-        const steps = stepsFor(t, s);
-        expect(steps).toHaveLength(16);
-        steps.forEach((sp) => expect(sp.h).toBeGreaterThanOrEqual(3));
-      });
-    });
-  });
-
-  it('drum patterns keep the four-on-the-floor anchors', () => {
-    SCENES.forEach((sc, s) => {
-      if (!sc.clips[0]) return;
-      const steps = stepsFor(0, s);
-      for (const i of [0, 4, 8, 12]) expect(steps[i].on).toBe(true);
-    });
+describe('pause', () => {
+  it('togglePlay suspends and resumes the context', () => {
+    st().togglePlay();
+    expect(rig.suspended).toBe(true);
+    expect(st().playing).toBe(false);
+    st().togglePlay();
+    expect(rig.suspended).toBe(false);
   });
 });

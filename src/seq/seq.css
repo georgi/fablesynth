@@ -7,9 +7,6 @@
 @keyframes sq-sweep { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 @keyframes sq-qpulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
 @keyframes sq-eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
-@keyframes sq-vu1 { 0% { width: 14%; } 14% { width: 72%; } 28% { width: 38%; } 42% { width: 88%; } 56% { width: 52%; } 70% { width: 76%; } 84% { width: 30%; } 100% { width: 14%; } }
-@keyframes sq-vu2 { 0% { width: 30%; } 14% { width: 58%; } 28% { width: 84%; } 42% { width: 44%; } 56% { width: 92%; } 70% { width: 36%; } 84% { width: 66%; } 100% { width: 30%; } }
-@keyframes sq-vu3 { 0% { width: 48%; } 14% { width: 22%; } 28% { width: 70%; } 42% { width: 96%; } 56% { width: 34%; } 70% { width: 80%; } 84% { width: 56%; } 100% { width: 48%; } }
 
 #sq-rack {
   max-width: 1460px;
@@ -21,6 +18,7 @@
 }
 
 #sq-rack button { font-family: var(--font-mono); }
+#sq-rack button:disabled { opacity: 0.4; cursor: default; }
 
 /* shared 5-column row: scene rail + 4 tracks */
 .sq-grid {
@@ -486,9 +484,6 @@
   background: linear-gradient(90deg, color-mix(in srgb, var(--tc) 33%, transparent), var(--tc));
   box-shadow: 0 0 6px color-mix(in srgb, var(--tc) 33%, transparent);
 }
-.sq-vu div.vu1 { animation: sq-vu1 1s steps(7) infinite; }
-.sq-vu div.vu2 { animation: sq-vu2 1s steps(7) infinite; }
-.sq-vu div.vu3 { animation: sq-vu3 1s steps(7) infinite; }
 
 .sq-hint {
   text-align: center;

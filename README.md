@@ -206,21 +206,26 @@ running). Two builds from one source of truth:
 
 ## SQ-4 session launcher
 
-SQ-4 is a session clip launcher in the spirit of Ableton's Session View: four
-tracks (DRUMS · BASS · LEAD · PADS, each badged with the FableSynth machine it
-represents) crossed with six scenes (INTRO → OUTRO). Tap a clip to launch it,
-tap again to stop; scenes layer freely and the latest launch wins each track.
-Launches quantize to the beat clock (**1 BAR**, **1/4** or **OFF**) — queued
-clips pulse until the boundary, then take ownership atomically. Per-track
-mute/solo, per-scene mute, a master SUM scope and per-track VU meters round
-out the surface. It is currently UI-only — a performance front end with the
-full launcher state machine, not yet wired to the instrument engines.
+SQ-4 is a session clip launcher in the spirit of Ableton's Session View,
+**driving all three real instruments from one page**: one shared
+`AudioContext` hosts a DR-1, a BL-1 and two WT-1 engines (LEAD + PADS), four
+tracks crossed with six scenes of real, playable clips. Tap a clip to launch
+it, tap again to stop; scenes layer freely and the latest launch wins each
+track. Launches quantize to the clock (**1 BAR**, **1/4** or **OFF**): the
+conductor stamps every command with an absolute context frame, and because
+all four worklets share the same `currentFrame` timebase, clips launched at
+one boundary start in the same render quantum and never drift apart. Queued
+cells pulse until the boundary; the grid flips to LIVE on the worklet's ack —
+exactly when the audio changed. Per-track mute/solo and per-scene mute are
+gain ramps on the shared graph; pause is `ctx.suspend()`, so everything
+freezes and resumes in phase. The SUM scope and the VU meters draw the real
+per-track analysers. The factory session (NEON TALE, 122 BPM) ships six
+scenes of handcrafted patterns in each machine's native format. State,
+document schema and the hosted worklet protocol are specified in
+[`docs/sq4-clips.md`](docs/sq4-clips.md).
 
 - **Web app** — served at `/seq/` (`npm run dev`, then open
   `http://localhost:5173/seq/`).
-- **Engine hookup design** — the clip/session document schema, the shared
-  `currentFrame` timebase and the hosted worklet protocol that will drive
-  the real instruments are specified in [`docs/sq4-clips.md`](docs/sq4-clips.md).
 
 ## Code layout
 
@@ -282,9 +287,16 @@ src/bass/hooks/                  computer-keyboard + MIDI note input
 The **SQ-4 session launcher** (TypeScript, fifth vite entry at `seq/index.html`):
 
 ```
-src/seq/model.ts                 tracks/scenes data + pure launcher rules
-                                 (quantize queue, ownership, audibility)
-src/seq/store.ts                 Zustand store: beat clock, launch queue, mutes
+src/seq/protocol.ts              session document schema, clip payload layouts,
+                                 base64 codec, shared-timebase boundary math
+src/seq/factory.ts               the NEON TALE factory session: 6 scenes of
+                                 handcrafted clips in each machine's format
+src/seq/devices.ts               SeqDevice adapters wrapping the three engines
+src/seq/rig.ts                   shared AudioContext, per-track gains/analysers,
+                                 final limiter
+src/seq/store.ts                 the conductor: owner/queue state, quantized
+                                 scheduling, ack handling, mute/solo gains
+src/seq/model.ts                 pure launcher rules + pattern-byte previews
 src/seq/components/              top bar, track heads, scene rows, clip cells,
-                                 now-playing footer, SUM scope, knobs
+                                 now-playing footer, SUM scope, VU meters
 ```
