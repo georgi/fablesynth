@@ -106,6 +106,10 @@ enum Pid : int {
     FXDELAY_ON, FXDELAY_TIME, FXDELAY_FB, FXDELAY_MIX,
     FXREVERB_ON, FXREVERB_SIZE, FXREVERB_MIX,
     MASTER_VOLUME, MASTER_GLIDE,
+    // Note sequencer clock (params.ts appends these after master too). seq.bpm
+    // also drives the engine's virtual transport while the internal sequencer
+    // plays, so synced LFOs phase-lock to the sequencer tempo (web parity).
+    SEQ_BPM, SEQ_SWING, SEQ_GATE, SEQ_ROOT,
     NUM_PARAMS
 };
 

@@ -4,18 +4,23 @@
 #include "PluginProcessor.h"
 #include "ui/Panels.h"
 #include "ui/LookAndFeel.h"
+#include "ui/NoteSeqView.h"
 #include "ui/WavetableEditor.h"
 
 // The rack: all panels laid out at a fixed logical size matching the web CSS
 // grid. The editor scales it to the window so the layout stays pixel-faithful.
 class Rack : public juce::Component {
 public:
-    static constexpr int LW = 1400, LH = 1053;
+    // LH grew by the NOTE SEQ row (270 + 9 gap) when the sequencer landed,
+    // matching the web grid's added 'seq' row.
+    static constexpr int LW = 1400, LH = 1332;
     Rack(juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
     void resized() override;
 
     // Forwarded from either oscillator panel's ✎ button (arg = osc index).
     std::function<void(int)> onEditTable;
+
+    fui::NoteSeqView& noteSeq() { return seq; }   // exposed for the host test
 private:
     juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
     fui::TopBar  topBar;
@@ -26,6 +31,7 @@ private:
     fui::LfoPanel lfos;
     fui::MatrixPanel matrix;
     fui::FxPanel fx;
+    fui::NoteSeqView seq;
 };
 
 class FableAudioProcessorEditor : public juce::AudioProcessorEditor,
@@ -36,6 +42,8 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    Rack& getRack() { return rack; }              // exposed for the host test
 
 private:
     fui::DarkLNF lnf;

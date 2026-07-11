@@ -32,7 +32,10 @@ source/dsp/Wavetables.{h,cpp}  FFT + 6 procedural tables + 9-level band-limited
 source/dsp/Engine.{h,cpp}      8-voice engine: 2 morphing oscillators (unison),
                                sub + noise, dual SVF/comb/vowel filter with ADAA
                                drive, 2 ADSR, 2 LFO, 4-slot mod matrix, glide,
-                               voice stealing            (port of worklet.js)
+                               voice stealing, and the sample-accurate 16-step
+                               note sequencer             (port of worklet.js)
+source/dsp/NoteSeq.h           packed pattern model (3 bytes/step x 16 x A-D)
+                               shared by engine/plugin/tests (port of noteseq.ts)
 source/dsp/Fx.{h,cpp}          drive -> chorus -> ping-pong delay -> reverb ->
                                master gain -> DC block -> limiter (port of synth.ts)
 source/dsp/Params.{h,cpp}      single source of truth for every parameter
@@ -45,6 +48,9 @@ source/ui/Theme.h              palette + panel drawing (port of index.css :root)
 source/ui/Controls.{h,cpp}     knob / stepper / power LED / vertical slider
 source/ui/Displays.{h,cpp}     scope, spectrum, filter, env + LFO views
 source/ui/Panels.{h,cpp}       osc / util / filter / env / lfo / matrix / fx / top bar
+source/ui/NoteSeqView.{h,cpp}  NOTE SEQ panel: 12 lanes x 16 steps, oct/acc/tie
+                               rows, patterns A-D + chain, RAND, BPM/SWING/GATE/
+                               ROOT clock            (port of SeqPanel.tsx .ns-*)
 test/engine_test.cpp           headless DSP verification harness (no JUCE)
 test/plugin_host_test.cpp      plugin-boundary test + PNG snapshot of the editor
 ```
@@ -73,6 +79,20 @@ stays pixel-faithful at any size.
   delay are direct ports. The web build's **convolution reverb** (generated
   exponential-noise impulse) is approximated by a Freeverb network tuned by SIZE
   — a real-time-safe stand-in with an equivalent diffuse tail.
+- **Note sequencer** (port of the web NOTE SEQ panel + the worklet's
+  seqFire/seqTie/seqGateOff): 16 steps x 4 chained patterns firing into the
+  polyphonic voice allocator; a *tie* retunes the sounding voice legato — no
+  envelope retrigger, GLIDE decides snap vs slide; accents fire velocity
+  1.0 vs 0.72 so VELO mod routes respond; the gate closes at the GATE fraction
+  of the step unless the next step ties in; swing delays odd 16ths by
+  swing * 0.667 of a step. **Host transport lock** mirrors DR-1/BL-1: when the
+  host transport rolls (reporting tempo + song position), steps derive from the
+  playhead ppq sample-accurately and host stop stops the line; a reported tempo
+  always overrides `seq.bpm`; otherwise the panel's play button drives the
+  internal sample-counting clock (Standalone included), and synced LFOs
+  phase-lock to the sequencer tempo like the web's virtual transport. All 4
+  patterns (the web's packed 3-byte/step layout), the chain and the edit
+  pattern persist in the plugin state.
 
 ## Build
 
@@ -98,13 +118,15 @@ One build produces all three plugins: WT-1 artifacts land in
 ## Verify the audio engine
 
 The headless harness builds without JUCE and checks wavetable correctness, that
-a note produces audio, the anti-aliasing floor, every filter type, the FX chain
-and all 20 presets:
+a note produces audio, the anti-aliasing floor, every filter type, the FX chain,
+all 20 presets, and the note sequencer (sample-exact step positions, accent
+velocities 1.0/0.72, tie-without-retrigger, gate fraction, swing timing, chain
+wrap and the host transport lock):
 ```sh
 cd juce
 g++ -std=c++17 -O2 -o engine_test test/engine_test.cpp \
   source/dsp/Engine.cpp source/dsp/Wavetables.cpp source/dsp/Fx.cpp \
-  source/dsp/Params.cpp source/dsp/Presets.cpp
+  source/dsp/Params.cpp source/dsp/Presets.cpp source/dsp/UserTables.cpp
 ./engine_test
 # or: cmake --build build --target engine_test && ctest --test-dir build
 ```

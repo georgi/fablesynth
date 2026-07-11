@@ -86,8 +86,28 @@ public:
     // Copy the most recent n post-FX mono samples (oldest -> newest) into dst.
     void   readScope(float* dst, int n) const;
 
+    // ---- note sequencer (BL-1 conventions) --------------------------------
+    // Transport: message thread -> engine via a lock-free command FIFO.
+    void setSeqPlaying(bool on);
+    bool isSeqPlaying() const { return seqPlaying_.load(); }
+    int  getCurrentStep() const { return curStep_.load(); }      // -1 stopped
+    int  getCurrentPattern() const { return curPattern_.load(); }
+    bool isHostSynced() const { return hostSynced_.load(); }     // host reported a tempo
+    double getHostBpm() const { return hostSeqBpm_.load(); }
+    // Patterns / chain are owned by the message thread; every edit copies the
+    // whole array into a shared mirror the audio thread applies on its next
+    // block (try-lock there — never blocks the audio thread).
+    fable::NoteSeqStep getSeqStep(int pattern, int step) const;
+    void setSeqStep(int pattern, int step, const fable::NoteSeqStep& s);
+    const std::vector<int>& getChain() const { return chain_; }
+    void setChain(std::vector<int> c);
+    int  getEditPattern() const { return editPattern_; }
+    void setEditPattern(int p);
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    void pushCmd(int type);
+    void shareSeqState(bool patterns, bool chain);
 
     // Rebuild the engine's table set from procedural + user tables (message thread).
     void rebuildEngineTables();
@@ -113,6 +133,26 @@ private:
     std::array<std::atomic<float>*, fable::NUM_PARAMS> rawParams{};
     int currentProgram = 0;
     bool prepared = false;
+
+    // ---- note sequencer bridge (BassAudioProcessor scheme) ----
+    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic };
+    juce::AbstractFifo cmdFifo_{64};
+    std::array<int, 64> cmds_{};
+
+    // sequencer content — message-thread source of truth + audio-side mirror
+    std::vector<uint8_t> patterns_ = fable::makeEmptySeqPatterns();
+    std::vector<int> chain_{0};
+    mutable std::mutex shareMutex_;
+    std::vector<uint8_t> patternsShared_ = fable::makeEmptySeqPatterns();
+    std::vector<int> chainShared_{0};
+    bool patternsDirty_ = false, chainDirty_ = false;
+    int editPattern_ = 0;
+
+    // atomics published from the audio thread
+    std::atomic<bool> seqPlaying_{false};
+    std::atomic<int> curStep_{-1}, curPattern_{0};
+    std::atomic<bool> hostSynced_{false};
+    std::atomic<double> hostSeqBpm_{0.0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FableAudioProcessor)
 };

@@ -304,8 +304,13 @@ juce::String Stepper::displayName() const {
         if (nameProvider) return nameProvider(choice->getIndex());
         return choice->getCurrentChoiceName();
     }
-    if (ranged)
-        return juce::String((int)std::lround(ranged->convertFrom0to1(ranged->getValue())));
+    if (ranged) {
+        const int v = (int)std::lround(ranged->convertFrom0to1(ranged->getValue()));
+        // Integer-range steppers can format the raw value (e.g. seq.root shows
+        // a note name via params.ts fmtNote); default is the plain number.
+        if (nameProvider) return nameProvider(v);
+        return juce::String(v);
+    }
     return "-";
 }
 void Stepper::timerCallback() {

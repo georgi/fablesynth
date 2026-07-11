@@ -186,6 +186,169 @@ void Engine::noteOff(int n) {
     }
 }
 
+// ---------------- note sequencer (worklet.js seqRead/seqGateOff/seqTie/seqFire) ----------------
+
+void Engine::seqPlay() {
+    if (seqHostPlaying_) return;   // host owns the transport while rolling
+    seqPlaying_ = true;
+    seqStep_ = -1;
+    seqChainPos_ = 0;
+    seqToNext_ = 0;
+    seqToGateOff_ = -1;
+    seqNote_ = -1;
+    seqSongPos_ = 0;
+}
+
+void Engine::seqStop() {
+    seqPlaying_ = false;
+    seqStep_ = -1;
+    seqToGateOff_ = -1;
+    seqGateOff();
+}
+
+void Engine::setSeqPatterns(const uint8_t* data, int n) {
+    if (data && n == (int)seqPats_.size())
+        std::copy(data, data + n, seqPats_.begin());
+}
+
+void Engine::setSeqChain(const int* list, int n) {
+    if (!list || n <= 0) return;
+    seqChain_.assign(list, list + n);
+    for (int& c : seqChain_)
+        c = std::max(0, std::min(SEQ_NPATTERNS - 1, c));
+    seqChainPos_ = std::min(seqChainPos_, (int)seqChain_.size() - 1);
+}
+
+void Engine::setBpmOverride(double bpm) {
+    bpmOverride_ = bpm > 0 ? bpm : 0;
+}
+
+double Engine::seqEffectiveBpm() const {
+    if (bpmOverride_ > 0) return bpmOverride_;
+    double pbpm = p_[SEQ_BPM] != 0 ? (double)p_[SEQ_BPM] : 120.0;
+    return std::min(200.0, std::max(60.0, pbpm));
+}
+
+// worklet seqRead (noteseq.ts getStep folded to a semitone offset)
+Engine::SeqReadStep Engine::readSeqStep(const uint8_t* pats, int pat, int s) {
+    const int o = (pat * SEQ_STEPS + s) * SEQ_STEP_STRIDE;
+    const uint8_t flags = pats[o];
+    SeqReadStep st;
+    st.on   = (flags & 1) != 0;
+    st.acc  = (flags & 2) != 0;
+    st.tie  = (flags & 4) != 0;
+    st.semi = std::min(11, (int)pats[o + 1]) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
+    return st;
+}
+
+void Engine::seqGateOff() {
+    if (seqNote_ >= 0) {
+        noteOff(seqNote_);
+        seqNote_ = -1;
+    }
+}
+
+// Legato retune of the sounding sequencer voice: no envelope retrigger; the
+// renderVoice glide slew takes v.pitch to the new note (instant at GLIDE 0).
+void Engine::seqTie(int n, double vel) {
+    Voice* voice = nullptr;
+    for (auto& v : voices_)
+        if (v.gate && v.note == seqNote_) { voice = &v; break; }
+    if (!voice) { noteOn(n, vel); return; } // voice got stolen — retrigger
+    voice->note = n;
+    lastPitch_ = n;
+}
+
+// Shared step-fire body: trigger the step and schedule the gate, holding
+// through when the NEXT step ties in (worklet seqFire lines 428-441).
+void Engine::seqFireAt(int s, int pat, int patNext, double dur) {
+    const SeqReadStep st = readSeqStep(seqPats_.data(), pat, s);
+    if (st.on) {
+        int root = (int)p_[SEQ_ROOT];
+        if (root == 0) root = 48;
+        const int n = root + st.semi;
+        const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
+        if (st.tie && seqNote_ >= 0) seqTie(n, vel);
+        else { seqGateOff(); noteOn(n, vel); }
+        seqNote_ = n;
+        // hold through the step when the NEXT step ties in
+        const int sN = (s + 1) % SEQ_STEPS;
+        const int patN = sN == 0 ? patNext : pat;
+        const SeqReadStep stN = readSeqStep(seqPats_.data(), patN, sN);
+        double gate = p_[SEQ_GATE] != 0 ? (double)p_[SEQ_GATE] : 0.55;
+        gate = std::min(0.98, std::max(0.1, gate));
+        seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
+    }
+    seqStep_ = s;
+}
+
+// worklet seqFire — internal clock: real-sample step durations, swing delays
+// odd 16ths by swing * SEQ_SWING_MAX of a step.
+void Engine::seqFire() {
+    const double bpm = seqEffectiveBpm();
+    const double dur = (60.0 / bpm / 4.0) * sr_;
+    const double swing = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
+    if (seqStep_ + 1 >= SEQ_STEPS) {               // bar wrap advances the chain
+        seqStep_ = -1;
+        seqChainPos_ = (seqChainPos_ + 1) % (int)seqChain_.size();
+    }
+    const int s = seqStep_ + 1;
+    const int pat = seqChain_[(size_t)seqChainPos_];
+    const int patNext = seqChain_[(size_t)((seqChainPos_ + 1) % (int)seqChain_.size())];
+    seqFireAt(s, pat, patNext, dur);
+    const double offNow = (s % 2 == 1) ? swing * SEQ_SWING_MAX * dur : 0.0;
+    const int sNext = (s + 1) % SEQ_STEPS;
+    const double offNext = (sNext % 2 == 1) ? swing * SEQ_SWING_MAX * dur : 0.0;
+    seqToNext_ = dur - offNow + offNext;
+}
+
+// ---------------- host transport lock (BassEngine scheme) ----------------
+
+void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
+    if (!std::isfinite(ppq)) ppq = 0;
+    if (!(std::isfinite(bpm) && bpm > 1.0)) bpm = 120;
+    if (playing && !seqHostPlaying_) {
+        seqPlaying_ = false;           // host takes over; internal transport yields
+        seqStep_ = -1;
+        seqToGateOff_ = -1;
+        seqHostSynced_ = false;
+        seqGateOff();
+    }
+    if (playing && seqHostSynced_ && std::fabs(ppq - seqHostEndPpq_) > 1e-4)
+        seqHostSynced_ = false;        // loop / relocate -> resync from ppq
+    if (!playing && seqHostPlaying_) { // host stopped
+        seqStep_ = -1;
+        seqToGateOff_ = -1;
+        seqGateOff();
+    }
+    seqHostPlaying_ = playing;
+    seqHostPpq_ = ppq;
+    seqHostBpm_ = bpm;
+}
+
+double Engine::seqHostStepPpq(long k) const {
+    const double swing = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
+    return (double)k * 0.25 + ((k & 1) ? swing * SEQ_SWING_MAX * 0.25 : 0.0);
+}
+
+void Engine::seqHostResync() {
+    long k = (long)std::floor(seqHostPpq_ / 0.25) - 1;
+    if (k < 0) k = 0;
+    while (seqHostStepPpq(k) < seqHostPpq_ - 1e-9) k++;
+    seqHostNextK_ = k;
+    seqHostSynced_ = true;
+}
+
+void Engine::seqFireHostStep(long k) {
+    const int  s   = (int)(k % SEQ_STEPS);
+    const long bar = k / SEQ_STEPS;
+    seqChainPos_ = (int)(bar % (long)seqChain_.size());
+    const int pat = seqChain_[(size_t)seqChainPos_];
+    const int patNext = seqChain_[(size_t)((bar + 1) % (long)seqChain_.size())];
+    const double dur = (60.0 / seqHostBpm_ / 4.0) * sr_;
+    seqFireAt(s, pat, patNext, dur);
+}
+
 // Configure one oscillator's per-block render state. Returns true if audible.
 // Reads the modulated snapshot pm for the per-param dests (pos/level/pan/detune/
 // spread); pitch and the pan global offset stay as direct additive terms.
@@ -688,13 +851,65 @@ void Engine::render(float* L, float* R, int n) {
         vizActive = 0; vizA = -1; vizB = -1;
         return;
     }
-    int off = 0;
-    const double beatsPerSample = (bpm_ / 60.0) / sr_;
-    while (off < n) {
-        int chunk = std::min(128, n - off);
-        renderBlock(L + off, R + off, chunk, ppq_ + off * beatsPerSample);
-        off += chunk;
+    // Sequencer clocking. The host-locked path derives absolute 16ths from the
+    // playhead ppq (sample-accurate splits at each due step); the internal path
+    // counts real samples so the clock never drifts (worklet parity). Chunks
+    // are additionally cut at the pending gate-off so it lands on its sample.
+    const bool hostRun = seqHostPlaying_;
+    double ppqPerSample = 0, samplesPerPpq = 0;
+    if (hostRun) {
+        ppqPerSample = seqHostBpm_ / 60.0 / sr_;
+        samplesPerPpq = 1.0 / ppqPerSample;
+        if (!seqHostSynced_) seqHostResync();
     }
+    const double beatsPerSample = (bpm_ / 60.0) / sr_;
+    // Virtual transport: while the internal sequencer plays without a host
+    // transport, synced LFOs phase-lock to the sequencer clock — the web
+    // build's transportBeats follows seq.bpm the same way.
+    const double seqBeatsPerSample = (seqEffectiveBpm() / 60.0) / sr_;
+    const bool internalRun = seqPlaying_ && !hostRun;
+    const bool hostPlayingFlag = playing_;
+    if (internalRun) playing_ = true;   // synced LFOs treat the seq as transport
+
+    int off = 0;
+    while (off < n) {
+        int run = std::min(128, n - off);
+        if (hostRun) {
+            // Fire every step due at/before off; split the run at the next one.
+            for (;;) {
+                const long fireAt = (long)std::ceil(
+                    (seqHostStepPpq(seqHostNextK_) - seqHostPpq_) * samplesPerPpq - 1e-9);
+                if (fireAt <= off) { seqFireHostStep(seqHostNextK_++); continue; }
+                if (fireAt - off < run) run = (int)(fireAt - off);
+                break;
+            }
+        } else if (seqPlaying_) {
+            if (seqToNext_ <= 0) seqFire();
+            run = std::min(run, std::max(1, (int)std::ceil(seqToNext_)));
+        }
+        if (seqToGateOff_ >= 0)
+            run = std::min(run, std::max(1, (int)std::ceil(seqToGateOff_)));
+
+        const double chunkPpq = hostRun    ? seqHostPpq_ + off * ppqPerSample
+                              : internalRun ? seqSongPos_ * seqBeatsPerSample
+                                            : ppq_ + off * beatsPerSample;
+        renderBlock(L + off, R + off, run, chunkPpq);
+
+        if (seqPlaying_) {
+            seqToNext_ -= run;
+            seqSongPos_ += run;
+        }
+        if (seqToGateOff_ >= 0) {
+            seqToGateOff_ -= run;
+            if (seqToGateOff_ <= 0) {
+                seqGateOff();
+                seqToGateOff_ = -1;
+            }
+        }
+        off += run;
+    }
+    playing_ = hostPlayingFlag;
+    if (hostRun) seqHostEndPpq_ = seqHostPpq_ + n * ppqPerSample;
 }
 
 } // namespace fable

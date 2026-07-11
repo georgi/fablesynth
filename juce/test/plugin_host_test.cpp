@@ -11,6 +11,27 @@
 #include <set>
 #include <string>
 
+// Minimal host playhead (bass_host_test scheme). bpm-only by default (tempo
+// sync); with reportPpq it also reports song position + isPlaying, advancing
+// ppq once per getPosition() call (= once per processBlock) like a rolling DAW.
+struct MockPlayHead : juce::AudioPlayHead {
+    double bpm = 90.0;
+    bool   playing = true;
+    bool   reportPpq = false;
+    mutable double ppq = 0.0;
+    double ppqInc = 0.0;
+    juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override {
+        juce::AudioPlayHead::PositionInfo pos;
+        pos.setBpm(bpm);
+        pos.setIsPlaying(playing);
+        if (reportPpq) {
+            pos.setPpqPosition(ppq);
+            if (playing) ppq += ppqInc;
+        }
+        return pos;
+    }
+};
+
 static void writePng(const juce::Image& img, const juce::File& out) {
     if (auto stream = out.createOutputStream()) {
         stream->setPosition(0); stream->truncate();
@@ -25,7 +46,7 @@ static void writePng(const juce::Image& img, const juce::File& out) {
 // panel) to a PNG via JUCE's headless software renderer.
 static void snapshotEditor(FableAudioProcessor& proc, const juce::File& out) {
     std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-    ed->setSize(1400, 1053); // logical rack size — full-resolution render
+    ed->setSize(Rack::LW, Rack::LH); // logical rack size — full-resolution render
     writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
 }
 
@@ -258,6 +279,204 @@ int main(int argc, char** argv) {
         for (int slot = 1; slot <= 12; ++slot)
             if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() != 0.0f) active++;
         check(active == 12, "12 mod-matrix routes active (list overflows -> scrollable viewport)", (float)active);
+    }
+
+    // ================= note sequencer (plugin boundary) =================
+    printf("\n== Note sequencer ==\n");
+    {
+        // seq params live in the canonical table -> APVTS
+        auto* pBpm = proc.apvts.getRawParameterValue("seq.bpm");
+        check(pBpm != nullptr, "seq.bpm exists in the APVTS", pBpm ? 1 : 0);
+        check(pBpm && std::abs(pBpm->load() - 120.0f) < 0.5f, "seq.bpm defaults to 120",
+              pBpm ? pBpm->load() : -1);
+        check(proc.apvts.getRawParameterValue("seq.swing") != nullptr
+              && proc.apvts.getRawParameterValue("seq.gate") != nullptr
+              && proc.apvts.getRawParameterValue("seq.root") != nullptr,
+              "seq.swing / seq.gate / seq.root exist", 0);
+
+        auto renderBlocks = [&](int nBlocks) {
+            double sumSq = 0; long cnt = 0;
+            for (int b = 0; b < nBlocks; ++b) {
+                buf.clear();
+                juce::MidiBuffer midi;
+                proc.processBlock(buf, midi);
+                for (int ch = 0; ch < 2; ++ch) {
+                    const float* d = buf.getReadPointer(ch);
+                    for (int i = 0; i < block; ++i) sumSq += (double)d[i] * d[i];
+                }
+                cnt += 2 * block;
+            }
+            return std::sqrt(sumSq / (double)cnt);
+        };
+
+        // write a line into pattern A and play the internal clock
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
+        for (int s = 0; s < 16; s += 2) {
+            fable::NoteSeqStep st; st.on = true; st.note = (s % 4 == 0) ? 0 : 7;
+            st.acc = (s == 0);
+            proc.setSeqStep(0, s, st);
+        }
+        renderBlocks(60); // flush earlier chord tails before measuring
+        proc.setSeqPlaying(true);
+        int stepChanges = 0, lastStep = -1;
+        double sum = 0;
+        // one bar at 120 bpm = 16 * 6000 = 96000 samples ~= 188 blocks
+        for (int b = 0; b < 188; ++b) {
+            sum += renderBlocks(1);
+            int s = proc.getCurrentStep();
+            if (s != lastStep) { stepChanges++; lastStep = s; }
+        }
+        check(proc.isSeqPlaying(), "sequencer reports playing", 1);
+        check(sum / 188.0 > 1e-4, "internal clock drives audible steps", sum / 188.0);
+        check(stepChanges >= 14, "step counter advances across the bar", stepChanges);
+        check(proc.getCurrentPattern() == 0, "current pattern is chain[0] = A",
+              proc.getCurrentPattern());
+        check(!proc.isHostSynced(), "no playhead -> not host-synced", 0);
+        proc.setSeqPlaying(false);
+        renderBlocks(4);
+        check(proc.getCurrentStep() == -1, "stopped: currentStep reads -1",
+              proc.getCurrentStep());
+        renderBlocks(120); // decay
+
+        // host tempo overrides seq.bpm for the internal clock
+        MockPlayHead ph; // 90 bpm, no ppq -> tempo-sync only
+        proc.setPlayHead(&ph);
+        proc.setSeqPlaying(true);
+        stepChanges = 0; lastStep = -1;
+        const int blocks4s = (int)(4.0 * sr / block);
+        for (int b = 0; b < blocks4s; ++b) {
+            renderBlocks(1);
+            int s = proc.getCurrentStep();
+            if (s != lastStep) { stepChanges++; lastStep = s; }
+        }
+        check(proc.isHostSynced(), "host tempo reported -> isHostSynced()", 1);
+        check(std::abs(proc.getHostBpm() - 90.0) < 0.01, "getHostBpm() = 90",
+              proc.getHostBpm());
+        // 4 s at 90 bpm = 6 steps/s -> ~24 step advances (vs 32 at 120)
+        check(stepChanges >= 21 && stepChanges <= 27,
+              "step spacing follows host 90 bpm (~24 steps in 4 s)", stepChanges);
+        proc.setSeqPlaying(false);
+        proc.setPlayHead(nullptr);
+        renderBlocks(120);
+
+        // host transport lock: isPlaying + ppq slave the sequencer
+        MockPlayHead tph;
+        tph.bpm = 120.0; tph.reportPpq = true;
+        tph.ppqInc = (double)block / sr * (120.0 / 60.0);
+        proc.setPlayHead(&tph);
+        stepChanges = 0; lastStep = -1;
+        double sum6b = 0;
+        const int blocks2s = (int)(2.0 * sr / block);
+        for (int b = 0; b < blocks2s; ++b) {
+            sum6b += renderBlocks(1);
+            int s = proc.getCurrentStep();
+            if (s != lastStep) { stepChanges++; lastStep = s; }
+        }
+        check(proc.isSeqPlaying(), "host transport -> sequencer reports playing", 1);
+        check(sum6b / blocks2s > 1e-4, "host transport drives the line without internal play",
+              sum6b / blocks2s);
+        // 2 s at 120 bpm = 16 step advances (8 steps/s)
+        check(stepChanges >= 13 && stepChanges <= 19,
+              "step count follows host position (~16 in 2 s)", stepChanges);
+        tph.playing = false;                                  // host hits stop
+        renderBlocks(4);
+        check(!proc.isSeqPlaying(), "host stop -> sequencer stops", 0);
+        check(proc.getCurrentStep() == -1, "host stop resets the step readout",
+              proc.getCurrentStep());
+        proc.setPlayHead(nullptr);
+        renderBlocks(120);
+
+        // patterns + chain round-trip through getState/setState (packed web layout)
+        fable::NoteSeqStep edited;
+        edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.tie = true;
+        proc.setSeqStep(2, 11, edited);
+        proc.setChain({ 0, 2 });
+        proc.setEditPattern(2);
+        juce::MemoryBlock seqState;
+        proc.getStateInformation(seqState);
+        FableAudioProcessor proc2;
+        check(!proc2.getSeqStep(2, 11).on, "fresh instance differs before restore", 0);
+        proc2.setStateInformation(seqState.getData(), (int)seqState.getSize());
+        auto rs = proc2.getSeqStep(2, 11);
+        check(rs.on && rs.acc && rs.tie && rs.note == 9 && rs.oct == 1,
+              "edited step round-trips", rs.note);
+        check(proc2.getChain() == std::vector<int>({ 0, 2 }), "chain {A,C} round-trips", 0);
+        check(proc2.getEditPattern() == 2, "edit pattern round-trips", proc2.getEditPattern());
+
+        // restore the snapshot-friendly state: pattern A, simple chain
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
+    }
+
+    // ---- NOTE SEQ panel: web store semantics through the real view ----
+    printf("\n== Note seq view ==\n");
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        auto* fed = dynamic_cast<FableAudioProcessorEditor*>(ed.get());
+        check(fed != nullptr, "createEditor returns FableAudioProcessorEditor", 0);
+        auto& seq = fed->getRack().noteSeq();
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
+
+        // toggleCell: tap = set note, tap same lane again = rest
+        fable::NoteSeqStep offStep;
+        proc.setSeqStep(0, 4, offStep);
+        seq.toggleCell(4, 7);
+        auto s = proc.getSeqStep(0, 4);
+        check(s.on && s.note == 7, "tap lane sets the note", s.note);
+        seq.toggleCell(4, 3);
+        s = proc.getSeqStep(0, 4);
+        check(s.on && s.note == 3, "tap other lane moves the note", s.note);
+        seq.toggleCell(4, 3);
+        s = proc.getSeqStep(0, 4);
+        check(!s.on, "tap active lane rests the step", 0);
+
+        // acc/tie only latch on active steps
+        seq.toggleStepAcc(4);
+        check(!proc.getSeqStep(0, 4).acc, "accent ignored on a rest", 0);
+        seq.toggleCell(4, 0);
+        seq.toggleStepAcc(4);
+        seq.toggleStepTie(4);
+        s = proc.getSeqStep(0, 4);
+        check(s.acc && s.tie, "accent + tie latch on an active step", 0);
+        seq.cycleStepOct(4);
+        check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
+        seq.cycleStepOct(4);
+        check(proc.getSeqStep(0, 4).oct == -1, "oct cycles +1 -> -1", proc.getSeqStep(0, 4).oct);
+
+        // pattern click outside chain mode resets the chain (store.setEditPattern)
+        seq.patternClick(1);
+        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}", 0);
+
+        // chain builder: first click replaces, later clicks append, toggle-off commits
+        seq.setChaining(true);
+        check(seq.isChaining(), "CHAIN toggle latches on", 1);
+        seq.patternClick(0);
+        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh", 0);
+        seq.patternClick(3);
+        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends", 0);
+        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
+              proc.getEditPattern());
+        seq.setChaining(false);
+        check(!seq.isChaining(), "CHAIN toggle latches off", 0);
+        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off", 0);
+
+        // RAND rewrites the edit pattern in place
+        proc.setEditPattern(1);
+        bool changed = false;
+        seq.randomize();
+        for (int i = 0; i < 16 && !changed; ++i)
+            if (proc.getSeqStep(1, i).on) changed = true;
+        if (!changed) { seq.randomize();
+            for (int i = 0; i < 16 && !changed; ++i)
+                if (proc.getSeqStep(1, i).on) changed = true; }
+        check(changed, "RAND writes a pattern", 1);
+
+        // back to the snapshot-friendly state
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
     }
 
     juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])

@@ -39,6 +39,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/Controls.cpp
         source/ui/Displays.cpp
         source/ui/Modulation.cpp
+        source/ui/NoteSeqView.cpp
         source/ui/Panels.cpp
         source/ui/WavetableEditor.cpp
         source/dsp/Engine.cpp
@@ -197,6 +198,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/Controls.cpp
         source/ui/Displays.cpp
         source/ui/Modulation.cpp
+        source/ui/NoteSeqView.cpp
         source/ui/Panels.cpp
         source/ui/WavetableEditor.cpp
         source/dsp/Engine.cpp

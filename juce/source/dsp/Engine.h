@@ -7,6 +7,7 @@
 // driven by the plugin AND exercised by a headless test harness.
 #pragma once
 
+#include "NoteSeq.h"
 #include "Params.h"
 #include "Wavetables.h"
 #include <algorithm>
@@ -148,7 +149,33 @@ public:
     // free-run LFO derives its phase from ppq so it lines up with the downbeat.
     // ppq is sanitised so a non-finite host position can't latch a NaN phase.
     void setTransport(double ppq, bool playing) { ppq_ = std::isfinite(ppq) ? ppq : 0.0; playing_ = playing; }
-    void panic() { for (auto& v : voices_) v.kill(); }
+    void panic() { for (auto& v : voices_) v.kill(); seqNote_ = -1; seqToGateOff_ = -1; }
+
+    // ---- note sequencer (port of worklet.js seqRead/seqGateOff/seqTie/seqFire).
+    // 16 steps x 4 chained patterns firing noteOn/noteOff into the polyphonic
+    // voice allocator; a tie retunes the sounding voice legato (no envelope
+    // retrigger — MASTER_GLIDE decides snap vs slide); accents fire velocity
+    // SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod routes respond; the gate
+    // closes at SEQ_GATE of the step unless the next step ties in.
+    void seqPlay();                                 // worklet 'play' (yields to a rolling host)
+    void seqStop();                                 // worklet 'stop'
+    bool seqIsPlaying() const { return seqPlaying_ || seqHostPlaying_; }
+    void setSeqPatterns(const uint8_t* data, int n); // n must be SEQ_PATTERN_BYTES; copies
+    void setSeqChain(const int* list, int n);        // ignores empty; clamps entries + chainPos
+    void setBpmOverride(double bpm);                 // host tempo wins over SEQ_BPM; <= 0 clears
+    int  seqCurrentStep() const { return seqStep_; } // -1 when stopped
+    int  seqCurrentPattern() const { return seqChain_[(size_t)seqChainPos_]; }
+
+    // Host transport lock (same contract as BassEngine::setHostTransport):
+    // while the host is rolling with a song position, absolute 16th k fires at
+    //   p(k) = k*0.25 + (k odd ? swing*SEQ_SWING_MAX*0.25 : 0) ppq,
+    // the pattern is chain[(k/16) % chain.size()], and k < 0 never fires.
+    void setSeqHostTransport(double ppq, double bpm, bool playing);
+
+    // One unpacked engine step: on/acc/tie + semitone offset from SEQ_ROOT
+    // (worklet seqRead). Static so the harness asserts the unpack directly.
+    struct SeqReadStep { bool on = false, acc = false, tie = false; int semi = 0; };
+    static SeqReadStep readSeqStep(const uint8_t* pats, int pat, int s);
 
     // Render the summed (pre-FX) voice mix into L/R. Chunks internally to the
     // 128-sample block cadence so block-rate modulation matches the web engine
@@ -169,6 +196,17 @@ private:
     double lfoHz(int base) const;
     void updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n);
 
+    // ---- note sequencer internals ----
+    void seqGateOff();                       // worklet seqGateOff
+    void seqTie(int n, double vel);          // worklet seqTie (legato retune)
+    void seqFire();                          // worklet seqFire (internal clock)
+    void seqFireAt(int s, int pat, int patNext, double dur); // shared step-fire body
+    double seqEffectiveBpm() const;
+    // host-lock helpers (BassEngine scheme)
+    double seqHostStepPpq(long k) const;
+    void   seqHostResync();
+    void   seqFireHostStep(long k);
+
     ParamArray p_ = defaultParams();
     std::vector<EngineTable> tables_;
     // Guards tables_ so the message thread can swap in new tables (user import /
@@ -187,6 +225,26 @@ private:
     double bpm_ = 120;
     double ppq_ = 0;                  // host transport position (quarter notes)
     bool   playing_ = false;          // host transport running
+
+    // ---- note sequencer state (worklet fields) ----
+    std::vector<uint8_t> seqPats_ = makeEmptySeqPatterns();
+    std::vector<int> seqChain_ { 0 };
+    int    seqChainPos_ = 0;
+    bool   seqPlaying_ = false;       // internal clock running
+    int    seqStep_ = -1;
+    double seqToNext_ = 0;            // samples until the next step fires
+    double seqToGateOff_ = -1;        // samples until the gate closes (-1 = none/tied)
+    int    seqNote_ = -1;             // midi note the sequencer is sounding (-1 = none)
+    double seqSongPos_ = 0;           // samples since play (virtual transport for synced LFOs)
+    double bpmOverride_ = 0;          // > 0: host tempo wins over SEQ_BPM
+
+    // host transport lock state (BassEngine scheme)
+    bool   seqHostPlaying_ = false;
+    bool   seqHostSynced_  = false;
+    double seqHostPpq_ = 0;
+    double seqHostBpm_ = 120;
+    double seqHostEndPpq_ = 0;
+    long   seqHostNextK_ = 0;
 
     // Per-voice modulated parameter snapshot: p_ with each route's offset folded in
     // (Lin/Log curve rules from the design contract). Reused per voice — no per-call

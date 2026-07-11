@@ -82,7 +82,8 @@ public:
 
     // Optional dynamic overrides for table steppers: cycle only over the live
     // count of selectable tables and show the live (user) table name. Default
-    // (unset) uses the param's fixed choice list.
+    // (unset) uses the param's fixed choice list. In the integer-range mode
+    // nameProvider formats the raw value instead (e.g. seq.root -> note name).
     std::function<int()>               countProvider;
     std::function<juce::String(int)>   nameProvider;
 private:

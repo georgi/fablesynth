@@ -11,11 +11,13 @@ Rack::Rack(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
       env2(s, "env2", "MOD ENV", juce::Colour(0xffb18cff), fui::Accent::F, 3), // MOD ENV = mod src 3
       lfos(s, [proc = &p] { return proc->getTransport(); }),
       matrix(s),
-      fx(s) {
+      fx(s),
+      seq(s, p) {
     addAndMakeVisible(topBar);
     addAndMakeVisible(oscA); addAndMakeVisible(oscB); addAndMakeVisible(util);
     addAndMakeVisible(filter); addAndMakeVisible(env1); addAndMakeVisible(env2);
     addAndMakeVisible(lfos); addAndMakeVisible(matrix); addAndMakeVisible(fx);
+    addAndMakeVisible(seq);
     oscA.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
     oscB.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
 }
@@ -30,11 +32,12 @@ juce::Rectangle<int> Rack::colArea(int c0, int span, int y, int h) const {
 
 void Rack::resized() {
     const int padX = 14, padY = 12, gap = 9;
-    const int topH = 70, row1 = 250, row2 = 430, row3 = 250;
+    const int topH = 70, row1 = 250, row2 = 430, row3 = 250, row4 = 270;
     topBar.setBounds(padX, padY, LW - padX * 2, topH);
     const int y1 = padY + topH + gap;
     const int y2 = y1 + row1 + gap;
     const int y3 = y2 + row2 + gap;
+    const int y4 = y3 + row3 + gap;
 
     oscA.setBounds(colArea(0, 5, y1, row1));
     oscB.setBounds(colArea(5, 5, y1, row1));
@@ -47,6 +50,8 @@ void Rack::resized() {
 
     matrix.setBounds(colArea(0, 4, y3, row3));
     fx.setBounds(colArea(4, 8, y3, row3));
+
+    seq.setBounds(colArea(0, 12, y4, row4));   // grid-area 'seq': full width
 }
 
 // ---- Editor ----
