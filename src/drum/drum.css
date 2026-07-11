@@ -140,6 +140,35 @@
   letter-spacing: 0.15em;
   white-space: nowrap;
 }
+.dr-patchbar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.dr-patchbar .pb-btn {
+  height: 21px;
+  min-width: 21px;
+  padding: 0 6px;
+  font-size: 9px;
+}
+.dr-patchbar .pb-save { font-size: 8px; }
+.dr-patchname {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  height: 21px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0c0f16;
+  color: var(--ac-a);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
 
 #dr-oscrow {
   display: grid;
