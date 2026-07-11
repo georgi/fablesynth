@@ -13,6 +13,7 @@ class FakeDevice implements SeqDevice {
   clips: Array<{ bars: number; atFrame: number; bytes: number }> = [];
   stops: number[] = [];
   tempos: Array<{ bpm: number; swing: number; anchor: number }> = [];
+  updates: Array<{ bars: number; bytes: number }> = [];
   onClipStart: ((frame: number) => void) | null = null;
   onClipStop: ((frame: number) => void) | null = null;
   onPos: ((step: number, bar: number) => void) | null = null;
@@ -27,6 +28,9 @@ class FakeDevice implements SeqDevice {
   }
   scheduleStop(atFrame: number): void {
     this.stops.push(atFrame);
+  }
+  updateClip(pattern: Uint8Array, bars: number): void {
+    this.updates.push({ bars, bytes: pattern.length });
   }
   panic(): void {}
 }

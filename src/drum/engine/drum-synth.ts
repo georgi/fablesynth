@@ -389,4 +389,8 @@ export class DrumEngine {
   scheduleStop(atFrame: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame });
   }
+
+  updateClip(data: Uint8Array, bars: number): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars });
+  }
 }

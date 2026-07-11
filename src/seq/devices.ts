@@ -17,10 +17,13 @@ export interface SeqDevice {
   setTempo(bpm: number, swing: number, anchor: number): void;
   scheduleClip(pattern: Uint8Array, bars: number, atFrame: number): void;
   scheduleStop(atFrame: number): void;
+  updateClip(pattern: Uint8Array, bars: number): void;
   panic(): void;
   onClipStart: ((frame: number) => void) | null;
   onClipStop: ((frame: number) => void) | null;
   onPos: ((step: number, bar: number) => void) | null;
+  /** The live engine behind this device (absent on test fakes). */
+  readonly engine?: DrumEngine | BassEngine | SynthEngine;
 }
 
 // The three engines expose an identical hosted surface (init opts, host/
@@ -56,6 +59,10 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
 
   scheduleStop(atFrame: number): void {
     this.engine.scheduleStop(atFrame);
+  }
+
+  updateClip(pattern: Uint8Array, bars: number): void {
+    this.engine.updateClip(pattern, bars);
   }
 
   panic(): void {
