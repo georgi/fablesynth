@@ -194,6 +194,21 @@ running). Two builds from one source of truth:
   overlapping keys = legato slide), computer keys `A W S E D …` with `Z`/`X`
   octave, `Esc` stops, MIDI in from C2 with last-note priority.
 
+## SQ-4 session launcher
+
+SQ-4 is a session clip launcher in the spirit of Ableton's Session View: four
+tracks (DRUMS · BASS · LEAD · PADS, each badged with the FableSynth machine it
+represents) crossed with six scenes (INTRO → OUTRO). Tap a clip to launch it,
+tap again to stop; scenes layer freely and the latest launch wins each track.
+Launches quantize to the beat clock (**1 BAR**, **1/4** or **OFF**) — queued
+clips pulse until the boundary, then take ownership atomically. Per-track
+mute/solo, per-scene mute, a master SUM scope and per-track VU meters round
+out the surface. It is currently UI-only — a performance front end with the
+full launcher state machine, not yet wired to the instrument engines.
+
+- **Web app** — served at `/seq/` (`npm run dev`, then open
+  `http://localhost:5173/seq/`).
+
 ## Code layout
 
 The **plugins** (C++/JUCE — WT-1, DR-1 and BL-1) live in [`juce/`](juce/) — see
@@ -248,4 +263,14 @@ src/bass/patches.ts              factory patches + localStorage user patches
 src/bass/store.ts                Zustand store: params, patterns, chain, transport
 src/bass/components/             osc/filter/env panels, keys, pitch seq, FX rack
 src/bass/hooks/                  computer-keyboard + MIDI note input
+```
+
+The **SQ-4 session launcher** (TypeScript, fifth vite entry at `seq/index.html`):
+
+```
+src/seq/model.ts                 tracks/scenes data + pure launcher rules
+                                 (quantize queue, ownership, audibility)
+src/seq/store.ts                 Zustand store: beat clock, launch queue, mutes
+src/seq/components/              top bar, track heads, scene rows, clip cells,
+                                 now-playing footer, SUM scope, knobs
 ```
