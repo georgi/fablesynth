@@ -3,7 +3,7 @@ import { factorySession } from './factory';
 import { previewSteps } from './model';
 import {
   b64ToBytes, barFrames, boundaryFrame, bytesPerBar, bytesToB64, dr1Idx,
-  noteIdx, samplesPerBeat, songPosition, validateSession,
+  emptyClipBytes, noteIdx, samplesPerBeat, songPosition, validateSession,
 } from './protocol';
 
 describe('base64 codec', () => {
@@ -112,5 +112,23 @@ describe('factory session', () => {
     expect(bytesPerBar('DR1')).toBe(256);
     expect(bytesPerBar('BL1')).toBe(48);
     expect(bytesPerBar('WT1')).toBe(48);
+  });
+});
+
+describe('emptyClipBytes', () => {
+  it('sizes DR1 clips at 256 bytes/bar, all zero', () => {
+    const b = emptyClipBytes('DR1', 2);
+    expect(b.length).toBe(2 * bytesPerBar('DR1'));
+    expect(b.every((x) => x === 0)).toBe(true);
+  });
+
+  it('note machines default the oct byte to 1 (= oct 0) on every step', () => {
+    for (const m of ['BL1', 'WT1'] as const) {
+      const b = emptyClipBytes(m, 1);
+      expect(b.length).toBe(bytesPerBar(m));
+      for (let i = 0; i < b.length; i += 3) {
+        expect([b[i], b[i + 1], b[i + 2]]).toEqual([0, 0, 1]);
+      }
+    }
   });
 });

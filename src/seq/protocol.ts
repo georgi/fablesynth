@@ -25,6 +25,18 @@ export const dr1Idx = (bar: number, pad: number, step: number): number =>
 export const noteIdx = (bar: number, step: number): number =>
   (bar * STEPS_PER_BAR + step) * NOTE_STRIDE;
 
+/** Hosted editor edits at most this many bars (= device NPATTERNS). */
+export const HOSTED_MAX_BARS = 4;
+
+/** A silent clip payload; note machines get the neutral oct byte (=1). */
+export function emptyClipBytes(machine: MachineId, bars: number): Uint8Array {
+  const out = new Uint8Array(bars * bytesPerBar(machine));
+  if (machine !== 'DR1') {
+    for (let i = 2; i < out.length; i += NOTE_STRIDE) out[i] = 1;
+  }
+  return out;
+}
+
 // ---------- session document ----------
 
 export interface SessionDoc {
