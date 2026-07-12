@@ -211,6 +211,10 @@
 }
 
 .sq-track-id { flex: 1; min-width: 0; }
+.sq-track-id-btn { cursor: pointer; }
+.sq-track-head.focused { border-color: var(--tc); box-shadow: 0 0 12px color-mix(in srgb, var(--tc) 35%, transparent); }
+.sq-back { cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
+.sq-back .sq-scenes-title { color: #cfd6e4; }
 .sq-track-name-row { display: flex; align-items: center; gap: 6px; }
 .sq-track-name {
   font-family: var(--font-disp);
@@ -419,6 +423,14 @@
   color: var(--ac-b);
 }
 
+.sq-cell-editbtn {
+  position: absolute; top: 6px; right: 6px;
+  width: 20px; height: 20px; line-height: 20px; text-align: center;
+  border-radius: 5px; background: #0d1119cc; color: var(--tc);
+  opacity: 0; transition: opacity 0.12s; font-size: 11px;
+}
+.sq-cell:hover .sq-cell-editbtn { opacity: 1; }
+
 /* ============ now-playing footer ============ */
 .sq-foot-master {
   border: 1px solid var(--line);
@@ -535,3 +547,29 @@
   padding: 6px 14px; border-radius: 6px; border: 1px dashed var(--tc);
   background: transparent; color: var(--tc); cursor: pointer; font: inherit;
 }
+
+/* ---------- focus mode ---------- */
+#sq-rack.focused { height: 100vh; display: flex; flex-direction: column; }
+.sq-focus {
+  display: flex; flex-direction: column; gap: 10px;
+  flex: 1; min-height: 0;
+  animation: sq-focus-in 0.2s ease-out;
+}
+@keyframes sq-focus-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.sq-strip { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: stretch; }
+.sq-strip-row { min-width: 0; }
+.sq-rail { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.sq-rail-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 5px; font-size: 10px;
+  border: 1px solid #232b3d; background: #121826; color: #8b94a7;
+  cursor: pointer; font-family: inherit;
+}
+.sq-rail-chip.active { border-color: #cfd6e4; color: #cfd6e4; }
+.sq-rail-dot { width: 5px; height: 5px; border-radius: 50%; background: #1a1f2a; }
+.sq-rail-chip.live .sq-rail-dot { background: #63e6a5; box-shadow: 0 0 6px #63e6a5; }
+.sq-rail-chip.queued .sq-rail-dot { background: #e8c268; animation: sq-qpulse 0.8s ease-in-out infinite; }
+.sq-device { flex: 1; }

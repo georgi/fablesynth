@@ -15,22 +15,41 @@ export function TrackHeads() {
   const sceneMute = useSeqStore((s) => s.sceneMute);
   const solo = useSeqStore((s) => s.solo);
   const trackVol = useSeqStore((s) => s.trackVol);
-  const { toggleTrackMute, toggleSolo, setTrackVol } = useSeqStore.getState();
+  const focus = useSeqStore((s) => s.focus);
+  const { toggleTrackMute, toggleSolo, setTrackVol, enterFocus, exitFocus } = useSeqStore.getState();
 
   return (
     <div className="sq-grid sq-heads">
-      <div className="sq-scenes-card">
-        <div className="sq-scenes-title">SCENES</div>
-        <div className="sq-scenes-sub">EMPTY CELLS STOP THEIR TRACK · ≈ PASSES THROUGH</div>
-      </div>
+      {focus ? (
+        <button className="sq-scenes-card sq-back" onClick={() => exitFocus()}>
+          <div className="sq-scenes-title">◂ SESSION</div>
+          <div className="sq-scenes-sub">ESC · 1–4 SWITCH DEVICE · ↑↓ SCENE</div>
+        </button>
+      ) : (
+        <div className="sq-scenes-card">
+          <div className="sq-scenes-title">SCENES</div>
+          <div className="sq-scenes-sub">EMPTY CELLS STOP THEIR TRACK · ≈ PASSES THROUGH</div>
+        </div>
+      )}
       {tracks.map((tr, t) => {
         const audible = playing && isTrackAudible(t, owner, trackMute, sceneMute, solo);
         const machineLabel = tr.machine === 'DR1' ? 'DR-1' : tr.machine === 'BL1' ? 'BL-1' : 'WT-1';
         const patchLabel = patchName(tr.machine, tr.patch);
         return (
-          <div key={t} className="sq-track-head" style={{ '--tc': tr.color } as React.CSSProperties}>
+          <div
+            key={t}
+            className={`sq-track-head${focus?.track === t ? ' focused' : ''}`}
+            style={{ '--tc': tr.color } as React.CSSProperties}
+          >
             <span className={`sq-led${audible ? ' on' : ''}`} />
-            <div className="sq-track-id">
+            <div
+              className="sq-track-id sq-track-id-btn"
+              role="button"
+              tabIndex={0}
+              title={focus?.track === t ? undefined : 'Open device'}
+              onClick={() => enterFocus(t)}
+              onKeyDown={(e) => { if (e.key === 'Enter') enterFocus(t); }}
+            >
               <div className="sq-track-name-row">
                 <span className="sq-track-name">{tr.name}</span>
                 <span className="sq-machine-chip">{machineLabel}</span>

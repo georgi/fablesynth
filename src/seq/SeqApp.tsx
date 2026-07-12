@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { DeviceView } from './components/DeviceView';
 import { FooterRow } from './components/FooterRow';
 import { Header } from './components/Header';
+import { SceneRail } from './components/SceneRail';
 import { SceneRow } from './components/SceneRow';
 import { SqPowerOverlay } from './components/SqPowerOverlay';
 import { TrackHeads } from './components/TrackHeads';
@@ -31,19 +32,44 @@ export function SeqApp() {
     (window as unknown as { __fableSq: unknown }).__fableSq = { store: useSeqStore };
   }, []);
 
+  // focus-mode keys: Esc exits, 1–4 switch devices, ↑/↓ move the scene rail
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const st = useSeqStore.getState();
+      if (!st.focus) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Escape') st.exitFocus();
+      else if (e.key >= '1' && e.key <= String(st.session.tracks.length)) st.enterFocus(Number(e.key) - 1);
+      else if (e.key === 'ArrowUp') { e.preventDefault(); st.focusScene(st.focus.scene - 1); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); st.focusScene(st.focus.scene + 1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <>
       <SqPowerOverlay />
-      <main id="sq-rack">
+      <main id="sq-rack" className={focus ? 'focused' : ''}>
         <Header />
         <TrackHeads />
-        {session.scenes.map((_, s) => (
-          <SceneRow key={s} s={s} />
-        ))}
+        {focus ? (
+          <div className="sq-focus" key={`f${focus.track}`}>
+            <div className="sq-strip">
+              <SceneRail />
+              <div className="sq-strip-row"><SceneRow s={focus.scene} /></div>
+            </div>
+            <DeviceView />
+          </div>
+        ) : (
+          session.scenes.map((_, s) => <SceneRow key={s} s={s} />)
+        )}
         <FooterRow />
-        {focus && <DeviceView />}
         <div className="sq-hint">
-          TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO {quant} · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH
+          {focus
+            ? 'MINI STRIP STAYS LIVE — TAP CELLS TO LAUNCH · ✎ RETARGETS THE EDITOR · ESC BACK TO SESSION'
+            : `TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO ${quant} · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH · CLICK A TRACK NAME TO OPEN ITS DEVICE`}
         </div>
       </main>
     </>
