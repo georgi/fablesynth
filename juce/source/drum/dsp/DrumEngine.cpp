@@ -20,20 +20,42 @@ static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// Finding 6: chunk-invariant smoothers (see Engine.cpp for the derivation).
+// DR-1's pos smoothing legacy cadence was 0.35 per 16-sample sub-block; cutoff
+// was 0.5 per 128-sample chunk, both at 48 kHz.
+static const double DR_POS_TAU = 16.0 / (48000.0 * 0.4307829160924542);
+static const double DR_CUT_TAU = 128.0 / (48000.0 * M_LN2);
+static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
+
+// Finding 10: cubic Hermite (Catmull-Rom) table read, indices pre-wrapped.
+static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i2, double f) {
+    const double ym1 = d[off + im1], y0 = d[off + i0], y1 = d[off + i1], y2 = d[off + i2];
+    const double c1 = 0.5 * (y1 - ym1);
+    const double c2 = ym1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
+    const double c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+    return ((c3 * f + c2) * f + c1) * f + y0;
+}
+
 // ---- PadVoice::trigger (js:61-69) — resets exactly the same state ----
 void DrumEngine::PadVoice::trigger(double v, double rnd) {
     active = true; choking = false;
     vel = v; rand = rnd;
     t = 0; ampLevel = 0;
     oA.posSm = -1; oB.posSm = -1;
+    oA.havePrev = false; oB.havePrev = false;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
-    f.cutSm = 0; f.satXL = 0; f.satXR = 0;
+    f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0;
     noiseY = 0;
     dcxL = dcxR = dcyL = dcyR = 0;
+    lgPrev = -1;
 }
 
+// prepare() contract (Finding 11): kill every pad voice so nothing computed at
+// the old rate survives (a trigger resets all recursive pad state anyway), and
+// remap the 48 kHz-reference DC pole to the new rate (Finding 9).
 void DrumEngine::prepare(double sampleRate) {
     sr_ = sampleRate;
+    dcR_ = std::pow(DR_DC_R, 48000.0 / sr_);
     panic();
 }
 
@@ -45,11 +67,12 @@ void DrumEngine::selectPad(int i) {
     sel_ = std::max(0, std::min(DR_NPADS - 1, i));
 }
 
-// Same scheme as Engine::setTables: build the replacement off-lock, swap
-// under the lock, free the old set on the message thread after unlock.
+// Finding 2: lock-free publication — same scheme as Engine::setTables. The
+// audio thread never blocks on a table swap and never substitutes silence;
+// retired_ keeps the previous set so its free lands on the message thread.
 void DrumEngine::setTables(std::vector<TablePtr> tables) {
-    std::vector<DrumTable> next;
-    next.reserve(tables.size());
+    auto next = std::make_shared<TableSet>();
+    next->reserve(tables.size());
     for (auto& t : tables) {
         DrumTable e;
         if (t) {
@@ -57,10 +80,9 @@ void DrumEngine::setTables(std::vector<TablePtr> tables) {
             e.data = t->data.data();
             e.src = std::move(t);
         }
-        next.push_back(std::move(e));
+        next->push_back(std::move(e));
     }
-    std::lock_guard<std::mutex> lk(tablesMutex_);
-    tables_.swap(next);
+    retired_ = std::atomic_exchange(&tables_, std::shared_ptr<const TableSet>(std::move(next)));
 }
 
 // ---- trigger (js:126-143): choke group scan, velocity clamp, phase preset ----
@@ -228,10 +250,10 @@ DrumEngine::Mod DrumEngine::padMod(int padI, const PadVoice& v) const {
 // ---- setupOsc (js:171-230). base = dpid(pad, DP_OSCA_TABLE or DP_OSCB_TABLE);
 // the 8 osc fields are contiguous: table,pos,tune,fine,phase,unison,detune,level.
 bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
-                          double mPos, double mFine, double mPitch) {
+                          double mPos, double mFine, double mPitch, int n) {
     int ti = (int)p_[base + 0];
     const DrumTable* table =
-        (ti >= 0 && ti < (int)tables_.size() && tables_[ti].data) ? &tables_[ti] : nullptr;
+        (ti >= 0 && ti < (int)curTables_->size() && (*curTables_)[ti].data) ? &(*curTables_)[ti] : nullptr;
     if (!table) return false;
 
     double basePitch = DR_BASE_NOTE + p_[base + 2]
@@ -249,7 +271,7 @@ bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
 
     double pos = clampd(p_[base + 1] + mPos, 0.0, 1.0);
     if (o.posSm < 0) o.posSm = pos;
-    o.posSm += (pos - o.posSm) * 0.35;
+    o.posSm += (pos - o.posSm) * smoothCoef(n, DR_POS_TAU * sr_);
     double posF = o.posSm * (table->frames - 1);
     int f0 = (int)posF;
     int f1 = std::min(table->frames - 1, f0 + 1);
@@ -291,83 +313,90 @@ bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
     return true;
 }
 
-// ---- renderOsc (js:232-280): no-blend and blend loops ----
+// ---- renderOsc (js:232-280) — Finding 7 + 10: increments / morph fraction /
+// pan gains ramp from the previous sub-block's targets (staircase-free pitch
+// env / mod sweeps), and table reads are cubic Hermite. Same scheme as
+// Engine::renderOsc — see there for the ramp-validity rules. ----
 void DrumEngine::renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n) {
     const float* data = o.data;
     const int mask = o.mask, size = o.size;
-    const double ft = o.ft, g = o.gain;
+    const double invN = 1.0 / n;
+    const bool rp = o.havePrev && o.pUni == o.uni;
+    const double ft1 = o.ft;
+    const double ft0 = (rp && o.pOff0 == o.off0) ? o.pFt : ft1;
+    const double dFt = (ft1 - ft0) * invN;
+    const double g = o.gain;
     const int off0 = o.off0, off1 = o.off1;
     const double blend = o.mipBlend;
-    if (blend < 0.001) {
-        for (int u = 0; u < o.uni; u++) {
-            double ph = o.phases[u];
-            const double inc = o.incs[u];
-            const double gl = o.gl[u] * g, gr = o.gr[u] * g;
+    for (int u = 0; u < o.uni; u++) {
+        double ph = o.phases[u];
+        const double inc1 = o.incs[u];
+        const double inc0 = rp ? o.pIncs[u] : inc1;
+        const double dInc = (inc1 - inc0) * invN;
+        const double gl1 = o.gl[u] * g, gr1 = o.gr[u] * g;
+        const double gl0 = rp ? (double)o.pGl[u] : gl1, gr0 = rp ? (double)o.pGr[u] : gr1;
+        const double dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
+        if (blend < 0.001) {
             for (int i = 0; i < n; i++) {
                 int idx = (int)ph;
                 double frac = ph - idx;
-                int i2 = (idx + 1) & mask;
-                double s0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-                double s1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-                double s = s0 + ft * (s1 - s0);
-                tmpL[off + i] += (float)(s * gl);
-                tmpR[off + i] += (float)(s * gr);
-                ph += inc;
+                int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+                double s0 = rdH(data, off0, im1, idx, i2, i3, frac);
+                double s1 = rdH(data, off1, im1, idx, i2, i3, frac);
+                double s = s0 + (ft0 + dFt * i) * (s1 - s0);
+                tmpL[off + i] += (float)(s * (gl0 + dGl * i));
+                tmpR[off + i] += (float)(s * (gr0 + dGr * i));
+                ph += inc0 + dInc * i;
                 if (ph >= size) ph -= size;
             }
-            o.phases[u] = ph;
-        }
-    } else {
-        const int off0b = o.off0b, off1b = o.off1b;
-        for (int u = 0; u < o.uni; u++) {
-            double ph = o.phases[u];
-            const double inc = o.incs[u];
-            const double gl = o.gl[u] * g, gr = o.gr[u] * g;
+        } else {
+            const int off0b = o.off0b, off1b = o.off1b;
             for (int i = 0; i < n; i++) {
                 int idx = (int)ph;
                 double frac = ph - idx;
-                int i2 = (idx + 1) & mask;
-                double sc0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-                double sc1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-                double sc = sc0 + ft * (sc1 - sc0);
-                double sf0 = data[off0b + idx] + frac * (data[off0b + i2] - data[off0b + idx]);
-                double sf1 = data[off1b + idx] + frac * (data[off1b + i2] - data[off1b + idx]);
-                double sf = sf0 + ft * (sf1 - sf0);
+                int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+                double ftN = ft0 + dFt * i;
+                double sc0 = rdH(data, off0, im1, idx, i2, i3, frac);
+                double sc1 = rdH(data, off1, im1, idx, i2, i3, frac);
+                double sc = sc0 + ftN * (sc1 - sc0);
+                double sf0 = rdH(data, off0b, im1, idx, i2, i3, frac);
+                double sf1 = rdH(data, off1b, im1, idx, i2, i3, frac);
+                double sf = sf0 + ftN * (sf1 - sf0);
                 double s = sc + blend * (sf - sc);
-                tmpL[off + i] += (float)(s * gl);
-                tmpR[off + i] += (float)(s * gr);
-                ph += inc;
+                tmpL[off + i] += (float)(s * (gl0 + dGl * i));
+                tmpR[off + i] += (float)(s * (gr0 + dGr * i));
+                ph += inc0 + dInc * i;
                 if (ph >= size) ph -= size;
             }
-            o.phases[u] = ph;
         }
+        o.phases[u] = ph;
+        o.pIncs[u] = inc1;
+        o.pGl[u] = (float)gl1; o.pGr[u] = (float)gr1;
     }
+    o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.havePrev = true;
 }
 
-// ---- setupFilter (js:282-301): Cytomic SVF, 0.5 cutoff smoothing ----
-void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes) {
+// ---- setupFilter (js:282-301): Cytomic SVF; smoothing is chunk-invariant
+// (Finding 6) and runFilter ramps cutPrev -> cutTarget (Finding 7). ----
+void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes, int n) {
     int ftype = (int)p_[dpid(padI, DP_FLT_TYPE)];
     fs.ftype = ftype;
     double fc = p_[dpid(padI, DP_FLT_CUT)] * std::pow(2.0, mCut * DR_MOD_LOG_D);
     if (!std::isfinite(fc)) fc = 20;
     fc = clampd(fc, 20.0, sr_ * 0.45);
     if (fs.cutSm <= 0) fs.cutSm = fc;
-    fs.cutSm += (fc - fs.cutSm) * 0.5;
-    const double cut = fs.cutSm;
+    fs.cutSm += (fc - fs.cutSm) * smoothCoef(n, DR_CUT_TAU * sr_);
+    fs.cutTarget = fs.cutSm;
     double res = clampd(p_[dpid(padI, DP_FLT_RES)] + mRes, 0.0, 0.999);
 
     fs.twoPole = ftype == 1;
-    double g = std::tan((M_PI * cut) / sr_);
-    double k = 2 - 1.93 * res;
-    fs.k1 = k;
-    fs.a1 = 1 / (1 + g * (g + k));
-    fs.a2 = g * fs.a1;
-    fs.a3 = g * fs.a2;
+    fs.k1 = 2 - 1.93 * res;           // a1..a3 recomputed per sub-block in runFilter
 }
 
 // ---- runFilter (js:303-367): ADAA lcosh drive, SVF, LP24 second pass ----
 void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
-                           float* outL, float* outR, double drive, int n) {
+                           float* outL, float* outR, double drive, int n) const {
     if (drive > 0.005) {
         const double dg = 1 + drive * 7;
         const double dcomp = 1 / std::pow(dg, 0.55);
@@ -393,46 +422,58 @@ void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
         if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }
     }
 
+    // Finding 7: cutoff ramps from the previous chunk's value; coefficients
+    // recomputed per <=32-sample sub-block.
     const int ftype = fs.ftype;
-    const double a1 = fs.a1, a2 = fs.a2, a3 = fs.a3, k1 = fs.k1;
+    const double k1 = fs.k1;
+    const double c1c = fs.cutTarget;
+    const double c0c = fs.cutPrev > 0 ? fs.cutPrev : c1c;
     double* F = fs.svf;
-    for (int ch = 0; ch < 2; ch++) {
-        float* buf = ch == 0 ? outL : outR;
-        const int o1 = ch * 2;
-        double ic1 = F[o1], ic2 = F[o1 + 1];
-        for (int i = 0; i < n; i++) {
-            const double x = buf[i];
-            const double v3 = x - ic2;
-            const double v1 = a1 * ic1 + a2 * v3;
-            const double v2 = ic2 + a2 * ic1 + a3 * v3;
-            ic1 = 2 * v1 - ic1;
-            ic2 = 2 * v2 - ic2;
-            switch (ftype) {
-                case 0: case 1: buf[i] = (float)v2; break;
-                case 2: buf[i] = (float)(k1 * v1); break;
-                case 3: buf[i] = (float)(x - k1 * v1 - v2); break;
-                default: buf[i] = (float)(x - k1 * v1); break;
-            }
-        }
-        F[o1] = ic1; F[o1 + 1] = ic2;
-    }
-    if (fs.twoPole) {
+    for (int at = 0; at < n; at += 32) {
+        const int m = std::min(32, n - at);
+        const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
+        const double gC = std::tan((M_PI * cut) / sr_);
+        const double a1 = 1 / (1 + gC * (gC + k1));
+        const double a2 = gC * a1, a3 = gC * a2;
         for (int ch = 0; ch < 2; ch++) {
             float* buf = ch == 0 ? outL : outR;
-            const int o1 = 4 + ch * 2;
+            const int o1 = ch * 2;
             double ic1 = F[o1], ic2 = F[o1 + 1];
-            for (int i = 0; i < n; i++) {
+            for (int i = at; i < at + m; i++) {
                 const double x = buf[i];
                 const double v3 = x - ic2;
                 const double v1 = a1 * ic1 + a2 * v3;
                 const double v2 = ic2 + a2 * ic1 + a3 * v3;
                 ic1 = 2 * v1 - ic1;
                 ic2 = 2 * v2 - ic2;
-                buf[i] = (float)v2;
+                switch (ftype) {
+                    case 0: case 1: buf[i] = (float)v2; break;
+                    case 2: buf[i] = (float)(k1 * v1); break;
+                    case 3: buf[i] = (float)(x - k1 * v1 - v2); break;
+                    default: buf[i] = (float)(x - k1 * v1); break;
+                }
             }
             F[o1] = ic1; F[o1 + 1] = ic2;
         }
+        if (fs.twoPole) {
+            for (int ch = 0; ch < 2; ch++) {
+                float* buf = ch == 0 ? outL : outR;
+                const int o1 = 4 + ch * 2;
+                double ic1 = F[o1], ic2 = F[o1 + 1];
+                for (int i = at; i < at + m; i++) {
+                    const double x = buf[i];
+                    const double v3 = x - ic2;
+                    const double v1 = a1 * ic1 + a2 * v3;
+                    const double v2 = ic2 + a2 * ic1 + a3 * v3;
+                    ic1 = 2 * v1 - ic1;
+                    ic2 = 2 * v2 - ic2;
+                    buf[i] = (float)v2;
+                }
+                F[o1] = ic1; F[o1 + 1] = ic2;
+            }
+        }
     }
+    fs.cutPrev = c1c;
 }
 
 // ---- ampEnv (js:369-383): one-shot AHD, DECAY morphs linear->exp by CURVE ----
@@ -465,10 +506,10 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     for (int at = 0; at < n; at += 16) {
         int count = std::min(16, n - at);
         double pe = pAmt * std::exp(-4.5 * (double)(v.t + at) / (pDec * sr_));
-        bool aOn = setupOsc(v.oA, dpid(padI, DP_OSCA_TABLE), pe, m.posA, m.fineA, m.pitch);
-        bool bOn = setupOsc(v.oB, dpid(padI, DP_OSCB_TABLE), pe, m.posB, m.fineB, m.pitch);
-        if (aOn) renderOsc(v.oA, tmpL, tmpR, at, count);
-        if (bOn) renderOsc(v.oB, tmpL, tmpR, at, count);
+        bool aOn = setupOsc(v.oA, dpid(padI, DP_OSCA_TABLE), pe, m.posA, m.fineA, m.pitch, count);
+        bool bOn = setupOsc(v.oB, dpid(padI, DP_OSCB_TABLE), pe, m.posB, m.fineB, m.pitch, count);
+        if (aOn) renderOsc(v.oA, tmpL, tmpR, at, count); else v.oA.havePrev = false;
+        if (bOn) renderOsc(v.oB, tmpL, tmpR, at, count); else v.oB.havePrev = false;
     }
 
     // noise: white -> one-pole tilt, level squared x 0.35
@@ -476,7 +517,10 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     double noiseGain = noiseLevel * noiseLevel * 0.35;
     if (noiseGain > 1e-6) {
         double color = clampd(p_[dpid(padI, DP_NOISE_COLOR)], -1.0, 1.0);
-        double a = 0.02 + (color + 1) * 0.49;
+        // Finding 9: the tilt coefficient is specified at 48 kHz; map the pole
+        // so the noise color is identical at any rate (exact at 48 kHz).
+        double a48 = 0.02 + (color + 1) * 0.49;
+        double a = 1 - std::pow(1 - a48, 48000.0 / sr_);
         double y = v.noiseY;
         for (int i = 0; i < n; i++) {
             double w = rng_.next() * 2.0 - 1.0;
@@ -490,21 +534,25 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     const float* srcL = tmpL;
     const float* srcR = tmpR;
     if (p_[dpid(padI, DP_FLT_ON)] != 0) {
-        setupFilter(v.f, padI, m.cut, m.res);
+        setupFilter(v.f, padI, m.cut, m.res, n);
         runFilter(v.f, tmpL, tmpR, fL_, fR_, p_[dpid(padI, DP_FLT_DRIVE)], n);
         srcL = fL_; srcR = fR_;
     }
 
     double velGain = 1 - p_[dpid(padI, DP_V2L)] * (1 - v.vel);
     double level = clampd(p_[dpid(padI, DP_LVL)] + m.level, 0.0, 1.0);
-    double levelGain = level * level;
+    // m.level is block-rate (mod env) — ramp the gain across the chunk
+    // (Finding 7); the DC pole is sr-derived (Finding 9).
+    double lg1 = velGain * level * level;
+    double lg0 = v.lgPrev >= 0 ? v.lgPrev : lg1;
+    double dLg = (lg1 - lg0) / n;
     double pan = clampd(p_[dpid(padI, DP_PAN)], -1.0, 1.0);
     double panA = ((pan + 1) * M_PI) / 4;
     double panL = std::cos(panA), panR = std::sin(panA);
     for (int i = 0; i < n; i++) {
         const double xl = srcL[i], xr = srcR[i];
-        const double yL = xl - v.dcxL + DR_DC_R * v.dcyL;   // per-voice DC block
-        const double yR = xr - v.dcxR + DR_DC_R * v.dcyR;
+        const double yL = xl - v.dcxL + dcR_ * v.dcyL;   // per-voice DC block
+        const double yR = xr - v.dcxR + dcR_ * v.dcyR;
         v.dcxL = xl; v.dcyL = yL;
         v.dcxR = xr; v.dcyR = yR;
 
@@ -517,10 +565,11 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
         } else {
             v.ampLevel = ampEnv(v, padI, i);
         }
-        const double amp = v.ampLevel * velGain * levelGain;
+        const double amp = v.ampLevel * (lg0 + dLg * i);
         L[off + i] += (float)(yL * amp * panL);
         R[off + i] += (float)(yR * amp * panR);
     }
+    v.lgPrev = lg1;
 
     v.t += n;
     double end = (p_[dpid(padI, DP_AENV_ATT)] + p_[dpid(padI, DP_AENV_HOLD)]
@@ -537,13 +586,11 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         for (int c = 0; c < 2; c++)
             std::fill(outs[b][c], outs[b][c] + n, 0.0f);
 
-    // setupOsc caches raw pointers into table data, so the set must not be
-    // swapped mid-render; on collision this block stays silent.
-    std::unique_lock<std::mutex> lk(tablesMutex_, std::try_to_lock);
-    if (!lk.owns_lock()) {
-        vizA = -1; vizB = -1; vizEnv = 0;
-        return;
-    }
+    // Finding 2: snapshot the published table set once for the whole call —
+    // the shared_ptr keeps setupOsc's cached raw pointers valid even if the
+    // message thread publishes a new set mid-block. Never blocks, never silent.
+    const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
+    curTables_ = snap.get();
 
     // Host-locked mode: step times come from song position, not samplesToNext_.
     // Hosted clip mode owns the transport exclusively: it suppresses both

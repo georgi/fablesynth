@@ -3,6 +3,7 @@
 #include "dsp/DrumPatches.h"
 #include "dsp/DrumTables.h"
 #include "dsp/SampledTables.gen.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -86,9 +87,11 @@ void DrumAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
     rebuildEngineTables();
     fx.prepare(sampleRate);
+    setLatencySamples(fx.latencySamples());
     // Backing storage for disabled AUX buses so the engine's 5x2 output API
-    // always gets valid pointers; sized here so processBlock never allocates.
-    scratch_.setSize(2 * DR_NBUSES, samplesPerBlock);
+    // always gets valid pointers; sized generously here so processBlock never
+    // allocates — oversized host blocks are rendered in chunks instead.
+    scratch_.setSize(2 * DR_NBUSES, std::max(samplesPerBlock, 8192));
     currentSr_.store(sampleRate);
     // Re-sync sequencer content into the (possibly reset) engine.
     shareSeqState(true, true);
@@ -336,9 +339,51 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         shareMutex_.unlock();
     }
 
+    // 5-bus render, sample-accurate MIDI: render engine+FX up to each event's
+    // offset, apply the event, continue (FX state is continuous across
+    // segments). Disabled buses get scratch backing so the engine always sees
+    // 10 valid pointers; MAIN is stereo by layout contract. Segments are
+    // capped at the scratch capacity so oversized host blocks never allocate.
+    float* base[DR_NBUSES][2];
+    bool busReal[DR_NBUSES];
+    for (int b = 0; b < DR_NBUSES; ++b) {
+        auto bb = getBusBuffer(buffer, false, b);
+        busReal[b] = bb.getNumChannels() >= 2;
+        if (busReal[b]) {
+            base[b][0] = bb.getWritePointer(0);
+            base[b][1] = bb.getWritePointer(1);
+        } else {
+            base[b][0] = scratch_.getWritePointer(2 * b);
+            base[b][1] = scratch_.getWritePointer(2 * b + 1);
+        }
+    }
+    // If the host gave MAIN a single channel despite the layout contract, the
+    // scratch-rendered stereo MAIN gets downmixed into it per segment.
+    auto mainBus = getBusBuffer(buffer, false, 0);
+    float* monoMain = mainBus.getNumChannels() == 1 ? mainBus.getWritePointer(0) : nullptr;
+    const int cap = scratch_.getNumSamples();
+    int pos = 0;
+    auto renderTo = [&](int end) {
+        while (pos < end) {
+            const int len = std::min(end - pos, cap);
+            float* outs[DR_NBUSES][2];
+            for (int b = 0; b < DR_NBUSES; ++b) {
+                const int off = busReal[b] ? pos : 0; // scratch reused per chunk
+                outs[b][0] = base[b][0] + off;
+                outs[b][1] = base[b][1] + off;
+            }
+            engine.render(outs, len);                // zero-fills all 10, then pads accumulate
+            fx.process(outs[0][0], outs[0][1], len); // master FX on MAIN only; AUX dry
+            if (monoMain)
+                for (int i = 0; i < len; ++i)
+                    monoMain[pos + i] = 0.5f * (outs[0][0][i] + outs[0][1][i]);
+            pos += len;
+        }
+    };
     // MIDI: notes 36-51 trigger pads 0-15 through the same path as the
     // sequencer (choke groups, v2l/v2m, hit flags).
     for (const auto meta : midi) {
+        renderTo(juce::jlimit(0, n, meta.samplePosition));
         const auto m = meta.getMessage();
         if (m.isNoteOn()) {
             const int note = m.getNoteNumber();
@@ -349,31 +394,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             engine.panic();
         }
     }
-
-    // 5-bus render. Disabled buses get scratch backing so the engine always
-    // sees 10 valid pointers; MAIN is stereo by layout contract.
-    if (scratch_.getNumSamples() < n)
-        scratch_.setSize(2 * DR_NBUSES, n, false, false, true);
-    float* outs[DR_NBUSES][2];
-    for (int b = 0; b < DR_NBUSES; ++b) {
-        auto bb = getBusBuffer(buffer, false, b);
-        if (bb.getNumChannels() >= 2) {
-            outs[b][0] = bb.getWritePointer(0);
-            outs[b][1] = bb.getWritePointer(1);
-        } else {
-            outs[b][0] = scratch_.getWritePointer(2 * b);
-            outs[b][1] = scratch_.getWritePointer(2 * b + 1);
-        }
-    }
-    engine.render(outs, n);          // zero-fills all 10, then pads accumulate
-    fx.process(outs[0][0], outs[0][1], n); // master FX on MAIN only; AUX dry
-
-    // If the host gave MAIN a single channel despite the layout contract,
-    // downmix the scratch-rendered stereo MAIN into it.
-    if (auto mainBus = getBusBuffer(buffer, false, 0); mainBus.getNumChannels() == 1) {
-        float* d = mainBus.getWritePointer(0);
-        for (int i = 0; i < n; ++i) d[i] = 0.5f * (outs[0][0][i] + outs[0][1][i]);
-    }
+    renderTo(n);
 
     // Publish transport/viz feedback for the editor.
     curStep_.store(engine.currentStep(), std::memory_order_relaxed);
@@ -387,8 +408,8 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     // Post-FX scope ring buffer (MAIN mono mix).
     {
-        const float* l0 = outs[0][0];
-        const float* r0 = outs[0][1];
+        const float* l0 = mainBus.getReadPointer(0);
+        const float* r0 = mainBus.getNumChannels() > 1 ? mainBus.getReadPointer(1) : l0;
         int w = scopeW_.load(std::memory_order_relaxed);
         for (int i = 0; i < n; ++i)
             scopeBuf_[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);

@@ -15,7 +15,7 @@
 #include "../../dsp/Engine.h"       // fable::Rng + TablePtr (via Wavetables.h)
 
 #include <cstdint>
-#include <mutex>
+#include <memory>
 #include <vector>
 
 namespace fable {
@@ -145,13 +145,20 @@ private:
         int    mask = 0, size = 0;
         const float* data = nullptr;
         double posSm = -1;
+        // Previous sub-block targets for the intra-block ramps (Finding 7).
+        double pIncs[DR_MAXUNI] = {0};
+        float  pGl[DR_MAXUNI] = {0}, pGr[DR_MAXUNI] = {0};
+        double pFt = 0;
+        int    pOff0 = -1, pUni = -1;
+        bool   havePrev = false;
     };
     struct FilterState {
         double svf[8] = {0};       // 2 stages x 2 ch x (ic1, ic2)
         double cutSm = 0;
+        double cutTarget = 0, cutPrev = -1;  // chunk cutoff ramp (Finding 7)
         double satXL = 0, satXR = 0;   // ADAA drive: previous input per channel
         int    ftype = 0; bool twoPole = false;
-        double a1 = 0, a2 = 0, a3 = 0, k1 = 0;
+        double k1 = 0;
     };
     struct PadVoice {
         bool   active = false;
@@ -162,6 +169,7 @@ private:
         FilterState f;
         double noiseY = 0;
         double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
+        double lgPrev = -1;        // level*vel gain ramp start (Finding 7)
 
         void trigger(double v, double rnd);
         void choke() { if (active) choking = true; }
@@ -174,11 +182,11 @@ private:
 
     Mod  padMod(int padI, const PadVoice& v) const;
     bool setupOsc(OscState& o, int base, double pitchEnv,
-                  double mPos, double mFine, double mPitch);
+                  double mPos, double mFine, double mPitch, int n);
     static void renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n);
-    void setupFilter(FilterState& fs, int padI, double mCut, double mRes);
-    static void runFilter(FilterState& fs, const float* inL, const float* inR,
-                          float* outL, float* outR, double drive, int n);
+    void setupFilter(FilterState& fs, int padI, double mCut, double mRes, int n);
+    void runFilter(FilterState& fs, const float* inL, const float* inR,
+                   float* outL, float* outR, double drive, int n) const;
     double ampEnv(const PadVoice& v, int padI, int i) const;
     void renderPad(PadVoice& v, int padI, float* L, float* R, int off, int n);
     void fireStep();               // js:493-518
@@ -220,13 +228,16 @@ private:
 
     DrumParamArray p_ = defaultDrumParams();
     uint32_t hits_ = 0;
-    std::vector<DrumTable> tables_;
-    // Guards tables_ exactly like Engine::tablesMutex_: setTables builds the
-    // replacement off-lock and swaps under it; render try-locks and emits one
-    // block of silence on the rare collision.
-    std::mutex tablesMutex_;
+    // Lock-free table publication (Finding 2) — same scheme as Engine::tables_:
+    // setTables atomically publishes an immutable set; render() atomic_loads
+    // one snapshot per call and keeps it alive for the whole block.
+    using TableSet = std::vector<DrumTable>;
+    std::shared_ptr<const TableSet> tables_ = std::make_shared<TableSet>();
+    std::shared_ptr<const TableSet> retired_;
+    const TableSet* curTables_ = nullptr;
     PadVoice voices_[DR_NPADS];
     double sr_ = 48000;
+    double dcR_ = DR_DC_R;         // sr-derived DC pole (Finding 9)
     Rng    rng_;                   // trigger rand + noise (deterministic tests)
     int    sel_ = 0;
 

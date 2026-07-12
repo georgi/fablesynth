@@ -6,7 +6,26 @@ namespace fable {
 
 static constexpr double PI = 3.14159265358979323846;
 static constexpr double LN2 = 0.6931471805599453;
-static const double DC_R = 0.9998; // ~3.5 Hz highpass
+static const double DC_R = 0.9998; // DC-blocker pole at the 48 kHz reference (Finding 9: prepare() maps it to sr)
+
+// Finding 6: chunk-invariant smoothers. Legacy applied a fixed coef per render
+// chunk (0.35 wavetable pos, 0.5 cutoff, per 128 samples at 48 kHz), so the
+// smoothing time varied with sample rate and transport-split chunk sizes.
+// tau = T/(48000*ln(1/(1-c))) reproduces the legacy response exactly at the
+// reference cadence; coef = 1-exp(-n/(tau*sr)) makes it rate/split-invariant.
+static const double POS_TAU = 128.0 / (48000.0 * 0.4307829160924542); // 0.35 per 128
+static const double CUT_TAU = 128.0 / (48000.0 * LN2);                // 0.5 per 128
+static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
+
+// Finding 10: 4-point cubic Hermite (Catmull-Rom) table read. Indices are
+// pre-wrapped by the caller (branchless & mask), off selects the frame/mip.
+static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i2, double f) {
+    const double ym1 = d[off + im1], y0 = d[off + i0], y1 = d[off + i1], y2 = d[off + i2];
+    const double c1 = 0.5 * (y1 - ym1);
+    const double c2 = ym1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
+    const double c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+    return ((c3 * f + c2) * f + c1) * f + y0;
+}
 
 // Vowel formants (A-E-I-O-U) for the VOWEL filter morph.
 static const double VOWELS[5][3] = {
@@ -82,6 +101,7 @@ void FilterState::reset() {
     for (auto& x : fmt) x = 0;
     combL.fill(0); combR.fill(0); combW = 0;
     cutSm = 0; satXL = 0; satXR = 0;
+    cutPrev = -1; combLenPrev = -1;
 }
 
 // ---------------- Voice ----------------
@@ -95,15 +115,41 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
     // cycle so unison voices (and osc A vs B) decorrelate at note start.
     for (int i = 0; i < MAXUNI; i++) { oA.phases[i] = rng.next() * SIZE; oB.phases[i] = rng.next() * SIZE; }
     oA.posSm = -1; oB.posSm = -1;
-    subPhase = 0;
+    oA.havePrev = false; oB.havePrev = false;
+    subPhase = 0; subIncPrev = -1; ampFacPrev = -1;
     f1.reset(); f2.reset();
     dcxL = dcxR = dcyL = dcyR = 0;
 }
 
 // ---------------- Engine ----------------
+// prepare() contract (Finding 11): establishes a clean state for the new
+// sample rate — every active voice is killed and all recursive per-voice state
+// (filters, DC blockers, pink noise, smoothers, ramps) is cleared, and the
+// fixed 48 kHz-reference per-sample coefficients are remapped to sr (Finding 9).
 void Engine::prepare(double sampleRate) {
     sr_ = sampleRate;
-    for (auto& v : voices_) { v.lfo1.rng = &rng_; v.lfo2.rng = &rng_; }
+    // Same analog pole at any rate: p' = p^(48k/sr); one-pole input gains are
+    // rescaled to keep the low-frequency gain, so the pink spectrum matches
+    // the 48 kHz reference (b[5]'s pole is negative — its DC gain is g/(1+p)).
+    const double r = 48000.0 / sr_;
+    dcR_ = std::pow(DC_R, r);
+    static const double PP[6] = {0.99886, 0.99332, 0.969, 0.8665, 0.55, 0.7616};
+    static const double PG[6] = {0.0555179, 0.0750759, 0.153852, 0.3104856, 0.5329522, 0.016898};
+    for (int i = 0; i < 6; i++) {
+        pinkP_[i] = std::pow(PP[i], r);
+        pinkG_[i] = i == 5 ? PG[5] * (1 + pinkP_[5]) / (1 + PP[5])
+                           : PG[i] * (1 - pinkP_[i]) / (1 - PP[i]);
+    }
+    for (auto& v : voices_) {
+        v.kill();
+        v.f1.reset(); v.f2.reset();
+        v.dcxL = v.dcxR = v.dcyL = v.dcyR = 0;
+        for (auto& x : v.pb) x = 0;
+        v.subPhase = 0; v.subIncPrev = -1; v.ampFacPrev = -1;
+        v.oA.posSm = -1; v.oB.posSm = -1;
+        v.oA.havePrev = false; v.oB.havePrev = false;
+        v.lfo1.rng = &rng_; v.lfo2.rng = &rng_;
+    }
     gLfo1_.rng = &rng_; gLfo2_.rng = &rng_;
     gLfo1_.reset(); gLfo2_.reset();
 }
@@ -131,11 +177,15 @@ void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
 }
 
 void Engine::setTables(std::vector<TablePtr> tables) {
-    // Build the replacement off-lock, then swap under the lock so the audio
-    // thread is never blocked. The old set (and any table it held the last
-    // reference to) is freed here on the message thread after the unlock.
-    std::vector<EngineTable> next;
-    next.reserve(tables.size());
+    // Finding 2: build a complete immutable set, then publish it with an atomic
+    // shared_ptr swap — the audio thread never waits and never goes silent.
+    // The previously published set is parked in retired_ so it is normally
+    // freed here (message thread) on the NEXT publish; if the audio thread
+    // happens to drop the last reference at a block end instead, the freed
+    // payload is only a small vector of views (sample data is shared TablePtrs
+    // typically also owned by the processor's pool).
+    auto next = std::make_shared<TableSet>();
+    next->reserve(tables.size());
     for (auto& t : tables) {
         EngineTable e;
         if (t) {
@@ -143,10 +193,9 @@ void Engine::setTables(std::vector<TablePtr> tables) {
             e.data = t->data.data();
             e.src = std::move(t);
         }
-        next.push_back(std::move(e));
+        next->push_back(std::move(e));
     }
-    std::lock_guard<std::mutex> lk(tablesMutex_);
-    tables_.swap(next);
+    retired_ = std::atomic_exchange(&tables_, std::shared_ptr<const TableSet>(std::move(next)));
 }
 
 void Engine::noteOn(int n, double vel) {
@@ -384,11 +433,11 @@ void Engine::seqFireHostStep(long k) {
 // Configure one oscillator's per-block render state. Returns true if audible.
 // Reads the modulated snapshot pm for the per-param dests (pos/level/pan/detune/
 // spread); pitch and the pan global offset stay as direct additive terms.
-bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan) {
+bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n) {
     if (p_[base + OSC_ON] < 0.5) return false;
     int ti = (int)p_[base + OSC_TABLE];
-    if (ti < 0 || ti >= (int)tables_.size()) return false;
-    const EngineTable& table = tables_[ti];
+    if (ti < 0 || ti >= (int)curTables_->size()) return false;
+    const EngineTable& table = (*curTables_)[ti];
     if (!table.data) return false; // empty slot
 
     double basePitch = v.pitch + bend_ + p_[base + OSC_OCT] * 12 + p_[base + OSC_SEMI]
@@ -408,7 +457,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
 
     double pos = std::min(1.0, std::max(0.0, pm[base + OSC_POS]));
     if (o.posSm < 0) o.posSm = pos;
-    o.posSm += (pos - o.posSm) * 0.35;
+    o.posSm += (pos - o.posSm) * smoothCoef(n, POS_TAU * sr_);
     double posF = o.posSm * (table.frames - 1);
     int f0 = (int)posF;
     int f1 = std::min(table.frames - 1, f0 + 1);
@@ -470,54 +519,71 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     return true;
 }
 
+// Finding 7: phase increments, morph fraction and pan/level gain products ramp
+// from the previous chunk's targets to this chunk's across n samples, so
+// block-rate modulation (LFO->pitch, glide, POS, pan, level) has no staircase.
+// The ramp is suppressed on the first chunk after note-on, on a unison-count
+// change, and (for the morph fraction) when the frame pair switched — ft is a
+// fraction WITHIN a pair, so ramping it across a pair change would sweep the
+// wrong way. Table reads are cubic Hermite (Finding 10).
 void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
     const float* data = o.data; int mask = o.mask, size = o.size;
-    double ft = o.ft, g = o.gain;
+    const double invN = 1.0 / n;
+    const bool rp = o.havePrev && o.pUni == o.uni;
+    const double ft1 = o.ft;
+    const double ft0 = (rp && o.pOff0 == o.off0) ? o.pFt : ft1;
+    const double dFt = (ft1 - ft0) * invN;
+    const double g = o.gain;
     int off0 = o.off0, off1 = o.off1;
     double blend = o.mipBlend;
-    if (blend < 0.001) {
-        for (int u = 0; u < o.uni; u++) {
-            double ph = o.phases[u], inc = o.incs[u];
-            double gl = o.gl[u] * g, gr = o.gr[u] * g;
+    for (int u = 0; u < o.uni; u++) {
+        double ph = o.phases[u];
+        const double inc1 = o.incs[u];
+        const double inc0 = rp ? o.pIncs[u] : inc1;
+        const double dInc = (inc1 - inc0) * invN;
+        const double gl1 = o.gl[u] * g, gr1 = o.gr[u] * g;
+        const double gl0 = rp ? (double)o.pGl[u] : gl1, gr0 = rp ? (double)o.pGr[u] : gr1;
+        const double dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
+        if (blend < 0.001) {
             for (int i = 0; i < n; i++) {
                 int idx = (int)ph;
                 double frac = ph - idx;
-                int i2 = (idx + 1) & mask;
-                double s0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-                double s1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-                double s = s0 + ft * (s1 - s0);
-                tmpL[i] += (float)(s * gl);
-                tmpR[i] += (float)(s * gr);
-                ph += inc; if (ph >= size) ph -= size;
+                int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+                double s0 = rdH(data, off0, im1, idx, i2, i3, frac);
+                double s1 = rdH(data, off1, im1, idx, i2, i3, frac);
+                double s = s0 + (ft0 + dFt * i) * (s1 - s0);
+                tmpL[i] += (float)(s * (gl0 + dGl * i));
+                tmpR[i] += (float)(s * (gr0 + dGr * i));
+                ph += inc0 + dInc * i; if (ph >= size) ph -= size;
             }
-            o.phases[u] = ph;
-        }
-    } else {
-        int off0b = o.off0b, off1b = o.off1b;
-        for (int u = 0; u < o.uni; u++) {
-            double ph = o.phases[u], inc = o.incs[u];
-            double gl = o.gl[u] * g, gr = o.gr[u] * g;
+        } else {
+            const int off0b = o.off0b, off1b = o.off1b;
             for (int i = 0; i < n; i++) {
                 int idx = (int)ph;
                 double frac = ph - idx;
-                int i2 = (idx + 1) & mask;
-                double sc0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-                double sc1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-                double sc = sc0 + ft * (sc1 - sc0);
-                double sf0 = data[off0b + idx] + frac * (data[off0b + i2] - data[off0b + idx]);
-                double sf1 = data[off1b + idx] + frac * (data[off1b + i2] - data[off1b + idx]);
-                double sf = sf0 + ft * (sf1 - sf0);
+                int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+                double ftN = ft0 + dFt * i;
+                double sc0 = rdH(data, off0, im1, idx, i2, i3, frac);
+                double sc1 = rdH(data, off1, im1, idx, i2, i3, frac);
+                double sc = sc0 + ftN * (sc1 - sc0);
+                double sf0 = rdH(data, off0b, im1, idx, i2, i3, frac);
+                double sf1 = rdH(data, off1b, im1, idx, i2, i3, frac);
+                double sf = sf0 + ftN * (sf1 - sf0);
                 double s = sc + blend * (sf - sc);
-                tmpL[i] += (float)(s * gl);
-                tmpR[i] += (float)(s * gr);
-                ph += inc; if (ph >= size) ph -= size;
+                tmpL[i] += (float)(s * (gl0 + dGl * i));
+                tmpR[i] += (float)(s * (gr0 + dGr * i));
+                ph += inc0 + dInc * i; if (ph >= size) ph -= size;
             }
-            o.phases[u] = ph;
         }
+        o.phases[u] = ph;
+        o.pIncs[u] = inc1;
+        o.pGl[u] = (float)gl1; o.pGr[u] = (float)gr1;
     }
+    o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.havePrev = true;
 }
 
-void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm) {
+void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n) {
     int ftype = (int)p_[base + FLT_TYPE];
     fs.ftype = ftype;
 
@@ -529,18 +595,16 @@ void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double 
         std::pow(2.0, pm[base + FLT_ENV] * 4 * e2 + (pm[base + FLT_KEY] * (v.note - 60)) / 12.0 + mCut * 5.0);
     fc = std::min(sr_ * 0.45, std::max(20.0, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
-    fs.cutSm += (fc - fs.cutSm) * 0.5;
+    fs.cutSm += (fc - fs.cutSm) * smoothCoef(n, CUT_TAU * sr_);
     double cut = fs.cutSm;
+    fs.cutTarget = cut;                // runFilter ramps cutPrev -> cutTarget
     double res = std::min(0.999, std::max(0.0, pm[base + FLT_RES]));
 
     if (ftype <= 4) {
+        // SVF coefficients are recomputed per <=32-sample sub-block in
+        // runFilter from the ramped cutoff (Finding 7); only k is fixed here.
         fs.twoPole = ftype == 1;
-        double g = std::tan((PI * cut) / sr_);
-        double k = 2 - 1.93 * res;
-        fs.k1 = k;
-        fs.a1 = 1 / (1 + g * (g + k));
-        fs.a2 = g * fs.a1;
-        fs.a3 = g * fs.a2;
+        fs.k1 = 2 - 1.93 * res;
     } else if (ftype == 5) {
         double len = sr_ / cut;
         len = std::min((double)COMB_MAX - 2, std::max(1.0, len));
@@ -592,48 +656,66 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
 
     int ftype = fs.ftype;
     if (ftype <= 4) {
-        double a1 = fs.a1, a2 = fs.a2, a3 = fs.a3, k1 = fs.k1;
+        // Finding 7: cutoff ramps from the previous chunk's value across the
+        // chunk; SVF coefficients are recomputed per <=32-sample sub-block.
+        const double k1 = fs.k1;
+        const double c1c = fs.cutTarget;
+        const double c0c = fs.cutPrev > 0 ? fs.cutPrev : c1c;
         double* F = fs.svf;
-        auto runSvf = [&](float* buf, int o1, auto out) {
-            double ic1 = F[o1], ic2 = F[o1 + 1];
-            for (int i = 0; i < n; i++) {
-                double x = buf[i];
-                double v3 = x - ic2;
-                double v1 = a1 * ic1 + a2 * v3;
-                double v2 = ic2 + a2 * ic1 + a3 * v3;
-                ic1 = 2 * v1 - ic1;
-                ic2 = 2 * v2 - ic2;
-                buf[i] = (float)out(x, v1, v2);
+        for (int at = 0; at < n; at += 32) {
+            const int m = std::min(32, n - at);
+            const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
+            const double gC = std::tan((PI * cut) / sr_);
+            const double a1 = 1 / (1 + gC * (gC + k1));
+            const double a2 = gC * a1, a3 = gC * a2;
+            auto runSvf = [&](float* buf, int o1, auto out) {
+                double ic1 = F[o1], ic2 = F[o1 + 1];
+                for (int i = at; i < at + m; i++) {
+                    double x = buf[i];
+                    double v3 = x - ic2;
+                    double v1 = a1 * ic1 + a2 * v3;
+                    double v2 = ic2 + a2 * ic1 + a3 * v3;
+                    ic1 = 2 * v1 - ic1;
+                    ic2 = 2 * v2 - ic2;
+                    buf[i] = (float)out(x, v1, v2);
+                }
+                F[o1] = ic1; F[o1 + 1] = ic2;
+            };
+            auto outV2 = [](double, double, double v2) { return v2; };
+            switch (ftype) {
+                case 0:
+                case 1:
+                    for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, ch * 2, outV2);
+                    break;
+                case 2:
+                    for (int ch = 0; ch < 2; ch++)
+                        runSvf(ch == 0 ? outL : outR, ch * 2, [&](double, double v1, double) { return k1 * v1; });
+                    break;
+                case 3:
+                    for (int ch = 0; ch < 2; ch++)
+                        runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double v2) { return x - k1 * v1 - v2; });
+                    break;
+                default:
+                    for (int ch = 0; ch < 2; ch++)
+                        runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double) { return x - k1 * v1; });
+                    break;
             }
-            F[o1] = ic1; F[o1 + 1] = ic2;
-        };
-        auto outV2 = [](double, double, double v2) { return v2; };
-        switch (ftype) {
-            case 0:
-            case 1:
-                for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, ch * 2, outV2);
-                break;
-            case 2:
-                for (int ch = 0; ch < 2; ch++)
-                    runSvf(ch == 0 ? outL : outR, ch * 2, [&](double, double v1, double) { return k1 * v1; });
-                break;
-            case 3:
-                for (int ch = 0; ch < 2; ch++)
-                    runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double v2) { return x - k1 * v1 - v2; });
-                break;
-            default:
-                for (int ch = 0; ch < 2; ch++)
-                    runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double) { return x - k1 * v1; });
-                break;
+            if (fs.twoPole) {
+                for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, 4 + ch * 2, outV2);
+            }
         }
-        if (fs.twoPole) {
-            for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, 4 + ch * 2, outV2);
-        }
+        fs.cutPrev = c1c;
     } else if (ftype == 5) {
-        double len = fs.combLen, fb = fs.combFb, g0 = 1 - fb;
+        // Comb delay length ramps across the chunk (Finding 7); the fractional
+        // read below already supports a per-sample length.
+        const double len1 = fs.combLen;
+        const double len0 = fs.combLenPrev > 0 ? fs.combLenPrev : len1;
+        const double dLen = (len1 - len0) / n;
+        double fb = fs.combFb, g0 = 1 - fb;
         float* cl = fs.combL.data(); float* cr = fs.combR.data();
         int w = fs.combW;
         for (int i = 0; i < n; i++) {
+            double len = len0 + dLen * (i + 1);
             double rd = w - len;
             // w in [0, COMB_MAX), len in [1, COMB_MAX-2] => rd in (-COMB_MAX, COMB_MAX).
             if (rd < 0) rd += COMB_MAX;
@@ -647,6 +729,7 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
             w = w + 1 < COMB_MAX ? w + 1 : 0;
         }
         fs.combW = w;
+        fs.combLenPrev = len1;
     } else {
         const double* fc = fs.fc; const double* fa = fs.famp; double* z = fs.fmt;
         for (int ch = 0; ch < 2; ch++) {
@@ -733,21 +816,26 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     std::fill(tmpR_, tmpR_ + n, 0.0f);
     if (split) { std::fill(bL_, bL_ + n, 0.0f); std::fill(bR_, bR_ + n, 0.0f); }
 
-    bool aOn = setupOsc(v.oA, OSCA_BASE, v, pm_, mPitch, mPan);
-    bool bOn = setupOsc(v.oB, OSCB_BASE, v, pm_, mPitch, mPan);
-    if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n);
-    if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n);
+    bool aOn = setupOsc(v.oA, OSCA_BASE, v, pm_, mPitch, mPan, n);
+    bool bOn = setupOsc(v.oB, OSCB_BASE, v, pm_, mPitch, mPan, n);
+    if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n); else v.oA.havePrev = false;
+    if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n); else v.oB.havePrev = false;
 
     // sub oscillator
     if (p_[SUB_ON] > 0.5) {
         double lvl = pm_[SUB_LEVEL] * pm_[SUB_LEVEL] * 0.3;
         if (lvl > 1e-6) {
             double sf = 440 * std::pow(2.0, (v.pitch + bend_ + p_[SUB_OCT] * 12 + mPitch * 12 - 69) / 12.0);
-            double inc = sf / sr_;
-            if (inc > 0 && inc < 0.45) {
+            double inc1 = sf / sr_;
+            if (inc1 > 0 && inc1 < 0.45) {
+                // Finding 7: ramp the sub increment across the chunk so glide /
+                // pitch modulation is staircase-free on the sub too.
+                double inc0 = (v.subIncPrev > 0 && v.subIncPrev < 0.45) ? v.subIncPrev : inc1;
+                double dInc = (inc1 - inc0) / n;
                 double ph = v.subPhase;
                 bool square = (int)p_[SUB_SHAPE] == 1;
                 for (int i = 0; i < n; i++) {
+                    double inc = inc0 + dInc * i;
                     double s;
                     if (square) {
                         s = ph < 0.5 ? 1 : -1;
@@ -765,7 +853,8 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
                     ph += inc; if (ph >= 1) ph -= 1;
                 }
                 v.subPhase = ph;
-            }
+                v.subIncPrev = inc1;
+            } else v.subIncPrev = -1;
         }
     }
 
@@ -775,14 +864,16 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         if (lvl > 1e-6) {
             if ((int)p_[NOISE_TYPE] == 1) {
                 double* b = v.pb;
+                // Kellet pink filter with sr-mapped poles/gains (Finding 9;
+                // identical to the fixed literals at the 48 kHz reference).
                 for (int i = 0; i < n; i++) {
                     double w = rng_.next() * 2 - 1;
-                    b[0] = 0.99886 * b[0] + w * 0.0555179;
-                    b[1] = 0.99332 * b[1] + w * 0.0750759;
-                    b[2] = 0.969 * b[2] + w * 0.153852;
-                    b[3] = 0.8665 * b[3] + w * 0.3104856;
-                    b[4] = 0.55 * b[4] + w * 0.5329522;
-                    b[5] = -0.7616 * b[5] - w * 0.016898;
+                    b[0] = pinkP_[0] * b[0] + w * pinkG_[0];
+                    b[1] = pinkP_[1] * b[1] + w * pinkG_[1];
+                    b[2] = pinkP_[2] * b[2] + w * pinkG_[2];
+                    b[3] = pinkP_[3] * b[3] + w * pinkG_[3];
+                    b[4] = pinkP_[4] * b[4] + w * pinkG_[4];
+                    b[5] = -pinkP_[5] * b[5] - w * pinkG_[5];
                     double pink = (b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + w * 0.5362) * 0.11;
                     b[6] = w * 0.115926;
                     float o = (float)(pink * lvl);
@@ -800,8 +891,8 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     // ---- per-voice filters with routing ----
     bool f1on = p_[FILTER1_BASE + FLT_ON] > 0.5;
     bool f2on = p_[FILTER2_BASE + FLT_ON] > 0.5;
-    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, modAccum[FILTER1_BASE + FLT_CUTOFF], pm_);
-    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, modAccum[FILTER2_BASE + FLT_CUTOFF], pm_);
+    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, modAccum[FILTER1_BASE + FLT_CUTOFF], pm_, n);
+    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, modAccum[FILTER2_BASE + FLT_CUTOFF], pm_, n);
 
     double dr1 = pm_[FILTER1_BASE + FLT_DRIVE], dr2 = pm_[FILTER2_BASE + FLT_DRIVE];
     float* oL; float* oR;
@@ -829,17 +920,22 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         oL = cL; oR = cR;
     }
 
+    // AMP-mod factor ramps from the previous chunk's value (Finding 7); the DC
+    // blocker pole is sr-derived (Finding 9).
     double ampFactor = std::min(2.0, std::max(0.0, 1 + mAmp));
+    double af0 = v.ampFacPrev >= 0 ? v.ampFacPrev : ampFactor;
+    double dAf = (ampFactor - af0) / n;
     for (int i = 0; i < n; i++) {
         double sl = oL[i], sr = oR[i];
-        double yL = sl - v.dcxL + DC_R * v.dcyL;
-        double yR = sr - v.dcxR + DC_R * v.dcyR;
+        double yL = sl - v.dcxL + dcR_ * v.dcyL;
+        double yR = sr - v.dcxR + dcR_ * v.dcyR;
         v.dcxL = sl; v.dcyL = yL;
         v.dcxR = sr; v.dcyR = yR;
-        double amp = v.ampEnv.process() * v.velGain * ampFactor;
+        double amp = v.ampEnv.process() * v.velGain * (af0 + dAf * i);
         L[i] += (float)(yL * amp);
         R[i] += (float)(yR * amp);
     }
+    v.ampFacPrev = ampFactor;
 
     v.lfo1.advance(lfoHz(LFO1_BASE), n, sr_);
     v.lfo2.advance(lfoHz(LFO2_BASE), n, sr_);
@@ -873,16 +969,12 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
 }
 
 void Engine::render(float* L, float* R, int n) {
-    // Hold the table lock for the whole block: setupOsc caches a raw pointer into
-    // a table's sample data, so the table set must not be swapped mid-render. If
-    // the message thread is swapping tables right now, emit silence this block.
-    std::unique_lock<std::mutex> lk(tablesMutex_, std::try_to_lock);
-    if (!lk.owns_lock()) {
-        std::fill(L, L + n, 0.0f);
-        std::fill(R, R + n, 0.0f);
-        vizActive = 0; vizA = -1; vizB = -1;
-        return;
-    }
+    // Snapshot the published table set once for the whole call (Finding 2):
+    // the shared_ptr keeps every raw pointer setupOsc caches valid even if the
+    // message thread publishes a new set mid-block. Wait-free — the audio
+    // thread never blocks on a UI table swap and never substitutes silence.
+    const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
+    curTables_ = snap.get();
     // Sequencer clocking. The host-locked path derives absolute 16ths from the
     // playhead ppq (sample-accurate splits at each due step); the internal path
     // counts real samples so the clock never drifts (worklet parity). Chunks

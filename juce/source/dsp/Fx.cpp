@@ -34,6 +34,49 @@ void Biquad::highpass(double freq, double q, double sr) {
     a2 = (1 - alpha) / a0;
 }
 
+// ---------------- shared oversampling / limiter helpers ----------------
+static double besselI0(double x) {
+    double sum = 1, term = 1;
+    for (int k = 1; k < 64; k++) {
+        term *= x * x / (4.0 * k * k);
+        sum += term;
+        if (term < 1e-16 * sum) break;
+    }
+    return sum;
+}
+
+void HalfBandFir::design(int taps, double beta) {
+    h.assign((size_t)taps, 0.0);
+    double M = taps - 1, ib = besselI0(beta);
+    for (int i = 0; i < taps; i++) {
+        double m = i - M * 0.5;
+        double sinc = m == 0 ? 0.5 : std::sin(PI * 0.5 * m) / (PI * m);
+        double t = 2.0 * m / M;
+        h[(size_t)i] = sinc * besselI0(beta * std::sqrt(std::max(0.0, 1.0 - t * t))) / ib;
+    }
+    z.assign((size_t)taps, 0.0);
+    pos = 0;
+}
+
+void LookaheadLimiter::prepare(double sampleRate, double makeup) {
+    la_ = std::max(8, (int)std::lround(0.0015 * sampleRate)); // ~1.5 ms lookahead
+    qcap_ = la_ + 2;
+    dlL_.assign((size_t)la_, 0.0f);
+    dlR_.assign((size_t)la_, 0.0f);
+    qv_.assign((size_t)qcap_, 1.0);
+    qi_.assign((size_t)qcap_, 0);
+    atk_ = 1.0 - std::exp(-4.0 / la_);              // develops fully inside the window
+    rel_ = 1.0 - std::exp(-1.0 / (0.2 * sampleRate)); // ~200 ms release
+    makeup_ = makeup;
+    reset();
+}
+
+void LookaheadLimiter::reset() {
+    std::fill(dlL_.begin(), dlL_.end(), 0.0f);
+    std::fill(dlR_.begin(), dlR_.end(), 0.0f);
+    qh_ = qt_ = 0; w_ = 0; t_ = 0; env_ = 1.0;
+}
+
 // ---------------- Freeverb tuning (classic constants, scaled to sr) ----------------
 static const int COMB_TUNE[8]   = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617};
 static const int AP_TUNE[4]     = {556, 441, 341, 225};
@@ -68,33 +111,46 @@ void Fx::prepare(double sampleRate) {
 
     dcL_.highpass(8, 0.707, sr_);
     dcR_.highpass(8, 0.707, sr_);
-    // 2x oversampling anti-image / anti-alias filters, cutoff just below base Nyquist.
-    upL_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
-    upR_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
-    downL_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
-    downR_.lowpass(sr_ * 0.45, 0.707, sr_ * 2);
+    // 4x drive oversampler: cascaded Kaiser half-band FIR pairs (>60 dB
+    // rejection in the audible-alias region), designed once here.
+    up1L_.design(kHB1Taps, 6.0); up2L_.design(kHB2Taps, 6.0);
+    dn2L_.design(kHB2Taps, 6.0); dn1L_.design(kHB1Taps, 6.0);
+    up1R_.design(kHB1Taps, 6.0); up2R_.design(kHB2Taps, 6.0);
+    dn2R_.design(kHB2Taps, 6.0); dn1R_.design(kHB1Taps, 6.0);
+    dryL_.prepare(kDriveLatency + 4);
+    dryR_.prepare(kDriveLatency + 4);
     dlDamp_.lowpass(4500, 0.707, sr_);
-
-    // Limiter envelope coefficients (attack 2ms, release 220ms).
-    limAtk_ = 1 - std::exp(-1.0 / (0.002 * sr_));
-    limRel_ = 1 - std::exp(-1.0 / (0.22 * sr_));
 
     // WebAudio's DynamicsCompressor applies spec-defined makeup gain
     // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
-    // node, so match it here or the plugin sits ~4.5 dB under the web app.
+    // node, so keep its ~4.5 dB makeup ahead of the lookahead limiter or the
+    // plugin sits under the web app's loudness.
     double c1 = std::pow(1.0 / kLimThr, 1.0 / kLimRatio - 1.0);
-    limMakeup_ = std::pow(1.0 / c1, 0.6);
+    lim_.prepare(sr_, std::pow(1.0 / c1, 0.6));
+
+    reset(); // full state clear: re-prepare must never keep stale recursive state
 }
 
 void Fx::reset() {
     chDl1_.reset(); chDl2_.reset(); dlL_.reset(); dlR_.reset();
-    for (auto& c : combL_) std::fill(c.buf.begin(), c.buf.end(), 0.0f);
-    for (auto& c : combR_) std::fill(c.buf.begin(), c.buf.end(), 0.0f);
-    for (auto& a : apL_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
-    for (auto& a : apR_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+    dryL_.reset(); dryR_.reset();
+    for (auto& c : combL_) c.reset();
+    for (auto& c : combR_) c.reset();
+    for (auto& a : apL_) a.reset();
+    for (auto& a : apR_) a.reset();
     dcL_.reset(); dcR_.reset(); dlDamp_.reset();
-    upL_.reset(); upR_.reset(); downL_.reset(); downR_.reset();
-    limEnv_ = 0;
+    up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
+    up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
+    lim_.reset();
+    chPhase_ = 0;
+    driveGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
+    // settle smoothers at their targets so no stale ramp survives a re-prepare
+    driveWet_.snap(driveWet_.target); driveDry_.snap(driveDry_.target);
+    chWet_.snap(chWet_.target); chDry_.snap(chDry_.target);
+    dlTime_.snap(dlTime_.target); dlFb_.snap(dlFb_.target);
+    dlWet_.snap(dlWet_.target); dlDry_.snap(dlDry_.target);
+    verbWet_.snap(verbWet_.target); verbDry_.snap(verbDry_.target);
+    masterGain_.snap(masterGain_.target);
 }
 
 static inline float mixGate(bool on, float amount, bool wet) {
@@ -148,8 +204,26 @@ void Fx::setParams(const ParamArray& p) {
 }
 
 float Fx::shape(float x) const {
-    float c = std::max(-1.0f, std::min(1.0f, x));
-    return std::tanh(c * driveK_) * driveNorm_;
+    // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth nonlinearity)
+    return std::tanh(x * driveK_) * driveNorm_;
+}
+
+// One channel through the 4x oversampled shaper: 2x half-band interpolate,
+// 2x again, tanh at 4x, then the mirrored decimators. Zero-stuff gain (x2 per
+// stage) is applied at each stage input; decimation keeps the phase aligned
+// with the integer kDriveLatency group delay.
+float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x) {
+    double a[2] = { u1.process(2.0 * x), u1.process(0.0) };
+    double y = 0;
+    for (int k = 0; k < 2; k++) {
+        double b0 = u2.process(2.0 * a[k]);
+        double b1 = u2.process(0.0);
+        double c = d2.process((double)shape((float)b0));
+        d2.process((double)shape((float)b1)); // discarded decimation phase
+        double d = d1.process(c);
+        if (k == 0) y = d;                    // keep the base-rate phase
+    }
+    return (float)y;
 }
 
 void Fx::process(float* L, float* R, int n) {
@@ -161,7 +235,8 @@ void Fx::process(float* L, float* R, int n) {
 
     if (driveGate && !driveGated_) {
         driveWet_.snap(0); driveDry_.snap(1);
-        upL_.reset(); upR_.reset(); downL_.reset(); downR_.reset();
+        up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
+        up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     }
     if (chorusGate && !chorusGated_) {
         chWet_.snap(0); chDry_.snap(1);
@@ -187,22 +262,21 @@ void Fx::process(float* L, float* R, int n) {
     for (int i = 0; i < n; i++) {
         float l = L[i], r = R[i];
 
-        // ---- drive (2x oversampled tanh waveshaper) ----
+        // ---- drive (4x oversampled tanh waveshaper) ----
+        // The dry/bypass path always runs through a kDriveLatency delay so the
+        // dry/wet mix stays time-aligned with the shaper's FIR group delay and
+        // chain latency is constant whether drive is active or gated.
+        dryL_.write(l); dryR_.write(r);
+        float dlyL = dryL_.read((double)(kDriveLatency + 1));
+        float dlyR = dryR_.read((double)(kDriveLatency + 1));
         if (!driveGated_) {
             float wet = driveWet_.next(), dry = driveDry_.next();
-            // upsample (zero-stuff x2, gain 2), shape, downsample
-            float u0 = (float)upL_.process(2.0 * drivePre_ * l);
-            float u1 = (float)upL_.process(0.0);
-            float s0 = shape(u0), s1 = shape(u1);
-            downL_.process(s0);
-            float dl = (float)downL_.process(s1);
-            float ru0 = (float)upR_.process(2.0 * drivePre_ * r);
-            float ru1 = (float)upR_.process(0.0);
-            float rs0 = shape(ru0), rs1 = shape(ru1);
-            downR_.process(rs0);
-            float dr = (float)downR_.process(rs1);
-            l = dry * l + wet * dl;
-            r = dry * r + wet * dr;
+            float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l);
+            float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r);
+            l = dry * dlyL + wet * dl;
+            r = dry * dlyR + wet * dr;
+        } else {
+            l = dlyL; r = dlyR;
         }
 
         // ---- chorus (two modulated taps, stereo) ----
@@ -216,8 +290,8 @@ void Fx::process(float* L, float* R, int n) {
             chDl2_.write(mono);
             double d1 = (0.012 + depth * lfo) * sr_;
             double d2 = (0.017 - depth * 0.8 * lfo) * sr_;
-            float c1 = chDl1_.read(d1);
-            float c2 = chDl2_.read(d2);
+            float c1 = chDl1_.readHermite(d1);
+            float c2 = chDl2_.readHermite(d2);
             float wet = chWet_.next(), dry = chDry_.next();
             l = dry * l + wet * c1;
             r = dry * r + wet * c2;
@@ -227,8 +301,8 @@ void Fx::process(float* L, float* R, int n) {
         if (!delayGated_) {
             double dt = dlTime_.next() * sr_;
             float fb = dlFb_.next();
-            float dL = dlL_.read(dt);
-            float dR = dlR_.read(dt);
+            float dL = dlL_.readHermite(dt);
+            float dR = dlR_.readHermite(dt);
             float mono = 0.5f * (l + r);
             dlL_.write(mono + fb * dR);
             dlR_.write((float)dlDamp_.process(fb * dL));
@@ -256,21 +330,8 @@ void Fx::process(float* L, float* R, int n) {
         l = (float)dcL_.process(l);
         r = (float)dcR_.process(r);
 
-        // ---- safety limiter (feed-forward peak compressor) ----
-        {
-            double peak = std::max(std::abs((double)l), std::abs((double)r));
-            double coef = peak > limEnv_ ? limAtk_ : limRel_;
-            limEnv_ += (peak - limEnv_) * coef;
-            // static curve: threshold -8 dB, ratio 14 (hard knee; the web's
-            // knee=4 only differs inside a 4 dB window below threshold)
-            double gain = 1.0;
-            if (limEnv_ > kLimThr) {
-                double over = limEnv_ / kLimThr;             // linear overshoot
-                gain = std::pow(over, 1.0 / kLimRatio - 1.0);
-            }
-            l *= (float)(gain * limMakeup_);
-            r *= (float)(gain * limMakeup_);
-        }
+        // ---- lookahead safety limiter (makeup inside, -1 dBFS ceiling) ----
+        lim_.process(l, r);
 
         L[i] = l; R[i] = r;
     }

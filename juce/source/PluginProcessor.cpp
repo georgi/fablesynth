@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -53,9 +54,10 @@ void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
     engine.prepare(sampleRate);
     rebuildEngineTables();
     fx.prepare(sampleRate);
-    // Pre-size the mono-downmix scratch so processBlock never allocates on the
-    // audio thread (its setSize call keeps existing storage when it fits).
-    scratchR.setSize(1, samplesPerBlock);
+    setLatencySamples(fx.latencySamples());
+    // Pre-size the render scratch generously; processBlock never allocates on
+    // the audio thread — oversized host blocks are rendered in chunks instead.
+    scratchR.setSize(1, std::max(samplesPerBlock, 8192));
     currentSr.store(sampleRate);
     prepared = true;
     // Re-sync sequencer content into the (possibly reset) engine.
@@ -270,30 +272,38 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         shareMutex_.unlock();
     }
 
-    // MIDI -> note / bend events.
+    // Sample-accurate MIDI: render engine+FX up to each event's offset, apply
+    // the event, continue. FX state is continuous, so per-segment processing is
+    // equivalent to one full-block pass. Segments are capped at the scratch
+    // capacity so an oversized host block never allocates on the audio thread.
+    const bool stereo = buffer.getNumChannels() > 1;
+    float* L = buffer.getWritePointer(0);
+    float* R = stereo ? buffer.getWritePointer(1) : scratchR.getWritePointer(0);
+    const int cap = scratchR.getNumSamples();
+    int pos = 0;
+    auto renderTo = [&](int end) {
+        while (pos < end) {
+            const int len = std::min(end - pos, cap);
+            float* l = L + pos;
+            float* r = stereo ? R + pos : R; // mono: scratch reused per chunk
+            engine.render(l, r, len); // summed (pre-FX) voice mix
+            fx.process(l, r, len);
+            if (!stereo) { // mono out: downmix (engine is stereo)
+                juce::FloatVectorOperations::add(l, r, len);
+                juce::FloatVectorOperations::multiply(l, 0.5f, len);
+            }
+            pos += len;
+        }
+    };
     for (const auto meta : midi) {
+        renderTo(juce::jlimit(0, n, meta.samplePosition));
         const auto m = meta.getMessage();
         if (m.isNoteOn())        { engine.noteOn(m.getNoteNumber(), m.getFloatVelocity()); midiGlow.store(20); }
         else if (m.isNoteOff())  engine.noteOff(m.getNoteNumber());
         else if (m.isAllNotesOff() || m.isAllSoundOff()) engine.panic();
         else if (m.isPitchWheel()) { engine.pitchBend((m.getPitchWheelValue() - 8192) / 8192.0 * 2.0); midiGlow.store(20); }
     }
-
-    if (buffer.getNumChannels() > 1) {
-        float* L = buffer.getWritePointer(0);
-        float* R = buffer.getWritePointer(1);
-        engine.render(L, R, n);     // fills L/R with the summed (pre-FX) voice mix
-        fx.process(L, R, n);
-    } else {
-        // Mono out: render to a stereo scratch then downmix (engine is stereo).
-        scratchR.setSize(1, n, false, false, true);
-        float* L = buffer.getWritePointer(0);
-        float* R = scratchR.getWritePointer(0);
-        engine.render(L, R, n);
-        fx.process(L, R, n);
-        juce::FloatVectorOperations::add(L, R, n);
-        juce::FloatVectorOperations::multiply(L, 0.5f, n);
-    }
+    renderTo(n);
 
     // Publish the live modulated wavetable positions for the editor.
     vizPosA.store((float)engine.vizA, std::memory_order_relaxed);
