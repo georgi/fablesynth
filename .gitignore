@@ -5,6 +5,7 @@ dist
 
 # JUCE / C++ build artifacts
 juce/build/
+juce/build-*/
 build/
 
 # Redundant compressed copy of design-handoff/ (the extracted dir is tracked)

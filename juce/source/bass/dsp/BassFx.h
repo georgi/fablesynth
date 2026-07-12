@@ -21,6 +21,7 @@ public:
     void setParams(const BassParamArray& p); // reads BL_FX* and BL_MASTER_VOLUME
     void process(float* L, float* R, int n); // in-place, stereo
     void reset();
+    int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
 
 private:
     double sr_ = 48000;
@@ -28,9 +29,11 @@ private:
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;
     Smooth driveWet_, driveDry_;
-    Biquad upL_, upR_, downL_, downR_; // 2x oversampling filters
+    HalfBandFir up1L_, up2L_, dn2L_, dn1L_, up1R_, up2R_, dn2R_, dn1R_; // 4x oversampler
+    DelayLine dryL_, dryR_; // constant-latency dry path aligned with the shaper FIRs
     bool driveOff_ = false, driveGated_ = false;
     inline float shape(float x) const;
+    float driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x);
 
     // chorus
     double chPhase_ = 0;
@@ -55,9 +58,7 @@ private:
     // master + limiter
     Smooth masterGain_;
     Biquad dcL_, dcR_;
-    double limEnv_ = 0;
-    double limAtk_ = 0, limRel_ = 0;
-    double limMakeup_ = 1; // WebAudio-spec makeup gain, computed in prepare()
+    LookaheadLimiter lim_; // WebAudio-spec makeup applied inside, computed in prepare()
 };
 
 } // namespace fable
