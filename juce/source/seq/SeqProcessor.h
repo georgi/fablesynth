@@ -35,10 +35,12 @@ const std::vector<ParamInfo>& seqParamInfo();
 //    256 slots), drained at the top of processBlock and applied to the engines.
 //  - Clip bytes travel as std::shared_ptr<std::vector<uint8_t>> built on the
 //    message thread — no audio-thread allocation *in Task 8's command scheme*
-//    (the Cmd/Ack FIFOs and their payload handoff). ClipHost::scheduleClip/
-//    updateClip and the engines' internal events.push_back() may still
-//    allocate on first growth, inside the engines (pre-existing Tasks 2-5
-//    behavior) — this claim doesn't cover that. The audio thread reads the
+//    (the Cmd/Ack FIFOs and their payload handoff). Nor inside the engines:
+//    ClipHost::prepare() (called from setHostClipMode(true) in prepareToPlay)
+//    reserves the clip byte buffers and the event buffer, and the
+//    pending->playing handoff is a capacity-preserving std::swap, so
+//    scheduleClip/updateClip/tick and events.push_back() are all allocation-
+//    free in steady state after prepare. The audio thread reads the
 //    slot's shared_ptr in place (hostClip/hostClipUpdate *copy* the bytes into
 //    the engine's ClipHost) and never resets it. The shared_ptr is recycled
 //    only when the message thread overwrites that slot on a later push, so the
@@ -156,8 +158,22 @@ private:
     IO io_ { *this };
 
     // ---- ack FIFO (audio thread -> message thread) --------------------------
-    struct Ack { int t = 0; fable::HostEvent ev {}; };
-    void pushAck(int t, const fable::HostEvent& ev);
+    // Each ack carries the command generation live when the audio thread pushed
+    // it (see cmdGen_); drainAcks drops any whose generation no longer matches.
+    struct Ack { int t = 0; fable::HostEvent ev {}; uint32_t gen = 0; };
+    void pushAck(int t, const fable::HostEvent& ev, uint32_t gen);
+
+    // Bumped on the message thread whenever the conductor is replaced
+    // (applySessionJson, and setStateInformation via it) BEFORE the stop
+    // commands + rebuild. The audio thread reads it once per block and stamps
+    // every ack it pushes; drainAcks compares against the current value and
+    // discards stale acks. This closes a window that draining the ack FIFO at
+    // the swap cannot: a block already in flight on the audio thread can push
+    // a pre-swap Start ack AFTER the message-thread drain, and that ack would
+    // otherwise reach the new conductor and make Conductor::onClipStart insert
+    // a scene-0 false owner (lastScheduled_[t] default-constructs to 0). The
+    // generation tag invalidates such acks regardless of thread interleaving.
+    std::atomic<uint32_t> cmdGen_ { 0 };
 
     // ---- per-track render helpers (audio thread) ----------------------------
     void renderDrum(float* L, float* R, int n);

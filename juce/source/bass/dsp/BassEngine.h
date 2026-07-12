@@ -88,7 +88,14 @@ public:
     // standalone sequencer and the hosted clip can never double-fire the
     // voice; the standalone render path is otherwise byte-identical when
     // this is off.
-    void setHostClipMode(bool on) { hostClipMode_ = on; if (!on) clipHost_.clear(); }
+    void setHostClipMode(bool on) {
+        hostClipMode_ = on;
+        // Reserve the clip host's buffers so no launch/update/tick allocates on
+        // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
+        // machine; 64 events is far above the per-block worst case).
+        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, 64);
+        else clipHost_.clear();
+    }
     void hostTempo(double bpm, double swing, double anchorFrame) {
         setBpmOverride(bpm);
         anchorFrame_ = anchorFrame;

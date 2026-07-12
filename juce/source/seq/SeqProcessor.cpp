@@ -404,21 +404,25 @@ void SeqAudioProcessor::IO::ioSendTempo(double bpm, double swing, double anchor)
 
 // ---- acks ------------------------------------------------------------------
 
-void SeqAudioProcessor::pushAck(int t, const HostEvent& ev) {
+void SeqAudioProcessor::pushAck(int t, const HostEvent& ev, uint32_t gen) {
     int s1, sz1, s2, sz2;
     ackFifo_.prepareToWrite(1, s1, sz1, s2, sz2);
-    if (sz1 > 0)      ackSlots_[(size_t)s1] = { t, ev };
-    else if (sz2 > 0) ackSlots_[(size_t)s2] = { t, ev };
+    if (sz1 > 0)      ackSlots_[(size_t)s1] = { t, ev, gen };
+    else if (sz2 > 0) ackSlots_[(size_t)s2] = { t, ev, gen };
     ackFifo_.finishedWrite(sz1 + sz2);
 }
 
 void SeqAudioProcessor::drainAcks() {
     int s1, sz1, s2, sz2;
     ackFifo_.prepareToRead(ackFifo_.getNumReady(), s1, sz1, s2, sz2);
+    const uint32_t cur = cmdGen_.load(std::memory_order_relaxed);
     auto run = [&](int start, int count) {
         for (int i = 0; i < count; ++i) {
             const Ack& a = ackSlots_[(size_t)(start + i)];
             if (!conductor_) continue;
+            // Drop acks stamped before the conductor was last replaced — they
+            // target a session that no longer exists (see cmdGen_).
+            if (a.gen != cur) continue;
             if (a.ev.t == HostEvent::T::Start) {
                 conductor_->onClipStart(a.t);
             } else if (a.ev.t == HostEvent::T::Stop) {
@@ -491,11 +495,6 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // Pause = web ctx.suspend(): silence, and the shared frame counter freezes.
     if (paused_.load()) { buffer.clear(); return; }
 
-    // Grow scratch if the host ever exceeds the prepared block (keeps storage
-    // otherwise, so the steady state never allocates on the audio thread).
-    if (trackBuf_.getNumSamples() < n) trackBuf_.setSize(2, n, false, false, true);
-    if (drumAux_.getNumSamples() < n) drumAux_.setSize(2 * (DR_NBUSES - 1), n, false, false, true);
-
     drainCmds();
     masterGain_.setTargetValue(rawMaster_ ? rawMaster_->load() : 0.75f);
 
@@ -504,56 +503,78 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     float* outR = stereo ? buffer.getWritePointer(1) : outL;
     for (int i = 0; i < n; ++i) { outL[i] = 0.0f; if (stereo) outR[i] = 0.0f; }
 
+    // The scratch buffers are sized to the prepared block once in
+    // prepareToPlay; a host that hands us a larger buffer is processed in
+    // sub-blocks of at most that size, so nothing here ever setSize()s (which
+    // would allocate) on the audio thread. drainCmds runs once up top; each
+    // engine renders per chunk from its own chunk-start frame; the shared
+    // currentFrame is published once for the whole block, as before.
+    const int cap = std::max(1, trackBuf_.getNumSamples());
+    const double base = frame_;
+    const uint32_t gen = cmdGen_.load(std::memory_order_relaxed);
+    const int scopeW = scopeWrite_.load(std::memory_order_relaxed);
+
     float* tl = trackBuf_.getWritePointer(0);
     float* tr = trackBuf_.getWritePointer(1);
+    double trackSumSq[kTracks] = { 0.0, 0.0, 0.0, 0.0 };
 
-    for (int t = 0; t < kTracks; ++t) {
-        switch (t) {
-            case 0: renderDrum(tl, tr, n); break;
-            case 1: renderBass(tl, tr, n); break;
-            default: renderWt(t - 2, tl, tr, n); break;
+    for (int off = 0; off < n; off += cap) {
+        const int c = std::min(cap, n - off);
+        frame_ = base + off;                         // engines render this chunk from here
+        float* oL = outL + off;
+        float* oR = (stereo ? outR : outL) + off;
+
+        for (int t = 0; t < kTracks; ++t) {
+            switch (t) {
+                case 0: renderDrum(tl, tr, c); break;
+                case 1: renderBass(tl, tr, c); break;
+                default: renderWt(t - 2, tl, tr, c); break;
+            }
+            double sumSq = 0.0;
+            for (int i = 0; i < c; ++i) {
+                const float g = trackGain_[t].getNextValue();
+                const float l = tl[i] * g, r = tr[i] * g;
+                if (stereo) { oL[i] += l; oR[i] += r; }
+                else        { oL[i] += 0.5f * (l + r); }
+                sumSq += (double)l * l + (double)r * r;
+            }
+            trackSumSq[t] += sumSq;
         }
-        double sumSq = 0.0;
-        for (int i = 0; i < n; ++i) {
-            const float g = trackGain_[t].getNextValue();
-            const float l = tl[i] * g, r = tr[i] * g;
-            if (stereo) { outL[i] += l; outR[i] += r; }
-            else        { outL[i] += 0.5f * (l + r); }
-            sumSq += (double)l * l + (double)r * r;
+
+        // Master gain -> limiter -> output; post-limiter mono into the scope ring.
+        for (int i = 0; i < c; ++i) {
+            const float g = masterGain_.getNextValue();
+            float l = oL[i] * g, r = (stereo ? oR[i] : oL[i]) * g;
+            limiter_.process(l, r);
+            oL[i] = l; if (stereo) oR[i] = r;
+            scopeRing_[(size_t)((scopeW + off + i) & (kScopeSize - 1))] = 0.5f * (l + r);
         }
-        trackRms[t].store((float)std::sqrt(sumSq / (2.0 * (double)n)));
-    }
 
-    // Master gain -> limiter -> output; post-limiter mono into the scope ring.
-    int w = scopeWrite_.load(std::memory_order_relaxed);
-    for (int i = 0; i < n; ++i) {
-        const float g = masterGain_.getNextValue();
-        float l = outL[i] * g, r = (stereo ? outR[i] : outL[i]) * g;
-        limiter_.process(l, r);
-        outL[i] = l; if (stereo) outR[i] = r;
-        scopeRing_[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l + r);
-    }
-    scopeWrite_.store(w + n, std::memory_order_relaxed);
-
-    // Drain each engine's host events: Pos updates the step/bar readouts here;
-    // Start/Stop become acks the conductor consumes via drainAcks().
-    HostEvent evs[64];
-    for (int t = 0; t < kTracks; ++t) {
-        const int m = takeEvents(t, evs, 64);
-        for (int k = 0; k < m; ++k) {
-            if (evs[k].t == HostEvent::T::Pos) {
-                trackStep[t].store(evs[k].step, std::memory_order_relaxed);
-                trackBar[t].store(evs[k].bar, std::memory_order_relaxed);
-            } else {
-                pushAck(t, evs[k]);
+        // Drain each engine's host events for this chunk: Pos updates the
+        // step/bar readouts; Start/Stop become acks the conductor consumes via
+        // drainAcks(), stamped with this block's command generation.
+        HostEvent evs[64];
+        for (int t = 0; t < kTracks; ++t) {
+            const int m = takeEvents(t, evs, 64);
+            for (int k = 0; k < m; ++k) {
+                if (evs[k].t == HostEvent::T::Pos) {
+                    trackStep[t].store(evs[k].step, std::memory_order_relaxed);
+                    trackBar[t].store(evs[k].bar, std::memory_order_relaxed);
+                } else {
+                    pushAck(t, evs[k], gen);
+                }
             }
         }
     }
 
+    for (int t = 0; t < kTracks; ++t)
+        trackRms[t].store((float)std::sqrt(trackSumSq[t] / (2.0 * (double)n)));
+    scopeWrite_.store(scopeW + n, std::memory_order_relaxed);
+
     // Advance the shared timebase. currentFrame is published as elapsed frames
     // (= the next block's start frame) so a launch issued between blocks and the
     // block that consumes it agree on the reference frame.
-    frame_ += n;
+    frame_ = base + n;
     currentFrame.store(frame_);
 }
 
@@ -615,6 +636,11 @@ bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
     if (!sqLayoutMatches(restored)) return false; // reject: not the fixed {DR1,BL1,WT1,WT1} rig
     initialSession_ = std::move(restored);
     if (preparedSampleRate_ > 0.0) {
+        // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
+        // that lands after this point would otherwise flip an owner in the new
+        // conductor (see cmdGen_). Bump first, then push the stops/rebuild —
+        // acks the audio thread stamps with the old generation are now stale.
+        cmdGen_.fetch_add(1, std::memory_order_relaxed);
         // Same stop-before-re-anchor sequencing as setStateInformation (see the
         // comment there): stop every track first, ordered ahead of the new
         // conductor's first tempo command, so no clip is mid-flight across the

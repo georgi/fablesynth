@@ -246,6 +246,37 @@ static void testClipHost() {
         CHECK(q2.size() == 2);
         if (q2.size() == 2) { CHECK(q2[0] == 1); CHECK(q2[1] == 2); }
     }
+    // 10. After prepare(), a full launch / live-resize / re-launch / stop cycle
+    //     never reallocates the clip, pend, or events buffers — the swap and
+    //     the assigns all stay within the reserved capacity (Finding 1: no
+    //     audio-thread allocation in steady state). Capacities are captured
+    //     once and must be byte-for-byte identical at the end.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        h.prepare(SQ_MAX_BARS * 256, 64);
+        const size_t cc = h.clipCapacity(), pc = h.pendCapacity(), ec = h.eventsCapacity();
+        CHECK(cc >= (size_t)(SQ_MAX_BARS * 256) && pc >= (size_t)(SQ_MAX_BARS * 256) && ec >= 64);
+
+        auto a = sqEmptyClip(Machine::DR1, 1);
+        h.scheduleClip(a.data(), a.size(), 1, 0);          // launch (quant OFF)
+        std::vector<HostEvent> evs;
+        run(h, 0, 4, evs);                                  // swap + a few fires
+        auto bigger = sqEmptyClip(Machine::DR1, 2);
+        h.updateClip(bigger.data(), bigger.size(), 2);      // live resize (assign into clip_)
+        h.events.clear(); evs.clear();
+        run(h, 4 * stepDur, 4, evs);
+        auto b = sqEmptyClip(Machine::DR1, 1);
+        h.scheduleClip(b.data(), b.size(), 1, 8 * stepDur); // re-launch -> second swap
+        h.events.clear(); evs.clear();
+        run(h, 8 * stepDur - 128, 4, evs);
+        h.scheduleStop(12 * stepDur);
+        h.events.clear(); evs.clear();
+        run(h, 12 * stepDur - 128, 4, evs);
+
+        CHECK(h.clipCapacity() == cc);
+        CHECK(h.pendCapacity() == pc);
+        CHECK(h.eventsCapacity() == ec);
+    }
 }
 
 static double rmsOf(fable::Engine& e, double& frame, int blocks) {

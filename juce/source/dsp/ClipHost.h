@@ -7,6 +7,8 @@
 
 #include "../seq/dsp/SeqProtocol.h"
 #include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -23,6 +25,23 @@ public:
 
     void setTempo(double bpm, double swing, double sr, double anchor) {
         bpm_ = bpm; swing_ = swing; sr_ = sr; anchor_ = anchor;
+    }
+
+    // Reserve steady-state capacity so nothing here allocates on the audio
+    // thread once audio is running. Call once, before the first tick (the
+    // embedding engine does this from setHostClipMode(true)). maxBytes covers
+    // the largest possible clip (SQ_MAX_BARS * DR1 bytes-per-bar = 4096);
+    // maxEvents is the per-drain event headroom (Start/Stop plus one Pos per
+    // fired step — far above the worst case, since events are drained every
+    // block). After this, clip_ AND pend_ keep their capacity for the object's
+    // lifetime: scheduleClip/updateClip only ever assign() within reserve
+    // (assign never shrinks capacity), and the pending->playing handoff is a
+    // std::swap (see tick) that trades the two buffers without freeing either.
+    void prepare(int maxBytes, int maxEvents) {
+        clip_.reserve((size_t)maxBytes);
+        pend_.reserve((size_t)maxBytes);
+        events.reserve((size_t)maxEvents);
+        maxEvents_ = (size_t)maxEvents;
     }
 
     // Replaces any pending clip and disarms a pending stop (a re-launch
@@ -60,6 +79,12 @@ public:
     const uint8_t* clipData() const { return clip_.data(); }
     int  clipStep() const { return clipStep_; } // last fired absolute step
 
+    // Test hooks: reserved buffer capacities, to assert prepare()'s
+    // allocation-free steady state (no realloc across launch/update/stop).
+    size_t clipCapacity()   const { return clip_.capacity(); }
+    size_t pendCapacity()   const { return pend_.capacity(); }
+    size_t eventsCapacity() const { return events.capacity(); }
+
     // One render quantum: [frame, frame+n). fire(absStep) triggers the step's
     // voices in the embedding engine. Order matters: stop, swap, fire —
     // usually one fire per call (the caller drives consecutive quanta and a
@@ -87,19 +112,22 @@ public:
         if (hasStop_ && stopAt_ < end) {
             hasStop_ = false;
             playing_ = false; clipStep_ = -1;
-            events.push_back({ HostEvent::T::Stop, frame });
+            pushEvent({ HostEvent::T::Stop, frame });
         }
         if (hasPend_ && pendAt_ < end) {
             hasPend_ = false;
             const bool wasPlaying = playing_;
-            clip_ = std::move(pend_); clipBars_ = pendBars_;
+            // Capacity-preserving handoff: swap (not move-assign) so both
+            // clip_ and pend_ retain their reserved buffers — pend_ inherits
+            // the outgoing clip's storage for the next scheduleClip's assign().
+            std::swap(clip_, pend_); clipBars_ = pendBars_;
             playing_ = true;
             // Phase-locked entry: enter at the global grid position, -1 so
             // the immediate fire below lands ON that step (worklet clipPhase).
             clipStep_ = phaseStep(frame, clipBars_ * SQ_STEPS_PER_BAR, true) - 1;
             toNext_ = 0;
             onSwap(wasPlaying);
-            events.push_back({ HostEvent::T::Start, frame });
+            pushEvent({ HostEvent::T::Start, frame });
         }
         if (playing_) {
             // A large host quantum (offline render, high bpm) can leave more
@@ -127,6 +155,17 @@ public:
     }
 
 private:
+    // Append a host event. prepare() reserves maxEvents_ up front and the
+    // buffer is drained every block, so a prepared host must never exceed that
+    // reserve here (doing so would allocate on the audio thread) — the assert
+    // is a debug-only safety net if the worst-case sizing is ever wrong.
+    // maxEvents_ == 0 means unprepared (the direct-construction unit tests),
+    // which grow freely.
+    void pushEvent(const HostEvent& e) {
+        assert(maxEvents_ == 0 || events.size() < maxEvents_);
+        events.push_back(e);
+    }
+
     double clampBpm() const { return std::max(60.0, std::min(200.0, bpm_)); }
     double clampSwing() const { return std::max(0.0, std::min(1.0, swing_)); }
 
@@ -153,7 +192,7 @@ private:
         const int s = abs % SQ_STEPS_PER_BAR;
         clipStep_ = abs;
         fire(abs);
-        events.push_back({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR });
+        pushEvent({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR });
 
         const double offNow  = (s % 2 == 1) ? sw * SQ_SWING_MAX * dur : 0.0;
         const int sNext = (s + 1) % SQ_STEPS_PER_BAR;
@@ -168,6 +207,7 @@ private:
     double pendAt_ = -1, stopAt_ = -1, toNext_ = 0, lastFrame_ = 0;
     bool hasPend_ = false, hasStop_ = false, playing_ = false;
     int clipStep_ = -1;
+    size_t maxEvents_ = 0; // reserved event headroom, 0 until prepare() (see pushEvent)
 };
 
 } // namespace fable

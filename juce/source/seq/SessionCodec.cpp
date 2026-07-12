@@ -51,9 +51,14 @@ juce::String sessionToJson(const SessionData& s) {
             patch->setProperty("index", t.patch.index);
         } else {
             patch->setProperty("kind", "inline");
-            auto* dataObj = new juce::DynamicObject();
+            // Web contract (src/seq/devices.ts inlineParams, protocol.ts
+            // PatchDoc): { kind:"inline", data:{ params:{ name:number,... } } }.
+            // The param map is nested under data.params, not flat in data.
+            auto* paramsObj = new juce::DynamicObject();
             for (const auto& kv : t.patch.params)
-                dataObj->setProperty(juce::Identifier(kv.first), kv.second);
+                paramsObj->setProperty(juce::Identifier(kv.first), kv.second);
+            auto* dataObj = new juce::DynamicObject();
+            dataObj->setProperty("params", juce::var(paramsObj));
             patch->setProperty("data", juce::var(dataObj));
         }
         to->setProperty("patch", juce::var(patch));
@@ -118,9 +123,16 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
         const juce::var& pv = tv.getProperty("patch", juce::var());
         if (pv.getProperty("kind", "factory").toString() == "inline") {
             td.patch.factory = false;
-            if (auto* dataObj = pv.getProperty("data", juce::var()).getDynamicObject())
-                for (const auto& prop : dataObj->getProperties())
+            if (auto* dataObj = pv.getProperty("data", juce::var()).getDynamicObject()) {
+                // Web schema nests the params under data.params; accept that,
+                // and fall back to the legacy JUCE-flat form (params written
+                // directly into data) so any prior saved state keeps loading.
+                juce::DynamicObject* paramsObj =
+                    dataObj->getProperty("params").getDynamicObject();
+                if (paramsObj == nullptr) paramsObj = dataObj;
+                for (const auto& prop : paramsObj->getProperties())
                     td.patch.params[prop.name.toString().toStdString()] = (float)prop.value;
+            }
         } else {
             td.patch.factory = true;
             td.patch.index = (int)pv.getProperty("index", 0);

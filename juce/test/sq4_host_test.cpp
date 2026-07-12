@@ -391,6 +391,57 @@ int main(int argc, char** argv) {
         check(v.getProperty("scenes", juce::var())[0].getProperty("clips", juce::var())[1].isVoid(),
               "schema: INTRO/BASS is a null clip slot");
 
+        // inline patch (web schema: { kind:"inline", data:{ params:{...} } } --
+        // src/seq/devices.ts inlineParams, protocol.ts PatchDoc). Give track 2
+        // (LEAD/WT1) an inline patch and assert the JSON nests params under
+        // data, round-trips, and that a legacy JUCE-flat doc still loads.
+        {
+            fable::SessionData s2 = fable::factorySession();
+            s2.tracks[2].patch.factory = false;
+            s2.tracks[2].patch.params = { {"cutoff", 0.42f}, {"reso", 0.7f} };
+            juce::String j2 = fable::sessionToJson(s2);
+
+            // (a) the JSON literally carries data -> params as an object.
+            auto pv = juce::JSON::parse(j2);
+            auto patch2 = pv.getProperty("tracks", juce::var())[2].getProperty("patch", juce::var());
+            check(patch2.getProperty("kind", "").toString() == "inline", "inline patch: kind is \"inline\"");
+            auto data2 = patch2.getProperty("data", juce::var());
+            check(data2.getDynamicObject() != nullptr, "inline patch: data is an object");
+            auto params2 = data2.getProperty("params", juce::var());
+            check(params2.getDynamicObject() != nullptr, "inline patch: data.params is a nested object (web schema)");
+            check(std::abs((double)params2.getProperty("cutoff", -1.0) - 0.42) < 1e-4,
+                  "inline patch: data.params.cutoff is the written value");
+
+            // (b) round-trip restores the params map.
+            fable::SessionData r2;
+            check(fable::sessionFromJson(j2, r2), "inline patch round-trips");
+            check(!r2.tracks[2].patch.factory, "inline patch stays inline on load");
+            check(std::abs(r2.tracks[2].patch.params["cutoff"] - 0.42f) < 1e-4f &&
+                  std::abs(r2.tracks[2].patch.params["reso"] - 0.7f) < 1e-4f,
+                  "inline patch params map round-trips");
+
+            // (c) a legacy JUCE-flat doc (params written directly into data,
+            // pre-Finding-2) still parses into the same params map. Build the
+            // flat form by flattening data.params -> data in the parsed tree
+            // (robust to float formatting, unlike string surgery).
+            {
+                auto vflat = juce::JSON::parse(j2);
+                auto* patchObj = vflat.getProperty("tracks", juce::var())[2]
+                                     .getProperty("patch", juce::var()).getDynamicObject();
+                check(patchObj != nullptr, "legacy-flat setup: found the inline patch object");
+                auto paramsFlat = patchObj->getProperty("data").getProperty("params", juce::var());
+                patchObj->setProperty("data", paramsFlat); // data == the flat params object
+                juce::String jf = juce::JSON::toString(vflat);
+                check(!jf.contains("\"params\""), "legacy-flat doc has no nested params key");
+
+                fable::SessionData rf;
+                check(fable::sessionFromJson(jf, rf), "legacy flat inline patch still parses");
+                check(std::abs(rf.tracks[2].patch.params["cutoff"] - 0.42f) < 1e-4f &&
+                      std::abs(rf.tracks[2].patch.params["reso"] - 0.7f) < 1e-4f,
+                      "legacy flat inline patch yields the same params map");
+            }
+        }
+
         // rejects bad docs.
         fable::SessionData junk;
         check(!fable::sessionFromJson("{\"v\":2}", junk), "sessionFromJson rejects v != 1");
@@ -517,6 +568,82 @@ int main(int argc, char** argv) {
               "setStateInformation rejects a layout-violating SESSION doc, current session retained");
         renderRms(p3, buf, 4); // must not crash
         check(p3.getName() == "FableSynth SQ-4", "processor alive after the layout-guard rejection");
+    }
+
+    // ---- Finding 3: a session swap invalidates in-flight acks. Launch scene 2
+    // (live), then applySessionJson a fresh session while clipstart acks are
+    // still queued (not yet drained). After the swap + drain, no track may be
+    // owned -- a stale pre-swap Start ack must not reach the new conductor and
+    // insert a false scene-0 owner (Conductor::onClipStart's lastScheduled_[t]
+    // default-inserts 0). Draining the FIFO at the swap alone can't close this:
+    // the acks were already queued by earlier blocks; the generation tag is
+    // what discards them. Output must be silent until a new launch. ----
+    {
+        std::printf("\n== stale-ack invalidation across a session swap ==\n");
+        SeqAudioProcessor p4;
+        p4.prepareToPlay(48000.0, 128);
+        juce::AudioBuffer<float> b4(2, 128);
+
+        p4.conductor().launchScene(2);   // DROP A: all four tracks
+        renderRms(p4, b4, 800);          // arm + fire across the bar boundary...
+        // ...but DON'T drainAcks: the four clipstart acks sit queued in the FIFO
+        // while we swap the session out from under them (a LOAD landing mid-flight).
+        juce::String fresh = p4.currentSessionJson();
+        check(p4.applySessionJson(fresh), "applySessionJson accepts the fresh session mid-flight");
+        p4.drainAcks();                  // the queued pre-swap acks reach the drain here
+        // Check immediately, before any render processes the swap's stop
+        // commands: at this instant no Stop ack has been produced yet, so a
+        // stale Start ack that slipped through would show as a false scene-0
+        // owner right now. (Without the generation guard this fails: the four
+        // gen-0 Start acks flip owner_[t] to lastScheduled_[t] == 0 on the new
+        // conductor. The swap's own stops would later scrub it, which is why
+        // the guard -- not drain-at-swap -- is what closes the window.)
+        bool anyOwned = false;
+        for (int t = 0; t < 4; ++t)
+            if (p4.conductor().ownerOf(t) != -2) anyOwned = true;
+        check(!anyOwned, "no false owner from a stale ack immediately after the swap + drain");
+
+        // Then let the swap's stops land and the engine tails decay: still
+        // unowned, and silent until a new launch.
+        renderRms(p4, b4, 1200);
+        p4.drainAcks();
+        bool anyOwned2 = false;
+        for (int t = 0; t < 4; ++t)
+            if (p4.conductor().ownerOf(t) != -2) anyOwned2 = true;
+        check(!anyOwned2, "still unowned after the swap's stops settle");
+        check(renderRms(p4, b4, 400) < 1e-4, "silent until a new launch after the swap");
+    }
+
+    // ---- Finding 4: an over-large host buffer is processed in prepared-size
+    // sub-blocks (no setSize on the audio thread). Prepare at 128, then drive
+    // the processor with 1024-sample buffers and a live scene: audio stays
+    // finite (asserted in renderRms) and audible, the step readout advances
+    // across the run (per-chunk frame accounting + ClipHost catch-up, also
+    // exercising Finding 1's swap), and currentFrame advances by the full
+    // block. One 1024-sample block is < one step at 122 bpm, so step advance
+    // is checked across several blocks. ----
+    {
+        std::printf("\n== over-large host buffer (chunked render) ==\n");
+        SeqAudioProcessor p5;
+        p5.prepareToPlay(48000.0, 128);              // prepared block = 128
+        p5.conductor().launchScene(2);               // DROP A
+        juce::AudioBuffer<float> big(2, 1024);
+
+        renderRms(p5, big, 200);                     // past the bar boundary, 1024-sample blocks
+        p5.drainAcks();
+        check(p5.conductor().ownerOf(0) == 2, "scene live under 1024-sample blocks (prepared at 128)",
+              p5.conductor().ownerOf(0));
+
+        const int stepBefore = p5.trackStep[0].load();
+        const double bigRms = renderRms(p5, big, 20); // finite asserted inside; spans ~3.5 steps
+        check(bigRms > 1e-5, "1024-sample blocks produce audio (chunked render)", bigRms);
+        check(p5.trackStep[0].load() != stepBefore, "step readout advances across 1024-sample blocks",
+              p5.trackStep[0].load());
+
+        const double f0 = p5.currentFrame.load();
+        renderRms(p5, big, 1);
+        check(std::abs(p5.currentFrame.load() - (f0 + 1024)) < 1e-6,
+              "currentFrame advances by the full over-large block", p5.currentFrame.load());
     }
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);
