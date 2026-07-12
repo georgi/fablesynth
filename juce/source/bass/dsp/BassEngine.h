@@ -15,7 +15,7 @@
 #include "../../dsp/Engine.h"      // fable::Rng + TablePtr (via Wavetables.h)
 
 #include <cstdint>
-#include <mutex>
+#include <memory>
 #include <vector>
 
 namespace fable {
@@ -161,11 +161,11 @@ private:
 
     // ---- render internals (worklet setupOsc/renderOsc/renderSub/
     //      lfoValue/setupFilter/runFilter/renderVoice) ----
-    bool setupOsc(double noteAbs);
+    bool setupOsc(double noteAbs, int n);
     void renderOsc(float* tmpL, float* tmpR, int off, int n);
     void renderSub(float* tmpL, float* tmpR, int off, int n, double noteRootAbs);
     double lfoValue(double beats);
-    void setupFilter(double noteAbs, double beats);
+    void setupFilter(double noteAbs, double beats, int n);
     void runFilter(const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n);
     void renderVoice(float* L, float* R, int off, int n, double beats);
@@ -221,23 +221,33 @@ private:
     int    mask_ = 0, size_ = 0;
     const float* data_ = nullptr;
     double posSm_ = -1;
-    double subPhase_ = 0;
+    double subPhase_ = 0, subIncPrev_ = -1;
+    // Previous sub-block targets for the intra-block ramps (Finding 7).
+    double pIncs_[BL_MAXUNI] = {0};
+    float  pGl_[BL_MAXUNI] = {0}, pGr_[BL_MAXUNI] = {0};
+    double pFt_ = 0;
+    int    pOff0_ = -1, pUni_ = -1;
+    bool   havePrev_ = false;
 
     // filter state
     double svf_[8] = {0};
     double cutSm_ = 0, curCut_ = 0;
+    double cutTarget_ = 0, cutPrev_ = -1;   // chunk cutoff ramp (Finding 7)
     double satXL_ = 0, satXR_ = 0;
     int    ftype_ = 1; bool twoPole_ = true;
-    double a1_ = 0, a2_ = 0, a3_ = 0, k1_ = 0;
+    double k1_ = 0;
     double fenvVal_ = 0;
     double shVal_ = 0; long shPhase_ = -1;
     double dcxL_ = 0, dcxR_ = 0, dcyL_ = 0, dcyR_ = 0;
+    double dcR_ = BL_DC_R;                  // sr-derived DC pole (Finding 9)
 
-    std::vector<BassTable> tables_;
-    // Guards tables_ exactly like DrumEngine: setTables builds the replacement
-    // off-lock and swaps under it; render try-locks and emits one block of
-    // silence on the rare collision.
-    std::mutex tablesMutex_;
+    // Lock-free table publication (Finding 2) — same scheme as Engine::tables_:
+    // setTables atomically publishes an immutable set; render() atomic_loads
+    // one snapshot per call and keeps it alive for the whole block.
+    using TableSet = std::vector<BassTable>;
+    std::shared_ptr<const TableSet> tables_ = std::make_shared<TableSet>();
+    std::shared_ptr<const TableSet> retired_;
+    const TableSet* curTables_ = nullptr;
 
     // per-block scratch (worklet process quantum)
     float tmpL_[128] = {0}, tmpR_[128] = {0};

@@ -20,16 +20,42 @@ static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-void BassEngine::prepare(double sampleRate) {
-    sr_ = sampleRate;
-    panic();
-    held_.clear();
+// Finding 6: chunk-invariant smoothers (see Engine.cpp for the derivation).
+// BL-1's pos smoothing legacy cadence was 0.35 per 16-sample sub-block; cutoff
+// was 0.5 per 128-sample chunk, both at 48 kHz.
+static const double BL_POS_TAU = 16.0 / (48000.0 * 0.4307829160924542);
+static const double BL_CUT_TAU = 128.0 / (48000.0 * M_LN2);
+static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
+
+// Finding 10: cubic Hermite (Catmull-Rom) table read, indices pre-wrapped.
+static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i2, double f) {
+    const double ym1 = d[off + im1], y0 = d[off + i0], y1 = d[off + i1], y2 = d[off + i2];
+    const double c1 = 0.5 * (y1 - ym1);
+    const double c2 = ym1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
+    const double c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+    return ((c3 * f + c2) * f + c1) * f + y0;
 }
 
-// Same scheme as DrumEngine::setTables: build off-lock, swap under it.
+// prepare() contract (Finding 11): clean state for the new sample rate — the
+// voice is killed and every recursive state (SVF, DC blocker, smoothers, sub
+// phase, LFO S&H) cleared; the DC pole is remapped from its 48 kHz reference.
+void BassEngine::prepare(double sampleRate) {
+    sr_ = sampleRate;
+    dcR_ = std::pow(BL_DC_R, 48000.0 / sr_);   // Finding 9
+    panic();
+    held_.clear();
+    std::fill(std::begin(phases_), std::end(phases_), 0.0);
+    subPhase_ = 0; subIncPrev_ = -1;
+    dcxL_ = dcxR_ = dcyL_ = dcyR_ = 0;
+    shVal_ = 0; shPhase_ = -1;
+}
+
+// Finding 2: lock-free publication — same scheme as Engine::setTables. The
+// audio thread never blocks on a table swap and never substitutes silence;
+// retired_ keeps the previous set so its free lands on the message thread.
 void BassEngine::setTables(std::vector<TablePtr> tables) {
-    std::vector<BassTable> next;
-    next.reserve(tables.size());
+    auto next = std::make_shared<TableSet>();
+    next->reserve(tables.size());
     for (auto& t : tables) {
         BassTable e;
         if (t) {
@@ -37,10 +63,9 @@ void BassEngine::setTables(std::vector<TablePtr> tables) {
             e.data = t->data.data();
             e.src = std::move(t);
         }
-        next.push_back(std::move(e));
+        next->push_back(std::move(e));
     }
-    std::lock_guard<std::mutex> lk(tablesMutex_);
-    tables_.swap(next);
+    retired_ = std::atomic_exchange(&tables_, std::shared_ptr<const TableSet>(std::move(next)));
 }
 
 // ---------- voice control (js:126-173) ----------
@@ -72,7 +97,8 @@ void BassEngine::kill() {
     fenvT_ = 1e9;
     std::fill(std::begin(svf_), std::end(svf_), 0.0);
     satXL_ = 0; satXR_ = 0;
-    posSm_ = -1; cutSm_ = 0;
+    posSm_ = -1; cutSm_ = 0; cutPrev_ = -1;
+    havePrev_ = false; subIncPrev_ = -1;
 }
 
 void BassEngine::panic() {
@@ -253,11 +279,11 @@ void BassEngine::fireHostStep(long k) {
 
 // ---------- osc setup / render (js:221-322, per 16-sample sub-block) ----------
 
-bool BassEngine::setupOsc(double noteAbs) {
+bool BassEngine::setupOsc(double noteAbs, int n) {
     const int ti = (int)p_[BL_OSC_TABLE];
     const BassTable* table =
-        (ti >= 0 && ti < (int)tables_.size() && tables_[(size_t)ti].data)
-            ? &tables_[(size_t)ti] : nullptr;
+        (ti >= 0 && ti < (int)curTables_->size() && (*curTables_)[(size_t)ti].data)
+            ? &(*curTables_)[(size_t)ti] : nullptr;
     if (!table) return false;
     const double freq = 440.0 * std::pow(2.0, (noteAbs - 69.0) / 12.0);
     if (!(freq > 0 && freq <= sr_ * 0.45)) return false;
@@ -272,7 +298,7 @@ bool BassEngine::setupOsc(double noteAbs) {
 
     const double pos = clampd(p_[BL_OSC_POS], 0.0, 1.0);
     if (posSm_ < 0) posSm_ = pos;
-    posSm_ += (pos - posSm_) * 0.35;
+    posSm_ += (pos - posSm_) * smoothCoef(n, BL_POS_TAU * sr_);
     const double posF = posSm_ * (table->frames - 1);
     const int f0 = (int)posF;
     const int f1 = std::min(table->frames - 1, f0 + 1);
@@ -314,56 +340,68 @@ bool BassEngine::setupOsc(double noteAbs) {
     return true;
 }
 
+// Finding 7 + 10: increments / morph fraction / pan gains ramp from the
+// previous sub-block's targets across each sub-block (staircase-free slides
+// and pos sweeps), and table reads are cubic Hermite. Same scheme as
+// Engine::renderOsc — see there for the ramp-validity rules.
 void BassEngine::renderOsc(float* tmpL, float* tmpR, int off, int n) {
     const float* data = data_;
     const int mask = mask_, size = size_;
-    const double ft = ft_, g = oscGain_;
+    const double invN = 1.0 / n;
+    const bool rp = havePrev_ && pUni_ == uni_;
+    const double ft1 = ft_;
+    const double ft0 = (rp && pOff0_ == off0_) ? pFt_ : ft1;
+    const double dFt = (ft1 - ft0) * invN;
+    const double g = oscGain_;
     const int off0 = off0_, off1 = off1_;
     const double blend = mipBlend_;
-    if (blend < 0.001) {
-        for (int u = 0; u < uni_; u++) {
-            double ph = phases_[u];
-            const double inc = incs_[u];
-            const double gl = gl_[u] * g, gr = gr_[u] * g;
+    for (int u = 0; u < uni_; u++) {
+        double ph = phases_[u];
+        const double inc1 = incs_[u];
+        const double inc0 = rp ? pIncs_[u] : inc1;
+        const double dInc = (inc1 - inc0) * invN;
+        const double gl1 = gl_[u] * g, gr1 = gr_[u] * g;
+        const double gl0 = rp ? (double)pGl_[u] : gl1, gr0 = rp ? (double)pGr_[u] : gr1;
+        const double dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
+        if (blend < 0.001) {
             for (int i = 0; i < n; i++) {
                 const int idx = (int)ph;
                 const double frac = ph - idx;
-                const int i2 = (idx + 1) & mask;
-                const double s0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-                const double s1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-                const double s = s0 + ft * (s1 - s0);
-                tmpL[off + i] += (float)(s * gl);
-                tmpR[off + i] += (float)(s * gr);
-                ph += inc;
+                const int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+                const double s0 = rdH(data, off0, im1, idx, i2, i3, frac);
+                const double s1 = rdH(data, off1, im1, idx, i2, i3, frac);
+                const double s = s0 + (ft0 + dFt * i) * (s1 - s0);
+                tmpL[off + i] += (float)(s * (gl0 + dGl * i));
+                tmpR[off + i] += (float)(s * (gr0 + dGr * i));
+                ph += inc0 + dInc * i;
                 if (ph >= size) ph -= size;
             }
-            phases_[u] = ph;
-        }
-    } else {
-        const int off0b = off0b_, off1b = off1b_;
-        for (int u = 0; u < uni_; u++) {
-            double ph = phases_[u];
-            const double inc = incs_[u];
-            const double gl = gl_[u] * g, gr = gr_[u] * g;
+        } else {
+            const int off0b = off0b_, off1b = off1b_;
             for (int i = 0; i < n; i++) {
                 const int idx = (int)ph;
                 const double frac = ph - idx;
-                const int i2 = (idx + 1) & mask;
-                const double sc0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-                const double sc1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-                const double sc = sc0 + ft * (sc1 - sc0);
-                const double sf0 = data[off0b + idx] + frac * (data[off0b + i2] - data[off0b + idx]);
-                const double sf1 = data[off1b + idx] + frac * (data[off1b + i2] - data[off1b + idx]);
-                const double sf = sf0 + ft * (sf1 - sf0);
+                const int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+                const double ftN = ft0 + dFt * i;
+                const double sc0 = rdH(data, off0, im1, idx, i2, i3, frac);
+                const double sc1 = rdH(data, off1, im1, idx, i2, i3, frac);
+                const double sc = sc0 + ftN * (sc1 - sc0);
+                const double sf0 = rdH(data, off0b, im1, idx, i2, i3, frac);
+                const double sf1 = rdH(data, off1b, im1, idx, i2, i3, frac);
+                const double sf = sf0 + ftN * (sf1 - sf0);
                 const double s = sc + blend * (sf - sc);
-                tmpL[off + i] += (float)(s * gl);
-                tmpR[off + i] += (float)(s * gr);
-                ph += inc;
+                tmpL[off + i] += (float)(s * (gl0 + dGl * i));
+                tmpR[off + i] += (float)(s * (gr0 + dGr * i));
+                ph += inc0 + dInc * i;
                 if (ph >= size) ph -= size;
             }
-            phases_[u] = ph;
         }
+        phases_[u] = ph;
+        pIncs_[u] = inc1;
+        pGl_[u] = (float)gl1; pGr_[u] = (float)gr1;
     }
+    pFt_ = ft1; pOff0_ = off0_; pUni_ = uni_;
+    havePrev_ = true;
 }
 
 // js:324-354 — sine / polyblep-square sub, -1/-2 oct below the (un-tuned) note
@@ -376,12 +414,16 @@ void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double note
     if (octI == 0) octI = -1;                      // js: p['sub.oct'] | 0 || -1
     const int oct = std::max(-2, std::min(-1, octI));
     const double freq = 440.0 * std::pow(2.0, (noteRootAbs + 12 * oct - 69.0) / 12.0);
-    if (!(freq > 4 && freq <= sr_ * 0.45)) return;
-    const double inc = freq / sr_;
+    if (!(freq > 4 && freq <= sr_ * 0.45)) { subIncPrev_ = -1; return; }
+    // Finding 7: ramp the sub increment across the sub-block (slide smoothing).
+    const double inc1 = freq / sr_;
+    const double inc0 = subIncPrev_ > 0 ? subIncPrev_ : inc1;
+    const double dInc = (inc1 - inc0) / n;
     const bool square = (int)p_[BL_SUB_SHAPE] == 1;
     double ph = subPhase_;
     if (square) {
         for (int i = 0; i < n; i++) {
+            const double inc = inc0 + dInc * i;
             double s = ph < 0.5 ? 1.0 : -1.0;
             // polyblep both edges
             if (ph < inc) { const double t = ph / inc; s += -(t * t) + 2 * t - 1; }
@@ -396,10 +438,11 @@ void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double note
         for (int i = 0; i < n; i++) {
             const float v = (float)(std::sin(ph * 2 * M_PI) * gain * 1.2);
             tmpL[off + i] += v; tmpR[off + i] += v;
-            ph += inc; if (ph >= 1) ph -= 1;
+            ph += inc0 + dInc * i; if (ph >= 1) ph -= 1;
         }
     }
     subPhase_ = ph;
+    subIncPrev_ = inc1;
 }
 
 // ---------- LFO (js:357-374, bar-locked while playing) ----------
@@ -422,7 +465,7 @@ double BassEngine::lfoValue(double beats) {
 }
 
 // ---------- filter (js:377-413) ----------
-void BassEngine::setupFilter(double noteAbs, double beats) {
+void BassEngine::setupFilter(double noteAbs, double beats, int n) {
     const double accAmt = clampd(p_[BL_ACC_AMT], 0.0, 1.0);
     const double accBoost = acc_ ? accAmt : 0.0;
 
@@ -444,19 +487,15 @@ void BassEngine::setupFilter(double noteAbs, double beats) {
     if (!std::isfinite(fc)) fc = 20;
     fc = clampd(fc, 20.0, sr_ * 0.45);
     if (cutSm_ <= 0) cutSm_ = fc;
-    cutSm_ += (fc - cutSm_) * 0.5;
+    cutSm_ += (fc - cutSm_) * smoothCoef(n, BL_CUT_TAU * sr_);
     curCut_ = cutSm_;
+    cutTarget_ = cutSm_;              // runFilter ramps cutPrev_ -> cutTarget_
     const double res = clampd(p_[BL_FLT_RES], 0.0, 0.999);
 
     const int ftype = (int)p_[BL_FLT_TYPE];
     ftype_ = ftype;
     twoPole_ = ftype == 1;
-    const double g = std::tan((M_PI * cutSm_) / sr_);
-    const double k = 2 - 1.93 * res;
-    k1_ = k;
-    a1_ = 1 / (1 + g * (g + k));
-    a2_ = g * a1_;
-    a3_ = g * a2_;
+    k1_ = 2 - 1.93 * res;             // SVF a1..a3 recomputed per sub-block in runFilter
 }
 
 // js:415-479 — ADAA lcosh drive, Cytomic SVF, LP24 second pass
@@ -487,46 +526,58 @@ void BassEngine::runFilter(const float* inL, const float* inR,
         if (n > 0) { satXL_ = inL[n - 1]; satXR_ = inR[n - 1]; }
     }
 
+    // Finding 7: cutoff ramps from the previous chunk's value; coefficients
+    // recomputed per <=32-sample sub-block.
     const int ftype = ftype_;
-    const double a1 = a1_, a2 = a2_, a3 = a3_, k1 = k1_;
+    const double k1 = k1_;
+    const double c1c = cutTarget_;
+    const double c0c = cutPrev_ > 0 ? cutPrev_ : c1c;
     double* F = svf_;
-    for (int ch = 0; ch < 2; ch++) {
-        float* buf = ch == 0 ? outL : outR;
-        const int o1 = ch * 2;
-        double ic1 = F[o1], ic2 = F[o1 + 1];
-        for (int i = 0; i < n; i++) {
-            const double x = buf[i];
-            const double v3 = x - ic2;
-            const double v1 = a1 * ic1 + a2 * v3;
-            const double v2 = ic2 + a2 * ic1 + a3 * v3;
-            ic1 = 2 * v1 - ic1;
-            ic2 = 2 * v2 - ic2;
-            switch (ftype) {
-                case 0: case 1: buf[i] = (float)v2; break;
-                case 2: buf[i] = (float)(k1 * v1); break;
-                case 3: buf[i] = (float)(x - k1 * v1 - v2); break;
-                default: buf[i] = (float)(x - k1 * v1); break;
-            }
-        }
-        F[o1] = ic1; F[o1 + 1] = ic2;
-    }
-    if (twoPole_) {
+    for (int at = 0; at < n; at += 32) {
+        const int m = std::min(32, n - at);
+        const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
+        const double gC = std::tan((M_PI * cut) / sr_);
+        const double a1 = 1 / (1 + gC * (gC + k1));
+        const double a2 = gC * a1, a3 = gC * a2;
         for (int ch = 0; ch < 2; ch++) {
             float* buf = ch == 0 ? outL : outR;
-            const int o1 = 4 + ch * 2;
+            const int o1 = ch * 2;
             double ic1 = F[o1], ic2 = F[o1 + 1];
-            for (int i = 0; i < n; i++) {
+            for (int i = at; i < at + m; i++) {
                 const double x = buf[i];
                 const double v3 = x - ic2;
                 const double v1 = a1 * ic1 + a2 * v3;
                 const double v2 = ic2 + a2 * ic1 + a3 * v3;
                 ic1 = 2 * v1 - ic1;
                 ic2 = 2 * v2 - ic2;
-                buf[i] = (float)v2;
+                switch (ftype) {
+                    case 0: case 1: buf[i] = (float)v2; break;
+                    case 2: buf[i] = (float)(k1 * v1); break;
+                    case 3: buf[i] = (float)(x - k1 * v1 - v2); break;
+                    default: buf[i] = (float)(x - k1 * v1); break;
+                }
             }
             F[o1] = ic1; F[o1 + 1] = ic2;
         }
+        if (twoPole_) {
+            for (int ch = 0; ch < 2; ch++) {
+                float* buf = ch == 0 ? outL : outR;
+                const int o1 = 4 + ch * 2;
+                double ic1 = F[o1], ic2 = F[o1 + 1];
+                for (int i = at; i < at + m; i++) {
+                    const double x = buf[i];
+                    const double v3 = x - ic2;
+                    const double v1 = a1 * ic1 + a2 * v3;
+                    const double v2 = ic2 + a2 * ic1 + a3 * v3;
+                    ic1 = 2 * v1 - ic1;
+                    ic2 = 2 * v2 - ic2;
+                    buf[i] = (float)v2;
+                }
+                F[o1] = ic1; F[o1 + 1] = ic2;
+            }
+        }
     }
+    cutPrev_ = c1c;
 }
 
 // ---------- render voice (js:482-543) ----------
@@ -549,11 +600,12 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
         }
         const double noteRootAbs = BL_ROOT_MIDI + semi_;
         const double noteAbs = noteRootAbs + p_[BL_OSC_TUNE] + p_[BL_OSC_FINE] / 100.0;
-        if (setupOsc(noteAbs)) renderOsc(tmpL, tmpR, at, count);
+        if (setupOsc(noteAbs, count)) renderOsc(tmpL, tmpR, at, count);
+        else havePrev_ = false;
         renderSub(tmpL, tmpR, at, count, noteRootAbs);
     }
 
-    setupFilter(BL_ROOT_MIDI + semi_ + p_[BL_OSC_TUNE], beats);
+    setupFilter(BL_ROOT_MIDI + semi_ + p_[BL_OSC_TUNE], beats, n);
     runFilter(tmpL, tmpR, fL_, fR_, p_[BL_FLT_DRIVE], n);
     fenvT_ += n;
 
@@ -582,8 +634,8 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
         }
         const double amp = ampLevel_ * gain;
         const double sl = fL_[i] * amp, sr = fR_[i] * amp;
-        const double yL = sl - dcxL_ + BL_DC_R * dcyL_;
-        const double yR = sr - dcxR_ + BL_DC_R * dcyR_;
+        const double yL = sl - dcxL_ + dcR_ * dcyL_;
+        const double yR = sr - dcxR_ + dcR_ * dcyR_;
         dcxL_ = sl; dcyL_ = yL;
         dcxR_ = sr; dcyR_ = yR;
         L[off + i] += (float)yL;
@@ -599,13 +651,11 @@ void BassEngine::render(float* L, float* R, int n) {
     std::fill(L, L + n, 0.0f);
     std::fill(R, R + n, 0.0f);
 
-    // setupOsc caches raw pointers into table data, so the set must not be
-    // swapped mid-render; on collision this block stays silent.
-    std::unique_lock<std::mutex> lk(tablesMutex_, std::try_to_lock);
-    if (!lk.owns_lock()) {
-        vizPos = -1; vizEnv = 0; vizFenv = 0; vizCut = -1; vizGate = false; vizSemi = -100;
-        return;
-    }
+    // Finding 2: snapshot the published table set once for the whole call —
+    // the shared_ptr keeps setupOsc's cached raw pointers valid even if the
+    // message thread publishes a new set mid-block. Never blocks, never silent.
+    const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
+    curTables_ = snap.get();
 
     // Hosted clip mode owns the transport exclusively: it suppresses both the
     // host-transport-locked and internal-clock firing below so the

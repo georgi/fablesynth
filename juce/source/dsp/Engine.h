@@ -15,7 +15,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <mutex>
+#include <memory>
 #include <vector>
 
 namespace fable {
@@ -76,7 +76,8 @@ struct FilterState {
     double satXL = 0, satXR = 0;       // ADAA drive: previous input per channel
     int    ftype = 0; bool twoPole = false;
     double a1 = 0, a2 = 0, a3 = 0, k1 = 0;
-    double combLen = 1, combFb = 0;
+    double cutTarget = 0, cutPrev = -1;    // chunk cutoff ramp (Finding 7)
+    double combLen = 1, combFb = 0, combLenPrev = -1;
     double fc[9]  = {0};               // formant biquad coefs: 3 bands x (b0,a1,a2)
     double famp[3] = {0};
     void   reset();
@@ -97,6 +98,15 @@ struct OscState {
     int    mask = 0, size = 0;
     const float* data = nullptr;
     double posSm = -1;
+    // Previous chunk's targets for the intra-chunk ramps (Finding 7): phase
+    // increments, morph fraction and pan/level gain products are interpolated
+    // from these to the current values across each render chunk.
+    double pIncs[MAXUNI] = {0};
+    float  pGl[MAXUNI] = {0};
+    float  pGr[MAXUNI] = {0};
+    double pFt = 0;
+    int    pOff0 = -1, pUni = -1;
+    bool   havePrev = false;
 };
 
 class Voice {
@@ -110,10 +120,11 @@ public:
     Env    ampEnv, modEnv;
     Lfo    lfo1, lfo2;
     OscState oA, oB;
-    double subPhase = 0;
+    double subPhase = 0, subIncPrev = -1;
     double pb[7] = {0};                // pink noise filter state
     FilterState f1, f2;
     double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
+    double ampFacPrev = -1;            // AMP-mod factor ramp start (Finding 7)
 
     bool   active() const { return ampEnv.state != 0; }
     void   noteOn(int n, double v, double startPitch, long a, Rng& rng);
@@ -248,9 +259,9 @@ public:
     double vizA = -1, vizB = -1; int vizActive = 0;
 
 private:
-    bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan);
+    bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n);
     void renderOsc(OscState& o, float* tmpL, float* tmpR, int n);
-    void setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm);
+    void setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n);
     void runFilter(FilterState& fs, const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n);
     void renderVoice(Voice& v, float* L, float* R, int n);
@@ -271,15 +282,25 @@ private:
     void   seqFireHostStep(long k);
 
     ParamArray p_ = defaultParams();
-    std::vector<EngineTable> tables_;
-    // Guards tables_ so the message thread can swap in new tables (user import /
-    // delete / preset load) while the audio thread renders. setTables builds the
-    // replacement off-lock (pointer copies — sample data is shared, never
-    // duplicated) and only holds the lock for the O(1) swap; render try-locks
-    // and emits one block of silence on the rare collision.
-    std::mutex tablesMutex_;
+    // Lock-free table publication (Finding 2): the message thread builds a
+    // complete immutable set in setTables and publishes it with an atomic
+    // shared_ptr swap; render() atomic_loads one snapshot per call and keeps it
+    // alive for the whole block, so the audio thread never blocks on a UI swap
+    // and never substitutes silence. retired_ pins the previously published set
+    // so its deallocation normally happens on the message thread (the next
+    // setTables), not on audio.
+    using TableSet = std::vector<EngineTable>;
+    std::shared_ptr<const TableSet> tables_ = std::make_shared<TableSet>();
+    std::shared_ptr<const TableSet> retired_;
+    const TableSet* curTables_ = nullptr;  // render-call snapshot (audio thread only)
     std::array<Voice, NVOICES> voices_;
     double sr_ = 48000;
+    // Sample-rate-derived per-sample coefficients (Finding 9), set in prepare():
+    // DC-blocker pole and Kellet pink-noise poles/gains mapped from their
+    // 48 kHz reference so 44.1/48/96/192 kHz produce the same spectra.
+    double dcR_ = 0.9998;
+    double pinkP_[6] = {0.99886, 0.99332, 0.969, 0.8665, 0.55, 0.7616};
+    double pinkG_[6] = {0.0555179, 0.0750759, 0.153852, 0.3104856, 0.5329522, 0.016898};
     double bend_ = 0;
     double lastPitch_ = 60;
     long   clock_ = 0;
