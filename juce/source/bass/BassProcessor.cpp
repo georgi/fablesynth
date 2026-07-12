@@ -1,5 +1,6 @@
 #include "BassProcessor.h"
 #include "BassEditor.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -72,7 +73,10 @@ void BassAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
     engine.setTables(tables_);
     fx.prepare(sampleRate);
-    scratch_.setSize(1, samplesPerBlock); // sized here so processBlock never allocates
+    setLatencySamples(fx.latencySamples());
+    // Sized generously here so processBlock never allocates; oversized host
+    // blocks are rendered in chunks of this capacity.
+    scratch_.setSize(1, std::max(samplesPerBlock, 8192));
     currentSr_.store(sampleRate);
     // Re-sync sequencer content into the (possibly reset) engine.
     shareSeqState(true, true);
@@ -247,10 +251,31 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         shareMutex_.unlock();
     }
 
-    // MIDI: notes audition the mono voice around root C2 (36) through the
-    // same last-note/legato path as the on-screen keyboard. The engine
-    // ignores them while the sequencer is playing (it owns the voice).
+    // Sample-accurate MIDI: render engine+FX up to each event's offset, apply
+    // the event, continue (FX state is continuous across segments). Notes
+    // audition the mono voice around root C2 (36) through the same
+    // last-note/legato path as the on-screen keyboard. The engine ignores them
+    // while the sequencer is playing (it owns the voice). Segments are capped
+    // at the scratch capacity so oversized host blocks never allocate here.
+    const bool isStereo = buffer.getNumChannels() > 1;
+    float* L = buffer.getWritePointer(0);
+    float* R = isStereo ? buffer.getWritePointer(1) : scratch_.getWritePointer(0);
+    const int cap = scratch_.getNumSamples();
+    int pos = 0;
+    auto renderTo = [&](int end) {
+        while (pos < end) {
+            const int len = std::min(end - pos, cap);
+            float* l = L + pos;
+            float* r = isStereo ? R + pos : R; // mono host: scratch reused per chunk
+            engine.render(l, r, len);
+            fx.process(l, r, len);
+            if (!isStereo) // mono host: downmix
+                for (int i = 0; i < len; ++i) l[i] = 0.5f * (l[i] + r[i]);
+            pos += len;
+        }
+    };
     for (const auto meta : midi) {
+        renderTo(juce::jlimit(0, n, meta.samplePosition));
         const auto m = meta.getMessage();
         if (m.isNoteOn()) {
             engine.keyOn(m.getNoteNumber() - BL_ROOT_MIDI, m.getFloatVelocity());
@@ -261,22 +286,7 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             engine.panic();
         }
     }
-
-    // Stereo render + master FX in place. Mono hosts get a downmix.
-    float* L = buffer.getWritePointer(0);
-    float* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
-    if (R) {
-        engine.render(L, R, n);
-        fx.process(L, R, n);
-    } else {
-        // Mono host: render stereo into L + scratch, then downmix.
-        if (scratch_.getNumSamples() < n)
-            scratch_.setSize(1, n, false, false, true);
-        float* sr = scratch_.getWritePointer(0);
-        engine.render(L, sr, n);
-        fx.process(L, sr, n);
-        for (int i = 0; i < n; ++i) L[i] = 0.5f * (L[i] + sr[i]);
-    }
+    renderTo(n);
 
     // Publish transport/viz feedback for the editor.
     curStep_.store(engine.currentStep(), std::memory_order_relaxed);

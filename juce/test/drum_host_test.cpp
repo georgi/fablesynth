@@ -80,6 +80,38 @@ int main(int argc, char** argv) {
     juce::AudioBuffer<float> buf(10, block);
     bool allFinite = true;
 
+    check(proc.getLatencySamples() > 0, "FX latency reported to the host",
+          proc.getLatencySamples());
+
+    // Sample-accurate MIDI: a pad trigger at offset K on a clean processor
+    // must leave MAIN [0, K) exactly silent, with signal appearing at/after K
+    // (the FX lookahead latency shifts it further right).
+    {
+        const int kOffset = 100;
+        int firstNonZero = -1;
+        juce::MidiBuffer om;
+        om.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), kOffset);
+        for (int b = 0; b < 2 && firstNonZero < 0; ++b) {
+            buf.clear();
+            juce::MidiBuffer empty;
+            proc.processBlock(buf, b == 0 ? om : empty);
+            auto bb = proc.getBusBuffer(buf, false, 0);
+            for (int i = 0; i < block && firstNonZero < 0; ++i)
+                if (bb.getSample(0, i) != 0.0f || bb.getSample(1, i) != 0.0f)
+                    firstNonZero = b * block + i;
+        }
+        check(firstNonZero >= kOffset, "pad trigger at offset 100: silence before the offset",
+              firstNonZero);
+        check(firstNonZero >= 0, "pad trigger at offset 100: signal after the offset",
+              firstNonZero);
+        // let the hit decay so the routing tests below start clean
+        for (int b = 0; b < 60; ++b) {
+            buf.clear();
+            juce::MidiBuffer empty;
+            proc.processBlock(buf, empty);
+        }
+    }
+
     // Render nBlocks, optionally firing a MIDI note at block 0; returns the
     // per-bus RMS and tracks step-counter changes + finiteness.
     int stepChanges = 0, lastStep = -1;

@@ -1,5 +1,13 @@
 # JUCE Audio Fidelity Review
 
+> **Status update:** Findings 1–4, 6–12 have been implemented on this branch
+> (see the commits following the review commit). Finding 5 (block-rate host
+> parameter automation) is partially addressed — engine-side per-chunk ramping
+> now smooths pitch, morph, pan, level, and cutoff, but APVTS values are still
+> sampled once per host block; full per-parameter smoothing/crossfading of
+> discrete switches (filter type, routing, oscillator enable) remains open.
+> Intentional departures from WebAudio parity are listed in each commit.
+
 Scope: the JUCE wavetable (WT-1), bass (BL-1), drum (DR-1), shared FX, processor,
 transport, and sequencer DSP paths under `juce/source/`.
 

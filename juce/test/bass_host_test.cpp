@@ -88,6 +88,41 @@ int main(int argc, char** argv) {
     juce::AudioBuffer<float> buf(2, block);
     bool allFinite = true;
 
+    check(proc.getLatencySamples() > 0, "FX latency reported to the host",
+          proc.getLatencySamples());
+
+    // Sample-accurate MIDI: a note-on at offset K on a clean processor must
+    // leave [0, K) exactly silent, with signal appearing at/after K (the FX
+    // lookahead latency shifts it further right). Scan two blocks so a slow
+    // attack can't false-fail the "signal exists" half.
+    {
+        const int kOffset = 100;
+        int firstNonZero = -1;
+        juce::MidiBuffer om;
+        om.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), kOffset);
+        for (int b = 0; b < 2 && firstNonZero < 0; ++b) {
+            buf.clear();
+            juce::MidiBuffer empty;
+            proc.processBlock(buf, b == 0 ? om : empty);
+            for (int i = 0; i < block && firstNonZero < 0; ++i)
+                if (buf.getSample(0, i) != 0.0f || buf.getSample(1, i) != 0.0f)
+                    firstNonZero = b * block + i;
+        }
+        check(firstNonZero >= kOffset, "note-on at offset 100: silence before the offset",
+              firstNonZero);
+        check(firstNonZero >= 0, "note-on at offset 100: signal after the offset", firstNonZero);
+        // release + settle so the audition test below starts clean
+        juce::MidiBuffer off;
+        off.addEvent(juce::MidiMessage::noteOff(1, 48), 0);
+        buf.clear();
+        proc.processBlock(buf, off);
+        for (int b = 0; b < 60; ++b) {
+            buf.clear();
+            juce::MidiBuffer empty;
+            proc.processBlock(buf, empty);
+        }
+    }
+
     int stepChanges = 0, lastStep = -1;
     auto render = [&](int nBlocks, int note, float vel, bool noteOff = false) {
         double sumSq = 0;
