@@ -8,6 +8,8 @@
 #include "../source/drum/dsp/DrumKits.h"
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
+#include "../source/seq/dsp/SeqFactory.h"
+#include "../source/seq/dsp/SeqModel.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include <cassert>
 #include <cmath>
@@ -51,6 +53,45 @@ static void testProtocol() {
 
     auto p = sqSongPosition(256 + spb * 5.2, 256, bpm, sr);
     CHECK(p.beat == 1 && p.bar == 2);
+}
+
+static void testModelAndFactory() {
+    using namespace fable;
+    SessionData s = factorySession();
+    CHECK(validateSession(s).empty());
+    CHECK(s.name == "NEON TALE" && s.bpm == 122 && s.quant == Quant::Bar);
+    CHECK(s.tracks.size() == 4 && s.scenes.size() == 6);
+    CHECK(s.tracks[0].machine == Machine::DR1 && s.tracks[1].machine == Machine::BL1);
+    CHECK(s.tracks[2].machine == Machine::WT1 && s.tracks[3].machine == Machine::WT1);
+    CHECK(s.tracks[0].color == 0xff4de8ffu);
+    // INTRO: clips on tracks 0 and 3 only
+    CHECK(s.scenes[0].hasClip[0] && !s.scenes[0].hasClip[1] && !s.scenes[0].hasClip[2] && s.scenes[0].hasClip[3]);
+    // DROP A drum clip: four-on-the-floor kick, accent step 0, 2 bars
+    const ClipData& kit = s.scenes[2].clips[0];
+    CHECK(kit.bars == 2 && kit.bytes.size() == 512);
+    CHECK(kit.bytes[(size_t)sqDr1Idx(0, 0, 0)] == 2);
+    for (int st : {4, 8, 12}) CHECK(kit.bytes[(size_t)sqDr1Idx(0, 0, st)] == 1);
+    // every clip's byte length matches bars * bytesPerBar
+    for (auto& sc : s.scenes)
+        for (size_t t = 0; t < sc.clips.size(); t++)
+            if (sc.hasClip[t])
+                CHECK((int)sc.clips[t].bytes.size() == sc.clips[t].bars * sqBytesPerBar(s.tracks[t].machine));
+    // validation rejects bad docs
+    SessionData bad = factorySession(); bad.bpm = 300;
+    CHECK(!validateSession(bad).empty());
+    SessionData bad2 = factorySession(); bad2.scenes[1].clips[1].bytes.pop_back();
+    CHECK(!validateSession(bad2).empty());
+
+    // mute/solo gates (model.ts:20-51)
+    std::unordered_map<int,int> owner{{0, 2}};
+    std::vector<bool> tm(4,false), sm(6,false), solo(4,false);
+    CHECK(isTrackAudible(0, owner, tm, sm, solo));
+    CHECK(!isTrackAudible(1, owner, tm, sm, solo));   // unowned
+    CHECK(isTrackOpen(1, owner, tm, sm, solo));       // open even between clips
+    solo[2] = true;
+    CHECK(!isTrackAudible(0, owner, tm, sm, solo));   // another track soloed
+    solo[2] = false; sm[2] = true;
+    CHECK(!isTrackAudible(0, owner, tm, sm, solo));   // owning scene muted
 }
 
 // Drive a ClipHost through consecutive 128-sample quanta from frame f0,
@@ -436,6 +477,7 @@ static void testDr1Hosted() {
 
 int main() {
     testProtocol();
+    testModelAndFactory();
     testClipHost();
     testWt1Hosted();
     testWt1ClipSwapGatesOldNote();
