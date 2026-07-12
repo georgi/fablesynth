@@ -11,6 +11,7 @@ import { Stepper } from '../Stepper';
 const LANES_H = 143; // svg viewBox height for the connector overlay
 
 export function SeqPanel() {
+  const hosted = useStore((s) => s.hosted);
   const seqPlaying = useStore((s) => s.seqPlaying);
   const curStep = useStore((s) => s.curStep);
   const curPat = useStore((s) => s.curPat);
@@ -46,38 +47,44 @@ export function SeqPanel() {
   return (
     <section className="panel ns-section" style={{ gridArea: 'seq' }} data-accent="a">
       <div className="panel-head ns-head">
-        <button
-          className={`pb-btn ns-transport${seqPlaying ? ' active' : ''}`}
-          type="button"
-          aria-label={seqPlaying ? 'Stop sequencer' : 'Play sequencer'}
-          aria-pressed={seqPlaying}
-          onClick={seqPlaying ? seqStop : seqPlay}
-        >
-          {seqPlaying ? '■' : '▶'}
-        </button>
+        {!hosted && (
+          <button
+            className={`pb-btn ns-transport${seqPlaying ? ' active' : ''}`}
+            type="button"
+            aria-label={seqPlaying ? 'Stop sequencer' : 'Play sequencer'}
+            aria-pressed={seqPlaying}
+            onClick={seqPlaying ? seqStop : seqPlay}
+          >
+            {seqPlaying ? '■' : '▶'}
+          </button>
+        )}
         <h2>NOTE SEQ</h2>
-        <div className="ns-patterns" aria-label="Edit pattern">
-          {PATTERN_NAMES.map((name, i) => (
+        {!hosted && (
+          <>
+            <div className="ns-patterns" aria-label="Edit pattern">
+              {PATTERN_NAMES.map((name, i) => (
+                <button
+                  className={`ns-btn ns-pattern${editPattern === i ? ' active' : ''}`}
+                  type="button"
+                  aria-label={`Pattern ${name}`}
+                  aria-pressed={editPattern === i}
+                  key={name}
+                  onClick={() => chainClick(i)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
             <button
-              className={`ns-btn ns-pattern${editPattern === i ? ' active' : ''}`}
+              className={`ns-btn ns-chain-toggle${chaining ? ' active' : ''}`}
               type="button"
-              aria-label={`Pattern ${name}`}
-              aria-pressed={editPattern === i}
-              key={name}
-              onClick={() => chainClick(i)}
+              aria-pressed={chaining}
+              onClick={() => setChaining(!chaining)}
             >
-              {name}
+              CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}
             </button>
-          ))}
-        </div>
-        <button
-          className={`ns-btn ns-chain-toggle${chaining ? ' active' : ''}`}
-          type="button"
-          aria-pressed={chaining}
-          onClick={() => setChaining(!chaining)}
-        >
-          CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}
-        </button>
+          </>
+        )}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
         <span className="ns-hint">TAP LANE = NOTE · TIE HOLDS FROM PREV STEP — GLIDE MAKES IT SLIDE</span>
       </div>

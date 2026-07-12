@@ -501,3 +501,37 @@
   color: #4a5266;
   margin-top: 12px;
 }
+
+/* ---------- hosted device (focus mode) ---------- */
+.sq-device {
+  border: 1px solid #1a2030;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.sq-device-body { overflow-y: auto; min-height: 0; }
+/* Device stylesheets style their own root ids; neutralize page-level sizing
+   so the rack renders as an embedded panel, not a full page. */
+.sq-hosted-rack { width: auto; min-height: 0; margin: 0; padding: 12px; }
+
+.sq-clipbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; border-bottom: 1px solid #1a2030;
+  background: #0d1119;
+}
+.sq-clipbar-name { font-weight: 700; letter-spacing: 0.08em; }
+.sq-clipbar-bars { display: flex; gap: 4px; }
+.sq-bar-chip {
+  min-width: 26px; padding: 3px 6px; border-radius: 5px;
+  border: 1px solid #232b3d; background: #121826; color: #8b94a7;
+  cursor: pointer; font: inherit; font-size: 11px;
+}
+.sq-bar-chip.active { border-color: var(--tc); color: var(--tc); }
+.sq-clipbar-len { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; }
+.sq-clipbar-hint, .sq-clipbar-lock { font-size: 10px; color: #667; letter-spacing: 0.06em; }
+.sq-clipbar-create {
+  padding: 6px 14px; border-radius: 6px; border: 1px dashed var(--tc);
+  background: transparent; color: var(--tc); cursor: pointer; font: inherit;
+}

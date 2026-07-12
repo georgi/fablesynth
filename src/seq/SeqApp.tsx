@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { DeviceView } from './components/DeviceView';
 import { FooterRow } from './components/FooterRow';
 import { Header } from './components/Header';
 import { SceneRow } from './components/SceneRow';
@@ -10,6 +11,7 @@ export function SeqApp() {
   const session = useSeqStore((s) => s.session);
   const powered = useSeqStore((s) => s.powered);
   const quant = useSeqStore((s) => s.quant);
+  const focus = useSeqStore((s) => s.focus);
 
   // UI clock: beat dots / bar counter derive from the shared context-frame
   // timebase (ctx.suspend freezes it, so pause is free).
@@ -39,6 +41,7 @@ export function SeqApp() {
           <SceneRow key={s} s={s} />
         ))}
         <FooterRow />
+        {focus && <DeviceView />}
         <div className="sq-hint">
           TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO {quant} · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH
         </div>

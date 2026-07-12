@@ -4,15 +4,44 @@
 
 import { useEffect, useRef } from 'react';
 import type * as React from 'react';
+import { EnvPanel as BassEnvPanel } from '../../bass/components/EnvPanel';
+import { BassFxRack } from '../../bass/components/BassFxRack';
+import { FilterSection as BassFilterSection } from '../../bass/components/FilterSection';
+import { KeysPanel } from '../../bass/components/KeysPanel';
+import { AccentPanel, LfoPanel as BassLfoPanel } from '../../bass/components/LfoPanel';
+import { OscSection as BassOscSection, SubSection } from '../../bass/components/OscSection';
+import { PitchSeq } from '../../bass/components/PitchSeq';
 import { makeEmptyPatterns as bassEmpty } from '../../bass/seq';
 import { useBassStore } from '../../bass/store';
+import { AmpEnvPanel } from '../../drum/components/AmpEnvPanel';
+import { FilterSection } from '../../drum/components/FilterSection';
+import { FxRack } from '../../drum/components/FxRack';
+import { ModPanel } from '../../drum/components/ModPanel';
+import { NoiseSection } from '../../drum/components/NoiseSection';
+import { OscSection } from '../../drum/components/OscSection';
+import { PadGrid } from '../../drum/components/PadGrid';
+import { PadStrip } from '../../drum/components/PadStrip';
+import { PitchEnvPanel } from '../../drum/components/PitchEnvPanel';
+import { SelBar } from '../../drum/components/SelBar';
+import { StepSeq } from '../../drum/components/StepSeq';
 import { makeEmptyPatterns as drumEmpty } from '../../drum/seq';
 import { useDrumStore } from '../../drum/store';
 import { makeEmptyPatterns as wtEmpty } from '../../noteseq';
+import { WavetableEditor } from '../../components/WavetableEditor';
+import { EnvPanel } from '../../components/panels/EnvPanel';
+import { FilterPanel } from '../../components/panels/FilterPanel';
+import { FxPanel } from '../../components/panels/FxPanel';
+import { KeyboardBar } from '../../components/panels/KeyboardBar';
+import { LfoPanel } from '../../components/panels/LfoPanel';
+import { MatrixPanel } from '../../components/panels/MatrixPanel';
+import { OscPanel } from '../../components/panels/OscPanel';
+import { SeqPanel } from '../../components/panels/SeqPanel';
+import { UtilPanel } from '../../components/panels/UtilPanel';
 import { useStore as useWtStore } from '../../store';
 import { clipToPatterns, patternsToClip } from '../hostBridge';
 import { HOSTED_MAX_BARS, type MachineId } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
+import { HostedClipBar } from './HostedClipBar';
 
 // One uniform handle per machine over the three (differently-typed) stores.
 interface HostedStore {
@@ -138,7 +167,82 @@ export function DeviceView() {
 
   return (
     <section className="sq-device" style={{ '--tc': track.color } as React.CSSProperties}>
-      <div className="sq-device-body" />
+      <HostedClipBar machine={machine} />
+      <div className="sq-device-body">
+        {machine === 'DR1' && <DrumPanels />}
+        {machine === 'BL1' && <BassPanels />}
+        {machine === 'WT1' && <WtPanels />}
+      </div>
     </section>
+  );
+}
+
+function DrumPanels() {
+  return (
+    <div id="drum-rack" className="sq-hosted-rack">
+      <div className="dr-main">
+        <div className="dr-left">
+          <div id="dr-pads"><PadGrid /></div>
+          <div id="dr-padstrip"><PadStrip /></div>
+        </div>
+        <div className="dr-right">
+          <div id="dr-selbar"><SelBar /></div>
+          <div id="dr-oscrow">
+            <OscSection osc="oscA" />
+            <OscSection osc="oscB" />
+            <NoiseSection />
+          </div>
+          <div id="dr-editrow">
+            <PitchEnvPanel />
+            <AmpEnvPanel />
+            <FilterSection />
+            <ModPanel />
+          </div>
+        </div>
+      </div>
+      <div id="dr-stepseq"><StepSeq /></div>
+      <div id="dr-fxrack"><FxRack /></div>
+    </div>
+  );
+}
+
+function BassPanels() {
+  return (
+    <div id="bass-rack" className="sq-hosted-rack">
+      <div id="bl-editrow">
+        <BassOscSection />
+        <SubSection />
+        <BassFilterSection />
+        <BassEnvPanel />
+      </div>
+      <div id="bl-modrow">
+        <BassLfoPanel />
+        <AccentPanel />
+        <KeysPanel />
+      </div>
+      <div id="bl-seq"><PitchSeq /></div>
+      <div id="bl-fxrack"><BassFxRack /></div>
+    </div>
+  );
+}
+
+function WtPanels() {
+  return (
+    <div id="rack" className="sq-hosted-rack">
+      <WavetableEditor />
+      <div className="panels">
+        <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
+        <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
+        <UtilPanel />
+        <FilterPanel />
+        <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
+        <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
+        <LfoPanel />
+        <MatrixPanel />
+        <FxPanel />
+        <SeqPanel />
+      </div>
+      <KeyboardBar />
+    </div>
   );
 }
