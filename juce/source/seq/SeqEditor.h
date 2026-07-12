@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "SeqProcessor.h"
 #include "ui/SeqHeader.h"
+#include "ui/TrackHeadsView.h"
 #include "../ui/LookAndFeel.h"
 
 // The SQ-4 rack: all sections laid out at a fixed logical size matching the
@@ -18,10 +19,12 @@ public:
     void resized() override;
 
     fui::SeqHeader& getHeader() { return header; }
+    fui::TrackHeadsView& getHeads() { return trackHeads; }
 
 private:
     fui::SeqHeader header;
-    juce::Component trackHeads, sceneGrid, footer, hint, clipEdit;
+    fui::TrackHeadsView trackHeads;
+    juce::Component sceneGrid, footer, hint, clipEdit;
 };
 
 class SeqEditor : public juce::AudioProcessorEditor {
@@ -34,6 +37,7 @@ public:
 
     SeqRack& getRack() { return rack; } // for the host test
     fui::SeqHeader& header() { return rack.getHeader(); } // for the host test
+    fui::TrackHeadsView& heads() { return rack.getHeads(); } // for the host test
 
 private:
     fui::DarkLNF lnf;

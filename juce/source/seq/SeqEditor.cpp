@@ -14,9 +14,10 @@
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 
 // ---- SeqRack ----
-SeqRack::SeqRack(SeqAudioProcessor& p) : header(p) {
+SeqRack::SeqRack(SeqAudioProcessor& p) : header(p), trackHeads(p) {
     addAndMakeVisible(header);
-    for (auto* c : std::initializer_list<juce::Component*>{ &trackHeads, &sceneGrid, &footer, &hint, &clipEdit })
+    addAndMakeVisible(trackHeads);
+    for (auto* c : std::initializer_list<juce::Component*>{ &sceneGrid, &footer, &hint, &clipEdit })
         addAndMakeVisible(*c);
     clipEdit.setVisible(false); // Task 13: focus-mode overlay, hidden until entered
 }

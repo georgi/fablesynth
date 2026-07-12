@@ -169,6 +169,22 @@ int main(int argc, char** argv) {
     check(p.conductor().ownerOf(0) == -2, "stopAllClick schedules stops for owned tracks",
           p.conductor().ownerOf(0));
 
+    // ---- 10. Track heads: mute/solo reach the conductor; patch stepper swaps sounds. ----
+    std::printf("\n== track heads ==\n");
+    auto& heads = seqEditor->heads();
+    heads.muteClick(0);
+    check(p.conductor().trackMuted(0), "muteClick(0) mutes track 0");
+    heads.muteClick(0);
+    check(!p.conductor().trackMuted(0), "muteClick(0) again unmutes");
+    heads.soloClick(1);
+    check(p.conductor().soloed(1), "soloClick(1) solos track 1");
+    heads.soloClick(1);
+    check(!p.conductor().soloed(1), "soloClick(1) again unsolos");
+    heads.patchStep(2, 1); // LEAD: preset 3 -> 4; session doc updated
+    check(p.conductor().session().tracks[2].patch.index == 4,
+          "patchStep(2, +1) advances LEAD's patch index",
+          p.conductor().session().tracks[2].patch.index);
+
     delete ed;
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);
