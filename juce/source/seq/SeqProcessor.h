@@ -28,21 +28,31 @@
 //    musical decision into a Cmd pushed through cmdFifo_ (juce::AbstractFifo,
 //    256 slots), drained at the top of processBlock and applied to the engines.
 //  - Clip bytes travel as std::shared_ptr<std::vector<uint8_t>> built on the
-//    message thread — no audio-thread allocation. The audio thread reads the
+//    message thread — no audio-thread allocation *in Task 8's command scheme*
+//    (the Cmd/Ack FIFOs and their payload handoff). ClipHost::scheduleClip/
+//    updateClip and the engines' internal events.push_back() may still
+//    allocate on first growth, inside the engines (pre-existing Tasks 2-5
+//    behavior) — this claim doesn't cover that. The audio thread reads the
 //    slot's shared_ptr in place (hostClip/hostClipUpdate *copy* the bytes into
 //    the engine's ClipHost) and never resets it. The shared_ptr is recycled
 //    only when the message thread overwrites that slot on a later push, so the
 //    only free() ever happens on the message thread (see cmdSlots_ note below).
 //  - Acks (clipstart/clipstop) flow back through ackFifo_ (512); drainAcks()
-//    (the editor timer, and tests) pops them into Conductor::onClipStart/Stop.
+//    pops them into Conductor::onClipStart/Stop and polls the musical APVTS
+//    params (swing/bpm/vol0..3) into the conductor. The processor itself owns
+//    this pump via a private juce::Timer (30 Hz, started in prepareToPlay,
+//    stopped in releaseResources/destructor) so acks and param changes are
+//    delivered even headless (offline bounce, no editor open); the editor and
+//    tests may still call drainAcks() directly — it's idempotent, and every
+//    caller runs on the message thread, so concurrent/double drains are safe.
 //    Step/bar positions are written straight to atomics on the audio thread.
-class SeqAudioProcessor : public juce::AudioProcessor {
+class SeqAudioProcessor : public juce::AudioProcessor, private juce::Timer {
 public:
     SeqAudioProcessor();
     ~SeqAudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override { stopTimer(); }
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -139,6 +149,10 @@ private:
 
     // ---- session param polling (message thread) -----------------------------
     void pollSessionParams();
+
+    // juce::Timer: the processor's own 30 Hz pump for drainAcks() (see the
+    // threading note above) — private since only the processor drives it.
+    void timerCallback() override { drainAcks(); }
 
     // The four engines + their standalone FX chains (identical topology/order).
     fable::DrumEngine drum_;  fable::DrumFx drumFx_;

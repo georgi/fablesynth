@@ -158,7 +158,7 @@ SeqAudioProcessor::SeqAudioProcessor()
             && session_.tracks[3].machine == Machine::WT1);
 }
 
-SeqAudioProcessor::~SeqAudioProcessor() = default;
+SeqAudioProcessor::~SeqAudioProcessor() { stopTimer(); }
 
 bool SeqAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     auto s = layouts.getMainOutputChannelSet();
@@ -265,6 +265,11 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     lastSwing_ = rawSwing_->load();
     lastBpm_   = rawBpm_->load();
     for (int t = 0; t < kTracks; ++t) lastVol_[t] = rawVol_[t]->load();
+
+    // Own the ack-drain/param-poll pump so it runs headless too (offline
+    // bounce, no editor open) — see the class-doc threading note. Restarting
+    // an already-running juce::Timer just reschedules it.
+    startTimerHz(30);
 }
 
 // ---- command FIFO ----------------------------------------------------------
@@ -546,6 +551,21 @@ void SeqAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
                 // Rebuild the conductor + re-arm the engines through the FIFO
                 // (audio may be live): patches ride the command path, not a
                 // direct engine write.
+                //
+                // Conductor::powerOn() unconditionally re-anchors (anchor =
+                // now()+256), which would violate "hostTempo is never
+                // re-anchored while a clip plays" (a BL-1 hosted LFO term
+                // depends on it) if a clip is mid-flight on the engines the
+                // *old* conductor doesn't know is being replaced. Stop every
+                // track first, ordered ahead of the tempo command in the same
+                // FIFO: ClipHost::tick() applies a due stop before it next
+                // consumes the anchor for phase math, so by the time the new
+                // anchor is used, playback has already stopped.
+                const double now = currentFrame.load();
+                for (int t = 0; t < kTracks; ++t) {
+                    Cmd c; c.k = Cmd::K::Stop; c.t = t; c.at = now;
+                    pushCmd(std::move(c));
+                }
                 conductor_ = std::make_unique<Conductor>(session_, io_, getSampleRate());
                 conductor_->powerOn();
                 for (int t = 0; t < kTracks; ++t) applyTrackPatch(t);
