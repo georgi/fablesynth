@@ -69,8 +69,12 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
     this.engine.panic();
   }
 
+  // Merge, don't replace: factory patches are complete sets (identical
+  // result), but an imported inline patch may be partial — overwriting
+  // wholesale would drop required defaults (NaN in applyAllFx etc). Matches
+  // the JUCE port's overlayInline semantics.
   protected applyParams(params: Record<string, number>): void {
-    this.engine.params = { ...params };
+    this.engine.params = { ...this.engine.params, ...params };
     this.engine.applyAllParams();
   }
 }

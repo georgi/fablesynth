@@ -20,7 +20,7 @@ export function Scope() {
       const st = useSeqStore.getState();
       const w = cv.clientWidth, h = cv.clientHeight;
       if (!w || !h) return;
-      if (cv.width !== w * 2) { cv.width = w * 2; cv.height = h * 2; }
+      if (cv.width !== w * 2 || cv.height !== h * 2) { cv.width = w * 2; cv.height = h * 2; }
       const x = cv.getContext('2d');
       if (!x) return;
       x.setTransform(2, 0, 0, 2, 0, 0);
