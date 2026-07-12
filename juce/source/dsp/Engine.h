@@ -166,6 +166,10 @@ public:
     void setBpmOverride(double bpm);                 // host tempo wins over SEQ_BPM; <= 0 clears
     int  seqCurrentStep() const { return seqStep_; } // -1 when stopped
     int  seqCurrentPattern() const { return seqChain_[(size_t)seqChainPos_]; }
+    // The MIDI note the sequencer (standalone or hosted-clip) voice is
+    // currently sounding, -1 when none — shared seqNote_/seqGateOff() state,
+    // so this observes hosted-clip mode too (test/UI observability).
+    int  seqCurrentNote() const { return seqNote_; }
 
     // Host transport lock (same contract as BassEngine::setHostTransport):
     // while the host is rolling with a song position, absolute 16th k fires at

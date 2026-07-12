@@ -925,9 +925,14 @@ void Engine::render(float* L, float* R, int n) {
             // At most one fire per quantum (ClipHost contract); a Stop event
             // means the clip transport just gated the seq voice off (docs
             // §6 rule 3 — sequencer notes only, never panic(): live MIDI
-            // notes must survive).
+            // notes must survive). onSwap ends the OUTGOING clip's sounding
+            // note before the new clip's entry-step fire, in the same block
+            // (docs §6 rule 4: old gate-off before new trigger).
             const size_t evBefore = clipHost_.events.size();
-            clipHost_.tick(hostFrame_, run, [&](int abs) { clipFireAt(abs); });
+            clipHost_.tick(
+                hostFrame_, run,
+                [&](int abs) { clipFireAt(abs); },
+                [&](bool wasPlaying) { if (wasPlaying) seqGateOff(); });
             for (size_t i = evBefore; i < clipHost_.events.size(); i++)
                 if (clipHost_.events[i].t == HostEvent::T::Stop) seqGateOff();
         }

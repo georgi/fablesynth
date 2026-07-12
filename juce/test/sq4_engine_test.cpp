@@ -223,10 +223,53 @@ static void testWt1Hosted() {
     CHECK(rmsOf(e, frame, 200) < 1e-4);                  // silent tail after release
 }
 
+// docs/sq4-clips.md §6 rule 4: "the old clip's last gate-off and the new
+// clip's first trigger execute in the same block, old before new." Clip A
+// holds a note via a continuous tie chain (seqToGateOff_ pinned to -1, so it
+// never gates off on its own); clip B is scheduled mid-flight and is all
+// rests, so its own entry-step fire never gates anything off either. Without
+// the swap hook, A's note would keep sounding forever once B takes over.
+static void testWt1ClipSwapGatesOldNote() {
+    using namespace fable;
+    Engine e;
+    e.prepare(48000);
+    std::vector<TablePtr> tables;
+    for (auto& g : generateTables()) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    e.setTables(tables);
+    e.setParams(applyPreset(factoryPresets()[3]));
+    e.setHostClipMode(true);
+    e.hostTempo(120, 0, 0);
+
+    // Clip A: step 0 on, step 1 on+tie (keeps the gate held indefinitely —
+    // seqFireAt/clipFireAt's lookahead sees an on+tie next step and sets
+    // seqToGateOff_ = -1). All later steps are irrelevant: the test stops
+    // well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
+    auto clipA = sqEmptyClip(Machine::WT1, 1);
+    clipA[(size_t)sqNoteIdx(0, 0)] = 1;                 // on
+    clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
+    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + tie
+    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
+    e.hostClip(clipA.data(), (int)clipA.size(), 1, 0.0); // quant OFF
+
+    double frame = 0;
+    float L[128], R[128];
+    for (int b = 0; b < 5; b++) { e.hostSetFrame(frame); e.render(L, R, 128); frame += 128; }
+    CHECK(e.seqCurrentNote() >= 0);                      // A's note held, well before its own gate-off
+
+    // Clip B: all rests. Its own entry-step fire is a no-op (readSeqStep().on
+    // == false), so only the swap hook can end A's note here.
+    auto clipB = sqEmptyClip(Machine::WT1, 1);
+    e.hostClip(clipB.data(), (int)clipB.size(), 1, frame); // swap this block
+    for (int b = 0; b < 3; b++) { e.hostSetFrame(frame); e.render(L, R, 128); frame += 128; }
+
+    CHECK(e.seqCurrentNote() < 0);                       // A's note ended at the swap, not left hanging
+}
+
 int main() {
     testProtocol();
     testClipHost();
     testWt1Hosted();
+    testWt1ClipSwapGatesOldNote();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;

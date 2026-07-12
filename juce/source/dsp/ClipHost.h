@@ -66,8 +66,21 @@ public:
     // (matching hostTick) at most one fire per call, since the caller drives
     // consecutive quanta and a step never spans more than one block in
     // practice on the shared timebase.
+    //
+    // 2-arg overload: no swap hook (existing callers/tests unaffected).
     template <typename FireFn>
     void tick(double frame, int n, FireFn&& fire) {
+        tick(frame, n, std::forward<FireFn>(fire), [](bool) {});
+    }
+
+    // onSwap(wasPlaying) runs at the pending->playing swap, after the new
+    // clip's state (clip_/clipBars_/clipStep_) is committed but before the
+    // Start event and the entry step's fire — so the embedding engine can
+    // end the outgoing clip's sounding note in the same block, before the
+    // new clip's first trigger (docs/sq4-clips.md §6 rule 4; worklet.js
+    // hostTick: "the old clip's tail note ends where the new clip starts").
+    template <typename FireFn, typename SwapFn>
+    void tick(double frame, int n, FireFn&& fire, SwapFn&& onSwap) {
         lastFrame_ = frame;
         const double end = frame + n;
         if (hasStop_ && stopAt_ < end) {
@@ -77,12 +90,14 @@ public:
         }
         if (hasPend_ && pendAt_ < end) {
             hasPend_ = false;
+            const bool wasPlaying = playing_;
             clip_ = std::move(pend_); clipBars_ = pendBars_;
             playing_ = true;
             // Phase-locked entry: enter at the global grid position, -1 so
             // the immediate fire below lands ON that step (worklet clipPhase).
             clipStep_ = phaseStep(frame, clipBars_ * SQ_STEPS_PER_BAR, true) - 1;
             toNext_ = 0;
+            onSwap(wasPlaying);
             events.push_back({ HostEvent::T::Start, frame });
         }
         if (playing_) {
