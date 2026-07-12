@@ -6,7 +6,11 @@ four independent AudioWorklet sequencers stay locked to one musical grid.
 Phases 1–3 of this contract are implemented: `src/seq/protocol.ts` (schema,
 codecs, boundary math), the hosted messages in the three worklets,
 `src/seq/devices.ts` + `src/seq/rig.ts` (adapters, shared-context graph) and
-the conductor in `src/seq/store.ts`. Phase 4 (session editing) is open.
+the conductor in `src/seq/store.ts`. Phase 4 (session editing) shipped via
+the device-focus design — see
+[`docs/superpowers/specs/2026-07-12-sq4-device-focus-design.md`](superpowers/specs/2026-07-12-sq4-device-focus-design.md)
+for the focus-mode UI, hosted device panels, and the clip/patch bridge that
+lets edits hot-swap live clips and snapshot patches into the session.
 
 ## 1. Goals
 
