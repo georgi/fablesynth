@@ -250,6 +250,71 @@ int main(int argc, char** argv) {
     check(p.conductor().ownerOf(0) == -2, "footer stopAllClick clears owners",
           p.conductor().ownerOf(0));
 
+    // ---- 12. Focus mode: enter, edit a live clip, doc + engine hot-swap. ----
+    std::printf("\n== focus mode ==\n");
+    auto* ed2 = seqEditor;
+    auto& clipEd = ed2->clipEdit();
+
+    ed2->enterFocus(0, 2);            // DRUMS, DROP A
+    check(ed2->focus() == std::make_pair(0, 2), "enterFocus(0,2) targets scene 2 / track 0");
+    grid.cellClick(2, 0);            // launch DROP A drums so the edited clip is live
+    renderRms(p, buf, 800); p.drainAcks();
+    check(p.conductor().ownerOf(0) == 2, "DROP A drums are live before editing",
+          p.conductor().ownerOf(0));
+
+    auto before = p.conductor().session().scenes[2].clips[0].bytes;
+    clipEd.toggleDrumCell(/*pad*/ 5, /*step*/ 3);
+    auto after = p.conductor().session().scenes[2].clips[0].bytes;
+    check(before != after, "toggleDrumCell mutates the live clip's bytes");
+    check(after[(size_t)fable::sqDr1Idx(0, 5, 3)] != before[(size_t)fable::sqDr1Idx(0, 5, 3)],
+          "edit lands exactly at sqDr1Idx(0,5,3)");
+    // audio keeps running (phase preserved by ClipHost::updateClip — Task 2 case 6)
+    check(renderRms(p, buf, 200) > 1e-5, "audio keeps running through the live edit");
+
+    // focus rules: head switch keeps scene, explicit scene wins, exit remembers.
+    ed2->enterFocus(1);
+    check(ed2->focus() == std::make_pair(1, 2), "switching heads keeps the scene");
+
+    // BL-1 note editor: toggleNoteCell/toggleAcc/setOct encode at sqNoteIdx.
+    auto nBefore = p.conductor().session().scenes[2].clips[1].bytes;
+    clipEd.toggleNoteCell(/*lane*/ 7, /*step*/ 1);
+    clipEd.toggleAcc(1);
+    clipEd.setOct(1, 1);
+    auto nAfter = p.conductor().session().scenes[2].clips[1].bytes;
+    check(nBefore != nAfter, "note-machine edits reach the clip bytes");
+    {
+        const size_t o = (size_t)fable::sqNoteIdx(0, 1);
+        check((nAfter[o] & 1) && nAfter[o + 1] == 7 && (nAfter[o] & 2) && nAfter[o + 2] == 2,
+              "note / acc / oct encode at sqNoteIdx(0,1)");
+    }
+    { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
+
+    ed2->focusScene(4);
+    check(ed2->focus() == std::make_pair(1, 4), "focusScene(4) moves the scene, keeps the track");
+    ed2->exitFocus();
+    check(ed2->focus() == std::make_pair(-1, -1), "exitFocus returns to session mode");
+    ed2->enterFocus(1);
+    check(ed2->focus() == std::make_pair(1, 4), "re-entering remembers the last focus scene");
+
+    // create a clip on an empty cell (LEAD / INTRO).
+    ed2->enterFocus(2, 0);
+    check(ed2->focus() == std::make_pair(2, 0), "enterFocus(2,0) targets the empty LEAD/INTRO cell");
+    check(!p.conductor().session().scenes[0].hasClip[2], "LEAD/INTRO starts empty");
+    clipEd.createClipClick();
+    check(p.conductor().session().scenes[0].hasClip[2], "createClipClick writes a clip into the doc");
+
+    // Focus-mode snapshot: the DRUMS / DROP A clip editor over the live scene.
+    ed2->enterFocus(0, 2);
+    ed2->resized();
+    { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
+    if (argc > 2) {
+        juce::File out(argv[2]);
+        out.deleteFile();
+        juce::FileOutputStream os(out);
+        juce::PNGImageFormat().writeImageToStream(img, os);
+    }
+    ed2->exitFocus();
+
     delete ed;
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);

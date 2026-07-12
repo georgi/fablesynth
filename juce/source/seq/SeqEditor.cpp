@@ -12,33 +12,85 @@
 //   hint line          18, 858
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
+//
+// Focus mode reuses header + heads unchanged, collapses the scene grid to a
+// single-row mini strip (row 96 + scene rail 24 = ~128 tall), and drops the
+// ClipEditView device panel into the freed space down to the footer slot,
+// which hides. Instant relayout, no FLIP (spec §2).
 
 // ---- SeqRack ----
-SeqRack::SeqRack(SeqAudioProcessor& p) : header(p), trackHeads(p), sceneGrid(p), footer(p) {
+SeqRack::SeqRack(SeqAudioProcessor& p)
+    : header(p), trackHeads(p), sceneGrid(p), footer(p), clipEdit(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(trackHeads);
     addAndMakeVisible(sceneGrid);
     addAndMakeVisible(footer);
-    for (auto* c : std::initializer_list<juce::Component*>{ &hint, &clipEdit })
-        addAndMakeVisible(*c);
-    clipEdit.setVisible(false); // Task 13: focus-mode overlay, hidden until entered
+    addAndMakeVisible(hint);
+    addChildComponent(clipEdit); // hidden until focus is entered
+}
+
+void SeqRack::enterFocus(int track, int scene) {
+    focusMode_ = true;
+    focusTrack_ = track;
+    trackHeads.setFocusMode(true);
+    trackHeads.setFocusedTrack(track);
+    sceneGrid.setSingleRow(scene);
+    clipEdit.setTarget(scene, track);
+    footer.setVisible(false);
+    hint.setVisible(false);
+    clipEdit.setVisible(true);
+    resized();
+}
+
+void SeqRack::exitFocus() {
+    focusMode_ = false;
+    focusTrack_ = -1;
+    trackHeads.setFocusMode(false);
+    trackHeads.setFocusedTrack(-1);
+    sceneGrid.clearSingleRow();
+    clipEdit.setTarget(-1, -1);
+    footer.setVisible(true);
+    hint.setVisible(true);
+    clipEdit.setVisible(false);
+    resized();
+}
+
+void SeqRack::setFocusScene(int scene) {
+    if (!focusMode_) return;
+    sceneGrid.setSingleRow(scene);
+    clipEdit.setTarget(scene, focusTrack_);
 }
 
 void SeqRack::resized() {
     header.setBounds(18, 14, 1424, 66);
     trackHeads.setBounds(18, 89, 1424, 54);
-    sceneGrid.setBounds(18, 152, 1424, 630);
-    footer.setBounds(18, 782, 1424, 68);
-    hint.setBounds(18, 858, 1424, 20);
-    clipEdit.setBounds(0, 0, LW, LH);
+    if (focusMode_) {
+        sceneGrid.setBounds(18, 152, 1424, 128);  // mini strip: row (96) + rail (24)
+        clipEdit.setBounds(18, 288, 1424, 618);   // device panel -> down to ~906
+    } else {
+        sceneGrid.setBounds(18, 152, 1424, 630);
+        footer.setBounds(18, 782, 1424, 68);
+        hint.setBounds(18, 858, 1424, 20);
+        clipEdit.setBounds(0, 0, LW, LH);
+    }
 }
 
 // ---- SeqEditor ----
 SeqEditor::SeqEditor(SeqAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), rack(p) {
+    : juce::AudioProcessorEditor(p), proc_(p), rack(p) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     rack.setBounds(0, 0, SeqRack::LW, SeqRack::LH);
+
+    // Focus wiring: a head click focuses that device, the scenes-card back
+    // button exits, the cell ✎ opens exactly that clip, and the mini-strip
+    // rail jumps scenes (docs/.../sq4-device-focus-design.md §2-§3).
+    heads().onFocusTrack = [this](int t) { enterFocus(t); };
+    heads().onExitFocus  = [this]() { exitFocus(); };
+    grid().onEditClip    = [this](int s, int t) { enterFocus(t, s); };
+    grid().onRailScene   = [this](int s) { focusScene(s); };
+
+    setWantsKeyboardFocus(true);
 
     setResizable(true, true);
     if (auto* c = getConstrainer())
@@ -49,6 +101,52 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
 }
 
 SeqEditor::~SeqEditor() { setLookAndFeel(nullptr); }
+
+int SeqEditor::clampScene(int s) const {
+    const int n = (int)proc_.conductor().session().scenes.size();
+    return juce::jlimit(0, juce::jmax(0, n - 1), s);
+}
+
+void SeqEditor::enterFocus(int t, int s) {
+    // Scene pick (store.ts enterFocus): explicit s wins, else the scene
+    // currently owning the track, else the current/last focused scene, else 0.
+    int scene;
+    if (s >= 0)                                scene = s;
+    else if (proc_.conductor().ownerOf(t) >= 0) scene = proc_.conductor().ownerOf(t);
+    else if (focusTrack_ >= 0)                 scene = focusScene_;
+    else                                       scene = lastFocusScene_;
+    scene = clampScene(scene);
+
+    focusTrack_ = t;
+    focusScene_ = scene;
+    rack.enterFocus(t, scene);
+    grabKeyboardFocus();
+}
+
+void SeqEditor::exitFocus() {
+    if (focusTrack_ >= 0) lastFocusScene_ = focusScene_;
+    focusTrack_ = focusScene_ = -1;
+    rack.exitFocus();
+}
+
+void SeqEditor::focusScene(int s) {
+    if (focusTrack_ < 0) return;
+    focusScene_ = clampScene(s);
+    rack.setFocusScene(focusScene_);
+}
+
+bool SeqEditor::keyPressed(const juce::KeyPress& k) {
+    if (k == juce::KeyPress::escapeKey) {
+        if (focusTrack_ >= 0) { exitFocus(); return true; }
+        return false;
+    }
+    if (focusTrack_ < 0) return false;
+    if (k == juce::KeyPress::upKey)   { focusScene(focusScene_ - 1); return true; }
+    if (k == juce::KeyPress::downKey) { focusScene(focusScene_ + 1); return true; }
+    const auto ch = k.getTextCharacter();
+    if (ch >= '1' && ch <= '4') { enterFocus((int)(ch - '1')); return true; }
+    return false;
+}
 
 void SeqEditor::paint(juce::Graphics& g) {
     g.fillAll(fui::col::bg);

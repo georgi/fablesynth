@@ -48,6 +48,8 @@ public:
     std::function<void(int)> onFocusTrack;
     std::function<void()> onExitFocus;
     void setFocusMode(bool f) { focusMode_ = f; repaint(); }
+    // Focus mode: the focused head glows in its track color (tab-strip role).
+    void setFocusedTrack(int t) { focusedTrack_ = t; repaint(); }
 
 private:
     void timerCallback() override { repaint(); }
@@ -66,6 +68,7 @@ private:
         muteBtn[4], soloBtn[4], volKnob[4];
 
     bool focusMode_ = false;
+    int focusedTrack_ = -1;
 
     enum class Drag { None, Vol };
     Drag dragging_ = Drag::None;

@@ -216,8 +216,14 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
                                            col::panelLo, rf.getX(), rf.getBottom(), false));
     g.fillRoundedRectangle(rf, 10.0f);
-    g.setColour(col::line);
-    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, 1.0f);
+    // Focus mode: the focused head is lit in its track color (tab-strip cue).
+    const bool focused = focusMode_ && t == focusedTrack_;
+    g.setColour(focused ? tc.withAlpha(0.9f) : col::line);
+    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, focused ? 1.6f : 1.0f);
+    if (focused) {
+        g.setColour(tc.withAlpha(0.85f));
+        g.fillRoundedRectangle(rf.removeFromBottom(2.5f).reduced(10.0f, 0.0f), 1.2f);
+    }
 
     // LED
     const bool audible = proc.conductor().ownerOf(t) != -2;
