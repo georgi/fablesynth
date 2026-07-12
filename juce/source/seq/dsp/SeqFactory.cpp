@@ -227,7 +227,8 @@ SceneData scene(std::string name, std::vector<ClipData*> clips) {
     sc.name = std::move(name);
     sc.clips.resize(clips.size());
     sc.hasClip.resize(clips.size(), false);
-    sc.pass.assign(clips.size(), 0);
+    // pass is left empty: the factory session ships no pass-through tracks,
+    // so every empty cell is a stop button on scene launch (default).
     for (size_t t = 0; t < clips.size(); t++) {
         if (clips[t] != nullptr) {
             sc.clips[t] = *clips[t];

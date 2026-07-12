@@ -34,7 +34,10 @@ struct TrackData {
 };
 
 // clips[t] is meaningful only where hasClip[t] — models the web's
-// (ClipDoc | null)[]. pass[] is reserved for later tasks (unused here).
+// (ClipDoc | null)[]. pass holds the indices of tracks whose empty cell is
+// pass-through on scene launch (the previous clip rides through instead of
+// stopping); tracks not listed here default to Ableton-style stop buttons
+// on their empty cells (protocol.ts:66-72, docs/sq4-clips.md §4).
 struct SceneData {
     std::string name;
     std::vector<ClipData> clips;

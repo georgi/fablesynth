@@ -76,6 +76,9 @@ static void testModelAndFactory() {
         for (size_t t = 0; t < sc.clips.size(); t++)
             if (sc.hasClip[t])
                 CHECK((int)sc.clips[t].bytes.size() == sc.clips[t].bars * sqBytesPerBar(s.tracks[t].machine));
+    // the factory ships no pass-through tracks: every empty cell is a stop
+    // button on scene launch (protocol.ts:66-72)
+    for (auto& sc : s.scenes) CHECK(sc.pass.empty());
     // validation rejects bad docs
     SessionData bad = factorySession(); bad.bpm = 300;
     CHECK(!validateSession(bad).empty());
