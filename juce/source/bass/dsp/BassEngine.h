@@ -88,12 +88,12 @@ public:
     // standalone sequencer and the hosted clip can never double-fire the
     // voice; the standalone render path is otherwise byte-identical when
     // this is off.
-    void setHostClipMode(bool on) {
+    void setHostClipMode(bool on, int maxBlock = 0) {
         hostClipMode_ = on;
         // Reserve the clip host's buffers so no launch/update/tick allocates on
         // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
-        // machine; 64 events is far above the per-block worst case).
-        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, 64);
+        // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
+        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
         else clipHost_.clear();
     }
     void hostTempo(double bpm, double swing, double anchorFrame) {
@@ -101,20 +101,32 @@ public:
         anchorFrame_ = anchorFrame;
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame) {
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame);
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
     }
     void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
     void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
         clipHost_.updateClip(data, (size_t)bytes, bars);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
+    // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
+    // rest for the next call (Finding 3 — the SeqProcessor loops until 0).
     int  takeHostEvents(HostEvent* out, int max) {
         if (max <= 0 || out == nullptr) return 0;
         int n = std::min((int)clipHost_.events.size(), max);
         std::copy(clipHost_.events.begin(), clipHost_.events.begin() + n, out);
-        clipHost_.events.clear();
+        clipHost_.events.erase(clipHost_.events.begin(), clipHost_.events.begin() + n);
         return n;
+    }
+    size_t hostEventsCapacity() const { return clipHost_.eventsCapacity(); }
+    // Worst-case host-event count for one prepared block (see Engine.h's
+    // hostMaxEvents for the full rationale): ceil(maxBlock / minStepDur) + 8,
+    // minStepDur at max bpm 200; maxBlock<=0 keeps the old fixed 64.
+    int hostMaxEvents(int maxBlock) const {
+        if (maxBlock <= 0) return 64;
+        const double minStepDur = sr_ * 60.0 / 200.0 / 4.0;
+        const int n = (int)std::ceil((double)maxBlock / minStepDur) + 8;
+        return std::max(64, n);
     }
 
     // Render n samples into stereo L/R (zero-filled first, voice accumulates).

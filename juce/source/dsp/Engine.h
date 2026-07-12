@@ -182,32 +182,56 @@ public:
     // suppressed (guarded by hostClipMode_) so the standalone sequencer and
     // the hosted clip can never double-fire the same voice slot; the
     // standalone render path is otherwise byte-identical when this is off.
-    void setHostClipMode(bool on) {
+    void setHostClipMode(bool on, int maxBlock = 0) {
         hostClipMode_ = on;
         // Reserve the clip host's buffers so no launch/update/tick allocates on
         // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
-        // machine; 64 events is far above the per-block worst case).
-        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, 64);
+        // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
+        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
         else clipHost_.clear();
     }
     void hostTempo(double bpm, double swing, double anchorFrame) {
         setBpm(bpm);
         clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame) {
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame);
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
     }
     void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
     void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
         clipHost_.updateClip(data, (size_t)bytes, bars);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
+    // Lossless drain: copy up to `max` events, then erase ONLY the copied
+    // prefix, keeping the remainder for the next call (Finding 3). The old
+    // clear()-everything dropped Pos events past `max` when one prepared block
+    // spanned more grid steps than the caller's buffer; the SeqProcessor now
+    // loops takeHostEvents until it returns 0 so a burst can't leak. erase()
+    // shrinks in place (no realloc), so this stays audio-thread-safe.
     int  takeHostEvents(HostEvent* out, int max) {
         if (max <= 0 || out == nullptr) return 0;
         int n = std::min((int)clipHost_.events.size(), max);
         std::copy(clipHost_.events.begin(), clipHost_.events.begin() + n, out);
-        clipHost_.events.clear();
+        clipHost_.events.erase(clipHost_.events.begin(), clipHost_.events.begin() + n);
         return n;
+    }
+    // Test hook: the clip host's reserved event capacity, to assert the
+    // worst-case sizing holds with no audio-thread realloc (Finding 3).
+    size_t hostEventsCapacity() const { return clipHost_.eventsCapacity(); }
+
+    // Worst-case host-event count for one prepared render block (Finding 3).
+    // A single prepared chunk can span many grid steps in an offline render;
+    // each step emits one Pos event, plus Start/Stop/entry headroom. The
+    // shortest possible step is at the max bpm (200), so
+    // ceil(maxBlock / minStepDur) + 8 bounds it. Diverges from the web's fixed
+    // 64 deliberately: JUCE hands offline renders arbitrarily large blocks, and
+    // a reserve() overflow here would realloc on the audio thread. maxBlock<=0
+    // (the standalone/unit callers) keeps the old fixed 64.
+    int hostMaxEvents(int maxBlock) const {
+        if (maxBlock <= 0) return 64;
+        const double minStepDur = sr_ * 60.0 / 200.0 / 4.0; // sqSamplesPerStep(200, sr_)
+        const int n = (int)std::ceil((double)maxBlock / minStepDur) + 8;
+        return std::max(64, n);
     }
 
     // One unpacked engine step: on/acc/tie + semitone offset from SEQ_ROOT

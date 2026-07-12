@@ -279,6 +279,59 @@ static void testClipHost() {
     }
 }
 
+// Finding 3: one prepared render block can span more grid steps than any
+// single takeHostEvents call returns. The event buffer must be sized to that
+// worst case (no audio-thread realloc), and the drain must be lossless — every
+// step's Pos event observed across repeated 64-at-a-time takes, none dropped.
+static void testHostEventLossless() {
+    using namespace fable;
+    const double sr = 48000;
+    Engine e;
+    e.prepare(sr);
+    std::vector<TablePtr> tables;
+    for (auto& g : generateTables()) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    e.setTables(tables);
+    e.setParams(applyPreset(factoryPresets()[3]));
+
+    // Prepared block far larger than one step at 200 bpm (stepDur = 3600):
+    // 256000 samples ~= 71 steps, well past a single 64-event take.
+    const int maxBlock = 256000;
+    e.setHostClipMode(true, maxBlock);
+    e.hostTempo(200, 0, 0);
+
+    // Capacity must cover the worst case: ceil(maxBlock/minStepDur) + 8, min 64.
+    const double minStepDur = sr * 60.0 / 200.0 / 4.0; // 3600
+    const size_t want = std::max((size_t)64, (size_t)std::ceil((double)maxBlock / minStepDur) + 8);
+    const size_t cap = e.hostEventsCapacity();
+    CHECK(cap >= want);
+
+    auto clip = sqEmptyClip(Machine::WT1, 1);              // 1 bar, 16 steps
+    e.hostClip(clip.data(), (int)clip.size(), 1, 0.0, /*tag*/0); // quant OFF
+
+    std::vector<float> L((size_t)maxBlock), R((size_t)maxBlock);
+    e.hostSetFrame(0);
+    e.render(L.data(), R.data(), maxBlock); // accumulates > 64 events, no drain between chunks
+
+    // Lossless drain: 64 at a time until empty, collecting every Pos step.
+    std::vector<int> pos; int starts = 0; HostEvent evs[64]; int m;
+    while ((m = e.takeHostEvents(evs, 64)) > 0)
+        for (int k = 0; k < m; k++) {
+            if (evs[k].t == HostEvent::T::Start) starts++;
+            else if (evs[k].t == HostEvent::T::Pos) pos.push_back(evs[k].step);
+        }
+
+    CHECK(starts == 1);
+    CHECK(pos.size() > 64); // proves the block held more than one take's worth
+    // Contiguous grid: each Pos step advances by exactly 1 (mod 16). A dropped
+    // event (the old clear()-everything drain) would leave a gap here.
+    bool contiguous = !pos.empty();
+    for (size_t i = 1; i < pos.size(); i++)
+        if (pos[i] != (pos[i - 1] + 1) % SQ_STEPS_PER_BAR) contiguous = false;
+    CHECK(contiguous);
+    // No audio-thread realloc: capacity is byte-for-byte unchanged.
+    CHECK(e.hostEventsCapacity() == cap);
+}
+
 static double rmsOf(fable::Engine& e, double& frame, int blocks) {
     double sumSq = 0; long cnt = 0;
     float L[128], R[128];
@@ -547,7 +600,8 @@ struct FakeIO : fable::ConductorIO {
     std::vector<std::tuple<int, std::vector<uint8_t>, int>> updates;
     std::map<int,float> gains; double bpm = 0, swing = -1, anchor = -1;
     double now() override { return frame; }
-    void ioScheduleClip(int t, const std::vector<uint8_t>& b, int bars, double at) override { clips.push_back({t,bars,at,b.size()}); }
+    std::vector<int> tags; // launch identity per scheduled clip (Finding 1)
+    void ioScheduleClip(int t, const std::vector<uint8_t>& b, int bars, double at, int tag) override { clips.push_back({t,bars,at,b.size()}); tags.push_back(tag); }
     void ioScheduleStop(int t, double at) override { stops.push_back({t,at}); }
     void ioUpdateClip(int t, const std::vector<uint8_t>& b, int bars) override { updates.push_back({t,b,bars}); }
     void ioSetTrackGain(int t, float g) override { gains[t] = g; }
@@ -584,16 +638,41 @@ static void testConductor() {
         CHECK(std::abs(io.clips[0].at - (c.anchor() + bar)) < 1e-6);
         CHECK(c.queueOf(0) == 2);
         CHECK(c.ownerOf(0) == -2);
+        CHECK(io.tags.back() == 2); // the scheduled clip carries its scene tag
 
-        c.onClipStart(0);
+        c.onClipStart(0, 2);
         CHECK(c.ownerOf(0) == 2);
         CHECK(c.queueOf(0) == -2);
 
+        // Re-launch before the boundary re-targets: only the last clip (scene 3)
+        // ever swaps in at the device, so only its Start ack fires -> owner 3.
         c.launch(0, 2);
         c.launch(0, 3);
         CHECK(io.clips.size() == 3);
-        c.onClipStart(0);
+        c.onClipStart(0, 3);
         CHECK(c.ownerOf(0) == 3);
+    }
+
+    // Finding 1: identity-carrying acks. A clip that started keeps ownership
+    // even if a newer clip is queued while its Start ack is still in flight —
+    // the ack names the scene that actually started, not the latest scheduled.
+    // (Diverges from the web's identity-free acks; see Conductor.h.)
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2);              // A (scene 2) queued; reaches its boundary
+                                    // and starts at the device — its Start ack
+                                    // is now in flight, not yet delivered.
+        c.launch(0, 3);             // B (scene 3) queued in that window: the
+                                    // device now has A live and B pending.
+        CHECK(c.queueOf(0) == 3);
+        c.onClipStart(0, 2);        // A's delayed ack finally lands, naming A.
+        CHECK(c.ownerOf(0) == 2);   // A owns, by identity — NOT the queued B.
+        CHECK(c.queueOf(0) == 3);   // B stays pending; its own ack will promote it.
+        c.onClipStart(0, 3);        // B's Start ack arrives.
+        CHECK(c.ownerOf(0) == 3);
+        CHECK(c.queueOf(0) == -2);
     }
     {
         FakeIO io;
@@ -620,7 +699,7 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launch(0, 2);
-        c.onClipStart(0);
+        c.onClipStart(0, 2);
         c.stopTrack(0);
         CHECK(io.stops.size() == 1);
         CHECK(c.queueOf(0) == SQ_STOP);
@@ -665,7 +744,7 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launchScene(2); // DROP A: bring all four tracks up first
-        for (int t = 0; t < 4; t++) c.onClipStart(t);
+        for (int t = 0; t < 4; t++) c.onClipStart(t, 2);
         io.clips.clear(); io.stops.clear();
         c.launchScene(0); // INTRO: clips on 0,3; stops on 1,2 (now owned)
         CHECK(io.clips.size() == 2);
@@ -676,7 +755,7 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launchScene(2);
-        for (int t = 0; t < 4; t++) c.onClipStart(t);
+        for (int t = 0; t < 4; t++) c.onClipStart(t, 2);
         c.togglePassThrough(0, 1); // INTRO track 1: remove the stop button
         io.clips.clear(); io.stops.clear();
         c.launchScene(0);
@@ -692,9 +771,9 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launchScene(2); // DROP A, all four
-        for (int t = 0; t < 4; t++) c.onClipStart(t);
+        for (int t = 0; t < 4; t++) c.onClipStart(t, 2);
         c.launch(0, 3); // re-queue drums to DROP B
-        c.onClipStart(0);
+        c.onClipStart(0, 3);
         io.stops.clear();
         c.stopScene(2);
         bool stopped0 = false;
@@ -738,7 +817,7 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launch(0, 2);
-        c.onClipStart(0);
+        c.onClipStart(0, 2);
         c.toggleSceneMute(2);
         CHECK(io.gains[0] == 0.0f);
         CHECK(io.gains[1] > 0.0f); // unowned track keeps its independent open gate
@@ -765,7 +844,7 @@ static void testConductor() {
         c.setBpm(140);
         CHECK(c.session().bpm == 122.0);
         CHECK(io.bpm == 122.0);
-        c.onClipStart(0);
+        c.onClipStart(0, 2);
         c.setBpm(140); // still owned
         CHECK(c.session().bpm == 122.0);
         c.stopTrack(0);
@@ -785,7 +864,7 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launch(0, 0); // INTRO drums
-        c.onClipStart(0); // owner[0] = 0
+        c.onClipStart(0, 0); // owner[0] = 0
         std::vector<uint8_t> bytes(256, 7);
         c.updateClipBytes(0, 0, bytes, 1);
         CHECK(io.updates.size() == 1);
@@ -851,6 +930,7 @@ int main() {
     testProtocol();
     testModelAndFactory();
     testClipHost();
+    testHostEventLossless();
     testWt1Hosted();
     testWt1ClipSwapGatesOldNote();
     testBl1Hosted();

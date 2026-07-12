@@ -38,8 +38,10 @@ void Conductor::powerOn() {
 void Conductor::launch(int t, int s) {
     auto& sc = session_.scenes[(size_t)s];
     if (!sc.hasClip[(size_t)t]) return;
-    lastScheduled_[t] = s;
-    io_.ioScheduleClip(t, sc.clips[(size_t)t].bytes, sc.clips[(size_t)t].bars, boundary());
+    // Stamp the scene as the clip's launch identity: it rides the command to the
+    // device and comes back on the Start ack, so onClipStart can attribute the
+    // ack to this scene rather than whatever was scheduled last (Finding 1).
+    io_.ioScheduleClip(t, sc.clips[(size_t)t].bytes, sc.clips[(size_t)t].bars, boundary(), s);
     queue_[t] = s;
 }
 
@@ -152,9 +154,14 @@ void Conductor::setBpm(double bpm) {
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
 }
 
-void Conductor::onClipStart(int t) {
-    owner_[t] = lastScheduled_[t];
-    if (queue_.count(t) && queue_[t] == lastScheduled_[t]) queue_.erase(t);
+void Conductor::onClipStart(int t, int scene) {
+    // The device-delivered `scene` is the clip that actually started; make it
+    // the owner. Clear the queue only when it still names this same scene — if a
+    // newer clip was queued while this ack was in flight, that later launch must
+    // stay pending (its own Start ack will promote it). This is the divergence
+    // from the web's identity-free acks documented in the header.
+    owner_[t] = scene;
+    if (queue_.count(t) && queue_[t] == scene) queue_.erase(t);
     applyGains();
 }
 

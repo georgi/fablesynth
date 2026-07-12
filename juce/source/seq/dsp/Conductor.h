@@ -8,11 +8,21 @@
 // carries a 250 ms watchdog to cope with dropped WebAudio port messages;
 // this port has none — acks travel an in-process FIFO (Task 8's
 // SeqProcessor) sized so they cannot be dropped.
+//
+// DIVERGENCE from docs/sq4-clips.md §6 ("acks carry no identity"): here a
+// Start ack carries the launch identity (scene index) of the clip that
+// actually swapped in at the device, and onClipStart flips the owner to THAT
+// scene rather than to whatever was scheduled most recently. The web can rely
+// on acks carrying no identity because its ack turnaround is a microtask; this
+// port's ack turnaround is a real ~33 ms drain-timer window, long enough for a
+// second clip to be queued between a clip starting and its ack landing. Without
+// the identity, that second clip's scene would be promoted to owner while the
+// first is still the audible one (Finding 1). The identity closes it: the ack
+// names its own clip, and the queue is cleared only when it matches.
 #pragma once
 
 #include "SeqModel.h"
 #include "SeqProtocol.h"
-#include <map>
 #include <unordered_map>
 #include <vector>
 
@@ -22,7 +32,7 @@ namespace fable {
 // FIFO into the audio thread, and by tests as a recording fake.
 struct ConductorIO {
     virtual double now() = 0;                                                     // current shared frame
-    virtual void ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double atFrame) = 0;
+    virtual void ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double atFrame, int tag) = 0;
     virtual void ioScheduleStop(int t, double atFrame) = 0;
     virtual void ioUpdateClip(int t, const std::vector<uint8_t>& bytes, int bars) = 0;
     virtual void ioSetTrackGain(int t, float gain) = 0;                           // post-curve, 0 when closed
@@ -54,8 +64,11 @@ public:
     void setSwing(double v);
     void setBpm(double bpm);              // guarded: only while no track owned/queued; re-anchors
 
-    // audio-thread acks, delivered on the message thread by the editor timer:
-    void onClipStart(int t);
+    // audio-thread acks, delivered on the message thread by the editor timer.
+    // `scene` is the launch identity the device stamped on the Start ack (the
+    // scene whose clip actually started) — the owner flips to it, and the queue
+    // clears only when it still names that scene (see the header divergence).
+    void onClipStart(int t, int scene);
     void onClipStop(int t);
 
     // views for the UI:
@@ -84,7 +97,6 @@ private:
 
     SessionData session_;
     std::unordered_map<int, int> owner_, queue_;
-    std::map<int, int> lastScheduled_;
     std::vector<bool> sceneMute_, trackMute_, solo_;
     Quant quant_;
     std::vector<float> trackVol_;

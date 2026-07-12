@@ -296,9 +296,14 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     currentFrame.store(0.0);
     for (int t = 0; t < kTracks; ++t) { trackStep[t].store(-1); trackBar[t].store(0); }
 
-    // Hosted mode on before any tempo/clip reaches the engines.
-    drum_.setHostClipMode(true); bass_.setHostClipMode(true);
-    for (int i = 0; i < 2; ++i) wt_[i].setHostClipMode(true);
+    // Hosted mode on before any tempo/clip reaches the engines. Pass the
+    // prepared block size so each ClipHost reserves event headroom for the
+    // worst-case number of grid steps one chunk can span (Finding 3): the
+    // processor renders each engine in chunks of at most samplesPerBlock, so
+    // that is the largest quantum a ClipHost ever sees between drains.
+    drum_.setHostClipMode(true, samplesPerBlock);
+    bass_.setHostClipMode(true, samplesPerBlock);
+    for (int i = 0; i < 2; ++i) wt_[i].setHostClipMode(true, samplesPerBlock);
 
     conductor_ = std::make_unique<Conductor>(liveSession, io_, sampleRate);
     conductor_->powerOn(); // anchor = 256; enqueues tempo + gain commands
@@ -343,9 +348,9 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Clip: {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
-                        case 0: drum_.hostClip(d, nb, c.bars, c.at); break;
-                        case 1: bass_.hostClip(d, nb, c.bars, c.at); break;
-                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at); break;
+                        case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag); break;
+                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag); break;
+                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag); break;
                     }
                 } break;
                 case Cmd::K::Stop:
@@ -374,6 +379,12 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Patch:
                     loadTrackParams(c.t, *c.params);
                     break;
+                case Cmd::K::Reset:
+                    // Ordered generation advance (see cmdGen_/audioGen_): every
+                    // ack the audio thread stamps from here on carries the new
+                    // generation. FIFO-ordered ahead of the swap's stops.
+                    audioGen_ = c.gen;
+                    break;
             }
         }
     };
@@ -382,8 +393,8 @@ void SeqAudioProcessor::drainCmds() {
 }
 
 // ConductorIO -> command FIFO (all on the message thread).
-void SeqAudioProcessor::IO::ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double at) {
-    Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = bars; c.at = at;
+void SeqAudioProcessor::IO::ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double at, int tag) {
+    Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = bars; c.at = at; c.tag = tag;
     c.bytes = std::make_shared<std::vector<uint8_t>>(bytes);
     p.pushCmd(std::move(c));
 }
@@ -424,7 +435,7 @@ void SeqAudioProcessor::drainAcks() {
             // target a session that no longer exists (see cmdGen_).
             if (a.gen != cur) continue;
             if (a.ev.t == HostEvent::T::Start) {
-                conductor_->onClipStart(a.t);
+                conductor_->onClipStart(a.t, a.ev.tag);
             } else if (a.ev.t == HostEvent::T::Stop) {
                 conductor_->onClipStop(a.t);
                 trackStep[a.t].store(-1);
@@ -511,7 +522,11 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // currentFrame is published once for the whole block, as before.
     const int cap = std::max(1, trackBuf_.getNumSamples());
     const double base = frame_;
-    const uint32_t gen = cmdGen_.load(std::memory_order_relaxed);
+    // Stamp acks with audioGen_, advanced only by an ordered K::Reset command in
+    // drainCmds above — NOT a fresh cmdGen_.load(), which would race a
+    // concurrent applySessionJson bump and mis-stamp this block's old-session
+    // events with the new generation (see cmdGen_/audioGen_ in the header).
+    const uint32_t gen = audioGen_;
     const int scopeW = scopeWrite_.load(std::memory_order_relaxed);
 
     float* tl = trackBuf_.getWritePointer(0);
@@ -553,15 +568,22 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         // Drain each engine's host events for this chunk: Pos updates the
         // step/bar readouts; Start/Stop become acks the conductor consumes via
         // drainAcks(), stamped with this block's command generation.
+        // Drain losslessly: one prepared chunk can emit more host events than
+        // the local buffer holds (offline render spanning many grid steps), and
+        // takeEvents now keeps the remainder, so loop until it returns 0
+        // (Finding 3). No allocation — evs is fixed and takeEvents erases in
+        // place.
         HostEvent evs[64];
         for (int t = 0; t < kTracks; ++t) {
-            const int m = takeEvents(t, evs, 64);
-            for (int k = 0; k < m; ++k) {
-                if (evs[k].t == HostEvent::T::Pos) {
-                    trackStep[t].store(evs[k].step, std::memory_order_relaxed);
-                    trackBar[t].store(evs[k].bar, std::memory_order_relaxed);
-                } else {
-                    pushAck(t, evs[k], gen);
+            int m;
+            while ((m = takeEvents(t, evs, 64)) > 0) {
+                for (int k = 0; k < m; ++k) {
+                    if (evs[k].t == HostEvent::T::Pos) {
+                        trackStep[t].store(evs[k].step, std::memory_order_relaxed);
+                        trackBar[t].store(evs[k].bar, std::memory_order_relaxed);
+                    } else {
+                        pushAck(t, evs[k], gen);
+                    }
                 }
             }
         }
@@ -638,9 +660,17 @@ bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
     if (preparedSampleRate_ > 0.0) {
         // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
         // that lands after this point would otherwise flip an owner in the new
-        // conductor (see cmdGen_). Bump first, then push the stops/rebuild —
-        // acks the audio thread stamps with the old generation are now stale.
+        // conductor (see cmdGen_/audioGen_). Bump the message-thread reference
+        // first, then push a Reset carrying the new generation as the FIRST
+        // command — the audio thread advances audioGen_ only when this Reset
+        // drains, in FIFO order ahead of the stops below. That ordering is what
+        // makes the invalidation race-free: any event the old session produces
+        // before the Reset drains still carries the old generation (dropped);
+        // once it drains, the stops that follow have already disarmed every
+        // pending clip, so only Stop acks can be produced.
         cmdGen_.fetch_add(1, std::memory_order_relaxed);
+        const uint32_t newGen = cmdGen_.load(std::memory_order_relaxed);
+        { Cmd r; r.k = Cmd::K::Reset; r.gen = newGen; pushCmd(std::move(r)); }
         // Same stop-before-re-anchor sequencing as setStateInformation (see the
         // comment there): stop every track first, ordered ahead of the new
         // conductor's first tempo command, so no clip is mid-flight across the

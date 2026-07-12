@@ -574,10 +574,13 @@ int main(int argc, char** argv) {
     // (live), then applySessionJson a fresh session while clipstart acks are
     // still queued (not yet drained). After the swap + drain, no track may be
     // owned -- a stale pre-swap Start ack must not reach the new conductor and
-    // insert a false scene-0 owner (Conductor::onClipStart's lastScheduled_[t]
-    // default-inserts 0). Draining the FIFO at the swap alone can't close this:
-    // the acks were already queued by earlier blocks; the generation tag is
-    // what discards them. Output must be silent until a new launch. ----
+    // install a false owner (the acks name scene 2, which onClipStart would make
+    // the owner). Draining the FIFO at the swap alone can't close this: the acks
+    // were already queued by earlier blocks; the generation tag is what discards
+    // them. The generation now advances via an ordered K::Reset command (not a
+    // raced cmdGen_.load on the audio thread — Finding 2), so an ack stamped by
+    // the old session before the Reset drains keeps the old generation and is
+    // dropped. Output must be silent until a new launch. ----
     {
         std::printf("\n== stale-ack invalidation across a session swap ==\n");
         SeqAudioProcessor p4;
@@ -593,9 +596,9 @@ int main(int argc, char** argv) {
         p4.drainAcks();                  // the queued pre-swap acks reach the drain here
         // Check immediately, before any render processes the swap's stop
         // commands: at this instant no Stop ack has been produced yet, so a
-        // stale Start ack that slipped through would show as a false scene-0
-        // owner right now. (Without the generation guard this fails: the four
-        // gen-0 Start acks flip owner_[t] to lastScheduled_[t] == 0 on the new
+        // stale Start ack that slipped through would show as a false owner
+        // (scene 2) right now. (Without the generation guard this fails: the
+        // four gen-0 Start acks flip owner_[t] to the scene they name on the new
         // conductor. The swap's own stops would later scrub it, which is why
         // the guard -- not drain-at-swap -- is what closes the window.)
         bool anyOwned = false;

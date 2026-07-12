@@ -120,7 +120,12 @@ void SeqEditor::enterFocus(int t, int s) {
     focusTrack_ = t;
     focusScene_ = scene;
     rack.enterFocus(t, scene);
-    grabKeyboardFocus();
+    // Only grab focus when we're actually on screen: grabbing keyboard focus on
+    // a component with no peer (headless render, or before the editor is shown)
+    // is a no-op that trips JUCE's isShowing()/isOnDesktop() assert in
+    // grabKeyboardFocusInternal. Guarding here keeps the shortcut keys working
+    // in a live editor while leaving offline paints (host tests) assertion-free.
+    if (isShowing() || isOnDesktop()) grabKeyboardFocus();
 }
 
 void SeqEditor::exitFocus() {

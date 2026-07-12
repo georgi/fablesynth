@@ -16,7 +16,13 @@ namespace fable {
 
 struct HostEvent {
     enum class T { Start, Stop, Pos };
-    T t; double frame; int step = 0, bar = 0;
+    // `tag` is the launch identity of the clip this event belongs to (the scene
+    // index the conductor stamped on scheduleClip). Start/Stop acks carry it so
+    // the conductor can attribute an ack to the clip that actually started at
+    // the device, not to whatever was scheduled most recently (Finding 1). This
+    // diverges deliberately from the web protocol, whose acks carry no identity
+    // (docs/sq4-clips.md §6) — see Conductor.h's header comment.
+    T t; double frame; int step = 0, bar = 0, tag = 0;
 };
 
 class ClipHost {
@@ -45,9 +51,12 @@ public:
     }
 
     // Replaces any pending clip and disarms a pending stop (a re-launch
-    // before the boundary re-targets; docs §6 rule 1).
-    void scheduleClip(const uint8_t* d, size_t n, int bars, double at) {
+    // before the boundary re-targets; docs §6 rule 1). `tag` is the clip's
+    // launch identity (scene index), carried through to the Start ack so the
+    // conductor attributes it correctly (Finding 1).
+    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0) {
         pend_.assign(d, d + n); pendBars_ = bars; pendAt_ = at; hasPend_ = true;
+        pendTag_ = tag;
         hasStop_ = false;
     }
 
@@ -112,7 +121,9 @@ public:
         if (hasStop_ && stopAt_ < end) {
             hasStop_ = false;
             playing_ = false; clipStep_ = -1;
-            pushEvent({ HostEvent::T::Stop, frame });
+            // Stop carries the stopped clip's tag (harmless, and lets the
+            // conductor attribute the stop if it ever needs to).
+            pushEvent({ HostEvent::T::Stop, frame, 0, 0, clipTag_ });
         }
         if (hasPend_ && pendAt_ < end) {
             hasPend_ = false;
@@ -120,14 +131,14 @@ public:
             // Capacity-preserving handoff: swap (not move-assign) so both
             // clip_ and pend_ retain their reserved buffers — pend_ inherits
             // the outgoing clip's storage for the next scheduleClip's assign().
-            std::swap(clip_, pend_); clipBars_ = pendBars_;
+            std::swap(clip_, pend_); clipBars_ = pendBars_; clipTag_ = pendTag_;
             playing_ = true;
             // Phase-locked entry: enter at the global grid position, -1 so
             // the immediate fire below lands ON that step (worklet clipPhase).
             clipStep_ = phaseStep(frame, clipBars_ * SQ_STEPS_PER_BAR, true) - 1;
             toNext_ = 0;
             onSwap(wasPlaying);
-            pushEvent({ HostEvent::T::Start, frame });
+            pushEvent({ HostEvent::T::Start, frame, 0, 0, clipTag_ });
         }
         if (playing_) {
             // A large host quantum (offline render, high bpm) can leave more
@@ -192,7 +203,7 @@ private:
         const int s = abs % SQ_STEPS_PER_BAR;
         clipStep_ = abs;
         fire(abs);
-        pushEvent({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR });
+        pushEvent({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR, clipTag_ });
 
         const double offNow  = (s % 2 == 1) ? sw * SQ_SWING_MAX * dur : 0.0;
         const int sNext = (s + 1) % SQ_STEPS_PER_BAR;
@@ -204,6 +215,7 @@ private:
     double bpm_ = 120, swing_ = 0, sr_ = 48000, anchor_ = 0;
     std::vector<uint8_t> clip_, pend_;
     int clipBars_ = 0, pendBars_ = 0;
+    int clipTag_ = 0, pendTag_ = 0; // launch identity (scene) of live/pending clip
     double pendAt_ = -1, stopAt_ = -1, toNext_ = 0, lastFrame_ = 0;
     bool hasPend_ = false, hasStop_ = false, playing_ = false;
     int clipStep_ = -1;
