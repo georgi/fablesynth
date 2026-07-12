@@ -285,7 +285,13 @@ add_executable(bass_engine_test
     source/dsp/UserTables.cpp)
 target_compile_features(bass_engine_test PRIVATE cxx_std_17)
 
+# ---- SQ-4 headless DSP verification harness (no JUCE) ----
+add_executable(sq4_engine_test
+    test/sq4_engine_test.cpp)
+target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
+
 enable_testing()
 add_test(NAME engine_test COMMAND engine_test)
 add_test(NAME drum_engine_test COMMAND drum_engine_test)
 add_test(NAME bass_engine_test COMMAND bass_engine_test)
+add_test(NAME sq4_engine_test COMMAND sq4_engine_test)
