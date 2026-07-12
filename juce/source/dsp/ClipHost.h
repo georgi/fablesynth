@@ -8,7 +8,6 @@
 #include "../seq/dsp/SeqProtocol.h"
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 
 namespace fable {
@@ -62,10 +61,12 @@ public:
     int  clipStep() const { return clipStep_; } // last fired absolute step
 
     // One render quantum: [frame, frame+n). fire(absStep) triggers the step's
-    // voices in the embedding engine. Order matters: stop, swap, fire — and
-    // (matching hostTick) at most one fire per call, since the caller drives
-    // consecutive quanta and a step never spans more than one block in
-    // practice on the shared timebase.
+    // voices in the embedding engine. Order matters: stop, swap, fire —
+    // usually one fire per call (the caller drives consecutive quanta and a
+    // step rarely spans more than one block on the shared timebase), but a
+    // quantum spanning more than one step's duration (large host buffers,
+    // e.g. offline render) fires every step actually due, catching up any
+    // backlog instead of dropping it.
     //
     // 2-arg overload: no swap hook (existing callers/tests unaffected).
     template <typename FireFn>
@@ -101,8 +102,27 @@ public:
             events.push_back({ HostEvent::T::Start, frame });
         }
         if (playing_) {
-            if (toNext_ <= 0) fireStep(frame, fire);
-            toNext_ -= n;
+            // A large host quantum (offline render, high bpm) can leave more
+            // than one grid step already due as of this block's start.
+            // fireStep reschedules anchor-absolute from the frame it's given
+            // (self-correcting — see its comment — not a running countdown),
+            // so a *fixed* `frame` on every iteration would recompute the
+            // same due time and only ever fire once, no matter how deep the
+            // backlog. Instead advance a local `due` cursor to each fired
+            // step's own scheduled time and keep the original firing
+            // condition (due <= frame, i.e. "already due as of this block's
+            // start" — exactly what the old single-fire `if` checked) so a
+            // block with no backlog fires at the identical time it always
+            // did; only a genuinely overdue backlog loops to catch up,
+            // instead of leaking the excess as ever-growing, never-fired
+            // backlog (the original bug).
+            double due = frame + toNext_;
+            int guard = 0; // pathological-swing safety net; never hit in practice
+            while (due <= frame && guard++ < 100000) {
+                fireStep(due, fire);
+                due += toNext_;
+            }
+            toNext_ = due - end;
         }
     }
 

@@ -221,6 +221,31 @@ static void testClipHost() {
         CHECK(std::abs(d01 - stepDur * (1 + 0.5 * 0.667)) <= 128.0);
         CHECK(std::abs(d12 - stepDur * (1 - 0.5 * 0.667)) <= 128.0);
     }
+    // 9. A host quantum spanning more than one step's duration (offline
+    //    render with a large block, e.g. 8192 samples at 200 bpm, where
+    //    stepDur = 3600) must fire every step actually due, not just one —
+    //    the single-fire `if` this replaced would silently drop the rest and
+    //    leak the backlog forever. bpm 200 / sr 48000 -> stepDur = 3600.
+    //    Quantum 1 (frame 0..8192): the phase-locked entry fires step 0 at
+    //    frame 0 (due 3600 lies outside this quantum -> exactly one fire).
+    //    Quantum 2 (frame 8192..16384): step 1 (due 3600) and step 2 (due
+    //    7200) both fall inside it -> exactly two fires, in order.
+    {
+        const double bpm2 = 200, dur2 = sqSamplesPerStep(bpm2, sr); // 3600
+        CHECK(dur2 == 3600.0);
+        ClipHost h; h.setTempo(bpm2, 0, sr, 0);
+        auto clip = sqEmptyClip(Machine::DR1, 1);
+        h.scheduleClip(clip.data(), clip.size(), 1, 0);
+
+        std::vector<int> q1;
+        h.tick(0.0, 8192, [&](int abs) { q1.push_back(abs); });
+        CHECK(q1.size() == 1 && q1[0] == 0);
+
+        std::vector<int> q2;
+        h.tick(8192.0, 8192, [&](int abs) { q2.push_back(abs); });
+        CHECK(q2.size() == 2);
+        if (q2.size() == 2) { CHECK(q2[0] == 1); CHECK(q2[1] == 2); }
+    }
 }
 
 static double rmsOf(fable::Engine& e, double& frame, int blocks) {

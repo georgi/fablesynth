@@ -184,10 +184,12 @@ private:
     std::vector<fable::TablePtr> wtTables_, drumTables_, bassTables_;
 
     std::unique_ptr<fable::Conductor> conductor_;
-    // Seed only — the constructor (factory session) and setStateInformation
-    // (restored doc) write it, then immediately hand it to a freshly built
-    // Conductor. Once conductor_ exists, IT is the runtime truth (patch
-    // swaps, mute/solo, vol, ...); anything on a live/runtime path must read
+    // Seed only — the constructor (factory session) and applySessionJson
+    // (restored doc — also setStateInformation's SESSION path, which funnels
+    // through applySessionJson) write it, then immediately hand it to a
+    // freshly built Conductor. Once conductor_ exists, IT is the runtime
+    // truth (patch swaps, mute/solo, vol, ...); anything on a live/runtime
+    // path must read
     // conductor_->session(), never this member, or it'll act on a stale copy
     // (see applyTrackPatch's history — it did exactly that).
     fable::SessionData initialSession_;

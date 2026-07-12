@@ -103,6 +103,7 @@ public:
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     int  takeHostEvents(HostEvent* out, int max) {
+        if (max <= 0 || out == nullptr) return 0;
         int n = std::min((int)clipHost_.events.size(), max);
         std::copy(clipHost_.events.begin(), clipHost_.events.begin() + n, out);
         clipHost_.events.clear();

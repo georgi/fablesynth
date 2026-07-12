@@ -35,6 +35,27 @@ void overlayInline(Arr& arr, const std::map<std::string, float>& params, const T
         for (const auto& d : info)
             if (d.pid == kv.first) { arr[(size_t)d.id] = kv.second; break; }
 }
+
+// This processor is a fixed 4-track rig — every index-based engine routing
+// below (prepareToPlay/applyTrackPatch/computeTrackParams/loadTrackParams/the
+// render paths) hardcodes track 0 = DR1, track 1 = BL1, tracks 2-3 = WT1.
+// fable::validateSession (SeqModel.h) only checks the doc is internally
+// consistent (clip byte counts vs. each track's own machine) — it says
+// nothing about track count or which machine sits at which index, because
+// the web schema and codec are layout-agnostic by design (other layouts are
+// valid SessionDoc v:1 documents). So the guard belongs here, at THIS
+// processor's apply boundary, not in the shared model/codec: a schema-valid
+// doc with a different track count or a swapped machine would otherwise
+// reach applySessionJson (LOAD button, and setStateInformation's SESSION
+// child) and drive an out-of-bounds/mismatched-size read in loadTrackParams
+// (e.g. a 48-byte BL1 clip routed to DrumEngine, which reads ~256 bytes).
+bool sqLayoutMatches(const SessionData& doc) {
+    static const Machine kLayout[4] = { Machine::DR1, Machine::BL1, Machine::WT1, Machine::WT1 };
+    if (doc.tracks.size() != 4) return false;
+    for (int i = 0; i < 4; ++i)
+        if (doc.tracks[(size_t)i].machine != kLayout[i]) return false;
+    return true;
+}
 } // namespace
 
 namespace fable {
@@ -245,9 +266,13 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 
     // prepareToPlay can run again later (e.g. a host sample-rate change)
     // after the conductor has already diverged from initialSession_ (patch
-    // swaps, mute/solo, vol edits all live only in the conductor) — seed
-    // this pass from the conductor's live session when one already exists,
-    // so a re-prepare can't quietly revert runtime edits. Copied by value:
+    // swaps land in SessionData.tracks[t].patch, so they live in the
+    // conductor's session, not initialSession_) — seed this pass from the
+    // conductor's live session when one already exists, so a re-prepare
+    // can't quietly revert a patch swap. Mute/solo/vol do NOT survive a
+    // re-prepare either way: they're Conductor-owned vectors outside
+    // SessionData, reset when the fresh Conductor below is constructed.
+    // Copied by value:
     // the old conductor_ (and the session it owns) is destroyed below when
     // conductor_ is reassigned, so a reference here would dangle.
     const SessionData liveSession = conductor_ ? conductor_->session() : initialSession_;
@@ -587,6 +612,7 @@ juce::AudioProcessorEditor* SeqAudioProcessor::createEditor() {
 bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
     SessionData restored;
     if (!fable::sessionFromJson(json, restored)) return false;
+    if (!sqLayoutMatches(restored)) return false; // reject: not the fixed {DR1,BL1,WT1,WT1} rig
     initialSession_ = std::move(restored);
     if (preparedSampleRate_ > 0.0) {
         // Same stop-before-re-anchor sequencing as setStateInformation (see the

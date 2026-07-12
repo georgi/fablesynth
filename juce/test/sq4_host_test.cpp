@@ -16,6 +16,7 @@
 #include "../source/seq/dsp/SeqProtocol.h"
 #include "../source/dsp/Presets.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -110,7 +111,12 @@ int main(int argc, char** argv) {
     check(renderRms(p, buf, 400) < 1e-4, "audio decays to silence after stop");
 
     // ---- 7. State round-trip into a fresh processor: an edited clip and the
-    //        params survive; garbage state does not crash. ----
+    //        params survive; garbage state does not crash. This block is the
+    //        load-bearing check for the whole rebuild-a-processor-from-state
+    //        path (getStateInformation -> setStateInformation -> a fresh
+    //        Conductor/engines) — every other setStateInformation scenario
+    //        in this file (garbage, layout-guard rejection) only exercises
+    //        the reject branch, not a real successful rebuild. ----
     std::printf("\n== state round-trip ==\n");
     auto bytes = fable::sqEmptyClip(fable::Machine::BL1, 1);
     bytes[0] = 1; // step 0 on
@@ -433,6 +439,84 @@ int main(int argc, char** argv) {
 
         check(!p2.applySessionJson("not json"), "applySessionJson rejects garbage and returns false");
         check(p2.conductor().session().name == "RENAMED", "a rejected applySessionJson leaves the session untouched");
+    }
+
+    // ---- layout guard: this processor hardcodes a 4-track {DR1,BL1,WT1,WT1}
+    // rig; a schema-valid doc that doesn't match it (fewer tracks, or a
+    // swapped machine) must be rejected by applySessionJson (and by
+    // extension setStateInformation's SESSION path, which funnels through
+    // it) rather than reaching the index-based engine routing with a
+    // mismatched track. ----
+    {
+        std::printf("\n== session layout guard ==\n");
+
+        // A 3-track doc: schema-valid (validateSession only checks internal
+        // consistency, not track count), but not the fixed rig.
+        auto threeTrack = [] {
+            fable::SessionData s = fable::factorySession();
+            s.tracks.resize(3);
+            for (auto& sc : s.scenes) {
+                sc.clips.resize(3);
+                sc.hasClip.resize(3);
+                sc.pass.erase(std::remove_if(sc.pass.begin(), sc.pass.end(),
+                                              [](int t) { return t >= 3; }),
+                              sc.pass.end());
+            }
+            return s;
+        }();
+        check(fable::validateSession(threeTrack).empty(),
+              "3-track doc is schema-valid (sanity check on the test fixture itself)");
+
+        // A 4-track doc with track 0 swapped DR1 -> BL1 (byte-matched to the
+        // new machine so it stays schema-valid).
+        auto swappedMachine = [] {
+            fable::SessionData s = fable::factorySession();
+            s.tracks[0].machine = fable::Machine::BL1;
+            for (auto& sc : s.scenes)
+                if (sc.hasClip[0])
+                    sc.clips[0].bytes = fable::sqEmptyClip(fable::Machine::BL1, sc.clips[0].bars);
+            return s;
+        }();
+        check(fable::validateSession(swappedMachine).empty(),
+              "track-0-swapped doc is schema-valid (sanity check on the test fixture itself)");
+
+        SeqAudioProcessor p3;
+        p3.prepareToPlay(48000.0, 128);
+        juce::String nameBefore = p3.conductor().session().name;
+
+        check(!p3.applySessionJson(fable::sessionToJson(threeTrack)),
+              "applySessionJson rejects a schema-valid 3-track doc");
+        check(p3.conductor().session().name == nameBefore,
+              "rejected 3-track doc leaves the current session in place");
+        renderRms(p3, buf, 4); // must not crash
+
+        check(!p3.applySessionJson(fable::sessionToJson(swappedMachine)),
+              "applySessionJson rejects a schema-valid doc with track 0 = BL1");
+        check(p3.conductor().session().name == nameBefore,
+              "rejected swapped-machine doc leaves the current session in place");
+        renderRms(p3, buf, 4); // must not crash
+
+        // Same rejection, through setStateInformation's SESSION-doc path (the
+        // DAW state-load entry point, distinct from the LOAD button's direct
+        // applySessionJson call) -- build a real state blob, then swap only
+        // its embedded session JSON for the layout-violating doc.
+        juce::MemoryBlock validState;
+        p3.getStateInformation(validState);
+        auto xml = juce::AudioProcessor::getXmlFromBinary(validState.getData(), (int)validState.getSize());
+        check(xml != nullptr, "processor state serialises to XML for the setStateInformation test");
+        auto root = juce::ValueTree::fromXml(*xml);
+        auto sess = root.getChildWithName("SESSION");
+        check(sess.isValid(), "state XML carries a SESSION child");
+        sess.setProperty("doc", fable::sessionToJson(threeTrack), nullptr);
+        auto badXml = root.createXml();
+        juce::MemoryBlock badState;
+        juce::AudioProcessor::copyXmlToBinary(*badXml, badState);
+
+        p3.setStateInformation(badState.getData(), (int)badState.getSize());
+        check(p3.conductor().session().name == nameBefore,
+              "setStateInformation rejects a layout-violating SESSION doc, current session retained");
+        renderRms(p3, buf, 4); // must not crash
+        check(p3.getName() == "FableSynth SQ-4", "processor alive after the layout-guard rejection");
     }
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);
