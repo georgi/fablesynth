@@ -1,4 +1,5 @@
 #include "SeqProcessor.h"
+#include "SeqEditor.h"
 #include "SessionCodec.h"
 #include "dsp/SeqFactory.h"
 
@@ -25,6 +26,18 @@ enum { SQ_MASTER = 0, SQ_SWING, SQ_BPM, SQ_QUANT, SQ_VOL0, SQ_VOL1, SQ_VOL2, SQ_
 
 const std::vector<std::string> SQ_QUANT_LABELS = { "1 BAR", "1/4", "OFF" };
 
+// Overlay a pid->value patch map onto a flat engine param array, resolving pids
+// through the engine's ParamInfo table (Enum/Bool carried verbatim, matching
+// each standalone processor's inline-load path).
+template <typename Arr, typename Table>
+void overlayInline(Arr& arr, const std::map<std::string, float>& params, const Table& info) {
+    for (const auto& kv : params)
+        for (const auto& d : info)
+            if (d.pid == kv.first) { arr[(size_t)d.id] = kv.second; break; }
+}
+} // namespace
+
+namespace fable {
 const std::vector<ParamInfo>& seqParamInfo() {
     static const std::vector<ParamInfo> v = [] {
         std::vector<ParamInfo> t;
@@ -41,17 +54,7 @@ const std::vector<ParamInfo>& seqParamInfo() {
     }();
     return v;
 }
-
-// Overlay a pid->value patch map onto a flat engine param array, resolving pids
-// through the engine's ParamInfo table (Enum/Bool carried verbatim, matching
-// each standalone processor's inline-load path).
-template <typename Arr, typename Table>
-void overlayInline(Arr& arr, const std::map<std::string, float>& params, const Table& info) {
-    for (const auto& kv : params)
-        for (const auto& d : info)
-            if (d.pid == kv.first) { arr[(size_t)d.id] = kv.second; break; }
-}
-} // namespace
+} // namespace fable
 
 juce::AudioProcessorValueTreeState::ParameterLayout SeqAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -583,8 +586,7 @@ void SeqAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
 // ---- editor ----------------------------------------------------------------
 
 juce::AudioProcessorEditor* SeqAudioProcessor::createEditor() {
-    // Task 9 replaces this with the SQ-4 rack editor.
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new SeqEditor(*this);
 }
 
 // ---- session <-> JSON codec (web SessionDoc v:1) ---------------------------

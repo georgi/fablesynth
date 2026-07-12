@@ -17,6 +17,12 @@
 #include <memory>
 #include <vector>
 
+namespace fable {
+// SQ-4's flat host-parameter table (master/swing/bpm/quant/vol0..3), pid
+// strings "master" … "vol3" — the fui control resolver installed by
+// SeqEditor's header (same pattern as bassParamInfo/drumParamInfo).
+const std::vector<ParamInfo>& seqParamInfo();
+} // namespace fable
 // FableSynth SQ-4 (session launcher) processor. Hosts all four FableSynth
 // engines — DR-1 (DrumEngine), BL-1 (BassEngine), and two WT-1 (Engine) — in a
 // single plugin and renders them under one shared frame timebase, driven by the

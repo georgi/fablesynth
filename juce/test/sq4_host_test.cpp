@@ -41,7 +41,7 @@ static double renderRms(SeqAudioProcessor& p, juce::AudioBuffer<float>& buf, int
     return std::sqrt(sumSq / (double)std::max(1L, cnt));
 }
 
-int main(int, char**) {
+int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui; // message manager for the processor
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
@@ -125,6 +125,22 @@ int main(int, char**) {
 
     q.setStateInformation("garbage", 7); // must not crash
     check(q.getName() == "FableSynth SQ-4", "processor alive after garbage load");
+
+    // ---- 8. Editor: correct logical size, paints without crashing, snapshot PNG. ----
+    auto* ed = p.createEditor();
+    check(ed != nullptr, "createEditor returns non-null");
+    ed->setSize(1460, 920);
+    juce::Image img(juce::Image::ARGB, 1460, 920, true);
+    { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
+    if (argc > 1) {
+        juce::File out(argv[1]);
+        juce::FileOutputStream os(out);
+        juce::PNGImageFormat().writeImageToStream(img, os);
+    }
+    // background pixel is the theme bg, not uninitialized black-with-alpha-0
+    check(img.getPixelAt(4, 900).getAlpha() == 255, "editor background pixel opaque",
+          img.getPixelAt(4, 900).getAlpha());
+    delete ed;
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);
     return failures ? 1 : 0;
