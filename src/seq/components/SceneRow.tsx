@@ -93,7 +93,13 @@ function ClipCell({ s, t }: { s: number; t: number }) {
         tabIndex={0}
         title="Edit clip in its device"
         onClick={(e) => { e.stopPropagation(); useSeqStore.getState().enterFocus(t, s); }}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); useSeqStore.getState().enterFocus(t, s); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (e.key === ' ') e.preventDefault();
+            e.stopPropagation();
+            useSeqStore.getState().enterFocus(t, s);
+          }
+        }}
       >
         ✎
       </span>

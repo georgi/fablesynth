@@ -48,7 +48,12 @@ export function TrackHeads() {
               tabIndex={0}
               title={focus?.track === t ? undefined : 'Open device'}
               onClick={() => enterFocus(t)}
-              onKeyDown={(e) => { if (e.key === 'Enter') enterFocus(t); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === ' ') e.preventDefault();
+                  enterFocus(t);
+                }
+              }}
             >
               <div className="sq-track-name-row">
                 <span className="sq-track-name">{tr.name}</span>

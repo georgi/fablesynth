@@ -38,7 +38,7 @@ export function SeqApp() {
       const st = useSeqStore.getState();
       if (!st.focus) return;
       const el = e.target as HTMLElement | null;
-      if (el?.closest('input, textarea, select, [role="slider"]')) return;
+      if (el?.closest('input, textarea, select, [role="slider"], [contenteditable="true"]')) return;
       if (e.key === 'Escape') st.exitFocus();
       else if (e.key >= '1' && e.key <= String(st.session.tracks.length)) st.enterFocus(Number(e.key) - 1);
       else if (e.key === 'ArrowUp') { e.preventDefault(); st.focusScene(st.focus.scene - 1); }

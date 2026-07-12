@@ -430,6 +430,7 @@
   opacity: 0; transition: opacity 0.12s; font-size: 11px;
 }
 .sq-cell:hover .sq-cell-editbtn { opacity: 1; }
+.sq-cell:focus-within .sq-cell-editbtn, .sq-cell-editbtn:focus-visible { opacity: 1; }
 
 /* ============ now-playing footer ============ */
 .sq-foot-master {
@@ -522,6 +523,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1;
 }
 .sq-device-body { overflow-y: auto; min-height: 0; }
 /* Device stylesheets style their own root ids; neutralize page-level sizing
@@ -572,4 +574,3 @@
 .sq-rail-dot { width: 5px; height: 5px; border-radius: 50%; background: #1a1f2a; }
 .sq-rail-chip.live .sq-rail-dot { background: #63e6a5; box-shadow: 0 0 6px #63e6a5; }
 .sq-rail-chip.queued .sq-rail-dot { background: #e8c268; animation: sq-qpulse 0.8s ease-in-out infinite; }
-.sq-device { flex: 1; }
