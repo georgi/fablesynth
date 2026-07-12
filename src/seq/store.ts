@@ -274,9 +274,11 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       set({ session: { ...st.session, scenes } });
       clipBytes.set(`${s}:${t}`, bytes);
       persist();
-      // Live or pending on this track → hot-swap in the worklet. The worklet
-      // updates whichever exists (clip or clipPend), so no re-stamping.
-      if (st.rig && (st.owner[t] === s || st.queue[t] === s)) {
+      // The worklet applies clipupdate to its pending clip when one exists,
+      // else the live clip — send only when the edited scene is that target.
+      const q = st.queue[t];
+      const target = q != null && q !== STOP ? q : st.owner[t];
+      if (st.rig && target === s) {
         st.rig.devices[t].updateClip(bytes, bars);
       }
     },

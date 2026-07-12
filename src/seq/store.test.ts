@@ -283,6 +283,16 @@ describe('clip editing', () => {
     expect(rig.dev(0).updates).toHaveLength(1);
   });
 
+  it('routes edits to the queued clip, not the outgoing live clip', () => {
+    st().launch(0, 0);
+    rig.dev(0).onClipStart!(0); // scene 0 live
+    st().launch(0, 1); // scene 1 queued — the worklet's write target
+    st().updateClipBytes(0, 0, new Uint8Array(256), 1); // edit live scene 0
+    expect(rig.dev(0).updates).toHaveLength(0); // would clobber scene 1's pend
+    st().updateClipBytes(1, 0, new Uint8Array(2 * 256), 2); // edit queued scene 1
+    expect(rig.dev(0).updates).toEqual([{ bars: 2, bytes: 512 }]);
+  });
+
   it('sends nothing when the clip is idle or another scene owns the track', () => {
     st().launch(0, 1);
     rig.dev(0).onClipStart!(0); // scene 1 owns track 0
