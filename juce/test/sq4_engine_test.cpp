@@ -8,13 +8,16 @@
 #include "../source/drum/dsp/DrumKits.h"
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
+#include "../source/seq/dsp/Conductor.h"
 #include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqModel.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <memory>
+#include <tuple>
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
@@ -478,6 +481,316 @@ static void testDr1Hosted() {
     CHECK(rmsDrum(e, frame, 200) < 1e-4);   // fully silent once the tail has decayed
 }
 
+// Conductor tests: a FakeIO with recordable calls and a controllable frame
+// clock stands in for SeqProcessor's FIFO. Acks are fired manually to assert
+// the owner-flips-on-ack contract (store.test.ts).
+struct FakeIO : fable::ConductorIO {
+    double frame = 0;
+    struct Sched { int t; int bars; double at; size_t bytes; };
+    std::vector<Sched> clips; std::vector<std::pair<int,double>> stops;
+    std::vector<std::tuple<int, std::vector<uint8_t>, int>> updates;
+    std::map<int,float> gains; double bpm = 0, swing = -1, anchor = -1;
+    double now() override { return frame; }
+    void ioScheduleClip(int t, const std::vector<uint8_t>& b, int bars, double at) override { clips.push_back({t,bars,at,b.size()}); }
+    void ioScheduleStop(int t, double at) override { stops.push_back({t,at}); }
+    void ioUpdateClip(int t, const std::vector<uint8_t>& b, int bars) override { updates.push_back({t,b,bars}); }
+    void ioSetTrackGain(int t, float g) override { gains[t] = g; }
+    void ioSendTempo(double b, double s, double a) override { bpm = b; swing = s; anchor = a; }
+};
+
+static void testConductor() {
+    using namespace fable;
+
+    // 1. powerOn: anchor 256 frames ahead of a zero clock, tempo sent,
+    //    every track's initial gain applied.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        CHECK(c.anchor() == 256.0);
+        CHECK(io.bpm == 122.0);
+        CHECK(io.anchor == 256.0);
+        for (int t = 0; t < 4; t++)
+            CHECK(std::abs(io.gains[t] - Conductor::gainCurve(c.trackVol(t))) < 1e-9);
+    }
+
+    // 2/3/4/5/6: quantized launch, owner-flips-on-ack, re-launch retargets,
+    // quant OFF, empty-slot launch is a no-op.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        io.frame = c.anchor() + 10;
+        c.launch(0, 2); // DROP A drums
+        CHECK(io.clips.size() == 1);
+        const double bar = sqBarFrames(122, 48000);
+        CHECK(io.clips[0].t == 0 && io.clips[0].bars == 2 && io.clips[0].bytes == 512);
+        CHECK(std::abs(io.clips[0].at - (c.anchor() + bar)) < 1e-6);
+        CHECK(c.queueOf(0) == 2);
+        CHECK(c.ownerOf(0) == -2);
+
+        c.onClipStart(0);
+        CHECK(c.ownerOf(0) == 2);
+        CHECK(c.queueOf(0) == -2);
+
+        c.launch(0, 2);
+        c.launch(0, 3);
+        CHECK(io.clips.size() == 3);
+        c.onClipStart(0);
+        CHECK(c.ownerOf(0) == 3);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.cycleQuant(1);
+        c.cycleQuant(1); // 1 BAR -> 1/4 -> OFF
+        CHECK(c.quant() == Quant::Off);
+        c.launch(1, 2); // DROP A bass
+        CHECK(io.clips[0].at == 0.0);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(1, 0); // INTRO has no BASS clip
+        CHECK(io.clips.empty());
+    }
+
+    // 7. stopTrack on an owned track schedules a stop, clears on ack; on an
+    //    idle track it's a no-op.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2);
+        c.onClipStart(0);
+        c.stopTrack(0);
+        CHECK(io.stops.size() == 1);
+        CHECK(c.queueOf(0) == SQ_STOP);
+        c.onClipStop(0);
+        CHECK(c.ownerOf(0) == -2);
+        CHECK(c.queueOf(0) == -2);
+
+        c.stopTrack(2); // never touched
+        CHECK(io.stops.size() == 1);
+    }
+
+    // 8. stopTrack on a pending-only (queued, never started) launch.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2);
+        c.stopTrack(0);
+        CHECK(io.stops.size() == 1);
+        CHECK(c.queueOf(0) == SQ_STOP);
+        c.onClipStop(0);
+        CHECK(c.queueOf(0) == -2);
+        CHECK(c.ownerOf(0) == -2);
+    }
+
+    // 9. launchScene: DROP A schedules all four; INTRO schedules 0/3 and
+    //    stops the empty cells 1/2 unless pass-through.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2); // DROP A
+        CHECK(io.clips.size() == 4);
+        for (auto& s : io.clips) CHECK(std::abs(s.at - io.clips[0].at) < 1e-9);
+    }
+    // Empty cells only trigger a stop when the track is owned/queued
+    // (stopTrack is a no-op on an idle track — store.test.ts "launchScene
+    // leaves idle empty tracks alone"); so exercise it on tracks brought up
+    // by DROP A first, matching the web spec's setup.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2); // DROP A: bring all four tracks up first
+        for (int t = 0; t < 4; t++) c.onClipStart(t);
+        io.clips.clear(); io.stops.clear();
+        c.launchScene(0); // INTRO: clips on 0,3; stops on 1,2 (now owned)
+        CHECK(io.clips.size() == 2);
+        CHECK(io.stops.size() == 2);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2);
+        for (int t = 0; t < 4; t++) c.onClipStart(t);
+        c.togglePassThrough(0, 1); // INTRO track 1: remove the stop button
+        io.clips.clear(); io.stops.clear();
+        c.launchScene(0);
+        for (auto& s : io.clips) CHECK(s.t != 1);
+        for (auto& s : io.stops) CHECK(s.first != 1); // pass-through: no stop
+        CHECK(c.ownerOf(1) == 2); // DROP A bass keeps riding
+    }
+
+    // 10. stopScene stops only tracks owned by/queued for that scene;
+    //     stopAll stops every owned/queued track.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2); // DROP A, all four
+        for (int t = 0; t < 4; t++) c.onClipStart(t);
+        c.launch(0, 3); // re-queue drums to DROP B
+        c.onClipStart(0);
+        io.stops.clear();
+        c.stopScene(2);
+        bool stopped0 = false;
+        for (auto& s : io.stops) if (s.first == 0) stopped0 = true;
+        CHECK(!stopped0); // now owned by scene 3
+        CHECK(io.stops.size() == 3); // tracks 1,2,3 still owned by scene 2
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2); // queued only, no acks
+        io.stops.clear();
+        c.stopAll();
+        CHECK(io.stops.size() == 4);
+    }
+
+    // 11. mute / solo / scene-mute gains.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const float before = io.gains[0];
+        c.toggleTrackMute(0);
+        CHECK(io.gains[0] == 0.0f);
+        c.toggleTrackMute(0);
+        CHECK(std::abs(io.gains[0] - before) < 1e-9);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.toggleSolo(1);
+        CHECK(io.gains[1] > 0.0f);
+        CHECK(io.gains[0] == 0.0f);
+        CHECK(io.gains[2] == 0.0f);
+        CHECK(io.gains[3] == 0.0f);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2);
+        c.onClipStart(0);
+        c.toggleSceneMute(2);
+        CHECK(io.gains[0] == 0.0f);
+        CHECK(io.gains[1] > 0.0f); // unowned track keeps its independent open gate
+    }
+
+    // 12. setSwing re-sends tempo with the unchanged anchor.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const double anchor = c.anchor();
+        c.setSwing(0.4);
+        CHECK(io.swing == 0.4);
+        CHECK(io.anchor == anchor);
+    }
+
+    // 13. setBpm is guarded while any track is owned/queued; applies and
+    //     re-anchors once the launcher is idle.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2);
+        c.setBpm(140);
+        CHECK(c.session().bpm == 122.0);
+        CHECK(io.bpm == 122.0);
+        c.onClipStart(0);
+        c.setBpm(140); // still owned
+        CHECK(c.session().bpm == 122.0);
+        c.stopTrack(0);
+        c.onClipStop(0);
+        io.frame = c.anchor() + 500;
+        c.setBpm(140);
+        CHECK(c.session().bpm == 140.0);
+        CHECK(io.bpm == 140.0);
+        CHECK(io.anchor == io.frame + 256.0);
+    }
+
+    // 14. updateClipBytes routes to the queued target when one is real,
+    //     else the owner; unrelated edits never reach the engine; the doc
+    //     is always updated.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 0); // INTRO drums
+        c.onClipStart(0); // owner[0] = 0
+        std::vector<uint8_t> bytes(256, 7);
+        c.updateClipBytes(0, 0, bytes, 1);
+        CHECK(io.updates.size() == 1);
+        CHECK(std::get<0>(io.updates[0]) == 0);
+        CHECK(c.session().scenes[0].clips[0].bytes[0] == 7);
+
+        c.launch(0, 1); // BUILD drums queued — the worklet's write target
+        std::vector<uint8_t> liveBytes(256, 9);
+        c.updateClipBytes(0, 0, liveBytes, 1); // edit the outgoing live scene
+        CHECK(io.updates.size() == 1); // unchanged: would clobber the pending clip
+        CHECK(c.session().scenes[0].clips[0].bytes[0] == 9); // doc still updates
+
+        std::vector<uint8_t> queuedBytes(512, 3);
+        c.updateClipBytes(1, 0, queuedBytes, 2); // edit the queued scene
+        CHECK(io.updates.size() == 2);
+        CHECK(std::get<0>(io.updates[1]) == 0);
+        CHECK(std::get<2>(io.updates[1]) == 2);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        std::vector<uint8_t> bytes(256, 5);
+        c.updateClipBytes(5, 0, bytes, 1); // OUTRO drums, track idle
+        CHECK(io.updates.empty());
+        CHECK(c.session().scenes[5].clips[0].bytes[0] == 5);
+    }
+
+    // 15. createClip writes a silent 1-bar clip into an empty cell only.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        CHECK(!c.session().scenes[0].hasClip[1]); // INTRO has no BASS clip
+        c.createClip(0, 1);
+        CHECK(c.session().scenes[0].hasClip[1]);
+        const auto& clip = c.session().scenes[0].clips[1];
+        CHECK(clip.bars == 1);
+        CHECK(clip.bytes.size() == 48); // BL1: 16 * 3
+        for (size_t i = 2; i < clip.bytes.size(); i += 3) CHECK(clip.bytes[i] == 1); // neutral oct
+        c.createClip(0, 1); // no-op: cell no longer empty
+        CHECK(c.session().scenes[0].clips[1].bars == 1);
+    }
+
+    // 16. cycleQuant wraps 1 BAR -> 1/4 -> OFF -> 1 BAR in both directions.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        CHECK(c.quant() == Quant::Bar);
+        c.cycleQuant(1);
+        CHECK(c.quant() == Quant::Quarter);
+        c.cycleQuant(1);
+        CHECK(c.quant() == Quant::Off);
+        c.cycleQuant(1);
+        CHECK(c.quant() == Quant::Bar);
+        c.cycleQuant(-1);
+        CHECK(c.quant() == Quant::Off);
+    }
+}
+
 int main() {
     testProtocol();
     testModelAndFactory();
@@ -487,6 +800,7 @@ int main() {
     testBl1Hosted();
     testBl1ClipSwapGatesOldNote();
     testDr1Hosted();
+    testConductor();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;
