@@ -288,6 +288,12 @@ int main(int argc, char** argv) {
               "note / acc / oct encode at sqNoteIdx(0,1)");
     }
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
+    if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
+        juce::File out(argv[3]);
+        out.deleteFile();
+        juce::FileOutputStream os(out);
+        juce::PNGImageFormat().writeImageToStream(img, os);
+    }
 
     ed2->focusScene(4);
     check(ed2->focus() == std::make_pair(1, 4), "focusScene(4) moves the scene, keeps the track");
