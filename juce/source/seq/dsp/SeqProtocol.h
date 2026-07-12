@@ -18,6 +18,7 @@ constexpr int SQ_NOTE_STRIDE   = 3;   // BL1/WT1: flags, note, oct+1 per step
 constexpr int SQ_MAX_BARS      = 16;
 constexpr int SQ_HOSTED_MAX_BARS = 4; // hosted editor cap (= device NPATTERNS)
 constexpr int SQ_STOP          = -1;  // queue sentinel: "stop the track"
+constexpr double SQ_SWING_MAX  = 0.667; // odd-16th delay fraction of a step (matches worklet SEQ_SWING_MAX)
 
 inline int sqBytesPerBar(Machine m) {
     return m == Machine::DR1 ? SQ_DR1_PADS * SQ_STEPS_PER_BAR

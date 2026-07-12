@@ -1,3 +1,4 @@
+#include "../source/dsp/ClipHost.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include <cassert>
 #include <cmath>
@@ -42,8 +43,132 @@ static void testProtocol() {
     CHECK(p.beat == 1 && p.bar == 2);
 }
 
+// Drive a ClipHost through consecutive 128-sample quanta from frame f0,
+// recording fires; returns fired absolute steps.
+static std::vector<int> run(fable::ClipHost& h, double f0, int blocks,
+                            std::vector<fable::HostEvent>& evs) {
+    std::vector<int> fired;
+    for (int b = 0; b < blocks; b++)
+        h.tick(f0 + b * 128.0, 128, [&](int abs) { fired.push_back(abs); });
+    evs = h.events; // accumulated; caller clears
+    return fired;
+}
+
+static void testClipHost() {
+    using namespace fable;
+    const double sr = 48000, bpm = 125;           // stepDur = 5760 exactly
+    const double stepDur = sqSamplesPerStep(bpm, sr);
+
+    // 1. Pending swaps in at atFrame, Start event posted, first fire is the
+    //    phase-locked entry step (anchor-derived), not step 0.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, /*anchor*/ 256);
+        auto clip = sqEmptyClip(Machine::DR1, 1);
+        const double at = 256 + 16 * stepDur;      // exactly one bar after anchor
+        h.scheduleClip(clip.data(), clip.size(), 1, at);
+        std::vector<HostEvent> evs;
+        auto fired = run(h, at - 128, 4, evs);     // spans the swap frame
+        CHECK(!evs.empty() && evs[0].t == HostEvent::T::Start);
+        CHECK(!fired.empty() && fired[0] == 0);    // 16 steps in = step 0 of a 1-bar clip
+        // steps advance by stepDur
+        if (fired.size() > 1) CHECK(fired[1] == 1);
+    }
+    // 2. Entry mid-clip: launch a 2-bar clip 5 steps after the anchor -> enters at step 5.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        auto clip = sqEmptyClip(Machine::BL1, 2);
+        const double at = 5 * stepDur;
+        h.scheduleClip(clip.data(), clip.size(), 2, at);
+        std::vector<HostEvent> evs;
+        auto fired = run(h, at - 64, 2, evs);
+        CHECK(!fired.empty() && fired[0] == 5);
+    }
+    // 3. Re-schedule before the boundary replaces pending (one pending slot).
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        auto a = sqEmptyClip(Machine::DR1, 1), b = sqEmptyClip(Machine::DR1, 2);
+        h.scheduleClip(a.data(), a.size(), 1, 16 * stepDur);
+        h.scheduleClip(b.data(), b.size(), 2, 16 * stepDur);
+        std::vector<HostEvent> evs;
+        run(h, 16 * stepDur - 128, 2, evs);
+        CHECK(h.playingBars() == 2);
+    }
+    // 4. scheduleStop cancels a pending clip; Stop event still acks.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        auto a = sqEmptyClip(Machine::DR1, 1);
+        h.scheduleClip(a.data(), a.size(), 1, 16 * stepDur);
+        h.scheduleStop(16 * stepDur);
+        std::vector<HostEvent> evs;
+        auto fired = run(h, 16 * stepDur - 128, 3, evs);
+        CHECK(fired.empty());
+        bool sawStop = false;
+        for (auto& e : evs) if (e.t == HostEvent::T::Stop) sawStop = true;
+        CHECK(sawStop && !h.isPlaying());
+    }
+    // 5. Stop on a playing clip stops it at atFrame; no fires after.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        auto a = sqEmptyClip(Machine::DR1, 1);
+        h.scheduleClip(a.data(), a.size(), 1, 0);   // quant OFF: at<=frame fires now
+        std::vector<HostEvent> evs;
+        run(h, 0, 4, evs);
+        CHECK(h.isPlaying());
+        h.scheduleStop(8 * stepDur);
+        evs.clear(); h.events.clear();
+        auto fired = run(h, 4 * stepDur, 8 * (int)(stepDur / 128) + 4, evs);
+        for (int s : fired) CHECK(s < 8);
+        CHECK(!h.isPlaying());
+    }
+    // 6. updateClip on the live slot preserves phase (playhead doesn't move):
+    //    grow 1 bar -> 2 bars mid-flight, next fire continues the global grid.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        auto a = sqEmptyClip(Machine::WT1, 1);
+        h.scheduleClip(a.data(), a.size(), 1, 0);
+        std::vector<HostEvent> evs;
+        run(h, 0, 3 * (int)(stepDur / 128), evs);   // ~3 steps in
+        auto bigger = sqEmptyClip(Machine::WT1, 2);
+        h.updateClip(bigger.data(), bigger.size(), 2);
+        evs.clear(); h.events.clear();
+        auto fired = run(h, 3 * stepDur + 128, (int)(stepDur / 128), evs);
+        CHECK(!fired.empty() && fired[0] >= 3 && fired[0] <= 4);
+        CHECK(h.playingBars() == 2);
+    }
+    // 7. updateClip targets the PENDING slot when one exists.
+    {
+        ClipHost h; h.setTempo(bpm, 0, sr, 0);
+        auto a = sqEmptyClip(Machine::WT1, 1);
+        h.scheduleClip(a.data(), a.size(), 1, 32 * stepDur);
+        auto b = sqEmptyClip(Machine::WT1, 4);
+        h.updateClip(b.data(), b.size(), 4);
+        std::vector<HostEvent> evs;
+        run(h, 32 * stepDur - 128, 2, evs);
+        CHECK(h.playingBars() == 4);
+    }
+    // 8. Swing delays odd 16ths by swing*0.667 of a step.
+    {
+        ClipHost h; h.setTempo(bpm, 0.5, sr, 0);
+        auto a = sqEmptyClip(Machine::DR1, 1);
+        h.scheduleClip(a.data(), a.size(), 1, 0);
+        std::vector<double> fireFrames;
+        double f = 0;
+        for (int b = 0; b < 200; b++) {
+            h.tick(f, 128, [&](int) { fireFrames.push_back(f); });
+            f += 128;
+        }
+        // step1 fires ~ stepDur*(1 + 0.5*0.667) after step0 (within a quantum)
+        CHECK(fireFrames.size() >= 3);
+        double d01 = fireFrames[1] - fireFrames[0];
+        double d12 = fireFrames[2] - fireFrames[1];
+        CHECK(std::abs(d01 - stepDur * (1 + 0.5 * 0.667)) <= 128.0);
+        CHECK(std::abs(d12 - stepDur * (1 - 0.5 * 0.667)) <= 128.0);
+    }
+}
+
 int main() {
     testProtocol();
+    testClipHost();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;
