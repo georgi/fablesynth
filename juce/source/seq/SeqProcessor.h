@@ -20,7 +20,7 @@
 namespace fable {
 // SQ-4's flat host-parameter table (master/swing/bpm/quant/vol0..3), pid
 // strings "master" … "vol3" — the fui control resolver installed by
-// SeqEditor's header (same pattern as bassParamInfo/drumParamInfo).
+// SeqHeader.cpp (same pattern as bassParamInfo/drumParamInfo).
 const std::vector<ParamInfo>& seqParamInfo();
 } // namespace fable
 // FableSynth SQ-4 (session launcher) processor. Hosts all four FableSynth

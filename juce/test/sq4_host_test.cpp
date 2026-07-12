@@ -6,6 +6,7 @@
 // grid, per-track mute, pause (frame freeze), stopAll decay, and a full
 // session+params state round-trip. Modeled on bass_host_test.cpp.
 #include "../source/seq/SeqProcessor.h"
+#include "../source/seq/SeqEditor.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 
 #include <array>
@@ -140,6 +141,34 @@ int main(int argc, char** argv) {
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
     check(img.getPixelAt(4, 900).getAlpha() == 255, "editor background pixel opaque",
           img.getPixelAt(4, 900).getAlpha());
+
+    // ---- 9. Header interactions drive the conductor. ----
+    std::printf("\n== header ==\n");
+    auto* seqEditor = dynamic_cast<SeqEditor*>(ed);
+    check(seqEditor != nullptr, "editor is a SeqEditor");
+    auto& hdr = seqEditor->header();
+    hdr.quantStep(1);
+    check(p.conductor().quant() == fable::Quant::Quarter, "quantStep(+1) advances quant",
+          (double)(int)p.conductor().quant());
+    hdr.quantStep(-1);
+    check(p.conductor().quant() == fable::Quant::Bar, "quantStep(-1) returns to 1 BAR",
+          (double)(int)p.conductor().quant());
+    hdr.playClick();
+    check(p.paused(), "playClick pauses");
+    hdr.playClick();
+    check(!p.paused(), "playClick again unpauses");
+
+    p.conductor().launchScene(1);
+    renderRms(p, buf, 800);
+    p.drainAcks();
+    check(p.conductor().ownerOf(0) != -2, "scene launched before stopAllClick",
+          p.conductor().ownerOf(0));
+    hdr.stopAllClick();
+    renderRms(p, buf, 1200);
+    p.drainAcks();
+    check(p.conductor().ownerOf(0) == -2, "stopAllClick schedules stops for owned tracks",
+          p.conductor().ownerOf(0));
+
     delete ed;
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);

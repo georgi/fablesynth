@@ -13,25 +13,10 @@
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 
-namespace {
-// The SQ-4 host-param resolver for fui controls (Task 10's header knobs) —
-// same pattern as bassInfoLookup/drumInfoLookup, installed once here since
-// SeqHeader.cpp is still a Task 10 placeholder.
-const fable::ParamInfo* seqInfoLookup(const std::string& pid) {
-    for (const auto& d : fable::seqParamInfo())
-        if (d.pid == pid) return &d;
-    return nullptr;
-}
-const bool g_seqResolverInstalled = [] {
-    fui::setParamInfoResolver(&seqInfoLookup);
-    return true;
-}();
-} // namespace
-
 // ---- SeqRack ----
-SeqRack::SeqRack(SeqAudioProcessor&) {
-    for (auto* c : std::initializer_list<juce::Component*>{
-             &header, &trackHeads, &sceneGrid, &footer, &hint, &clipEdit })
+SeqRack::SeqRack(SeqAudioProcessor& p) : header(p) {
+    addAndMakeVisible(header);
+    for (auto* c : std::initializer_list<juce::Component*>{ &trackHeads, &sceneGrid, &footer, &hint, &clipEdit })
         addAndMakeVisible(*c);
     clipEdit.setVisible(false); // Task 13: focus-mode overlay, hidden until entered
 }
