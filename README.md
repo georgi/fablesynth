@@ -111,9 +111,19 @@ and play.
 | --- | --- |
 | Knobs | drag vertically · `shift` = fine · double-click = reset · scroll wheel |
 | Computer keys | `A W S E D F T G Y H U J K O L P ; '` play notes · `Z`/`X` octave |
-| `Esc` | panic (all notes off) |
+| `Esc` | panic (all notes off, stops the sequencer) |
 | MIDI | plug in a controller — notes + pitch bend (Chrome/Edge) |
 | On-screen keys | click/touch, vertical position = velocity, drag for glissando |
+
+The web rack also carries a **16-step note sequencer** (the NOTE SEQ panel,
+web-only for now): 12 note lanes per step with per-step octave (−1/0/+1),
+**accents** (full velocity — route VELO in the mod matrix to make them bite)
+and **ties** (legato retune of the sounding voice, no envelope retrigger; turn
+up GLIDE and a tie becomes a slide). Four patterns A–D with chaining, swing,
+gate length, a root-note stepper and RAND — the same workflow as the DR-1 and
+BL-1 sequencers, driving the full polyphonic engine. Synced LFOs lock to the
+sequencer tempo, and patterns persist in `localStorage`. This is the WT-1
+half of the groundwork for the FableSeq SQ-4 session launcher.
 
 ## DR-1 drum machine
 
@@ -194,6 +204,29 @@ running). Two builds from one source of truth:
   overlapping keys = legato slide), computer keys `A W S E D …` with `Z`/`X`
   octave, `Esc` stops, MIDI in from C2 with last-note priority.
 
+## SQ-4 session launcher
+
+SQ-4 is a session clip launcher in the spirit of Ableton's Session View,
+**driving all three real instruments from one page**: one shared
+`AudioContext` hosts a DR-1, a BL-1 and two WT-1 engines (LEAD + PADS), four
+tracks crossed with six scenes of real, playable clips. Tap a clip to launch
+it, tap again to stop; scenes layer freely and the latest launch wins each
+track. Launches quantize to the clock (**1 BAR**, **1/4** or **OFF**): the
+conductor stamps every command with an absolute context frame, and because
+all four worklets share the same `currentFrame` timebase, clips launched at
+one boundary start in the same render quantum and never drift apart. Queued
+cells pulse until the boundary; the grid flips to LIVE on the worklet's ack —
+exactly when the audio changed. Per-track mute/solo and per-scene mute are
+gain ramps on the shared graph; pause is `ctx.suspend()`, so everything
+freezes and resumes in phase. The SUM scope and the VU meters draw the real
+per-track analysers. The factory session (NEON TALE, 122 BPM) ships six
+scenes of handcrafted patterns in each machine's native format. State,
+document schema and the hosted worklet protocol are specified in
+[`docs/sq4-clips.md`](docs/sq4-clips.md).
+
+- **Web app** — served at `/seq/` (`npm run dev`, then open
+  `http://localhost:5173/seq/`).
+
 ## Code layout
 
 The **plugins** (C++/JUCE — WT-1, DR-1 and BL-1) live in [`juce/`](juce/) — see
@@ -213,6 +246,7 @@ src/engine/synth.ts        AudioContext, FX graph, param routing
 src/components/WavetableEditor.tsx  import / draw modal
 src/params.ts              single source of truth for every parameter
 src/presets.ts             factory + localStorage user presets
+src/noteseq.ts             16-step note-sequencer data model + timing math
 src/store.ts               Zustand store: param state + transport, engine glue
 src/components/            knobs, steppers, sliders, keyboard, canvas displays
 src/components/panels/     the rack layout (oscillators, filter, env, fx, …)
@@ -248,4 +282,21 @@ src/bass/patches.ts              factory patches + localStorage user patches
 src/bass/store.ts                Zustand store: params, patterns, chain, transport
 src/bass/components/             osc/filter/env panels, keys, pitch seq, FX rack
 src/bass/hooks/                  computer-keyboard + MIDI note input
+```
+
+The **SQ-4 session launcher** (TypeScript, fifth vite entry at `seq/index.html`):
+
+```
+src/seq/protocol.ts              session document schema, clip payload layouts,
+                                 base64 codec, shared-timebase boundary math
+src/seq/factory.ts               the NEON TALE factory session: 6 scenes of
+                                 handcrafted clips in each machine's format
+src/seq/devices.ts               SeqDevice adapters wrapping the three engines
+src/seq/rig.ts                   shared AudioContext, per-track gains/analysers,
+                                 final limiter
+src/seq/store.ts                 the conductor: owner/queue state, quantized
+                                 scheduling, ack handling, mute/solo gains
+src/seq/model.ts                 pure launcher rules + pattern-byte previews
+src/seq/components/              top bar, track heads, scene rows, clip cells,
+                                 now-playing footer, SUM scope, VU meters
 ```

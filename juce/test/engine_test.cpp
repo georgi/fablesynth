@@ -668,6 +668,227 @@ int main() {
         }
     }
 
+    printf("\n== 13. Note sequencer (worklet.js seqFire/seqTie/seqGateOff parity) ==\n");
+    {
+        // -- constants + packed-layout parity with noteseq.ts --
+        check(SEQ_ACCENT_VEL == 1.0f && SEQ_PLAIN_VEL == 0.72f,
+              "accent/plain velocities 1.0 / 0.72");
+        check(std::abs(SEQ_SWING_MAX - 0.667) < 1e-9, "SWING_MAX = 0.667");
+        check(SEQ_PATTERN_BYTES == 4 * 16 * 3, "4 patterns x 16 steps x 3 bytes");
+        {
+            auto pats = makeEmptySeqPatterns();
+            bool neutral = true;
+            for (int p = 0; p < SEQ_NPATTERNS; p++)
+                for (int s = 0; s < SEQ_STEPS; s++) {
+                    auto st = getNoteSeqStep(pats.data(), p, s);
+                    if (st.on || st.oct != 0) neutral = false;
+                }
+            check(neutral, "empty patterns read back as neutral rests (oct byte = 1)");
+            NoteSeqStep w; w.on = true; w.note = 7; w.oct = -1; w.acc = true; w.tie = true;
+            setNoteSeqStep(pats.data(), 2, 11, w);
+            auto r = getNoteSeqStep(pats.data(), 2, 11);
+            check(r.on && r.acc && r.tie && r.note == 7 && r.oct == -1, "step round-trips");
+            auto er = Engine::readSeqStep(pats.data(), 2, 11);
+            check(er.on && er.acc && er.tie && er.semi == 7 - 12,
+                  "engine unpack folds note+oct to semi", std::to_string(er.semi));
+        }
+
+        // Base sequencer params: fast attack, full sustain, short release so
+        // gate-off edges are observable; seq defaults (120 BPM -> 6000-sample
+        // steps at 48 kHz).
+        auto seqParams = [&] {
+            auto p = defaultParams();
+            p[ENV1_BASE + 0] = 0.001f;  // ATK
+            p[ENV1_BASE + 2] = 1.0f;    // SUS
+            p[ENV1_BASE + 3] = 0.005f;  // REL
+            return p;
+        };
+        const double stepDur = (60.0 / 120.0 / 4.0) * sr;   // 6000
+        auto onset = [](const std::vector<float>& v, int from) {
+            for (int i = from; i < (int)v.size(); i++)
+                if (std::abs(v[i]) > 1e-4f) return i;
+            return -1;
+        };
+        auto rmsw = [](const std::vector<float>& v, int a, int b) {
+            double s = 0; int n = 0;
+            for (int i = a; i < b && i < (int)v.size(); i++) { s += (double)v[i] * v[i]; n++; }
+            return n ? std::sqrt(s / n) : 0.0;
+        };
+        auto renderSeq = [&](const std::vector<uint8_t>& pats, const ParamArray& p,
+                             int nSamples) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(p);
+            e.setSeqPatterns(pats.data(), (int)pats.size());
+            e.seqPlay();
+            std::vector<float> L((size_t)nSamples, 0.0f), R((size_t)nSamples, 0.0f);
+            e.render(L.data(), R.data(), nSamples);
+            return L;
+        };
+
+        // -- (a) steps fire at the right sample positions for a given BPM --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            setNoteSeqStep(pats.data(), 0, 4, s0);
+            auto buf = renderSeq(pats, seqParams(), 30000);
+            const int o0 = onset(buf, 0);
+            const int o4 = onset(buf, 20000);   // past step 0's gated tail
+            check(o0 >= 0 && o0 < 96, "step 1 fires at sample 0", std::to_string(o0));
+            check(o4 >= 24000 && o4 < 24000 + 96,
+                  "step 5 fires at 4 * 6000 samples @ 120 BPM", std::to_string(o4));
+            check(rmsw(buf, 12000, 23000) < 1e-4,
+                  "rest steps stay silent between the notes");
+        }
+
+        // -- (b) accent velocity 1.0 vs 0.72 (velGain = 0.25 + 0.75 v^2) --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            auto plain = renderSeq(pats, seqParams(), 3200);
+            s0.acc = true;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            auto accented = renderSeq(pats, seqParams(), 3200);
+            const double rp = rmsw(plain, 500, 3000), ra = rmsw(accented, 500, 3000);
+            const double expect = 1.0 / (0.25 + 0.75 * 0.72 * 0.72); // 1.5655
+            check(rp > 1e-4 && std::abs(ra / rp - expect) < 0.15 * expect,
+                  "accent/plain gain ratio matches velocities 1.0/0.72",
+                  "ratio=" + std::to_string(ra / rp) + " expect=" + std::to_string(expect));
+        }
+
+        // -- (c) tie: legato retune, no amp-env retrigger, gate held through --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            NoteSeqStep s1; s1.on = true; s1.note = 7; s1.tie = true;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            setNoteSeqStep(pats.data(), 0, 1, s1);
+            auto tied = renderSeq(pats, seqParams(), 15000);
+            s1.tie = false; s1.on = false;                 // variant: step 1 rests
+            setNoteSeqStep(pats.data(), 0, 1, s1);
+            auto cut = renderSeq(pats, seqParams(), 15000);
+
+            // gate held through the step when the next step ties in: past the
+            // gate point (0.55 * 6000 = 3300) the tied run must keep sounding
+            const double rTied = rmsw(tied, 4000, 5900), rCut = rmsw(cut, 4000, 5900);
+            check(rTied > 10 * std::max(rCut, 1e-6),
+                  "tie holds the gate through the step",
+                  std::to_string(rCut) + " -> " + std::to_string(rTied));
+
+            // no envelope retrigger: windowed level stays continuous across the
+            // step-2 boundary at 6000 (a retrigger would fade to silence first)
+            double wMin = 1e9, wMax = 0;
+            for (int a = 5000; a + 256 <= 7200; a += 128) {
+                double w = rmsw(tied, a, a + 256);
+                wMin = std::min(wMin, w); wMax = std::max(wMax, w);
+            }
+            check(wMax > 1e-3 && wMin > 0.3 * wMax,
+                  "tie does not retrigger the amp envelope (no level dip)",
+                  "min/max=" + std::to_string(wMin / wMax));
+
+            // the tie retunes: +7 semitones -> ~1.5x zero crossings (GLIDE 0 snaps)
+            auto crossings = [&](const std::vector<float>& v, int a, int b) {
+                int c = 0;
+                for (int i = a + 1; i < b; i++)
+                    if ((v[i - 1] < 0 && v[i] >= 0) || (v[i - 1] >= 0 && v[i] < 0)) c++;
+                return c;
+            };
+            const int cb = crossings(tied, 4200, 5800), ca = crossings(tied, 6200, 7800);
+            check(ca > cb * 5 / 4, "tie retunes the sounding voice (+7 semi)",
+                  std::to_string(cb) + " -> " + std::to_string(ca));
+        }
+
+        // -- (d) gate closes at the seq.gate fraction of the step --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            auto pHalf = seqParams(); pHalf[SEQ_GATE] = 0.5f;   // gate off @ 3000
+            auto pLong = seqParams(); pLong[SEQ_GATE] = 0.9f;   // gate off @ 5400
+            auto half = renderSeq(pats, pHalf, 6000);
+            auto full = renderSeq(pats, pLong, 6000);
+            check(rmsw(half, 1000, 2900) > 1e-3, "gate 0.5: sounding before 0.5 * dur");
+            check(rmsw(half, 3600, 5400) < 0.05 * rmsw(half, 1000, 2900),
+                  "gate 0.5: released after 0.5 * dur",
+                  std::to_string(rmsw(half, 3600, 5400)));
+            check(rmsw(full, 3600, 5200) > 1e-3, "gate 0.9: still sounding at 0.75 * dur");
+        }
+
+        // -- (e) swing delays odd 16ths by swing * 0.667 * step --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            setNoteSeqStep(pats.data(), 0, 1, s0);
+            auto pShort = seqParams(); pShort[SEQ_GATE] = 0.1f; // step 1 dies fast
+            auto straight = renderSeq(pats, pShort, 14000);
+            auto pSwung = pShort; pSwung[SEQ_SWING] = 1.0f;
+            auto swung = renderSeq(pats, pSwung, 14000);
+            const int oS = onset(straight, 3000), oW = onset(swung, 3000);
+            check(oS >= 5900 && oS < 6100, "swing 0: step 2 fires at 6000", std::to_string(oS));
+            const double delta = oW - oS, expect = SEQ_SWING_MAX * stepDur; // 4002
+            check(std::abs(delta - expect) < 130,
+                  "full swing delays step 2 by 0.667 * dur",
+                  std::to_string(delta) + " vs " + std::to_string(expect));
+        }
+
+        // -- (f) chain advances to the next pattern at the bar wrap --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            NoteSeqStep sB; sB.on = true; sB.note = 2;
+            setNoteSeqStep(pats.data(), 1, 0, sB);
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(seqParams());
+            e.setSeqPatterns(pats.data(), (int)pats.size());
+            const int chain[2] = { 0, 1 };
+            e.setSeqChain(chain, 2);
+            e.seqPlay();
+            std::vector<float> L((size_t)(17.5 * stepDur), 0.0f), R(L.size(), 0.0f);
+            e.render(L.data(), R.data(), (int)L.size());   // 1.5 bars
+            check(e.seqCurrentPattern() == 1, "chain A->B follows the bar wrap",
+                  std::to_string(e.seqCurrentPattern()));
+            check(e.seqCurrentStep() == 1, "step counter wrapped into bar 2",
+                  std::to_string(e.seqCurrentStep()));
+            e.seqStop();
+            check(e.seqCurrentStep() == -1 && !e.seqIsPlaying(), "stop resets the step");
+        }
+
+        // -- (g) host transport lock: steps derive from the playhead ppq --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            setNoteSeqStep(pats.data(), 0, 0, s0);
+            setNoteSeqStep(pats.data(), 0, 4, s0);
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(seqParams());
+            e.setSeqPatterns(pats.data(), (int)pats.size());
+            // host rolling at 150 BPM from ppq 0 — no internal play() at all
+            const double bpm = 150.0, spb = 60.0 / bpm * sr; // samples per beat
+            std::vector<float> L((size_t)(2.0 * spb), 0.0f), R(L.size(), 0.0f);
+            double ppq = 0;
+            const int block = 480;
+            for (int off = 0; off + block <= (int)L.size(); off += block) {
+                e.setBpmOverride(bpm);
+                e.setSeqHostTransport(ppq, bpm, true);
+                e.render(L.data() + off, R.data() + off, block);
+                ppq += block / spb;
+            }
+            check(e.seqIsPlaying(), "host transport reports playing");
+            const int o0 = onset(L, 0);
+            const int o4 = onset(L, (int)(0.8 * spb));
+            const int expect4 = (int)(1.0 * spb);            // step 4 = beat 1
+            check(o0 >= 0 && o0 < 96, "host-locked step 1 fires at ppq 0", std::to_string(o0));
+            check(o4 >= expect4 - 96 && o4 < expect4 + 96,
+                  "host-locked step 5 fires on beat 2 at 150 BPM",
+                  std::to_string(o4) + " vs " + std::to_string(expect4));
+            e.setSeqHostTransport(ppq, bpm, false);          // host stop
+            check(!e.seqIsPlaying() && e.seqCurrentStep() == -1, "host stop stops the sequencer");
+        }
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;
 }

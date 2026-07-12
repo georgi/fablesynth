@@ -164,6 +164,27 @@ void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
     step_ = s;
 }
 
+// Hosted twin of fireStepAt (docs/sq4-clips.md §6, js: BassProcessor.clipFire).
+// Identical trigger/glide/gate-off logic to fireStepAt — only the byte source
+// changes from the pattern bank (pats_/chain_) to the ClipHost's live clip,
+// and the tie lookahead wraps within the clip's own bar count rather than a
+// separate chain. Does not touch step_ (that's the internal/host-transport
+// sequencer's own position; clipHost_.clipStep() is the hosted position).
+void BassEngine::clipFireAt(int abs) {
+    const uint8_t* clip = clipHost_.clipData();
+    const int total = std::max(1, clipHost_.clipBars() * BL_STEPS);
+    const int s = abs % BL_STEPS;
+    const BassStep st = readStep(clip, abs / BL_STEPS, s);
+    if (st.on) {
+        if (st.slide && gate_) glideTo(st.semi, st.acc);
+        else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
+        const int absN = (abs + 1) % total;
+        const BassStep stN = readStep(clip, absN / BL_STEPS, absN % BL_STEPS);
+        const double dur = sqSamplesPerStep(effectiveBpm(), sr_);
+        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : BL_GATE_FRAC * dur;
+    }
+}
+
 // js:187-218
 void BassEngine::fireStep() {
     const double bpm = effectiveBpm();
@@ -586,7 +607,10 @@ void BassEngine::render(float* L, float* R, int n) {
         return;
     }
 
-    const bool hostRun = hostPlaying_;
+    // Hosted clip mode owns the transport exclusively: it suppresses both the
+    // host-transport-locked and internal-clock firing below so the
+    // standalone sequencer and the hosted clip can never double-fire.
+    const bool hostRun = hostPlaying_ && !hostClipMode_;
     double ppqPerSample = 0, samplesPerPpq = 0;
     if (hostRun) {
         ppqPerSample = hostBpm_ / 60.0 / sr_;
@@ -594,6 +618,7 @@ void BassEngine::render(float* L, float* R, int n) {
         if (!hostSynced_) hostResync();
     }
     const double beatsPerSample = effectiveBpm() / 60.0 / sr_;
+    const bool internalRun = playing_ && !hostClipMode_;
 
     int pos = 0;
     while (pos < n) {
@@ -607,21 +632,36 @@ void BassEngine::render(float* L, float* R, int n) {
                 if (fireAt - pos < run) run = (int)(fireAt - pos);
                 break;
             }
-        } else if (playing_) {
+        } else if (internalRun) {
             if (samplesToNext_ <= 0) fireStep();
             run = std::min(run, (int)std::ceil(samplesToNext_));
+        } else if (hostClipMode_) {
+            // At most one fire per quantum (ClipHost contract). onSwap ends
+            // the OUTGOING clip's sounding note before the new clip's entry
+            // fire (docs §6 rule 4). A Stop event means the clip transport
+            // just gated the voice off (docs §6 rule 3 — release, not panic:
+            // Stop semantics release the mono voice, never a hard kill).
+            const size_t evBefore = clipHost_.events.size();
+            clipHost_.tick(
+                hostFrame_, run,
+                [&](int abs) { clipFireAt(abs); },
+                [&](bool wasPlaying) { if (wasPlaying) release(); });
+            for (size_t i = evBefore; i < clipHost_.events.size(); i++)
+                if (clipHost_.events[i].t == HostEvent::T::Stop) release();
         }
         if (samplesToGateOff_ >= 0)
             run = std::min(run, std::max(1, (int)std::ceil(samplesToGateOff_)));
 
         const double beats = hostRun ? hostPpq_ + pos * ppqPerSample
-                                     : songPos_ * beatsPerSample;
+                            : hostClipMode_ ? std::max(0.0, hostFrame_ - anchorFrame_) * beatsPerSample
+                                            : songPos_ * beatsPerSample;
         renderVoice(L, R, pos, run, beats);
 
-        if (playing_) {
+        if (internalRun) {
             samplesToNext_ -= run;
             songPos_ += run;
         }
+        if (hostClipMode_) hostFrame_ += run;
         if (samplesToGateOff_ >= 0) {
             samplesToGateOff_ -= run;
             if (samplesToGateOff_ <= 0) {

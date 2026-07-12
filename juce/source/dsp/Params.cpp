@@ -100,6 +100,12 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({MASTER_VOLUME, "master.volume", "MASTER", 0, 1,    0.75f, Curve::Lin, Kind::Float, nullptr});
     v.push_back({MASTER_GLIDE,  "master.glide",  "GLIDE",  0, 0.5f, 0,     Curve::Lin, Kind::Float, nullptr});
 
+    // Note sequencer (params.ts seq.*).
+    v.push_back({SEQ_BPM,   "seq.bpm",   "BPM",   60,   200,   120,   Curve::Int, Kind::Float, nullptr});
+    v.push_back({SEQ_SWING, "seq.swing", "SWING", 0,    1,     0,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({SEQ_GATE,  "seq.gate",  "GATE",  0.1f, 0.98f, 0.55f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({SEQ_ROOT,  "seq.root",  "ROOT",  24,   72,    48,    Curve::Int, Kind::Float, nullptr});
+
     std::array<ParamInfo, NUM_PARAMS> out{};
     for (auto& info : v) out[info.id] = info; // place by id so [Pid] indexing is exact
     return out;

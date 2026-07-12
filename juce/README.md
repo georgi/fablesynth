@@ -32,7 +32,10 @@ source/dsp/Wavetables.{h,cpp}  FFT + 6 procedural tables + 9-level band-limited
 source/dsp/Engine.{h,cpp}      8-voice engine: 2 morphing oscillators (unison),
                                sub + noise, dual SVF/comb/vowel filter with ADAA
                                drive, 2 ADSR, 2 LFO, 4-slot mod matrix, glide,
-                               voice stealing            (port of worklet.js)
+                               voice stealing, and the sample-accurate 16-step
+                               note sequencer             (port of worklet.js)
+source/dsp/NoteSeq.h           packed pattern model (3 bytes/step x 16 x A-D)
+                               shared by engine/plugin/tests (port of noteseq.ts)
 source/dsp/Fx.{h,cpp}          drive -> chorus -> ping-pong delay -> reverb ->
                                master gain -> DC block -> limiter (port of synth.ts)
 source/dsp/Params.{h,cpp}      single source of truth for every parameter
@@ -45,6 +48,9 @@ source/ui/Theme.h              palette + panel drawing (port of index.css :root)
 source/ui/Controls.{h,cpp}     knob / stepper / power LED / vertical slider
 source/ui/Displays.{h,cpp}     scope, spectrum, filter, env + LFO views
 source/ui/Panels.{h,cpp}       osc / util / filter / env / lfo / matrix / fx / top bar
+source/ui/NoteSeqView.{h,cpp}  NOTE SEQ panel: 12 lanes x 16 steps, oct/acc/tie
+                               rows, patterns A-D + chain, RAND, BPM/SWING/GATE/
+                               ROOT clock            (port of SeqPanel.tsx .ns-*)
 test/engine_test.cpp           headless DSP verification harness (no JUCE)
 test/plugin_host_test.cpp      plugin-boundary test + PNG snapshot of the editor
 ```
@@ -73,6 +79,20 @@ stays pixel-faithful at any size.
   delay are direct ports. The web build's **convolution reverb** (generated
   exponential-noise impulse) is approximated by a Freeverb network tuned by SIZE
   — a real-time-safe stand-in with an equivalent diffuse tail.
+- **Note sequencer** (port of the web NOTE SEQ panel + the worklet's
+  seqFire/seqTie/seqGateOff): 16 steps x 4 chained patterns firing into the
+  polyphonic voice allocator; a *tie* retunes the sounding voice legato — no
+  envelope retrigger, GLIDE decides snap vs slide; accents fire velocity
+  1.0 vs 0.72 so VELO mod routes respond; the gate closes at the GATE fraction
+  of the step unless the next step ties in; swing delays odd 16ths by
+  swing * 0.667 of a step. **Host transport lock** mirrors DR-1/BL-1: when the
+  host transport rolls (reporting tempo + song position), steps derive from the
+  playhead ppq sample-accurately and host stop stops the line; a reported tempo
+  always overrides `seq.bpm`; otherwise the panel's play button drives the
+  internal sample-counting clock (Standalone included), and synced LFOs
+  phase-lock to the sequencer tempo like the web's virtual transport. All 4
+  patterns (the web's packed 3-byte/step layout), the chain and the edit
+  pattern persist in the plugin state.
 
 ## Build
 
@@ -98,13 +118,15 @@ One build produces all three plugins: WT-1 artifacts land in
 ## Verify the audio engine
 
 The headless harness builds without JUCE and checks wavetable correctness, that
-a note produces audio, the anti-aliasing floor, every filter type, the FX chain
-and all 20 presets:
+a note produces audio, the anti-aliasing floor, every filter type, the FX chain,
+all 20 presets, and the note sequencer (sample-exact step positions, accent
+velocities 1.0/0.72, tie-without-retrigger, gate fraction, swing timing, chain
+wrap and the host transport lock):
 ```sh
 cd juce
 g++ -std=c++17 -O2 -o engine_test test/engine_test.cpp \
   source/dsp/Engine.cpp source/dsp/Wavetables.cpp source/dsp/Fx.cpp \
-  source/dsp/Params.cpp source/dsp/Presets.cpp
+  source/dsp/Params.cpp source/dsp/Presets.cpp source/dsp/UserTables.cpp
 ./engine_test
 # or: cmake --build build --target engine_test && ctest --test-dir build
 ```
@@ -354,4 +376,129 @@ programs, the pitch-seq store semantics) and renders the editor snapshot:
 ```sh
 cmake --build build --target bass_host_test
 ctest --test-dir build --output-on-failure
+```
+
+---
+
+# FableSynth SQ-4 — 4-track session launcher
+
+A C++/JUCE port of the SQ-4 web session launcher (`src/seq/`, the lockstep
+reference): a 4-track, 6-scene Ableton-style clip launcher that hosts DR-1,
+BL-1, and two WT-1 engines under one shared frame timebase, with per-track
+mute/solo, scene launch/stop with quantize, live in-place clip editing
+(focus mode), and session files byte-compatible with the web build. Ships as
+a fourth plugin from the same build: **VST3 · AU · Standalone**, product name
+"FableSynth SQ-4".
+
+## Targets
+
+- `FableSeq` — the plugin (VST3/AU/Standalone).
+- `sq4_engine_test` — headless DSP verification (no JUCE): the shared
+  protocol/timebase math, the hosted-clip transport, and the conductor's
+  owner/queue state machine.
+- `sq4_host_test` — plugin-boundary test: instantiates the real
+  `SeqAudioProcessor` and drives it like a DAW + editor timer would (scene
+  launch across all four engines on the shared bar grid, mute, pause, stopAll
+  decay, state round-trip, focus-mode clip editing, the session JSON codec,
+  LOAD/SAVE) and renders editor snapshots.
+
+## Architecture
+
+```
+source/seq/dsp/SeqProtocol.h    Machine/Quant enums, SQ_STOP sentinel, the
+                                shared frame-timebase + bar/step boundary math
+                                (one definition, shared by every hosted engine)
+source/seq/dsp/SeqModel.h       SessionData/SceneData/TrackData/ClipData (the
+                                in-memory session doc) + validateSession —
+                                JUCE-free, mirrors src/seq/protocol.ts
+source/seq/dsp/SeqFactory.{h,cpp} the factory session (6 scenes x 4 tracks) —
+                                byte-identical patterns to src/seq/factory.ts
+source/seq/dsp/Conductor.{h,cpp} message-thread owner/queue launcher: which
+                                clip owns each track, quantized scene/cell
+                                launches, mute/solo gain math, ack-flips-owner
+source/seq/SessionCodec.{h,cpp} session <-> JSON codec, web SessionDoc v:1
+                                schema exactly (src/seq/protocol.ts) —
+                                juce::JSON + juce::Base64
+source/seq/SeqProcessor.{h,cpp} JUCE AudioProcessor: hosts DrumEngine,
+                                BassEngine, and two Engine (WT-1) instances
+                                behind a lock-free command/ack FIFO pair, one
+                                shared frame timebase, master gain -> limiter,
+                                APVTS (master/swing/bpm/quant/vol0..3)
+source/seq/SeqEditor.{h,cpp}    the rack shell — fixed logical grid, scaled to
+                                the window, session view <-> focus-mode editor
+source/seq/ui/SeqHeader.*       transport, quantize stepper, beat/bar/BPM
+                                clock, master scope, SWING/VOL knobs, LOAD/SAVE
+source/seq/ui/TrackHeadsView.*  per-track machine tag, patch stepper (factory
+                                only), mute/solo, gain knob
+source/seq/ui/SceneGridView.*   the 6x4 clip grid: launch/stop cells, owner/
+                                queued/pass-through states, STOP ALL row
+source/seq/ui/SeqFooterView.*   per-track solo + gain slider footer
+source/seq/ui/ClipEditView.*    focus-mode clip editor: DR-1 pad/step grid or
+                                BL-1/WT-1 12-lane pitch grid with oct/acc/tie
+test/sq4_engine_test.cpp        headless DSP verification harness (no JUCE)
+test/sq4_host_test.cpp          plugin-boundary test (scenes, mute, state,
+                                focus editing, session codec, LOAD/SAVE) + PNG
+                                snapshots
+```
+
+### Scope decisions vs the web v1
+
+- **Internal clock only** — v1 has no host-transport lock (unlike DR-1/BL-1):
+  the conductor always runs on its own frame timebase. A host's tempo/song
+  position is not read; Standalone and DAW use behave identically.
+- **Patch editing = factory stepper** — tracks step through each machine's
+  factory patches (`<`/`>` in the track head), matching the web's v1 patch
+  model (`PatchDoc.kind: 'factory'`). Inline patches
+  (`PatchDoc.kind: 'inline'`) are load-only: the codec round-trips them (a
+  session saved elsewhere with an inline patch loads correctly) but there is
+  no UI to author one from scratch.
+- **No FLIP animation** — the web's clip-launch flip transition doesn't have
+  a JUCE port; cells switch state immediately.
+- **No ack watchdog** — the web's worklet bridge needs a stuck-message
+  watchdog because postMessage can silently drop; JUCE's in-process FIFOs
+  (cmdFifo_/ackFifo_) can't lose a message, so there's nothing to watch for.
+
+## Session files (web-compatible)
+
+`SessionCodec.h` serializes/parses the exact web `SessionDoc` v:1 JSON shape
+(`src/seq/protocol.ts:42-78`): `v:1`, `name`, `bpm`, `swing`, `quant` (the
+string `"1 BAR"`/`"1/4"`/`"OFF"`), `tracks[].{machine,name,color,gain,patch}`,
+`scenes[].{name,clips[],pass?}` with clip slots `null` or
+`{name,bars,pattern}` (`pattern` = base64 of the packed clip bytes, matching
+the per-machine layouts in `protocol.ts`). A file saved by the plugin loads
+in the web app and vice versa — `juce/test/fixtures/web-session.json` is a
+real web export (produced by `scripts/dump-session.ts`, which calls the web's
+own `factorySession()` and prints exactly what `saveSession` persists) that
+`sq4_host_test` loads and checks byte-for-byte against
+`fable::factorySession()`, proving both factories and both codecs agree.
+
+Regenerate the fixture after a `src/seq/factory.ts` change:
+```sh
+npx tsx scripts/dump-session.ts > juce/test/fixtures/web-session.json
+```
+
+The plugin's `getStateInformation`/`setStateInformation` embed the same JSON
+in the DAW project state; the header's **LOAD**/**SAVE** buttons additionally
+read/write standalone `.json` files via an async `juce::FileChooser`. LOAD
+stops every live track before rebuilding the conductor from the loaded doc
+(same sequencing `setStateInformation` uses, so no clip is caught mid-flight
+across the swap); a JSON document that fails `fable::validateSession` is
+rejected and the current session is left untouched.
+
+## Build & verify
+
+Built by the same configure/build as WT-1 (above). Artifacts:
+`build/FableSeq_artefacts/Release/{VST3,AU,Standalone}/` →
+`FableSynth SQ-4.vst3` / `.component` / `.app`.
+
+```sh
+cmake --build build --target sq4_engine_test && ctest --test-dir build -R sq4_engine_test --output-on-failure
+cmake --build build --target sq4_host_test && ctest --test-dir build -R sq4_host_test --output-on-failure
+```
+
+The plugin-boundary test also accepts up to three output paths for PNG
+snapshots of the editor (`argv[1]` a live scene grid, `argv[2]` a focus-mode
+drum clip editor, `argv[3]` a focus-mode BASS/ACID 303 pitch-grid editor):
+```sh
+./build/sq4_host_test_artefacts/Debug/sq4_host_test session.png focus.png bass_focus.png
 ```

@@ -11,6 +11,7 @@
 #pragma once
 
 #include "BassParams.h"
+#include "../../dsp/ClipHost.h"
 #include "../../dsp/Engine.h"      // fable::Rng + TablePtr (via Wavetables.h)
 
 #include <cstdint>
@@ -62,7 +63,12 @@ public:
     // ---- sequencer (worklet onMsg 'play'/'stop'/'pats'/'chain' + fireStep) ----
     void play();
     void stop();
-    bool isPlaying() const { return playing_ || hostPlaying_; }
+    // worklet: `this.playing || this.clip` — a loaded hosted clip owns the
+    // voice (audition gating, bar-locked LFO) exactly like the internal/
+    // host-transport-locked sequencer does.
+    bool isPlaying() const {
+        return playing_ || hostPlaying_ || (hostClipMode_ && clipHost_.isPlaying());
+    }
     void setPatterns(const uint8_t* data, int n);  // n must be BL_PATTERN_BYTES; copies
     void setChain(const int* list, int n);         // ignores empty; clamps entries + chainPos
     void setBpmOverride(double bpm);               // host tempo; <= 0 clears the override
@@ -74,6 +80,54 @@ public:
     //   p(k) = k*0.25 + (k odd ? swing*BL_SWING_MAX*0.25 : 0) ppq,
     // the pattern is chain[(k/16) % chain.size()], and k < 0 never fires.
     void setHostTransport(double ppq, double bpm, bool playing);
+
+    // ---- SQ-4 hosted-clip mode (docs/sq4-clips.md §6, same contract as
+    // Engine::setHostClipMode/hostTempo/...). While on, play()/stop() and the
+    // host-transport-locked pattern firing are suppressed (hostClipMode_
+    // guards render's internal-clock and host-transport branches) so the
+    // standalone sequencer and the hosted clip can never double-fire the
+    // voice; the standalone render path is otherwise byte-identical when
+    // this is off.
+    void setHostClipMode(bool on, int maxBlock = 0) {
+        hostClipMode_ = on;
+        // Reserve the clip host's buffers so no launch/update/tick allocates on
+        // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
+        // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
+        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
+        else clipHost_.clear();
+    }
+    void hostTempo(double bpm, double swing, double anchorFrame) {
+        setBpmOverride(bpm);
+        anchorFrame_ = anchorFrame;
+        clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
+    }
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
+    }
+    void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
+        clipHost_.updateClip(data, (size_t)bytes, bars);
+    }
+    void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
+    // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
+    // rest for the next call (Finding 3 — the SeqProcessor loops until 0).
+    int  takeHostEvents(HostEvent* out, int max) {
+        if (max <= 0 || out == nullptr) return 0;
+        int n = std::min((int)clipHost_.events.size(), max);
+        std::copy(clipHost_.events.begin(), clipHost_.events.begin() + n, out);
+        clipHost_.events.erase(clipHost_.events.begin(), clipHost_.events.begin() + n);
+        return n;
+    }
+    size_t hostEventsCapacity() const { return clipHost_.eventsCapacity(); }
+    // Worst-case host-event count for one prepared block (see Engine.h's
+    // hostMaxEvents for the full rationale): ceil(maxBlock / minStepDur) + 8,
+    // minStepDur at max bpm 200; maxBlock<=0 keeps the old fixed 64.
+    int hostMaxEvents(int maxBlock) const {
+        if (maxBlock <= 0) return 64;
+        const double minStepDur = sr_ * 60.0 / 200.0 / 4.0;
+        const int n = (int)std::ceil((double)maxBlock / minStepDur) + 8;
+        return std::max(64, n);
+    }
 
     // Render n samples into stereo L/R (zero-filled first, voice accumulates).
     void render(float* L, float* R, int n);
@@ -103,6 +157,7 @@ private:
     void   hostResync();
     void   fireHostStep(long k);
     void   fireStepAt(int s, int pat, int patNext, double dur);  // shared step-fire body
+    void   clipFireAt(int abs);   // hosted twin of fireStepAt; byte source is clipHost_'s clip
 
     // ---- render internals (worklet setupOsc/renderOsc/renderSub/
     //      lfoValue/setupFilter/runFilter/renderVoice) ----
@@ -129,6 +184,12 @@ private:
     double samplesToGateOff_ = -1;
     double songPos_ = 0;           // samples since play, for the bar-locked LFO
     double bpmOverride_ = 0;       // > 0: host tempo wins over seq.bpm
+
+    // ---- hosted-clip mode state (SQ-4) ----
+    bool     hostClipMode_ = false;
+    double   hostFrame_ = 0;
+    double   anchorFrame_ = 0;     // shared timebase's beat zero (hostTempo)
+    ClipHost clipHost_;
 
     // host transport lock state
     bool   hostPlaying_ = false;

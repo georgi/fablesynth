@@ -132,3 +132,159 @@ describe('drum sequencer', () => {
     expect(peak(after.L.slice(-2560))).toBeLessThan(1e-3);
   });
 });
+
+// The harness evaluates the worklet source with bare-global `currentFrame`
+// resolving via globalThis, like the real AudioWorkletGlobalScope.
+const g = globalThis as unknown as { currentFrame: number };
+
+function runBlocks(h: DrumHarness, blocks: number): void {
+  for (let b = 0; b < blocks; b++) {
+    h.proc.process([], [[new Float32Array(128), new Float32Array(128)]]);
+    g.currentFrame += 128;
+  }
+}
+
+type ClipState = {
+  clip: { data: Uint8Array; bars: number } | null;
+  clipPend: { data: Uint8Array; bars: number; at: number } | null;
+  clipStep: number;
+};
+
+describe('clipupdate (hosted hot-swap)', () => {
+  it('swaps a live clip in place and preserves the play position', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    // step = 60/120/4*48000 = 6000 frames; 50 blocks = 6400 frames → step 1 fired
+    runBlocks(h, 50);
+    const p = h.proc as unknown as ClipState;
+    expect(p.clip).not.toBeNull();
+    const before = p.clipStep;
+    expect(before).toBeGreaterThanOrEqual(1);
+
+    const next = new Uint8Array(2 * 256);
+    next[0] = 1; // bar 0, pad 0, step 0
+    h.send({ t: 'clipupdate', data: next, bars: 2 });
+    expect(p.clip!.bars).toBe(2);
+    expect(p.clip!.data[0]).toBe(1);
+    expect(p.clipStep).toBe(before); // phase untouched
+
+    runBlocks(h, 50); // keeps ticking: pos messages continue past the swap
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('re-wraps clipStep when the clip shrinks below the current position', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(2 * 256), bars: 2, atFrame: 0 });
+    runBlocks(h, 900); // ~19 steps in → clipStep in bar 1
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBeGreaterThanOrEqual(16);
+    h.send({ t: 'clipupdate', data: new Uint8Array(256), bars: 1 });
+    expect(p.clipStep).toBeLessThan(16);
+  });
+
+  it('updates a pending clip without touching its launch frame', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 96000 });
+    const p = h.proc as unknown as ClipState;
+    const next = new Uint8Array(256);
+    next[16] = 2; // pad 1, step 0
+    h.send({ t: 'clipupdate', data: next, bars: 1 });
+    expect(p.clipPend!.at).toBe(96000);
+    expect(p.clipPend!.data[16]).toBe(2);
+    expect(p.clip).toBeNull();
+  });
+
+  it('is a no-op when nothing is live or pending', () => {
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'clipupdate', data: new Uint8Array(256), bars: 1 });
+    const p = h.proc as unknown as ClipState;
+    expect(p.clip).toBeNull();
+    expect(p.clipPend).toBeNull();
+  });
+});
+
+// Clips are phase-locked to the shared timebase: activation derives the entry
+// step from the tempo anchor, so a (re)launch can never desync devices.
+describe('clip phase lock', () => {
+  it('a clip launched at song bar 1 enters at its own bar 1, not step 0', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    // 120 BPM / 48k: step = 6000 frames, bar = 96000. Launch a 2-bar clip
+    // exactly at the bar-1 boundary.
+    h.send({ t: 'clip', data: new Uint8Array(2 * 256), bars: 2, atFrame: 96000 });
+    runBlocks(h, 751); // past frame 96000 → activated + first fire
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses[0]).toMatchObject({ step: 0, bar: 1 });
+  });
+
+  it('an unquantized launch mid-song joins the global step grid', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    runBlocks(h, 100); // song runs to frame 12800 ≈ step 2.13
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    runBlocks(h, 1);
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses[0]).toMatchObject({ step: 2, bar: 0 }); // round(12800/6000) = 2
+  });
+
+  it('the step clock does not drift off the anchor grid over long runs', () => {
+    // A free-running countdown drops the block-quantization residue every
+    // fire (16 frames/step at 120 BPM) and slips late without bound — then
+    // any anchor-derived phase math disagrees with what is audible.
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    // 2394 blocks → frame 306432, mid-interval of global step 51. A clock
+    // slipping 16 frames/step would still be on step 50.
+    runBlocks(h, 2394);
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBe(51 % 16);
+  });
+
+  it('a same-length pattern edit (sequencer click) never moves the phase', () => {
+    // Swing delays odd steps past their unswung grid time; an edit inside
+    // that window must not floor the anchor phase onto the not-yet-fired
+    // step (that skips it and shifts the device against the others).
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 1, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    runBlocks(h, 63); // frame 8064 — step 1's grid time passed, swung fire pending
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBe(0);
+    const next = new Uint8Array(256);
+    next[0] = 1;
+    h.send({ t: 'clipupdate', data: next, bars: 1 });
+    expect(p.clip!.data[0]).toBe(1);
+    expect(p.clipStep).toBe(0); // pure data swap — the transport is untouched
+  });
+
+  it('a non-zero anchor is respected', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    // anchor at frame 96000: song bar 0 begins there
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 96000 });
+    h.send({ t: 'clip', data: new Uint8Array(2 * 256), bars: 2, atFrame: 2 * 96000 });
+    runBlocks(h, 1501); // past frame 192000 = song bar 1
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses[0]).toMatchObject({ step: 0, bar: 1 });
+  });
+});

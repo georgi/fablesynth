@@ -12,7 +12,7 @@ import {
   cycleOct, getStep, randomPattern, setStep, writePattern, type Patterns,
 } from './seq';
 
-export const bassEngine = new BassEngine();
+export let bassEngine = new BassEngine();
 const initialState = patchToState(FACTORY_PATCHES[0]);
 
 export interface BassStore {
@@ -27,6 +27,7 @@ export interface BassStore {
   curPat: number;
   curSemi: number; // sounding seq/keyboard note (offset from root), -100 = none
   powered: boolean;
+  hosted: boolean;
   midiActive: boolean;
   patchValue: string;
   userPatches: BassPatch[];
@@ -53,6 +54,7 @@ export interface BassStore {
   setMidiActive: (on: boolean) => void;
   play: () => void;
   stop: () => void;
+  attachHosted: (engine: BassEngine) => void;
   powerOn: () => Promise<void>;
   savePatch: (name: string) => void;
   loadPatchByValue: (value: string) => void;
@@ -71,6 +73,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   curPat: 0,
   curSemi: -100,
   powered: false,
+  hosted: false,
   midiActive: false,
   patchValue: 'f0',
   userPatches: loadUserPatches(),
@@ -182,13 +185,29 @@ export const useBassStore = create<BassStore>((set, get) => ({
   setMidiActive: (on) => set({ midiActive: on }),
 
   play: () => {
+    if (get().hosted) return;
     bassEngine.play();
     set({ playing: true, heldSemis: [] });
   },
 
   stop: () => {
+    if (get().hosted) return;
     bassEngine.stop();
     set({ playing: false, curStep: -1, curSemi: -100 });
+  },
+
+  attachHosted: (engine) => {
+    bassEngine = engine;
+    set({
+      hosted: true,
+      powered: true,
+      playing: false,
+      curStep: -1,
+      curSemi: -100,
+      chaining: false,
+      chainFresh: false,
+      params: { ...engine.params },
+    });
   },
 
   powerOn: async () => {
@@ -229,6 +248,13 @@ export const useBassStore = create<BassStore>((set, get) => ({
     if (!patch) return;
 
     const state = patchToState(patch);
+    if (get().hosted) {
+      bassEngine.panic();
+      bassEngine.params = { ...state.params };
+      bassEngine.applyAllParams();
+      set({ params: state.params, patchValue: value });
+      return;
+    }
     bassEngine.panic();
     bassEngine.params = { ...state.params };
     bassEngine.applyAllParams();

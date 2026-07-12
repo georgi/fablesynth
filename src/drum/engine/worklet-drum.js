@@ -85,6 +85,16 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.step = -1;
     this.samplesToNext = 0;
     this.sel = 0;
+    // ---- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----
+    this.hosted = false;
+    this.hostBpm = 120;
+    this.hostSwing = 0;
+    this.hostAnchor = 0; // songStartFrame — the shared timebase's beat zero
+    this.clip = null; // { data: Uint8Array, bars } — byte per pad-step, bar-major
+    this.clipPend = null; // { data, bars, at }
+    this.clipStopAt = -1;
+    this.clipStep = -1; // absolute step within the clip
+    this.clipToNext = 0;
     this.vizCount = 0;
     this.tmpL = new Float32Array(128); this.tmpR = new Float32Array(128);
     this.fL = new Float32Array(128); this.fR = new Float32Array(128);
@@ -115,12 +125,113 @@ class DrumProcessor extends AudioWorkletProcessor {
         }
         break;
       case 'play':
+        if (this.hosted) break; // conductor owns the transport
         this.playing = true; this.step = -1; this.chainPos = 0; this.samplesToNext = 0;
         break;
       case 'stop': this.playing = false; this.step = -1; break;
       case 'sel': this.sel = Math.max(0, Math.min(NPADS - 1, d.pad | 0)); break;
-      case 'panic': for (const v of this.voices) v.kill(); break;
+      case 'panic':
+        for (const v of this.voices) v.kill();
+        this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        break;
+      case 'host': this.hosted = !!d.on; break;
+      case 'tempo':
+        if (Number.isFinite(d.bpm)) this.hostBpm = d.bpm;
+        if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
+        if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
+        break;
+      case 'clip':
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
+        this.clipStopAt = -1;
+        break;
+      case 'clipstop':
+        this.clipPend = null;
+        this.clipStopAt = +d.atFrame || 0;
+        break;
+      case 'clipupdate': {
+        // Hosted hot-swap (SQ-4): replace pattern bytes in place. Position is
+        // derived arithmetic, so a live swap never moves the playhead.
+        const data = new Uint8Array(d.data);
+        const bars = Math.max(1, d.bars | 0);
+        if (this.clipPend) {
+          this.clipPend = { data, bars, at: this.clipPend.at };
+        } else if (this.clip) {
+          const resized = bars !== this.clip.bars;
+          this.clip = { data, bars };
+          // Re-derive the phase only on a bar-count change (plain modulo can
+          // land a grown clip half a cycle off). Same-length edits — every
+          // sequencer click — are a pure data swap: touching the phase inside
+          // a swing/quantization window would skip a step and desync devices.
+          if (resized && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
+        }
+        break;
+      }
     }
+  }
+
+  // ---------- hosted clip transport ----------
+  hostTick(n) {
+    const end = currentFrame + n;
+    if (this.clipStopAt >= 0 && this.clipStopAt < end) {
+      this.clipStopAt = -1;
+      if (this.clip) {
+        this.clip = null;
+        this.clipStep = -1;
+        // sounding pads ring out (design: DR-1 stop lets voices decay)
+      }
+      // ack even when nothing was playing — the stop may have targeted a
+      // pending-only launch and the conductor clears its STOP marker on this
+      this.port.postMessage({ t: 'clipstop', frame: currentFrame });
+    }
+    if (this.clipPend && this.clipPend.at < end) {
+      this.clip = this.clipPend;
+      this.clipPend = null;
+      // Phase-lock to the shared timebase: enter at the global song position
+      // modulo the clip length, so a (re)launch can never desync devices —
+      // position is derived from the anchor, never restarted at step 0.
+      this.clipStep = this.clipPhase(Math.round) - 1;
+      this.clipToNext = 0;
+      this.port.postMessage({ t: 'clipstart', frame: currentFrame });
+    }
+    if (this.clip) {
+      if (this.clipToNext <= 0) this.clipFire();
+      this.clipToNext -= n;
+    }
+  }
+
+  // Global step index (mod clip length) at the current frame. Activation
+  // rounds (atFrame sits at a boundary, block-quantized slightly early);
+  // mid-flight resizes floor (the last fired step).
+  clipPhase(quantize) {
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const total = this.clip.bars * STEPS;
+    const idx = quantize(Math.max(0, currentFrame - this.hostAnchor) / dur);
+    return ((idx % total) + total) % total;
+  }
+
+  clipFire() {
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
+    const total = this.clip.bars * STEPS;
+    const abs = (this.clipStep + 1) % total;
+    const s = abs % STEPS;
+    const bar = (abs / STEPS) | 0;
+    for (let i = 0; i < NPADS; i++) {
+      const val = this.clip.data[(bar * NPADS + i) * STEPS + s];
+      if (val) this.trigger(i, val === 2 ? ACCENT_VEL : PLAIN_VEL);
+    }
+    this.clipStep = abs;
+    const offNow = s % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    const sNext = (s + 1) % STEPS;
+    const offNext = sNext % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    // Schedule the next step at its absolute anchor-grid time. A free-running
+    // countdown (dur - offNow + offNext) drops the block-quantization residue
+    // each fire and drifts late without bound against the shared timebase.
+    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
+    this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - currentFrame;
+    this.port.postMessage({ t: 'pos', step: s, bar });
   }
 
   trigger(padI, vel) {
@@ -459,10 +570,13 @@ class DrumProcessor extends AudioWorkletProcessor {
     L.fill(0); if (R !== L) R.fill(0);
     const n = L.length;
 
+    if (this.hosted) this.hostTick(n);
+    const standalone = this.playing && !this.hosted;
+
     let pos = 0;
     while (pos < n) {
       let run = n - pos;
-      if (this.playing) {
+      if (standalone) {
         if (this.samplesToNext <= 0) {
           this.fireStep();
         }
@@ -472,7 +586,7 @@ class DrumProcessor extends AudioWorkletProcessor {
         const v = this.voices[i];
         if (v.active) this.renderPad(v, i, L, R, pos, run);
       }
-      if (this.playing) this.samplesToNext -= run;
+      if (standalone) this.samplesToNext -= run;
       pos += run;
     }
 

@@ -2,6 +2,7 @@ import { PATTERN_NAMES, STEPS, patIdx } from '../seq';
 import { useDrumStore } from '../store';
 
 export function StepSeq() {
+  const hosted = useDrumStore((s) => s.hosted);
   const playing = useDrumStore((s) => s.playing);
   const curStep = useDrumStore((s) => s.curStep);
   const curPat = useDrumStore((s) => s.curPat);
@@ -20,39 +21,45 @@ export function StepSeq() {
   return (
     <section className="panel dr-stepseq" data-accent="a">
       <div className="panel-head dr-stepseq-head">
-        <button
-          className={`pb-btn dr-transport${playing ? ' active' : ''}`}
-          type="button"
-          aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
-          aria-pressed={playing}
-          onClick={playing ? stop : play}
-        >
-          {playing ? '■' : '▶'}
-        </button>
+        {!hosted && (
+          <button
+            className={`pb-btn dr-transport${playing ? ' active' : ''}`}
+            type="button"
+            aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
+            aria-pressed={playing}
+            onClick={playing ? stop : play}
+          >
+            {playing ? '■' : '▶'}
+          </button>
+        )}
         <h2>STEP SEQ</h2>
-        <div className="dr-patterns" aria-label="Edit pattern">
-          {PATTERN_NAMES.map((name, i) => (
+        {!hosted && (
+          <>
+            <div className="dr-patterns" aria-label="Edit pattern">
+              {PATTERN_NAMES.map((name, i) => (
+                <button
+                  className={`dr-seq-btn dr-pattern${editPattern === i ? ' active' : ''}`}
+                  type="button"
+                  aria-label={`Pattern ${name}`}
+                  aria-pressed={editPattern === i}
+                  key={name}
+                  onClick={() => chainClick(i)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
             <button
-              className={`dr-seq-btn dr-pattern${editPattern === i ? ' active' : ''}`}
+              className={`dr-seq-btn dr-chain-toggle${chaining ? ' active' : ''}`}
               type="button"
-              aria-label={`Pattern ${name}`}
-              aria-pressed={editPattern === i}
-              key={name}
-              onClick={() => chainClick(i)}
+              aria-pressed={chaining}
+              onClick={() => setChaining(!chaining)}
             >
-              {name}
+              CHAIN
             </button>
-          ))}
-        </div>
-        <button
-          className={`dr-seq-btn dr-chain-toggle${chaining ? ' active' : ''}`}
-          type="button"
-          aria-pressed={chaining}
-          onClick={() => setChaining(!chaining)}
-        >
-          CHAIN
-        </button>
-        <span className="dr-chain-readout">CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}</span>
+            <span className="dr-chain-readout">CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}</span>
+          </>
+        )}
         <div className="dr-step-editing">
           <span>EDITING</span>
           <strong>{padName}</strong>

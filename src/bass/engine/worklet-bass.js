@@ -47,6 +47,16 @@ class BassProcessor extends AudioWorkletProcessor {
     this.samplesToNext = 0;
     this.samplesToGateOff = -1;
     this.songPos = 0; // samples since play, for the bar-locked LFO
+    // ---- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----
+    this.hosted = false;
+    this.hostBpm = 120;
+    this.hostSwing = 0;
+    this.hostAnchor = 0; // songStartFrame — the shared timebase's beat zero
+    this.clip = null; // { data: Uint8Array, bars } — 3 bytes/step, bar-major
+    this.clipPend = null; // { data, bars, at }
+    this.clipStopAt = -1;
+    this.clipStep = -1;
+    this.clipToNext = 0;
 
     // ---- voice ----
     this.gate = false;
@@ -107,6 +117,7 @@ class BassProcessor extends AudioWorkletProcessor {
         }
         break;
       case 'play':
+        if (this.hosted) break; // conductor owns the transport
         this.playing = true; this.step = -1; this.chainPos = 0;
         this.samplesToNext = 0; this.samplesToGateOff = -1; this.songPos = 0;
         this.held.length = 0;
@@ -118,8 +129,125 @@ class BassProcessor extends AudioWorkletProcessor {
         break;
       case 'noteon': this.keyOn(d.semi | 0, d.vel); break;
       case 'noteoff': this.keyOff(d.semi | 0); break;
-      case 'panic': this.kill(); this.held.length = 0; break;
+      case 'panic':
+        this.kill(); this.held.length = 0;
+        this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        break;
+      case 'host': this.hosted = !!d.on; break;
+      case 'tempo':
+        if (Number.isFinite(d.bpm)) { this.hostBpm = d.bpm; this.p['seq.bpm'] = d.bpm; } // bar-locked LFO follows
+        if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
+        if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
+        break;
+      case 'clip':
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
+        this.clipStopAt = -1;
+        break;
+      case 'clipstop':
+        this.clipPend = null;
+        this.clipStopAt = +d.atFrame || 0;
+        break;
+      case 'clipupdate': {
+        // Hosted hot-swap (SQ-4): replace pattern bytes in place. Position is
+        // derived arithmetic, so a live swap never moves the playhead.
+        const data = new Uint8Array(d.data);
+        const bars = Math.max(1, d.bars | 0);
+        if (this.clipPend) {
+          this.clipPend = { data, bars, at: this.clipPend.at };
+        } else if (this.clip) {
+          const resized = bars !== this.clip.bars;
+          this.clip = { data, bars };
+          // Re-derive the phase only on a bar-count change (plain modulo can
+          // land a grown clip half a cycle off). Same-length edits — every
+          // sequencer click — are a pure data swap: touching the phase inside
+          // a swing/quantization window would skip a step and desync devices.
+          if (resized && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
+        }
+        break;
+      }
     }
+  }
+
+  // ---------- hosted clip transport ----------
+  clipRead(abs) {
+    const o = abs * STEP_STRIDE;
+    const flags = this.clip.data[o];
+    return {
+      on: (flags & 1) !== 0,
+      acc: (flags & 2) !== 0,
+      slide: (flags & 4) !== 0,
+      semi: Math.min(11, this.clip.data[o + 1]) + 12 * (Math.min(2, this.clip.data[o + 2]) - 1),
+    };
+  }
+
+  hostTick(n) {
+    const end = currentFrame + n;
+    if (this.clipStopAt >= 0 && this.clipStopAt < end) {
+      this.clipStopAt = -1;
+      if (this.clip) {
+        this.clip = null;
+        this.clipStep = -1;
+        this.samplesToGateOff = -1;
+        this.release();
+      }
+      // ack even when nothing was playing — the stop may have targeted a
+      // pending-only launch and the conductor clears its STOP marker on this
+      this.port.postMessage({ t: 'clipstop', frame: currentFrame });
+    }
+    if (this.clipPend && this.clipPend.at < end) {
+      this.clip = this.clipPend;
+      this.clipPend = null;
+      // Phase-lock to the shared timebase: enter at the global song position
+      // modulo the clip length, so a (re)launch can never desync devices —
+      // position is derived from the anchor, never restarted at step 0.
+      this.clipStep = this.clipPhase(Math.round) - 1;
+      this.clipToNext = 0;
+      this.songPos = Math.max(0, currentFrame - this.hostAnchor); // bar-locked LFO follows the global clock
+      this.port.postMessage({ t: 'clipstart', frame: currentFrame });
+    }
+    if (this.clip) {
+      if (this.clipToNext <= 0) this.clipFire();
+      this.clipToNext -= n;
+    }
+  }
+
+  // Global step index (mod clip length) at the current frame. Activation
+  // rounds (atFrame sits at a boundary, block-quantized slightly early);
+  // mid-flight resizes floor (the last fired step).
+  clipPhase(quantize) {
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const total = this.clip.bars * STEPS;
+    const idx = quantize(Math.max(0, currentFrame - this.hostAnchor) / dur);
+    return ((idx % total) + total) % total;
+  }
+
+  clipFire() {
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
+    const total = this.clip.bars * STEPS;
+    const abs = (this.clipStep + 1) % total;
+    const s = abs % STEPS;
+    const st = this.clipRead(abs);
+
+    if (st.on) {
+      if (st.slide && this.gate) this.glideTo(st.semi, st.acc);
+      else this.noteOn(st.semi, st.acc);
+      const stN = this.clipRead((abs + 1) % total);
+      this.samplesToGateOff = stN.on && stN.slide ? -1 : GATE_FRAC * dur;
+    }
+
+    this.clipStep = abs;
+    const offNow = s % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    const sNext = (s + 1) % STEPS;
+    const offNext = sNext % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    // Schedule the next step at its absolute anchor-grid time. A free-running
+    // countdown (dur - offNow + offNext) drops the block-quantization residue
+    // each fire and drifts late without bound against the shared timebase.
+    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
+    this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - currentFrame;
+    this.port.postMessage({ t: 'pos', step: s, bar: (abs / STEPS) | 0 });
   }
 
   // ---------- voice control ----------
@@ -152,7 +280,7 @@ class BassProcessor extends AudioWorkletProcessor {
   }
 
   keyOn(semi, vel) {
-    if (this.playing) return; // audition when stopped · sequencer owns the voice
+    if (this.playing || this.clip) return; // audition when stopped · sequencer owns the voice
     const i = this.held.indexOf(semi);
     if (i >= 0) this.held.splice(i, 1);
     const legato = this.held.length > 0 && this.gate;
@@ -164,7 +292,7 @@ class BassProcessor extends AudioWorkletProcessor {
   keyOff(semi) {
     const i = this.held.indexOf(semi);
     if (i >= 0) this.held.splice(i, 1);
-    if (this.playing) return;
+    if (this.playing || this.clip) return;
     if (this.held.length === 0) {
       this.release();
     } else if (this.semiTarget !== this.held[this.held.length - 1]) {
@@ -388,7 +516,7 @@ class BassProcessor extends AudioWorkletProcessor {
     env *= 1 + accBoost;
     this.fenvVal = env;
 
-    const lfo = this.playing ? this.lfoValue() * Math.min(1, Math.max(0, p['lfo.depth'])) : 0;
+    const lfo = (this.playing || this.clip) ? this.lfoValue() * Math.min(1, Math.max(0, p['lfo.depth'])) : 0;
     const track = Math.min(1, Math.max(0, p['flt.track']));
     const key = ((noteAbs - KEYTRACK_REF) / 12) * track;
     const oct = p['flt.env'] * env * FENV_OCT + lfo * LFO_OCT + key;
@@ -548,10 +676,13 @@ class BassProcessor extends AudioWorkletProcessor {
     L.fill(0); if (R !== L) R.fill(0);
     const n = L.length;
 
+    if (this.hosted) this.hostTick(n);
+    const standalone = this.playing && !this.hosted;
+
     let pos = 0;
     while (pos < n) {
       let run = n - pos;
-      if (this.playing) {
+      if (standalone) {
         if (this.samplesToNext <= 0) this.fireStep();
         run = Math.min(run, Math.ceil(this.samplesToNext));
       }
@@ -559,9 +690,9 @@ class BassProcessor extends AudioWorkletProcessor {
         run = Math.min(run, Math.max(1, Math.ceil(this.samplesToGateOff)));
       }
       this.renderVoice(L, R, pos, run);
-      if (this.playing) {
-        this.samplesToNext -= run;
-        this.songPos += run;
+      if (standalone) this.samplesToNext -= run;
+      if (standalone || this.clip) {
+        this.songPos += run; // the bar-locked LFO tracks either transport
       }
       if (this.samplesToGateOff >= 0) {
         this.samplesToGateOff -= run;

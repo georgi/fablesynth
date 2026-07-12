@@ -11,6 +11,7 @@
 #pragma once
 
 #include "DrumParams.h"
+#include "../../dsp/ClipHost.h"
 #include "../../dsp/Engine.h"       // fable::Rng + TablePtr (via Wavetables.h)
 
 #include <cstdint>
@@ -68,6 +69,57 @@ public:
     // never fires. Jumps/loops resync from ppq. Host playing suppresses the
     // internal play()/stop() transport; host stop leaves the sequencer stopped.
     void setHostTransport(double ppq, double bpm, bool playing);
+
+    // ---- SQ-4 hosted-clip mode (docs/sq4-clips.md §6, same contract as
+    // Engine::setHostClipMode/hostTempo/...). While on, play()/stop() and the
+    // host-transport-locked pattern firing are suppressed (hostClipMode_
+    // guards render's internal-clock and host-transport branches) so the
+    // standalone sequencer and the hosted clip can never double-fire pads;
+    // the standalone render path is otherwise byte-identical when this is
+    // off. Unlike WT-1/BL-1, DR-1 pads are one-shot fire-and-forget voices —
+    // the worklet's hostTick/clipFire never gate or choke anything on stop
+    // or swap (src/drum/engine/worklet-drum.js:173-235), so sounding pads
+    // just ring out through both.
+    void setHostClipMode(bool on, int maxBlock = 0) {
+        hostClipMode_ = on;
+        // Reserve the clip host's buffers so no launch/update/tick allocates on
+        // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
+        // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
+        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
+        else clipHost_.clear();
+    }
+    void hostTempo(double bpm, double swing, double anchorFrame) {
+        setBpmOverride(bpm);
+        anchorFrame_ = anchorFrame;
+        clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
+    }
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
+    }
+    void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
+        clipHost_.updateClip(data, (size_t)bytes, bars);
+    }
+    void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
+    // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
+    // rest for the next call (Finding 3 — the SeqProcessor loops until 0).
+    int  takeHostEvents(HostEvent* out, int max) {
+        if (max <= 0 || out == nullptr) return 0;
+        int n = std::min((int)clipHost_.events.size(), max);
+        std::copy(clipHost_.events.begin(), clipHost_.events.begin() + n, out);
+        clipHost_.events.erase(clipHost_.events.begin(), clipHost_.events.begin() + n);
+        return n;
+    }
+    size_t hostEventsCapacity() const { return clipHost_.eventsCapacity(); }
+    // Worst-case host-event count for one prepared block (see Engine.h's
+    // hostMaxEvents for the full rationale): ceil(maxBlock / minStepDur) + 8,
+    // minStepDur at max bpm 200; maxBlock<=0 keeps the old fixed 64.
+    int hostMaxEvents(int maxBlock) const {
+        if (maxBlock <= 0) return 64;
+        const double minStepDur = sr_ * 60.0 / 200.0 / 4.0;
+        const int n = (int)std::ceil((double)maxBlock / minStepDur) + 8;
+        return std::max(64, n);
+    }
 
     // Render n samples into 5 stereo buses. outs[b][0]=L, outs[b][1]=R;
     // render() zero-fills all 10 buffers first, then pads accumulate into
@@ -130,11 +182,17 @@ private:
     double ampEnv(const PadVoice& v, int padI, int i) const;
     void renderPad(PadVoice& v, int padI, float* L, float* R, int off, int n);
     void fireStep();               // js:493-518
+    double effectiveBpm() const;   // DG_SEQ_BPM clamp, or bpmOverride_ when host-tempo'd
 
     // host-lock helpers
     double hostStepPpq(long k) const;   // p(k) with the current swing
     void   hostResync();                // smallest k >= 0 with p(k) >= hostPpq_
     void   fireHostStep(long k);        // trigger step k%16 of chain[(k/16) % len]
+
+    // hosted-clip fire (docs/sq4-clips.md §6): byte source is clipHost_'s
+    // live clip rather than pats_/chain_; no tie/lookahead state to carry
+    // (each pad's val is independent, unlike BL-1/WT-1's slide chains).
+    void clipFireAt(int abs);
 
     // sequencer state (js:82-89)
     std::vector<uint8_t> pats_ =
@@ -153,6 +211,12 @@ private:
     double hostBpm_ = 120;
     double hostEndPpq_ = 0;        // expected block-end ppq (continuity check)
     long   hostNextK_ = 0;         // next absolute 16th to fire
+
+    // ---- hosted-clip mode state (SQ-4) ----
+    bool     hostClipMode_ = false;
+    double   hostFrame_ = 0;
+    double   anchorFrame_ = 0;     // shared timebase's beat zero (hostTempo)
+    ClipHost clipHost_;
 
     DrumParamArray p_ = defaultDrumParams();
     uint32_t hits_ = 0;

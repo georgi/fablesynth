@@ -5,6 +5,9 @@ import { describe, it, expect } from 'vitest';
 // tables against params.ts by parsing this text.
 import WORKLET_SRC from './worklet.js?raw';
 import { MOD_DESTS, dstTarget, PARAMS } from '../params';
+import {
+  ACCENT_VEL, NPATTERNS, PLAIN_VEL, STEP_STRIDE, STEPS, SWING_MAX,
+} from '../noteseq';
 
 // worklet.js can't import params.ts (it's loaded into the AudioWorklet via ?url, a
 // standalone module with no imports), so it hand-copies three tables from the
@@ -90,5 +93,26 @@ describe('worklet MOD_LOG_D parity', () => {
     const m = WORKLET_SRC.match(/const MOD_LOG_D = (\d+)\s*;/);
     expect(m, 'MOD_LOG_D declared in worklet.js').not.toBeNull();
     expect(Number(m![1])).toBe(5);
+  });
+});
+
+// --- (d) note-sequencer constants match noteseq.ts ---
+describe('worklet SEQ_* parity', () => {
+  function seqConst(name: string): number {
+    const m = WORKLET_SRC.match(new RegExp(`const ${name} = ([\\d.]+)\\s*;`));
+    expect(m, `${name} declared in worklet.js`).not.toBeNull();
+    return Number(m![1]);
+  }
+
+  it('pattern layout constants match', () => {
+    expect(seqConst('SEQ_STEPS')).toBe(STEPS);
+    expect(seqConst('SEQ_NPATTERNS')).toBe(NPATTERNS);
+    expect(seqConst('SEQ_STRIDE')).toBe(STEP_STRIDE);
+  });
+
+  it('velocity + swing constants match', () => {
+    expect(seqConst('SEQ_ACCENT_VEL')).toBe(ACCENT_VEL);
+    expect(seqConst('SEQ_PLAIN_VEL')).toBe(PLAIN_VEL);
+    expect(seqConst('SEQ_SWING_MAX')).toBe(SWING_MAX);
   });
 });

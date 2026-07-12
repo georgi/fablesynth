@@ -1,6 +1,7 @@
 // src/drum/store.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useDrumStore } from './store';
+import { drumEngine, useDrumStore } from './store';
+import { DrumEngine } from './engine/drum-synth';
 import { patIdx } from './seq';
 import { defaultDrumParams } from './params';
 import { FACTORY_PATCHES, patchOptions } from './patches';
@@ -24,7 +25,7 @@ describe('drum store', () => {
     localStorage.clear();
     useDrumStore.setState({
       params: defaultDrumParams(), sel: 0, editPattern: 0, chain: [0], chaining: false, chainFresh: false,
-      patterns: new Uint8Array(4 * 16 * 16),
+      patterns: new Uint8Array(4 * 16 * 16), hosted: false,
     });
   });
 
@@ -114,5 +115,34 @@ describe('drum store', () => {
     useDrumStore.getState().loadKitByValue(val);
     expect(useDrumStore.getState().params['pad1.penv.amt']).toBe(30);
     expect(useDrumStore.getState().patterns[patIdx(0, 1, 0)]).toBe(1);
+  });
+});
+
+describe('hosted mode', () => {
+  it('attachHosted swaps the engine singleton and mirrors its params', () => {
+    const foreign = new DrumEngine();
+    foreign.params = { 'pad0.oscA.table': 3 };
+    useDrumStore.getState().attachHosted(foreign);
+    const s = useDrumStore.getState();
+    expect(s.hosted).toBe(true);
+    expect(s.powered).toBe(true);
+    expect(s.playing).toBe(false);
+    expect(s.params['pad0.oscA.table']).toBe(3);
+    expect(drumEngine).toBe(foreign);
+  });
+
+  it('play/stop are inert while hosted', () => {
+    useDrumStore.getState().attachHosted(new DrumEngine());
+    useDrumStore.getState().play();
+    expect(useDrumStore.getState().playing).toBe(false);
+  });
+
+  it('kit loads apply params only — patterns stay untouched', () => {
+    useDrumStore.getState().attachHosted(new DrumEngine());
+    const before = useDrumStore.getState().patterns;
+    useDrumStore.getState().loadKitByValue('f1');
+    const s = useDrumStore.getState();
+    expect(s.patterns).toBe(before);
+    expect(s.kitValue).toBe('f1');
   });
 });

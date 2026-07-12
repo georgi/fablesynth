@@ -8,6 +8,7 @@ import { useBassStore } from '../store';
 const LANES_H = 143; // svg viewBox height for the connector overlay
 
 export function PitchSeq() {
+  const hosted = useBassStore((s) => s.hosted);
   const playing = useBassStore((s) => s.playing);
   const curStep = useBassStore((s) => s.curStep);
   const curPat = useBassStore((s) => s.curPat);
@@ -43,38 +44,44 @@ export function PitchSeq() {
   return (
     <section className="panel bl-seq-section" data-accent="a">
       <div className="panel-head bl-seq-head">
-        <button
-          className={`pb-btn bl-transport${playing ? ' active' : ''}`}
-          type="button"
-          aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
-          aria-pressed={playing}
-          onClick={playing ? stop : play}
-        >
-          {playing ? '■' : '▶'}
-        </button>
+        {!hosted && (
+          <button
+            className={`pb-btn bl-transport${playing ? ' active' : ''}`}
+            type="button"
+            aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
+            aria-pressed={playing}
+            onClick={playing ? stop : play}
+          >
+            {playing ? '■' : '▶'}
+          </button>
+        )}
         <h2>PITCH SEQ</h2>
-        <div className="bl-patterns" aria-label="Edit pattern">
-          {PATTERN_NAMES.map((name, i) => (
+        {!hosted && (
+          <>
+            <div className="bl-patterns" aria-label="Edit pattern">
+              {PATTERN_NAMES.map((name, i) => (
+                <button
+                  className={`bl-seq-btn bl-pattern${editPattern === i ? ' active' : ''}`}
+                  type="button"
+                  aria-label={`Pattern ${name}`}
+                  aria-pressed={editPattern === i}
+                  key={name}
+                  onClick={() => chainClick(i)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
             <button
-              className={`bl-seq-btn bl-pattern${editPattern === i ? ' active' : ''}`}
+              className={`bl-seq-btn bl-chain-toggle${chaining ? ' active' : ''}`}
               type="button"
-              aria-label={`Pattern ${name}`}
-              aria-pressed={editPattern === i}
-              key={name}
-              onClick={() => chainClick(i)}
+              aria-pressed={chaining}
+              onClick={() => setChaining(!chaining)}
             >
-              {name}
+              CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}
             </button>
-          ))}
-        </div>
-        <button
-          className={`bl-seq-btn bl-chain-toggle${chaining ? ' active' : ''}`}
-          type="button"
-          aria-pressed={chaining}
-          onClick={() => setChaining(!chaining)}
-        >
-          CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}
-        </button>
+          </>
+        )}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
         <span className="bl-seq-hint">TAP LANE = NOTE · SLIDE TIES INTO STEP FROM PREV</span>
       </div>

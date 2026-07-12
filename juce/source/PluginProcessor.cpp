@@ -58,6 +58,55 @@ void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
     scratchR.setSize(1, samplesPerBlock);
     currentSr.store(sampleRate);
     prepared = true;
+    // Re-sync sequencer content into the (possibly reset) engine.
+    shareSeqState(true, true);
+}
+
+// ---- note sequencer bridge (message thread) --------------------------------
+
+void FableAudioProcessor::pushCmd(int type) {
+    int s1, sz1, s2, sz2;
+    cmdFifo_.prepareToWrite(1, s1, sz1, s2, sz2);
+    if (sz1 > 0)      cmds_[(size_t)s1] = type;
+    else if (sz2 > 0) cmds_[(size_t)s2] = type;
+    cmdFifo_.finishedWrite(sz1 + sz2);
+}
+
+void FableAudioProcessor::setSeqPlaying(bool on) {
+    pushCmd(on ? CmdPlay : CmdStop);
+    seqPlaying_.store(on); // optimistic; processBlock republishes the engine's state
+}
+
+// Copy the message-thread sequencer content into the shared mirror the audio
+// thread applies on its next block (try-lock there, so this never glitches).
+void FableAudioProcessor::shareSeqState(bool patterns, bool chain) {
+    std::lock_guard<std::mutex> lk(shareMutex_);
+    if (patterns) { patternsShared_ = patterns_; patternsDirty_ = true; }
+    if (chain)    { chainShared_ = chain_;       chainDirty_ = true; }
+}
+
+fable::NoteSeqStep FableAudioProcessor::getSeqStep(int pattern, int step) const {
+    if (pattern < 0 || pattern >= fable::SEQ_NPATTERNS || step < 0 || step >= fable::SEQ_STEPS)
+        return {};
+    return fable::getNoteSeqStep(patterns_.data(), pattern, step);
+}
+
+void FableAudioProcessor::setSeqStep(int pattern, int step, const fable::NoteSeqStep& s) {
+    if (pattern < 0 || pattern >= fable::SEQ_NPATTERNS || step < 0 || step >= fable::SEQ_STEPS)
+        return;
+    fable::setNoteSeqStep(patterns_.data(), pattern, step, s);
+    shareSeqState(true, false);
+}
+
+void FableAudioProcessor::setChain(std::vector<int> c) {
+    chain_.clear();
+    for (int p : c) chain_.push_back(juce::jlimit(0, fable::SEQ_NPATTERNS - 1, p));
+    if (chain_.empty()) chain_.push_back(0);
+    shareSeqState(false, true);
+}
+
+void FableAudioProcessor::setEditPattern(int p) {
+    editPattern_ = juce::jlimit(0, fable::SEQ_NPATTERNS - 1, p);
 }
 
 // ---- table addressing & user-table management (message thread) ----
@@ -168,19 +217,58 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     // Push host tempo + transport for LFO sync and downbeat phase-locking
     // (fallbacks when the host provides nothing: 120 BPM, position 0, stopped).
+    // Sequencer host sync (BL-1 conventions): a reported tempo overrides
+    // seq.bpm; a rolling transport that also reports song position slaves the
+    // sequencer to the playhead (steps derive from ppq). Without ppq (or
+    // stopped) the internal play control drives the clock.
     double bpm = 120.0, ppq = 0.0;
-    bool playing = false;
+    bool playing = false, synced = false, hasPpq = false;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition()) {
-            if (auto b = pos->getBpm()) bpm = *b;
-            if (auto q = pos->getPpqPosition()) ppq = *q;
+            if (auto b = pos->getBpm()) { bpm = *b; synced = bpm > 0; }
+            if (auto q = pos->getPpqPosition()) { ppq = *q; hasPpq = true; }
             playing = pos->getIsPlaying();
         }
     engine.setBpm(bpm);
     engine.setTransport(ppq, playing);
+    engine.setBpmOverride(synced ? bpm : 0.0);
+    engine.setSeqHostTransport(ppq, synced ? bpm : 120.0,
+                               playing && hasPpq && synced);
     hostBpm.store((float)bpm, std::memory_order_relaxed);
     hostPpq.store(ppq, std::memory_order_relaxed);
     hostPlaying.store(playing, std::memory_order_relaxed);
+    hostSynced_.store(synced, std::memory_order_relaxed);
+    hostSeqBpm_.store(synced ? bpm : 0.0, std::memory_order_relaxed);
+
+    // Drain the UI command FIFO (sequencer transport / panic).
+    {
+        int s1, sz1, s2, sz2;
+        cmdFifo_.prepareToRead(cmdFifo_.getNumReady(), s1, sz1, s2, sz2);
+        auto run = [&](int start, int count) {
+            for (int i = 0; i < count; ++i) {
+                switch (cmds_[(size_t)(start + i)]) {
+                    case CmdPlay:  engine.seqPlay();  break;
+                    case CmdStop:  engine.seqStop();  break;
+                    case CmdPanic: engine.panic();    break;
+                }
+            }
+        };
+        run(s1, sz1); run(s2, sz2);
+        cmdFifo_.finishedRead(sz1 + sz2);
+    }
+
+    // Sync pattern/chain edits (try-lock: skip on contention, retry next block).
+    if (shareMutex_.try_lock()) {
+        if (patternsDirty_) {
+            engine.setSeqPatterns(patternsShared_.data(), (int)patternsShared_.size());
+            patternsDirty_ = false;
+        }
+        if (chainDirty_) {
+            engine.setSeqChain(chainShared_.data(), (int)chainShared_.size());
+            chainDirty_ = false;
+        }
+        shareMutex_.unlock();
+    }
 
     // MIDI -> note / bend events.
     for (const auto meta : midi) {
@@ -210,6 +298,11 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // Publish the live modulated wavetable positions for the editor.
     vizPosA.store((float)engine.vizA, std::memory_order_relaxed);
     vizPosB.store((float)engine.vizB, std::memory_order_relaxed);
+
+    // Publish sequencer transport feedback for the editor.
+    curStep_.store(engine.seqCurrentStep(), std::memory_order_relaxed);
+    curPattern_.store(engine.seqCurrentPattern(), std::memory_order_relaxed);
+    seqPlaying_.store(engine.seqIsPlaying(), std::memory_order_relaxed);
 
     // HUD feeds: voice count, MIDI led decay, and the post-FX scope ring buffer.
     voiceCount.store(engine.vizActive, std::memory_order_relaxed);
@@ -264,6 +357,18 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
         pool.appendChild(t, nullptr);
     }
     root.appendChild(pool, nullptr);
+
+    // Note sequencer session: all 4 patterns in the web's packed 3-byte/step
+    // layout (base64) + the chain + the edit pattern (BL-1 BASS-child scheme).
+    juce::ValueTree seq("NOTESEQ");
+    seq.setProperty("patterns",
+        juce::Base64::toBase64(patterns_.data(), patterns_.size()), nullptr);
+    juce::StringArray chainStr;
+    for (int c : chain_) chainStr.add(juce::String(c));
+    seq.setProperty("chain", chainStr.joinIntoString(","), nullptr);
+    seq.setProperty("editPattern", editPattern_, nullptr);
+    root.appendChild(seq, nullptr);
+
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
 }
 
@@ -271,14 +376,35 @@ void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
 
-    juce::ValueTree params, pool;
+    juce::ValueTree params, pool, seq;
     if (xml->hasTagName("FABLESTATE")) {
         auto root = juce::ValueTree::fromXml(*xml);
         params = root.getChildWithName(apvts.state.getType());
         pool   = root.getChildWithName("USERTABLES");
+        seq    = root.getChildWithName("NOTESEQ");
     } else if (xml->hasTagName(apvts.state.getType())) {
         params = juce::ValueTree::fromXml(*xml); // legacy: bare parameter tree
     }
+
+    // Restore the sequencer session (legacy states without NOTESEQ keep the
+    // empty-pattern defaults).
+    if (seq.isValid()) {
+        juce::MemoryOutputStream raw;
+        if (juce::Base64::convertFromBase64(raw, seq.getProperty("patterns", "").toString())
+            && raw.getDataSize() == patterns_.size())
+            std::memcpy(patterns_.data(), raw.getData(), patterns_.size());
+        juce::StringArray chainStr;
+        chainStr.addTokens(seq.getProperty("chain", "").toString(), ",", "");
+        std::vector<int> c;
+        for (const auto& s : chainStr)
+            if (s.trim().isNotEmpty())
+                c.push_back(juce::jlimit(0, fable::SEQ_NPATTERNS - 1, s.getIntValue()));
+        chain_ = c.empty() ? std::vector<int>{0} : std::move(c);
+        editPattern_ = juce::jlimit(0, fable::SEQ_NPATTERNS - 1,
+                                    (int)seq.getProperty("editPattern", 0));
+    }
+    shareSeqState(true, true);
+    pushCmd(CmdPanic);
 
     // Restore user tables first so the engine has them before params apply.
     userTables.clear();
