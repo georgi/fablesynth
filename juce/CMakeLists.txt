@@ -178,7 +178,11 @@ if(FABLE_BUILD_PLUGIN)
         PLUGIN_CODE Fsq4
         FORMATS AU VST3 Standalone
         IS_SYNTH TRUE
-        NEEDS_MIDI_INPUT FALSE
+        # TRUE even though SQ-4 ignores incoming MIDI: Ableton Live refuses to
+        # create a VST3 instrument with no event-in bus ("VST3: Failed" right
+        # after the processor loads) — an instrument with neither audio-in nor
+        # MIDI-in is unroutable in Live's model.
+        NEEDS_MIDI_INPUT TRUE
         EDITOR_WANTS_KEYBOARD_FOCUS TRUE
         COPY_PLUGIN_AFTER_BUILD FALSE)
 
