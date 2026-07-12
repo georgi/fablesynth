@@ -21,6 +21,7 @@ export function OscPanel({ prefix, accentKey, title, gridArea }: OscPanelProps) 
   const modPos = useStore((s) => (prefix === 'oscA' ? s.modPosA : s.modPosB));
   const userTables = useStore((s) => s.userTables); // re-render when the pool changes
   const openEditor = useStore((s) => s.openEditor);
+  const hosted = useStore((s) => s.hosted);
   void userTables;
 
   const table = powered && engine.tables ? engine.tables[tableIndex | 0] : null;
@@ -31,7 +32,9 @@ export function OscPanel({ prefix, accentKey, title, gridArea }: OscPanelProps) 
         <span className="ph-power"><PowerButton paramId={`${prefix}.on`} /></span>
         <h2>{title}</h2>
         <span className="ph-stepper">
-          <button className="wt-edit" aria-label="edit wavetable" title="import / draw wavetable" onClick={() => openEditor(prefix)}>✎</button>
+          {!hosted && (
+            <button className="wt-edit" aria-label="edit wavetable" title="import / draw wavetable" onClick={() => openEditor(prefix)}>✎</button>
+          )}
           <Stepper paramId={`${prefix}.table`} />
         </span>
       </div>

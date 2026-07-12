@@ -215,7 +215,7 @@ export const useStore = create<SynthStore>((set, get) => ({
 
   addUserTable: (u) => {
     const userTables = [...get().userTables, u];
-    saveUserTablePool(userTables);
+    if (!get().hosted) saveUserTablePool(userTables);
     engine.setUserTables(userTables.map((t) => t.table));
     set({ userTables });
     const osc = get().editorOsc;
@@ -224,7 +224,7 @@ export const useStore = create<SynthStore>((set, get) => ({
 
   deleteUserTable: (poolIndex) => {
     const userTables = get().userTables.filter((_, i) => i !== poolIndex);
-    saveUserTablePool(userTables);
+    if (!get().hosted) saveUserTablePool(userTables);
     engine.setUserTables(userTables.map((t) => t.table));
     set({ userTables });
     // Repair osc table references around the removed slot.
@@ -239,7 +239,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   renameUserTable: (poolIndex, name) => {
     const nm = (name.trim().toUpperCase() || 'USER').slice(0, 14);
     const userTables = get().userTables.map((t, i) => (i === poolIndex ? { ...t, name: nm } : t));
-    saveUserTablePool(userTables);
+    if (!get().hosted) saveUserTablePool(userTables);
     set({ userTables });
   },
 
@@ -249,7 +249,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   updateUserTable: (poolIndex, u) => {
     if (poolIndex < 0 || poolIndex >= get().userTables.length) return;
     const userTables = get().userTables.map((t, i) => (i === poolIndex ? u : t));
-    saveUserTablePool(userTables);
+    if (!get().hosted) saveUserTablePool(userTables);
     engine.setUserTables(userTables.map((t) => t.table));
     set({ userTables });
   },

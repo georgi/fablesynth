@@ -27,7 +27,6 @@ import { StepSeq } from '../../drum/components/StepSeq';
 import { makeEmptyPatterns as drumEmpty } from '../../drum/seq';
 import { useDrumStore } from '../../drum/store';
 import { makeEmptyPatterns as wtEmpty } from '../../noteseq';
-import { WavetableEditor } from '../../components/WavetableEditor';
 import { EnvPanel } from '../../components/panels/EnvPanel';
 import { FilterPanel } from '../../components/panels/FilterPanel';
 import { FxPanel } from '../../components/panels/FxPanel';
@@ -132,23 +131,35 @@ export function DeviceView() {
   }, [focus?.scene, focus?.track, host, machine, editable]);
 
   // 4. Snapshot patch edits (debounced) into the track's inline patch doc.
+  //    Cleanup flushes a pending timer rather than discarding it, so tweaks
+  //    made <400ms before Esc/track-switch aren't lost.
   useEffect(() => {
     if (!focus || !host) return;
     let prev = host.getParams();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const write = () => {
+      useSeqStore.getState().setTrackPatch(focus.track, {
+        kind: 'inline',
+        data: { params: { ...host.getParams() } },
+      });
+    };
     const unsub = host.subscribe(() => {
       const next = host.getParams();
       if (next === prev) return;
       prev = next;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        useSeqStore.getState().setTrackPatch(focus.track, {
-          kind: 'inline',
-          data: { params: { ...host.getParams() } },
-        });
+        timer = undefined;
+        write();
       }, 400);
     });
-    return () => { clearTimeout(timer); unsub(); };
+    return () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        write();
+      }
+      unsub();
+    };
   }, [focus?.track, host]);
 
   // 5. Mirror the conductor's per-track playhead into the device step LEDs —
@@ -229,7 +240,6 @@ function BassPanels() {
 function WtPanels() {
   return (
     <div id="rack" className="sq-hosted-rack">
-      <WavetableEditor />
       <div className="panels">
         <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
         <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
