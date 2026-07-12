@@ -660,17 +660,16 @@ bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
     if (preparedSampleRate_ > 0.0) {
         // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
         // that lands after this point would otherwise flip an owner in the new
-        // conductor (see cmdGen_/audioGen_). Bump the message-thread reference
-        // first, then push a Reset carrying the new generation as the FIRST
-        // command — the audio thread advances audioGen_ only when this Reset
-        // drains, in FIFO order ahead of the stops below. That ordering is what
-        // makes the invalidation race-free: any event the old session produces
-        // before the Reset drains still carries the old generation (dropped);
-        // once it drains, the stops that follow have already disarmed every
-        // pending clip, so only Stop acks can be produced.
+        // conductor (see cmdGen_/audioGen_). Bump the message-thread reference,
+        // push the stops, then push a Reset carrying the new generation LAST —
+        // the audio thread advances audioGen_ only when the Reset drains, and
+        // FIFO order then proves the stops drained first, so every pending clip
+        // is already disarmed the instant the new generation takes effect: no
+        // interleaving (even a message-thread preemption between pushes) can
+        // stamp an old-session Start with the new generation. Events produced
+        // before the Reset drains carry the old generation and are dropped.
         cmdGen_.fetch_add(1, std::memory_order_relaxed);
         const uint32_t newGen = cmdGen_.load(std::memory_order_relaxed);
-        { Cmd r; r.k = Cmd::K::Reset; r.gen = newGen; pushCmd(std::move(r)); }
         // Same stop-before-re-anchor sequencing as setStateInformation (see the
         // comment there): stop every track first, ordered ahead of the new
         // conductor's first tempo command, so no clip is mid-flight across the
@@ -680,6 +679,7 @@ bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
             Cmd c; c.k = Cmd::K::Stop; c.t = t; c.at = now;
             pushCmd(std::move(c));
         }
+        { Cmd r; r.k = Cmd::K::Reset; r.gen = newGen; pushCmd(std::move(r)); }
         conductor_ = std::make_unique<Conductor>(initialSession_, io_, preparedSampleRate_);
         conductor_->powerOn();
         for (int t = 0; t < kTracks; ++t) applyTrackPatch(t);
