@@ -7,6 +7,7 @@
 // driven by the plugin AND exercised by a headless test harness.
 #pragma once
 
+#include "ClipHost.h"
 #include "NoteSeq.h"
 #include "Params.h"
 #include "Wavetables.h"
@@ -172,6 +173,31 @@ public:
     // the pattern is chain[(k/16) % chain.size()], and k < 0 never fires.
     void setSeqHostTransport(double ppq, double bpm, bool playing);
 
+    // ---- SQ-4 hosted-clip mode (docs/sq4-clips.md §6) ----
+    // While on, seqPlay()/seqStop() and host-transport seq firing are
+    // suppressed (guarded by hostClipMode_) so the standalone sequencer and
+    // the hosted clip can never double-fire the same voice slot; the
+    // standalone render path is otherwise byte-identical when this is off.
+    void setHostClipMode(bool on) { hostClipMode_ = on; if (!on) clipHost_.clear(); }
+    void hostTempo(double bpm, double swing, double anchorFrame) {
+        setBpm(bpm);
+        clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
+    }
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame);
+    }
+    void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
+        clipHost_.updateClip(data, (size_t)bytes, bars);
+    }
+    void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
+    int  takeHostEvents(HostEvent* out, int max) {
+        int n = std::min((int)clipHost_.events.size(), max);
+        std::copy(clipHost_.events.begin(), clipHost_.events.begin() + n, out);
+        clipHost_.events.clear();
+        return n;
+    }
+
     // One unpacked engine step: on/acc/tie + semitone offset from SEQ_ROOT
     // (worklet seqRead). Static so the harness asserts the unpack directly.
     struct SeqReadStep { bool on = false, acc = false, tie = false; int semi = 0; };
@@ -201,6 +227,7 @@ private:
     void seqTie(int n, double vel);          // worklet seqTie (legato retune)
     void seqFire();                          // worklet seqFire (internal clock)
     void seqFireAt(int s, int pat, int patNext, double dur); // shared step-fire body
+    void clipFireAt(int abs); // hosted twin of seqFireAt; byte source is clipHost_'s clip
     double seqEffectiveBpm() const;
     // host-lock helpers (BassEngine scheme)
     double seqHostStepPpq(long k) const;
@@ -237,6 +264,11 @@ private:
     int    seqNote_ = -1;             // midi note the sequencer is sounding (-1 = none)
     double seqSongPos_ = 0;           // samples since play (virtual transport for synced LFOs)
     double bpmOverride_ = 0;          // > 0: host tempo wins over SEQ_BPM
+
+    // ---- hosted-clip mode state (SQ-4) ----
+    bool     hostClipMode_ = false;
+    double   hostFrame_ = 0;
+    ClipHost clipHost_;
 
     // host transport lock state (BassEngine scheme)
     bool   seqHostPlaying_ = false;

@@ -54,6 +54,10 @@ public:
 
     bool isPlaying() const { return playing_; }
     int  playingBars() const { return hasPend_ ? pendBars_ : clipBars_; }
+    // Bars of the currently loaded (live) clip — unlike playingBars(), never
+    // shadowed by a still-pending clip; the fire callback needs this to wrap
+    // its tie lookahead within the clip that's actually sounding.
+    int  clipBars() const { return clipBars_; }
     const uint8_t* clipData() const { return clip_.data(); }
     int  clipStep() const { return clipStep_; } // last fired absolute step
 

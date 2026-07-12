@@ -189,6 +189,7 @@ void Engine::noteOff(int n) {
 // ---------------- note sequencer (worklet.js seqRead/seqGateOff/seqTie/seqFire) ----------------
 
 void Engine::seqPlay() {
+    if (hostClipMode_) return;     // hosted clip owns the transport
     if (seqHostPlaying_) return;   // host owns the transport while rolling
     seqPlaying_ = true;
     seqStep_ = -1;
@@ -280,6 +281,37 @@ void Engine::seqFireAt(int s, int pat, int patNext, double dur) {
         seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
     }
     seqStep_ = s;
+}
+
+// Hosted twin of seqFireAt (docs/sq4-clips.md §6): identical gate-off
+// ordering, tie legato and accent velocities — only the byte source changes
+// from the pattern banks (seqPats_/chain) to the ClipHost's live clip, whose
+// layout (flags, note, oct+1 per step) is byte-identical to a seq pattern, so
+// readSeqStep() reads it directly with the clip's bar standing in for `pat`.
+void Engine::clipFireAt(int abs) {
+    const uint8_t* clip = clipHost_.clipData();
+    const int total = std::max(1, clipHost_.clipBars() * SEQ_STEPS);
+    const int bar = abs / SEQ_STEPS;
+    const int s   = abs % SEQ_STEPS;
+    const SeqReadStep st = readSeqStep(clip, bar, s);
+    if (st.on) {
+        int root = (int)p_[SEQ_ROOT];
+        if (root == 0) root = 48;
+        const int n = root + st.semi;
+        const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
+        if (st.tie && seqNote_ >= 0) seqTie(n, vel);
+        else { seqGateOff(); noteOn(n, vel); }
+        seqNote_ = n;
+        // hold through the step when the NEXT step (wrapping within the
+        // clip's own bar count, not a separate chain) ties in
+        const int absN = (abs + 1) % total;
+        const SeqReadStep stN = readSeqStep(clip, absN / SEQ_STEPS, absN % SEQ_STEPS);
+        const double bpm = std::max(60.0, std::min(200.0, bpm_));
+        const double dur = sqSamplesPerStep(bpm, sr_);
+        double gate = p_[SEQ_GATE] != 0 ? (double)p_[SEQ_GATE] : 0.55;
+        gate = std::min(0.98, std::max(0.1, gate));
+        seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
+    }
 }
 
 // worklet seqFire — internal clock: real-sample step durations, swing delays
@@ -855,7 +887,10 @@ void Engine::render(float* L, float* R, int n) {
     // playhead ppq (sample-accurate splits at each due step); the internal path
     // counts real samples so the clock never drifts (worklet parity). Chunks
     // are additionally cut at the pending gate-off so it lands on its sample.
-    const bool hostRun = seqHostPlaying_;
+    // Hosted clip mode owns the transport exclusively: it suppresses both the
+    // host-transport-locked and internal-clock seq firing below so the
+    // standalone sequencer and the hosted clip can never double-fire.
+    const bool hostRun = seqHostPlaying_ && !hostClipMode_;
     double ppqPerSample = 0, samplesPerPpq = 0;
     if (hostRun) {
         ppqPerSample = seqHostBpm_ / 60.0 / sr_;
@@ -867,7 +902,7 @@ void Engine::render(float* L, float* R, int n) {
     // transport, synced LFOs phase-lock to the sequencer clock — the web
     // build's transportBeats follows seq.bpm the same way.
     const double seqBeatsPerSample = (seqEffectiveBpm() / 60.0) / sr_;
-    const bool internalRun = seqPlaying_ && !hostRun;
+    const bool internalRun = seqPlaying_ && !hostRun && !hostClipMode_;
     const bool hostPlayingFlag = playing_;
     if (internalRun) playing_ = true;   // synced LFOs treat the seq as transport
 
@@ -883,9 +918,18 @@ void Engine::render(float* L, float* R, int n) {
                 if (fireAt - off < run) run = (int)(fireAt - off);
                 break;
             }
-        } else if (seqPlaying_) {
+        } else if (internalRun) {
             if (seqToNext_ <= 0) seqFire();
             run = std::min(run, std::max(1, (int)std::ceil(seqToNext_)));
+        } else if (hostClipMode_) {
+            // At most one fire per quantum (ClipHost contract); a Stop event
+            // means the clip transport just gated the seq voice off (docs
+            // §6 rule 3 — sequencer notes only, never panic(): live MIDI
+            // notes must survive).
+            const size_t evBefore = clipHost_.events.size();
+            clipHost_.tick(hostFrame_, run, [&](int abs) { clipFireAt(abs); });
+            for (size_t i = evBefore; i < clipHost_.events.size(); i++)
+                if (clipHost_.events[i].t == HostEvent::T::Stop) seqGateOff();
         }
         if (seqToGateOff_ >= 0)
             run = std::min(run, std::max(1, (int)std::ceil(seqToGateOff_)));
@@ -895,10 +939,11 @@ void Engine::render(float* L, float* R, int n) {
                                             : ppq_ + off * beatsPerSample;
         renderBlock(L + off, R + off, run, chunkPpq);
 
-        if (seqPlaying_) {
+        if (internalRun) {
             seqToNext_ -= run;
             seqSongPos_ += run;
         }
+        if (hostClipMode_) hostFrame_ += run;
         if (seqToGateOff_ >= 0) {
             seqToGateOff_ -= run;
             if (seqToGateOff_ <= 0) {

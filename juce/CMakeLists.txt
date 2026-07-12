@@ -287,7 +287,13 @@ target_compile_features(bass_engine_test PRIVATE cxx_std_17)
 
 # ---- SQ-4 headless DSP verification harness (no JUCE) ----
 add_executable(sq4_engine_test
-    test/sq4_engine_test.cpp)
+    test/sq4_engine_test.cpp
+    source/dsp/Engine.cpp
+    source/dsp/Wavetables.cpp
+    source/dsp/Fx.cpp
+    source/dsp/Params.cpp
+    source/dsp/Presets.cpp
+    source/dsp/UserTables.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
 
 enable_testing()

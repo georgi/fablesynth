@@ -1,8 +1,12 @@
 #include "../source/dsp/ClipHost.h"
+#include "../source/dsp/Engine.h"
+#include "../source/dsp/Presets.h"
+#include "../source/dsp/Wavetables.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
@@ -166,9 +170,63 @@ static void testClipHost() {
     }
 }
 
+static double rmsOf(fable::Engine& e, double& frame, int blocks) {
+    double sumSq = 0; long cnt = 0;
+    float L[128], R[128];
+    for (int b = 0; b < blocks; b++) {
+        e.hostSetFrame(frame);
+        e.render(L, R, 128);
+        frame += 128;
+        for (int i = 0; i < 128; i++) { sumSq += (double)L[i]*L[i] + (double)R[i]*R[i]; cnt += 2; }
+    }
+    return std::sqrt(sumSq / (double)cnt);
+}
+
+static void testWt1Hosted() {
+    using namespace fable;
+    Engine e;
+    e.prepare(48000);
+    std::vector<TablePtr> tables;
+    for (auto& g : generateTables()) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    e.setTables(tables);
+    // load factory preset 3 (CRYSTAL PLUCK) exactly as
+    // FableAudioProcessor::setCurrentProgram does (PluginProcessor.cpp:320-335),
+    // minus the APVTS round-trip which is JUCE-only.
+    e.setParams(applyPreset(factoryPresets()[3]));
+    e.setHostClipMode(true);
+    e.hostTempo(122, 0, 256);
+
+    // one-bar clip: quarter-note C lane hits on steps 0,4,8,12
+    auto clip = sqEmptyClip(Machine::WT1, 1);
+    for (int s : {0, 4, 8, 12}) { clip[(size_t)sqNoteIdx(0, s)] = 1; clip[(size_t)sqNoteIdx(0, s) + 1] = 0; }
+    e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);   // quant OFF
+
+    double frame = 256;
+    CHECK(rmsOf(e, frame, 400) > 1e-5);                  // audible
+
+    HostEvent evs[64];
+    int n = e.takeHostEvents(evs, 64);
+    bool sawStart = false, sawPos = false;
+    for (int i = 0; i < n; i++) {
+        if (evs[i].t == HostEvent::T::Start) sawStart = true;
+        if (evs[i].t == HostEvent::T::Pos) sawPos = true;
+    }
+    CHECK(sawStart && sawPos);
+
+    // Stop gates the seq note off; the decay to silence takes the full ADSR
+    // release, not an instant cut (WT-1 is a "pluck" patch: env1.r = 0.6s, so
+    // the release tail rings past the stop). Skip past the release (300
+    // blocks = 800ms > 9 release time-constants) before asserting silence —
+    // matches the docs §6 rule 3 contract (seqGateOff(), not panic()).
+    e.hostClipStop(frame);
+    (void)rmsOf(e, frame, 300);
+    CHECK(rmsOf(e, frame, 200) < 1e-4);                  // silent tail after release
+}
+
 int main() {
     testProtocol();
     testClipHost();
+    testWt1Hosted();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;
