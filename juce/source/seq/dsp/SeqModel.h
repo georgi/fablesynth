@@ -5,6 +5,9 @@
 #pragma once
 
 #include "SeqProtocol.h"
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -106,6 +109,35 @@ inline bool isTrackOpen(int t, const std::unordered_map<int, int>& owner,
     if (it == owner.end()) return true;
     int o = it->second;
     return !(o < (int)sceneMute.size() && sceneMute[(size_t)o]);
+}
+
+// 16-step cell preview derived from the clip's first bar of real pattern
+// data — port of src/seq/model.ts:61-80 (StepBar.h is a bar height in px of a
+// 20px lane; `bytes` must have at least one bar's worth for `machine`).
+struct StepBar {
+    int h = 3;
+    bool on = false;
+};
+
+inline std::array<StepBar, SQ_STEPS_PER_BAR> sqPreviewSteps(Machine machine, const uint8_t* bytes) {
+    std::array<StepBar, SQ_STEPS_PER_BAR> out {};
+    for (int s = 0; s < SQ_STEPS_PER_BAR; s++) {
+        if (machine == Machine::DR1) {
+            int count = 0;
+            bool acc = false;
+            for (int pad = 0; pad < SQ_DR1_PADS; pad++) {
+                const uint8_t v = bytes[sqDr1Idx(0, pad, s)];
+                if (v) { count++; if (v == 2) acc = true; }
+            }
+            out[(size_t)s] = { count ? std::min(19, 5 + count * 3 + (acc ? 2 : 0)) : 3, count > 0 };
+        } else {
+            const int o = sqNoteIdx(0, s);
+            const bool on = (bytes[o] & 1) != 0;
+            const int semi = std::min(11, (int)bytes[o + 1]) + 12 * ((int)bytes[o + 2] - 1); // -12..23
+            out[(size_t)s] = { on ? (int)std::lround(5.0 + ((semi + 12) / 35.0) * 14.0) : 3, on };
+        }
+    }
+    return out;
 }
 
 } // namespace fable

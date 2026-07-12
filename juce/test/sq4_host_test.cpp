@@ -134,11 +134,6 @@ int main(int argc, char** argv) {
     ed->setSize(1460, 920);
     juce::Image img(juce::Image::ARGB, 1460, 920, true);
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
-    if (argc > 1) {
-        juce::File out(argv[1]);
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
     check(img.getPixelAt(4, 900).getAlpha() == 255, "editor background pixel opaque",
           img.getPixelAt(4, 900).getAlpha());
@@ -200,6 +195,51 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < live.size(); ++i)
             if (std::abs(live[i] - expected[i]) > 1e-6f) { matches = false; break; }
     check(matches, "patchStep(2, +1) reaches the engine (not just the session doc)");
+
+    // ---- 11. Grid semantics through real click handlers. ----
+    std::printf("\n== scene grid + footer ==\n");
+    auto& grid = seqEditor->grid();
+    auto& footer = seqEditor->footer();
+
+    grid.cellClick(2, 0);                          // launch DROP A drums
+    check(p.conductor().queueOf(0) == 2, "cellClick(2,0) queues scene 2 on track 0",
+          p.conductor().queueOf(0));
+    renderRms(p, buf, 800); p.drainAcks();
+    check(p.conductor().ownerOf(0) == 2, "track 0 becomes owned by scene 2 after render",
+          p.conductor().ownerOf(0));
+
+    grid.cellClick(2, 0);                          // click a LIVE cell -> stop
+    check(p.conductor().queueOf(0) == fable::SQ_STOP, "cellClick(2,0) on a live cell queues a stop",
+          p.conductor().queueOf(0));
+    renderRms(p, buf, 800); p.drainAcks();
+
+    grid.cellRightClick(0, 1);                     // INTRO empty BASS cell -> pass-through
+    bool pass = false;
+    for (int x : p.conductor().session().scenes[0].pass) if (x == 1) pass = true;
+    check(pass, "cellRightClick on an empty cell toggles pass-through");
+
+    grid.sceneLaunch(3);                           // DROP B
+    check(p.conductor().queueOf(0) == 3 && p.conductor().queueOf(3) == 3,
+          "sceneLaunch(3) queues every track of scene 3");
+    renderRms(p, buf, 800); p.drainAcks();
+
+    // Re-render the snapshot now that scene 3 is live and the INTRO pass-
+    // through toggle is set -- a livelier picture than the idle factory grid.
+    { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
+    if (argc > 1) {
+        juce::File out(argv[1]);
+        out.deleteFile();
+        juce::FileOutputStream os(out);
+        juce::PNGImageFormat().writeImageToStream(img, os);
+    }
+
+    footer.trackStopClick(3);
+    check(p.conductor().queueOf(3) == fable::SQ_STOP, "footer trackStopClick(3) queues a stop");
+
+    footer.stopAllClick();
+    renderRms(p, buf, 1200); p.drainAcks();
+    check(p.conductor().ownerOf(0) == -2, "footer stopAllClick clears owners",
+          p.conductor().ownerOf(0));
 
     delete ed;
 
