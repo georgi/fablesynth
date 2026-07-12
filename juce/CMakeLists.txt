@@ -293,7 +293,11 @@ add_executable(sq4_engine_test
     source/dsp/Fx.cpp
     source/dsp/Params.cpp
     source/dsp/Presets.cpp
-    source/dsp/UserTables.cpp)
+    source/dsp/UserTables.cpp
+    source/bass/dsp/BassParams.cpp
+    source/bass/dsp/BassEngine.cpp
+    source/bass/dsp/BassFx.cpp
+    source/bass/dsp/BassPatches.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
 
 enable_testing()

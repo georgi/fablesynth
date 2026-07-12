@@ -1,3 +1,5 @@
+#include "../source/bass/dsp/BassEngine.h"
+#include "../source/bass/dsp/BassPatches.h"
 #include "../source/dsp/ClipHost.h"
 #include "../source/dsp/Engine.h"
 #include "../source/dsp/Presets.h"
@@ -265,11 +267,109 @@ static void testWt1ClipSwapGatesOldNote() {
     CHECK(e.seqCurrentNote() < 0);                       // A's note ended at the swap, not left hanging
 }
 
+static double rmsBass(fable::BassEngine& e, double& frame, int blocks) {
+    double sumSq = 0; long cnt = 0;
+    float L[128], R[128];
+    for (int b = 0; b < blocks; b++) {
+        e.hostSetFrame(frame);
+        e.render(L, R, 128);
+        frame += 128;
+        for (int i = 0; i < 128; i++) { sumSq += (double)L[i]*L[i] + (double)R[i]*R[i]; cnt += 2; }
+    }
+    return std::sqrt(sumSq / (double)cnt);
+}
+
+static std::vector<fable::TablePtr> makeBassTables() {
+    using namespace fable;
+    std::vector<TablePtr> out;
+    for (auto& g : generateTables()) out.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    return out;
+}
+
+static void testBl1Hosted() {
+    using namespace fable;
+    BassEngine e;
+    e.prepare(48000);
+    e.setTables(makeBassTables());
+    e.setParams(applyBassPatch(bassFactoryPatches()[0]));  // ACID LINE
+    e.setHostClipMode(true);
+    e.hostTempo(122, 0, 256);
+
+    // steps 0..3: 0 on, 1 slide->2, 2 on, 3 off; slide bit = flags bit2
+    auto clip = sqEmptyClip(Machine::BL1, 1);
+    auto set = [&](int s, int note, bool slide) {
+        clip[(size_t)sqNoteIdx(0, s)] = (uint8_t)(1 | (slide ? 4 : 0));
+        clip[(size_t)sqNoteIdx(0, s) + 1] = (uint8_t)note;
+    };
+    set(0, 0, false); set(1, 0, true); set(2, 3, false);
+    e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);
+
+    double frame = 256;
+    CHECK(rmsBass(e, frame, 400) > 1e-5);
+
+    HostEvent evs[64];
+    int n = e.takeHostEvents(evs, 64);
+    bool sawStart = false, sawPos = false;
+    for (int i = 0; i < n; i++) {
+        if (evs[i].t == HostEvent::T::Start) sawStart = true;
+        if (evs[i].t == HostEvent::T::Pos) sawPos = true;
+    }
+    CHECK(sawStart && sawPos);
+
+    // stop releases the mono voice
+    e.hostClipStop(frame);
+    (void)rmsBass(e, frame, 100);
+    CHECK(rmsBass(e, frame, 300) < 1e-4);
+}
+
+// docs/sq4-clips.md §6 rule 4: "the old clip's last gate-off and the new
+// clip's first trigger execute in the same block, old before new." Clip A
+// holds its gate via a continuous slide chain (step 1 on+slide keeps
+// samplesToGateOff_ pinned to -1, so it never gates off on its own); clip B
+// is scheduled mid-flight and is all rests, so its own entry-step fire never
+// gates anything off either. Without the swap hook, A's note would keep
+// sounding forever once B takes over.
+static void testBl1ClipSwapGatesOldNote() {
+    using namespace fable;
+    BassEngine e;
+    e.prepare(48000);
+    e.setTables(makeBassTables());
+    e.setParams(applyBassPatch(bassFactoryPatches()[0]));  // ACID LINE
+    e.setHostClipMode(true);
+    e.hostTempo(120, 0, 0);
+
+    // Clip A: step 0 on, step 1 on+slide (keeps the gate held indefinitely —
+    // clipFireAt's lookahead sees an on+slide next step and sets
+    // samplesToGateOff_ = -1). All later steps are irrelevant: the test
+    // stops well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
+    auto clipA = sqEmptyClip(Machine::BL1, 1);
+    clipA[(size_t)sqNoteIdx(0, 0)] = 1;                 // on
+    clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
+    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + slide
+    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
+    e.hostClip(clipA.data(), (int)clipA.size(), 1, 0.0); // quant OFF
+
+    double frame = 0;
+    float L[128], R[128];
+    for (int b = 0; b < 5; b++) { e.hostSetFrame(frame); e.render(L, R, 128); frame += 128; }
+    CHECK(e.vizGate);                                    // A's note held, well before its own gate-off
+
+    // Clip B: all rests. Its own entry-step fire is a no-op (on == false),
+    // so only the swap hook can end A's note here.
+    auto clipB = sqEmptyClip(Machine::BL1, 1);
+    e.hostClip(clipB.data(), (int)clipB.size(), 1, frame); // swap this block
+    for (int b = 0; b < 3; b++) { e.hostSetFrame(frame); e.render(L, R, 128); frame += 128; }
+
+    CHECK(!e.vizGate);                                    // A's note ended at the swap, not left hanging
+}
+
 int main() {
     testProtocol();
     testClipHost();
     testWt1Hosted();
     testWt1ClipSwapGatesOldNote();
+    testBl1Hosted();
+    testBl1ClipSwapGatesOldNote();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;
