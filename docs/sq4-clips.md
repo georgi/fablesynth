@@ -92,7 +92,9 @@ All `AudioWorkletProcessor`s on one `AudioContext` read the same global
   (`round((currentFrame − anchor) / stepDur) mod clipSteps`), so every clip
   plays whatever step the global clock dictates. Toggling or relaunching a
   clip therefore cannot shift a multi-bar clip against the other devices;
-  all sequencers stay locked to one clock by construction.
+  all sequencers stay locked to one clock by construction. Live pattern
+  edits (`clipupdate`) re-derive the phase only when the bar count changes —
+  a same-length edit is a pure data swap and never touches the transport.
 - **Global pause**: SQ-4's ⏸ maps to `ctx.suspend()` / `ctx.resume()`.
   Frames freeze, every pending `atFrame` and every playing clip resumes in
   phase for free. Stop-all is a real command; pause is not.
@@ -204,9 +206,13 @@ Execution rules inside every worklet (shared contract):
 1. One **playing** slot and one **pending** slot. `clip` writes pending;
    at `atFrame` the pending swaps in (starting at its step 0) and
    `clipstart` is posted. Ableton-style: clips always launch from the top.
-2. Step timing derives from the swap frame: the countdown starts at
-   `atFrame`, counts real samples with the machine's existing swing math, so
-   two devices swapped at the same frame stay in phase indefinitely.
+2. Step timing derives from the anchor: after every fire the worklet
+   schedules the next step at its absolute grid time
+   (`anchor + (idx+1)·stepDur` plus the machine's swing offset) rather than
+   free-running a countdown — a countdown drops the block-quantization
+   residue each step and drifts late without bound, so devices launched at
+   different times would slide apart. Anchor-absolute scheduling keeps every
+   device within one render quantum of the grid indefinitely.
 3. **Stop semantics per machine**: DR-1 lets sounding pads ring out; BL-1
    releases its voice; WT-1 gates off its sequencer notes (and only those —
    live keyboard/MIDI notes survive).

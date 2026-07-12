@@ -241,6 +241,41 @@ describe('clip phase lock', () => {
     expect(poses[0]).toMatchObject({ step: 2, bar: 0 }); // round(12800/6000) = 2
   });
 
+  it('the step clock does not drift off the anchor grid over long runs', () => {
+    // A free-running countdown drops the block-quantization residue every
+    // fire (16 frames/step at 120 BPM) and slips late without bound — then
+    // any anchor-derived phase math disagrees with what is audible.
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    // 2394 blocks → frame 306432, mid-interval of global step 51. A clock
+    // slipping 16 frames/step would still be on step 50.
+    runBlocks(h, 2394);
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBe(51 % 16);
+  });
+
+  it('a same-length pattern edit (sequencer click) never moves the phase', () => {
+    // Swing delays odd steps past their unswung grid time; an edit inside
+    // that window must not floor the anchor phase onto the not-yet-fired
+    // step (that skips it and shifts the device against the others).
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 1, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    runBlocks(h, 63); // frame 8064 — step 1's grid time passed, swung fire pending
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBe(0);
+    const next = new Uint8Array(256);
+    next[0] = 1;
+    h.send({ t: 'clipupdate', data: next, bars: 1 });
+    expect(p.clip!.data[0]).toBe(1);
+    expect(p.clipStep).toBe(0); // pure data swap — the transport is untouched
+  });
+
   it('a non-zero anchor is respected', () => {
     g.currentFrame = 0;
     const h = makeDrumProcessor();

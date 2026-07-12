@@ -419,10 +419,13 @@ class FableProcessor extends AudioWorkletProcessor {
         if (this.clipPend) {
           this.clipPend = { data, bars, at: this.clipPend.at };
         } else if (this.clip) {
+          const resized = bars !== this.clip.bars;
           this.clip = { data, bars };
-          // Re-derive the phase so a bar-count change stays grid-locked
-          // (plain modulo can land a grown clip half a cycle off).
-          if (this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
+          // Re-derive the phase only on a bar-count change (plain modulo can
+          // land a grown clip half a cycle off). Same-length edits — every
+          // sequencer click — are a pure data swap: touching the phase inside
+          // a swing/quantization window would skip a step and desync devices.
+          if (resized && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
         }
         break;
       }
@@ -541,7 +544,11 @@ class FableProcessor extends AudioWorkletProcessor {
     const offNow = s % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
     const sNext = (s + 1) % SEQ_STEPS;
     const offNext = sNext % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
-    this.clipToNext = dur - offNow + offNext;
+    // Schedule the next step at its absolute anchor-grid time. A free-running
+    // countdown (dur - offNow + offNext) drops the block-quantization residue
+    // each fire and drifts late without bound against the shared timebase.
+    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
+    this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - currentFrame;
     this.port.postMessage({ t: 'pos', step: s, bar: (abs / SEQ_STEPS) | 0 });
   }
 
