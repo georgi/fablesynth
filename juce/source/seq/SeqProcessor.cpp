@@ -153,12 +153,12 @@ SeqAudioProcessor::SeqAudioProcessor()
     for (auto& g : generateSampledDrumTables())
         drumTables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
 
-    session_ = factorySession();
-    jassert(session_.tracks.size() == (size_t)kTracks
-            && session_.tracks[0].machine == Machine::DR1
-            && session_.tracks[1].machine == Machine::BL1
-            && session_.tracks[2].machine == Machine::WT1
-            && session_.tracks[3].machine == Machine::WT1);
+    initialSession_ = factorySession();
+    jassert(initialSession_.tracks.size() == (size_t)kTracks
+            && initialSession_.tracks[0].machine == Machine::DR1
+            && initialSession_.tracks[1].machine == Machine::BL1
+            && initialSession_.tracks[2].machine == Machine::WT1
+            && initialSession_.tracks[3].machine == Machine::WT1);
 }
 
 SeqAudioProcessor::~SeqAudioProcessor() { stopTimer(); }
@@ -212,12 +212,23 @@ void SeqAudioProcessor::loadTrackParams(int t, const std::vector<float>& v) {
 }
 
 void SeqAudioProcessor::applyTrackPatch(int t) {
-    if (t < 0 || t >= kTracks) return;
+    if (t < 0 || t >= kTracks || !conductor_) return;
+    // conductor_->session() is the runtime truth for patch swaps (setTrackPatch
+    // writes there, not to initialSession_) — reading initialSession_ here
+    // would re-apply whatever patch the track shipped with, not the one just
+    // selected.
     Cmd c;
     c.k = Cmd::K::Patch;
     c.t = t;
-    c.params = std::make_shared<std::vector<float>>(computeTrackParams(t, session_.tracks[(size_t)t].patch));
+    c.params = std::make_shared<std::vector<float>>(
+        computeTrackParams(t, conductor_->session().tracks[(size_t)t].patch));
     pushCmd(std::move(c));
+}
+
+std::vector<float> SeqAudioProcessor::debugTrackParams(int t) {
+    if (t == 0) { auto& p = drum_.params(); return std::vector<float>(p.begin(), p.end()); }
+    if (t == 1) { auto& p = bass_.params(); return std::vector<float>(p.begin(), p.end()); }
+    auto& p = wt_[t - 2].params(); return std::vector<float>(p.begin(), p.end());
 }
 
 // ---- prepare ---------------------------------------------------------------
@@ -231,9 +242,18 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     bass_.setTables(bassTables_);
     for (int i = 0; i < 2; ++i) wt_[i].setTables(wtTables_);
 
+    // prepareToPlay can run again later (e.g. a host sample-rate change)
+    // after the conductor has already diverged from initialSession_ (patch
+    // swaps, mute/solo, vol edits all live only in the conductor) — seed
+    // this pass from the conductor's live session when one already exists,
+    // so a re-prepare can't quietly revert runtime edits. Copied by value:
+    // the old conductor_ (and the session it owns) is destroyed below when
+    // conductor_ is reassigned, so a reference here would dangle.
+    const SessionData liveSession = conductor_ ? conductor_->session() : initialSession_;
+
     // Apply each track's patch directly (audio is not running yet).
     for (int t = 0; t < kTracks; ++t)
-        loadTrackParams(t, computeTrackParams(t, session_.tracks[(size_t)t].patch));
+        loadTrackParams(t, computeTrackParams(t, liveSession.tracks[(size_t)t].patch));
 
     trackBuf_.setSize(2, samplesPerBlock);
     drumAux_.setSize(2 * (DR_NBUSES - 1), samplesPerBlock);
@@ -254,16 +274,16 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     drum_.setHostClipMode(true); bass_.setHostClipMode(true);
     for (int i = 0; i < 2; ++i) wt_[i].setHostClipMode(true);
 
-    conductor_ = std::make_unique<Conductor>(session_, io_, sampleRate);
+    conductor_ = std::make_unique<Conductor>(liveSession, io_, sampleRate);
     conductor_->powerOn(); // anchor = 256; enqueues tempo + gain commands
 
     // Also stamp tempo directly (safe here — audio not running): the shared
     // anchor is fixed once, never re-anchored mid-flight (a BL-1 LFO term
     // depends on this).
     const double a = conductor_->anchor(), sw = conductor_->swing();
-    drum_.hostTempo(session_.bpm, sw, a);
-    bass_.hostTempo(session_.bpm, sw, a);
-    for (int i = 0; i < 2; ++i) wt_[i].hostTempo(session_.bpm, sw, a);
+    drum_.hostTempo(liveSession.bpm, sw, a);
+    bass_.hostTempo(liveSession.bpm, sw, a);
+    for (int i = 0; i < 2; ++i) wt_[i].hostTempo(liveSession.bpm, sw, a);
 
     lastSwing_ = rawSwing_->load();
     lastBpm_   = rawBpm_->load();
@@ -527,7 +547,7 @@ void SeqAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     juce::ValueTree root("SQ4STATE");
     root.appendChild(state, nullptr);
     juce::ValueTree sess("SESSION");
-    sess.setProperty("doc", sessionToJson(conductor_ ? conductor_->session() : session_), nullptr);
+    sess.setProperty("doc", sessionToJson(conductor_ ? conductor_->session() : initialSession_), nullptr);
     root.appendChild(sess, nullptr);
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
 }
@@ -549,7 +569,7 @@ void SeqAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     if (sess.isValid()) {
         SessionData restored;
         if (sessionFromJson(sess.getProperty("doc", "").toString(), restored)) {
-            session_ = std::move(restored);
+            initialSession_ = std::move(restored);
             if (getSampleRate() > 0.0) {
                 // Rebuild the conductor + re-arm the engines through the FIFO
                 // (audio may be live): patches ride the command path, not a
@@ -569,7 +589,7 @@ void SeqAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
                     Cmd c; c.k = Cmd::K::Stop; c.t = t; c.at = now;
                     pushCmd(std::move(c));
                 }
-                conductor_ = std::make_unique<Conductor>(session_, io_, getSampleRate());
+                conductor_ = std::make_unique<Conductor>(initialSession_, io_, getSampleRate());
                 conductor_->powerOn();
                 for (int t = 0; t < kTracks; ++t) applyTrackPatch(t);
                 lastSwing_ = rawSwing_->load();

@@ -8,6 +8,7 @@
 #include "../source/seq/SeqProcessor.h"
 #include "../source/seq/SeqEditor.h"
 #include "../source/seq/dsp/SeqProtocol.h"
+#include "../source/dsp/Presets.h"
 
 #include <array>
 #include <cmath>
@@ -184,6 +185,21 @@ int main(int argc, char** argv) {
     check(p.conductor().session().tracks[2].patch.index == 4,
           "patchStep(2, +1) advances LEAD's patch index",
           p.conductor().session().tracks[2].patch.index);
+
+    // The session doc updating isn't enough on its own: applyTrackPatch must
+    // read the *conductor's* session (the runtime truth) to compute the Cmd
+    // it pushes, not a stale processor-owned copy — otherwise the chip shows
+    // preset 4 while the engine keeps sounding preset 3. Drain the FIFO
+    // (any processBlock does it) and compare the live engine params against
+    // preset 4's, computed the same way SeqProcessor does internally.
+    renderRms(p, buf, 1);
+    auto expected = fable::applyPreset(fable::factoryPresets()[4]);
+    auto live = p.debugTrackParams(2);
+    bool matches = live.size() == expected.size();
+    if (matches)
+        for (size_t i = 0; i < live.size(); ++i)
+            if (std::abs(live[i] - expected[i]) > 1e-6f) { matches = false; break; }
+    check(matches, "patchStep(2, +1) reaches the engine (not just the session doc)");
 
     delete ed;
 

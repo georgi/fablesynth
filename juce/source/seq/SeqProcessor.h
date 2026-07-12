@@ -92,6 +92,12 @@ public:
     // patch stepper (Task 11) uses this to hot-swap a track's sound.
     void applyTrackPatch(int t);
 
+    // Test hook: snapshot of a track's live audio-thread param array. Used to
+    // verify a patch swap (applyTrackPatch) actually reached the engine and
+    // not just the session doc — call after draining the Cmd FIFO (any
+    // processBlock).
+    std::vector<float> debugTrackParams(int t);
+
     // Published by the audio thread. currentFrame is the shared timebase read by
     // ConductorIO::now(): frames elapsed = the frame index the *next* block will
     // render from, so a launch issued between blocks and the block that consumes
@@ -168,7 +174,13 @@ private:
     std::vector<fable::TablePtr> wtTables_, drumTables_, bassTables_;
 
     std::unique_ptr<fable::Conductor> conductor_;
-    fable::SessionData session_; // message-thread copy (the conductor owns truth)
+    // Seed only — the constructor (factory session) and setStateInformation
+    // (restored doc) write it, then immediately hand it to a freshly built
+    // Conductor. Once conductor_ exists, IT is the runtime truth (patch
+    // swaps, mute/solo, vol, ...); anything on a live/runtime path must read
+    // conductor_->session(), never this member, or it'll act on a stale copy
+    // (see applyTrackPatch's history — it did exactly that).
+    fable::SessionData initialSession_;
 
     // NB: cmdSlots_ holds the shared_ptr for a consumed command until the
     // message thread overwrites that slot on its next wrap of the FIFO — that
