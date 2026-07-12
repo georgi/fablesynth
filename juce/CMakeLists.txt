@@ -184,6 +184,7 @@ if(FABLE_BUILD_PLUGIN)
 
     set(FABLE_SEQ_SOURCES
         source/seq/SeqProcessor.cpp
+        source/seq/SessionCodec.cpp
         source/seq/SeqEditor.cpp
         source/seq/ui/SeqHeader.cpp
         source/seq/ui/TrackHeadsView.cpp

@@ -1,7 +1,7 @@
 // SQ-4 session <-> JSON codec (web SessionDoc v:1 schema, src/seq/protocol.ts
-// SessionDoc). Declared here so Task 14 can move/extend the tests; the bodies
-// live in SeqProcessor.cpp for now. The JUCE layer owns base64 (juce::Base64)
-// and JSON (juce::JSON) — the pure model (SeqModel.h) stays JUCE-free.
+// SessionDoc). Bodies live in SessionCodec.cpp. The JUCE layer owns base64
+// (juce::Base64) and JSON (juce::JSON) — the pure model (SeqModel.h) stays
+// JUCE-free.
 #pragma once
 
 #include <juce_core/juce_core.h>

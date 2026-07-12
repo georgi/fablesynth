@@ -80,6 +80,16 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    // Session import/export (web-compatible SessionDoc v:1 JSON — see
+    // SessionCodec.h). LOAD/SAVE (SeqHeader) and setStateInformation's session
+    // child both funnel through these so there is one rebuild-the-conductor
+    // path. applySessionJson stops all tracks first, then rebuilds the
+    // conductor from the decoded doc (same sequencing as the old
+    // setStateInformation logic); returns false (session unchanged) if the
+    // JSON fails validation.
+    bool applySessionJson(const juce::String& json);
+    juce::String currentSessionJson() const;
+
     // ---- SQ-4 surface --------------------------------------------------------
     // The conductor half (message thread). Valid after prepareToPlay().
     fable::Conductor& conductor() { return *conductor_; }
@@ -181,6 +191,14 @@ private:
     // conductor_->session(), never this member, or it'll act on a stale copy
     // (see applyTrackPatch's history — it did exactly that).
     fable::SessionData initialSession_;
+
+    // Sample rate from the most recent prepareToPlay() call. applySessionJson
+    // uses this (not getSampleRate()) to decide whether it's safe to rebuild
+    // the conductor/engines: JUCE's getSampleRate() only reflects a value a
+    // host wrapper pushed via setRateAndBufferSizeDetails, which plugin-
+    // boundary tests that call prepareToPlay() directly never do — this
+    // member tracks the same fact from the value we actually receive.
+    double preparedSampleRate_ = 0.0;
 
     // NB: cmdSlots_ holds the shared_ptr for a consumed command until the
     // message thread overwrites that slot on its next wrap of the FIFO — that

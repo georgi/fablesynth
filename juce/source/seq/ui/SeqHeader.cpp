@@ -37,6 +37,35 @@ SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
 void SeqHeader::playClick() { proc.setPaused(!proc.paused()); repaint(); }
 void SeqHeader::stopAllClick() { proc.conductor().stopAll(); }
 
+void SeqHeader::loadClick() {
+    chooser_ = std::make_unique<juce::FileChooser>("Load session", juce::File{}, "*.json");
+    auto fcFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+    // SafePointer guards against the header being torn down while the OS
+    // dialog is open (same pattern as WavetableEditor::chooseFile).
+    juce::Component::SafePointer<SeqHeader> safe(this);
+    chooser_->launchAsync(fcFlags, [safe](const juce::FileChooser& fc) {
+        if (safe == nullptr) return;
+        auto* self = safe.getComponent();
+        auto file = fc.getResult();
+        if (file == juce::File{}) return;
+        self->proc.applySessionJson(file.loadFileAsString());
+        self->repaint();
+    });
+}
+
+void SeqHeader::saveClick() {
+    chooser_ = std::make_unique<juce::FileChooser>("Save session", juce::File{}, "*.json");
+    auto fcFlags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting;
+    juce::Component::SafePointer<SeqHeader> safe(this);
+    chooser_->launchAsync(fcFlags, [safe](const juce::FileChooser& fc) {
+        if (safe == nullptr) return;
+        auto* self = safe.getComponent();
+        auto file = fc.getResult();
+        if (file == juce::File{}) return;
+        file.replaceWithText(self->proc.currentSessionJson());
+    });
+}
+
 void SeqHeader::quantStep(int d) {
     proc.conductor().cycleQuant(d);
     // Mirror the new value into the "quant" APVTS param so hosts can see it.
@@ -69,6 +98,8 @@ void SeqHeader::mouseDown(const juce::MouseEvent& e) {
     else if (stopBtn.contains(pos))       stopAllClick();
     else if (quantPrevBtn.contains(pos))  quantStep(-1);
     else if (quantNextBtn.contains(pos))  quantStep(+1);
+    else if (loadBtn.contains(pos))       loadClick();
+    else if (saveBtn.contains(pos))       saveClick();
     else if (swingKnob.contains(pos))     { dragging_ = Drag::Swing; lastY_ = e.position.y; }
     else if (volKnob.contains(pos)) {
         dragging_ = Drag::Vol;
@@ -149,6 +180,13 @@ void SeqHeader::resized() {
     volKnob = knobsArea.withSizeKeepingCentre(40, 44);
     r.removeFromRight(14);
     scopeArea = r.removeFromRight(190).withSizeKeepingCentre(190, 46);
+    r.removeFromRight(14);
+
+    // LOAD/SAVE (JUCE-only surface, no web equivalent) sit right of the clock,
+    // in the same flexible middle gap the clock area leaves before the scope.
+    saveBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
+    r.removeFromRight(6);
+    loadBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -191,6 +229,8 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
     };
     drawBtn(playBtn, playing ? kPauseGlyph : kPlayGlyph, playing);
     drawBtn(stopBtn, kStopGlyph, false);
+    drawBtn(loadBtn, "LOAD", false);
+    drawBtn(saveBtn, "SAVE", false);
 }
 
 void SeqHeader::paintQuant(juce::Graphics& g) {

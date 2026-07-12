@@ -3,10 +3,16 @@
 // (message thread) issues launches/stops/mutes, the audio thread renders and
 // publishes acks, and drainAcks() bridges the two. Covers: silent-but-ticking
 // idle, a scene launch that starts all four hosted engines on the shared bar
-// grid, per-track mute, pause (frame freeze), stopAll decay, and a full
-// session+params state round-trip. Modeled on bass_host_test.cpp.
+// grid, per-track mute, pause (frame freeze), stopAll decay, a full
+// session+params state round-trip, and the web-compatible session JSON codec
+// (SessionCodec.h), including cross-compat against a real web export
+// (test/fixtures/web-session.json — regenerate with
+// `npx tsx scripts/dump-session.ts > juce/test/fixtures/web-session.json`).
+// Modeled on bass_host_test.cpp.
 #include "../source/seq/SeqProcessor.h"
 #include "../source/seq/SeqEditor.h"
+#include "../source/seq/SessionCodec.h"
+#include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include "../source/dsp/Presets.h"
 
@@ -359,6 +365,75 @@ int main(int argc, char** argv) {
     ed2->exitFocus();
 
     delete ed;
+
+    // ---- session JSON codec (web SessionDoc v:1 schema, SessionCodec.h) ----
+
+    {
+        fable::SessionData s = fable::factorySession();
+        juce::String json = fable::sessionToJson(s);
+        fable::SessionData r;
+        check(fable::sessionFromJson(json, r), "sessionFromJson parses sessionToJson's own output");
+        check(r.name == s.name && r.scenes.size() == 6, "round-tripped name + scene count");
+        check(r.scenes[2].clips[0].bytes == s.scenes[2].clips[0].bytes,
+              "round-tripped DRUMS/DROP A pattern bytes");
+        check(r.tracks[0].color == 0xff4de8ffu, "round-tripped DRUMS track color");
+
+        // schema spot-checks against the literal web format.
+        auto v = juce::JSON::parse(json);
+        check((int)v.getProperty("v", 0) == 1, "schema: v == 1");
+        check(v.getProperty("quant", "").toString() == "1 BAR", "schema: quant is the string \"1 BAR\"");
+        check(v.getProperty("scenes", juce::var())[0].getProperty("clips", juce::var())[1].isVoid(),
+              "schema: INTRO/BASS is a null clip slot");
+
+        // rejects bad docs.
+        fable::SessionData junk;
+        check(!fable::sessionFromJson("{\"v\":2}", junk), "sessionFromJson rejects v != 1");
+        check(!fable::sessionFromJson("not json", junk), "sessionFromJson rejects non-JSON");
+
+        // cross-compat: a real web export (dumped via scripts/dump-session.ts,
+        // byte-identical to what the web's saveSession persists) loads and
+        // matches fable::factorySession() byte-for-byte — proving the two
+        // factories AND codecs agree end-to-end.
+        juce::File fixture = juce::File::getCurrentWorkingDirectory()
+                                  .getChildFile("test/fixtures/web-session.json");
+        if (!fixture.existsAsFile())
+            fixture = juce::File(__FILE__).getSiblingFile("fixtures").getChildFile("web-session.json");
+        check(fixture.existsAsFile(), "web-session.json fixture is present");
+        fable::SessionData webSession;
+        check(fable::sessionFromJson(fixture.loadFileAsString(), webSession),
+              "sessionFromJson parses the web-exported fixture");
+        check(webSession.tracks.size() == s.tracks.size() && webSession.scenes.size() == s.scenes.size(),
+              "web fixture track/scene counts match fable::factorySession()");
+        bool scenesMatch = webSession.scenes.size() == s.scenes.size();
+        for (size_t sc = 0; scenesMatch && sc < webSession.scenes.size(); ++sc)
+            for (size_t t = 0; t < webSession.scenes[sc].clips.size(); ++t)
+                if (webSession.scenes[sc].hasClip[t] != s.scenes[sc].hasClip[t] ||
+                    (s.scenes[sc].hasClip[t] &&
+                     webSession.scenes[sc].clips[t].bytes != s.scenes[sc].clips[t].bytes))
+                    scenesMatch = false;
+        check(scenesMatch, "web fixture clip bytes match fable::factorySession() scene-by-scene, track-by-track");
+    }
+
+    // ---- LOAD/SAVE UI test handles (SeqHeader::loadClick/saveClick apply the
+    // FileChooser result via applySessionJson/currentSessionJson underneath;
+    // tested directly here without opening a real OS dialog) ----
+
+    {
+        SeqAudioProcessor p2;
+        p2.prepareToPlay(48000.0, 128);
+        juce::String json = p2.currentSessionJson();
+        check(json.isNotEmpty(), "currentSessionJson returns the live session as JSON");
+
+        fable::SessionData parsed;
+        check(fable::sessionFromJson(json, parsed), "currentSessionJson's output round-trips through sessionFromJson");
+
+        juce::String mutated = json.replace("\"NEON TALE\"", "\"RENAMED\"");
+        check(p2.applySessionJson(mutated), "applySessionJson accepts a valid mutated doc");
+        check(p2.conductor().session().name == "RENAMED", "applySessionJson replaces the live session");
+
+        check(!p2.applySessionJson("not json"), "applySessionJson rejects garbage and returns false");
+        check(p2.conductor().session().name == "RENAMED", "a rejected applySessionJson leaves the session untouched");
+    }
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);
     return failures ? 1 : 0;

@@ -30,6 +30,14 @@ public:
     void stopAllClick();
     void quantStep(int d);
 
+    // Session import/export — web-compatible SessionDoc v:1 JSON (no web
+    // equivalent; JUCE-only surface). Test handle == real click target: the
+    // async juce::FileChooser lambda calls straight into
+    // proc.applySessionJson()/currentSessionJson(), so tests exercise those
+    // directly without opening an OS dialog.
+    void loadClick();
+    void saveClick();
+
 private:
     void timerCallback() override { repaint(); }
 
@@ -46,7 +54,9 @@ private:
     SeqAudioProcessor& proc;
 
     juce::Rectangle<int> logoArea, playBtn, stopBtn, quantTagArea, quantPrevBtn, quantValArea,
-        quantNextBtn, beatsArea, clockLineArea, scopeArea, swingKnob, volKnob;
+        quantNextBtn, beatsArea, clockLineArea, loadBtn, saveBtn, scopeArea, swingKnob, volKnob;
+
+    std::unique_ptr<juce::FileChooser> chooser_;
 
     enum class Drag { None, Swing, Vol };
     Drag dragging_ = Drag::None;
