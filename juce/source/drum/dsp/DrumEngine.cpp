@@ -110,6 +110,11 @@ void DrumEngine::setBpmOverride(double bpm) {
     bpmOverride_ = bpm > 0 ? bpm : 0;
 }
 
+double DrumEngine::effectiveBpm() const {
+    double pbpm = p_[DG_SEQ_BPM] != 0 ? (double)p_[DG_SEQ_BPM] : 126.0;
+    return bpmOverride_ > 0 ? bpmOverride_ : clampd(pbpm, 60.0, 200.0);
+}
+
 // ---- host transport lock ----
 // The DAW owns the clock: steps derive from song position (ppq), so loops,
 // jumps and mid-bar starts all land sample-accurately without local state.
@@ -159,11 +164,22 @@ void DrumEngine::fireHostStep(long k) {
     step_ = s;
 }
 
+// Hosted twin of fireHostStep (docs/sq4-clips.md §6): byte source is the
+// ClipHost's live clip instead of pats_/chain_. Each pad's val is
+// independent (no tie/slide lookahead), so this is a straight per-pad scan.
+void DrumEngine::clipFireAt(int abs) {
+    const uint8_t* clip = clipHost_.clipData();
+    const int bar = abs / DR_STEPS, s = abs % DR_STEPS;
+    for (int i = 0; i < DR_NPADS; i++) {
+        uint8_t val = clip[(size_t)(bar * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
+        if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+    }
+}
+
 // ---- fireStep (js:493-518). The host-tempo override bypasses the 60..200 ----
 // ---- param clamp — the sequencer follows whatever the DAW runs at.       ----
 void DrumEngine::fireStep() {
-    double pbpm = p_[DG_SEQ_BPM] != 0 ? (double)p_[DG_SEQ_BPM] : 126.0;
-    double bpm = bpmOverride_ > 0 ? bpmOverride_ : clampd(pbpm, 60.0, 200.0);
+    double bpm = effectiveBpm();
     double dur = (60.0 / bpm / 4.0) * sr_;
     double swing = p_[DG_MASTER_SWING];
     if (step_ + 1 >= DR_STEPS) {                    // bar wrap advances the chain
@@ -530,13 +546,17 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     }
 
     // Host-locked mode: step times come from song position, not samplesToNext_.
-    const bool hostRun = hostPlaying_;
+    // Hosted clip mode owns the transport exclusively: it suppresses both
+    // the host-transport-locked and internal-clock firing below so the
+    // standalone sequencer and the hosted clip can never double-fire pads.
+    const bool hostRun = hostPlaying_ && !hostClipMode_;
     double ppqPerSample = 0, samplesPerPpq = 0;
     if (hostRun) {
         ppqPerSample = hostBpm_ / 60.0 / sr_;
         samplesPerPpq = 1.0 / ppqPerSample;
         if (!hostSynced_) hostResync();
     }
+    const bool internalRun = playing_ && !hostClipMode_;
 
     int pos = 0;
     while (pos < n) {
@@ -550,9 +570,15 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
                 if (fireAt - pos < run) run = (int)(fireAt - pos);
                 break;
             }
-        } else if (playing_) {                       // js:465-469
+        } else if (internalRun) {                    // js:465-469
             if (samplesToNext_ <= 0) fireStep();
             run = std::min(run, (int)std::ceil(samplesToNext_));
+        } else if (hostClipMode_) {
+            // At most one fire per quantum (ClipHost contract). DR-1 pads
+            // are one-shot voices with no gate to release on Stop/swap
+            // (worklet-drum.js hostTick/clipFire never touch a sounding
+            // pad) — 2-arg tick, no onSwap hook needed.
+            clipHost_.tick(hostFrame_, run, [&](int abs) { clipFireAt(abs); });
         }
         for (int i = 0; i < DR_NPADS; i++) {
             PadVoice& v = voices_[i];
@@ -560,7 +586,8 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             int out = std::max(0, std::min(DR_NBUSES - 1, (int)p_[dpid(i, DP_OUT)]));
             renderPad(v, i, outs[out][0], outs[out][1], pos, run);
         }
-        if (!hostRun && playing_) samplesToNext_ -= run;   // js:475
+        if (internalRun) samplesToNext_ -= run;      // js:475
+        if (hostClipMode_) hostFrame_ += run;
         pos += run;
     }
     if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;

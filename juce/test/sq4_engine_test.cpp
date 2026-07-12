@@ -4,6 +4,10 @@
 #include "../source/dsp/Engine.h"
 #include "../source/dsp/Presets.h"
 #include "../source/dsp/Wavetables.h"
+#include "../source/drum/dsp/DrumEngine.h"
+#include "../source/drum/dsp/DrumKits.h"
+#include "../source/drum/dsp/DrumTables.h"
+#include "../source/drum/dsp/SampledTables.gen.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include <cassert>
 #include <cmath>
@@ -363,6 +367,73 @@ static void testBl1ClipSwapGatesOldNote() {
     CHECK(!e.vizGate);                                    // A's note ended at the swap, not left hanging
 }
 
+static double rmsDrum(fable::DrumEngine& e, double& frame, int blocks) {
+    using namespace fable;
+    double sumSq = 0; long cnt = 0;
+    float bufs[DR_NBUSES][2][128];
+    float* outs[DR_NBUSES][2];
+    for (int b = 0; b < DR_NBUSES; b++)
+        for (int c = 0; c < 2; c++) outs[b][c] = bufs[b][c];
+    for (int b = 0; b < blocks; b++) {
+        e.hostSetFrame(frame);
+        e.render(outs, 128);
+        frame += 128;
+        for (int i = 0; i < 128; i++)
+            sumSq += (double)bufs[0][0][i]*bufs[0][0][i] + (double)bufs[0][1][i]*bufs[0][1][i];
+        cnt += 256;
+    }
+    return std::sqrt(sumSq / (double)cnt);
+}
+
+static std::vector<fable::TablePtr> makeDrumTables() {
+    using namespace fable;
+    std::vector<TablePtr> out;
+    for (auto& t : generateDrumTables())
+        out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
+    for (auto& t : generateTables())
+        out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
+    for (auto& t : generateSampledDrumTables())
+        out.push_back(std::make_shared<const GeneratedTable>(std::move(t)));
+    return out;
+}
+
+static void testDr1Hosted() {
+    using namespace fable;
+    DrumEngine e;
+    e.prepare(48000);
+    e.setTables(makeDrumTables());
+    e.setParams(applyKit(factoryKits()[0]));   // TR-VOID
+    e.setHostClipMode(true);
+    e.hostTempo(122, 0, 256);
+
+    // four-on-the-floor kick (pad 0), accent on step 0
+    auto clip = sqEmptyClip(Machine::DR1, 1);
+    for (int s : {0, 4, 8, 12}) clip[(size_t)sqDr1Idx(0, 0, s)] = (uint8_t)(s == 0 ? 2 : 1);
+    e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);
+
+    double frame = 256;
+    CHECK(rmsDrum(e, frame, 400) > 1e-5);   // renders the MAIN bus (bus 0)
+
+    HostEvent evs[64];
+    int n = e.takeHostEvents(evs, 64);
+    bool sawStart = false, sawPos = false;
+    for (int i = 0; i < n; i++) {
+        if (evs[i].t == HostEvent::T::Start) sawStart = true;
+        if (evs[i].t == HostEvent::T::Pos) sawPos = true;
+    }
+    CHECK(sawStart && sawPos);
+
+    // stop: pads ring out (one-shot AHD envelopes, not gated) — audio
+    // continues briefly, then the envelopes finish decaying on their own.
+    // Render contiguously (a voice's envelope only advances by samples
+    // actually rendered) rather than skipping frame forward.
+    e.hostClipStop(frame);
+    double tail = rmsDrum(e, frame, 10);    // right after stop: the last hit still rings
+    CHECK(tail > 1e-5);
+    (void)rmsDrum(e, frame, 200);           // consume the ~0.2s AHD decay tail
+    CHECK(rmsDrum(e, frame, 200) < 1e-4);   // fully silent once the tail has decayed
+}
+
 int main() {
     testProtocol();
     testClipHost();
@@ -370,6 +441,7 @@ int main() {
     testWt1ClipSwapGatesOldNote();
     testBl1Hosted();
     testBl1ClipSwapGatesOldNote();
+    testDr1Hosted();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;

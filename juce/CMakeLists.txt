@@ -297,7 +297,14 @@ add_executable(sq4_engine_test
     source/bass/dsp/BassParams.cpp
     source/bass/dsp/BassEngine.cpp
     source/bass/dsp/BassFx.cpp
-    source/bass/dsp/BassPatches.cpp)
+    source/bass/dsp/BassPatches.cpp
+    source/drum/dsp/DrumParams.cpp
+    source/drum/dsp/DrumTables.cpp
+    source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumFx.cpp
+    source/drum/dsp/DrumKits.cpp
+    source/drum/dsp/DrumPatches.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
 
 enable_testing()
