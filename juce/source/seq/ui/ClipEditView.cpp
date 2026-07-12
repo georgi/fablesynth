@@ -91,7 +91,8 @@ void ClipEditView::toggleNoteCell(int lane, int step) {
     if (o + 2 >= bytes_.size()) return;
     const bool on = (bytes_[o] & 1) != 0;
     if (on && bytes_[o + 1] == (uint8_t)lane) {
-        bytes_[o] = (uint8_t)(bytes_[o] & ~1); // tap the lit note -> rest
+        // tap the lit note -> rest: clear on+acc+tie (web setStep {on,acc,slide}=false).
+        bytes_[o] = (uint8_t)(bytes_[o] & ~0x07);
     } else {
         bytes_[o] = (uint8_t)(bytes_[o] | 1);
         bytes_[o + 1] = (uint8_t)lane;
@@ -102,7 +103,7 @@ void ClipEditView::toggleNoteCell(int lane, int step) {
 void ClipEditView::toggleAcc(int step) {
     if (!editable() || isDrum() || step < 0 || step >= kSteps) return;
     const size_t o = (size_t)(barOffset() + fable::sqNoteIdx(0, step));
-    if (o >= bytes_.size()) return;
+    if (o >= bytes_.size() || (bytes_[o] & 1) == 0) return; // web toggleStepAcc: no-op when off
     bytes_[o] = (uint8_t)(bytes_[o] ^ 2);
     commit();
 }
@@ -110,7 +111,7 @@ void ClipEditView::toggleAcc(int step) {
 void ClipEditView::toggleTie(int step) {
     if (!editable() || isDrum() || step < 0 || step >= kSteps) return;
     const size_t o = (size_t)(barOffset() + fable::sqNoteIdx(0, step));
-    if (o >= bytes_.size()) return;
+    if (o >= bytes_.size() || (bytes_[o] & 1) == 0) return; // web toggleStepSlide: no-op when off
     bytes_[o] = (uint8_t)(bytes_[o] ^ 4);
     commit();
 }
@@ -179,8 +180,10 @@ void ClipEditView::layoutBars() {
     r.removeFromRight(56); // "N BARS" readout
     barsMinus = r.removeFromRight(26).withSizeKeepingCentre(22, 22);
     // bar chips, laid out left-to-right ending just left of the stepper block.
+    // Locked (>4-bar, view-only) clips show NO chips, just the lock banner
+    // (web HostedClipBar.tsx: chips render only when clip.bars <= HOSTED_MAX_BARS).
     const int chipW = 24, gap = 4;
-    const int nChips = juce::jmin(bars_, (int)fable::SQ_HOSTED_MAX_BARS);
+    const int nChips = editable() ? juce::jmin(bars_, (int)fable::SQ_HOSTED_MAX_BARS) : 0;
     int x = barsMinus.getX() - 16 - nChips * (chipW + gap);
     for (int b = 0; b < fable::SQ_HOSTED_MAX_BARS; ++b) {
         if (b < nChips) { barChip[b] = { x, barsRow.getY() + 4, chipW, 22 }; x += chipW + gap; }
@@ -331,12 +334,6 @@ void ClipEditView::paintBars(juce::Graphics& g) {
         g.setColour(cur ? col::text : col::textDim);
         g.setFont(monoFont(9.0f, true));
         g.drawText(juce::String(b + 1), barChip[b], juce::Justification::centred);
-    }
-    if (bars_ > fable::SQ_HOSTED_MAX_BARS) {
-        g.setColour(col::textDim);
-        g.setFont(monoFont(8.0f));
-        g.drawText("BAR " + juce::String(editBar_ + 1) + "/" + juce::String(bars_),
-                   barsRow.withTrimmedRight(20).removeFromRight(120), juce::Justification::centredRight);
     }
 
     // stepper (only on editable clips)

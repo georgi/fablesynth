@@ -275,18 +275,42 @@ int main(int argc, char** argv) {
     ed2->enterFocus(1);
     check(ed2->focus() == std::make_pair(1, 2), "switching heads keeps the scene");
 
-    // BL-1 note editor: toggleNoteCell/toggleAcc/setOct encode at sqNoteIdx.
-    auto nBefore = p.conductor().session().scenes[2].clips[1].bytes;
-    clipEd.toggleNoteCell(/*lane*/ 7, /*step*/ 1);
-    clipEd.toggleAcc(1);
-    clipEd.setOct(1, 1);
-    auto nAfter = p.conductor().session().scenes[2].clips[1].bytes;
-    check(nBefore != nAfter, "note-machine edits reach the clip bytes");
-    {
-        const size_t o = (size_t)fable::sqNoteIdx(0, 1);
-        check((nAfter[o] & 1) && nAfter[o + 1] == 7 && (nAfter[o] & 2) && nAfter[o + 2] == 2,
-              "note / acc / oct encode at sqNoteIdx(0,1)");
-    }
+    // BL-1 note editor: exact byte encoding at sqNoteIdx + web step hygiene
+    // (src/bass/store.ts:112-146). Focus is BASS / DROP A (ACID 303, 1 bar);
+    // edit a rest step (step 5) so every transition starts from a clean slate.
+    auto noteByte = [&](int off) {
+        return p.conductor().session().scenes[2].clips[1].bytes[(size_t)(fable::sqNoteIdx(0, 5) + off)];
+    };
+    check((noteByte(0) & 1) == 0, "note step 5 starts as a rest", noteByte(0));
+
+    // acc/tie must NO-OP on an off step (store.ts: if (!cur.on) return).
+    clipEd.toggleAcc(5);
+    check(noteByte(0) == 0, "toggleAcc no-ops on an off step", noteByte(0));
+    clipEd.toggleTie(5);
+    check(noteByte(0) == 0, "toggleTie no-ops on an off step", noteByte(0));
+
+    clipEd.toggleNoteCell(/*lane*/ 7, /*step*/ 5);
+    check((noteByte(0) & 1) && noteByte(1) == 7, "toggleNoteCell sets on + note 7", noteByte(1));
+
+    clipEd.toggleAcc(5);
+    check(noteByte(0) == (1 | 2), "toggleAcc sets the accent bit on a live step", noteByte(0));
+    clipEd.toggleTie(5);
+    check(noteByte(0) == (1 | 2 | 4), "toggleTie sets the tie bit on a live step", noteByte(0));
+
+    clipEd.setOct(5, -1);
+    check(noteByte(2) == 0, "setOct(-1) writes oct+1 = 0", noteByte(2));
+    clipEd.setOct(5, 1);
+    check(noteByte(2) == 2, "setOct(+1) writes oct+1 = 2", noteByte(2));
+
+    // turning the note off clears acc + tie too (web setStep {on,acc,slide}=false).
+    clipEd.toggleNoteCell(7, 5);
+    check((noteByte(0) & 0x07) == 0, "turning a note off clears on + acc + tie", noteByte(0));
+
+    // re-arm on a different lane: no stale acc/tie survive the on->off->on cycle.
+    clipEd.toggleNoteCell(9, 5);
+    check(noteByte(0) == 1, "re-armed step has on set and no stale acc/tie", noteByte(0));
+    check(noteByte(1) == 9, "re-armed step carries the new note", noteByte(1));
+
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
     if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
         juce::File out(argv[3]);
@@ -295,6 +319,19 @@ int main(int argc, char** argv) {
         juce::PNGImageFormat().writeImageToStream(img, os);
     }
 
+    // Locked (>4-bar) clip: view-only. Edits and the bars stepper are ignored,
+    // the clip keeps its length, and the lock-banner paint path (no chips) runs.
+    ed2->enterFocus(3, 4);                 // PADS / BREAK = FOG SWELL, 8 bars
+    check(ed2->focus() == std::make_pair(3, 4), "enterFocus(3,4) targets the 8-bar FOG SWELL");
+    auto locked0 = p.conductor().session().scenes[4].clips[3].bytes;
+    clipEd.toggleNoteCell(5, 0);
+    clipEd.barsStep(-1);
+    check(p.conductor().session().scenes[4].clips[3].bytes == locked0,
+          "edits + bars stepper are ignored on a view-only clip");
+    check(p.conductor().session().scenes[4].clips[3].bars == 8, "locked clip keeps its 8 bars");
+    { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // lock-banner paint, no chips
+
+    ed2->enterFocus(1, 2);                 // back to BASS / DROP A for the following checks
     ed2->focusScene(4);
     check(ed2->focus() == std::make_pair(1, 4), "focusScene(4) moves the scene, keeps the track");
     ed2->exitFocus();
