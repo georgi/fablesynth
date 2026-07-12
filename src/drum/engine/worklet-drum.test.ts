@@ -212,3 +212,44 @@ describe('clipupdate (hosted hot-swap)', () => {
     expect(p.clipPend).toBeNull();
   });
 });
+
+// Clips are phase-locked to the shared timebase: activation derives the entry
+// step from the tempo anchor, so a (re)launch can never desync devices.
+describe('clip phase lock', () => {
+  it('a clip launched at song bar 1 enters at its own bar 1, not step 0', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    // 120 BPM / 48k: step = 6000 frames, bar = 96000. Launch a 2-bar clip
+    // exactly at the bar-1 boundary.
+    h.send({ t: 'clip', data: new Uint8Array(2 * 256), bars: 2, atFrame: 96000 });
+    runBlocks(h, 751); // past frame 96000 → activated + first fire
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses[0]).toMatchObject({ step: 0, bar: 1 });
+  });
+
+  it('an unquantized launch mid-song joins the global step grid', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    runBlocks(h, 100); // song runs to frame 12800 ≈ step 2.13
+    h.send({ t: 'clip', data: new Uint8Array(256), bars: 1, atFrame: 0 });
+    runBlocks(h, 1);
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses[0]).toMatchObject({ step: 2, bar: 0 }); // round(12800/6000) = 2
+  });
+
+  it('a non-zero anchor is respected', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    // anchor at frame 96000: song bar 0 begins there
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 96000 });
+    h.send({ t: 'clip', data: new Uint8Array(2 * 256), bars: 2, atFrame: 2 * 96000 });
+    runBlocks(h, 1501); // past frame 192000 = song bar 1
+    const poses = h.sent.filter((m) => m.t === 'pos');
+    expect(poses[0]).toMatchObject({ step: 0, bar: 1 });
+  });
+});

@@ -316,6 +316,7 @@ class FableProcessor extends AudioWorkletProcessor {
     this.hosted = false;
     this.hostBpm = 120;
     this.hostSwing = 0;
+    this.hostAnchor = 0; // songStartFrame — the shared timebase's beat zero
     this.clip = null; // { data: Uint8Array, bars }
     this.clipPend = null; // { data, bars, at } — waiting for its atFrame
     this.clipStopAt = -1;
@@ -400,6 +401,7 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'tempo':
         if (Number.isFinite(d.bpm)) { this.hostBpm = d.bpm; this.bpm = Math.min(1000, Math.max(1, d.bpm)); }
         if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
+        if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
         break;
       case 'clip':
         this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
@@ -418,7 +420,9 @@ class FableProcessor extends AudioWorkletProcessor {
           this.clipPend = { data, bars, at: this.clipPend.at };
         } else if (this.clip) {
           this.clip = { data, bars };
-          if (this.clipStep >= 0) this.clipStep %= bars * SEQ_STEPS;
+          // Re-derive the phase so a bar-count change stays grid-locked
+          // (plain modulo can land a grown clip half a cycle off).
+          if (this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
         }
         break;
       }
@@ -487,7 +491,10 @@ class FableProcessor extends AudioWorkletProcessor {
     if (this.clipPend && this.clipPend.at < end) {
       this.clip = this.clipPend;
       this.clipPend = null;
-      this.clipStep = -1;
+      // Phase-lock to the shared timebase: enter at the global song position
+      // modulo the clip length, so a (re)launch can never desync devices —
+      // position is derived from the anchor, never restarted at step 0.
+      this.clipStep = this.clipPhase(Math.round) - 1;
       this.clipToNext = 0;
       this.seqGateOff(); // the old clip's tail note ends where the new clip starts
       this.port.postMessage({ t: 'clipstart', frame: currentFrame });
@@ -496,6 +503,17 @@ class FableProcessor extends AudioWorkletProcessor {
       if (this.clipToNext <= 0) this.clipFire();
       this.clipToNext -= n;
     }
+  }
+
+  // Global step index (mod clip length) at the current frame. Activation
+  // rounds (atFrame sits at a boundary, block-quantized slightly early);
+  // mid-flight resizes floor (the last fired step).
+  clipPhase(quantize) {
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const total = this.clip.bars * SEQ_STEPS;
+    const idx = quantize(Math.max(0, currentFrame - this.hostAnchor) / dur);
+    return ((idx % total) + total) % total;
   }
 
   clipFire() {

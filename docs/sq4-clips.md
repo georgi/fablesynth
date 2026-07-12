@@ -87,6 +87,12 @@ All `AudioWorkletProcessor`s on one `AudioContext` read the same global
   durations count real samples so there is no drift. (This matches how the
   WT-1 note seq already ticks; DR-1/BL-1 sub-block splitting can later snap
   the first hit to the exact sample, but block-consistent is the contract.)
+- **Phase-locked entry**: a clip never restarts at its own step 0 — on
+  activation the worklet derives the entry step from the anchor
+  (`round((currentFrame − anchor) / stepDur) mod clipSteps`), so every clip
+  plays whatever step the global clock dictates. Toggling or relaunching a
+  clip therefore cannot shift a multi-bar clip against the other devices;
+  all sequencers stay locked to one clock by construction.
 - **Global pause**: SQ-4's ⏸ maps to `ctx.suspend()` / `ctx.resume()`.
   Frames freeze, every pending `atFrame` and every playing clip resumes in
   phase for free. Stop-all is a real command; pause is not.
