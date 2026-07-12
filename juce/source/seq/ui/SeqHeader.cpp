@@ -102,9 +102,17 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
         proc.conductor().setSwing(0.0);
     } else if (volKnob.contains(pos)) {
         if (auto* p = volParam()) {
-            p->beginChangeGesture();
+            // JUCE delivers a double-click as mouseDown/mouseUp/mouseDown/
+            // mouseDoubleClick/mouseUp: the second mouseDown already opened a
+            // change gesture (dragging_ == Drag::Vol) that the trailing
+            // mouseUp will close, so don't nest a second begin/end pair here
+            // -- just set the value. Only wrap our own pair if a gesture
+            // somehow isn't already open (e.g. this fired without the usual
+            // mouseDown, in a test).
+            const bool gestureOpen = dragging_ == Drag::Vol;
+            if (!gestureOpen) p->beginChangeGesture();
             p->setValueNotifyingHost(p->getDefaultValue());
-            p->endChangeGesture();
+            if (!gestureOpen) p->endChangeGesture();
         }
     }
     repaint();
@@ -223,9 +231,9 @@ void SeqHeader::paintClock(juce::Graphics& g) {
         auto d = r.removeFromLeft(dotSize).withSizeKeepingCentre(dotSize, dotSize);
         r.removeFromLeft(gap);
         const bool on = playing && pos.beat == i;
-        g.setColour(on ? accentA() : juce::Colour(0xff232936));
+        g.setColour(on ? col::acB : juce::Colour(0xff232936));
         g.fillEllipse(d.toFloat());
-        if (on) { g.setColour(accentA().withAlpha(0.5f)); g.fillEllipse(d.toFloat().expanded(2.0f)); }
+        if (on) { g.setColour(col::acB.withAlpha(0.5f)); g.fillEllipse(d.toFloat().expanded(2.0f)); }
     }
 
     g.setColour(col::textDim);
