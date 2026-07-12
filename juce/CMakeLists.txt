@@ -169,13 +169,52 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+    # ---- FableSynth SQ-4 (session launcher) — fourth plugin target. Hosts the
+    # DR-1/BL-1/WT-1 engines in one processor (docs/sq4-clips.md, JUCE surface).
+    juce_add_plugin(FableSeq
+        PRODUCT_NAME "FableSynth SQ-4"
+        COMPANY_NAME "FableSynth"
+        PLUGIN_MANUFACTURER_CODE Fabl
+        PLUGIN_CODE Fsq4
+        FORMATS AU VST3 Standalone
+        IS_SYNTH TRUE
+        NEEDS_MIDI_INPUT FALSE
+        EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+        COPY_PLUGIN_AFTER_BUILD FALSE)
+
+    set(FABLE_SEQ_SOURCES
+        source/seq/SeqProcessor.cpp
+        source/seq/SeqEditor.cpp
+        source/seq/ui/SeqHeader.cpp
+        source/seq/ui/TrackHeadsView.cpp
+        source/seq/ui/SceneGridView.cpp
+        source/seq/ui/SeqFooterView.cpp
+        source/seq/ui/ClipEditView.cpp
+        source/seq/dsp/SeqFactory.cpp
+        source/seq/dsp/Conductor.cpp
+        source/ui/Controls.cpp source/ui/Modulation.cpp
+        # all three machines' DSP (each list already exists above):
+        source/dsp/Engine.cpp source/dsp/Presets.cpp
+        source/drum/dsp/DrumParams.cpp source/drum/dsp/DrumTables.cpp
+        source/drum/dsp/SampledTables.gen.cpp source/drum/dsp/DrumEngine.cpp
+        source/drum/dsp/DrumFx.cpp source/drum/dsp/DrumKits.cpp source/drum/dsp/DrumPatches.cpp
+        source/bass/dsp/BassParams.cpp source/bass/dsp/BassEngine.cpp
+        source/bass/dsp/BassFx.cpp source/bass/dsp/BassPatches.cpp
+        source/dsp/Wavetables.cpp source/dsp/Params.cpp source/dsp/UserTables.cpp source/dsp/Fx.cpp)
+
+    target_sources(FableSeq PRIVATE ${FABLE_SEQ_SOURCES})
+    target_compile_definitions(FableSeq PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    juce_generate_juce_header(FableSeq)
+    target_link_libraries(FableSeq PRIVATE juce::juce_audio_utils juce::juce_dsp
+        PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
+
     # On macOS, JUCE regenerates moduleinfo.json as a post-build step *after* the
     # bundle is code-signed, which invalidates the signature seal. Hosts with a
     # hardened scanner then refuse to load the plugin ("a sealed resource is
     # missing or invalid" — e.g. Ableton silently skips it). Re-sign (ad-hoc)
     # after all of JUCE's post-build steps so the seal matches the contents.
     if(APPLE)
-        foreach(tgt FableSynth FableDrum FableBass)
+        foreach(tgt FableSynth FableDrum FableBass FableSeq)
             foreach(fmt VST3 AU Standalone)
                 if(TARGET ${tgt}_${fmt})
                     add_custom_command(TARGET ${tgt}_${fmt} POST_BUILD
@@ -243,6 +282,20 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     add_test(NAME bass_host_test COMMAND bass_host_test)
+
+    # SQ-4 plugin-boundary harness (instantiates the real SeqAudioProcessor).
+    juce_add_console_app(sq4_host_test PRODUCT_NAME "sq4_host_test")
+    target_sources(sq4_host_test PRIVATE
+        test/sq4_host_test.cpp
+        ${FABLE_SEQ_SOURCES})
+    target_compile_definitions(sq4_host_test PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(sq4_host_test PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME sq4_host_test COMMAND sq4_host_test)
 endif()
 
 # ---- Headless DSP verification harness (no JUCE) ----
