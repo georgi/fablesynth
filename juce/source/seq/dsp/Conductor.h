@@ -65,6 +65,11 @@ public:
     bool sceneMuted(int s) const;
     bool trackMuted(int t) const;
     bool soloed(int t) const;
+    // Port of model.ts isTrackAudible (docs/sq4-clips.md): a track is audible
+    // only when owned AND not muted/soloed-out AND its owning scene isn't
+    // muted -- the single gate the UI (scene dots, cell MUTED state, footer
+    // NOW label) should read instead of checking ownerOf/sceneMuted alone.
+    bool trackAudible(int t) const { return isTrackAudible(t, owner_, trackMute_, sceneMute_, solo_); }
     Quant quant() const { return quant_; }
     double swing() const { return swing_; }
     float trackVol(int t) const;

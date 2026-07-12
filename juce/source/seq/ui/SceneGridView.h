@@ -34,6 +34,11 @@ public:
 
     std::function<void(int, int)> onEditClip;
 
+    // Test hook: true when cell (s,t) is live (owned by s) and fully audible
+    // (not muted/soloed-out/scene-muted) -- the same gate paintFilledCell
+    // uses to dim the cell and show MUTED, exposed without pixel probing.
+    bool cellAudible(int s, int t) const;
+
     // Task 13's mini-strip mode: render only scene s's row (at local y=0)
     // plus a slim rail of 6 numbered scene chips for switching between them.
     void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; resized(); repaint(); }

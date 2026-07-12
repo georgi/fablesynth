@@ -223,6 +223,15 @@ int main(int argc, char** argv) {
           "sceneLaunch(3) queues every track of scene 3");
     renderRms(p, buf, 800); p.drainAcks();
 
+    // A live cell's audible gate must track mute/solo, not just scene mute
+    // (SceneRow.tsx's isTrackAudible) -- exercise it through the real
+    // conductor mute toggle rather than probing pixels.
+    check(grid.cellAudible(3, 0), "track 0's live cell reads audible before muting");
+    p.conductor().toggleTrackMute(0);
+    check(!grid.cellAudible(3, 0), "toggleTrackMute(0) flips the live cell's audible gate off");
+    p.conductor().toggleTrackMute(0);
+    check(grid.cellAudible(3, 0), "unmuting restores the live cell's audible gate");
+
     // Re-render the snapshot now that scene 3 is live and the INTRO pass-
     // through toggle is set -- a livelier picture than the idle factory grid.
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }

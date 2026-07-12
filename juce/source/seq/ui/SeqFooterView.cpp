@@ -94,6 +94,7 @@ void SeqFooterView::paint(juce::Graphics& g) {
             for (int t = 0; t < 4; ++t) if (cond.ownerOf(t) == s) live = true;
             if (!live) continue;
             any = true;
+            // web "01 DROP A ·M" -- ASCII middle dot substitute (BassHeader.cpp:175 convention)
             juce::String txt = juce::String(s + 1).paddedLeft('0', 2) + " " + juce::String(session.scenes[(size_t)s].name)
                               + (cond.sceneMuted(s) ? " -M" : "");
             g.setFont(monoFont(7.0f));
@@ -115,9 +116,6 @@ void SeqFooterView::paint(juce::Graphics& g) {
     }
 
     // per-track NOW cells
-    bool anySolo = false;
-    for (int t = 0; t < 4; ++t) if (cond.soloed(t)) anySolo = true;
-
     for (int t = 0; t < 4 && t < (int)session.tracks.size(); ++t) {
         const juce::Colour tc { session.tracks[(size_t)t].color };
         auto rf = cellArea[t].toFloat();
@@ -138,8 +136,7 @@ void SeqFooterView::paint(juce::Graphics& g) {
 
         const int owner = cond.ownerOf(t);
         const bool live = owner != -2;
-        bool audible = live && !cond.trackMuted(t) && !(anySolo && !cond.soloed(t));
-        if (audible && owner >= 0) audible = !cond.sceneMuted(owner);
+        const bool audible = live && cond.trackAudible(t);
 
         auto na = nowArea[t];
         g.setColour(col::textDim);

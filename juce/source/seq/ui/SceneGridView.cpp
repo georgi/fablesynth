@@ -56,6 +56,11 @@ void SceneGridView::cellRightClick(int s, int t) {
 
 void SceneGridView::cellEditClick(int s, int t) { if (onEditClip) onEditClip(s, t); }
 
+bool SceneGridView::cellAudible(int s, int t) const {
+    const auto& cond = proc.conductor();
+    return cond.ownerOf(t) == s && cond.trackAudible(t);
+}
+
 void SceneGridView::sceneLaunch(int s) { proc.conductor().launchScene(s); }
 void SceneGridView::sceneMute(int s)   { proc.conductor().toggleSceneMute(s); }
 void SceneGridView::sceneStop(int s)   { proc.conductor().stopScene(s); }
@@ -189,6 +194,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
 
     juce::String status;
     juce::Colour statusColour = col::textDim;
+    // web "LIVE · MUTED" -- ASCII middle dot substitute (BassHeader.cpp:175 convention)
     if (muted && liveAny)      { status = "LIVE - MUTED"; statusColour = col::acB; }
     else if (muted)            { status = "MUTED"; statusColour = col::acB; }
     else if (queued)           { status = "QUEUED"; statusColour = col::text; }
@@ -220,7 +226,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
         dr.removeFromLeft(6);
         const bool has = t < (int)tracks.size() && sc.hasClip[(size_t)t];
         const juce::Colour tc { has ? tracks[(size_t)t].color : 0xff1a1f2au };
-        const bool lit = has && cond.ownerOf(t) == s;
+        const bool lit = has && cellAudible(s, t);
         g.setColour(lit ? tc : has ? tc.withAlpha(0.27f) : juce::Colour(0xff1a1f2a));
         g.fillEllipse(d.toFloat());
     }
@@ -268,7 +274,10 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     const bool live = cond.ownerOf(t) == s;
     const bool queued = cond.queueOf(t) == s;
-    const bool muted = live && cond.sceneMuted(s);
+    // Port of ClipCell's `muted` (SceneRow.tsx): a live cell dims/shows MUTED
+    // whenever the track isn't fully audible -- its own mute, another
+    // track's solo, or its owning scene's mute -- not just a scene mute.
+    const bool muted = live && !cellAudible(s, t);
 
     auto full = cellR[s][t];
     auto rf = full.toFloat().reduced(0.5f);
