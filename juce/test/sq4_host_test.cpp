@@ -425,6 +425,12 @@ int main(int argc, char** argv) {
           "native device edits are ignored on an over-four-bar view-only clip");
     check(p.conductor().session().scenes[4].clips[3].bars == 8, "locked clip keeps its 8 bars");
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // lock-banner paint, no chips
+    if (argc > 4) {
+        juce::File out(argv[4]);
+        out.deleteFile();
+        juce::FileOutputStream os(out);
+        juce::PNGImageFormat().writeImageToStream(img, os);
+    }
 
     ed2->enterFocus(1, 2);                 // back to BASS / DROP A for the following checks
     ed2->focusScene(4);
