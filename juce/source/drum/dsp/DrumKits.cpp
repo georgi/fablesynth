@@ -178,6 +178,24 @@ Overrides uzuParams() {
     return p;
 }
 
+Overrides hybridParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 126); set(p, "master.swing", 0.24f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.16f); set(p, "fx.drive.mix", 0.34f);
+    set(p, "fx.reverb.mix", 0.14f);
+    static const int samples[DR_NPADS] = { 16, 5, 18, 1, 20, 21, 3, 23, 13, 25, 15, 27, 7, 28, 30, 31 };
+    static const float oscLevels[DR_NPADS] = { .50f, .45f, .42f, .25f, .40f, .18f, .16f, .12f, .45f, .42f, .40f, .12f, .25f, .22f, .30f, .35f };
+    static const float sampleLevels[DR_NPADS] = { .72f, .68f, .70f, .76f, .65f, .76f, .76f, .72f, .66f, .68f, .68f, .72f, .62f, .70f, .66f, .68f };
+    static const float decays[DR_NPADS] = { .60f, .70f, .50f, .70f, .20f, .15f, .70f, 1.20f, .60f, .60f, .60f, 1.20f, .50f, .35f, .60f, .25f };
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.level"), oscLevels[i]);
+        set(p, padPid(i, "oscB.table"), (float)samples[i]);
+        set(p, padPid(i, "oscB.level"), sampleLevels[i]);
+        set(p, padPid(i, "aenv.dec"), decays[i]);
+    }
+    return p;
+}
+
 Overrides deepDubParams() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 112); set(p, "master.swing", 0.38f);
@@ -307,6 +325,7 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "BROKEN TOYS", brokenToysParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "LIVE ROOM", liveRoomParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "UZU", uzuParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "808+UZU HYBRID", hybridParams(), kPadNames, patterns, { 0 } });
         return out;
     }();
     return kits;

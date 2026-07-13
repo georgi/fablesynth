@@ -20,10 +20,11 @@ if (typeof localStorage === 'undefined') {
 describe('kits', () => {
   beforeEach(() => localStorage.clear());
 
-  it('ships 13 distinct factory kits; TR-VOID keeps the mockup names', () => {
+  it('ships 14 distinct factory kits; TR-VOID keeps the mockup names', () => {
     expect(FACTORY_KITS.map((k) => k.name)).toEqual([
       'TR-VOID', 'ROOM ONE', 'BITCRUSH', '808 CLASSIC', 'DEEP DUB', 'DUST HOUSE',
       'WAREHOUSE', 'METAL WORK', 'TAPE KIT', 'MINIMAL', 'BROKEN TOYS', 'LIVE ROOM', 'UZU',
+      '808+UZU HYBRID',
     ]);
     const tv = FACTORY_KITS[0];
     expect(tv.padNames).toHaveLength(PAD_COUNT);
@@ -59,6 +60,12 @@ describe('kits', () => {
       .toEqual(Array.from({ length: PAD_COUNT }, (_, i) => 16 + i));
     expect(uzu.params[pad(0, 'oscA.level')]).toBe(0);
     expect(uzu.params[pad(0, 'oscB.level')]).toBeCloseTo(0.92);
+
+    const hybrid = kitToState(FACTORY_KITS[13]);
+    expect(hybrid.params[pad(0, 'oscB.table')]).toBe(16);
+    expect(hybrid.params[pad(15, 'oscB.table')]).toBe(31);
+    expect(hybrid.params[pad(0, 'oscA.level')]).toBeGreaterThan(0);
+    expect(hybrid.params[pad(0, 'oscB.level')]).toBeGreaterThan(0);
   });
 
   it('every factory kit param id exists in DRUM_PARAMS and is in range', () => {

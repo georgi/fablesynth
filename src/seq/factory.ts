@@ -1,27 +1,14 @@
 // The factory session: the SQ-4 mock's six scenes as real, playable clips.
 // Patterns are handcrafted in each machine's packed clip layout (protocol.ts).
-// DR-1 pad map (TR-VOID kit): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
+// DR-1 pad map (shared by 808, UZU, and hybrid kits): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
 // 6 OH HAT · 8..10 TOMS · 12/13 PERC.
 
 import {
-  bytesPerBar, bytesToB64, type ClipDoc, dr1Idx, noteIdx, type SessionDoc,
+  bytesPerBar, bytesToB64, type ClipDoc, noteIdx, type SessionDoc,
 } from './protocol';
+import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 
 // ---------- pattern builders ----------
-
-type DrumHits = Array<[pad: number, steps: number[], accents?: number[]]>;
-
-/** One entry per bar; each bar is a list of [pad, steps, accents]. */
-function drumClip(name: string, barsSpec: DrumHits[]): ClipDoc {
-  const bars = barsSpec.length;
-  const data = new Uint8Array(bars * bytesPerBar('DR1'));
-  barsSpec.forEach((bar, b) => {
-    for (const [pad, steps, accents = []] of bar) {
-      for (const s of steps) data[dr1Idx(b, pad, s)] = accents.includes(s) ? 2 : 1;
-    }
-  });
-  return { name, bars, pattern: bytesToB64(data) };
-}
 
 interface NoteStep {
   s: number; // absolute step (0 .. bars*16-1)
@@ -57,34 +44,17 @@ function held(s0: number, span: number, n: number, o = 0): NoteStep[] {
 
 // ---------- drum clips ----------
 
-const KICK = 0, SNARE = 2, CLAP = 3, RIM = 4, CH = 5, OH = 6, TOM_LO = 8, TOM_HI = 10, PERC = 12;
+function factoryDrumClip(id: string): ClipDoc {
+  const clip = FACTORY_CLIP_LIBRARY.find((entry) => entry.id === id && entry.machine === 'DR1');
+  if (!clip) throw new Error(`Missing factory DR-1 clip ${id}`);
+  return { name: clip.name, bars: clip.bars, pattern: clip.pattern };
+}
 
-const four = [0, 4, 8, 12];
-const off8 = [2, 6, 10, 14];
-const all16 = Array.from({ length: 16 }, (_, i) => i);
-
-const SPARSE_KICK = drumClip('SPARSE KICK', [
-  [[KICK, [0, 8], [0]], [RIM, [10]]],
-]);
-
-const HAT_RISE = drumClip('HAT RISE', [
-  [[KICK, four, [0]], [CH, [0, 4, 8, 12]], [PERC, [14]]],
-  [[KICK, four, [0]], [CH, all16, [4, 12]], [OH, [14]]],
-]);
-
-const FULL_KIT_A = drumClip('FULL KIT A', [
-  [[KICK, four, [0]], [SNARE, [4, 12]], [CH, off8], [OH, [10]], [CLAP, [12]]],
-  [[KICK, four, [0]], [SNARE, [4, 12], [12]], [CH, off8], [OH, [6, 14]], [PERC, [7, 15]]],
-]);
-
-const FULL_KIT_B = drumClip('FULL KIT B', [
-  [[KICK, [0, 4, 7, 8, 12], [0]], [SNARE, [4, 12]], [CH, all16, [2, 6, 10, 14]], [CLAP, [12]]],
-  [[KICK, [0, 4, 8, 10, 12], [0]], [SNARE, [4, 12, 15], [15]], [CH, all16, [2, 6, 10, 14]], [TOM_HI, [13]], [TOM_LO, [14]]],
-]);
-
-const TAIL_KICK = drumClip('TAIL KICK', [
-  [[KICK, [0, 8]], [OH, [8]], [PERC, [12]]],
-]);
+const SPARSE_KICK = factoryDrumClip('dr1-distant-ticks');
+const HAT_RISE = factoryDrumClip('dr1-hat-rise');
+const FULL_KIT_A = factoryDrumClip('dr1-neon-drive');
+const FULL_KIT_B = factoryDrumClip('dr1-jungle-sparks');
+const TAIL_KICK = factoryDrumClip('dr1-ghost-shuffle');
 
 // ---------- bass clips (BL-1 lanes: 0 = its C, slide bit glides) ----------
 
@@ -177,7 +147,7 @@ export function factorySession(): SessionDoc {
     swing: 0,
     quant: '1 BAR',
     tracks: [
-      { machine: 'DR1', name: 'DRUMS', color: '#4de8ff', gain: 0.8, patch: { kind: 'factory', index: 0 } }, // TR-VOID
+      { machine: 'DR1', name: 'DRUMS', color: '#4de8ff', gain: 0.8, patch: { kind: 'factory', index: 13 } }, // 808+UZU HYBRID
       { machine: 'BL1', name: 'BASS', color: '#4dff9e', gain: 0.75, patch: { kind: 'factory', index: 0 } }, // ACID LINE
       { machine: 'WT1', name: 'LEAD', color: '#ffa14d', gain: 0.85, patch: { kind: 'factory', index: 3 } }, // CRYSTAL PLUCK
       { machine: 'WT1', name: 'PADS', color: '#b18cff', gain: 1, patch: { kind: 'factory', index: 11 } }, // FUTURE CHORD

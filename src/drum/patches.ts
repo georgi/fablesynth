@@ -120,6 +120,87 @@ export const FACTORY_PATCHES: PadPatch[] = [
     'oscA.table': 3, 'oscA.tune': -12, 'oscA.pos': 0.5, 'penv.amt': 9,
     'penv.dec': 0.04, 'aenv.dec': 0.22, 'lvl': 0.78,
   }),
+  // Hybrid voices — procedural transient/body layered with the new raw banks.
+  fp('HX BD UZU', {
+    'oscA.table': 0, 'oscA.tune': -26, 'oscA.level': 0.50,
+    'oscB.table': 16, 'oscB.level': 0.72, 'penv.amt': 22, 'penv.dec': 0.045,
+    'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1400, 'lvl': 0.90,
+  }),
+  fp('HX BD 808', {
+    'oscA.table': 0, 'oscA.tune': -31, 'oscA.level': 0.45,
+    'oscB.table': 5, 'oscB.level': 0.68, 'penv.amt': 18, 'penv.dec': 0.055,
+    'aenv.dec': 0.72, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1100, 'lvl': 0.92,
+  }),
+  fp('HX SD UZU', {
+    'oscA.table': 1, 'oscA.tune': -12, 'oscA.level': 0.42,
+    'oscB.table': 18, 'oscB.level': 0.70, 'noise.level': 0.16,
+    'aenv.dec': 0.50, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 900, 'lvl': 0.84,
+  }),
+  fp('HX CP CROSS', {
+    'oscA.table': 1, 'oscA.tune': 7, 'oscA.level': 0.25,
+    'oscB.table': 1, 'oscB.level': 0.76, 'noise.level': 0.12,
+    'aenv.hold': 0.02, 'aenv.dec': 0.70, 'lvl': 0.82,
+  }),
+  fp('HX RIM', {
+    'oscA.table': 2, 'oscA.tune': 19, 'oscA.level': 0.40,
+    'oscB.table': 20, 'oscB.level': 0.65, 'ring.freq': 1831, 'ring.mix': 0.34,
+    'aenv.dec': 0.20, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 2900, 'lvl': 0.78,
+  }),
+  fp('HX HH', {
+    'oscA.table': 3, 'oscA.tune': 24, 'oscA.level': 0.18,
+    'oscB.table': 21, 'oscB.level': 0.76, 'ring.freq': 6389, 'ring.mix': 0.24,
+    'aenv.dec': 0.15, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 6900, 'lvl': 0.68,
+  }),
+  fp('HX OH', {
+    'oscA.table': 3, 'oscA.tune': 17, 'oscA.level': 0.16,
+    'oscB.table': 3, 'oscB.level': 0.76, 'ring.freq': 5197, 'ring.mix': 0.26,
+    'aenv.dec': 0.70, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 4800, 'lvl': 0.70,
+  }),
+  fp('HX RD', {
+    'oscA.table': 8, 'oscA.tune': 7, 'oscA.level': 0.12,
+    'oscB.table': 23, 'oscB.level': 0.72, 'ring.freq': 2741, 'ring.mix': 0.38,
+    'aenv.dec': 1.20, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 3300, 'lvl': 0.70,
+  }),
+  fp('HX LT', {
+    'oscA.table': 0, 'oscA.tune': -19, 'oscA.level': 0.45,
+    'oscB.table': 13, 'oscB.level': 0.66, 'penv.amt': 8, 'penv.dec': 0.065,
+    'aenv.dec': 0.60, 'lvl': 0.84,
+  }),
+  fp('HX MT', {
+    'oscA.table': 0, 'oscA.tune': -12, 'oscA.level': 0.42,
+    'oscB.table': 25, 'oscB.level': 0.68, 'penv.amt': 7, 'penv.dec': 0.055,
+    'aenv.dec': 0.60, 'lvl': 0.84,
+  }),
+  fp('HX HT', {
+    'oscA.table': 0, 'oscA.tune': -5, 'oscA.level': 0.40,
+    'oscB.table': 15, 'oscB.level': 0.68, 'penv.amt': 6, 'penv.dec': 0.05,
+    'aenv.dec': 0.60, 'lvl': 0.84,
+  }),
+  fp('HX CR', {
+    'oscA.table': 3, 'oscA.pos': 0.38, 'oscA.tune': 17, 'oscA.level': 0.12,
+    'oscB.table': 27, 'oscB.level': 0.72, 'ring.freq': 3271, 'ring.mix': 0.48,
+    'aenv.dec': 1.20, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 3200, 'lvl': 0.70,
+  }),
+  fp('HX CB', {
+    'oscA.table': 8, 'oscA.tune': -5, 'oscA.level': 0.25,
+    'oscB.table': 7, 'oscB.level': 0.62, 'ring.freq': 731, 'ring.mix': 0.42,
+    'aenv.dec': 0.50, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 2400, 'lvl': 0.76,
+  }),
+  fp('HX SH', {
+    'oscA.table': 2, 'oscA.tune': 24, 'oscA.level': 0.22,
+    'oscB.table': 29, 'oscB.level': 0.70, 'noise.level': 0.14,
+    'aenv.dec': 0.10, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 6200, 'lvl': 0.70,
+  }),
+  fp('HX TB', {
+    'oscA.table': 7, 'oscA.tune': -5, 'oscA.level': 0.30,
+    'oscB.table': 30, 'oscB.level': 0.66, 'ring.freq': 1187, 'ring.mix': 0.28,
+    'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 1800, 'lvl': 0.76,
+  }),
+  fp('HX MOD', {
+    'oscA.table': 9, 'oscA.pos': 0.55, 'oscA.tune': -12, 'oscA.level': 0.35,
+    'oscB.table': 31, 'oscB.level': 0.68, 'ring.freq': 2203, 'ring.mix': 0.32,
+    'aenv.dec': 0.25, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 2600, 'lvl': 0.76,
+  }),
 ];
 
 // -- Apply / extract ----------------------------------------------------------

@@ -3,7 +3,7 @@ import {
   FACTORY_PATCHES, PATCH_FIELDS, applyPatchToParams, extractPatch,
   loadUserPatches, saveUserPatch, patchOptions,
 } from './patches';
-import { DRUM_PARAMS, PAD_FIELDS, defaultDrumParams, pad } from './params';
+import { DRUM_PARAMS, DRUM_SAMPLE_NAMES, PAD_FIELDS, defaultDrumParams, pad } from './params';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -51,12 +51,21 @@ describe('patches', () => {
     }
   });
 
-  it('factory patches reference only built-in tables (index <= 14)', () => {
+  it('factory patches reference valid oscillator tables and built-in samples', () => {
     for (const patch of FACTORY_PATCHES) {
-      for (const field of ['oscA.table', 'oscB.table'] as const) {
-        const v = patch.params[field];
-        if (v !== undefined) expect(v, `${patch.name}: ${field}`).toBeLessThanOrEqual(14);
-      }
+      const osc = patch.params['oscA.table'];
+      const sample = patch.params['oscB.table'];
+      if (osc !== undefined) expect(osc, `${patch.name}: oscA.table`).toBeLessThanOrEqual(14);
+      if (sample !== undefined) expect(sample, `${patch.name}: oscB.table`).toBeLessThan(DRUM_SAMPLE_NAMES.length);
+    }
+  });
+
+  it('ships one oscillator/sample hybrid patch for every pad role', () => {
+    const hybrid = FACTORY_PATCHES.filter((patch) => patch.name.startsWith('HX '));
+    expect(hybrid).toHaveLength(16);
+    for (const patch of hybrid) {
+      expect(patch.params['oscA.level'], patch.name).toBeGreaterThan(0);
+      expect(patch.params['oscB.level'], patch.name).toBeGreaterThan(0);
     }
   });
 

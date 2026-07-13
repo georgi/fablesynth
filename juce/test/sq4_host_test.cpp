@@ -379,7 +379,7 @@ int main(int argc, char** argv) {
     hdr.selectLibrarySession(1);
     check(hdr.libraryForTest().getSelectedId() == 2,
           "SQ-4 library selects the complete NEON CHASE session");
-    const std::array<int, 4> neonChase { 3, 2, 4, 11 };
+    const std::array<int, 4> neonChase { 13, 2, 4, 11 };
     bool rigMatches = true;
     for (int t = 0; t < 4; ++t) {
         const auto& patch = p.conductor().session().tracks[(size_t)t].patch;
@@ -572,8 +572,8 @@ int main(int argc, char** argv) {
 
     const auto drumPatchBeforeClipLoad = p.conductor().session().tracks[0].patch;
     const auto bassNeighbourBeforeClipLoad = p.conductor().session().scenes[2].clips[1].bytes;
-    focusView.clipSelectorForTest().setSelectedId(2, juce::sendNotificationSync); // HOUSE POCKET
-    check(p.conductor().session().scenes[2].clips[0].name == "HOUSE POCKET",
+    focusView.clipSelectorForTest().setSelectedId(2, juce::sendNotificationSync); // 808 FLOOR
+    check(p.conductor().session().scenes[2].clips[0].name == "808 FLOOR",
           "selecting a library clip immediately replaces the focused live cell");
     check(p.conductor().session().tracks[0].patch.factory == drumPatchBeforeClipLoad.factory
               && p.conductor().session().tracks[0].patch.index == drumPatchBeforeClipLoad.index

@@ -117,6 +117,71 @@ const std::vector<PadPatch>& factoryPatches() {
             { "oscA.table", 3 }, { "oscA.tune", -12 }, { "oscA.pos", 0.5f }, { "penv.amt", 9 },
             { "penv.dec", 0.04f }, { "aenv.dec", 0.22f }, { "lvl", 0.78f },
         }),
+        // Hybrid voices — procedural transient/body layered with raw samples.
+        fp("HX BD UZU", {
+            { "oscA.table", 0 }, { "oscA.tune", -26 }, { "oscA.level", .50f }, { "oscB.table", 16 }, { "oscB.level", .72f },
+            { "penv.amt", 22 }, { "penv.dec", .045f }, { "aenv.dec", .60f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1400 }, { "lvl", .90f },
+        }),
+        fp("HX BD 808", {
+            { "oscA.table", 0 }, { "oscA.tune", -31 }, { "oscA.level", .45f }, { "oscB.table", 5 }, { "oscB.level", .68f },
+            { "penv.amt", 18 }, { "penv.dec", .055f }, { "aenv.dec", .72f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1100 }, { "lvl", .92f },
+        }),
+        fp("HX SD UZU", {
+            { "oscA.table", 1 }, { "oscA.tune", -12 }, { "oscA.level", .42f }, { "oscB.table", 18 }, { "oscB.level", .70f },
+            { "noise.level", .16f }, { "aenv.dec", .50f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 900 }, { "lvl", .84f },
+        }),
+        fp("HX CP CROSS", {
+            { "oscA.table", 1 }, { "oscA.tune", 7 }, { "oscA.level", .25f }, { "oscB.table", 1 }, { "oscB.level", .76f },
+            { "noise.level", .12f }, { "aenv.hold", .02f }, { "aenv.dec", .70f }, { "lvl", .82f },
+        }),
+        fp("HX RIM", {
+            { "oscA.table", 2 }, { "oscA.tune", 19 }, { "oscA.level", .40f }, { "oscB.table", 20 }, { "oscB.level", .65f },
+            { "ring.freq", 1831 }, { "ring.mix", .34f }, { "aenv.dec", .20f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 2900 }, { "lvl", .78f },
+        }),
+        fp("HX HH", {
+            { "oscA.table", 3 }, { "oscA.tune", 24 }, { "oscA.level", .18f }, { "oscB.table", 21 }, { "oscB.level", .76f },
+            { "ring.freq", 6389 }, { "ring.mix", .24f }, { "aenv.dec", .15f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 6900 }, { "lvl", .68f },
+        }),
+        fp("HX OH", {
+            { "oscA.table", 3 }, { "oscA.tune", 17 }, { "oscA.level", .16f }, { "oscB.table", 3 }, { "oscB.level", .76f },
+            { "ring.freq", 5197 }, { "ring.mix", .26f }, { "aenv.dec", .70f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 4800 }, { "lvl", .70f },
+        }),
+        fp("HX RD", {
+            { "oscA.table", 8 }, { "oscA.tune", 7 }, { "oscA.level", .12f }, { "oscB.table", 23 }, { "oscB.level", .72f },
+            { "ring.freq", 2741 }, { "ring.mix", .38f }, { "aenv.dec", 1.20f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 3300 }, { "lvl", .70f },
+        }),
+        fp("HX LT", {
+            { "oscA.table", 0 }, { "oscA.tune", -19 }, { "oscA.level", .45f }, { "oscB.table", 13 }, { "oscB.level", .66f },
+            { "penv.amt", 8 }, { "penv.dec", .065f }, { "aenv.dec", .60f }, { "lvl", .84f },
+        }),
+        fp("HX MT", {
+            { "oscA.table", 0 }, { "oscA.tune", -12 }, { "oscA.level", .42f }, { "oscB.table", 25 }, { "oscB.level", .68f },
+            { "penv.amt", 7 }, { "penv.dec", .055f }, { "aenv.dec", .60f }, { "lvl", .84f },
+        }),
+        fp("HX HT", {
+            { "oscA.table", 0 }, { "oscA.tune", -5 }, { "oscA.level", .40f }, { "oscB.table", 15 }, { "oscB.level", .68f },
+            { "penv.amt", 6 }, { "penv.dec", .05f }, { "aenv.dec", .60f }, { "lvl", .84f },
+        }),
+        fp("HX CR", {
+            { "oscA.table", 3 }, { "oscA.pos", .38f }, { "oscA.tune", 17 }, { "oscA.level", .12f }, { "oscB.table", 27 }, { "oscB.level", .72f },
+            { "ring.freq", 3271 }, { "ring.mix", .48f }, { "aenv.dec", 1.20f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 3200 }, { "lvl", .70f },
+        }),
+        fp("HX CB", {
+            { "oscA.table", 8 }, { "oscA.tune", -5 }, { "oscA.level", .25f }, { "oscB.table", 7 }, { "oscB.level", .62f },
+            { "ring.freq", 731 }, { "ring.mix", .42f }, { "aenv.dec", .50f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 2400 }, { "lvl", .76f },
+        }),
+        fp("HX SH", {
+            { "oscA.table", 2 }, { "oscA.tune", 24 }, { "oscA.level", .22f }, { "oscB.table", 29 }, { "oscB.level", .70f },
+            { "noise.level", .14f }, { "aenv.dec", .10f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 6200 }, { "lvl", .70f },
+        }),
+        fp("HX TB", {
+            { "oscA.table", 7 }, { "oscA.tune", -5 }, { "oscA.level", .30f }, { "oscB.table", 30 }, { "oscB.level", .66f },
+            { "ring.freq", 1187 }, { "ring.mix", .28f }, { "aenv.dec", .60f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 1800 }, { "lvl", .76f },
+        }),
+        fp("HX MOD", {
+            { "oscA.table", 9 }, { "oscA.pos", .55f }, { "oscA.tune", -12 }, { "oscA.level", .35f }, { "oscB.table", 31 }, { "oscB.level", .68f },
+            { "ring.freq", 2203 }, { "ring.mix", .32f }, { "aenv.dec", .25f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 2600 }, { "lvl", .76f },
+        }),
     };
     return bank;
 }

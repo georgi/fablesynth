@@ -162,9 +162,13 @@ The web build:
 - **Choke groups** (4) so open/closed hats cut each other, and per-pad output
   routing (MAIN + 4 aux buses).
 - **Master FX** — drive, bus compressor, chorus, delay, reverb.
-- **Kits** — 13 factory kits, including sample-based 808 CLASSIC and UZU;
+- **Kits** — 14 factory kits, including sample-based 808 CLASSIC and UZU plus
+  the oscillator/sample-blended 808+UZU HYBRID;
   saved kits persist in
   `localStorage`, including patterns, chains and any dropped-in wavetables.
+- **Pad patches and SQ-4 content** — 36 pad patches include 16 `HX` hybrids
+  with both oscillator and sample layers active; 32 DR-1 clips and the six
+  factory scenes are voiced around the 808, UZU and blended kits.
 - **Play it** — pads map to `Z X C V / A S D F / Q W E R / 1 2 3 4` (bottom row
   = pads 1–4), `Esc` stops, and MIDI notes 36–51 (C1 up) trigger pads 1–16.
 

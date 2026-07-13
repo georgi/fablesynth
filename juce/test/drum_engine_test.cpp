@@ -747,10 +747,11 @@ int main() {
     printf("\n== 6. DrumKits ==\n");
     {
         const auto& kits = factoryKits();
-        check(kits.size() == 13, "13 factory kits");
+        check(kits.size() == 14, "14 factory kits");
         check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
               "original kit names/order stay stable");
-        check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM" && kits[12].name == "UZU",
+        check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM" && kits[12].name == "UZU"
+              && kits[13].name == "808+UZU HYBRID",
               "expanded kit bank names/order");
         auto classic = applyKit(kits[3]);
         check(classic[dpid(0, DP_OSCB_TABLE)] == 5
@@ -764,6 +765,12 @@ int main() {
               && uzu[dpid(0, DP_OSCA_LEVEL)] == 0
               && std::abs(uzu[dpid(0, DP_OSCB_LEVEL)] - 0.92f) < 1.0e-6f,
               "UZU factory kit maps all 16 imported one-shots");
+        auto hybrid = applyKit(kits[13]);
+        check(hybrid[dpid(0, DP_OSCB_TABLE)] == 16
+              && hybrid[dpid(15, DP_OSCB_TABLE)] == 31
+              && hybrid[dpid(0, DP_OSCA_LEVEL)] > 0
+              && hybrid[dpid(0, DP_OSCB_LEVEL)] > 0,
+              "hybrid kit keeps oscillator and sample layers active");
 
         // Every override pid resolves and its value is within [min,max].
         bool allResolve = true, allInRange = true;
@@ -875,12 +882,13 @@ int main() {
     printf("\n== 7. DrumPatches ==\n");
     {
         const auto& bank = factoryPatches();
-        // Bank parity with src/drum/patches.ts FACTORY_PATCHES (20 entries).
-        check(bank.size() == 20, "20 factory patches");
+        // Bank parity with src/drum/patches.ts FACTORY_PATCHES.
+        check(bank.size() == 36, "36 factory patches");
         check(bank[0].name == "BD DEEP" && bank[3].name == "BD 808" &&
               bank[8].name == "HH 808" && bank[11].name == "CY 808" &&
               bank[16].name == "PC BELL" && bank[17].name == "PC CYMBAL" &&
-              bank[19].name == "PC GLITCH", "patch names/order match web");
+              bank[19].name == "PC GLITCH" && bank[20].name == "HX BD UZU" &&
+              bank[35].name == "HX MOD", "patch names/order match web");
 
         // Every override id resolves as a pad-relative field (never out/choke)
         // and its value is within [min,max].
@@ -900,19 +908,24 @@ int main() {
         check(allResolve, "all patch ids resolve as pad fields", bad);
         check(allInRange, "all patch values within [min,max]", bad);
         check(noRouting, "no patch touches out/choke", bad);
-        // Factory patches reference only built-in tables (index <= 14).
+        // Factory patches reference valid oscillator tables and sample slots.
         bool tablesOk = true;
         for (const auto& p : bank)
             for (const auto& [rel, v] : p.params)
-                if (rel == "oscA.table" || rel == "oscB.table")
-                    if (v < 0 || v > 14) tablesOk = false;
-        check(tablesOk, "factory patches use built-in tables only");
-
+                if ((rel == "oscA.table" && (v < 0 || v > 14))
+                    || (rel == "oscB.table" && (v < 0 || v >= (float)DRUM_SAMPLE_NAMES.size())))
+                    tablesOk = false;
+        check(tablesOk, "factory patches use valid built-in oscillator/sample tables");
         // Spot-check 3 patches against the hardcoded web values (patches.ts).
         auto val = [](const PadPatch& p, const char* rel, float fallback) {
             for (const auto& [r, v] : p.params) if (r == rel) return v;
             return fallback;
         };
+        bool hybridLayers = true;
+        for (size_t i = 20; i < bank.size(); ++i)
+            if (val(bank[i], "oscA.level", 0) <= 0 || val(bank[i], "oscB.level", 0) <= 0)
+                hybridLayers = false;
+        check(hybridLayers, "16 HX patches keep oscillator and sample layers active");
         const auto& bd = bank[0];   // BD DEEP
         check(val(bd, "oscA.table", -1) == 0.0f && val(bd, "oscA.tune", 0) == -26.0f &&
               val(bd, "penv.amt", 0) == 24.0f && val(bd, "penv.dec", 0) == 0.05f &&

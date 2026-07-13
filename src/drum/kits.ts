@@ -157,6 +157,27 @@ function uzuParams(): Partial<ParamValues> {
   return params;
 }
 
+function hybridParams(): Partial<ParamValues> {
+  const params = { ...trVoidParams() };
+  params['seq.bpm'] = 126;
+  params['master.swing'] = 0.24;
+  params['fx.drive.on'] = 1;
+  params['fx.drive.amt'] = 0.16;
+  params['fx.drive.mix'] = 0.34;
+  params['fx.reverb.mix'] = 0.14;
+  const samples = [16, 5, 18, 1, 20, 21, 3, 23, 13, 25, 15, 27, 7, 28, 30, 31];
+  const oscLevels = [0.50, 0.45, 0.42, 0.25, 0.40, 0.18, 0.16, 0.12, 0.45, 0.42, 0.40, 0.12, 0.25, 0.22, 0.30, 0.35];
+  const sampleLevels = [0.72, 0.68, 0.70, 0.76, 0.65, 0.76, 0.76, 0.72, 0.66, 0.68, 0.68, 0.72, 0.62, 0.70, 0.66, 0.68];
+  const decays = [0.60, 0.70, 0.50, 0.70, 0.20, 0.15, 0.70, 1.20, 0.60, 0.60, 0.60, 1.20, 0.50, 0.35, 0.60, 0.25];
+  for (let i = 0; i < PAD_COUNT; i++) {
+    params[pad(i, 'oscA.level')] = oscLevels[i];
+    params[pad(i, 'oscB.table')] = samples[i];
+    params[pad(i, 'oscB.level')] = sampleLevels[i];
+    params[pad(i, 'aenv.dec')] = decays[i];
+  }
+  return params;
+}
+
 function deepDubParams(): Partial<ParamValues> {
   const params = { ...trVoidParams() };
   params['seq.bpm'] = 112;
@@ -312,6 +333,7 @@ export const FACTORY_KITS: Kit[] = [
   { name: 'BROKEN TOYS', params: brokenToysParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
   { name: 'LIVE ROOM', params: liveRoomParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
   { name: 'UZU', params: uzuParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
+  { name: '808+UZU HYBRID', params: hybridParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
 ];
 
 export function kitToState(kit: Kit): {
