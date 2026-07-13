@@ -15,6 +15,8 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <map>
+#include <unordered_map>
 #include <vector>
 
 namespace fable {
@@ -104,6 +106,34 @@ public:
     // patch stepper (Task 11) uses this to hot-swap a track's sound.
     void applyTrackPatch(int t);
 
+    // Hosted native-device bridge (message thread). Parameter edits update the
+    // session PatchRef first, then cross to the audio thread through Cmd::Patch.
+    std::unordered_map<std::string, float> trackParameterValues(int t) const;
+    void setTrackInlineParams(int t, const std::unordered_map<std::string, float>& values);
+    void setTrackFactoryPatch(int t, int program);
+    int trackFactoryProgram(int t) const;
+
+    int deviceNumTables(int t) const;
+    const fable::GeneratedTable* deviceTableAt(int t, int index) const;
+    juce::String deviceTableName(int t, int index) const;
+
+    void auditionDrum(int pad, float velocity);
+    void selectDrumPad(int pad);
+    void auditionBassOn(int semitone, float velocity);
+    void auditionBassOff(int semitone);
+    void auditionWtOn(int track, int note, float velocity);
+    void auditionWtOff(int track, int note);
+
+    uint32_t consumeDrumHitFlags() { return drumHitFlags_.exchange(0); }
+    float drumVizPosition(int oscillator) const;
+    float drumVizEnvelope() const { return drumVizEnv_.load(); }
+    float bassVizPosition() const { return bassVizPos_.load(); }
+    float bassVizCutoff() const { return bassVizCut_.load(); }
+    int bassCurrentSemitone() const { return bassVizSemi_.load(); }
+    float wtVizPosition(int track, int oscillator) const;
+    int wtVoiceCount(int track) const;
+    double preparedSampleRate() const { return preparedSampleRate_; }
+
     // Test hook: snapshot of a track's live audio-thread param array. Used to
     // verify a patch swap (applyTrackPatch) actually reached the engine and
     // not just the session doc — call after draining the Cmd FIFO (any
@@ -120,7 +150,7 @@ public:
     std::atomic<float>  trackRms[4];    // post-gain running RMS, for the VU
 
     // Copy the most recent n post-limiter mono samples (oldest -> newest).
-    float readScope(float* dest, int n);
+    float readScope(float* dest, int n) const;
 
     void setPaused(bool p) { paused_.store(p); }
     bool paused() const { return paused_.load(); }
@@ -134,8 +164,9 @@ private:
 
     // ---- command FIFO (message thread -> audio thread) ----------------------
     struct Cmd {
-        enum class K { Clip, Stop, Update, Gain, Tempo, Patch, Reset } k = K::Gain;
-        int t = 0, bars = 0, tag = 0;                // tag = launch scene (Clip)
+        enum class K { Clip, Stop, Update, Gain, Tempo, Patch, Reset,
+                       DrumTrigger, DrumSelect, BassOn, BassOff, WtOn, WtOff } k = K::Gain;
+        int t = 0, bars = 0, tag = 0, key = 0;       // tag = launch scene (Clip)
         double at = 0, bpm = 0, swing = 0, anchor = 0;
         float gain = 0;
         uint32_t gen = 0;                            // Reset: the new generation
@@ -260,6 +291,14 @@ private:
     static constexpr int kScopeSize = 2048;
     std::array<float, kScopeSize> scopeRing_ {};
     std::atomic<int> scopeWrite_ { 0 };
+
+    // Audio-thread visual state published atomically for hosted device views.
+    std::atomic<uint32_t> drumHitFlags_ { 0 };
+    std::atomic<float> drumVizA_ { -1 }, drumVizB_ { -1 }, drumVizEnv_ { 0 };
+    std::atomic<float> bassVizPos_ { -1 }, bassVizCut_ { -1 };
+    std::atomic<int> bassVizSemi_ { -100 };
+    std::atomic<float> wtVizA_[2] {{ -1 }, { -1 }}, wtVizB_[2] {{ -1 }, { -1 }};
+    std::atomic<int> wtVoices_[2] {{ 0 }, { 0 }};
 
     // cached raw params for the message-thread poll (swing / bpm / vol0..3).
     std::atomic<float>* rawSwing_ = nullptr;

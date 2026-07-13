@@ -246,6 +246,92 @@ void SeqAudioProcessor::applyTrackPatch(int t) {
     pushCmd(std::move(c));
 }
 
+std::unordered_map<std::string, float> SeqAudioProcessor::trackParameterValues(int t) const {
+    std::unordered_map<std::string, float> out;
+    if (t < 0 || t >= kTracks || !conductor_) return out;
+    const auto values = computeTrackParams(t, conductor_->session().tracks[(size_t)t].patch);
+    auto addCatalog = [&](const auto& info) {
+        out.reserve(info.size());
+        for (const auto& d : info)
+            if (d.id >= 0 && d.id < (int)values.size()) out.emplace(d.pid, values[(size_t)d.id]);
+    };
+    if (t == 0) addCatalog(drumParamInfo());
+    else if (t == 1) addCatalog(bassParamInfo());
+    else addCatalog(paramInfo());
+    return out;
+}
+
+void SeqAudioProcessor::setTrackInlineParams(
+    int t, const std::unordered_map<std::string, float>& values) {
+    if (t < 0 || t >= kTracks || !conductor_) return;
+    PatchRef patch;
+    patch.factory = false;
+    patch.index = 0;
+    patch.params.insert(values.begin(), values.end());
+    conductor_->setTrackPatch(t, std::move(patch));
+    applyTrackPatch(t);
+}
+
+void SeqAudioProcessor::setTrackFactoryPatch(int t, int program) {
+    if (t < 0 || t >= kTracks || !conductor_) return;
+    conductor_->setTrackPatch(t, PatchRef { true, program, {} });
+    applyTrackPatch(t);
+}
+
+int SeqAudioProcessor::trackFactoryProgram(int t) const {
+    if (t < 0 || t >= kTracks || !conductor_) return 0;
+    const auto& patch = conductor_->session().tracks[(size_t)t].patch;
+    return patch.factory ? patch.index : 0;
+}
+
+int SeqAudioProcessor::deviceNumTables(int t) const {
+    if (t == 0) return (int)drumTables_.size();
+    if (t == 1) return (int)bassTables_.size();
+    return (t == 2 || t == 3) ? (int)wtTables_.size() : 0;
+}
+
+const GeneratedTable* SeqAudioProcessor::deviceTableAt(int t, int index) const {
+    const std::vector<TablePtr>* tables = t == 0 ? &drumTables_ : t == 1 ? &bassTables_ : &wtTables_;
+    return index >= 0 && index < (int)tables->size() ? (*tables)[(size_t)index].get() : nullptr;
+}
+
+juce::String SeqAudioProcessor::deviceTableName(int t, int index) const {
+    if (auto* table = deviceTableAt(t, index)) return table->name;
+    return {};
+}
+
+void SeqAudioProcessor::auditionDrum(int pad, float velocity) {
+    Cmd c; c.k = Cmd::K::DrumTrigger; c.key = pad; c.gain = velocity; pushCmd(std::move(c));
+}
+void SeqAudioProcessor::selectDrumPad(int pad) {
+    Cmd c; c.k = Cmd::K::DrumSelect; c.key = pad; pushCmd(std::move(c));
+}
+void SeqAudioProcessor::auditionBassOn(int semitone, float velocity) {
+    Cmd c; c.k = Cmd::K::BassOn; c.key = semitone; c.gain = velocity; pushCmd(std::move(c));
+}
+void SeqAudioProcessor::auditionBassOff(int semitone) {
+    Cmd c; c.k = Cmd::K::BassOff; c.key = semitone; pushCmd(std::move(c));
+}
+void SeqAudioProcessor::auditionWtOn(int track, int note, float velocity) {
+    if (track < 2 || track > 3) return;
+    Cmd c; c.k = Cmd::K::WtOn; c.t = track; c.key = note; c.gain = velocity; pushCmd(std::move(c));
+}
+void SeqAudioProcessor::auditionWtOff(int track, int note) {
+    if (track < 2 || track > 3) return;
+    Cmd c; c.k = Cmd::K::WtOff; c.t = track; c.key = note; pushCmd(std::move(c));
+}
+
+float SeqAudioProcessor::drumVizPosition(int oscillator) const {
+    return oscillator == 0 ? drumVizA_.load() : drumVizB_.load();
+}
+float SeqAudioProcessor::wtVizPosition(int track, int oscillator) const {
+    const int i = juce::jlimit(0, 1, track - 2);
+    return oscillator == 0 ? wtVizA_[i].load() : wtVizB_[i].load();
+}
+int SeqAudioProcessor::wtVoiceCount(int track) const {
+    return wtVoices_[juce::jlimit(0, 1, track - 2)].load();
+}
+
 std::vector<float> SeqAudioProcessor::debugTrackParams(int t) {
     if (t == 0) { auto& p = drum_.params(); return std::vector<float>(p.begin(), p.end()); }
     if (t == 1) { auto& p = bass_.params(); return std::vector<float>(p.begin(), p.end()); }
@@ -385,6 +471,12 @@ void SeqAudioProcessor::drainCmds() {
                     // generation. FIFO-ordered ahead of the swap's stops.
                     audioGen_ = c.gen;
                     break;
+                case Cmd::K::DrumTrigger: drum_.trigger(c.key, c.gain); break;
+                case Cmd::K::DrumSelect:  drum_.selectPad(c.key); break;
+                case Cmd::K::BassOn:      bass_.keyOn(c.key, c.gain); break;
+                case Cmd::K::BassOff:     bass_.keyOff(c.key); break;
+                case Cmd::K::WtOn:        wt_[c.t - 2].noteOn(c.key, c.gain); break;
+                case Cmd::K::WtOff:       wt_[c.t - 2].noteOff(c.key); break;
             }
         }
     };
@@ -474,18 +566,28 @@ void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
         outs[b][1] = drumAux_.getWritePointer(2 * (b - 1) + 1);
     }
     drum_.render(outs, n);         // zero-fills all buses, pads accumulate
+    drumVizA_.store(drum_.vizA, std::memory_order_relaxed);
+    drumVizB_.store(drum_.vizB, std::memory_order_relaxed);
+    drumVizEnv_.store(drum_.vizEnv, std::memory_order_relaxed);
+    drumHitFlags_.fetch_or(drum_.consumeHits(), std::memory_order_relaxed);
     drumFx_.process(L, R, n);      // master FX on MAIN only (AUX dropped)
 }
 
 void SeqAudioProcessor::renderBass(float* L, float* R, int n) {
     bass_.hostSetFrame(frame_);
     bass_.render(L, R, n);
+    bassVizPos_.store(bass_.vizPos, std::memory_order_relaxed);
+    bassVizCut_.store(bass_.vizCut, std::memory_order_relaxed);
+    bassVizSemi_.store(bass_.vizSemi, std::memory_order_relaxed);
     bassFx_.process(L, R, n);
 }
 
 void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
     wt_[i].hostSetFrame(frame_);
     wt_[i].render(L, R, n);
+    wtVizA_[i].store((float)wt_[i].vizA, std::memory_order_relaxed);
+    wtVizB_[i].store((float)wt_[i].vizB, std::memory_order_relaxed);
+    wtVoices_[i].store(wt_[i].vizActive, std::memory_order_relaxed);
     wtFx_[i].process(L, R, n);
 }
 
@@ -600,7 +702,7 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     currentFrame.store(frame_);
 }
 
-float SeqAudioProcessor::readScope(float* dest, int n) {
+float SeqAudioProcessor::readScope(float* dest, int n) const {
     int w = scopeWrite_.load(std::memory_order_relaxed);
     for (int i = 0; i < n; ++i)
         dest[i] = scopeRing_[(size_t)((w - n + i) & (kScopeSize - 1))];

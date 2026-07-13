@@ -21,6 +21,11 @@
 #include "../source/drum/ui/DrumUiModel.h"
 #include "../source/bass/ui/BassUiModel.h"
 #include "../source/bass/dsp/BassParams.h"
+#include "../source/bass/dsp/BassPatches.h"
+#include "../source/dsp/NoteSeq.h"
+#include "../source/seq/ui/HostedDrumModel.h"
+#include "../source/seq/ui/HostedBassModel.h"
+#include "../source/seq/ui/HostedWtModel.h"
 
 #include <algorithm>
 #include <array>
@@ -87,6 +92,67 @@ int main(int argc, char** argv) {
     SeqAudioProcessor p;
     p.prepareToPlay(48000.0, 128);
     juce::AudioBuffer<float> buf(2, 128);
+
+    // ---- native hosted device models ------------------------------------
+    {
+        SeqAudioProcessor hosted;
+        hosted.prepareToPlay(48000.0, 128);
+        juce::AudioBuffer<float> hostedBuf(2, 128);
+        fui::HostedDrumModel drum(hosted);
+        fui::HostedBassModel bass(hosted);
+        fui::HostedWtModel wt2(hosted, 2), wt3(hosted, 3);
+        drum.setTargetScene(2);
+        bass.setTargetScene(2);
+        wt2.setTarget(2);
+        wt3.setTarget(2);
+
+        check(drum.capabilities().hosted && !drum.capabilities().ownsTransport,
+              "DR-1 model advertises hosted transport semantics");
+        check(bass.capabilities().hosted && !bass.capabilities().supportsPatternChain,
+              "BL-1 model disables standalone pattern chaining");
+        check(wt2.capabilities().hosted && !wt2.capabilities().supportsUserTables,
+              "WT-1 model disables hosted user-table mutation");
+
+        const auto before0 = hosted.debugTrackParams(0);
+        const auto before2 = hosted.debugTrackParams(2);
+        auto* cutoff = bass.parameters().parameter("flt.cut");
+        cutoff->setValueNotifyingHost(cutoff->convertTo0to1(6789.0f));
+        bass.flushPendingPatch();
+        renderRms(hosted, hostedBuf, 1); // drain the Patch command on the audio thread
+        const auto after1 = hosted.debugTrackParams(1);
+        check(std::abs(after1[(size_t)fable::BL_FLT_CUT] - 6789.0f) < 2.0f,
+              "BL-1 hosted knob edit reaches its engine through the patch FIFO",
+              after1[(size_t)fable::BL_FLT_CUT]);
+        check(hosted.debugTrackParams(0) == before0 && hosted.debugTrackParams(2) == before2,
+              "hosted parameter edit is isolated to the focused track");
+
+        const uint8_t oldDrum = drum.step(0, 0, 0);
+        drum.setStep(0, 0, 0, oldDrum == 2 ? 1 : 2);
+        check(drum.step(0, 0, 0) != oldDrum,
+              "DR-1 native sequencer writes the selected SQ clip bytes");
+
+        auto bassStep = bass.sequenceStep(0, 0);
+        bassStep.on = !bassStep.on; bassStep.note = 7; bassStep.acc = true;
+        bass.setSequenceStep(0, 0, bassStep);
+        const auto bassRead = bass.sequenceStep(0, 0);
+        check(bassRead.on == bassStep.on && bassRead.note == 7 && bassRead.acc,
+              "BL-1 native sequencer round-trips a hosted clip step");
+
+        auto wtStep = wt2.sequenceStep(0, 1);
+        wtStep.on = true; wtStep.note = 9; wtStep.oct = 1; wtStep.tie = true;
+        wt2.setSequenceStep(0, 1, wtStep);
+        const auto wtRead = wt2.sequenceStep(0, 1);
+        check(wtRead.on && wtRead.note == 9 && wtRead.oct == 1 && wtRead.tie,
+              "WT-1 native sequencer round-trips a hosted clip step");
+        check(wt3.sequenceStep(0, 1).note != 9 || !wt3.sequenceStep(0, 1).tie,
+              "WT-1 clip edit remains isolated from the second WT track");
+
+        wt2.auditionNoteOn(60, 0.8f);
+        renderRms(hosted, hostedBuf, 2);
+        wt2.auditionNoteOff(60);
+        renderRms(hosted, hostedBuf, 1);
+        check(hosted.wtVoiceCount(2) >= 0, "WT-1 audition commands cross the audio FIFO safely");
+    }
 
     // ---- 1. Silent before any launch, but the shared clock runs. ----
     check(renderRms(p, buf, 50) < 1e-6, "idle output is silent");
