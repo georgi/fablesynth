@@ -13,9 +13,9 @@ namespace fui {
 // ===================== Group =====================
 DrumFxRack::Group::Group(DrumUiModel& p, const char* fx, const char* t,
                          std::initializer_list<const char*> knobIds)
-    : title(t), power(p.parameters(), juce::String("fx.") + fx + ".on", Accent::N) {
+    : title(t), power(p.parameters(), "pad" + juce::String(p.selectedPad()) + ".fx." + fx + ".on", Accent::N) {
     for (const char* k : knobIds)
-        knobs.add(new Knob(p.parameters(), juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
+        knobs.add(new Knob(p.parameters(), "pad" + juce::String(p.selectedPad()) + ".fx." + fx + "." + k, Knob::Sm, Accent::N));
 }
 
 void DrumFxRack::Group::layout(juce::Rectangle<int> r) {
@@ -57,6 +57,22 @@ void DrumFxRack::Group::paintGroup(juce::Graphics& g) {
 
 // ===================== DrumFxRack =====================
 DrumFxRack::DrumFxRack(DrumUiModel& p) : proc(p) {
+    proc.selectionChanges().addChangeListener(this);
+    rebuild();
+    lastSig = routeSignature();
+    startTimerHz(1); // OUT panel reflects live pad.out routing + renames
+}
+
+DrumFxRack::~DrumFxRack() {
+    proc.selectionChanges().removeChangeListener(this);
+}
+
+void DrumFxRack::changeListenerCallback(juce::ChangeBroadcaster*) {
+    rebuild();
+}
+
+void DrumFxRack::rebuild() {
+    groups.clear();
     struct Def { const char* fx; const char* title; std::initializer_list<const char*> k; };
     const Def defs[] = {
         {"drive",  "DRIVE",  {"amt", "mix"}},
@@ -66,12 +82,12 @@ DrumFxRack::DrumFxRack(DrumUiModel& p) : proc(p) {
         {"reverb", "REVERB", {"size", "mix"}},
     };
     for (const auto& d : defs) {
-        auto* m = groups.add(new Group(p, d.fx, d.title, d.k));
+        auto* m = groups.add(new Group(proc, d.fx, d.title, d.k));
         addAndMakeVisible(m->power);
         for (auto* k : m->knobs) addAndMakeVisible(*k);
     }
-    lastSig = routeSignature();
-    startTimerHz(1); // OUT panel reflects live pad.out routing + renames
+    resized();
+    repaint();
 }
 
 void DrumFxRack::resized() {
@@ -103,6 +119,10 @@ void DrumFxRack::timerCallback() {
 
 void DrumFxRack::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
+    g.setColour(col::acA);
+    g.setFont(dispFont(8.0f));
+    drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2) + " FX",
+               { 17, 2, 100, 12 }, 1.4f);
     for (auto* m : groups) m->paintGroup(g);
     paintOutPanel(g);
 }
@@ -120,7 +140,7 @@ void DrumFxRack::paintOutPanel(juce::Graphics& g) {
     drawSpaced(g, "OUT", head, 1.4f);
     g.setColour(col::textDim);
     g.setFont(monoFont(6.5f));
-    drawSpaced(g, juce::String::fromUTF8("FX \xe2\x86\x92 MAIN ONLY"), head, 0.6f,
+    drawSpaced(g, juce::String::fromUTF8("PAD FX \xe2\x86\x92 OUT"), head, 0.6f,
                juce::Justification::right);
     inner.removeFromTop(6);
 

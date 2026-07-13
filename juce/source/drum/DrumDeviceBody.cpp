@@ -21,6 +21,6 @@ void DrumDeviceBody::resized() {
     ampEnv.setBounds(613, 395, 259, 209);
     filter.setBounds(881, 395, 259, 209);
     mod.setBounds(1149, 395, 293, 209);
-    stepSeq.setBounds(18, 613, 1424, 105);
-    fxRack.setBounds(18, 727, 1424, 131);
+    fxRack.setBounds(18, 613, 1424, 131);
+    stepSeq.setBounds(18, 753, 1424, 105);
 }

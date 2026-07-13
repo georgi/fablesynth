@@ -57,7 +57,7 @@ std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor& p) {
 //     #dr-padstrip    (18, 481)  352 x 119
 //     #dr-selbar      (379,103) 1063 x 31
 //     #dr-oscrow      (379,143) 1063 x 243  cols 1fr 1fr 196px, 9px gaps
-//       OSC A (379,143,424) OSC B (812,143,425) NOISE (1246,143,196)
+//       OSC A (379,143,424) SAMPLE (812,143,425) NOISE (1246,143,196)
 //     #dr-editrow     (379,395) 1063 x 209  cols 1fr 1.15fr 1.15fr 1.3fr, 9px gaps
 //       PITCH (379,395,225) AMP (613,395,259) FLT (881,395,259) MOD (1149,395,293)
 //   #dr-stepseq       (18, 613) 1424 x 105
@@ -65,8 +65,11 @@ std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor& p) {
 
 // ---- DrumRack ----
 DrumRack::DrumRack(fui::DrumUiModel& p) : header(p), body(p) {
-    addAndMakeVisible(header);
     addAndMakeVisible(body);
+    // The body spans the full logical rack, including the otherwise-empty
+    // header strip. Keep the header above it so its program and master
+    // controls receive mouse events.
+    addAndMakeVisible(header);
 }
 
 void DrumRack::resized() {

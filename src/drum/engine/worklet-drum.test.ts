@@ -9,11 +9,18 @@ const tableMsg = {
   t: 'tables',
   list: tables.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.slice().buffer })),
 };
+const testSamples = Array.from({ length: 5 }, (_, slot) => {
+  const data = new Float32Array(4800);
+  for (let i = 0; i < data.length; i++) data[i] = Math.sin(i * (0.03 + slot * 0.01)) * (1 - i / data.length);
+  return { sampleRate: 48000, buf: data.buffer };
+});
+const sampleMsg = { t: 'samples', list: testSamples };
 
 function boot(params = defaultDrumParams()): DrumHarness {
   const h = makeDrumProcessor();
   h.send({ t: 'init', params });
   h.send(tableMsg);
+  h.send(sampleMsg);
   return h;
 }
 
@@ -33,12 +40,44 @@ describe('drum voice', () => {
     expect(finite(L) && finite(R)).toBe(true);
   });
 
+  it('routes each voice only to its matching stereo pad bus', () => {
+    h.send({ t: 'trig', pad: 3, v: 1 });
+    const outputs = Array.from({ length: 16 }, () => [new Float32Array(128), new Float32Array(128)]);
+    h.proc.process([], outputs);
+    expect(peak(outputs[3][0])).toBeGreaterThan(0);
+    for (let i = 0; i < outputs.length; i++) {
+      if (i !== 3) expect(peak(outputs[i][0]), `pad bus ${i}`).toBe(0);
+    }
+  });
+
   it('one-shot: decays to silence without a note-off', () => {
     h.send({ t: 'trig', pad: 0, v: 1 });
     h.render(40);
     // default aenv: att 1ms + hold 10ms + dec 240ms ≈ 12k samples; render 1.5s
     const tail = h.render(560).L;
     expect(peak(tail.slice(-2560))).toBeLessThan(1e-3);
+  });
+
+  it('replaces oscillator B with a selectable, tunable one-shot sample layer', () => {
+    const p = defaultDrumParams();
+    p[pad(0, 'oscA.level')] = 0;
+    p[pad(0, 'oscB.table')] = 3;
+    p[pad(0, 'oscB.level')] = 1;
+    p[pad(0, 'aenv.dec')] = 1;
+    const sample = boot(p);
+    sample.send({ t: 'trig', pad: 0, v: 1 });
+    expect(peak(sample.render(8).L)).toBeGreaterThan(0.01);
+
+    const silentParams = { ...p, [pad(0, 'oscB.level')]: 0 };
+    const silent = boot(silentParams);
+    silent.send({ t: 'trig', pad: 0, v: 1 });
+    expect(peak(silent.render(8).L)).toBe(0);
+
+    const fast = boot({ ...p, [pad(0, 'oscB.tune')]: 12 });
+    fast.send({ t: 'trig', pad: 0, v: 1 });
+    fast.render(40);
+    const fastState = fast.proc as unknown as { voices: { sample: { done: boolean } }[] };
+    expect(fastState.voices[0].sample.done).toBe(true);
   });
 
   it('accent (v=1) is louder than plain (v=0.72) with default v2l', () => {

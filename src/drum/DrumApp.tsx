@@ -9,6 +9,7 @@ import { PadGrid } from './components/PadGrid';
 import { PadStrip } from './components/PadStrip';
 import { NoiseSection } from './components/NoiseSection';
 import { OscSection } from './components/OscSection';
+import { SampleSection } from './components/SampleSection';
 import { PitchEnvPanel } from './components/PitchEnvPanel';
 import { SelBar } from './components/SelBar';
 import { StepSeq } from './components/StepSeq';
@@ -42,7 +43,7 @@ export function DrumApp() {
             <div id="dr-selbar"><SelBar /></div>
             <div id="dr-oscrow">
               <OscSection osc="oscA" />
-              <OscSection osc="oscB" />
+              <SampleSection />
               <NoiseSection />
             </div>
             <div id="dr-editrow">
@@ -53,8 +54,8 @@ export function DrumApp() {
             </div>
           </div>
         </div>
-        <div id="dr-stepseq"><StepSeq /></div>
         <div id="dr-fxrack"><FxRack /></div>
+        <div id="dr-stepseq"><StepSeq /></div>
       </main>
     </>
   );

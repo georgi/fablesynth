@@ -27,71 +27,72 @@ const fp = (name: string, params: Record<string, number>): PadPatch => ({ v: 1, 
 export const FACTORY_PATCHES: PadPatch[] = [
   // Kicks — THUD body, pitch envelope does the punch.
   fp('BD DEEP', {
-    'oscA.table': 0, 'oscA.tune': -14, 'penv.amt': 24, 'penv.dec': 0.05,
+    'oscA.table': 0, 'oscA.tune': -26, 'penv.amt': 24, 'penv.dec': 0.05,
     'aenv.dec': 0.42, 'aenv.curve': 0.45, 'lvl': 0.9,
   }),
   fp('BD PUNCH', {
-    'oscA.table': 0, 'oscA.tune': -7, 'penv.amt': 32, 'penv.dec': 0.028,
+    'oscA.table': 0, 'oscA.tune': -19, 'penv.amt': 32, 'penv.dec': 0.028,
     'aenv.dec': 0.2, 'aenv.curve': 0.5, 'lvl': 0.9,
   }),
   fp('BD SUB', {
-    'oscA.table': 0, 'oscA.tune': -22, 'penv.amt': 20, 'penv.dec': 0.06,
+    'oscA.table': 0, 'oscA.tune': -34, 'penv.amt': 20, 'penv.dec': 0.06,
     'aenv.dec': 0.95, 'aenv.hold': 0.02, 'aenv.curve': 0.3, 'lvl': 0.92,
   }),
   fp('BD 808', {
-    'oscA.table': 0, 'oscA.tune': -12, 'penv.amt': 26, 'penv.dec': 0.075,
+    'oscA.table': 0, 'oscA.tune': -24, 'penv.amt': 26, 'penv.dec': 0.075,
     'aenv.dec': 0.65, 'aenv.curve': 0.35, 'flt.on': 1, 'flt.type': 0,
     'flt.cut': 900, 'flt.drive': 0.35, 'lvl': 0.92,
   }),
   // Snares — tonal crack plus a bright noise layer.
   fp('SD CRACK', {
-    'oscA.table': 1, 'oscA.tune': 0, 'penv.amt': 5, 'penv.dec': 0.03,
+    'oscA.table': 1, 'oscA.tune': -12, 'penv.amt': 5, 'penv.dec': 0.03,
     'noise.level': 0.5, 'noise.color': 0.3, 'aenv.dec': 0.18, 'lvl': 0.85,
   }),
   fp('SD 808', {
-    'oscA.table': 10, 'oscA.tune': 0, 'penv.amt': 3, 'penv.dec': 0.025,
-    'noise.level': 0.35, 'noise.color': 0.45, 'aenv.dec': 0.22, 'lvl': 0.85,
+    'oscA.level': 0, 'oscB.table': 0, 'oscB.level': 0.9,
+    'noise.level': 0.12, 'noise.color': 0.45, 'aenv.dec': 0.42, 'lvl': 0.85,
   }),
   fp('SD RIM', {
-    'oscA.table': 1, 'oscA.tune': 12, 'penv.amt': 2, 'penv.dec': 0.015,
+    'oscA.table': 1, 'oscA.tune': 0, 'penv.amt': 2, 'penv.dec': 0.015,
     'noise.level': 0.18, 'noise.color': 0.6, 'aenv.dec': 0.08, 'lvl': 0.8,
   }),
   // Clap — sampled 808 clap with a room-friendly tail.
   fp('CP 808', {
-    'oscA.table': 11, 'oscA.tune': 0, 'noise.level': 0.3, 'noise.color': 0.5,
-    'aenv.hold': 0.02, 'aenv.dec': 0.3, 'aenv.curve': 0.4, 'lvl': 0.85,
+    'oscA.level': 0, 'oscB.table': 1, 'oscB.level': 0.9,
+    'aenv.hold': 0.02, 'aenv.dec': 0.65, 'aenv.curve': 0.4, 'lvl': 0.85,
   }),
   // Hats — sampled 808 hats, high-passed to sit above the kit.
   fp('HH 808', {
-    'oscA.table': 12, 'aenv.dec': 0.06, 'flt.on': 1, 'flt.type': 3,
+    'oscA.level': 0, 'oscB.table': 2, 'oscB.level': 0.9, 'aenv.dec': 0.12, 'flt.on': 1, 'flt.type': 3,
     'flt.cut': 7200, 'ring.freq': 6389, 'ring.mix': 0.18, 'lvl': 0.7,
   }),
   fp('HH TIGHT', {
-    'oscA.table': 12, 'aenv.dec': 0.035, 'flt.on': 1, 'flt.type': 3,
+    'oscA.level': 0, 'oscB.table': 2, 'oscB.level': 0.9, 'aenv.dec': 0.055, 'flt.on': 1, 'flt.type': 3,
     'flt.cut': 9200, 'ring.freq': 7919, 'ring.mix': 0.22, 'lvl': 0.65,
   }),
   fp('OH 808', {
-    'oscA.table': 13, 'aenv.dec': 0.55, 'flt.on': 1, 'flt.type': 3,
+    'oscA.level': 0, 'oscB.table': 3, 'oscB.level': 0.9, 'aenv.dec': 0.55, 'flt.on': 1, 'flt.type': 3,
     'flt.cut': 5200, 'ring.freq': 5197, 'ring.mix': 0.28, 'lvl': 0.7,
   }),
   // Cymbal — long sizzle.
   fp('CY 808', {
-    'oscA.table': 14, 'aenv.dec': 1.7, 'aenv.curve': 0.25, 'flt.on': 1,
+    'oscA.level': 0, 'oscB.table': 4, 'oscB.level': 0.9,
+    'aenv.dec': 1.7, 'aenv.curve': 0.25, 'flt.on': 1,
     'flt.type': 3, 'flt.cut': 3800, 'ring.freq': 2741, 'ring.mix': 0.62,
     'lvl': 0.72,
   }),
   // Toms — THUD tuned across the range with a modest pitch sweep.
   fp('TM LO', {
-    'oscA.table': 0, 'oscA.tune': -12, 'penv.amt': 12, 'penv.dec': 0.07,
-    'aenv.dec': 0.42, 'lvl': 0.85,
+    'oscA.table': 0, 'oscA.tune': -19, 'penv.amt': 12, 'penv.dec': 0.07,
+    'aenv.dec': 0.28, 'lvl': 0.85,
   }),
   fp('TM MID', {
-    'oscA.table': 0, 'oscA.tune': -5, 'penv.amt': 10, 'penv.dec': 0.06,
-    'aenv.dec': 0.36, 'lvl': 0.85,
+    'oscA.table': 0, 'oscA.tune': -12, 'penv.amt': 10, 'penv.dec': 0.06,
+    'aenv.dec': 0.24, 'lvl': 0.85,
   }),
   fp('TM HI', {
-    'oscA.table': 0, 'oscA.tune': 2, 'penv.amt': 8, 'penv.dec': 0.05,
-    'aenv.dec': 0.3, 'lvl': 0.85,
+    'oscA.table': 0, 'oscA.tune': -5, 'penv.amt': 8, 'penv.dec': 0.05,
+    'aenv.dec': 0.2, 'lvl': 0.85,
   }),
   // Perc / vox / glitch flavors. The fixed-Hz ring carrier creates
   // inharmonic sidebands, avoiding the cartoonish pitched-table character.

@@ -127,9 +127,9 @@ half of the groundwork for the FableSeq SQ-4 session launcher.
 
 ## DR-1 drum machine
 
-DR-1 is a 16-pad drum machine built on the same wavetable engine. Every sound
-is **fully synthesized, no samples**: each pad is a complete drum voice you can
-retune, reshape or mangle. It comes in two forms:
+DR-1 is a 16-pad drum machine built on the same wavetable engine. Each pad
+combines a morphing wavetable oscillator with a true one-shot sample player,
+plus noise, modulation and shaping. It comes in two forms:
 
 - **Plugin** — **FableSynth DR-1** (VST3 · AU · Standalone), a faithful
   C++/JUCE port built from the same [`juce/`](juce/) project as WT-1, adding
@@ -145,9 +145,10 @@ The web build:
 
 ![The DR-1 drum machine](docs/dr1.png)
 
-- **16 pads**, each with **2 wavetable oscillators** (4 drum tables — THUD,
+- **16 pads**, each with a **wavetable oscillator** (4 drum tables — THUD,
   CRACK, TINE, GRIT — plus WT-1's six procedural tables, with the same POS
-  morphing and up to 7-voice unison) and a **noise** layer with color control.
+  morphing and up to 7-voice unison), a tunable **808 one-shot sample player**
+  (snare, clap, closed/open hat, cymbal), and a **noise** layer with color control.
 - **Per-pad shaping** — pitch envelope (±48 st), AHD amp envelope with
   adjustable curve, a switchable filter (LP12/LP24/BP/HP/Notch) with drive, and
   a **4-slot mod matrix** (MOD ENV / VELO / RAND → wavetable pos, pitch, cutoff,

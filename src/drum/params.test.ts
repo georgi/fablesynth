@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   PAD_COUNT, MIDI_BASE, pad, DRUM_PARAM_DEFS, DRUM_PARAMS, defaultDrumParams,
-  DRUM_TABLE_NAMES, DMOD_SOURCES, DMOD_DESTS, PAD_FIELDS,
+  DRUM_TABLE_NAMES, DRUM_SAMPLE_NAMES, DMOD_SOURCES, DMOD_DESTS, PAD_FIELDS,
 } from './params';
 
 describe('drum params', () => {
@@ -21,6 +21,10 @@ describe('drum params', () => {
     }
     // spot-check ranges off the spec
     expect(DRUM_PARAMS['pad0.oscA.tune']).toMatchObject({ min: -48, max: 48, curve: 'int' });
+    expect(DRUM_PARAMS['pad0.oscB.table']).toMatchObject({ options: DRUM_SAMPLE_NAMES, def: 0 });
+    expect(DRUM_PARAMS['pad0.oscB.pos']).toMatchObject({ label: 'START', min: 0, max: 1 });
+    expect(DRUM_PARAMS['pad0.oscB.detune']).toMatchObject({ label: 'END', def: 1 });
+    expect(DRUM_PARAMS['pad0.oscB.phase']).toMatchObject({ label: 'REV', def: 0 });
     expect(DRUM_PARAMS['pad0.aenv.dec']).toMatchObject({ min: 0.005, max: 4, curve: 'log' });
     expect(DRUM_PARAMS['pad0.flt.cut']).toMatchObject({ min: 20, max: 20000, curve: 'log', def: 1800 });
     expect(DRUM_PARAMS['pad0.ring.freq']).toMatchObject({ min: 20, max: 12000, curve: 'log', def: 1200 });
@@ -29,14 +33,15 @@ describe('drum params', () => {
     expect(DRUM_PARAMS['pad0.choke']).toMatchObject({ min: 0, max: 4, curve: 'int' });
   });
 
-  it('globals: bpm/swing/volume/fx', () => {
+  it('keeps transport/master global and gives every pad its own FX definitions', () => {
     expect(DRUM_PARAMS['seq.bpm']).toMatchObject({ min: 60, max: 200, def: 126, curve: 'int' });
     expect(DRUM_PARAMS['master.swing'].def).toBeCloseTo(0.22);
     expect(DRUM_PARAMS['master.volume'].def).toBeCloseTo(0.78);
-    expect(DRUM_PARAMS['fx.comp.thr']).toMatchObject({ min: -40, max: 0, def: -16 });
-    expect(DRUM_PARAMS['fx.comp.on'].def).toBe(1);
-    expect(DRUM_PARAMS['fx.reverb.on'].def).toBe(1);
-    expect(DRUM_PARAMS['fx.drive.on'].def).toBe(0);
+    expect(DRUM_PARAMS['fx.comp.thr']).toBeUndefined();
+    expect(DRUM_PARAMS['pad0.fx.comp.thr']).toMatchObject({ min: -40, max: 0, def: -16 });
+    expect(DRUM_PARAMS['pad7.fx.comp.on'].def).toBe(1);
+    expect(DRUM_PARAMS['pad15.fx.reverb.on'].def).toBe(1);
+    expect(DRUM_PARAMS['pad3.fx.drive.on'].def).toBe(0);
   });
 
   it('defaults map covers every def and enums line up', () => {
@@ -45,6 +50,8 @@ describe('drum params', () => {
     expect(DRUM_TABLE_NAMES.slice(0, 4)).toEqual(['THUD', 'CRACK', 'TINE', 'GRIT']);
     expect(DMOD_SOURCES).toHaveLength(4);
     expect(DMOD_DESTS).toHaveLength(10);
+    expect(DMOD_DESTS[2]).toBe('SAMPLE START');
+    expect(DMOD_DESTS[7]).toBe('SAMPLE FINE');
   });
 
   it('has 15 built-in table names: 4 drum + 6 synth + 5 sample-derived TR-808, appended at the end', () => {

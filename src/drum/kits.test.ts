@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FACTORY_KITS, loadUserKits, saveUserKit, kitToState, stateToKit, type Kit } from './kits';
-import { DRUM_PARAMS, defaultDrumParams, PAD_COUNT } from './params';
+import { DRUM_PARAMS, defaultDrumParams, pad, PAD_COUNT } from './params';
 import { NPATTERNS, STEPS, patIdx } from './seq';
 
 if (typeof localStorage === 'undefined') {
@@ -40,16 +40,41 @@ describe('kits', () => {
     expect(state.params['pad12.ring.mix']).toBeCloseTo(0.78);
     expect(state.params['pad13.ring.freq']).toBe(3271);
     expect(state.params['pad13.ring.mix']).toBeCloseTo(0.88);
+    expect(state.params['pad0.oscA.tune']).toBe(-26);
+    expect(state.params['pad1.oscA.tune']).toBe(-19);
+    expect(state.params['pad2.oscA.tune']).toBe(-12);
+    expect(state.params['pad12.aenv.dec']).toBeCloseTo(0.16);
+    expect(state.params['pad13.aenv.dec']).toBeCloseTo(0.20);
+    expect([8, 9, 10].map((i) => state.params[pad(i, 'oscA.tune')])).toEqual([-19, -12, -5]);
+    expect([8, 9, 10].map((i) => state.params[pad(i, 'aenv.dec')])).toEqual([0.28, 0.24, 0.20]);
   });
 
   it('every factory kit param id exists in DRUM_PARAMS and is in range', () => {
     for (const k of FACTORY_KITS) {
       for (const [id, v] of Object.entries(k.params)) {
-        const d = DRUM_PARAMS[id];
+        // Factory data deliberately retains v1 global FX IDs to exercise the
+        // same migration path as saved user kits.
+        const d = DRUM_PARAMS[id] ?? (id.startsWith('fx.') ? DRUM_PARAMS[pad(0, id)] : undefined);
         expect(d, `${k.name}: ${id}`).toBeDefined();
         if (d.min !== undefined) { expect(v).toBeGreaterThanOrEqual(d.min!); expect(v).toBeLessThanOrEqual(d.max!); }
       }
     }
+  });
+
+  it('broadcasts legacy global FX to every pad without overwriting new pad-scoped values', () => {
+    const legacy: Kit = {
+      ...FACTORY_KITS[0],
+      params: {
+        ...FACTORY_KITS[0].params,
+        'fx.delay.mix': 0.73,
+        'pad4.fx.delay.mix': 0.21,
+      },
+    };
+    const state = kitToState(legacy);
+    expect(state.params['fx.delay.mix']).toBeUndefined();
+    expect(state.params['pad0.fx.delay.mix']).toBeCloseTo(0.73);
+    expect(state.params['pad15.fx.delay.mix']).toBeCloseTo(0.73);
+    expect(state.params['pad4.fx.delay.mix']).toBeCloseTo(0.21);
   });
 
   it('user kit save/load round-trip preserves everything', () => {

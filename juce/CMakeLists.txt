@@ -122,6 +122,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/dsp/DrumParams.cpp
         source/drum/dsp/DrumTables.cpp
         source/drum/dsp/SampledTables.gen.cpp
+        source/drum/dsp/OneShotSamples.gen.cpp
         source/drum/dsp/DrumEngine.cpp
         source/drum/dsp/DrumFx.cpp
         source/drum/dsp/DrumKits.cpp
@@ -247,6 +248,7 @@ if(FABLE_BUILD_PLUGIN)
         source/dsp/Engine.cpp source/dsp/Presets.cpp
         source/drum/dsp/DrumParams.cpp source/drum/dsp/DrumTables.cpp
         source/drum/dsp/SampledTables.gen.cpp source/drum/dsp/DrumEngine.cpp
+        source/drum/dsp/OneShotSamples.gen.cpp
         source/drum/dsp/DrumFx.cpp source/drum/dsp/DrumKits.cpp source/drum/dsp/DrumPatches.cpp
         source/bass/dsp/BassParams.cpp source/bass/dsp/BassEngine.cpp
         source/bass/dsp/BassFx.cpp source/bass/dsp/BassPatches.cpp
@@ -369,6 +371,7 @@ add_executable(drum_engine_test
     source/drum/dsp/DrumParams.cpp
     source/drum/dsp/DrumTables.cpp
     source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
@@ -408,6 +411,7 @@ add_executable(sq4_engine_test
     source/drum/dsp/DrumParams.cpp
     source/drum/dsp/DrumTables.cpp
     source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp

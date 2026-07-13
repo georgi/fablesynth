@@ -49,7 +49,10 @@ private:
 
 // ---- BassRack ----
 BassRack::BassRack(fui::BassUiModel& p) : header(p), body(p) {
-    addAndMakeVisible(header); addAndMakeVisible(body);
+    // The body spans the full logical rack, including the otherwise-empty
+    // header strip. Keep the header above it so its patch and master controls
+    // receive mouse events.
+    addAndMakeVisible(body); addAndMakeVisible(header);
 }
 
 void BassRack::resized() {

@@ -15,7 +15,7 @@ static constexpr double PI = 3.14159265358979323846;
 static constexpr double kLimThr = 0.398, kLimRatio = 14.0;
 
 // Bus compressor: fixed WebAudio node settings from drum-synth.ts buildFx()
-// (ratio 4, knee 9 dB, attack 3 ms, release 250 ms); threshold is DG_FXCOMP_THR.
+// (ratio 4, knee 9 dB, attack 3 ms, release 250 ms).
 static constexpr double kCompRatio = 4.0, kCompKnee = 9.0;
 
 // WebAudio DynamicsCompressor static curve, in dB of gain reduction (<= 0):
@@ -119,46 +119,47 @@ static inline float mixGate(bool on, float amount, bool wet) {
     return on ? (float)std::cos(amount * PI / 2) : 1.0f;
 }
 
-void DrumFx::setParams(const DrumParamArray& p) {
+void DrumFx::setParams(const DrumParamArray& p, int pad) {
+    const int b = dpid(std::max(0, std::min(DR_NPADS - 1, pad)), 0);
     // drive
-    float amt = p[DG_FXDRIVE_AMT];
+    float amt = p[(size_t)(b + DP_FXDRIVE_AMT)];
     driveK_ = 1 + amt * 24;
     driveNorm_ = 1.0f / std::tanh(driveK_);
     drivePre_ = 1 + amt * 2;
-    bool dOn = p[DG_FXDRIVE_ON] > 0.5f;
+    bool dOn = p[(size_t)(b + DP_FXDRIVE_ON)] > 0.5f;
     driveOff_ = !dOn;
-    driveWet_.target = mixGate(dOn, p[DG_FXDRIVE_MIX], true);
-    driveDry_.target = mixGate(dOn, p[DG_FXDRIVE_MIX], false);
+    driveWet_.target = mixGate(dOn, p[(size_t)(b + DP_FXDRIVE_MIX)], true);
+    driveDry_.target = mixGate(dOn, p[(size_t)(b + DP_FXDRIVE_MIX)], false);
 
     // compressor — implicit spec makeup (from the static curve at 0 dBFS)
     // times the explicit MAKEUP param; fully wet while ON (web setMix(.., 1)).
-    float thrDb = p[DG_FXCOMP_THR];
+    float thrDb = p[(size_t)(b + DP_FXCOMP_THR)];
     compThrDb_.target = thrDb;
     double implicit = std::pow(10.0, -0.6 * compGainDb(0.0, thrDb) / 20.0);
-    compMakeup_.target = (float)(implicit * std::pow(10.0, p[DG_FXCOMP_GAIN] / 20.0));
-    bool kOn = p[DG_FXCOMP_ON] > 0.5f;
+    compMakeup_.target = (float)(implicit * std::pow(10.0, p[(size_t)(b + DP_FXCOMP_GAIN)] / 20.0));
+    bool kOn = p[(size_t)(b + DP_FXCOMP_ON)] > 0.5f;
     compOff_ = !kOn;
     compWet_.target = mixGate(kOn, 1.0f, true);
     compDry_.target = mixGate(kOn, 1.0f, false);
 
     // chorus
-    chRate_ = p[DG_FXCHORUS_RATE];
-    chDepth_ = p[DG_FXCHORUS_DEPTH];
-    bool cOn = p[DG_FXCHORUS_ON] > 0.5f;
+    chRate_ = p[(size_t)(b + DP_FXCHORUS_RATE)];
+    chDepth_ = p[(size_t)(b + DP_FXCHORUS_DEPTH)];
+    bool cOn = p[(size_t)(b + DP_FXCHORUS_ON)] > 0.5f;
     chorusOff_ = !cOn;
-    chWet_.target = mixGate(cOn, p[DG_FXCHORUS_MIX] * 0.8f, true);
-    chDry_.target = mixGate(cOn, p[DG_FXCHORUS_MIX] * 0.8f, false);
+    chWet_.target = mixGate(cOn, p[(size_t)(b + DP_FXCHORUS_MIX)] * 0.8f, true);
+    chDry_.target = mixGate(cOn, p[(size_t)(b + DP_FXCHORUS_MIX)] * 0.8f, false);
 
     // delay
-    dlTime_.target = p[DG_FXDELAY_TIME];
-    dlFb_.target = p[DG_FXDELAY_FB];
-    bool delOn = p[DG_FXDELAY_ON] > 0.5f;
+    dlTime_.target = p[(size_t)(b + DP_FXDELAY_TIME)];
+    dlFb_.target = p[(size_t)(b + DP_FXDELAY_FB)];
+    bool delOn = p[(size_t)(b + DP_FXDELAY_ON)] > 0.5f;
     delayOff_ = !delOn;
-    dlWet_.target = mixGate(delOn, p[DG_FXDELAY_MIX] * 0.85f, true);
-    dlDry_.target = mixGate(delOn, p[DG_FXDELAY_MIX] * 0.85f, false);
+    dlWet_.target = mixGate(delOn, p[(size_t)(b + DP_FXDELAY_MIX)] * 0.85f, true);
+    dlDry_.target = mixGate(delOn, p[(size_t)(b + DP_FXDELAY_MIX)] * 0.85f, false);
 
     // reverb — SIZE maps to roomsize/decay (longer & brighter tail with size)
-    float size = p[DG_FXREVERB_SIZE];
+    float size = p[(size_t)(b + DP_FXREVERB_SIZE)];
     roomSize_ = 0.7f + size * 0.28f;
     float damp = 0.4f - size * 0.2f;
     for (size_t i = 0; i < 8; i++) {
@@ -166,10 +167,10 @@ void DrumFx::setParams(const DrumParamArray& p) {
         combL_[i].damp1 = combR_[i].damp1 = damp;
         combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
     }
-    bool rOn = p[DG_FXREVERB_ON] > 0.5f;
+    bool rOn = p[(size_t)(b + DP_FXREVERB_ON)] > 0.5f;
     verbOff_ = !rOn;
-    verbWet_.target = mixGate(rOn, p[DG_FXREVERB_MIX] * 0.9f, true);
-    verbDry_.target = mixGate(rOn, p[DG_FXREVERB_MIX] * 0.9f, false);
+    verbWet_.target = mixGate(rOn, p[(size_t)(b + DP_FXREVERB_MIX)] * 0.9f, true);
+    verbDry_.target = mixGate(rOn, p[(size_t)(b + DP_FXREVERB_MIX)] * 0.9f, false);
 
     float vol = p[DG_MASTER_VOLUME];
     masterGain_.target = vol * vol * 1.6f;

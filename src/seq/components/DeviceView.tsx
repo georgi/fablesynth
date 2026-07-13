@@ -212,8 +212,8 @@ function DrumPanels() {
           </div>
         </div>
       </div>
-      <div id="dr-stepseq"><StepSeq /></div>
       <div id="dr-fxrack"><FxRack /></div>
+      <div id="dr-stepseq"><StepSeq /></div>
     </div>
   );
 }

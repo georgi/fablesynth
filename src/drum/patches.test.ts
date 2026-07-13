@@ -60,6 +60,27 @@ describe('patches', () => {
     }
   });
 
+  it('pitches kick and snare oscillators one octave lower', () => {
+    const expected: Record<string, number> = {
+      'BD DEEP': -26, 'BD PUNCH': -19, 'BD SUB': -34, 'BD 808': -24,
+      'SD CRACK': -12, 'SD RIM': 0,
+    };
+    for (const [name, tune] of Object.entries(expected)) {
+      expect(FACTORY_PATCHES.find((patch) => patch.name === name)?.params['oscA.tune']).toBe(tune);
+    }
+  });
+
+  it('tunes toms seven semitones deeper with shorter tails', () => {
+    const expected: Record<string, [number, number]> = {
+      'TM LO': [-19, 0.28], 'TM MID': [-12, 0.24], 'TM HI': [-5, 0.20],
+    };
+    for (const [name, [tune, decay]] of Object.entries(expected)) {
+      const patch = FACTORY_PATCHES.find((entry) => entry.name === name);
+      expect(patch?.params['oscA.tune']).toBe(tune);
+      expect(patch?.params['aenv.dec']).toBeCloseTo(decay);
+    }
+  });
+
   it('apply-then-extract round-trips a pad sound', () => {
     const padI = 5;
     const params = defaultDrumParams();
@@ -96,7 +117,7 @@ describe('patches', () => {
     expect(params[pad(padI, 'mod2.dst')]).toBe(0);
     expect(params[pad(padI, 'mod2.amt')]).toBe(0);
     // ...while the patch's own overrides landed.
-    expect(params[pad(padI, 'oscA.tune')]).toBe(-14);
+    expect(params[pad(padI, 'oscA.tune')]).toBe(-26);
     expect(params[pad(padI, 'penv.amt')]).toBe(24);
   });
 

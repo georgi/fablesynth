@@ -64,10 +64,10 @@ int main(int argc, char** argv) {
 
     printf("\n== DR-1 plugin-boundary test (DrumAudioProcessor) ==\n");
 
-    // ---- 1. parameter surface: 788 params in the APVTS ----
+    // ---- 1. parameter surface: all per-pad + global params in the APVTS ----
     const int nParams = (int)proc.getParameters().size();
     check(nParams == fable::DR_NUM_PARAMS || nParams == fable::DR_NUM_PARAMS + 1, // + host bypass
-          "788 host parameters", nParams);
+          "DR-1 host parameter catalog", nParams);
     check(proc.getName() == "FableSynth DR-1", "plugin name");
 
     // ---- 2. bus layout: 5 stereo output buses ----
@@ -290,13 +290,22 @@ int main(int argc, char** argv) {
     printf("\n== legacy state ==\n");
     {
         DrumAudioProcessor proc3;
-        auto bare = proc3.apvts.copyState(); // no DR1STATE wrapper, no DRUM child
+        juce::ValueTree bare(proc3.apvts.state.getType()); // no DR1STATE wrapper, no DRUM child
         bare.setProperty(juce::Identifier("nonsense"), 42, nullptr);
+        juce::ValueTree legacyFx("PARAM");
+        legacyFx.setProperty("id", "fx.delay.mix", nullptr);
+        legacyFx.setProperty("value", 0.42f, nullptr);
+        bare.appendChild(legacyFx, nullptr);
         juce::MemoryBlock legacy;
         if (auto xml = bare.createXml()) BinPacker::pack(*xml, legacy);
         check(legacy.getSize() > 0, "legacy blob built", (double)legacy.getSize());
         proc3.setStateInformation(legacy.getData(), (int)legacy.getSize());
         check(proc3.getParameters().size() > 0, "processor alive after legacy load");
+        bool broadcast = true;
+        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+            broadcast = broadcast && std::abs(proc3.apvts.getRawParameterValue(
+                "pad" + juce::String(pad) + ".fx.delay.mix")->load() - 0.42f) < 0.001f;
+        check(broadcast, "legacy top-level FX broadcasts to every pad");
         // Garbage bytes must not crash either.
         const char junk[] = "not a state blob";
         proc3.setStateInformation(junk, (int)sizeof(junk));
@@ -309,11 +318,21 @@ int main(int argc, char** argv) {
         juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
                                 : juce::File::getCurrentWorkingDirectory());
         std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-        check(dynamic_cast<DrumEditor*>(ed.get()) != nullptr, "createEditor returns DrumEditor");
+        auto* drumEd = dynamic_cast<DrumEditor*>(ed.get());
+        check(drumEd != nullptr, "createEditor returns DrumEditor");
         ed->setSize(DrumRack::LW, DrumRack::LH); // logical rack size — 1:1 render
         juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
         check(img.isValid() && img.getWidth() == DrumRack::LW && img.getHeight() == DrumRack::LH,
               "snapshot rendered at 1460x880", img.getWidth());
+        // The full-rack device body also occupies the header's coordinates.
+        // The header must remain above it or the kit stepper cannot be clicked.
+        const int programBeforeClick = proc.getCurrentProgram();
+        auto* nextKitHit = drumEd->getRack().getComponentAt(455, 54);
+        check(dynamic_cast<juce::Button*>(nextKitHit) != nullptr,
+              "kit stepper is the header hit target");
+        if (auto* button = dynamic_cast<juce::Button*>(nextKitHit)) button->onClick();
+        check(proc.getCurrentProgram() == (programBeforeClick + 1) % proc.getNumPrograms(),
+              "kit stepper changes program");
         const juce::File out = dir.getChildFile("drum_editor.png");
         writePng(img, out);
         check(out.existsAsFile() && out.getSize() > 0, "drum_editor.png written",
@@ -326,8 +345,8 @@ int main(int argc, char** argv) {
             { "header",    700,  54 },
             { "pad grid",  194, 287 },
             { "osc row",   910, 264 },
-            { "step seq",  730, 665 },
-            { "fx rack",   730, 792 },
+            { "fx rack",   730, 665 },
+            { "step seq",  730, 805 },
             // Task 11 pad editor panels (centres of view/knob areas)
             { "osc A terrain",   560, 230 },
             { "noise view",     1344, 230 },
@@ -336,8 +355,8 @@ int main(int argc, char** argv) {
             { "filter view",    1010, 458 },
             { "mod rows",       1200, 452 },
             // Task 13 FX rack + OUT panel (DRIVE knob body / MAIN route dot)
-            { "fx drive knob",    89, 787 },
-            { "out main dot",   1256, 772 },
+            { "fx drive knob",    89, 673 },
+            { "out main dot",   1256, 658 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);

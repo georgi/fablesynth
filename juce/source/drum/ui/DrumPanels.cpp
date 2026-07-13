@@ -1,6 +1,8 @@
 #include "DrumPanels.h"
 #include "../../ui/Format.h"
 #include "../../dsp/Wavetables.h"
+#include "../dsp/OneShotSamples.gen.h"
+#include "../dsp/DrumParams.h"
 #include <cmath>
 
 // Web layout (src/drum/drum.css), rack-relative px:
@@ -110,6 +112,32 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(0.5f), 9.0f, 1.0f);
 
     const int idx = tableIndex();
+    if (osc == 1) {
+        const auto& bank = fable::drumOneShots();
+        if (idx < 0 || idx >= (int)bank.size()) return;
+        const auto& sample = bank[(size_t)idx];
+        g.setColour(accent);
+        juce::Path waveform;
+        const float mid = h * 0.5f;
+        for (int x = 1; x < (int)w - 1; ++x) {
+            const int from = x * sample.length / std::max(1, (int)w);
+            const int to = std::max(from + 1, (x + 1) * sample.length / std::max(1, (int)w));
+            int peak = 0;
+            for (int i = from; i < std::min(sample.length, to); ++i)
+                peak = std::max(peak, std::abs((int)sample.data[i]));
+            const float amp = (static_cast<float>(peak) / 32768.0f) * h * 0.44f;
+            waveform.startNewSubPath((float)x, mid - amp);
+            waveform.lineTo((float)x, mid + amp);
+        }
+        g.strokePath(waveform, juce::PathStrokeType(1.1f));
+        const float mp = proc.vizPosition(osc);
+        if (mp >= 0) {
+            g.setColour(juce::Colour(0xfffff3e8));
+            const float x = juce::jlimit(0.0f, 1.0f, mp) * w;
+            g.drawVerticalLine((int)x, 3.0f, h - 3.0f);
+        }
+        return;
+    }
     const auto* tp = proc.tableAt(idx);
     if (!tp) return; // empty user slot
     const auto& t = *tp;
@@ -451,8 +479,10 @@ void DrumOscPanel::rebuild() {
     const auto pre = juce::String(osc == 0 ? "oscA." : "oscB.");
     table = std::make_unique<Stepper>(proc.parameters(), pid((pre + "table").toRawUTF8()), ac);
     // Cycle only over the live tables and show live (user) names — WT-1 scheme.
-    table->countProvider = [this] { return proc.numTables(); };
-    table->nameProvider  = [this](int idx) { return proc.tableName(idx); };
+    table->countProvider = [this] { return osc == 0 ? proc.numTables() : (int)fable::DRUM_SAMPLE_NAMES.size(); };
+    table->nameProvider  = [this](int idx) {
+        return osc == 0 ? proc.tableName(idx) : juce::String(fable::DRUM_SAMPLE_NAMES[(size_t)idx]);
+    };
     addAndMakeVisible(*table);
     wt = std::make_unique<DrumTerrainView>(proc, sel, osc, accentColour(ac));
     addAndMakeVisible(*wt);
@@ -462,10 +492,13 @@ void DrumOscPanel::rebuild() {
                                     [&pr, o] { return pr.vizPosition(o); });
     addAndMakeVisible(*pos);
     knobs.clear();
-    const char* ids[] = { "tune", "fine", "phase", "unison", "detune", "level" };
-    for (int i = 0; i < 6; ++i)
+    const char* oscIds[] = { "tune", "fine", "phase", "unison", "detune", "level" };
+    const char* sampleIds[] = { "tune", "fine", "detune", "phase", "level" };
+    const char** ids = osc == 0 ? oscIds : sampleIds;
+    const int count = osc == 0 ? 6 : 5;
+    for (int i = 0; i < count; ++i)
         addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid((pre + ids[i]).toRawUTF8()),
-                                             i == 5 ? Knob::Md : Knob::Sm, ac)));
+                                             i == count - 1 ? Knob::Md : Knob::Sm, ac)));
 }
 
 void DrumOscPanel::resized() {
@@ -480,9 +513,10 @@ void DrumOscPanel::resized() {
     if (wt)  wt->setBounds(body);
     if (pos) pos->setBounds(posCol);
     r.removeFromTop(4);
-    static const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
-                                 Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
-                                 Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md) };
+    const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
+                          Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
+                          osc == 0 ? Knob::svgPx(Knob::Sm) : Knob::svgPx(Knob::Md),
+                          Knob::svgPx(Knob::Md) };
     layoutKnobRow(r, knobs, sizes);
 }
 
@@ -492,7 +526,7 @@ void DrumOscPanel::paint(juce::Graphics& g) {
     drawDrLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(),
               accentColour(ac));
     head.removeFromLeft(8);
-    drawHeadTitle(g, head, osc == 0 ? "OSC A" : "OSC B", accentColour(ac));
+    drawHeadTitle(g, head, osc == 0 ? "OSC A" : "SAMPLE", accentColour(ac));
 }
 
 // ===================== DrumNoisePanel =====================

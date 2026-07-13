@@ -16,7 +16,7 @@ import {
   FACTORY_PATCHES, applyPatchToParams, extractPatch, loadUserPatches,
   patchOptions, saveUserPatch, type PadPatch,
 } from './patches';
-import { pad } from './params';
+import { DRUM_TABLE_NAMES, pad } from './params';
 import { cycleStep, patIdx, type Patterns } from './seq';
 
 export let drumEngine = new DrumEngine();
@@ -318,6 +318,6 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const userTables = [...get().userTables, table];
     drumEngine.setUserTables(userTables);
     set({ userTables });
-    get().setParam(pad(padI, 'oscA.table'), 10 + userTables.length - 1);
+    get().setParam(pad(padI, 'oscA.table'), DRUM_TABLE_NAMES.length + userTables.length - 1);
   },
 }));

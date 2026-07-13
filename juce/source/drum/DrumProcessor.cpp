@@ -6,8 +6,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 
 using namespace fable;
+
+namespace {
+void collectParameterState(const juce::ValueTree& tree,
+                           std::unordered_map<std::string, float>& values) {
+    const auto id = tree.getProperty("id").toString().toStdString();
+    if (!id.empty() && tree.hasProperty("value"))
+        values[id] = (float)tree.getProperty("value");
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+        collectParameterState(tree.getChild(i), values);
+}
+}
 
 // ---- construction --------------------------------------------------------
 
@@ -39,7 +51,7 @@ DrumAudioProcessor::DrumAudioProcessor()
 
 // Build the APVTS layout from the canonical descriptor table, using the exact
 // same value<->norm mapping as the web app so curves are identical. Grouped
-// PAD 01..PAD 16 / SEQ / FX so hosts display a sane 788-parameter tree.
+// PAD 01..PAD 16 / SEQ so hosts display each pad's synthesis and FX together.
 juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     const auto& info = drumParamInfo();
@@ -76,18 +88,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     for (int i : {(int)DG_SEQ_BPM, (int)DG_MASTER_SWING, (int)DG_MASTER_VOLUME})
         seq->addChild(make(info[(size_t)i]));
     layout.add(std::move(seq));
-    auto fxg = std::make_unique<juce::AudioProcessorParameterGroup>("fx", "FX", " | ");
-    for (int i = DG_FXDRIVE_ON; i < DR_NUM_PARAMS; ++i)
-        fxg->addChild(make(info[(size_t)i]));
-    layout.add(std::move(fxg));
     return layout;
 }
 
 void DrumAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
+    engine.enablePadFx(true);
     rebuildEngineTables();
-    fx.prepare(sampleRate);
-    setLatencySamples(fx.latencySamples());
+    setLatencySamples(engine.latencySamples());
     // Backing storage for disabled AUX buses so the engine's 5x2 output API
     // always gets valid pointers; sized generously here so processBlock never
     // allocates — oversized host blocks are rendered in chunks instead.
@@ -287,7 +295,6 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     auto& p = engine.params();
     for (int i = 0; i < DR_NUM_PARAMS; ++i)
         if (rawParams_[(size_t)i]) p[(size_t)i] = rawParams_[(size_t)i]->load();
-    fx.setParams(p);
 
     // Host sync. A reported tempo overrides seq.bpm; a rolling transport that
     // also reports song position slaves the whole sequencer to the host
@@ -373,7 +380,6 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
                 outs[b][1] = base[b][1] + off;
             }
             engine.render(outs, len);                // zero-fills all 10, then pads accumulate
-            fx.process(outs[0][0], outs[0][1], len); // master FX on MAIN only; AUX dry
             if (monoMain)
                 for (int i = 0; i < len; ++i)
                     monoMain[pos + i] = 0.5f * (outs[0][0][i] + outs[0][1][i]);
@@ -526,8 +532,25 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
     shareSeqState(true, true);
 
     // 3. Parameters last (their table indices now resolve).
-    if (params.isValid())
+    if (params.isValid()) {
+        std::unordered_map<std::string, float> saved;
+        collectParameterState(params, saved);
         apvts.replaceState(params);
+        // Pre-per-pad DR-1 states stored one top-level fx.* chain. Preserve
+        // their sound by broadcasting each legacy value to pads that do not
+        // already carry an explicit pad<i>.fx.* value (mixed/new states win).
+        const auto& info = drumParamInfo();
+        for (const auto& [legacyId, value] : saved) {
+            const int field = legacyDrumFxField(legacyId);
+            if (field < 0) continue;
+            for (int pad = 0; pad < DR_NPADS; ++pad) {
+                const auto& d = info[(size_t)dpid(pad, field)];
+                if (saved.find(d.pid) != saved.end()) continue;
+                if (auto* parameter = apvts.getParameter(d.pid))
+                    parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+            }
+        }
+    }
 
     selectionBroadcaster.sendChangeMessage();
 }

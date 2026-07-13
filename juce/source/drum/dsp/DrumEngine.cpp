@@ -4,6 +4,7 @@
 // xorshift Rng (deterministic tests), and output goes to 5 stereo buses
 // selected by each pad's OUT param instead of one worklet output.
 #include "DrumEngine.h"
+#include "OneShotSamples.gen.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,8 +42,8 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
     active = true; choking = false;
     vel = v; rand = rnd;
     t = 0; ampLevel = 0;
-    oA.posSm = -1; oB.posSm = -1;
-    oA.havePrev = false; oB.havePrev = false;
+    oA.posSm = -1; oA.havePrev = false;
+    sample.pos = -1; sample.index = -1; sample.done = false;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
     f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0;
     noiseY = 0; ringPhase = 0.25;
@@ -56,6 +57,7 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
 void DrumEngine::prepare(double sampleRate) {
     sr_ = sampleRate;
     dcR_ = std::pow(DR_DC_R, 48000.0 / sr_);
+    for (auto& fx : padFx_) fx.prepare(sampleRate);
     panic();
 }
 
@@ -97,10 +99,8 @@ void DrumEngine::trigger(int padI, float vel) {
     double vv = std::isfinite(vel) ? (double)vel : 1.0;
     v.trigger(clampd(vv, 0.0, 1.0), rng_.next() * 2.0 - 1.0);
     double phaseA = std::fmod(clampd(param(dpid(padI, DP_OSCA_PHASE)), 0.0, 1.0) * 2048.0, 2048.0);
-    double phaseB = std::fmod(clampd(param(dpid(padI, DP_OSCB_PHASE)), 0.0, 1.0) * 2048.0, 2048.0);
     for (int i = 0; i < DR_MAXUNI; i++) {
         v.oA.phases[i] = phaseA;
-        v.oB.phases[i] = phaseB;
     }
     hits_ |= 1u << padI;
 }
@@ -378,6 +378,53 @@ void DrumEngine::renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n
     o.havePrev = true;
 }
 
+// Raw PCM16 one-shot player. The legacy oscB parameter slots now select and
+// shape this layer, preserving saved automation and all later flat ids.
+void DrumEngine::renderSample(SampleState& state, int padI, double pitchEnv,
+                              double modStart, double modFine, double modPitch,
+                              float* tmpL, float* tmpR, int off, int n) const {
+    if (state.done) return;
+    const auto& bank = drumOneShots();
+    if (bank.empty()) return;
+    const int index = std::max(0, std::min((int)bank.size() - 1,
+        (int)param(dpid(padI, DP_OSCB_TABLE))));
+    const auto& sample = bank[(size_t)index];
+    if (sample.data == nullptr || sample.length < 2) return;
+
+    const double start = clampd(param(dpid(padI, DP_OSCB_POS)) + modStart, 0.0, 0.999);
+    const double end = std::max(start + 1.0 / sample.length,
+        clampd(param(dpid(padI, DP_OSCB_DETUNE)), 0.0, 1.0));
+    const bool reverse = param(dpid(padI, DP_OSCB_PHASE)) >= 0.5f;
+    if (state.pos < 0 || state.index != index) {
+        state.index = index;
+        state.pos = (reverse ? end : start) * (sample.length - 1);
+    }
+    const double semis = param(dpid(padI, DP_OSCB_TUNE))
+        + (param(dpid(padI, DP_OSCB_FINE)) + modFine) / 100.0
+        + pitchEnv + modPitch;
+    const double step = ((double)sample.sampleRate / sr_) * std::pow(2.0, semis / 12.0)
+        * (reverse ? -1.0 : 1.0);
+    const double level = clampd(param(dpid(padI, DP_OSCB_LEVEL)), 0.0, 1.2);
+    const double gain = level * level * 0.75 / 32768.0;
+    const double lo = start * (sample.length - 1);
+    const double hi = end * (sample.length - 1);
+    double pos = state.pos;
+    for (int i = 0; i < n; ++i) {
+        if ((!reverse && pos >= hi) || (reverse && pos <= lo)) {
+            state.done = true;
+            break;
+        }
+        const int i0 = std::max(0, std::min(sample.length - 2, (int)std::floor(pos)));
+        const double frac = pos - i0;
+        const double value = sample.data[i0] + frac * (sample.data[i0 + 1] - sample.data[i0]);
+        const float out = (float)(value * gain);
+        tmpL[off + i] += out;
+        tmpR[off + i] += out;
+        pos += step;
+    }
+    state.pos = pos;
+}
+
 // ---- setupFilter (js:282-301): Cytomic SVF; smoothing is chunk-invariant
 // (Finding 6) and runFilter ramps cutPrev -> cutTarget (Finding 7). ----
 void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes, int n) {
@@ -508,9 +555,9 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
         int count = std::min(16, n - at);
         double pe = pAmt * std::exp(-4.5 * (double)(v.t + at) / (pDec * sr_));
         bool aOn = setupOsc(v.oA, dpid(padI, DP_OSCA_TABLE), pe, m.posA, m.fineA, m.pitch, count);
-        bool bOn = setupOsc(v.oB, dpid(padI, DP_OSCB_TABLE), pe, m.posB, m.fineB, m.pitch, count);
         if (aOn) renderOsc(v.oA, tmpL, tmpR, at, count); else v.oA.havePrev = false;
-        if (bOn) renderOsc(v.oB, tmpL, tmpR, at, count); else v.oB.havePrev = false;
+        renderSample(v.sample, padI, pe, m.posB, m.fineB, m.pitch,
+                     tmpL, tmpR, at, count);
     }
 
     // noise: white -> one-pole tilt, level squared x 0.35
@@ -611,6 +658,8 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     // message thread publishes a new set mid-block. Never blocks, never silent.
     const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
     curTables_ = snap.get();
+    if (padFxEnabled_)
+        for (int i = 0; i < DR_NPADS; ++i) padFx_[(size_t)i].setParams(p_, i);
 
     // Host-locked mode: step times come from song position, not samplesToNext_.
     // Hosted clip mode owns the transport exclusively: it suppresses both
@@ -649,9 +698,24 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         }
         for (int i = 0; i < DR_NPADS; i++) {
             PadVoice& v = voices_[(size_t)i];
-            if (!v.active) continue;
+            if (!padFxEnabled_) {
+                if (!v.active) continue;
+                const int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
+                renderPad(v, i, outs[out][0], outs[out][1], pos, run);
+                continue;
+            }
+            std::fill(padL_, padL_ + run, 0.0f);
+            std::fill(padR_, padR_ + run, 0.0f);
+            if (v.active) renderPad(v, i, padL_, padR_, 0, run);
+            // Each pad owns a continuous chain, including its delay/reverb
+            // tail. Processing silence after the one-shot voice ends is what
+            // lets that tail ring naturally and keeps all pad paths aligned.
+            padFx_[(size_t)i].process(padL_, padR_, run);
             int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
-            renderPad(v, i, outs[out][0], outs[out][1], pos, run);
+            for (int s = 0; s < run; ++s) {
+                outs[out][0][pos + s] += padL_[s];
+                outs[out][1][pos + s] += padR_[s];
+            }
         }
         if (internalRun) samplesToNext_ -= run;      // js:475
         if (hostClipMode_) hostFrame_ += run;
@@ -661,7 +725,10 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
 
     const PadVoice& v = voices_[(size_t)sel_];
     vizA = v.active ? (float)v.oA.posSm : -1.0f;
-    vizB = v.active ? (float)v.oB.posSm : -1.0f;
+    const auto& samples = drumOneShots();
+    vizB = v.active && v.sample.index >= 0 && v.sample.index < (int)samples.size()
+        ? (float)clampd(v.sample.pos / std::max(1, samples[(size_t)v.sample.index].length - 1), 0.0, 1.0)
+        : -1.0f;
     vizEnv = v.active ? (float)v.ampLevel : 0.0f;
 }
 

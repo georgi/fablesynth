@@ -1,8 +1,8 @@
 # TR-808 drum samples — provenance & license
 
-These 5 WAVs are real recordings of a **Roland TR-808** (serial 103852), used to
-derive the DR-1 `808*` sample-flavored wavetables via
-`scripts/build-drum-tables.mjs`.
+These 5 WAVs are real recordings of a **Roland TR-808** (serial 103852). DR-1
+plays them directly in its sample layer and also uses them to derive the
+`808*` sample-flavored wavetables via `scripts/build-drum-tables.mjs`.
 
 - **Upstream repo:** https://github.com/tidalcycles/sounds-tr808-fischer
 - **License:** CC0-1.0 (public domain dedication) — no rights reserved.

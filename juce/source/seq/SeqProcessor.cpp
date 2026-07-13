@@ -217,7 +217,16 @@ std::vector<float> SeqAudioProcessor::computeTrackParams(int t, const PatchRef& 
         int idx = patch.factory ? patch.index : 0;
         if (idx < 0 || idx >= (int)kits.size()) idx = 0;
         DrumParamArray a = applyKit(kits[(size_t)idx]);
-        if (!patch.factory) overlayInline(a, patch.params, drumParamInfo());
+        if (!patch.factory) {
+            // SessionDoc v1 patches made before per-pad FX used top-level
+            // fx.* keys. Broadcast those first; explicit pad<i>.fx.* values
+            // in a newer mixed document then win in the normal overlay.
+            for (const auto& [pid, value] : patch.params)
+                if (const int field = legacyDrumFxField(pid); field >= 0)
+                    for (int pad = 0; pad < DR_NPADS; ++pad)
+                        a[(size_t)dpid(pad, field)] = value;
+            overlayInline(a, patch.params, drumParamInfo());
+        }
         return std::vector<float>(a.begin(), a.end());
     }
     if (t == 1) {
@@ -240,7 +249,6 @@ void SeqAudioProcessor::loadTrackParams(int t, const std::vector<float>& v) {
     if (t == 0) {
         auto& p = drum_.params();
         for (int i = 0; i < DR_NUM_PARAMS && i < (int)v.size(); ++i) p[(size_t)i] = v[(size_t)i];
-        drumFx_.setParams(p);
     } else if (t == 1) {
         auto& p = bass_.params();
         for (int i = 0; i < BL_NUM_PARAMS && i < (int)v.size(); ++i) p[(size_t)i] = v[(size_t)i];
@@ -392,7 +400,7 @@ std::vector<float> SeqAudioProcessor::debugTrackParams(int t) {
 
 void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     preparedSampleRate_ = sampleRate;
-    drum_.prepare(sampleRate); drumFx_.prepare(sampleRate);
+    drum_.prepare(sampleRate); drum_.enablePadFx(true);
     bass_.prepare(sampleRate); bassFx_.prepare(sampleRate);
     for (int i = 0; i < 2; ++i) { wt_[i].prepare(sampleRate); wtFx_[i].prepare(sampleRate); }
 
@@ -622,7 +630,6 @@ void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
     drumVizB_.store(drum_.vizB, std::memory_order_relaxed);
     drumVizEnv_.store(drum_.vizEnv, std::memory_order_relaxed);
     drumHitFlags_.fetch_or(drum_.consumeHits(), std::memory_order_relaxed);
-    drumFx_.process(L, R, n);      // master FX on MAIN only (AUX dropped)
 }
 
 void SeqAudioProcessor::renderBass(float* L, float* R, int n) {

@@ -290,6 +290,15 @@ int main(int argc, char** argv) {
         juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
         check(img.isValid() && img.getWidth() == BassRack::LW && img.getHeight() == BassRack::LH,
               "snapshot rendered at 1460x931", img.getWidth());
+        // The full-rack device body also occupies the header's coordinates.
+        // The header must remain above it or the patch stepper cannot be clicked.
+        const int programBeforeClick = proc.getCurrentProgram();
+        auto* nextPatchHit = bassEd->getRack().getComponentAt(499, 54);
+        check(dynamic_cast<juce::Button*>(nextPatchHit) != nullptr,
+              "patch stepper is the header hit target");
+        if (auto* button = dynamic_cast<juce::Button*>(nextPatchHit)) button->onClick();
+        check(proc.getCurrentProgram() == (programBeforeClick + 1) % proc.getNumPrograms(),
+              "patch stepper changes program");
         const juce::File out = dir.getChildFile("bass_editor.png");
         writePng(img, out);
         check(out.existsAsFile() && out.getSize() > 0, "bass_editor.png written",

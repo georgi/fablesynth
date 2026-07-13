@@ -3,7 +3,7 @@
 // the reference implementations of the shared primitives (mip playback, SVF,
 // ADAA drive) — copied here because worklets can't import.
 //
-// In:  {t:'init',params} {t:'tables',list} {t:'p',k,v} {t:'trig',pad,v}
+// In:  {t:'init',params} {t:'tables',list} {t:'samples',list} {t:'p',k,v} {t:'trig',pad,v}
 //      {t:'pats',data} {t:'chain',list} {t:'play'} {t:'stop'} {t:'sel',pad} {t:'panic'}
 // Out: {t:'step',s,pat,hits} per step while playing
 //      {t:'viz',a,b,env} every 2048 samples for the selected pad
@@ -36,6 +36,10 @@ function makeOscState() {
   };
 }
 
+function makeSampleState() {
+  return { pos: -1, index: -1, done: false };
+}
+
 function makeFilterState() {
   return {
     svf: new Float64Array(8),
@@ -52,7 +56,7 @@ class PadVoice {
     this.vel = 1; this.rand = 0;
     this.t = 0;
     this.ampLevel = 0; this.choking = false;
-    this.oA = makeOscState(); this.oB = makeOscState();
+    this.oA = makeOscState(); this.sample = makeSampleState();
     this.f = makeFilterState();
     this.noiseY = 0;
     this.ringPhase = 0.25;
@@ -63,7 +67,8 @@ class PadVoice {
     this.active = true; this.choking = false;
     this.vel = v; this.rand = Math.random() * 2 - 1;
     this.t = 0; this.ampLevel = 0;
-    this.oA.posSm = -1; this.oB.posSm = -1;
+    this.oA.posSm = -1;
+    this.sample.pos = -1; this.sample.index = -1; this.sample.done = false;
     this.f.svf.fill(0); this.f.cutSm = 0; this.f.satXL = 0; this.f.satXR = 0;
     this.noiseY = 0;
     this.ringPhase = 0.25;
@@ -79,6 +84,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     super();
     this.p = Object.create(null);
     this.tables = [];
+    this.samples = [];
     this.voices = [];
     for (let i = 0; i < NPADS; i++) this.voices.push(new PadVoice());
     this.pats = new Uint8Array(NPATTERNS * NPADS * STEPS);
@@ -115,6 +121,12 @@ class DrumProcessor extends AudioWorkletProcessor {
       case 'tables':
         this.tables = d.list.map((x) => ({
           frames: x.frames, mips: x.mips, size: x.size, mask: x.size - 1,
+          data: new Float32Array(x.buf),
+        }));
+        break;
+      case 'samples':
+        this.samples = d.list.map((x) => ({
+          sampleRate: x.sampleRate,
           data: new Float32Array(x.buf),
         }));
         break;
@@ -248,10 +260,8 @@ class DrumProcessor extends AudioWorkletProcessor {
     v.trigger(Math.max(0, Math.min(1, Number.isFinite(vel) ? vel : 1)));
     const pre = 'pad' + padI + '.';
     const phaseA = (Math.max(0, Math.min(1, this.p[pre + 'oscA.phase'])) * 2048) % 2048;
-    const phaseB = (Math.max(0, Math.min(1, this.p[pre + 'oscB.phase'])) * 2048) % 2048;
     for (let i = 0; i < MAXUNI; i++) {
       v.oA.phases[i] = phaseA;
-      v.oB.phases[i] = phaseB;
     }
   }
 
@@ -392,6 +402,45 @@ class DrumProcessor extends AudioWorkletProcessor {
     }
   }
 
+  renderSample(state, pre, pitchEnv, modStart, modFine, modPitch, tmpL, tmpR, off, n) {
+    if (state.done) return false;
+    const p = this.p;
+    const index = Math.max(0, Math.min(this.samples.length - 1, p[pre + 'table'] | 0));
+    const sample = this.samples[index];
+    if (!sample || sample.data.length < 2) return false;
+
+    const start = Math.max(0, Math.min(0.999, p[pre + 'pos'] + modStart));
+    const end = Math.max(start + 1 / sample.data.length, Math.min(1, p[pre + 'detune']));
+    const reverse = p[pre + 'phase'] >= 0.5;
+    if (state.pos < 0 || state.index !== index) {
+      state.index = index;
+      state.pos = reverse ? end * (sample.data.length - 1) : start * (sample.data.length - 1);
+    }
+
+    const semis = p[pre + 'tune'] + (p[pre + 'fine'] + modFine) / 100 + pitchEnv + modPitch;
+    const direction = reverse ? -1 : 1;
+    const step = (sample.sampleRate / sampleRate) * Math.pow(2, semis / 12) * direction;
+    const level = Math.max(0, Math.min(1.2, p[pre + 'level']));
+    const gain = level * level * 0.75;
+    const lo = start * (sample.data.length - 1);
+    const hi = end * (sample.data.length - 1);
+    let pos = state.pos;
+    for (let i = 0; i < n; i++) {
+      if ((!reverse && pos >= hi) || (reverse && pos <= lo)) {
+        state.done = true;
+        break;
+      }
+      const i0 = Math.max(0, Math.min(sample.data.length - 2, Math.floor(pos)));
+      const frac = pos - i0;
+      const value = sample.data[i0] + frac * (sample.data[i0 + 1] - sample.data[i0]);
+      tmpL[off + i] += value * gain;
+      tmpR[off + i] += value * gain;
+      pos += step;
+    }
+    state.pos = pos;
+    return gain > 1e-6;
+  }
+
   setupFilter(fs, pre, mCut, mRes) {
     const p = this.p;
     const ftype = p[pre + 'flt.type'] | 0;
@@ -507,9 +556,9 @@ class DrumProcessor extends AudioWorkletProcessor {
       const count = Math.min(16, n - at);
       const pe = pAmt * Math.exp(-4.5 * (v.t + at) / (pDec * sampleRate));
       const aOn = this.setupOsc(v.oA, pre + 'oscA.', pe, m.posA, m.fineA, m.pitch);
-      const bOn = this.setupOsc(v.oB, pre + 'oscB.', pe, m.posB, m.fineB, m.pitch);
       if (aOn) this.renderOsc(v.oA, tmpL, tmpR, at, count);
-      if (bOn) this.renderOsc(v.oB, tmpL, tmpR, at, count);
+      this.renderSample(v.sample, pre + 'oscB.', pe, m.posB, m.fineB, m.pitch,
+        tmpL, tmpR, at, count);
     }
 
     const noiseLevel = Math.min(1, Math.max(0, p[pre + 'noise.level'] + m.noise));
@@ -586,10 +635,14 @@ class DrumProcessor extends AudioWorkletProcessor {
   }
 
   process(_inputs, outputs) {
-    const out = outputs[0];
-    const L = out[0], R = out.length > 1 ? out[1] : out[0];
-    L.fill(0); if (R !== L) R.fill(0);
-    const n = L.length;
+    // One stereo worklet output per pad. The main thread connects each output
+    // to that pad's own FX rack; summing here would make independent inserts
+    // impossible. Missing outputs are tolerated by the lightweight test
+    // harness and older hosts during upgrades.
+    for (const out of outputs) {
+      for (const channel of out) channel.fill(0);
+    }
+    const n = outputs[0]?.[0]?.length || 128;
 
     if (this.hosted) this.hostTick(n);
     const standalone = this.playing && !this.hosted;
@@ -605,7 +658,11 @@ class DrumProcessor extends AudioWorkletProcessor {
       }
       for (let i = 0; i < NPADS; i++) {
         const v = this.voices[i];
-        if (v.active) this.renderPad(v, i, L, R, pos, run);
+        const out = outputs[i];
+        if (v.active && out) {
+          const L = out[0], R = out.length > 1 ? out[1] : out[0];
+          this.renderPad(v, i, L, R, pos, run);
+        }
       }
       if (standalone) this.samplesToNext -= run;
       pos += run;
@@ -618,7 +675,10 @@ class DrumProcessor extends AudioWorkletProcessor {
       this.port.postMessage({
         t: 'viz',
         a: v.active ? v.oA.posSm : -1,
-        b: v.active ? v.oB.posSm : -1,
+        b: v.active && this.samples[v.sample.index] && v.sample.pos >= 0
+          ? Math.max(0, Math.min(1,
+            v.sample.pos / Math.max(1, this.samples[v.sample.index].data.length - 1)))
+          : -1,
         env: v.active ? v.ampLevel : 0,
       });
     }

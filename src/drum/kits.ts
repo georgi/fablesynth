@@ -3,7 +3,7 @@
 
 import type { ParamValues } from '../params';
 import type { SerializedUserTable } from '../engine/usertables';
-import { defaultDrumParams, pad, PAD_COUNT } from './params';
+import { defaultDrumParams, FX_DEFS, pad, PAD_COUNT } from './params';
 import { makeEmptyPatterns, patIdx, type Patterns } from './seq';
 
 export interface Kit {
@@ -45,9 +45,9 @@ function trVoidParams(): Partial<ParamValues> {
     'fx.reverb.mix': 0.16,
   };
   const sounds: Array<[number, number, number, number]> = [
-    [0, -14, 22, 0.30], [0, -7, 16, 0.24], [1, 0, 5, 0.18], [1, 7, 2, 0.14],
+    [0, -26, 22, 0.30], [0, -19, 16, 0.24], [1, -12, 5, 0.18], [1, 7, 2, 0.14],
     [2, 24, 0, 0.08], [2, 18, 0, 0.04], [2, 12, 0, 0.30], [2, 5, 0, 1.40],
-    [0, -12, 12, 0.42], [0, -5, 10, 0.36], [0, 2, 8, 0.30], [2, 0, 0, 1.80],
+    [0, -19, 12, 0.28], [0, -12, 10, 0.24], [0, -5, 8, 0.20], [2, 0, 0, 1.80],
     [1, 12, -5, 0.16], [2, 19, 0, 0.20], [7, -5, 0, 0.48], [3, -12, 9, 0.22],
   ];
   sounds.forEach(([table, tune, penv, decay], i) => {
@@ -69,11 +69,11 @@ function trVoidParams(): Partial<ParamValues> {
     [pad(11, 'ring.freq')]: 2741, [pad(11, 'ring.mix')]: 0.62,
     [pad(12, 'oscA.table')]: 8, [pad(12, 'oscA.tune')]: -5,
     [pad(12, 'ring.freq')]: 731, [pad(12, 'ring.mix')]: 0.78,
-    [pad(12, 'aenv.dec')]: 1.1, [pad(12, 'aenv.curve')]: 0.22,
+    [pad(12, 'aenv.dec')]: 0.16, [pad(12, 'aenv.curve')]: 0.22,
     [pad(13, 'oscA.table')]: 3, [pad(13, 'oscA.pos')]: 0.38,
     [pad(13, 'oscA.tune')]: 17, [pad(13, 'noise.level')]: 0.18,
     [pad(13, 'noise.color')]: 0.75, [pad(13, 'ring.freq')]: 3271,
-    [pad(13, 'ring.mix')]: 0.88, [pad(13, 'aenv.dec')]: 1.45,
+    [pad(13, 'ring.mix')]: 0.88, [pad(13, 'aenv.dec')]: 0.20,
     [pad(13, 'flt.on')]: 1, [pad(13, 'flt.type')]: 3,
     [pad(13, 'flt.cut')]: 3600,
   });
@@ -126,18 +126,18 @@ function classic808Params(): Partial<ParamValues> {
   params['seq.bpm'] = 124;
   params['master.swing'] = 0.28;
   params['fx.reverb.mix'] = 0.09;
-  params[pad(0, 'oscA.tune')] = -18;
+  params[pad(0, 'oscA.tune')] = -30;
   params[pad(0, 'penv.amt')] = 30;
   params[pad(0, 'aenv.dec')] = 0.52;
-  params[pad(1, 'oscA.tune')] = -10;
-  params[pad(2, 'oscA.table')] = 10; // 808SD
-  params[pad(2, 'noise.level')] = 0.18;
-  params[pad(3, 'oscA.table')] = 11; // 808CP
-  params[pad(3, 'noise.level')] = 0.12;
-  params[pad(5, 'oscA.table')] = 12; // 808CH
-  params[pad(6, 'oscA.table')] = 13; // 808OH
-  params[pad(11, 'oscA.table')] = 14; // 808CY
-  params[pad(7, 'oscA.table')] = 14;
+  params[pad(1, 'oscA.tune')] = -22;
+  for (const [padI, slot] of [[2, 0], [3, 1], [5, 2], [6, 3], [7, 4], [11, 4]]) {
+    params[pad(padI, 'oscA.level')] = 0;
+    params[pad(padI, 'oscB.table')] = slot;
+    params[pad(padI, 'oscB.level')] = 0.9;
+  }
+  params[pad(2, 'noise.level')] = 0.12;
+  params[pad(2, 'aenv.dec')] = 0.42;
+  params[pad(3, 'aenv.dec')] = 0.65;
   return params;
 }
 
@@ -304,8 +304,23 @@ export function kitToState(kit: Kit): {
   chain: number[];
   tables: SerializedUserTable[];
 } {
+  const params = { ...defaultDrumParams(), ...kit.params } as ParamValues;
+
+  // v1 kits stored one global rack under `fx.*`. Interpret that rack as the
+  // initial settings for every pad unless the kit already contains the newer
+  // pad-scoped value. This keeps old localStorage kits and all factory kits
+  // sounding intentional while allowing pads to diverge after loading.
+  for (const def of FX_DEFS) {
+    const legacy = kit.params[def.id];
+    if (legacy === undefined) continue;
+    for (let i = 0; i < PAD_COUNT; i++) {
+      const id = pad(i, def.id);
+      if (kit.params[id] === undefined) params[id] = legacy;
+    }
+    delete params[def.id];
+  }
   return {
-    params: { ...defaultDrumParams(), ...kit.params } as ParamValues,
+    params,
     padNames: [...kit.padNames],
     patterns: Uint8Array.from(kit.patterns),
     chain: [...kit.chain],

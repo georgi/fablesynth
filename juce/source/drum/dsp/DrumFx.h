@@ -1,6 +1,6 @@
-// DR-1 master FX chain — C++ port of the Web Audio graph in
+// One DR-1 pad FX chain — C++ port of the Web Audio graph in
 // src/drum/engine/drum-synth.ts buildFx()/applyAllFx():
-// drive -> comp -> chorus -> ping-pong delay -> reverb -> master gain ->
+// drive -> comp -> chorus -> ping-pong delay -> reverb -> shared master gain ->
 // DC block -> safety limiter. Same topology as WT-1's Fx (source/dsp/Fx.h,
 // the template for every shared stage) plus the bus compressor, which follows
 // WebAudio DynamicsCompressorNode semantics (ratio 4, knee 9 dB, attack 3 ms,
@@ -20,8 +20,8 @@ namespace fable {
 class DrumFx {
 public:
     void prepare(double sampleRate);
-    void setParams(const DrumParamArray& p); // reads DG_FX* and DG_MASTER_VOLUME
-    void process(float* L, float* R, int n); // in-place, MAIN bus only
+    void setParams(const DrumParamArray& p, int pad); // reads pad<i>.fx.* + shared master.volume
+    void process(float* L, float* R, int n); // in-place, before pad output routing
     void reset();
     int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
 

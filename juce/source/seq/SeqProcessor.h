@@ -11,7 +11,6 @@
 #include "../bass/dsp/BassEngine.h"
 #include "../bass/dsp/BassFx.h"
 #include "../drum/dsp/DrumEngine.h"
-#include "../drum/dsp/DrumFx.h"
 
 #include <array>
 #include <atomic>
@@ -249,7 +248,7 @@ private:
     void timerCallback() override { drainAcks(); }
 
     // The four engines + their standalone FX chains (identical topology/order).
-    fable::DrumEngine drum_;  fable::DrumFx drumFx_;
+    fable::DrumEngine drum_;
     fable::BassEngine bass_;  fable::BassFx bassFx_;
     fable::Engine     wt_[2]; fable::Fx     wtFx_[2];
 

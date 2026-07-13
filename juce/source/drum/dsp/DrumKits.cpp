@@ -67,9 +67,9 @@ Overrides trVoidParams() {
     set(p, "fx.reverb.mix", 0.16f);
     // [oscA.table, oscA.tune, penv.amt, aenv.dec] per pad
     static const float kSounds[DR_NPADS][4] = {
-        { 0, -14, 22, 0.30f }, { 0,  -7, 16, 0.24f }, { 1,  0,  5, 0.18f }, { 1,   7,  2, 0.14f },
+        { 0, -26, 22, 0.30f }, { 0, -19, 16, 0.24f }, { 1, -12,  5, 0.18f }, { 1,   7,  2, 0.14f },
         { 2,  24,  0, 0.08f }, { 2,  18,  0, 0.04f }, { 2, 12,  0, 0.30f }, { 2,   5,  0, 1.40f },
-        { 0, -12, 12, 0.42f }, { 0,  -5, 10, 0.36f }, { 0,  2,  8, 0.30f }, { 2,   0,  0, 1.80f },
+        { 0, -19, 12, 0.28f }, { 0, -12, 10, 0.24f }, { 0, -5,  8, 0.20f }, { 2,   0,  0, 1.80f },
         { 1,  12, -5, 0.16f }, { 2,  19,  0, 0.20f }, { 7, -5,  0, 0.48f }, { 3, -12,  9, 0.22f },
     };
     for (int i = 0; i < DR_NPADS; i++) {
@@ -90,11 +90,11 @@ Overrides trVoidParams() {
     set(p, padPid(11, "ring.freq"), 2741); set(p, padPid(11, "ring.mix"), 0.62f);
     set(p, padPid(12, "oscA.table"), 8); set(p, padPid(12, "oscA.tune"), -5);
     set(p, padPid(12, "ring.freq"), 731); set(p, padPid(12, "ring.mix"), 0.78f);
-    set(p, padPid(12, "aenv.dec"), 1.1f); set(p, padPid(12, "aenv.curve"), 0.22f);
+    set(p, padPid(12, "aenv.dec"), 0.16f); set(p, padPid(12, "aenv.curve"), 0.22f);
     set(p, padPid(13, "oscA.table"), 3); set(p, padPid(13, "oscA.pos"), 0.38f);
     set(p, padPid(13, "oscA.tune"), 17); set(p, padPid(13, "noise.level"), 0.18f);
     set(p, padPid(13, "noise.color"), 0.75f); set(p, padPid(13, "ring.freq"), 3271);
-    set(p, padPid(13, "ring.mix"), 0.88f); set(p, padPid(13, "aenv.dec"), 1.45f);
+    set(p, padPid(13, "ring.mix"), 0.88f); set(p, padPid(13, "aenv.dec"), 0.20f);
     set(p, padPid(13, "flt.on"), 1); set(p, padPid(13, "flt.type"), 3);
     set(p, padPid(13, "flt.cut"), 3600);
     for (int i : { 5, 6 }) {
@@ -149,12 +149,15 @@ Overrides bitcrushParams() {
 Overrides classic808Params() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 124); set(p, "master.swing", 0.28f); set(p, "fx.reverb.mix", 0.09f);
-    set(p, padPid(0, "oscA.tune"), -18); set(p, padPid(0, "penv.amt"), 30);
-    set(p, padPid(0, "aenv.dec"), 0.52f); set(p, padPid(1, "oscA.tune"), -10);
-    set(p, padPid(2, "oscA.table"), 10); set(p, padPid(2, "noise.level"), 0.18f);
-    set(p, padPid(3, "oscA.table"), 11); set(p, padPid(3, "noise.level"), 0.12f);
-    set(p, padPid(5, "oscA.table"), 12); set(p, padPid(6, "oscA.table"), 13);
-    set(p, padPid(11, "oscA.table"), 14); set(p, padPid(7, "oscA.table"), 14);
+    set(p, padPid(0, "oscA.tune"), -30); set(p, padPid(0, "penv.amt"), 30);
+    set(p, padPid(0, "aenv.dec"), 0.52f); set(p, padPid(1, "oscA.tune"), -22);
+    for (const auto [pad, slot] : { std::pair<int, int>{2, 0}, {3, 1}, {5, 2}, {6, 3}, {7, 4}, {11, 4} }) {
+        set(p, padPid(pad, "oscA.level"), 0);
+        set(p, padPid(pad, "oscB.table"), (float)slot);
+        set(p, padPid(pad, "oscB.level"), 0.9f);
+    }
+    set(p, padPid(2, "noise.level"), 0.12f); set(p, padPid(2, "aenv.dec"), 0.42f);
+    set(p, padPid(3, "aenv.dec"), 0.65f);
     return p;
 }
 
@@ -295,7 +298,11 @@ DrumParamArray applyKit(const DrumKit& kit) {
     DrumParamArray p = defaultDrumParams();
     for (const auto& [pid, v] : kit.params) {
         int id = drumIdFromString(pid);
-        if (id >= 0) p[(size_t)id] = v;
+        if (id >= 0) {
+            p[(size_t)id] = v;
+        } else if (const int field = legacyDrumFxField(pid); field >= 0) {
+            for (int pad = 0; pad < DR_NPADS; ++pad) p[(size_t)dpid(pad, field)] = v;
+        }
     }
     return p;
 }

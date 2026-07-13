@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isFxParam } from './drum-synth';
+import { fxPadFromParam, isFxParam } from './drum-synth';
 import { generateTables } from '../../engine/wavetables';
 import { generateDrumTables } from './drumtables';
 import { generateSampledDrumTables } from './sampledtables.gen';
@@ -8,11 +8,16 @@ import { DRUM_TABLE_NAMES } from '../params';
 describe('drum engine param routing', () => {
   it('fx + master.volume stay on the main thread, the rest goes to the worklet', () => {
     expect(isFxParam('fx.drive.amt')).toBe(true);
+    expect(isFxParam('pad0.fx.drive.amt')).toBe(true);
+    expect(isFxParam('pad15.fx.reverb.size')).toBe(true);
     expect(isFxParam('fx.comp.thr')).toBe(true);
     expect(isFxParam('master.volume')).toBe(true);
     expect(isFxParam('master.swing')).toBe(false); // worklet needs it for timing
     expect(isFxParam('seq.bpm')).toBe(false);
     expect(isFxParam('pad0.oscA.tune')).toBe(false);
+    expect(fxPadFromParam('pad0.fx.drive.amt')).toBe(0);
+    expect(fxPadFromParam('pad15.fx.reverb.size')).toBe(15);
+    expect(fxPadFromParam('pad16.fx.drive.amt')).toBeNull();
   });
 });
 

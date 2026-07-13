@@ -29,6 +29,8 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    DrumRack& getRack() { return rack; }
+
 private:
     fui::DarkLNF lnf;
     std::unique_ptr<fui::DrumUiModel> model;

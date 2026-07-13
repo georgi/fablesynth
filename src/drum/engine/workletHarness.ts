@@ -34,9 +34,14 @@ export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
     const L = new Float32Array(blocks * 128);
     const R = new Float32Array(blocks * 128);
     for (let b = 0; b < blocks; b++) {
-      const l = new Float32Array(128), r = new Float32Array(128);
-      proc.process([], [[l, r]]);
-      L.set(l, b * 128); R.set(r, b * 128);
+      const outputs = Array.from({ length: 16 }, () => [new Float32Array(128), new Float32Array(128)]);
+      proc.process([], outputs);
+      for (const [l, r] of outputs) {
+        for (let i = 0; i < 128; i++) {
+          L[b * 128 + i] += l[i];
+          R[b * 128 + i] += r[i];
+        }
+      }
     }
     return { L, R };
   };

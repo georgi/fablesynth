@@ -1,5 +1,5 @@
-// Transcribes src/drum/params.ts row for row: PAD_DEFS (params.ts:29-71)
-// repeated for 16 pads, then GLOBAL_DEFS (params.ts:75-96).
+// Transcribes src/drum/params.ts row for row: synthesis + FX definitions
+// repeated for 16 pads, then the three shared global definitions.
 #include "DrumParams.h"
 
 #include <unordered_map>
@@ -7,9 +7,10 @@
 namespace fable {
 
 const std::vector<std::string> DRUM_TABLE_NAMES  = {"THUD", "CRACK", "TINE", "GRIT", "PRIME", "BLOOM", "PULSE", "VOX", "CHIME", "GLITCH", "808SD", "808CP", "808CH", "808OH", "808CY"};
+const std::vector<std::string> DRUM_SAMPLE_NAMES = {"808SD", "808CP", "808CH", "808OH", "808CY"};
 const std::vector<std::string> DRUM_FILTER_TYPES = {"LP 12", "LP 24", "BP 12", "HP 12", "NOTCH"};
 const std::vector<std::string> DMOD_SOURCES      = {"—", "MOD ENV", "VELO", "RAND"};
-const std::vector<std::string> DMOD_DESTS        = {"—", "A POS", "B POS", "LEVEL", "CUTOFF", "PITCH", "A FINE", "B FINE", "NOISE LVL", "RES"};
+const std::vector<std::string> DMOD_DESTS        = {"—", "A POS", "SAMPLE START", "LEVEL", "CUTOFF", "PITCH", "A FINE", "SAMPLE FINE", "NOISE LVL", "RES"};
 const std::vector<std::string> CHOKE_NAMES       = {"—", "CHK 1", "CHK 2", "CHK 3", "CHK 4"};
 const std::vector<std::string> OUT_NAMES         = {"MAIN", "AUX 1", "AUX 2", "AUX 3", "AUX 4"};
 
@@ -37,13 +38,26 @@ void addOsc(std::vector<ParamInfo>& v, int base, const std::string& pre, bool is
     v.push_back({base + 7, pre + ".level",  "LVL",      0, 1,   isA ? 0.75f : 0.0f, Curve::Lin, Kind::Float, nullptr});
 }
 
+// The legacy oscB ids/offsets intentionally remain stable for saved DAW state,
+// but now expose a raw one-shot sample player.
+void addSample(std::vector<ParamInfo>& v, int base, const std::string& pre) {
+    v.push_back({base + 0, pre + ".table",  "SAMPLE", 0, (float)DRUM_SAMPLE_NAMES.size() - 1, 0, Curve::Int, Kind::Enum, &DRUM_SAMPLE_NAMES});
+    v.push_back({base + 1, pre + ".pos",    "START",  0, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({base + 2, pre + ".tune",   "TUNE", -48, 48, 0, Curve::Int, Kind::Float, nullptr});
+    v.push_back({base + 3, pre + ".fine",   "FINE", -100, 100, 0, Curve::Int, Kind::Float, nullptr});
+    v.push_back({base + 4, pre + ".phase",  "REV", 0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({base + 5, pre + ".unison", "MODE", 1, 1, 1, Curve::Int, Kind::Float, nullptr});
+    v.push_back({base + 6, pre + ".detune", "END", 0, 1, 1, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({base + 7, pre + ".level",  "LVL", 0, 1, 0, Curve::Lin, Kind::Float, nullptr});
+}
+
 // PAD_DEFS (params.ts:43-71), pids prefixed "pad<i>.".
 void addPad(std::vector<ParamInfo>& v, int i) {
     const int b = i * DPAD_NFIELDS;
     const std::string p = "pad" + std::to_string(i) + ".";
 
     addOsc(v, b + DP_OSCA_TABLE, p + "oscA", true);
-    addOsc(v, b + DP_OSCB_TABLE, p + "oscB", false);
+    addSample(v, b + DP_OSCB_TABLE, p + "oscB");
 
     v.push_back({b + DP_NOISE_COLOR, p + "noise.color", "COLOR",  -1, 1,      0,      Curve::Lin, Kind::Float, nullptr});
     v.push_back({b + DP_NOISE_LEVEL, p + "noise.level", "LVL",     0, 1,      0,      Curve::Lin, Kind::Float, nullptr});
@@ -76,6 +90,24 @@ void addPad(std::vector<ParamInfo>& v, int i) {
     v.push_back({b + DP_V2M,        p + "v2m",        "V→MOD",    0, 1, 0.4f,   Curve::Lin, Kind::Float, nullptr});
     v.push_back({b + DP_CHOKE,      p + "choke",      "CHOKE",    0, 4, 0,      Curve::Int, Kind::Enum, &CHOKE_NAMES});
     v.push_back({b + DP_OUT,        p + "out",        "OUT",      0, 4, 0,      Curve::Int, Kind::Enum, &OUT_NAMES});
+
+    v.push_back({b + DP_FXDRIVE_ON,     p + "fx.drive.on",     "ON",        0, 1,     0,      Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({b + DP_FXDRIVE_AMT,    p + "fx.drive.amt",    "AMT",       0, 1,     0.3f,   Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXDRIVE_MIX,    p + "fx.drive.mix",    "MIX",       0, 1,     1,      Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXCOMP_ON,      p + "fx.comp.on",      "ON",        0, 1,     1,      Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({b + DP_FXCOMP_THR,     p + "fx.comp.thr",     "THRESH",  -40, 0,    -16,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXCOMP_GAIN,    p + "fx.comp.gain",    "MAKEUP",    0, 12,    4,      Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXCHORUS_ON,    p + "fx.chorus.on",    "ON",        0, 1,     0,      Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({b + DP_FXCHORUS_RATE,  p + "fx.chorus.rate",  "RATE",  0.05f, 8,     0.6f,   Curve::Log, Kind::Float, nullptr});
+    v.push_back({b + DP_FXCHORUS_DEPTH, p + "fx.chorus.depth", "DEPTH",     0, 1,     0.4f,   Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXCHORUS_MIX,   p + "fx.chorus.mix",   "MIX",       0, 1,     0.2f,   Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXDELAY_ON,     p + "fx.delay.on",     "ON",        0, 1,     0,      Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({b + DP_FXDELAY_TIME,   p + "fx.delay.time",   "TIME",  0.02f, 1.5f,  0.36f,  Curve::Log, Kind::Float, nullptr});
+    v.push_back({b + DP_FXDELAY_FB,     p + "fx.delay.fb",     "FDBK",      0, 0.92f, 0.35f,  Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXDELAY_MIX,    p + "fx.delay.mix",    "MIX",       0, 1,     0.15f,  Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXREVERB_ON,    p + "fx.reverb.on",    "ON",        0, 1,     1,      Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({b + DP_FXREVERB_SIZE,  p + "fx.reverb.size",  "SIZE",      0, 1,     0.4f,   Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXREVERB_MIX,   p + "fx.reverb.mix",   "MIX",       0, 1,     0.16f,  Curve::Lin, Kind::Float, nullptr});
 }
 
 // GLOBAL_DEFS (params.ts:75-96).
@@ -83,23 +115,6 @@ void addGlobals(std::vector<ParamInfo>& v) {
     v.push_back({DG_SEQ_BPM,        "seq.bpm",         "BPM",      60, 200,   126,    Curve::Int, Kind::Float, nullptr});
     v.push_back({DG_MASTER_SWING,   "master.swing",    "SWING",     0, 1,     0.22f,  Curve::Lin, Kind::Float, nullptr});
     v.push_back({DG_MASTER_VOLUME,  "master.volume",   "VOL",       0, 1,     0.78f,  Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXDRIVE_ON,     "fx.drive.on",     "ON",        0, 1,     0,      Curve::Int, Kind::Bool,  nullptr});
-    v.push_back({DG_FXDRIVE_AMT,    "fx.drive.amt",    "AMT",       0, 1,     0.3f,   Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXDRIVE_MIX,    "fx.drive.mix",    "MIX",       0, 1,     1,      Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXCOMP_ON,      "fx.comp.on",      "ON",        0, 1,     1,      Curve::Int, Kind::Bool,  nullptr});
-    v.push_back({DG_FXCOMP_THR,     "fx.comp.thr",     "THRESH",  -40, 0,    -16,     Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXCOMP_GAIN,    "fx.comp.gain",    "MAKEUP",    0, 12,    4,      Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXCHORUS_ON,    "fx.chorus.on",    "ON",        0, 1,     0,      Curve::Int, Kind::Bool,  nullptr});
-    v.push_back({DG_FXCHORUS_RATE,  "fx.chorus.rate",  "RATE",  0.05f, 8,     0.6f,   Curve::Log, Kind::Float, nullptr});
-    v.push_back({DG_FXCHORUS_DEPTH, "fx.chorus.depth", "DEPTH",     0, 1,     0.4f,   Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXCHORUS_MIX,   "fx.chorus.mix",   "MIX",       0, 1,     0.2f,   Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXDELAY_ON,     "fx.delay.on",     "ON",        0, 1,     0,      Curve::Int, Kind::Bool,  nullptr});
-    v.push_back({DG_FXDELAY_TIME,   "fx.delay.time",   "TIME",  0.02f, 1.5f,  0.36f,  Curve::Log, Kind::Float, nullptr});
-    v.push_back({DG_FXDELAY_FB,     "fx.delay.fb",     "FDBK",      0, 0.92f, 0.35f,  Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXDELAY_MIX,    "fx.delay.mix",    "MIX",       0, 1,     0.15f,  Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXREVERB_ON,    "fx.reverb.on",    "ON",        0, 1,     1,      Curve::Int, Kind::Bool,  nullptr});
-    v.push_back({DG_FXREVERB_SIZE,  "fx.reverb.size",  "SIZE",      0, 1,     0.4f,   Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_FXREVERB_MIX,   "fx.reverb.mix",   "MIX",       0, 1,     0.16f,  Curve::Lin, Kind::Float, nullptr});
 }
 
 std::vector<ParamInfo> build() {
@@ -135,6 +150,22 @@ int drumIdFromString(const std::string& pid) {
     }();
     auto it = map.find(pid);
     return it == map.end() ? -1 : it->second;
+}
+
+int legacyDrumFxField(const std::string& pid) {
+    static const std::unordered_map<std::string, int> fields = {
+        {"fx.drive.on", DP_FXDRIVE_ON}, {"fx.drive.amt", DP_FXDRIVE_AMT},
+        {"fx.drive.mix", DP_FXDRIVE_MIX}, {"fx.comp.on", DP_FXCOMP_ON},
+        {"fx.comp.thr", DP_FXCOMP_THR}, {"fx.comp.gain", DP_FXCOMP_GAIN},
+        {"fx.chorus.on", DP_FXCHORUS_ON}, {"fx.chorus.rate", DP_FXCHORUS_RATE},
+        {"fx.chorus.depth", DP_FXCHORUS_DEPTH}, {"fx.chorus.mix", DP_FXCHORUS_MIX},
+        {"fx.delay.on", DP_FXDELAY_ON}, {"fx.delay.time", DP_FXDELAY_TIME},
+        {"fx.delay.fb", DP_FXDELAY_FB}, {"fx.delay.mix", DP_FXDELAY_MIX},
+        {"fx.reverb.on", DP_FXREVERB_ON}, {"fx.reverb.size", DP_FXREVERB_SIZE},
+        {"fx.reverb.mix", DP_FXREVERB_MIX},
+    };
+    const auto it = fields.find(pid);
+    return it == fields.end() ? -1 : it->second;
 }
 
 } // namespace fable

@@ -104,8 +104,8 @@ private:
 
 // ---- panels -----------------------------------------------------------------
 
-// OSC A (cyan) / OSC B (amber): LED + title + table stepper head, terrain view
-// with live POS, vertical POS slider, TUNE/FINE/PHASE/UNI/DET/LVL knobs.
+// OSC A (cyan) / SAMPLE (amber): wavetable terrain or one-shot waveform with
+// live playhead, vertical POS/START slider and layer-specific controls.
 class DrumOscPanel : public PadBoundPanel {
 public:
     DrumOscPanel(DrumUiModel&, int osc);   // 0 = A, 1 = B
