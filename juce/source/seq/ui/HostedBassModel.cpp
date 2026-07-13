@@ -143,6 +143,7 @@ void HostedBassModel::setSequenceStep(int pattern, int step,
         return;
 
     const auto& clip = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack];
+    if (clip.bars > fable::SQ_HOSTED_MAX_BARS) return;
     auto bytes = clip.bytes;
     fable::setBassStep(bytes.data(), pattern, step, value);
     proc_.conductor().updateClipBytes(scene_, kTrack, std::move(bytes), clip.bars);

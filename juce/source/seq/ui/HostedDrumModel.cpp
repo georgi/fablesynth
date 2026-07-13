@@ -108,7 +108,8 @@ uint8_t HostedDrumModel::step(int pattern, int pad, int stepIndex) const {
 
 void HostedDrumModel::setStep(int pattern, int pad, int stepIndex, uint8_t value) {
     const auto* c = clip();
-    if (!c || pattern < 0 || pattern >= c->bars || pad < 0 || pad >= fable::SQ_DR1_PADS
+    if (!c || c->bars > fable::SQ_HOSTED_MAX_BARS
+        || pattern < 0 || pattern >= c->bars || pad < 0 || pad >= fable::SQ_DR1_PADS
         || stepIndex < 0 || stepIndex >= fable::SQ_STEPS_PER_BAR) return;
     auto bytes = c->bytes;
     bytes[(size_t)fable::sqDr1Idx(pattern, pad, stepIndex)] = value;
@@ -117,6 +118,9 @@ void HostedDrumModel::setStep(int pattern, int pad, int stepIndex, uint8_t value
 
 bool HostedDrumModel::hasTargetClip() const { return clip() != nullptr; }
 void HostedDrumModel::createTargetClip() { proc_.conductor().createClip(scene_, 0); }
-int HostedDrumModel::clipBars() const { const auto* c = clip(); return c ? c->bars : 1; }
+int HostedDrumModel::clipBars() const {
+    const auto* c = clip();
+    return c ? juce::jmin(c->bars, fable::SQ_HOSTED_MAX_BARS) : 1;
+}
 
 } // namespace fui

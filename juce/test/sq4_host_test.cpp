@@ -360,17 +360,20 @@ int main(int argc, char** argv) {
     // ---- 12. Focus mode: enter, edit a live clip, doc + engine hot-swap. ----
     std::printf("\n== focus mode ==\n");
     auto* ed2 = seqEditor;
-    auto& clipEd = ed2->clipEdit();
+    auto& focusView = ed2->deviceFocus();
 
     ed2->enterFocus(0, 2);            // DRUMS, DROP A
     check(ed2->focus() == std::make_pair(0, 2), "enterFocus(0,2) targets scene 2 / track 0");
+    check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::drum,
+          "DRUMS focus shows the native DR-1 body");
     grid.cellClick(2, 0);            // launch DROP A drums so the edited clip is live
     renderRms(p, buf, 800); p.drainAcks();
     check(p.conductor().ownerOf(0) == 2, "DROP A drums are live before editing",
           p.conductor().ownerOf(0));
 
     auto before = p.conductor().session().scenes[2].clips[0].bytes;
-    clipEd.toggleDrumCell(/*pad*/ 5, /*step*/ 3);
+    const auto drumValue = focusView.drumModelForTest().step(0, 5, 3);
+    focusView.drumModelForTest().setStep(0, 5, 3, drumValue == 2 ? 1 : 2);
     auto after = p.conductor().session().scenes[2].clips[0].bytes;
     check(before != after, "toggleDrumCell mutates the live clip's bytes");
     check(after[(size_t)fable::sqDr1Idx(0, 5, 3)] != before[(size_t)fable::sqDr1Idx(0, 5, 3)],
@@ -382,41 +385,23 @@ int main(int argc, char** argv) {
     ed2->enterFocus(1);
     check(ed2->focus() == std::make_pair(1, 2), "switching heads keeps the scene");
 
-    // BL-1 note editor: exact byte encoding at sqNoteIdx + web step hygiene
-    // (src/bass/store.ts:112-146). Focus is BASS / DROP A (ACID 303, 1 bar);
-    // edit a rest step (step 5) so every transition starts from a clean slate.
+    check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::bass,
+          "head switch replaces DR-1 with the native BL-1 body");
+
+    // BL-1 native sequencer: exact byte encoding at sqNoteIdx. Focus is
+    // BASS / DROP A (ACID 303, one bar); edit a rest step with the same model
+    // used by PitchSeqView.
     auto noteByte = [&](int off) {
         return p.conductor().session().scenes[2].clips[1].bytes[(size_t)(fable::sqNoteIdx(0, 5) + off)];
     };
     check((noteByte(0) & 1) == 0, "note step 5 starts as a rest", noteByte(0));
-
-    // acc/tie must NO-OP on an off step (store.ts: if (!cur.on) return).
-    clipEd.toggleAcc(5);
-    check(noteByte(0) == 0, "toggleAcc no-ops on an off step", noteByte(0));
-    clipEd.toggleTie(5);
-    check(noteByte(0) == 0, "toggleTie no-ops on an off step", noteByte(0));
-
-    clipEd.toggleNoteCell(/*lane*/ 7, /*step*/ 5);
-    check((noteByte(0) & 1) && noteByte(1) == 7, "toggleNoteCell sets on + note 7", noteByte(1));
-
-    clipEd.toggleAcc(5);
-    check(noteByte(0) == (1 | 2), "toggleAcc sets the accent bit on a live step", noteByte(0));
-    clipEd.toggleTie(5);
-    check(noteByte(0) == (1 | 2 | 4), "toggleTie sets the tie bit on a live step", noteByte(0));
-
-    clipEd.setOct(5, -1);
-    check(noteByte(2) == 0, "setOct(-1) writes oct+1 = 0", noteByte(2));
-    clipEd.setOct(5, 1);
-    check(noteByte(2) == 2, "setOct(+1) writes oct+1 = 2", noteByte(2));
-
-    // turning the note off clears acc + tie too (web setStep {on,acc,slide}=false).
-    clipEd.toggleNoteCell(7, 5);
-    check((noteByte(0) & 0x07) == 0, "turning a note off clears on + acc + tie", noteByte(0));
-
-    // re-arm on a different lane: no stale acc/tie survive the on->off->on cycle.
-    clipEd.toggleNoteCell(9, 5);
-    check(noteByte(0) == 1, "re-armed step has on set and no stale acc/tie", noteByte(0));
-    check(noteByte(1) == 9, "re-armed step carries the new note", noteByte(1));
+    fable::BassSeqStep nativeBass;
+    nativeBass.on = true; nativeBass.note = 7; nativeBass.oct = -1;
+    nativeBass.acc = true; nativeBass.slide = true;
+    focusView.bassModelForTest().setSequenceStep(0, 5, nativeBass);
+    check(noteByte(0) == (1 | 2 | 4), "native BL-1 writes on/accent/slide flags", noteByte(0));
+    check(noteByte(1) == 7, "native BL-1 writes the selected pitch lane", noteByte(1));
+    check(noteByte(2) == 0, "native BL-1 writes octave as oct+1", noteByte(2));
 
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
     if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
@@ -430,11 +415,14 @@ int main(int argc, char** argv) {
     // the clip keeps its length, and the lock-banner paint path (no chips) runs.
     ed2->enterFocus(3, 4);                 // PADS / BREAK = FOG SWELL, 8 bars
     check(ed2->focus() == std::make_pair(3, 4), "enterFocus(3,4) targets the 8-bar FOG SWELL");
+    check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::wt3,
+          "PADS focus shows the second native WT-1 body");
     auto locked0 = p.conductor().session().scenes[4].clips[3].bytes;
-    clipEd.toggleNoteCell(5, 0);
-    clipEd.barsStep(-1);
+    auto lockedStep = focusView.wt3ModelForTest().sequenceStep(0, 0);
+    lockedStep.on = !lockedStep.on;
+    focusView.wt3ModelForTest().setSequenceStep(0, 0, lockedStep);
     check(p.conductor().session().scenes[4].clips[3].bytes == locked0,
-          "edits + bars stepper are ignored on a view-only clip");
+          "native device edits are ignored on an over-four-bar view-only clip");
     check(p.conductor().session().scenes[4].clips[3].bars == 8, "locked clip keeps its 8 bars");
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // lock-banner paint, no chips
 
@@ -449,12 +437,16 @@ int main(int argc, char** argv) {
     // create a clip on an empty cell (LEAD / INTRO).
     ed2->enterFocus(2, 0);
     check(ed2->focus() == std::make_pair(2, 0), "enterFocus(2,0) targets the empty LEAD/INTRO cell");
+    check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::wt2,
+          "LEAD focus shows the first native WT-1 body");
     check(!p.conductor().session().scenes[0].hasClip[2], "LEAD/INTRO starts empty");
-    clipEd.createClipClick();
-    check(p.conductor().session().scenes[0].hasClip[2], "createClipClick writes a clip into the doc");
+    focusView.wt2ModelForTest().createTargetClip();
+    check(p.conductor().session().scenes[0].hasClip[2], "native focus create action writes a clip into the doc");
 
     // Focus-mode snapshot: the DRUMS / DROP A clip editor over the live scene.
     ed2->enterFocus(0, 2);
+    check(focusView.activeBodyComponent() == &focusView.drumBodyForTest(),
+          "focus container exposes exactly the active native body");
     ed2->resized();
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
     if (argc > 2) {

@@ -15,18 +15,18 @@
 //
 // Focus mode reuses header + heads unchanged, collapses the scene grid to a
 // single-row mini strip (row 96 + scene rail 24 = ~128 tall), and drops the
-// ClipEditView device panel into the freed space down to the footer slot,
+// selected native device body into the freed space down to the footer slot,
 // which hides. Instant relayout, no FLIP (spec §2).
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
-    : header(p), trackHeads(p), sceneGrid(p), footer(p), clipEdit(p) {
+    : header(p), trackHeads(p), sceneGrid(p), footer(p), deviceFocus(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(trackHeads);
     addAndMakeVisible(sceneGrid);
     addAndMakeVisible(footer);
     addAndMakeVisible(hint);
-    addChildComponent(clipEdit); // hidden until focus is entered
+    addChildComponent(deviceFocus); // hidden until focus is entered
 }
 
 void SeqRack::enterFocus(int track, int scene) {
@@ -35,10 +35,10 @@ void SeqRack::enterFocus(int track, int scene) {
     trackHeads.setFocusMode(true);
     trackHeads.setFocusedTrack(track);
     sceneGrid.setSingleRow(scene);
-    clipEdit.setTarget(scene, track);
+    deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
     hint.setVisible(false);
-    clipEdit.setVisible(true);
+    deviceFocus.setVisible(true);
     resized();
 }
 
@@ -48,17 +48,17 @@ void SeqRack::exitFocus() {
     trackHeads.setFocusMode(false);
     trackHeads.setFocusedTrack(-1);
     sceneGrid.clearSingleRow();
-    clipEdit.setTarget(-1, -1);
+    deviceFocus.setTarget(-1, -1);
     footer.setVisible(true);
     hint.setVisible(true);
-    clipEdit.setVisible(false);
+    deviceFocus.setVisible(false);
     resized();
 }
 
 void SeqRack::setFocusScene(int scene) {
     if (!focusMode_) return;
     sceneGrid.setSingleRow(scene);
-    clipEdit.setTarget(scene, focusTrack_);
+    deviceFocus.setTarget(scene, focusTrack_);
 }
 
 void SeqRack::resized() {
@@ -66,12 +66,12 @@ void SeqRack::resized() {
     trackHeads.setBounds(18, 89, 1424, 54);
     if (focusMode_) {
         sceneGrid.setBounds(18, 152, 1424, 128);  // mini strip: row (96) + rail (24)
-        clipEdit.setBounds(18, 288, 1424, 618);   // device panel -> down to ~906
+        deviceFocus.setBounds(18, 288, 1424, 618); // native device -> down to ~906
     } else {
         sceneGrid.setBounds(18, 152, 1424, 630);
         footer.setBounds(18, 782, 1424, 68);
         hint.setBounds(18, 858, 1424, 20);
-        clipEdit.setBounds(0, 0, LW, LH);
+        deviceFocus.setBounds(0, 0, LW, LH);
     }
 }
 

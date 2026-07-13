@@ -204,7 +204,7 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/ui/TrackHeadsView.cpp
         source/seq/ui/SceneGridView.cpp
         source/seq/ui/SeqFooterView.cpp
-        source/seq/ui/ClipEditView.cpp
+        source/seq/ui/DeviceFocusView.cpp
         source/seq/ui/HostedDrumModel.cpp
         source/seq/ui/HostedBassModel.cpp
         source/seq/ui/HostedWtModel.cpp

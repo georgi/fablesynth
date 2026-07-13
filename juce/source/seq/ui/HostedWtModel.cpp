@@ -148,7 +148,8 @@ fable::NoteSeqStep HostedWtModel::sequenceStep(int pattern, int step) const {
 
 void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqStep& value) {
     const auto* clip = targetClip();
-    if (clip == nullptr || pattern < 0 || pattern >= clip->bars
+    if (clip == nullptr || clip->bars > fable::SQ_HOSTED_MAX_BARS
+        || pattern < 0 || pattern >= clip->bars
         || step < 0 || step >= fable::SEQ_STEPS)
         return;
     auto bytes = clip->bytes;
