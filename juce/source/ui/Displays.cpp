@@ -5,12 +5,18 @@
 namespace fui {
 
 static constexpr double PI = juce::MathConstants<double>::pi;
+static ParameterSource wtSource(juce::AudioProcessorValueTreeState& apvts) {
+    const auto& catalog = fable::paramInfo();
+    return ParameterSource::fromApvts(apvts, catalog.data(), catalog.size());
+}
 
 // ===================== EnvView =====================
 EnvView::EnvView(juce::AudioProcessorValueTreeState& s, const juce::String& b, juce::Colour ac)
-    : apvts(s), base(b), accent(ac) { startTimerHz(20); }
+    : EnvView(wtSource(s), b, ac) {}
+EnvView::EnvView(ParameterSource source, const juce::String& b, juce::Colour ac)
+    : parameters(std::move(source)), base(b), accent(ac) { startTimerHz(20); }
 float EnvView::p(const char* sfx) const {
-    auto* prm = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(base + sfx));
+    auto* prm = parameters.parameter(base + sfx);
     return prm ? prm->convertFrom0to1(prm->getValue()) : 0.0f;
 }
 void EnvView::timerCallback() {
@@ -54,23 +60,27 @@ void EnvView::paint(juce::Graphics& g) {
 LfoView::LfoView(juce::AudioProcessorValueTreeState& s, const juce::String& sh,
                  const juce::String& ra, const juce::String& sy, const juce::String& sr,
                  juce::Colour ac, std::function<HostTransport()> transportProvider)
-    : apvts(s), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
+    : LfoView(wtSource(s), sh, ra, sy, sr, ac, std::move(transportProvider)) {}
+LfoView::LfoView(ParameterSource source, const juce::String& sh,
+                 const juce::String& ra, const juce::String& sy, const juce::String& sr,
+                 juce::Colour ac, std::function<HostTransport()> transportProvider)
+    : parameters(std::move(source)), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
       transport(std::move(transportProvider)), t0(juce::Time::getMillisecondCounter()) {
     startTimerHz(30);
 }
 bool LfoView::synced() const {
-    auto* syncP = apvts.getParameter(syncId);
+    auto* syncP = parameters.parameter(syncId);
     return syncP && syncP->getValue() >= 0.5f;
 }
 // Effective LFO rate in Hz: synced division * host tempo when sync is on, else
 // the free RATE param. Mirrors Engine::lfoHz so the dot tracks the real speed.
 float LfoView::currentRate(const HostTransport& tr) const {
     if (synced()) {
-        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(syncRateId));
         int idx = srP ? srP->getIndex() : 2;
         return (float)((tr.bpm / 60.0) * fable::lfoDivFactor(idx));
     }
-    auto* rp = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(rateId));
+    auto* rp = parameters.parameter(rateId);
     return rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
 }
 static float lfoFn(int shape, float p) {
@@ -90,7 +100,7 @@ static float shVal(int s) {
 void LfoView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     const HostTransport tr = transport ? transport() : HostTransport{};
-    auto* sp = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(shapeId));
+    auto* sp = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(shapeId));
     int shape = sp ? sp->getIndex() : 0;
     float rate = currentRate(tr);
 
@@ -120,7 +130,7 @@ void LfoView::paint(juce::Graphics& g) {
     // otherwise free-run at the effective rate.
     float phase;
     if (synced() && tr.playing) {
-        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(syncRateId));
         int idx = srP ? srP->getIndex() : 2;
         double ph = tr.ppq * fable::lfoDivFactor(idx);
         phase = (float)(ph - std::floor(ph));
@@ -167,9 +177,12 @@ static double magFor(int type, double cutoff, double res, double f) {
     }
     return acc * 0.8;
 }
-FilterView::FilterView(juce::AudioProcessorValueTreeState& s, juce::Colour ac) : apvts(s), accent(ac) { startTimerHz(20); }
+FilterView::FilterView(juce::AudioProcessorValueTreeState& s, juce::Colour ac)
+    : FilterView(wtSource(s), ac) {}
+FilterView::FilterView(ParameterSource source, juce::Colour ac)
+    : parameters(std::move(source)), accent(ac) { startTimerHz(20); }
 void FilterView::timerCallback() {
-    auto get = [&](const char* id) { auto* p = apvts.getParameter(id); return p ? p->getValue() : 0.0f; };
+    auto get = [&](const char* id) { auto* p = parameters.parameter(id); return p ? p->getValue() : 0.0f; };
     float sum = get("filter.on") + get("filter.type") * 1.7f + get("filter.cutoff") * 3.1f + get("filter.res") * 2.3f
               + get("filter2.on") + get("filter2.type") * 1.1f + get("filter2.cutoff") * 0.7f + get("filter2.res") * 1.9f
               + get("filter.route") * 5.0f;
@@ -178,7 +191,7 @@ void FilterView::timerCallback() {
 void FilterView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     auto val = [&](const char* id) {
-        auto* p = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
+        auto* p = parameters.parameter(id);
         return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
     };
     struct F { int type; double cut, res; bool on; };

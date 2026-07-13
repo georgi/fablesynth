@@ -37,6 +37,8 @@ if(FABLE_BUILD_PLUGIN)
         source/PluginEditor.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
         source/ui/Modulation.cpp
         source/ui/NoteSeqView.cpp
@@ -89,6 +91,8 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/ui/StepSeqView.cpp
         source/drum/ui/DrumFxRack.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
         source/drum/dsp/DrumParams.cpp
         source/drum/dsp/DrumTables.cpp
@@ -142,6 +146,8 @@ if(FABLE_BUILD_PLUGIN)
         source/bass/ui/PitchSeqView.cpp
         source/bass/ui/BassFxRack.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
         source/bass/dsp/BassParams.cpp
         source/bass/dsp/BassEngine.cpp
@@ -197,7 +203,8 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/ui/ClipEditView.cpp
         source/seq/dsp/SeqFactory.cpp
         source/seq/dsp/Conductor.cpp
-        source/ui/Controls.cpp source/ui/Modulation.cpp
+        source/ui/Controls.cpp source/ui/ParameterSource.cpp source/ui/DeviceParameterBank.cpp
+        source/ui/Modulation.cpp
         # all three machines' DSP (each list already exists above):
         source/dsp/Engine.cpp source/dsp/Presets.cpp
         source/drum/dsp/DrumParams.cpp source/drum/dsp/DrumTables.cpp
@@ -240,6 +247,8 @@ if(FABLE_BUILD_PLUGIN)
         source/PluginEditor.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
         source/ui/Modulation.cpp
         source/ui/NoteSeqView.cpp

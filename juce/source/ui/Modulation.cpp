@@ -3,25 +3,24 @@
 
 namespace fui {
 
-// Resolve a slot field (".src" / ".dst" / ".amt") to its APVTS RangedAudioParameter.
-static juce::RangedAudioParameter* matParam(APVTS& s, int slot, const char* field) {
-    return dynamic_cast<juce::RangedAudioParameter*>(
-        s.getParameter("mat" + juce::String(slot) + field));
+// Resolve a slot field (".src" / ".dst" / ".amt") through the shared source.
+static juce::RangedAudioParameter* matParam(const ParameterSource& s, int slot, const char* field) {
+    return s.parameter("mat" + juce::String(slot) + field);
 }
 
 // Read a slot field as its REAL value (0 if missing).
-static float matReal(APVTS& s, int slot, const char* field) {
+static float matReal(const ParameterSource& s, int slot, const char* field) {
     if (auto* p = matParam(s, slot, field)) return p->convertFrom0to1(p->getValue());
     return 0.0f;
 }
 
 // Write a slot field from a REAL value, notifying the host.
-static void setMatReal(APVTS& s, int slot, const char* field, float real) {
+static void setMatReal(const ParameterSource& s, int slot, const char* field, float real) {
     if (auto* p = matParam(s, slot, field))
         p->setValueNotifyingHost(p->convertTo0to1(real));
 }
 
-int findFreeSlot(APVTS& s) {
+int findFreeSlot(const ParameterSource& s) {
     for (int n = 1; n <= fable::MOD_MATRIX_SIZE; ++n) {
         // free = fully empty (src==0 AND dst==0) so a half-configured ADD-ROUTE
         // row (src set, dst not yet) is never clobbered.
@@ -31,7 +30,7 @@ int findFreeSlot(APVTS& s) {
     return -1;
 }
 
-int addRoute(APVTS& s, int src, int dst, float amt) {
+int addRoute(const ParameterSource& s, int src, int dst, float amt) {
     int slot = findFreeSlot(s);
     if (slot < 0) return -1;
     setMatReal(s, slot, ".src", (float)src);
@@ -40,17 +39,23 @@ int addRoute(APVTS& s, int src, int dst, float amt) {
     return slot;
 }
 
-void clearSlot(APVTS& s, int slot) {
+void clearSlot(const ParameterSource& s, int slot) {
     if (slot < 1 || slot > fable::MOD_MATRIX_SIZE) return;
     setMatReal(s, slot, ".src", 0.0f);
     setMatReal(s, slot, ".dst", 0.0f);
     setMatReal(s, slot, ".amt", 0.0f);
 }
 
-bool isSlotActive(APVTS& s, int slot) {
+bool isSlotActive(const ParameterSource& s, int slot) {
     if (slot < 1 || slot > fable::MOD_MATRIX_SIZE) return false;
     return (int)matReal(s, slot, ".src") != 0 && (int)matReal(s, slot, ".dst") != 0;
 }
+
+static ParameterSource sourceFor(APVTS& s) { return ParameterSource::fromApvts(s); }
+int findFreeSlot(APVTS& s) { return findFreeSlot(sourceFor(s)); }
+int addRoute(APVTS& s, int src, int dst, float amt) { return addRoute(sourceFor(s), src, dst, amt); }
+void clearSlot(APVTS& s, int slot) { clearSlot(sourceFor(s), slot); }
+bool isSlotActive(APVTS& s, int slot) { return isSlotActive(sourceFor(s), slot); }
 
 // ======================= ModSourceChip =======================
 ModSourceChip::ModSourceChip(int src, juce::String label, bool compact)

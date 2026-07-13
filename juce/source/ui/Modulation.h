@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Theme.h"
+#include "ParameterSource.h"
 
 // Shared modulation plumbing for the VST editor: the 16-slot pool helpers (the
 // single home for slot find/add/clear over the APVTS) plus the draggable source
@@ -23,6 +24,10 @@ int  findFreeSlot(APVTS&);                                       // -1 if none f
 int  addRoute(APVTS&, int src, int dst, float amt = MOD_DEFAULT_AMT); // slot or -1
 void clearSlot(APVTS&, int slot);                               // zeroes src, dst, amt
 bool isSlotActive(APVTS&, int slot);
+int  findFreeSlot(const ParameterSource&);                       // hosted/shared form
+int  addRoute(const ParameterSource&, int src, int dst, float amt = MOD_DEFAULT_AMT);
+void clearSlot(const ParameterSource&, int slot);
+bool isSlotActive(const ParameterSource&, int slot);
 
 // ---- draggable modulation source chip --------------------------------------
 // A pill (grip glyph + optional label) tinted with modSourceColour(src). On a

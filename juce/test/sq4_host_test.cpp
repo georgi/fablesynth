@@ -15,6 +15,12 @@
 #include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include "../source/dsp/Presets.h"
+#include "../source/ui/DeviceParameterBank.h"
+#include "../source/ui/DeviceUiModel.h"
+#include "../source/ui/WtUiModel.h"
+#include "../source/drum/ui/DrumUiModel.h"
+#include "../source/bass/ui/BassUiModel.h"
+#include "../source/bass/dsp/BassParams.h"
 
 #include <algorithm>
 #include <array>
@@ -54,6 +60,29 @@ int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui; // message manager for the processor
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
+
+    // ---- shared hosted parameter backing ---------------------------------
+    // A bank uses canonical descriptors, exposes the same parameter gestures
+    // as APVTS-backed controls, and defers real work through its dirty flag.
+    {
+        const auto& catalog = fable::bassParamInfo();
+        fui::DeviceParameterBank bank(catalog.data(), catalog.size());
+        auto source = bank.source();
+        auto* cutoff = source.parameter("flt.cut");
+        check(cutoff != nullptr, "hosted parameter source resolves canonical ids");
+        check(source.info("flt.cut") != nullptr, "hosted parameter source resolves metadata");
+        check(!bank.consumeDirty(), "fresh hosted parameter bank is clean");
+        cutoff->setValueNotifyingHost(0.25f);
+        check(bank.consumeDirty(), "parameter gesture marks hosted bank dirty");
+        check(!bank.consumeDirty(), "dirty flag is consumable");
+
+        std::unordered_map<std::string, float> values {{"flt.cut", 4321.0f}};
+        bank.load(values);
+        auto snap = bank.snapshot();
+        check(std::abs(snap["flt.cut"] - 4321.0f) < 1.0f,
+              "hosted parameter bank loads and snapshots real values", snap["flt.cut"]);
+        check(!bank.consumeDirty(), "programmatic hosted-bank load finishes clean");
+    }
 
     SeqAudioProcessor p;
     p.prepareToPlay(48000.0, 128);
