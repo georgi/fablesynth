@@ -1,4 +1,6 @@
 #include "BassPanels.h"
+#include "../../dsp/Wavetables.h"
+#include "../dsp/BassEngine.h"
 #include "../../ui/Format.h"
 #include <cmath>
 
@@ -66,13 +68,13 @@ static void layoutKnobRow(juce::Rectangle<int> area, const juce::OwnedArray<Knob
     }
 }
 
-static float rawVal(const BassAudioProcessor& proc, const char* id) {
-    auto* v = proc.apvts.getRawParameterValue(id);
-    return v ? v->load() : 0.0f;
+static float rawVal(BassUiModel& proc, const juce::String& id) {
+    auto* v = proc.parameters().parameter(id);
+    return v ? v->convertFrom0to1(v->getValue()) : 0.0f;
 }
 
 // ===================== BassTerrainView =====================
-BassTerrainView::BassTerrainView(BassAudioProcessor& p) : proc(p) {
+BassTerrainView::BassTerrainView(BassUiModel& p) : proc(p) {
     startTimerHz(30); // animation cadence (matches the web rAF throttle)
 }
 
@@ -80,7 +82,7 @@ int BassTerrainView::tableIndex() const { return (int)rawVal(proc, "osc.table");
 float BassTerrainView::knobPos() const { return rawVal(proc, "osc.pos"); }
 
 void BassTerrainView::timerCallback() {
-    const float mp = proc.getVizPos();
+    const float mp = proc.vizPosition();
     const float show = mp >= 0 ? mp : knobPos();
     const int idx = tableIndex();
     if (idx == lastTable && std::abs(show - lastShown) < 0.004f) return;
@@ -108,7 +110,7 @@ void BassTerrainView::paint(juce::Graphics& g) {
     const float* viz = t.viz.data();
     const int N = (int)t.viz.size() / frames;
 
-    const float mp = proc.getVizPos();
+    const float mp = proc.vizPosition();
     const float show = mp >= 0 ? mp : knobPos();
 
     // perspective layout (mirrors the shared WavetableView canvas math)
@@ -184,10 +186,10 @@ static double bassFltMag(int type, double cutoff, double res, double f) {
     return type == 1 ? m * m : m;
 }
 
-BassFilterView::BassFilterView(BassAudioProcessor& p) : proc(p) { startTimerHz(30); }
+BassFilterView::BassFilterView(BassUiModel& p) : proc(p) { startTimerHz(30); }
 
 void BassFilterView::timerCallback() {
-    const float vc = proc.getVizCut();
+    const float vc = proc.vizCutoff();
     const float sum = rawVal(proc, "flt.type") * 1.7f + rawVal(proc, "flt.cut") * 0.001f
                     + rawVal(proc, "flt.res") * 2.3f + (vc > 0 ? vc * 0.003f : 0.0f);
     if (sum != sig) { sig = sum; repaint(); }
@@ -197,7 +199,7 @@ void BassFilterView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     const int type = (int)std::lround(rawVal(proc, "flt.type"));
     const double res = rawVal(proc, "flt.res");
-    const float vizCut = proc.getVizCut();
+    const float vizCut = proc.vizCutoff();
     const double cut = vizCut > 0 ? vizCut : rawVal(proc, "flt.cut");
 
     const float w = (float)getWidth(), h = (float)getHeight(), pad = 6;
@@ -238,7 +240,7 @@ void BassFilterView::paint(juce::Graphics& g) {
 // many seconds so knob moves read as proportional changes.
 static constexpr float kEnvWindowS = 2.5f;
 
-BassEnvView::BassEnvView(BassAudioProcessor& p) : proc(p) { startTimerHz(30); }
+BassEnvView::BassEnvView(BassUiModel& p) : proc(p) { startTimerHz(30); }
 
 float BassEnvView::val(const char* id) const { return rawVal(proc, id); }
 
@@ -335,7 +337,7 @@ static float lfoShapeValue(int shape, float phase) {
     }
 }
 
-BassLfoView::BassLfoView(BassAudioProcessor& p)
+BassLfoView::BassLfoView(BassUiModel& p)
     : proc(p), t0(juce::Time::getMillisecondCounter()) {
     startTimerHz(30);
 }
@@ -350,9 +352,9 @@ void BassLfoView::paint(juce::Graphics& g) {
 
     const int shape = (int)std::lround(rawVal(proc, "lfo.shape"));
     const int rate = (int)std::lround(rawVal(proc, "lfo.rate"));
-    const double bpm = proc.isHostSynced() ? proc.getHostBpm() : rawVal(proc, "seq.bpm");
+    const double bpm = proc.hostSynced() ? proc.hostBpm() : rawVal(proc, "seq.bpm");
     const double cpb = fable::lfoDivFactor(rate);
-    const float ph0 = proc.isSeqPlaying()
+    const float ph0 = proc.sequencerPlaying()
         ? (float)std::fmod(((juce::Time::getMillisecondCounter() - t0) / 1000.0)
                                * (bpm / 60.0) * cpb, 1.0)
         : 0.0f;
@@ -374,16 +376,16 @@ void BassLfoView::paint(juce::Graphics& g) {
 }
 
 // ===================== BassOscPanel =====================
-BassOscPanel::BassOscPanel(BassAudioProcessor& p)
-    : table(p.apvts, "osc.table", Accent::A), wt(p),
-      pos(p.apvts, "osc.pos", Accent::A, [&p] { return p.getVizPos(); }) {
+BassOscPanel::BassOscPanel(BassUiModel& p)
+    : table(p.parameters(), "osc.table", Accent::A), wt(p),
+      pos(p.parameters(), "osc.pos", Accent::A, [&p] { return p.vizPosition(); }) {
     addAndMakeVisible(table);
     addAndMakeVisible(wt);
     addAndMakeVisible(pos);
     const char* ids[] = { "osc.tune", "osc.fine", "osc.unison",
                           "osc.detune", "osc.spread", "osc.level" };
     for (int i = 0; i < 6; ++i)
-        addAndMakeVisible(knobs.add(new Knob(p.apvts, ids[i],
+        addAndMakeVisible(knobs.add(new Knob(p.parameters(), ids[i],
                                              i == 5 ? Knob::Md : Knob::Sm, Accent::A)));
 }
 
@@ -414,10 +416,10 @@ void BassOscPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== BassSubPanel =====================
-BassSubPanel::BassSubPanel(BassAudioProcessor& p)
-    : shape(p.apvts, "sub.shape", Accent::N),
-      oct(p.apvts, "sub.oct", Accent::N),
-      level(p.apvts, "sub.level", Knob::Md, Accent::N) {
+BassSubPanel::BassSubPanel(BassUiModel& p)
+    : shape(p.parameters(), "sub.shape", Accent::N),
+      oct(p.parameters(), "sub.oct", Accent::N),
+      level(p.parameters(), "sub.level", Knob::Md, Accent::N) {
     addAndMakeVisible(shape);
     addAndMakeVisible(oct);
     addAndMakeVisible(level);
@@ -451,13 +453,13 @@ void BassSubPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== BassFilterPanel =====================
-BassFilterPanel::BassFilterPanel(BassAudioProcessor& p)
-    : type(p.apvts, "flt.type", Accent::F), view(p) {
+BassFilterPanel::BassFilterPanel(BassUiModel& p)
+    : type(p.parameters(), "flt.type", Accent::F), view(p) {
     addAndMakeVisible(type);
     addAndMakeVisible(view);
     const char* ids[] = { "flt.cut", "flt.res", "flt.drive", "flt.env", "flt.track" };
     for (int i = 0; i < 5; ++i)
-        addAndMakeVisible(knobs.add(new Knob(p.apvts, ids[i],
+        addAndMakeVisible(knobs.add(new Knob(p.parameters(), ids[i],
                                              i == 0 ? Knob::Md : Knob::Sm, Accent::F)));
 }
 
@@ -484,7 +486,7 @@ void BassFilterPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== BassEnvPanel =====================
-BassEnvPanel::BassEnvPanel(BassAudioProcessor& p) : view(p) {
+BassEnvPanel::BassEnvPanel(BassUiModel& p) : view(p) {
     addAndMakeVisible(view);
     struct Def { const char* id; Accent ac; };
     const Def defs[] = {
@@ -493,7 +495,7 @@ BassEnvPanel::BassEnvPanel(BassAudioProcessor& p) : view(p) {
         { "aenv.sus", Accent::N }, { "aenv.rel", Accent::N },
     };
     for (const auto& d : defs)
-        addAndMakeVisible(knobs.add(new Knob(p.apvts, d.id, Knob::Sm, d.ac)));
+        addAndMakeVisible(knobs.add(new Knob(p.parameters(), d.id, Knob::Sm, d.ac)));
 }
 
 void BassEnvPanel::resized() {
@@ -517,11 +519,11 @@ void BassEnvPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== BassLfoPanel =====================
-BassLfoPanel::BassLfoPanel(BassAudioProcessor& p)
+BassLfoPanel::BassLfoPanel(BassUiModel& p)
     : view(p),
-      rate(p.apvts, "lfo.rate", Accent::A),
-      shape(p.apvts, "lfo.shape", Accent::N),
-      depth(p.apvts, "lfo.depth", Knob::Md, Accent::A) {
+      rate(p.parameters(), "lfo.rate", Accent::A),
+      shape(p.parameters(), "lfo.shape", Accent::N),
+      depth(p.parameters(), "lfo.depth", Knob::Md, Accent::A) {
     addAndMakeVisible(view);
     addAndMakeVisible(rate);
     addAndMakeVisible(shape);
@@ -552,9 +554,9 @@ void BassLfoPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== BassAccentPanel =====================
-BassAccentPanel::BassAccentPanel(BassAudioProcessor& p)
-    : acc(p.apvts, "acc.amt", Knob::Lg, Accent::A),
-      slide(p.apvts, "slide.time", Knob::Md, Accent::N) {
+BassAccentPanel::BassAccentPanel(BassUiModel& p)
+    : acc(p.parameters(), "acc.amt", Knob::Lg, Accent::A),
+      slide(p.parameters(), "slide.time", Knob::Md, Accent::N) {
     addAndMakeVisible(acc);
     addAndMakeVisible(slide);
 }
@@ -601,7 +603,7 @@ static int whiteIndex(int pc) {
     return idx[pc];
 }
 
-BassKeysPanel::BassKeysPanel(BassAudioProcessor& p) : proc(p) { startTimerHz(20); }
+BassKeysPanel::BassKeysPanel(BassUiModel& p) : proc(p) { startTimerHz(20); }
 
 juce::Rectangle<float> BassKeysPanel::keyBounds(int semi) const {
     const auto area = keysArea.toFloat();
@@ -626,11 +628,11 @@ int BassKeysPanel::hitKey(juce::Point<float> pos) const {
 }
 
 int BassKeysPanel::hotKey() const {
-    int semi = proc.getCurrentSemi();
+    int semi = proc.currentSemitone();
     if (semi <= -100) return -100;
     // sequencer semis are root-relative (-12..23): show them an octave up so
     // the lane octave lands mid-keyboard; audition semis are already key ids.
-    int hot = proc.isSeqPlaying() ? semi + 12 : semi;
+    int hot = proc.sequencerPlaying() ? semi + 12 : semi;
     while (hot > fable::BL_KEY_COUNT - 1) hot -= 12;
     while (hot < 0) hot += 12;
     return hot;

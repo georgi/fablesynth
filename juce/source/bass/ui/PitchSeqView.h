@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../BassProcessor.h"
+#include "BassUiModel.h"
 #include "../../ui/Theme.h"
 
 // The 16-step pitch sequencer — port of src/bass/components/PitchSeq.tsx
@@ -12,7 +12,7 @@ namespace fui {
 
 class PitchSeqView : public juce::Component, private juce::Timer {
 public:
-    explicit PitchSeqView(BassAudioProcessor&);
+    explicit PitchSeqView(BassUiModel&);
     ~PitchSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -41,7 +41,7 @@ public:
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     juce::Random rng_;
     bool chaining_ = false;
     bool chainFresh_ = false;               // next chained click replaces the chain

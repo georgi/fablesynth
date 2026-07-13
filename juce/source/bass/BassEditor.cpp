@@ -1,4 +1,40 @@
 #include "BassEditor.h"
+#include "dsp/BassParams.h"
+
+namespace {
+class StandaloneBassUiModel final : public fui::BassUiModel {
+public:
+    explicit StandaloneBassUiModel(BassAudioProcessor& p) : proc(p) {}
+    fui::ParameterSource parameters() override { const auto& i = fable::bassParamInfo(); return fui::ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
+    fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    int currentProgram() const override { return proc.getCurrentProgram(); }
+    int numPrograms() const override { return proc.getNumPrograms(); }
+    juce::String programName(int i) const override { return proc.getProgramName(i); }
+    void selectProgram(int i) override { proc.setCurrentProgram(i); }
+    const fable::GeneratedTable* tableAt(int i) const override { return proc.tableAt(i); }
+    float vizPosition() const override { return proc.getVizPos(); }
+    float vizCutoff() const override { return proc.getVizCut(); }
+    void readScope(float* d, int n) const override { proc.readScope(d, n); }
+    bool midiActive() const override { return proc.getMidiActive(); }
+    bool hostSynced() const override { return proc.isHostSynced(); }
+    double hostBpm() const override { return proc.getHostBpm(); }
+    void noteOn(int s, float v) override { proc.noteOn(s, v); }
+    void noteOff(int s) override { proc.noteOff(s); }
+    int currentSemitone() const override { return proc.getCurrentSemi(); }
+    bool sequencerPlaying() const override { return proc.isSeqPlaying(); }
+    void setSequencerPlaying(bool b) override { proc.setSeqPlaying(b); }
+    int currentStep() const override { return proc.getCurrentStep(); }
+    int currentPattern() const override { return proc.getCurrentPattern(); }
+    int editPattern() const override { return proc.getEditPattern(); }
+    void setEditPattern(int i) override { proc.setEditPattern(i); }
+    fable::BassSeqStep sequenceStep(int p, int s) const override { return proc.getSeqStep(p, s); }
+    void setSequenceStep(int p, int s, const fable::BassSeqStep& v) override { proc.setSeqStep(p, s, v); }
+    const std::vector<int>& chain() const override { return proc.getChain(); }
+    void setChain(std::vector<int> c) override { proc.setChain(std::move(c)); }
+private:
+    BassAudioProcessor& proc;
+};
+}
 
 // Web layout, measured from the running BL-1 app (src/bass/bass.css,
 // #bass-rack at its 1460px max-width; rack-relative px):
@@ -12,16 +48,14 @@
 //   #bl-fxrack        (18, 789) 1424 x 120
 
 // ---- BassRack ----
-BassRack::BassRack(BassAudioProcessor& p)
-    : header(p), osc(p), sub(p), filter(p), env(p), lfo(p), accent(p), keys(p),
-      seq(p), fxRack(p) {
+BassDeviceBody::BassDeviceBody(fui::BassUiModel& p)
+    : osc(p), sub(p), filter(p), env(p), lfo(p), accent(p), keys(p), seq(p), fxRack(p) {
     for (auto* c : std::initializer_list<juce::Component*>{
-             &header, &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
+             &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
         addAndMakeVisible(*c);
 }
 
-void BassRack::resized() {
-    header.setBounds(18, 14, 1424, 80);
+void BassDeviceBody::resized() {
     osc.setBounds(18, 103, 464, 243);
     sub.setBounds(491, 103, 192, 243);
     filter.setBounds(692, 103, 355, 243);
@@ -33,9 +67,18 @@ void BassRack::resized() {
     fxRack.setBounds(18, 789, 1424, 120);
 }
 
+BassRack::BassRack(fui::BassUiModel& p) : header(p), body(p) {
+    addAndMakeVisible(header); addAndMakeVisible(body);
+}
+
+void BassRack::resized() {
+    header.setBounds(18, 14, 1424, 80);
+    body.setBounds(getLocalBounds());
+}
+
 // ---- BassEditor ----
 BassEditor::BassEditor(BassAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), rack(p) {
+    : juce::AudioProcessorEditor(p), model(std::make_unique<StandaloneBassUiModel>(p)), rack(*model) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     rack.setBounds(0, 0, BassRack::LW, BassRack::LH);

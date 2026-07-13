@@ -1,4 +1,5 @@
 #include "PitchSeqView.h"
+#include "../dsp/BassPatches.h"
 #include <cmath>
 
 namespace fui {
@@ -22,7 +23,7 @@ static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 14;
 static constexpr int kSldY = kAccY + kAccH + 4, kSldH = 14;
 static constexpr int kNumY = kSldY + kSldH + 4;
 
-PitchSeqView::PitchSeqView(BassAudioProcessor& p) : proc(p) {
+PitchSeqView::PitchSeqView(BassUiModel& p) : proc(p) {
     setInterceptsMouseClicks(true, false);
     startTimerHz(30);
 }
@@ -79,40 +80,40 @@ juce::Rectangle<int> PitchSeqView::slideBounds(int step) const {
 // ---- store handlers ----------------------------------------------------------
 
 void PitchSeqView::toggleCell(int step, int note) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     if (cur.on && cur.note == note) {              // tap again = rest
         cur.on = false; cur.acc = false; cur.slide = false;
     } else {
         cur.on = true; cur.note = note;
     }
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void PitchSeqView::cycleStepOct(int step) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     cur.oct = cur.oct >= fable::BL_OCT_MAX ? fable::BL_OCT_MIN : cur.oct + 1; // seq.ts cycleOct
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void PitchSeqView::toggleStepAcc(int step) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.acc = !cur.acc;
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void PitchSeqView::toggleStepSlide(int step) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.slide = !cur.slide;
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
@@ -120,7 +121,7 @@ void PitchSeqView::toggleStepSlide(int step) {
 // throws, accents and slides.
 void PitchSeqView::randomize() {
     static const int pool[] = { 0, 0, 0, 3, 5, 7, 10 };
-    const int pat = proc.getEditPattern();
+    const int pat = proc.editPattern();
     for (int i = 0; i < fable::BL_STEPS; ++i) {
         BassSeqStep s;
         s.on = rng_.nextFloat() < 0.6f;
@@ -128,7 +129,7 @@ void PitchSeqView::randomize() {
         s.oct = rng_.nextFloat() < 0.2f ? (rng_.nextFloat() < 0.5f ? -1 : 1) : 0;
         s.acc = s.on && rng_.nextFloat() < 0.25f;
         s.slide = s.on && i > 0 && rng_.nextFloat() < 0.22f;
-        proc.setSeqStep(pat, i, s);
+        proc.setSequenceStep(pat, i, s);
     }
     repaint();
 }
@@ -139,7 +140,7 @@ void PitchSeqView::patternClick(int i) {
         proc.setChain({ i });
     } else {                                     // store.chainClick while chaining
         std::vector<int> chain;
-        if (!chainFresh_) chain = proc.getChain();
+        if (!chainFresh_) chain = proc.chain();
         chain.push_back(i);
         chainFresh_ = false;
         proc.setEditPattern(i);
@@ -155,8 +156,8 @@ void PitchSeqView::setChaining(bool on) {
     } else {                                     // commit (store.setChaining off)
         chaining_ = false;
         chainFresh_ = false;
-        auto chain = proc.getChain();
-        if (chain.empty()) chain.push_back(proc.getEditPattern());
+        auto chain = proc.chain();
+        if (chain.empty()) chain.push_back(proc.editPattern());
         proc.setChain(std::move(chain));
     }
     repaint();
@@ -165,7 +166,7 @@ void PitchSeqView::setChaining(bool on) {
 void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     if (transportBounds().contains(pos)) {       // play/stop
-        proc.setSeqPlaying(!proc.isSeqPlaying());
+        proc.setSequencerPlaying(!proc.sequencerPlaying());
         repaint();
         return;
     }
@@ -191,17 +192,17 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
 void PitchSeqView::timerCallback() {
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = proc.sequencerPlaying();
+    const int edit = proc.editPattern();
     mix(playing ? 1 : 0);
-    mix(playing ? proc.getCurrentStep() : -1);
-    mix(proc.getCurrentPattern());
+    mix(playing ? proc.currentStep() : -1);
+    mix(proc.currentPattern());
     mix(edit); mix(chaining_ ? 1 : 0);
-    const auto& chain = proc.getChain();
+    const auto& chain = proc.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
     for (int s = 0; s < fable::BL_STEPS; ++s) {
-        const BassSeqStep st = proc.getSeqStep(edit, s);
+        const BassSeqStep st = proc.sequenceStep(edit, s);
         mix((st.on ? 1 : 0) | (st.acc ? 2 : 0) | (st.slide ? 4 : 0));
         mix(st.note); mix(st.oct);
     }
@@ -232,8 +233,8 @@ void PitchSeqView::paint(juce::Graphics& g) {
     g.setColour(green.withAlpha(0.16f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 12.0f, 1.0f);
 
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = proc.sequencerPlaying();
+    const int edit = proc.editPattern();
 
     // ---- head: transport (.bl-transport — green-tinted well) ----
     const auto tb = transportBounds().toFloat();
@@ -262,7 +263,7 @@ void PitchSeqView::paint(juce::Graphics& g) {
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
         drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
     juce::String chainLabel("CHAIN ");
-    const auto& chain = proc.getChain();
+    const auto& chain = proc.chain();
     for (size_t k = 0; k < chain.size(); ++k) {
         if (k > 0) chainLabel << ">";
         const int p = chain[k];
@@ -295,9 +296,9 @@ void PitchSeqView::paint(juce::Graphics& g) {
     }
 
     // ---- step columns ----
-    const int curStep = proc.getCurrentStep(), curPat = proc.getCurrentPattern();
+    const int curStep = proc.currentStep(), curPat = proc.currentPattern();
     BassSeqStep steps[fable::BL_STEPS];
-    for (int s = 0; s < fable::BL_STEPS; ++s) steps[s] = proc.getSeqStep(edit, s);
+    for (int s = 0; s < fable::BL_STEPS; ++s) steps[s] = proc.sequenceStep(edit, s);
 
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         const BassSeqStep& st = steps[s];

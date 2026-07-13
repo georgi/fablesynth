@@ -1,4 +1,5 @@
 #include "BassHeader.h"
+#include "../dsp/BassParams.h"
 
 namespace fui {
 
@@ -19,7 +20,7 @@ static const bool g_bassThemeInstalled = [] {
 }();
 
 // ===================== BassScopeView =====================
-BassScopeView::BassScopeView(BassAudioProcessor& p) : proc(p) { startTimerHz(30); }
+BassScopeView::BassScopeView(BassUiModel& p) : proc(p) { startTimerHz(30); }
 void BassScopeView::timerCallback() {
     std::array<float, 2048> buf;
     proc.readScope(buf.data(), (int)buf.size());
@@ -47,17 +48,17 @@ void BassScopeView::paint(juce::Graphics& g) {
 }
 
 // ===================== BassBpmReadout =====================
-BassBpmReadout::BassBpmReadout(BassAudioProcessor& p) : proc(p) {
-    param = dynamic_cast<juce::RangedAudioParameter*>(p.apvts.getParameter("seq.bpm"));
+BassBpmReadout::BassBpmReadout(BassUiModel& p) : proc(p) {
+    param = p.parameters().parameter("seq.bpm");
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     startTimerHz(10);
 }
 int BassBpmReadout::shown() const {
-    if (proc.isHostSynced()) return (int)std::lround(proc.getHostBpm());
+    if (proc.hostSynced()) return (int)std::lround(proc.hostBpm());
     return param ? (int)std::lround(param->convertFrom0to1(param->getValue())) : 0;
 }
 void BassBpmReadout::timerCallback() {
-    const bool sync = proc.isHostSynced();
+    const bool sync = proc.hostSynced();
     const int v = shown();
     if (v != lastShown || sync != lastSync) {
         lastShown = v; lastSync = sync;
@@ -67,12 +68,12 @@ void BassBpmReadout::timerCallback() {
     }
 }
 void BassBpmReadout::nudge(float d) {
-    if (proc.isHostSynced() || !param) return; // host owns the tempo
+    if (proc.hostSynced() || !param) return; // host owns the tempo
     param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, param->getValue() + d));
     repaint();
 }
 void BassBpmReadout::mouseDown(const juce::MouseEvent& e) {
-    if (proc.isHostSynced() || !param) return;
+    if (proc.hostSynced() || !param) return;
     param->beginChangeGesture();
     lastY = e.position.y;
 }
@@ -82,11 +83,11 @@ void BassBpmReadout::mouseDrag(const juce::MouseEvent& e) {
     nudge(dy * (e.mods.isShiftDown() ? 0.0008f : 0.005f));
 }
 void BassBpmReadout::mouseUp(const juce::MouseEvent&) {
-    if (proc.isHostSynced() || !param) return;
+    if (proc.hostSynced() || !param) return;
     param->endChangeGesture();
 }
 void BassBpmReadout::mouseDoubleClick(const juce::MouseEvent&) {
-    if (proc.isHostSynced() || !param) return;
+    if (proc.hostSynced() || !param) return;
     param->setValueNotifyingHost(param->getDefaultValue());
 }
 void BassBpmReadout::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) {
@@ -104,16 +105,16 @@ void BassBpmReadout::paint(juce::Graphics& g) {
 }
 
 // ===================== BassHeader =====================
-BassHeader::BassHeader(BassAudioProcessor& p)
+BassHeader::BassHeader(BassUiModel& p)
     : proc(p), scope(p), bpm(p),
-      swing(p.apvts, "master.swing", Knob::Md, Accent::N),
-      vol(p.apvts, "master.volume", Knob::Md, Accent::N) {
+      swing(p.parameters(), "master.swing", Knob::Md, Accent::N),
+      vol(p.parameters(), "master.volume", Knob::Md, Accent::N) {
     auto styleBtn = [this](juce::TextButton& b, int dir) {
         b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
         b.setColour(juce::TextButton::textColourOffId, col::text);
         b.onClick = [this, dir] {
-            const int n = proc.getNumPrograms();
-            proc.setCurrentProgram(((proc.getCurrentProgram() + dir) % n + n) % n);
+            const int n = proc.numPrograms();
+            proc.selectProgram(((proc.currentProgram() + dir) % n + n) % n);
             repaint(patchNameArea);
         };
         addAndMakeVisible(b);
@@ -128,10 +129,10 @@ BassHeader::BassHeader(BassAudioProcessor& p)
 }
 
 void BassHeader::timerCallback() {
-    if (proc.getMidiActive() != lastMidi) { lastMidi = proc.getMidiActive(); repaint(midiArea); }
-    if (proc.isHostSynced() != lastSync)  { lastSync = proc.isHostSynced();  repaint(syncArea); }
-    if (proc.getCurrentProgram() != lastProgram) {
-        lastProgram = proc.getCurrentProgram();
+    if (proc.midiActive() != lastMidi) { lastMidi = proc.midiActive(); repaint(midiArea); }
+    if (proc.hostSynced() != lastSync)  { lastSync = proc.hostSynced();  repaint(syncArea); }
+    if (proc.currentProgram() != lastProgram) {
+        lastProgram = proc.currentProgram();
         repaint(patchNameArea);
     }
 }
@@ -165,7 +166,7 @@ void BassHeader::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(patchNameArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
     g.setColour(accentA());
     g.setFont(monoFont(10.0f));
-    drawSpaced(g, proc.getProgramName(proc.getCurrentProgram()),
+    drawSpaced(g, proc.programName(proc.currentProgram()),
                patchNameArea.reduced(10, 0), 0.8f, juce::Justification::centred);
 
     // voice-mode hint (.bl-voicemode), two dim lines
@@ -186,15 +187,15 @@ void BassHeader::paint(juce::Graphics& g) {
     // MIDI activity LED (.bl-midi)
     auto midiRow = midiArea;
     auto led = midiRow.removeFromLeft(13).withSizeKeepingCentre(7, 7).toFloat();
-    g.setColour(proc.getMidiActive() ? accentA() : juce::Colour(0xff232936));
+    g.setColour(proc.midiActive() ? accentA() : juce::Colour(0xff232936));
     g.fillEllipse(led);
-    if (proc.getMidiActive()) { g.setColour(accentA().withAlpha(0.5f)); g.fillEllipse(led.expanded(2)); }
+    if (proc.midiActive()) { g.setColour(accentA().withAlpha(0.5f)); g.fillEllipse(led.expanded(2)); }
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
     g.drawText("MIDI", midiRow, juce::Justification::centredLeft);
 
     // SYNC tag under the BPM box — dim normally, lit while the host owns tempo
-    g.setColour(proc.isHostSynced() ? accentA() : col::textDim);
+    g.setColour(proc.hostSynced() ? accentA() : col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SYNC", syncArea, 1.6f, juce::Justification::horizontallyCentred);
 }

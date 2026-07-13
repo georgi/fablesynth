@@ -6,11 +6,11 @@
 namespace fui {
 
 // ===================== Group =====================
-BassFxRack::Group::Group(BassAudioProcessor& p, const char* fx, const char* t,
+BassFxRack::Group::Group(BassUiModel& p, const char* fx, const char* t,
                          const char* n, std::initializer_list<const char*> knobIds)
-    : title(t), note(n), power(p.apvts, juce::String("fx.") + fx + ".on", Accent::N) {
+    : title(t), note(n), power(p.parameters(), juce::String("fx.") + fx + ".on", Accent::N) {
     for (const char* k : knobIds)
-        knobs.add(new Knob(p.apvts, juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
+        knobs.add(new Knob(p.parameters(), juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
 }
 
 void BassFxRack::Group::layout(juce::Rectangle<int> r) {
@@ -56,7 +56,7 @@ void BassFxRack::Group::paintGroup(juce::Graphics& g) {
 }
 
 // ===================== BassFxRack =====================
-BassFxRack::BassFxRack(BassAudioProcessor& p) {
+BassFxRack::BassFxRack(BassUiModel& p) {
     struct Def {
         const char* fx; const char* title; const char* note;
         std::initializer_list<const char*> k;

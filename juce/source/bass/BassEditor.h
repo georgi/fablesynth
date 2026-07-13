@@ -11,16 +11,13 @@
 // The BL-1 rack: all sections laid out at a fixed logical size matching the
 // web CSS grid (src/bass/bass.css). The editor scales it to the window so the
 // layout stays pixel-faithful — same scheme as the WT-1/DR-1 racks.
-class BassRack : public juce::Component {
+class BassDeviceBody : public juce::Component {
 public:
-    static constexpr int LW = 1460, LH = 931;
-    explicit BassRack(BassAudioProcessor&);
+    explicit BassDeviceBody(fui::BassUiModel&);
     void resized() override;
-
-    fui::PitchSeqView& pitchSeq() { return seq; }   // for the host test
+    fui::PitchSeqView& pitchSeq() { return seq; }
 
 private:
-    fui::BassHeader header;
     fui::BassOscPanel osc;
     fui::BassSubPanel sub;
     fui::BassFilterPanel filter;
@@ -30,6 +27,19 @@ private:
     fui::BassKeysPanel keys;
     fui::PitchSeqView seq;
     fui::BassFxRack fxRack;
+};
+
+class BassRack : public juce::Component {
+public:
+    static constexpr int LW = 1460, LH = 931;
+    explicit BassRack(fui::BassUiModel&);
+    void resized() override;
+
+    fui::PitchSeqView& pitchSeq() { return body.pitchSeq(); }   // for the host test
+
+private:
+    fui::BassHeader header;
+    BassDeviceBody body;
 };
 
 class BassEditor : public juce::AudioProcessorEditor {
@@ -44,6 +54,7 @@ public:
 
 private:
     fui::DarkLNF lnf;
+    std::unique_ptr<fui::BassUiModel> model;
     BassRack rack;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassEditor)
 };
