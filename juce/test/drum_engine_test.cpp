@@ -179,8 +179,13 @@ int main() {
     auto dt = generateDrumTables();
     check(dt.size() == 4, "4 drum tables");
     check(generateSampledDrumTables().size() == 5, "5 sampled drum tables");
-    check(drumOneShots().size() == 5 && drumOneShots()[0].length == 22051
-          && drumOneShots()[4].length == 110251, "5 raw 808 one-shot samples");
+    check(drumOneShots().size() == 32 && drumOneShots()[0].length == 22051
+          && drumOneShots()[4].length == 110251
+          && std::string(drumOneShots()[5].name) == "808BD"
+          && std::string(drumOneShots()[15].name) == "808HT"
+          && std::string(drumOneShots()[16].name) == "UZU BD1"
+          && std::string(drumOneShots()[31].name) == "UZU MOD",
+          "32 raw one-shots in stable 808 then UZU order");
     check(allTables().size() == 15, "15 tables total (4 drum + 6 synth + 5 sampled)");
     check(dt[0].name == "THUD" && dt[1].name == "CRACK" && dt[2].name == "TINE" && dt[3].name == "GRIT", "names/order");
     // Web-reference overall peaks (vitest run of src/drum/engine/drumtables.ts):
@@ -742,11 +747,23 @@ int main() {
     printf("\n== 6. DrumKits ==\n");
     {
         const auto& kits = factoryKits();
-        check(kits.size() == 12, "12 factory kits");
+        check(kits.size() == 13, "13 factory kits");
         check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
               "original kit names/order stay stable");
-        check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM",
+        check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM" && kits[12].name == "UZU",
               "expanded kit bank names/order");
+        auto classic = applyKit(kits[3]);
+        check(classic[dpid(0, DP_OSCB_TABLE)] == 5
+              && classic[dpid(8, DP_OSCB_TABLE)] == 13
+              && classic[dpid(10, DP_OSCB_TABLE)] == 15
+              && classic[dpid(14, DP_OSCB_TABLE)] == 8,
+              "808 CLASSIC maps new kick, tom, and percussion samples");
+        auto uzu = applyKit(kits[12]);
+        check(uzu[dpid(0, DP_OSCB_TABLE)] == 16
+              && uzu[dpid(15, DP_OSCB_TABLE)] == 31
+              && uzu[dpid(0, DP_OSCA_LEVEL)] == 0
+              && std::abs(uzu[dpid(0, DP_OSCB_LEVEL)] - 0.92f) < 1.0e-6f,
+              "UZU factory kit maps all 16 imported one-shots");
 
         // Every override pid resolves and its value is within [min,max].
         bool allResolve = true, allInRange = true;

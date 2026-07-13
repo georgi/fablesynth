@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
     render(40, -1, 0); // decay (program 0 below restores fx.reverb.on)
 
     // ---- 5. sequencer with TR-VOID (program 0) ----
-    check(proc.getNumPrograms() == 12, "12 kit programs", proc.getNumPrograms());
+    check(proc.getNumPrograms() == 13, "13 kit programs", proc.getNumPrograms());
     check(proc.getProgramName(0) == "TR-VOID", "program 0 is TR-VOID");
     const auto patchRevisionBeforeKit = proc.getPatchContextRevision();
     proc.setCurrentProgram(0);

@@ -147,8 +147,9 @@ The web build:
 
 - **16 pads**, each with a **wavetable oscillator** (4 drum tables — THUD,
   CRACK, TINE, GRIT — plus WT-1's six procedural tables, with the same POS
-  morphing and up to 7-voice unison), a tunable **808 one-shot sample player**
-  (snare, clap, closed/open hat, cymbal), and a **noise** layer with color control.
+  morphing and up to 7-voice unison), a tunable **32-voice one-shot sample
+  player** with the CC0 808 and public-domain UZU banks, and a **noise** layer
+  with color control.
 - **Per-pad shaping** — pitch envelope (±48 st), AHD amp envelope with
   adjustable curve, a switchable filter (LP12/LP24/BP/HP/Notch) with drive, and
   a **4-slot mod matrix** (MOD ENV / VELO / RAND → wavetable pos, pitch, cutoff,
@@ -161,7 +162,8 @@ The web build:
 - **Choke groups** (4) so open/closed hats cut each other, and per-pad output
   routing (MAIN + 4 aux buses).
 - **Master FX** — drive, bus compressor, chorus, delay, reverb.
-- **Kits** — 3 factory kits (TR-VOID, ROOM ONE, BITCRUSH); saved kits persist in
+- **Kits** — 13 factory kits, including sample-based 808 CLASSIC and UZU;
+  saved kits persist in
   `localStorage`, including patterns, chains and any dropped-in wavetables.
 - **Play it** — pads map to `Z X C V / A S D F / Q W E R / 1 2 3 4` (bottom row
   = pads 1–4), `Esc` stops, and MIDI notes 36–51 (C1 up) trigger pads 1–16.

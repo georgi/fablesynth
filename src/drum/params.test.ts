@@ -21,6 +21,13 @@ describe('drum params', () => {
     }
     // spot-check ranges off the spec
     expect(DRUM_PARAMS['pad0.oscA.tune']).toMatchObject({ min: -48, max: 48, curve: 'int' });
+    expect(DRUM_SAMPLE_NAMES).toEqual([
+      '808SD', '808CP', '808CH', '808OH', '808CY',
+      '808BD', '808RS', '808CB', '808MA', '808CL',
+      '808LC', '808MC', '808HC', '808LT', '808MT', '808HT',
+      'UZU BD1', 'UZU BD2', 'UZU SD', 'UZU CP', 'UZU RIM', 'UZU HH', 'UZU OH', 'UZU RD',
+      'UZU LT', 'UZU MT', 'UZU HT', 'UZU CR', 'UZU PERC', 'UZU SH', 'UZU TB', 'UZU MOD',
+    ]);
     expect(DRUM_PARAMS['pad0.oscB.table']).toMatchObject({ options: DRUM_SAMPLE_NAMES, def: 0 });
     expect(DRUM_PARAMS['pad0.oscB.pos']).toMatchObject({ label: 'START', min: 0, max: 1 });
     expect(DRUM_PARAMS['pad0.oscB.detune']).toMatchObject({ label: 'END', def: 1 });

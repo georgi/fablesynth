@@ -23,7 +23,7 @@ constexpr int DR_STEPS = 16;
 
 // ---- option label tables (mirror src/drum/params.ts) ----
 extern const std::vector<std::string> DRUM_TABLE_NAMES;   // THUD CRACK TINE GRIT PRIME BLOOM PULSE VOX CHIME GLITCH
-extern const std::vector<std::string> DRUM_SAMPLE_NAMES;  // 808SD 808CP 808CH 808OH 808CY
+extern const std::vector<std::string> DRUM_SAMPLE_NAMES;  // 16 CC0 TR-808 + 16 Unlicense UZU one-shots
 extern const std::vector<std::string> DRUM_FILTER_TYPES;  // LP 12, LP 24, BP 12, HP 12, NOTCH
 extern const std::vector<std::string> DMOD_SOURCES;       // —, MOD ENV, VELO, RAND
 extern const std::vector<std::string> DMOD_DESTS;         // —, A POS, B POS, LEVEL, CUTOFF, PITCH, A FINE, B FINE, NOISE LVL, RES

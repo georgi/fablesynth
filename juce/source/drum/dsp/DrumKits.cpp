@@ -1,5 +1,5 @@
 // Transcription of src/drum/kits.ts. Derived kits share the same base helpers
-// and rounding/clamps as the web so the 12-program banks stay in lockstep.
+// and rounding/clamps as the web so the factory program banks stay in lockstep.
 #include "DrumKits.h"
 
 #include <algorithm>
@@ -149,15 +149,32 @@ Overrides bitcrushParams() {
 Overrides classic808Params() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 124); set(p, "master.swing", 0.28f); set(p, "fx.reverb.mix", 0.09f);
-    set(p, padPid(0, "oscA.tune"), -30); set(p, padPid(0, "penv.amt"), 30);
-    set(p, padPid(0, "aenv.dec"), 0.52f); set(p, padPid(1, "oscA.tune"), -22);
-    for (const auto [pad, slot] : { std::pair<int, int>{2, 0}, {3, 1}, {5, 2}, {6, 3}, {7, 4}, {11, 4} }) {
-        set(p, padPid(pad, "oscA.level"), 0);
-        set(p, padPid(pad, "oscB.table"), (float)slot);
+    static const int slots[DR_NPADS] = { 5, 5, 0, 1, 6, 2, 3, 4, 13, 14, 15, 4, 7, 9, 8, 12 };
+    static const float decays[DR_NPADS] = { .8f, .55f, .5f, .7f, .2f, .1f, .6f, 2, .7f, .65f, .6f, 2, .8f, .25f, .15f, .6f };
+    for (int pad = 0; pad < DR_NPADS; ++pad) {
+        set(p, padPid(pad, "oscA.level"), 0.0f);
+        set(p, padPid(pad, "oscB.table"), (float)slots[pad]);
         set(p, padPid(pad, "oscB.level"), 0.9f);
+        set(p, padPid(pad, "aenv.dec"), decays[pad]);
     }
-    set(p, padPid(2, "noise.level"), 0.12f); set(p, padPid(2, "aenv.dec"), 0.42f);
-    set(p, padPid(3, "aenv.dec"), 0.65f);
+    set(p, padPid(1, "oscB.tune"), 3.0f);
+    set(p, padPid(2, "noise.level"), 0.12f);
+    return p;
+}
+
+Overrides uzuParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 128); set(p, "master.swing", 0.18f); set(p, "fx.reverb.mix", 0.12f);
+    static const float decays[DR_NPADS] = { .4f, 2.4f, .6f, .6f, .2f, .45f, 1.8f, 1.1f, 1, .6f, .55f, 1, .35f, .1f, .6f, .2f };
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.level"), 0.0f);
+        set(p, padPid(i, "oscB.table"), (float)(16 + i));
+        set(p, padPid(i, "oscB.level"), 0.92f);
+        set(p, padPid(i, "noise.level"), 0.0f);
+        set(p, padPid(i, "ring.mix"), 0.0f);
+        set(p, padPid(i, "penv.amt"), 0.0f);
+        set(p, padPid(i, "aenv.dec"), decays[i]);
+    }
     return p;
 }
 
@@ -289,6 +306,7 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "MINIMAL", minimalParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "BROKEN TOYS", brokenToysParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "LIVE ROOM", liveRoomParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "UZU", uzuParams(), kPadNames, patterns, { 0 } });
         return out;
     }();
     return kits;

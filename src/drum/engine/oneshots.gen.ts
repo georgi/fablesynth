@@ -4,6 +4,33 @@ import sample1Url from '../../../assets/drum-samples/808/808CP_CP.WAV?url';
 import sample2Url from '../../../assets/drum-samples/808/808CH_CH.WAV?url';
 import sample3Url from '../../../assets/drum-samples/808/808OH_OH50.WAV?url';
 import sample4Url from '../../../assets/drum-samples/808/808CY_CY5050.WAV?url';
+import sample5Url from '../../../assets/drum-samples/808/808BD_BD5050.WAV?url';
+import sample6Url from '../../../assets/drum-samples/808/808RS_RS.WAV?url';
+import sample7Url from '../../../assets/drum-samples/808/808CB_CB.WAV?url';
+import sample8Url from '../../../assets/drum-samples/808/808MA_MA.WAV?url';
+import sample9Url from '../../../assets/drum-samples/808/808CL_CL.WAV?url';
+import sample10Url from '../../../assets/drum-samples/808/808LC_LC50.WAV?url';
+import sample11Url from '../../../assets/drum-samples/808/808MC_MC50.WAV?url';
+import sample12Url from '../../../assets/drum-samples/808/808HC_HC50.WAV?url';
+import sample13Url from '../../../assets/drum-samples/808/808LT_LT50.WAV?url';
+import sample14Url from '../../../assets/drum-samples/808/808MT_MT50.WAV?url';
+import sample15Url from '../../../assets/drum-samples/808/808HT_HT50.WAV?url';
+import sample16Url from '../../../assets/drum-samples/uzu/UZU_BD1.wav?url';
+import sample17Url from '../../../assets/drum-samples/uzu/UZU_BD2.wav?url';
+import sample18Url from '../../../assets/drum-samples/uzu/UZU_SD.wav?url';
+import sample19Url from '../../../assets/drum-samples/uzu/UZU_CP.wav?url';
+import sample20Url from '../../../assets/drum-samples/uzu/UZU_RIM.wav?url';
+import sample21Url from '../../../assets/drum-samples/uzu/UZU_HH.wav?url';
+import sample22Url from '../../../assets/drum-samples/uzu/UZU_OH.wav?url';
+import sample23Url from '../../../assets/drum-samples/uzu/UZU_RD.wav?url';
+import sample24Url from '../../../assets/drum-samples/uzu/UZU_LT.wav?url';
+import sample25Url from '../../../assets/drum-samples/uzu/UZU_MT.wav?url';
+import sample26Url from '../../../assets/drum-samples/uzu/UZU_HT.wav?url';
+import sample27Url from '../../../assets/drum-samples/uzu/UZU_CR.wav?url';
+import sample28Url from '../../../assets/drum-samples/uzu/UZU_PERC.wav?url';
+import sample29Url from '../../../assets/drum-samples/uzu/UZU_SH.wav?url';
+import sample30Url from '../../../assets/drum-samples/uzu/UZU_TB.wav?url';
+import sample31Url from '../../../assets/drum-samples/uzu/UZU_MOD.wav?url';
 
 export interface DrumOneShot { name: string; sampleRate: number; data: Float32Array }
 
@@ -13,6 +40,33 @@ const RAW = [
   { name: '808CH', url: sample2Url },
   { name: '808OH', url: sample3Url },
   { name: '808CY', url: sample4Url },
+  { name: '808BD', url: sample5Url },
+  { name: '808RS', url: sample6Url },
+  { name: '808CB', url: sample7Url },
+  { name: '808MA', url: sample8Url },
+  { name: '808CL', url: sample9Url },
+  { name: '808LC', url: sample10Url },
+  { name: '808MC', url: sample11Url },
+  { name: '808HC', url: sample12Url },
+  { name: '808LT', url: sample13Url },
+  { name: '808MT', url: sample14Url },
+  { name: '808HT', url: sample15Url },
+  { name: 'UZU BD1', url: sample16Url },
+  { name: 'UZU BD2', url: sample17Url },
+  { name: 'UZU SD', url: sample18Url },
+  { name: 'UZU CP', url: sample19Url },
+  { name: 'UZU RIM', url: sample20Url },
+  { name: 'UZU HH', url: sample21Url },
+  { name: 'UZU OH', url: sample22Url },
+  { name: 'UZU RD', url: sample23Url },
+  { name: 'UZU LT', url: sample24Url },
+  { name: 'UZU MT', url: sample25Url },
+  { name: 'UZU HT', url: sample26Url },
+  { name: 'UZU CR', url: sample27Url },
+  { name: 'UZU PERC', url: sample28Url },
+  { name: 'UZU SH', url: sample29Url },
+  { name: 'UZU TB', url: sample30Url },
+  { name: 'UZU MOD', url: sample31Url },
 ] as const;
 
 function decodeWavPcm16(buf: ArrayBuffer): { sampleRate: number; data: Float32Array } {

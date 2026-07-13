@@ -16,7 +16,13 @@ export const DRUM_TABLE_NAMES = [
   'THUD', 'CRACK', 'TINE', 'GRIT', 'PRIME', 'BLOOM', 'PULSE', 'VOX', 'CHIME', 'GLITCH',
   '808SD', '808CP', '808CH', '808OH', '808CY',
 ];
-export const DRUM_SAMPLE_NAMES = ['808SD', '808CP', '808CH', '808OH', '808CY'];
+export const DRUM_SAMPLE_NAMES = [
+  '808SD', '808CP', '808CH', '808OH', '808CY',
+  '808BD', '808RS', '808CB', '808MA', '808CL',
+  '808LC', '808MC', '808HC', '808LT', '808MT', '808HT',
+  'UZU BD1', 'UZU BD2', 'UZU SD', 'UZU CP', 'UZU RIM', 'UZU HH', 'UZU OH', 'UZU RD',
+  'UZU LT', 'UZU MT', 'UZU HT', 'UZU CR', 'UZU PERC', 'UZU SH', 'UZU TB', 'UZU MOD',
+];
 export const DRUM_FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH'];
 export const NOISE_COLORS = ['WHITE'];
 // Mod sources are per-pad: MOD ENV (per-pad decay env), VELO (hit velocity ×

@@ -20,10 +20,10 @@ if (typeof localStorage === 'undefined') {
 describe('kits', () => {
   beforeEach(() => localStorage.clear());
 
-  it('ships 12 distinct factory kits; TR-VOID keeps the mockup names', () => {
+  it('ships 13 distinct factory kits; TR-VOID keeps the mockup names', () => {
     expect(FACTORY_KITS.map((k) => k.name)).toEqual([
       'TR-VOID', 'ROOM ONE', 'BITCRUSH', '808 CLASSIC', 'DEEP DUB', 'DUST HOUSE',
-      'WAREHOUSE', 'METAL WORK', 'TAPE KIT', 'MINIMAL', 'BROKEN TOYS', 'LIVE ROOM',
+      'WAREHOUSE', 'METAL WORK', 'TAPE KIT', 'MINIMAL', 'BROKEN TOYS', 'LIVE ROOM', 'UZU',
     ]);
     const tv = FACTORY_KITS[0];
     expect(tv.padNames).toHaveLength(PAD_COUNT);
@@ -47,6 +47,18 @@ describe('kits', () => {
     expect(state.params['pad13.aenv.dec']).toBeCloseTo(0.20);
     expect([8, 9, 10].map((i) => state.params[pad(i, 'oscA.tune')])).toEqual([-19, -12, -5]);
     expect([8, 9, 10].map((i) => state.params[pad(i, 'aenv.dec')])).toEqual([0.28, 0.24, 0.20]);
+
+    const classic = kitToState(FACTORY_KITS[3]);
+    expect([0, 2, 4, 8, 9, 10, 12, 13, 14].map((i) => classic.params[pad(i, 'oscB.table')]))
+      .toEqual([5, 0, 6, 13, 14, 15, 7, 9, 8]);
+    expect(classic.params[pad(0, 'oscA.level')]).toBe(0);
+    expect(classic.params[pad(0, 'oscB.level')]).toBeCloseTo(0.9);
+
+    const uzu = kitToState(FACTORY_KITS[12]);
+    expect(Array.from({ length: PAD_COUNT }, (_, i) => uzu.params[pad(i, 'oscB.table')]))
+      .toEqual(Array.from({ length: PAD_COUNT }, (_, i) => 16 + i));
+    expect(uzu.params[pad(0, 'oscA.level')]).toBe(0);
+    expect(uzu.params[pad(0, 'oscB.level')]).toBeCloseTo(0.92);
   });
 
   it('every factory kit param id exists in DRUM_PARAMS and is in range', () => {

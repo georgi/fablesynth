@@ -126,18 +126,34 @@ function classic808Params(): Partial<ParamValues> {
   params['seq.bpm'] = 124;
   params['master.swing'] = 0.28;
   params['fx.reverb.mix'] = 0.09;
-  params[pad(0, 'oscA.tune')] = -30;
-  params[pad(0, 'penv.amt')] = 30;
-  params[pad(0, 'aenv.dec')] = 0.52;
-  params[pad(1, 'oscA.tune')] = -22;
-  for (const [padI, slot] of [[2, 0], [3, 1], [5, 2], [6, 3], [7, 4], [11, 4]]) {
+  const slots = [5, 5, 0, 1, 6, 2, 3, 4, 13, 14, 15, 4, 7, 9, 8, 12];
+  const decays = [0.8, 0.55, 0.5, 0.7, 0.2, 0.1, 0.6, 2, 0.7, 0.65, 0.6, 2, 0.8, 0.25, 0.15, 0.6];
+  slots.forEach((slot, padI) => {
     params[pad(padI, 'oscA.level')] = 0;
     params[pad(padI, 'oscB.table')] = slot;
     params[pad(padI, 'oscB.level')] = 0.9;
-  }
+    params[pad(padI, 'aenv.dec')] = decays[padI];
+  });
+  params[pad(1, 'oscB.tune')] = 3;
   params[pad(2, 'noise.level')] = 0.12;
-  params[pad(2, 'aenv.dec')] = 0.42;
-  params[pad(3, 'aenv.dec')] = 0.65;
+  return params;
+}
+
+function uzuParams(): Partial<ParamValues> {
+  const params = { ...trVoidParams() };
+  params['seq.bpm'] = 128;
+  params['master.swing'] = 0.18;
+  params['fx.reverb.mix'] = 0.12;
+  const decays = [0.4, 2.4, 0.6, 0.6, 0.2, 0.45, 1.8, 1.1, 1, 0.6, 0.55, 1, 0.35, 0.1, 0.6, 0.2];
+  for (let i = 0; i < PAD_COUNT; i++) {
+    params[pad(i, 'oscA.level')] = 0;
+    params[pad(i, 'oscB.table')] = 16 + i;
+    params[pad(i, 'oscB.level')] = 0.92;
+    params[pad(i, 'noise.level')] = 0;
+    params[pad(i, 'ring.mix')] = 0;
+    params[pad(i, 'penv.amt')] = 0;
+    params[pad(i, 'aenv.dec')] = decays[i];
+  }
   return params;
 }
 
@@ -295,6 +311,7 @@ export const FACTORY_KITS: Kit[] = [
   { name: 'MINIMAL', params: minimalParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
   { name: 'BROKEN TOYS', params: brokenToysParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
   { name: 'LIVE ROOM', params: liveRoomParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
+  { name: 'UZU', params: uzuParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
 ];
 
 export function kitToState(kit: Kit): {
