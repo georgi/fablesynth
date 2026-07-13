@@ -47,6 +47,8 @@ void addPad(std::vector<ParamInfo>& v, int i) {
 
     v.push_back({b + DP_NOISE_COLOR, p + "noise.color", "COLOR",  -1, 1,      0,      Curve::Lin, Kind::Float, nullptr});
     v.push_back({b + DP_NOISE_LEVEL, p + "noise.level", "LVL",     0, 1,      0,      Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_RING_FREQ,   p + "ring.freq",   "RING Hz", 20, 12000, 1200,   Curve::Log, Kind::Float, nullptr});
+    v.push_back({b + DP_RING_MIX,    p + "ring.mix",    "RING",     0, 1,      0,      Curve::Lin, Kind::Float, nullptr});
     v.push_back({b + DP_PENV_AMT,    p + "penv.amt",    "AMT",   -48, 48,     0,      Curve::Int, Kind::Float, nullptr});
     v.push_back({b + DP_PENV_DEC,    p + "penv.dec",    "DEC", 0.005f, 2,     0.06f,  Curve::Log, Kind::Float, nullptr});
     v.push_back({b + DP_AENV_ATT,    p + "aenv.att",    "ATT",0.0005f, 0.5f,  0.001f, Curve::Log, Kind::Float, nullptr});

@@ -180,6 +180,10 @@ void HostedBassModel::reloadParameters() {
     parameterBank_.load(proc_.trackParameterValues(kTrack));
 }
 
+void HostedBassModel::reloadPatchFromSession() {
+    reloadParameters();
+}
+
 bool HostedBassModel::validScene() const {
     return scene_ >= 0 && scene_ < (int)proc_.conductor().session().scenes.size();
 }

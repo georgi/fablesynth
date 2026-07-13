@@ -153,8 +153,8 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 48, "48 per-pad fields");
-    check(DR_NUM_PARAMS == 788, "788 total params");
+    check(DPAD_NFIELDS == 50, "50 per-pad fields");
+    check(DR_NUM_PARAMS == 820, "820 total params");
     const auto& info = drumParamInfo();
     check((int)info.size() == DR_NUM_PARAMS, "info covers all params");
     check(info[dpid(0, DP_OSCA_TABLE)].pid == "pad0.oscA.table", "pad0 table pid");
@@ -254,6 +254,22 @@ int main() {
         for (int i = 0; i < 12000; i++) { double d = (double)m0[i] - m1[i]; dsum += d * d; }
         check(std::sqrt(dsum / 12000) > 1e-4, "mod env -> cutoff moves filter",
               std::to_string(std::sqrt(dsum / 12000)));
+
+        // fixed-Hz ring carrier creates a substantially different, finite
+        // sideband spectrum while the default MIX=0 path remains dry.
+        DrumEngine dryRing, wetRing;
+        dryRing.prepare(48000); wetRing.prepare(48000);
+        dryRing.setTables(allTables()); wetRing.setTables(allTables());
+        wetRing.setParam(dpid(0, DP_RING_FREQ), 731.0f);
+        wetRing.setParam(dpid(0, DP_RING_MIX), 1.0f);
+        dryRing.trigger(0, 1.0f); wetRing.trigger(0, 1.0f);
+        auto dryMetal = renderMain(dryRing, 12000);
+        auto wetMetal = renderMain(wetRing, 12000);
+        double ringDelta = 0;
+        for (int i = 0; i < 12000; ++i)
+            ringDelta += std::abs((double)dryMetal[(size_t)i] - wetMetal[(size_t)i]);
+        check(finite(wetMetal) && peak(wetMetal) < 2.0f && ringDelta / 12000 > 0.005,
+              "ring mod creates finite metallic sidebands", std::to_string(ringDelta / 12000));
 
         // choke: pads 4+5 in group 1; triggering 5 silences 4's long tail
         eng.panic();
@@ -670,9 +686,11 @@ int main() {
     printf("\n== 6. DrumKits ==\n");
     {
         const auto& kits = factoryKits();
-        check(kits.size() == 3, "3 factory kits");
+        check(kits.size() == 12, "12 factory kits");
         check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
-              "kit names/order");
+              "original kit names/order stay stable");
+        check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM",
+              "expanded kit bank names/order");
 
         // Every override pid resolves and its value is within [min,max].
         bool allResolve = true, allInRange = true;
@@ -711,6 +729,12 @@ int main() {
         check(tv[dpid(5, DP_CHOKE)] == 1.0f && tv[dpid(6, DP_CHOKE)] == 1.0f &&
               tv[dpid(5, DP_FLT_ON)] == 1.0f && tv[dpid(6, DP_FLT_ON)] == 1.0f,
               "TR-VOID hats choke 1 + flt.on");
+        check(tv[dpid(5, DP_RING_MIX)] == 0.18f && tv[dpid(6, DP_RING_MIX)] == 0.28f &&
+              tv[dpid(7, DP_RING_MIX)] == 0.46f && tv[dpid(11, DP_RING_MIX)] == 0.62f,
+              "TR-VOID hats/ride/crash use metallic ring carriers");
+        check(tv[dpid(12, DP_RING_FREQ)] == 731.0f && tv[dpid(12, DP_RING_MIX)] == 0.78f &&
+              tv[dpid(13, DP_RING_FREQ)] == 3271.0f && tv[dpid(13, DP_RING_MIX)] == 0.88f,
+              "TR-VOID PERC 1/2 use bell/cymbal ring carriers");
         // Non-overridden params keep defaults.
         check(tv[dpid(1, DP_PAN)] == defaultDrumParams()[dpid(1, DP_PAN)],
               "applyKit keeps defaults elsewhere");
@@ -737,6 +761,18 @@ int main() {
             if (bc[dpid(i, DP_OSCA_TABLE)] != 3.0f) allGrit = false;
         check(allGrit && bc[DG_SEQ_BPM] == 140.0f, "BITCRUSH oscA.table 3 on all pads, bpm 140");
 
+        // Every authored kit must produce a finite, audible kick when loaded.
+        // This catches valid-but-useless combinations such as a silent table,
+        // closed filter, or zero level that range validation cannot detect.
+        for (const auto& kit : kits) {
+            DrumEngine smoke; smoke.prepare(48000); smoke.setTables(allTables());
+            smoke.setParams(applyKit(kit));
+            smoke.trigger(0, 1.0f);
+            const auto hit = renderMain(smoke, 12000);
+            check(finite(hit) && rms(hit) > 1e-5 && peak(hit) < 4.0f,
+                  kit.name + " kick is finite, audible, and bounded");
+        }
+
         // End to end: TR-VOID into a DrumEngine, one bar of audio on MAIN.
         DrumEngine ke; ke.prepare(48000); ke.setTables(allTables());
         ke.setParams(tv);
@@ -752,11 +788,12 @@ int main() {
     printf("\n== 7. DrumPatches ==\n");
     {
         const auto& bank = factoryPatches();
-        // Bank parity with src/drum/patches.ts FACTORY_PATCHES (18 entries).
-        check(bank.size() == 18, "18 factory patches");
+        // Bank parity with src/drum/patches.ts FACTORY_PATCHES (20 entries).
+        check(bank.size() == 20, "20 factory patches");
         check(bank[0].name == "BD DEEP" && bank[3].name == "BD 808" &&
               bank[8].name == "HH 808" && bank[11].name == "CY 808" &&
-              bank[17].name == "PC GLITCH", "patch names/order match web");
+              bank[16].name == "PC BELL" && bank[17].name == "PC CYMBAL" &&
+              bank[19].name == "PC GLITCH", "patch names/order match web");
 
         // Every override id resolves as a pad-relative field (never out/choke)
         // and its value is within [min,max].
@@ -798,14 +835,16 @@ int main() {
         const auto& hh = bank[8];   // HH 808
         check(val(hh, "oscA.table", -1) == 12.0f && val(hh, "aenv.dec", 0) == 0.06f &&
               val(hh, "flt.on", 0) == 1.0f && val(hh, "flt.type", -1) == 3.0f &&
-              val(hh, "flt.cut", 0) == 7200.0f && val(hh, "lvl", 0) == 0.7f &&
-              hh.params.size() == 6,
+              val(hh, "flt.cut", 0) == 7200.0f && val(hh, "ring.freq", 0) == 6389.0f &&
+              val(hh, "ring.mix", 0) == 0.18f && val(hh, "lvl", 0) == 0.7f &&
+              hh.params.size() == 8,
               "HH 808 values match web");
         const auto& cy = bank[11];  // CY 808
         check(val(cy, "oscA.table", -1) == 14.0f && val(cy, "aenv.dec", 0) == 1.7f &&
               val(cy, "aenv.curve", 0) == 0.25f && val(cy, "flt.on", 0) == 1.0f &&
               val(cy, "flt.type", -1) == 3.0f && val(cy, "flt.cut", 0) == 3800.0f &&
-              val(cy, "lvl", 0) == 0.72f && cy.params.size() == 7,
+              val(cy, "ring.freq", 0) == 2741.0f && val(cy, "ring.mix", 0) == 0.62f &&
+              val(cy, "lvl", 0) == 0.72f && cy.params.size() == 9,
               "CY 808 values match web");
 
         // applyPatchToPad(3, BD DEEP): every included pad3 field gets defaults

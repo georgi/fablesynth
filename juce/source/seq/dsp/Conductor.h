@@ -23,6 +23,7 @@
 
 #include "SeqModel.h"
 #include "SeqProtocol.h"
+#include "ClipLibrary.h"
 #include <unordered_map>
 #include <vector>
 
@@ -55,6 +56,14 @@ public:
     void togglePassThrough(int s, int t);
     void updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int bars);
     void createClip(int s, int t);
+    // Replace or create exactly one scene cell from a compatible library
+    // entry. A live/pending target is updated in place (phase preserved).
+    // Note clips are transposed and octave-folded into the packed format's
+    // -12..+23 range.
+    // Returns false without changing the session when validation,
+    // compatibility, bounds, or transposition fails.
+    bool loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
+                         int transposeSemitones = 0);
     void setTrackPatch(int t, PatchRef patch);
     void toggleSceneMute(int s);
     void toggleTrackMute(int t);

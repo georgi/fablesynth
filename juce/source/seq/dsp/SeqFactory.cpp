@@ -3,6 +3,7 @@
 // DR-1 pad map (TR-VOID kit): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
 // 6 OH HAT · 8..10 TOMS · 12/13 PERC.
 #include "SeqFactory.h"
+#include "ClipLibrary.gen.h"
 
 #include <algorithm>
 #include <tuple>
@@ -284,6 +285,101 @@ SessionData factorySession() {
     };
 
     return s;
+}
+
+const std::vector<SessionPreset>& factorySessionLibrary() {
+    static const std::vector<SessionPreset> presets = [] {
+        auto make = [](const char* name, const char* family, const char* variation,
+                       int energy, std::initializer_list<const char*> tags,
+                       std::array<int, 4> programs, int variationIndex) {
+            SessionPreset preset;
+            preset.name = name;
+            preset.family = family;
+            preset.variation = variation;
+            preset.energy = energy;
+            for (auto* tag : tags) preset.tags.emplace_back(tag);
+            preset.session = factorySession();
+            preset.session.name = name;
+            preset.session.bpm = 96.0 + energy * 7.0 + variationIndex;
+            preset.session.swing = family == std::string("HOUSE") ? 0.12
+                                 : family == std::string("LO-FI") ? 0.18 : 0.0;
+            for (size_t t = 0; t < programs.size(); ++t)
+                preset.session.tracks[t].patch = PatchRef { true, programs[t], {} };
+
+            // Build a six-scene arrangement from the shared factory clip bank.
+            // Prefer the session's family, but deliberately fall back to the
+            // complete machine pool so every preset remains fully populated.
+            const std::string wanted = family == std::string("NEON") ? "techno"
+                : family == std::string("ACID") ? "acid"
+                : family == std::string("AMBIENT") ? "ambient"
+                : family == std::string("HOUSE") ? "house"
+                : family == std::string("LO-FI") ? "lo-fi" : "cinematic";
+            const auto& clips = factoryClipLibrary();
+            for (size_t s = 0; s < preset.session.scenes.size(); ++s) {
+                auto& sceneData = preset.session.scenes[s];
+                for (size_t t = 0; t < preset.session.tracks.size(); ++t) {
+                    const auto machine = preset.session.tracks[t].machine;
+                    std::vector<const ClipLibraryEntry*> candidates;
+                    for (const auto& clip : clips)
+                        if (clip.machine == machine && clip.family == wanted)
+                            candidates.push_back(&clip);
+                    if (candidates.empty())
+                        for (const auto& clip : clips)
+                            if (clip.machine == machine) candidates.push_back(&clip);
+                    const size_t pick = (s + (size_t)variationIndex * 3 + t * 2)
+                                      % candidates.size();
+                    const auto& clip = *candidates[pick];
+                    sceneData.clips[t] = ClipData { clip.name, clip.bars, clip.bytes };
+                    sceneData.hasClip[t] = true;
+                }
+            }
+            return preset;
+        };
+
+        // Program order is DR-1, BL-1, WT-1 lead, WT-1 pad. The two WT slots
+        // are voiced as complementary roles rather than interchangeable picks.
+        auto library = std::vector<SessionPreset> {
+            // NEON / SYNTHWAVE
+            make("NEON TALE",    "NEON", "ORIGINAL", 3, { "bright", "balanced", "wide" }, { 0, 0, 3, 11 }, 0),
+            make("NEON CHASE",   "NEON", "CHASE",    5, { "bright", "driving", "wide" }, { 3, 2, 4, 11 }, 1),
+            make("GLASS CIRCUIT", "NEON", "GLASS",   2, { "clean", "glassy", "sparse" }, { 9, 9, 3, 6 }, 2),
+            make("AFTERGLOW",    "NEON", "SOFT",     2, { "warm", "soft", "wide" }, { 5, 1, 5, 1 }, 3),
+
+            // ACID / WAREHOUSE
+            make("WAREHOUSE RAW", "ACID", "RAW",     5, { "hard", "dark", "driving" }, { 6, 4, 12, 17 }, 0),
+            make("ACID FLASH",    "ACID", "FLASH",   4, { "acid", "bright", "punchy" }, { 3, 0, 14, 4 }, 1),
+            make("STEEL PULSE",   "ACID", "METAL",   4, { "metallic", "tight", "industrial" }, { 7, 6, 13, 9 }, 2),
+            make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 2, 2, 19, 11 }, 3),
+
+            // AMBIENT / DEEP
+            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 4, 3, 5, 17 }, 0),
+            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 11, 11, 3, 1 }, 1),
+            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 9, 11, 6, 17 }, 2),
+            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 1, 7, 15, 1 }, 3),
+
+            // HOUSE / CLUB
+            make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 5, 5, 14, 1 }, 0),
+            make("MIDNIGHT FLOOR", "HOUSE", "NIGHT",  4, { "club", "round", "wide" }, { 3, 1, 13, 11 }, 1),
+            make("TAPE DISCO",    "HOUSE", "TAPE",    3, { "tape", "soft", "groovy" }, { 8, 7, 19, 1 }, 2),
+            make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 9, 11, 14, 4 }, 3),
+
+            // LO-FI / RETRO
+            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 8, 7, 16, 17 }, 0),
+            make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 5, 5, 3, 1 }, 1),
+            make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 10, 9, 16, 15 }, 2),
+            make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 2, 10, 5, 17 }, 3),
+
+            // CINEMATIC / EXPERIMENTAL
+            make("CHROME CATHEDRAL", "CINEMATIC", "CATHEDRAL", 3, { "large", "metallic", "ceremonial" }, { 11, 3, 6, 1 }, 0),
+            make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 7, 10, 12, 17 }, 1),
+            make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 0, 8, 9, 17 }, 2),
+            make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 6, 8, 19, 11 }, 3),
+        };
+        // Preserve the hand-authored cross-platform factory session exactly.
+        library.front().session = factorySession();
+        return library;
+    }();
+    return presets;
 }
 
 } // namespace fable

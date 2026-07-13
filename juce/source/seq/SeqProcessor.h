@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "dsp/Conductor.h"
+#include "dsp/ClipLibrary.h"
 #include "dsp/SeqModel.h"
 #include "../dsp/Engine.h"
 #include "../dsp/Fx.h"
@@ -75,10 +76,10 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 6.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return "NEON TALE"; }
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int) override;
+    const juce::String getProgramName(int) override;
     void changeProgramName(int, const juce::String&) override {}
 
     void getStateInformation(juce::MemoryBlock& destData) override;
@@ -112,6 +113,19 @@ public:
     void setTrackInlineParams(int t, const std::unordered_map<std::string, float>& values);
     void setTrackFactoryPatch(int t, int program);
     int trackFactoryProgram(int t) const;
+
+    // Top-level factory library: each program is a complete SQ-4 session,
+    // including clips, device patches, tempo, quantize, and mixer state.
+    int currentSessionPreset() const;
+    void applySessionPreset(int index);
+
+    // Clip-library load boundary used by the future browser. Both variants
+    // preserve the track patch and replace/create only (scene, track).
+    bool loadClipLibraryEntry(int scene, int track,
+                              const fable::ClipLibraryEntry& entry,
+                              int transposeSemitones = 0);
+    bool loadFactoryClip(int scene, int track, int libraryIndex,
+                         int transposeSemitones = 0);
 
     int deviceNumTables(int t) const;
     const fable::GeneratedTable* deviceTableAt(int t, int index) const;

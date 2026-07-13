@@ -55,6 +55,7 @@ class PadVoice {
     this.oA = makeOscState(); this.oB = makeOscState();
     this.f = makeFilterState();
     this.noiseY = 0;
+    this.ringPhase = 0.25;
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
   }
 
@@ -65,6 +66,7 @@ class PadVoice {
     this.oA.posSm = -1; this.oB.posSm = -1;
     this.f.svf.fill(0); this.f.cutSm = 0; this.f.satXL = 0; this.f.satXR = 0;
     this.noiseY = 0;
+    this.ringPhase = 0.25;
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
   }
 
@@ -523,6 +525,25 @@ class DrumProcessor extends AudioWorkletProcessor {
         tmpL[i] += s; tmpR[i] += s;
       }
       v.noiseY = y;
+    }
+
+    // Sine ring modulator. A fixed-Hz carrier deliberately breaks the
+    // oscillator's harmonic series into inharmonic sidebands—the useful bit
+    // for bells, struck metal and synthetic cymbals. MIX=0 is a true bypass.
+    const ringMix = Math.min(1, Math.max(0, p[pre + 'ring.mix']));
+    if (ringMix > 1e-6) {
+      const ringFreq = Math.min(sampleRate * 0.45, Math.max(20, p[pre + 'ring.freq']));
+      const ringInc = ringFreq / sampleRate;
+      let phase = v.ringPhase;
+      for (let i = 0; i < n; i++) {
+        const carrier = Math.sin(phase * Math.PI * 2) * Math.SQRT2;
+        const gain = 1 + ringMix * (carrier - 1);
+        tmpL[i] *= gain;
+        tmpR[i] *= gain;
+        phase += ringInc;
+        if (phase >= 1) phase -= 1;
+      }
+      v.ringPhase = phase;
     }
 
     let srcL = tmpL, srcR = tmpR;

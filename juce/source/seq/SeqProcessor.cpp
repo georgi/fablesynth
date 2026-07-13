@@ -1,6 +1,7 @@
 #include "SeqProcessor.h"
 #include "SeqEditor.h"
 #include "SessionCodec.h"
+#include "dsp/ClipLibrary.gen.h"
 #include "dsp/SeqFactory.h"
 
 #include "../dsp/Params.h"
@@ -184,6 +185,25 @@ SeqAudioProcessor::SeqAudioProcessor()
 
 SeqAudioProcessor::~SeqAudioProcessor() { stopTimer(); }
 
+int SeqAudioProcessor::getNumPrograms() {
+    return (int)factorySessionLibrary().size();
+}
+
+int SeqAudioProcessor::getCurrentProgram() {
+    return juce::jmax(0, currentSessionPreset());
+}
+
+void SeqAudioProcessor::setCurrentProgram(int index) {
+    applySessionPreset(index);
+}
+
+const juce::String SeqAudioProcessor::getProgramName(int index) {
+    const auto& sessions = factorySessionLibrary();
+    return index >= 0 && index < (int)sessions.size()
+        ? juce::String(sessions[(size_t)index].name)
+        : juce::String();
+}
+
 bool SeqAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     auto s = layouts.getMainOutputChannelSet();
     return s == juce::AudioChannelSet::stereo() || s == juce::AudioChannelSet::mono();
@@ -279,9 +299,39 @@ void SeqAudioProcessor::setTrackFactoryPatch(int t, int program) {
 }
 
 int SeqAudioProcessor::trackFactoryProgram(int t) const {
-    if (t < 0 || t >= kTracks || !conductor_) return 0;
+    if (t < 0 || t >= kTracks || !conductor_) return -1;
     const auto& patch = conductor_->session().tracks[(size_t)t].patch;
-    return patch.factory ? patch.index : 0;
+    return patch.factory ? patch.index : -1;
+}
+
+int SeqAudioProcessor::currentSessionPreset() const {
+    const auto& session = conductor_ ? conductor_->session() : initialSession_;
+    const auto current = fable::sessionToJson(session);
+    const auto& library = factorySessionLibrary();
+    for (int i = 0; i < (int)library.size(); ++i) {
+        if (current == fable::sessionToJson(library[(size_t)i].session)) return i;
+    }
+    return -1;
+}
+
+void SeqAudioProcessor::applySessionPreset(int index) {
+    const auto& library = factorySessionLibrary();
+    if (index < 0 || index >= (int)library.size()) return;
+    applySessionJson(fable::sessionToJson(library[(size_t)index].session));
+}
+
+bool SeqAudioProcessor::loadClipLibraryEntry(
+    int scene, int track, const ClipLibraryEntry& entry, int transposeSemitones) {
+    return conductor_ != nullptr
+        && conductor_->loadLibraryClip(scene, track, entry, transposeSemitones);
+}
+
+bool SeqAudioProcessor::loadFactoryClip(
+    int scene, int track, int libraryIndex, int transposeSemitones) {
+    const auto& library = factoryClipLibrary();
+    if (libraryIndex < 0 || libraryIndex >= (int)library.size()) return false;
+    return loadClipLibraryEntry(scene, track, library[(size_t)libraryIndex],
+                                transposeSemitones);
 }
 
 int SeqAudioProcessor::deviceNumTables(int t) const {

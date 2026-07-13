@@ -343,7 +343,9 @@
   padding-top: 8px;
   flex-wrap: nowrap;
   justify-content: space-evenly;
+  gap: 0;
 }
+.dr-noise-knobs .knob { min-width: 0; }
 
 .pad-grid {
   display: grid;

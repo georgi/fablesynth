@@ -20,6 +20,7 @@ public:
     void setTargetScene(int scene);
     int targetScene() const { return scene_; }
     void flushPendingPatch();
+    void reloadPatchFromSession();
 
     ParameterSource parameters() override;
     DeviceUiCapabilities capabilities() const override;

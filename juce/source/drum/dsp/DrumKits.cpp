@@ -1,6 +1,5 @@
-// Transcription of src/drum/kits.ts:18-113. ROOM ONE and BITCRUSH derive from
-// trVoidParams() exactly like the web (same rounding/clamps), so the three
-// kits stay lockstep with the reference by construction.
+// Transcription of src/drum/kits.ts. Derived kits share the same base helpers
+// and rounding/clamps as the web so the 12-program banks stay in lockstep.
 #include "DrumKits.h"
 
 #include <algorithm>
@@ -83,6 +82,21 @@ Overrides trVoidParams() {
     set(p, padPid(2, "noise.level"), 0.5f);
     set(p, padPid(2, "noise.color"), 0.3f);
     set(p, padPid(3, "noise.level"), 0.35f);
+    // Metallic pads: unrelated fixed-Hz carriers prevent their sidebands from
+    // collapsing back onto the oscillator's harmonic series.
+    set(p, padPid(5, "ring.freq"), 6389); set(p, padPid(5, "ring.mix"), 0.18f);
+    set(p, padPid(6, "ring.freq"), 5197); set(p, padPid(6, "ring.mix"), 0.28f);
+    set(p, padPid(7, "ring.freq"), 1667); set(p, padPid(7, "ring.mix"), 0.46f);
+    set(p, padPid(11, "ring.freq"), 2741); set(p, padPid(11, "ring.mix"), 0.62f);
+    set(p, padPid(12, "oscA.table"), 8); set(p, padPid(12, "oscA.tune"), -5);
+    set(p, padPid(12, "ring.freq"), 731); set(p, padPid(12, "ring.mix"), 0.78f);
+    set(p, padPid(12, "aenv.dec"), 1.1f); set(p, padPid(12, "aenv.curve"), 0.22f);
+    set(p, padPid(13, "oscA.table"), 3); set(p, padPid(13, "oscA.pos"), 0.38f);
+    set(p, padPid(13, "oscA.tune"), 17); set(p, padPid(13, "noise.level"), 0.18f);
+    set(p, padPid(13, "noise.color"), 0.75f); set(p, padPid(13, "ring.freq"), 3271);
+    set(p, padPid(13, "ring.mix"), 0.88f); set(p, padPid(13, "aenv.dec"), 1.45f);
+    set(p, padPid(13, "flt.on"), 1); set(p, padPid(13, "flt.type"), 3);
+    set(p, padPid(13, "flt.cut"), 3600);
     for (int i : { 5, 6 }) {
         set(p, padPid(i, "choke"), 1.0f);
         set(p, padPid(i, "flt.on"), 1.0f);
@@ -132,6 +146,128 @@ Overrides bitcrushParams() {
     return p;
 }
 
+Overrides classic808Params() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 124); set(p, "master.swing", 0.28f); set(p, "fx.reverb.mix", 0.09f);
+    set(p, padPid(0, "oscA.tune"), -18); set(p, padPid(0, "penv.amt"), 30);
+    set(p, padPid(0, "aenv.dec"), 0.52f); set(p, padPid(1, "oscA.tune"), -10);
+    set(p, padPid(2, "oscA.table"), 10); set(p, padPid(2, "noise.level"), 0.18f);
+    set(p, padPid(3, "oscA.table"), 11); set(p, padPid(3, "noise.level"), 0.12f);
+    set(p, padPid(5, "oscA.table"), 12); set(p, padPid(6, "oscA.table"), 13);
+    set(p, padPid(11, "oscA.table"), 14); set(p, padPid(7, "oscA.table"), 14);
+    return p;
+}
+
+Overrides deepDubParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 112); set(p, "master.swing", 0.38f);
+    set(p, "fx.delay.on", 1); set(p, "fx.delay.time", 0.48f);
+    set(p, "fx.delay.fb", 0.55f); set(p, "fx.delay.mix", 0.18f);
+    set(p, "fx.reverb.size", 0.72f); set(p, "fx.reverb.mix", 0.24f);
+    for (int i : { 0, 1, 8, 9, 10 }) {
+        set(p, padPid(i, "oscA.tune"), get(p, padPid(i, "oscA.tune"), 0) - 5);
+        set(p, padPid(i, "aenv.dec"), std::min(4.0f, get(p, padPid(i, "aenv.dec"), 0.24f) * 1.65f));
+    }
+    for (int i : { 5, 6 }) set(p, padPid(i, "flt.cut"), i == 5 ? 4300 : 3200);
+    return p;
+}
+
+Overrides dustHouseParams() {
+    Overrides p = roomOneParams();
+    set(p, "seq.bpm", 122); set(p, "master.swing", 0.46f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.28f);
+    set(p, "fx.drive.mix", 0.48f); set(p, "fx.reverb.mix", 0.2f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "noise.level"), i < 4 ? 0.12f : 0.04f);
+        set(p, padPid(i, "oscA.pos"), 0.18f + (float)(i % 3) * 0.08f);
+        set(p, padPid(i, "aenv.curve"), 0.58f);
+    }
+    return p;
+}
+
+Overrides warehouseParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 136); set(p, "master.swing", 0.14f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.72f);
+    set(p, "fx.drive.mix", 0.76f); set(p, "fx.comp.thr", -20);
+    set(p, "fx.comp.gain", 3); set(p, "fx.reverb.mix", 0.1f);
+    for (int i : { 0, 1, 2, 3, 8, 9, 10 }) {
+        set(p, padPid(i, "flt.on"), 1); set(p, padPid(i, "flt.type"), 1);
+        set(p, padPid(i, "flt.cut"), i < 2 ? 1800 : 5200);
+        set(p, padPid(i, "flt.drive"), 0.52f);
+    }
+    return p;
+}
+
+Overrides metalWorkParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 132); set(p, "master.swing", 0.2f);
+    set(p, "fx.chorus.on", 1); set(p, "fx.chorus.rate", 1.8f);
+    set(p, "fx.chorus.depth", 0.52f); set(p, "fx.chorus.mix", 0.24f);
+    set(p, "fx.reverb.size", 0.8f); set(p, "fx.reverb.mix", 0.28f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.table"), i % 3 == 0 ? 8 : 2);
+        set(p, padPid(i, "oscA.tune"), -12 + (i % 6) * 7);
+        set(p, padPid(i, "oscA.fine"), i % 2 ? 11 : -9);
+        set(p, padPid(i, "aenv.dec"), std::min(2.2f, 0.12f + (float)(i % 5) * 0.16f));
+    }
+    return p;
+}
+
+Overrides tapeKitParams() {
+    Overrides p = roomOneParams();
+    set(p, "seq.bpm", 98); set(p, "master.swing", 0.52f);
+    set(p, "fx.chorus.on", 1); set(p, "fx.chorus.rate", 0.22f);
+    set(p, "fx.chorus.depth", 0.24f); set(p, "fx.chorus.mix", 0.18f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.18f); set(p, "fx.drive.mix", 0.32f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.fine"), (i % 5) * 3 - 6);
+        set(p, padPid(i, "flt.on"), 1); set(p, padPid(i, "flt.type"), 0);
+        set(p, padPid(i, "flt.cut"), i < 4 ? 4800 : 7600);
+    }
+    return p;
+}
+
+Overrides minimalParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 128); set(p, "master.swing", 0.12f);
+    set(p, "fx.reverb.mix", 0.07f); set(p, "fx.comp.gain", 2);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "aenv.dec"),
+            std::max(0.025f, std::min(0.22f, get(p, padPid(i, "aenv.dec"), 0.24f) * 0.52f)));
+        const bool main = i == 0 || i == 2 || i == 5 || i == 6;
+        set(p, padPid(i, "lvl"), main ? 0.82f : 0.5f);
+    }
+    return p;
+}
+
+Overrides brokenToysParams() {
+    Overrides p = bitcrushParams();
+    set(p, "seq.bpm", 150); set(p, "master.swing", 0.34f);
+    set(p, "fx.delay.time", 0.11f); set(p, "fx.delay.fb", 0.64f); set(p, "fx.delay.mix", 0.3f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.table"), i % 2 ? 9 : 7);
+        set(p, padPid(i, "oscA.tune"), -24 + (i * 11) % 47);
+        set(p, padPid(i, "pan"), (float)((i % 5) - 2) * 0.28f);
+        set(p, padPid(i, "mod1.src"), 3); set(p, padPid(i, "mod1.dst"), 1);
+        set(p, padPid(i, "mod1.amt"), 0.22f);
+    }
+    return p;
+}
+
+Overrides liveRoomParams() {
+    Overrides p = classic808Params();
+    set(p, "seq.bpm", 110); set(p, "master.swing", 0.2f);
+    set(p, "fx.reverb.size", 0.88f); set(p, "fx.reverb.mix", 0.36f);
+    set(p, "fx.comp.thr", -12); set(p, "fx.comp.gain", 2);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "aenv.hold"), i < 4 ? 0.04f : 0.02f);
+        set(p, padPid(i, "aenv.dec"), std::min(4.0f, get(p, padPid(i, "aenv.dec"), 0.24f) * 1.35f));
+        set(p, padPid(i, "v2l"), 0.82f);
+    }
+    return p;
+}
+
 } // namespace
 
 const std::vector<DrumKit>& factoryKits() {
@@ -141,6 +277,15 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "TR-VOID", trVoidParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "ROOM ONE", roomOneParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "BITCRUSH", bitcrushParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "808 CLASSIC", classic808Params(), kPadNames, patterns, { 0 } });
+        out.push_back({ "DEEP DUB", deepDubParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "DUST HOUSE", dustHouseParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "WAREHOUSE", warehouseParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "METAL WORK", metalWorkParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "TAPE KIT", tapeKitParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "MINIMAL", minimalParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "BROKEN TOYS", brokenToysParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "LIVE ROOM", liveRoomParams(), kPadNames, patterns, { 0 } });
         return out;
     }();
     return kits;

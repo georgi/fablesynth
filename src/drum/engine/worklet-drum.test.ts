@@ -86,6 +86,24 @@ describe('drum voice', () => {
     const bright = peak(mod.render(20).L);
     expect(Math.abs(bright - dull)).toBeGreaterThan(0.001);
   });
+
+  it('ring mod creates an inharmonic metallic spectrum and mix=0 is bypassed', () => {
+    const plainParams = defaultDrumParams();
+    const plain = boot(plainParams); plain.send({ t: 'trig', pad: 0, v: 1 });
+    const dry = plain.render(20).L;
+
+    const ringParams = defaultDrumParams();
+    ringParams[pad(0, 'ring.freq')] = 731;
+    ringParams[pad(0, 'ring.mix')] = 1;
+    const ring = boot(ringParams); ring.send({ t: 'trig', pad: 0, v: 1 });
+    const wet = ring.render(20).L;
+
+    let delta = 0;
+    for (let i = 0; i < dry.length; i++) delta += Math.abs(dry[i] - wet[i]);
+    expect(delta / dry.length).toBeGreaterThan(0.005);
+    expect(finite(wet)).toBe(true);
+    expect(peak(wet)).toBeLessThan(2);
+  });
 });
 
 describe('drum sequencer', () => {

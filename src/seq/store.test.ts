@@ -8,6 +8,10 @@ import { STOP } from './model';
 import { barFrames } from './protocol';
 import type { SeqRig } from './rig';
 import { clipPattern, resetSeqStore, useSeqStore } from './store';
+import { decodeClipLibrary } from './clipLibrary';
+import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
+
+const library = decodeClipLibrary({ v: 1, clips: FACTORY_CLIP_LIBRARY }).clips;
 
 class FakeDevice implements SeqDevice {
   clips: Array<{ bars: number; atFrame: number; bytes: number }> = [];
@@ -316,6 +320,32 @@ describe('clip editing', () => {
     st().setTrackPatch(0, { kind: 'inline', data: { params: { x: 1 } } });
     expect(st().session.tracks[0].patch).toEqual({ kind: 'inline', data: { params: { x: 1 } } });
     expect(st().session.tracks[1].patch.kind).toBe('factory');
+  });
+
+  it('loads a compatible library clip into only the target cell and preserves the patch', () => {
+    const entry = library.find((clip) => clip.machine === 'DR1')!;
+    const patch = st().session.tracks[0].patch;
+    const other = st().session.scenes[1].clips[0];
+    expect(st().loadLibraryClip(0, 0, entry)).toBe(true);
+    expect(st().session.scenes[0].clips[0]?.name).toBe(entry.name);
+    expect(clipPattern(st().session, 0, 0)).toEqual(entry.pattern);
+    expect(st().session.scenes[1].clips[0]).toBe(other);
+    expect(st().session.tracks[0].patch).toBe(patch);
+    expect(st().clipLoadRevision).toBe(1);
+  });
+
+  it('rejects a library clip for another machine without changing the session', () => {
+    const entry = library.find((clip) => clip.machine === 'BL1')!;
+    const session = st().session;
+    expect(st().loadLibraryClip(0, 0, entry)).toBe(false);
+    expect(st().session).toBe(session);
+  });
+
+  it('hot-swaps a library load when the target is live or pending', () => {
+    const entry = library.find((clip) => clip.machine === 'DR1')!;
+    st().launch(0, 0);
+    expect(st().loadLibraryClip(0, 0, entry)).toBe(true);
+    expect(rig.dev(0).updates).toEqual([{ bars: entry.bars, bytes: entry.pattern.length }]);
   });
 });
 

@@ -61,20 +61,21 @@ const std::vector<PadPatch>& factoryPatches() {
         // Hats — sampled 808 hats, high-passed to sit above the kit.
         fp("HH 808", {
             { "oscA.table", 12 }, { "aenv.dec", 0.06f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 7200 }, { "lvl", 0.7f },
+            { "flt.cut", 7200 }, { "ring.freq", 6389 }, { "ring.mix", 0.18f }, { "lvl", 0.7f },
         }),
         fp("HH TIGHT", {
             { "oscA.table", 12 }, { "aenv.dec", 0.035f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 9200 }, { "lvl", 0.65f },
+            { "flt.cut", 9200 }, { "ring.freq", 7919 }, { "ring.mix", 0.22f }, { "lvl", 0.65f },
         }),
         fp("OH 808", {
             { "oscA.table", 13 }, { "aenv.dec", 0.55f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 5200 }, { "lvl", 0.7f },
+            { "flt.cut", 5200 }, { "ring.freq", 5197 }, { "ring.mix", 0.28f }, { "lvl", 0.7f },
         }),
         // Cymbal — long sizzle.
         fp("CY 808", {
             { "oscA.table", 14 }, { "aenv.dec", 1.7f }, { "aenv.curve", 0.25f }, { "flt.on", 1 },
-            { "flt.type", 3 }, { "flt.cut", 3800 }, { "lvl", 0.72f },
+            { "flt.type", 3 }, { "flt.cut", 3800 }, { "ring.freq", 2741 }, { "ring.mix", 0.62f },
+            { "lvl", 0.72f },
         }),
         // Toms — THUD tuned across the range with a modest pitch sweep.
         fp("TM LO", {
@@ -89,10 +90,23 @@ const std::vector<PadPatch>& factoryPatches() {
             { "oscA.table", 0 }, { "oscA.tune", 2 }, { "penv.amt", 8 }, { "penv.dec", 0.05f },
             { "aenv.dec", 0.3f }, { "lvl", 0.85f },
         }),
-        // Perc / vox / glitch flavors from the procedural tables.
+        // Perc / vox / glitch flavors. Fixed-Hz ring modulation supplies the
+        // inharmonic sidebands that the pitched procedural tables lack.
         fp("PC TINE", {
-            { "oscA.table", 2 }, { "oscA.tune", 12 }, { "oscA.fine", -5 }, { "aenv.dec", 0.16f },
-            { "lvl", 0.75f },
+            { "oscA.table", 2 }, { "oscA.tune", 7 }, { "oscA.fine", -5 }, { "ring.freq", 1187 },
+            { "ring.mix", 0.62f }, { "aenv.dec", 0.42f }, { "aenv.curve", 0.28f }, { "lvl", 0.75f },
+        }),
+        fp("PC BELL", {
+            { "oscA.table", 8 }, { "oscA.tune", -5 }, { "oscA.level", 0.7f }, { "ring.freq", 731 },
+            { "ring.mix", 0.78f }, { "aenv.att", 0.0005f }, { "aenv.hold", 0.018f },
+            { "aenv.dec", 1.35f }, { "aenv.curve", 0.2f }, { "flt.on", 1 }, { "flt.type", 2 },
+            { "flt.cut", 2400 }, { "flt.res", 0.35f }, { "lvl", 0.78f },
+        }),
+        fp("PC CYMBAL", {
+            { "oscA.table", 3 }, { "oscA.pos", 0.38f }, { "oscA.tune", 17 }, { "noise.level", 0.22f },
+            { "noise.color", 0.75f }, { "ring.freq", 3271 }, { "ring.mix", 0.88f },
+            { "aenv.hold", 0.014f }, { "aenv.dec", 1.6f }, { "aenv.curve", 0.24f },
+            { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 3600 }, { "lvl", 0.72f },
         }),
         fp("PC VOX", {
             { "oscA.table", 7 }, { "oscA.tune", -5 }, { "aenv.dec", 0.48f }, { "aenv.curve", 0.3f },

@@ -31,10 +31,22 @@ void HostedDrumModel::setTargetScene(int scene) {
 }
 
 void HostedDrumModel::flushPendingPatch() {
+    flushPendingPatch(true);
+}
+
+void HostedDrumModel::flushPendingPatch(bool invalidatePadPatchSelection) {
     if (bank_.consumeDirty()) {
         proc_.setTrackInlineParams(0, bank_.snapshot());
-        ++patchRevision_;
+        // Knob edits make a named pad patch custom, but applying that named
+        // patch must not immediately clear its own readout in SelBarView.
+        if (invalidatePadPatchSelection) ++patchRevision_;
     }
+}
+
+void HostedDrumModel::reloadPatchFromSession() {
+    bank_.load(proc_.trackParameterValues(0));
+    ++patchRevision_;
+    selectionChanges_.sendChangeMessage();
 }
 
 void HostedDrumModel::selectPad(int pad) {
@@ -57,7 +69,7 @@ void HostedDrumModel::applyFactoryPadPatch(int index) {
         if (auto* p = bank_.parameter(info.pid))
             p->setValueNotifyingHost(p->convertTo0to1(value.second));
     }
-    flushPendingPatch();
+    flushPendingPatch(false);
 }
 
 int HostedDrumModel::currentProgram() const { return proc_.trackFactoryProgram(0); }
@@ -68,9 +80,7 @@ juce::String HostedDrumModel::programName(int i) const {
 void HostedDrumModel::selectProgram(int i) {
     if (i < 0 || i >= numPrograms()) return;
     proc_.setTrackFactoryPatch(0, i);
-    bank_.load(proc_.trackParameterValues(0));
-    ++patchRevision_;
-    selectionChanges_.sendChangeMessage();
+    reloadPatchFromSession();
 }
 
 int HostedDrumModel::numTables() const { return proc_.deviceNumTables(0); }

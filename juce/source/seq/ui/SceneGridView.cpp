@@ -103,9 +103,14 @@ void SceneGridView::resized() {
 
 void SceneGridView::layoutRow(int s) {
     const int y = singleRow_ ? 0 : s * 105;
-    sceneCardR[s] = { 0, y, 218, 96 };
+    const int rowX = singleRow_ ? 73 : 0;
+    const int sceneWidth = singleRow_ ? 200 : 218;
+    const int cellWidth = singleRow_
+        ? juce::jmax(1, (getWidth() - rowX - sceneWidth - 4 * 9) / kTracks)
+        : 292;
+    sceneCardR[s] = { rowX, y, sceneWidth, 96 };
     for (int t = 0; t < kTracks; ++t)
-        cellR[s][t] = { 218 + 9 + t * (292 + 9), y, 292, 96 };
+        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 96 };
 
     // scene card: [launch] [id: num+name / status] [M] [S], then dots row.
     auto r = sceneCardR[s].reduced(10, 8);
@@ -126,11 +131,16 @@ void SceneGridView::layoutRow(int s) {
 }
 
 void SceneGridView::layoutRail() {
-    railArea = { 0, 100, getWidth(), 24 };
-    auto r = railArea;
-    const int w = juce::jmin(48, r.getWidth() / kScenes);
-    for (int s = 0; s < kScenes; ++s)
-        railChip[s] = r.removeFromLeft(w).reduced(2);
+    railArea = { 0, 0, 64, 96 };
+    constexpr int chipWidth = 28, chipHeight = 28, gap = 4;
+    const int top = (railArea.getHeight() - (3 * chipHeight + 2 * gap)) / 2;
+    for (int s = 0; s < kScenes; ++s) {
+        const int column = s % 2;
+        const int row = s / 2;
+        railChip[s] = { railArea.getX() + column * (chipWidth + gap),
+                        railArea.getY() + top + row * (chipHeight + gap),
+                        chipWidth, chipHeight };
+    }
 }
 
 // ---- paint -------------------------------------------------------------------

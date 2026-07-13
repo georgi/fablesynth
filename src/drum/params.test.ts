@@ -23,6 +23,8 @@ describe('drum params', () => {
     expect(DRUM_PARAMS['pad0.oscA.tune']).toMatchObject({ min: -48, max: 48, curve: 'int' });
     expect(DRUM_PARAMS['pad0.aenv.dec']).toMatchObject({ min: 0.005, max: 4, curve: 'log' });
     expect(DRUM_PARAMS['pad0.flt.cut']).toMatchObject({ min: 20, max: 20000, curve: 'log', def: 1800 });
+    expect(DRUM_PARAMS['pad0.ring.freq']).toMatchObject({ min: 20, max: 12000, curve: 'log', def: 1200 });
+    expect(DRUM_PARAMS['pad0.ring.mix']).toMatchObject({ min: 0, max: 1, def: 0 });
     expect(DRUM_PARAMS['pad15.modenv.dec'].def).toBeCloseTo(0.084);
     expect(DRUM_PARAMS['pad0.choke']).toMatchObject({ min: 0, max: 4, curve: 'int' });
   });

@@ -64,6 +64,10 @@ void HostedWtModel::flushPendingPatch() {
         proc_.setTrackInlineParams(track_, parameters_.snapshot());
 }
 
+void HostedWtModel::reloadPatchFromSession() {
+    parameters_.load(proc_.trackParameterValues(track_));
+}
+
 int HostedWtModel::currentProgram() const {
     const auto& tracks = proc_.conductor().session().tracks;
     if (track_ < 0 || track_ >= (int)tracks.size()) return -1;
@@ -82,7 +86,7 @@ void HostedWtModel::selectProgram(int index) {
     if (index < 0 || index >= numPrograms()) return;
     flushPendingPatch();
     proc_.setTrackFactoryPatch(track_, index);
-    parameters_.load(proc_.trackParameterValues(track_));
+    reloadPatchFromSession();
 }
 
 int HostedWtModel::numTables() const { return proc_.deviceNumTables(track_); }

@@ -122,7 +122,7 @@ private:
     juce::Rectangle<int> headArea;
 };
 
-// NOISE: LED + title + "WHITE" readout, tilt curve view, COLOR + LVL knobs.
+// NOISE + RING: tilt curve, COLOR/LVL, and fixed-Hz ring carrier FREQ/MIX.
 class DrumNoisePanel : public PadBoundPanel {
 public:
     explicit DrumNoisePanel(DrumUiModel&);
@@ -131,7 +131,7 @@ public:
 private:
     void rebuild() override;
     std::unique_ptr<DrumNoiseView> view;
-    juce::OwnedArray<Knob> knobs;                 // color, lvl
+    juce::OwnedArray<Knob> knobs;                 // color, noise lvl, ring freq, ring mix
     juce::Rectangle<int> headArea;
 };
 

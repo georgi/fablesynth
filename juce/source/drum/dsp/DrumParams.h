@@ -41,6 +41,7 @@ enum DPadField : int {
     DP_OSCB_TABLE, DP_OSCB_POS, DP_OSCB_TUNE, DP_OSCB_FINE, DP_OSCB_PHASE,
     DP_OSCB_UNISON, DP_OSCB_DETUNE, DP_OSCB_LEVEL,
     DP_NOISE_COLOR, DP_NOISE_LEVEL,
+    DP_RING_FREQ, DP_RING_MIX,
     DP_PENV_AMT, DP_PENV_DEC,
     DP_AENV_ATT, DP_AENV_HOLD, DP_AENV_DEC, DP_AENV_CURVE,
     DP_FLT_ON, DP_FLT_TYPE, DP_FLT_CUT, DP_FLT_RES, DP_FLT_DRIVE,
@@ -50,18 +51,18 @@ enum DPadField : int {
     DP_MOD4_SRC, DP_MOD4_DST, DP_MOD4_AMT,
     DP_MODENV_DEC,
     DP_LVL, DP_PAN, DP_V2L, DP_V2M, DP_CHOKE, DP_OUT,
-    DPAD_NFIELDS                                   // == 48
+    DPAD_NFIELDS                                   // == 50
 };
 
 enum DGlobalPid : int {
-    DG_SEQ_BPM = DR_NPADS * DPAD_NFIELDS,          // 768
+    DG_SEQ_BPM = DR_NPADS * DPAD_NFIELDS,          // 800
     DG_MASTER_SWING, DG_MASTER_VOLUME,
     DG_FXDRIVE_ON, DG_FXDRIVE_AMT, DG_FXDRIVE_MIX,
     DG_FXCOMP_ON, DG_FXCOMP_THR, DG_FXCOMP_GAIN,
     DG_FXCHORUS_ON, DG_FXCHORUS_RATE, DG_FXCHORUS_DEPTH, DG_FXCHORUS_MIX,
     DG_FXDELAY_ON, DG_FXDELAY_TIME, DG_FXDELAY_FB, DG_FXDELAY_MIX,
     DG_FXREVERB_ON, DG_FXREVERB_SIZE, DG_FXREVERB_MIX,
-    DR_NUM_PARAMS                                  // == 788
+    DR_NUM_PARAMS                                  // == 820
 };
 
 inline constexpr int dpid(int padI, int field) { return padI * DPAD_NFIELDS + field; }

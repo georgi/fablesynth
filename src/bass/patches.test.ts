@@ -23,6 +23,13 @@ if (typeof localStorage === 'undefined') {
 describe('bass patches', () => {
   beforeEach(() => localStorage.clear());
 
+  it('ships 12 distinct factory patches without moving the original programs', () => {
+    expect(FACTORY_PATCHES.map((p) => p.name)).toEqual([
+      'ACID LINE', 'RUBBER SUB', 'NEON SQUELCH', 'DEEP DUB', 'WAREHOUSE', 'ROUNDHOUSE',
+      'METAL PULSE', 'TAPE BASS', 'REESE MONO', 'PLUCKED WIRE', 'DARK CURRENT', 'CLEAN SUB',
+    ]);
+  });
+
   it('factory patches only override known params, within range', () => {
     for (const patch of FACTORY_PATCHES) {
       for (const [id, v] of Object.entries(patch.params)) {

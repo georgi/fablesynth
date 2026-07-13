@@ -4,9 +4,11 @@
 import { useBassStore } from '../../bass/store';
 import { useDrumStore } from '../../drum/store';
 import { useStore as useWtStore } from '../../store';
+import { useState } from 'react';
 import { patternsToClip } from '../hostBridge';
 import { HOSTED_MAX_BARS, type MachineId } from '../protocol';
 import { useSeqStore } from '../store';
+import { ClipLibraryBrowser } from './ClipLibraryBrowser';
 
 const BAR_STORE = {
   DR1: {
@@ -27,6 +29,7 @@ const BAR_STORE = {
 } as const;
 
 export function HostedClipBar({ machine }: { machine: MachineId }) {
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const focus = useSeqStore((s) => s.focus)!;
   const clip = useSeqStore((s) => s.session.scenes[focus.scene]?.clips[focus.track]);
   const { createClip, updateClipBytes } = useSeqStore.getState();
@@ -35,21 +38,27 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
 
   if (!clip) {
     return (
-      <div className="sq-clipbar">
-        <button className="sq-clipbar-create" onClick={() => createClip(focus.scene, focus.track)}>
-          ＋ CREATE CLIP
-        </button>
-        <span className="sq-clipbar-hint">EMPTY SLOT — THE PATCH PANEL STILL EDITS THIS TRACK'S SOUND</span>
-      </div>
+      <>
+        <div className="sq-clipbar">
+          <button className="sq-clipbar-create" onClick={() => createClip(focus.scene, focus.track)}>＋ CREATE CLIP</button>
+          <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
+          <span className="sq-clipbar-hint">EMPTY SLOT — LOAD A CLIP OR CREATE ONE</span>
+        </div>
+        {libraryOpen && <ClipLibraryBrowser machine={machine} onClose={() => setLibraryOpen(false)} />}
+      </>
     );
   }
 
   if (clip.bars > HOSTED_MAX_BARS) {
     return (
-      <div className="sq-clipbar">
-        <span className="sq-clipbar-name">{clip.name}</span>
-        <span className="sq-clipbar-lock">CLIP IS {clip.bars} BARS — EDITING CAPS AT {HOSTED_MAX_BARS} (PLAYBACK UNAFFECTED)</span>
-      </div>
+      <>
+        <div className="sq-clipbar">
+          <span className="sq-clipbar-name">{clip.name}</span>
+          <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
+          <span className="sq-clipbar-lock">CLIP IS {clip.bars} BARS — EDITING CAPS AT {HOSTED_MAX_BARS} (PLAYBACK UNAFFECTED)</span>
+        </div>
+        {libraryOpen && <ClipLibraryBrowser machine={machine} onClose={() => setLibraryOpen(false)} />}
+      </>
     );
   }
 
@@ -61,24 +70,28 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   };
 
   return (
-    <div className="sq-clipbar">
-      <span className="sq-clipbar-name">{clip.name}</span>
-      <div className="sq-clipbar-bars">
-        {Array.from({ length: clip.bars }, (_, i) => (
-          <button
-            key={i}
-            className={`sq-bar-chip${editBar === i ? ' active' : ''}`}
-            onClick={() => bars.set(i)}
-          >
-            {i + 1}
-          </button>
-        ))}
+    <>
+      <div className="sq-clipbar">
+        <span className="sq-clipbar-name">{clip.name}</span>
+        <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
+        <div className="sq-clipbar-bars">
+          {Array.from({ length: clip.bars }, (_, i) => (
+            <button
+              key={i}
+              className={`sq-bar-chip${editBar === i ? ' active' : ''}`}
+              onClick={() => bars.set(i)}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+        <div className="sq-clipbar-len">
+          <button className="sq-mini" onClick={() => setBars(clip.bars - 1)} title="Remove bar">−</button>
+          <span>{clip.bars} BAR{clip.bars > 1 ? 'S' : ''}</span>
+          <button className="sq-mini" onClick={() => setBars(clip.bars + 1)} title="Add bar">＋</button>
+        </div>
       </div>
-      <div className="sq-clipbar-len">
-        <button className="sq-mini" onClick={() => setBars(clip.bars - 1)} title="Remove bar">−</button>
-        <span>{clip.bars} BAR{clip.bars > 1 ? 'S' : ''}</span>
-        <button className="sq-mini" onClick={() => setBars(clip.bars + 1)} title="Add bar">＋</button>
-      </div>
-    </div>
+      {libraryOpen && <ClipLibraryBrowser machine={machine} onClose={() => setLibraryOpen(false)} />}
+    </>
   );
 }

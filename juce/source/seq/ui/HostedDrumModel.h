@@ -14,6 +14,7 @@ public:
     void setTargetScene(int scene);
     int targetScene() const { return scene_; }
     void flushPendingPatch();
+    void reloadPatchFromSession();
 
     ParameterSource parameters() override { return bank_.source(); }
     DeviceUiCapabilities capabilities() const override;
@@ -56,6 +57,7 @@ public:
 
 private:
     void timerCallback() override { flushPendingPatch(); }
+    void flushPendingPatch(bool invalidatePadPatchSelection);
     const fable::ClipData* clip() const;
 
     SeqAudioProcessor& proc_;

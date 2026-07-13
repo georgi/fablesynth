@@ -168,6 +168,7 @@ private:
         OscState oA, oB;
         FilterState f;
         double noiseY = 0;
+        double ringPhase = 0.25;
         double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
         double lgPrev = -1;        // level*vel gain ramp start (Finding 7)
 

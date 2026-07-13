@@ -1,5 +1,6 @@
 #include "Conductor.h"
 #include <algorithm>
+#include <cstdint>
 
 namespace fable {
 
@@ -108,6 +109,51 @@ void Conductor::createClip(int s, int t) {
     sc.hasClip[(size_t)t] = true;
 }
 
+bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
+                                int transposeSemitones) {
+    if (s < 0 || s >= (int)session_.scenes.size()
+        || t < 0 || t >= (int)session_.tracks.size()
+        || !validateClipLibraryEntry(entry).empty()
+        || entry.machine != session_.tracks[(size_t)t].machine)
+        return false;
+
+    std::vector<uint8_t> bytes = entry.bytes;
+    if (transposeSemitones != 0) {
+        if (!entry.transpose || entry.machine == Machine::DR1) return false;
+        for (int bar = 0; bar < entry.bars; ++bar) {
+            for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) {
+                const int o = sqNoteIdx(bar, step);
+                if ((bytes[(size_t)o] & 1u) == 0) continue;
+                int64_t shifted = (int)bytes[(size_t)o + 1]
+                                + 12 * ((int)bytes[(size_t)o + 2] - 1)
+                                + (int64_t)transposeSemitones;
+                // The wire format spans three octaves. Fold by octaves (not
+                // clamp) so pitch class survives even at either boundary,
+                // matching the web library transform.
+                if (shifted > 23) shifted -= ((shifted - 23 + 11) / 12) * 12;
+                if (shifted < -12) shifted += ((-12 - shifted + 11) / 12) * 12;
+                // C++ division truncates toward zero, so offset to a
+                // non-negative 0..35 representation before splitting it.
+                const int encoded = (int)shifted + 12;
+                bytes[(size_t)o + 1] = (uint8_t)(encoded % 12);
+                bytes[(size_t)o + 2] = (uint8_t)(encoded / 12);
+            }
+        }
+    }
+
+    auto& scene = session_.scenes[(size_t)s];
+    scene.clips[(size_t)t] = ClipData { entry.name, entry.bars, bytes };
+    scene.hasClip[(size_t)t] = true;
+
+    // Same write target as focused edits: a pending clip wins over the
+    // outgoing live owner because ClipHost has only one pending slot.
+    const auto qit = queue_.find(t);
+    const int q = qit != queue_.end() ? qit->second : kNone;
+    const int target = (q != kNone && q != SQ_STOP) ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateClip(t, bytes, entry.bars);
+    return true;
+}
+
 void Conductor::setTrackPatch(int t, PatchRef patch) {
     session_.tracks[(size_t)t].patch = std::move(patch);
 }
@@ -133,10 +179,12 @@ void Conductor::cycleQuant(int d) {
     for (int i = 0; i < 3; i++) if (kOrder[i] == quant_) { ix = i; break; }
     ix = ((ix + d) % 3 + 3) % 3;
     quant_ = kOrder[ix];
+    session_.quant = quant_;
 }
 
 void Conductor::setTrackVol(int t, float v) {
     trackVol_[(size_t)t] = v;
+    session_.tracks[(size_t)t].gain = v;
     applyGains();
 }
 
@@ -144,6 +192,7 @@ void Conductor::setTrackVol(int t, float v) {
 // anchor math (docs §3/§6).
 void Conductor::setSwing(double v) {
     swing_ = v;
+    session_.swing = v;
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
 }
 

@@ -9,18 +9,93 @@
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
 #include "../source/seq/dsp/Conductor.h"
+#include "../source/seq/dsp/ClipLibrary.h"
+#include "../source/seq/dsp/ClipLibrary.gen.h"
 #include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqModel.h"
 #include "../source/seq/dsp/SeqProtocol.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <iterator>
 #include <tuple>
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void testClipLibrarySchema() {
+    using namespace fable;
+
+    ClipLibraryEntry lead;
+    lead.id = "neon-lead-01";
+    lead.name = "NEON LEAD";
+    lead.machine = Machine::WT1;
+    lead.bars = 2;
+    lead.bytes = sqEmptyClip(lead.machine, lead.bars);
+    lead.family = "techno";
+    lead.role = "lead";
+    lead.energy = 3;
+    lead.tags = {"bright", "melodic"};
+    lead.root = 0;
+    lead.scale = "minor";
+    lead.transpose = true;
+
+    CHECK(validateClipLibraryEntry(lead).empty());
+    CHECK(sqIsKnownClipRole(Machine::DR1, "four-on-floor"));
+    CHECK(!sqIsKnownClipRole(Machine::DR1, "lead"));
+    CHECK(sqIsKnownClipFamily("lo-fi"));
+    CHECK(!sqIsKnownClipFamily("unknown"));
+
+    auto bad = lead;
+    bad.bytes.pop_back();
+    CHECK(!validateClipLibraryEntry(bad).empty());
+    bad = lead;
+    bad.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 12;
+    CHECK(!validateClipLibraryEntry(bad).empty());
+    bad = lead;
+    bad.energy = 6;
+    CHECK(!validateClipLibraryEntry(bad).empty());
+    bad = lead;
+    bad.role = "four-on-floor";
+    CHECK(!validateClipLibraryEntry(bad).empty());
+
+    std::vector<ClipLibraryEntry> library {lead, lead};
+    CHECK(!validateClipLibrary(library).empty());
+    library[1].id = "neon-lead-02";
+    CHECK(validateClipLibrary(library).empty());
+
+    const auto& factory = factoryClipLibrary();
+    CHECK(factory.size() == 72);
+    CHECK(validateClipLibrary(factory).empty());
+    int dr = 0, bl = 0, wt = 0;
+    for (const auto& clip : factory) {
+        if (clip.machine == Machine::DR1) ++dr;
+        else if (clip.machine == Machine::BL1) ++bl;
+        else if (clip.machine == Machine::WT1) ++wt;
+    }
+    CHECK(dr == 32 && bl == 20 && wt == 20);
+
+    lead.bytes[(size_t)sqNoteIdx(0, 0)] = 1;
+    lead.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 11;
+    lead.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 2;
+    lead.bytes[(size_t)sqNoteIdx(0, 2) + 1] = 9; // inactive metadata is preserved
+    lead.bytes[(size_t)sqNoteIdx(0, 2) + 2] = 1;
+    const auto original = lead.bytes;
+    const auto transposed = transformClipLibraryEntry(lead, ClipTransformKind::transpose, 2);
+    CHECK(lead.bytes == original);
+    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 0) + 1] == 1);
+    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 0) + 2] == 0);
+    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 2) + 1] == 9);
+    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 2) + 2] == 1);
+    CHECK(transposed.root == 2);
+    const auto rotated = transformClipLibraryEntry(lead, ClipTransformKind::rotate, 1);
+    CHECK((rotated.bytes[(size_t)sqNoteIdx(0, 1)] & 1) != 0);
+    const auto repeated = transformClipLibraryEntry(lead, ClipTransformKind::repeat, 4);
+    CHECK(repeated.bars == 4 && repeated.bytes.size() == (size_t)(4 * sqBytesPerBar(Machine::WT1)));
+}
 
 static void testProtocol() {
     using namespace fable;
@@ -909,7 +984,71 @@ static void testConductor() {
         CHECK(c.session().scenes[0].clips[1].bars == 1);
     }
 
-    // 16. cycleQuant wraps 1 BAR -> 1/4 -> OFF -> 1 BAR in both directions.
+    // 16. Library loads replace/create only the target cell, preserve the
+    //     track patch, reject incompatible machines, hot-update a live or
+    //     pending target, and optionally transpose note payloads.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const auto beforePatch = c.session().tracks[1].patch;
+        const auto beforeDrums = c.session().scenes[0].clips[0];
+        const auto bassIt = std::find_if(factoryClipLibrary().begin(), factoryClipLibrary().end(),
+                                         [](const auto& clip) { return clip.machine == Machine::BL1; });
+        CHECK(bassIt != factoryClipLibrary().end());
+        const auto& bassEntry = *bassIt;
+        CHECK(!c.session().scenes[0].hasClip[1]);
+        CHECK(c.loadLibraryClip(0, 1, bassEntry));
+        CHECK(c.session().scenes[0].hasClip[1]);
+        CHECK(c.session().scenes[0].clips[1].name == bassEntry.name);
+        CHECK(c.session().scenes[0].clips[1].bytes == bassEntry.bytes);
+        CHECK(c.session().tracks[1].patch.factory == beforePatch.factory);
+        CHECK(c.session().tracks[1].patch.index == beforePatch.index);
+        CHECK(c.session().tracks[1].patch.params == beforePatch.params);
+        CHECK(c.session().scenes[0].clips[0].bytes == beforeDrums.bytes);
+        CHECK(io.updates.empty()); // newly-created idle cell: no engine traffic
+
+        const auto saved = c.session().scenes[0].clips[1];
+        CHECK(!c.loadLibraryClip(0, 1, factoryClipLibrary()[0])); // DR1 -> BL1
+        CHECK(c.session().scenes[0].clips[1].bytes == saved.bytes);
+
+        c.launch(1, 0); // pending target
+        CHECK(c.loadLibraryClip(0, 1, *std::next(bassIt)));
+        CHECK(io.updates.size() == 1);
+        CHECK(std::get<0>(io.updates.back()) == 1);
+        c.onClipStart(1, 0); // live target
+        CHECK(c.loadLibraryClip(0, 1, bassEntry));
+        CHECK(io.updates.size() == 2);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const auto noteIt = std::find_if(factoryClipLibrary().begin(), factoryClipLibrary().end(),
+                                         [](const auto& clip) { return clip.machine == Machine::WT1; });
+        CHECK(noteIt != factoryClipLibrary().end());
+        ClipLibraryEntry note = *noteIt;
+        note.bytes = sqEmptyClip(Machine::WT1, 1);
+        note.bytes[(size_t)sqNoteIdx(0, 0)] = 1;
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 3;
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 1;
+        CHECK(c.loadLibraryClip(0, 2, note, 5)); // empty INTRO lead cell
+        const auto& loaded = c.session().scenes[0].clips[2];
+        CHECK(loaded.bytes[(size_t)sqNoteIdx(0, 0) + 1] == 8);
+        CHECK(loaded.bytes[(size_t)sqNoteIdx(0, 0) + 2] == 1);
+
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 11;
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 2; // +23; +1 folds to +12
+        CHECK(c.loadLibraryClip(0, 2, note, 1));
+        const auto folded = c.session().scenes[0].clips[2].bytes;
+        CHECK(folded[(size_t)sqNoteIdx(0, 0) + 1] == 0);
+        CHECK(folded[(size_t)sqNoteIdx(0, 0) + 2] == 2);
+        note.transpose = false;
+        CHECK(!c.loadLibraryClip(0, 2, note, -1));
+        CHECK(c.session().scenes[0].clips[2].bytes == folded);
+    }
+
+    // 17. cycleQuant wraps 1 BAR -> 1/4 -> OFF -> 1 BAR in both directions.
     {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
@@ -927,6 +1066,7 @@ static void testConductor() {
 }
 
 int main() {
+    testClipLibrarySchema();
     testProtocol();
     testModelAndFactory();
     testClipHost();

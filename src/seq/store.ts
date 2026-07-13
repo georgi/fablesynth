@@ -12,6 +12,8 @@ import {
 } from './protocol';
 import { factorySession } from './factory';
 import type { SeqRig } from './rig';
+import type { RuntimeClipLibraryEntry } from './clipLibrary';
+import { loadLibraryClipIntoSession } from './clipLibraryActions';
 
 export interface TrackPos {
   step: number;
@@ -37,6 +39,7 @@ export interface SeqStore {
   rig: SeqRig | null;
   anchor: number; // songStartFrame — beat zero of the shared timebase
   focus: { track: number; scene: number } | null;
+  clipLoadRevision: number;
 
   powerOn: (rig?: SeqRig) => Promise<void>;
   togglePlay: () => void;
@@ -47,6 +50,7 @@ export interface SeqStore {
   togglePassThrough: (s: number, t: number) => void;
   updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
   createClip: (s: number, t: number) => void;
+  loadLibraryClip: (s: number, t: number, entry: RuntimeClipLibraryEntry, semitones?: number) => boolean;
   setTrackPatch: (t: number, patch: PatchDoc) => void;
   stopAll: () => void;
   toggleSceneMute: (s: number) => void;
@@ -146,6 +150,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     rig: null,
     anchor: 0,
     focus: null,
+    clipLoadRevision: 0,
 
     powerOn: async (rigIn?: SeqRig) => {
       const session = get().session;
@@ -298,6 +303,24 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
     },
 
+    loadLibraryClip: (s, t, entry, semitones = 0) => {
+      const st = get();
+      let loaded;
+      try { loaded = loadLibraryClipIntoSession(st.session, s, t, entry, { semitones }); }
+      catch { return false; }
+      const bytes = loaded.bytes;
+      set({
+        session: loaded.session,
+        clipLoadRevision: st.clipLoadRevision + 1,
+      });
+      clipBytes.set(`${s}:${t}`, bytes);
+      persist();
+      const q = st.queue[t];
+      const target = q != null && q !== STOP ? q : st.owner[t];
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars);
+      return true;
+    },
+
     setTrackPatch: (t, patch) => {
       set((st) => ({
         session: {
@@ -380,6 +403,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
 
 /** Reset launcher state (used by tests). */
 export function resetSeqStore(): void {
+  clipBytes.clear();
   useSeqStore.setState({
     session: factorySession(),
     powered: false,
@@ -399,5 +423,6 @@ export function resetSeqStore(): void {
     rig: null,
     anchor: 0,
     focus: null,
+    clipLoadRevision: 0,
   });
 }

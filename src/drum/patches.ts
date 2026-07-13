@@ -64,20 +64,21 @@ export const FACTORY_PATCHES: PadPatch[] = [
   // Hats — sampled 808 hats, high-passed to sit above the kit.
   fp('HH 808', {
     'oscA.table': 12, 'aenv.dec': 0.06, 'flt.on': 1, 'flt.type': 3,
-    'flt.cut': 7200, 'lvl': 0.7,
+    'flt.cut': 7200, 'ring.freq': 6389, 'ring.mix': 0.18, 'lvl': 0.7,
   }),
   fp('HH TIGHT', {
     'oscA.table': 12, 'aenv.dec': 0.035, 'flt.on': 1, 'flt.type': 3,
-    'flt.cut': 9200, 'lvl': 0.65,
+    'flt.cut': 9200, 'ring.freq': 7919, 'ring.mix': 0.22, 'lvl': 0.65,
   }),
   fp('OH 808', {
     'oscA.table': 13, 'aenv.dec': 0.55, 'flt.on': 1, 'flt.type': 3,
-    'flt.cut': 5200, 'lvl': 0.7,
+    'flt.cut': 5200, 'ring.freq': 5197, 'ring.mix': 0.28, 'lvl': 0.7,
   }),
   // Cymbal — long sizzle.
   fp('CY 808', {
     'oscA.table': 14, 'aenv.dec': 1.7, 'aenv.curve': 0.25, 'flt.on': 1,
-    'flt.type': 3, 'flt.cut': 3800, 'lvl': 0.72,
+    'flt.type': 3, 'flt.cut': 3800, 'ring.freq': 2741, 'ring.mix': 0.62,
+    'lvl': 0.72,
   }),
   // Toms — THUD tuned across the range with a modest pitch sweep.
   fp('TM LO', {
@@ -92,10 +93,23 @@ export const FACTORY_PATCHES: PadPatch[] = [
     'oscA.table': 0, 'oscA.tune': 2, 'penv.amt': 8, 'penv.dec': 0.05,
     'aenv.dec': 0.3, 'lvl': 0.85,
   }),
-  // Perc / vox / glitch flavors from the procedural tables.
+  // Perc / vox / glitch flavors. The fixed-Hz ring carrier creates
+  // inharmonic sidebands, avoiding the cartoonish pitched-table character.
   fp('PC TINE', {
-    'oscA.table': 2, 'oscA.tune': 12, 'oscA.fine': -5, 'aenv.dec': 0.16,
-    'lvl': 0.75,
+    'oscA.table': 2, 'oscA.tune': 7, 'oscA.fine': -5, 'ring.freq': 1187,
+    'ring.mix': 0.62, 'aenv.dec': 0.42, 'aenv.curve': 0.28, 'lvl': 0.75,
+  }),
+  fp('PC BELL', {
+    'oscA.table': 8, 'oscA.tune': -5, 'oscA.level': 0.7, 'ring.freq': 731,
+    'ring.mix': 0.78, 'aenv.att': 0.0005, 'aenv.hold': 0.018,
+    'aenv.dec': 1.35, 'aenv.curve': 0.2, 'flt.on': 1, 'flt.type': 2,
+    'flt.cut': 2400, 'flt.res': 0.35, 'lvl': 0.78,
+  }),
+  fp('PC CYMBAL', {
+    'oscA.table': 3, 'oscA.pos': 0.38, 'oscA.tune': 17, 'noise.level': 0.22,
+    'noise.color': 0.75, 'ring.freq': 3271, 'ring.mix': 0.88,
+    'aenv.hold': 0.014, 'aenv.dec': 1.6, 'aenv.curve': 0.24,
+    'flt.on': 1, 'flt.type': 3, 'flt.cut': 3600, 'lvl': 0.72,
   }),
   fp('PC VOX', {
     'oscA.table': 7, 'oscA.tune': -5, 'aenv.dec': 0.48, 'aenv.curve': 0.3,

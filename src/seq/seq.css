@@ -517,6 +517,7 @@
 
 /* ---------- hosted device (focus mode) ---------- */
 .sq-device {
+  position: relative;
   border: 1px solid #1a2030;
   border-radius: 10px;
   overflow: hidden;
@@ -548,6 +549,53 @@
 .sq-clipbar-create {
   padding: 6px 14px; border-radius: 6px; border: 1px dashed var(--tc);
   background: transparent; color: var(--tc); cursor: pointer; font: inherit;
+}
+.sq-clipbar-library {
+  padding: 5px 10px; border-radius: 5px; border: 1px solid #303a50;
+  background: #151c2a; color: #aeb8cc; cursor: pointer; font: inherit;
+  font-size: 10px; letter-spacing: .08em;
+}
+
+/* Focus-mode clip library. It floats over the device so browsing never
+   disturbs the machine panel or the currently sounding clip. */
+.sq-lib {
+  position: absolute; z-index: 40; inset: 45px 12px auto 12px;
+  max-height: min(620px, calc(100% - 58px)); overflow: hidden;
+  border: 1px solid #303b52; border-radius: 9px; background: #090d14;
+  box-shadow: 0 18px 60px #000c; color: #aeb8cc;
+}
+.sq-lib > header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid #20283a; color: var(--tc);
+  letter-spacing: .1em; font-size: 12px;
+}
+.sq-lib > header button { border: 0; background: none; color: #8791a5; font-size: 20px; cursor: pointer; }
+.sq-lib-filters { display: grid; grid-template-columns: 2fr repeat(5, 1fr) auto; gap: 6px; padding: 8px; border-bottom: 1px solid #20283a; }
+.sq-lib input, .sq-lib select, .sq-lib button {
+  min-width: 0; border: 1px solid #283147; border-radius: 5px;
+  background: #111725; color: #aeb8cc; font: inherit; font-size: 10px; padding: 6px;
+}
+.sq-lib button { cursor: pointer; }
+.sq-lib button:disabled { opacity: .35; cursor: default; }
+.sq-lib button.active, .sq-lib button.primary { border-color: var(--tc); color: var(--tc); }
+.sq-lib-body { display: grid; grid-template-columns: minmax(0, 1fr) 220px; min-height: 270px; max-height: 500px; }
+.sq-lib-list { overflow-y: auto; padding: 7px; display: flex; flex-direction: column; gap: 5px; }
+.sq-lib-list > button { display: grid; grid-template-columns: 22px 170px minmax(150px, 1fr); align-items: center; text-align: left; padding: 7px; }
+.sq-lib-list > button.selected { border-color: var(--tc); background: color-mix(in srgb, var(--tc) 8%, #111725); }
+.sq-lib-list small { display: block; margin-top: 3px; color: #667187; font-size: 8px; text-transform: uppercase; }
+.sq-lib-list p { text-align: center; color: #566075; font-size: 10px; letter-spacing: .1em; }
+.sq-lib-star { font-size: 15px; color: #e8c268; }
+.sq-lib aside { border-left: 1px solid #20283a; padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+.sq-lib aside p, .sq-lib aside label { margin: 0; color: #717c91; font-size: 9px; text-transform: uppercase; }
+.sq-lib aside label input { width: 50px; margin-left: 5px; }
+.sq-lib-preview > span { display: block; margin-bottom: 5px; color: #7d879b; font-size: 8px; letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sq-lib-steps { height: 24px; display: flex; align-items: end; gap: 2px; padding: 2px; background: #080b11; border-radius: 3px; }
+.sq-lib-steps i { flex: 1; min-width: 2px; max-height: 20px; background: #293146; border-radius: 1px; }
+.sq-lib-steps i.on { background: var(--tc); box-shadow: 0 0 4px color-mix(in srgb, var(--tc) 50%, transparent); }
+@media (max-width: 900px) {
+  .sq-lib-filters { grid-template-columns: repeat(4, 1fr); }
+  .sq-lib-body { grid-template-columns: 1fr; }
+  .sq-lib aside { border-left: 0; border-top: 1px solid #20283a; display: grid; grid-template-columns: repeat(3, 1fr); }
 }
 
 /* ---------- focus mode ---------- */

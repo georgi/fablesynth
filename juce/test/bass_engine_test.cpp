@@ -113,9 +113,25 @@ int main() {
     printf("\n== factory patches (patches.ts) ==\n");
     {
         const auto& bank = bassFactoryPatches();
-        check((int)bank.size() == 3, "3 factory patches");
+        check((int)bank.size() == 12, "12 factory patches");
         check(bank[0].name == "ACID LINE" && bank[1].name == "RUBBER SUB"
-              && bank[2].name == "NEON SQUELCH", "patch names + order");
+              && bank[2].name == "NEON SQUELCH", "original patch names/order stay stable");
+        check(bank[3].name == "DEEP DUB" && bank[11].name == "CLEAN SUB",
+              "expanded patch bank names/order");
+        bool allResolve = true, allInRange = true;
+        std::string badOverride;
+        for (const auto& patch : bank)
+            for (const auto& [pid, value] : patch.params) {
+                const int id = bassIdFromString(pid);
+                if (id < 0) { allResolve = false; badOverride = patch.name + ":" + pid; continue; }
+                const auto& info = bassParamInfo()[(size_t)id];
+                if (value < info.min || value > info.max) {
+                    allInRange = false;
+                    badOverride = patch.name + ":" + pid + "=" + std::to_string(value);
+                }
+            }
+        check(allResolve, "all bass patch override pids resolve", badOverride);
+        check(allInRange, "all bass patch overrides are in range", badOverride);
         const auto& acid = bank[0];
         auto s0 = getBassStep(acid.patterns.data(), 0, 0);
         check(s0.on && s0.acc && s0.note == 0 && s0.oct == 0, "acid A step 1: accented root");
@@ -130,6 +146,19 @@ int main() {
     }
 
     auto tables = makeTables();
+
+    // Program-bank smoke test: every patch must create a finite, audible held
+    // note. Parameter range checks alone cannot catch a closed/silent voice.
+    for (const auto& patch : bassFactoryPatches()) {
+        BassEngine smoke;
+        smoke.prepare(SR);
+        smoke.setTables(tables);
+        smoke.setParams(applyBassPatch(patch));
+        smoke.keyOn(0, 0.8f);
+        const auto note = render(smoke, 12000);
+        check(finite(note) && rms(note, 0, (int)note.size()) > 1e-5 && peak(note) < 4.0f,
+              patch.name + " note is finite, audible, and bounded");
+    }
 
     printf("\n== audition voice (keyOn/keyOff, worklet noteOn/release) ==\n");
     {

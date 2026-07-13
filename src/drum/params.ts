@@ -49,6 +49,8 @@ const PAD_DEFS: ParamDef[] = [
   ...oscFields('oscB'),
   { id: 'noise.color', label: 'COLOR', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
   { id: 'noise.level', label: 'LVL', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  { id: 'ring.freq', label: 'RING Hz', min: 20, max: 12000, def: 1200, curve: 'log', fmt: fmtHz },
+  { id: 'ring.mix', label: 'RING', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
   { id: 'penv.amt', label: 'AMT', min: -48, max: 48, def: 0, curve: 'int', fmt: fmtSt },
   { id: 'penv.dec', label: 'DEC', min: 0.005, max: 2, def: 0.06, curve: 'log', fmt: fmtSec },
   { id: 'aenv.att', label: 'ATT', min: 0.0005, max: 0.5, def: 0.001, curve: 'log', fmt: fmtSec },

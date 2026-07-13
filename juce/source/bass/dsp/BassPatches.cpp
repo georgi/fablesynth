@@ -1,5 +1,5 @@
 // Transcription of src/bass/seq.ts (packed step helpers) and
-// src/bass/patches.ts (the acid A/B lines + the three factory patches).
+// src/bass/patches.ts (the acid A/B lines + the factory patch bank).
 #include "BassPatches.h"
 
 #include <algorithm>
@@ -124,6 +124,110 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "fx.delay.mix", 0.24f },
             { "seq.bpm", 142 },
         }, acid, { 0, 1 } });
+        out.push_back({ "DEEP DUB", Overrides{
+            { "osc.table", 0 }, { "osc.pos", 0.18f }, { "osc.tune", -12 }, { "osc.level", 0.62f },
+            { "sub.shape", 0 }, { "sub.oct", -2 }, { "sub.level", 0.88f },
+            { "flt.type", 1 }, { "flt.cut", 145 }, { "flt.res", 0.28f }, { "flt.drive", 0.22f },
+            { "flt.env", 0.32f }, { "fenv.dec", 0.55f },
+            { "aenv.dec", 0.7f }, { "aenv.sus", 0.82f }, { "aenv.rel", 0.22f },
+            { "acc.amt", 0.38f }, { "slide.time", 0.13f }, { "lfo.depth", 0.04f },
+            { "fx.drive.amt", 0.16f }, { "fx.delay.on", 1 }, { "fx.delay.time", 0.5f },
+            { "fx.delay.fb", 0.5f }, { "fx.delay.mix", 0.14f },
+            { "fx.reverb.size", 0.58f }, { "fx.reverb.mix", 0.16f },
+            { "seq.bpm", 112 }, { "master.swing", 0.4f },
+        }, acid, { 0 } });
+        out.push_back({ "WAREHOUSE", Overrides{
+            { "osc.table", 3 }, { "osc.pos", 0.72f }, { "osc.unison", 2 }, { "osc.detune", 0.18f },
+            { "osc.spread", 0.18f }, { "sub.level", 0.38f },
+            { "flt.type", 1 }, { "flt.cut", 430 }, { "flt.res", 0.68f }, { "flt.drive", 0.72f },
+            { "flt.env", 0.76f }, { "fenv.dec", 0.14f }, { "aenv.dec", 0.22f }, { "aenv.sus", 0.42f },
+            { "acc.amt", 0.9f }, { "slide.time", 0.055f },
+            { "fx.drive.amt", 0.7f }, { "fx.drive.mix", 0.92f },
+            { "fx.reverb.mix", 0.05f }, { "seq.bpm", 136 }, { "master.swing", 0.16f },
+        }, acid, { 0, 1 } });
+        out.push_back({ "ROUNDHOUSE", Overrides{
+            { "osc.table", 1 }, { "osc.pos", 0.28f }, { "osc.unison", 1 }, { "osc.level", 0.68f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.68f },
+            { "flt.type", 0 }, { "flt.cut", 680 }, { "flt.res", 0.22f }, { "flt.drive", 0.34f },
+            { "flt.env", 0.48f }, { "flt.track", 0.45f }, { "fenv.dec", 0.28f },
+            { "aenv.dec", 0.36f }, { "aenv.sus", 0.62f }, { "aenv.rel", 0.12f },
+            { "acc.amt", 0.52f }, { "lfo.depth", 0.08f },
+            { "fx.drive.amt", 0.28f }, { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.42f },
+            { "fx.chorus.depth", 0.22f }, { "fx.chorus.mix", 0.1f },
+            { "seq.bpm", 124 }, { "master.swing", 0.32f },
+        }, acid, { 0 } });
+        out.push_back({ "METAL PULSE", Overrides{
+            { "osc.table", 4 }, { "osc.pos", 0.86f }, { "osc.tune", -12 }, { "osc.fine", 9 },
+            { "osc.unison", 3 }, { "osc.detune", 0.12f }, { "osc.spread", 0.32f }, { "osc.level", 0.72f },
+            { "sub.shape", 1 }, { "sub.level", 0.3f },
+            { "flt.type", 2 }, { "flt.cut", 920 }, { "flt.res", 0.58f }, { "flt.drive", 0.38f },
+            { "flt.env", 0.62f }, { "fenv.dec", 0.19f },
+            { "aenv.dec", 0.24f }, { "aenv.sus", 0.48f }, { "acc.amt", 0.72f },
+            { "lfo.rate", 8 }, { "lfo.shape", 2 }, { "lfo.depth", 0.24f },
+            { "fx.chorus.on", 1 }, { "fx.chorus.rate", 1.4f }, { "fx.chorus.depth", 0.5f },
+            { "fx.chorus.mix", 0.22f }, { "fx.delay.on", 1 }, { "fx.delay.time", 0.22f },
+            { "fx.delay.mix", 0.12f }, { "seq.bpm", 130 }, { "master.swing", 0.2f },
+        }, acid, { 0, 1 } });
+        out.push_back({ "TAPE BASS", Overrides{
+            { "osc.table", 0 }, { "osc.pos", 0.38f }, { "osc.fine", -7 }, { "osc.unison", 2 },
+            { "osc.detune", 0.08f }, { "osc.spread", 0.12f }, { "osc.level", 0.66f },
+            { "sub.shape", 0 }, { "sub.level", 0.62f },
+            { "flt.type", 0 }, { "flt.cut", 510 }, { "flt.res", 0.18f }, { "flt.drive", 0.3f },
+            { "flt.env", 0.38f }, { "fenv.att", 0.006f }, { "fenv.dec", 0.4f },
+            { "aenv.att", 0.008f }, { "aenv.dec", 0.5f }, { "aenv.sus", 0.7f }, { "aenv.rel", 0.2f },
+            { "acc.amt", 0.44f }, { "slide.time", 0.1f }, { "lfo.rate", 3 }, { "lfo.depth", 0.08f },
+            { "fx.drive.amt", 0.22f }, { "fx.drive.mix", 0.5f },
+            { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.18f }, { "fx.chorus.depth", 0.2f },
+            { "fx.chorus.mix", 0.12f }, { "fx.reverb.mix", 0.08f },
+            { "seq.bpm", 104 }, { "master.swing", 0.5f },
+        }, acid, { 0 } });
+        out.push_back({ "REESE MONO", Overrides{
+            { "osc.table", 0 }, { "osc.pos", 0.64f }, { "osc.unison", 7 }, { "osc.detune", 0.46f },
+            { "osc.spread", 0.18f }, { "osc.level", 0.72f }, { "sub.shape", 0 }, { "sub.level", 0.54f },
+            { "flt.type", 1 }, { "flt.cut", 360 }, { "flt.res", 0.3f }, { "flt.drive", 0.54f },
+            { "flt.env", 0.3f }, { "flt.track", 0.22f }, { "fenv.dec", 0.65f },
+            { "aenv.dec", 0.4f }, { "aenv.sus", 0.88f }, { "aenv.rel", 0.16f },
+            { "acc.amt", 0.5f }, { "slide.time", 0.085f }, { "lfo.rate", 2 }, { "lfo.depth", 0.1f },
+            { "fx.drive.amt", 0.48f }, { "fx.drive.mix", 0.72f },
+            { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.32f }, { "fx.chorus.depth", 0.26f },
+            { "fx.chorus.mix", 0.16f }, { "fx.reverb.mix", 0.05f },
+            { "seq.bpm", 128 }, { "master.swing", 0.24f },
+        }, acid, { 0, 1 } });
+        out.push_back({ "PLUCKED WIRE", Overrides{
+            { "osc.table", 2 }, { "osc.pos", 0.62f }, { "osc.tune", 0 }, { "osc.unison", 2 },
+            { "osc.detune", 0.1f }, { "osc.spread", 0.28f }, { "osc.level", 0.66f },
+            { "sub.level", 0.18f }, { "flt.type", 2 }, { "flt.cut", 1500 }, { "flt.res", 0.42f },
+            { "flt.drive", 0.26f }, { "flt.env", 0.88f }, { "flt.track", 0.62f },
+            { "fenv.dec", 0.075f }, { "aenv.dec", 0.11f }, { "aenv.sus", 0.08f }, { "aenv.rel", 0.05f },
+            { "acc.amt", 0.8f }, { "slide.time", 0.035f }, { "lfo.depth", 0 },
+            { "fx.drive.amt", 0.24f }, { "fx.delay.on", 1 }, { "fx.delay.time", 0.31f },
+            { "fx.delay.fb", 0.34f }, { "fx.delay.mix", 0.18f },
+            { "fx.reverb.size", 0.42f }, { "fx.reverb.mix", 0.14f },
+            { "seq.bpm", 132 }, { "master.swing", 0.18f },
+        }, acid, { 1, 0 } });
+        out.push_back({ "DARK CURRENT", Overrides{
+            { "osc.table", 5 }, { "osc.pos", 0.24f }, { "osc.tune", -12 }, { "osc.unison", 4 },
+            { "osc.detune", 0.32f }, { "osc.spread", 0.36f }, { "osc.level", 0.68f },
+            { "sub.shape", 1 }, { "sub.oct", -2 }, { "sub.level", 0.62f },
+            { "flt.type", 1 }, { "flt.cut", 260 }, { "flt.res", 0.46f }, { "flt.drive", 0.62f },
+            { "flt.env", -0.38f }, { "flt.track", 0.18f }, { "fenv.att", 0.035f }, { "fenv.dec", 0.8f },
+            { "aenv.att", 0.012f }, { "aenv.dec", 0.55f }, { "aenv.sus", 0.78f }, { "aenv.rel", 0.28f },
+            { "acc.amt", 0.58f }, { "slide.time", 0.16f }, { "lfo.rate", 4 }, { "lfo.shape", 1 },
+            { "lfo.depth", 0.34f }, { "fx.drive.amt", 0.56f }, { "fx.drive.mix", 0.74f },
+            { "fx.delay.on", 1 }, { "fx.delay.time", 0.6f }, { "fx.delay.fb", 0.58f },
+            { "fx.delay.mix", 0.16f }, { "fx.reverb.size", 0.68f }, { "fx.reverb.mix", 0.18f },
+            { "seq.bpm", 118 }, { "master.swing", 0.36f },
+        }, acid, { 0, 1 } });
+        out.push_back({ "CLEAN SUB", Overrides{
+            { "osc.table", 1 }, { "osc.pos", 0 }, { "osc.unison", 1 }, { "osc.level", 0.36f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.92f },
+            { "flt.type", 0 }, { "flt.cut", 780 }, { "flt.res", 0.08f }, { "flt.drive", 0.08f },
+            { "flt.env", 0.12f }, { "flt.track", 0.5f }, { "fenv.dec", 0.45f },
+            { "aenv.att", 0.006f }, { "aenv.dec", 0.5f }, { "aenv.sus", 0.9f }, { "aenv.rel", 0.12f },
+            { "acc.amt", 0.32f }, { "slide.time", 0.07f }, { "lfo.depth", 0 },
+            { "fx.drive.on", 0 }, { "fx.chorus.on", 0 }, { "fx.delay.on", 0 }, { "fx.reverb.on", 0 },
+            { "seq.bpm", 120 }, { "master.swing", 0.26f },
+        }, acid, { 0 } });
         return out;
     }();
     return patches;

@@ -12,8 +12,10 @@
 #include "../source/seq/SeqProcessor.h"
 #include "../source/seq/SeqEditor.h"
 #include "../source/seq/SessionCodec.h"
+#include "../source/seq/ClipLibraryStorage.h"
 #include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqProtocol.h"
+#include "../source/seq/dsp/ClipLibrary.gen.h"
 #include "../source/dsp/Presets.h"
 #include "../source/ui/DeviceParameterBank.h"
 #include "../source/ui/DeviceUiModel.h"
@@ -22,6 +24,8 @@
 #include "../source/bass/ui/BassUiModel.h"
 #include "../source/bass/dsp/BassParams.h"
 #include "../source/bass/dsp/BassPatches.h"
+#include "../source/drum/dsp/DrumKits.h"
+#include "../source/drum/dsp/DrumPatches.h"
 #include "../source/dsp/NoteSeq.h"
 #include "../source/seq/ui/HostedDrumModel.h"
 #include "../source/seq/ui/HostedBassModel.h"
@@ -31,6 +35,8 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <map>
+#include <set>
 #include <vector>
 
 static int failures = 0;
@@ -65,6 +71,32 @@ int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui; // message manager for the processor
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
+
+    // Native USER/IMPORTED persistence and portable .sqclip validation.
+    {
+        const auto root = juce::File("/private/tmp")
+            .getChildFile("sq4-clip-library-test-" + juce::Uuid().toString());
+        fable::ClipLibraryStorage storage(root);
+        auto user = fable::factoryClipLibrary().front();
+        user.id = "user-native-test"; user.name = "NATIVE USER TEST";
+        juce::String error;
+        check(storage.addUser(user, &error), "native USER clip persists", error.length());
+        fable::ClipLibraryStorage restored(root);
+        check(restored.users().size() == 1 && restored.users()[0].bytes == user.bytes,
+              "native USER clip reloads from application storage");
+        auto imported = fable::factoryClipLibrary()[1];
+        imported.id = "imported-native-test"; imported.name = "NATIVE IMPORT TEST";
+        check(restored.importSqclip(fable::ClipLibraryStorage::encodeSqclip({ imported }), &error),
+              "validated .sqclip import persists as IMPORTED");
+        fable::ClipLibraryStorage importedAgain(root);
+        check(importedAgain.imported().size() == 1,
+              "native IMPORTED clip reloads from application storage");
+        auto malformed = fable::ClipLibraryStorage::encodeSqclip({ imported })
+            .replace("\"bars\": 2", "\"bars\": \"2\"");
+        check(!importedAgain.importSqclip(malformed, &error),
+              "native .sqclip rejects coerced field types");
+        root.deleteRecursively();
+    }
 
     // ---- shared hosted parameter backing ---------------------------------
     // A bank uses canonical descriptors, exposes the same parameter gestures
@@ -152,6 +184,45 @@ int main(int argc, char** argv) {
         wt2.auditionNoteOff(60);
         renderRms(hosted, hostedBuf, 1);
         check(hosted.wtVoiceCount(2) >= 0, "WT-1 audition commands cross the audio FIFO safely");
+    }
+
+    // ---- clip-library processor boundary --------------------------------
+    // Loading is a session mutation, so the existing session/state codecs
+    // must persist it without adding library-specific project state.
+    {
+        SeqAudioProcessor libraryHost;
+        libraryHost.prepareToPlay(48000.0, 128);
+        const auto patchBefore = libraryHost.conductor().session().tracks[1].patch;
+        const auto neighbourBefore = libraryHost.conductor().session().scenes[0].clips[0].bytes;
+        check(!libraryHost.conductor().session().scenes[0].hasClip[1],
+              "library target starts as an empty focused cell");
+        check(libraryHost.loadFactoryClip(0, 1, 8),
+              "factory clip API creates a compatible empty cell");
+        const auto& loaded = libraryHost.conductor().session().scenes[0].clips[1];
+        check(loaded.name == "ACID CRAWL" && loaded.bytes.size() == 48,
+              "library load applies entry name, bars, and bytes");
+        const auto& patchAfter = libraryHost.conductor().session().tracks[1].patch;
+        check(patchAfter.factory == patchBefore.factory && patchAfter.index == patchBefore.index
+                  && patchAfter.params == patchBefore.params,
+              "library load preserves the focused track patch");
+        check(libraryHost.conductor().session().scenes[0].clips[0].bytes == neighbourBefore,
+              "library load leaves neighbouring cells unchanged");
+        check(!libraryHost.loadFactoryClip(0, 1, 0),
+              "processor API rejects an incompatible factory clip machine");
+
+        fable::SessionData jsonRoundTrip;
+        check(fable::sessionFromJson(libraryHost.currentSessionJson(), jsonRoundTrip)
+                  && jsonRoundTrip.scenes[0].hasClip[1]
+                  && jsonRoundTrip.scenes[0].clips[1].name == "ACID CRAWL",
+              "loaded library clip persists through session JSON");
+        juce::MemoryBlock libraryState;
+        libraryHost.getStateInformation(libraryState);
+        SeqAudioProcessor restored;
+        restored.prepareToPlay(48000.0, 128);
+        restored.setStateInformation(libraryState.getData(), (int)libraryState.getSize());
+        check(restored.conductor().session().scenes[0].hasClip[1]
+                  && restored.conductor().session().scenes[0].clips[1].bytes == loaded.bytes,
+              "loaded library clip persists through plugin state");
     }
 
     // ---- 1. Silent before any launch, but the shared clock runs. ----
@@ -261,6 +332,77 @@ int main(int argc, char** argv) {
     hdr.playClick();
     check(!p.paused(), "playClick again unpauses");
 
+    const auto& sessionLibrary = fable::factorySessionLibrary();
+    check(sessionLibrary.size() == 24 && p.getNumPrograms() == 24,
+          "SQ-4 ships 24 complete session programs");
+    std::map<std::string, int> familyCounts;
+    std::set<std::string> rigNames, rigSignatures;
+    bool rigMetadataValid = true, rigProgramsValid = true, completeSessionContent = true;
+    for (const auto& preset : sessionLibrary) {
+        familyCounts[preset.family]++;
+        rigNames.insert(preset.name);
+        if (preset.name.empty() || preset.variation.empty() || preset.tags.empty()
+            || preset.energy < 1 || preset.energy > 5
+            || !fable::validateSession(preset.session).empty()) rigMetadataValid = false;
+        const std::array<int, 4> counts {
+            (int)fable::factoryKits().size(), (int)fable::bassFactoryPatches().size(),
+            (int)fable::factoryPresets().size(), (int)fable::factoryPresets().size()
+        };
+        for (int t = 0; t < 4; ++t) {
+            const auto& patch = preset.session.tracks[(size_t)t].patch;
+            if (!patch.factory || patch.index < 0 || patch.index >= counts[(size_t)t])
+                rigProgramsValid = false;
+        }
+        for (int t = 0; t < 4; ++t) {
+            bool hasPlayableClip = false;
+            for (const auto& scene : preset.session.scenes)
+                if (scene.hasClip[(size_t)t] && !scene.clips[(size_t)t].bytes.empty())
+                    hasPlayableClip = true;
+            if (!hasPlayableClip) completeSessionContent = false;
+        }
+        rigSignatures.insert(std::to_string(preset.session.tracks[0].patch.index) + ":"
+            + std::to_string(preset.session.tracks[1].patch.index) + ":"
+            + std::to_string(preset.session.tracks[2].patch.index) + ":"
+            + std::to_string(preset.session.tracks[3].patch.index));
+    }
+    bool familiesValid = familyCounts.size() == 6;
+    for (const auto& [family, count] : familyCounts)
+        if (family.empty() || count != 4) familiesValid = false;
+    check(rigMetadataValid, "every SQ-4 library entry is a valid complete session");
+    check(familiesValid, "session library has six families with four variations each");
+    check(rigProgramsValid, "every session references valid device programs");
+    check(completeSessionContent, "every session contains playable clips and device patches");
+    check(rigNames.size() == sessionLibrary.size() && rigSignatures.size() == sessionLibrary.size(),
+          "session names and four-device combinations are unique");
+
+    const auto clipsBeforeRigPatch = p.conductor().session().scenes[2].clips;
+    hdr.selectLibrarySession(1);
+    check(hdr.libraryForTest().getSelectedId() == 2,
+          "SQ-4 library selects the complete NEON CHASE session");
+    const std::array<int, 4> neonChase { 3, 2, 4, 11 };
+    bool rigMatches = true;
+    for (int t = 0; t < 4; ++t) {
+        const auto& patch = p.conductor().session().tracks[(size_t)t].patch;
+        if (!patch.factory || patch.index != neonChase[(size_t)t]) rigMatches = false;
+    }
+    check(rigMatches, "session library updates all four device patches");
+    bool sessionChangedClips = false;
+    for (int t = 0; t < 4; ++t)
+        if (p.conductor().session().scenes[2].clips[(size_t)t].bytes
+            != clipsBeforeRigPatch[(size_t)t].bytes) sessionChangedClips = true;
+    check(sessionChangedClips, "session recall replaces scene clips as well as patches");
+    check(p.conductor().session().name == "NEON CHASE"
+              && std::abs(p.conductor().session().bpm - sessionLibrary[1].session.bpm) < 1.0e-9,
+          "session recall applies global session metadata and tempo");
+    auto customizedBytes = p.conductor().session().scenes[0].clips[0].bytes;
+    customizedBytes[0] ^= 1u;
+    p.conductor().updateClipBytes(0, 0, customizedBytes,
+                                  p.conductor().session().scenes[0].clips[0].bars);
+    check(p.currentSessionPreset() == -1,
+          "editing a recalled clip marks the complete session as CUSTOM");
+    hdr.selectLibrarySession(0);
+    check(p.currentSessionPreset() == 0, "NEON TALE restores the full factory session");
+
     p.conductor().launchScene(1);
     renderRms(p, buf, 800);
     p.drainAcks();
@@ -363,9 +505,56 @@ int main(int argc, char** argv) {
     auto& focusView = ed2->deviceFocus();
 
     ed2->enterFocus(0, 2);            // DRUMS, DROP A
+    focusView.clipSourceForTest().setSelectedId(2, juce::sendNotificationSync);
     check(ed2->focus() == std::make_pair(0, 2), "enterFocus(0,2) targets scene 2 / track 0");
     check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::drum,
           "DRUMS focus shows the native DR-1 body");
+    check(focusView.patchSelectorForTest().isVisible(),
+          "native focus keeps a visible device patch selector");
+    check(focusView.clipSelectorForTest().isVisible()
+              && focusView.clipSelectorForTest().getNumItems() == 32,
+          "clip browser shows only the eight DR-1 factory clips");
+    check(focusView.clipTargetForTest().contains("DROP A")
+              && focusView.clipTargetForTest().contains("DRUMS"),
+          "clip browser identifies its target scene and track");
+    check(focusView.clipMetadataForTest().isNotEmpty()
+              && focusView.clipActionsForTest().isVisible(),
+          "DR-1 clip browser keeps metadata and utilities in one action menu");
+
+    // Applying a per-pad patch makes the enclosing session custom. The SQ-4
+    // library synchronizer must not mistake that local edit for an external
+    // session recall and reload the old bank over it; likewise the pad-patch
+    // strip must retain the selected patch instead of clearing it next tick.
+    hdr.selectLibrarySession(0);
+    const auto padPatchRevision = focusView.drumModelForTest().patchContextRevision();
+    focusView.drumModelForTest().applyFactoryPadPatch(0);
+    hdr.syncLibraryForTest();
+    const auto expectedPadValues = fable::applyPatchToPad(0, fable::factoryPatches()[0]);
+    const auto& expectedPadValue = expectedPadValues.front();
+    const auto& expectedPadInfo = fable::drumParamInfo()[(size_t)expectedPadValue.first];
+    const auto& inlinePadPatch = p.conductor().session().tracks[0].patch;
+    const auto storedPadValue = inlinePadPatch.params.find(expectedPadInfo.pid);
+    check(!inlinePadPatch.factory && storedPadValue != inlinePadPatch.params.end()
+              && std::abs(storedPadValue->second - expectedPadValue.second) < 1.0e-6f,
+          "SQ-4 pad patch remains committed after the session library sync");
+    check(focusView.drumModelForTest().patchContextRevision() == padPatchRevision,
+          "applying a pad patch does not immediately invalidate its own readout");
+
+    const int drumProgram = focusView.drumModelForTest().currentProgram();
+    const int nextDrumProgram = drumProgram < 0 ? 1
+        : (drumProgram + 1) % focusView.drumModelForTest().numPrograms();
+    focusView.patchSelectorForTest().setSelectedId(nextDrumProgram + 1,
+                                                   juce::sendNotificationSync);
+    check(p.conductor().session().tracks[0].patch.factory
+              && p.conductor().session().tracks[0].patch.index == nextDrumProgram,
+          "DR-1 patch selector updates the SQ-4 track patch");
+    p.setTrackInlineParams(0, p.trackParameterValues(0));
+    focusView.reloadPatchesFromSession();
+    check(focusView.drumModelForTest().currentProgram() == -1
+              && focusView.patchSelectorForTest().getText() == "CUSTOM",
+          "DR-1 inline patch is shown as CUSTOM");
+    focusView.patchSelectorForTest().setSelectedId(nextDrumProgram + 1,
+                                                   juce::sendNotificationSync);
     grid.cellClick(2, 0);            // launch DROP A drums so the edited clip is live
     renderRms(p, buf, 800); p.drainAcks();
     check(p.conductor().ownerOf(0) == 2, "DROP A drums are live before editing",
@@ -381,12 +570,41 @@ int main(int argc, char** argv) {
     // audio keeps running (phase preserved by ClipHost::updateClip — Task 2 case 6)
     check(renderRms(p, buf, 200) > 1e-5, "audio keeps running through the live edit");
 
+    const auto drumPatchBeforeClipLoad = p.conductor().session().tracks[0].patch;
+    const auto bassNeighbourBeforeClipLoad = p.conductor().session().scenes[2].clips[1].bytes;
+    focusView.clipSelectorForTest().setSelectedId(2, juce::sendNotificationSync); // HOUSE POCKET
+    check(p.conductor().session().scenes[2].clips[0].name == "HOUSE POCKET",
+          "selecting a library clip immediately replaces the focused live cell");
+    check(p.conductor().session().tracks[0].patch.factory == drumPatchBeforeClipLoad.factory
+              && p.conductor().session().tracks[0].patch.index == drumPatchBeforeClipLoad.index
+              && p.conductor().session().tracks[0].patch.params == drumPatchBeforeClipLoad.params,
+          "native clip selection preserves the focused device patch");
+    check(p.conductor().session().scenes[2].clips[1].bytes == bassNeighbourBeforeClipLoad,
+          "native clip selection leaves neighbouring cells unchanged");
+    check(renderRms(p, buf, 200) > 1e-5,
+          "native factory selection keeps live playback running through hot-update");
+
     // focus rules: head switch keeps scene, explicit scene wins, exit remembers.
     ed2->enterFocus(1);
+    focusView.clipSourceForTest().setSelectedId(2, juce::sendNotificationSync);
     check(ed2->focus() == std::make_pair(1, 2), "switching heads keeps the scene");
 
     check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::bass,
           "head switch replaces DR-1 with the native BL-1 body");
+    const int bassProgram = focusView.bassModelForTest().currentProgram();
+    const int nextBassProgram = (bassProgram + 1) % focusView.bassModelForTest().numPrograms();
+    focusView.patchSelectorForTest().setSelectedId(nextBassProgram + 1,
+                                                   juce::sendNotificationSync);
+    check(p.conductor().session().tracks[1].patch.factory
+              && p.conductor().session().tracks[1].patch.index == nextBassProgram,
+          "BL-1 patch selector updates the SQ-4 track patch");
+    p.setTrackInlineParams(1, p.trackParameterValues(1));
+    focusView.reloadPatchesFromSession();
+    check(focusView.bassModelForTest().currentProgram() == -1
+              && focusView.patchSelectorForTest().getText() == "CUSTOM",
+          "BL-1 inline patch is shown as CUSTOM");
+    focusView.patchSelectorForTest().setSelectedId(nextBassProgram + 1,
+                                                   juce::sendNotificationSync);
 
     // BL-1 native sequencer: exact byte encoding at sqNoteIdx. Focus is
     // BASS / DROP A (ACID 303, one bar); edit a rest step with the same model
@@ -402,6 +620,17 @@ int main(int argc, char** argv) {
     check(noteByte(0) == (1 | 2 | 4), "native BL-1 writes on/accent/slide flags", noteByte(0));
     check(noteByte(1) == 7, "native BL-1 writes the selected pitch lane", noteByte(1));
     check(noteByte(2) == 0, "native BL-1 writes octave as oct+1", noteByte(2));
+
+    check(focusView.clipSelectorForTest().getNumItems() == 20,
+          "BL-1 focus filters its factory clips without auxiliary load controls");
+    const auto bassPatchBeforeClipLoad = p.conductor().session().tracks[1].patch;
+    focusView.clipSelectorForTest().setSelectedId(1, juce::sendNotificationSync); // ACID CRAWL
+    check(p.conductor().session().scenes[2].clips[1].name == "ACID CRAWL",
+          "native note-clip selection applies the factory entry");
+    check(p.conductor().session().tracks[1].patch.factory == bassPatchBeforeClipLoad.factory
+              && p.conductor().session().tracks[1].patch.index == bassPatchBeforeClipLoad.index
+              && p.conductor().session().tracks[1].patch.params == bassPatchBeforeClipLoad.params,
+          "native clip selection preserves the BL-1 patch");
 
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
     if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
@@ -445,6 +674,13 @@ int main(int argc, char** argv) {
     check(ed2->focus() == std::make_pair(2, 0), "enterFocus(2,0) targets the empty LEAD/INTRO cell");
     check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::wt2,
           "LEAD focus shows the first native WT-1 body");
+    const int wtProgram = focusView.wt2ModelForTest().currentProgram();
+    const int nextWtProgram = (wtProgram + 1) % focusView.wt2ModelForTest().numPrograms();
+    focusView.patchSelectorForTest().setSelectedId(nextWtProgram + 1,
+                                                   juce::sendNotificationSync);
+    check(p.conductor().session().tracks[2].patch.factory
+              && p.conductor().session().tracks[2].patch.index == nextWtProgram,
+          "WT-1 patch selector updates the focused SQ-4 track patch");
     check(!p.conductor().session().scenes[0].hasClip[2], "LEAD/INTRO starts empty");
     focusView.wt2ModelForTest().createTargetClip();
     check(p.conductor().session().scenes[0].hasClip[2], "native focus create action writes a clip into the doc");

@@ -20,14 +20,26 @@ if (typeof localStorage === 'undefined') {
 describe('kits', () => {
   beforeEach(() => localStorage.clear());
 
-  it('ships TR-VOID, ROOM ONE, BITCRUSH; TR-VOID matches the mockup names', () => {
-    expect(FACTORY_KITS.map((k) => k.name)).toEqual(['TR-VOID', 'ROOM ONE', 'BITCRUSH']);
+  it('ships 12 distinct factory kits; TR-VOID keeps the mockup names', () => {
+    expect(FACTORY_KITS.map((k) => k.name)).toEqual([
+      'TR-VOID', 'ROOM ONE', 'BITCRUSH', '808 CLASSIC', 'DEEP DUB', 'DUST HOUSE',
+      'WAREHOUSE', 'METAL WORK', 'TAPE KIT', 'MINIMAL', 'BROKEN TOYS', 'LIVE ROOM',
+    ]);
     const tv = FACTORY_KITS[0];
     expect(tv.padNames).toHaveLength(PAD_COUNT);
     expect(tv.padNames[0]).toBe('KICK');
     expect(tv.padNames[2]).toBe('SNARE');
     expect(tv.patterns).toHaveLength(NPATTERNS * PAD_COUNT * STEPS);
     expect(tv.patterns[patIdx(0, 0, 0)]).toBe(2); // kick accent on the one
+    const state = kitToState(tv);
+    expect(state.params['pad5.ring.mix']).toBeCloseTo(0.18);
+    expect(state.params['pad6.ring.mix']).toBeCloseTo(0.28);
+    expect(state.params['pad7.ring.mix']).toBeCloseTo(0.46);
+    expect(state.params['pad11.ring.mix']).toBeCloseTo(0.62);
+    expect(state.params['pad12.ring.freq']).toBe(731);
+    expect(state.params['pad12.ring.mix']).toBeCloseTo(0.78);
+    expect(state.params['pad13.ring.freq']).toBe(3271);
+    expect(state.params['pad13.ring.mix']).toBeCloseTo(0.88);
   });
 
   it('every factory kit param id exists in DRUM_PARAMS and is in range', () => {

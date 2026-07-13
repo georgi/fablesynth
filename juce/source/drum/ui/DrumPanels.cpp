@@ -504,6 +504,8 @@ void DrumNoisePanel::rebuild() {
     knobs.clear();
     addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("noise.color"), Knob::Sm, Accent::B)));
     addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("noise.level"), Knob::Md, Accent::B)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("ring.freq"), Knob::Sm, Accent::B)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("ring.mix"), Knob::Md, Accent::B)));
 }
 
 void DrumNoisePanel::resized() {
@@ -512,7 +514,8 @@ void DrumNoisePanel::resized() {
     r.removeFromTop(8);
     if (view) view->setBounds(r.removeFromTop(104));
     r.removeFromTop(8);
-    static const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md) };
+    static const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md),
+                                 Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md) };
     layoutKnobRow(r, knobs, sizes);
 }
 
@@ -521,8 +524,8 @@ void DrumNoisePanel::paint(juce::Graphics& g) {
     auto head = headArea;
     drawDrLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), col::acB);
     head.removeFromLeft(8);
-    drawValueWell(g, head.removeFromRight(65).withSizeKeepingCentre(65, 18), "WHITE");
-    drawHeadTitle(g, head, "NOISE", col::acB);
+    drawValueWell(g, head.removeFromRight(52).withSizeKeepingCentre(52, 18), "METAL");
+    drawHeadTitle(g, head, "NOISE + RING", col::acB);
 }
 
 // ===================== DrumPitchEnvPanel =====================

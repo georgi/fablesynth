@@ -14,7 +14,7 @@
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
 // Focus mode reuses header + heads unchanged, collapses the scene grid to a
-// single-row mini strip (row 96 + scene rail 24 = ~128 tall), and drops the
+// single-row mini strip (96 tall, with the scene rail on its left), and drops the
 // selected native device body into the freed space down to the footer slot,
 // which hides. Instant relayout, no FLIP (spec §2).
 
@@ -65,8 +65,8 @@ void SeqRack::resized() {
     header.setBounds(18, 14, 1424, 66);
     trackHeads.setBounds(18, 89, 1424, 54);
     if (focusMode_) {
-        sceneGrid.setBounds(18, 152, 1424, 128);  // mini strip: row (96) + rail (24)
-        deviceFocus.setBounds(18, 288, 1424, 618); // native device -> down to ~906
+        sceneGrid.setBounds(18, 152, 1424, 96);   // mini strip: scene rail + row
+        deviceFocus.setBounds(18, 256, 1424, 650); // native device -> down to ~906
     } else {
         sceneGrid.setBounds(18, 152, 1424, 630);
         footer.setBounds(18, 782, 1424, 68);
@@ -89,6 +89,7 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
     heads().onExitFocus  = [this]() { exitFocus(); };
     grid().onEditClip    = [this](int s, int t) { enterFocus(t, s); };
     grid().onRailScene   = [this](int s) { focusScene(s); };
+    header().onLibrarySessionChanged = [this] { deviceFocus().reloadPatchesFromSession(); };
 
     setWantsKeyboardFocus(true);
 

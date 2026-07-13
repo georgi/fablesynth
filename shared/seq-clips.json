@@ -1,0 +1,1165 @@
+{
+  "v": 1,
+  "clips": [
+    {
+      "id": "dr1-neon-drive",
+      "name": "NEON DRIVE",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "techno",
+      "role": "four-on-floor",
+      "energy": 4,
+      "tags": [
+        "driving",
+        "peak-time"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-house-pocket",
+      "name": "HOUSE POCKET",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AQAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "house",
+      "role": "four-on-floor",
+      "energy": 3,
+      "tags": [
+        "groovy",
+        "straight"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-lofi-break",
+      "name": "LO-FI BREAK",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AQAAAAAAAAEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQABAAABAAABAAEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "lo-fi",
+      "role": "breakbeat",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "syncopated"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-cinema-half",
+      "name": "CINEMA HALF",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "cinematic",
+      "role": "half-time",
+      "energy": 2,
+      "tags": [
+        "dark",
+        "sparse"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-electro-grid",
+      "name": "ELECTRO GRID",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AQAAAQAAAAABAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAABAAAAAQAAAQAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "electro",
+      "role": "electro",
+      "energy": 4,
+      "tags": [
+        "cold",
+        "syncopated"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-perc-orbit",
+      "name": "PERC ORBIT",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAQAAAAEAAAIAAAABAAAAAQAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "experimental",
+      "role": "percussion",
+      "energy": 3,
+      "tags": [
+        "hypnotic",
+        "atonal"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-hat-rise",
+      "name": "HAT RISE",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AQAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQACAQIBAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "house",
+      "role": "build-up",
+      "energy": 4,
+      "tags": [
+        "build-up",
+        "dense"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-tom-fall",
+      "name": "TOM FALL",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAABAAEAAAAAAAAAAAAAAAAAAAEAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "cinematic",
+      "role": "fill",
+      "energy": 5,
+      "tags": [
+        "dark",
+        "peak-time"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "bl1-acid-crawl",
+      "name": "ACID CRAWL",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AwABAAABAAABBQABAAABAAABAQMBAAABAQABAAABAAABBQoAAAABAAABAQUBAAAB",
+      "family": "acid",
+      "role": "acid",
+      "energy": 4,
+      "tags": [
+        "hypnotic",
+        "driving"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-sub-anchor",
+      "name": "SUB ANCHOR",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQAAAAABAAABAAABAAABAAABAAABAAABAQoAAAABAAABAAABAAABAAABAAABAAAB",
+      "family": "ambient",
+      "role": "sub",
+      "energy": 1,
+      "tags": [
+        "dark",
+        "sparse"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-neon-arp",
+      "name": "NEON ARP",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAABAQMBAAABAQcBAAABAQoBAAABAwACAAABAQoBAAABAQcBAAABAQMBAAAB",
+      "family": "techno",
+      "role": "arpeggio",
+      "energy": 4,
+      "tags": [
+        "bright",
+        "dense"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-house-loop",
+      "name": "HOUSE LOOP",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAABAAABAQABAAABAAABAQMBAAABAQACAAABAAABAQUBAAABAAABAQMBAAAB",
+      "family": "house",
+      "role": "ostinato",
+      "energy": 3,
+      "tags": [
+        "groovy",
+        "hypnotic"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-lofi-skip",
+      "name": "LO-FI SKIP",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AAABAQABAAABAAABAQoAAAABAAABAQMBAAABAAABAQABAAABAAABAQUBAAABAAAB",
+      "family": "lo-fi",
+      "role": "syncopated",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "syncopated"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-cinema-hold",
+      "name": "CINEMA HOLD",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQAABQAABQAABQAABQAABQAABQAABQAAAQMABQMABQMABQMABQMABQMABQMABQMA",
+      "family": "cinematic",
+      "role": "sustained",
+      "energy": 2,
+      "tags": [
+        "dark",
+        "breakdown"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-slide-wire",
+      "name": "SLIDE WIRE",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AwABAAABBQACAAABAQMBBQUBAAABAAABAwoAAAABAQABBQcBAAABAAABAQMBAAAB",
+      "family": "acid",
+      "role": "sliding",
+      "energy": 5,
+      "tags": [
+        "peak-time",
+        "driving"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-minimal-pulse",
+      "name": "MINIMAL PULSE",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAABAAABAAABAAABAAABAAABAQABAAABAAABAAABAAABAQMBAAABAAABAAAB",
+      "family": "experimental",
+      "role": "minimal",
+      "energy": 2,
+      "tags": [
+        "cold",
+        "sparse"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-glass-hook",
+      "name": "GLASS HOOK",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AwACAAABAAABAQoBAAABAAABAQcBAAABAQMCAAABBQoBAAABAAABAAABAQUBAAAB",
+      "family": "techno",
+      "role": "hook",
+      "energy": 4,
+      "tags": [
+        "bright",
+        "melodic"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-air-chord",
+      "name": "AIR CHORD",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABBQABBQABBQABBQABBQABBQABBQABAQoABQoABQoABQoABQoABQoABQoABQoA",
+      "family": "ambient",
+      "role": "chord",
+      "energy": 1,
+      "tags": [
+        "warm",
+        "breakdown"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-pad-pulse",
+      "name": "PAD PULSE",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AAABAAABAQABAAABAAABAAABAQMBAAABAAABAAABAQoAAAABAAABAAABAQUBAAAB",
+      "family": "house",
+      "role": "pad-pulse",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "groovy"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-lumen-arp",
+      "name": "LUMEN ARP",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAAABAQMBAAABAQcBAAABAQoBAAABAQACAAABAQMCAAABAQcCAAABAQoCAAAB",
+      "family": "techno",
+      "role": "arpeggio",
+      "energy": 4,
+      "tags": [
+        "bright",
+        "dense"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-fog-lead",
+      "name": "FOG LEAD",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAAABAAABAAABAQoBAAABAAABAQcBAAABAAABAQMBAAABAAABAQUBAAABAAAB",
+      "family": "lo-fi",
+      "role": "lead",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "melodic"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-counter-light",
+      "name": "COUNTER LIGHT",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AAABAAABAQcBAAABAAABAQoBAAABAAABAAABAQMCAAABAAABAQACAAABAAABAQoB",
+      "family": "house",
+      "role": "countermelody",
+      "energy": 3,
+      "tags": [
+        "melodic",
+        "syncopated"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-cinema-texture",
+      "name": "CINEMA TEXTURE",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQAAAAABAAABBQAAAAABAAABAAABAQUBAAABAAABBQUBAAABAAABAAABAQMBAAAB",
+      "family": "cinematic",
+      "role": "texture",
+      "energy": 2,
+      "tags": [
+        "dark",
+        "atonal"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-signal-rise",
+      "name": "SIGNAL RISE",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAAABAQIBAAABAQMBAAABAQUBAAABAQcBAAABAQgBAAABAQoBAAABAwsCAAAB",
+      "family": "cinematic",
+      "role": "riser",
+      "energy": 5,
+      "tags": [
+        "build-up",
+        "peak-time"
+      ],
+      "root": 0,
+      "scale": "chromatic",
+      "transpose": true
+    },
+    {
+      "id": "dr1-dusty-amen",
+      "name": "DUSTY AMEN",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAEAAAEAAAEAAAABAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAQAAAQABAAEAAAEAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "breaks",
+      "role": "breakbeat",
+      "energy": 4,
+      "tags": [
+        "warm",
+        "syncopated"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-ghost-shuffle",
+      "name": "GHOST SHUFFLE",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAEAAAEAAAEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "breaks",
+      "role": "sparse",
+      "energy": 2,
+      "tags": [
+        "sparse",
+        "triplet-feel"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-iron-quarters",
+      "name": "IRON QUARTERS",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAIAAAACAAAAAgAAAAAAAQAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAAEAAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "techno",
+      "role": "four-on-floor",
+      "energy": 5,
+      "tags": [
+        "driving",
+        "peak-time"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-dub-chambers",
+      "name": "DUB CHAMBERS",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAAABAAEAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "techno",
+      "role": "half-time",
+      "energy": 3,
+      "tags": [
+        "dark",
+        "hypnotic"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-velvet-jack",
+      "name": "VELVET JACK",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAEAAAACAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEAAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "house",
+      "role": "four-on-floor",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "groovy"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-sunrise-hats",
+      "name": "SUNRISE HATS",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AQAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEAAAEAAQABAAEAAQABAAEAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "house",
+      "role": "hats",
+      "energy": 2,
+      "tags": [
+        "bright",
+        "straight"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-chrome-sync",
+      "name": "CHROME SYNC",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAQAAAAACAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQEAAAEAAQABAQAAAAEAAAABAAEAAQAAAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "electro",
+      "role": "electro",
+      "energy": 5,
+      "tags": [
+        "cold",
+        "syncopated"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-machine-funk",
+      "name": "MACHINE FUNK",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAQACAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAEAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEBAAABAAEAAQEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAQAAAAAAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "electro",
+      "role": "breakbeat",
+      "energy": 3,
+      "tags": [
+        "groovy",
+        "glitchy"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-squelch-frame",
+      "name": "SQUELCH FRAME",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAIAAAACAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAQAAAAABAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "acid",
+      "role": "four-on-floor",
+      "energy": 4,
+      "tags": [
+        "driving",
+        "hypnotic"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-distant-ticks",
+      "name": "DISTANT TICKS",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "ambient",
+      "role": "sparse",
+      "energy": 1,
+      "tags": [
+        "cold",
+        "sparse"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-tape-swing",
+      "name": "TAPE SWING",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAEAAgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAABAAABAAABAAABAAABAAEAAAAAAAEAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "lo-fi",
+      "role": "breakbeat",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "triplet-feel"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-titan-march",
+      "name": "TITAN MARCH",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAACAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAQACAAAAAAABAAAAAAEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "cinematic",
+      "role": "half-time",
+      "energy": 5,
+      "tags": [
+        "dark",
+        "peak-time"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-broken-clock",
+      "name": "BROKEN CLOCK",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAABAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAEAAAABAAABAAABAAAAAQABAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAABAAAAAA==",
+      "family": "experimental",
+      "role": "experimental",
+      "energy": 3,
+      "tags": [
+        "atonal",
+        "glitchy"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-jungle-sparks",
+      "name": "JUNGLE SPARKS",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAQAAAQACAAEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAABAAAAAAIAAQAAAAAAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQEBAQEBAQEBAQEBAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQABAAAAAAABAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "breaks",
+      "role": "breakbeat",
+      "energy": 5,
+      "tags": [
+        "dense",
+        "peak-time"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-garage-skip",
+      "name": "GARAGE SKIP",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAQACAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEAAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "house",
+      "role": "breakbeat",
+      "energy": 3,
+      "tags": [
+        "groovy",
+        "syncopated"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-warehouse-fill",
+      "name": "WAREHOUSE FILL",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAIAAAACAAAAAgACAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAQEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEBAQEBAQAAAAAAAAAAAAAAAAEBAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "techno",
+      "role": "fill",
+      "energy": 5,
+      "tags": [
+        "build-up",
+        "dense"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-pulse-dust",
+      "name": "PULSE DUST",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "ambient",
+      "role": "percussion",
+      "energy": 1,
+      "tags": [
+        "sparse",
+        "hypnotic"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-ritual-toms",
+      "name": "RITUAL TOMS",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAQAAAQACAAABAAABAAAAAQAAAAAAAQAAAAEAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "cinematic",
+      "role": "percussion",
+      "energy": 3,
+      "tags": [
+        "dark",
+        "triplet-feel"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-binary-rain",
+      "name": "BINARY RAIN",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEBAAEAAAABAQABAAEAAAAAAAAAAAAAAAAAAAAAAAABAAABAAEBAAAAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAQAAAAEAAQ==",
+      "family": "experimental",
+      "role": "experimental",
+      "energy": 4,
+      "tags": [
+        "cold",
+        "glitchy"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-bedroom-knock",
+      "name": "BEDROOM KNOCK",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "lo-fi",
+      "role": "half-time",
+      "energy": 2,
+      "tags": [
+        "warm",
+        "sparse"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-corrosive-build",
+      "name": "CORROSIVE BUILD",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAIAAAACAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAEAAQABAQEBAAAAAAAAAAAAAQABAQEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "acid",
+      "role": "build-up",
+      "energy": 5,
+      "tags": [
+        "build-up",
+        "driving"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-robot-fill",
+      "name": "ROBOT FILL",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAQACAAAAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAAABAAEAAQABAQEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAABAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQABAQ==",
+      "family": "electro",
+      "role": "fill",
+      "energy": 4,
+      "tags": [
+        "glitchy",
+        "build-up"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-halftime-crush",
+      "name": "HALFTIME CRUSH",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAAAAAACAAABAAAAAAAAAQAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEAAQABAAEAAQABAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "breaks",
+      "role": "half-time",
+      "energy": 4,
+      "tags": [
+        "dark",
+        "driving"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "dr1-disco-lift",
+      "name": "DISCO LIFT",
+      "machine": "DR1",
+      "bars": 1,
+      "pattern": "AgAAAAIAAAACAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAEBAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAAAAAAAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAABAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "family": "house",
+      "role": "build-up",
+      "energy": 5,
+      "tags": [
+        "bright",
+        "peak-time"
+      ],
+      "transpose": false
+    },
+    {
+      "id": "bl1-redline-acid",
+      "name": "REDLINE ACID",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AwABAQABAAAABQMBAQABAAAAAwcBAQoAAwABAAAABQMBAQEBAwoAAAAAAQcBBQMB",
+      "family": "acid",
+      "role": "acid",
+      "energy": 5,
+      "tags": [
+        "driving",
+        "peak-time"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-rubber-dub",
+      "name": "RUBBER DUB",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAAAAAAAAAAABQABAAAAAAAAAQcAAQABAAAAAAAAAAAABQoAAAAAAAAAAAAA",
+      "family": "acid",
+      "role": "minimal",
+      "energy": 2,
+      "tags": [
+        "dark",
+        "sparse"
+      ],
+      "root": 2,
+      "scale": "dorian",
+      "transpose": true
+    },
+    {
+      "id": "bl1-basement-sequence",
+      "name": "BASEMENT SEQUENCE",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAAAAQABAQEBAQABAAAAAQMBAAAAAQABAAAAAQcAAQEBAQABAAAAAQoAAAAA",
+      "family": "techno",
+      "role": "ostinato",
+      "energy": 4,
+      "tags": [
+        "cold",
+        "hypnotic"
+      ],
+      "root": 5,
+      "scale": "phrygian",
+      "transpose": true
+    },
+    {
+      "id": "bl1-deep-root",
+      "name": "DEEP ROOT",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQAAAAAAAAAAAQAAAQMAAAAAAAAAAQAAAQAAAAAAAAAAAQUAAQcAAAAAAAAAAQMA",
+      "family": "house",
+      "role": "sub",
+      "energy": 2,
+      "tags": [
+        "warm",
+        "groovy"
+      ],
+      "root": 7,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-voltage-hop",
+      "name": "VOLTAGE HOP",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAAAAQcAAAAAAAAAAQMBAwoAAAAAAQABAAAAAAAAAQEBAAAABQcAAAAAAQoA",
+      "family": "electro",
+      "role": "syncopated",
+      "energy": 4,
+      "tags": [
+        "syncopated",
+        "glitchy"
+      ],
+      "root": 9,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-rewind-bass",
+      "name": "REWIND BASS",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABAAAAAAAAAQMBAQABAAAAAAAAAQoAAQABAAAAAQcAAAAAAQMBAAAAAAAABQAB",
+      "family": "breaks",
+      "role": "syncopated",
+      "energy": 4,
+      "tags": [
+        "warm",
+        "driving"
+      ],
+      "root": 0,
+      "scale": "pentatonic-minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-tide-drone",
+      "name": "TIDE DRONE",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQABBAABBAABBAABAQcABAcABAcABAcAAQUABAUABAUABAUAAQABBAABBAABBAAB",
+      "family": "ambient",
+      "role": "sustained",
+      "energy": 1,
+      "tags": [
+        "warm",
+        "breakdown"
+      ],
+      "root": 4,
+      "scale": "major",
+      "transpose": true
+    },
+    {
+      "id": "bl1-cassette-sub",
+      "name": "CASSETTE SUB",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQAAAAAAAAAAAQAAAAAAAAAAAQMAAAAAAQAAAAAAAAAAAQoAAAAAAAAAAQcAAAAA",
+      "family": "lo-fi",
+      "role": "sub",
+      "energy": 2,
+      "tags": [
+        "warm",
+        "triplet-feel"
+      ],
+      "root": 10,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-dread-pedal",
+      "name": "DREAD PEDAL",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQAABAAABAAABAAABQEAAAAAAAAAAAAAAQAABAAABAAABAAABQcAAAAAAAAAAAAA",
+      "family": "cinematic",
+      "role": "sustained",
+      "energy": 3,
+      "tags": [
+        "dark",
+        "hypnotic"
+      ],
+      "root": 1,
+      "scale": "phrygian",
+      "transpose": true
+    },
+    {
+      "id": "bl1-wrong-turn",
+      "name": "WRONG TURN",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AwABAAAABQsAAAAAAAAAAwICAAAAAQgABQEBAAAAAwkAAAAAAAAAAQQBAAAABQYA",
+      "family": "experimental",
+      "role": "sliding",
+      "energy": 3,
+      "tags": [
+        "atonal",
+        "glitchy"
+      ],
+      "root": 6,
+      "scale": "chromatic",
+      "transpose": true
+    },
+    {
+      "id": "bl1-acid-ascent",
+      "name": "ACID ASCENT",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AQAAAQAAAQMAAQMAAQUAAQUAAQcAAQcAAwgAAQgAAwoAAQoAAwABAQMBAwcBBQoB",
+      "family": "acid",
+      "role": "transition",
+      "energy": 5,
+      "tags": [
+        "build-up",
+        "dense"
+      ],
+      "root": 3,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "bl1-turnaround-fill",
+      "name": "TURNAROUND FILL",
+      "machine": "BL1",
+      "bars": 1,
+      "pattern": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQABAQMBAQUBAQcBAwoBAQcBAwUBBQMB",
+      "family": "house",
+      "role": "fill",
+      "energy": 4,
+      "tags": [
+        "groovy",
+        "build-up"
+      ],
+      "root": 5,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-prism-lead",
+      "name": "PRISM LEAD",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAAAAAQMBAQcBAQoBAAAAAQcBAAAAAQACAAAAAQoBAQcBAQMBAAAAAQEBAQAB",
+      "family": "techno",
+      "role": "lead",
+      "energy": 5,
+      "tags": [
+        "bright",
+        "peak-time"
+      ],
+      "root": 0,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-sodium-chords",
+      "name": "SODIUM CHORDS",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABBAABAAAAAQMBAQcBBAcBAAAAAQoBAQACBAACAAAAAQoBAQcBBAcBAAAAAQMB",
+      "family": "house",
+      "role": "chord",
+      "energy": 3,
+      "tags": [
+        "warm",
+        "groovy"
+      ],
+      "root": 5,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-arcade-hero",
+      "name": "ARCADE HERO",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAQMBAAAAAQcBAQACAAAAAQoBAQcBAQMBAAAAAQABAAAAAQcBAQoBAAAAAQAC",
+      "family": "electro",
+      "role": "hook",
+      "energy": 4,
+      "tags": [
+        "bright",
+        "melodic"
+      ],
+      "root": 9,
+      "scale": "pentatonic-minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-rain-counter",
+      "name": "RAIN COUNTER",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AAAAAQcBAAAAAQoBAAAAAAAAAQMCAQACAAAAAQoBAAAAAQcBAAAAAAAAAQUBAQMB",
+      "family": "breaks",
+      "role": "countermelody",
+      "energy": 3,
+      "tags": [
+        "syncopated",
+        "melodic"
+      ],
+      "root": 2,
+      "scale": "dorian",
+      "transpose": true
+    },
+    {
+      "id": "wt1-horizon-pad",
+      "name": "HORIZON PAD",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAAAAAAAAAAAAAQcBAAAAAAAAAAAAAQUBAAAAAAAAAAAAAQACAAAAAAAAAAAA",
+      "family": "ambient",
+      "role": "pad-pulse",
+      "energy": 1,
+      "tags": [
+        "warm",
+        "sparse"
+      ],
+      "root": 4,
+      "scale": "major",
+      "transpose": true
+    },
+    {
+      "id": "wt1-tape-memory",
+      "name": "TAPE MEMORY",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQABAAAAAAAAAQMBAAAAAAAAAQcBAAAAAQoBAAAAAAAAAQcBAAAAAAAAAQMBAAAA",
+      "family": "lo-fi",
+      "role": "lead",
+      "energy": 2,
+      "tags": [
+        "warm",
+        "triplet-feel"
+      ],
+      "root": 10,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-black-signal",
+      "name": "BLACK SIGNAL",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQAAAAAABQYBAAAAAAAAAQECAAAAAwsAAQABAAAABQgBAAAAAAAAAQICAAAAAwEB",
+      "family": "cinematic",
+      "role": "texture",
+      "energy": 3,
+      "tags": [
+        "dark",
+        "atonal"
+      ],
+      "root": 1,
+      "scale": "chromatic",
+      "transpose": true
+    },
+    {
+      "id": "wt1-shard-cloud",
+      "name": "SHARD CLOUD",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQACAQsAAAAABQUBAQICAAAAAwkAAAAAAAAAAQMCAAAABQgAAQEBAAAAAwcCAAAA",
+      "family": "experimental",
+      "role": "texture",
+      "energy": 4,
+      "tags": [
+        "cold",
+        "glitchy"
+      ],
+      "root": 6,
+      "scale": "chromatic",
+      "transpose": true
+    },
+    {
+      "id": "wt1-acid-answer",
+      "name": "ACID ANSWER",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AAAAAQcBAAAAAwoBAAAAAQMCAAAABQECAAAAAQoBAAAAAwcBAAAAAQUBAAAABQMB",
+      "family": "acid",
+      "role": "countermelody",
+      "energy": 4,
+      "tags": [
+        "hypnotic",
+        "melodic"
+      ],
+      "root": 3,
+      "scale": "minor",
+      "transpose": true
+    },
+    {
+      "id": "wt1-aurora-rise",
+      "name": "AURORA RISE",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQAAAQEAAQIAAQMAAQQAAQUAAQYAAQcAAQgBAQkBAQoBAQsBAQACAQMCAQcCBQoC",
+      "family": "cinematic",
+      "role": "riser",
+      "energy": 5,
+      "tags": [
+        "build-up",
+        "bright"
+      ],
+      "root": 0,
+      "scale": "chromatic",
+      "transpose": true
+    },
+    {
+      "id": "wt1-subway-bass",
+      "name": "SUBWAY BASS",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQAAAAAAAQAAAAAAAQEAAAAAAQMAAAAAAQAAAAAAAQcAAAAAAQEAAAAAAQoAAAAA",
+      "family": "techno",
+      "role": "bass",
+      "energy": 3,
+      "tags": [
+        "dark",
+        "driving"
+      ],
+      "root": 7,
+      "scale": "phrygian",
+      "transpose": true
+    },
+    {
+      "id": "wt1-doorway-transition",
+      "name": "DOORWAY TRANSITION",
+      "machine": "WT1",
+      "bars": 1,
+      "pattern": "AQAAAAAAAQIAAAAAAQUAAAAAAQkAAAAAAwEBAAAAAwYBAAAABQsBAwQCBQgCAQAC",
+      "family": "experimental",
+      "role": "transition",
+      "energy": 4,
+      "tags": [
+        "build-up",
+        "atonal"
+      ],
+      "root": 8,
+      "scale": "chromatic",
+      "transpose": true
+    }
+  ]
+}

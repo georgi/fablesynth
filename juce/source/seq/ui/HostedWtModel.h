@@ -26,6 +26,7 @@ public:
     int targetScene() const { return scene_; }
     int trackIndex() const { return track_; }
     void flushPendingPatch();
+    void reloadPatchFromSession();
 
     ParameterSource parameters() override;
     DeviceUiCapabilities capabilities() const override;

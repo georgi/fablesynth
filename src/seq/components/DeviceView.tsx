@@ -87,6 +87,7 @@ export function DeviceView() {
   const focus = useSeqStore((s) => s.focus);
   const session = useSeqStore((s) => s.session);
   const rig = useSeqStore((s) => s.rig);
+  const clipLoadRevision = useSeqStore((s) => s.clipLoadRevision);
 
   const track = focus ? session.tracks[focus.track] : null;
   const clip = focus ? session.scenes[focus.scene]?.clips[focus.track] : null;
@@ -113,7 +114,7 @@ export function DeviceView() {
     syncing.current = false;
     // Intentionally NOT keyed on the pattern string: our own write-backs must
     // not reload (they'd reset editPattern); createClip flips `!!clip`.
-  }, [focus?.scene, focus?.track, !!clip, host, machine]);
+  }, [focus?.scene, focus?.track, !!clip, host, machine, clipLoadRevision]);
 
   // 3. Write pattern edits back: device store → session doc (+ live hot-swap).
   useEffect(() => {

@@ -1,5 +1,6 @@
 #include "SeqHeader.h"
 #include "../../ui/Controls.h"
+#include "../dsp/SeqFactory.h"
 
 #include <array>
 #include <cmath>
@@ -30,7 +31,29 @@ constexpr const char* kPlayGlyph = "PLAY", *kPauseGlyph = "PAUSE", *kStopGlyph =
 constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
 } // namespace
 
-SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
+SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
+    juce::String lastFamily;
+    const auto& sessions = fable::factorySessionLibrary();
+    for (int i = 0; i < proc.getNumPrograms(); ++i) {
+        const juce::String family(sessions[(size_t)i].family);
+        if (family != lastFamily) {
+            library_.addSectionHeading(family);
+            lastFamily = family;
+        }
+        library_.addItem(proc.getProgramName(i), i + 1);
+    }
+    library_.addItem("CUSTOM", proc.getNumPrograms() + 1);
+    library_.setItemEnabled(proc.getNumPrograms() + 1, false);
+    library_.onChange = [this] {
+        const int index = library_.getSelectedId() - 1;
+        if (index >= 0 && index < proc.getNumPrograms()) selectLibrarySession(index);
+        shownLibrarySession_ = -2;
+        refreshLibrarySelection();
+    };
+    addAndMakeVisible(library_);
+    refreshLibrarySelection();
+    startTimerHz(30);
+}
 
 // ---- actions (also the test handles) ---------------------------------------
 
@@ -48,7 +71,11 @@ void SeqHeader::loadClick() {
         auto* self = safe.getComponent();
         auto file = fc.getResult();
         if (file == juce::File{}) return;
-        self->proc.applySessionJson(file.loadFileAsString());
+        if (self->proc.applySessionJson(file.loadFileAsString())
+            && self->onLibrarySessionChanged)
+            self->onLibrarySessionChanged();
+        self->shownLibrarySession_ = -2;
+        self->refreshLibrarySelection();
         self->repaint();
     });
 }
@@ -64,6 +91,37 @@ void SeqHeader::saveClick() {
         if (file == juce::File{}) return;
         file.replaceWithText(self->proc.currentSessionJson());
     });
+}
+
+void SeqHeader::selectLibrarySession(int index) {
+    proc.applySessionPreset(index);
+    if (onLibrarySessionChanged) onLibrarySessionChanged();
+    shownLibrarySession_ = -2;
+    refreshLibrarySelection();
+    repaint();
+}
+
+void SeqHeader::refreshLibrarySelection() {
+    const int session = proc.currentSessionPreset();
+    if (shownLibrarySession_ == session) return;
+    const bool changedExternally = shownLibrarySession_ != -2;
+    library_.setSelectedId(session >= 0 ? session + 1 : proc.getNumPrograms() + 1,
+                           juce::dontSendNotification);
+    shownLibrarySession_ = session;
+    // Host program changes and per-track patch steppers do not pass through
+    // selectLibrarySession(). Keep any open native device bank aligned with the
+    // session before its next edit can snapshot stale parameter values.
+    // Ordinary clip/patch edits move a factory session to CUSTOM. They already
+    // originated in the focused model, so reloading it here would overwrite
+    // transient UI state (notably DR-1's selected pad patch). A non-custom
+    // session appearing externally is a real recall and does need a reload.
+    if (changedExternally && session >= 0 && onLibrarySessionChanged)
+        onLibrarySessionChanged();
+}
+
+void SeqHeader::timerCallback() {
+    refreshLibrarySelection();
+    repaint();
 }
 
 void SeqHeader::quantStep(int d) {
@@ -187,6 +245,12 @@ void SeqHeader::resized() {
     saveBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
     r.removeFromRight(6);
     loadBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
+
+    r.removeFromRight(14);
+    auto libraryArea = r.removeFromRight(224).withSizeKeepingCentre(224, 28);
+    libraryLabelArea = libraryArea.removeFromLeft(54);
+    libraryArea.removeFromLeft(6);
+    library_.setBounds(libraryArea);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -210,6 +274,10 @@ void SeqHeader::paint(juce::Graphics& g) {
     paintQuant(g);
     paintClock(g);
     paintScope(g);
+
+    g.setColour(col::textDim);
+    g.setFont(monoFont(8.0f));
+    drawSpaced(g, "LIBRARY", libraryLabelArea, 1.2f, juce::Justification::centredRight);
 
     paintKnob(g, swingKnob, "SWING", swingValue());
     paintKnob(g, volKnob, "VOL", volValue());

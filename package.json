@@ -8,6 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "clips:generate": "node scripts/generate-clip-library.mjs",
+    "clips:check": "node scripts/generate-clip-library.mjs --check",
     "standalone:build": "cmake --build juce/build --target FableSynth_Standalone FableDrum_Standalone FableBass_Standalone FableSeq_Standalone -j4",
     "vst:install": "bash scripts/install-vst.sh"
   },

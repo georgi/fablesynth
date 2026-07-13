@@ -45,7 +45,7 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
     oA.havePrev = false; oB.havePrev = false;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
     f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0;
-    noiseY = 0;
+    noiseY = 0; ringPhase = 0.25;
     dcxL = dcxR = dcyL = dcyR = 0;
     lgPrev = -1;
 }
@@ -530,6 +530,25 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
             tmpL[i] += s; tmpR[i] += s;
         }
         v.noiseY = y;
+    }
+
+    // Fixed-Hz sine ring modulation creates inharmonic sidebands for bells,
+    // struck metal and cymbals. MIX=0 is an exact bypass; sqrt(2) compensates
+    // the sine carrier's RMS loss at full wet.
+    const double ringMix = clampd(param(dpid(padI, DP_RING_MIX)), 0.0, 1.0);
+    if (ringMix > 1e-6) {
+        const double ringFreq = clampd(param(dpid(padI, DP_RING_FREQ)), 20.0, sr_ * 0.45);
+        const double ringInc = ringFreq / sr_;
+        double phase = v.ringPhase;
+        for (int i = 0; i < n; ++i) {
+            const double carrier = std::sin(phase * 2.0 * M_PI) * std::sqrt(2.0);
+            const float gain = (float)(1.0 + ringMix * (carrier - 1.0));
+            tmpL[i] *= gain;
+            tmpR[i] *= gain;
+            phase += ringInc;
+            if (phase >= 1.0) phase -= 1.0;
+        }
+        v.ringPhase = phase;
     }
 
     const float* srcL = tmpL;

@@ -221,6 +221,7 @@ if(FABLE_BUILD_PLUGIN)
     set(FABLE_SEQ_SOURCES
         source/seq/SeqProcessor.cpp
         source/seq/SessionCodec.cpp
+        source/seq/ClipLibraryStorage.cpp
         source/seq/SeqEditor.cpp
         source/seq/ui/SeqHeader.cpp
         source/seq/ui/TrackHeadsView.cpp
@@ -237,6 +238,7 @@ if(FABLE_BUILD_PLUGIN)
         source/bass/ui/BassPanels.cpp source/bass/ui/PitchSeqView.cpp source/bass/ui/BassFxRack.cpp
         source/ui/WtDeviceBody.cpp source/WavetableView.cpp source/ui/Displays.cpp
         source/ui/NoteSeqView.cpp source/ui/Panels.cpp
+        source/seq/dsp/ClipLibrary.cpp
         source/seq/dsp/SeqFactory.cpp
         source/seq/dsp/Conductor.cpp
         source/ui/Controls.cpp source/ui/ParameterSource.cpp source/ui/DeviceParameterBank.cpp
@@ -410,6 +412,7 @@ add_executable(sq4_engine_test
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
+    source/seq/dsp/ClipLibrary.cpp
     source/seq/dsp/SeqFactory.cpp
     source/seq/dsp/Conductor.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
