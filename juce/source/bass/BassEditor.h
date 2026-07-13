@@ -2,33 +2,13 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassProcessor.h"
+#include "BassDeviceBody.h"
 #include "ui/BassHeader.h"
-#include "ui/BassPanels.h"
-#include "ui/PitchSeqView.h"
-#include "ui/BassFxRack.h"
 #include "../ui/LookAndFeel.h"
 
 // The BL-1 rack: all sections laid out at a fixed logical size matching the
 // web CSS grid (src/bass/bass.css). The editor scales it to the window so the
 // layout stays pixel-faithful — same scheme as the WT-1/DR-1 racks.
-class BassDeviceBody : public juce::Component {
-public:
-    explicit BassDeviceBody(fui::BassUiModel&);
-    void resized() override;
-    fui::PitchSeqView& pitchSeq() { return seq; }
-
-private:
-    fui::BassOscPanel osc;
-    fui::BassSubPanel sub;
-    fui::BassFilterPanel filter;
-    fui::BassEnvPanel env;
-    fui::BassLfoPanel lfo;
-    fui::BassAccentPanel accent;
-    fui::BassKeysPanel keys;
-    fui::PitchSeqView seq;
-    fui::BassFxRack fxRack;
-};
-
 class BassRack : public juce::Component {
 public:
     static constexpr int LW = 1460, LH = 931;

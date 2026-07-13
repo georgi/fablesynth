@@ -4,13 +4,10 @@
 #include "Modulation.h"
 #include "WtUiModel.h"
 #include "../WavetableView.h"
-#include "../PluginProcessor.h"
 
 // Rack panels — 1:1 ports of src/components/panels/*.tsx, laid out to match the
 // CSS grid in src/index.css.
 namespace fui {
-
-using APVTS = juce::AudioProcessorValueTreeState;
 
 // Shared: panel background + section header (power led + title + right widget).
 void paintPanelBg(juce::Graphics&, juce::Component&);
@@ -166,22 +163,6 @@ private:
         void paintModule(juce::Graphics&);
     };
     juce::OwnedArray<Module> modules;
-};
-
-class TopBar : public juce::Component, private juce::Timer {
-public:
-    TopBar(APVTS&, FableAudioProcessor&);
-    void paint(juce::Graphics&) override;
-    void resized() override;
-private:
-    void timerCallback() override;
-    FableAudioProcessor& proc;
-    juce::TextButton prev{"<"}, next{">"}, save{"SAVE"};
-    juce::ComboBox presets;
-    ScopeView scope; SpectrumView spectrum;
-    Knob master;
-    juce::Rectangle<int> brandArea, scopeBox, specBox, statusArea;
-    int lastVoices = -1; bool lastMidi = false;
 };
 
 } // namespace fui

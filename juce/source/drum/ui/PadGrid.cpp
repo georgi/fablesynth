@@ -25,6 +25,7 @@ PadGrid::PadGrid(DrumUiModel& p) : proc(p) {
     startTimerHz(30);
 }
 
+#ifndef FABLE_HOSTED_UI
 PadGrid::PadGrid(DrumAudioProcessor& p)
     : ownedModel(makeStandaloneDrumUiModel(p)), proc(*ownedModel) {
     formatMgr.registerBasicFormats();
@@ -32,6 +33,7 @@ PadGrid::PadGrid(DrumAudioProcessor& p)
     setInterceptsMouseClicks(true, false);
     startTimerHz(30);
 }
+#endif
 
 PadGrid::~PadGrid() {
     stopTimer();

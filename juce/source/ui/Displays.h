@@ -3,7 +3,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "Theme.h"
 #include "ParameterSource.h"
-#include "../PluginProcessor.h"
+#include "DeviceUiModel.h"
 
 // Visualization views — ports of the canvas displays in src/components/displays:
 //   EnvView.tsx, LFOView.tsx, FilterView.tsx, ScopeView.tsx, SpectrumView.tsx
@@ -64,11 +64,11 @@ private:
 // Oscilloscope (post-FX time domain).
 class ScopeView : public juce::Component, private juce::Timer {
 public:
-    ScopeView(FableAudioProcessor&, juce::Colour accent);
+    ScopeView(std::function<void(float*, int)> reader, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override; // repaints only while audio is present
-    FableAudioProcessor& proc;
+    std::function<void(float*, int)> readScope;
     juce::Colour accent;
     bool wasActive_ = true;
 };
@@ -76,11 +76,14 @@ private:
 // Spectrum analyser (post-FX, FFT with smoothing).
 class SpectrumView : public juce::Component, private juce::Timer {
 public:
-    SpectrumView(FableAudioProcessor&, juce::Colour accent);
+    SpectrumView(std::function<void(float*, int)> reader,
+                 std::function<double()> sampleRateProvider,
+                 juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override; // repaints while audio present or bars still falling
-    FableAudioProcessor& proc;
+    std::function<void(float*, int)> readScope;
+    std::function<double()> sampleRate;
     juce::Colour accent;
     static constexpr int kOrder = 11, kFFT = 1 << kOrder; // 2048
     juce::dsp::FFT fft{kOrder};

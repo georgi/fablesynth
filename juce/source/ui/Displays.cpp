@@ -234,12 +234,13 @@ void FilterView::paint(juce::Graphics& g) {
 }
 
 // ===================== ScopeView =====================
-ScopeView::ScopeView(FableAudioProcessor& p, juce::Colour ac) : proc(p), accent(ac) { startTimerHz(30); }
+ScopeView::ScopeView(std::function<void(float*, int)> reader, juce::Colour ac)
+    : readScope(std::move(reader)), accent(ac) { startTimerHz(30); }
 void ScopeView::timerCallback() {
     // Silent output draws the same flat line every frame: skip the repaint until
     // audio returns. One extra paint after the transition draws the final flat line.
     std::array<float, 2048> buf;
-    proc.readScope(buf.data(), (int)buf.size());
+    readScope(buf.data(), (int)buf.size());
     float peak = 0;
     for (float v : buf) peak = std::max(peak, std::abs(v));
     bool active = peak > 1.0e-5f;
@@ -249,7 +250,7 @@ void ScopeView::timerCallback() {
 void ScopeView::paint(juce::Graphics& g) {
     const int N = 2048;
     std::array<float, 2048> buf;
-    proc.readScope(buf.data(), N);
+    readScope(buf.data(), N);
     const float w = (float)getWidth(), h = (float)getHeight();
     int start = 0;
     for (int i = 1; i < N / 2; i++) if (buf[i - 1] <= 0 && buf[i] > 0) { start = i; break; }
@@ -264,10 +265,13 @@ void ScopeView::paint(juce::Graphics& g) {
 }
 
 // ===================== SpectrumView =====================
-SpectrumView::SpectrumView(FableAudioProcessor& p, juce::Colour ac) : proc(p), accent(ac) { startTimerHz(30); }
+SpectrumView::SpectrumView(std::function<void(float*, int)> reader,
+                           std::function<double()> sampleRateProvider,
+                           juce::Colour ac)
+    : readScope(std::move(reader)), sampleRate(std::move(sampleRateProvider)), accent(ac) { startTimerHz(30); }
 void SpectrumView::timerCallback() {
     std::array<float, kFFT> buf;
-    proc.readScope(buf.data(), kFFT);
+    readScope(buf.data(), kFFT);
     float peak = 0;
     for (float v : buf) peak = std::max(peak, std::abs(v));
     bool active = peak > 1.0e-5f;
@@ -278,7 +282,7 @@ void SpectrumView::timerCallback() {
 }
 void SpectrumView::paint(juce::Graphics& g) {
     std::array<float, kFFT * 2> fftData{};
-    proc.readScope(fftData.data(), kFFT);
+    readScope(fftData.data(), kFFT);
     window.multiplyWithWindowingTable(fftData.data(), kFFT);
     fft.performFrequencyOnlyForwardTransform(fftData.data());
 
@@ -297,7 +301,7 @@ void SpectrumView::paint(juce::Graphics& g) {
 
     const float w = (float)getWidth(), h = (float)getHeight();
     const int bars = 48;
-    const double sr = proc.getCurrentSr();
+    const double sr = sampleRate();
     const double fmin = 30, fmax = std::min(18000.0, sr / 2);
     g.setGradientFill(juce::ColourGradient(accent.withAlpha(0.33f), 0, h, accent, 0, 0, false));
     for (int b = 0; b < bars; b++) {

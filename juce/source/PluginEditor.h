@@ -6,27 +6,8 @@
 #include "ui/LookAndFeel.h"
 #include "ui/NoteSeqView.h"
 #include "ui/WavetableEditor.h"
-
-namespace fui { class WtUiModel; }
-
-class WtDeviceBody : public juce::Component {
-public:
-    static constexpr int LW = 1400, LH = 1243;
-    explicit WtDeviceBody(fui::WtUiModel&, std::function<HostTransport()> transportProvider = {});
-    void resized() override;
-    std::function<void(int)> onEditTable;
-    fui::NoteSeqView& noteSeq() { return seq; }
-private:
-    juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
-    fui::OscPanel oscA, oscB;
-    fui::UtilPanel util;
-    fui::FilterPanel filter;
-    fui::EnvPanel env1, env2;
-    fui::LfoPanel lfos;
-    fui::MatrixPanel matrix;
-    fui::FxPanel fx;
-    fui::NoteSeqView seq;
-};
+#include "ui/WtDeviceBody.h"
+#include "ui/StandaloneTopBar.h"
 
 // The rack: all panels laid out at a fixed logical size matching the web CSS
 // grid. The editor scales it to the window so the layout stays pixel-faithful.

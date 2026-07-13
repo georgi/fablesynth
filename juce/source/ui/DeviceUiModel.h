@@ -2,6 +2,13 @@
 
 #include "ParameterSource.h"
 
+// Host transport snapshot used by tempo-synchronised device displays.
+struct HostTransport {
+    double bpm = 120.0;
+    double ppq = 0.0;
+    bool playing = false;
+};
+
 namespace fui {
 
 struct DeviceUiCapabilities {

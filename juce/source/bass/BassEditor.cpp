@@ -48,25 +48,6 @@ private:
 //   #bl-fxrack        (18, 789) 1424 x 120
 
 // ---- BassRack ----
-BassDeviceBody::BassDeviceBody(fui::BassUiModel& p)
-    : osc(p), sub(p), filter(p), env(p), lfo(p), accent(p), keys(p), seq(p), fxRack(p) {
-    for (auto* c : std::initializer_list<juce::Component*>{
-             &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
-        addAndMakeVisible(*c);
-}
-
-void BassDeviceBody::resized() {
-    osc.setBounds(18, 103, 464, 243);
-    sub.setBounds(491, 103, 192, 243);
-    filter.setBounds(692, 103, 355, 243);
-    env.setBounds(1056, 103, 386, 243);
-    lfo.setBounds(18, 355, 290, 140);
-    accent.setBounds(317, 355, 250, 140);
-    keys.setBounds(576, 355, 866, 140);
-    seq.setBounds(18, 504, 1424, 276);
-    fxRack.setBounds(18, 789, 1424, 120);
-}
-
 BassRack::BassRack(fui::BassUiModel& p) : header(p), body(p) {
     addAndMakeVisible(header); addAndMakeVisible(body);
 }

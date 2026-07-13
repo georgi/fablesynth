@@ -64,23 +64,6 @@ std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor& p) {
 //   #dr-fxrack        (18, 727) 1424 x 131
 
 // ---- DrumRack ----
-DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& p)
-    : pads(p), padStrip(p), oscA(p, 0), oscB(p, 1), noise(p), pitchEnv(p),
-      ampEnv(p), filter(p), mod(p), selBar(p), stepSeq(p), fxRack(p) {
-    for (auto* c : std::initializer_list<juce::Component*>{ &pads, &padStrip, &oscA, &oscB,
-             &noise, &pitchEnv, &ampEnv, &filter, &mod, &selBar, &stepSeq, &fxRack })
-        addAndMakeVisible(*c);
-}
-
-void DrumDeviceBody::resized() {
-    pads.setBounds(18, 103, 352, 369); padStrip.setBounds(18, 481, 352, 119);
-    selBar.setBounds(379, 103, 1063, 31); oscA.setBounds(379, 143, 424, 243);
-    oscB.setBounds(812, 143, 425, 243); noise.setBounds(1246, 143, 196, 243);
-    pitchEnv.setBounds(379, 395, 225, 209); ampEnv.setBounds(613, 395, 259, 209);
-    filter.setBounds(881, 395, 259, 209); mod.setBounds(1149, 395, 293, 209);
-    stepSeq.setBounds(18, 613, 1424, 105); fxRack.setBounds(18, 727, 1424, 131);
-}
-
 DrumRack::DrumRack(fui::DrumUiModel& p) : header(p), body(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(body);

@@ -8,14 +8,6 @@
 #include "dsp/UserTables.h"
 #include "ui/WtUiModel.h"
 
-// Host transport snapshot for the LFO displays: tempo, song position, and
-// whether the transport is running. The synced-LFO dot tracks ppq when playing.
-struct HostTransport {
-    double bpm = 120.0;
-    double ppq = 0.0;
-    bool   playing = false;
-};
-
 // FableSynth VST/AU processor. Owns the JUCE-independent DSP core (Engine + Fx)
 // and bridges the APVTS parameter tree + MIDI to it.
 class FableAudioProcessor : public juce::AudioProcessor {

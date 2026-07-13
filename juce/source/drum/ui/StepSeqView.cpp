@@ -133,11 +133,13 @@ StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
     startTimerHz(30);
 }
 
+#ifndef FABLE_HOSTED_UI
 StepSeqView::StepSeqView(DrumAudioProcessor& p)
     : ownedModel(makeStandaloneDrumUiModel(p)), proc(*ownedModel) {
     setInterceptsMouseClicks(true, false);
     startTimerHz(30);
 }
+#endif
 
 juce::Rectangle<int> StepSeqView::transportBounds() const {
     return { kPadX, kHeadY, 34, 28 };            // .dr-transport 34x28

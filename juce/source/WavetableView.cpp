@@ -1,5 +1,8 @@
 #include "WavetableView.h"
+#include "dsp/UserTables.h"
+#ifndef FABLE_HOSTED_UI
 #include "PluginProcessor.h"
+#endif
 
 WavetableView::WavetableView(fui::WtUiModel& m, int oscIndex, juce::Colour acc)
     : model(m), osc(oscIndex), accent(acc) {
@@ -7,12 +10,14 @@ WavetableView::WavetableView(fui::WtUiModel& m, int oscIndex, juce::Colour acc)
     startTimerHz(30); // animation cadence (matches the web rAF throttle)
 }
 
+#ifndef FABLE_HOSTED_UI
 WavetableView::WavetableView(FableAudioProcessor& p, int oscIndex, juce::Colour acc)
     : ownedModel(std::make_unique<StandaloneWtUiModel>(p)), model(*ownedModel),
       osc(oscIndex), accent(acc) {
     label = oscIndex == 0 ? "OSC A" : "OSC B";
     startTimerHz(30);
 }
+#endif
 
 int WavetableView::tableIndex() const {
     auto* p = model.parameters().parameter(osc == 0 ? "oscA.table" : "oscB.table");
