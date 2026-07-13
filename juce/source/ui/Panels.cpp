@@ -23,25 +23,58 @@ static juce::Array<juce::Component*> ptrs(juce::OwnedArray<Knob>& a) {
     juce::Array<juce::Component*> v; for (auto* k : a) v.add(k); return v;
 }
 
+static std::unique_ptr<juce::ParameterAttachment> attachButton(
+        const ParameterSource& source, const juce::String& id, juce::Button& button) {
+    auto* parameter = source.parameter(id);
+    jassert(parameter != nullptr);
+    if (parameter == nullptr) return {};
+    auto attachment = std::make_unique<juce::ParameterAttachment>(
+        *parameter, [&button](float value) {
+            button.setToggleState(value >= 0.5f, juce::dontSendNotification);
+        }, nullptr);
+    button.onClick = [a = attachment.get(), &button] {
+        a->setValueAsCompleteGesture(button.getToggleState() ? 1.0f : 0.0f);
+    };
+    attachment->sendInitialUpdate();
+    return attachment;
+}
+
+static std::unique_ptr<juce::ParameterAttachment> attachCombo(
+        const ParameterSource& source, const juce::String& id, juce::ComboBox& combo) {
+    auto* parameter = source.parameter(id);
+    jassert(parameter != nullptr);
+    if (parameter == nullptr) return {};
+    auto attachment = std::make_unique<juce::ParameterAttachment>(
+        *parameter, [&combo](float value) {
+            combo.setSelectedId((int)std::lround(value) + 1, juce::dontSendNotification);
+        }, nullptr);
+    combo.onChange = [a = attachment.get(), &combo] {
+        a->setValueAsCompleteGesture((float)(combo.getSelectedId() - 1));
+    };
+    attachment->sendInitialUpdate();
+    return attachment;
+}
+
 // ===================== OscPanel =====================
-OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pre, Accent ac, juce::String t)
+OscPanel::OscPanel(WtUiModel& model, int osc, juce::String pre, Accent ac, juce::String t)
     : oscIndex(osc), title(t), prefix(pre), accent(ac),
-      power(s, pre + ".on", ac), tableStep(s, pre + ".table", ac), unisonStep(s, pre + ".unison", ac),
-      wt(proc, osc, accentColour(ac)),
+      power(model.parameters(), pre + ".on", ac), tableStep(model.parameters(), pre + ".table", ac),
+      unisonStep(model.parameters(), pre + ".unison", ac), wt(model, osc, accentColour(ac)),
       // POS slider is a mod target: dest 1 (oscA POS) / 2 (oscB POS).
-      pos(s, pre + ".pos", ac, [&proc, osc] { return proc.getVizPos(osc); }, osc == 0 ? 1 : 2) {
+      pos(model.parameters(), pre + ".pos", ac, [&model, osc] { return model.vizPosition(osc); }, osc == 0 ? 1 : 2) {
     addAndMakeVisible(power); addAndMakeVisible(tableStep); addAndMakeVisible(unisonStep);
     addAndMakeVisible(wt); addAndMakeVisible(pos);
     // The table stepper cycles only over the procedural + live user tables and
     // shows each table's live name (the param itself reserves fixed USER slots).
-    tableStep.countProvider = [&proc] { return proc.numTables(); };
-    tableStep.nameProvider  = [&proc](int idx) { return proc.tableName(idx); };
+    tableStep.countProvider = [&model] { return model.numTables(); };
+    tableStep.nameProvider  = [&model](int idx) { return model.tableName(idx); };
     // ✎ edit button — opens the import / draw editor for this oscillator.
     editBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     editBtn.setColour(juce::TextButton::textColourOffId, accentColour(ac));
     editBtn.setTooltip("import / draw wavetable");
     editBtn.onClick = [this] { if (onEditTable) onEditTable(oscIndex); };
     addAndMakeVisible(editBtn);
+    editBtn.setVisible(model.capabilities().supportsUserTables);
     const char* ids[] = {".oct", ".semi", ".fine", ".detune", ".spread", ".blend", ".level", ".pan"};
     // Continuous knobs are mod targets (A/B per osc): DETUNE (3) → 11/14,
     // SPREAD (4) → 12/15, BLEND (5) → 26/27, LEVEL (6) → 7/8, PAN (7) → 13/16.
@@ -57,7 +90,7 @@ OscPanel::OscPanel(APVTS& s, FableAudioProcessor& proc, int osc, juce::String pr
             case 6: modDest = osc == 0 ?  7 :  8; break; // LEVEL  → A/B LVL
             case 7: modDest = osc == 0 ? 13 : 16; break; // PAN    → A/B PAN
         }
-        auto* k = new Knob(s, pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac, true, modDest);
+        auto* k = new Knob(model.parameters(), pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac, true, modDest);
         knobs.add(k); addAndMakeVisible(k);
     }
 }
@@ -104,7 +137,7 @@ void OscPanel::resized() {
 }
 
 // ===================== UtilPanel =====================
-UtilPanel::UtilPanel(APVTS& s)
+UtilPanel::UtilPanel(ParameterSource s)
     : subPow(s, "sub.on", Accent::N), noisePow(s, "noise.on", Accent::N),
       subShape(s, "sub.shape", Accent::N), noiseType(s, "noise.type", Accent::N),
       subOct(s, "sub.oct", Knob::Sm, Accent::N),
@@ -147,7 +180,7 @@ void UtilPanel::resized() {
 }
 
 // ===================== FilterPanel =====================
-FilterPanel::Block::Block(APVTS& s, juce::String prefix, juce::String lbl,
+FilterPanel::Block::Block(ParameterSource s, juce::String prefix, juce::String lbl,
                           int cutoffDest, int resDest, int driveDest, int envDest, int keyDest)
     : label(lbl), power(s, prefix + ".on", Accent::F), type(s, prefix + ".type", Accent::F) {
     const char* ids[] = {".cutoff", ".res", ".drive", ".env", ".key"};
@@ -172,7 +205,7 @@ void FilterPanel::Block::paintLabel(juce::Graphics& g) {
     drawSpaced(g, label, labelArea, 1.2f, juce::Justification::centredLeft);
 }
 
-FilterPanel::FilterPanel(APVTS& s)
+FilterPanel::FilterPanel(ParameterSource s)
     : route(s, "filter.route", Accent::F), view(s, col::acF),
       // dst indices per §9: F1 cut/res/drive/env/key = 3/17/18/19/20;
       //                      F2 cut/res/drive/env/key = 9/10/21/22/23.
@@ -203,7 +236,7 @@ void FilterPanel::resized() {
 }
 
 // ===================== EnvPanel =====================
-EnvPanel::EnvPanel(APVTS& s, juce::String base, juce::String t, juce::Colour viewAccent, Accent knobAccent, int modSrc)
+EnvPanel::EnvPanel(ParameterSource s, juce::String base, juce::String t, juce::Colour viewAccent, Accent knobAccent, int modSrc)
     : title(t), view(s, base, viewAccent) {
     addAndMakeVisible(view);
     const char* ids[] = {".a", ".d", ".s", ".r"};
@@ -233,7 +266,7 @@ void EnvPanel::resized() {
 }
 
 // ===================== LfoPanel =====================
-LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac,
+LfoPanel::Block::Block(ParameterSource s, juce::String id, juce::String t, Accent ac,
                        std::function<HostTransport()> transportProvider, int modSrc)
     : title(t),
       srcChip(modSrc, juce::String(fable::MOD_SOURCES[(size_t)modSrc]), true),
@@ -249,8 +282,8 @@ LfoPanel::Block::Block(APVTS& s, juce::String id, juce::String t, Accent ac,
         b->setColour(juce::TextButton::buttonOnColourId, accentColour(ac));
         b->setColour(juce::TextButton::textColourOnId, col::bg);
     }
-    syncAtt   = std::make_unique<APVTS::ButtonAttachment>(s, id + ".sync", syncBtn);
-    retrigAtt = std::make_unique<APVTS::ButtonAttachment>(s, id + ".retrig", retrigBtn);
+    syncAtt   = attachButton(s, id + ".sync", syncBtn);
+    retrigAtt = attachButton(s, id + ".retrig", retrigBtn);
 }
 
 void LfoPanel::Block::applySync(bool sync) {
@@ -284,8 +317,8 @@ void LfoPanel::Block::layout(juce::Rectangle<int> r) {
 
 void LfoPanel::Block::paintTitle(juce::Graphics& g) { paintHeaderTitle(g, titleArea, title, col::text); }
 
-LfoPanel::LfoPanel(APVTS& s, std::function<HostTransport()> transportProvider)
-    : apvts(s),
+LfoPanel::LfoPanel(ParameterSource s, std::function<HostTransport()> transportProvider)
+    : parameters(s),
       l1(s, "lfo1", "LFO 1", Accent::A, transportProvider, 1),
       l2(s, "lfo2", "LFO 2", Accent::B, transportProvider, 2) {
     for (auto* b : { &l1, &l2 }) {
@@ -300,15 +333,15 @@ LfoPanel::LfoPanel(APVTS& s, std::function<HostTransport()> transportProvider)
         addAndMakeVisible(b->phase);
     }
     // Initialise swap state from current param values.
-    l1.applySync(s.getRawParameterValue("lfo1.sync")->load() != 0.0f);
-    l2.applySync(s.getRawParameterValue("lfo2.sync")->load() != 0.0f);
+    l1.applySync(s.parameter("lfo1.sync")->getValue() != 0.0f);
+    l2.applySync(s.parameter("lfo2.sync")->getValue() != 0.0f);
     startTimerHz(15);
 }
 
 void LfoPanel::timerCallback() {
     // Poll sync params and re-layout on change.
-    bool s1 = apvts.getRawParameterValue("lfo1.sync")->load() != 0.0f;
-    bool s2 = apvts.getRawParameterValue("lfo2.sync")->load() != 0.0f;
+    bool s1 = parameters.parameter("lfo1.sync")->getValue() != 0.0f;
+    bool s2 = parameters.parameter("lfo2.sync")->getValue() != 0.0f;
     if (s1 != l1.lastSync) l1.applySync(s1);
     if (s2 != l2.lastSync) l2.applySync(s2);
 }
@@ -328,17 +361,17 @@ void LfoPanel::resized() {
 }
 
 // ===================== MatrixPanel =====================
-MatrixPanel::Row::Row(APVTS& s, int sl) : slot(sl) {
+MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl) {
     juce::String base = "mat" + juce::String(slot);
     for (int i = 0; i < (int)fable::MOD_SOURCES.size(); ++i) src.addItem(fable::MOD_SOURCES[i], i + 1);
     for (int i = 0; i < (int)fable::MOD_DESTS.size(); ++i) dst.addItem(fable::MOD_DESTS[i], i + 1);
-    srcAtt = std::make_unique<APVTS::ComboBoxAttachment>(s, base + ".src", src);
-    dstAtt = std::make_unique<APVTS::ComboBoxAttachment>(s, base + ".dst", dst);
+    srcAtt = attachCombo(s, base + ".src", src);
+    dstAtt = attachCombo(s, base + ".dst", dst);
     amt = std::make_unique<Knob>(s, base + ".amt", Knob::Xs, Accent::N, false);
     remove.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     remove.setColour(juce::TextButton::textColourOffId, col::textDim);
     remove.setTooltip("remove route");
-    remove.onClick = [&s, sl] { fui::clearSlot(s, sl); };
+    remove.onClick = [s, sl] { fui::clearSlot(s, sl); };
     addAndMakeVisible(src); addAndMakeVisible(dst); addAndMakeVisible(*amt); addAndMakeVisible(remove);
 }
 void MatrixPanel::Row::resized() {
@@ -361,7 +394,7 @@ void MatrixPanel::Row::paint(juce::Graphics& g) {
                sb.getRight(), sb.getY(), 14, sb.getHeight(), juce::Justification::centred);
 }
 
-MatrixPanel::MatrixPanel(APVTS& s) : apvts(s) {
+MatrixPanel::MatrixPanel(ParameterSource s) : parameters(s) {
     // All 16 rows constructed up front so the combobox attachments stay stable;
     // visibility is toggled per slot (rowVisible) by the diffing timer.
     for (int i = 1; i <= fable::MOD_MATRIX_SIZE; ++i) {
@@ -381,7 +414,7 @@ MatrixPanel::MatrixPanel(APVTS& s) : apvts(s) {
     }
     addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     addBtn.setColour(juce::TextButton::textColourOffId, col::text);
-    addBtn.onClick = [this] { fui::addRoute(apvts, 1, 0); }; // src=LFO 1, dst=— (inactive)
+    addBtn.onClick = [this] { fui::addRoute(parameters, 1, 0); }; // src=LFO 1, dst=— (inactive)
     addAndMakeVisible(addBtn);
     lastVisible = visibleSlots();
     startTimerHz(3); // low rate: diff visible slots before rebuilding to avoid flicker
@@ -392,7 +425,7 @@ std::vector<int> MatrixPanel::visibleSlots() const {
     for (int slot = 1; slot <= fable::MOD_MATRIX_SIZE; ++slot) {
         auto rv = [&](const char* f) {
             auto* p = dynamic_cast<juce::RangedAudioParameter*>(
-                apvts.getParameter("mat" + juce::String(slot) + f));
+                parameters.parameter("mat" + juce::String(slot) + f));
             return p ? (int)p->convertFrom0to1(p->getValue()) : 0;
         };
         if (rv(".src") != 0 || rv(".dst") != 0) out.push_back(slot); // rowVisible (§9)
@@ -401,7 +434,7 @@ std::vector<int> MatrixPanel::visibleSlots() const {
 }
 
 void MatrixPanel::timerCallback() {
-    addBtn.setEnabled(fui::findFreeSlot(apvts) > 0); // grey out ADD ROUTE when the 16-slot pool is full
+    addBtn.setEnabled(fui::findFreeSlot(parameters) > 0); // grey out ADD ROUTE when the 16-slot pool is full
     auto cur = visibleSlots();
     if (cur != lastVisible) {
         lastVisible = cur;
@@ -467,7 +500,7 @@ void MatrixPanel::resized() {
 }
 
 // ===================== FxPanel =====================
-FxPanel::Module::Module(APVTS& s, juce::String fx, juce::String t, juce::StringArray knobIds)
+FxPanel::Module::Module(ParameterSource s, juce::String fx, juce::String t, juce::StringArray knobIds)
     : title(t), power(s, "fx." + fx + ".on", Accent::N) {
     for (auto& k : knobIds) knobs.add(new Knob(s, "fx." + fx + "." + k, Knob::Sm, Accent::N));
 }
@@ -488,7 +521,7 @@ void FxPanel::Module::paintModule(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 9.0f, 1.0f);
     paintHeaderTitle(g, titleArea, title, col::text);
 }
-FxPanel::FxPanel(APVTS& s) {
+FxPanel::FxPanel(ParameterSource s) {
     struct Def { const char* fx; const char* title; juce::StringArray k; };
     std::vector<Def> defs = {
         {"drive", "DRIVE", {"amt", "mix"}},

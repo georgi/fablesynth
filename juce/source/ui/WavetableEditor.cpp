@@ -1,4 +1,5 @@
 #include "WavetableEditor.h"
+#include "../PluginProcessor.h"
 #include "../dsp/UserTables.h"
 #include "../dsp/FrameOps.h"
 
@@ -251,7 +252,7 @@ void WavetableEditor::LibRow::paint(juce::Graphics& g) {
 }
 
 // ============================ WavetableEditor ============================
-WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col::acA) {
+WavetableEditor::WavetableEditor(WtUiModel& m) : model(m), drawPad(col::acA) {
     formatMgr.registerBasicFormats();
     setInterceptsMouseClicks(true, true);
 
@@ -375,11 +376,11 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     newBtn.onClick = [this] {
         std::vector<std::vector<float>> fs{ fable::frameFromDrawing(
             [this]{ drawPad.seed(0); return drawPad.points(); }()) };
-        const int idx = (int)proc.getUserTables().size();
-        if (proc.addUserTable(fable::makeUserTable("USER", fs)) < 0) return;
+        const int idx = (int)model.userTables().size();
+        if (model.addUserTable(fable::makeUserTable("USER", fs)) < 0) return;
         selectedId = "u" + juce::String(idx); readOnlySel = false; drawPad.setReadOnly(false);
         nameField.setText("USER", juce::dontSendNotification);
-        assignTable((int)proc.factoryTables().size() + idx);
+        assignTable((int)model.factoryTables().size() + idx);
         loadFrames(fs);
         setTab(Tab::Draw);
         refreshLibrary();
@@ -401,6 +402,11 @@ WavetableEditor::WavetableEditor(FableAudioProcessor& p) : proc(p), drawPad(col:
     addChildComponent(stackPreview);
 
     setVisible(false);
+}
+
+WavetableEditor::WavetableEditor(FableAudioProcessor& p)
+    : WavetableEditor(*new StandaloneWtUiModel(p)) {
+    ownedModel.reset(&model);
 }
 
 juce::Colour WavetableEditor::accent() const { return oscIndex == 0 ? col::acA : col::acB; }
@@ -528,18 +534,18 @@ void WavetableEditor::updatePreview() {
 }
 
 void WavetableEditor::commit(fable::UserTable u) {
-    int idx = proc.addUserTable(std::move(u));
+    int idx = model.addUserTable(std::move(u));
     if (idx < 0) {
         // Pool is full — keep the editor open and surface why, rather than
         // closing as if the table had been added.
         setTab(Tab::Audio); // the status line lives on the audio tab
-        statusLabel.setText("table pool full (max " + juce::String(proc.maxUserTables())
+        statusLabel.setText("table pool full (max " + juce::String(model.maxUserTables())
                             + ") — delete one first", juce::dontSendNotification);
         refreshLibrary();
         return;
     }
     // Assign the new table to the oscillator that opened the editor.
-    if (auto* p = proc.apvts.getParameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
+    if (auto* p = model.parameters().parameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
         p->setValueNotifyingHost(p->convertTo0to1((float)idx));
     close();
 }
@@ -563,8 +569,8 @@ void WavetableEditor::createFromDraw() {
     auto u = fable::makeUserTable(finalName(nameField.getText()), frames);
     if (selectedId.isNotEmpty() && selectedId[0] == 'u') {
         const int idx = selectedId.substring(1).getIntValue();
-        proc.updateUserTable(idx, std::move(u));
-        assignTable((int)proc.factoryTables().size() + idx);
+        model.updateUserTable(idx, std::move(u));
+        assignTable((int)model.factoryTables().size() + idx);
         refreshLibrary();
         return;
     }
@@ -572,7 +578,7 @@ void WavetableEditor::createFromDraw() {
 }
 
 void WavetableEditor::assignTable(int combinedIndex) {
-    if (auto* p = proc.apvts.getParameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
+    if (auto* p = model.parameters().parameter(oscIndex == 0 ? "oscA.table" : "oscB.table"))
         p->setValueNotifyingHost(p->convertTo0to1((float)combinedIndex));
 }
 
@@ -617,7 +623,7 @@ void WavetableEditor::reorderFrameOp(int from, int to) {
 }
 
 void WavetableEditor::selectFactory(int i) {
-    const auto& fac = proc.factoryTables();
+    const auto& fac = model.factoryTables();
     if (i < 0 || i >= (int)fac.size()) return;
     selectedId = "f" + juce::String(i);
     nameField.setText(juce::String(fac[(size_t)i]->name), juce::dontSendNotification);
@@ -629,14 +635,14 @@ void WavetableEditor::selectFactory(int i) {
 }
 
 void WavetableEditor::selectUser(int i) {
-    const auto& pool = proc.getUserTables();
+    const auto& pool = model.userTables();
     if (i < 0 || i >= (int)pool.size()) return;
     selectedId = "u" + juce::String(i);
     nameField.setText(juce::String(pool[(size_t)i].name), juce::dontSendNotification);
     readOnlySel = false; drawPad.setReadOnly(false);
     loadFrames(fable::framesFromWave(pool[(size_t)i].wave, pool[(size_t)i].frames));
     setTab(Tab::Draw);
-    assignTable((int)proc.factoryTables().size() + i);
+    assignTable((int)model.factoryTables().size() + i);
     refreshLibrary();
 }
 
@@ -645,7 +651,7 @@ void WavetableEditor::refreshLibrary() {
     const juce::String q = searchField.getText().trim().toUpperCase();
     auto matches = [&q](const juce::String& nm) { return q.isEmpty() || nm.toUpperCase().contains(q); };
 
-    const auto& fac = proc.factoryTables();
+    const auto& fac = model.factoryTables();
     for (int i = 0; i < (int)fac.size(); ++i) {
         const juce::String nm(fac[(size_t)i]->name);
         if (!matches(nm)) continue;
@@ -658,12 +664,12 @@ void WavetableEditor::refreshLibrary() {
                                fac[(size_t)i]->viz.begin() + juce::jmin((int)fac[(size_t)i]->viz.size(), fable::VIZ_N));
         row->thumb.setData(viz, accent(), row->selected);
         row->onSelect = [this, i] { selectFactory(i); };
-        row->dup.onClick = [this, i] { int ni = proc.duplicateFactoryTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
+        row->dup.onClick = [this, i] { int ni = model.duplicateFactoryTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
         libRows.add(row);
         addAndMakeVisible(row);
     }
 
-    const auto& pool = proc.getUserTables();
+    const auto& pool = model.userTables();
     for (int i = 0; i < (int)pool.size(); ++i) {
         const juce::String nm(pool[(size_t)i].name);
         if (!matches(nm)) continue;
@@ -676,9 +682,9 @@ void WavetableEditor::refreshLibrary() {
         std::vector<float> viz(vz.begin(), vz.begin() + juce::jmin((int)vz.size(), fable::VIZ_N));
         row->thumb.setData(viz, accent(), row->selected);
         row->onSelect = [this, i] { selectUser(i); };
-        row->dup.onClick = [this, i] { int ni = proc.duplicateUserTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
+        row->dup.onClick = [this, i] { int ni = model.duplicateUserTable(i); if (ni >= 0) assignTable(ni); refreshLibrary(); };
         row->del.onClick = [this, i] {
-            proc.deleteUserTable(i);
+            model.deleteUserTable(i);
             if (selectedId == ("u" + juce::String(i))) { selectedId = {}; readOnlySel = false; drawPad.setReadOnly(false); }
             refreshLibrary();
         };
@@ -691,7 +697,7 @@ void WavetableEditor::refreshLibrary() {
             nameLbl->setVisible(false); subLbl->setVisible(false);
             re->setVisible(true); re->grabKeyboardFocus(); re->selectAll();
             auto commit = [this, i, re] {
-                proc.renameUserTable(i, re->getText().toStdString());
+                model.renameUserTable(i, re->getText().toStdString());
                 refreshLibrary();
             };
             re->onReturnKey = commit;

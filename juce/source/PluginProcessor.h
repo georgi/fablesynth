@@ -6,6 +6,7 @@
 #include "dsp/Params.h"
 #include "dsp/Presets.h"
 #include "dsp/UserTables.h"
+#include "ui/WtUiModel.h"
 
 // Host transport snapshot for the LFO displays: tempo, song position, and
 // whether the transport is running. The synced-LFO dot tracks ppq when playing.
@@ -155,4 +156,49 @@ private:
     std::atomic<double> hostSeqBpm_{0.0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FableAudioProcessor)
+};
+
+// Thin standalone UI adapter. It owns no state and must not outlive proc.
+class StandaloneWtUiModel final : public fui::WtUiModel {
+public:
+    explicit StandaloneWtUiModel(FableAudioProcessor& p) : proc(p) {}
+    fui::ParameterSource parameters() override;
+    fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    int currentProgram() const override;
+    int numPrograms() const override;
+    juce::String programName(int) const override;
+    void selectProgram(int) override;
+    int numTables() const override;
+    const fable::GeneratedTable* tableAt(int) const override;
+    juce::String tableName(int) const override;
+    int tablesGeneration() const override;
+    float vizPosition(int) const override;
+    int voiceCount() const override;
+    bool midiActive() const override;
+    double sampleRate() const override;
+    void readScope(float*, int) const override;
+    bool hostSynced() const override;
+    double hostBpm() const override;
+    bool sequencerPlaying() const override;
+    void setSequencerPlaying(bool) override;
+    int currentStep() const override;
+    int currentPattern() const override;
+    int editPattern() const override;
+    void setEditPattern(int) override;
+    fable::NoteSeqStep sequenceStep(int, int) const override;
+    void setSequenceStep(int, int, const fable::NoteSeqStep&) override;
+    const std::vector<int>& chain() const override;
+    void setChain(std::vector<int>) override;
+    const std::vector<fable::UserTable>& userTables() const override;
+    const std::vector<std::shared_ptr<const fable::GeneratedTable>>& factoryTables() const override;
+    int maxUserTables() const override;
+    int addUserTable(fable::UserTable) override;
+    void deleteUserTable(int) override;
+    void renameUserTable(int, std::string) override;
+    void updateUserTable(int, fable::UserTable) override;
+    int duplicateUserTable(int) override;
+    int duplicateFactoryTable(int) override;
+    int clipBars() const override { return fable::SEQ_NPATTERNS; }
+private:
+    FableAudioProcessor& proc;
 };

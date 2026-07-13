@@ -1,8 +1,9 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../PluginProcessor.h"
 #include "Controls.h"
 #include "Theme.h"
+#include "WtUiModel.h"
+#include "../dsp/NoteSeq.h"
 
 // The WT-1 16-step note sequencer panel — port of
 // src/components/panels/SeqPanel.tsx (+ index.css .ns-*): 12 note lanes per
@@ -15,7 +16,7 @@ namespace fui {
 
 class NoteSeqView : public juce::Component, private juce::Timer {
 public:
-    NoteSeqView(juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
+    explicit NoteSeqView(WtUiModel&);
     ~NoteSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -45,7 +46,7 @@ public:
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
-    FableAudioProcessor& proc;
+    WtUiModel& model;
     Knob bpm_, swing_, gate_;
     Stepper root_;
     juce::Random rng_;

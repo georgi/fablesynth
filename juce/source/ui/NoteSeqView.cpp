@@ -24,12 +24,12 @@ static constexpr int kTieY = kAccY + kAccH + 4, kTieH = 14;
 static constexpr int kNumY = kTieY + kTieH + 4;
 static constexpr int kClockW = 60, kClockGap = 6;
 
-NoteSeqView::NoteSeqView(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
-    : proc(p),
-      bpm_(s, "seq.bpm", Knob::Sm, Accent::A),
-      swing_(s, "seq.swing", Knob::Sm, Accent::A),
-      gate_(s, "seq.gate", Knob::Sm, Accent::A),
-      root_(s, "seq.root", Accent::A) {
+NoteSeqView::NoteSeqView(WtUiModel& m)
+    : model(m),
+      bpm_(m.parameters(), "seq.bpm", Knob::Sm, Accent::A),
+      swing_(m.parameters(), "seq.swing", Knob::Sm, Accent::A),
+      gate_(m.parameters(), "seq.gate", Knob::Sm, Accent::A),
+      root_(m.parameters(), "seq.root", Accent::A) {
     setInterceptsMouseClicks(true, true);
     addAndMakeVisible(bpm_);
     addAndMakeVisible(swing_);
@@ -107,40 +107,40 @@ juce::Rectangle<int> NoteSeqView::tieBounds(int step) const {
 // ---- store handlers ----------------------------------------------------------
 
 void NoteSeqView::toggleCell(int step, int note) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     if (cur.on && cur.note == note) {              // tap again = rest
         cur.on = false; cur.acc = false; cur.tie = false;
     } else {
         cur.on = true; cur.note = note;
     }
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void NoteSeqView::cycleStepOct(int step) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     cur.oct = cur.oct >= fable::SEQ_OCT_MAX ? fable::SEQ_OCT_MIN : cur.oct + 1; // noteseq.ts cycleOct
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void NoteSeqView::toggleStepAcc(int step) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.acc = !cur.acc;
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void NoteSeqView::toggleStepTie(int step) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.tie = !cur.tie;
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
@@ -148,7 +148,7 @@ void NoteSeqView::toggleStepTie(int step) {
 // accents and legato ties — melodic flavor rather than BL-1's acid crawl.
 void NoteSeqView::randomize() {
     static const int pool[] = { 0, 0, 2, 3, 5, 7, 10 };
-    const int pat = proc.getEditPattern();
+    const int pat = model.editPattern();
     for (int i = 0; i < fable::SEQ_STEPS; ++i) {
         NoteSeqStep s;
         s.on = rng_.nextFloat() < 0.62f;
@@ -156,22 +156,22 @@ void NoteSeqView::randomize() {
         s.oct = rng_.nextFloat() < 0.18f ? (rng_.nextFloat() < 0.5f ? -1 : 1) : 0;
         s.acc = s.on && rng_.nextFloat() < 0.22f;
         s.tie = s.on && i > 0 && rng_.nextFloat() < 0.25f;
-        proc.setSeqStep(pat, i, s);
+        model.setSequenceStep(pat, i, s);
     }
     repaint();
 }
 
 void NoteSeqView::patternClick(int i) {
     if (!chaining_) {                            // store.setEditPattern
-        proc.setEditPattern(i);
-        proc.setChain({ i });
+        model.setEditPattern(i);
+        model.setChain({ i });
     } else {                                     // store.chainClick while chaining
         std::vector<int> chain;
-        if (!chainFresh_) chain = proc.getChain();
+        if (!chainFresh_) chain = model.chain();
         chain.push_back(i);
         chainFresh_ = false;
-        proc.setEditPattern(i);
-        proc.setChain(std::move(chain));
+        model.setEditPattern(i);
+        model.setChain(std::move(chain));
     }
     repaint();
 }
@@ -183,23 +183,28 @@ void NoteSeqView::setChaining(bool on) {
     } else {                                     // commit (store.setChaining off)
         chaining_ = false;
         chainFresh_ = false;
-        auto chain = proc.getChain();
-        if (chain.empty()) chain.push_back(proc.getEditPattern());
-        proc.setChain(std::move(chain));
+        auto chain = model.chain();
+        if (chain.empty()) chain.push_back(model.editPattern());
+        model.setChain(std::move(chain));
     }
     repaint();
 }
 
 void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
-    if (transportBounds().contains(pos)) {       // play/stop
-        proc.setSeqPlaying(!proc.isSeqPlaying());
+    const auto caps = model.capabilities();
+    if (!model.hasTargetClip()) {
+        if (randBounds().contains(pos)) model.createTargetClip();
+        return;
+    }
+    if (caps.ownsTransport && transportBounds().contains(pos)) {       // play/stop
+        model.setSequencerPlaying(!model.sequencerPlaying());
         repaint();
         return;
     }
-    for (int i = 0; i < fable::SEQ_NPATTERNS; ++i)
+    for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
         if (patternBounds(i).contains(pos)) { patternClick(i); return; }
-    if (chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
+    if (caps.supportsPatternChain && chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
     if (randBounds().contains(pos)) { randomize(); return; }
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
@@ -219,19 +224,19 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
 void NoteSeqView::timerCallback() {
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = model.sequencerPlaying();
+    const int edit = model.editPattern();
     mix(playing ? 1 : 0);
-    mix(playing ? proc.getCurrentStep() : -1);
-    mix(proc.getCurrentPattern());
+    mix(playing ? model.currentStep() : -1);
+    mix(model.currentPattern());
     mix(edit); mix(chaining_ ? 1 : 0);
-    mix(proc.isHostSynced() ? 1 : 0);
-    mix((int)std::lround(proc.getHostBpm()));
-    const auto& chain = proc.getChain();
+    mix(model.hostSynced() ? 1 : 0);
+    mix((int)std::lround(model.hostBpm()));
+    const auto& chain = model.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
-        const NoteSeqStep st = proc.getSeqStep(edit, s);
+        const NoteSeqStep st = model.sequenceStep(edit, s);
         mix((st.on ? 1 : 0) | (st.acc ? 2 : 0) | (st.tie ? 4 : 0));
         mix(st.note); mix(st.oct);
     }
@@ -262,50 +267,61 @@ void NoteSeqView::paint(juce::Graphics& g) {
     g.setColour(cyan.withAlpha(0.16f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 12.0f, 1.0f);
 
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = model.sequencerPlaying();
+    const int edit = model.editPattern();
+    const auto caps = model.capabilities();
+
+    if (!model.hasTargetClip()) {
+        g.setColour(cyan);
+        g.setFont(dispFont(10.0f));
+        drawSpaced(g, "NOTE SEQ", { kPadX, kHeadY, 110, kHeadH }, 2.2f);
+        drawSeqBtn(g, randBounds(), "CREATE CLIP", false, 0.7f);
+        return;
+    }
 
     // ---- head: transport (.ns-transport — cyan-tinted well) ----
-    const auto tb = transportBounds().toFloat();
-    g.setColour(juce::Colour(0xff0c2a33));
-    g.fillRoundedRectangle(tb, 5.0f);
-    g.setColour(cyan.withAlpha(playing ? 0.9f : 0.55f));
-    g.drawRoundedRectangle(tb.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(cyan);
-    if (playing) {                               // stop square
-        g.fillRect(juce::Rectangle<float>(8.0f, 8.0f).withCentre(tb.getCentre()));
-    } else {                                     // play triangle
-        juce::Path p;
-        p.addTriangle(tb.getCentreX() - 3.5f, tb.getCentreY() - 5.0f,
-                      tb.getCentreX() - 3.5f, tb.getCentreY() + 5.0f,
-                      tb.getCentreX() + 5.5f, tb.getCentreY());
-        g.fillPath(p);
+    if (caps.ownsTransport) {
+        const auto tb = transportBounds().toFloat();
+        g.setColour(juce::Colour(0xff0c2a33));
+        g.fillRoundedRectangle(tb, 5.0f);
+        g.setColour(cyan.withAlpha(playing ? 0.9f : 0.55f));
+        g.drawRoundedRectangle(tb.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(cyan);
+        if (playing) g.fillRect(juce::Rectangle<float>(8.0f, 8.0f).withCentre(tb.getCentre()));
+        else {
+            juce::Path p;
+            p.addTriangle(tb.getCentreX() - 3.5f, tb.getCentreY() - 5.0f,
+                          tb.getCentreX() - 3.5f, tb.getCentreY() + 5.0f,
+                          tb.getCentreX() + 5.5f, tb.getCentreY());
+            g.fillPath(p);
+        }
     }
 
     // ---- head: title ----
     g.setColour(cyan);
     g.setFont(dispFont(10.0f));
-    drawSpaced(g, "NOTE SEQ",
-               { transportBounds().getRight() + 12, kHeadY, 96, kHeadH }, 2.2f);
+    drawSpaced(g, "NOTE SEQ", { caps.ownsTransport ? transportBounds().getRight() + 12 : kPadX,
+                                 kHeadY, 96, kHeadH }, 2.2f);
 
     // ---- head: pattern buttons + CHAIN + RAND ----
-    for (int i = 0; i < fable::SEQ_NPATTERNS; ++i)
+    for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
         drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
     juce::String chainLabel("CHAIN ");
-    const auto& chain = proc.getChain();
+    const auto& chain = model.chain();
     for (size_t k = 0; k < chain.size(); ++k) {
         if (k > 0) chainLabel << ">";
         const int p = chain[k];
         chainLabel << (p >= 0 && p < fable::SEQ_NPATTERNS ? kPatNames[p] : "?");
     }
-    drawSeqBtn(g, chainToggleBounds(), chainLabel, chaining_, 0.5f);
+    if (caps.supportsPatternChain)
+        drawSeqBtn(g, chainToggleBounds(), chainLabel, chaining_, 0.5f);
     drawSeqBtn(g, randBounds(), "RAND", false, 0.7f);
 
     // ---- head: SYNC badge + hint, right-aligned (.ns-hint) ----
     int hintRight = getWidth() - kPadX;
-    if (proc.isHostSynced()) {
+    if (model.hostSynced()) {
         // host tempo overrides seq.bpm — surface it like DR-1's SYNC tag
-        const juce::String sync = "SYNC " + juce::String((int)std::lround(proc.getHostBpm()));
+        const juce::String sync = "SYNC " + juce::String((int)std::lround(model.hostBpm()));
         const juce::Rectangle<int> sb{ hintRight - 64, kHeadY + 3, 64, kHeadH - 6 };
         g.setColour(juce::Colour(0xff0c2a33));
         g.fillRoundedRectangle(sb.toFloat(), 4.0f);
@@ -351,9 +367,9 @@ void NoteSeqView::paint(juce::Graphics& g) {
     }
 
     // ---- step columns ----
-    const int curStep = proc.getCurrentStep(), curPat = proc.getCurrentPattern();
+    const int curStep = model.currentStep(), curPat = model.currentPattern();
     NoteSeqStep steps[fable::SEQ_STEPS];
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) steps[s] = proc.getSeqStep(edit, s);
+    for (int s = 0; s < fable::SEQ_STEPS; ++s) steps[s] = model.sequenceStep(edit, s);
 
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         const NoteSeqStep& st = steps[s];

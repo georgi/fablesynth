@@ -1,6 +1,8 @@
 #pragma once
 
-#include "PluginProcessor.h"
+#include "ui/WtUiModel.h"
+
+class FableAudioProcessor;
 
 // Live 3D wavetable terrain — JUCE port of src/components/displays/WavetableView.tsx.
 // Draws every frame of the selected table in perspective and highlights the
@@ -8,7 +10,8 @@
 // publishes (falls back to the POS knob when idle).
 class WavetableView : public juce::Component, private juce::Timer {
 public:
-    WavetableView(FableAudioProcessor& proc, int oscIndex, juce::Colour accent);
+    WavetableView(fui::WtUiModel&, int oscIndex, juce::Colour accent);
+    WavetableView(FableAudioProcessor&, int oscIndex, juce::Colour accent);
     ~WavetableView() override = default;
 
     void paint(juce::Graphics&) override;
@@ -18,7 +21,8 @@ private:
     int  tableIndex() const;
     float knobPos() const;
 
-    FableAudioProcessor& proc;
+    std::unique_ptr<fui::WtUiModel> ownedModel;
+    fui::WtUiModel& model;
     int        osc;
     juce::Colour accent;
     juce::String label;

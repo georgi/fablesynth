@@ -349,6 +349,46 @@ const juce::String FableAudioProcessor::getProgramName(int index) {
     return factoryPresets()[index].name;
 }
 
+// ---- standalone WT UI model ----------------------------------------------
+fui::ParameterSource StandaloneWtUiModel::parameters() {
+    const auto& info = fable::paramInfo();
+    return fui::ParameterSource::fromApvts(proc.apvts, info.data(), info.size());
+}
+int StandaloneWtUiModel::currentProgram() const { return proc.getCurrentProgram(); }
+int StandaloneWtUiModel::numPrograms() const { return proc.getNumPrograms(); }
+juce::String StandaloneWtUiModel::programName(int i) const { return proc.getProgramName(i); }
+void StandaloneWtUiModel::selectProgram(int i) { proc.setCurrentProgram(i); }
+int StandaloneWtUiModel::numTables() const { return proc.numTables(); }
+const fable::GeneratedTable* StandaloneWtUiModel::tableAt(int i) const { return proc.tableAt(i); }
+juce::String StandaloneWtUiModel::tableName(int i) const { return proc.tableName(i); }
+int StandaloneWtUiModel::tablesGeneration() const { return proc.getTablesGeneration(); }
+float StandaloneWtUiModel::vizPosition(int i) const { return proc.getVizPos(i); }
+int StandaloneWtUiModel::voiceCount() const { return proc.getVoiceCount(); }
+bool StandaloneWtUiModel::midiActive() const { return proc.getMidiActive(); }
+double StandaloneWtUiModel::sampleRate() const { return proc.getCurrentSr(); }
+void StandaloneWtUiModel::readScope(float* d, int n) const { proc.readScope(d, n); }
+bool StandaloneWtUiModel::hostSynced() const { return proc.isHostSynced(); }
+double StandaloneWtUiModel::hostBpm() const { return proc.getHostBpm(); }
+bool StandaloneWtUiModel::sequencerPlaying() const { return proc.isSeqPlaying(); }
+void StandaloneWtUiModel::setSequencerPlaying(bool on) { proc.setSeqPlaying(on); }
+int StandaloneWtUiModel::currentStep() const { return proc.getCurrentStep(); }
+int StandaloneWtUiModel::currentPattern() const { return proc.getCurrentPattern(); }
+int StandaloneWtUiModel::editPattern() const { return proc.getEditPattern(); }
+void StandaloneWtUiModel::setEditPattern(int i) { proc.setEditPattern(i); }
+fable::NoteSeqStep StandaloneWtUiModel::sequenceStep(int p, int s) const { return proc.getSeqStep(p, s); }
+void StandaloneWtUiModel::setSequenceStep(int p, int s, const fable::NoteSeqStep& v) { proc.setSeqStep(p, s, v); }
+const std::vector<int>& StandaloneWtUiModel::chain() const { return proc.getChain(); }
+void StandaloneWtUiModel::setChain(std::vector<int> v) { proc.setChain(std::move(v)); }
+const std::vector<fable::UserTable>& StandaloneWtUiModel::userTables() const { return proc.getUserTables(); }
+const std::vector<std::shared_ptr<const fable::GeneratedTable>>& StandaloneWtUiModel::factoryTables() const { return proc.factoryTables(); }
+int StandaloneWtUiModel::maxUserTables() const { return proc.maxUserTables(); }
+int StandaloneWtUiModel::addUserTable(fable::UserTable v) { return proc.addUserTable(std::move(v)); }
+void StandaloneWtUiModel::deleteUserTable(int i) { proc.deleteUserTable(i); }
+void StandaloneWtUiModel::renameUserTable(int i, std::string n) { proc.renameUserTable(i, std::move(n)); }
+void StandaloneWtUiModel::updateUserTable(int i, fable::UserTable v) { proc.updateUserTable(i, std::move(v)); }
+int StandaloneWtUiModel::duplicateUserTable(int i) { return proc.duplicateUserTable(i); }
+int StandaloneWtUiModel::duplicateFactoryTable(int i) { return proc.duplicateFactoryTable(i); }
+
 void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = apvts.copyState();
     if (!state.isValid()) return;

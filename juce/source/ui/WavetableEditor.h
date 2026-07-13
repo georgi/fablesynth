@@ -1,7 +1,10 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Theme.h"
-#include "../PluginProcessor.h"
+#include "WtUiModel.h"
+#include "../dsp/UserTables.h"
+
+class FableAudioProcessor;
 
 // User-wavetable editor — JUCE port of src/components/WavetableEditor.tsx.
 // A modal overlay with two creation modes:
@@ -99,6 +102,7 @@ private:
 
 class WavetableEditor : public juce::Component {
 public:
+    explicit WavetableEditor(WtUiModel&);
     explicit WavetableEditor(FableAudioProcessor&);
 
     void openFor(int oscIndex);
@@ -129,7 +133,8 @@ private:
     juce::Rectangle<int> panelBounds() const;
     juce::Colour accent() const;
 
-    FableAudioProcessor& proc;
+    std::unique_ptr<WtUiModel> ownedModel;
+    WtUiModel& model;
     int oscIndex = 0;
     Tab tab = Tab::Audio;
     AudioMode mode = AudioMode::Single;
