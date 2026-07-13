@@ -88,16 +88,16 @@ void DrumEngine::setTables(std::vector<TablePtr> tables) {
 // ---- trigger (js:126-143): choke group scan, velocity clamp, phase preset ----
 void DrumEngine::trigger(int padI, float vel) {
     if (padI < 0 || padI >= DR_NPADS) return;
-    int g = (int)p_[dpid(padI, DP_CHOKE)];
+    int g = (int)param(dpid(padI, DP_CHOKE));
     if (g > 0) {
         for (int j = 0; j < DR_NPADS; j++)
-            if (j != padI && (int)p_[dpid(j, DP_CHOKE)] == g) voices_[j].choke();
+            if (j != padI && (int)param(dpid(j, DP_CHOKE)) == g) voices_[(size_t)j].choke();
     }
-    PadVoice& v = voices_[padI];
+    PadVoice& v = voices_[(size_t)padI];
     double vv = std::isfinite(vel) ? (double)vel : 1.0;
     v.trigger(clampd(vv, 0.0, 1.0), rng_.next() * 2.0 - 1.0);
-    double phaseA = std::fmod(clampd(p_[dpid(padI, DP_OSCA_PHASE)], 0.0, 1.0) * 2048.0, 2048.0);
-    double phaseB = std::fmod(clampd(p_[dpid(padI, DP_OSCB_PHASE)], 0.0, 1.0) * 2048.0, 2048.0);
+    double phaseA = std::fmod(clampd(param(dpid(padI, DP_OSCA_PHASE)), 0.0, 1.0) * 2048.0, 2048.0);
+    double phaseB = std::fmod(clampd(param(dpid(padI, DP_OSCB_PHASE)), 0.0, 1.0) * 2048.0, 2048.0);
     for (int i = 0; i < DR_MAXUNI; i++) {
         v.oA.phases[i] = phaseA;
         v.oB.phases[i] = phaseB;
@@ -133,7 +133,7 @@ void DrumEngine::setBpmOverride(double bpm) {
 }
 
 double DrumEngine::effectiveBpm() const {
-    double pbpm = p_[DG_SEQ_BPM] != 0 ? (double)p_[DG_SEQ_BPM] : 126.0;
+    double pbpm = std::fpclassify(p_[DG_SEQ_BPM]) != FP_ZERO ? (double)p_[DG_SEQ_BPM] : 126.0;
     return bpmOverride_ > 0 ? bpmOverride_ : clampd(pbpm, 60.0, 200.0);
 }
 
@@ -224,14 +224,14 @@ void DrumEngine::fireStep() {
 // ---- padMod (js:145-169) ----
 DrumEngine::Mod DrumEngine::padMod(int padI, const PadVoice& v) const {
     Mod m;
-    double dec = std::max(0.002, (double)p_[dpid(padI, DP_MODENV_DEC)] / 4.5);
+    double dec = std::max(0.002, (double)param(dpid(padI, DP_MODENV_DEC)) / 4.5);
     double env = std::exp(-(double)v.t / (dec * sr_));
-    double srcs[4] = { 0.0, env, v.vel * p_[dpid(padI, DP_V2M)], v.rand };
+    double srcs[4] = { 0.0, env, v.vel * param(dpid(padI, DP_V2M)), v.rand };
     for (int n = 0; n < 4; n++) {
-        int src = (int)p_[dpid(padI, DP_MOD1_SRC + n * 3)];
-        int dst = (int)p_[dpid(padI, DP_MOD1_DST + n * 3)];
+        int src = (int)param(dpid(padI, DP_MOD1_SRC + n * 3));
+        int dst = (int)param(dpid(padI, DP_MOD1_DST + n * 3));
         if (src < 1 || src > 3 || dst < 1 || dst > 9) continue;
-        double x = srcs[src] * p_[dpid(padI, DP_MOD1_AMT + n * 3)];
+        double x = srcs[src] * param(dpid(padI, DP_MOD1_AMT + n * 3));
         switch (dst) {
             case 1: m.posA  += x; break;
             case 2: m.posB  += x; break;
@@ -251,25 +251,26 @@ DrumEngine::Mod DrumEngine::padMod(int padI, const PadVoice& v) const {
 // the 8 osc fields are contiguous: table,pos,tune,fine,phase,unison,detune,level.
 bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
                           double mPos, double mFine, double mPitch, int n) {
-    int ti = (int)p_[base + 0];
+    int ti = (int)param(base);
     const DrumTable* table =
-        (ti >= 0 && ti < (int)curTables_->size() && (*curTables_)[ti].data) ? &(*curTables_)[ti] : nullptr;
+        (ti >= 0 && ti < (int)curTables_->size() && (*curTables_)[(size_t)ti].data)
+            ? &(*curTables_)[(size_t)ti] : nullptr;
     if (!table) return false;
 
-    double basePitch = DR_BASE_NOTE + p_[base + 2]
-                     + (p_[base + 3] + mFine) / 100.0 + pitchEnv + mPitch;
+    double basePitch = DR_BASE_NOTE + param(base + 2)
+                     + (param(base + 3) + mFine) / 100.0 + pitchEnv + mPitch;
     double freq = 440.0 * std::pow(2.0, (basePitch - 69.0) / 12.0);
     if (!(freq > 0 && freq <= sr_ * 0.45)) return false;
 
-    double level = clampd(p_[base + 7], 0.0, 1.2);
+    double level = clampd(param(base + 7), 0.0, 1.2);
     level *= level;
     if (!(level >= 1e-5)) return false;
 
-    int uni = std::max(1, std::min(DR_MAXUNI, (int)p_[base + 5]));
-    double det = p_[base + 6];
+    int uni = std::max(1, std::min(DR_MAXUNI, (int)param(base + 5)));
+    double det = param(base + 6);
     const double spr = 0.6;
 
-    double pos = clampd(p_[base + 1] + mPos, 0.0, 1.0);
+    double pos = clampd(param(base + 1) + mPos, 0.0, 1.0);
     if (o.posSm < 0) o.posSm = pos;
     o.posSm += (pos - o.posSm) * smoothCoef(n, DR_POS_TAU * sr_);
     double posF = o.posSm * (table->frames - 1);
@@ -380,15 +381,15 @@ void DrumEngine::renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n
 // ---- setupFilter (js:282-301): Cytomic SVF; smoothing is chunk-invariant
 // (Finding 6) and runFilter ramps cutPrev -> cutTarget (Finding 7). ----
 void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes, int n) {
-    int ftype = (int)p_[dpid(padI, DP_FLT_TYPE)];
+    int ftype = (int)param(dpid(padI, DP_FLT_TYPE));
     fs.ftype = ftype;
-    double fc = p_[dpid(padI, DP_FLT_CUT)] * std::pow(2.0, mCut * DR_MOD_LOG_D);
+    double fc = param(dpid(padI, DP_FLT_CUT)) * std::pow(2.0, mCut * DR_MOD_LOG_D);
     if (!std::isfinite(fc)) fc = 20;
     fc = clampd(fc, 20.0, sr_ * 0.45);
     if (fs.cutSm <= 0) fs.cutSm = fc;
     fs.cutSm += (fc - fs.cutSm) * smoothCoef(n, DR_CUT_TAU * sr_);
     fs.cutTarget = fs.cutSm;
-    double res = clampd(p_[dpid(padI, DP_FLT_RES)] + mRes, 0.0, 0.999);
+    double res = clampd(param(dpid(padI, DP_FLT_RES)) + mRes, 0.0, 0.999);
 
     fs.twoPole = ftype == 1;
     fs.k1 = 2 - 1.93 * res;           // a1..a3 recomputed per sub-block in runFilter
@@ -478,9 +479,9 @@ void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
 
 // ---- ampEnv (js:369-383): one-shot AHD, DECAY morphs linear->exp by CURVE ----
 double DrumEngine::ampEnv(const PadVoice& v, int padI, int i) const {
-    double att = std::max(1.0, p_[dpid(padI, DP_AENV_ATT)] * sr_);
-    double hold = p_[dpid(padI, DP_AENV_HOLD)] * sr_;
-    double dec = std::max(1.0, p_[dpid(padI, DP_AENV_DEC)] * sr_);
+    double att = std::max(1.0, param(dpid(padI, DP_AENV_ATT)) * sr_);
+    double hold = param(dpid(padI, DP_AENV_HOLD)) * sr_;
+    double dec = std::max(1.0, param(dpid(padI, DP_AENV_DEC)) * sr_);
     double t = (double)v.t + i;
     if (t < att) return t / att;
     double td = t - att - hold;
@@ -488,7 +489,7 @@ double DrumEngine::ampEnv(const PadVoice& v, int padI, int i) const {
     if (td >= dec) return 0;
     double lin = 1 - td / dec;
     double ex = std::exp(-4.5 * td / dec);
-    double c = p_[dpid(padI, DP_AENV_CURVE)];
+    double c = param(dpid(padI, DP_AENV_CURVE));
     return lin + (ex - lin) * c;
 }
 
@@ -501,8 +502,8 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     std::fill(tmpR, tmpR + n, 0.0f);
 
     // oscillators, re-evaluated every 16-sample subblock with the pitch env
-    double pDec = std::max(0.002, (double)p_[dpid(padI, DP_PENV_DEC)]);
-    double pAmt = p_[dpid(padI, DP_PENV_AMT)];
+    double pDec = std::max(0.002, (double)param(dpid(padI, DP_PENV_DEC)));
+    double pAmt = param(dpid(padI, DP_PENV_AMT));
     for (int at = 0; at < n; at += 16) {
         int count = std::min(16, n - at);
         double pe = pAmt * std::exp(-4.5 * (double)(v.t + at) / (pDec * sr_));
@@ -513,10 +514,10 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     }
 
     // noise: white -> one-pole tilt, level squared x 0.35
-    double noiseLevel = clampd(p_[dpid(padI, DP_NOISE_LEVEL)] + m.noise, 0.0, 1.0);
+    double noiseLevel = clampd(param(dpid(padI, DP_NOISE_LEVEL)) + m.noise, 0.0, 1.0);
     double noiseGain = noiseLevel * noiseLevel * 0.35;
     if (noiseGain > 1e-6) {
-        double color = clampd(p_[dpid(padI, DP_NOISE_COLOR)], -1.0, 1.0);
+        double color = clampd(param(dpid(padI, DP_NOISE_COLOR)), -1.0, 1.0);
         // Finding 9: the tilt coefficient is specified at 48 kHz; map the pole
         // so the noise color is identical at any rate (exact at 48 kHz).
         double a48 = 0.02 + (color + 1) * 0.49;
@@ -533,20 +534,20 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
 
     const float* srcL = tmpL;
     const float* srcR = tmpR;
-    if (p_[dpid(padI, DP_FLT_ON)] != 0) {
+    if (std::fpclassify(param(dpid(padI, DP_FLT_ON))) != FP_ZERO) {
         setupFilter(v.f, padI, m.cut, m.res, n);
-        runFilter(v.f, tmpL, tmpR, fL_, fR_, p_[dpid(padI, DP_FLT_DRIVE)], n);
+        runFilter(v.f, tmpL, tmpR, fL_, fR_, param(dpid(padI, DP_FLT_DRIVE)), n);
         srcL = fL_; srcR = fR_;
     }
 
-    double velGain = 1 - p_[dpid(padI, DP_V2L)] * (1 - v.vel);
-    double level = clampd(p_[dpid(padI, DP_LVL)] + m.level, 0.0, 1.0);
+    double velGain = 1 - param(dpid(padI, DP_V2L)) * (1 - v.vel);
+    double level = clampd(param(dpid(padI, DP_LVL)) + m.level, 0.0, 1.0);
     // m.level is block-rate (mod env) — ramp the gain across the chunk
     // (Finding 7); the DC pole is sr-derived (Finding 9).
     double lg1 = velGain * level * level;
     double lg0 = v.lgPrev >= 0 ? v.lgPrev : lg1;
     double dLg = (lg1 - lg0) / n;
-    double pan = clampd(p_[dpid(padI, DP_PAN)], -1.0, 1.0);
+    double pan = clampd(param(dpid(padI, DP_PAN)), -1.0, 1.0);
     double panA = ((pan + 1) * M_PI) / 4;
     double panL = std::cos(panA), panR = std::sin(panA);
     for (int i = 0; i < n; i++) {
@@ -572,9 +573,9 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     v.lgPrev = lg1;
 
     v.t += n;
-    double end = (p_[dpid(padI, DP_AENV_ATT)] + p_[dpid(padI, DP_AENV_HOLD)]
-                + p_[dpid(padI, DP_AENV_DEC)]) * sr_;
-    if (v.active && !v.choking && v.t >= end && v.ampLevel < 1e-4) v.kill();
+    double end = (param(dpid(padI, DP_AENV_ATT)) + param(dpid(padI, DP_AENV_HOLD))
+                + param(dpid(padI, DP_AENV_DEC))) * sr_;
+    if (v.active && !v.choking && (double)v.t >= end && v.ampLevel < 1e-4) v.kill();
 }
 
 // ---- process (js:456-491). Chunks to <=128 samples so padMod's block-  ----
@@ -628,9 +629,9 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             clipHost_.tick(hostFrame_, run, [&](int abs) { clipFireAt(abs); });
         }
         for (int i = 0; i < DR_NPADS; i++) {
-            PadVoice& v = voices_[i];
+            PadVoice& v = voices_[(size_t)i];
             if (!v.active) continue;
-            int out = std::max(0, std::min(DR_NBUSES - 1, (int)p_[dpid(i, DP_OUT)]));
+            int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
             renderPad(v, i, outs[out][0], outs[out][1], pos, run);
         }
         if (internalRun) samplesToNext_ -= run;      // js:475
@@ -639,7 +640,7 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     }
     if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
 
-    const PadVoice& v = voices_[sel_];
+    const PadVoice& v = voices_[(size_t)sel_];
     vizA = v.active ? (float)v.oA.posSm : -1.0f;
     vizB = v.active ? (float)v.oB.posSm : -1.0f;
     vizEnv = v.active ? (float)v.ampLevel : 0.0f;

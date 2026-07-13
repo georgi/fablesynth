@@ -76,7 +76,7 @@ juce::Rectangle<int> NoteSeqView::colBounds(int step) const {
     const int gx = kPadX + kLegendW + kLegendGap;
     const int gw = getWidth() - kPadX - kClockW - kClockGap - kLegendGap - gx;
     const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
-    const float x = gx + step * (w + kColGap);
+    const float x = static_cast<float>(gx) + static_cast<float>(step) * (w + kColGap);
     return juce::Rectangle<float>(x, (float)kBodyY, w, (float)(kNumY + 10)).toNearestInt();
 }
 
@@ -85,7 +85,7 @@ juce::Rectangle<int> NoteSeqView::cellBounds(int step, int note) const {
     // 12 lanes over kLanesH with 1px gaps, note 11 on top (web lane order)
     const float ch = (kLanesH - 11.0f) / 12.0f;
     const int r = fable::SEQ_NOTE_LANES - 1 - note;
-    const float y = c.getY() + r * (ch + 1.0f);
+    const float y = static_cast<float>(c.getY()) + static_cast<float>(r) * (ch + 1.0f);
     return juce::Rectangle<float>((float)c.getX(), y, (float)c.getWidth(), ch).toNearestInt();
 }
 
@@ -447,7 +447,9 @@ void NoteSeqView::paint(juce::Graphics& g) {
     // (noteseq.ts tiesInto: cur.on && cur.tie && prev.on)
     const float laneH = kLanesH / (float)fable::SEQ_NOTE_LANES;
     auto yOf = [&](const NoteSeqStep& st) {
-        return kBodyY + (fable::SEQ_NOTE_LANES - 1 - st.note + 0.5f) * laneH - st.oct * 4.0f;
+        return static_cast<float>(kBodyY)
+             + (static_cast<float>(fable::SEQ_NOTE_LANES - 1 - st.note) + 0.5f) * laneH
+             - static_cast<float>(st.oct) * 4.0f;
     };
     g.setColour(cyan.withAlpha(0.75f));
     for (int i = 1; i < fable::SEQ_STEPS; ++i) {

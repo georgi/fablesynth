@@ -7,6 +7,7 @@ namespace fui {
 
 static constexpr double A0 = -135.0, A1 = 135.0; // knob sweep (degrees, 0 = up)
 static float clamp01(float x) { return juce::jlimit(0.0f, 1.0f, x); }
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
 
 // See Controls.h — pre-WT-1-table metadata resolver installed by the DR-1
 // editor. Zero-initialised before any dynamic initialisation, so an installer
@@ -96,7 +97,7 @@ void Knob::rebuildRings() {
 
 void Knob::timerCallback() {
     bool dirty = false;
-    if (norm() != lastNorm) { lastNorm = norm(); dirty = true; }
+    if (floatChanged(norm(), lastNorm)) { lastNorm = norm(); dirty = true; }
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
@@ -209,7 +210,7 @@ void Knob::itemDropped(const SourceDetails& d) {
 void Knob::paint(juce::Graphics& g) {
     const float avail = (float)juce::jmin(getWidth(), getHeight() - (showLabel ? 13 : 0));
     const float dia = juce::jmin(avail, (float)svgPx(size));
-    const float cx = getWidth() * 0.5f, cy = dia * 0.5f + 1.0f;
+    const float cx = static_cast<float>(getWidth()) * 0.5f, cy = dia * 0.5f + 1.0f;
     const float scale = dia / 80.0f;
     const float bodyR = 26 * scale, arcR = 33 * scale, ptrLen = 23 * scale;
     const float n = clamp01(norm());
@@ -336,7 +337,7 @@ void Stepper::timerCallback() {
     }
     if (ranged) {
         float v = ranged->getValue();
-        if (v != lastValue) { lastValue = v; repaint(); }
+        if (floatChanged(v, lastValue)) { lastValue = v; repaint(); }
     }
 }
 void Stepper::step(int d) {
@@ -351,8 +352,8 @@ void Stepper::step(int d) {
         const auto& r = ranged->getNormalisableRange();
         float stepBy = r.interval > 0.0f ? r.interval : 1.0f;
         float cur  = ranged->convertFrom0to1(ranged->getValue());
-        float next = juce::jlimit(r.start, r.end, cur + (float)d * stepBy);
-        ranged->setValueNotifyingHost(ranged->convertTo0to1(next));
+        float nextValue = juce::jlimit(r.start, r.end, cur + static_cast<float>(d) * stepBy);
+        ranged->setValueNotifyingHost(ranged->convertTo0to1(nextValue));
         repaint();
     }
 }
@@ -448,7 +449,7 @@ void VSlider::rebuildRings() {
 void VSlider::timerCallback() {
     float n = param ? param->getValue() : 0.0f, gh = ghost ? ghost() : -1.0f;
     bool dirty = false;
-    if (n != lastNorm || gh != lastGhost) { lastNorm = n; lastGhost = gh; dirty = true; }
+    if (floatChanged(n, lastNorm) || floatChanged(gh, lastGhost)) { lastNorm = n; lastGhost = gh; dirty = true; }
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }

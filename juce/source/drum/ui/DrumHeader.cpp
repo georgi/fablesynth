@@ -36,11 +36,13 @@ void DrumScopeView::paint(juce::Graphics& g) {
     proc.readScope(buf.data(), N);
     const float w = (float)getWidth(), h = (float)getHeight();
     int start = 0;
-    for (int i = 1; i < N / 2; i++) if (buf[i - 1] <= 0 && buf[i] > 0) { start = i; break; }
+    for (int i = 1; i < N / 2; i++)
+        if (buf[static_cast<size_t>(i - 1)] <= 0 && buf[static_cast<size_t>(i)] > 0) { start = i; break; }
     int M = std::min(900, N - start);
     juce::Path path;
     for (int i = 0; i < M; i++) {
-        float x = (i / (float)(M - 1)) * w, y = h / 2 - buf[start + i] * h * 0.46f;
+        float x = (static_cast<float>(i) / static_cast<float>(M - 1)) * w;
+        float y = h / 2 - buf[static_cast<size_t>(start + i)] * h * 0.46f;
         if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
     }
     g.setColour(col::acA.withAlpha(0.95f));
@@ -146,7 +148,7 @@ void DrumHeader::paint(juce::Graphics& g) {
     int bx = brandArea.getX(), by = brandArea.getY();
     g.setColour(col::text);
     drawSpaced(g, "FABLE", { bx, by, 70, brandArea.getHeight() }, 1.5f);
-    int fableW = (int)g.getCurrentFont().getStringWidthFloat("FABLE") + 5 * 5;
+    int fableW = (int)juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "FABLE") + 5 * 5;
     g.setColour(col::acA);
     drawSpaced(g, "SYNTH", { bx + fableW, by, 80, brandArea.getHeight() }, 1.5f);
     g.setColour(col::textDim);

@@ -19,7 +19,7 @@ constexpr const char* kEditGlyph = "E";
 // 0.8s pulse, matches the web's sq-qpulse keyframe (opacity 0.2..1).
 float qpulse() {
     const double t = juce::Time::getMillisecondCounterHiRes() / 1000.0;
-    return 0.2f + 0.8f * (0.5f - 0.5f * std::cos(2.0 * juce::MathConstants<double>::pi * t / 0.8));
+    return static_cast<float>(0.2 + 0.8 * (0.5 - 0.5 * std::cos(2.0 * juce::MathConstants<double>::pi * t / 0.8)));
 }
 } // namespace
 
@@ -332,11 +332,12 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     auto stepsArea = content.removeFromTop(20);
     if (!clip.bytes.empty()) {
         auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
-        const float bw = stepsArea.getWidth() / (float)fable::SQ_STEPS_PER_BAR;
+        const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
         for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
             const auto& sb = steps[(size_t)i];
             const float bh = (float)juce::jlimit(2, 20, sb.h);
-            juce::Rectangle<float> bar(stepsArea.getX() + i * bw + 1.0f, stepsArea.getBottom() - bh,
+            juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
+                                        static_cast<float>(stepsArea.getBottom()) - bh,
                                         juce::jmax(1.0f, bw - 2.0f), bh);
             g.setColour(sb.on ? tc.withAlpha(0.6f * bodyAlpha) : juce::Colours::white.withAlpha(0.08f * bodyAlpha));
             g.fillRoundedRectangle(bar, 1.0f);
@@ -354,7 +355,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
             const int totalSteps = clip.bars * fable::SQ_STEPS_PER_BAR;
             const int pos = ((bar * fable::SQ_STEPS_PER_BAR + step) % totalSteps + totalSteps) % totalSteps;
             const float frac = juce::jlimit(0.0f, 1.0f, (float)pos / (float)totalSteps);
-            auto lit = progress.withWidth((int)(progress.getWidth() * frac));
+            auto lit = progress.withWidth((int)(static_cast<float>(progress.getWidth()) * frac));
             g.setColour(tc);
             g.fillRoundedRectangle(lit.toFloat(), 1.5f);
         }

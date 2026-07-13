@@ -11,7 +11,7 @@ FableAudioProcessor::FableAudioProcessor()
       apvts(*this, nullptr, "PARAMS", createLayout()) {
     // Cache raw atomic pointers, indexed by the engine's flat parameter id.
     const auto& info = paramInfo();
-    for (int i = 0; i < NUM_PARAMS; ++i)
+    for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
         rawParams[i] = apvts.getRawParameterValue(info[i].pid);
     // Procedural wavetables are sample-rate independent: build once.
     for (auto& g : generateTables())
@@ -182,9 +182,11 @@ int FableAudioProcessor::duplicateUserTable(int poolIndex) {
     if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return -1;
     const auto& src = userTables[(size_t)poolIndex];
     std::vector<std::vector<float>> frames;
-    for (int f = 0; f < src.frames; ++f)
-        frames.emplace_back(src.wave.begin() + (size_t)f * fable::SIZE,
-                            src.wave.begin() + (size_t)(f + 1) * fable::SIZE);
+    for (int f = 0; f < src.frames; ++f) {
+        const auto first = (std::vector<float>::difference_type)((size_t)f * fable::SIZE);
+        const auto last = (std::vector<float>::difference_type)((size_t)(f + 1) * fable::SIZE);
+        frames.emplace_back(src.wave.begin() + first, src.wave.begin() + last);
+    }
     std::string nm = (src.name + " COPY").substr(0, 14);
     return addUserTable(fable::makeUserTable(nm, frames));
 }
@@ -213,7 +215,7 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     // Pull current parameter values into the engine's flat array (audio-thread safe).
     auto& p = engine.params();
-    for (int i = 0; i < NUM_PARAMS; ++i)
+    for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
         if (rawParams[i]) p[i] = rawParams[i]->load();
     fx.setParams(p);
 
@@ -331,9 +333,9 @@ void FableAudioProcessor::setCurrentProgram(int index) {
     if (index < 0 || index >= (int)factoryPresets().size()) return;
     currentProgram = index;
     // Apply preset values onto the APVTS so the host + UI reflect them.
-    ParamArray pv = applyPreset(factoryPresets()[index]);
+    ParamArray pv = applyPreset(factoryPresets()[(size_t)index]);
     const auto& info = paramInfo();
-    for (int i = 0; i < NUM_PARAMS; ++i) {
+    for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i) {
         if (auto* param = apvts.getParameter(info[i].pid)) {
             const auto& d = info[i];
             float norm = (d.kind == Kind::Bool) ? (pv[i] != 0.0f ? 1.0f : 0.0f)
@@ -346,7 +348,7 @@ void FableAudioProcessor::setCurrentProgram(int index) {
 
 const juce::String FableAudioProcessor::getProgramName(int index) {
     if (index < 0 || index >= (int)factoryPresets().size()) return {};
-    return factoryPresets()[index].name;
+    return factoryPresets()[(size_t)index].name;
 }
 
 // ---- standalone WT UI model ----------------------------------------------

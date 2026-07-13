@@ -50,7 +50,7 @@ void HalfBandFir::design(int taps, double beta) {
     double M = taps - 1, ib = besselI0(beta);
     for (int i = 0; i < taps; i++) {
         double m = i - M * 0.5;
-        double sinc = m == 0 ? 0.5 : std::sin(PI * 0.5 * m) / (PI * m);
+        double sinc = std::fpclassify(m) == FP_ZERO ? 0.5 : std::sin(PI * 0.5 * m) / (PI * m);
         double t = 2.0 * m / M;
         h[(size_t)i] = sinc * besselI0(beta * std::sqrt(std::max(0.0, 1.0 - t * t))) / ib;
     }
@@ -86,11 +86,11 @@ void Fx::prepare(double sampleRate) {
     sr_ = sampleRate;
     double scale = sr_ / 44100.0;
 
-    for (int i = 0; i < 8; i++) {
+    for (size_t i = 0; i < 8; i++) {
         combL_[i].prepare((int)(COMB_TUNE[i] * scale));
         combR_[i].prepare((int)((COMB_TUNE[i] + STEREO_SPREAD) * scale));
     }
-    for (int i = 0; i < 4; i++) {
+    for (size_t i = 0; i < 4; i++) {
         apL_[i].prepare((int)(AP_TUNE[i] * scale));
         apR_[i].prepare((int)((AP_TUNE[i] + STEREO_SPREAD) * scale));
         apL_[i].feedback = apR_[i].feedback = 0.5f;
@@ -189,7 +189,7 @@ void Fx::setParams(const ParamArray& p) {
     float size = p[FXREVERB_SIZE];
     roomSize_ = 0.7f + size * 0.28f;
     float damp = 0.4f - size * 0.2f;
-    for (int i = 0; i < 8; i++) {
+    for (size_t i = 0; i < 8; i++) {
         combL_[i].feedback = combR_[i].feedback = roomSize_;
         combL_[i].damp1 = combR_[i].damp1 = damp;
         combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
@@ -315,8 +315,8 @@ void Fx::process(float* L, float* R, int n) {
         if (!verbGated_) {
             float input = (l + r) * 0.015f; // fixed input gain (Freeverb convention)
             float outL = 0, outR = 0;
-            for (int c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
-            for (int a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+            for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
+            for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
             float wet = verbWet_.next(), dry = verbDry_.next();
             l = dry * l + wet * outL;
             r = dry * r + wet * outR;

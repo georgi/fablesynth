@@ -240,7 +240,7 @@ ParamArray applyPreset(const Preset& preset) {
     ParamArray p = defaultParams();
     for (const auto& kv : preset.params) {
         int id = idFromString(kv.first);
-        if (id >= 0) p[id] = kv.second;
+        if (id >= 0) p[(size_t)id] = kv.second;
     }
     return p;
 }

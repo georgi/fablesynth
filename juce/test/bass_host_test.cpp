@@ -105,7 +105,8 @@ int main(int argc, char** argv) {
             juce::MidiBuffer empty;
             proc.processBlock(buf, b == 0 ? om : empty);
             for (int i = 0; i < block && firstNonZero < 0; ++i)
-                if (buf.getSample(0, i) != 0.0f || buf.getSample(1, i) != 0.0f)
+                if (std::fpclassify(buf.getSample(0, i)) != FP_ZERO
+                    || std::fpclassify(buf.getSample(1, i)) != FP_ZERO)
                     firstNonZero = b * block + i;
         }
         check(firstNonZero >= kOffset, "note-on at offset 100: silence before the offset",

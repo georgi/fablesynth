@@ -71,13 +71,13 @@ void WavetableView::paint(juce::Graphics& g) {
     const auto buildPath = [&](int f) {
         // Single-frame tables (drawn / single-cycle import) have frames == 1;
         // guard the depth ratio so it doesn't become 0/0 (NaN coords -> blank).
-        const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+        const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
 
         juce::Path path;
         for (int i = 0; i < N; ++i) {
-            const float x = ox + (i / (float)(N - 1)) * waveW;
+            const float x = ox + (static_cast<float>(i) / static_cast<float>(N - 1)) * waveW;
             const float y = oy - viz[f * N + i] * waveAmp;
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
@@ -95,7 +95,7 @@ void WavetableView::paint(juce::Graphics& g) {
             juce::Graphics cg(farCache);
             cg.addTransform(juce::AffineTransform::scale(2.0f));
             for (int f = frames - 1; f >= 0; --f) {
-                const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+                const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
                 cg.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
                 cg.strokePath(buildPath(f), juce::PathStrokeType(1.0f));
             }
@@ -109,10 +109,10 @@ void WavetableView::paint(juce::Graphics& g) {
     if (farCache.isValid())
         g.drawImage(farCache, getLocalBounds().toFloat());
 
-    const float posF = show * (frames - 1);
+    const float posF = show * static_cast<float>(frames - 1);
     // The near frame keeps its cached grey hairline underneath; the glow pass hides it.
     for (int f = frames - 1; f >= 0; --f) {
-        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
+        const float near = juce::jmax(0.0f, 1.0f - std::abs(static_cast<float>(f) - posF));
         if (near <= 0.02f) continue;
 
         auto path = buildPath(f);

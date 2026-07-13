@@ -294,7 +294,7 @@ void SeqHeader::paintScope(juce::Graphics& g) {
     const float x0 = (float)scopeArea.getX(), y0 = (float)scopeArea.getY();
     juce::Path path;
     for (int i = 0; i < N; ++i) {
-        const float x = x0 + (i / (float)(N - 1)) * w;
+        const float x = x0 + (static_cast<float>(i) / static_cast<float>(N - 1)) * w;
         const float y = y0 + h * 0.5f - buf[(size_t)i] * h * 0.46f;
         if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
     }

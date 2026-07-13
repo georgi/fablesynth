@@ -21,6 +21,28 @@ if(FABLE_BUILD_PLUGIN)
         FetchContent_MakeAvailable(JUCE)
     endif()
 
+    # JUCE modules are compiled directly into each application target, so the
+    # project's warning flags also diagnose JUCE's bundled macOS/HarfBuzz code.
+    # Keep strict warnings for every FableSynth source while isolating the few
+    # diagnostics that originate entirely inside these third-party translation
+    # units. This can be removed when the pinned JUCE version incorporates the
+    # corresponding upstream fixes.
+    if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set_property(SOURCE
+            "${JUCE_SOURCE_DIR}/modules/juce_gui_basics/juce_gui_basics.mm"
+            APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-unused-but-set-variable
+            -Wno-switch-enum)
+        set_property(SOURCE
+            "${JUCE_SOURCE_DIR}/modules/juce_graphics/juce_graphics_Harfbuzz.cpp"
+            APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-nontrivial-memcall)
+        set_property(SOURCE
+            "${JUCE_SOURCE_DIR}/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp"
+            APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-nontrivial-memcall)
+    endif()
+
     juce_add_plugin(FableSynth
         PRODUCT_NAME "FableSynth WT-1"
         COMPANY_NAME "FableSynth"

@@ -10,6 +10,12 @@
 
 namespace fable {
 
+namespace {
+bool exactlyDifferent(double a, double b) {
+    return std::isless(a, b) || std::isgreater(a, b) || std::isunordered(a, b);
+}
+}
+
 // js:33-36 — log-cosh for the ADAA drive antiderivative
 static inline double lcosh(double z) {
     double a = std::fabs(z);
@@ -120,7 +126,7 @@ void BassEngine::keyOff(int semi) {
     if (isPlaying()) return;
     if (held_.empty()) {
         release();
-    } else if (semiTarget_ != (double)held_.back()) {
+    } else if (exactlyDifferent(semiTarget_, (double)held_.back())) {
         glideTo(held_.back(), false);
     }
 }
@@ -159,7 +165,7 @@ void BassEngine::setBpmOverride(double bpm) {
 
 double BassEngine::effectiveBpm() const {
     if (bpmOverride_ > 0) return bpmOverride_;
-    double pbpm = p_[BL_SEQ_BPM] != 0 ? (double)p_[BL_SEQ_BPM] : 138.0;
+    double pbpm = std::fpclassify(p_[BL_SEQ_BPM]) != FP_ZERO ? (double)p_[BL_SEQ_BPM] : 138.0;
     return clampd(pbpm, 60.0, 200.0);
 }
 
@@ -594,7 +600,7 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
 
     for (int at = 0; at < n; at += 16) {
         const int count = std::min(16, n - at);
-        if (semi_ != semiTarget_) {
+        if (exactlyDifferent(semi_, semiTarget_)) {
             semi_ += (semiTarget_ - semi_) * gk16;
             if (std::fabs(semiTarget_ - semi_) < 0.001) semi_ = semiTarget_;
         }

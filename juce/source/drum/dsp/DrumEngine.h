@@ -202,6 +202,8 @@ private:
     // (each pad's val is independent, unlike BL-1/WT-1's slide chains).
     void clipFireAt(int abs);
 
+    float param(int id) const { return p_[(size_t)id]; }
+
     // sequencer state (js:82-89)
     std::vector<uint8_t> pats_ =
         std::vector<uint8_t>(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);

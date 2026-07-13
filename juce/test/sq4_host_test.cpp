@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
     p.setPaused(true);
     double f0 = p.currentFrame.load();
     check(renderRms(p, buf, 50) < 1e-6, "paused output is silent");
-    check(p.currentFrame.load() == f0, "paused clock is frozen",
+    check(std::fpclassify(p.currentFrame.load() - f0) == FP_ZERO, "paused clock is frozen",
           p.currentFrame.load());
     p.setPaused(false);
 
@@ -736,9 +736,9 @@ int main(int argc, char** argv) {
         check(p5.trackStep[0].load() != stepBefore, "step readout advances across 1024-sample blocks",
               p5.trackStep[0].load());
 
-        const double f0 = p5.currentFrame.load();
+        const double frameBeforeLargeBlock = p5.currentFrame.load();
         renderRms(p5, big, 1);
-        check(std::abs(p5.currentFrame.load() - (f0 + 1024)) < 1e-6,
+        check(std::abs(p5.currentFrame.load() - (frameBeforeLargeBlock + 1024)) < 1e-6,
               "currentFrame advances by the full over-large block", p5.currentFrame.load());
     }
 

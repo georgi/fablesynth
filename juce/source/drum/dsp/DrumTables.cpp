@@ -17,7 +17,7 @@ void thud(double t, std::vector<float>& out) {
         double s = std::sin(kTau * x);
         s += t * 0.6 * std::sin(kTau * 2 * x + 0.6);
         s += t * t * 0.45 * std::sin(kTau * 3 * x + 1.2);
-        out[i] = (float)std::tanh(s * (1 + t * 1.8));
+        out[static_cast<size_t>(i)] = (float)std::tanh(s * (1 + t * 1.8));
     }
 }
 
@@ -30,7 +30,7 @@ void crack(double t, std::vector<float>& out) {
             const double roll = std::exp(-std::pow((k - 5 - t * 10) / 7.0, 2.0));
             s += comb * roll * std::sin(kTau * k * x + std::sin(k * 7.31) * 1.4);
         }
-        out[i] = (float)s;
+        out[static_cast<size_t>(i)] = (float)s;
     }
 }
 
@@ -44,7 +44,7 @@ void tine(double t, std::vector<float>& out) {
             const double a = std::pow(std::max(t, 0.001), 0.3 * j) / (j + 1);
             s += a * std::sin(kTau * TINE_K[j] * x + j * j * 1.7);
         }
-        out[i] = (float)s;
+        out[static_cast<size_t>(i)] = (float)s;
     }
 }
 
@@ -58,7 +58,7 @@ void grit(double t, std::vector<float>& out) {
         }
         // blend toward a sine at t=0 so frame 0 is tonal, not static
         const double x = (double)i / SIZE;
-        out[i] = (float)(held * t + std::sin(kTau * x) * (1 - t));
+        out[static_cast<size_t>(i)] = (float)(held * t + std::sin(kTau * x) * (1 - t));
     }
 }
 
@@ -81,7 +81,7 @@ std::vector<GeneratedTable> generateDrumTables() {
     for (const auto& spec : SPECS) {
         std::vector<std::vector<float>> frames(FRAMES, std::vector<float>(SIZE));
         for (int f = 0; f < FRAMES; f++)
-            spec.fn((double)f / (FRAMES - 1), frames[f]);
+            spec.fn((double)f / (FRAMES - 1), frames[static_cast<size_t>(f)]);
         tables.push_back(buildUserTable(spec.name, frames));
     }
     return tables;

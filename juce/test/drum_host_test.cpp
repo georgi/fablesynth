@@ -97,7 +97,8 @@ int main(int argc, char** argv) {
             proc.processBlock(buf, b == 0 ? om : empty);
             auto bb = proc.getBusBuffer(buf, false, 0);
             for (int i = 0; i < block && firstNonZero < 0; ++i)
-                if (bb.getSample(0, i) != 0.0f || bb.getSample(1, i) != 0.0f)
+                if (std::fpclassify(bb.getSample(0, i)) != FP_ZERO
+                    || std::fpclassify(bb.getSample(1, i)) != FP_ZERO)
                     firstNonZero = b * block + i;
         }
         check(firstNonZero >= kOffset, "pad trigger at offset 100: silence before the offset",

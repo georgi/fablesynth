@@ -34,15 +34,21 @@ FableAudioProcessorEditor::~FableAudioProcessorEditor() { setLookAndFeel(nullptr
 
 void FableAudioProcessorEditor::paint(juce::Graphics& g) {
     g.fillAll(fui::col::bg);
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), getWidth() * 0.5f, -120.0f,
-                                           fui::col::bg, getWidth() * 0.5f, getHeight() * 0.6f, true));
+    const float width = static_cast<float>(getWidth());
+    const float height = static_cast<float>(getHeight());
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), width * 0.5f, -120.0f,
+                                           fui::col::bg, width * 0.5f, height * 0.6f, true));
     g.fillRect(getLocalBounds());
 }
 
 void FableAudioProcessorEditor::resized() {
-    const float sc = juce::jmin(getWidth() / (float)Rack::LW, getHeight() / (float)Rack::LH);
-    const float dx = (getWidth() - Rack::LW * sc) * 0.5f;
-    const float dy = (getHeight() - Rack::LH * sc) * 0.5f;
+    const float width = static_cast<float>(getWidth());
+    const float height = static_cast<float>(getHeight());
+    const float rackWidth = static_cast<float>(Rack::LW);
+    const float rackHeight = static_cast<float>(Rack::LH);
+    const float sc = juce::jmin(width / rackWidth, height / rackHeight);
+    const float dx = (width - rackWidth * sc) * 0.5f;
+    const float dy = (height - rackHeight * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
     wtEditor.setBounds(getLocalBounds());
 }

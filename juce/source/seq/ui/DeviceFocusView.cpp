@@ -149,10 +149,10 @@ void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,
                                  int logicalHeight, int contentTop) {
     if (getWidth() <= 0 || getHeight() <= 0) return;
     const int contentHeight = logicalHeight - contentTop;
-    const float scale = std::min(getWidth() / (float)logicalWidth,
-                                 getHeight() / (float)contentHeight);
-    const float dx = (getWidth() - logicalWidth * scale) * 0.5f;
-    const float dy = (getHeight() - contentHeight * scale) * 0.5f;
+    const float scale = std::min(static_cast<float>(getWidth()) / static_cast<float>(logicalWidth),
+                                 static_cast<float>(getHeight()) / static_cast<float>(contentHeight));
+    const float dx = (static_cast<float>(getWidth()) - static_cast<float>(logicalWidth) * scale) * 0.5f;
+    const float dy = (static_cast<float>(getHeight()) - static_cast<float>(contentHeight) * scale) * 0.5f;
     body.setTransform(juce::AffineTransform::translation(0.0f, (float)-contentTop)
                           .scaled(scale).translated(dx, dy));
 }

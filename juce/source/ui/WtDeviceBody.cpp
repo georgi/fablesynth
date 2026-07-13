@@ -22,8 +22,8 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
 juce::Rectangle<int> WtDeviceBody::colArea(int c0, int span, int y, int h) const {
     const int padX = 14, gap = 9;
     const float colUnit = (LW - padX * 2 - 11 * gap) / 12.0f;
-    int x = (int)std::round(padX + c0 * (colUnit + gap));
-    int w = (int)std::round(span * colUnit + (span - 1) * gap);
+    int x = (int)std::round(static_cast<float>(padX) + static_cast<float>(c0) * (colUnit + static_cast<float>(gap)));
+    int w = (int)std::round(static_cast<float>(span) * colUnit + static_cast<float>((span - 1) * gap));
     return { x, y, w, h };
 }
 

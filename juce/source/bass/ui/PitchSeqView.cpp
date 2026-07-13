@@ -49,7 +49,7 @@ juce::Rectangle<int> PitchSeqView::colBounds(int step) const {
     const int gx = kPadX + kLegendW + kLegendGap;
     const int gw = getWidth() - kPadX - gx;
     const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
-    const float x = gx + step * (w + kColGap);
+    const float x = static_cast<float>(gx) + static_cast<float>(step) * (w + kColGap);
     return juce::Rectangle<float>(x, (float)kBodyY, w, (float)(kNumY + 10)).toNearestInt();
 }
 
@@ -58,7 +58,7 @@ juce::Rectangle<int> PitchSeqView::cellBounds(int step, int note) const {
     // 12 lanes over kLanesH with 1px gaps, note 11 on top (web lane order)
     const float ch = (kLanesH - 11.0f) / 12.0f;
     const int r = fable::BL_NOTE_LANES - 1 - note;
-    const float y = c.getY() + r * (ch + 1.0f);
+    const float y = static_cast<float>(c.getY()) + static_cast<float>(r) * (ch + 1.0f);
     return juce::Rectangle<float>((float)c.getX(), y, (float)c.getWidth(), ch).toNearestInt();
 }
 
@@ -376,7 +376,9 @@ void PitchSeqView::paint(juce::Graphics& g) {
     // (seq.ts slidesInto: cur.on && cur.slide && prev.on)
     const float laneH = kLanesH / (float)fable::BL_NOTE_LANES;
     auto yOf = [&](const BassSeqStep& st) {
-        return kBodyY + (fable::BL_NOTE_LANES - 1 - st.note + 0.5f) * laneH - st.oct * 4.0f;
+        return static_cast<float>(kBodyY)
+             + (static_cast<float>(fable::BL_NOTE_LANES - 1 - st.note) + 0.5f) * laneH
+             - static_cast<float>(st.oct) * 4.0f;
     };
     g.setColour(green.withAlpha(0.75f));
     for (int i = 1; i < fable::BL_STEPS; ++i) {

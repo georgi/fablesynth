@@ -156,14 +156,16 @@ bool SeqEditor::keyPressed(const juce::KeyPress& k) {
 void SeqEditor::paint(juce::Graphics& g) {
     g.fillAll(fui::col::bg);
     // subtle top radial glow, like the web background
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), getWidth() * 0.5f, -120.0f,
-                                           fui::col::bg, getWidth() * 0.5f, getHeight() * 0.6f, true));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), static_cast<float>(getWidth()) * 0.5f, -120.0f,
+                                           fui::col::bg, static_cast<float>(getWidth()) * 0.5f,
+                                           static_cast<float>(getHeight()) * 0.6f, true));
     g.fillRect(getLocalBounds());
 }
 
 void SeqEditor::resized() {
-    const float sc = juce::jmin(getWidth() / (float)SeqRack::LW, getHeight() / (float)SeqRack::LH);
-    const float dx = (getWidth() - SeqRack::LW * sc) * 0.5f;
-    const float dy = (getHeight() - SeqRack::LH * sc) * 0.5f;
+    const float sc = juce::jmin(static_cast<float>(getWidth()) / static_cast<float>(SeqRack::LW),
+                               static_cast<float>(getHeight()) / static_cast<float>(SeqRack::LH));
+    const float dx = (static_cast<float>(getWidth()) - static_cast<float>(SeqRack::LW) * sc) * 0.5f;
+    const float dy = (static_cast<float>(getHeight()) - static_cast<float>(SeqRack::LH) * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
 }

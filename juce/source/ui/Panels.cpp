@@ -14,9 +14,9 @@ void paintHeaderTitle(juce::Graphics& g, juce::Rectangle<int> area, const juce::
 
 static void layoutKnobRow(juce::Rectangle<int> area, juce::Array<juce::Component*> ks) {
     int n = ks.size(); if (n == 0) return;
-    float cw = area.getWidth() / (float)n;
+    float cw = static_cast<float>(area.getWidth()) / static_cast<float>(n);
     for (int i = 0; i < n; ++i)
-        ks[i]->setBounds(juce::Rectangle<int>((int)std::round(area.getX() + i * cw), area.getY(),
+        ks[i]->setBounds(juce::Rectangle<int>((int)std::round(static_cast<float>(area.getX()) + static_cast<float>(i) * cw), area.getY(),
                                               (int)std::round(cw), area.getHeight()));
 }
 static juce::Array<juce::Component*> ptrs(juce::OwnedArray<Knob>& a) {
@@ -363,8 +363,8 @@ void LfoPanel::resized() {
 // ===================== MatrixPanel =====================
 MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl) {
     juce::String base = "mat" + juce::String(slot);
-    for (int i = 0; i < (int)fable::MOD_SOURCES.size(); ++i) src.addItem(fable::MOD_SOURCES[i], i + 1);
-    for (int i = 0; i < (int)fable::MOD_DESTS.size(); ++i) dst.addItem(fable::MOD_DESTS[i], i + 1);
+    for (size_t i = 0; i < fable::MOD_SOURCES.size(); ++i) src.addItem(fable::MOD_SOURCES[i], static_cast<int>(i) + 1);
+    for (size_t i = 0; i < fable::MOD_DESTS.size(); ++i) dst.addItem(fable::MOD_DESTS[i], static_cast<int>(i) + 1);
     srcAtt = attachCombo(s, base + ".src", src);
     dstAtt = attachCombo(s, base + ".dst", dst);
     amt = std::make_unique<Knob>(s, base + ".amt", Knob::Xs, Accent::N, false);
@@ -544,9 +544,10 @@ void FxPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     int n = modules.size();
     int gap = 10;
-    float cw = (r.getWidth() - gap * (n - 1)) / (float)n;
+    float cw = static_cast<float>(r.getWidth() - gap * (n - 1)) / static_cast<float>(n);
     for (int i = 0; i < n; ++i) {
-        auto cell = juce::Rectangle<int>((int)std::round(r.getX() + i * (cw + gap)), r.getY(),
+        auto cell = juce::Rectangle<int>((int)std::round(static_cast<float>(r.getX())
+                                         + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
                                          (int)std::round(cw), r.getHeight());
         modules[i]->layout(cell);
     }

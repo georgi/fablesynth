@@ -9,6 +9,7 @@
 //   .dr-env-view / .dr-filter-view height 58px; knob rows fill the rest.
 //   .dr-mod-row height 30px, gap 5px; .dr-mod-head min-height 34px.
 namespace fui {
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
 
 static float parameterValue(DrumUiModel& model, const juce::String& id) {
     auto* p = model.parameters().parameter(id);
@@ -62,7 +63,7 @@ static void layoutKnobRow(juce::Rectangle<int> area, const juce::OwnedArray<Knob
     if (n == 0) return;
     const float cw = (float)area.getWidth() / (float)n;
     for (int i = 0; i < n; ++i) {
-        juce::Rectangle<int> cell((int)std::round(area.getX() + i * cw), area.getY(),
+        juce::Rectangle<int> cell((int)std::round(static_cast<float>(area.getX()) + static_cast<float>(i) * cw), area.getY(),
                                   (int)std::round(cw), area.getHeight());
         const int kh = juce::jmin(area.getHeight(), sizesPx[i] + 13); // dia + label strip
         knobs[i]->setBounds(cell.withSizeKeepingCentre(cell.getWidth(), kh));
@@ -126,12 +127,12 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     const float x0 = w * 0.06f, y0 = h * 0.78f;
 
     const auto buildPath = [&](int f) {
-        const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f; // 1-frame guard
+        const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f; // 1-frame guard
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
         juce::Path path;
         for (int i = 0; i < N; ++i) {
-            const float x = ox + (i / (float)(N - 1)) * waveW;
+            const float x = ox + (static_cast<float>(i) / static_cast<float>(N - 1)) * waveW;
             const float y = oy - viz[f * N + i] * waveAmp;
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
@@ -149,7 +150,7 @@ void DrumTerrainView::paint(juce::Graphics& g) {
             juce::Graphics cg(farCache);
             cg.addTransform(juce::AffineTransform::scale(2.0f));
             for (int f = frames - 1; f >= 0; --f) {
-                const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+                const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
                 cg.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
                 cg.strokePath(buildPath(f), juce::PathStrokeType(1.0f));
             }
@@ -163,9 +164,9 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     if (farCache.isValid())
         g.drawImage(farCache, getLocalBounds().toFloat());
 
-    const float posF = show * (frames - 1);
+    const float posF = show * static_cast<float>(frames - 1);
     for (int f = frames - 1; f >= 0; --f) {
-        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
+        const float near = juce::jmax(0.0f, 1.0f - std::abs(static_cast<float>(f) - posF));
         if (near <= 0.02f) continue;
         auto path = buildPath(f);
         g.setColour(accent.withAlpha(near * 0.22f)); // bloom ≈ canvas shadowBlur
@@ -210,7 +211,7 @@ void DrumNoiseView::paint(juce::Graphics& g) {
     juce::Path path;
     for (int i = 0; i < points; ++i) {
         y += (noiseRand(seed) * 2.0f - 1.0f - y) * smoothing;
-        const float x = padX + (i / (float)(points - 1)) * (w - padX * 2.0f);
+        const float x = padX + (static_cast<float>(i) / static_cast<float>(points - 1)) * (w - padX * 2.0f);
         const float py = h * 0.5f + y * h * 0.38f;
         if (i == 0) path.startNewSubPath(x, py);
         else        path.lineTo(x, py);
@@ -245,7 +246,7 @@ void DrumEnvView::timerCallback() {
     cur[4] = std::round(proc.vizEnvelope() * 100.0f); // hit pulse, quantised
     bool dirty = false;
     for (int i = 0; i < 5; ++i)
-        if (cur[i] != last[i]) { last[i] = cur[i]; dirty = true; }
+        if (floatChanged(cur[i], last[i])) { last[i] = cur[i]; dirty = true; }
     if (dirty) repaint();
 }
 
@@ -276,7 +277,7 @@ void DrumEnvView::paint(juce::Graphics& g) {
 
         juce::Path trace;
         for (int i = 0; i <= 60; ++i) {
-            const float p = i / 60.0f;
+            const float p = static_cast<float>(i) / 60.0f;
             const float x = pad + p * width, y = yFor(p);
             if (i == 0) trace.startNewSubPath(x, y);
             else        trace.lineTo(x, y);
@@ -322,7 +323,7 @@ void DrumEnvView::paint(juce::Graphics& g) {
     trace.lineTo(xFor(attackEnd), yFor(1));
     trace.lineTo(xFor(holdEnd), yFor(1));
     for (int i = 1; i <= 60; ++i) {
-        const float progress = i / 60.0f;
+        const float progress = static_cast<float>(i) / 60.0f;
         const float linear = 1.0f - progress;
         const float exponential = std::exp(-4.5f * progress);
         const float value = linear + (exponential - linear) * curve;
@@ -376,7 +377,7 @@ void DrumFilterView::timerCallback() {
         return parameterValue(proc, base + sfx);
     };
     const float sum = get("on") + get("type") * 1.7f + get("cut") * 0.001f + get("res") * 2.3f;
-    if (sum != sig) { sig = sum; repaint(); }
+    if (floatChanged(sum, sig)) { sig = sum; repaint(); }
 }
 
 void DrumFilterView::paint(juce::Graphics& g) {
@@ -404,7 +405,7 @@ void DrumFilterView::paint(juce::Graphics& g) {
         juce::Path pth;
         for (int i = 0; i <= 120; ++i) {
             const double f = fmin * std::pow(fmax / fmin, i / 120.0);
-            const float x = pad + (i / 120.0f) * (w - pad * 2), y = toY(fn(f));
+            const float x = pad + (static_cast<float>(i) / 120.0f) * (w - pad * 2), y = toY(fn(f));
             if (i == 0) pth.startNewSubPath(x, y);
             else        pth.lineTo(x, y);
         }
@@ -668,7 +669,7 @@ void DrumModPanel::rebuild() {
 
 void DrumModPanel::timerCallback() {
     const float dec = parameterValue(proc, pid("modenv.dec"));
-    if (dec != lastDec) { lastDec = dec; repaint(headArea); }
+    if (floatChanged(dec, lastDec)) { lastDec = dec; repaint(headArea); }
 }
 
 void DrumModPanel::resized() {

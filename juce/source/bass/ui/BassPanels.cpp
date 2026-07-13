@@ -9,6 +9,7 @@
 //   .bl-osc-body grid: rows 104px / auto, cols 1fr / 36px, gap 8px.
 //   .bl-display height 104px; .bl-lfo-view height 44px; knob rows fill the rest.
 namespace fui {
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
 
 // ---- shared bits (drum panel styling, accent-A aware) ------------------------
 
@@ -61,7 +62,7 @@ static void layoutKnobRow(juce::Rectangle<int> area, const juce::OwnedArray<Knob
     if (n == 0) return;
     const float cw = (float)area.getWidth() / (float)n;
     for (int i = 0; i < n; ++i) {
-        juce::Rectangle<int> cell((int)std::round(area.getX() + i * cw), area.getY(),
+        juce::Rectangle<int> cell((int)std::round(static_cast<float>(area.getX()) + static_cast<float>(i) * cw), area.getY(),
                                   (int)std::round(cw), area.getHeight());
         const int kh = juce::jmin(area.getHeight(), sizesPx[i] + 13); // dia + label strip
         knobs[i]->setBounds(cell.withSizeKeepingCentre(cell.getWidth(), kh));
@@ -119,12 +120,12 @@ void BassTerrainView::paint(juce::Graphics& g) {
     const float x0 = w * 0.06f, y0 = h * 0.78f;
 
     const auto buildPath = [&](int f) {
-        const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+        const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
         juce::Path path;
         for (int i = 0; i < N; ++i) {
-            const float x = ox + (i / (float)(N - 1)) * waveW;
+            const float x = ox + (static_cast<float>(i) / static_cast<float>(N - 1)) * waveW;
             const float y = oy - viz[f * N + i] * waveAmp;
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
@@ -141,7 +142,7 @@ void BassTerrainView::paint(juce::Graphics& g) {
             juce::Graphics cg(farCache);
             cg.addTransform(juce::AffineTransform::scale(2.0f));
             for (int f = frames - 1; f >= 0; --f) {
-                const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+                const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
                 cg.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
                 cg.strokePath(buildPath(f), juce::PathStrokeType(1.0f));
             }
@@ -155,9 +156,9 @@ void BassTerrainView::paint(juce::Graphics& g) {
         g.drawImage(farCache, getLocalBounds().toFloat());
 
     const juce::Colour accent = accentA();
-    const float posF = show * (frames - 1);
+    const float posF = show * static_cast<float>(frames - 1);
     for (int f = frames - 1; f >= 0; --f) {
-        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
+        const float near = juce::jmax(0.0f, 1.0f - std::abs(static_cast<float>(f) - posF));
         if (near <= 0.02f) continue;
         auto path = buildPath(f);
         g.setColour(accent.withAlpha(near * 0.22f)); // bloom ≈ canvas shadowBlur
@@ -192,7 +193,7 @@ void BassFilterView::timerCallback() {
     const float vc = proc.vizCutoff();
     const float sum = rawVal(proc, "flt.type") * 1.7f + rawVal(proc, "flt.cut") * 0.001f
                     + rawVal(proc, "flt.res") * 2.3f + (vc > 0 ? vc * 0.003f : 0.0f);
-    if (sum != sig) { sig = sum; repaint(); }
+    if (floatChanged(sum, sig)) { sig = sum; repaint(); }
 }
 
 void BassFilterView::paint(juce::Graphics& g) {
@@ -218,7 +219,7 @@ void BassFilterView::paint(juce::Graphics& g) {
         juce::Path pth;
         for (int i = 0; i <= 120; ++i) {
             const double f = fmin * std::pow(fmax / fmin, i / 120.0);
-            const float x = pad + (i / 120.0f) * (w - pad * 2), y = toY(bassFltMag(type, cut, res, f));
+            const float x = pad + (static_cast<float>(i) / 120.0f) * (w - pad * 2), y = toY(bassFltMag(type, cut, res, f));
             if (i == 0) pth.startNewSubPath(x, y);
             else        pth.lineTo(x, y);
         }
@@ -251,7 +252,7 @@ void BassEnvView::timerCallback() {
     };
     bool dirty = false;
     for (int i = 0; i < 7; ++i)
-        if (cur[i] != last[i]) { last[i] = cur[i]; dirty = true; }
+        if (floatChanged(cur[i], last[i])) { last[i] = cur[i]; dirty = true; }
     if (dirty) repaint();
 }
 
@@ -273,7 +274,7 @@ void BassEnvView::paint(juce::Graphics& g) {
         p.startNewSubPath(X(0), Y(0));
         p.lineTo(X(fA), Y(1));
         for (int i = 0; i <= 80; ++i) {
-            const float q = i / 80.0f;
+            const float q = static_cast<float>(i) / 80.0f;
             p.lineTo(X(fA + q * fD * 4 * scale), Y(std::exp(-q * 4.5f)));
         }
         return p;
@@ -361,7 +362,7 @@ void BassLfoView::paint(juce::Graphics& g) {
 
     juce::Path path;
     for (int i = 0; i <= 100; ++i) {
-        const float q = i / 100.0f;
+        const float q = static_cast<float>(i) / 100.0f;
         const float y = h / 2 - lfoShapeValue(shape, q * 2 - ph0) * h * 0.34f;
         const float x = q * w;
         if (i == 0) path.startNewSubPath(x, y);
@@ -566,7 +567,7 @@ void BassAccentPanel::resized() {
     headArea = r.removeFromTop(18);
     r.removeFromTop(4);
     hintArea = r.removeFromBottom(10);
-    const float cw = r.getWidth() / 2.0f;
+    const float cw = static_cast<float>(r.getWidth()) / 2.0f;
     acc.setBounds(juce::Rectangle<int>(r.getX(), r.getY(), (int)cw, r.getHeight())
                       .withSizeKeepingCentre((int)cw, juce::jmin(r.getHeight(),
                                              Knob::svgPx(Knob::Lg) + 13)));
@@ -611,11 +612,12 @@ juce::Rectangle<float> BassKeysPanel::keyBounds(int semi) const {
     const int pc = semi % 12, oct = semi / 12;
     if (keyIsBlack(pc)) {
         const float x = area.getX()
-                      + (oct * 7 + blackOffset(pc)) * (area.getWidth() / kWhiteCount);
+                      + (static_cast<float>(oct * 7) + blackOffset(pc)) * (area.getWidth() / kWhiteCount);
         return { x, area.getY(), area.getWidth() * 0.041f, area.getHeight() * 0.58f };
     }
     const int wi = oct * 7 + whiteIndex(pc);
-    return { area.getX() + wi * (ww + 2.0f), area.getY(), ww, area.getHeight() };
+    return { static_cast<float>(area.getX()) + static_cast<float>(wi) * (ww + 2.0f),
+             static_cast<float>(area.getY()), ww, static_cast<float>(area.getHeight()) };
 }
 
 int BassKeysPanel::hitKey(juce::Point<float> pos) const {

@@ -19,13 +19,13 @@ void DrawPad::paintAt(juce::Point<float> p) {
     if (snap) val = std::round(val * 8.0f) / 8.0f;
     if (lastIdx >= 0 && lastIdx != idx) {
         int lo = juce::jmin(lastIdx, idx), hi = juce::jmax(lastIdx, idx);
-        float v0 = pts[lastIdx];
+        float v0 = pts[static_cast<size_t>(lastIdx)];
         for (int i = lo; i <= hi; ++i) {
-            float t = (idx == lastIdx) ? 1.0f : (float)(i - lastIdx) / (idx - lastIdx);
-            pts[i] = v0 + (val - v0) * t;
+            float t = (idx == lastIdx) ? 1.0f : static_cast<float>(i - lastIdx) / static_cast<float>(idx - lastIdx);
+            pts[static_cast<size_t>(i)] = v0 + (val - v0) * t;
         }
     } else {
-        pts[idx] = val;
+        pts[static_cast<size_t>(idx)] = val;
     }
     if (brush == Brush::Smooth) smoothAround(idx);
     lastIdx = idx;
@@ -41,7 +41,7 @@ void DrawPad::smoothAround(int idx, int rad) {
     for (int i = juce::jmax(0, idx - rad); i <= juce::jmin(n - 1, idx + rad); ++i) {
         float s = 0; int cnt = 0;
         for (int j = -2; j <= 2; ++j) { int k = i + j; if (k >= 0 && k < n) { s += src[(size_t)k]; ++cnt; } }
-        pts[(size_t)i] = s / cnt;
+        pts[(size_t)i] = s / static_cast<float>(cnt);
     }
 }
 
@@ -61,7 +61,8 @@ void DrawPad::seed(int kind) {
 void DrawPad::setPoints(const std::vector<float>& p) {
     if (p.empty()) return;
     for (int i = 0; i < DRAW_N; ++i)
-        pts[(size_t)i] = p[(size_t)juce::jlimit(0, (int)p.size() - 1, (int)((float)i / DRAW_N * (int)p.size()))];
+        pts[(size_t)i] = p[(size_t)juce::jlimit(0, (int)p.size() - 1,
+            (int)(static_cast<float>(i) / static_cast<float>(DRAW_N) * static_cast<float>(p.size())))];
     lastIdx = -1; repaint();
 }
 
@@ -73,8 +74,8 @@ void DrawPad::paint(juce::Graphics& g) {
     g.drawHorizontalLine((int)(h * 0.5f), 0.0f, w);
     juce::Path path;
     for (int i = 0; i < DRAW_N; ++i) {
-        float x = (i / (float)(DRAW_N - 1)) * w;
-        float y = h * 0.5f - pts[i] * (h * 0.5f - 4.0f);
+        float x = (static_cast<float>(i) / static_cast<float>(DRAW_N - 1)) * w;
+        float y = h * 0.5f - pts[static_cast<size_t>(i)] * (h * 0.5f - 4.0f);
         if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
     }
     g.setColour(accent.withAlpha(0.25f));
@@ -101,16 +102,16 @@ void TablePreview::paint(juce::Graphics& g) {
     const int maxDraw = juce::jmin(nf, 48); // cap drawn rows for cheap repaint
     constexpr int PTS = 160;               // downsample each frame for drawing
     for (int k = maxDraw - 1; k >= 0; --k) { // back-to-front
-        const int f = (nf == 1) ? 0 : (int)std::round((float)k / (maxDraw - 1) * (nf - 1));
-        const float d = (maxDraw == 1) ? 1.0f : (float)k / (maxDraw - 1);
+        const int f = (nf == 1) ? 0 : (int)std::round(static_cast<float>(k) / static_cast<float>(maxDraw - 1) * static_cast<float>(nf - 1));
+        const float d = (maxDraw == 1) ? 1.0f : static_cast<float>(k) / static_cast<float>(maxDraw - 1);
         const auto& frame = frames[(size_t)f];
         const int n = (int)frame.size();
         if (n < 2) continue;
         const float ox = x0 + d * depthX, oy = y0 - d * depthY;
         juce::Path path;
         for (int i = 0; i < PTS; ++i) {
-            const int si = (int)((float)i / (PTS - 1) * (n - 1));
-            const float x = ox + (i / (float)(PTS - 1)) * waveW;
+            const int si = (int)(static_cast<float>(i) / static_cast<float>(PTS - 1) * static_cast<float>(n - 1));
+            const float x = ox + (static_cast<float>(i) / static_cast<float>(PTS - 1)) * waveW;
             const float y = oy - frame[(size_t)si] * waveAmp;
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
@@ -132,7 +133,7 @@ void TableThumb::paint(juce::Graphics& g) {
     const float w = b.getWidth(), h = b.getHeight();
     juce::Path p;
     for (int i = 0; i < N; ++i) {
-        float x = (float)i / (N - 1) * w;
+        float x = static_cast<float>(i) / static_cast<float>(N - 1) * w;
         float y = h * 0.5f - viz[(size_t)i] * h * 0.38f;
         if (i == 0) p.startNewSubPath(x, y); else p.lineTo(x, y);
     }
@@ -289,11 +290,11 @@ WavetableEditor::WavetableEditor(WtUiModel& m) : model(m), drawPad(col::acA) {
     // audio tab
     styleBtn(fileBtn);
     fileBtn.onClick = [this] { chooseFile(); };
-    auto styleMode = [this](juce::TextButton& b, AudioMode m) {
-        b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
-        b.setColour(juce::TextButton::textColourOffId, col::textDim);
-        b.onClick = [this, m] { setMode(m); };
-        addAndMakeVisible(b);
+    auto styleMode = [this](juce::TextButton& modeButton, AudioMode audioMode) {
+        modeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+        modeButton.setColour(juce::TextButton::textColourOffId, col::textDim);
+        modeButton.onClick = [this, audioMode] { setMode(audioMode); };
+        addAndMakeVisible(modeButton);
     };
     styleMode(modeSingle, AudioMode::Single);
     styleMode(modeAuto,   AudioMode::Auto);

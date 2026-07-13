@@ -324,7 +324,7 @@ void StepSeqView::paint(juce::Graphics& g) {
     right.removeFromRight(7);
     const auto name = proc.padName(sel);
     const auto nameFont = monoFont(8.0f);
-    const int nameW = juce::jmin(120, (int)std::ceil(nameFont.getStringWidthFloat(name)
+    const int nameW = juce::jmin(120, (int)std::ceil(juce::GlyphArrangement::getStringWidth(nameFont, name)
                                           + 0.8f * (float)name.length()) + 14);
     const auto nameBox = right.removeFromRight(nameW).withSizeKeepingCentre(nameW, 17);
     g.setColour(juce::Colour(0xff0a0d13));                  // .dr-step-editing strong

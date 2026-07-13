@@ -38,6 +38,7 @@ public:
     void filesDropped(const juce::StringArray& files, int x, int y) override;
 
     // juce::KeyListener
+    using juce::Component::keyPressed;
     bool keyPressed(const juce::KeyPress&, juce::Component*) override;
 
     // Tile geometry (public so the host test can aim a simulated drop).

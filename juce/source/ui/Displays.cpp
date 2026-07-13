@@ -5,6 +5,7 @@
 namespace fui {
 
 static constexpr double PI = juce::MathConstants<double>::pi;
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
 static ParameterSource wtSource(juce::AudioProcessorValueTreeState& apvts) {
     const auto& catalog = fable::paramInfo();
     return ParameterSource::fromApvts(apvts, catalog.data(), catalog.size());
@@ -21,7 +22,8 @@ float EnvView::p(const char* sfx) const {
 }
 void EnvView::timerCallback() {
     float v[4] = {p(".a"), p(".d"), p(".s"), p(".r")};
-    if (v[0] != last[0] || v[1] != last[1] || v[2] != last[2] || v[3] != last[3]) {
+    if (floatChanged(v[0], last[0]) || floatChanged(v[1], last[1])
+        || floatChanged(v[2], last[2]) || floatChanged(v[3], last[3])) {
         last[0] = v[0]; last[1] = v[1]; last[2] = v[2]; last[3] = v[3]; repaint();
     }
 }
@@ -93,7 +95,7 @@ static float lfoFn(int shape, float p) {
     }
 }
 static float shVal(int s) {
-    float v = std::sin(s * 78.233f + 12.9898f) * 43758.5453f;
+    float v = std::sin(static_cast<float>(s) * 78.233f + 12.9898f) * 43758.5453f;
     v = v - std::floor(v);
     return (v - 0.5f) * 2.0f;
 }
@@ -112,13 +114,14 @@ void LfoView::paint(juce::Graphics& g) {
         const int steps = 8;
         for (int s = 0; s < steps; s++) {
             float y = mid - shVal(s) * amp * 0.9f;
-            float x0 = pad + (s / (float)steps) * W, x1 = pad + ((s + 1) / (float)steps) * W;
+            float x0 = pad + (static_cast<float>(s) / static_cast<float>(steps)) * W;
+            float x1 = pad + (static_cast<float>(s + 1) / static_cast<float>(steps)) * W;
             if (s == 0) path.startNewSubPath(x0, y); else path.lineTo(x0, y);
             path.lineTo(x1, y);
         }
     } else {
         for (int i = 0; i <= 96; i++) {
-            float pp = i / 96.0f, x = pad + pp * W, y = mid - lfoFn(shape, pp) * amp * 0.9f;
+            float pp = static_cast<float>(i) / 96.0f, x = pad + pp * W, y = mid - lfoFn(shape, pp) * amp * 0.9f;
             if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
         }
     }
@@ -135,7 +138,7 @@ void LfoView::paint(juce::Graphics& g) {
         double ph = tr.ppq * fable::lfoDivFactor(idx);
         phase = (float)(ph - std::floor(ph));
     } else {
-        phase = std::fmod((juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
+        phase = std::fmod(static_cast<float>(juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
     }
     float y;
     if (shape == 4) y = mid - shVal((int)std::floor(phase * 8)) * amp * 0.9f;
@@ -186,7 +189,7 @@ void FilterView::timerCallback() {
     float sum = get("filter.on") + get("filter.type") * 1.7f + get("filter.cutoff") * 3.1f + get("filter.res") * 2.3f
               + get("filter2.on") + get("filter2.type") * 1.1f + get("filter2.cutoff") * 0.7f + get("filter2.res") * 1.9f
               + get("filter.route") * 5.0f;
-    if (sum != sig) { sig = sum; repaint(); }
+    if (floatChanged(sum, sig)) { sig = sum; repaint(); }
 }
 void FilterView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
@@ -216,7 +219,7 @@ void FilterView::paint(juce::Graphics& g) {
         juce::Path pth;
         for (int i = 0; i <= 120; i++) {
             double f = fmin * std::pow(fmax / fmin, i / 120.0);
-            float x = pad + (i / 120.0f) * (w - pad * 2), y = toY(fn(f));
+            float x = pad + (static_cast<float>(i) / 120.0f) * (w - pad * 2), y = toY(fn(f));
             if (i == 0) pth.startNewSubPath(x, y); else pth.lineTo(x, y);
         }
         g.setColour(stroke);
@@ -240,7 +243,7 @@ void ScopeView::timerCallback() {
     // Silent output draws the same flat line every frame: skip the repaint until
     // audio returns. One extra paint after the transition draws the final flat line.
     std::array<float, 2048> buf;
-    readScope(buf.data(), (int)buf.size());
+    readScope(buf.data(), static_cast<int>(buf.size()));
     float peak = 0;
     for (float v : buf) peak = std::max(peak, std::abs(v));
     bool active = peak > 1.0e-5f;
@@ -253,11 +256,12 @@ void ScopeView::paint(juce::Graphics& g) {
     readScope(buf.data(), N);
     const float w = (float)getWidth(), h = (float)getHeight();
     int start = 0;
-    for (int i = 1; i < N / 2; i++) if (buf[i - 1] <= 0 && buf[i] > 0) { start = i; break; }
+    for (int i = 1; i < N / 2; i++) if (buf[static_cast<size_t>(i - 1)] <= 0 && buf[static_cast<size_t>(i)] > 0) { start = i; break; }
     int M = std::min(900, N - start);
     juce::Path path;
     for (int i = 0; i < M; i++) {
-        float x = (i / (float)(M - 1)) * w, y = h / 2 - buf[start + i] * h * 0.46f;
+        float x = (static_cast<float>(i) / static_cast<float>(M - 1)) * w;
+        float y = h / 2 - buf[static_cast<size_t>(start + i)] * h * 0.46f;
         if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
     }
     g.setColour(accent.withAlpha(0.95f));
@@ -291,11 +295,12 @@ void SpectrumView::paint(juce::Graphics& g) {
     std::array<float, kFFT / 2> bytes;
     float maxSm = 0;
     for (int i = 0; i < kFFT / 2; i++) {
-        float mag = fftData[i] / kFFT;
-        smoothed[i] = smoothing * smoothed[i] + (1 - smoothing) * mag;
-        maxSm = std::max(maxSm, smoothed[i]);
-        float db = juce::Decibels::gainToDecibels(smoothed[i] + 1e-9f);
-        bytes[i] = juce::jlimit(0.0f, 1.0f, (db - minDb) / (maxDb - minDb)) * 255.0f;
+        const auto index = static_cast<size_t>(i);
+        float mag = fftData[index] / static_cast<float>(kFFT);
+        smoothed[index] = smoothing * smoothed[index] + (1 - smoothing) * mag;
+        maxSm = std::max(maxSm, smoothed[index]);
+        float db = juce::Decibels::gainToDecibels(smoothed[index] + 1e-9f);
+        bytes[index] = juce::jlimit(0.0f, 1.0f, (db - minDb) / (maxDb - minDb)) * 255.0f;
     }
     decaying_ = maxSm > 1.0e-5f; // 1e-5 == the -100 dB floor where bars are zero
 
@@ -310,9 +315,9 @@ void SpectrumView::paint(juce::Graphics& g) {
         int i0 = (int)((f0 / (sr / 2)) * (kFFT / 2));
         int i1 = std::max(i0 + 1, (int)((f1 / (sr / 2)) * (kFFT / 2)));
         float m = 0;
-        for (int i = i0; i < i1 && i < kFFT / 2; i++) m = std::max(m, bytes[i]);
-        float v = m / 255.0f, bh = std::pow(v, 1.4f) * (h - 2), bw = w / bars;
-        g.fillRect(b * bw + 0.5f, h - bh, bw - 1.5f, bh);
+        for (int i = i0; i < i1 && i < kFFT / 2; i++) m = std::max(m, bytes[static_cast<size_t>(i)]);
+        float v = m / 255.0f, bh = std::pow(v, 1.4f) * (h - 2), bw = w / static_cast<float>(bars);
+        g.fillRect(static_cast<float>(b) * bw + 0.5f, h - bh, bw - 1.5f, bh);
     }
 }
 

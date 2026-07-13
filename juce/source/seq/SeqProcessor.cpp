@@ -460,7 +460,7 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Tempo:
                     drum_.hostTempo(c.bpm, c.swing, c.anchor);
                     bass_.hostTempo(c.bpm, c.swing, c.anchor);
-                    for (int i = 0; i < 2; ++i) wt_[i].hostTempo(c.bpm, c.swing, c.anchor);
+                    for (int wtIndex = 0; wtIndex < 2; ++wtIndex) wt_[wtIndex].hostTempo(c.bpm, c.swing, c.anchor);
                     break;
                 case Cmd::K::Patch:
                     loadTrackParams(c.t, *c.params);
@@ -546,12 +546,14 @@ void SeqAudioProcessor::drainAcks() {
 void SeqAudioProcessor::pollSessionParams() {
     if (!conductor_) return;
     float sw = rawSwing_->load();
-    if (sw != lastSwing_) { lastSwing_ = sw; conductor_->setSwing(sw); }
+    if (std::isunordered(sw, lastSwing_) || std::islessgreater(sw, lastSwing_)) { lastSwing_ = sw; conductor_->setSwing(sw); }
     float bpm = rawBpm_->load();
-    if (bpm != lastBpm_) { lastBpm_ = bpm; conductor_->setBpm(bpm); } // guarded in the conductor
+    if (std::isunordered(bpm, lastBpm_) || std::islessgreater(bpm, lastBpm_)) { lastBpm_ = bpm; conductor_->setBpm(bpm); } // guarded in the conductor
     for (int t = 0; t < kTracks; ++t) {
         float v = rawVol_[t]->load();
-        if (v != lastVol_[t]) { lastVol_[t] = v; conductor_->setTrackVol(t, v); }
+        if (std::isunordered(v, lastVol_[t]) || std::islessgreater(v, lastVol_[t])) {
+            lastVol_[t] = v; conductor_->setTrackVol(t, v);
+        }
     }
 }
 

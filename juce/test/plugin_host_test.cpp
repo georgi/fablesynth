@@ -101,7 +101,8 @@ int main(int argc, char** argv) {
             juce::MidiBuffer empty;
             proc.processBlock(buf, b == 0 ? om : empty);
             for (int i = 0; i < block && firstNonZero < 0; ++i)
-                if (buf.getSample(0, i) != 0.0f || buf.getSample(1, i) != 0.0f)
+                if (std::fpclassify(buf.getSample(0, i)) != FP_ZERO
+                    || std::fpclassify(buf.getSample(1, i)) != FP_ZERO)
                     firstNonZero = b * block + i;
         }
         // release + settle so the main measurement below starts clean-ish
@@ -137,7 +138,7 @@ int main(int argc, char** argv) {
                 sumSq += (double)v * v; count++;
             }
     }
-    double rms = std::sqrt(sumSq / count);
+    double rms = std::sqrt(sumSq / (double)count);
 
     // Flush the release tail so all voices free, then the viz feed should idle.
     for (int b = 0; b < (int)(3.0 * sr / block); ++b) {
@@ -311,7 +312,7 @@ int main(int argc, char** argv) {
         }
         int active = 0;
         for (int slot = 1; slot <= 12; ++slot)
-            if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() != 0.0f) active++;
+            if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() >= 0.5f) active++;
         check(active == 12, "12 mod-matrix routes active (list overflows -> scrollable viewport)", (float)active);
     }
 
@@ -329,18 +330,18 @@ int main(int argc, char** argv) {
               "seq.swing / seq.gate / seq.root exist", 0);
 
         auto renderBlocks = [&](int nBlocks) {
-            double sumSq = 0; long cnt = 0;
+            double seqSumSq = 0; long cnt = 0;
             for (int b = 0; b < nBlocks; ++b) {
                 buf.clear();
                 juce::MidiBuffer midi;
                 proc.processBlock(buf, midi);
                 for (int ch = 0; ch < 2; ++ch) {
                     const float* d = buf.getReadPointer(ch);
-                    for (int i = 0; i < block; ++i) sumSq += (double)d[i] * d[i];
+                    for (int i = 0; i < block; ++i) seqSumSq += (double)d[i] * d[i];
                 }
                 cnt += 2 * block;
             }
-            return std::sqrt(sumSq / (double)cnt);
+            return std::sqrt(seqSumSq / (double)cnt);
         };
 
         // write a line into pattern A and play the internal clock

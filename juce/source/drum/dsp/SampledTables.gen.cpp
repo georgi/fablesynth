@@ -105,10 +105,10 @@ const float kData[kNumTables * FRAMES * SIZE] = {
 std::vector<GeneratedTable> generateSampledDrumTables() {
     std::vector<GeneratedTable> tables;
     tables.reserve(kNumTables);
-    for (int ti = 0; ti < kNumTables; ti++) {
+    for (size_t ti = 0; ti < (size_t)kNumTables; ti++) {
         std::vector<std::vector<float>> frames(FRAMES, std::vector<float>(SIZE));
-        for (int f = 0; f < FRAMES; f++)
-            for (int i = 0; i < SIZE; i++)
+        for (size_t f = 0; f < (size_t)FRAMES; f++)
+            for (size_t i = 0; i < (size_t)SIZE; i++)
                 frames[f][i] = kData[((ti * FRAMES) + f) * SIZE + i];
         tables.push_back(buildUserTable(kNames[ti], frames));
     }

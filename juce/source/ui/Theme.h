@@ -33,7 +33,8 @@ inline juce::Colour& accentA() { static juce::Colour c = col::acA; return c; }
 
 inline juce::Colour accentColour(Accent a) {
     switch (a) { case Accent::A: return accentA(); case Accent::B: return col::acB;
-                 case Accent::F: return col::acF; default: return col::acN; }
+                 case Accent::F: return col::acF; case Accent::N: return col::acN; }
+    return col::acN;
 }
 
 // Tint per MOD_SOURCES index — single home for the mod-source palette (mirrors
@@ -79,16 +80,17 @@ inline void drawSpaced(juce::Graphics& g, const juce::String& s, juce::Rectangle
     const auto f = g.getCurrentFont();
     float total = 0;
     for (int i = 0; i < s.length(); ++i)
-        total += f.getStringWidthFloat(s.substring(i, i + 1)) + tracking;
+        total += juce::GlyphArrangement::getStringWidth(f, s.substring(i, i + 1)) + tracking;
     total -= tracking;
     float x = (float)area.getX();
-    if (just.testFlags(juce::Justification::horizontallyCentred)) x += (area.getWidth() - total) * 0.5f;
-    else if (just.testFlags(juce::Justification::right))          x += area.getWidth() - total;
+    const float areaWidth = (float)area.getWidth();
+    if (just.testFlags(juce::Justification::horizontallyCentred)) x += (areaWidth - total) * 0.5f;
+    else if (just.testFlags(juce::Justification::right))          x += areaWidth - total;
     for (int i = 0; i < s.length(); ++i) {
         auto ch = s.substring(i, i + 1);
         g.drawText(ch, juce::Rectangle<float>(x, (float)area.getY(), 40.0f, (float)area.getHeight()).toNearestInt(),
                    juce::Justification::centredLeft, false);
-        x += f.getStringWidthFloat(ch) + tracking;
+        x += juce::GlyphArrangement::getStringWidth(f, ch) + tracking;
     }
 }
 

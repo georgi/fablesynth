@@ -145,7 +145,7 @@ class Engine {
 public:
     void prepare(double sampleRate);
     void setTables(std::vector<TablePtr> tables);
-    void setParam(int id, float v) { p_[id] = v; }
+    void setParam(int id, float v) { p_[(size_t)id] = v; }
     void setParams(const ParamArray& p) { p_ = p; }
     ParamArray& params() { return p_; }
 

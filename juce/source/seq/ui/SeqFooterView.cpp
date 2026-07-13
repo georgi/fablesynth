@@ -98,7 +98,9 @@ void SeqFooterView::paint(juce::Graphics& g) {
             juce::String txt = juce::String(s + 1).paddedLeft('0', 2) + " " + juce::String(session.scenes[(size_t)s].name)
                               + (cond.sceneMuted(s) ? " -M" : "");
             g.setFont(monoFont(7.0f));
-            const int w = g.getCurrentFont().getStringWidth(txt) + 10;
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText(g.getCurrentFont(), txt, 0.0f, 0.0f);
+            const int w = (int)std::ceil(glyphs.getBoundingBox(0, -1, true).getWidth()) + 10;
             juce::Rectangle<int> chip(x, cr.getY(), w, cr.getHeight());
             if (chip.getRight() > cr.getRight()) break;
             g.setColour(juce::Colours::white.withAlpha(0.03f));

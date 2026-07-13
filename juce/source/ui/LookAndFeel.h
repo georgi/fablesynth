@@ -24,7 +24,7 @@ public:
         g.drawRoundedRectangle(r.reduced(0.5f), 5.0f, 1.0f);
         // arrow
         juce::Path p;
-        float ax = (float)w - 13, ay = h * 0.5f - 2;
+        float ax = (float)w - 13, ay = (float)h * 0.5f - 2;
         p.addTriangle(ax, ay, ax + 7, ay, ax + 3.5f, ay + 5);
         g.setColour(col::textDim);
         g.fillPath(p);

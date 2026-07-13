@@ -41,16 +41,16 @@ struct Biquad {
 // Fractional-read delay line.
 class DelayLine {
 public:
-    void  prepare(int maxSamples) { buf_.assign(maxSamples, 0.0f); w_ = 0; }
+    void  prepare(int maxSamples) { buf_.assign((size_t)maxSamples, 0.0f); w_ = 0; }
     void  reset() { std::fill(buf_.begin(), buf_.end(), 0.0f); w_ = 0; }
-    inline void write(float x) { buf_[w_] = x; if (++w_ >= (int)buf_.size()) w_ = 0; }
+    inline void write(float x) { buf_[(size_t)w_] = x; if (++w_ >= (int)buf_.size()) w_ = 0; }
     inline float read(double delaySamples) const {
         int sz = (int)buf_.size();
         double rd = w_ - delaySamples;
         while (rd < 0) rd += sz;
         int i0 = (int)rd; double frac = rd - i0;
         int i1 = i0 + 1 < sz ? i0 + 1 : 0;
-        return buf_[i0] + (float)frac * (buf_[i1] - buf_[i0]);
+        return buf_[(size_t)i0] + (float)frac * (buf_[(size_t)i1] - buf_[(size_t)i0]);
     }
     // 4-point Catmull-Rom read for modulated/fractional delays (chorus, echo);
     // integer-delay users (reverb combs, dry alignment) keep read().
@@ -62,7 +62,8 @@ public:
         int i0 = i1 > 0 ? i1 - 1 : sz - 1;
         int i2 = i1 + 1 < sz ? i1 + 1 : 0;
         int i3 = i2 + 1 < sz ? i2 + 1 : 0;
-        float y0 = buf_[i0], y1 = buf_[i1], y2 = buf_[i2], y3 = buf_[i3];
+        float y0 = buf_[(size_t)i0], y1 = buf_[(size_t)i1];
+        float y2 = buf_[(size_t)i2], y3 = buf_[(size_t)i3];
         float c1 = 0.5f * (y2 - y0);
         float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
         float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
@@ -136,24 +137,24 @@ private:
 // Freeverb building blocks.
 struct FvComb {
     std::vector<float> buf; int idx = 0; float filt = 0, damp1 = 0.2f, damp2 = 0.8f, feedback = 0.84f;
-    void prepare(int n) { buf.assign(n, 0.0f); idx = 0; filt = 0; }
+    void prepare(int n) { buf.assign((size_t)n, 0.0f); idx = 0; filt = 0; }
     void reset() { std::fill(buf.begin(), buf.end(), 0.0f); filt = 0; }
     inline float process(float in) {
-        float out = buf[idx];
+        float out = buf[(size_t)idx];
         filt = out * damp2 + filt * damp1;
-        buf[idx] = in + filt * feedback;
+        buf[(size_t)idx] = in + filt * feedback;
         if (++idx >= (int)buf.size()) idx = 0;
         return out;
     }
 };
 struct FvAllpass {
     std::vector<float> buf; int idx = 0; float feedback = 0.5f;
-    void prepare(int n) { buf.assign(n, 0.0f); idx = 0; }
+    void prepare(int n) { buf.assign((size_t)n, 0.0f); idx = 0; }
     void reset() { std::fill(buf.begin(), buf.end(), 0.0f); }
     inline float process(float in) {
-        float bufout = buf[idx];
+        float bufout = buf[(size_t)idx];
         float out = -in + bufout;
-        buf[idx] = in + bufout * feedback;
+        buf[(size_t)idx] = in + bufout * feedback;
         if (++idx >= (int)buf.size()) idx = 0;
         return out;
     }

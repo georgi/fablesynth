@@ -60,7 +60,7 @@ static void specPrime(double t, double* re, double* im) {
         double sqr = (k % 2 == 1) ? 1.27 / k : 0.0;
         double shapes[4] = {sine, tri, saw, sqr};
         double a = lerp(shapes[s], shapes[s + 1], f);
-        if (a != 0) setHarm(re, im, k, a, SINE_PH);
+        if (std::fpclassify(a) != FP_ZERO) setHarm(re, im, k, a, SINE_PH);
     }
 }
 
@@ -149,11 +149,12 @@ static void bandlimitFrame(const double* re, const double* im,
             for (int i = 0; i < SIZE; i++) peak = std::max(peak, std::abs(wre[i]));
             scale = 0.92 / peak;
         }
-        int off = (f * MIPS + m) * SIZE;
-        for (int i = 0; i < SIZE; i++) data[off + i] = (float)(wre[i] * scale);
+        const size_t off = (size_t)(f * MIPS + m) * SIZE;
+        for (size_t i = 0; i < (size_t)SIZE; i++) data[off + i] = (float)(wre[i] * scale);
         if (m == 0) {
-            int step = SIZE / VIZ_N;
-            for (int i = 0; i < VIZ_N; i++) viz[f * VIZ_N + i] = (float)(wre[(i * step)] * scale);
+            constexpr size_t step = SIZE / VIZ_N;
+            const size_t vizOff = (size_t)f * VIZ_N;
+            for (size_t i = 0; i < (size_t)VIZ_N; i++) viz[vizOff + i] = (float)(wre[i * step] * scale);
         }
     }
 }
@@ -192,7 +193,7 @@ std::vector<GeneratedTable> generateTables() {
                 spec.spectrum(t, re.data(), im.data());
             } else {
                 spec.wave(t, tmp.data());
-                for (int i = 0; i < SIZE; i++) { re[i] = tmp[i]; im[i] = 0; }
+                for (size_t i = 0; i < (size_t)SIZE; i++) { re[i] = tmp[i]; im[i] = 0; }
                 fft(re.data(), im.data(), SIZE, false);
             }
             re[0] = 0; im[0] = 0;            // kill DC
@@ -215,8 +216,10 @@ GeneratedTable buildUserTable(const std::string& name, const std::vector<std::ve
     for (int f = 0; f < nf; f++) {
         std::fill(re.begin(), re.end(), 0.0);
         std::fill(im.begin(), im.end(), 0.0);
-        if (f < (int)frames.size() && !frames[f].empty())
-            for (int i = 0; i < SIZE && i < (int)frames[f].size(); i++) re[i] = frames[f][i];
+        const size_t frameIndex = (size_t)f;
+        if (frameIndex < frames.size() && !frames[frameIndex].empty())
+            for (size_t i = 0; i < (size_t)SIZE && i < frames[frameIndex].size(); i++)
+                re[i] = frames[frameIndex][i];
         fft(re.data(), im.data(), SIZE, false);
         re[0] = 0; im[0] = 0;
         re[SIZE / 2] = 0; im[SIZE / 2] = 0;

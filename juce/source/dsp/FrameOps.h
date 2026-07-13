@@ -42,8 +42,10 @@ inline std::vector<Frame> moveFrame(const std::vector<Frame>& frames, int from, 
 inline std::vector<float> framePoints(const Frame& frame, int n) {
     std::vector<float> out((size_t)n, 0.0f);
     if (frame.empty()) return out;
-    const float step = (float)frame.size() / n;
-    for (int i = 0; i < n; ++i) out[(size_t)i] = frame[(size_t)std::min((int)frame.size() - 1, (int)(i * step))];
+    const float step = static_cast<float>(frame.size()) / static_cast<float>(n);
+    for (int i = 0; i < n; ++i)
+        out[(size_t)i] = frame[(size_t)std::min(static_cast<float>(frame.size() - 1),
+                                               static_cast<float>(i) * step)];
     return out;
 }
 
@@ -54,8 +56,12 @@ inline std::vector<Frame> framesFromWave(const std::vector<float>& wave, int fra
     const int fit = (int)(wave.size() / (size_t)SIZE);
     frameCount = std::max(0, std::min(frameCount, fit));
     std::vector<Frame> out;
-    for (int f = 0; f < frameCount; ++f)
-        out.emplace_back(wave.begin() + (size_t)f * SIZE, wave.begin() + (size_t)(f + 1) * SIZE);
+    using Difference = std::vector<float>::difference_type;
+    for (int f = 0; f < frameCount; ++f) {
+        const auto begin = static_cast<Difference>(f) * static_cast<Difference>(SIZE);
+        const auto end = static_cast<Difference>(f + 1) * static_cast<Difference>(SIZE);
+        out.emplace_back(wave.begin() + begin, wave.begin() + end);
+    }
     return out;
 }
 

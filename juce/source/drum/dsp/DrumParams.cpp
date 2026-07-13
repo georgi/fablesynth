@@ -118,7 +118,10 @@ const std::vector<ParamInfo>& drumParamInfo() {
 DrumParamArray defaultDrumParams() {
     DrumParamArray p{};
     const auto& info = drumParamInfo();
-    for (int i = 0; i < DR_NUM_PARAMS; ++i) p[i] = info[i].def;
+    for (int i = 0; i < DR_NUM_PARAMS; ++i) {
+        const auto index = static_cast<size_t>(i);
+        p[index] = info[index].def;
+    }
     return p;
 }
 

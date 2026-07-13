@@ -107,7 +107,7 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({SEQ_ROOT,  "seq.root",  "ROOT",  24,   72,    48,    Curve::Int, Kind::Float, nullptr});
 
     std::array<ParamInfo, NUM_PARAMS> out{};
-    for (auto& info : v) out[info.id] = info; // place by id so [Pid] indexing is exact
+    for (auto& info : v) out[(size_t)info.id] = info; // place by id so [Pid] indexing is exact
     return out;
 }
 } // namespace
@@ -119,15 +119,15 @@ const std::array<ParamInfo, NUM_PARAMS>& paramInfo() {
 
 int idFromString(const std::string& pid) {
     const auto& info = paramInfo();
-    for (int i = 0; i < NUM_PARAMS; ++i)
-        if (info[i].pid == pid) return i;
+    for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
+        if (info[i].pid == pid) return (int)i;
     return -1;
 }
 
 ParamArray defaultParams() {
     ParamArray p{};
     const auto& info = paramInfo();
-    for (int i = 0; i < NUM_PARAMS; ++i) p[i] = info[i].def;
+    for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i) p[i] = info[i].def;
     return p;
 }
 

@@ -38,7 +38,7 @@ void TopBar::paint(juce::Graphics& g) {
     int bx = brandArea.getX(), by = brandArea.getY();
     g.setColour(col::text);
     drawSpaced(g, "FABLE", { bx, by, 70, brandArea.getHeight() }, 1.5f);
-    int fableW = (int)g.getCurrentFont().getStringWidthFloat("FABLE") + 5 * 5;
+    int fableW = (int)juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "FABLE") + 5 * 5;
     g.setColour(col::acA);
     drawSpaced(g, "SYNTH", { bx + fableW, by, 80, brandArea.getHeight() }, 1.5f);
     g.setColour(col::textDim);
