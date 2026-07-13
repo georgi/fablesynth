@@ -31,13 +31,13 @@ function LfoBlock({ id, src, title, accentKey }: { id: 'lfo1' | 'lfo2'; src: num
       <div className="panel-head">
         <ModSourceChip src={src} compact />
         <h2>{title}</h2>
+        <div className="lfo-toggles">
+          <Toggle id={`${id}.sync`} label="SYNC" />
+          <Toggle id={`${id}.retrig`} label="TRIG" />
+        </div>
         <span className="ph-stepper"><Stepper paramId={`${id}.shape`} /></span>
       </div>
       <LFOView className="lfo-curve" shape={shape} rate={dispRate} accent={ACCENTS[accentKey]} />
-      <div className="lfo-toggles">
-        <Toggle id={`${id}.sync`} label="SYNC" />
-        <Toggle id={`${id}.retrig`} label="TRIG" />
-      </div>
       <div className="knob-row lfo-knobs">
         {sync
           ? <span className="lfo-div"><Stepper paramId={`${id}.syncrate`} accent={accentKey} /></span>

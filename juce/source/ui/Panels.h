@@ -48,21 +48,35 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
+    struct TabButton : public juce::Button, private juce::Timer {
+        TabButton(ParameterSource, juce::String onId, juce::String label);
+        ~TabButton() override { stopTimer(); }
+        void paintButton(juce::Graphics&, bool highlighted, bool down) override;
+        bool keyPressed(const juce::KeyPress&) override;
+        void timerCallback() override;
+
+        std::function<void(int)> onNavigate;
+        ParameterSource parameters;
+        juce::String onId, label;
+        bool lastOn = false;
+    };
     struct Block {
         // cutoffDest / resDest / driveDest / envDest / keyDest = mod-matrix dest
         // indices for this filter's CUTOFF/RES/DRIVE/ENV/KEY knobs (all continuous,
         // all mod targets).
-        Block(ParameterSource, juce::String prefix, juce::String label,
+        Block(ParameterSource, juce::String prefix,
               int cutoffDest, int resDest, int driveDest, int envDest, int keyDest);
-        juce::String label;
         PowerButton power; Stepper type;
         juce::OwnedArray<Knob> knobs;
-        juce::Rectangle<int> labelArea;
         void layout(juce::Rectangle<int>);
-        void paintLabel(juce::Graphics&);
+        void setVisible(bool);
     };
+    void setActiveFilter(int index, bool moveKeyboardFocus = false);
+
     Stepper route; FilterView view;
     Block f1, f2;
+    TabButton tab1, tab2;
+    int activeFilter = 0;
     juce::Rectangle<int> titleArea;
 };
 
@@ -136,15 +150,15 @@ private:
         juce::TextButton remove{juce::String::fromUTF8("\xc3\x97")}; // ×
     };
     ParameterSource parameters;
-    // Rows live in a scrollable viewport: fixed-height rows that scroll once the
-    // active routes exceed the panel height (the 16-slot pool can fill the list).
+    // Rows live in a four-route viewport beside a compact source/add rail. The
+    // fixed 16-slot pool scrolls once a fifth visible route is present.
     juce::Viewport viewport;
     juce::Component rowsHolder;
     juce::OwnedArray<Row> rows;          // indexed [slot-1]; children of rowsHolder
     juce::OwnedArray<ModSourceChip> chips;
     juce::TextButton addBtn{"+ ADD ROUTE"};
     std::vector<int> lastVisible;        // cached visible-slot vector (diffed by timer)
-    juce::Rectangle<int> titleArea, chipArea, addArea, rowsArea;
+    juce::Rectangle<int> titleArea, chipArea, hintArea, addArea, rowsArea;
 };
 
 class FxPanel : public juce::Component {

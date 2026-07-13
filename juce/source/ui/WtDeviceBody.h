@@ -8,7 +8,7 @@
 // editor adds its own header around this body; SQ-4 embeds the body directly.
 class WtDeviceBody : public juce::Component {
 public:
-    static constexpr int LW = 1400, LH = 1243;
+    static constexpr int LW = 1520, LH = 893;
 
     explicit WtDeviceBody(fui::WtUiModel&,
                           std::function<HostTransport()> transportProvider = {});

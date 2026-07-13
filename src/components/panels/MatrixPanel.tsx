@@ -28,7 +28,7 @@ function arc(from: number, to: number): string {
 
 // Compact bipolar amount knob (sweeps from 12 o'clock), driven by value/onChange
 // rather than a param id.
-function AmtKnob({ amt, color, onChange }: { amt: number; color: string; onChange: (a: number) => void }) {
+function AmtKnob({ amt, color, label, onChange }: { amt: number; color: string; label: string; onChange: (a: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; amt: number } | null>(null);
   const deg = A0 + (A1 - A0) * (amt + 1) / 2;
@@ -40,8 +40,11 @@ function AmtKnob({ amt, color, onChange }: { amt: number; color: string; onChang
       className="mx-amt"
       tabIndex={0}
       role="slider"
-      aria-label="amount"
+      aria-label={label}
+      aria-valuemin={-1}
+      aria-valuemax={1}
       aria-valuenow={amt}
+      aria-valuetext={fmtBi(amt)}
       title={fmtBi(amt)}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -55,6 +58,22 @@ function AmtKnob({ amt, color, onChange }: { amt: number; color: string; onChang
       }}
       onPointerUp={(e) => { drag.current = null; try { ref.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ } }}
       onDoubleClick={() => onChange(0)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 0.01 : 0.05;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          onChange(clampAmt(amt + step));
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          onChange(clampAmt(amt - step));
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          onChange(-1);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          onChange(1);
+        }
+      }}
     >
       <svg viewBox="0 0 32 32">
         <circle className="k-body" cx="16" cy="16" r="10" />
@@ -66,9 +85,9 @@ function AmtKnob({ amt, color, onChange }: { amt: number; color: string; onChang
   );
 }
 
-function ModSelect({ value, options, onChange }: { value: number; options: string[]; onChange: (v: number) => void }) {
+function ModSelect({ value, options, label, onChange }: { value: number; options: string[]; label: string; onChange: (v: number) => void }) {
   return (
-    <select className="mx-select" value={value} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange(parseInt(e.target.value, 10))}>
+    <select className="mx-select" aria-label={label} value={value} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange(parseInt(e.target.value, 10))}>
       {options.map((o, i) => (
         <option key={i} value={i}>{o}</option>
       ))}
@@ -97,27 +116,26 @@ export function MatrixPanel() {
 
   return (
     <section className="panel panel-matrix" style={{ gridArea: 'matrix' }}>
-      <div className="panel-head"><h2>MOD MATRIX</h2></div>
-
-      <div className="mx-sources">
-        {[1, 2, 3, 4, 5].map((s) => <ModSourceChip key={s} src={s} />)}
+      <div className="mx-rail">
+        <div className="panel-head"><h2>MOD MATRIX</h2></div>
+        <div className="mx-sources" aria-label="Modulation sources">
+          {[1, 2, 3, 4, 5].map((s) => <ModSourceChip key={s} src={s} />)}
+        </div>
+        <button className="mx-add" onClick={() => addRoute(1, 0)}>+ ADD ROUTE</button>
       </div>
-      <p className="mx-hint">Drag a source onto any knob or POS, or add a route below.</p>
 
-      <div className="matrix-rows">
+      <div className="matrix-rows" aria-label="Modulation routes">
         {rows.map((r) => (
           <div className="mx-row" key={r.slot}>
-            <AmtKnob amt={r.amt} color={SOURCE_COLORS[r.src]} onChange={(a) => updateSlot(r.slot, { amt: a })} />
-            <ModSelect value={r.src} options={MOD_SOURCES} onChange={(v) => updateSlot(r.slot, { src: v })} />
+            <AmtKnob amt={r.amt} color={SOURCE_COLORS[r.src]} label={`Route ${r.slot} amount`} onChange={(a) => updateSlot(r.slot, { amt: a })} />
+            <ModSelect value={r.src} options={MOD_SOURCES} label={`Route ${r.slot} source`} onChange={(v) => updateSlot(r.slot, { src: v })} />
             <span className="mx-arrow">▸</span>
-            <ModSelect value={r.dst} options={MOD_DESTS} onChange={(v) => updateSlot(r.slot, { dst: v })} />
-            <button className="mx-del" aria-label="remove route" title="remove" onClick={() => clearSlot(r.slot)}>×</button>
+            <ModSelect value={r.dst} options={MOD_DESTS} label={`Route ${r.slot} destination`} onChange={(v) => updateSlot(r.slot, { dst: v })} />
+            <button className="mx-del" aria-label={`Remove route ${r.slot}`} title="remove" onClick={() => clearSlot(r.slot)}>×</button>
           </div>
         ))}
         {!rows.length && <p className="mx-empty">No modulation routes yet.</p>}
       </div>
-
-      <button className="mx-add" onClick={() => addRoute(1, 0)}>+ ADD ROUTE</button>
     </section>
   );
 }

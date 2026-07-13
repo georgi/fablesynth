@@ -13,9 +13,8 @@
 // grid. The editor scales it to the window so the layout stays pixel-faithful.
 class Rack : public juce::Component {
 public:
-    // LH grew by the NOTE SEQ row (270 + 9 gap) when the sequencer landed,
-    // matching the web grid's added 'seq' row.
-    static constexpr int LW = 1400, LH = 1332;
+    // Compact WT rows plus the NOTE SEQ row, matching the web rack geometry.
+    static constexpr int LW = 1520, LH = 982;
     Rack(fui::WtUiModel&, juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
     void resized() override;
 

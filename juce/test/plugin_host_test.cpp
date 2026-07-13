@@ -50,6 +50,28 @@ static void snapshotEditor(FableAudioProcessor& proc, const juce::File& out) {
     writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
 }
 
+static juce::Button* findButtonNamed(juce::Component& root, const juce::String& name) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        auto* child = root.getChildComponent(i);
+        if (auto* button = dynamic_cast<juce::Button*>(child); button != nullptr
+            && button->getName() == name)
+            return button;
+        if (auto* nested = findButtonNamed(*child, name)) return nested;
+    }
+    return nullptr;
+}
+
+// Exercise the native filter-tab interaction headlessly. The full F1/matrix
+// snapshots remain the visual fixtures; this check covers the F2 state change
+// without relying on JUCE's invalidated-descendant repaint behaviour.
+static bool selectEditorFilter2(FableAudioProcessor& proc) {
+    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    ed->setSize(Rack::LW, Rack::LH);
+    auto* f2 = findButtonNamed(*ed, "F2");
+    if (f2 != nullptr && f2->onClick) f2->onClick();
+    return f2 != nullptr && f2->getToggleState();
+}
+
 // Render the two live wavetable views to a PNG (headless software renderer),
 // proving the visualization actually draws.
 static void snapshotViews(FableAudioProcessor& proc, const juce::File& out) {
@@ -522,6 +544,7 @@ int main(int argc, char** argv) {
     snapshotEditor(proc, dir.getChildFile("plugin_editor_mat5.png")); // editor with mat5 route assigned
     snapshotEditor(proc, dir.getChildFile("plugin_editor_newdest.png")); // editor with mat6 -> SUB LVL (new dest)
     snapshotEditor(proc, dir.getChildFile("plugin_editor_matrixfull.png")); // 12 routes -> scrollable matrix
+    check(selectEditorFilter2(proc), "F2 filter tab selects the second filter controls", 0);
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");

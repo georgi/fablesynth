@@ -29,7 +29,7 @@ juce::Rectangle<int> WtDeviceBody::colArea(int c0, int span, int y, int h) const
 
 void WtDeviceBody::resized() {
     const int gap = 9;
-    const int row1 = 250, row2 = 430, row3 = 250, row4 = 270;
+    const int row1 = 250, row2 = 206, row3 = 124, row4 = 270;
     const int y1 = 2;
     const int y2 = y1 + row1 + gap;
     const int y3 = y2 + row2 + gap;

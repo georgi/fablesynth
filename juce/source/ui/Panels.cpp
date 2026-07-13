@@ -180,9 +180,9 @@ void UtilPanel::resized() {
 }
 
 // ===================== FilterPanel =====================
-FilterPanel::Block::Block(ParameterSource s, juce::String prefix, juce::String lbl,
+FilterPanel::Block::Block(ParameterSource s, juce::String prefix,
                           int cutoffDest, int resDest, int driveDest, int envDest, int keyDest)
-    : label(lbl), power(s, prefix + ".on", Accent::F), type(s, prefix + ".type", Accent::F) {
+    : power(s, prefix + ".on", Accent::F), type(s, prefix + ".type", Accent::F) {
     const char* ids[] = {".cutoff", ".res", ".drive", ".env", ".key"};
     // Every continuous knob is a mod target (per filter): CUTOFF (0) → 3/9,
     // RES (1) → 17/10, DRIVE (2) → 18/21, ENV (3) → 19/22, KEY (4) → 20/23.
@@ -191,48 +191,128 @@ FilterPanel::Block::Block(ParameterSource s, juce::String prefix, juce::String l
         knobs.add(new Knob(s, prefix + ids[i], i == 0 ? Knob::Md : Knob::Sm, Accent::F, true, dests[i]));
 }
 void FilterPanel::Block::layout(juce::Rectangle<int> r) {
-    auto head = r.removeFromTop(18);
-    power.setBounds(head.removeFromLeft(17).withSizeKeepingCentre(13, 13));
-    head.removeFromLeft(4);
-    type.setBounds(head.removeFromRight(86).withSizeKeepingCentre(86, 18));
-    labelArea = head;
-    r.removeFromTop(4);
     layoutKnobRow(r, ptrs(knobs));
 }
-void FilterPanel::Block::paintLabel(juce::Graphics& g) {
-    g.setColour(col::acF);
-    g.setFont(monoFont(10.0f));
-    drawSpaced(g, label, labelArea, 1.2f, juce::Justification::centredLeft);
+
+void FilterPanel::Block::setVisible(bool visible) {
+    power.setVisible(visible);
+    type.setVisible(visible);
+    for (auto* knob : knobs) knob->setVisible(visible);
+}
+
+FilterPanel::TabButton::TabButton(ParameterSource s, juce::String id,
+                                  juce::String text)
+    : juce::Button(text), parameters(s), onId(std::move(id)),
+      label(std::move(text)) {
+    setClickingTogglesState(false);
+    setWantsKeyboardFocus(true);
+    setTitle(label + " filter controls tab");
+    setDescription("Shows the " + label + " controls. Use left and right arrow keys to switch filters.");
+    setTooltip("Show " + label + " controls");
+    if (auto* p = parameters.parameter(onId)) lastOn = p->getValue() >= 0.5f;
+    startTimerHz(8);
+}
+
+void FilterPanel::TabButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
+    auto r = getLocalBounds().toFloat();
+    const bool selected = getToggleState();
+    g.setColour(selected ? col::acF.withAlpha(0.13f) : juce::Colour(0xff0a0d13));
+    g.fillRoundedRectangle(r, 3.0f);
+    g.setColour(selected ? col::acF.withAlpha(0.7f)
+                         : (highlighted || down ? col::textDim : col::line));
+    g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
+
+    const float ledX = 10.0f;
+    const float ledY = r.getCentreY();
+    if (lastOn) {
+        g.setColour(col::acF.withAlpha(0.25f));
+        g.fillEllipse(ledX - 4.0f, ledY - 4.0f, 8.0f, 8.0f);
+        g.setColour(col::acF);
+    } else {
+        g.setColour(juce::Colour(0xff303645));
+    }
+    g.fillEllipse(ledX - 2.5f, ledY - 2.5f, 5.0f, 5.0f);
+
+    g.setColour(selected ? col::acF : col::textDim);
+    g.setFont(monoFont(9.0f, true));
+    drawSpaced(g, label, getLocalBounds().withTrimmedLeft(17), 1.1f,
+               juce::Justification::centred);
+}
+
+bool FilterPanel::TabButton::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress::leftKey || key == juce::KeyPress::rightKey) {
+        if (onNavigate) onNavigate(key == juce::KeyPress::leftKey ? -1 : 1);
+        return true;
+    }
+    return juce::Button::keyPressed(key);
+}
+
+void FilterPanel::TabButton::timerCallback() {
+    auto* p = parameters.parameter(onId);
+    const bool nowOn = p != nullptr && p->getValue() >= 0.5f;
+    if (nowOn != lastOn) {
+        lastOn = nowOn;
+        repaint();
+    }
 }
 
 FilterPanel::FilterPanel(ParameterSource s)
     : route(s, "filter.route", Accent::F), view(s, col::acF),
       // dst indices per §9: F1 cut/res/drive/env/key = 3/17/18/19/20;
       //                      F2 cut/res/drive/env/key = 9/10/21/22/23.
-      f1(s, "filter", "F1", 3, 17, 18, 19, 20), f2(s, "filter2", "F2", 9, 10, 21, 22, 23) {
+      f1(s, "filter", 3, 17, 18, 19, 20),
+      f2(s, "filter2", 9, 10, 21, 22, 23),
+      tab1(s, "filter.on", "F1"), tab2(s, "filter2.on", "F2") {
     addAndMakeVisible(route); addAndMakeVisible(view);
+    addAndMakeVisible(tab1); addAndMakeVisible(tab2);
     for (auto* b : { &f1, &f2 }) {
         addAndMakeVisible(b->power); addAndMakeVisible(b->type);
         for (auto* k : b->knobs) addAndMakeVisible(k);
     }
+    tab1.onClick = [this] { setActiveFilter(0); };
+    tab2.onClick = [this] { setActiveFilter(1); };
+    tab1.onNavigate = tab2.onNavigate = [this](int) {
+        setActiveFilter(1 - activeFilter, true);
+    };
+    setActiveFilter(0);
+}
+
+void FilterPanel::setActiveFilter(int index, bool moveKeyboardFocus) {
+    activeFilter = juce::jlimit(0, 1, index);
+    tab1.setToggleState(activeFilter == 0, juce::dontSendNotification);
+    tab2.setToggleState(activeFilter == 1, juce::dontSendNotification);
+    tab1.setTitle("F1 filter controls tab, " + juce::String(activeFilter == 0 ? "selected" : "not selected"));
+    tab2.setTitle("F2 filter controls tab, " + juce::String(activeFilter == 1 ? "selected" : "not selected"));
+    f1.setVisible(activeFilter == 0);
+    f2.setVisible(activeFilter == 1);
+    resized();
+    repaint();
+    if (moveKeyboardFocus) (activeFilter == 0 ? tab1 : tab2).grabKeyboardFocus();
 }
 void FilterPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, "FILTERS", col::acF);
-    f1.paintLabel(g); f2.paintLabel(g);
 }
 void FilterPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     auto head = r.removeFromTop(20);
     route.setBounds(head.removeFromRight(104).withSizeKeepingCentre(104, 18));
-    titleArea = head;
+    head.removeFromRight(8);
+    titleArea = head.removeFromLeft(92);
+    head.removeFromLeft(5);
+    auto tabs = head.removeFromLeft(84).withSizeKeepingCentre(84, 20);
+    tab1.setBounds(tabs.removeFromLeft(41));
+    tabs.removeFromLeft(2);
+    tab2.setBounds(tabs);
+    head.removeFromLeft(8);
+    auto& active = activeFilter == 0 ? f1 : f2;
+    active.power.setBounds(head.removeFromLeft(17).withSizeKeepingCentre(13, 13));
+    head.removeFromLeft(4);
+    active.type.setBounds(head.removeFromLeft(86).withSizeKeepingCentre(86, 18));
     r.removeFromTop(6);
     view.setBounds(r.removeFromTop(62));
-    r.removeFromTop(6);
-    auto h = r.getHeight();
-    f1.layout(r.removeFromTop(h / 2));
-    r.removeFromTop(4);
-    f2.layout(r);
+    r.removeFromTop(8);
+    active.layout(r.removeFromTop(60));
 }
 
 // ===================== EnvPanel =====================
@@ -258,11 +338,7 @@ void EnvPanel::resized() {
     r.removeFromTop(6);
     view.setBounds(r.removeFromTop(62));
     r.removeFromTop(8);
-    // ATK DEC SUS on top, REL centred below (matches the web wrap)
-    auto top = r.removeFromTop(60);
-    layoutKnobRow(top, { knobs[0], knobs[1], knobs[2] });
-    r.removeFromTop(2);
-    knobs[3]->setBounds(r.removeFromTop(60).withSizeKeepingCentre(48, 60));
+    layoutKnobRow(r.removeFromTop(60), ptrs(knobs));
 }
 
 // ===================== LfoPanel =====================
@@ -293,25 +369,26 @@ void LfoPanel::Block::applySync(bool sync) {
 }
 
 void LfoPanel::Block::layout(juce::Rectangle<int> r) {
-    auto head = r.removeFromTop(22);
-    shape.setBounds(head.removeFromRight(96).withSizeKeepingCentre(96, 18));
-    head.removeFromRight(6);
-    srcChip.setBounds(head.removeFromRight(22).withSizeKeepingCentre(20, 16));
+    auto head = r.removeFromTop(20);
+    shape.setBounds(head.removeFromRight(78).withSizeKeepingCentre(78, 18));
+    head.removeFromRight(3);
+    retrigBtn.setBounds(head.removeFromRight(30).withSizeKeepingCentre(30, 18));
+    head.removeFromRight(2);
+    syncBtn.setBounds(head.removeFromRight(30).withSizeKeepingCentre(30, 18));
+    head.removeFromRight(3);
+    srcChip.setBounds(head.removeFromLeft(20).withSizeKeepingCentre(20, 16));
+    head.removeFromLeft(4);
     titleArea = head;
+    r.removeFromTop(6);
+    view.setBounds(r.removeFromTop(62));
     r.removeFromTop(8);
-    view.setBounds(r.removeFromTop(110));   // tall shape visualization
-    r.removeFromTop(10);
-    auto tg = r.removeFromTop(22);
-    syncBtn.setBounds(tg.removeFromLeft(tg.getWidth() / 2).reduced(2, 0));
-    retrigBtn.setBounds(tg.reduced(2, 0));
-    r.removeFromTop(12);
-    auto row = r.removeFromTop(64);
+    auto row = r.removeFromTop(60);
     int w = row.getWidth() / 3;
     slot0 = row.removeFromLeft(w);
-    rate.setBounds(slot0.withSizeKeepingCentre(40, 56));
+    rate.setBounds(slot0);
     syncRate.setBounds(slot0.withSizeKeepingCentre(w - 4, 18));
-    rise.setBounds(row.removeFromLeft(w).withSizeKeepingCentre(40, 56));
-    phase.setBounds(row.withSizeKeepingCentre(40, 56));
+    rise.setBounds(row.removeFromLeft(w));
+    phase.setBounds(row);
     applySync(lastSync);
 }
 
@@ -377,14 +454,14 @@ MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl) {
 void MatrixPanel::Row::resized() {
     auto rr = getLocalBounds();
     int rowH = rr.getHeight();
-    remove.setBounds(rr.removeFromRight(20).withSizeKeepingCentre(18, juce::jmin(18, rowH)));
+    amt->setBounds(rr.removeFromLeft(22).withSizeKeepingCentre(22, rowH));
+    rr.removeFromLeft(4);
+    remove.setBounds(rr.removeFromRight(18).withSizeKeepingCentre(18, juce::jmin(18, rowH)));
     rr.removeFromRight(4);
-    amt->setBounds(rr.removeFromRight(34).withSizeKeepingCentre(34, rowH));
-    rr.removeFromRight(6);
     int half = (rr.getWidth() - 14) / 2;
-    src.setBounds(rr.removeFromLeft(half).withSizeKeepingCentre(half, juce::jmin(26, rowH)));
+    src.setBounds(rr.removeFromLeft(half).withSizeKeepingCentre(half, juce::jmin(22, rowH)));
     rr.removeFromLeft(14); // arrow gutter
-    dst.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), juce::jmin(26, rowH)));
+    dst.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), juce::jmin(22, rowH)));
 }
 void MatrixPanel::Row::paint(juce::Graphics& g) {
     g.setColour(col::textDim);
@@ -447,7 +524,7 @@ void MatrixPanel::relayoutRows() {
     // Fixed-height rows stacked in the holder; the viewport scrolls vertically
     // once their total height exceeds the visible area.
     for (auto* row : rows) row->setVisible(false);
-    const int rowH = 28, gap = 7;
+    const int rowH = 24, gap = 2;
     int n = (int)lastVisible.size();
     int vpW = viewport.getWidth(), vpH = viewport.getHeight();
     int neededH = n > 0 ? n * rowH + (n - 1) * gap : 0;
@@ -464,6 +541,10 @@ void MatrixPanel::relayoutRows() {
 void MatrixPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, "MOD MATRIX", col::text);
+    g.setColour(col::textDim);
+    g.setFont(monoFont(7.5f));
+    g.drawFittedText("Drag to a control, or add a route.", hintArea,
+                     juce::Justification::centredLeft, 2);
     // (each Row paints its own ▸ arrow between src and dst, so it scrolls correctly)
     if (lastVisible.empty()) {
         g.setColour(col::textDim);
@@ -475,26 +556,32 @@ void MatrixPanel::paint(juce::Graphics& g) {
 
 void MatrixPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
-    titleArea = r.removeFromTop(20);
-    r.removeFromTop(6);
-    // header chip strip
-    chipArea = r.removeFromTop(20);
+    auto rail = r.removeFromLeft(172);
+    r.removeFromLeft(9);
+
+    titleArea = rail.removeFromTop(18);
+    rail.removeFromTop(3);
+    chipArea = rail.removeFromTop(38);
     {
-        auto cr = chipArea;
-        int n = chips.size();
-        int gap = 5;
-        int cw = (cr.getWidth() - gap * (n - 1)) / juce::jmax(1, n);
-        for (int i = 0; i < n; ++i) {
-            chips[i]->setBounds(cr.removeFromLeft(cw).withSizeKeepingCentre(cw, 18));
-            cr.removeFromLeft(gap);
+        auto top = chipArea.removeFromTop(18);
+        auto bottom = chipArea.removeFromBottom(18);
+        const int gap = 3;
+        const int topW = (top.getWidth() - gap * 2) / 3;
+        for (int i = 0; i < 3; ++i) {
+            chips[i]->setBounds(top.removeFromLeft(topW).withSizeKeepingCentre(topW, 16));
+            if (i < 2) top.removeFromLeft(gap);
         }
+        const int bottomW = (bottom.getWidth() - gap) / 2;
+        chips[3]->setBounds(bottom.removeFromLeft(bottomW).withSizeKeepingCentre(bottomW, 16));
+        bottom.removeFromLeft(gap);
+        chips[4]->setBounds(bottom.withSizeKeepingCentre(bottomW, 16));
     }
-    r.removeFromTop(6);
-    // ADD ROUTE button pinned at the bottom
-    addArea = r.removeFromBottom(24);
-    addBtn.setBounds(addArea.withSizeKeepingCentre(juce::jmin(140, addArea.getWidth()), 22));
-    r.removeFromBottom(6);
-    rowsArea = r;
+    rail.removeFromTop(2);
+    hintArea = rail.removeFromTop(15);
+    addArea = rail.removeFromBottom(22);
+    addBtn.setBounds(addArea);
+
+    rowsArea = r.withSizeKeepingCentre(r.getWidth(), juce::jmin(102, r.getHeight()));
     viewport.setBounds(rowsArea);
     relayoutRows();
 }
