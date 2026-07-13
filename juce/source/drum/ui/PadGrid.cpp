@@ -1,6 +1,12 @@
 #include "PadGrid.h"
+#include "../../dsp/UserTables.h"
 
 namespace fui {
+
+static float parameterValue(DrumUiModel& model, const juce::String& id) {
+    auto* p = model.parameters().parameter(id);
+    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
+}
 
 // Web timings/velocities (PadGrid.tsx, store.ts, useDrumKeys.ts).
 static constexpr int    kLitMs    = 180;    // pad-led.lit window
@@ -12,7 +18,15 @@ static constexpr int    kGap      = 8;      // .pad-grid gap
 // zxcv = pads 0-3, asdf = 4-7, qwer = 8-11, 1234 = 12-15.
 static const juce::String kKeyOrder("zxcvasdfqwer1234");
 
-PadGrid::PadGrid(DrumAudioProcessor& p) : proc(p) {
+PadGrid::PadGrid(DrumUiModel& p) : proc(p) {
+    formatMgr.registerBasicFormats();
+    for (int i = 0; i < fable::DR_NPADS; ++i) lastTag_[(size_t)i] = -1;
+    setInterceptsMouseClicks(true, false);
+    startTimerHz(30);
+}
+
+PadGrid::PadGrid(DrumAudioProcessor& p)
+    : ownedModel(makeStandaloneDrumUiModel(p)), proc(*ownedModel) {
     formatMgr.registerBasicFormats();
     for (int i = 0; i < fable::DR_NPADS; ++i) lastTag_[(size_t)i] = -1;
     setInterceptsMouseClicks(true, false);
@@ -66,7 +80,7 @@ void PadGrid::flash(int i) {
 void PadGrid::mouseDown(const juce::MouseEvent& e) {
     const int i = padAt(e.getPosition());
     if (i < 0) return;
-    proc.setSelectedPad(i);          // web store.selectPad: select + audition
+    proc.selectPad(i);          // web store.selectPad: select + audition
     proc.triggerPad(i, kClickVel);
     flash(i);
     repaint();                       // selection ring moved
@@ -76,7 +90,7 @@ bool PadGrid::keyPressed(const juce::KeyPress& k, juce::Component*) {
     const auto mods = k.getModifiers();
     if (mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown()) return false;
     if (k.getKeyCode() == juce::KeyPress::escapeKey) {   // useDrumKeys: Escape = stop
-        proc.setSeqPlaying(false);
+        proc.setSequencerPlaying(false);
         return true;
     }
     const auto c = juce::CharacterFunctions::toLowerCase(k.getTextCharacter());
@@ -163,12 +177,12 @@ void PadGrid::timerCallback() {
     for (int i = 0; i < fable::DR_NPADS; ++i) {
         if (now - hitMs_[(size_t)i] < (juce::uint32)kLitMs) lit |= 1u << i;
         const auto pre = "pad" + juce::String(i) + ".";
-        const int choke = (int)std::lround(proc.apvts.getRawParameterValue(pre + "choke")->load());
-        const int out   = (int)std::lround(proc.apvts.getRawParameterValue(pre + "out")->load());
+        const int choke = (int)std::lround(parameterValue(proc, pre + "choke"));
+        const int out   = (int)std::lround(parameterValue(proc, pre + "out"));
         const int tag = (choke << 8) | out;
         if (tag != lastTag_[(size_t)i]) { lastTag_[(size_t)i] = tag; tagChanged = true; }
     }
-    const int sel = proc.getSelectedPad();
+    const int sel = proc.selectedPad();
     if (lit != lastLit_ || sel != lastSel_ || tagChanged) {
         lastLit_ = lit;
         lastSel_ = sel;
@@ -194,7 +208,7 @@ void PadGrid::paint(juce::Graphics& g) {
     drawSpaced(g, "DROP WAV -> WAVETABLE", head, 1.1f, juce::Justification::right);
 
     const auto now = juce::Time::getMillisecondCounter();
-    const int sel = proc.getSelectedPad();
+    const int sel = proc.selectedPad();
 
     for (int i = 0; i < fable::DR_NPADS; ++i) {
         const auto t = tileBounds(i).toFloat();
@@ -242,12 +256,12 @@ void PadGrid::paint(juce::Graphics& g) {
         const auto meta = t.toNearestInt().reduced(7, 0).withTrimmedBottom(7);
         g.setColour(col::text);
         g.setFont(monoFont(9.0f));
-        g.drawText(proc.getPadName(i), meta.withTop(meta.getBottom() - 29).withHeight(16),
+        g.drawText(proc.padName(i), meta.withTop(meta.getBottom() - 29).withHeight(16),
                    juce::Justification::centredLeft, true);
 
         const auto pre = "pad" + juce::String(i) + ".";
-        const int choke = (int)std::lround(proc.apvts.getRawParameterValue(pre + "choke")->load());
-        const int out   = (int)std::lround(proc.apvts.getRawParameterValue(pre + "out")->load());
+        const int choke = (int)std::lround(parameterValue(proc, pre + "choke"));
+        const int out   = (int)std::lround(parameterValue(proc, pre + "out"));
         const auto& names = choke > 0 ? fable::CHOKE_NAMES : fable::OUT_NAMES;
         const int nameIdx = juce::jlimit(0, (int)names.size() - 1, choke > 0 ? choke : out);
         g.setColour(col::textDim);

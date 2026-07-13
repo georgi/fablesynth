@@ -8,8 +8,8 @@ static const char* const kPatNames[fable::DR_NPATTERNS] = { "A", "B", "C", "D" }
 
 // ---- SelBarView -------------------------------------------------------------
 
-SelBarView::SelBarView(DrumAudioProcessor& p) : proc(p) {
-    lastPatchContextRevision_ = proc.getPatchContextRevision();
+SelBarView::SelBarView(DrumUiModel& p) : proc(p) {
+    lastPatchContextRevision_ = proc.patchContextRevision();
     setInterceptsMouseClicks(false, true);    // bar is display-only; buttons live
     auto styleBtn = [this](juce::TextButton& b, int dir) {   // kit-stepper styling
         b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
@@ -23,10 +23,10 @@ SelBarView::SelBarView(DrumAudioProcessor& p) : proc(p) {
 }
 
 void SelBarView::timerCallback() {
-    const int sel = proc.getSelectedPad();
-    const int prog = proc.getCurrentProgram();
-    const auto patchRevision = proc.getPatchContextRevision();
-    auto name = proc.getPadName(sel);
+    const int sel = proc.selectedPad();
+    const int prog = proc.currentProgram();
+    const auto patchRevision = proc.patchContextRevision();
+    auto name = proc.padName(sel);
     if (sel != lastSel_ || prog != lastProgram_ || patchRevision != lastPatchContextRevision_
         || name != lastName_) {
         // The processor revision also catches same-pad selection, reloading the
@@ -45,7 +45,7 @@ void SelBarView::stepPatch(int dir) {
     if (n == 0) return;
     patchIndex_ = patchIndex_ < 0 ? (dir > 0 ? 0 : n - 1)
                                   : ((patchIndex_ + dir) % n + n) % n;
-    proc.applyFactoryPatch(patchIndex_);
+    proc.applyFactoryPadPatch(patchIndex_);
     repaint();
 }
 
@@ -74,7 +74,7 @@ void SelBarView::paint(juce::Graphics& g) {
     g.setColour(col::line);
     g.drawRoundedRectangle(r.reduced(0.5f), 7.0f, 1.0f);
 
-    const int sel = proc.getSelectedPad();
+    const int sel = proc.selectedPad();
     auto row = getLocalBounds().reduced(11, 5);   // padding 5px 11px
 
     // .dr-led.dr-led-a: 8px cyan LED with halo and a specular hotspot
@@ -97,7 +97,7 @@ void SelBarView::paint(juce::Graphics& g) {
     // .dr-sel-name (cyan)
     g.setColour(col::acA);
     g.setFont(monoFont(9.0f));
-    drawSpaced(g, proc.getPadName(sel), row.removeFromLeft(170), 0.9f);
+    drawSpaced(g, proc.padName(sel), row.removeFromLeft(170), 0.9f);
 
     // Patch stepper (web .dr-patchbar): "PATCH" mini head left of the prev
     // button, current factory patch name in a dark well between the buttons.
@@ -128,7 +128,13 @@ static constexpr int kPadX = 12, kHeadY = 9, kHeadH = 28, kTitleW = 88;
 static constexpr int kRowY = 47, kStepH = 45;
 static constexpr float kStepGap = 5.0f, kGroupGap = 8.0f;
 
-StepSeqView::StepSeqView(DrumAudioProcessor& p) : proc(p) {
+StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
+    setInterceptsMouseClicks(true, false);
+    startTimerHz(30);
+}
+
+StepSeqView::StepSeqView(DrumAudioProcessor& p)
+    : ownedModel(makeStandaloneDrumUiModel(p)), proc(*ownedModel) {
     setInterceptsMouseClicks(true, false);
     startTimerHz(30);
 }
@@ -160,8 +166,8 @@ juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
 // ---- store handlers ----------------------------------------------------------
 
 void StepSeqView::toggleStep(int step) {
-    const int pat = proc.getEditPattern(), pad = proc.getSelectedPad();
-    const auto v = (uint8_t)((proc.getStep(pat, pad, step) + 1) % 3);
+    const int pat = proc.editPattern(), pad = proc.selectedPad();
+    const auto v = (uint8_t)((proc.step(pat, pad, step) + 1) % 3);
     proc.setStep(pat, pad, step, v);             // seq.ts cycleStep
     repaint();
 }
@@ -172,7 +178,7 @@ void StepSeqView::patternClick(int i) {
         proc.setChain({ i });
     } else {                                     // store.chainClick while chaining
         std::vector<int> chain;
-        if (!chainFresh_) chain = proc.getChain();
+        if (!chainFresh_) chain = proc.chain();
         chain.push_back(i);
         chainFresh_ = false;
         proc.setEditPattern(i);
@@ -188,8 +194,8 @@ void StepSeqView::setChaining(bool on) {
     } else {                                     // commit (store.setChaining off)
         chaining_ = false;
         chainFresh_ = false;
-        auto chain = proc.getChain();
-        if (chain.empty()) chain.push_back(proc.getEditPattern());
+        auto chain = proc.chain();
+        if (chain.empty()) chain.push_back(proc.editPattern());
         proc.setChain(std::move(chain));
     }
     repaint();
@@ -198,7 +204,7 @@ void StepSeqView::setChaining(bool on) {
 void StepSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     if (transportBounds().contains(pos)) {       // play/stop
-        proc.setSeqPlaying(!proc.isSeqPlaying());
+        proc.setSequencerPlaying(!proc.sequencerPlaying());
         repaint();
         return;
     }
@@ -217,17 +223,17 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
 void StepSeqView::timerCallback() {
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern(), sel = proc.getSelectedPad();
+    const bool playing = proc.sequencerPlaying();
+    const int edit = proc.editPattern(), sel = proc.selectedPad();
     mix(playing ? 1 : 0);
-    mix(playing ? proc.getCurrentStep() : -1);
-    mix(proc.getCurrentPattern());
+    mix(playing ? proc.currentStep() : -1);
+    mix(proc.currentPattern());
     mix(edit); mix(sel); mix(chaining_ ? 1 : 0);
-    const auto& chain = proc.getChain();
+    const auto& chain = proc.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
-    for (int s = 0; s < fable::DR_STEPS; ++s) mix(proc.getStep(edit, sel, s));
-    mix(proc.getPadName(sel).hashCode());
+    for (int s = 0; s < fable::DR_STEPS; ++s) mix(proc.step(edit, sel, s));
+    mix(proc.padName(sel).hashCode());
     if (sig != lastSig_) { lastSig_ = sig; repaint(); }
 }
 
@@ -254,9 +260,9 @@ static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::St
 void StepSeqView::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
-    const int sel = proc.getSelectedPad();
+    const bool playing = proc.sequencerPlaying();
+    const int edit = proc.editPattern();
+    const int sel = proc.selectedPad();
 
     // ---- head: transport ----
     const auto tb = transportBounds().toFloat();
@@ -294,7 +300,7 @@ void StepSeqView::paint(juce::Graphics& g) {
 
     // ---- head: chain readout ("CHAIN A→B" — ASCII arrow) ----
     juce::String readout("CHAIN ");
-    const auto& chain = proc.getChain();
+    const auto& chain = proc.chain();
     for (size_t k = 0; k < chain.size(); ++k) {
         if (k > 0) readout << "->";
         const int p = chain[k];
@@ -314,7 +320,7 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "TAP STEP - ON -> ACCENT -> OFF", right.removeFromRight(180), 0.9f,
                juce::Justification::right);
     right.removeFromRight(7);
-    const auto name = proc.getPadName(sel);
+    const auto name = proc.padName(sel);
     const auto nameFont = monoFont(8.0f);
     const int nameW = juce::jmin(120, (int)std::ceil(nameFont.getStringWidthFloat(name)
                                           + 0.8f * (float)name.length()) + 14);
@@ -332,10 +338,10 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "EDITING", right, 0.9f, juce::Justification::right);
 
     // ---- step row ----
-    const int curStep = proc.getCurrentStep(), curPat = proc.getCurrentPattern();
+    const int curStep = proc.currentStep(), curPat = proc.currentPattern();
     for (int s = 0; s < fable::DR_STEPS; ++s) {
         const auto b = stepBounds(s).toFloat();
-        const int v = proc.getStep(edit, sel, s);
+        const int v = proc.step(edit, sel, s);
         const bool cur = playing && curStep == s && curPat == edit;
 
         // .step body: #171b25 -> #0d1017 gradient, 6px radius

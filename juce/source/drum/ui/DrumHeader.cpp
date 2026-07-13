@@ -1,4 +1,5 @@
 #include "DrumHeader.h"
+#include "../dsp/DrumParams.h"
 
 namespace fui {
 
@@ -17,7 +18,7 @@ static const bool g_drumResolverInstalled = [] {
 }();
 
 // ===================== DrumScopeView =====================
-DrumScopeView::DrumScopeView(DrumAudioProcessor& p) : proc(p) { startTimerHz(30); }
+DrumScopeView::DrumScopeView(DrumUiModel& p) : proc(p) { startTimerHz(30); }
 void DrumScopeView::timerCallback() {
     // Silent output draws the same flat line every frame: skip the repaint until
     // audio returns. One extra paint after the transition draws the final flat line.
@@ -47,17 +48,17 @@ void DrumScopeView::paint(juce::Graphics& g) {
 }
 
 // ===================== BpmReadout =====================
-BpmReadout::BpmReadout(DrumAudioProcessor& p) : proc(p) {
-    param = dynamic_cast<juce::RangedAudioParameter*>(p.apvts.getParameter("seq.bpm"));
+BpmReadout::BpmReadout(DrumUiModel& p) : proc(p) {
+    param = p.parameters().parameter("seq.bpm");
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     startTimerHz(10);
 }
 int BpmReadout::shown() const {
-    if (proc.isHostSynced()) return (int)std::lround(proc.getHostBpm());
+    if (proc.hostSynced()) return (int)std::lround(proc.hostBpm());
     return param ? (int)std::lround(param->convertFrom0to1(param->getValue())) : 0;
 }
 void BpmReadout::timerCallback() {
-    const bool sync = proc.isHostSynced();
+    const bool sync = proc.hostSynced();
     const int v = shown();
     if (v != lastShown || sync != lastSync) {
         lastShown = v; lastSync = sync;
@@ -67,12 +68,12 @@ void BpmReadout::timerCallback() {
     }
 }
 void BpmReadout::nudge(float d) {
-    if (proc.isHostSynced() || !param) return; // host owns the tempo
+    if (proc.hostSynced() || !param) return; // host owns the tempo
     param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, param->getValue() + d));
     repaint();
 }
 void BpmReadout::mouseDown(const juce::MouseEvent& e) {
-    if (proc.isHostSynced() || !param) return;
+    if (proc.hostSynced() || !param) return;
     param->beginChangeGesture();
     lastY = e.position.y;
 }
@@ -82,11 +83,11 @@ void BpmReadout::mouseDrag(const juce::MouseEvent& e) {
     nudge(dy * (e.mods.isShiftDown() ? 0.0008f : 0.005f));
 }
 void BpmReadout::mouseUp(const juce::MouseEvent&) {
-    if (proc.isHostSynced() || !param) return;
+    if (proc.hostSynced() || !param) return;
     param->endChangeGesture();
 }
 void BpmReadout::mouseDoubleClick(const juce::MouseEvent&) {
-    if (proc.isHostSynced() || !param) return;
+    if (proc.hostSynced() || !param) return;
     param->setValueNotifyingHost(param->getDefaultValue());
 }
 void BpmReadout::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) {
@@ -99,22 +100,22 @@ void BpmReadout::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(r, 6.0f);
     g.setColour(col::line);
     g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 1.0f);
-    g.setColour(proc.isHostSynced() ? col::acA : col::text);
+    g.setColour(proc.hostSynced() ? col::acA : col::text);
     g.setFont(monoFont(11.0f));
     g.drawText(juce::String(shown()), getLocalBounds(), juce::Justification::centred);
 }
 
 // ===================== DrumHeader =====================
-DrumHeader::DrumHeader(DrumAudioProcessor& p)
+DrumHeader::DrumHeader(DrumUiModel& p)
     : proc(p), scope(p), bpm(p),
-      swing(p.apvts, "master.swing", Knob::Md, Accent::N),
-      vol(p.apvts, "master.volume", Knob::Md, Accent::N) {
+      swing(p.parameters(), "master.swing", Knob::Md, Accent::N),
+      vol(p.parameters(), "master.volume", Knob::Md, Accent::N) {
     auto styleBtn = [this](juce::TextButton& b, int dir) {
         b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
         b.setColour(juce::TextButton::textColourOffId, col::text);
         b.onClick = [this, dir] {
-            const int n = proc.getNumPrograms();
-            proc.setCurrentProgram(((proc.getCurrentProgram() + dir) % n + n) % n);
+            const int n = proc.numPrograms();
+            proc.selectProgram(((proc.currentProgram() + dir) % n + n) % n);
             repaint(kitNameArea);
         };
         addAndMakeVisible(b);
@@ -129,10 +130,10 @@ DrumHeader::DrumHeader(DrumAudioProcessor& p)
 }
 
 void DrumHeader::timerCallback() {
-    if (proc.getMidiActive() != lastMidi) { lastMidi = proc.getMidiActive(); repaint(midiArea); }
-    if (proc.isHostSynced() != lastSync)  { lastSync = proc.isHostSynced();  repaint(syncArea); }
-    if (proc.getCurrentProgram() != lastProgram) {
-        lastProgram = proc.getCurrentProgram();
+    if (proc.midiActive() != lastMidi) { lastMidi = proc.midiActive(); repaint(midiArea); }
+    if (proc.hostSynced() != lastSync)  { lastSync = proc.hostSynced();  repaint(syncArea); }
+    if (proc.currentProgram() != lastProgram) {
+        lastProgram = proc.currentProgram();
         repaint(kitNameArea);
     }
 }
@@ -159,7 +160,7 @@ void DrumHeader::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(kitNameArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
     g.setColour(col::acA);
     g.setFont(monoFont(10.0f));
-    drawSpaced(g, proc.getProgramName(proc.getCurrentProgram()),
+    drawSpaced(g, proc.programName(proc.currentProgram()),
                kitNameArea.reduced(10, 0), 0.8f, juce::Justification::centred);
 
     // scope well (.hud-cell) + caption
@@ -172,15 +173,15 @@ void DrumHeader::paint(juce::Graphics& g) {
     // MIDI activity LED (.dr-midi)
     auto midiRow = midiArea;
     auto led = midiRow.removeFromLeft(13).withSizeKeepingCentre(7, 7).toFloat();
-    g.setColour(proc.getMidiActive() ? col::acA : juce::Colour(0xff232936));
+    g.setColour(proc.midiActive() ? col::acA : juce::Colour(0xff232936));
     g.fillEllipse(led);
-    if (proc.getMidiActive()) { g.setColour(col::acA.withAlpha(0.5f)); g.fillEllipse(led.expanded(2)); }
+    if (proc.midiActive()) { g.setColour(col::acA.withAlpha(0.5f)); g.fillEllipse(led.expanded(2)); }
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
     g.drawText("MIDI", midiRow, juce::Justification::centredLeft);
 
     // SYNC tag under the BPM box — dim normally, lit while the host owns tempo
-    g.setColour(proc.isHostSynced() ? col::acA : col::textDim);
+    g.setColour(proc.hostSynced() ? col::acA : col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SYNC", syncArea, 1.6f, juce::Justification::horizontallyCentred);
 }

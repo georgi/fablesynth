@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../DrumProcessor.h"
+#include "DrumUiModel.h"
 #include "../../ui/Theme.h"
 
 // Step sequencer strip + selected-pad bar — ports of src/drum/components/
@@ -22,14 +22,14 @@ namespace fui {
 // a pad resets the readout to "—" like the web store's selectPad.
 class SelBarView : public juce::Component, private juce::Timer {
 public:
-    explicit SelBarView(DrumAudioProcessor&);
+    explicit SelBarView(DrumUiModel&);
     ~SelBarView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
     void timerCallback() override;    // repaint on selection / pad-name change
     void stepPatch(int dir);          // cycle the factory bank onto the selected pad
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::TextButton prevBtn{"<"}, nextBtn{">"};
     juce::Rectangle<int> patchNameArea;
     int patchIndex_ = -1;             // -1 = no patch selected -> "—"
@@ -42,7 +42,8 @@ private:
 
 class StepSeqView : public juce::Component, private juce::Timer {
 public:
-    explicit StepSeqView(DrumAudioProcessor&);
+    explicit StepSeqView(DrumUiModel&);
+    explicit StepSeqView(DrumAudioProcessor&); // standalone-test compatibility
     ~StepSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -62,7 +63,8 @@ public:
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
-    DrumAudioProcessor& proc;
+    std::unique_ptr<DrumUiModel> ownedModel;
+    DrumUiModel& proc;
     bool chaining_ = false;
     bool chainFresh_ = false;               // next chained click replaces the chain
     juce::uint32 lastSig_ = 0xffffffffu;

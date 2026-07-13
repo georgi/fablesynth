@@ -3,9 +3,11 @@
 #include "../../ui/DeviceUiModel.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace fable { struct GeneratedTable; struct UserTable; }
+class DrumAudioProcessor;
 
 namespace fui {
 
@@ -54,5 +56,7 @@ public:
     virtual void createTargetClip() {}
     virtual int clipBars() const { return 1; }
 };
+
+std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor&);
 
 } // namespace fui

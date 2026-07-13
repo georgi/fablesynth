@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
-#include "../DrumProcessor.h"
+#include "DrumUiModel.h"
+#include "../dsp/DrumEngine.h"
 #include "../../ui/Theme.h"
 #include <array>
 #include <set>
@@ -22,7 +23,8 @@ class PadGrid : public juce::Component,
                 public juce::KeyListener,
                 private juce::Timer {
 public:
-    explicit PadGrid(DrumAudioProcessor&);
+    explicit PadGrid(DrumUiModel&);
+    explicit PadGrid(DrumAudioProcessor&); // standalone-test compatibility
     ~PadGrid() override;
 
     void paint(juce::Graphics&) override;
@@ -48,7 +50,8 @@ private:
     void importFile(const juce::File&, int padIndex);
     void flash(int padIndex);
 
-    DrumAudioProcessor& proc;
+    std::unique_ptr<DrumUiModel> ownedModel;
+    DrumUiModel& proc;
     juce::AudioFormatManager formatMgr;
 
     std::array<juce::uint32, fable::DR_NPADS> hitMs_{};   // last hit, ms ticks

@@ -1,4 +1,5 @@
 #include "DrumFxRack.h"
+#include "../dsp/DrumEngine.h"
 #include <cmath>
 
 // Web layout (src/drum/drum.css), rack-relative px:
@@ -10,11 +11,11 @@
 namespace fui {
 
 // ===================== Group =====================
-DrumFxRack::Group::Group(DrumAudioProcessor& p, const char* fx, const char* t,
+DrumFxRack::Group::Group(DrumUiModel& p, const char* fx, const char* t,
                          std::initializer_list<const char*> knobIds)
-    : title(t), power(p.apvts, juce::String("fx.") + fx + ".on", Accent::N) {
+    : title(t), power(p.parameters(), juce::String("fx.") + fx + ".on", Accent::N) {
     for (const char* k : knobIds)
-        knobs.add(new Knob(p.apvts, juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
+        knobs.add(new Knob(p.parameters(), juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
 }
 
 void DrumFxRack::Group::layout(juce::Rectangle<int> r) {
@@ -55,7 +56,7 @@ void DrumFxRack::Group::paintGroup(juce::Graphics& g) {
 }
 
 // ===================== DrumFxRack =====================
-DrumFxRack::DrumFxRack(DrumAudioProcessor& p) : proc(p) {
+DrumFxRack::DrumFxRack(DrumUiModel& p) : proc(p) {
     struct Def { const char* fx; const char* title; std::initializer_list<const char*> k; };
     const Def defs[] = {
         {"drive",  "DRIVE",  {"amt", "mix"}},
@@ -86,8 +87,8 @@ void DrumFxRack::resized() {
 juce::String DrumFxRack::routeSignature() const {
     juce::String sig;
     for (int i = 0; i < fable::DR_NPADS; ++i) {
-        auto* v = proc.apvts.getRawParameterValue("pad" + juce::String(i) + ".out");
-        sig << (v ? (int)std::lround(v->load()) : 0) << ':' << proc.getPadName(i) << ';';
+        auto* v = proc.parameters().parameter("pad" + juce::String(i) + ".out");
+        sig << (v ? (int)std::lround(v->convertFrom0to1(v->getValue())) : 0) << ':' << proc.padName(i) << ';';
     }
     return sig;
 }
@@ -125,9 +126,9 @@ void DrumFxRack::paintOutPanel(juce::Graphics& g) {
     // Pad -> output assignments (params are live; the timer diffs for repaint).
     std::array<juce::StringArray, 5> assigned;
     for (int i = 0; i < fable::DR_NPADS; ++i) {
-        auto* v = proc.apvts.getRawParameterValue("pad" + juce::String(i) + ".out");
-        const int out = juce::jlimit(0, 4, v ? (int)std::lround(v->load()) : 0);
-        assigned[(size_t)out].add(proc.getPadName(i));
+        auto* v = proc.parameters().parameter("pad" + juce::String(i) + ".out");
+        const int out = juce::jlimit(0, 4, v ? (int)std::lround(v->convertFrom0to1(v->getValue())) : 0);
+        assigned[(size_t)out].add(proc.padName(i));
     }
 
     for (int o = 0; o < 5; ++o) {

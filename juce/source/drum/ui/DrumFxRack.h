@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../DrumProcessor.h"
+#include "DrumUiModel.h"
 #include "../../ui/Controls.h"
 
 // Master FX rack + OUT routing summary — port of src/drum/components/
@@ -12,14 +12,14 @@ namespace fui {
 
 class DrumFxRack : public juce::Component, private juce::Timer {
 public:
-    explicit DrumFxRack(DrumAudioProcessor&);
+    explicit DrumFxRack(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
     // One .fx-group: power LED + title head, then a row of Sm knobs.
     struct Group {
-        Group(DrumAudioProcessor&, const char* fx, const char* title,
+        Group(DrumUiModel&, const char* fx, const char* title,
               std::initializer_list<const char*> knobIds);
         juce::String title;
         PowerButton power;
@@ -33,7 +33,7 @@ private:
     juce::String routeSignature() const;    // pad->out assignments + pad names
     void paintOutPanel(juce::Graphics&);
 
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::OwnedArray<Group> groups;         // drive comp chorus delay reverb
     juce::Rectangle<int> outBounds;
     juce::String lastSig;

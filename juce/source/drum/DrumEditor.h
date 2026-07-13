@@ -13,14 +13,12 @@
 // The DR-1 rack: all sections laid out at a fixed logical size matching the
 // web CSS grid (src/drum/drum.css). The editor scales it to the window so the
 // layout stays pixel-faithful — same scheme as the WT-1 Rack (PluginEditor.h).
-class DrumRack : public juce::Component {
+class DrumDeviceBody : public juce::Component {
 public:
-    static constexpr int LW = 1460, LH = 880;
-    explicit DrumRack(DrumAudioProcessor&);
+    explicit DrumDeviceBody(fui::DrumUiModel&);
     void resized() override;
 
 private:
-    fui::DrumHeader header;
     fui::PadGrid pads;
     fui::PadStrip padStrip;
     fui::DrumOscPanel oscA, oscB;
@@ -34,6 +32,17 @@ private:
     fui::DrumFxRack fxRack;
 };
 
+class DrumRack : public juce::Component {
+public:
+    static constexpr int LW = 1460, LH = 880;
+    explicit DrumRack(fui::DrumUiModel&);
+    void resized() override;
+
+private:
+    fui::DrumHeader header;
+    DrumDeviceBody body;
+};
+
 class DrumEditor : public juce::AudioProcessorEditor,
                    public juce::DragAndDropContainer {
 public:
@@ -45,6 +54,7 @@ public:
 
 private:
     fui::DarkLNF lnf;
+    std::unique_ptr<fui::DrumUiModel> model;
     DrumRack rack;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumEditor)
 };

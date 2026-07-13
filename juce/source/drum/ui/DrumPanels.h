@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../DrumProcessor.h"
+#include "DrumUiModel.h"
 #include "../../ui/Controls.h"
 
 // Selected-pad editor panels — ports of src/drum/components/{OscSection,
@@ -19,13 +19,13 @@ namespace fui {
 // highlights the live frame from getVizPos(osc) (POS param when idle).
 class DrumTerrainView : public juce::Component, private juce::Timer {
 public:
-    DrumTerrainView(DrumAudioProcessor&, int pad, int osc, juce::Colour accent);
+    DrumTerrainView(DrumUiModel&, int pad, int osc, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
     int   tableIndex() const;
     float knobPos() const;
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     int osc;
     juce::String tableId, posId;
     juce::Colour accent;
@@ -40,11 +40,11 @@ private:
 // walk reseeded every 66 ms, smoothing from the COLOR param).
 class DrumNoiseView : public juce::Component, private juce::Timer {
 public:
-    DrumNoiseView(DrumAudioProcessor&, int pad);
+    DrumNoiseView(DrumUiModel&, int pad);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override { repaint(); } // free-running, like the web rAF
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::String colorId;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumNoiseView)
 };
@@ -55,12 +55,12 @@ private:
 class DrumEnvView : public juce::Component, private juce::Timer {
 public:
     enum Mode { Pitch, Ahd };
-    DrumEnvView(DrumAudioProcessor&, int pad, Mode, juce::Colour accent);
+    DrumEnvView(DrumUiModel&, int pad, Mode, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
     float val(const juce::String& id) const;   // real (denormalised) value
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::String base;                          // "pad<i>."
     Mode mode;
     juce::Colour accent;
@@ -73,11 +73,11 @@ private:
 // = LP12/LP24/BP12/HP12/NOTCH, FilterView.tsx magFor).
 class DrumFilterView : public juce::Component, private juce::Timer {
 public:
-    DrumFilterView(DrumAudioProcessor&, int pad);
+    DrumFilterView(DrumUiModel&, int pad);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::String base;                          // "pad<i>.flt."
     float sig = -1.0f;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumFilterView)
@@ -91,12 +91,12 @@ private:
 // once at the end of their own constructor.
 class PadBoundPanel : public juce::Component, private juce::ChangeListener {
 public:
-    explicit PadBoundPanel(DrumAudioProcessor&);
+    explicit PadBoundPanel(DrumUiModel&);
     ~PadBoundPanel() override;
 protected:
     juce::String pid(const char* field) const;  // "pad<selected>.<field>"
     virtual void rebuild() = 0;
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
 private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadBoundPanel)
@@ -108,7 +108,7 @@ private:
 // with live POS, vertical POS slider, TUNE/FINE/PHASE/UNI/DET/LVL knobs.
 class DrumOscPanel : public PadBoundPanel {
 public:
-    DrumOscPanel(DrumAudioProcessor&, int osc);   // 0 = A, 1 = B
+    DrumOscPanel(DrumUiModel&, int osc);   // 0 = A, 1 = B
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -125,7 +125,7 @@ private:
 // NOISE: LED + title + "WHITE" readout, tilt curve view, COLOR + LVL knobs.
 class DrumNoisePanel : public PadBoundPanel {
 public:
-    explicit DrumNoisePanel(DrumAudioProcessor&);
+    explicit DrumNoisePanel(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -138,7 +138,7 @@ private:
 // PITCH ENV: sweep view + AMT / DEC knobs (cyan).
 class DrumPitchEnvPanel : public PadBoundPanel {
 public:
-    explicit DrumPitchEnvPanel(DrumAudioProcessor&);
+    explicit DrumPitchEnvPanel(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -151,7 +151,7 @@ private:
 // AMP ENV: AHD shape view + ATT / HOLD / DEC / CURVE knobs, "AHD · ONE-SHOT" hint.
 class DrumAmpEnvPanel : public PadBoundPanel {
 public:
-    explicit DrumAmpEnvPanel(DrumAudioProcessor&);
+    explicit DrumAmpEnvPanel(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -165,7 +165,7 @@ private:
 // knobs. While off, the view + knobs dim to 40% (web .panel.off).
 class DrumFilterPanel : public PadBoundPanel, private juce::Timer {
 public:
-    explicit DrumFilterPanel(DrumAudioProcessor&);
+    explicit DrumFilterPanel(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -183,7 +183,7 @@ private:
 // MOD ENV DEC knob + readout in the head.
 class DrumModPanel : public PadBoundPanel, private juce::Timer {
 public:
-    explicit DrumModPanel(DrumAudioProcessor&);
+    explicit DrumModPanel(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
