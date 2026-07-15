@@ -800,7 +800,39 @@ int main() {
                   std::to_string(rmsw(buf, 6500, 8500)));
         }
 
-        // -- (e) swing delays odd 16ths by swing * 0.667 * step --
+        // -- (e) overlapping notes keep independent duration timers --
+        {
+            auto pats = makeEmptySeqPatterns();
+            NoteSeqStep c; c.on = true; c.note = 0; c.duration = 3;
+            NoteSeqStep e4; e4.on = true; e4.note = 4; e4.duration = 1;
+            setNoteSeqStep(pats.data(), 0, 0, c);
+            setNoteSeqStep(pats.data(), 0, 1, e4);
+
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(seqParams());
+            e.setSeqPatterns(pats.data(), (int)pats.size());
+            e.seqPlay();
+            float L[128], R[128];
+            auto run = [&](int samples) {
+                while (samples > 0) {
+                    const int n = std::min(samples, 128);
+                    e.render(L, R, n);
+                    samples -= n;
+                }
+            };
+
+            run(6100); // C starts at 0; E starts at 6000, while C is held.
+            check(e.seqPendingOffCount() == 2,
+                  "overlapping sequencer notes keep both pending note-offs");
+            run(6000); // E's one-step duration has elapsed; C still has one step.
+            check(e.seqPendingOffCount() == 1,
+                  "short overlapping note releases without cutting the long note");
+            run(6000);
+            check(e.seqPendingOffCount() == 0,
+                  "long overlapping note releases at its own duration boundary");
+        }
+
+        // -- (f) swing delays odd 16ths by swing * 0.667 * step --
         {
             auto pats = makeEmptySeqPatterns();
             NoteSeqStep s0; s0.on = true; s0.note = 0;

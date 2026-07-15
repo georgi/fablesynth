@@ -248,20 +248,18 @@ void Engine::noteOff(int n) {
 void Engine::seqPlay() {
     if (hostClipMode_) return;     // hosted clip owns the transport
     if (seqHostPlaying_) return;   // host owns the transport while rolling
+    seqGateOff();                  // restarting must not orphan an old gate
     seqPlaying_ = true;
     seqStep_ = -1;
     seqChainPos_ = 0;
     seqToNext_ = 0;
-    seqToGateOff_ = -1;
-    seqNote_ = -1;
     seqSongPos_ = 0;
 }
 
 void Engine::seqStop() {
     seqPlaying_ = false;
     seqStep_ = -1;
-    seqToGateOff_ = -1;
-    seqGateOff();
+    seqGateOff();                    // worklet 'stop' gates off every sounding note
 }
 
 void Engine::setSeqPatterns(const uint8_t* data, int n) {
@@ -299,18 +297,47 @@ Engine::SeqReadStep Engine::readSeqStep(const uint8_t* pats, int pat, int s) {
     return st;
 }
 
+// Gate off every sounding sequencer note (worklet seqGateOff): used on
+// stop, clip swap and clip stop. Drains the per-note off queue.
 void Engine::seqGateOff() {
-    for (const int note : seqChordNotes_) noteOff(note);
-    seqChordNotes_.clear();
-    if (seqNote_ >= 0) {
-        noteOff(seqNote_);
-        seqNote_ = -1;
-    }
+    for (int i = 0; i < seqOffCount_; ++i) noteOff(seqOff_[i].note);
+    seqOffCount_ = 0;
+    seqLastNote_ = -1;
 }
 
-// Shared step-fire body: trigger the step and schedule its gate from the
-// step's duration (worklet seqFire lines 557-566). seqGateOff() then noteOn
-// mirrors the web exactly; the gate lasts st.duration 16th-steps.
+// Per-note off queue (worklet seqScheduleOff). A retriggered pitch supersedes
+// any pending off for it (one voice per note), so overlapping DIFFERENT notes
+// ring concurrently while a repeated pitch takes the new duration.
+void Engine::seqScheduleOff(int note, double remaining) {
+    int w = 0;                       // de-dup by note value (swap-remove)
+    for (int i = 0; i < seqOffCount_; ++i)
+        if (seqOff_[i].note != note) seqOff_[w++] = seqOff_[i];
+    seqOffCount_ = w;
+    if (seqOffCount_ < kSeqOffCap) {
+        seqOff_[seqOffCount_].note = note;
+        seqOff_[seqOffCount_].remaining = remaining;
+        ++seqOffCount_;
+    } else {
+        // Cap exceeded (>> realistic overlap): drop the oldest to make room.
+        for (int i = 1; i < kSeqOffCap; ++i) seqOff_[i - 1] = seqOff_[i];
+        seqOff_[kSeqOffCap - 1].note = note;
+        seqOff_[kSeqOffCap - 1].remaining = remaining;
+    }
+    seqLastNote_ = note;
+}
+
+// Smallest pending-off remaining (-1 when nothing is scheduled). The render
+// loop splits a block at this sample so each off lands on its exact frame.
+double Engine::seqEarliestOff() const {
+    double m = -1.0;
+    for (int i = 0; i < seqOffCount_; ++i)
+        if (m < 0.0 || seqOff_[i].remaining < m) m = seqOff_[i].remaining;
+    return m;
+}
+
+// Shared step-fire body (worklet seqFire). noteOn then schedule this note's
+// own gate-off at st.duration 16th-steps — no seqGateOff first, so a note can
+// overlap the next step's note when its duration extends past it.
 void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
     const SeqReadStep st = readSeqStep(seqPats_.data(), pat, s);
     if (st.on) {
@@ -318,19 +345,17 @@ void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
         if (root == 0) root = 48;
         const int n = root + st.semi;
         const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-        seqGateOff();
         noteOn(n, vel);
-        seqNote_ = n;
-        seqToGateOff_ = st.duration * dur;
+        seqScheduleOff(n, st.duration * dur);
     }
     seqStep_ = s;
 }
 
-// Hosted twin of seqFireAt (docs/sq4-clips.md §6): identical gate-off
-// ordering, tie legato and accent velocities — only the byte source changes
-// from the pattern banks (seqPats_/chain) to the ClipHost's live clip, whose
-// layout (flags, note, oct+1 per step) is byte-identical to a seq pattern, so
-// readSeqStep() reads it directly with the clip's bar standing in for `pat`.
+// Hosted twin of seqFireAt (docs/sq4-clips.md §6): each on-lane gates for its
+// OWN duration (worklet clipFire), so a chord's voices release independently.
+// Only the byte source differs — the clip layout (flags, note, oct+1 per
+// lane) is byte-identical to a seq pattern, so readSeqStep() reads it with
+// the clip's bar standing in for `pat`.
 void Engine::clipFireAt(int abs) {
     const uint8_t* clip = clipHost_.clipData();
     const int bar = abs / SEQ_STEPS;
@@ -345,19 +370,13 @@ void Engine::clipFireAt(int abs) {
     if (any) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
-        seqGateOff();
-        int noteGate = 1;                              // web clipFire: max duration in the chord
+        const double bpm = std::max(60.0, std::min(200.0, bpm_));
+        const double dur = sqSamplesPerStep(bpm, sr_);
         for (const auto& st : chord) if (st.on) {
             const int n = root + st.semi;
             noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
-            if (seqNote_ < 0) seqNote_ = n;
-            else seqChordNotes_.push_back(n);
-            noteGate = std::max(noteGate, st.duration);
+            seqScheduleOff(n, st.duration * dur);
         }
-        // gate lasts the longest note's duration (worklet clipFire lines 532-533)
-        const double bpm = std::max(60.0, std::min(200.0, bpm_));
-        const double dur = sqSamplesPerStep(bpm, sr_);
-        seqToGateOff_ = noteGate * dur;
     }
 }
 
@@ -389,7 +408,6 @@ void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
     if (playing && !seqHostPlaying_) {
         seqPlaying_ = false;           // host takes over; internal transport yields
         seqStep_ = -1;
-        seqToGateOff_ = -1;
         seqHostSynced_ = false;
         seqGateOff();
     }
@@ -397,7 +415,6 @@ void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
         seqHostSynced_ = false;        // loop / relocate -> resync from ppq
     if (!playing && seqHostPlaying_) { // host stopped
         seqStep_ = -1;
-        seqToGateOff_ = -1;
         seqGateOff();
     }
     seqHostPlaying_ = playing;
@@ -1037,8 +1054,11 @@ void Engine::render(float* L, float* R, int n) {
             for (size_t i = evBefore; i < clipHost_.events.size(); i++)
                 if (clipHost_.events[i].t == HostEvent::T::Stop) seqGateOff();
         }
-        if (seqToGateOff_ >= 0)
-            run = std::min(run, std::max(1, (int)std::ceil(seqToGateOff_)));
+        // Split the run at the next pending note-off so each off lands on its
+        // exact sample (worklet seqOffQueue countdown; native is sample-accurate).
+        const double earliestOff = seqEarliestOff();
+        if (earliestOff >= 0)
+            run = std::min(run, std::max(1, (int)std::ceil(earliestOff)));
 
         const double chunkPpq = hostRun    ? seqHostPpq_ + off * ppqPerSample
                               : internalRun ? seqSongPos_ * seqBeatsPerSample
@@ -1050,12 +1070,17 @@ void Engine::render(float* L, float* R, int n) {
             seqSongPos_ += run;
         }
         if (hostClipMode_) hostFrame_ += run;
-        if (seqToGateOff_ >= 0) {
-            seqToGateOff_ -= run;
-            if (seqToGateOff_ <= 0) {
-                seqGateOff();
-                seqToGateOff_ = -1;
+        // Drain the per-note off queue: decrement every pending off, fire
+        // noteOff for those due, compact the survivors (no alloc).
+        if (seqOffCount_ > 0) {
+            int w = 0;
+            for (int i = 0; i < seqOffCount_; ++i) {
+                seqOff_[i].remaining -= run;
+                if (seqOff_[i].remaining <= 0.0) noteOff(seqOff_[i].note);
+                else seqOff_[w++] = seqOff_[i];
             }
+            seqOffCount_ = w;
+            seqLastNote_ = w > 0 ? seqOff_[w - 1].note : -1;
         }
         off += run;
     }

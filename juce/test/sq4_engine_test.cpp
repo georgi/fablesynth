@@ -501,6 +501,51 @@ static void testWt1ClipSwapGatesOldNote() {
     CHECK(e.seqCurrentNote() < 0);                       // A's note ended at the swap, not left hanging
 }
 
+// WT-1 clips are polyphonic: every active lane gets its own duration timer.
+// A short chord tone must release without cutting a longer tone from the same
+// trigger, and neither may be cut by the following rest step.
+static void testWt1HostedIndependentChordDurations() {
+    using namespace fable;
+    Engine e;
+    e.prepare(48000);
+    std::vector<TablePtr> tables;
+    for (auto& g : generateTables()) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    e.setTables(tables);
+    e.setParams(applyPreset(factoryPresets()[3]));
+    e.setHostClipMode(true);
+    e.hostTempo(120, 0, 0);
+
+    auto clip = sqEmptyClip(Machine::WT1, 1);
+    const auto put = [&](int lane, int note, int duration) {
+        const int o = sqWtNoteIdx(0, 0, lane);
+        clip[(size_t)o] = (uint8_t)(1 | (duration << 2));
+        clip[(size_t)o + 1] = (uint8_t)note;
+        clip[(size_t)o + 2] = 1;
+    };
+    put(0, 0, 3); // C: three 16ths
+    put(1, 4, 1); // E: one 16th
+    e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);
+
+    double frame = 0;
+    float L[128], R[128];
+    auto run = [&](int samples) {
+        while (samples > 0) {
+            const int n = std::min(samples, 128);
+            e.hostSetFrame(frame);
+            e.render(L, R, n);
+            frame += n;
+            samples -= n;
+        }
+    };
+
+    run(128);
+    CHECK(e.seqPendingOffCount() == 2);
+    run(6000);
+    CHECK(e.seqPendingOffCount() == 1);
+    run(12000);
+    CHECK(e.seqPendingOffCount() == 0);
+}
+
 static double rmsBass(fable::BassEngine& e, double& frame, int blocks) {
     double sumSq = 0; long cnt = 0;
     float L[128], R[128];
@@ -1097,6 +1142,7 @@ int main() {
     testHostEventLossless();
     testWt1Hosted();
     testWt1ClipSwapGatesOldNote();
+    testWt1HostedIndependentChordDurations();
     testBl1Hosted();
     testBl1ClipSwapGatesOldNote();
     testDr1Hosted();

@@ -311,9 +311,8 @@ class FableProcessor extends AudioWorkletProcessor {
     this.seqChain = [0];
     this.seqChainPos = 0;
     this.seqToNext = 0; // samples until the next step fires
-    this.seqToGateOff = -1; // samples until the current step's gate closes
-    this.seqNote = -1; // midi note the sequencer is currently sounding (-1 = none)
-    this.seqChordNotes = [];
+    this.seqOffQueue = []; // { note, remaining } per sounding seq note (poly)
+    this.seqLastNote = -1; // most recent fired note (-1 = none), for viz
     // ---- hosted clip transport (SQ-4) ----
     this.hosted = false;
     this.hostBpm = 120;
@@ -377,23 +376,21 @@ class FableProcessor extends AudioWorkletProcessor {
         break;
       case 'play':
         if (this.hosted) break; // conductor owns the transport
+        this.seqGateOff(); // restarting must not orphan an old gate
         this.seqPlaying = true;
         this.seqStep = -1;
         this.seqChainPos = 0;
         this.seqToNext = 0;
-        this.seqToGateOff = -1;
-        this.seqNote = -1;
         break;
       case 'stop':
         this.seqPlaying = false;
         this.seqStep = -1;
-        this.seqToGateOff = -1;
         this.seqGateOff();
         break;
       case 'panic':
         for (const v of this.voices) v.kill();
-        this.seqNote = -1;
-        this.seqToGateOff = -1;
+        this.seqOffQueue.length = 0;
+        this.seqLastNote = -1;
         this.clip = null;
         this.clipPend = null;
         this.clipStopAt = -1;
@@ -446,13 +443,28 @@ class FableProcessor extends AudioWorkletProcessor {
     };
   }
 
+  // Gate off every sounding sequencer note (stop / clip swap / clip stop).
   seqGateOff() {
-    for (const note of this.seqChordNotes) this.noteOff(note);
-    this.seqChordNotes.length = 0;
-    if (this.seqNote >= 0) {
-      this.noteOff(this.seqNote);
-      this.seqNote = -1;
+    for (const e of this.seqOffQueue) this.noteOff(e.note);
+    this.seqOffQueue.length = 0;
+    this.seqLastNote = -1;
+  }
+
+  // Schedule an independent note-off for `note` at `remaining` samples. A
+  // retriggered pitch supersedes any pending off for it (one voice per note),
+  // so overlapping DIFFERENT notes ring concurrently while a repeated pitch
+  // takes the new duration.
+  seqScheduleOff(note, remaining) {
+    // Compact in place: the audio thread must not allocate an array for each
+    // sequencer event.
+    let w = 0;
+    for (let i = 0; i < this.seqOffQueue.length; i++) {
+      const e = this.seqOffQueue[i];
+      if (e.note !== note) this.seqOffQueue[w++] = e;
     }
+    this.seqOffQueue.length = w;
+    this.seqOffQueue.push({ note, remaining });
+    this.seqLastNote = note;
   }
 
   // ---------- hosted clip transport ----------
@@ -522,15 +534,11 @@ class FableProcessor extends AudioWorkletProcessor {
 
     if (chord.length) {
       const root = (this.p['seq.root'] | 0) || 48;
-      this.seqGateOff();
       for (const st of chord) {
         const note = root + st.semi;
         this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
-        if (this.seqNote < 0) this.seqNote = note;
-        else this.seqChordNotes.push(note);
+        this.seqScheduleOff(note, st.duration * dur);
       }
-      const noteGate = chord.reduce((max, st) => Math.max(max, st.duration), 1);
-      this.seqToGateOff = noteGate * dur;
     }
 
     this.clipStep = abs;
@@ -561,9 +569,8 @@ class FableProcessor extends AudioWorkletProcessor {
       const root = (this.p['seq.root'] | 0) || 48;
       const n = root + st.semi;
       const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-      this.seqGateOff(); this.noteOn(n, vel);
-      this.seqNote = n;
-      this.seqToGateOff = st.duration * dur;
+      this.noteOn(n, vel);
+      this.seqScheduleOff(n, st.duration * dur);
     }
 
     this.seqStep = s;
@@ -1157,9 +1164,16 @@ class FableProcessor extends AudioWorkletProcessor {
     // arrive at); step *durations* are counted in real samples so the clock
     // never drifts. Gate-off runs before the fire so a full-length gate
     // releases just ahead of its retrigger.
-    if (this.seqToGateOff >= 0) {
-      this.seqToGateOff -= n;
-      if (this.seqToGateOff < 0) this.seqGateOff();
+    if (this.seqOffQueue.length) {
+      let w = 0;
+      for (let i = 0; i < this.seqOffQueue.length; i++) {
+        const e = this.seqOffQueue[i];
+        e.remaining -= n;
+        if (e.remaining <= 0) this.noteOff(e.note);
+        else this.seqOffQueue[w++] = e;
+      }
+      this.seqOffQueue.length = w;
+      this.seqLastNote = w ? this.seqOffQueue[w - 1].note : -1;
     }
     if (this.hosted) {
       this.hostTick(n);

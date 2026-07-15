@@ -161,14 +161,14 @@ public:
     // free-run LFO derives its phase from ppq so it lines up with the downbeat.
     // ppq is sanitised so a non-finite host position can't latch a NaN phase.
     void setTransport(double ppq, bool playing) { ppq_ = std::isfinite(ppq) ? ppq : 0.0; playing_ = playing; }
-    void panic() { for (auto& v : voices_) v.kill(); seqNote_ = -1; seqChordNotes_.clear(); seqToGateOff_ = -1; }
+    void panic() { for (auto& v : voices_) v.kill(); seqOffCount_ = 0; seqLastNote_ = -1; }
 
     // ---- note sequencer (port of worklet.js seqRead/seqGateOff/seqFire).
     // 16 steps x 4 chained patterns firing noteOn/noteOff into the polyphonic
-    // voice allocator; each on-step's gate lasts `duration` 16th-steps
-    // (seqToGateOff_ = duration * dur, matching the web worklet — no tie/gate
-    // flag); accents fire velocity SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod
-    // routes respond.
+    // voice allocator. Each on-step gates for its own `duration` 16th-steps via
+    // a per-note off queue (seqScheduleOff), so overlapping notes ring
+    // concurrently — matching the web worklet's poly seqOffQueue; accents fire
+    // velocity SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod routes respond.
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
     void seqStop();                                 // worklet 'stop'
     bool seqIsPlaying() const { return seqPlaying_ || seqHostPlaying_; }
@@ -177,10 +177,12 @@ public:
     void setBpmOverride(double bpm);                 // host tempo wins over SEQ_BPM; <= 0 clears
     int  seqCurrentStep() const { return seqStep_; } // -1 when stopped
     int  seqCurrentPattern() const { return seqChain_[(size_t)seqChainPos_]; }
-    // The MIDI note the sequencer (standalone or hosted-clip) voice is
-    // currently sounding, -1 when none — shared seqNote_/seqGateOff() state,
-    // so this observes hosted-clip mode too (test/UI observability).
-    int  seqCurrentNote() const { return seqNote_; }
+    // The most recent MIDI note the sequencer (standalone or hosted-clip) fired
+    // while any seq note is still sounding, -1 when none — backed by the
+    // per-note off queue, so this observes hosted-clip mode too (test/UI).
+    int  seqCurrentNote() const { return seqOffCount_ > 0 ? seqLastNote_ : -1; }
+    // Number of seq-fired notes still sounding (pending their per-note off).
+    int  seqPendingOffCount() const { return seqOffCount_; }
 
     // Host transport lock (same contract as BassEngine::setHostTransport):
     // while the host is rolling with a song position, absolute 16th k fires at
@@ -270,7 +272,9 @@ private:
     void updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n);
 
     // ---- note sequencer internals ----
-    void seqGateOff();                       // worklet seqGateOff
+    void seqGateOff();                       // worklet seqGateOff (gate off all)
+    void seqScheduleOff(int note, double remaining); // per-note off queue (worklet seqScheduleOff)
+    double seqEarliestOff() const;           // smallest pending-off remaining (-1 = none)
     void seqFire();                          // worklet seqFire (internal clock)
     void seqFireAt(int s, int pat, int /*patNext*/, double dur); // shared step-fire body
     void clipFireAt(int abs); // hosted twin of seqFireAt; byte source is clipHost_'s clip
@@ -316,9 +320,13 @@ private:
     bool   seqPlaying_ = false;       // internal clock running
     int    seqStep_ = -1;
     double seqToNext_ = 0;            // samples until the next step fires
-    double seqToGateOff_ = -1;        // samples until the gate closes (-1 = none/tied)
-    int    seqNote_ = -1;             // midi note the sequencer is sounding (-1 = none)
-    std::vector<int> seqChordNotes_;   // additional notes in a hosted WT chord
+    // Per-note pending off queue (worklet seqOffQueue): {note, remaining} for
+    // each seq-fired note not yet gated off. Fixed-cap, no audio-thread alloc.
+    static constexpr int kSeqOffCap = 32;
+    struct SeqOff { int note = -1; double remaining = 0.0; };
+    SeqOff seqOff_[kSeqOffCap];
+    int    seqOffCount_ = 0;
+    int    seqLastNote_ = -1;        // most recent fired note (for seqCurrentNote/viz)
     double seqSongPos_ = 0;           // samples since play (virtual transport for synced LFOs)
     double bpmOverride_ = 0;          // > 0: host tempo wins over SEQ_BPM
 
