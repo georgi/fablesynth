@@ -3,15 +3,15 @@
 // clip's real pattern bytes; live cells sweep at the clip's actual length.
 
 import type * as React from 'react';
-import { isTrackAudible, pad2, previewSteps } from '../model';
+import { isTrackAudible, pad2, previewSteps, STOP } from '../model';
 import { barSeconds } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
 
 function ClipCell({ s, t }: { s: number; t: number }) {
   const session = useSeqStore((st) => st.session);
-  const playing = useSeqStore((st) => st.playing);
   const live = useSeqStore((st) => st.owner[t] === s);
-  const queued = useSeqStore((st) => st.queue[t] === s || (st.queue[t] === -1 && st.owner[t] === s));
+  const queuedPlay = useSeqStore((st) => st.queue[t] === s);
+  const queuedStop = useSeqStore((st) => st.queue[t] === STOP && st.owner[t] === s);
   const muted = useSeqStore(
     (st) => st.owner[t] === s && !isTrackAudible(t, st.owner, st.trackMute, st.sceneMute, st.solo),
   );
@@ -48,22 +48,20 @@ function ClipCell({ s, t }: { s: number; t: number }) {
   const cls = ['sq-cell'];
   if (live) cls.push('live');
   if (muted) cls.push('muted');
-  const aps = playing ? 'running' : 'paused';
-
   return (
     <button
       className={cls.join(' ')}
       style={style}
-      onClick={() => (live ? stopTrack(t) : launch(t, s))}
-      title={live ? 'Stop clip' : 'Launch clip'}
+      onClick={() => (live ? (queuedStop ? undefined : stopTrack(t)) : launch(t, s))}
+      title={queuedStop ? 'Clip stop queued' : live ? 'Stop clip' : 'Launch clip'}
     >
       <div className="sq-cell-body">
         <div className="sq-cell-head">
           {live ? (
-            <span className="sq-eq" style={{ animationPlayState: aps }}>
-              <i style={{ animationPlayState: aps }} />
-              <i style={{ animationPlayState: aps }} />
-              <i style={{ animationPlayState: aps }} />
+            <span className="sq-eq">
+              <i />
+              <i />
+              <i />
             </span>
           ) : (
             <span className="sq-cell-idle">▶</span>
@@ -81,7 +79,6 @@ function ClipCell({ s, t }: { s: number; t: number }) {
             <div
               style={{
                 animationDuration: `${clip.bars * barSeconds(session.bpm)}s`,
-                animationPlayState: aps,
               }}
             />
           )}
@@ -103,7 +100,8 @@ function ClipCell({ s, t }: { s: number; t: number }) {
       >
         ✎
       </span>
-      {queued && <div className="sq-cell-queued" />}
+      {queuedPlay && <div className="sq-cell-queued" aria-hidden="true" />}
+      {queuedStop && <div className="sq-cell-stopping" aria-hidden="true"><span>■ STOP</span></div>}
       {muted && <span className="sq-cell-mutedtag">MUTED</span>}
     </button>
   );

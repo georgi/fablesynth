@@ -50,7 +50,7 @@ public:
     uint8_t step(int pattern, int pad, int step) const override;
     void setStep(int pattern, int pad, int step, uint8_t) override;
     const std::vector<int>& chain() const override { return chain_; }
-    void setChain(std::vector<int>) override {}
+    void setChain(std::vector<int>) override;
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;

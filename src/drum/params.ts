@@ -128,7 +128,8 @@ export const PAD_FIELDS: string[] = PAD_DEFS.map((d) => d.id);
 const GLOBAL_DEFS: ParamDef[] = [
   { id: 'seq.bpm', label: 'BPM', min: 60, max: 200, def: 126, curve: 'int', fmt: (v) => String(Math.round(v)) },
   { id: 'master.swing', label: 'SWING', min: 0, max: 1, def: 0.22, curve: 'lin', fmt: fmtPct },
-  { id: 'master.volume', label: 'VOL', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
+  // Final visible gain stage: after summed pad FX, before the limiter.
+  { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
 ];
 
 export const DRUM_PARAM_DEFS: ParamDef[] = [

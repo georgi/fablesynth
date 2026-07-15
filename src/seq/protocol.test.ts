@@ -3,7 +3,7 @@ import { factorySession } from './factory';
 import { previewSteps } from './model';
 import {
   b64ToBytes, barFrames, boundaryFrame, bytesPerBar, bytesToB64, dr1Idx,
-  emptyClipBytes, noteIdx, samplesPerBeat, songPosition, validateSession,
+  emptyClipBytes, noteIdx, samplesPerBeat, songPosition, validateSession, WT_POLY_LANES, wtNoteIdx,
 } from './protocol';
 
 describe('base64 codec', () => {
@@ -69,6 +69,14 @@ describe('factory session', () => {
     for (const sc of doc.scenes) expect(sc.clips.some(Boolean)).toBe(true);
   });
 
+  it('gives the drop scenes a shared four-bar harmonic phrase', () => {
+    for (const scene of [doc.scenes[2], doc.scenes[3]]) {
+      // Bass, lead, and chord-pad changes stay phase-aligned while the
+      // one/two-bar drum loops provide the rhythmic bed.
+      expect(scene.clips.slice(1).map((clip) => clip?.bars)).toEqual([4, 4, 4]);
+    }
+  });
+
   it('drum clips keep four-on-the-floor kicks where expected', () => {
     const drop = doc.scenes[2].clips[0]!;
     const bytes = b64ToBytes(drop.pattern);
@@ -85,12 +93,16 @@ describe('factory session', () => {
         if (!c || doc.tracks[t].machine === 'DR1') return;
         const bytes = b64ToBytes(c.pattern);
         const steps = c.bars * 16;
-        expect(bytes.length).toBe(steps * 3);
+        const machine = doc.tracks[t].machine;
+        const lanes = machine === 'WT1' ? WT_POLY_LANES : 1;
+        expect(bytes.length).toBe(steps * 3 * lanes);
         for (let i = 0; i < steps; i++) {
-          const o = noteIdx(Math.floor(i / 16), i % 16);
+          for (let lane = 0; lane < lanes; lane++) {
+          const o = machine === 'WT1' ? wtNoteIdx(Math.floor(i / 16), i % 16, lane) : noteIdx(Math.floor(i / 16), i % 16);
           expect(bytes[o + 1]).toBeLessThan(12);
           expect(bytes[o + 2]).toBeGreaterThanOrEqual(0);
           expect(bytes[o + 2]).toBeLessThanOrEqual(2);
+          }
         }
         // step 0 must not tie in — there is nothing before it at launch
         expect(bytes[0] & 4).toBe(0);
@@ -111,7 +123,7 @@ describe('factory session', () => {
   it('clip payload sizes match bytesPerBar', () => {
     expect(bytesPerBar('DR1')).toBe(256);
     expect(bytesPerBar('BL1')).toBe(48);
-    expect(bytesPerBar('WT1')).toBe(48);
+    expect(bytesPerBar('WT1')).toBe(144);
   });
 });
 

@@ -55,7 +55,7 @@ export interface StepBar {
   on: boolean;
 }
 
-import { dr1Idx, type MachineId, noteIdx } from './protocol';
+import { dr1Idx, type MachineId, noteIdx, WT_POLY_LANES, wtNoteIdx } from './protocol';
 
 /** 16-step cell preview derived from the clip's first bar of real pattern data. */
 export function previewSteps(machine: MachineId, bytes: Uint8Array, _bars: number): StepBar[] {
@@ -70,9 +70,12 @@ export function previewSteps(machine: MachineId, bytes: Uint8Array, _bars: numbe
       }
       out.push({ h: count ? Math.min(19, 5 + count * 3 + (acc ? 2 : 0)) : 3, on: count > 0 });
     } else {
-      const o = noteIdx(0, s);
-      const on = (bytes[o] & 1) !== 0;
-      const semi = Math.min(11, bytes[o + 1]) + 12 * ((bytes[o + 2] | 0) - 1); // -12..23
+      const offsets = machine === 'WT1'
+        ? Array.from({ length: WT_POLY_LANES }, (_, lane) => wtNoteIdx(0, s, lane))
+        : [noteIdx(0, s)];
+      const active = offsets.filter((o) => (bytes[o] & 1) !== 0);
+      const on = active.length > 0;
+      const semi = active.length ? Math.max(...active.map((o) => Math.min(11, bytes[o + 1]) + 12 * ((bytes[o + 2] | 0) - 1))) : -12;
       out.push({ h: on ? Math.round(5 + ((semi + 12) / 35) * 14) : 3, on });
     }
   }

@@ -5,7 +5,7 @@ namespace fui {
 
 using fable::NoteSeqStep;
 
-static const char* const kPatNames[fable::SEQ_NPATTERNS] = { "A", "B", "C", "D" };
+static const char* const kPatNames[fable::SEQ_NPATTERNS] = { "1", "2", "3", "4" };
 
 // ---- geometry (index.css .ns-*, rack-relative px) -----------------------------
 // panel padding 8px 12px 10px; head 24px + 10px margin; body: legend 36px +
@@ -64,12 +64,12 @@ juce::Rectangle<int> NoteSeqView::patternBounds(int i) const {
     return { x0 + i * (26 + 5), kHeadY, 26, kHeadH }; // .ns-pattern 26x24, gap 5
 }
 
-juce::Rectangle<int> NoteSeqView::chainToggleBounds() const {
-    return { patternBounds(3).getRight() + 12, kHeadY, 108, kHeadH };
+juce::Rectangle<int> NoteSeqView::sequenceLengthBounds() const {
+    return { patternBounds(3).getRight() + 12, kHeadY - 3, 170, 30 };
 }
 
 juce::Rectangle<int> NoteSeqView::randBounds() const {
-    return { chainToggleBounds().getRight() + 12, kHeadY, 52, kHeadH };
+    return { sequenceLengthBounds().getRight() + 12, kHeadY, 52, kHeadH };
 }
 
 juce::Rectangle<int> NoteSeqView::colBounds(int step) const {
@@ -162,31 +162,15 @@ void NoteSeqView::randomize() {
 }
 
 void NoteSeqView::patternClick(int i) {
-    if (!chaining_) {                            // store.setEditPattern
-        model.setEditPattern(i);
-        model.setChain({ i });
-    } else {                                     // store.chainClick while chaining
-        std::vector<int> chain;
-        if (!chainFresh_) chain = model.chain();
-        chain.push_back(i);
-        chainFresh_ = false;
-        model.setEditPattern(i);
-        model.setChain(std::move(chain));
-    }
+    model.setEditPattern(i);
     repaint();
 }
 
-void NoteSeqView::setChaining(bool on) {
-    if (on) {
-        chaining_ = true;
-        chainFresh_ = true;                      // first click will replace
-    } else {                                     // commit (store.setChaining off)
-        chaining_ = false;
-        chainFresh_ = false;
-        auto chain = model.chain();
-        if (chain.empty()) chain.push_back(model.editPattern());
-        model.setChain(std::move(chain));
-    }
+void NoteSeqView::setSequenceLength(int bars) {
+    bars = juce::jlimit(1, fable::SEQ_NPATTERNS, bars);
+    std::vector<int> sequence;
+    for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
+    model.setChain(std::move(sequence));
     repaint();
 }
 
@@ -204,7 +188,13 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
     }
     for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
         if (patternBounds(i).contains(pos)) { patternClick(i); return; }
-    if (caps.supportsPatternChain && chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
+    if (caps.supportsPatternChain && sequenceLengthBounds().contains(pos)) {
+        const auto length = sequenceLengthBounds();
+        const int bars = caps.hosted ? model.clipBars() : (int)model.chain().size();
+        if (pos.x < length.getX() + 38) setSequenceLength(bars - 1);
+        else if (pos.x >= length.getRight() - 38) setSequenceLength(bars + 1);
+        return;
+    }
     if (randBounds().contains(pos)) { randomize(); return; }
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
@@ -229,7 +219,7 @@ void NoteSeqView::timerCallback() {
     mix(playing ? 1 : 0);
     mix(playing ? model.currentStep() : -1);
     mix(model.currentPattern());
-    mix(edit); mix(chaining_ ? 1 : 0);
+    mix(edit);
     mix(model.hostSynced() ? 1 : 0);
     mix((int)std::lround(model.hostBpm()));
     const auto& chain = model.chain();
@@ -248,15 +238,20 @@ void NoteSeqView::timerCallback() {
 // .ns-btn: 5px radius, #11141c, dim mono text; active = cyan border/text over
 // a dark cyan wash (#0c2a33).
 static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::String& text,
-                       bool active, float tracking) {
+                       bool active, float tracking, bool current = false, float fontSize = 8.0f) {
     const auto bf = b.toFloat();
     const juce::Colour cyan = accentA();
-    g.setColour(active ? juce::Colour(0xff0c2a33) : juce::Colour(0xff11141c));
+    g.setColour(current ? cyan.withAlpha(0.20f)
+                        : active ? juce::Colour(0xff0c2a33) : juce::Colour(0xff11141c));
     g.fillRoundedRectangle(bf, 5.0f);
-    g.setColour(active ? cyan.withAlpha(0.55f) : col::line);
+    g.setColour(current ? cyan.withAlpha(0.9f) : active ? cyan.withAlpha(0.55f) : col::line);
     g.drawRoundedRectangle(bf.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(active ? cyan : col::textDim);
-    g.setFont(monoFont(8.0f));
+    if (active) {
+        g.setColour(cyan);
+        g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
+    }
+    g.setColour(active || current ? cyan : col::textDim);
+    g.setFont(monoFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -303,18 +298,21 @@ void NoteSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "NOTE SEQ", { caps.ownsTransport ? transportBounds().getRight() + 12 : kPadX,
                                  kHeadY, 96, kHeadH }, 2.2f);
 
-    // ---- head: pattern buttons + CHAIN + RAND ----
+    // ---- head: bar buttons + sequence length + RAND ----
+    const int bars = caps.hosted ? model.clipBars()
+                                 : juce::jlimit(1, fable::SEQ_NPATTERNS, (int)model.chain().size());
+    const int currentBar = playing ? model.currentPattern() : -1;
     for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
-        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
-    juce::String chainLabel("CHAIN ");
-    const auto& chain = model.chain();
-    for (size_t k = 0; k < chain.size(); ++k) {
-        if (k > 0) chainLabel << ">";
-        const int p = chain[k];
-        chainLabel << (p >= 0 && p < fable::SEQ_NPATTERNS ? kPatNames[p] : "?");
+        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f,
+                   bars > 1 && currentBar == i);
+    if (caps.supportsPatternChain) {
+        auto length = sequenceLengthBounds();
+        const auto minus = length.removeFromLeft(38);
+        const auto plus = length.removeFromRight(38);
+        drawSeqBtn(g, minus, "-", false, 0.0f, false, 15.0f);
+        drawSeqBtn(g, length, "LENGTH " + juce::String(bars) + "B", false, 0.25f);
+        drawSeqBtn(g, plus, "+", false, 0.0f, false, 15.0f);
     }
-    if (caps.supportsPatternChain)
-        drawSeqBtn(g, chainToggleBounds(), chainLabel, chaining_, 0.5f);
     drawSeqBtn(g, randBounds(), "RAND", false, 0.7f);
 
     // ---- head: SYNC badge + hint, right-aligned (.ns-hint) ----

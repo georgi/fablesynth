@@ -300,6 +300,8 @@ Engine::SeqReadStep Engine::readSeqStep(const uint8_t* pats, int pat, int s) {
 }
 
 void Engine::seqGateOff() {
+    for (const int note : seqChordNotes_) noteOff(note);
+    seqChordNotes_.clear();
     if (seqNote_ >= 0) {
         noteOff(seqNote_);
         seqNote_ = -1;
@@ -350,24 +352,37 @@ void Engine::clipFireAt(int abs) {
     const int total = std::max(1, clipHost_.clipBars() * SEQ_STEPS);
     const int bar = abs / SEQ_STEPS;
     const int s   = abs % SEQ_STEPS;
-    const SeqReadStep st = readSeqStep(clip, bar, s);
-    if (st.on) {
+    std::array<SeqReadStep, SQ_WT_POLY_LANES> chord {};
+    bool any = false;
+    for (int lane = 0; lane < SQ_WT_POLY_LANES; ++lane) {
+        const int o = sqWtNoteIdx(bar, s, lane);
+        chord[(size_t)lane] = readSeqStep(clip + o, 0, 0);
+        any = any || chord[(size_t)lane].on;
+    }
+    if (any) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
-        const int n = root + st.semi;
-        const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-        if (st.tie && seqNote_ >= 0) seqTie(n, vel);
-        else { seqGateOff(); noteOn(n, vel); }
-        seqNote_ = n;
+        seqGateOff();
+        for (const auto& st : chord) if (st.on) {
+            const int n = root + st.semi;
+            noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+            if (seqNote_ < 0) seqNote_ = n;
+            else seqChordNotes_.push_back(n);
+        }
         // hold through the step when the NEXT step (wrapping within the
         // clip's own bar count, not a separate chain) ties in
         const int absN = (abs + 1) % total;
-        const SeqReadStep stN = readSeqStep(clip, absN / SEQ_STEPS, absN % SEQ_STEPS);
+        bool nextTies = false;
+        for (int lane = 0; lane < SQ_WT_POLY_LANES; ++lane) {
+            const int o = sqWtNoteIdx(absN / SEQ_STEPS, absN % SEQ_STEPS, lane);
+            const auto next = readSeqStep(clip + o, 0, 0);
+            nextTies = nextTies || (next.on && next.tie);
+        }
         const double bpm = std::max(60.0, std::min(200.0, bpm_));
         const double dur = sqSamplesPerStep(bpm, sr_);
         double gate = !exactlyZero(p_[SEQ_GATE]) ? (double)p_[SEQ_GATE] : 0.55;
         gate = std::min(0.98, std::max(0.1, gate));
-        seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
+        seqToGateOff_ = nextTies ? -1 : gate * dur;
     }
 }
 

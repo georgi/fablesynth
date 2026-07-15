@@ -11,6 +11,7 @@ import {
 import {
   cycleOct, getStep, randomPattern, setStep, writePattern, type Patterns,
 } from './seq';
+import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
 
 export let bassEngine = new BassEngine();
 const initialState = patchToState(FACTORY_PATCHES[0]);
@@ -19,8 +20,6 @@ export interface BassStore {
   params: ParamValues;
   patterns: Patterns;
   chain: number[];
-  chaining: boolean;
-  chainFresh: boolean;
   editPattern: number;
   playing: boolean;
   curStep: number;
@@ -49,8 +48,7 @@ export interface BassStore {
   toggleStepSlide: (step: number) => void;
   randomize: () => void;
   setEditPattern: (i: number) => void;
-  setChaining: (on: boolean) => void;
-  chainClick: (i: number) => void;
+  setSequenceLength: (length: number) => void;
   setMidiActive: (on: boolean) => void;
   play: () => void;
   stop: () => void;
@@ -64,9 +62,7 @@ export interface BassStore {
 export const useBassStore = create<BassStore>((set, get) => ({
   params: initialState.params,
   patterns: initialState.patterns,
-  chain: initialState.chain,
-  chaining: false,
-  chainFresh: false,
+  chain: sequenceChain(sequenceLengthFromChain(initialState.chain)),
   editPattern: 0,
   playing: false,
   curStep: -1,
@@ -152,33 +148,11 @@ export const useBassStore = create<BassStore>((set, get) => ({
     bassEngine.setPatterns(next);
   },
 
-  setEditPattern: (i) => {
-    if (get().chaining) {
-      set({ editPattern: i });
-      return;
-    }
-    const chain = [i];
-    set({ editPattern: i, chain });
-    bassEngine.setChain(chain);
-  },
+  setEditPattern: (i) => set({ editPattern: i }),
 
-  setChaining: (on) => {
-    if (on) {
-      set({ chaining: true, chainFresh: true });
-      return;
-    }
-    const chain = get().chain.length ? get().chain : [get().editPattern];
-    set({ chaining: false, chainFresh: false, chain });
-    bassEngine.setChain(chain);
-  },
-
-  chainClick: (i) => {
-    if (!get().chaining) {
-      get().setEditPattern(i);
-      return;
-    }
-    const chain = get().chainFresh ? [i] : [...get().chain, i];
-    set({ chain, chainFresh: false, editPattern: i });
+  setSequenceLength: (length) => {
+    const chain = sequenceChain(length);
+    set({ chain });
     bassEngine.setChain(chain);
   },
 
@@ -204,8 +178,6 @@ export const useBassStore = create<BassStore>((set, get) => ({
       playing: false,
       curStep: -1,
       curSemi: -100,
-      chaining: false,
-      chainFresh: false,
       params: { ...engine.params },
     });
   },
@@ -259,12 +231,13 @@ export const useBassStore = create<BassStore>((set, get) => ({
     bassEngine.params = { ...state.params };
     bassEngine.applyAllParams();
     bassEngine.setPatterns(state.patterns);
-    bassEngine.setChain(state.chain);
+    const chain = sequenceChain(sequenceLengthFromChain(state.chain));
+    bassEngine.setChain(chain);
     set({
       params: state.params,
       patterns: state.patterns,
-      chain: state.chain,
-      editPattern: state.chain[0] ?? 0,
+      chain,
+      editPattern: 0,
       patchValue: value,
     });
   },

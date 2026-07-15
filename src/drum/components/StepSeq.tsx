@@ -1,4 +1,5 @@
-import { PATTERN_NAMES, STEPS, patIdx } from '../seq';
+import { SequenceLengthControl } from '../../components/SequenceLengthControl';
+import { STEPS, patIdx } from '../seq';
 import { useDrumStore } from '../store';
 
 export function StepSeq() {
@@ -8,15 +9,14 @@ export function StepSeq() {
   const curPat = useDrumStore((s) => s.curPat);
   const editPattern = useDrumStore((s) => s.editPattern);
   const chain = useDrumStore((s) => s.chain);
-  const chaining = useDrumStore((s) => s.chaining);
   const patterns = useDrumStore((s) => s.patterns);
   const sel = useDrumStore((s) => s.sel);
   const padName = useDrumStore((s) => s.padNames[s.sel]);
   const play = useDrumStore((s) => s.play);
   const stop = useDrumStore((s) => s.stop);
   const toggleStep = useDrumStore((s) => s.toggleStep);
-  const setChaining = useDrumStore((s) => s.setChaining);
-  const chainClick = useDrumStore((s) => s.chainClick);
+  const setEditPattern = useDrumStore((s) => s.setEditPattern);
+  const setSequenceLength = useDrumStore((s) => s.setSequenceLength);
 
   return (
     <section className="panel dr-stepseq" data-accent="a">
@@ -35,29 +35,13 @@ export function StepSeq() {
         <h2>STEP SEQ</h2>
         {!hosted && (
           <>
-            <div className="dr-patterns" aria-label="Edit pattern">
-              {PATTERN_NAMES.map((name, i) => (
-                <button
-                  className={`dr-seq-btn dr-pattern${editPattern === i ? ' active' : ''}`}
-                  type="button"
-                  aria-label={`Pattern ${name}`}
-                  aria-pressed={editPattern === i}
-                  key={name}
-                  onClick={() => chainClick(i)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <button
-              className={`dr-seq-btn dr-chain-toggle${chaining ? ' active' : ''}`}
-              type="button"
-              aria-pressed={chaining}
-              onClick={() => setChaining(!chaining)}
-            >
-              CHAIN
-            </button>
-            <span className="dr-chain-readout">CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}</span>
+            <SequenceLengthControl
+              editBar={editPattern}
+              length={chain.length}
+              playingBar={playing ? curPat : null}
+              onEditBar={setEditPattern}
+              onLengthChange={setSequenceLength}
+            />
           </>
         )}
         <div className="dr-step-editing">

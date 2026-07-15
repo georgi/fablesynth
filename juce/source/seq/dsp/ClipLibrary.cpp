@@ -70,8 +70,9 @@ std::string validatePattern(const ClipLibraryEntry& entry) {
     }
 
     for (int bar = 0; bar < entry.bars; ++bar) {
-        for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) {
-            const int offset = sqNoteIdx(bar, step);
+        const int lanes = entry.machine == Machine::WT1 ? SQ_WT_POLY_LANES : 1;
+        for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) for (int lane = 0; lane < lanes; ++lane) {
+            const int offset = entry.machine == Machine::WT1 ? sqWtNoteIdx(bar, step, lane) : sqNoteIdx(bar, step);
             if (entry.bytes[(size_t)offset] > 7)
                 return "invalid note flags at byte " + std::to_string(offset);
             if (entry.bytes[(size_t)offset + 1] > 11)
@@ -149,7 +150,8 @@ int positiveMod(int n, int d) { return ((n % d) + d) % d; }
 size_t stepOffset(const ClipLibraryEntry& entry, int step, int lane = 0) {
     const int bar = step / SQ_STEPS_PER_BAR, local = step % SQ_STEPS_PER_BAR;
     return (size_t)(entry.machine == Machine::DR1
-        ? sqDr1Idx(bar, lane, local) : sqNoteIdx(bar, local));
+        ? sqDr1Idx(bar, lane, local)
+        : entry.machine == Machine::WT1 ? sqWtNoteIdx(bar, local, lane) : sqNoteIdx(bar, local));
 }
 
 bool stepOn(const ClipLibraryEntry& entry, const std::vector<uint8_t>& bytes,
@@ -165,7 +167,8 @@ ClipLibraryEntry transformClipLibraryEntry(const ClipLibraryEntry& source,
         throw std::invalid_argument("invalid source clip");
     ClipLibraryEntry out = source;
     const int total = source.bars * SQ_STEPS_PER_BAR;
-    const int lanes = source.machine == Machine::DR1 ? 16 : 1;
+    const int lanes = source.machine == Machine::DR1 ? 16
+        : source.machine == Machine::WT1 ? SQ_WT_POLY_LANES : 1;
     const int stride = source.machine == Machine::DR1 ? 1 : 3;
 
     if (kind == ClipTransformKind::transpose) {

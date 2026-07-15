@@ -24,7 +24,7 @@ describe('drum store', () => {
   beforeEach(() => {
     localStorage.clear();
     useDrumStore.setState({
-      params: defaultDrumParams(), sel: 0, editPattern: 0, chain: [0], chaining: false, chainFresh: false,
+      params: defaultDrumParams(), sel: 0, editPattern: 0, chain: [0],
       patterns: new Uint8Array(4 * 16 * 16), hosted: false,
     });
   });
@@ -45,16 +45,15 @@ describe('drum store', () => {
     expect(useDrumStore.getState().params['pad0.oscA.tune']).toBe(-14);
   });
 
-  it('chain building: chaining mode appends, leaving keeps ≥1 entry', () => {
+  it('sequence length plays bars from 1 through N and editing does not change it', () => {
     const s = useDrumStore.getState();
-    s.setChaining(true);
-    s.chainClick(0); s.chainClick(1); s.chainClick(0);
-    expect(useDrumStore.getState().chain).toEqual([0, 1, 0]);
-    useDrumStore.getState().setChaining(false);
-    // outside chaining, clicking a pattern selects it for editing and resets the chain to just it
-    useDrumStore.getState().chainClick(2);
+    s.setSequenceLength(3);
+    expect(useDrumStore.getState().chain).toEqual([0, 1, 2]);
+    useDrumStore.getState().setEditPattern(2);
     expect(useDrumStore.getState().editPattern).toBe(2);
-    expect(useDrumStore.getState().chain).toEqual([2]);
+    expect(useDrumStore.getState().chain).toEqual([0, 1, 2]);
+    useDrumStore.getState().setSequenceLength(99);
+    expect(useDrumStore.getState().chain).toEqual([0, 1, 2, 3]);
   });
 
   it('stepPatch cycles from empty: +1 lands on first factory patch, -1 on last option', () => {

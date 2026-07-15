@@ -1,11 +1,12 @@
-// SQ-4 top bar: logo, transport (pause = ctx.suspend — everything resumes
-// in phase), launch quantize, beat dots + bar/BPM readout from the shared
+// SQ-4 top bar: combined play/stop transport, launch quantize, beat dots +
+// bar/BPM readout from the shared
 // timebase, master scope and the swing/volume master knobs.
 
 import { pad2 } from '../model';
 import { useSeqStore } from '../store';
 import { Scope } from './Scope';
 import { SeqKnob } from './SeqKnob';
+import { FACTORY_SESSION_PRESETS } from '../sessionPresets';
 
 export function Header() {
   const playing = useSeqStore((s) => s.playing);
@@ -16,7 +17,8 @@ export function Header() {
   const quant = useSeqStore((s) => s.quant);
   const swing = useSeqStore((s) => s.swing);
   const masterVol = useSeqStore((s) => s.masterVol);
-  const { togglePlay, stopAll, cycleQuant, setSwing, setMasterVol } = useSeqStore.getState();
+  const sessionName = useSeqStore((s) => s.session.name);
+  const { toggleTransport, cycleQuant, setSwing, setMasterVol, loadSessionPreset } = useSeqStore.getState();
 
   return (
     <header className="sq-top">
@@ -28,14 +30,22 @@ export function Header() {
       <div className="sq-transport">
         <button
           className={`sq-play${playing ? ' on' : ''}`}
-          onClick={togglePlay}
+          onClick={toggleTransport}
           disabled={!powered}
-          title="Play / pause clock"
+          title={playing ? 'Stop sequencer' : 'Start sequencer'}
+          aria-label={playing ? 'Stop sequencer' : 'Start sequencer'}
         >
-          {playing ? '❚❚' : '▶'}
+          {playing ? '■' : '▶'}
         </button>
-        <button className="sq-stop" onClick={stopAll} disabled={!powered} title="Stop all clips">■</button>
       </div>
+
+      <label className="sq-session-preset">
+        <span>SESSION</span>
+        <select value={FACTORY_SESSION_PRESETS.findIndex((preset) => preset.name === sessionName)} onChange={(e) => loadSessionPreset(Number(e.target.value))}>
+          <option value={-1}>CUSTOM · {sessionName}</option>
+          {FACTORY_SESSION_PRESETS.map((preset, i) => <option key={preset.name} value={i}>{preset.family} · {preset.name}</option>)}
+        </select>
+      </label>
 
       <div className="sq-quant">
         <span className="sq-quant-tag">QUANT</span>

@@ -45,7 +45,9 @@ class Conductor {
 public:
     Conductor(SessionData session, ConductorIO& io, double sampleRate);
 
-    void powerOn();                       // anchor = now()+256, tempo out, gains out
+    void powerOn();                       // initialise tempo/gains; transport stays stopped
+    void startTransport();                // re-anchor at now()+256 and roll the clock
+    void stopTransport();                 // immediate stop for every owned/queued track
 
     // UI actions (message thread only):
     void launch(int t, int s);
@@ -95,6 +97,7 @@ public:
     Quant quant() const { return quant_; }
     double swing() const { return swing_; }
     float trackVol(int t) const;
+    bool playing() const { return playing_; }
     double anchor() const { return anchor_; }
     SqSongPos songPos() const;   // derived from io.now()
 
@@ -110,6 +113,7 @@ private:
     Quant quant_;
     std::vector<float> trackVol_;
     double swing_ = 0, anchor_ = 0;
+    bool playing_ = false;
     ConductorIO& io_;
     double sr_;
 };

@@ -3,7 +3,7 @@
 // (message thread) issues launches/stops/mutes, the audio thread renders and
 // publishes acks, and drainAcks() bridges the two. Covers: silent-but-ticking
 // idle, a scene launch that starts all four hosted engines on the shared bar
-// grid, per-track mute, pause (frame freeze), stopAll decay, a full
+// grid, per-track mute, combined play/stop transport, stop decay, a full
 // session+params state round-trip, and the web-compatible session JSON codec
 // (SessionCodec.h), including cross-compat against a real web export
 // (test/fixtures/web-session.json — regenerate with
@@ -140,10 +140,17 @@ int main(int argc, char** argv) {
 
         check(drum.capabilities().hosted && !drum.capabilities().ownsTransport,
               "DR-1 model advertises hosted transport semantics");
-        check(bass.capabilities().hosted && !bass.capabilities().supportsPatternChain,
-              "BL-1 model disables standalone pattern chaining");
+        check(bass.capabilities().hosted && bass.capabilities().supportsPatternChain,
+              "BL-1 model exposes hosted sequence length controls");
         check(wt2.capabilities().hosted && !wt2.capabilities().supportsUserTables,
               "WT-1 model disables hosted user-table mutation");
+
+        const int oldBassBars = bass.clipBars();
+        const int resizedBassBars = oldBassBars == fable::SQ_HOSTED_MAX_BARS ? oldBassBars - 1 : oldBassBars + 1;
+        bass.setChain(std::vector<int>((size_t)resizedBassBars, 0));
+        check(bass.clipBars() == resizedBassBars,
+              "SQ-4 hosted length control resizes the focused clip", bass.clipBars());
+        bass.setChain(std::vector<int>((size_t)oldBassBars, 0));
 
         const auto before0 = hosted.debugTrackParams(0);
         const auto before2 = hosted.debugTrackParams(2);
@@ -225,8 +232,10 @@ int main(int argc, char** argv) {
               "loaded library clip persists through plugin state");
     }
 
-    // ---- 1. Silent before any launch, but the shared clock runs. ----
+    // ---- 1. Silent and transport-stopped before any launch, while the audio
+    //        engine's shared frame clock keeps running. ----
     check(renderRms(p, buf, 50) < 1e-6, "idle output is silent");
+    check(!p.conductor().playing(), "transport starts stopped after power-on");
     check(p.currentFrame.load() >= 50 * 128, "clock advanced while idle",
           p.currentFrame.load());
 
@@ -234,6 +243,7 @@ int main(int argc, char** argv) {
     //        arm and fire at the next bar boundary, then all tracks are
     //        audible with a live step position. ----
     p.conductor().launchScene(2);
+    check(p.conductor().playing(), "scene launch starts stopped transport");
     renderRms(p, buf, 800); // > one bar at 122 bpm / 48k (94,488 frames)
     p.drainAcks();          // the editor timer's job — deliver clipstart acks
     check(p.conductor().ownerOf(0) == 2, "track 0 owned by scene 2",
@@ -260,21 +270,18 @@ int main(int argc, char** argv) {
     p.conductor().toggleTrackMute(0);
     renderRms(p, buf, 200); // let it come back before pausing
 
-    // ---- 5. Pause freezes the frame counter and outputs silence. ----
-    p.setPaused(true);
+    // ---- 5/6. Transport stop is immediate, keeps the engine processing, and
+    //          owners clear as the stop acknowledgements arrive. ----
     double f0 = p.currentFrame.load();
-    check(renderRms(p, buf, 50) < 1e-6, "paused output is silent");
-    check(std::fpclassify(p.currentFrame.load() - f0) == FP_ZERO, "paused clock is frozen",
-          p.currentFrame.load());
-    p.setPaused(false);
-
-    // ---- 6. stopAll + acks: owners clear and audio decays to silence. ----
-    p.conductor().stopAll();
+    p.conductor().stopTransport();
+    check(!p.conductor().playing(), "transport stop enters stopped state");
     renderRms(p, buf, 1200);
+    check(p.currentFrame.load() > f0, "audio clock continues while transport is stopped",
+          p.currentFrame.load());
     p.drainAcks();
-    check(p.conductor().ownerOf(0) == -2, "stopAll clears owner",
+    check(p.conductor().ownerOf(0) == -2, "transport stop clears owner",
           p.conductor().ownerOf(0));
-    check(renderRms(p, buf, 400) < 1e-4, "audio decays to silence after stop");
+    check(renderRms(p, buf, 400) < 1e-4, "audio decays to silence after transport stop");
 
     // ---- 7. State round-trip into a fresh processor: an edited clip and the
     //        params survive; garbage state does not crash. This block is the
@@ -328,9 +335,9 @@ int main(int argc, char** argv) {
     check(p.conductor().quant() == fable::Quant::Bar, "quantStep(-1) returns to 1 BAR",
           (double)(int)p.conductor().quant());
     hdr.playClick();
-    check(p.paused(), "playClick pauses");
+    check(p.conductor().playing(), "combined transport button starts playback");
     hdr.playClick();
-    check(!p.paused(), "playClick again unpauses");
+    check(!p.conductor().playing(), "combined transport button stops playback");
 
     const auto& sessionLibrary = fable::factorySessionLibrary();
     check(sessionLibrary.size() == 24 && p.getNumPrograms() == 24,
@@ -408,10 +415,11 @@ int main(int argc, char** argv) {
     p.drainAcks();
     check(p.conductor().ownerOf(0) != -2, "scene launched before stopAllClick",
           p.conductor().ownerOf(0));
-    hdr.stopAllClick();
+    hdr.playClick();
     renderRms(p, buf, 1200);
     p.drainAcks();
-    check(p.conductor().ownerOf(0) == -2, "stopAllClick schedules stops for owned tracks",
+    check(!p.conductor().playing(), "header button enters stopped state");
+    check(p.conductor().ownerOf(0) == -2, "header stop clears owned tracks",
           p.conductor().ownerOf(0));
 
     // ---- 10. Track heads: mute/solo reach the conductor; patch stepper swaps sounds. ----
@@ -459,6 +467,10 @@ int main(int argc, char** argv) {
 
     grid.cellClick(2, 0);                          // click a LIVE cell -> stop
     check(p.conductor().queueOf(0) == fable::SQ_STOP, "cellClick(2,0) on a live cell queues a stop",
+          p.conductor().queueOf(0));
+    check(grid.cellStopping(2, 0), "live cell exposes distinct STOPPING state");
+    grid.cellClick(2, 0);                          // duplicate click is guarded
+    check(p.conductor().queueOf(0) == fable::SQ_STOP, "second click keeps the existing queued stop",
           p.conductor().queueOf(0));
     renderRms(p, buf, 800); p.drainAcks();
 

@@ -10,20 +10,26 @@ export type MachineId = 'DR1' | 'BL1' | 'WT1';
 
 export const STEPS_PER_BAR = 16;
 export const DR1_PADS = 16;
-export const NOTE_STRIDE = 3; // BL1/WT1: flags, note, oct+1 per step
+export const NOTE_STRIDE = 3; // flags, note, oct+1 per voice-step
+export const WT_POLY_LANES = 3;
 export const MAX_BARS = 16;
 
 // Clip payload layouts (must match each worklet's clipRead):
 //   DR1: byte per pad-step, bar-major:  ((bar*16 + pad) * 16) + step
-//   BL1/WT1: 3 bytes per step, bar-major: ((bar*16 + step) * 3)
+//   BL1: 3 bytes per step, bar-major
+//   WT1: 3 poly lanes per step, step-major then lane-major
 export const bytesPerBar = (m: MachineId): number =>
-  m === 'DR1' ? DR1_PADS * STEPS_PER_BAR : STEPS_PER_BAR * NOTE_STRIDE;
+  m === 'DR1' ? DR1_PADS * STEPS_PER_BAR
+    : STEPS_PER_BAR * NOTE_STRIDE * (m === 'WT1' ? WT_POLY_LANES : 1);
 
 export const dr1Idx = (bar: number, pad: number, step: number): number =>
   (bar * DR1_PADS + pad) * STEPS_PER_BAR + step;
 
 export const noteIdx = (bar: number, step: number): number =>
   (bar * STEPS_PER_BAR + step) * NOTE_STRIDE;
+
+export const wtNoteIdx = (bar: number, step: number, lane = 0): number =>
+  ((bar * STEPS_PER_BAR + step) * WT_POLY_LANES + lane) * NOTE_STRIDE;
 
 /** Hosted editor edits at most this many bars (= device NPATTERNS). */
 export const HOSTED_MAX_BARS = 4;

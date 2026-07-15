@@ -1,8 +1,9 @@
 // The 16-step pitch sequencer: 12 note lanes per step (tap = set note,
-// tap again = rest), per-step octave / accent / slide rows, pattern A–D
-// select + chaining, RAND, and glowing slide connectors between tied steps.
+// tap again = rest), per-step octave / accent / slide rows, bars 1–4,
+// sequence length, RAND, and glowing slide connectors between tied steps.
 
-import { getStep, NOTE_LANES, PATTERN_NAMES, slidesInto, STEPS } from '../seq';
+import { SequenceLengthControl } from '../../components/SequenceLengthControl';
+import { getStep, NOTE_LANES, slidesInto, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
 const LANES_H = 143; // svg viewBox height for the connector overlay
@@ -14,7 +15,6 @@ export function PitchSeq() {
   const curPat = useBassStore((s) => s.curPat);
   const editPattern = useBassStore((s) => s.editPattern);
   const chain = useBassStore((s) => s.chain);
-  const chaining = useBassStore((s) => s.chaining);
   const patterns = useBassStore((s) => s.patterns);
   const play = useBassStore((s) => s.play);
   const stop = useBassStore((s) => s.stop);
@@ -22,8 +22,8 @@ export function PitchSeq() {
   const cycleStepOct = useBassStore((s) => s.cycleStepOct);
   const toggleStepAcc = useBassStore((s) => s.toggleStepAcc);
   const toggleStepSlide = useBassStore((s) => s.toggleStepSlide);
-  const setChaining = useBassStore((s) => s.setChaining);
-  const chainClick = useBassStore((s) => s.chainClick);
+  const setEditPattern = useBassStore((s) => s.setEditPattern);
+  const setSequenceLength = useBassStore((s) => s.setSequenceLength);
   const randomize = useBassStore((s) => s.randomize);
 
   const steps = Array.from({ length: STEPS }, (_, i) => getStep(patterns, editPattern, i));
@@ -58,28 +58,13 @@ export function PitchSeq() {
         <h2>PITCH SEQ</h2>
         {!hosted && (
           <>
-            <div className="bl-patterns" aria-label="Edit pattern">
-              {PATTERN_NAMES.map((name, i) => (
-                <button
-                  className={`bl-seq-btn bl-pattern${editPattern === i ? ' active' : ''}`}
-                  type="button"
-                  aria-label={`Pattern ${name}`}
-                  aria-pressed={editPattern === i}
-                  key={name}
-                  onClick={() => chainClick(i)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <button
-              className={`bl-seq-btn bl-chain-toggle${chaining ? ' active' : ''}`}
-              type="button"
-              aria-pressed={chaining}
-              onClick={() => setChaining(!chaining)}
-            >
-              CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}
-            </button>
+            <SequenceLengthControl
+              editBar={editPattern}
+              length={chain.length}
+              playingBar={playing ? curPat : null}
+              onEditBar={setEditPattern}
+              onLengthChange={setSequenceLength}
+            />
           </>
         )}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>

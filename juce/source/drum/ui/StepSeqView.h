@@ -5,15 +5,10 @@
 
 // Step sequencer strip + selected-pad bar — ports of src/drum/components/
 // StepSeq.tsx and SelBar.tsx (+ drum.css .dr-stepseq / .step* / .dr-selbar).
-// Pattern/chain semantics mirror store.ts exactly:
+// Bar/length semantics mirror store.ts exactly:
 //  - toggleStep: cycle the (editPattern, selectedPad, step) cell 0 -> 1 -> 2 -> 0.
-//  - pattern click, not chaining (store.setEditPattern): select the pattern
-//    for editing AND reset the play chain to just that pattern.
-//  - pattern click while CHAIN is lit (store.chainClick): the first click
-//    replaces the chain ("chainFresh"), later clicks append; every click also
-//    moves the edit pattern and pushes the chain to the engine immediately.
-//  - CHAIN toggle-off (store.setChaining): commit the built chain (falls back
-//    to [editPattern] if somehow empty).
+//  - bar click selects one of bars 1-4 for editing without changing playback.
+//  - sequence length plays bars 1 through N, where N is clamped to 1-4.
 namespace fui {
 
 // Selected-pad bar above the OSC row — port of SelBar.tsx: cyan LED,
@@ -51,22 +46,19 @@ public:
     // Web store handlers — public so the host test drives the exact code
     // paths a mouse click takes.
     void toggleStep(int step);              // store.toggleStep
-    void patternClick(int i);               // store.chainClick
-    void setChaining(bool on);              // store.setChaining
-    bool isChaining() const { return chaining_; }
+    void patternClick(int i);               // choose bar to edit
+    void setSequenceLength(int bars);        // play bars 1 through N
 
     // Hit-test geometry (public for the host test).
     juce::Rectangle<int> transportBounds() const;
     juce::Rectangle<int> patternBounds(int i) const;
-    juce::Rectangle<int> chainToggleBounds() const;
+    juce::Rectangle<int> sequenceLengthBounds() const;
     juce::Rectangle<int> stepBounds(int step) const;
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
     std::unique_ptr<DrumUiModel> ownedModel;
     DrumUiModel& proc;
-    bool chaining_ = false;
-    bool chainFresh_ = false;               // next chained click replaces the chain
     juce::uint32 lastSig_ = 0xffffffffu;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StepSeqView)
 };

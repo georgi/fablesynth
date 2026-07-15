@@ -25,8 +25,6 @@ describe('bass store', () => {
       params: defaultBassParams(),
       patterns: makeEmptyPatterns(),
       chain: [0],
-      chaining: false,
-      chainFresh: false,
       editPattern: 0,
       playing: false,
       heldSemis: [],
@@ -66,15 +64,15 @@ describe('bass store', () => {
     expect(useBassStore.getState().params['flt.cut']).toBe(777);
   });
 
-  it('chain building: chaining mode appends, leaving keeps ≥1 entry', () => {
+  it('sequence length plays bars from 1 through N and editing does not change it', () => {
     const s = useBassStore.getState();
-    s.setChaining(true);
-    s.chainClick(0); s.chainClick(1); s.chainClick(0);
-    expect(useBassStore.getState().chain).toEqual([0, 1, 0]);
-    useBassStore.getState().setChaining(false);
-    useBassStore.getState().chainClick(2);
+    s.setSequenceLength(3);
+    expect(useBassStore.getState().chain).toEqual([0, 1, 2]);
+    useBassStore.getState().setEditPattern(2);
     expect(useBassStore.getState().editPattern).toBe(2);
-    expect(useBassStore.getState().chain).toEqual([2]);
+    expect(useBassStore.getState().chain).toEqual([0, 1, 2]);
+    useBassStore.getState().setSequenceLength(0);
+    expect(useBassStore.getState().chain).toEqual([0]);
   });
 
   it('note tracking: audition updates curSemi via held stack', () => {

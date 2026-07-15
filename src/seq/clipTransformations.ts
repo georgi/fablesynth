@@ -1,6 +1,7 @@
 import type { RuntimeClipLibraryEntry } from './clipLibrary';
 import {
   bytesPerBar, dr1Idx, DR1_PADS, MAX_BARS, NOTE_STRIDE, noteIdx, STEPS_PER_BAR,
+  WT_POLY_LANES, wtNoteIdx,
 } from './protocol';
 import { transposeNotePattern } from './clipLibraryActions';
 
@@ -24,14 +25,18 @@ function assertInt(value: number, label: string): void {
 function stepOffset(entry: RuntimeClipLibraryEntry, step: number, lane = 0): number {
   const bar = Math.floor(step / STEPS_PER_BAR);
   const local = step % STEPS_PER_BAR;
-  return entry.machine === 'DR1' ? dr1Idx(bar, lane, local) : noteIdx(bar, local);
+  return entry.machine === 'DR1' ? dr1Idx(bar, lane, local)
+    : entry.machine === 'WT1' ? wtNoteIdx(bar, local, lane) : noteIdx(bar, local);
 }
+
+const laneCount = (entry: RuntimeClipLibraryEntry): number =>
+  entry.machine === 'DR1' ? DR1_PADS : entry.machine === 'WT1' ? WT_POLY_LANES : 1;
 
 function rotate(entry: RuntimeClipLibraryEntry, steps: number): Uint8Array {
   assertInt(steps, 'rotation');
   const total = entry.bars * STEPS_PER_BAR;
   const out = new Uint8Array(entry.pattern.length);
-  const lanes = entry.machine === 'DR1' ? DR1_PADS : 1;
+  const lanes = laneCount(entry);
   const stride = entry.machine === 'DR1' ? 1 : NOTE_STRIDE;
   for (let lane = 0; lane < lanes; lane++) for (let src = 0; src < total; src++) {
     const from = stepOffset(entry, src, lane), to = stepOffset(entry, mod(src + steps, total), lane);
@@ -43,7 +48,7 @@ function rotate(entry: RuntimeClipLibraryEntry, steps: number): Uint8Array {
 function reverse(entry: RuntimeClipLibraryEntry): Uint8Array {
   const total = entry.bars * STEPS_PER_BAR;
   const out = new Uint8Array(entry.pattern.length);
-  const lanes = entry.machine === 'DR1' ? DR1_PADS : 1;
+  const lanes = laneCount(entry);
   const stride = entry.machine === 'DR1' ? 1 : NOTE_STRIDE;
   for (let lane = 0; lane < lanes; lane++) for (let src = 0; src < total; src++) {
     const from = stepOffset(entry, src, lane), to = stepOffset(entry, total - 1 - src, lane);
@@ -54,7 +59,7 @@ function reverse(entry: RuntimeClipLibraryEntry): Uint8Array {
 
 function density(entry: RuntimeClipLibraryEntry, factor: 0.5 | 2): Uint8Array {
   const out = entry.pattern.slice(), total = entry.bars * STEPS_PER_BAR;
-  const lanes = entry.machine === 'DR1' ? DR1_PADS : 1;
+  const lanes = laneCount(entry);
   const stride = entry.machine === 'DR1' ? 1 : NOTE_STRIDE;
   for (let lane = 0; lane < lanes; lane++) {
     let activeIndex = 0;
@@ -82,7 +87,7 @@ function density(entry: RuntimeClipLibraryEntry, factor: 0.5 | 2): Uint8Array {
 function accentShift(entry: RuntimeClipLibraryEntry, steps: number): Uint8Array {
   assertInt(steps, 'accent shift');
   const out = entry.pattern.slice(), total = entry.bars * STEPS_PER_BAR;
-  const lanes = entry.machine === 'DR1' ? DR1_PADS : 1;
+  const lanes = laneCount(entry);
   for (let lane = 0; lane < lanes; lane++) {
     const accents: number[] = [];
     for (let step = 0; step < total; step++) {

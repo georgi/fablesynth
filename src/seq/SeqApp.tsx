@@ -15,7 +15,7 @@ export function SeqApp() {
   const focus = useSeqStore((s) => s.focus);
 
   // UI clock: beat dots / bar counter derive from the shared context-frame
-  // timebase (ctx.suspend freezes it, so pause is free).
+  // timebase while the logical transport is running.
   useEffect(() => {
     if (!powered) return;
     let raf = 0;

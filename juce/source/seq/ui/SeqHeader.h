@@ -6,7 +6,7 @@
 #include <functional>
 
 // SQ-4 top bar — port of src/seq/components/Header.tsx + Scope.tsx: logo,
-// transport (play/pause = ctx.suspend, stop-all), launch quantize stepper,
+// combined play/stop transport, launch quantize stepper,
 // beat dots + bar/BPM readout from the shared timebase, a master scope, and
 // the SWING/VOL master knobs. Everything is drawn directly in paint() and hit
 // -tested in mouseDown/Drag — no juce::Button/Knob children — since the whole
@@ -29,7 +29,6 @@ public:
 
     // Test handles (also the real click targets, wired from mouseDown).
     void playClick();
-    void stopAllClick();
     void quantStep(int d);
 
     // Session import/export — web-compatible SessionDoc v:1 JSON (no web
@@ -61,7 +60,7 @@ private:
 
     SeqAudioProcessor& proc;
 
-    juce::Rectangle<int> logoArea, playBtn, stopBtn, quantTagArea, quantPrevBtn, quantValArea,
+    juce::Rectangle<int> logoArea, playBtn, quantTagArea, quantPrevBtn, quantValArea,
         quantNextBtn, beatsArea, clockLineArea, libraryLabelArea, loadBtn, saveBtn,
         scopeArea, swingKnob, volKnob;
 

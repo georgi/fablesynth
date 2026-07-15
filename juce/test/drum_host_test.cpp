@@ -446,28 +446,15 @@ int main(int argc, char** argv) {
         check(seq.stepBounds(3).getCentre().y > 47, "step tiles sit in the row band",
               seq.stepBounds(3).getCentre().y);
 
-        // Pattern click outside chain mode: selects for editing AND resets the
-        // chain to just that pattern (store.setEditPattern).
+        // Bar selection edits independently from the playback length.
         seq.patternClick(1);
-        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
-        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}");
-
-        // Chain builder: toggle on -> first click replaces, later clicks append,
-        // toggle off commits (store.chainClick / setChaining).
-        seq.setChaining(true);
-        check(seq.isChaining(), "CHAIN toggle latches on");
-        seq.patternClick(0);
-        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh");
+        check(proc.getEditPattern() == 1, "bar click selects 2", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0 }), "bar click preserves length");
+        seq.setSequenceLength(3);
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "length 3 plays bars 1-3");
         seq.patternClick(3);
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends");
-        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
-              proc.getEditPattern());
-        seq.setChaining(false);
-        check(!seq.isChaining(), "CHAIN toggle latches off");
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off");
-
-        seq.patternClick(0); // restore pattern A / chain {A}
-        check(proc.getChain() == std::vector<int>({ 0 }), "post-chain click resets to {A}");
+        check(proc.getEditPattern() == 3, "bar click selects 4", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length");
     }
 
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");

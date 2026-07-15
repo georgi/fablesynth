@@ -161,7 +161,7 @@ public:
     // free-run LFO derives its phase from ppq so it lines up with the downbeat.
     // ppq is sanitised so a non-finite host position can't latch a NaN phase.
     void setTransport(double ppq, bool playing) { ppq_ = std::isfinite(ppq) ? ppq : 0.0; playing_ = playing; }
-    void panic() { for (auto& v : voices_) v.kill(); seqNote_ = -1; seqToGateOff_ = -1; }
+    void panic() { for (auto& v : voices_) v.kill(); seqNote_ = -1; seqChordNotes_.clear(); seqToGateOff_ = -1; }
 
     // ---- note sequencer (port of worklet.js seqRead/seqGateOff/seqTie/seqFire).
     // 16 steps x 4 chained patterns firing noteOn/noteOff into the polyphonic
@@ -319,6 +319,7 @@ private:
     double seqToNext_ = 0;            // samples until the next step fires
     double seqToGateOff_ = -1;        // samples until the gate closes (-1 = none/tied)
     int    seqNote_ = -1;             // midi note the sequencer is sounding (-1 = none)
+    std::vector<int> seqChordNotes_;   // additional notes in a hosted WT chord
     double seqSongPos_ = 0;           // samples since play (virtual transport for synced LFOs)
     double bpmOverride_ = 0;          // > 0: host tempo wins over SEQ_BPM
 

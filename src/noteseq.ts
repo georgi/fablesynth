@@ -8,7 +8,7 @@
 
 export const STEPS = 16;
 export const NPATTERNS = 4;
-export const PATTERN_NAMES = ['A', 'B', 'C', 'D'];
+export const PATTERN_NAMES = ['1', '2', '3', '4'];
 export const NOTE_LANES = 12; // one octave of lanes, C at the bottom
 export const OCT_MIN = -1;
 export const OCT_MAX = 1;

@@ -398,8 +398,9 @@ a fourth plugin from the same build: **VST3 · AU · Standalone**, product name
   owner/queue state machine.
 - `sq4_host_test` — plugin-boundary test: instantiates the real
   `SeqAudioProcessor` and drives it like a DAW + editor timer would (scene
-  launch across all four engines on the shared bar grid, mute, pause, stopAll
-  decay, state round-trip, focus-mode clip editing, the session JSON codec,
+  launch across all four engines on the shared bar grid, mute, combined
+  play/stop transport, stop decay, state round-trip, focus-mode clip editing,
+  the session JSON codec,
   LOAD/SAVE) and renders editor snapshots.
 
 ## Architecture

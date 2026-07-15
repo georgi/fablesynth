@@ -74,7 +74,8 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   // ---- transport + master ----
   { id: 'seq.bpm', label: 'BPM', min: 60, max: 200, def: 138, curve: 'int', fmt: (v) => String(Math.round(v)) },
   { id: 'master.swing', label: 'SWING', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
-  { id: 'master.volume', label: 'VOL', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
+  // Final visible gain stage: after FX, before the limiter.
+  { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
 ];
 
 export const BASS_PARAMS: Record<string, ParamDef> = Object.fromEntries(BASS_PARAM_DEFS.map((d) => [d.id, d]));

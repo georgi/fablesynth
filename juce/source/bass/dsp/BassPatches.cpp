@@ -239,6 +239,9 @@ BassParamArray applyBassPatch(const BassPatch& patch) {
         int id = bassIdFromString(pid);
         if (id >= 0) p[(size_t)id] = v;
     }
+    // Keep the factory bank dry, matching the web factory patch transform.
+    p[(size_t)BL_FXDELAY_ON] = 0.0f;
+    p[(size_t)BL_FXREVERB_ON] = 0.0f;
     return p;
 }
 

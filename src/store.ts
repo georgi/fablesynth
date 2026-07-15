@@ -17,6 +17,7 @@ import {
   writePattern, type Patterns,
 } from './noteseq';
 import { generateTables, SIZE, type GeneratedTable } from './engine/wavetables';
+import { sequenceChain, sequenceLengthFromChain } from './sequenceLength';
 
 // Singleton audio engine (created once, initialized on power-on).
 export let engine = new SynthEngine();
@@ -52,8 +53,6 @@ interface SynthStore {
   // note sequencer
   patterns: Patterns;
   chain: number[];
-  chaining: boolean;
-  chainFresh: boolean;
   editPattern: number;
   seqPlaying: boolean;
   curStep: number;
@@ -90,8 +89,7 @@ interface SynthStore {
   toggleStepTie: (step: number) => void;
   randomizeSeq: () => void;
   setEditPattern: (i: number) => void;
-  setChaining: (on: boolean) => void;
-  chainClick: (i: number) => void;
+  setSequenceLength: (length: number) => void;
   seqPlay: () => void;
   seqStop: () => void;
   attachHosted: (e: SynthEngine) => void;
@@ -131,9 +129,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   userTables: loadUserTablePool(),
   editorOsc: null,
   patterns: initialSeq.patterns,
-  chain: initialSeq.chain,
-  chaining: false,
-  chainFresh: false,
+  chain: sequenceChain(sequenceLengthFromChain(initialSeq.chain)),
   editPattern: 0,
   seqPlaying: false,
   curStep: -1,
@@ -316,35 +312,11 @@ export const useStore = create<SynthStore>((set, get) => ({
     get()._setPatterns(writePattern(patterns, editPattern, randomPattern()));
   },
 
-  setEditPattern: (i) => {
-    if (get().chaining) {
-      set({ editPattern: i });
-      return;
-    }
-    const chain = [i];
-    set({ editPattern: i, chain });
-    engine.setSeqChain(chain);
-    saveSeqState(get().patterns, chain);
-  },
+  setEditPattern: (i) => set({ editPattern: i }),
 
-  setChaining: (on) => {
-    if (on) {
-      set({ chaining: true, chainFresh: true });
-      return;
-    }
-    const chain = get().chain.length ? get().chain : [get().editPattern];
-    set({ chaining: false, chainFresh: false, chain });
-    engine.setSeqChain(chain);
-    saveSeqState(get().patterns, chain);
-  },
-
-  chainClick: (i) => {
-    if (!get().chaining) {
-      get().setEditPattern(i);
-      return;
-    }
-    const chain = get().chainFresh ? [i] : [...get().chain, i];
-    set({ chain, chainFresh: false, editPattern: i });
+  setSequenceLength: (length) => {
+    const chain = sequenceChain(length);
+    set({ chain });
     engine.setSeqChain(chain);
     saveSeqState(get().patterns, chain);
   },
@@ -368,8 +340,6 @@ export const useStore = create<SynthStore>((set, get) => ({
       powered: true,
       seqPlaying: false,
       curStep: -1,
-      chaining: false,
-      chainFresh: false,
       params: { ...e.params },
     });
   },

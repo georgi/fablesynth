@@ -97,20 +97,25 @@ export function DeviceView() {
 
   // Guards the pattern-subscription against echoing our own writes.
   const syncing = useRef(false);
+  const patchSyncing = useRef(false);
 
   // 1. Attach the rig engine whenever the focused track changes.
   useEffect(() => {
     if (!focus || !rig || !host) return;
     const engine = rig.devices[focus.track].engine;
-    if (engine) host.attach(engine);
-  }, [focus?.track, rig, host]);
+    if (engine) {
+      patchSyncing.current = true;
+      host.attach(engine);
+      queueMicrotask(() => { patchSyncing.current = false; });
+    }
+  }, [focus?.track, track?.patch, rig, host]);
 
   // 2. Load the target clip's bytes into the device store on target change.
   useEffect(() => {
     if (!focus || !host || !machine) return;
     syncing.current = true;
     const bytes = clipPattern(session, focus.scene, focus.track);
-    host.setPatterns(bytes ? clipToPatterns(bytes, host.empty()) : host.empty());
+    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty());
     syncing.current = false;
     // Intentionally NOT keyed on the pattern string: our own write-backs must
     // not reload (they'd reset editPattern); createClip flips `!!clip`.
@@ -127,7 +132,8 @@ export function DeviceView() {
       const st = useSeqStore.getState();
       const cur = st.session.scenes[focus.scene]?.clips[focus.track];
       if (!cur) return;
-      st.updateClipBytes(focus.scene, focus.track, patternsToClip(machine, next, cur.bars), cur.bars);
+      const base = clipPattern(st.session, focus.scene, focus.track) ?? undefined;
+      st.updateClipBytes(focus.scene, focus.track, patternsToClip(machine, next, cur.bars, base), cur.bars);
     });
   }, [focus?.scene, focus?.track, host, machine, editable]);
 
@@ -145,6 +151,7 @@ export function DeviceView() {
       });
     };
     const unsub = host.subscribe(() => {
+      if (patchSyncing.current) return;
       const next = host.getParams();
       if (next === prev) return;
       prev = next;

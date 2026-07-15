@@ -5,9 +5,10 @@ import { useBassStore } from '../../bass/store';
 import { useDrumStore } from '../../drum/store';
 import { useStore as useWtStore } from '../../store';
 import { useState } from 'react';
+import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { patternsToClip } from '../hostBridge';
 import { HOSTED_MAX_BARS, type MachineId } from '../protocol';
-import { useSeqStore } from '../store';
+import { clipPattern, useSeqStore } from '../store';
 import { ClipLibraryBrowser } from './ClipLibraryBrowser';
 
 const BAR_STORE = {
@@ -32,6 +33,9 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const focus = useSeqStore((s) => s.focus)!;
   const clip = useSeqStore((s) => s.session.scenes[focus.scene]?.clips[focus.track]);
+  const currentBar = useSeqStore((s) => (
+    s.playing && s.owner[focus.track] === focus.scene ? s.pos[focus.track]?.bar ?? null : null
+  ));
   const { createClip, updateClipBytes } = useSeqStore.getState();
   const bars = BAR_STORE[machine];
   const editBar = bars.use();
@@ -65,7 +69,8 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   const setBars = (n: number) => {
     const next = Math.max(1, Math.min(HOSTED_MAX_BARS, n));
     if (next === clip.bars) return;
-    updateClipBytes(focus.scene, focus.track, patternsToClip(machine, bars.patterns(), next), next);
+    const base = clipPattern(useSeqStore.getState().session, focus.scene, focus.track) ?? undefined;
+    updateClipBytes(focus.scene, focus.track, patternsToClip(machine, bars.patterns(), next, base), next);
     if (editBar >= next) bars.set(next - 1);
   };
 
@@ -74,22 +79,13 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
       <div className="sq-clipbar">
         <span className="sq-clipbar-name">{clip.name}</span>
         <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
-        <div className="sq-clipbar-bars">
-          {Array.from({ length: clip.bars }, (_, i) => (
-            <button
-              key={i}
-              className={`sq-bar-chip${editBar === i ? ' active' : ''}`}
-              onClick={() => bars.set(i)}
-            >
-              {i + 1}
-            </button>
-          ))}
-        </div>
-        <div className="sq-clipbar-len">
-          <button className="sq-mini" onClick={() => setBars(clip.bars - 1)} title="Remove bar">−</button>
-          <span>{clip.bars} BAR{clip.bars > 1 ? 'S' : ''}</span>
-          <button className="sq-mini" onClick={() => setBars(clip.bars + 1)} title="Add bar">＋</button>
-        </div>
+        <SequenceLengthControl
+          editBar={editBar}
+          length={clip.bars}
+          playingBar={currentBar}
+          onEditBar={bars.set}
+          onLengthChange={setBars}
+        />
       </div>
       {libraryOpen && <ClipLibraryBrowser machine={machine} onClose={() => setLibraryOpen(false)} />}
     </>

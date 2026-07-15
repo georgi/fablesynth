@@ -692,6 +692,7 @@ static void testConductor() {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
+        CHECK(!c.playing());
         CHECK(c.anchor() == 256.0);
         CHECK(io.bpm == 122.0);
         CHECK(io.anchor == 256.0);
@@ -705,12 +706,13 @@ static void testConductor() {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
-        io.frame = c.anchor() + 10;
+        io.frame = 1000;
         c.launch(0, 2); // DROP A drums
+        CHECK(c.playing());
         CHECK(io.clips.size() == 1);
-        const double bar = sqBarFrames(122, 48000);
         CHECK(io.clips[0].t == 0 && io.clips[0].bars == 2 && io.clips[0].bytes == 512);
-        CHECK(std::abs(io.clips[0].at - (c.anchor() + bar)) < 1e-6);
+        CHECK(c.anchor() == 1256.0);
+        CHECK(std::abs(io.clips[0].at - c.anchor()) < 1e-6);
         CHECK(c.queueOf(0) == 2);
         CHECK(c.ownerOf(0) == -2);
         CHECK(io.tags.back() == 2); // the scheduled clip carries its scene tag
@@ -864,6 +866,29 @@ static void testConductor() {
         io.stops.clear();
         c.stopAll();
         CHECK(io.stops.size() == 4);
+    }
+
+    // Combined transport stop is immediate (not launch-quantized), marks the
+    // conductor stopped, and a later scene launch starts from a fresh anchor.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2);
+        for (int t = 0; t < 4; ++t) c.onClipStart(t, 2);
+        io.stops.clear();
+        c.stopTransport();
+        CHECK(!c.playing());
+        CHECK(io.stops.size() == 4);
+        for (const auto& stop : io.stops) CHECK(stop.second == 0.0);
+        for (int t = 0; t < 4; ++t) CHECK(c.queueOf(t) == SQ_STOP);
+        CHECK(c.songPos().beat == 0 && c.songPos().bar == 1);
+
+        io.frame = 5000;
+        c.launchScene(3);
+        CHECK(c.playing());
+        CHECK(c.anchor() == 5256.0);
+        CHECK(io.clips.back().at == c.anchor());
     }
 
     // 11. mute / solo / scene-mute gains.

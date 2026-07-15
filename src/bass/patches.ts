@@ -37,7 +37,7 @@ function acidPatterns(): number[] {
 
 const ACID_PATTERNS = acidPatterns();
 
-export const FACTORY_PATCHES: BassPatch[] = [
+const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     // The design defaults ARE the acid line — overrides only where the mock differs.
     name: 'ACID LINE',
@@ -235,6 +235,14 @@ export const FACTORY_PATCHES: BassPatch[] = [
     patterns: [...ACID_PATTERNS], chain: [0],
   },
 ];
+
+// Factory BL-1 sounds stay dry so their sequence and filter character read
+// clearly in a mix. Users can still enable either effect after loading a patch.
+export const FACTORY_PATCHES: BassPatch[] = FACTORY_PATCHES_RAW.map((patch) => ({
+  ...patch,
+  params: { ...patch.params, 'fx.delay.on': 0, 'fx.reverb.on': 0 },
+}));
+
 
 export function patchToState(patch: BassPatch): {
   params: ParamValues;

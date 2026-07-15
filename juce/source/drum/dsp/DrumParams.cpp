@@ -120,7 +120,7 @@ void addPad(std::vector<ParamInfo>& v, int i) {
 void addGlobals(std::vector<ParamInfo>& v) {
     v.push_back({DG_SEQ_BPM,        "seq.bpm",         "BPM",      60, 200,   126,    Curve::Int, Kind::Float, nullptr});
     v.push_back({DG_MASTER_SWING,   "master.swing",    "SWING",     0, 1,     0.22f,  Curve::Lin, Kind::Float, nullptr});
-    v.push_back({DG_MASTER_VOLUME,  "master.volume",   "VOL",       0, 1,     0.78f,  Curve::Lin, Kind::Float, nullptr});
+    v.push_back({DG_MASTER_VOLUME,  "master.volume",   "OUTPUT",    0, 1,     0.78f,  Curve::Lin, Kind::Float, nullptr});
 }
 
 std::vector<ParamInfo> build() {

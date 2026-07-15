@@ -4,7 +4,7 @@
 
 namespace fui {
 
-static const char* const kPatNames[fable::DR_NPATTERNS] = { "A", "B", "C", "D" };
+static const char* const kPatNames[fable::DR_NPATTERNS] = { "1", "2", "3", "4" };
 
 // ---- SelBarView -------------------------------------------------------------
 
@@ -150,8 +150,8 @@ juce::Rectangle<int> StepSeqView::patternBounds(int i) const {
     return { x0 + i * (26 + 4), kHeadY + 2, 26, 24 }; // .dr-pattern 26x24, gap 4
 }
 
-juce::Rectangle<int> StepSeqView::chainToggleBounds() const {
-    return { patternBounds(3).getRight() + 10, kHeadY + 2, 52, 24 }; // ml 2 + gap 8
+juce::Rectangle<int> StepSeqView::sequenceLengthBounds() const {
+    return { patternBounds(3).getRight() + 10, kHeadY, 170, 30 };
 }
 
 juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
@@ -175,31 +175,15 @@ void StepSeqView::toggleStep(int step) {
 }
 
 void StepSeqView::patternClick(int i) {
-    if (!chaining_) {                            // store.setEditPattern
-        proc.setEditPattern(i);
-        proc.setChain({ i });
-    } else {                                     // store.chainClick while chaining
-        std::vector<int> chain;
-        if (!chainFresh_) chain = proc.chain();
-        chain.push_back(i);
-        chainFresh_ = false;
-        proc.setEditPattern(i);
-        proc.setChain(std::move(chain));
-    }
+    proc.setEditPattern(i);
     repaint();
 }
 
-void StepSeqView::setChaining(bool on) {
-    if (on) {
-        chaining_ = true;
-        chainFresh_ = true;                      // first click will replace
-    } else {                                     // commit (store.setChaining off)
-        chaining_ = false;
-        chainFresh_ = false;
-        auto chain = proc.chain();
-        if (chain.empty()) chain.push_back(proc.editPattern());
-        proc.setChain(std::move(chain));
-    }
+void StepSeqView::setSequenceLength(int bars) {
+    bars = juce::jlimit(1, fable::DR_NPATTERNS, bars);
+    std::vector<int> sequence;
+    for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
+    proc.setChain(std::move(sequence));
     repaint();
 }
 
@@ -212,7 +196,13 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
     }
     for (int i = 0; i < fable::DR_NPATTERNS; ++i)
         if (patternBounds(i).contains(pos)) { patternClick(i); return; }
-    if (chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
+    if (proc.capabilities().supportsPatternChain && sequenceLengthBounds().contains(pos)) {
+        const auto length = sequenceLengthBounds();
+        const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
+        if (pos.x < length.getX() + 38) setSequenceLength(bars - 1);
+        else if (pos.x >= length.getRight() - 38) setSequenceLength(bars + 1);
+        return;
+    }
     for (int s = 0; s < fable::DR_STEPS; ++s)
         if (stepBounds(s).contains(pos)) { toggleStep(s); return; }
 }
@@ -230,7 +220,7 @@ void StepSeqView::timerCallback() {
     mix(playing ? 1 : 0);
     mix(playing ? proc.currentStep() : -1);
     mix(proc.currentPattern());
-    mix(edit); mix(sel); mix(chaining_ ? 1 : 0);
+    mix(edit); mix(sel);
     const auto& chain = proc.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
@@ -241,21 +231,25 @@ void StepSeqView::timerCallback() {
 
 // ---- paint ----------------------------------------------------------------------
 
-// .dr-seq-btn (pattern + CHAIN buttons): 5px radius, #0d1017, dim mono text;
+// Sequencer header buttons: 5px radius, #0d1017, dim mono text;
 // active = cyan border/text over a faint cyan wash.
 static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::String& text,
-                       bool active, float tracking) {
+                       bool active, float tracking, bool current = false, float fontSize = 8.0f) {
     const auto bf = b.toFloat();
     g.setColour(juce::Colour(0xff0d1017));
     g.fillRoundedRectangle(bf, 5.0f);
-    if (active) {
-        g.setColour(col::acA.withAlpha(0.07f));
+    if (active || current) {
+        g.setColour(col::acA.withAlpha(current ? 0.20f : 0.07f));
         g.fillRoundedRectangle(bf, 5.0f);
     }
-    g.setColour(active ? col::acA : col::line);
+    g.setColour(current ? col::acA.withAlpha(0.9f) : active ? col::acA : col::line);
     g.drawRoundedRectangle(bf.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(active ? col::acA : col::textDim);
-    g.setFont(monoFont(8.0f));
+    if (active) {
+        g.setColour(col::acA);
+        g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
+    }
+    g.setColour(active || current ? col::acA : col::textDim);
+    g.setFont(monoFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -295,23 +289,21 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "STEP SEQ",
                { transportBounds().getRight() + 8, kHeadY, kTitleW, kHeadH }, 2.2f);
 
-    // ---- head: pattern buttons + CHAIN toggle ----
+    // ---- head: bar buttons + sequence length ----
+    const int bars = proc.capabilities().hosted ? proc.clipBars()
+                                                : juce::jlimit(1, fable::DR_NPATTERNS, (int)proc.chain().size());
+    const int currentBar = playing ? proc.currentPattern() : -1;
     for (int i = 0; i < fable::DR_NPATTERNS; ++i)
-        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
-    drawSeqBtn(g, chainToggleBounds(), "CHAIN", chaining_, 0.96f);
-
-    // ---- head: chain readout ("CHAIN A→B" — ASCII arrow) ----
-    juce::String readout("CHAIN ");
-    const auto& chain = proc.chain();
-    for (size_t k = 0; k < chain.size(); ++k) {
-        if (k > 0) readout << "->";
-        const int p = chain[k];
-        readout << (p >= 0 && p < fable::DR_NPATTERNS ? kPatNames[p] : "?");
+        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f,
+                   bars > 1 && currentBar == i);
+    if (proc.capabilities().supportsPatternChain) {
+        auto length = sequenceLengthBounds();
+        const auto minus = length.removeFromLeft(38);
+        const auto plus = length.removeFromRight(38);
+        drawSeqBtn(g, minus, "-", false, 0.0f, false, 15.0f);
+        drawSeqBtn(g, length, "LENGTH " + juce::String(bars) + "B", false, 0.25f);
+        drawSeqBtn(g, plus, "+", false, 0.0f, false, 15.0f);
     }
-    g.setColour(col::textDim);
-    g.setFont(monoFont(7.0f));
-    drawSpaced(g, readout,
-               { chainToggleBounds().getRight() + 8, kHeadY, 180, kHeadH }, 0.7f);
 
     // ---- head: EDITING <pad name> + tap hint, right-aligned ----
     auto right = getLocalBounds().withY(kHeadY).withHeight(kHeadH)

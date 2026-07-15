@@ -6,7 +6,7 @@ namespace fui {
 
 using fable::BassSeqStep;
 
-static const char* const kPatNames[fable::BL_NPATTERNS] = { "A", "B", "C", "D" };
+static const char* const kPatNames[fable::BL_NPATTERNS] = { "1", "2", "3", "4" };
 
 // ---- geometry (bass.css .bl-seq-*, rack-relative px) --------------------------
 // panel padding 9px 12px 11px; head 28px + 10px margin; body: legend 36px +
@@ -37,12 +37,12 @@ juce::Rectangle<int> PitchSeqView::patternBounds(int i) const {
     return { x0 + i * (26 + 5), kHeadY + 2, 26, 24 }; // .bl-pattern 26x24, gap 5
 }
 
-juce::Rectangle<int> PitchSeqView::chainToggleBounds() const {
-    return { patternBounds(3).getRight() + 12, kHeadY + 2, 108, 24 };
+juce::Rectangle<int> PitchSeqView::sequenceLengthBounds() const {
+    return { patternBounds(3).getRight() + 12, kHeadY, 170, 30 };
 }
 
 juce::Rectangle<int> PitchSeqView::randBounds() const {
-    return { chainToggleBounds().getRight() + 12, kHeadY + 2, 52, 24 };
+    return { sequenceLengthBounds().getRight() + 12, kHeadY + 2, 52, 24 };
 }
 
 juce::Rectangle<int> PitchSeqView::colBounds(int step) const {
@@ -135,31 +135,15 @@ void PitchSeqView::randomize() {
 }
 
 void PitchSeqView::patternClick(int i) {
-    if (!chaining_) {                            // store.setEditPattern
-        proc.setEditPattern(i);
-        proc.setChain({ i });
-    } else {                                     // store.chainClick while chaining
-        std::vector<int> chain;
-        if (!chainFresh_) chain = proc.chain();
-        chain.push_back(i);
-        chainFresh_ = false;
-        proc.setEditPattern(i);
-        proc.setChain(std::move(chain));
-    }
+    proc.setEditPattern(i);
     repaint();
 }
 
-void PitchSeqView::setChaining(bool on) {
-    if (on) {
-        chaining_ = true;
-        chainFresh_ = true;                      // first click will replace
-    } else {                                     // commit (store.setChaining off)
-        chaining_ = false;
-        chainFresh_ = false;
-        auto chain = proc.chain();
-        if (chain.empty()) chain.push_back(proc.editPattern());
-        proc.setChain(std::move(chain));
-    }
+void PitchSeqView::setSequenceLength(int bars) {
+    bars = juce::jlimit(1, fable::BL_NPATTERNS, bars);
+    std::vector<int> sequence;
+    for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
+    proc.setChain(std::move(sequence));
     repaint();
 }
 
@@ -172,7 +156,13 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     }
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
         if (patternBounds(i).contains(pos)) { patternClick(i); return; }
-    if (chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
+    if (proc.capabilities().supportsPatternChain && sequenceLengthBounds().contains(pos)) {
+        const auto length = sequenceLengthBounds();
+        const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
+        if (pos.x < length.getX() + 38) setSequenceLength(bars - 1);
+        else if (pos.x >= length.getRight() - 38) setSequenceLength(bars + 1);
+        return;
+    }
     if (randBounds().contains(pos)) { randomize(); return; }
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
@@ -197,7 +187,7 @@ void PitchSeqView::timerCallback() {
     mix(playing ? 1 : 0);
     mix(playing ? proc.currentStep() : -1);
     mix(proc.currentPattern());
-    mix(edit); mix(chaining_ ? 1 : 0);
+    mix(edit);
     const auto& chain = proc.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
@@ -214,15 +204,20 @@ void PitchSeqView::timerCallback() {
 // .bl-seq-btn: 5px radius, #11141c, dim mono text; active = green border/text
 // over a dark green wash (#0e3122).
 static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::String& text,
-                       bool active, float tracking) {
+                       bool active, float tracking, bool current = false, float fontSize = 8.0f) {
     const auto bf = b.toFloat();
     const juce::Colour green = accentA();
-    g.setColour(active ? juce::Colour(0xff0e3122) : juce::Colour(0xff11141c));
+    g.setColour(current ? green.withAlpha(0.20f)
+                        : active ? juce::Colour(0xff0e3122) : juce::Colour(0xff11141c));
     g.fillRoundedRectangle(bf, 5.0f);
-    g.setColour(active ? green.withAlpha(0.55f) : col::line);
+    g.setColour(current ? green.withAlpha(0.9f) : active ? green.withAlpha(0.55f) : col::line);
     g.drawRoundedRectangle(bf.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(active ? green : col::textDim);
-    g.setFont(monoFont(8.0f));
+    if (active) {
+        g.setColour(green);
+        g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
+    }
+    g.setColour(active || current ? green : col::textDim);
+    g.setFont(monoFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -259,17 +254,21 @@ void PitchSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "PITCH SEQ",
                { transportBounds().getRight() + 12, kHeadY, 96, kHeadH }, 2.2f);
 
-    // ---- head: pattern buttons + CHAIN + RAND ----
+    // ---- head: bar buttons + sequence length + RAND ----
+    const int bars = proc.capabilities().hosted ? proc.clipBars()
+                                                : juce::jlimit(1, fable::BL_NPATTERNS, (int)proc.chain().size());
+    const int currentBar = playing ? proc.currentPattern() : -1;
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
-        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
-    juce::String chainLabel("CHAIN ");
-    const auto& chain = proc.chain();
-    for (size_t k = 0; k < chain.size(); ++k) {
-        if (k > 0) chainLabel << ">";
-        const int p = chain[k];
-        chainLabel << (p >= 0 && p < fable::BL_NPATTERNS ? kPatNames[p] : "?");
+        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f,
+                   bars > 1 && currentBar == i);
+    if (proc.capabilities().supportsPatternChain) {
+        auto length = sequenceLengthBounds();
+        const auto minus = length.removeFromLeft(38);
+        const auto plus = length.removeFromRight(38);
+        drawSeqBtn(g, minus, "-", false, 0.0f, false, 15.0f);
+        drawSeqBtn(g, length, "LENGTH " + juce::String(bars) + "B", false, 0.25f);
+        drawSeqBtn(g, plus, "+", false, 0.0f, false, 15.0f);
     }
-    drawSeqBtn(g, chainToggleBounds(), chainLabel, chaining_, 0.5f);
     drawSeqBtn(g, randBounds(), "RAND", false, 0.7f);
 
     // ---- head: hint, right-aligned (.bl-seq-hint) ----

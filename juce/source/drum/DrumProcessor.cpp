@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numeric>
 #include <unordered_map>
 
 using namespace fable;
@@ -209,9 +210,9 @@ void DrumAudioProcessor::setStep(int pattern, int pad, int step, uint8_t v) {
 }
 
 void DrumAudioProcessor::setChain(std::vector<int> c) {
-    chain_.clear();
-    for (int p : c) chain_.push_back(juce::jlimit(0, DR_NPATTERNS - 1, p));
-    if (chain_.empty()) chain_.push_back(0);
+    const int bars = juce::jlimit(1, DR_NPATTERNS, (int)c.size());
+    chain_.resize((size_t)bars);
+    std::iota(chain_.begin(), chain_.end(), 0);
     shareSeqState(false, true);
 }
 
@@ -254,7 +255,9 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
     // Non-param kit content: patterns, chain, pad names.
     if ((int)kit.patterns.size() == kPatternBytes)
         std::copy(kit.patterns.begin(), kit.patterns.end(), patterns_.begin());
-    chain_ = kit.chain.empty() ? std::vector<int>{0} : kit.chain;
+    const int bars = juce::jlimit(1, DR_NPATTERNS, (int)kit.chain.size());
+    chain_.resize((size_t)bars);
+    std::iota(chain_.begin(), chain_.end(), 0);
     for (int& c : chain_) c = juce::jlimit(0, DR_NPATTERNS - 1, c);
     for (int i = 0; i < DR_NPADS; ++i)
         padNames_[(size_t)i] = juce::String(kit.padNames[(size_t)i]);
@@ -520,7 +523,9 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
         for (const auto& s : chainStr)
             if (s.trim().isNotEmpty())
                 c.push_back(juce::jlimit(0, DR_NPATTERNS - 1, s.getIntValue()));
-        chain_ = c.empty() ? std::vector<int>{0} : std::move(c);
+        const int bars = juce::jlimit(1, DR_NPATTERNS, (int)c.size());
+        chain_.resize((size_t)bars);
+        std::iota(chain_.begin(), chain_.end(), 0);
         juce::StringArray names;
         names.addLines(drum.getProperty("padNames", "").toString());
         for (int i = 0; i < DR_NPADS && i < names.size(); ++i)

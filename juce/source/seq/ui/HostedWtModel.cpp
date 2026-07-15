@@ -42,16 +42,18 @@ void HostedWtModel::setTarget(int scene) {
     flushPendingPatch();
     scene_ = scene;
     editPattern_ = 0;
-    chain_.assign(1, 0);
+    chain_.clear();
+    for (int bar = 0; bar < clipBars(); ++bar) chain_.push_back(bar);
 }
 
 ParameterSource HostedWtModel::parameters() { return parameters_.source(); }
 
 DeviceUiCapabilities HostedWtModel::capabilities() const {
+    const auto* target = targetClip();
     return {
         true,  // hosted
         false, // ownsTransport
-        false, // supportsPatternChain
+        target == nullptr || target->bars <= fable::SQ_HOSTED_MAX_BARS,
         false, // supportsUserTables
         true   // supportsAudition
     };
@@ -123,7 +125,6 @@ int HostedWtModel::currentPattern() const {
 void HostedWtModel::setEditPattern(int pattern) {
     const int last = std::max(0, clipBars() - 1);
     editPattern_ = juce::jlimit(0, last, pattern);
-    chain_.assign(1, editPattern_);
 }
 
 const fable::ClipData* HostedWtModel::targetClip() const {
@@ -145,9 +146,11 @@ fable::NoteSeqStep HostedWtModel::sequenceStep(int pattern, int step) const {
     if (clip == nullptr || pattern < 0 || pattern >= clip->bars
         || step < 0 || step >= fable::SEQ_STEPS)
         return {};
-    const auto offset = fable::sqNoteIdx(pattern, step);
+    const auto offset = fable::sqWtNoteIdx(pattern, step, 0);
     if (offset + 2 >= (int)clip->bytes.size()) return {};
-    return fable::getNoteSeqStep(clip->bytes.data(), pattern, step);
+    const auto flags = clip->bytes[(size_t)offset];
+    return { (flags & 1) != 0, (int)clip->bytes[(size_t)offset + 1],
+        (int)clip->bytes[(size_t)offset + 2] - 1, (flags & 2) != 0, (flags & 4) != 0 };
 }
 
 void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqStep& value) {
@@ -157,15 +160,24 @@ void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqS
         || step < 0 || step >= fable::SEQ_STEPS)
         return;
     auto bytes = clip->bytes;
-    const auto offset = fable::sqNoteIdx(pattern, step);
+    const auto offset = fable::sqWtNoteIdx(pattern, step, 0);
     if (offset + 2 >= (int)bytes.size()) return;
-    fable::setNoteSeqStep(bytes.data(), pattern, step, value);
+    bytes[(size_t)offset] = (uint8_t)((value.on ? 1 : 0) | (value.acc ? 2 : 0) | (value.tie ? 4 : 0));
+    bytes[(size_t)offset + 1] = (uint8_t)juce::jlimit(0, 11, value.note);
+    bytes[(size_t)offset + 2] = (uint8_t)juce::jlimit(0, 2, value.oct + 1);
     proc_.conductor().updateClipBytes(scene_, track_, std::move(bytes), clip->bars);
 }
 
-void HostedWtModel::setChain(std::vector<int>) {
-    // Hosted bars are selected directly; an SQ clip owns its playback order.
-    chain_.assign(1, editPattern_);
+void HostedWtModel::setChain(std::vector<int> sequence) {
+    const auto* current = targetClip();
+    if (current == nullptr || current->bars > fable::SQ_HOSTED_MAX_BARS) return;
+    const int bars = juce::jlimit(1, fable::SQ_HOSTED_MAX_BARS, (int)sequence.size());
+    auto bytes = fable::sqEmptyClip(fable::Machine::WT1, bars);
+    std::copy_n(current->bytes.begin(), juce::jmin(current->bytes.size(), bytes.size()), bytes.begin());
+    proc_.conductor().updateClipBytes(scene_, track_, std::move(bytes), bars);
+    editPattern_ = juce::jmin(editPattern_, bars - 1);
+    chain_.clear();
+    for (int bar = 0; bar < bars; ++bar) chain_.push_back(bar);
 }
 
 const std::vector<fable::UserTable>& HostedWtModel::userTables() const {

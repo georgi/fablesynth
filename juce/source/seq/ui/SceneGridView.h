@@ -38,6 +38,7 @@ public:
     // (not muted/soloed-out/scene-muted) -- the same gate paintFilledCell
     // uses to dim the cell and show MUTED, exposed without pixel probing.
     bool cellAudible(int s, int t) const;
+    bool cellStopping(int s, int t) const;
 
     // Focus mini-strip: render only scene s's row, with a compact 2x3 rail of
     // numbered scene chips immediately to its left.

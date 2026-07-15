@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeClipLibraryEntry } from './clipLibrary';
 import { exportSqclip, type SourcedClip } from './clipLibraryStorage';
 import { DR_REMAP_ALTERNATE_KIT, transformClip } from './clipTransformations';
-import { dr1Idx, emptyClipBytes, noteIdx, type MachineId } from './protocol';
+import { dr1Idx, emptyClipBytes, noteIdx, type MachineId, wtNoteIdx } from './protocol';
 
 function clip(machine: MachineId, bars = 1): RuntimeClipLibraryEntry {
   return {
@@ -54,15 +54,15 @@ describe('non-destructive clip transformations', () => {
 
   it('shifts accents to active events and humanizes repeatably', () => {
     const source = clip('WT1');
-    source.pattern.set([3, 0, 1], noteIdx(0, 0));
-    source.pattern.set([1, 4, 1], noteIdx(0, 4));
+    source.pattern.set([3, 0, 1], wtNoteIdx(0, 0));
+    source.pattern.set([1, 4, 1], wtNoteIdx(0, 4));
     const shifted = transformClip(source, { kind: 'accent-shift', steps: 1 });
-    expect(shifted.pattern[noteIdx(0, 0)] & 2).toBe(0);
-    expect(shifted.pattern[noteIdx(0, 4)] & 2).toBe(2);
+    expect(shifted.pattern[wtNoteIdx(0, 0)] & 2).toBe(0);
+    expect(shifted.pattern[wtNoteIdx(0, 4)] & 2).toBe(2);
     const a = transformClip(source, { kind: 'humanize', seed: 42, amount: 1 });
     const b = transformClip(source, { kind: 'humanize', seed: 42, amount: 1 });
     expect(a.pattern).toEqual(b.pattern);
-    expect(a.pattern[noteIdx(0, 0)] & 1).toBe(1);
+    expect(a.pattern[wtNoteIdx(0, 0)] & 1).toBe(1);
     expect(a.pattern).not.toEqual(source.pattern);
   });
 

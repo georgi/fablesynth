@@ -97,7 +97,7 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({FXREVERB_SIZE,  "fx.reverb.size", "SIZE",   0, 1, 0.5f,  Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXREVERB_MIX,   "fx.reverb.mix",  "MIX",    0, 1, 0.3f,  Curve::Lin, Kind::Float, nullptr});
 
-    v.push_back({MASTER_VOLUME, "master.volume", "MASTER", 0, 1,    0.75f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({MASTER_VOLUME, "master.volume", "OUTPUT", 0, 1,    0.75f, Curve::Lin, Kind::Float, nullptr});
     v.push_back({MASTER_GLIDE,  "master.glide",  "GLIDE",  0, 0.5f, 0,     Curve::Lin, Kind::Float, nullptr});
 
     // Note sequencer (params.ts seq.*).

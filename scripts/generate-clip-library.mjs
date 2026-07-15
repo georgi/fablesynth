@@ -17,7 +17,7 @@ const roles = {
 };
 const families = new Set(['techno', 'house', 'electro', 'breaks', 'acid', 'ambient', 'lo-fi', 'cinematic', 'experimental']);
 const tags = new Set(['dark', 'bright', 'warm', 'cold', 'sparse', 'dense', 'syncopated', 'straight', 'triplet-feel', 'driving', 'hypnotic', 'melodic', 'atonal', 'peak-time', 'build-up', 'breakdown', 'groovy', 'glitchy']);
-const bytesPerBar = { DR1: 256, BL1: 48, WT1: 48 };
+const bytesPerBar = { DR1: 256, BL1: 48, WT1: 144 };
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function fail(message) {

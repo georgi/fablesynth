@@ -232,7 +232,7 @@ int main(int argc, char** argv) {
     fable::BassSeqStep edited;
     edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.slide = true;
     proc.setSeqStep(2, 11, edited);
-    proc.setChain({ 0, 2 });
+    proc.setChain({ 0, 2 }); // legacy values now mean a two-bar length
     proc.setEditPattern(2);
 
     juce::MemoryBlock state;
@@ -247,7 +247,7 @@ int main(int argc, char** argv) {
     auto rs = proc2.getSeqStep(2, 11);
     check(rs.on && rs.acc && rs.slide && rs.note == 9 && rs.oct == 1,
           "edited step round-trips");
-    check(proc2.getChain() == std::vector<int>({ 0, 2 }), "chain {A,C} round-trips");
+    check(proc2.getChain() == std::vector<int>({ 0, 1 }), "two-bar length round-trips");
     check(proc2.getEditPattern() == 2, "edit pattern round-trips", proc2.getEditPattern());
 
     // ---- 9. patch programs beyond ACID LINE ----
@@ -356,23 +356,15 @@ int main(int argc, char** argv) {
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == -1, "oct cycles +1 -> -1", proc.getSeqStep(0, 4).oct);
 
-        // pattern click outside chain mode resets the chain (store.setEditPattern)
+        // Bar selection edits independently from the playback length.
         seq.patternClick(1);
-        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
-        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}");
-
-        // chain builder: first click replaces, later clicks append, toggle-off commits
-        seq.setChaining(true);
-        check(seq.isChaining(), "CHAIN toggle latches on");
-        seq.patternClick(0);
-        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh");
+        check(proc.getEditPattern() == 1, "bar click selects 2", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0 }), "bar click preserves length");
+        seq.setSequenceLength(3);
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "length 3 plays bars 1-3");
         seq.patternClick(3);
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends");
-        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
-              proc.getEditPattern());
-        seq.setChaining(false);
-        check(!seq.isChaining(), "CHAIN toggle latches off");
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off");
+        check(proc.getEditPattern() == 3, "bar click selects 4", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length");
 
         // RAND rewrites the edit pattern in place
         proc.setEditPattern(1);

@@ -36,7 +36,8 @@ void HostedBassModel::setTargetScene(int scene) {
     flushPendingPatch();
     scene_ = scene;
     editPattern_ = std::clamp(editPattern_, 0, std::max(0, clipBars() - 1));
-    chain_.assign(1, editPattern_);
+    chain_.clear();
+    for (int bar = 0; bar < clipBars(); ++bar) chain_.push_back(bar);
 }
 
 void HostedBassModel::flushPendingPatch() {
@@ -52,7 +53,9 @@ DeviceUiCapabilities HostedBassModel::capabilities() const {
     DeviceUiCapabilities result;
     result.hosted = true;
     result.ownsTransport = false;
-    result.supportsPatternChain = false;
+    result.supportsPatternChain = !hasTargetClip()
+        || proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack].bars
+            <= fable::SQ_HOSTED_MAX_BARS;
     result.supportsUserTables = false;
     result.supportsAudition = true;
     return result;
@@ -124,7 +127,6 @@ int HostedBassModel::currentPattern() const {
 
 void HostedBassModel::setEditPattern(int pattern) {
     editPattern_ = std::clamp(pattern, 0, std::max(0, clipBars() - 1));
-    chain_.assign(1, editPattern_);
 }
 
 fable::BassSeqStep HostedBassModel::sequenceStep(int pattern, int step) const {
@@ -150,7 +152,16 @@ void HostedBassModel::setSequenceStep(int pattern, int step,
 }
 
 void HostedBassModel::setChain(std::vector<int> chain) {
-    if (!chain.empty()) setEditPattern(chain.back());
+    if (!hasTargetClip()) return;
+    const auto& current = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack];
+    if (current.bars > fable::SQ_HOSTED_MAX_BARS) return;
+    const int bars = std::clamp((int)chain.size(), 1, fable::SQ_HOSTED_MAX_BARS);
+    auto bytes = fable::sqEmptyClip(fable::Machine::BL1, bars);
+    std::copy_n(current.bytes.begin(), std::min(current.bytes.size(), bytes.size()), bytes.begin());
+    proc_.conductor().updateClipBytes(scene_, kTrack, std::move(bytes), bars);
+    editPattern_ = std::min(editPattern_, bars - 1);
+    chain_.clear();
+    for (int bar = 0; bar < bars; ++bar) chain_.push_back(bar);
 }
 
 bool HostedBassModel::hasTargetClip() const {

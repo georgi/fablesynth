@@ -11,6 +11,8 @@ import {
   type PatchDoc, saveSession, type SessionDoc, songPosition,
 } from './protocol';
 import { factorySession } from './factory';
+import { copySession, FACTORY_SESSION_PRESETS } from './sessionPresets';
+import { embedSessionPatches } from './sessionExport';
 import type { SeqRig } from './rig';
 import type { RuntimeClipLibraryEntry } from './clipLibrary';
 import { loadLibraryClipIntoSession } from './clipLibraryActions';
@@ -23,7 +25,7 @@ export interface TrackPos {
 export interface SeqStore {
   session: SessionDoc;
   powered: boolean;
-  playing: boolean; // context running (pause = ctx.suspend)
+  playing: boolean; // logical transport state; the audio context stays running
   beat: number;
   bar: number;
   owner: OwnerMap;
@@ -42,7 +44,7 @@ export interface SeqStore {
   clipLoadRevision: number;
 
   powerOn: (rig?: SeqRig) => Promise<void>;
-  togglePlay: () => void;
+  toggleTransport: () => void;
   launch: (t: number, s: number) => void;
   stopTrack: (t: number) => void;
   launchScene: (s: number) => void;
@@ -52,6 +54,7 @@ export interface SeqStore {
   createClip: (s: number, t: number) => void;
   loadLibraryClip: (s: number, t: number, entry: RuntimeClipLibraryEntry, semitones?: number) => boolean;
   setTrackPatch: (t: number, patch: PatchDoc) => void;
+  loadTrackFactoryPatch: (t: number, index: number) => void;
   stopAll: () => void;
   toggleSceneMute: (s: number) => void;
   toggleTrackMute: (t: number) => void;
@@ -60,6 +63,7 @@ export interface SeqStore {
   setTrackVol: (t: number, v: number) => void;
   setMasterVol: (v: number) => void;
   setSwing: (v: number) => void;
+  loadSessionPreset: (index: number) => void;
   tick: () => void; // UI clock — called from a rAF loop while powered
   enterFocus: (t: number, s?: number) => void;
   exitFocus: () => void;
@@ -118,17 +122,29 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     return boundaryFrame(st.quant, st.rig.now(), st.anchor, st.session.bpm, st.rig.sampleRate);
   };
 
-  const resumeIfPaused = () => {
+  const startTransport = () => {
     const st = get();
-    if (st.rig && !st.playing) {
-      void st.rig.resume();
-      set({ playing: true });
-    }
+    if (!st.rig || st.playing) return;
+    const anchor = st.rig.now() + 256;
+    st.rig.sendTempo(st.session.bpm, st.swing, anchor);
+    set({ playing: true, anchor, beat: 0, bar: 1 });
+  };
+
+  const stopTransport = () => {
+    const st = get();
+    if (!st.rig || !st.playing) return;
+    const queue = { ...st.queue };
+    st.session.tracks.forEach((_, t) => {
+      if (st.owner[t] == null && st.queue[t] == null) return;
+      st.rig!.devices[t].scheduleStop(0);
+      queue[t] = STOP;
+    });
+    set({ playing: false, beat: 0, bar: 1, queue });
   };
 
   const persist = () => {
     const st = get();
-    saveSession({ ...st.session, quant: st.quant, swing: st.swing });
+    saveSession(embedSessionPatches({ ...st.session, quant: st.quant, swing: st.swing }));
   };
 
   return {
@@ -161,8 +177,8 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         await wr.init(session);
         rig = wr;
       }
-      // Transport starts at power-on: anchor one block ahead, tempo to all
-      // devices. Silence until the first clip launches, but the grid is live.
+      // Power unlocks the audio context, but the transport remains stopped
+      // until Play, a clip, or a scene is launched.
       const anchor = rig.now() + 256;
       rig.sendTempo(session.bpm, get().swing, anchor);
       rig.setMasterGain(gainCurve(get().masterVol));
@@ -171,6 +187,9 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       rig.devices.forEach((d, t) => {
         d.onClipStart = () => {
           set((st) => {
+            // An immediate transport stop can overtake a clip-start message.
+            // Ignore that stale ack instead of resurrecting a stopped track.
+            if (!st.playing) return {};
             const owner = { ...st.owner, [t]: lastScheduled[t] };
             const queue = { ...st.queue };
             if (queue[t] === lastScheduled[t]) delete queue[t];
@@ -198,26 +217,24 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         };
       });
 
-      set({ rig, anchor, powered: true, playing: true });
+      set({ rig, anchor, powered: true, playing: false, beat: 0, bar: 1 });
       applyGains();
     },
 
-    togglePlay: () => {
-      const st = get();
-      if (!st.rig) return;
-      if (st.playing) void st.rig.suspend();
-      else void st.rig.resume();
-      set({ playing: !st.playing });
-    },
+    toggleTransport: () => (get().playing ? stopTransport() : startTransport()),
 
     launch: (t, s) => {
-      const st = get();
+      let st = get();
       const bytes = bytesFor(st.session, s, t);
       const clip = st.session.scenes[s]?.clips[t];
       if (!st.rig || !bytes || !clip) return;
-      resumeIfPaused();
+      const rig = st.rig;
+      if (!st.playing) {
+        startTransport();
+        st = get();
+      }
       lastScheduled[t] = s;
-      st.rig.devices[t].scheduleClip(bytes, clip.bars, boundary());
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary());
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -232,6 +249,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     // Empty cells are stop buttons (Ableton semantics): launching a scene
     // stops uncovered tracks unless the cell is marked pass-through.
     launchScene: (s) => {
+      if (!get().playing) startTransport();
       const st = get();
       const sc = st.session.scenes[s];
       sc?.clips.forEach((c, t) => {
@@ -331,6 +349,20 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
     },
 
+    loadTrackFactoryPatch: (t, index) => {
+      const st = get();
+      if (!st.session.tracks[t] || index < 0) return;
+      const patch: PatchDoc = { kind: 'factory', index };
+      st.rig?.devices[t].applyPatch(patch);
+      set((current) => ({
+        session: {
+          ...current.session,
+          tracks: current.session.tracks.map((track, i) => i === t ? { ...track, patch } : track),
+        },
+      }));
+      persist();
+    },
+
     toggleSceneMute: (s) => {
       set((st) => ({ sceneMute: { ...st.sceneMute, [s]: !st.sceneMute[s] } }));
       applyGains();
@@ -372,6 +404,28 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       set({ swing: v });
       const st = get();
       st.rig?.sendTempo(st.session.bpm, v, st.anchor);
+      persist();
+    },
+
+    loadSessionPreset: (index) => {
+      const preset = FACTORY_SESSION_PRESETS[index];
+      if (!preset) return;
+      const session = copySession(preset.session);
+      const st = get();
+      st.rig?.devices.forEach((device, t) => {
+        device.panic();
+        device.applyPatch(session.tracks[t].patch);
+      });
+      const anchor = st.rig ? st.rig.now() + 256 : 0;
+      st.rig?.sendTempo(session.bpm, session.swing, anchor);
+      clipBytes.clear();
+      set({
+        session, quant: session.quant, swing: session.swing,
+        trackVol: session.tracks.map((track) => track.gain),
+        playing: false, beat: 0, bar: 1, owner: {}, queue: {},
+        pos: session.tracks.map(() => null), anchor, focus: null,
+        clipLoadRevision: st.clipLoadRevision + 1,
+      });
       persist();
     },
 

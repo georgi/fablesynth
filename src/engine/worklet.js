@@ -312,6 +312,7 @@ class FableProcessor extends AudioWorkletProcessor {
     this.seqToNext = 0; // samples until the next step fires
     this.seqToGateOff = -1; // samples until the current step's gate closes (-1 = none/tied)
     this.seqNote = -1; // midi note the sequencer is currently sounding (-1 = none)
+    this.seqChordNotes = [];
     // ---- hosted clip transport (SQ-4) ----
     this.hosted = false;
     this.hostBpm = 120;
@@ -445,6 +446,8 @@ class FableProcessor extends AudioWorkletProcessor {
   }
 
   seqGateOff() {
+    for (const note of this.seqChordNotes) this.noteOff(note);
+    this.seqChordNotes.length = 0;
     if (this.seqNote >= 0) {
       this.noteOff(this.seqNote);
       this.seqNote = -1;
@@ -467,8 +470,8 @@ class FableProcessor extends AudioWorkletProcessor {
   // A clip is bars*16 steps of the same 3-byte layout, bar-major. Pending
   // commands execute in the render quantum containing their atFrame — every
   // device on the shared context resolves the same frame to the same block.
-  clipRead(abs) {
-    const o = abs * SEQ_STRIDE;
+  clipRead(abs, lane = 0) {
+    const o = (abs * 3 + lane) * SEQ_STRIDE;
     const flags = this.clip.data[o];
     return {
       on: (flags & 1) !== 0,
@@ -526,18 +529,20 @@ class FableProcessor extends AudioWorkletProcessor {
     const total = this.clip.bars * SEQ_STEPS;
     const abs = (this.clipStep + 1) % total;
     const s = abs % SEQ_STEPS;
-    const st = this.clipRead(abs);
+    const chord = [0, 1, 2].map((lane) => this.clipRead(abs, lane)).filter((st) => st.on);
 
-    if (st.on) {
+    if (chord.length) {
       const root = (this.p['seq.root'] | 0) || 48;
-      const note = root + st.semi;
-      const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-      if (st.tie && this.seqNote >= 0) this.seqTie(note, vel);
-      else { this.seqGateOff(); this.noteOn(note, vel); }
-      this.seqNote = note;
-      const stN = this.clipRead((abs + 1) % total);
+      this.seqGateOff();
+      for (const st of chord) {
+        const note = root + st.semi;
+        this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+        if (this.seqNote < 0) this.seqNote = note;
+        else this.seqChordNotes.push(note);
+      }
+      const next = [0, 1, 2].map((lane) => this.clipRead((abs + 1) % total, lane));
       const gate = Math.min(0.98, Math.max(0.1, this.p['seq.gate'] || 0.55));
-      this.seqToGateOff = stN.on && stN.tie ? -1 : gate * dur;
+      this.seqToGateOff = next.some((st) => st.on && st.tie) ? -1 : gate * dur;
     }
 
     this.clipStep = abs;

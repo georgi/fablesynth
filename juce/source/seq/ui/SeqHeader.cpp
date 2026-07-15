@@ -27,7 +27,7 @@ const bool g_seqResolverInstalled = [] {
 // whatever fonts the CI box has) — ASCII stand-ins, same call BassHeader made
 // for the middle dot in its voice-mode line.
 namespace {
-constexpr const char* kPlayGlyph = "PLAY", *kPauseGlyph = "PAUSE", *kStopGlyph = "STOP";
+constexpr const char* kPlayGlyph = "PLAY", *kStopGlyph = "STOP";
 constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
 } // namespace
 
@@ -57,8 +57,12 @@ SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
 
 // ---- actions (also the test handles) ---------------------------------------
 
-void SeqHeader::playClick() { proc.setPaused(!proc.paused()); repaint(); }
-void SeqHeader::stopAllClick() { proc.conductor().stopAll(); }
+void SeqHeader::playClick() {
+    auto& conductor = proc.conductor();
+    if (conductor.playing()) conductor.stopTransport();
+    else conductor.startTransport();
+    repaint();
+}
 
 void SeqHeader::loadClick() {
     chooser_ = std::make_unique<juce::FileChooser>("Load session", juce::File{}, "*.json");
@@ -153,7 +157,6 @@ float SeqHeader::volValue() const {
 void SeqHeader::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     if (playBtn.contains(pos))            playClick();
-    else if (stopBtn.contains(pos))       stopAllClick();
     else if (quantPrevBtn.contains(pos))  quantStep(-1);
     else if (quantNextBtn.contains(pos))  quantStep(+1);
     else if (loadBtn.contains(pos))       loadClick();
@@ -215,9 +218,7 @@ void SeqHeader::resized() {
     logoArea = r.removeFromLeft(190);
     r.removeFromLeft(20);
 
-    playBtn = r.removeFromLeft(56).withSizeKeepingCentre(56, 32);
-    r.removeFromLeft(6);
-    stopBtn = r.removeFromLeft(52).withSizeKeepingCentre(52, 32);
+    playBtn = r.removeFromLeft(62).withSizeKeepingCentre(62, 32);
     r.removeFromLeft(20);
 
     quantTagArea = r.removeFromLeft(40).withSizeKeepingCentre(40, 16);
@@ -284,7 +285,7 @@ void SeqHeader::paint(juce::Graphics& g) {
 }
 
 void SeqHeader::paintButtons(juce::Graphics& g) {
-    const bool playing = !proc.paused();
+    const bool playing = proc.conductor().playing();
     auto drawBtn = [&](juce::Rectangle<int> r, const juce::String& txt, bool on) {
         auto rf = r.toFloat();
         g.setColour(on ? juce::Colour(0xff0e3120) : juce::Colour(0xff11141c));
@@ -295,8 +296,7 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
         g.setFont(monoFont(10.0f));
         g.drawText(txt, r, juce::Justification::centred);
     };
-    drawBtn(playBtn, playing ? kPauseGlyph : kPlayGlyph, playing);
-    drawBtn(stopBtn, kStopGlyph, false);
+    drawBtn(playBtn, playing ? kStopGlyph : kPlayGlyph, playing);
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
 }
@@ -330,7 +330,7 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
 }
 
 void SeqHeader::paintClock(juce::Graphics& g) {
-    const bool playing = !proc.paused();
+    const bool playing = proc.conductor().playing();
     const auto pos = proc.conductor().songPos();
 
     auto r = beatsArea;

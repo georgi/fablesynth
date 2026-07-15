@@ -64,7 +64,7 @@ std::vector<ParamInfo> build() {
     // ---- transport + master ----
     v.push_back({BL_SEQ_BPM,       "seq.bpm",        "BPM",   60, 200,    138,   Curve::Int, Kind::Float, nullptr});
     v.push_back({BL_MASTER_SWING,  "master.swing",   "SWING",  0, 1,      0.3f,  Curve::Lin, Kind::Float, nullptr});
-    v.push_back({BL_MASTER_VOLUME, "master.volume",  "VOL",    0, 1,      0.78f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({BL_MASTER_VOLUME, "master.volume",  "OUTPUT", 0, 1,      0.78f, Curve::Lin, Kind::Float, nullptr});
     return v;
 }
 

@@ -36,9 +36,27 @@ void Conductor::powerOn() {
     applyGains();
 }
 
+void Conductor::startTransport() {
+    if (playing_) return;
+    anchor_ = io_.now() + 256;
+    io_.ioSendTempo(session_.bpm, swing_, anchor_);
+    playing_ = true;
+}
+
+void Conductor::stopTransport() {
+    if (!playing_) return;
+    for (int t = 0; t < (int)session_.tracks.size(); ++t) {
+        if (!owner_.count(t) && !queue_.count(t)) continue;
+        io_.ioScheduleStop(t, 0.0);
+        queue_[t] = SQ_STOP;
+    }
+    playing_ = false;
+}
+
 void Conductor::launch(int t, int s) {
     auto& sc = session_.scenes[(size_t)s];
     if (!sc.hasClip[(size_t)t]) return;
+    startTransport();
     // Stamp the scene as the clip's launch identity: it rides the command to the
     // device and comes back on the Start ack, so onClipStart can attribute the
     // ack to this scene rather than whatever was scheduled last (Finding 1).
@@ -55,6 +73,7 @@ void Conductor::stopTrack(int t) {
 // Empty cells are stop buttons (Ableton semantics): launching a scene stops
 // uncovered tracks unless the cell is marked pass-through.
 void Conductor::launchScene(int s) {
+    startTransport();
     auto& sc = session_.scenes[(size_t)s];
     for (int t = 0; t < (int)sc.clips.size(); t++) {
         if (sc.hasClip[(size_t)t]) {
@@ -120,9 +139,10 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
     std::vector<uint8_t> bytes = entry.bytes;
     if (transposeSemitones != 0) {
         if (!entry.transpose || entry.machine == Machine::DR1) return false;
+        const int lanes = entry.machine == Machine::WT1 ? SQ_WT_POLY_LANES : 1;
         for (int bar = 0; bar < entry.bars; ++bar) {
-            for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) {
-                const int o = sqNoteIdx(bar, step);
+            for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) for (int lane = 0; lane < lanes; ++lane) {
+                const int o = entry.machine == Machine::WT1 ? sqWtNoteIdx(bar, step, lane) : sqNoteIdx(bar, step);
                 if ((bytes[(size_t)o] & 1u) == 0) continue;
                 int64_t shifted = (int)bytes[(size_t)o + 1]
                                 + 12 * ((int)bytes[(size_t)o + 2] - 1)
@@ -209,6 +229,10 @@ void Conductor::onClipStart(int t, int scene) {
     // newer clip was queued while this ack was in flight, that later launch must
     // stay pending (its own Start ack will promote it). This is the divergence
     // from the web's identity-free acks documented in the header.
+    // A transport stop may overtake an in-flight Start acknowledgement on the
+    // message thread. The immediate Stop command is already queued for the
+    // device, so do not briefly resurrect ownership while transport is down.
+    if (!playing_) return;
     owner_[t] = scene;
     if (queue_.count(t) && queue_[t] == scene) queue_.erase(t);
     applyGains();
@@ -235,6 +259,7 @@ bool Conductor::soloed(int t) const { return solo_[(size_t)t]; }
 float Conductor::trackVol(int t) const { return trackVol_[(size_t)t]; }
 
 SqSongPos Conductor::songPos() const {
+    if (!playing_) return {};
     return sqSongPosition(io_.now(), anchor_, session_.bpm, sr_);
 }
 

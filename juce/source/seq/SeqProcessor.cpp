@@ -452,9 +452,9 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     conductor_ = std::make_unique<Conductor>(liveSession, io_, sampleRate);
     conductor_->powerOn(); // anchor = 256; enqueues tempo + gain commands
 
-    // Also stamp tempo directly (safe here — audio not running): the shared
-    // anchor is fixed once, never re-anchored mid-flight (a BL-1 LFO term
-    // depends on this).
+    // Also stamp the initial stopped-transport tempo directly (safe here —
+    // audio is not running). startTransport() later re-anchors all devices
+    // together through the command FIFO.
     const double a = conductor_->anchor(), sw = conductor_->swing();
     drum_.hostTempo(liveSession.bpm, sw, a);
     bass_.hostTempo(liveSession.bpm, sw, a);
@@ -664,9 +664,6 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
 
-    // Pause = web ctx.suspend(): silence, and the shared frame counter freezes.
-    if (paused_.load()) { buffer.clear(); return; }
-
     drainCmds();
     masterGain_.setTargetValue(rawMaster_ ? rawMaster_->load() : 0.75f);
 
@@ -852,7 +849,7 @@ bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
 }
 
 juce::String SeqAudioProcessor::currentSessionJson() const {
-    return fable::sessionToJson(conductor_ ? conductor_->session() : initialSession_);
+    return fable::sessionToJson(conductor_ ? conductor_->session() : initialSession_, true);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {

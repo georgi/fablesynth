@@ -5,6 +5,8 @@
 #include "../../dsp/UserTables.h"
 #include "../dsp/SeqProtocol.h"
 
+#include <algorithm>
+
 namespace fui {
 
 HostedDrumModel::HostedDrumModel(SeqAudioProcessor& proc)
@@ -18,7 +20,8 @@ DeviceUiCapabilities HostedDrumModel::capabilities() const {
     DeviceUiCapabilities c;
     c.hosted = true;
     c.ownsTransport = false;
-    c.supportsPatternChain = false;
+    const auto* target = clip();
+    c.supportsPatternChain = target == nullptr || target->bars <= fable::SQ_HOSTED_MAX_BARS;
     c.supportsUserTables = false;
     return c;
 }
@@ -27,7 +30,8 @@ void HostedDrumModel::setTargetScene(int scene) {
     flushPendingPatch();
     scene_ = juce::jmax(0, scene);
     editBar_ = juce::jlimit(0, juce::jmax(0, clipBars() - 1), editBar_);
-    chain_[0] = editBar_;
+    chain_.clear();
+    for (int bar = 0; bar < clipBars(); ++bar) chain_.push_back(bar);
 }
 
 void HostedDrumModel::flushPendingPatch() {
@@ -99,7 +103,18 @@ int HostedDrumModel::currentPattern() const { return proc_.trackBar[0].load(); }
 
 void HostedDrumModel::setEditPattern(int bar) {
     editBar_ = juce::jlimit(0, juce::jmax(0, clipBars() - 1), bar);
-    chain_[0] = editBar_;
+}
+
+void HostedDrumModel::setChain(std::vector<int> sequence) {
+    const auto* current = clip();
+    if (!current || current->bars > fable::SQ_HOSTED_MAX_BARS) return;
+    const int bars = juce::jlimit(1, fable::SQ_HOSTED_MAX_BARS, (int)sequence.size());
+    auto bytes = fable::sqEmptyClip(fable::Machine::DR1, bars);
+    std::copy_n(current->bytes.begin(), juce::jmin(current->bytes.size(), bytes.size()), bytes.begin());
+    proc_.conductor().updateClipBytes(scene_, 0, std::move(bytes), bars);
+    editBar_ = juce::jmin(editBar_, bars - 1);
+    chain_.clear();
+    for (int bar = 0; bar < bars; ++bar) chain_.push_back(bar);
 }
 
 const fable::ClipData* HostedDrumModel::clip() const {

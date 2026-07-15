@@ -165,9 +165,6 @@ public:
     // Copy the most recent n post-limiter mono samples (oldest -> newest).
     float readScope(float* dest, int n) const;
 
-    void setPaused(bool p) { paused_.store(p); }
-    bool paused() const { return paused_.load(); }
-
     juce::AudioProcessorValueTreeState apvts;
 
 private:
@@ -282,8 +279,6 @@ private:
     std::array<Ack, 512> ackSlots_;
 
     double frame_ = 0;
-    std::atomic<bool> paused_ { false };
-
     juce::SmoothedValue<float> trackGain_[4], masterGain_; // ~15 ms ramps
     std::atomic<float>* rawMaster_ = nullptr;
 

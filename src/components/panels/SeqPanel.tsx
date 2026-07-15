@@ -1,11 +1,12 @@
 // The WT-1 note sequencer: 12 note lanes per step (tap = set note, tap again
-// = rest), per-step octave / accent / tie rows, pattern A–D select + chaining,
+// = rest), per-step octave / accent / tie rows, bars 1–4 + sequence length,
 // RAND, transport and BPM / SWING / GATE / ROOT clock controls. Ties retune
 // the sounding voice legato — the GLIDE knob decides snap vs slide.
 
-import { getStep, NOTE_LANES, PATTERN_NAMES, STEPS, tiesInto } from '../../noteseq';
+import { getStep, NOTE_LANES, STEPS, tiesInto } from '../../noteseq';
 import { useStore } from '../../store';
 import { Knob } from '../Knob';
+import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
 
 const LANES_H = 143; // svg viewBox height for the connector overlay
@@ -17,7 +18,6 @@ export function SeqPanel() {
   const curPat = useStore((s) => s.curPat);
   const editPattern = useStore((s) => s.editPattern);
   const chain = useStore((s) => s.chain);
-  const chaining = useStore((s) => s.chaining);
   const patterns = useStore((s) => s.patterns);
   const seqPlay = useStore((s) => s.seqPlay);
   const seqStop = useStore((s) => s.seqStop);
@@ -25,8 +25,8 @@ export function SeqPanel() {
   const cycleStepOct = useStore((s) => s.cycleStepOct);
   const toggleStepAcc = useStore((s) => s.toggleStepAcc);
   const toggleStepTie = useStore((s) => s.toggleStepTie);
-  const setChaining = useStore((s) => s.setChaining);
-  const chainClick = useStore((s) => s.chainClick);
+  const setEditPattern = useStore((s) => s.setEditPattern);
+  const setSequenceLength = useStore((s) => s.setSequenceLength);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
 
   const steps = Array.from({ length: STEPS }, (_, i) => getStep(patterns, editPattern, i));
@@ -61,28 +61,13 @@ export function SeqPanel() {
         <h2>NOTE SEQ</h2>
         {!hosted && (
           <>
-            <div className="ns-patterns" aria-label="Edit pattern">
-              {PATTERN_NAMES.map((name, i) => (
-                <button
-                  className={`ns-btn ns-pattern${editPattern === i ? ' active' : ''}`}
-                  type="button"
-                  aria-label={`Pattern ${name}`}
-                  aria-pressed={editPattern === i}
-                  key={name}
-                  onClick={() => chainClick(i)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <button
-              className={`ns-btn ns-chain-toggle${chaining ? ' active' : ''}`}
-              type="button"
-              aria-pressed={chaining}
-              onClick={() => setChaining(!chaining)}
-            >
-              CHAIN {chain.map((i) => PATTERN_NAMES[i] ?? '?').join('→')}
-            </button>
+            <SequenceLengthControl
+              editBar={editPattern}
+              length={chain.length}
+              playingBar={seqPlaying ? curPat : null}
+              onEditBar={setEditPattern}
+              onLengthChange={setSequenceLength}
+            />
           </>
         )}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>

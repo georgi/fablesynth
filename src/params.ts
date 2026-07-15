@@ -241,7 +241,8 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'fx.reverb.size', label: 'SIZE', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
   { id: 'fx.reverb.mix', label: 'MIX', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
 
-  { id: 'master.volume', label: 'MASTER', min: 0, max: 1, def: 0.75, curve: 'lin', fmt: fmtPct },
+  // Final visible gain stage: after FX, before DC blocking and limiting.
+  { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.75, curve: 'lin', fmt: fmtPct },
   { id: 'master.glide', label: 'GLIDE', min: 0, max: 0.5, def: 0, curve: 'lin', fmt: fmtSec },
 
   // Note sequencer. seq.bpm also drives the worklet's virtual transport, so
