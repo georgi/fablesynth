@@ -41,18 +41,20 @@ describe('bass store', () => {
     useBassStore.getState().toggleCell(4, 3); // different lane: move, keep on
     expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: true, note: 3 });
     useBassStore.getState().toggleCell(4, 3); // same lane: rest + clear flags
-    expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: false, acc: false, slide: false });
+    expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: false, acc: false, slide: false, duration: 1 });
   });
 
-  it('acc/slide toggles only apply to on steps; oct cycles', () => {
+  it('acc/slide/duration controls only apply to on steps; oct cycles', () => {
     const s = useBassStore.getState();
     s.toggleStepAcc(0);
+    s.setStepDuration(0, 4);
     s.toggleStepSlide(0);
-    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ acc: false, slide: false });
+    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ acc: false, slide: false, duration: 1 });
     useBassStore.getState().toggleCell(0, 0);
     useBassStore.getState().toggleStepAcc(0);
+    useBassStore.getState().setStepDuration(0, 2);
     useBassStore.getState().toggleStepSlide(0);
-    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, acc: true, slide: true });
+    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, acc: true, slide: true, duration: 2 });
     useBassStore.getState().cycleStepOct(0);
     expect(getStep(useBassStore.getState().patterns, 0, 0).oct).toBe(1);
     useBassStore.getState().cycleStepOct(0);

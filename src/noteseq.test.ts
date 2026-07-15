@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cycleOct, getStep, makeEmptyPatterns, NPATTERNS, randomPattern, setStep,
   STEP_STRIDE, stepDurSamples, STEPS, stepSemi, SWING_MAX, swingDelaySamples,
-  tiesInto, writePattern,
+  writePattern,
 } from './noteseq';
 
 describe('wt-1 note seq model', () => {
@@ -10,19 +10,19 @@ describe('wt-1 note seq model', () => {
     const p = makeEmptyPatterns();
     expect(p.length).toBe(NPATTERNS * STEPS * STEP_STRIDE);
     const s = getStep(p, 2, 7);
-    expect(s).toEqual({ on: false, note: 0, oct: 0, acc: false, tie: false });
+    expect(s).toEqual({ on: false, note: 0, oct: 0, acc: false, duration: 1 });
   });
 
   it('setStep/getStep round-trips all fields', () => {
     let p = makeEmptyPatterns();
-    p = setStep(p, 1, 3, { on: true, note: 10, oct: -1, acc: true, tie: true });
-    expect(getStep(p, 1, 3)).toEqual({ on: true, note: 10, oct: -1, acc: true, tie: true });
+    p = setStep(p, 1, 3, { on: true, note: 10, oct: -1, acc: true, duration: 3 });
+    expect(getStep(p, 1, 3)).toEqual({ on: true, note: 10, oct: -1, acc: true, duration: 3 });
     // neighbours untouched
     expect(getStep(p, 1, 2).on).toBe(false);
     expect(getStep(p, 1, 4).on).toBe(false);
     // partial update preserves the rest
     p = setStep(p, 1, 3, { acc: false });
-    expect(getStep(p, 1, 3)).toEqual({ on: true, note: 10, oct: -1, acc: false, tie: true });
+    expect(getStep(p, 1, 3)).toEqual({ on: true, note: 10, oct: -1, acc: false, duration: 3 });
   });
 
   it('setStep clamps note and oct', () => {
@@ -30,6 +30,8 @@ describe('wt-1 note seq model', () => {
     p = setStep(p, 0, 0, { on: true, note: 99, oct: 5 });
     expect(getStep(p, 0, 0).note).toBe(11);
     expect(getStep(p, 0, 0).oct).toBe(1);
+    p = setStep(p, 0, 0, { duration: 99 });
+    expect(getStep(p, 0, 0).duration).toBe(63);
   });
 
   it('stepSemi combines lane + octave', () => {
@@ -41,15 +43,6 @@ describe('wt-1 note seq model', () => {
     expect(cycleOct(0)).toBe(1);
     expect(cycleOct(1)).toBe(-1);
     expect(cycleOct(-1)).toBe(0);
-  });
-
-  it('a tie is drawn into a step only when both steps are on', () => {
-    const on = { on: true, note: 0, oct: 0, acc: false, tie: false };
-    const tied = { ...on, tie: true };
-    const off = { ...on, on: false };
-    expect(tiesInto(on, tied)).toBe(true);
-    expect(tiesInto(off, tied)).toBe(false);
-    expect(tiesInto(on, on)).toBe(false);
   });
 
   it('timing math matches the family convention', () => {
@@ -70,8 +63,8 @@ describe('wt-1 note seq model', () => {
       expect(s.note).toBeLessThan(12);
       expect(Math.abs(s.oct)).toBeLessThanOrEqual(1);
       if (s.on) onCount++;
-      if (!s.on) { expect(s.acc).toBe(false); expect(s.tie).toBe(false); }
-      if (i === 0) expect(s.tie).toBe(false); // step 1 can't tie in
+      expect(s.duration).toBeGreaterThanOrEqual(1);
+      expect(s.duration).toBeLessThanOrEqual(4);
     }
     expect(onCount).toBeGreaterThan(0);
     // other patterns untouched

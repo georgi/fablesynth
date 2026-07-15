@@ -99,13 +99,12 @@ describe('factory session', () => {
         for (let i = 0; i < steps; i++) {
           for (let lane = 0; lane < lanes; lane++) {
           const o = machine === 'WT1' ? wtNoteIdx(Math.floor(i / 16), i % 16, lane) : noteIdx(Math.floor(i / 16), i % 16);
-          expect(bytes[o + 1]).toBeLessThan(12);
+          expect(bytes[o + 1] & 0x7f).toBeLessThan(12);
+          if (machine === 'WT1') expect(bytes[o + 1]).toBeLessThan(12);
           expect(bytes[o + 2]).toBeGreaterThanOrEqual(0);
           expect(bytes[o + 2]).toBeLessThanOrEqual(2);
           }
         }
-        // step 0 must not tie in — there is nothing before it at launch
-        expect(bytes[0] & 4).toBe(0);
       });
     });
   });
@@ -123,7 +122,7 @@ describe('factory session', () => {
   it('clip payload sizes match bytesPerBar', () => {
     expect(bytesPerBar('DR1')).toBe(256);
     expect(bytesPerBar('BL1')).toBe(48);
-    expect(bytesPerBar('WT1')).toBe(144);
+    expect(bytesPerBar('WT1')).toBe(384);
   });
 });
 
@@ -139,7 +138,7 @@ describe('emptyClipBytes', () => {
       const b = emptyClipBytes(m, 1);
       expect(b.length).toBe(bytesPerBar(m));
       for (let i = 0; i < b.length; i += 3) {
-        expect([b[i], b[i + 1], b[i + 2]]).toEqual([0, 0, 1]);
+        expect([b[i], b[i + 1], b[i + 2]]).toEqual([4, 0, 1]);
       }
     }
   });

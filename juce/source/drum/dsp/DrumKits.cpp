@@ -132,7 +132,7 @@ Overrides bitcrushParams() {
     set(p, "master.swing", 0.08f);
     set(p, "fx.drive.on", 1.0f);
     set(p, "fx.drive.amt", 0.6f);
-    set(p, "fx.drive.mix", 0.9f);
+    set(p, "fx.drive.mix", 0.2f);
     set(p, "fx.delay.on", 1.0f);
     set(p, "fx.delay.time", 0.18f);
     set(p, "fx.delay.fb", 0.42f);
@@ -181,7 +181,7 @@ Overrides uzuParams() {
 Overrides hybridParams() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 126); set(p, "master.swing", 0.24f);
-    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.16f); set(p, "fx.drive.mix", 0.34f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.16f); set(p, "fx.drive.mix", 0.2f);
     set(p, "fx.reverb.mix", 0.14f);
     static const int samples[DR_NPADS] = { 16, 5, 18, 1, 20, 21, 3, 23, 13, 25, 15, 27, 7, 28, 30, 31 };
     static const float oscLevels[DR_NPADS] = { .50f, .45f, .42f, .25f, .40f, .18f, .16f, .12f, .45f, .42f, .40f, .12f, .25f, .22f, .30f, .35f };
@@ -214,7 +214,7 @@ Overrides dustHouseParams() {
     Overrides p = roomOneParams();
     set(p, "seq.bpm", 122); set(p, "master.swing", 0.46f);
     set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.28f);
-    set(p, "fx.drive.mix", 0.48f); set(p, "fx.reverb.mix", 0.2f);
+    set(p, "fx.drive.mix", 0.2f); set(p, "fx.reverb.mix", 0.2f);
     for (int i = 0; i < DR_NPADS; ++i) {
         set(p, padPid(i, "noise.level"), i < 4 ? 0.12f : 0.04f);
         set(p, padPid(i, "oscA.pos"), 0.18f + (float)(i % 3) * 0.08f);
@@ -227,7 +227,7 @@ Overrides warehouseParams() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 136); set(p, "master.swing", 0.14f);
     set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.72f);
-    set(p, "fx.drive.mix", 0.76f); set(p, "fx.comp.thr", -20);
+    set(p, "fx.drive.mix", 0.2f); set(p, "fx.comp.thr", -20);
     set(p, "fx.comp.gain", 3); set(p, "fx.reverb.mix", 0.1f);
     for (int i : { 0, 1, 2, 3, 8, 9, 10 }) {
         set(p, padPid(i, "flt.on"), 1); set(p, padPid(i, "flt.type"), 1);
@@ -257,7 +257,7 @@ Overrides tapeKitParams() {
     set(p, "seq.bpm", 98); set(p, "master.swing", 0.52f);
     set(p, "fx.chorus.on", 1); set(p, "fx.chorus.rate", 0.22f);
     set(p, "fx.chorus.depth", 0.24f); set(p, "fx.chorus.mix", 0.18f);
-    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.18f); set(p, "fx.drive.mix", 0.32f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.18f); set(p, "fx.drive.mix", 0.2f);
     for (int i = 0; i < DR_NPADS; ++i) {
         set(p, padPid(i, "oscA.fine"), (i % 5) * 3 - 6);
         set(p, padPid(i, "flt.on"), 1); set(p, padPid(i, "flt.type"), 0);

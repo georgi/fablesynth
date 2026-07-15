@@ -15,20 +15,22 @@ interface NoteStep {
   n: number; // lane 0..11
   o?: number; // octave -1/0/1
   a?: boolean; // accent
-  t?: boolean; // tie (WT-1) / slide (BL-1) — same bit
+  d?: number; // duration in 16th-note steps
+  sl?: boolean; // BL-1 legato slide into this note
   lane?: number; // WT-1 chord voice 0..2
 }
 
 function noteClip(machine: Extract<MachineId, 'BL1' | 'WT1'>, name: string, bars: number, steps: NoteStep[]): ClipDoc {
   const data = new Uint8Array(bars * bytesPerBar(machine));
-  // oct byte defaults to 1 (= oct 0) so rests read back neutral
-  for (let i = 2; i < data.length; i += 3) data[i] = 1;
+  // Neutral octave plus a one-step duration for every note slot.
+  for (let i = 0; i < data.length; i += 3) { data[i] = 1 << 2; data[i + 2] = 1; }
   for (const st of steps) {
     const o = machine === 'WT1'
       ? wtNoteIdx(Math.floor(st.s / 16), st.s % 16, st.lane ?? 0)
       : noteIdx(Math.floor(st.s / 16), st.s % 16);
-    data[o] = 1 | (st.a ? 2 : 0) | (st.t ? 4 : 0);
-    data[o + 1] = st.n;
+    const duration = Math.min(63, bars * 16 - st.s, Math.max(1, st.d ?? 1));
+    data[o] = 1 | (st.a ? 2 : 0) | (duration << 2);
+    data[o + 1] = st.n | (machine === 'BL1' && st.sl ? 0x80 : 0);
     data[o + 2] = (st.o ?? 0) + 1;
   }
   return { name, bars, pattern: bytesToB64(data) };
@@ -37,14 +39,15 @@ function noteClip(machine: Extract<MachineId, 'BL1' | 'WT1'>, name: string, bars
 const bassClip = (name: string, bars: number, steps: NoteStep[]) => noteClip('BL1', name, bars, steps);
 const wtClip = (name: string, bars: number, steps: NoteStep[]) => noteClip('WT1', name, bars, steps);
 
-/**
- * A held swell: one attack, then a tie on EVERY following step of the span —
- * a tie only sustains when the immediately next step ties in, so gaps in the
- * tie chain would gate the note off (and slow-attack pads would never open).
- */
+/** A sustained note, split only at the packed format's 63-step limit. */
 function held(s0: number, span: number, n: number, o = 0, lane = 0): NoteStep[] {
-  const out: NoteStep[] = [{ s: s0, n, o, lane }];
-  for (let s = s0 + 1; s < s0 + span; s++) out.push({ s, n, o, lane, t: true });
+  const out: NoteStep[] = [];
+  for (let s = s0, remaining = span; remaining > 0;) {
+    const d = Math.min(remaining, 63);
+    out.push({ s, n, o, lane, d });
+    s += d;
+    remaining -= d;
+  }
   return out;
 }
 
@@ -73,34 +76,34 @@ const TAIL_KICK = factoryDrumClip('dr1-ghost-shuffle');
 // ---------- bass clips (BL-1 lanes: 0 = its C, slide bit glides) ----------
 
 const ACID_CRAWL = bassClip('ACID CRAWL', 2, [
-  { s: 0, n: 0 }, { s: 3, n: 0, t: true }, { s: 8, n: 3 }, { s: 11, n: 0 },
-  { s: 16, n: 0 }, { s: 19, n: 10, o: -1 }, { s: 24, n: 5 }, { s: 27, n: 3, t: true },
+  { s: 0, n: 0 }, { s: 3, n: 0, sl: true }, { s: 8, n: 3 }, { s: 11, n: 0 },
+  { s: 16, n: 0 }, { s: 19, n: 10, o: -1 }, { s: 24, n: 5 }, { s: 27, n: 3, sl: true },
 ]);
 
 const ACID_303 = bassClip('ACID 303', 4, [
-  { s: 0, n: 0, a: true }, { s: 2, n: 0 }, { s: 3, n: 0, o: 1, t: true }, { s: 4, n: 0 },
-  { s: 6, n: 3, a: true }, { s: 7, n: 5, t: true }, { s: 8, n: 0 }, { s: 10, n: 10, o: -1 },
-  { s: 11, n: 0, t: true }, { s: 12, n: 7, a: true }, { s: 14, n: 5 }, { s: 15, n: 3, t: true },
-  { s: 16, n: 10, a: true }, { s: 18, n: 10 }, { s: 20, n: 5 }, { s: 22, n: 3, t: true },
-  { s: 24, n: 10 }, { s: 26, n: 0, o: 1 }, { s: 28, n: 7 }, { s: 30, n: 5, t: true },
-  { s: 32, n: 7, a: true }, { s: 34, n: 7 }, { s: 36, n: 2 }, { s: 38, n: 0, t: true },
-  { s: 40, n: 7 }, { s: 42, n: 10, o: -1 }, { s: 44, n: 5 }, { s: 46, n: 3, t: true },
-  { s: 48, n: 5, a: true }, { s: 50, n: 5 }, { s: 52, n: 0 }, { s: 54, n: 10, o: -1, t: true },
-  { s: 56, n: 5 }, { s: 58, n: 7 }, { s: 60, n: 3 }, { s: 62, n: 0, t: true },
+  { s: 0, n: 0, a: true }, { s: 2, n: 0 }, { s: 3, n: 0, o: 1, sl: true }, { s: 4, n: 0 },
+  { s: 6, n: 3, a: true }, { s: 7, n: 5, sl: true }, { s: 8, n: 0 }, { s: 10, n: 10, o: -1 },
+  { s: 11, n: 0, sl: true }, { s: 12, n: 7, a: true }, { s: 14, n: 5 }, { s: 15, n: 3, sl: true },
+  { s: 16, n: 10, a: true }, { s: 18, n: 10 }, { s: 20, n: 5 }, { s: 22, n: 3, sl: true },
+  { s: 24, n: 10 }, { s: 26, n: 0, o: 1 }, { s: 28, n: 7 }, { s: 30, n: 5, sl: true },
+  { s: 32, n: 7, a: true }, { s: 34, n: 7 }, { s: 36, n: 2 }, { s: 38, n: 0, sl: true },
+  { s: 40, n: 7 }, { s: 42, n: 10, o: -1 }, { s: 44, n: 5 }, { s: 46, n: 3, sl: true },
+  { s: 48, n: 5, a: true }, { s: 50, n: 5 }, { s: 52, n: 0 }, { s: 54, n: 10, o: -1, sl: true },
+  { s: 56, n: 5 }, { s: 58, n: 7 }, { s: 60, n: 3 }, { s: 62, n: 0, sl: true },
 ]);
 
 const ACID_SHIFT = bassClip('ACID SHIFT', 4, [
-  { s: 0, n: 3, a: true }, { s: 2, n: 3 }, { s: 4, n: 10, o: -1 }, { s: 5, n: 3, t: true },
-  { s: 7, n: 7 }, { s: 8, n: 3, a: true }, { s: 10, n: 5, t: true }, { s: 12, n: 0 },
-  { s: 13, n: 0, o: 1, t: true }, { s: 15, n: 10, o: -1 },
-  { s: 16, n: 0, a: true }, { s: 18, n: 0 }, { s: 20, n: 7 }, { s: 21, n: 0, t: true },
-  { s: 23, n: 10 }, { s: 24, n: 0, a: true }, { s: 26, n: 3, t: true }, { s: 28, n: 5 },
-  { s: 30, n: 7, o: -1 }, { s: 31, n: 10, t: true },
-  { s: 32, n: 10, a: true }, { s: 34, n: 10 }, { s: 36, n: 5 }, { s: 37, n: 10, t: true },
-  { s: 39, n: 3 }, { s: 40, n: 10, a: true }, { s: 42, n: 0, t: true }, { s: 44, n: 3 },
-  { s: 46, n: 5, o: -1 }, { s: 47, n: 7, t: true },
-  { s: 48, n: 7, a: true }, { s: 50, n: 7 }, { s: 52, n: 2 }, { s: 53, n: 7, t: true },
-  { s: 55, n: 0 }, { s: 56, n: 7, a: true }, { s: 58, n: 10, t: true }, { s: 60, n: 0 },
+  { s: 0, n: 3, a: true }, { s: 2, n: 3 }, { s: 4, n: 10, o: -1 }, { s: 5, n: 3, sl: true },
+  { s: 7, n: 7 }, { s: 8, n: 3, a: true }, { s: 10, n: 5, sl: true }, { s: 12, n: 0 },
+  { s: 13, n: 0, o: 1, sl: true }, { s: 15, n: 10, o: -1 },
+  { s: 16, n: 0, a: true }, { s: 18, n: 0 }, { s: 20, n: 7 }, { s: 21, n: 0, sl: true },
+  { s: 23, n: 10 }, { s: 24, n: 0, a: true }, { s: 26, n: 3, sl: true }, { s: 28, n: 5 },
+  { s: 30, n: 7, o: -1 }, { s: 31, n: 10, sl: true },
+  { s: 32, n: 10, a: true }, { s: 34, n: 10 }, { s: 36, n: 5 }, { s: 37, n: 10, sl: true },
+  { s: 39, n: 3 }, { s: 40, n: 10, a: true }, { s: 42, n: 0, sl: true }, { s: 44, n: 3 },
+  { s: 46, n: 5, o: -1 }, { s: 47, n: 7, sl: true },
+  { s: 48, n: 7, a: true }, { s: 50, n: 7 }, { s: 52, n: 2 }, { s: 53, n: 7, sl: true },
+  { s: 55, n: 0 }, { s: 56, n: 7, a: true }, { s: 58, n: 10, sl: true }, { s: 60, n: 0 },
   { s: 62, n: 3, o: -1 },
 ]);
 
@@ -115,31 +118,31 @@ const SUB_HOLD = bassClip('SUB HOLD', 4, [
 
 const GLASS_HOOK = wtClip('GLASS HOOK', 4, [
   { s: 0, n: 0, o: 1, a: true }, { s: 3, n: 10 }, { s: 6, n: 7 }, { s: 8, n: 3, o: 1 },
-  { s: 10, n: 10, t: true }, { s: 14, n: 5 },
+  { s: 10, n: 10 }, { s: 14, n: 5 },
   { s: 16, n: 0, o: 1, a: true }, { s: 19, n: 10 }, { s: 22, n: 7 }, { s: 24, n: 2, o: 1 },
-  { s: 26, n: 0, o: 1, t: true }, { s: 30, n: 7, t: true },
+  { s: 26, n: 0, o: 1 }, { s: 30, n: 7 },
   { s: 32, n: 7, o: 1, a: true }, { s: 35, n: 5, o: 1 }, { s: 38, n: 2, o: 1 }, { s: 40, n: 10 },
-  { s: 42, n: 7, o: 1, t: true }, { s: 46, n: 5 },
+  { s: 42, n: 7, o: 1 }, { s: 46, n: 5 },
   { s: 48, n: 5, o: 1, a: true }, { s: 51, n: 3, o: 1 }, { s: 54, n: 0, o: 1 }, { s: 56, n: 10 },
-  { s: 58, n: 7, t: true }, { s: 62, n: 3, o: 1, t: true },
+  { s: 58, n: 7 }, { s: 62, n: 3, o: 1 },
 ]);
 
 const GLASS_HOOK_II = wtClip('GLASS HOOK II', 4, [
   { s: 0, n: 3, o: 1, a: true }, { s: 3, n: 0, o: 1 }, { s: 6, n: 10 }, { s: 8, n: 5, o: 1 },
-  { s: 10, n: 3, o: 1, t: true }, { s: 14, n: 7 },
+  { s: 10, n: 3, o: 1 }, { s: 14, n: 7 },
   { s: 16, n: 3, o: 1, a: true }, { s: 19, n: 2, o: 1 }, { s: 22, n: 0, o: 1 }, { s: 24, n: 10 },
-  { s: 26, n: 7, t: true }, { s: 30, n: 10, t: true },
+  { s: 26, n: 7 }, { s: 30, n: 10 },
   { s: 32, n: 10, o: 1, a: true }, { s: 35, n: 7, o: 1 }, { s: 38, n: 5 }, { s: 40, n: 3, o: 1 },
-  { s: 42, n: 2, o: 1, t: true }, { s: 46, n: 0, o: 1 },
+  { s: 42, n: 2, o: 1 }, { s: 46, n: 0, o: 1 },
   { s: 48, n: 7, o: 1, a: true }, { s: 51, n: 5, o: 1 }, { s: 54, n: 3, o: 1 }, { s: 56, n: 0, o: 1 },
-  { s: 58, n: 10, t: true }, { s: 62, n: 7, t: true },
+  { s: 58, n: 10 }, { s: 62, n: 7 },
 ]);
 
 const GLASS_SOLO = wtClip('GLASS SOLO', 4, [
-  { s: 0, n: 0, o: 1 }, { s: 4, n: 10, t: true }, { s: 8, n: 7, t: true }, { s: 12, n: 10, t: true },
-  { s: 16, n: 3, o: 1 }, { s: 20, n: 2, o: 1, t: true }, { s: 24, n: 0, o: 1, t: true }, { s: 28, n: 10, t: true },
-  { s: 32, n: 5, o: 1 }, { s: 36, n: 3, o: 1, t: true }, { s: 40, n: 2, o: 1, t: true }, { s: 44, n: 0, o: 1, t: true },
-  { s: 48, n: 10, a: true }, { s: 52, n: 7, t: true }, { s: 56, n: 3, t: true }, { s: 60, n: 0, t: true },
+  { s: 0, n: 0, o: 1 }, { s: 4, n: 10 }, { s: 8, n: 7 }, { s: 12, n: 10 },
+  { s: 16, n: 3, o: 1 }, { s: 20, n: 2, o: 1 }, { s: 24, n: 0, o: 1 }, { s: 28, n: 10 },
+  { s: 32, n: 5, o: 1 }, { s: 36, n: 3, o: 1 }, { s: 40, n: 2, o: 1 }, { s: 44, n: 0, o: 1 },
+  { s: 48, n: 10, a: true }, { s: 52, n: 7 }, { s: 56, n: 3 }, { s: 60, n: 0 },
 ]);
 
 const AIR_BED = wtClip('AIR BED', 4, [
@@ -158,10 +161,10 @@ const AIR_BED_II = wtClip('AIR BED II', 4, [
 
 const FOG_STABS = wtClip('FOG STABS', 4, [
   // Four roots establish a C–Bb–G–F progression for the chord patch.
-  { s: 0, n: 0 }, { s: 2, n: 0, t: true }, { s: 7, n: 3 }, { s: 10, n: 5, a: true }, { s: 12, n: 5, t: true },
-  { s: 16, n: 10, o: -1 }, { s: 18, n: 10, o: -1, t: true }, { s: 23, n: 0 }, { s: 26, n: 2 }, { s: 28, n: 3, t: true },
-  { s: 32, n: 7, o: -1 }, { s: 34, n: 7, o: -1, t: true }, { s: 39, n: 10, o: -1 }, { s: 42, n: 2, a: true }, { s: 44, n: 2, t: true },
-  { s: 48, n: 5, o: -1 }, { s: 50, n: 5, o: -1, t: true }, { s: 55, n: 0 }, { s: 58, n: 3 }, { s: 60, n: 0, t: true },
+  { s: 0, n: 0 }, { s: 2, n: 0 }, { s: 7, n: 3 }, { s: 10, n: 5, a: true }, { s: 12, n: 5 },
+  { s: 16, n: 10, o: -1 }, { s: 18, n: 10, o: -1 }, { s: 23, n: 0 }, { s: 26, n: 2 }, { s: 28, n: 3 },
+  { s: 32, n: 7, o: -1 }, { s: 34, n: 7, o: -1 }, { s: 39, n: 10, o: -1 }, { s: 42, n: 2, a: true }, { s: 44, n: 2 },
+  { s: 48, n: 5, o: -1 }, { s: 50, n: 5, o: -1 }, { s: 55, n: 0 }, { s: 58, n: 3 }, { s: 60, n: 0 },
 ].flatMap((step) => [step, { ...step, lane: 1, n: (step.n + 3) % 12, o: (step.o ?? 0) + (step.n >= 9 ? 1 : 0) },
   { ...step, lane: 2, n: (step.n + 7) % 12, o: (step.o ?? 0) + (step.n >= 5 ? 1 : 0) }]));
 

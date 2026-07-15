@@ -249,7 +249,6 @@ export const PARAM_DEFS: ParamDef[] = [
   // synced LFOs phase-lock to the sequencer tempo while it plays.
   { id: 'seq.bpm', label: 'BPM', min: 60, max: 200, def: 120, curve: 'int', fmt: (v) => String(Math.round(v)) },
   { id: 'seq.swing', label: 'SWING', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
-  { id: 'seq.gate', label: 'GATE', min: 0.1, max: 0.98, def: 0.55, curve: 'lin', fmt: fmtPct },
   { id: 'seq.root', label: 'ROOT', min: 24, max: 72, def: 48, curve: 'int', fmt: fmtNote },
 ];
 

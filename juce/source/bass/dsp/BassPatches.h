@@ -17,7 +17,7 @@
 namespace fable {
 
 // ---- packed pattern helpers (seq.ts) ----
-// byte 0: bit0 on, bit1 acc, bit2 slide · byte 1: note 0..11 · byte 2: oct+1
+// byte 0: bit0 on, bit1 acc, bits2..7 duration · byte 1: note + bit7 slide · byte 2: oct+1
 constexpr int BL_NOTE_LANES = 12;
 constexpr int BL_OCT_MIN = -1, BL_OCT_MAX = 1;
 
@@ -28,6 +28,7 @@ struct BassSeqStep {
     int  note = 0;      // 0..11
     int  oct = 0;       // -1 | 0 | 1
     bool acc = false, slide = false;
+    int duration = 1;
 };
 
 // oct byte defaults to 1 (= oct 0) so untouched rests read back neutral.

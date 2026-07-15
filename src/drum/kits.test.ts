@@ -80,6 +80,12 @@ describe('kits', () => {
     }
   });
 
+  it('keeps every driven factory kit at 20% wet', () => {
+    for (const kit of FACTORY_KITS) {
+      if (kit.params['fx.drive.on']) expect(kit.params['fx.drive.mix'], kit.name).toBe(0.2);
+    }
+  });
+
   it('broadcasts legacy global FX to every pad without overwriting new pad-scoped values', () => {
     const legacy: Kit = {
       ...FACTORY_KITS[0],

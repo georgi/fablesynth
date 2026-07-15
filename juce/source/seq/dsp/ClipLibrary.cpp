@@ -73,9 +73,11 @@ std::string validatePattern(const ClipLibraryEntry& entry) {
         const int lanes = entry.machine == Machine::WT1 ? SQ_WT_POLY_LANES : 1;
         for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) for (int lane = 0; lane < lanes; ++lane) {
             const int offset = entry.machine == Machine::WT1 ? sqWtNoteIdx(bar, step, lane) : sqNoteIdx(bar, step);
-            if (entry.bytes[(size_t)offset] > 7)
+            const int duration = (entry.bytes[(size_t)offset] >> 2) & 0x3f;
+            if (duration < 1 || duration > 63)
                 return "invalid note flags at byte " + std::to_string(offset);
-            if (entry.bytes[(size_t)offset + 1] > 11)
+            const uint8_t noteByte = entry.bytes[(size_t)offset + 1];
+            if ((noteByte & 0x7f) > 11 || (entry.machine == Machine::WT1 && noteByte > 11))
                 return "invalid note at byte " + std::to_string(offset + 1);
             if (entry.bytes[(size_t)offset + 2] > 2)
                 return "invalid octave at byte " + std::to_string(offset + 2);
@@ -175,9 +177,10 @@ ClipLibraryEntry transformClipLibraryEntry(const ClipLibraryEntry& source,
         if (source.machine == Machine::DR1) throw std::invalid_argument("DR1 cannot transpose");
         for (size_t o = 0; o < out.bytes.size(); o += 3) {
             if ((out.bytes[o] & 1) == 0) continue;
-            const int absolute = (int)out.bytes[o + 1] + (int)out.bytes[o + 2] * 12 + amount;
+            const uint8_t slide = out.bytes[o + 1] & 0x80;
+            const int absolute = (int)(out.bytes[o + 1] & 0x7f) + (int)out.bytes[o + 2] * 12 + amount;
             const int folded = positiveMod(absolute, 36);
-            out.bytes[o + 1] = (uint8_t)(folded % 12);
+            out.bytes[o + 1] = (uint8_t)(slide | (folded % 12));
             out.bytes[o + 2] = (uint8_t)(folded / 12);
         }
         if (out.root >= 0) out.root = positiveMod(out.root + amount, 12);

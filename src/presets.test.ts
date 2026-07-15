@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePresetMods } from './presets';
+import { FACTORY_PRESETS, resolvePresetMods } from './presets';
 import { defaultParams, type ModConnection, type ParamValues } from './params';
 import { MOD_MATRIX_SIZE } from './store/slotHelpers';
 
 describe('resolvePresetMods', () => {
+  it('keeps every driven factory WT-1 patch at 20% wet', () => {
+    for (const preset of FACTORY_PRESETS) {
+      if (preset.params['fx.drive.on']) expect(preset.params['fx.drive.mix'], preset.name).toBe(0.2);
+    }
+  });
+
   it('factory-style params (only mat1..4 authored) leave mat5..16 zeroed', () => {
     const presetParams: Partial<ParamValues> = {
       'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.3,

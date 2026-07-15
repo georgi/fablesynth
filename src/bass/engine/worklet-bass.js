@@ -14,6 +14,7 @@ const MAXUNI = 7;
 const STEPS = 16;
 const NPATTERNS = 4;
 const STEP_STRIDE = 3;
+const SLIDE_MASK = 0x80;
 const ACCENT_VEL = 1.0;
 const PLAIN_VEL = 0.72;
 const GATE_FRAC = 0.55;
@@ -175,8 +176,9 @@ class BassProcessor extends AudioWorkletProcessor {
     return {
       on: (flags & 1) !== 0,
       acc: (flags & 2) !== 0,
-      slide: (flags & 4) !== 0,
-      semi: Math.min(11, this.clip.data[o + 1]) + 12 * (Math.min(2, this.clip.data[o + 2]) - 1),
+      slide: (this.clip.data[o + 1] & SLIDE_MASK) !== 0,
+      duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)),
+      semi: Math.min(11, this.clip.data[o + 1] & ~SLIDE_MASK) + 12 * (Math.min(2, this.clip.data[o + 2]) - 1),
     };
   }
 
@@ -234,8 +236,8 @@ class BassProcessor extends AudioWorkletProcessor {
     if (st.on) {
       if (st.slide && this.gate) this.glideTo(st.semi, st.acc);
       else this.noteOn(st.semi, st.acc);
-      const stN = this.clipRead((abs + 1) % total);
-      this.samplesToGateOff = stN.on && stN.slide ? -1 : GATE_FRAC * dur;
+      const next = this.clipRead((abs + 1) % total);
+      this.samplesToGateOff = next.on && next.slide ? -1 : st.duration * dur;
     }
 
     this.clipStep = abs;
@@ -263,7 +265,7 @@ class BassProcessor extends AudioWorkletProcessor {
 
   glideTo(semi, acc) {
     this.semiTarget = semi;
-    if (acc) this.acc = true; // an accented slide target keeps the bite
+    if (acc) this.acc = true;
     this.gate = true;
   }
 
@@ -307,8 +309,9 @@ class BassProcessor extends AudioWorkletProcessor {
     return {
       on: (flags & 1) !== 0,
       acc: (flags & 2) !== 0,
-      slide: (flags & 4) !== 0,
-      semi: Math.min(11, this.pats[o + 1]) + 12 * (Math.min(2, this.pats[o + 2]) - 1),
+      slide: (this.pats[o + 1] & SLIDE_MASK) !== 0,
+      duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)),
+      semi: Math.min(11, this.pats[o + 1] & ~SLIDE_MASK) + 12 * (Math.min(2, this.pats[o + 2]) - 1),
     };
   }
 
@@ -330,11 +333,10 @@ class BassProcessor extends AudioWorkletProcessor {
       semi = st.semi;
       if (st.slide && this.gate) this.glideTo(semi, st.acc);
       else this.noteOn(semi, st.acc);
-      // hold through the step when the NEXT step ties in with a slide
       const sN = (s + 1) % STEPS;
       const patN = sN === 0 ? this.chain[(this.chainPos + 1) % this.chain.length] | 0 : pat;
-      const stN = this.readStep(patN, sN);
-      this.samplesToGateOff = stN.on && stN.slide ? -1 : GATE_FRAC * dur;
+      const nextStep = this.readStep(patN, sN);
+      this.samplesToGateOff = nextStep.on && nextStep.slide ? -1 : st.duration * dur;
     }
 
     this.step = s;

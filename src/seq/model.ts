@@ -75,7 +75,7 @@ export function previewSteps(machine: MachineId, bytes: Uint8Array, _bars: numbe
         : [noteIdx(0, s)];
       const active = offsets.filter((o) => (bytes[o] & 1) !== 0);
       const on = active.length > 0;
-      const semi = active.length ? Math.max(...active.map((o) => Math.min(11, bytes[o + 1]) + 12 * ((bytes[o + 2] | 0) - 1))) : -12;
+      const semi = active.length ? Math.max(...active.map((o) => Math.min(11, bytes[o + 1] & 0x7f) + 12 * ((bytes[o + 2] | 0) - 1))) : -12;
       out.push({ h: on ? Math.round(5 + ((semi + 12) / 35) * 14) : 3, on });
     }
   }

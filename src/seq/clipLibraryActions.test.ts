@@ -59,13 +59,13 @@ describe('clip-library transposition', () => {
   it('transposes active notes, preserves flags/rests and octave-folds boundaries', () => {
     const bytes = emptyClipBytes('BL1', 1);
     let o = noteIdx(0, 0);
-    bytes[o] = 7; bytes[o + 1] = 11; bytes[o + 2] = 2; // B+1, active/accent/slide
+    bytes[o] = 11; bytes[o + 1] = 0x80 | 11; bytes[o + 2] = 2; // sliding B+1, active/accent, two steps
     o = noteIdx(0, 1);
     bytes[o + 1] = 4; bytes[o + 2] = 1; // rest metadata remains untouched
     const next = transposeNotePattern(bytes, 2);
-    expect(Array.from(next.slice(0, 3))).toEqual([7, 1, 2]); // C#+1 after octave fold
-    expect(Array.from(next.slice(3, 6))).toEqual([0, 4, 1]);
-    expect(bytes[1]).toBe(11); // input is immutable
+    expect(Array.from(next.slice(0, 3))).toEqual([11, 0x80 | 1, 2]); // sliding C#+1 after octave fold
+    expect(Array.from(next.slice(3, 6))).toEqual([4, 4, 1]);
+    expect(bytes[1]).toBe(0x80 | 11); // input is immutable
   });
 
   it('only applies a target root to transposable melodic entries', () => {

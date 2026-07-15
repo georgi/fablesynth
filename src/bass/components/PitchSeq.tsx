@@ -1,14 +1,13 @@
 // The 16-step pitch sequencer: 12 note lanes per step (tap = set note,
-// tap again = rest), per-step octave / accent / slide rows, bars 1–4,
-// sequence length, RAND, and glowing slide connectors between tied steps.
+// tap again = rest), draggable note lengths, octave / accent / slide rows,
+// bars 1–4 and sequence length.
 
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
-import { getStep, NOTE_LANES, slidesInto, STEPS } from '../seq';
+import { NoteLengthHandle } from '../../components/NoteLengthHandle';
+import { getStep, NOTE_LANES, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
-const LANES_H = 143; // svg viewBox height for the connector overlay
-
-export function PitchSeq() {
+export function PitchSeq({ bars }: { bars?: number } = {}) {
   const hosted = useBassStore((s) => s.hosted);
   const playing = useBassStore((s) => s.playing);
   const curStep = useBassStore((s) => s.curStep);
@@ -22,24 +21,19 @@ export function PitchSeq() {
   const cycleStepOct = useBassStore((s) => s.cycleStepOct);
   const toggleStepAcc = useBassStore((s) => s.toggleStepAcc);
   const toggleStepSlide = useBassStore((s) => s.toggleStepSlide);
+  const setStepDuration = useBassStore((s) => s.setStepDuration);
   const setEditPattern = useBassStore((s) => s.setEditPattern);
   const setSequenceLength = useBassStore((s) => s.setSequenceLength);
   const randomize = useBassStore((s) => s.randomize);
 
-  const steps = Array.from({ length: STEPS }, (_, i) => getStep(patterns, editPattern, i));
-
-  // slide connectors, drawn INTO a step from its predecessor
-  const segs: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
-  const yOf = (s: { note: number; oct: number }) =>
-    (NOTE_LANES - 1 - s.note + 0.5) * (LANES_H / NOTE_LANES) - s.oct * 4;
-  for (let i = 1; i < STEPS; i++) {
-    if (slidesInto(steps[i - 1], steps[i])) {
-      segs.push({
-        x1: (i - 0.5) * 10, y1: yOf(steps[i - 1]),
-        x2: (i + 0.5) * 10, y2: yOf(steps[i]),
-      });
-    }
-  }
+  const barCount = Math.max(1, Math.min(4, bars ?? chain.length));
+  const totalSteps = barCount * STEPS;
+  const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
+    const bar = Math.floor(absoluteStep / STEPS);
+    const step = absoluteStep % STEPS;
+    const pattern = chain[bar] ?? bar;
+    return { absoluteStep, bar, step, pattern, value: getStep(patterns, pattern, step) };
+  });
 
   return (
     <section className="panel bl-seq-section" data-accent="a">
@@ -68,7 +62,7 @@ export function PitchSeq() {
           </>
         )}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
-        <span className="bl-seq-hint">TAP LANE = NOTE · SLIDE TIES INTO STEP FROM PREV</span>
+        <span className="bl-seq-hint">DRAG EDGE = LENGTH · SLD = LEGATO</span>
       </div>
 
       <div className="bl-seq-body">
@@ -79,75 +73,68 @@ export function PitchSeq() {
           <div className="bl-legend-sld">SLD</div>
         </div>
 
-        <div className="bl-seq-grid">
+        <div className="bl-seq-grid-scroll">
+        <div className="bl-seq-grid" style={{ minWidth: `${totalSteps * 32}px` }}>
           <div className="bl-seq-cols">
-            {steps.map((s, i) => {
-              const current = playing && curStep === i && curPat === editPattern;
+            {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
+              const current = playing && curStep === step && curPat === pattern;
               return (
-                <div className="bl-seq-col" key={i}>
+                <div className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
                   <div className="bl-seq-lanes">
                     {Array.from({ length: NOTE_LANES }, (_, r) => {
                       const note = NOTE_LANES - 1 - r;
                       const active = s.on && s.note === note;
                       return (
-                        <button
-                          key={r}
-                          type="button"
-                          className={
-                            'bl-cell' +
-                            (note === 0 ? ' root' : '') +
-                            (active ? (s.acc ? ' on acc' : ' on') : '')
-                          }
-                          aria-label={`step ${i + 1} note ${note}`}
-                          aria-pressed={active}
-                          onClick={() => toggleCell(i, note)}
-                        />
+                        <div className="bl-cell-wrap" key={r}>
+                          <button
+                            type="button"
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '')}
+                            aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
+                            aria-pressed={active}
+                            onClick={() => toggleCell(step, note, pattern)}
+                          />
+                          {active && (
+                            <NoteLengthHandle
+                              prefix="bl"
+                              absoluteStep={absoluteStep}
+                              totalSteps={totalSteps}
+                              duration={s.duration}
+                              onChange={(duration) => setStepDuration(step, duration, pattern)}
+                            />
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                   <button
                     type="button"
                     className={`bl-oct-btn${s.oct !== 0 ? ' set' : ''}`}
-                    aria-label={`step ${i + 1} octave`}
-                    onClick={() => cycleStepOct(i)}
+                    aria-label={`bar ${bar + 1}, step ${step + 1} octave`}
+                    onClick={() => cycleStepOct(step, pattern)}
                   >
                     {s.oct === 0 ? '0' : s.oct > 0 ? '+1' : '−1'}
                   </button>
                   <button
                     type="button"
                     className={`bl-acc-btn${s.on && s.acc ? ' on' : ''}`}
-                    aria-label={`step ${i + 1} accent`}
+                    aria-label={`bar ${bar + 1}, step ${step + 1} accent`}
                     aria-pressed={s.on && s.acc}
-                    onClick={() => toggleStepAcc(i)}
+                    onClick={() => toggleStepAcc(step, pattern)}
                   />
                   <button
                     type="button"
                     className={`bl-sld-btn${s.on && s.slide ? ' on' : ''}`}
-                    aria-label={`step ${i + 1} slide`}
+                    aria-label={`bar ${bar + 1}, step ${step + 1} slide`}
                     aria-pressed={s.on && s.slide}
-                    onClick={() => toggleStepSlide(i)}
+                    onClick={() => toggleStepSlide(step, pattern)}
                   />
-                  <span className="bl-step-num">{i + 1}</span>
+                  <span className="bl-step-num">{step === 0 ? `BAR ${bar + 1}` : step + 1}</span>
                   <div className={`bl-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
                 </div>
               );
             })}
           </div>
-          <svg
-            className="bl-slide-overlay"
-            viewBox={`0 0 160 ${LANES_H}`}
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            {segs.map((seg, i) => (
-              <line
-                key={i}
-                x1={seg.x1} y1={seg.y1} x2={seg.x2} y2={seg.y2}
-                stroke="#4dff9e" strokeWidth="1.4" opacity="0.75"
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-          </svg>
+        </div>
         </div>
       </div>
     </section>

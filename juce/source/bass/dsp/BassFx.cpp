@@ -98,9 +98,9 @@ static inline float mixGate(bool on, float amount, bool wet) {
 void BassFx::setParams(const BassParamArray& p) {
     // drive
     float amt = p[BL_FXDRIVE_AMT];
-    driveK_ = 1 + amt * 24;
-    driveNorm_ = 1.0f / std::tanh(driveK_);
     drivePre_ = 1 + amt * 2;
+    driveK_ = 1 + amt * 12;
+    driveNorm_ = 1.0f / (drivePre_ * std::tanh(driveK_));
     bool dOn = p[BL_FXDRIVE_ON] > 0.5f;
     driveOff_ = !dOn;
     driveWet_.target = mixGate(dOn, p[BL_FXDRIVE_MIX], true);

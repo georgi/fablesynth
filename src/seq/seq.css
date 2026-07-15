@@ -566,6 +566,28 @@
   padding: 8px 12px; border-bottom: 1px solid #1a2030;
   background: #0d1119;
 }
+.sq-device-patch {
+  display: flex; align-items: center; gap: 4px; flex: none;
+  padding-right: 12px; border-right: 1px solid #20283a;
+}
+.sq-device-patch > span {
+  margin-right: 2px; color: #6b768c; font-size: 7px; font-weight: 600;
+  letter-spacing: 0.18em;
+}
+.sq-device-patch button {
+  width: 24px; height: 25px; border: 1px solid #303a50; border-radius: 4px;
+  background: #11141c; color: #9fb4d8; cursor: pointer; font: inherit;
+}
+.sq-device-patch select {
+  width: 156px; height: 25px; border: 1px solid #303a50; border-radius: 4px;
+  background: #0a0d13; color: var(--tc); padding: 0 7px;
+  font: 9px var(--font-mono); letter-spacing: 0.08em;
+}
+.sq-device-patch button:hover, .sq-device-patch button:focus-visible,
+.sq-device-patch select:hover, .sq-device-patch select:focus-visible {
+  border-color: color-mix(in srgb, var(--tc) 65%, #303a50);
+  outline: none;
+}
 .sq-clipbar-name { font-weight: 700; letter-spacing: 0.08em; }
 .sq-clipbar .seq-bars-control { margin-left: auto; --ac-a: var(--tc); }
 .sq-clipbar-hint, .sq-clipbar-lock { font-size: 10px; color: #667; letter-spacing: 0.06em; }

@@ -78,21 +78,21 @@ static void testClipLibrarySchema() {
     }
     CHECK(dr == 32 && bl == 20 && wt == 20);
 
-    lead.bytes[(size_t)sqNoteIdx(0, 0)] = 1;
-    lead.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 11;
-    lead.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 2;
-    lead.bytes[(size_t)sqNoteIdx(0, 2) + 1] = 9; // inactive metadata is preserved
-    lead.bytes[(size_t)sqNoteIdx(0, 2) + 2] = 1;
+    lead.bytes[(size_t)sqWtNoteIdx(0, 0)] = 1 | (1 << 2);
+    lead.bytes[(size_t)sqWtNoteIdx(0, 0) + 1] = 11;
+    lead.bytes[(size_t)sqWtNoteIdx(0, 0) + 2] = 2;
+    lead.bytes[(size_t)sqWtNoteIdx(0, 2) + 1] = 9; // inactive metadata is preserved
+    lead.bytes[(size_t)sqWtNoteIdx(0, 2) + 2] = 1;
     const auto original = lead.bytes;
     const auto transposed = transformClipLibraryEntry(lead, ClipTransformKind::transpose, 2);
     CHECK(lead.bytes == original);
-    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 0) + 1] == 1);
-    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 0) + 2] == 0);
-    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 2) + 1] == 9);
-    CHECK(transposed.bytes[(size_t)sqNoteIdx(0, 2) + 2] == 1);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 1] == 1);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 2] == 0);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 2) + 1] == 9);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 2) + 2] == 1);
     CHECK(transposed.root == 2);
     const auto rotated = transformClipLibraryEntry(lead, ClipTransformKind::rotate, 1);
-    CHECK((rotated.bytes[(size_t)sqNoteIdx(0, 1)] & 1) != 0);
+    CHECK((rotated.bytes[(size_t)sqWtNoteIdx(0, 1)] & 1) != 0);
     const auto repeated = transformClipLibraryEntry(lead, ClipTransformKind::repeat, 4);
     CHECK(repeated.bars == 4 && repeated.bytes.size() == (size_t)(4 * sqBytesPerBar(Machine::WT1)));
 }
@@ -101,7 +101,7 @@ static void testProtocol() {
     using namespace fable;
     CHECK(sqBytesPerBar(Machine::DR1) == 256);
     CHECK(sqBytesPerBar(Machine::BL1) == 48);
-    CHECK(sqBytesPerBar(Machine::WT1) == 48);
+    CHECK(sqBytesPerBar(Machine::WT1) == 384);
     CHECK(sqDr1Idx(1, 2, 3) == (1 * 16 + 2) * 16 + 3);
     CHECK(sqNoteIdx(2, 5) == (2 * 16 + 5) * 3);
 
@@ -110,7 +110,7 @@ static void testProtocol() {
     for (auto b : dr) CHECK(b == 0);
     auto bl = sqEmptyClip(Machine::BL1, 1);
     CHECK(bl.size() == 48);
-    for (int i = 0; i < 48; i++) CHECK(bl[(size_t)i] == (i % 3 == 2 ? 1 : 0));
+    for (int i = 0; i < 48; i++) CHECK(bl[(size_t)i] == (i % 3 == 0 ? 4 : i % 3 == 2 ? 1 : 0));
 
     const double sr = 48000, bpm = 122;
     const double spb = sr * 60 / bpm;
@@ -435,7 +435,7 @@ static void testWt1Hosted() {
 
     // one-bar clip: quarter-note C lane hits on steps 0,4,8,12
     auto clip = sqEmptyClip(Machine::WT1, 1);
-    for (int s : {0, 4, 8, 12}) { clip[(size_t)sqNoteIdx(0, s)] = 1; clip[(size_t)sqNoteIdx(0, s) + 1] = 0; }
+    for (int s : {0, 4, 8, 12}) { clip[(size_t)sqNoteIdx(0, s)] = 1 | (1 << 2); clip[(size_t)sqNoteIdx(0, s) + 1] = 0; }
     e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);   // quant OFF
 
     double frame = 256;
@@ -482,7 +482,7 @@ static void testWt1ClipSwapGatesOldNote() {
     // seqToGateOff_ = -1). All later steps are irrelevant: the test stops
     // well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
     auto clipA = sqEmptyClip(Machine::WT1, 1);
-    clipA[(size_t)sqNoteIdx(0, 0)] = 1;                 // on
+    clipA[(size_t)sqNoteIdx(0, 0)] = 1 | (1 << 2);      // on
     clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
     clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + tie
     clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
@@ -530,11 +530,11 @@ static void testBl1Hosted() {
     e.setHostClipMode(true);
     e.hostTempo(122, 0, 256);
 
-    // steps 0..3: 0 on, 1 slide->2, 2 on, 3 off; slide bit = flags bit2
+    // steps 0..3: 0 on, 1 slide->2, 2 on, 3 off.
     auto clip = sqEmptyClip(Machine::BL1, 1);
     auto set = [&](int s, int note, bool slide) {
-        clip[(size_t)sqNoteIdx(0, s)] = (uint8_t)(1 | (slide ? 4 : 0));
-        clip[(size_t)sqNoteIdx(0, s) + 1] = (uint8_t)note;
+        clip[(size_t)sqNoteIdx(0, s)] = 1 | (1 << 2);
+        clip[(size_t)sqNoteIdx(0, s) + 1] = (uint8_t)(note | (slide ? 0x80 : 0));
     };
     set(0, 0, false); set(1, 0, true); set(2, 3, false);
     e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);
@@ -578,10 +578,10 @@ static void testBl1ClipSwapGatesOldNote() {
     // samplesToGateOff_ = -1). All later steps are irrelevant: the test
     // stops well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
     auto clipA = sqEmptyClip(Machine::BL1, 1);
-    clipA[(size_t)sqNoteIdx(0, 0)] = 1;                 // on
+    clipA[(size_t)sqNoteIdx(0, 0)] = 1 | (1 << 2);      // on, one step
     clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
-    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + slide
-    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
+    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | (1 << 2);      // on
+    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0x80;          // slide
     e.hostClip(clipA.data(), (int)clipA.size(), 1, 0.0); // quant OFF
 
     double frame = 0;
@@ -1054,7 +1054,7 @@ static void testConductor() {
         CHECK(noteIt != factoryClipLibrary().end());
         ClipLibraryEntry note = *noteIt;
         note.bytes = sqEmptyClip(Machine::WT1, 1);
-        note.bytes[(size_t)sqNoteIdx(0, 0)] = 1;
+        note.bytes[(size_t)sqNoteIdx(0, 0)] = 1 | (1 << 2);
         note.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 3;
         note.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 1;
         CHECK(c.loadLibraryClip(0, 2, note, 5)); // empty INTRO lead cell

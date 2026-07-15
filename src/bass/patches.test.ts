@@ -48,6 +48,18 @@ describe('bass patches', () => {
     }
   });
 
+  it('keeps every factory bass patch at neutral oscillator tuning', () => {
+    for (const patch of FACTORY_PATCHES) {
+      expect(patchToState(patch).params['osc.tune'], patch.name).toBe(0);
+    }
+  });
+
+  it('keeps every driven factory bass patch at 20% wet', () => {
+    for (const patch of FACTORY_PATCHES) {
+      if (patchToState(patch).params['fx.drive.on']) expect(patchToState(patch).params['fx.drive.mix'], patch.name).toBe(0.2);
+    }
+  });
+
   it('patchToState fills every default and clones patterns', () => {
     const state = patchToState(FACTORY_PATCHES[0]);
     const defs = defaultBassParams();
@@ -55,9 +67,7 @@ describe('bass patches', () => {
     // the ACID LINE pattern A starts on an accented root
     const s0 = getStep(state.patterns, 0, 0);
     expect(s0).toMatchObject({ on: true, note: 0, acc: true });
-    // slides land where the design mock put them
-    expect(getStep(state.patterns, 0, 3).slide).toBe(true);
-    expect(getStep(state.patterns, 0, 7).slide).toBe(true);
+    expect(getStep(state.patterns, 0, 3).duration).toBe(1);
   });
 
   it('state → patch → state round-trips', () => {

@@ -1,17 +1,22 @@
 // The WT-1 note sequencer: 12 note lanes per step (tap = set note, tap again
-// = rest), per-step octave / accent / tie rows, bars 1–4 + sequence length,
-// RAND, transport and BPM / SWING / GATE / ROOT clock controls. Ties retune
-// the sounding voice legato — the GLIDE knob decides snap vs slide.
+// = rest), draggable note lengths, octave / accent rows, bars 1–4 + sequence
+// length, RAND, transport and ROOT controls.
 
-import { getStep, NOTE_LANES, STEPS, tiesInto } from '../../noteseq';
+import { getStep, NOTE_LANES, STEPS, type SeqStep } from '../../noteseq';
 import { useStore } from '../../store';
-import { Knob } from '../Knob';
+import { NoteLengthHandle } from '../NoteLengthHandle';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
 
-const LANES_H = 143; // svg viewBox height for the connector overlay
+interface SeqPanelProps {
+  /** Hosted SQ-4 clips have up to eight WT voices per step; standalone patterns do not. */
+  polySteps?: SeqStep[][];
+  bars?: number;
+  onToggleChordNote?: (step: number, note: number) => void;
+  onSetChordDuration?: (step: number, note: number, duration: number) => void;
+}
 
-export function SeqPanel() {
+export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
   const seqPlaying = useStore((s) => s.seqPlaying);
   const curStep = useStore((s) => s.curStep);
@@ -24,25 +29,19 @@ export function SeqPanel() {
   const toggleCell = useStore((s) => s.toggleCell);
   const cycleStepOct = useStore((s) => s.cycleStepOct);
   const toggleStepAcc = useStore((s) => s.toggleStepAcc);
-  const toggleStepTie = useStore((s) => s.toggleStepTie);
+  const setStepDuration = useStore((s) => s.setStepDuration);
   const setEditPattern = useStore((s) => s.setEditPattern);
   const setSequenceLength = useStore((s) => s.setSequenceLength);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
 
-  const steps = Array.from({ length: STEPS }, (_, i) => getStep(patterns, editPattern, i));
-
-  // tie connectors, drawn INTO a step from its predecessor
-  const segs: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
-  const yOf = (s: { note: number; oct: number }) =>
-    (NOTE_LANES - 1 - s.note + 0.5) * (LANES_H / NOTE_LANES) - s.oct * 4;
-  for (let i = 1; i < STEPS; i++) {
-    if (tiesInto(steps[i - 1], steps[i])) {
-      segs.push({
-        x1: (i - 0.5) * 10, y1: yOf(steps[i - 1]),
-        x2: (i + 0.5) * 10, y2: yOf(steps[i]),
-      });
-    }
-  }
+  const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
+  const totalSteps = barCount * STEPS;
+  const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
+    const bar = Math.floor(absoluteStep / STEPS);
+    const step = absoluteStep % STEPS;
+    const pattern = chain[bar] ?? bar;
+    return { absoluteStep, bar, step, pattern, value: getStep(patterns, pattern, step) };
+  });
 
   return (
     <section className="panel ns-section" style={{ gridArea: 'seq' }} data-accent="a">
@@ -71,7 +70,7 @@ export function SeqPanel() {
           </>
         )}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
-        <span className="ns-hint">TAP LANE = NOTE · TIE HOLDS FROM PREV STEP — GLIDE MAKES IT SLIDE</span>
+        <span className="ns-hint">TAP = NOTE · DRAG RIGHT EDGE = LENGTH</span>
       </div>
 
       <div className="ns-body">
@@ -79,84 +78,70 @@ export function SeqPanel() {
           <div className="ns-legend-lanes"><span>B</span><span>NOTE</span><span>C</span></div>
           <div className="ns-legend-oct">OCT</div>
           <div className="ns-legend-acc">ACC</div>
-          <div className="ns-legend-tie">TIE</div>
         </div>
 
-        <div className="ns-grid">
+        <div className="ns-grid-scroll">
+          <div className="ns-grid" style={{ minWidth: `${totalSteps * 32}px` }}>
           <div className="ns-cols">
-            {steps.map((s, i) => {
-              const current = seqPlaying && curStep === i && curPat === editPattern;
+            {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
+              const current = seqPlaying && curStep === step && curPat === pattern;
+              const voices = polySteps?.[absoluteStep]?.length ? polySteps[absoluteStep] : [s];
               return (
-                <div className="ns-col" key={i}>
+                <div className={`ns-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
                   <div className="ns-lanes">
                     {Array.from({ length: NOTE_LANES }, (_, r) => {
                       const note = NOTE_LANES - 1 - r;
-                      const active = s.on && s.note === note;
+                      const voice = voices.find((candidate) => candidate.on && candidate.note === note);
+                      const active = !!voice;
                       return (
-                        <button
-                          key={r}
-                          type="button"
-                          className={
-                            'ns-cell' +
-                            (note === 0 ? ' root' : '') +
-                            (active ? (s.acc ? ' on acc' : ' on') : '')
-                          }
-                          aria-label={`step ${i + 1} note ${note}`}
-                          aria-pressed={active}
-                          onClick={() => toggleCell(i, note)}
-                        />
+                        <div className="ns-cell-wrap" key={r}>
+                          <button
+                            type="button"
+                            className={'ns-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '')}
+                            aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
+                            aria-pressed={active}
+                            onClick={() => onToggleChordNote ? onToggleChordNote(absoluteStep, note) : toggleCell(step, note, pattern)}
+                          />
+                          {active && voice && (
+                            <NoteLengthHandle
+                              prefix="ns"
+                              absoluteStep={absoluteStep}
+                              totalSteps={totalSteps}
+                              duration={voice.duration}
+                              onChange={(duration) => onSetChordDuration
+                                ? onSetChordDuration(absoluteStep, note, duration)
+                                : setStepDuration(step, duration, pattern)}
+                            />
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                   <button
                     type="button"
                     className={`ns-oct-btn${s.oct !== 0 ? ' set' : ''}`}
-                    aria-label={`step ${i + 1} octave`}
-                    onClick={() => cycleStepOct(i)}
+                    aria-label={`bar ${bar + 1}, step ${step + 1} octave`}
+                    onClick={() => cycleStepOct(step, pattern)}
                   >
                     {s.oct === 0 ? '0' : s.oct > 0 ? '+1' : '−1'}
                   </button>
                   <button
                     type="button"
                     className={`ns-acc-btn${s.on && s.acc ? ' on' : ''}`}
-                    aria-label={`step ${i + 1} accent`}
+                    aria-label={`bar ${bar + 1}, step ${step + 1} accent`}
                     aria-pressed={s.on && s.acc}
-                    onClick={() => toggleStepAcc(i)}
+                    onClick={() => toggleStepAcc(step, pattern)}
                   />
-                  <button
-                    type="button"
-                    className={`ns-tie-btn${s.on && s.tie ? ' on' : ''}`}
-                    aria-label={`step ${i + 1} tie`}
-                    aria-pressed={s.on && s.tie}
-                    onClick={() => toggleStepTie(i)}
-                  />
-                  <span className="ns-step-num">{i + 1}</span>
+                  <span className="ns-step-num">{step === 0 ? `BAR ${bar + 1}` : step + 1}</span>
                   <div className={`ns-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
                 </div>
               );
             })}
           </div>
-          <svg
-            className="ns-tie-overlay"
-            viewBox={`0 0 160 ${LANES_H}`}
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            {segs.map((seg, i) => (
-              <line
-                key={i}
-                x1={seg.x1} y1={seg.y1} x2={seg.x2} y2={seg.y2}
-                stroke="#4de8ff" strokeWidth="1.4" opacity="0.75"
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-          </svg>
+          </div>
         </div>
 
         <div className="ns-clock">
-          <Knob paramId="seq.bpm" size="sm" accent="a" />
-          <Knob paramId="seq.swing" size="sm" accent="a" />
-          <Knob paramId="seq.gate" size="sm" accent="a" />
           <Stepper paramId="seq.root" label="ROOT" accent="a" />
         </div>
       </div>

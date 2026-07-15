@@ -138,7 +138,7 @@ inline std::array<StepBar, SQ_STEPS_PER_BAR> sqPreviewSteps(Machine machine, con
                 const int o = machine == Machine::WT1 ? sqWtNoteIdx(0, s, lane) : sqNoteIdx(0, s);
                 if ((bytes[o] & 1) != 0) {
                     on = true;
-                    semi = std::max(semi, std::min(11, (int)bytes[o + 1]) + 12 * ((int)bytes[o + 2] - 1));
+                    semi = std::max(semi, std::min(11, (int)(bytes[o + 1] & 0x7f)) + 12 * ((int)bytes[o + 2] - 1));
                 }
             }
             out[(size_t)s] = { on ? (int)std::lround(5.0 + ((semi + 12) / 35.0) * 14.0) : 3, on };

@@ -10,7 +10,7 @@ namespace fable {
 
 std::vector<uint8_t> makeEmptyBassPatterns() {
     std::vector<uint8_t> p(BL_PATTERN_BYTES, 0);
-    for (size_t i = 2; i < p.size(); i += BL_STEP_STRIDE) p[i] = 1;
+    for (size_t i = 0; i < p.size(); i += BL_STEP_STRIDE) { p[i] = 1 << 2; p[i + 2] = 1; }
     return p;
 }
 
@@ -20,16 +20,17 @@ BassSeqStep getBassStep(const uint8_t* pats, int pat, int step) {
     BassSeqStep s;
     s.on    = (flags & 1) != 0;
     s.acc   = (flags & 2) != 0;
-    s.slide = (flags & 4) != 0;
-    s.note  = std::min(BL_NOTE_LANES - 1, (int)pats[o + 1]);
+    s.slide = (pats[o + 1] & 0x80) != 0;
+    s.note  = std::min(BL_NOTE_LANES - 1, (int)(pats[o + 1] & 0x7f));
     s.oct   = std::min(BL_OCT_MAX, std::max(BL_OCT_MIN, (int)pats[o + 2] - 1));
+    s.duration = std::max(1, std::min(63, (int)(flags >> 2)));
     return s;
 }
 
 void setBassStep(uint8_t* pats, int pat, int step, const BassSeqStep& s) {
     const int o = (pat * BL_STEPS + step) * BL_STEP_STRIDE;
-    pats[o]     = (uint8_t)((s.on ? 1 : 0) | (s.acc ? 2 : 0) | (s.slide ? 4 : 0));
-    pats[o + 1] = (uint8_t)std::min(BL_NOTE_LANES - 1, std::max(0, s.note));
+    pats[o]     = (uint8_t)((s.on ? 1 : 0) | (s.acc ? 2 : 0) | (std::max(1, std::min(63, s.duration)) << 2));
+    pats[o + 1] = (uint8_t)(std::min(BL_NOTE_LANES - 1, std::max(0, s.note)) | (s.slide ? 0x80 : 0));
     pats[o + 2] = (uint8_t)(std::min(BL_OCT_MAX, std::max(BL_OCT_MIN, s.oct)) + 1);
 }
 
@@ -125,7 +126,7 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 142 },
         }, acid, { 0, 1 } });
         out.push_back({ "DEEP DUB", Overrides{
-            { "osc.table", 0 }, { "osc.pos", 0.18f }, { "osc.tune", -12 }, { "osc.level", 0.62f },
+            { "osc.table", 0 }, { "osc.pos", 0.18f }, { "osc.level", 0.62f },
             { "sub.shape", 0 }, { "sub.oct", -2 }, { "sub.level", 0.88f },
             { "flt.type", 1 }, { "flt.cut", 145 }, { "flt.res", 0.28f }, { "flt.drive", 0.22f },
             { "flt.env", 0.32f }, { "fenv.dec", 0.55f },
@@ -142,7 +143,7 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "flt.type", 1 }, { "flt.cut", 430 }, { "flt.res", 0.68f }, { "flt.drive", 0.72f },
             { "flt.env", 0.76f }, { "fenv.dec", 0.14f }, { "aenv.dec", 0.22f }, { "aenv.sus", 0.42f },
             { "acc.amt", 0.9f }, { "slide.time", 0.055f },
-            { "fx.drive.amt", 0.7f }, { "fx.drive.mix", 0.92f },
+            { "fx.drive.amt", 0.7f }, { "fx.drive.mix", 0.2f },
             { "fx.reverb.mix", 0.05f }, { "seq.bpm", 136 }, { "master.swing", 0.16f },
         }, acid, { 0, 1 } });
         out.push_back({ "ROUNDHOUSE", Overrides{
@@ -157,7 +158,7 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 124 }, { "master.swing", 0.32f },
         }, acid, { 0 } });
         out.push_back({ "METAL PULSE", Overrides{
-            { "osc.table", 4 }, { "osc.pos", 0.86f }, { "osc.tune", -12 }, { "osc.fine", 9 },
+            { "osc.table", 4 }, { "osc.pos", 0.86f }, { "osc.fine", 9 },
             { "osc.unison", 3 }, { "osc.detune", 0.12f }, { "osc.spread", 0.32f }, { "osc.level", 0.72f },
             { "sub.shape", 1 }, { "sub.level", 0.3f },
             { "flt.type", 2 }, { "flt.cut", 920 }, { "flt.res", 0.58f }, { "flt.drive", 0.38f },
@@ -176,7 +177,7 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "flt.env", 0.38f }, { "fenv.att", 0.006f }, { "fenv.dec", 0.4f },
             { "aenv.att", 0.008f }, { "aenv.dec", 0.5f }, { "aenv.sus", 0.7f }, { "aenv.rel", 0.2f },
             { "acc.amt", 0.44f }, { "slide.time", 0.1f }, { "lfo.rate", 3 }, { "lfo.depth", 0.08f },
-            { "fx.drive.amt", 0.22f }, { "fx.drive.mix", 0.5f },
+            { "fx.drive.amt", 0.22f }, { "fx.drive.mix", 0.2f },
             { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.18f }, { "fx.chorus.depth", 0.2f },
             { "fx.chorus.mix", 0.12f }, { "fx.reverb.mix", 0.08f },
             { "seq.bpm", 104 }, { "master.swing", 0.5f },
@@ -188,7 +189,7 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "flt.env", 0.3f }, { "flt.track", 0.22f }, { "fenv.dec", 0.65f },
             { "aenv.dec", 0.4f }, { "aenv.sus", 0.88f }, { "aenv.rel", 0.16f },
             { "acc.amt", 0.5f }, { "slide.time", 0.085f }, { "lfo.rate", 2 }, { "lfo.depth", 0.1f },
-            { "fx.drive.amt", 0.48f }, { "fx.drive.mix", 0.72f },
+            { "fx.drive.amt", 0.48f }, { "fx.drive.mix", 0.2f },
             { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.32f }, { "fx.chorus.depth", 0.26f },
             { "fx.chorus.mix", 0.16f }, { "fx.reverb.mix", 0.05f },
             { "seq.bpm", 128 }, { "master.swing", 0.24f },
@@ -206,14 +207,14 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 132 }, { "master.swing", 0.18f },
         }, acid, { 1, 0 } });
         out.push_back({ "DARK CURRENT", Overrides{
-            { "osc.table", 5 }, { "osc.pos", 0.24f }, { "osc.tune", -12 }, { "osc.unison", 4 },
+            { "osc.table", 5 }, { "osc.pos", 0.24f }, { "osc.unison", 4 },
             { "osc.detune", 0.32f }, { "osc.spread", 0.36f }, { "osc.level", 0.68f },
             { "sub.shape", 1 }, { "sub.oct", -2 }, { "sub.level", 0.62f },
             { "flt.type", 1 }, { "flt.cut", 260 }, { "flt.res", 0.46f }, { "flt.drive", 0.62f },
             { "flt.env", -0.38f }, { "flt.track", 0.18f }, { "fenv.att", 0.035f }, { "fenv.dec", 0.8f },
             { "aenv.att", 0.012f }, { "aenv.dec", 0.55f }, { "aenv.sus", 0.78f }, { "aenv.rel", 0.28f },
             { "acc.amt", 0.58f }, { "slide.time", 0.16f }, { "lfo.rate", 4 }, { "lfo.shape", 1 },
-            { "lfo.depth", 0.34f }, { "fx.drive.amt", 0.56f }, { "fx.drive.mix", 0.74f },
+            { "lfo.depth", 0.34f }, { "fx.drive.amt", 0.56f }, { "fx.drive.mix", 0.2f },
             { "fx.delay.on", 1 }, { "fx.delay.time", 0.6f }, { "fx.delay.fb", 0.58f },
             { "fx.delay.mix", 0.16f }, { "fx.reverb.size", 0.68f }, { "fx.reverb.mix", 0.18f },
             { "seq.bpm", 118 }, { "master.swing", 0.36f },

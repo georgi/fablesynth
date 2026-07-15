@@ -89,10 +89,11 @@ export function transposeNotePattern(pattern: Uint8Array, semitones: number): Ui
   const out = pattern.slice();
   for (let offset = 0; offset < out.length; offset += NOTE_STRIDE) {
     if ((out[offset] & 1) === 0) continue;
-    const absolute = out[offset + 1] + 12 * (out[offset + 2] - 1);
+    const slide = out[offset + 1] & 0x80;
+    const absolute = (out[offset + 1] & 0x7f) + 12 * (out[offset + 2] - 1);
     const shifted = foldToLaneRange(absolute + semitones);
     const octave = Math.floor(shifted / 12);
-    out[offset + 1] = ((shifted % 12) + 12) % 12;
+    out[offset + 1] = slide | (((shifted % 12) + 12) % 12);
     out[offset + 2] = octave + 1;
   }
   return out;

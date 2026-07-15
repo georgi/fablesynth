@@ -97,7 +97,7 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'DEEP DUB',
     params: {
-      'osc.table': 0, 'osc.pos': 0.18, 'osc.tune': -12, 'osc.level': 0.62,
+      'osc.table': 0, 'osc.pos': 0.18, 'osc.level': 0.62,
       'sub.shape': 0, 'sub.oct': -2, 'sub.level': 0.88,
       'flt.type': 1, 'flt.cut': 145, 'flt.res': 0.28, 'flt.drive': 0.22,
       'flt.env': 0.32, 'fenv.dec': 0.55,
@@ -118,7 +118,7 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
       'flt.type': 1, 'flt.cut': 430, 'flt.res': 0.68, 'flt.drive': 0.72,
       'flt.env': 0.76, 'fenv.dec': 0.14, 'aenv.dec': 0.22, 'aenv.sus': 0.42,
       'acc.amt': 0.9, 'slide.time': 0.055,
-      'fx.drive.amt': 0.7, 'fx.drive.mix': 0.92,
+      'fx.drive.amt': 0.7, 'fx.drive.mix': 0.2,
       'fx.reverb.mix': 0.05, 'seq.bpm': 136, 'master.swing': 0.16,
     },
     patterns: [...ACID_PATTERNS], chain: [0, 1],
@@ -141,7 +141,7 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'METAL PULSE',
     params: {
-      'osc.table': 4, 'osc.pos': 0.86, 'osc.tune': -12, 'osc.fine': 9,
+      'osc.table': 4, 'osc.pos': 0.86, 'osc.fine': 9,
       'osc.unison': 3, 'osc.detune': 0.12, 'osc.spread': 0.32, 'osc.level': 0.72,
       'sub.shape': 1, 'sub.level': 0.3,
       'flt.type': 2, 'flt.cut': 920, 'flt.res': 0.58, 'flt.drive': 0.38,
@@ -164,7 +164,7 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
       'flt.env': 0.38, 'fenv.att': 0.006, 'fenv.dec': 0.4,
       'aenv.att': 0.008, 'aenv.dec': 0.5, 'aenv.sus': 0.7, 'aenv.rel': 0.2,
       'acc.amt': 0.44, 'slide.time': 0.1, 'lfo.rate': 3, 'lfo.depth': 0.08,
-      'fx.drive.amt': 0.22, 'fx.drive.mix': 0.5,
+      'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2,
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.18, 'fx.chorus.depth': 0.2,
       'fx.chorus.mix': 0.12, 'fx.reverb.mix': 0.08,
       'seq.bpm': 104, 'master.swing': 0.5,
@@ -180,7 +180,7 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
       'flt.env': 0.3, 'flt.track': 0.22, 'fenv.dec': 0.65,
       'aenv.dec': 0.4, 'aenv.sus': 0.88, 'aenv.rel': 0.16,
       'acc.amt': 0.5, 'slide.time': 0.085, 'lfo.rate': 2, 'lfo.depth': 0.1,
-      'fx.drive.amt': 0.48, 'fx.drive.mix': 0.72,
+      'fx.drive.amt': 0.48, 'fx.drive.mix': 0.2,
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.32, 'fx.chorus.depth': 0.26,
       'fx.chorus.mix': 0.16, 'fx.reverb.mix': 0.05,
       'seq.bpm': 128, 'master.swing': 0.24,
@@ -206,14 +206,14 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'DARK CURRENT',
     params: {
-      'osc.table': 5, 'osc.pos': 0.24, 'osc.tune': -12, 'osc.unison': 4,
+      'osc.table': 5, 'osc.pos': 0.24, 'osc.unison': 4,
       'osc.detune': 0.32, 'osc.spread': 0.36, 'osc.level': 0.68,
       'sub.shape': 1, 'sub.oct': -2, 'sub.level': 0.62,
       'flt.type': 1, 'flt.cut': 260, 'flt.res': 0.46, 'flt.drive': 0.62,
       'flt.env': -0.38, 'flt.track': 0.18, 'fenv.att': 0.035, 'fenv.dec': 0.8,
       'aenv.att': 0.012, 'aenv.dec': 0.55, 'aenv.sus': 0.78, 'aenv.rel': 0.28,
       'acc.amt': 0.58, 'slide.time': 0.16, 'lfo.rate': 4, 'lfo.shape': 1,
-      'lfo.depth': 0.34, 'fx.drive.amt': 0.56, 'fx.drive.mix': 0.74,
+      'lfo.depth': 0.34, 'fx.drive.amt': 0.56, 'fx.drive.mix': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.6, 'fx.delay.fb': 0.58,
       'fx.delay.mix': 0.16, 'fx.reverb.size': 0.68, 'fx.reverb.mix': 0.18,
       'seq.bpm': 118, 'master.swing': 0.36,

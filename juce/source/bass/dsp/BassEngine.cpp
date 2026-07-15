@@ -176,8 +176,9 @@ BassStep BassEngine::readStep(const uint8_t* pats, int pat, int s) {
     BassStep st;
     st.on    = (flags & 1) != 0;
     st.acc   = (flags & 2) != 0;
-    st.slide = (flags & 4) != 0;
-    st.semi  = std::min(11, (int)pats[o + 1]) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
+    st.slide = (pats[o + 1] & 0x80) != 0;
+    st.semi  = std::min(11, (int)(pats[o + 1] & 0x7f)) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
+    st.duration = std::max(1, std::min(63, (int)(flags >> 2)));
     return st;
 }
 
@@ -191,7 +192,7 @@ void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
         const int sN = (s + 1) % BL_STEPS;
         const int patN = sN == 0 ? patNext : pat;
         const BassStep stN = readStep(pats_.data(), patN, sN);
-        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : BL_GATE_FRAC * dur;
+        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : st.duration * dur;
     }
     step_ = s;
 }
@@ -213,7 +214,7 @@ void BassEngine::clipFireAt(int abs) {
         const int absN = (abs + 1) % total;
         const BassStep stN = readStep(clip, absN / BL_STEPS, absN % BL_STEPS);
         const double dur = sqSamplesPerStep(effectiveBpm(), sr_);
-        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : BL_GATE_FRAC * dur;
+        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : st.duration * dur;
     }
 }
 

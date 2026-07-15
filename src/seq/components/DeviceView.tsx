@@ -2,7 +2,7 @@
 // engine to that machine's standalone store, keeps the target clip and the
 // track patch in sync with the session doc, and renders the device panels.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type * as React from 'react';
 import { EnvPanel as BassEnvPanel } from '../../bass/components/EnvPanel';
 import { BassFxRack } from '../../bass/components/BassFxRack';
@@ -35,10 +35,11 @@ import { LfoPanel } from '../../components/panels/LfoPanel';
 import { MatrixPanel } from '../../components/panels/MatrixPanel';
 import { OscPanel } from '../../components/panels/OscPanel';
 import { SeqPanel } from '../../components/panels/SeqPanel';
+import type { SeqStep } from '../../noteseq';
 import { UtilPanel } from '../../components/panels/UtilPanel';
 import { useStore as useWtStore } from '../../store';
 import { clipToPatterns, patternsToClip } from '../hostBridge';
-import { HOSTED_MAX_BARS, type MachineId } from '../protocol';
+import { b64ToBytes, HOSTED_MAX_BARS, type MachineId, wtNoteIdx } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
 import { HostedClipBar } from './HostedClipBar';
 
@@ -189,8 +190,8 @@ export function DeviceView() {
       <HostedClipBar machine={machine} />
       <div className="sq-device-body">
         {machine === 'DR1' && <DrumPanels />}
-        {machine === 'BL1' && <BassPanels />}
-        {machine === 'WT1' && <WtPanels />}
+        {machine === 'BL1' && <BassPanels bars={clip?.bars} />}
+        {machine === 'WT1' && <WtPanels clip={clip} />}
       </div>
     </section>
   );
@@ -225,7 +226,7 @@ function DrumPanels() {
   );
 }
 
-function BassPanels() {
+function BassPanels({ bars }: { bars?: number }) {
   return (
     <div id="bass-rack" className="sq-hosted-rack">
       <div id="bl-editrow">
@@ -239,13 +240,56 @@ function BassPanels() {
         <AccentPanel />
         <KeysPanel />
       </div>
-      <div id="bl-seq"><PitchSeq /></div>
+      <div id="bl-seq"><PitchSeq bars={bars} /></div>
       <div id="bl-fxrack"><BassFxRack /></div>
     </div>
   );
 }
 
-function WtPanels() {
+function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) {
+  const focus = useSeqStore((s) => s.focus);
+  const polySteps = useMemo<SeqStep[][] | undefined>(() => {
+    if (!clip) return undefined;
+    const bytes = b64ToBytes(clip.pattern);
+    return Array.from({ length: clip.bars * 16 }, (_, absoluteStep) => Array.from({ length: 8 }, (_, lane) => {
+      const bar = Math.floor(absoluteStep / 16), step = absoluteStep % 16;
+      const o = wtNoteIdx(bar, step, lane), flags = bytes[o] ?? 0;
+      return { on: !!(flags & 1), acc: !!(flags & 2), duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)), note: Math.min(11, bytes[o + 1] ?? 0), oct: Math.max(-1, Math.min(1, (bytes[o + 2] ?? 1) - 1)) };
+    }));
+  }, [clip?.pattern, clip?.bars]);
+  const toggleChordNote = (absoluteStep: number, note: number) => {
+    if (!focus || !clip) return;
+    const bytes = b64ToBytes(clip.pattern);
+    const bar = Math.floor(absoluteStep / 16), step = absoluteStep % 16;
+    const lanes = Array.from({ length: 8 }, (_, lane) => lane);
+    const active = lanes.find((lane) => {
+      const o = wtNoteIdx(bar, step, lane);
+      return !!(bytes[o] & 1) && bytes[o + 1] === note;
+    });
+    if (active !== undefined) {
+      const o = wtNoteIdx(bar, step, active);
+      bytes[o] = 0; bytes[o + 1] = 0; bytes[o + 2] = 1;
+    } else {
+      const lane = lanes.find((candidate) => !(bytes[wtNoteIdx(bar, step, candidate)] & 1));
+      if (lane === undefined) return;
+      const o = wtNoteIdx(bar, step, lane);
+      bytes[o] = 1 | (1 << 2); bytes[o + 1] = note; bytes[o + 2] = 1;
+    }
+    useSeqStore.getState().updateClipBytes(focus.scene, focus.track, bytes, clip.bars);
+  };
+  const setChordDuration = (absoluteStep: number, note: number, duration: number) => {
+    if (!focus || !clip) return;
+    const bytes = b64ToBytes(clip.pattern);
+    const bar = Math.floor(absoluteStep / 16), step = absoluteStep % 16;
+    const lane = Array.from({ length: 8 }, (_, candidate) => candidate).find((candidate) => {
+      const o = wtNoteIdx(bar, step, candidate);
+      return !!(bytes[o] & 1) && bytes[o + 1] === note;
+    });
+    if (lane === undefined) return;
+    const o = wtNoteIdx(bar, step, lane);
+    bytes[o] = (bytes[o] & 3) | (Math.min(63, clip.bars * 16 - absoluteStep, Math.max(1, duration)) << 2);
+    useSeqStore.getState().updateClipBytes(focus.scene, focus.track, bytes, clip.bars);
+  };
   return (
     <div id="rack" className="sq-hosted-rack">
       <div className="panels">
@@ -258,7 +302,7 @@ function WtPanels() {
         <LfoPanel />
         <MatrixPanel />
         <FxPanel />
-        <SeqPanel />
+        <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} />
       </div>
       <KeyboardBar />
     </div>

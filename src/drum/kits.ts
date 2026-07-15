@@ -108,7 +108,7 @@ function bitcrushParams(): Partial<ParamValues> {
   params['master.swing'] = 0.08;
   params['fx.drive.on'] = 1;
   params['fx.drive.amt'] = 0.6;
-  params['fx.drive.mix'] = 0.9;
+  params['fx.drive.mix'] = 0.2;
   params['fx.delay.on'] = 1;
   params['fx.delay.time'] = 0.18;
   params['fx.delay.fb'] = 0.42;
@@ -163,7 +163,7 @@ function hybridParams(): Partial<ParamValues> {
   params['master.swing'] = 0.24;
   params['fx.drive.on'] = 1;
   params['fx.drive.amt'] = 0.16;
-  params['fx.drive.mix'] = 0.34;
+  params['fx.drive.mix'] = 0.2;
   params['fx.reverb.mix'] = 0.14;
   const samples = [16, 5, 18, 1, 20, 21, 3, 23, 13, 25, 15, 27, 7, 28, 30, 31];
   const oscLevels = [0.50, 0.45, 0.42, 0.25, 0.40, 0.18, 0.16, 0.12, 0.45, 0.42, 0.40, 0.12, 0.25, 0.22, 0.30, 0.35];
@@ -202,7 +202,7 @@ function dustHouseParams(): Partial<ParamValues> {
   params['master.swing'] = 0.46;
   params['fx.drive.on'] = 1;
   params['fx.drive.amt'] = 0.28;
-  params['fx.drive.mix'] = 0.48;
+  params['fx.drive.mix'] = 0.2;
   params['fx.reverb.mix'] = 0.2;
   for (let i = 0; i < PAD_COUNT; i++) {
     params[pad(i, 'noise.level')] = i < 4 ? 0.12 : 0.04;
@@ -218,7 +218,7 @@ function warehouseParams(): Partial<ParamValues> {
   params['master.swing'] = 0.14;
   params['fx.drive.on'] = 1;
   params['fx.drive.amt'] = 0.72;
-  params['fx.drive.mix'] = 0.76;
+  params['fx.drive.mix'] = 0.2;
   params['fx.comp.thr'] = -20;
   params['fx.comp.gain'] = 3;
   params['fx.reverb.mix'] = 0.1;
@@ -260,7 +260,7 @@ function tapeKitParams(): Partial<ParamValues> {
   params['fx.chorus.mix'] = 0.18;
   params['fx.drive.on'] = 1;
   params['fx.drive.amt'] = 0.18;
-  params['fx.drive.mix'] = 0.32;
+  params['fx.drive.mix'] = 0.2;
   for (let i = 0; i < PAD_COUNT; i++) {
     params[pad(i, 'oscA.fine')] = (i % 5) * 3 - 6;
     params[pad(i, 'flt.on')] = 1;

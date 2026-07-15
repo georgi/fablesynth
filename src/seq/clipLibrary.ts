@@ -135,8 +135,12 @@ export function validateClipLibrary(value: unknown): string | null {
       if (bad >= 0) return `${at}: invalid DR1 value at byte ${bad}`;
     } else {
       for (let offset = 0; offset < bytes.length; offset += 3) {
-        if (bytes[offset] > 7) return `${at}: invalid note flags at byte ${offset}`;
-        if (bytes[offset + 1] > 11) return `${at}: invalid note at byte ${offset + 1}`;
+        const flags = bytes[offset];
+        const duration = (flags >> 2) & 0x3f;
+        if (duration < 1 || duration > 63) return `${at}: invalid note flags at byte ${offset}`;
+        if ((bytes[offset + 1] & 0x7f) > 11 || (machine === 'WT1' && bytes[offset + 1] > 11)) {
+          return `${at}: invalid note at byte ${offset + 1}`;
+        }
         if (bytes[offset + 2] > 2) return `${at}: invalid octave at byte ${offset + 2}`;
       }
     }

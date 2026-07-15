@@ -1,8 +1,6 @@
 // Pure WT-1 note-sequencer data model + timing math. A step is
-// { on, note (0..11 within the lane octave), oct (-1/0/+1), acc, tie };
+// { on, note (0..11 within the lane octave), oct (-1/0/+1), acc, duration }.
 // patterns are packed 3 bytes per step so they cross the worklet port as one
-// Uint8Array. Unlike BL-1's mono slide, a *tie* retunes the sounding voice
-// legato (no envelope retrigger) — with GLIDE up it slides, at zero it snaps.
 // The worklet re-implements the same unpack + timing internally
 // (self-contained); the parity test asserts the constants.
 
@@ -13,11 +11,12 @@ export const NOTE_LANES = 12; // one octave of lanes, C at the bottom
 export const OCT_MIN = -1;
 export const OCT_MAX = 1;
 
-// byte 0: bit0 on, bit1 acc, bit2 tie · byte 1: note 0..11 · byte 2: oct+1
+// byte 0: bit0 on, bit1 acc, bits2..7 duration (1..63 steps) · byte 1: note 0..11 · byte 2: oct+1
 export const STEP_STRIDE = 3;
 
 export const ACCENT_VEL = 1.0;
 export const PLAIN_VEL = 0.72;
+export const MAX_NOTE_STEPS = 63;
 // Swing: odd 16ths are delayed by swing * SWING_MAX of a step (1.0 → triplet feel).
 export const SWING_MAX = 0.667;
 
@@ -26,7 +25,7 @@ export interface SeqStep {
   note: number; // 0..11
   oct: number; // -1 | 0 | 1
   acc: boolean;
-  tie: boolean;
+  duration: number;
 }
 
 export type Patterns = Uint8Array;
@@ -36,8 +35,8 @@ export const stepOff = (pat: number, step: number): number =>
 
 export const makeEmptyPatterns = (): Patterns => {
   const p = new Uint8Array(NPATTERNS * STEPS * STEP_STRIDE);
-  // oct byte defaults to 1 (= oct 0) so untouched rests read back neutral
-  for (let i = 2; i < p.length; i += STEP_STRIDE) p[i] = 1;
+  // Neutral octave plus a one-step duration.
+  for (let i = 0; i < p.length; i += STEP_STRIDE) { p[i] = 1 << 2; p[i + 2] = 1; }
   return p;
 };
 
@@ -49,7 +48,7 @@ export function getStep(p: Patterns, pat: number, step: number): SeqStep {
     note: Math.min(NOTE_LANES - 1, p[o + 1]),
     oct: Math.min(OCT_MAX, Math.max(OCT_MIN, p[o + 2] - 1)),
     acc: (flags & 2) !== 0,
-    tie: (flags & 4) !== 0,
+    duration: Math.max(1, Math.min(MAX_NOTE_STEPS, (flags >> 2) & 0x3f)),
   };
 }
 
@@ -58,14 +57,15 @@ export function setStep(p: Patterns, pat: number, step: number, s: Partial<SeqSt
   const cur = getStep(p, pat, step);
   const merged = { ...cur, ...s };
   const o = stepOff(pat, step);
-  next[o] = (merged.on ? 1 : 0) | (merged.acc ? 2 : 0) | (merged.tie ? 4 : 0);
+  const duration = Math.min(MAX_NOTE_STEPS, Math.max(1, merged.duration | 0));
+  next[o] = (merged.on ? 1 : 0) | (merged.acc ? 2 : 0) | (duration << 2);
   next[o + 1] = Math.min(NOTE_LANES - 1, Math.max(0, merged.note | 0));
   next[o + 2] = Math.min(OCT_MAX, Math.max(OCT_MIN, merged.oct | 0)) + 1;
   return next;
 }
 
 // Semitone offset from the root for a step (lane note + octave switch).
-export const stepSemi = (s: SeqStep): number => s.note + 12 * s.oct;
+export const stepSemi = (s: { note: number; oct: number } & Record<string, unknown>): number => s.note + 12 * s.oct;
 
 export const cycleOct = (oct: number): number => (oct >= OCT_MAX ? OCT_MIN : oct + 1);
 
@@ -78,21 +78,16 @@ export const swingDelaySamples = (step: number, swing: number, stepDur: number):
 export const nextChainPos = (chainLen: number, pos: number): number =>
   chainLen > 0 ? (pos + 1) % chainLen : 0;
 
-// A tie line is drawn INTO a step from its predecessor when both are on
-// and the step is flagged tie (matches the worklet's legato rule).
-export const tiesInto = (prev: SeqStep, cur: SeqStep): boolean =>
-  cur.on && cur.tie && prev.on;
-
 export function writePattern(p: Patterns, pat: number, steps: Array<Partial<SeqStep>>): Patterns {
   let next = p;
   steps.forEach((s, i) => {
-    if (i < STEPS) next = setStep(next, pat, i, { on: false, note: 0, oct: 0, acc: false, tie: false, ...s });
+    if (i < STEPS) next = setStep(next, pat, i, { on: false, note: 0, oct: 0, acc: false, duration: 1, ...s });
   });
   return next;
 }
 
 // The RAND button: a sparse minor line with occasional octave throws,
-// accents and legato ties — melodic flavor rather than BL-1's acid crawl.
+// accents and varied note lengths — melodic flavor rather than BL-1's acid crawl.
 export function randomPattern(rng: () => number = Math.random): Array<Partial<SeqStep>> {
   const pool = [0, 0, 2, 3, 5, 7, 10];
   const steps: Array<Partial<SeqStep>> = [];
@@ -103,7 +98,7 @@ export function randomPattern(rng: () => number = Math.random): Array<Partial<Se
       note: pool[(rng() * pool.length) | 0],
       oct: rng() < 0.18 ? (rng() < 0.5 ? -1 : 1) : 0,
       acc: on && rng() < 0.22,
-      tie: on && i > 0 && rng() < 0.25,
+      duration: 1 + ((rng() * 4) | 0),
     });
   }
   return steps;

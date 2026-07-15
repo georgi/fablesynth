@@ -17,7 +17,7 @@ private:
     juce::TextButton prev{"<"}, next{">"}, save{"SAVE"};
     juce::ComboBox presets;
     ScopeView scope; SpectrumView spectrum;
-    Knob master;
+    Knob bpm, swing, master;
     juce::Rectangle<int> brandArea, scopeBox, specBox, statusArea;
     int lastVoices = -1; bool lastMidi = false;
 };

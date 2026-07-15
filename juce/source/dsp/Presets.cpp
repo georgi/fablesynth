@@ -28,7 +28,7 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.002f}, {"env1.d", 0.3f}, {"env1.s", 0.45f}, {"env1.r", 0.08f},
             {"env2.a", 0.001f}, {"env2.d", 0.19f}, {"env2.s", 0}, {"env2.r", 0.12f},
             {"master.glide", 0.06f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.45f}, {"fx.drive.mix", 0.8f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.45f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.18f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.22f},
         }},
 
@@ -61,7 +61,7 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 1}, {"lfo1.rate", 0.6f},
             {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.55f},
             {"mat2.src", 5}, {"mat2.dst", 1}, {"mat2.amt", 0.3f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.22f}, {"fx.drive.mix", 0.6f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.22f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"CATHEDRAL BELL", {
@@ -86,7 +86,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.55f},
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.5f},
             {"mat3.src", 1}, {"mat3.dst", 2}, {"mat3.amt", -0.35f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.7f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"REESE BASS", {
@@ -98,7 +98,7 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 0}, {"lfo1.rate", 0.16f},
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.18f},
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.12f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.7f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"POWER FIFTHS", {
@@ -122,7 +122,7 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 1}, {"lfo1.rate", 5.5f},
             {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.7f},
             {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.4f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.55f}, {"fx.drive.mix", 0.85f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.55f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"FUTURE CHORD", {
@@ -146,7 +146,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.5f},
             {"mat2.src", 1}, {"mat2.dst", 2}, {"mat2.amt", 0.4f},
             {"mat3.src", 4}, {"mat3.dst", 3}, {"mat3.amt", 0.3f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.6f}, {"fx.drive.mix", 0.8f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.6f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.18f},
         }},
 
@@ -158,7 +158,7 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.002f}, {"env1.d", 0.16f}, {"env1.s", 0}, {"env1.r", 0.1f},
             {"env2.a", 0.002f}, {"env2.d", 0.05f}, {"env2.s", 0}, {"env2.r", 0.05f},
             {"mat1.src", 3}, {"mat1.dst", 4}, {"mat1.amt", 0.25f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.6f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.2f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.2f},
         }},
 
@@ -217,7 +217,7 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.004f}, {"env1.d", 0.3f}, {"env1.s", 0.95f}, {"env1.r", 0.12f},
             {"lfo1.shape", 0}, {"lfo1.rate", 4},
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.7f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.75f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"GLIDE LEAD", {

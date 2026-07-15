@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { FACTORY_PRESETS } from '../presets';
 import { FACTORY_SESSION_PRESETS } from './sessionPresets';
+import { b64ToBytes, wtNoteIdx } from './protocol';
 
 describe('SQ-4 factory session patch contract', () => {
   it('keeps the native session-library ordering and factory patch indices', () => {
@@ -18,7 +20,80 @@ describe('SQ-4 factory session patch contract', () => {
     ]);
     expect(FACTORY_SESSION_PRESETS[1].session.tracks.map((track) => track.patch)).toEqual([
       { kind: 'factory', index: 13 }, { kind: 'factory', index: 2 },
-      { kind: 'factory', index: 4 }, { kind: 'factory', index: 11 },
+      { kind: 'factory', index: 14 }, { kind: 'factory', index: 11 },
     ]);
+  });
+
+  it('uses clean lead voices and measured per-track scene faders', () => {
+    const bassGains = new Set<number>();
+    const leadGains = new Set<number>();
+    const padGains = new Set<number>();
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      const [drums, bass, lead, pad] = preset.session.tracks;
+      expect(drums!.gain).toBe(0.78);
+      const leadPatch = FACTORY_PRESETS[(lead!.patch as { index: number }).index]!;
+      expect(leadPatch.params['fx.drive.on'] ?? 0).toBe(0);
+      expect(leadPatch.params['filter.drive'] ?? 0).toBe(0);
+      bassGains.add(bass!.gain);
+      leadGains.add(lead!.gain);
+      padGains.add(pad!.gain);
+    }
+    expect(bassGains.size).toBeGreaterThan(3);
+    expect(leadGains.size).toBeGreaterThan(3);
+    expect(padGains.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('writes each pad chord as three bar-length notes', () => {
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      for (const scene of preset.session.scenes) {
+        const pad = scene.clips[3]!;
+        const bytes = b64ToBytes(pad.pattern);
+        expect(pad.bars).toBe(4);
+        for (let bar = 0; bar < 4; bar++) {
+          expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, 0, lane)] & 1)).toEqual([1, 1, 1]);
+          expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, 0, lane)] >> 2)).toEqual([16, 16, 16]);
+          for (let step = 1; step < 16; step++) {
+            expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, step, lane)] & 1)).toEqual([0, 0, 0]);
+          }
+        }
+      }
+    }
+  });
+
+  it('gives every session distinct bass, lead, and pad clips', () => {
+    for (const track of [1, 2, 3]) {
+      const clips = FACTORY_SESSION_PRESETS.map((preset) => preset.session.scenes[2].clips[track]!);
+      expect(new Set(clips.map((clip) => clip.pattern)).size).toBe(FACTORY_SESSION_PRESETS.length);
+      expect(new Set(clips.map((clip) => clip.name)).size).toBe(FACTORY_SESSION_PRESETS.length);
+    }
+  });
+
+  it('composes six-note-per-bar lead phrases anchored to each chord', () => {
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      const lead = b64ToBytes(preset.session.scenes[2].clips[2]!.pattern);
+      const pad = b64ToBytes(preset.session.scenes[2].clips[3]!.pattern);
+      const tonic = pad[wtNoteIdx(0, 0, 0) + 1] & 0x7f;
+      const minorScale = new Set([0, 2, 3, 5, 7, 8, 10]);
+      for (let bar = 0; bar < 4; bar++) {
+        const events = Array.from({ length: 16 }, (_, step) => {
+          const offset = wtNoteIdx(bar, step, 0);
+          return { step, offset, on: !!(lead[offset] & 1), duration: lead[offset] >> 2, pitch: lead[offset + 1] & 0x7f };
+        }).filter((event) => event.on);
+        expect(events).toHaveLength(6);
+
+        const chord = new Set([0, 1, 2].map((lane) => pad[wtNoteIdx(bar, 0, lane) + 1] & 0x7f));
+        expect(chord.has(events[0].pitch), `${preset.name} bar ${bar + 1} downbeat`).toBe(true);
+        expect(chord.has(events[3].pitch), `${preset.name} bar ${bar + 1} midpoint`).toBe(true);
+
+        events.forEach((event, index) => {
+          const nextStep = events[index + 1]?.step ?? 16;
+          expect(event.duration).toBeGreaterThan(0);
+          expect(event.step + event.duration).toBeLessThanOrEqual(nextStep);
+          const relative = (event.pitch - tonic + 12) % 12;
+          const harmonicLeadingTone = relative === 11 && chord.has(event.pitch);
+          expect(minorScale.has(relative) || harmonicLeadingTone, `${preset.name} bar ${bar + 1} scale`).toBe(true);
+        });
+      }
+    }
   });
 });

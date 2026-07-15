@@ -196,9 +196,9 @@ public:
     void setHostClipMode(bool on, int maxBlock = 0) {
         hostClipMode_ = on;
         // Reserve the clip host's buffers so no launch/update/tick allocates on
-        // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
-        // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
-        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
+        // the audio thread (8192 covers SQ_MAX_BARS of the 8-note WT-1 clip
+        // format; the event headroom is sized to maxBlock — see hostMaxEvents).
+        if (on) clipHost_.prepare(SQ_MAX_BARS * 512, hostMaxEvents(maxBlock));
         else clipHost_.clear();
     }
     void hostTempo(double bpm, double swing, double anchorFrame) {

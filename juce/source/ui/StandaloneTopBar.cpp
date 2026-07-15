@@ -7,8 +7,11 @@ TopBar::TopBar(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
       scope([&p](float* out, int n) { p.readScope(out, n); }, col::acA),
       spectrum([&p](float* out, int n) { p.readScope(out, n); },
                [&p] { return p.getCurrentSr(); }, col::acB),
+      bpm(s, "seq.bpm", Knob::Sm, Accent::A),
+      swing(s, "seq.swing", Knob::Sm, Accent::A),
       master(s, "master.volume", Knob::Md, Accent::N) {
-    addAndMakeVisible(scope); addAndMakeVisible(spectrum); addAndMakeVisible(master);
+    addAndMakeVisible(scope); addAndMakeVisible(spectrum);
+    addAndMakeVisible(bpm); addAndMakeVisible(swing); addAndMakeVisible(master);
     for (int i = 0; i < proc.getNumPrograms(); ++i) presets.addItem(proc.getProgramName(i), i + 1);
     presets.setSelectedId(proc.getCurrentProgram() + 1, juce::dontSendNotification);
     presets.onChange = [this] { proc.setCurrentProgram(presets.getSelectedId() - 1); };
@@ -75,6 +78,8 @@ void TopBar::resized() {
     presets.setBounds(pb);
     master.setBounds(r.removeFromRight(70)); r.removeFromRight(10);
     statusArea = r.removeFromRight(96); r.removeFromRight(10);
+    swing.setBounds(r.removeFromRight(60)); r.removeFromRight(4);
+    bpm.setBounds(r.removeFromRight(60)); r.removeFromRight(10);
     specBox = r.removeFromRight(168).withSizeKeepingCentre(168, 46); r.removeFromRight(10);
     scopeBox = r.removeFromRight(168).withSizeKeepingCentre(168, 46);
     scope.setBounds(scopeBox.reduced(1));

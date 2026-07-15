@@ -26,14 +26,8 @@ static constexpr int kClockW = 60, kClockGap = 6;
 
 NoteSeqView::NoteSeqView(WtUiModel& m)
     : model(m),
-      bpm_(m.parameters(), "seq.bpm", Knob::Sm, Accent::A),
-      swing_(m.parameters(), "seq.swing", Knob::Sm, Accent::A),
-      gate_(m.parameters(), "seq.gate", Knob::Sm, Accent::A),
       root_(m.parameters(), "seq.root", Accent::A) {
     setInterceptsMouseClicks(true, true);
-    addAndMakeVisible(bpm_);
-    addAndMakeVisible(swing_);
-    addAndMakeVisible(gate_);
     addAndMakeVisible(root_);
     // params.ts fmtNote: seq.root shows a note name (48 -> C3), not the number.
     root_.nameProvider = [](int v) {
@@ -46,13 +40,9 @@ NoteSeqView::NoteSeqView(WtUiModel& m)
 }
 
 void NoteSeqView::resized() {
-    // .ns-clock: knobs + ROOT stepper stacked on the right, behind a border.
+    // .ns-clock: ROOT stays with pitch editing; timing lives in the top bar.
     const int x = getWidth() - kPadX - kClockW;
-    int y = kBodyY;
-    bpm_.setBounds(x, y, kClockW, 57);   y += 57 + 4;
-    swing_.setBounds(x, y, kClockW, 57); y += 57 + 4;
-    gate_.setBounds(x, y, kClockW, 57);  y += 57 + 4;
-    root_.setBounds(x, y, kClockW, 18);
+    root_.setBounds(x, kBodyY, kClockW, 18);
 }
 
 juce::Rectangle<int> NoteSeqView::transportBounds() const {

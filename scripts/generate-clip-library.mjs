@@ -17,7 +17,7 @@ const roles = {
 };
 const families = new Set(['techno', 'house', 'electro', 'breaks', 'acid', 'ambient', 'lo-fi', 'cinematic', 'experimental']);
 const tags = new Set(['dark', 'bright', 'warm', 'cold', 'sparse', 'dense', 'syncopated', 'straight', 'triplet-feel', 'driving', 'hypnotic', 'melodic', 'atonal', 'peak-time', 'build-up', 'breakdown', 'groovy', 'glitchy']);
-const bytesPerBar = { DR1: 256, BL1: 48, WT1: 144 };
+const bytesPerBar = { DR1: 256, BL1: 48, WT1: 384 };
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function fail(message) {
@@ -64,8 +64,12 @@ function validate(doc) {
     if (clip.machine === 'DR1' && bytes.some((value) => value > 2)) fail(`${at}.pattern has an invalid DR1 step value`);
     if (clip.machine !== 'DR1') {
       for (let offset = 0; offset < bytes.length; offset += 3) {
-        if (bytes[offset] > 7) fail(`${at}.pattern has invalid note flags at byte ${offset}`);
-        if (bytes[offset + 1] > 11) fail(`${at}.pattern has invalid note lane at byte ${offset + 1}`);
+        const flags = bytes[offset];
+        const duration = (flags >> 2) & 0x3f;
+        if (duration < 1 || duration > 63) fail(`${at}.pattern has invalid note flags at byte ${offset}`);
+        if ((bytes[offset + 1] & 0x7f) > 11 || (clip.machine === 'WT1' && bytes[offset + 1] > 11)) {
+          fail(`${at}.pattern has invalid note lane at byte ${offset + 1}`);
+        }
         if (bytes[offset + 2] > 2) fail(`${at}.pattern has invalid octave at byte ${offset + 2}`);
       }
     }

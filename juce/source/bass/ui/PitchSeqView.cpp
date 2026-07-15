@@ -307,12 +307,8 @@ void PitchSeqView::paint(juce::Graphics& g) {
             const auto b = cellBounds(s, note).toFloat();
             const bool active = st.on && st.note == note;
             if (active) {
-                if (st.acc)
-                    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffa4ffd0), b.getX(), b.getY(),
-                                                           juce::Colour(0xff2fbf76), b.getX(), b.getBottom(), false));
-                else
-                    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3ddc8c), b.getX(), b.getY(),
-                                                           juce::Colour(0xff1a8f57), b.getX(), b.getBottom(), false));
+                g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3ddc8c), b.getX(), b.getY(),
+                                                       juce::Colour(0xff1a8f57), b.getX(), b.getBottom(), false));
             } else {
                 g.setColour(note == 0 ? juce::Colour(0xff0c1016) : juce::Colour(0xff0a0d13));
             }

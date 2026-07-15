@@ -15,7 +15,7 @@ std::vector<ParamInfo> build() {
     // ---- oscillator ----
     v.push_back({BL_OSC_TABLE,  "osc.table",  "TABLE",    0, (float)TABLE_NAMES.size() - 1, 0, Curve::Int, Kind::Enum, &TABLE_NAMES});
     v.push_back({BL_OSC_POS,    "osc.pos",    "POS",      0, 1,      0.3f,  Curve::Lin, Kind::Float, nullptr});
-    v.push_back({BL_OSC_TUNE,   "osc.tune",   "TUNE",   -24, 24,    -12,    Curve::Int, Kind::Float, nullptr});
+    v.push_back({BL_OSC_TUNE,   "osc.tune",   "TUNE",   -24, 24,      0,    Curve::Int, Kind::Float, nullptr});
     v.push_back({BL_OSC_FINE,   "osc.fine",   "FINE",  -100, 100,    0,     Curve::Int, Kind::Float, nullptr});
     v.push_back({BL_OSC_UNISON, "osc.unison", "UNI",      1, 7,      1,     Curve::Int, Kind::Float, nullptr});
     v.push_back({BL_OSC_DETUNE, "osc.detune", "DET",      0, 1,      0.2f,  Curve::Lin, Kind::Float, nullptr});
@@ -49,7 +49,7 @@ std::vector<ParamInfo> build() {
     // ---- FX (post-accent drive · no compressor, accents live) ----
     v.push_back({BL_FXDRIVE_ON,    "fx.drive.on",    "ON",     0, 1,      1,     Curve::Int, Kind::Bool,  nullptr});
     v.push_back({BL_FXDRIVE_AMT,   "fx.drive.amt",   "AMT",    0, 1,      0.35f, Curve::Lin, Kind::Float, nullptr});
-    v.push_back({BL_FXDRIVE_MIX,   "fx.drive.mix",   "MIX",    0, 1,      1,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({BL_FXDRIVE_MIX,   "fx.drive.mix",   "MIX",    0, 1,      0.2f,  Curve::Lin, Kind::Float, nullptr});
     v.push_back({BL_FXCHORUS_ON,   "fx.chorus.on",   "ON",     0, 1,      0,     Curve::Int, Kind::Bool,  nullptr});
     v.push_back({BL_FXCHORUS_RATE, "fx.chorus.rate", "RATE", 0.05f, 8,    0.6f,  Curve::Log, Kind::Float, nullptr});
     v.push_back({BL_FXCHORUS_DEPTH,"fx.chorus.depth","DEPTH",  0, 1,      0.3f,  Curve::Lin, Kind::Float, nullptr});

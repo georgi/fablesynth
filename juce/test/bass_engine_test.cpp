@@ -81,7 +81,7 @@ int main() {
         for (int i = 0; i < (int)info.size(); i++) if (info[(size_t)i].id != i) ordered = false;
         check(ordered, "descriptors ordered by flat id");
         auto d = defaultBassParams();
-        check(d[BL_OSC_TUNE] == -12.0f, "osc.tune default -12 ST", num(d[BL_OSC_TUNE]));
+        check(d[BL_OSC_TUNE] == 0.0f, "osc.tune default 0 ST", num(d[BL_OSC_TUNE]));
         check(d[BL_FLT_CUT] == 340.0f, "flt.cut default 340 Hz", num(d[BL_FLT_CUT]));
         check(d[BL_SEQ_BPM] == 138.0f, "seq.bpm default 138", num(d[BL_SEQ_BPM]));
         check(d[BL_SUB_OCT] == -1.0f, "sub.oct default -1", num(d[BL_SUB_OCT]));
@@ -132,6 +132,10 @@ int main() {
             }
         check(allResolve, "all bass patch override pids resolve", badOverride);
         check(allInRange, "all bass patch overrides are in range", badOverride);
+        bool allNeutralTune = true;
+        for (const auto& patch : bank)
+            allNeutralTune = allNeutralTune && applyBassPatch(patch)[BL_OSC_TUNE] == 0.0f;
+        check(allNeutralTune, "all factory bass patches use neutral oscillator tuning");
         const auto& acid = bank[0];
         auto s0 = getBassStep(acid.patterns.data(), 0, 0);
         check(s0.on && s0.acc && s0.note == 0 && s0.oct == 0, "acid A step 1: accented root");
@@ -142,7 +146,7 @@ int main() {
         check(bank[2].chain == std::vector<int>({ 0, 1 }), "NEON SQUELCH chains A->B");
         auto pv = applyBassPatch(bank[1]);
         check(pv[BL_FLT_CUT] == 210.0f, "RUBBER SUB overrides flt.cut=210", num(pv[BL_FLT_CUT]));
-        check(pv[BL_OSC_TUNE] == -12.0f, "unlisted params keep defaults", num(pv[BL_OSC_TUNE]));
+        check(pv[BL_OSC_TUNE] == 0.0f, "unlisted params keep defaults", num(pv[BL_OSC_TUNE]));
     }
 
     auto tables = makeTables();
@@ -299,10 +303,11 @@ int main() {
         const double dur = (60.0 / 138.0 / 4.0) * SR;
         auto cut = renderTwo(false);
         auto tied = renderTwo(true);
-        // just before the step-2 boundary the tied run must still be sounding
+        // Adjustable one-step duration keeps both runs gated to the boundary;
+        // the slide path must remain audible without reverting to a short gate.
         const int a = (int)(dur * 0.9), b = (int)(dur * 0.99);
-        check(rms(tied, a, b) > rms(cut, a, b) * 2,
-              "tied step keeps sounding across the gate-frac point",
+        check(rms(tied, a, b) > 1e-3,
+              "slide target keeps sounding through the source note duration",
               num(rms(cut, a, b)) + " -> " + num(rms(tied, a, b)));
     }
 

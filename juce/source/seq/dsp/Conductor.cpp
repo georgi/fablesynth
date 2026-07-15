@@ -144,7 +144,8 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
             for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) for (int lane = 0; lane < lanes; ++lane) {
                 const int o = entry.machine == Machine::WT1 ? sqWtNoteIdx(bar, step, lane) : sqNoteIdx(bar, step);
                 if ((bytes[(size_t)o] & 1u) == 0) continue;
-                int64_t shifted = (int)bytes[(size_t)o + 1]
+                const uint8_t slide = bytes[(size_t)o + 1] & 0x80;
+                int64_t shifted = (int)(bytes[(size_t)o + 1] & 0x7f)
                                 + 12 * ((int)bytes[(size_t)o + 2] - 1)
                                 + (int64_t)transposeSemitones;
                 // The wire format spans three octaves. Fold by octaves (not
@@ -155,7 +156,7 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
                 // C++ division truncates toward zero, so offset to a
                 // non-negative 0..35 representation before splitting it.
                 const int encoded = (int)shifted + 12;
-                bytes[(size_t)o + 1] = (uint8_t)(encoded % 12);
+                bytes[(size_t)o + 1] = (uint8_t)(slide | (encoded % 12));
                 bytes[(size_t)o + 2] = (uint8_t)(encoded / 12);
             }
         }

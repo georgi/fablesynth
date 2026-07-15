@@ -9,7 +9,7 @@
 // src/components/panels/SeqPanel.tsx (+ index.css .ns-*): 12 note lanes per
 // step (tap = set note, tap again = rest), per-step octave / accent / tie
 // rows, bars 1-4 + sequence length, RAND, playhead cursor, glowing tie
-// connectors, and the BPM / SWING / GATE / ROOT clock column. Ties retune the
+// connectors and the ROOT clock column. BPM / SWING live in the WT-1 top bar.
 // sounding voice legato — the GLIDE knob decides snap vs slide. Pattern/chain
 // semantics mirror src/store.ts exactly.
 namespace fui {
@@ -46,7 +46,6 @@ public:
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
     WtUiModel& model;
-    Knob bpm_, swing_, gate_;
     Stepper root_;
     juce::Random rng_;
     juce::uint32 lastSig_ = 0xffffffffu;

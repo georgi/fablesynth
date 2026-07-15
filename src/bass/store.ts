@@ -42,10 +42,11 @@ export interface BassStore {
   setParam: (id: string, v: number) => void;
   noteOn: (semi: number, vel: number) => void;
   noteOff: (semi: number) => void;
-  toggleCell: (step: number, note: number) => void;
-  cycleStepOct: (step: number) => void;
-  toggleStepAcc: (step: number) => void;
-  toggleStepSlide: (step: number) => void;
+  toggleCell: (step: number, note: number, pattern?: number) => void;
+  cycleStepOct: (step: number, pattern?: number) => void;
+  toggleStepAcc: (step: number, pattern?: number) => void;
+  toggleStepSlide: (step: number, pattern?: number) => void;
+  setStepDuration: (step: number, duration: number, pattern?: number) => void;
   randomize: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
@@ -105,38 +106,52 @@ export const useBassStore = create<BassStore>((set, get) => ({
     });
   },
 
-  toggleCell: (step, note) => {
+  toggleCell: (step, note, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
     const next = cur.on && cur.note === note
-      ? setStep(patterns, editPattern, step, { on: false, acc: false, slide: false })
-      : setStep(patterns, editPattern, step, { on: true, note });
+      ? setStep(patterns, pat, step, { on: false, acc: false, slide: false, duration: 1 })
+      : setStep(patterns, pat, step, { on: true, note });
     set({ patterns: next });
     bassEngine.setPatterns(next);
   },
 
-  cycleStepOct: (step) => {
+  cycleStepOct: (step, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
-    const next = setStep(patterns, editPattern, step, { oct: cycleOct(cur.oct) });
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
+    const next = setStep(patterns, pat, step, { oct: cycleOct(cur.oct) });
     set({ patterns: next });
     bassEngine.setPatterns(next);
   },
 
-  toggleStepAcc: (step) => {
+  toggleStepAcc: (step, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
     if (!cur.on) return;
-    const next = setStep(patterns, editPattern, step, { acc: !cur.acc });
+    const next = setStep(patterns, pat, step, { acc: !cur.acc });
     set({ patterns: next });
     bassEngine.setPatterns(next);
   },
 
-  toggleStepSlide: (step) => {
+  toggleStepSlide: (step, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
     if (!cur.on) return;
-    const next = setStep(patterns, editPattern, step, { slide: !cur.slide });
+    const next = setStep(patterns, pat, step, { slide: !cur.slide });
+    set({ patterns: next });
+    bassEngine.setPatterns(next);
+  },
+
+  setStepDuration: (step, duration, pattern) => {
+    const { patterns, editPattern } = get();
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
+    if (!cur.on) return;
+    const next = setStep(patterns, pat, step, { duration });
     set({ patterns: next });
     bassEngine.setPatterns(next);
   },
@@ -188,10 +203,8 @@ export const useBassStore = create<BassStore>((set, get) => ({
       const base: Partial<BassStore> = { curStep: data.s, curPat: data.pat };
       if (data.semi > -100) {
         base.curSemi = data.semi;
-        if (!data.slide) {
-          base.hitTick = performance.now();
-          base.hitAcc = data.acc;
-        }
+        base.hitTick = performance.now();
+        base.hitAcc = data.acc;
       }
       return base;
     });

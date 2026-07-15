@@ -1,6 +1,7 @@
 // Main-thread DR-1 engine: owns the AudioContext, drum worklet and FX graph.
 
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
+import { makeDriveCurve } from '../../engine/drive';
 import { type ParamValues } from '../../params';
 import { defaultDrumParams, PAD_COUNT, pad } from '../params';
 import { generateDrumTables } from './drumtables';
@@ -331,15 +332,9 @@ export class DrumEngine {
     const t = this.ctx.currentTime;
 
     const amt = p[id('fx.drive.amt')];
-    const k = 1 + amt * 24;
-    const curve = new Float32Array(513);
-    const norm = Math.tanh(k);
-    for (let i = 0; i < 513; i++) {
-      const x = (i / 256) - 1;
-      curve[i] = Math.tanh(x * k) / norm;
-    }
+    const { curve, preGain } = makeDriveCurve(amt);
     chain.driveShaper.curve = curve;
-    chain.drivePre.gain.value = 1 + amt * 2;
+    chain.drivePre.gain.value = preGain;
     this.setMix(chain.driveMix, p[id('fx.drive.on')], p[id('fx.drive.mix')]);
 
     chain.compressor.threshold.setTargetAtTime(p[id('fx.comp.thr')], t, 0.02);

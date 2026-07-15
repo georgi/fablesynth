@@ -123,9 +123,9 @@ void DrumFx::setParams(const DrumParamArray& p, int pad) {
     const int b = dpid(std::max(0, std::min(DR_NPADS - 1, pad)), 0);
     // drive
     float amt = p[(size_t)(b + DP_FXDRIVE_AMT)];
-    driveK_ = 1 + amt * 24;
-    driveNorm_ = 1.0f / std::tanh(driveK_);
     drivePre_ = 1 + amt * 2;
+    driveK_ = 1 + amt * 12;
+    driveNorm_ = 1.0f / (drivePre_ * std::tanh(driveK_));
     bool dOn = p[(size_t)(b + DP_FXDRIVE_ON)] > 0.5f;
     driveOff_ = !dOn;
     driveWet_.target = mixGate(dOn, p[(size_t)(b + DP_FXDRIVE_MIX)], true);
