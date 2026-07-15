@@ -77,6 +77,13 @@ juce::Rectangle<int> PitchSeqView::slideBounds(int step) const {
     return { c.getX(), c.getY() + kSldY, c.getWidth(), kSldH };
 }
 
+juce::Rectangle<int> PitchSeqView::resizeBounds(int step) const {
+    const auto st = proc.sequenceStep(proc.editPattern(), step);
+    if (!st.on) return {};
+    auto cell = cellBounds(step, st.note);
+    return cell.removeFromRight(6).expanded(2, 2);
+}
+
 // ---- store handlers ----------------------------------------------------------
 
 void PitchSeqView::toggleCell(int step, int note) {
@@ -114,6 +121,14 @@ void PitchSeqView::toggleStepSlide(int step) {
     if (!cur.on) return;
     cur.slide = !cur.slide;
     proc.setSequenceStep(pat, step, cur);
+    repaint();
+}
+
+void PitchSeqView::resizeStep(int step, int duration) {
+    auto cur = proc.sequenceStep(proc.editPattern(), step);
+    if (!cur.on) return;
+    cur.duration = juce::jlimit(1, 63, duration);
+    proc.setSequenceStep(proc.editPattern(), step, cur);
     repaint();
 }
 
@@ -164,6 +179,9 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
     if (randBounds().contains(pos)) { randomize(); return; }
+    for (int s = 0; s < fable::BL_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
+        resizeStep_ = s; resizeStartDuration_ = proc.sequenceStep(proc.editPattern(), s).duration; return;
+    }
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
         for (int note = 0; note < fable::BL_NOTE_LANES; ++note)
@@ -174,6 +192,14 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 }
+
+void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
+    if (resizeStep_ < 0) return;
+    const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
+    resizeStep(resizeStep_, resizeStartDuration_ + delta);
+}
+
+void PitchSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
 
 // ---- animation ----------------------------------------------------------------
 
@@ -365,6 +391,24 @@ void PitchSeqView::paint(juce::Graphics& g) {
             g.setColour(green.withAlpha(0.18f));
             g.drawRoundedRectangle(cf.expanded(1.5f), 7.0f, 3.0f);
         }
+    }
+
+    // Duration blocks share the WT-1 piano-roll affordance; slide remains a
+    // separate per-step control and is never modified by resizing.
+    const int gridRight = getWidth() - kPadX;
+    for (int s = 0; s < fable::BL_STEPS; ++s) {
+        const auto& st = steps[s];
+        if (!st.on) continue;
+        const auto start = cellBounds(s, st.note);
+        const int pitch = colBounds(s).getWidth();
+        const int width = pitch * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+        auto block = start.withWidth(juce::jmax(pitch, juce::jmin(width, gridRight - start.getX()))).reduced(1, 1);
+        const auto bf = block.toFloat();
+        g.setColour(green.withAlpha(0.78f));
+        g.fillRoundedRectangle(bf, 3.0f);
+        g.setColour(green.withAlpha(0.95f));
+        g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
+        g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
     }
 
     // ---- slide connectors, drawn INTO a step from its predecessor ----

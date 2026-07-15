@@ -16,6 +16,8 @@ public:
     ~PitchSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 
     // Web store handlers — public so the host test drives the exact code
     // paths a mouse click takes.
@@ -23,6 +25,7 @@ public:
     void cycleStepOct(int step);            // store.cycleStepOct
     void toggleStepAcc(int step);           // store.toggleStepAcc
     void toggleStepSlide(int step);         // store.toggleStepSlide
+    void resizeStep(int step, int duration); // preserves accent + slide
     void randomize();                       // store.randomize (RAND button)
     void patternClick(int i);               // choose bar to edit
     void setSequenceLength(int bars);        // play bars 1 through N
@@ -37,12 +40,14 @@ public:
     juce::Rectangle<int> octBounds(int step) const;
     juce::Rectangle<int> accBounds(int step) const;
     juce::Rectangle<int> slideBounds(int step) const;
+    juce::Rectangle<int> resizeBounds(int step) const;
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
     BassUiModel& proc;
     juce::Random rng_;
     juce::uint32 lastSig_ = 0xffffffffu;
+    int resizeStep_ = -1, resizeStartDuration_ = 1;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PitchSeqView)
 };
 

@@ -351,6 +351,11 @@ int main(int argc, char** argv) {
         seq.toggleStepSlide(4);
         s = proc.getSeqStep(0, 4);
         check(s.acc && s.slide, "accent + slide latch on an active step");
+        seq.resizeStep(4, 63);
+        s = proc.getSeqStep(0, 4);
+        check(s.duration == 63 && s.slide, "duration resize preserves slide", s.duration);
+        seq.resizeStep(4, -4);
+        check(proc.getSeqStep(0, 4).duration == 1, "bass duration resize clamps at 1");
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
         seq.cycleStepOct(4);

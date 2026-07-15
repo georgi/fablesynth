@@ -497,6 +497,10 @@ int main(int argc, char** argv) {
         seq.toggleStepAcc(4);
         s = proc.getSeqStep(0, 4);
         check(s.acc && s.duration >= 1, "accent latches on an active step", s.duration);
+        seq.resizeStep(4, 63);
+        check(proc.getSeqStep(0, 4).duration == 63, "duration resize clamps at 63", proc.getSeqStep(0, 4).duration);
+        seq.resizeStep(4, -4);
+        check(proc.getSeqStep(0, 4).duration == 1, "duration resize clamps at 1", proc.getSeqStep(0, 4).duration);
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
         seq.cycleStepOct(4);

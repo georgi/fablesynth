@@ -88,6 +88,13 @@ juce::Rectangle<int> NoteSeqView::accBounds(int step) const {
     return { c.getX(), c.getY() + kAccY, c.getWidth(), kAccH };
 }
 
+juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
+    const auto st = model.sequenceStep(model.editPattern(), step);
+    if (!st.on) return {};
+    auto cell = cellBounds(step, st.note);
+    return cell.removeFromRight(6).expanded(2, 2);
+}
+
 // ---- store handlers ----------------------------------------------------------
 
 void NoteSeqView::toggleCell(int step, int note) {
@@ -116,6 +123,14 @@ void NoteSeqView::toggleStepAcc(int step) {
     if (!cur.on) return;
     cur.acc = !cur.acc;
     model.setSequenceStep(pat, step, cur);
+    repaint();
+}
+
+void NoteSeqView::resizeStep(int step, int duration) {
+    auto cur = model.sequenceStep(model.editPattern(), step);
+    if (!cur.on) return;
+    cur.duration = juce::jlimit(1, fable::SEQ_MAX_NOTE_STEPS, duration);
+    model.setSequenceStep(model.editPattern(), step, cur);
     repaint();
 }
 
@@ -171,6 +186,9 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
     if (randBounds().contains(pos)) { randomize(); return; }
+    for (int s = 0; s < fable::SEQ_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
+        resizeStep_ = s; resizeStartDuration_ = model.sequenceStep(model.editPattern(), s).duration; return;
+    }
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
         for (int note = 0; note < fable::SEQ_NOTE_LANES; ++note)
@@ -180,6 +198,14 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 }
+
+void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
+    if (resizeStep_ < 0) return;
+    const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
+    resizeStep(resizeStep_, resizeStartDuration_ + delta);
+}
+
+void NoteSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
 
 // ---- animation ----------------------------------------------------------------
 
@@ -411,6 +437,24 @@ void NoteSeqView::paint(juce::Graphics& g) {
             g.setColour(cyan.withAlpha(0.18f));
             g.drawRoundedRectangle(cf.expanded(1.5f), 7.0f, 3.0f);
         }
+    }
+
+    // Painted piano-roll layer: each trigger owns a horizontal duration block.
+    // The final 5px is a bright grab handle for right-edge resizing.
+    const int gridRight = getWidth() - kPadX - kClockW - kClockGap;
+    for (int s = 0; s < fable::SEQ_STEPS; ++s) {
+        const auto& st = steps[s];
+        if (!st.on) continue;
+        const auto start = cellBounds(s, st.note);
+        const int pitch = colBounds(s).getWidth();
+        const int width = pitch * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+        auto block = start.withWidth(juce::jmax(pitch, juce::jmin(width, gridRight - start.getX()))).reduced(1, 1);
+        const auto bf = block.toFloat();
+        g.setColour((st.acc ? juce::Colour(0xffaef2ff) : cyan).withAlpha(0.78f));
+        g.fillRoundedRectangle(bf, 3.0f);
+        g.setColour(cyan.withAlpha(0.95f));
+        g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
+        g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
     }
 }
 

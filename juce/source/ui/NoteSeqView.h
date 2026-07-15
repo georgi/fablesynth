@@ -21,12 +21,15 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 
     // Web store handlers — public so the host test drives the exact code
     // paths a mouse click takes.
     void toggleCell(int step, int note);    // store.toggleCell
     void cycleStepOct(int step);            // store.cycleStepOct
     void toggleStepAcc(int step);           // store.toggleStepAcc
+    void resizeStep(int step, int duration); // duration block length, 1..63
     void randomize();                       // store.randomizeSeq (RAND button)
     void patternClick(int i);               // choose bar to edit
     void setSequenceLength(int bars);        // play bars 1 through N
@@ -40,6 +43,7 @@ public:
     juce::Rectangle<int> cellBounds(int step, int note) const;
     juce::Rectangle<int> octBounds(int step) const;
     juce::Rectangle<int> accBounds(int step) const;
+    juce::Rectangle<int> resizeBounds(int step) const;
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
@@ -47,6 +51,7 @@ private:
     Stepper root_;
     juce::Random rng_;
     juce::uint32 lastSig_ = 0xffffffffu;
+    int resizeStep_ = -1, resizeStartDuration_ = 1;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NoteSeqView)
 };
 
