@@ -25,6 +25,7 @@ static constexpr int kNumY = kSldY + kSldH + 4;
 
 PitchSeqView::PitchSeqView(BassUiModel& p) : proc(p) {
     setInterceptsMouseClicks(true, false);
+    setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 
@@ -81,6 +82,8 @@ juce::Rectangle<int> PitchSeqView::resizeBounds(int step) const {
     const auto st = proc.sequenceStep(proc.editPattern(), step);
     if (!st.on) return {};
     auto cell = cellBounds(step, st.note);
+    const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+    cell.setWidth(w);
     return cell.removeFromRight(6).expanded(2, 2);
 }
 
@@ -127,7 +130,12 @@ void PitchSeqView::toggleStepSlide(int step) {
 void PitchSeqView::resizeStep(int step, int duration) {
     auto cur = proc.sequenceStep(proc.editPattern(), step);
     if (!cur.on) return;
-    cur.duration = juce::jlimit(1, 63, duration);
+    int limit = 63;
+    for (int i = step + 1; i < fable::BL_STEPS; ++i) {
+        const auto other = proc.sequenceStep(proc.editPattern(), i);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = i - step; break; }
+    }
+    cur.duration = juce::jlimit(1, limit, duration);
     proc.setSequenceStep(proc.editPattern(), step, cur);
     repaint();
 }
@@ -200,6 +208,8 @@ void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void PitchSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
+void PitchSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
+bool PitchSeqView::keyPressed(const juce::KeyPress& k) { if (k == juce::KeyPress::escapeKey) { cancelResize(); return true; } return false; }
 
 // ---- animation ----------------------------------------------------------------
 

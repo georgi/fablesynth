@@ -18,6 +18,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    bool keyPressed(const juce::KeyPress&) override;
 
     // Web store handlers — public so the host test drives the exact code
     // paths a mouse click takes.
@@ -26,6 +27,7 @@ public:
     void toggleStepAcc(int step);           // store.toggleStepAcc
     void toggleStepSlide(int step);         // store.toggleStepSlide
     void resizeStep(int step, int duration); // preserves accent + slide
+    void cancelResize();
     void randomize();                       // store.randomize (RAND button)
     void patternClick(int i);               // choose bar to edit
     void setSequenceLength(int bars);        // play bars 1 through N

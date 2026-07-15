@@ -27,6 +27,7 @@ NoteSeqView::NoteSeqView(WtUiModel& m)
     : model(m),
       root_(m.parameters(), "seq.root", Accent::A) {
     setInterceptsMouseClicks(true, true);
+    setWantsKeyboardFocus(true);
     addAndMakeVisible(root_);
     // params.ts fmtNote: seq.root shows a note name (48 -> C3), not the number.
     root_.nameProvider = [](int v) {
@@ -92,6 +93,8 @@ juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
     const auto st = model.sequenceStep(model.editPattern(), step);
     if (!st.on) return {};
     auto cell = cellBounds(step, st.note);
+    const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+    cell.setWidth(w);
     return cell.removeFromRight(6).expanded(2, 2);
 }
 
@@ -129,7 +132,12 @@ void NoteSeqView::toggleStepAcc(int step) {
 void NoteSeqView::resizeStep(int step, int duration) {
     auto cur = model.sequenceStep(model.editPattern(), step);
     if (!cur.on) return;
-    cur.duration = juce::jlimit(1, fable::SEQ_MAX_NOTE_STEPS, duration);
+    int limit = fable::SEQ_MAX_NOTE_STEPS;
+    for (int i = step + 1; i < fable::SEQ_STEPS; ++i) {
+        const auto other = model.sequenceStep(model.editPattern(), i);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = i - step; break; }
+    }
+    cur.duration = juce::jlimit(1, limit, duration);
     model.setSequenceStep(model.editPattern(), step, cur);
     repaint();
 }
@@ -206,6 +214,8 @@ void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void NoteSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
+void NoteSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
+bool NoteSeqView::keyPressed(const juce::KeyPress& k) { if (k == juce::KeyPress::escapeKey) { cancelResize(); return true; } return false; }
 
 // ---- animation ----------------------------------------------------------------
 
