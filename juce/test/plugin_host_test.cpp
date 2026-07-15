@@ -497,6 +497,7 @@ int main(int argc, char** argv) {
         seq.toggleStepAcc(4);
         s = proc.getSeqStep(0, 4);
         check(s.acc && s.duration >= 1, "accent latches on an active step", s.duration);
+        for (int i = 5; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
         seq.resizeStep(4, 63);
         check(proc.getSeqStep(0, 4).duration == 63, "duration resize clamps at 63", proc.getSeqStep(0, 4).duration);
         seq.resizeStep(4, -4);

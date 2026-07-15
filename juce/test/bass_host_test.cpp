@@ -351,6 +351,7 @@ int main(int argc, char** argv) {
         seq.toggleStepSlide(4);
         s = proc.getSeqStep(0, 4);
         check(s.acc && s.slide, "accent + slide latch on an active step");
+        for (int i = 5; i < fable::BL_STEPS; ++i) proc.setSeqStep(0, i, {});
         seq.resizeStep(4, 63);
         s = proc.getSeqStep(0, 4);
         check(s.duration == 63 && s.slide, "duration resize preserves slide", s.duration);
