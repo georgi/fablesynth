@@ -446,7 +446,7 @@ int main(int argc, char** argv) {
 
         // patterns + chain round-trip through getState/setState (packed web layout)
         fable::NoteSeqStep edited;
-        edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.tie = true;
+        edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.duration = 5;
         proc.setSeqStep(2, 11, edited);
         proc.setChain({ 0, 2 }); // legacy values now mean a two-bar length
         proc.setEditPattern(2);
@@ -456,7 +456,7 @@ int main(int argc, char** argv) {
         check(!proc2.getSeqStep(2, 11).on, "fresh instance differs before restore", 0);
         proc2.setStateInformation(seqState.getData(), (int)seqState.getSize());
         auto rs = proc2.getSeqStep(2, 11);
-        check(rs.on && rs.acc && rs.tie && rs.note == 9 && rs.oct == 1,
+        check(rs.on && rs.acc && rs.duration == 5 && rs.note == 9 && rs.oct == 1,
               "edited step round-trips", rs.note);
         check(proc2.getChain() == std::vector<int>({ 0, 1 }), "two-bar length round-trips", 0);
         check(proc2.getEditPattern() == 2, "edit pattern round-trips", proc2.getEditPattern());
@@ -489,14 +489,14 @@ int main(int argc, char** argv) {
         s = proc.getSeqStep(0, 4);
         check(!s.on, "tap active lane rests the step", 0);
 
-        // acc/tie only latch on active steps
+        // acc only latches on active steps (tie retired; duration lives in
+        // the packed bits and is surfaced by the milestone-3 piano roll)
         seq.toggleStepAcc(4);
         check(!proc.getSeqStep(0, 4).acc, "accent ignored on a rest", 0);
         seq.toggleCell(4, 0);
         seq.toggleStepAcc(4);
-        seq.toggleStepTie(4);
         s = proc.getSeqStep(0, 4);
-        check(s.acc && s.tie, "accent + tie latch on an active step", 0);
+        check(s.acc && s.duration >= 1, "accent latches on an active step", s.duration);
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
         seq.cycleStepOct(4);

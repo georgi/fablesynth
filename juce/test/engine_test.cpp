@@ -668,7 +668,7 @@ int main() {
         }
     }
 
-    printf("\n== 13. Note sequencer (worklet.js seqFire/seqTie/seqGateOff parity) ==\n");
+    printf("\n== 13. Note sequencer (worklet.js seqFire/seqGateOff parity) ==\n");
     {
         // -- constants + packed-layout parity with noteseq.ts --
         check(SEQ_ACCENT_VEL == 1.0f && SEQ_PLAIN_VEL == 0.72f,
@@ -681,15 +681,15 @@ int main() {
             for (int p = 0; p < SEQ_NPATTERNS; p++)
                 for (int s = 0; s < SEQ_STEPS; s++) {
                     auto st = getNoteSeqStep(pats.data(), p, s);
-                    if (st.on || st.oct != 0) neutral = false;
+                    if (st.on || st.oct != 0 || st.duration != 1) neutral = false;
                 }
-            check(neutral, "empty patterns read back as neutral rests (oct byte = 1)");
-            NoteSeqStep w; w.on = true; w.note = 7; w.oct = -1; w.acc = true; w.tie = true;
+            check(neutral, "empty patterns read back as neutral rests (duration 1, oct 0)");
+            NoteSeqStep w; w.on = true; w.note = 7; w.oct = -1; w.acc = true; w.duration = 5;
             setNoteSeqStep(pats.data(), 2, 11, w);
             auto r = getNoteSeqStep(pats.data(), 2, 11);
-            check(r.on && r.acc && r.tie && r.note == 7 && r.oct == -1, "step round-trips");
+            check(r.on && r.acc && r.duration == 5 && r.note == 7 && r.oct == -1, "step round-trips");
             auto er = Engine::readSeqStep(pats.data(), 2, 11);
-            check(er.on && er.acc && er.tie && er.semi == 7 - 12,
+            check(er.on && er.acc && er.duration == 5 && er.semi == 7 - 12,
                   "engine unpack folds note+oct to semi", std::to_string(er.semi));
         }
 
@@ -757,62 +757,47 @@ int main() {
                   "ratio=" + std::to_string(ra / rp) + " expect=" + std::to_string(expect));
         }
 
-        // -- (c) tie: legato retune, no amp-env retrigger, gate held through --
+        // -- (c) duration: a note sustains for N steps without retrigger --
         {
             auto pats = makeEmptySeqPatterns();
             NoteSeqStep s0; s0.on = true; s0.note = 0;
-            NoteSeqStep s1; s1.on = true; s1.note = 7; s1.tie = true;
+            s0.duration = 2;                       // two-step note (gate off @ 12000)
             setNoteSeqStep(pats.data(), 0, 0, s0);
-            setNoteSeqStep(pats.data(), 0, 1, s1);
-            auto tied = renderSeq(pats, seqParams(), 15000);
-            s1.tie = false; s1.on = false;                 // variant: step 1 rests
-            setNoteSeqStep(pats.data(), 0, 1, s1);
+            auto held = renderSeq(pats, seqParams(), 15000);
+            s0.duration = 1;                       // one-step note (gate off @ 6000)
+            setNoteSeqStep(pats.data(), 0, 0, s0);
             auto cut = renderSeq(pats, seqParams(), 15000);
 
-            // gate held through the step when the next step ties in: past the
-            // gate point (0.55 * 6000 = 3300) the tied run must keep sounding
-            const double rTied = rmsw(tied, 4000, 5900), rCut = rmsw(cut, 4000, 5900);
-            check(rTied > 10 * std::max(rCut, 1e-6),
-                  "tie holds the gate through the step",
-                  std::to_string(rCut) + " -> " + std::to_string(rTied));
+            // a two-step note keeps sounding across the second step where the
+            // one-step note has already released
+            const double rHeld = rmsw(held, 7000, 11000), rCut = rmsw(cut, 7000, 11000);
+            check(rHeld > 10 * std::max(rCut, 1e-6),
+                  "duration holds the gate across steps",
+                  std::to_string(rCut) + " -> " + std::to_string(rHeld));
 
-            // no envelope retrigger: windowed level stays continuous across the
-            // step-2 boundary at 6000 (a retrigger would fade to silence first)
+            // no envelope retrigger at the step-1 boundary (6000): a single
+            // sustained note stays continuous across it
             double wMin = 1e9, wMax = 0;
             for (int a = 5000; a + 256 <= 7200; a += 128) {
-                double w = rmsw(tied, a, a + 256);
+                double w = rmsw(held, a, a + 256);
                 wMin = std::min(wMin, w); wMax = std::max(wMax, w);
             }
             check(wMax > 1e-3 && wMin > 0.3 * wMax,
-                  "tie does not retrigger the amp envelope (no level dip)",
+                  "duration does not retrigger the amp envelope (no level dip)",
                   "min/max=" + std::to_string(wMin / wMax));
-
-            // the tie retunes: +7 semitones -> ~1.5x zero crossings (GLIDE 0 snaps)
-            auto crossings = [&](const std::vector<float>& v, int a, int b) {
-                int c = 0;
-                for (int i = a + 1; i < b; i++)
-                    if ((v[i - 1] < 0 && v[i] >= 0) || (v[i - 1] >= 0 && v[i] < 0)) c++;
-                return c;
-            };
-            const int cb = crossings(tied, 4200, 5800), ca = crossings(tied, 6200, 7800);
-            check(ca > cb * 5 / 4, "tie retunes the sounding voice (+7 semi)",
-                  std::to_string(cb) + " -> " + std::to_string(ca));
         }
 
-        // -- (d) gate closes at the seq.gate fraction of the step --
+        // -- (d) a one-step note gates off at its step boundary --
         {
             auto pats = makeEmptySeqPatterns();
-            NoteSeqStep s0; s0.on = true; s0.note = 0;
+            NoteSeqStep s0; s0.on = true; s0.note = 0;   // duration 1 (gate off @ 6000)
             setNoteSeqStep(pats.data(), 0, 0, s0);
-            auto pHalf = seqParams(); pHalf[SEQ_GATE] = 0.5f;   // gate off @ 3000
-            auto pLong = seqParams(); pLong[SEQ_GATE] = 0.9f;   // gate off @ 5400
-            auto half = renderSeq(pats, pHalf, 6000);
-            auto full = renderSeq(pats, pLong, 6000);
-            check(rmsw(half, 1000, 2900) > 1e-3, "gate 0.5: sounding before 0.5 * dur");
-            check(rmsw(half, 3600, 5400) < 0.05 * rmsw(half, 1000, 2900),
-                  "gate 0.5: released after 0.5 * dur",
-                  std::to_string(rmsw(half, 3600, 5400)));
-            check(rmsw(full, 3600, 5200) > 1e-3, "gate 0.9: still sounding at 0.75 * dur");
+            auto buf = renderSeq(pats, seqParams(), 9000);
+            check(rmsw(buf, 1000, 2900) > 1e-3, "one-step note sounding within its step");
+            // release (0.005s = 240 samples) -> silent shortly after 6000
+            check(rmsw(buf, 6500, 8500) < 0.05 * rmsw(buf, 1000, 2900),
+                  "one-step note released after its step boundary",
+                  std::to_string(rmsw(buf, 6500, 8500)));
         }
 
         // -- (e) swing delays odd 16ths by swing * 0.667 * step --
@@ -821,9 +806,13 @@ int main() {
             NoteSeqStep s0; s0.on = true; s0.note = 0;
             setNoteSeqStep(pats.data(), 0, 0, s0);
             setNoteSeqStep(pats.data(), 0, 1, s0);
-            auto pShort = seqParams(); pShort[SEQ_GATE] = 0.1f; // step 1 dies fast
-            auto straight = renderSeq(pats, pShort, 14000);
-            auto pSwung = pShort; pSwung[SEQ_SWING] = 1.0f;
+            // percussive pluck (SUS 0, short DEC) so each step is a distinct
+            // onset — seq.gate is retired, so discrete transients replace it
+            auto pluck = seqParams();
+            pluck[ENV1_BASE + 1] = 0.01f;  // DEC
+            pluck[ENV1_BASE + 2] = 0.0f;   // SUS
+            auto straight = renderSeq(pats, pluck, 14000);
+            auto pSwung = pluck; pSwung[SEQ_SWING] = 1.0f;
             auto swung = renderSeq(pats, pSwung, 14000);
             const int oS = onset(straight, 3000), oW = onset(swung, 3000);
             check(oS >= 5900 && oS < 6100, "swing 0: step 2 fires at 6000", std::to_string(oS));

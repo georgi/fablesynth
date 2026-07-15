@@ -178,12 +178,12 @@ int main(int argc, char** argv) {
               "BL-1 native sequencer round-trips a hosted clip step");
 
         auto wtStep = wt2.sequenceStep(0, 1);
-        wtStep.on = true; wtStep.note = 9; wtStep.oct = 1; wtStep.tie = true;
+        wtStep.on = true; wtStep.note = 9; wtStep.oct = 1; wtStep.duration = 4;
         wt2.setSequenceStep(0, 1, wtStep);
         const auto wtRead = wt2.sequenceStep(0, 1);
-        check(wtRead.on && wtRead.note == 9 && wtRead.oct == 1 && wtRead.tie,
+        check(wtRead.on && wtRead.note == 9 && wtRead.oct == 1 && wtRead.duration == 4,
               "WT-1 native sequencer round-trips a hosted clip step");
-        check(wt3.sequenceStep(0, 1).note != 9 || !wt3.sequenceStep(0, 1).tie,
+        check(wt3.sequenceStep(0, 1).note != 9 || wt3.sequenceStep(0, 1).duration != 4,
               "WT-1 clip edit remains isolated from the second WT track");
 
         wt2.auditionNoteOn(60, 0.8f);
@@ -629,8 +629,10 @@ int main(int argc, char** argv) {
     nativeBass.on = true; nativeBass.note = 7; nativeBass.oct = -1;
     nativeBass.acc = true; nativeBass.slide = true;
     focusView.bassModelForTest().setSequenceStep(0, 5, nativeBass);
-    check(noteByte(0) == (1 | 2 | 4), "native BL-1 writes on/accent/slide flags", noteByte(0));
-    check(noteByte(1) == 7, "native BL-1 writes the selected pitch lane", noteByte(1));
+    // BL-1 packs slide in the NOTE byte (bit 7), duration in flag bits 2-7
+    // (BassPatches.h) — the same packed layout the web uses.
+    check(noteByte(0) == (1 | 2 | (1 << 2)), "native BL-1 writes on/accent/duration-1 flags", noteByte(0));
+    check(noteByte(1) == (7 | 0x80), "native BL-1 writes the pitch lane + slide bit", noteByte(1));
     check(noteByte(2) == 0, "native BL-1 writes octave as oct+1", noteByte(2));
 
     check(focusView.clipSelectorForTest().getNumItems() == 20,

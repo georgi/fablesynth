@@ -163,12 +163,12 @@ public:
     void setTransport(double ppq, bool playing) { ppq_ = std::isfinite(ppq) ? ppq : 0.0; playing_ = playing; }
     void panic() { for (auto& v : voices_) v.kill(); seqNote_ = -1; seqChordNotes_.clear(); seqToGateOff_ = -1; }
 
-    // ---- note sequencer (port of worklet.js seqRead/seqGateOff/seqTie/seqFire).
+    // ---- note sequencer (port of worklet.js seqRead/seqGateOff/seqFire).
     // 16 steps x 4 chained patterns firing noteOn/noteOff into the polyphonic
-    // voice allocator; a tie retunes the sounding voice legato (no envelope
-    // retrigger — MASTER_GLIDE decides snap vs slide); accents fire velocity
-    // SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod routes respond; the gate
-    // closes at SEQ_GATE of the step unless the next step ties in.
+    // voice allocator; each on-step's gate lasts `duration` 16th-steps
+    // (seqToGateOff_ = duration * dur, matching the web worklet — no tie/gate
+    // flag); accents fire velocity SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod
+    // routes respond.
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
     void seqStop();                                 // worklet 'stop'
     bool seqIsPlaying() const { return seqPlaying_ || seqHostPlaying_; }
@@ -247,7 +247,7 @@ public:
 
     // One unpacked engine step: on/acc/tie + semitone offset from SEQ_ROOT
     // (worklet seqRead). Static so the harness asserts the unpack directly.
-    struct SeqReadStep { bool on = false, acc = false, tie = false; int semi = 0; };
+    struct SeqReadStep { bool on = false, acc = false; int semi = 0, duration = 1; };
     static SeqReadStep readSeqStep(const uint8_t* pats, int pat, int s);
 
     // Render the summed (pre-FX) voice mix into L/R. Chunks internally to the
@@ -271,9 +271,8 @@ private:
 
     // ---- note sequencer internals ----
     void seqGateOff();                       // worklet seqGateOff
-    void seqTie(int n, double vel);          // worklet seqTie (legato retune)
     void seqFire();                          // worklet seqFire (internal clock)
-    void seqFireAt(int s, int pat, int patNext, double dur); // shared step-fire body
+    void seqFireAt(int s, int pat, int /*patNext*/, double dur); // shared step-fire body
     void clipFireAt(int abs); // hosted twin of seqFireAt; byte source is clipHost_'s clip
     double seqEffectiveBpm() const;
     // host-lock helpers (BassEngine scheme)

@@ -243,7 +243,7 @@ void Engine::noteOff(int n) {
     }
 }
 
-// ---------------- note sequencer (worklet.js seqRead/seqGateOff/seqTie/seqFire) ----------------
+// ---------------- note sequencer (worklet.js seqRead/seqGateOff/seqFire) ----------------
 
 void Engine::seqPlay() {
     if (hostClipMode_) return;     // hosted clip owns the transport
@@ -287,14 +287,14 @@ double Engine::seqEffectiveBpm() const {
     return std::min(200.0, std::max(60.0, pbpm));
 }
 
-// worklet seqRead (noteseq.ts getStep folded to a semitone offset)
+// worklet seqRead (noteseq.ts getStep folded to a semitone offset + duration)
 Engine::SeqReadStep Engine::readSeqStep(const uint8_t* pats, int pat, int s) {
     const int o = (pat * SEQ_STEPS + s) * SEQ_STEP_STRIDE;
     const uint8_t flags = pats[o];
     SeqReadStep st;
     st.on   = (flags & 1) != 0;
     st.acc  = (flags & 2) != 0;
-    st.tie  = (flags & 4) != 0;
+    st.duration = std::max(1, std::min(SEQ_MAX_NOTE_STEPS, (int)((flags >> 2) & 0x3f)));
     st.semi = std::min(11, (int)pats[o + 1]) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
     return st;
 }
@@ -308,36 +308,20 @@ void Engine::seqGateOff() {
     }
 }
 
-// Legato retune of the sounding sequencer voice: no envelope retrigger; the
-// renderVoice glide slew takes v.pitch to the new note (instant at GLIDE 0).
-void Engine::seqTie(int n, double vel) {
-    Voice* voice = nullptr;
-    for (auto& v : voices_)
-        if (v.gate && v.note == seqNote_) { voice = &v; break; }
-    if (!voice) { noteOn(n, vel); return; } // voice got stolen — retrigger
-    voice->note = n;
-    lastPitch_ = n;
-}
-
-// Shared step-fire body: trigger the step and schedule the gate, holding
-// through when the NEXT step ties in (worklet seqFire lines 428-441).
-void Engine::seqFireAt(int s, int pat, int patNext, double dur) {
+// Shared step-fire body: trigger the step and schedule its gate from the
+// step's duration (worklet seqFire lines 557-566). seqGateOff() then noteOn
+// mirrors the web exactly; the gate lasts st.duration 16th-steps.
+void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
     const SeqReadStep st = readSeqStep(seqPats_.data(), pat, s);
     if (st.on) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
         const int n = root + st.semi;
         const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-        if (st.tie && seqNote_ >= 0) seqTie(n, vel);
-        else { seqGateOff(); noteOn(n, vel); }
+        seqGateOff();
+        noteOn(n, vel);
         seqNote_ = n;
-        // hold through the step when the NEXT step ties in
-        const int sN = (s + 1) % SEQ_STEPS;
-        const int patN = sN == 0 ? patNext : pat;
-        const SeqReadStep stN = readSeqStep(seqPats_.data(), patN, sN);
-        double gate = !exactlyZero(p_[SEQ_GATE]) ? (double)p_[SEQ_GATE] : 0.55;
-        gate = std::min(0.98, std::max(0.1, gate));
-        seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
+        seqToGateOff_ = st.duration * dur;
     }
     seqStep_ = s;
 }
@@ -349,7 +333,6 @@ void Engine::seqFireAt(int s, int pat, int patNext, double dur) {
 // readSeqStep() reads it directly with the clip's bar standing in for `pat`.
 void Engine::clipFireAt(int abs) {
     const uint8_t* clip = clipHost_.clipData();
-    const int total = std::max(1, clipHost_.clipBars() * SEQ_STEPS);
     const int bar = abs / SEQ_STEPS;
     const int s   = abs % SEQ_STEPS;
     std::array<SeqReadStep, SQ_WT_POLY_LANES> chord {};
@@ -363,26 +346,18 @@ void Engine::clipFireAt(int abs) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
         seqGateOff();
+        int noteGate = 1;                              // web clipFire: max duration in the chord
         for (const auto& st : chord) if (st.on) {
             const int n = root + st.semi;
             noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
             if (seqNote_ < 0) seqNote_ = n;
             else seqChordNotes_.push_back(n);
+            noteGate = std::max(noteGate, st.duration);
         }
-        // hold through the step when the NEXT step (wrapping within the
-        // clip's own bar count, not a separate chain) ties in
-        const int absN = (abs + 1) % total;
-        bool nextTies = false;
-        for (int lane = 0; lane < SQ_WT_POLY_LANES; ++lane) {
-            const int o = sqWtNoteIdx(absN / SEQ_STEPS, absN % SEQ_STEPS, lane);
-            const auto next = readSeqStep(clip + o, 0, 0);
-            nextTies = nextTies || (next.on && next.tie);
-        }
+        // gate lasts the longest note's duration (worklet clipFire lines 532-533)
         const double bpm = std::max(60.0, std::min(200.0, bpm_));
         const double dur = sqSamplesPerStep(bpm, sr_);
-        double gate = !exactlyZero(p_[SEQ_GATE]) ? (double)p_[SEQ_GATE] : 0.55;
-        gate = std::min(0.98, std::max(0.1, gate));
-        seqToGateOff_ = nextTies ? -1 : gate * dur;
+        seqToGateOff_ = noteGate * dur;
     }
 }
 

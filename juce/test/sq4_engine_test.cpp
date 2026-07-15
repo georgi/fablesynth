@@ -462,10 +462,11 @@ static void testWt1Hosted() {
 
 // docs/sq4-clips.md §6 rule 4: "the old clip's last gate-off and the new
 // clip's first trigger execute in the same block, old before new." Clip A
-// holds a note via a continuous tie chain (seqToGateOff_ pinned to -1, so it
-// never gates off on its own); clip B is scheduled mid-flight and is all
-// rests, so its own entry-step fire never gates anything off either. Without
-// the swap hook, A's note would keep sounding forever once B takes over.
+// holds a note with a long step duration (seqToGateOff_ = duration * dur,
+// so it never gates off on its own within the test window); clip B is
+// scheduled mid-flight and is all rests, so its own entry-step fire never
+// gates anything off either. Without the swap hook, A's note would keep
+// sounding past its duration once B takes over.
 static void testWt1ClipSwapGatesOldNote() {
     using namespace fable;
     Engine e;
@@ -477,15 +478,13 @@ static void testWt1ClipSwapGatesOldNote() {
     e.setHostClipMode(true);
     e.hostTempo(120, 0, 0);
 
-    // Clip A: step 0 on, step 1 on+tie (keeps the gate held indefinitely —
-    // seqFireAt/clipFireAt's lookahead sees an on+tie next step and sets
-    // seqToGateOff_ = -1). All later steps are irrelevant: the test stops
-    // well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
+    // Clip A: step 0 on with a 63-step duration (keeps the gate held well
+    // past the test window — seqToGateOff_ = 63 * dur). All later steps are
+    // irrelevant: the test stops inside step 0's ~6000-sample first step at
+    // bpm 120/sr 48000.
     auto clipA = sqEmptyClip(Machine::WT1, 1);
-    clipA[(size_t)sqNoteIdx(0, 0)] = 1 | (1 << 2);      // on
+    clipA[(size_t)sqNoteIdx(0, 0)] = (uint8_t)(1 | (63 << 2));   // on, 63-step duration
     clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
-    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + tie
-    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
     e.hostClip(clipA.data(), (int)clipA.size(), 1, 0.0); // quant OFF
 
     double frame = 0;

@@ -1,23 +1,29 @@
-// C++ port of src/seq/factory.ts — verbatim clip-for-clip, note-for-note
-// transcription so both builds ship the same NEON TALE factory session.
+// C++ port of src/seq/factory.ts — note-for-note transcription so both builds
+// ship the same NEON TALE factory session. Clip bytes use the shared packed
+// layout (flags: on/acc/duration, note+slide, oct+1) — identical to the web.
 // DR-1 pad map (shared by 808, UZU, and hybrid kits): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
 // 6 OH HAT · 8..10 TOMS · 12/13 PERC.
 #include "SeqFactory.h"
 #include "ClipLibrary.gen.h"
 
+#include <algorithm>
 
 namespace fable {
 namespace {
 
 // ---------- pattern builders ----------
 
+// Field order is positional so clip literals read like the web NoteStep:
+// { s, n, o, a, sl, d, lane }. `sl` (BL-1 slide) precedes `d` (duration) so a
+// bare fifth bool still means a slide; durations default to one step.
 struct NoteStep {
     int s;
     int n;
     int o = 0;
     bool a = false;
-    bool t = false;
-    int lane = 0;
+    bool sl = false;   // BL-1 legato slide (note-byte bit 7); WT-1 ignores it
+    int d = 1;         // duration in 16th-note steps (1..63)
+    int lane = 0;      // WT-1 chord voice
 };
 
 ClipData noteClip(Machine machine, std::string name, int bars, std::vector<NoteStep> steps) {
@@ -30,11 +36,14 @@ ClipData noteClip(Machine machine, std::string name, int bars, std::vector<NoteS
         c.bytes[i] = 1 << 2;
         c.bytes[i + 2] = 1;
     }
+    const int clipSteps = bars * SQ_STEPS_PER_BAR;
     for (auto& st : steps) {
-        int o = machine == Machine::WT1 ? sqWtNoteIdx(st.s / 16, st.s % 16, st.lane)
-                                        : sqNoteIdx(st.s / 16, st.s % 16);
-        c.bytes[(size_t)o] = (uint8_t)(1 | (st.a ? 2 : 0) | (1 << 2));
-        c.bytes[(size_t)o + 1] = (uint8_t)(st.n | (machine == Machine::BL1 && st.t ? 0x80 : 0));
+        const int o = machine == Machine::WT1 ? sqWtNoteIdx(st.s / 16, st.s % 16, st.lane)
+                                              : sqNoteIdx(st.s / 16, st.s % 16);
+        // duration clamps to 63 and to the remaining clip length (web noteClip)
+        const int duration = std::min({ 63, clipSteps - st.s, std::max(1, st.d) });
+        c.bytes[(size_t)o]     = (uint8_t)(1 | (st.a ? 2 : 0) | (duration << 2));
+        c.bytes[(size_t)o + 1] = (uint8_t)(st.n | (machine == Machine::BL1 && st.sl ? 0x80 : 0));
         c.bytes[(size_t)o + 2] = (uint8_t)(st.o + 1);
     }
     return c;
@@ -47,41 +56,17 @@ ClipData wtClip(std::string name, int bars, std::vector<NoteStep> steps) {
     return noteClip(Machine::WT1, std::move(name), bars, std::move(steps));
 }
 
-ClipData repeatClip(ClipData source, Machine machine, int bars) {
-    ClipData out { source.name, bars, sqEmptyClip(machine, bars) };
-    const int barBytes = sqBytesPerBar(machine);
-    for (int bar = 0; bar < bars; ++bar) {
-        const int srcBar = bar % source.bars;
-        std::copy_n(source.bytes.begin() + (ptrdiff_t)(srcBar * barBytes), barBytes,
-                    out.bytes.begin() + (ptrdiff_t)(bar * barBytes));
-    }
-    return out;
-}
-
-ClipData wtChordClip(std::string name, int bars, const std::vector<NoteStep>& roots) {
-    std::vector<NoteStep> voiced;
-    for (const auto& root : roots) {
-        voiced.push_back(root);
-        for (int lane = 1; lane < 3; ++lane) {
-            const int interval = lane == 1 ? 3 : 7;
-            const int absolute = root.n + interval;
-            auto voice = root;
-            voice.lane = lane;
-            voice.n = absolute % 12;
-            voice.o += absolute / 12;
-            voiced.push_back(voice);
-        }
-    }
-    return wtClip(std::move(name), bars, std::move(voiced));
-}
-
-// A held swell: one attack, then a tie on EVERY following step of the span —
-// a tie only sustains when the immediately next step ties in, so gaps in the
-// tie chain would gate the note off (and slow-attack pads would never open).
+// A held swell: a single note whose duration spans `span` steps, split only
+// at the packed format's 63-step limit (web factory.ts held). Duration — not a
+// tie chain — sustains the note across steps.
 std::vector<NoteStep> held(int s0, int span, int n, int o = 0, int lane = 0) {
     std::vector<NoteStep> out;
-    out.push_back({ s0, n, o, false, false, lane });
-    for (int s = s0 + 1; s < s0 + span; s++) out.push_back({ s, n, o, false, true, lane });
+    for (int s = s0, remaining = span; remaining > 0;) {
+        const int d = std::min(remaining, 63);
+        out.push_back({ s, n, o, false, false, d, lane });
+        s += d;
+        remaining -= d;
+    }
     return out;
 }
 
@@ -99,6 +84,23 @@ std::vector<NoteStep> chordHeld(int s0, int span, int root, int octave = 0, bool
 
 void append(std::vector<NoteStep>& dst, std::vector<NoteStep> src) {
     for (auto& s : src) dst.push_back(s);
+}
+
+// FOG STABS voicing (web factory.ts FOG_STABS flatMap): each root expands to a
+// 3-note chord across lanes 0..2 — root, +3, +7 — with an octave bump when
+// the interval crosses a 12-step boundary.
+std::vector<NoteStep> fogVoicing(std::vector<NoteStep> roots) {
+    std::vector<NoteStep> out;
+    for (auto step : roots) {
+        out.push_back(step);                                  // lane 0 (root)
+        NoteStep v1 = step; v1.lane = 1;
+        v1.n = (step.n + 3) % 12; v1.o = step.o + (step.n >= 9 ? 1 : 0);
+        out.push_back(v1);
+        NoteStep v2 = step; v2.lane = 2;
+        v2.n = (step.n + 7) % 12; v2.o = step.o + (step.n >= 5 ? 1 : 0);
+        out.push_back(v2);
+    }
+    return out;
 }
 
 // ---------- drum clips ----------
@@ -120,19 +122,34 @@ ClipData acidCrawl() {
 }
 
 ClipData acid303() {
-    return repeatClip(bassClip("ACID 303", 1, {
+    return bassClip("ACID 303", 4, {
         { 0, 0, 0, true }, { 2, 0 }, { 3, 0, 1, false, true }, { 4, 0 },
         { 6, 3, 0, true }, { 7, 5, 0, false, true }, { 8, 0 }, { 10, 10, -1 },
         { 11, 0, 0, false, true }, { 12, 7, 0, true }, { 14, 5 }, { 15, 3, 0, false, true },
-    }), Machine::BL1, 4);
+        { 16, 10, 0, true }, { 18, 10 }, { 20, 5 }, { 22, 3, 0, false, true },
+        { 24, 10 }, { 26, 0, 1 }, { 28, 7 }, { 30, 5, 0, false, true },
+        { 32, 7, 0, true }, { 34, 7 }, { 36, 2 }, { 38, 0, 0, false, true },
+        { 40, 7 }, { 42, 10, -1 }, { 44, 5 }, { 46, 3, 0, false, true },
+        { 48, 5, 0, true }, { 50, 5 }, { 52, 0 }, { 54, 10, -1, false, true },
+        { 56, 5 }, { 58, 7 }, { 60, 3 }, { 62, 0, 0, false, true },
+    });
 }
 
 ClipData acidShift() {
-    return repeatClip(bassClip("ACID SHIFT", 1, {
+    return bassClip("ACID SHIFT", 4, {
         { 0, 3, 0, true }, { 2, 3 }, { 4, 10, -1 }, { 5, 3, 0, false, true },
         { 7, 7 }, { 8, 3, 0, true }, { 10, 5, 0, false, true }, { 12, 0 },
         { 13, 0, 1, false, true }, { 15, 10, -1 },
-    }), Machine::BL1, 4);
+        { 16, 0, 0, true }, { 18, 0 }, { 20, 7 }, { 21, 0, 0, false, true },
+        { 23, 10 }, { 24, 0, 0, true }, { 26, 3, 0, false, true }, { 28, 5 },
+        { 30, 7, -1 }, { 31, 10, 0, false, true },
+        { 32, 10, 0, true }, { 34, 10 }, { 36, 5 }, { 37, 10, 0, false, true },
+        { 39, 3 }, { 40, 10, 0, true }, { 42, 0, 0, false, true }, { 44, 3 },
+        { 46, 5, -1 }, { 47, 7, 0, false, true },
+        { 48, 7, 0, true }, { 50, 7 }, { 52, 2 }, { 53, 7, 0, false, true },
+        { 55, 0 }, { 56, 7, 0, true }, { 58, 10, 0, false, true }, { 60, 0 },
+        { 62, 3, -1 },
+    });
 }
 
 ClipData subHold() {
@@ -148,29 +165,37 @@ ClipData subHold() {
 // ---------- lead / pad clips (WT-1, lanes relative to seq.root C3) ----------
 
 ClipData glassHook() {
-    return repeatClip(wtClip("GLASS HOOK", 2, {
+    return wtClip("GLASS HOOK", 4, {
         { 0, 0, 1, true }, { 3, 10 }, { 6, 7 }, { 8, 3, 1 },
-        { 10, 10, 0, false, true }, { 14, 5 },
+        { 10, 10 }, { 14, 5 },
         { 16, 0, 1, true }, { 19, 10 }, { 22, 7 }, { 24, 2, 1 },
-        { 26, 0, 1, false, true }, { 30, 7, 0, false, true },
-    }), Machine::WT1, 4);
+        { 26, 0, 1 }, { 30, 7 },
+        { 32, 7, 1, true }, { 35, 5, 1 }, { 38, 2, 1 }, { 40, 10 },
+        { 42, 7, 1 }, { 46, 5 },
+        { 48, 5, 1, true }, { 51, 3, 1 }, { 54, 0, 1 }, { 56, 10 },
+        { 58, 7 }, { 62, 3, 1 },
+    });
 }
 
 ClipData glassHookII() {
-    return repeatClip(wtClip("GLASS HOOK II", 2, {
+    return wtClip("GLASS HOOK II", 4, {
         { 0, 3, 1, true }, { 3, 0, 1 }, { 6, 10 }, { 8, 5, 1 },
-        { 10, 3, 1, false, true }, { 14, 7 },
+        { 10, 3, 1 }, { 14, 7 },
         { 16, 3, 1, true }, { 19, 2, 1 }, { 22, 0, 1 }, { 24, 10 },
-        { 26, 7, 0, false, true }, { 30, 10, 0, false, true },
-    }), Machine::WT1, 4);
+        { 26, 7 }, { 30, 10 },
+        { 32, 10, 1, true }, { 35, 7, 1 }, { 38, 5 }, { 40, 3, 1 },
+        { 42, 2, 1 }, { 46, 0, 1 },
+        { 48, 7, 1, true }, { 51, 5, 1 }, { 54, 3, 1 }, { 56, 0, 1 },
+        { 58, 10 }, { 62, 7 },
+    });
 }
 
 ClipData glassSolo() {
     return wtClip("GLASS SOLO", 4, {
-        { 0, 0, 1 }, { 4, 10, 0, false, true }, { 8, 7, 0, false, true }, { 12, 10, 0, false, true },
-        { 16, 3, 1 }, { 20, 2, 1, false, true }, { 24, 0, 1, false, true }, { 28, 10, 0, false, true },
-        { 32, 5, 1 }, { 36, 3, 1, false, true }, { 40, 2, 1, false, true }, { 44, 0, 1, false, true },
-        { 48, 10, 0, true }, { 52, 7, 0, false, true }, { 56, 3, 0, false, true }, { 60, 0, 0, false, true },
+        { 0, 0, 1 }, { 4, 10 }, { 8, 7 }, { 12, 10 },
+        { 16, 3, 1 }, { 20, 2, 1 }, { 24, 0, 1 }, { 28, 10 },
+        { 32, 5, 1 }, { 36, 3, 1 }, { 40, 2, 1 }, { 44, 0, 1 },
+        { 48, 10, 0, true }, { 52, 7 }, { 56, 3 }, { 60, 0 },
     });
 }
 
@@ -193,26 +218,29 @@ ClipData airBedII() {
 }
 
 ClipData fogStabs() {
-    return repeatClip(wtChordClip("FOG STABS", 2, {
-        { 0, 0 }, { 2, 0, 0, false, true }, { 7, 3 }, { 10, 5, 0, true }, { 12, 5, 0, false, true },
-        { 16, 10, -1 }, { 18, 10, -1, false, true }, { 23, 0 }, { 26, 2 }, { 28, 3, 0, false, true },
-    }), Machine::WT1, 4);
+    static const std::vector<NoteStep> roots = {
+        { 0, 0 }, { 2, 0 }, { 7, 3 }, { 10, 5, 0, true }, { 12, 5 },
+        { 16, 10, -1 }, { 18, 10, -1 }, { 23, 0 }, { 26, 2 }, { 28, 3 },
+        { 32, 7, -1 }, { 34, 7, -1 }, { 39, 10, -1 }, { 42, 2, 0, true }, { 44, 2 },
+        { 48, 5, -1 }, { 50, 5, -1 }, { 55, 0 }, { 58, 3 }, { 60, 0 },
+    };
+    return wtClip("FOG STABS", 4, fogVoicing(roots));
 }
 
 ClipData fogSwell() {
     std::vector<NoteStep> steps;
-    append(steps, held(0, 32, 0));
-    append(steps, held(32, 32, 10, -1));
-    append(steps, held(64, 32, 5));
-    append(steps, held(96, 32, 3));
+    append(steps, chordHeld(0, 32, 0));
+    append(steps, chordHeld(32, 32, 10, -1, false));
+    append(steps, chordHeld(64, 32, 5));
+    append(steps, chordHeld(96, 32, 3));
     return wtClip("FOG SWELL", 8, steps);
 }
 
 ClipData airOut() {
     std::vector<NoteStep> steps;
-    append(steps, held(0, 32, 0));
-    append(steps, held(32, 32, 10, -1));
-    append(steps, held(64, 64, 0, -1));
+    append(steps, chordHeld(0, 32, 0));
+    append(steps, chordHeld(32, 32, 10, -1, false));
+    append(steps, chordHeld(64, 64, 0, -1));
     return wtClip("AIR OUT", 8, steps);
 }
 

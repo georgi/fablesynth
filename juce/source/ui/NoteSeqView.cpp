@@ -11,7 +11,7 @@ static const char* const kPatNames[fable::SEQ_NPATTERNS] = { "1", "2", "3", "4" 
 // panel padding 8px 12px 10px; head 24px + 10px margin; body: legend 36px +
 // 8px gap, 16 columns with 5px gaps, then the clock column (border-left,
 // 6px padding). Column: 143px of lanes (12 cells, 1px gaps), oct 5+20,
-// acc 4+14, tie 4+14, step number 4+10.
+// acc 4+14, step number 4+10.
 
 static constexpr int kPadX = 12, kHeadY = 8, kHeadH = 24;
 static constexpr int kBodyY = kHeadY + kHeadH + 10;
@@ -20,8 +20,7 @@ static constexpr int kLanesH = 143;
 static constexpr float kColGap = 5.0f;
 static constexpr int kOctY = kLanesH + 5, kOctH = 20;
 static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 14;
-static constexpr int kTieY = kAccY + kAccH + 4, kTieH = 14;
-static constexpr int kNumY = kTieY + kTieH + 4;
+static constexpr int kNumY = kAccY + kAccH + 4;
 static constexpr int kClockW = 60, kClockGap = 6;
 
 NoteSeqView::NoteSeqView(WtUiModel& m)
@@ -89,18 +88,13 @@ juce::Rectangle<int> NoteSeqView::accBounds(int step) const {
     return { c.getX(), c.getY() + kAccY, c.getWidth(), kAccH };
 }
 
-juce::Rectangle<int> NoteSeqView::tieBounds(int step) const {
-    const auto c = colBounds(step);
-    return { c.getX(), c.getY() + kTieY, c.getWidth(), kTieH };
-}
-
 // ---- store handlers ----------------------------------------------------------
 
 void NoteSeqView::toggleCell(int step, int note) {
     const int pat = model.editPattern();
     NoteSeqStep cur = model.sequenceStep(pat, step);
     if (cur.on && cur.note == note) {              // tap again = rest
-        cur.on = false; cur.acc = false; cur.tie = false;
+        cur.on = false; cur.acc = false; cur.duration = 1;
     } else {
         cur.on = true; cur.note = note;
     }
@@ -125,17 +119,8 @@ void NoteSeqView::toggleStepAcc(int step) {
     repaint();
 }
 
-void NoteSeqView::toggleStepTie(int step) {
-    const int pat = model.editPattern();
-    NoteSeqStep cur = model.sequenceStep(pat, step);
-    if (!cur.on) return;
-    cur.tie = !cur.tie;
-    model.setSequenceStep(pat, step, cur);
-    repaint();
-}
-
 // noteseq.ts randomPattern: a sparse minor line with occasional octave throws,
-// accents and legato ties — melodic flavor rather than BL-1's acid crawl.
+// accents and varied note lengths — melodic flavor rather than BL-1's acid crawl.
 void NoteSeqView::randomize() {
     static const int pool[] = { 0, 0, 2, 3, 5, 7, 10 };
     const int pat = model.editPattern();
@@ -145,7 +130,7 @@ void NoteSeqView::randomize() {
         s.note = pool[rng_.nextInt(7)];
         s.oct = rng_.nextFloat() < 0.18f ? (rng_.nextFloat() < 0.5f ? -1 : 1) : 0;
         s.acc = s.on && rng_.nextFloat() < 0.22f;
-        s.tie = s.on && i > 0 && rng_.nextFloat() < 0.25f;
+        s.duration = 1 + rng_.nextInt(4);   // 1..4 steps (noteseq.ts randomPattern)
         model.setSequenceStep(pat, i, s);
     }
     repaint();
@@ -192,7 +177,6 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
             if (cellBounds(s, note).contains(pos)) { toggleCell(s, note); return; }
         if (octBounds(s).contains(pos)) { cycleStepOct(s); return; }
         if (accBounds(s).contains(pos)) { toggleStepAcc(s); return; }
-        if (tieBounds(s).contains(pos)) { toggleStepTie(s); return; }
         return;
     }
 }
@@ -217,7 +201,8 @@ void NoteSeqView::timerCallback() {
     for (int p : chain) mix(p);
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         const NoteSeqStep st = model.sequenceStep(edit, s);
-        mix((st.on ? 1 : 0) | (st.acc ? 2 : 0) | (st.tie ? 4 : 0));
+        mix((st.on ? 1 : 0) | (st.acc ? 2 : 0));
+        mix(st.duration);
         mix(st.note); mix(st.oct);
     }
     if (sig != lastSig_) { lastSig_ = sig; repaint(); }
@@ -322,9 +307,10 @@ void NoteSeqView::paint(juce::Graphics& g) {
     }
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
-    // web "TAP LANE = NOTE · TIE HOLDS FROM PREV STEP — GLIDE MAKES IT SLIDE"
-    drawSpaced(g, "TAP LANE = NOTE - TIE HOLDS FROM PREV STEP - GLIDE MAKES IT SLIDE",
-               { hintRight - 420, kHeadY, 420, kHeadH }, 0.9f,
+    // web "TAP LANE = NOTE · CYCLE OCT · ACCENT" (tie retired; note length
+    // lives in the duration bits, surfaced by the milestone-3 piano roll)
+    drawSpaced(g, "TAP LANE = NOTE - CYCLE OCT - ACCENT",
+               { hintRight - 360, kHeadY, 360, kHeadH }, 0.9f,
                juce::Justification::right);
 
     // ---- legend column (.ns-legend) ----
@@ -338,8 +324,6 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.drawText("OCT",  legend.withHeight(kOctH).translated(0, kOctY), juce::Justification::centredRight);
         g.setColour(col::acB);
         g.drawText("ACC",  legend.withHeight(kAccH).translated(0, kAccY), juce::Justification::centredRight);
-        g.setColour(cyan);
-        g.drawText("TIE",  legend.withHeight(kTieH).translated(0, kTieY), juce::Justification::centredRight);
     }
 
     // ---- clock column divider (.ns-clock border-left) ----
@@ -394,7 +378,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
                        octBounds(s), juce::Justification::centred);
         }
 
-        // accent / tie buttons (.ns-acc-btn / .ns-tie-btn)
+        // accent button (.ns-acc-btn)
         auto drawToggle = [&](juce::Rectangle<int> bi, bool on, juce::Colour top, juce::Colour bot) {
             const auto b = bi.toFloat();
             if (on) {
@@ -410,8 +394,6 @@ void NoteSeqView::paint(juce::Graphics& g) {
         };
         drawToggle(accBounds(s), st.on && st.acc,
                    juce::Colour(0xffffc98d), juce::Colour(0xffcc7a2e));
-        drawToggle(tieBounds(s), st.on && st.tie,
-                   juce::Colour(0xff7de6ff), juce::Colour(0xff2293b4));
 
         // step number (.ns-step-num)
         const auto c = colBounds(s);
@@ -423,28 +405,12 @@ void NoteSeqView::paint(juce::Graphics& g) {
         // playhead cursor (.ns-step-cursor)
         if (playing && curStep == s && curPat == edit) {
             const auto cf = juce::Rectangle<float>((float)c.getX() - 2, (float)c.getY() - 2,
-                                                   (float)c.getWidth() + 4, (float)(kTieY + kTieH) + 4);
+                                                   (float)c.getWidth() + 4, (float)(kAccY + kAccH) + 4);
             g.setColour(cyan.withAlpha(0.85f));
             g.drawRoundedRectangle(cf, 6.0f, 1.0f);
             g.setColour(cyan.withAlpha(0.18f));
             g.drawRoundedRectangle(cf.expanded(1.5f), 7.0f, 3.0f);
         }
-    }
-
-    // ---- tie connectors, drawn INTO a step from its predecessor ----
-    // (noteseq.ts tiesInto: cur.on && cur.tie && prev.on)
-    const float laneH = kLanesH / (float)fable::SEQ_NOTE_LANES;
-    auto yOf = [&](const NoteSeqStep& st) {
-        return static_cast<float>(kBodyY)
-             + (static_cast<float>(fable::SEQ_NOTE_LANES - 1 - st.note) + 0.5f) * laneH
-             - static_cast<float>(st.oct) * 4.0f;
-    };
-    g.setColour(cyan.withAlpha(0.75f));
-    for (int i = 1; i < fable::SEQ_STEPS; ++i) {
-        if (!fable::seqTiesInto(steps[i - 1], steps[i])) continue;
-        const auto c0 = colBounds(i - 1), c1 = colBounds(i);
-        g.drawLine((float)c0.getCentreX(), yOf(steps[i - 1]),
-                   (float)c1.getCentreX(), yOf(steps[i]), 1.4f);
     }
 }
 

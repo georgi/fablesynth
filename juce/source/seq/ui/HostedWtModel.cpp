@@ -149,8 +149,10 @@ fable::NoteSeqStep HostedWtModel::sequenceStep(int pattern, int step) const {
     const auto offset = fable::sqWtNoteIdx(pattern, step, 0);
     if (offset + 2 >= (int)clip->bytes.size()) return {};
     const auto flags = clip->bytes[(size_t)offset];
+    const int duration = std::max(1, std::min(fable::SEQ_MAX_NOTE_STEPS,
+                                              (int)((flags >> 2) & 0x3f)));
     return { (flags & 1) != 0, (int)clip->bytes[(size_t)offset + 1],
-        (int)clip->bytes[(size_t)offset + 2] - 1, (flags & 2) != 0, (flags & 4) != 0 };
+        (int)clip->bytes[(size_t)offset + 2] - 1, (flags & 2) != 0, duration };
 }
 
 void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqStep& value) {
@@ -162,7 +164,8 @@ void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqS
     auto bytes = clip->bytes;
     const auto offset = fable::sqWtNoteIdx(pattern, step, 0);
     if (offset + 2 >= (int)bytes.size()) return;
-    bytes[(size_t)offset] = (uint8_t)((value.on ? 1 : 0) | (value.acc ? 2 : 0) | (value.tie ? 4 : 0));
+    const int duration = std::min(fable::SEQ_MAX_NOTE_STEPS, std::max(1, value.duration));
+    bytes[(size_t)offset] = (uint8_t)((value.on ? 1 : 0) | (value.acc ? 2 : 0) | (duration << 2));
     bytes[(size_t)offset + 1] = (uint8_t)juce::jlimit(0, 11, value.note);
     bytes[(size_t)offset + 2] = (uint8_t)juce::jlimit(0, 2, value.oct + 1);
     proc_.conductor().updateClipBytes(scene_, track_, std::move(bytes), clip->bars);
