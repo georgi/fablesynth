@@ -502,6 +502,11 @@ int main(int argc, char** argv) {
         check(proc.getSeqStep(0, 4).duration == 63, "duration resize clamps at 63", proc.getSeqStep(0, 4).duration);
         seq.resizeStep(4, -4);
         check(proc.getSeqStep(0, 4).duration == 1, "duration resize clamps at 1", proc.getSeqStep(0, 4).duration);
+        fable::NoteSeqStep nextSame; nextSame.on = true; nextSame.note = 0;
+        proc.setSeqStep(0, 7, nextSame);
+        seq.resizeStep(4, 63);
+        check(proc.getSeqStep(0, 4).duration == 3, "duration resize stops before same-lane note", proc.getSeqStep(0, 4).duration);
+        proc.setSeqStep(0, 7, {});
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
         seq.cycleStepOct(4);
