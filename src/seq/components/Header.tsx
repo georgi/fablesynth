@@ -18,7 +18,7 @@ export function Header() {
   const swing = useSeqStore((s) => s.swing);
   const masterVol = useSeqStore((s) => s.masterVol);
   const sessionName = useSeqStore((s) => s.session.name);
-  const { toggleTransport, cycleQuant, setSwing, setMasterVol, loadSessionPreset } = useSeqStore.getState();
+  const { toggleTransport, cycleQuant, setSwing, setMasterVol, loadSessionPreset, startTour } = useSeqStore.getState();
 
   return (
     <header className="sq-top">
@@ -68,6 +68,15 @@ export function Header() {
       <div className="sq-top-right">
         <Scope />
       </div>
+      <button
+        className="sq-help"
+        onClick={startTour}
+        disabled={!powered}
+        title="Quick tour — what to click to start the song, launch scenes, edit devices and load other songs"
+        aria-label="Open quick tour"
+      >
+        ?
+      </button>
       <div className="sq-master-knobs">
         <SeqKnob value={swing} onChange={setSwing} label="SWING" size="sm" defaultValue={0} />
         <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" size="sm" defaultValue={0.75} />

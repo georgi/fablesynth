@@ -586,6 +586,118 @@
   margin-top: 12px;
 }
 
+/* ---------- onboarding tour ---------- */
+.sq-help {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #11141c;
+  color: var(--text-dim);
+  font: 700 12px var(--font-mono);
+  cursor: pointer;
+  flex: none;
+}
+.sq-help:hover:not(:disabled) {
+  color: var(--ac-b);
+  border-color: color-mix(in srgb, var(--ac-b) 55%, var(--line));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ac-b) 25%, transparent);
+}
+
+.sq-tour { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
+/* The spotlight ring dims everything around it via a huge box-shadow but
+   never captures the pointer, so the highlighted control stays clickable. */
+.sq-tour-spot {
+  position: fixed;
+  border: 1px solid var(--ac-b);
+  border-radius: 9px;
+  box-shadow:
+    0 0 0 9999px rgba(4, 6, 10, 0.62),
+    0 0 18px color-mix(in srgb, var(--ac-b) 55%, transparent),
+    inset 0 0 10px color-mix(in srgb, var(--ac-b) 25%, transparent);
+  animation: sq-tour-pulse 1.6s ease-in-out infinite;
+  transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+}
+@keyframes sq-tour-pulse {
+  0%, 100% { border-color: var(--ac-b); }
+  50% { border-color: color-mix(in srgb, var(--ac-b) 45%, transparent); }
+}
+.sq-tour-card {
+  position: fixed;
+  pointer-events: auto;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--ac-b) 45%, var(--line));
+  border-radius: 10px;
+  background: linear-gradient(180deg, #131826, #0b0e16);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7);
+  transition: top 0.18s ease, left 0.18s ease, bottom 0.18s ease;
+}
+.sq-tour-head { display: flex; align-items: center; gap: 8px; }
+.sq-tour-step {
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: #0a0d13;
+  background: var(--ac-b);
+  border-radius: 3px;
+  padding: 2px 5px;
+  flex: none;
+}
+.sq-tour-title {
+  font-family: var(--font-disp);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  flex: 1;
+}
+.sq-tour-x {
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px;
+}
+.sq-tour-x:hover { color: var(--text); }
+.sq-tour-body {
+  margin: 9px 0 11px;
+  font-size: 10px;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  color: #aeb8cc;
+}
+.sq-tour-nav { display: flex; align-items: center; gap: 6px; }
+.sq-tour-dots { display: flex; gap: 4px; flex: 1; }
+.sq-tour-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2a3244;
+}
+.sq-tour-dots i.on { background: var(--ac-b); box-shadow: 0 0 6px var(--ac-b); }
+.sq-tour-btn {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #11141c;
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.sq-tour-btn:hover { color: var(--text); }
+.sq-tour-btn.primary {
+  border-color: color-mix(in srgb, var(--ac-b) 65%, var(--line));
+  color: var(--ac-b);
+}
+.sq-tour-btn.primary:hover {
+  background: color-mix(in srgb, var(--ac-b) 12%, #11141c);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ac-b) 25%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sq-tour-spot { animation: none; transition: none; }
+  .sq-tour-card { transition: none; }
+}
+
 /* ---------- hosted device (focus mode) ---------- */
 .sq-device {
   position: relative;
