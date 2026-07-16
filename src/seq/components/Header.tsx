@@ -69,8 +69,8 @@ export function Header() {
         <Scope />
       </div>
       <div className="sq-master-knobs">
-        <SeqKnob value={swing} onChange={setSwing} label="SWING" defaultValue={0} />
-        <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" defaultValue={0.75} />
+        <SeqKnob value={swing} onChange={setSwing} label="SWING" size="sm" defaultValue={0} />
+        <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" size="sm" defaultValue={0.75} />
       </div>
     </header>
   );

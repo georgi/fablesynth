@@ -36,8 +36,8 @@
 .sq-top {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
+  gap: 14px;
+  padding: 7px 16px;
   margin-bottom: 9px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -128,7 +128,7 @@
 .sq-scope {
   position: relative;
   width: 190px;
-  height: 46px;
+  height: 40px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #07090e;
@@ -211,14 +211,26 @@
 .sq-track-head.focused { border-color: var(--tc); box-shadow: 0 0 12px color-mix(in srgb, var(--tc) 35%, transparent); }
 .sq-back { cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
 .sq-back .sq-scenes-title { color: #cfd6e4; }
-.sq-track-name-row { display: flex; align-items: center; gap: 6px; }
+/* Overflow is clipped at the track-id edge so nothing spills onto the stepper
+   when the head narrows. The name keeps priority (never shrinks); the machine
+   chip is the first thing to clip, then the name truncates if still too tight. */
+.sq-track-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
 .sq-track-name {
+  flex: 0 1 auto;
   font-family: var(--font-disp);
   font-size: 10px;
   letter-spacing: 0.16em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
+/* Chip collapses first (very high shrink) so the name keeps its space; only
+   once the chip is gone does the name start truncating with an ellipsis. */
 .sq-machine-chip {
+  flex: 0 9999 auto;
+  min-width: 0;
+  overflow: hidden;
   font-size: 7px;
   letter-spacing: 0.18em;
   color: var(--tc);
@@ -235,6 +247,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* The machine badge only coexists with the full track name near max width;
+   below that, drop it so the name stays legible instead of slivering. */
+@media (max-width: 1400px) {
+  .sq-machine-chip { display: none; }
 }
 .sq-track-patch-stepper { display: flex; gap: 3px; }
 
@@ -644,9 +661,11 @@
 }
 
 /* ---------- focus mode ---------- */
-#sq-rack.focused { height: 100vh; display: flex; flex-direction: column; }
+#sq-rack.focused { height: 100vh; display: flex; flex-direction: column; padding-bottom: 12px; }
+#sq-rack.focused .sq-heads { margin-bottom: 0; }
+#sq-rack.focused .sq-hint { margin-top: 8px; }
 .sq-focus {
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 8px;
   flex: 1; min-height: 0;
   animation: sq-focus-in 0.2s ease-out;
 }
@@ -654,15 +673,21 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
 }
-.sq-strip { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: stretch; }
+/* Strip stacks the launchable scene row over the scene selector, so the whole
+   block aligns with the track heads and the 1–6 chips tuck into the dead space
+   under the scene card (VST layout) instead of stealing a left column. */
+.sq-strip { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 .sq-strip-row { min-width: 0; }
-.sq-rail { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+/* Selector row is constrained to the first grid column (the scene card). */
+.sq-rail { display: flex; flex-direction: row; gap: 5px; width: 218px; }
 .sq-rail-chip {
-  display: flex; align-items: center; gap: 5px;
-  padding: 2px 7px; border-radius: 5px; font-size: 10px;
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 4px 0; border-radius: 5px; font-size: 10px;
   border: 1px solid #232b3d; background: #121826; color: #8b94a7;
   cursor: pointer; font-family: inherit;
 }
+.sq-rail-chip:hover { border-color: #333d54; color: #b6c0d3; }
 .sq-rail-chip.active { border-color: #cfd6e4; color: #cfd6e4; }
 .sq-rail-dot { width: 5px; height: 5px; border-radius: 50%; background: #1a1f2a; }
 .sq-rail-chip.live .sq-rail-dot { background: #63e6a5; box-shadow: 0 0 6px #63e6a5; }

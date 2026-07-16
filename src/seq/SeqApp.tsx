@@ -57,15 +57,15 @@ export function SeqApp() {
         {focus ? (
           <div className="sq-focus" key={`f${focus.track}`}>
             <div className="sq-strip">
-              <SceneRail />
               <div className="sq-strip-row"><SceneRow s={focus.scene} /></div>
+              <SceneRail />
             </div>
             <DeviceView />
           </div>
         ) : (
           session.scenes.map((_, s) => <SceneRow key={s} s={s} />)
         )}
-        <FooterRow />
+        {!focus && <FooterRow />}
         <div className="sq-hint">
           {focus
             ? 'MINI STRIP STAYS LIVE — TAP CELLS TO LAUNCH · ✎ RETARGETS THE EDITOR · ESC BACK TO SESSION'
