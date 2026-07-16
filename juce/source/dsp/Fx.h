@@ -1,8 +1,13 @@
 // FX chain — C++ port of the Web Audio graph in src/engine/synth.ts:
-// drive -> chorus -> ping-pong delay -> reverb -> master gain -> DC block ->
-// safety limiter. The web app builds this from native WebAudio nodes; here each
-// stage is reimplemented as pure DSP so it runs inside the plugin and the
-// headless test harness alike.
+// drive -> chorus -> ping-pong delay -> reverb -> leveling compressor ->
+// master gain -> DC block -> safety limiter. The web app builds this from native
+// WebAudio nodes; here each stage is reimplemented as pure DSP so it runs inside
+// the plugin and the headless test harness alike.
+//
+// The leveling compressor is the last FX (WebAudio DynamicsCompressor semantics,
+// ratio 4 / knee 9 dB / attack 10 ms / release 200 ms) with THRESH/MAKEUP/ON
+// params — defaults ON to bring patches to roughly the same loudness. Same
+// static-curve math as DR-1's bus compressor (source/drum/dsp/DrumFx).
 //
 // The convolution reverb (generated exponential-noise impulse) is approximated
 // by a Freeverb-style network tuned by SIZE — a standard, real-time-safe stand-in
@@ -29,6 +34,9 @@ struct Biquad {
     double z1 = 0, z2 = 0;
     void   lowpass(double freq, double q, double sr);
     void   highpass(double freq, double q, double sr);
+    void   lowShelf(double freq, double gainDb, double sr);
+    void   highShelf(double freq, double gainDb, double sr);
+    void   peaking(double freq, double q, double gainDb, double sr);
     inline double process(double x) {
         double y = b0 * x + z1;
         z1 = b1 * x - a1 * y + z2;
@@ -171,6 +179,10 @@ public:
 private:
     double sr_ = 48000;
 
+    // 3-band tone EQ (first FX): fixed-corner low/high shelves + sweepable mid
+    // bell. Coefficients recomputed in setParams; 0 dB gain is exact bypass.
+    Biquad eqLoL_, eqLoR_, eqMidL_, eqMidR_, eqHiL_, eqHiR_;
+
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;
     Smooth driveWet_, driveDry_;
@@ -199,6 +211,11 @@ private:
     Smooth verbWet_, verbDry_;
     float roomSize_ = 0.84f;
     bool verbOff_ = false, verbGated_ = false;
+
+    // leveling compressor (WebAudio DynamicsCompressor semantics), last FX
+    Smooth compThrDb_, compMakeup_, compWet_, compDry_;
+    double compEnv_ = 0, compAtk_ = 0, compRel_ = 0;
+    bool compOff_ = false, compGated_ = false;
 
     // master + limiter
     Smooth masterGain_;

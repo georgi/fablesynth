@@ -105,6 +105,8 @@ enum Pid : int {
     FXCHORUS_ON, FXCHORUS_RATE, FXCHORUS_DEPTH, FXCHORUS_MIX,
     FXDELAY_ON, FXDELAY_TIME, FXDELAY_FB, FXDELAY_MIX,
     FXREVERB_ON, FXREVERB_SIZE, FXREVERB_MIX,
+    FXCOMP_ON, FXCOMP_THR, FXCOMP_GAIN, // leveling "glue" comp, last FX
+    FXEQ_ON, FXEQ_LOW, FXEQ_MID, FXEQ_MFREQ, FXEQ_HIGH, // 3-band tone EQ, first FX
     MASTER_VOLUME, MASTER_GLIDE,
     // Note sequencer clock (params.ts appends these after master too). seq.bpm
     // also drives the engine's virtual transport while the internal sequencer

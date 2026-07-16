@@ -6,6 +6,7 @@ export const fmtSec = (v: number) => (v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.
 export const fmtPct = (v: number) => Math.round(v * 100) + '%';
 export const fmtPan = (v: number) => (Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 100) + 'L' : Math.round(v * 100) + 'R'));
 export const fmtSigned = (v: number) => (v > 0 ? '+' : '') + Math.round(v);
+export const fmtDb = (v: number) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB';
 export const fmtBi = (v: number) => (v > 0 ? '+' : '') + Math.round(v * 100);
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const fmtNote = (v: number) => {
@@ -226,6 +227,15 @@ export const PARAM_DEFS: ParamDef[] = [
 
   ...Array.from({ length: 16 }, (_, i) => matParams(i + 1)).flat(),
 
+  // 3-band tone EQ — first in the FX chain (pre-drive). Fixed-corner low/high
+  // shelves plus a sweepable mid bell; all gains default to 0 dB so the stage is
+  // transparent until dialed in, and bypasses cleanly when off.
+  { id: 'fx.eq.on', type: 'bool', def: 0 },
+  { id: 'fx.eq.low', label: 'LOW', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
+  { id: 'fx.eq.mid', label: 'MID', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
+  { id: 'fx.eq.mfreq', label: 'M FREQ', min: 200, max: 5000, def: 900, curve: 'log', fmt: fmtHz },
+  { id: 'fx.eq.high', label: 'HIGH', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
+
   { id: 'fx.drive.on', type: 'bool', def: 0 },
   { id: 'fx.drive.amt', label: 'AMOUNT', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
   { id: 'fx.drive.mix', label: 'MIX', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
@@ -240,6 +250,12 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'fx.reverb.on', type: 'bool', def: 0 },
   { id: 'fx.reverb.size', label: 'SIZE', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
   { id: 'fx.reverb.mix', label: 'MIX', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
+
+  // Leveling "glue" compressor — the last FX. Defaults ON so patches sit at
+  // roughly the same loudness (WebAudio DynamicsCompressor semantics).
+  { id: 'fx.comp.on', type: 'bool', def: 1 },
+  { id: 'fx.comp.thr', label: 'THRESH', min: -40, max: 0, def: -18, curve: 'lin', fmt: (v) => Math.round(v) + ' dB' },
+  { id: 'fx.comp.gain', label: 'MAKEUP', min: 0, max: 12, def: 4, curve: 'lin', fmt: (v) => '+' + v.toFixed(1) + ' dB' },
 
   // Final visible gain stage: after FX, before DC blocking and limiting.
   { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.75, curve: 'lin', fmt: fmtPct },

@@ -611,10 +611,12 @@ void FxPanel::Module::paintModule(juce::Graphics& g) {
 FxPanel::FxPanel(ParameterSource s) {
     struct Def { const char* fx; const char* title; juce::StringArray k; };
     std::vector<Def> defs = {
+        {"eq", "EQ", {"low", "mid", "mfreq", "high"}},
         {"drive", "DRIVE", {"amt", "mix"}},
         {"chorus", "CHORUS", {"rate", "depth", "mix"}},
         {"delay", "DELAY", {"time", "fb", "mix"}},
         {"reverb", "REVERB", {"size", "mix"}},
+        {"comp", "COMP", {"thr", "gain"}},
     };
     for (auto& d : defs) {
         auto* m = new Module(s, d.fx, d.title, d.k);

@@ -171,6 +171,68 @@ int main() {
         check(rms(L) > 1e-3, "FX path passes audio", "rms=" + std::to_string(rms(L)));
     }
 
+    printf("\n== 5b. Tone EQ shapes spectrum ==\n");
+    {
+        // Drive a pure sine through Fx with every dynamics/time stage bypassed so
+        // only the EQ (and the transparent DC block / limiter, kept linear by the
+        // small 0.1 amplitude) touches the signal. Measure RMS vs a flat run.
+        auto eqRun = [&](double freqHz, float onOff, float lowDb, float midDb,
+                         float mFreq, float highDb) {
+            Fx fx; fx.prepare(sr);
+            auto p = defaultParams();
+            p[FXCOMP_ON] = 0; p[FXDRIVE_ON] = 0; p[FXCHORUS_ON] = 0;
+            p[FXDELAY_ON] = 0; p[FXREVERB_ON] = 0;
+            p[FXEQ_ON] = onOff; p[FXEQ_LOW] = lowDb; p[FXEQ_MID] = midDb;
+            p[FXEQ_MFREQ] = mFreq; p[FXEQ_HIGH] = highDb;
+            fx.setParams(p);
+            int n = (int)(0.5 * sr);
+            std::vector<float> L(n), R(n);
+            for (int i = 0; i < n; i++)
+                L[i] = R[i] = 0.1f * (float)std::sin(2 * M_PI * freqHz * i / sr);
+            for (int off = 0; off < n; off += 128) {
+                int bs = std::min(128, n - off);
+                fx.process(L.data() + off, R.data() + off, bs);
+            }
+            // Skip the first 0.1 s so smoothing/limiter settling doesn't skew RMS.
+            return rms(L, (int)(0.1 * sr));
+        };
+        // The FX chain applies a fixed makeup/master gain, so compare every band
+        // against a per-frequency *flat* run (EQ on, all 0 dB); the chain gain
+        // cancels in the ratio and only the EQ's effect remains. +12 dB ≈ 3.98x.
+        double flat50 = eqRun(50, 1, 0, 0, 900, 0);
+        double flat900 = eqRun(900, 1, 0, 0, 900, 0);
+        double flat1k = eqRun(1000, 1, 0, 0, 900, 0);
+        double flat10k = eqRun(10000, 1, 0, 0, 900, 0);
+
+        // Off with dialed gains equals the flat run — bypass forces 0 dB.
+        double off1k = eqRun(1000, 0, 12, 6, 900, 12);
+        check(std::abs(off1k - flat1k) / flat1k < 0.01, "EQ off ignores dialed gains (flat bypass)",
+              "off=" + std::to_string(off1k) + " flat=" + std::to_string(flat1k));
+
+        // Low shelf +12 dB boosts a 50 Hz tone (well below the 120 Hz corner).
+        double lowBoost = eqRun(50, 1, 12, 0, 900, 0) / flat50;
+        check(lowBoost > 3.3 && lowBoost < 4.3, "low shelf +12 dB boosts sub-bass ~4x",
+              "gain=" + std::to_string(lowBoost));
+
+        // High shelf +12 dB boosts a 10 kHz tone but leaves 50 Hz alone.
+        double hiBoost = eqRun(10000, 1, 0, 0, 900, 12) / flat10k;
+        check(hiBoost > 3.2 && hiBoost < 4.3, "high shelf +12 dB boosts treble ~4x",
+              "gain=" + std::to_string(hiBoost));
+        double hiLeavesLow = eqRun(50, 1, 0, 0, 900, 12) / flat50;
+        check(std::abs(hiLeavesLow - 1.0) < 0.05, "high shelf leaves sub-bass alone",
+              "gain=" + std::to_string(hiLeavesLow));
+
+        // Mid bell +12 dB at its centre frequency boosts that band.
+        double midBoost = eqRun(900, 1, 0, 12, 900, 0) / flat900;
+        check(midBoost > 2.5, "mid bell +12 dB boosts its centre",
+              "gain=" + std::to_string(midBoost));
+
+        // A cut works too: low shelf -12 dB attenuates sub-bass.
+        double lowCut = eqRun(50, 1, -12, 0, 900, 0) / flat50;
+        check(lowCut < 0.4, "low shelf -12 dB cuts sub-bass",
+              "gain=" + std::to_string(lowCut));
+    }
+
     printf("\n== 6. All %zu factory presets render cleanly ==\n", factoryPresets().size());
     {
         int bad = 0;

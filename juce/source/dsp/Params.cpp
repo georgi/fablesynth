@@ -97,6 +97,17 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({FXREVERB_SIZE,  "fx.reverb.size", "SIZE",   0, 1, 0.5f,  Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXREVERB_MIX,   "fx.reverb.mix",  "MIX",    0, 1, 0.3f,  Curve::Lin, Kind::Float, nullptr});
 
+    v.push_back({FXCOMP_ON,      "fx.comp.on",     "ON",       0, 1,   1,     Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({FXCOMP_THR,     "fx.comp.thr",    "THRESH", -40, 0,   -18,    Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXCOMP_GAIN,    "fx.comp.gain",   "MAKEUP",   0, 12,  4,     Curve::Lin, Kind::Float, nullptr});
+
+    // 3-band tone EQ (first FX, pre-drive). Gains default 0 dB → transparent.
+    v.push_back({FXEQ_ON,        "fx.eq.on",       "ON",       0, 1,    0,     Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({FXEQ_LOW,       "fx.eq.low",      "LOW",    -15, 15,    0,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXEQ_MID,       "fx.eq.mid",      "MID",    -15, 15,    0,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXEQ_MFREQ,     "fx.eq.mfreq",    "M FREQ", 200, 5000,  900,   Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQ_HIGH,      "fx.eq.high",     "HIGH",   -15, 15,    0,     Curve::Lin, Kind::Float, nullptr});
+
     v.push_back({MASTER_VOLUME, "master.volume", "OUTPUT", 0, 1,    0.75f, Curve::Lin, Kind::Float, nullptr});
     v.push_back({MASTER_GLIDE,  "master.glide",  "GLIDE",  0, 0.5f, 0,     Curve::Lin, Kind::Float, nullptr});
 

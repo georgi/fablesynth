@@ -64,6 +64,9 @@ export class SynthEngine {
   node!: AudioWorkletNode;
 
   fxInput!: GainNode;
+  eqLow!: BiquadFilterNode;
+  eqMid!: BiquadFilterNode;
+  eqHigh!: BiquadFilterNode;
   driveShaper!: WaveShaperNode;
   drivePre!: GainNode;
   driveMix!: WetDry;
@@ -82,6 +85,9 @@ export class SynthEngine {
   convolver!: ConvolverNode;
   verbMix!: WetDry;
   verbTimer!: ReturnType<typeof setTimeout> | 0;
+  compressor!: DynamicsCompressorNode;
+  compMakeup!: GainNode;
+  compMix!: WetDry;
   masterGain!: GainNode;
   limiter!: DynamicsCompressorNode;
   scopeAnalyser!: AnalyserNode;
@@ -174,13 +180,29 @@ export class SynthEngine {
     const ctx = this.ctx;
     this.fxInput = ctx.createGain();
 
+    // -- 3-band tone EQ (first in the chain, pre-drive) --
+    // Low/high shelves at fixed corners + a sweepable mid bell. Always in series;
+    // at 0 dB gain each stage is unity, so "off" is just flat gains (transparent)
+    // and needs no wet/dry bypass. Feeds the drive stage below.
+    this.eqLow = ctx.createBiquadFilter();
+    this.eqLow.type = 'lowshelf';
+    this.eqLow.frequency.value = 120;
+    this.eqMid = ctx.createBiquadFilter();
+    this.eqMid.type = 'peaking';
+    this.eqMid.Q.value = 0.9;
+    this.eqHigh = ctx.createBiquadFilter();
+    this.eqHigh.type = 'highshelf';
+    this.eqHigh.frequency.value = 6000;
+    this.fxInput.connect(this.eqLow).connect(this.eqMid).connect(this.eqHigh);
+    const eqOut = this.eqHigh;
+
     // -- drive --
     const driveOut = ctx.createGain();
     this.driveShaper = ctx.createWaveShaper();
     this.driveShaper.oversample = '2x';
     this.drivePre = ctx.createGain();
-    this.fxInput.connect(this.drivePre).connect(this.driveShaper);
-    this.driveMix = this.mkWetDry(this.fxInput, driveOut);
+    eqOut.connect(this.drivePre).connect(this.driveShaper);
+    this.driveMix = this.mkWetDry(eqOut, driveOut);
     this.driveShaper.connect(this.driveMix.wet);
 
     // -- chorus --
@@ -233,6 +255,21 @@ export class SynthEngine {
     this.verbTimer = 0;
     this.renderImpulse();
 
+    // -- compressor (last FX) --
+    // A leveling "glue" comp: pulls loud patches down and, via MAKEUP, lifts
+    // quiet ones, so patches sit at roughly the same loudness. WebAudio node
+    // (ratio 4, knee 9 dB, attack 10 ms, release 200 ms) with wet/dry bypass.
+    const compOut = ctx.createGain();
+    this.compressor = ctx.createDynamicsCompressor();
+    this.compressor.ratio.value = 4;
+    this.compressor.knee.value = 9;
+    this.compressor.attack.value = 0.01;
+    this.compressor.release.value = 0.2;
+    this.compMakeup = ctx.createGain();
+    verbOut.connect(this.compressor).connect(this.compMakeup);
+    this.compMix = this.mkWetDry(verbOut, compOut);
+    this.compMakeup.connect(this.compMix.wet);
+
     // -- master --
     this.masterGain = ctx.createGain();
     const dcBlock = ctx.createBiquadFilter();
@@ -251,7 +288,7 @@ export class SynthEngine {
     this.specAnalyser.fftSize = 2048;
     this.specAnalyser.smoothingTimeConstant = 0.82;
 
-    verbOut.connect(this.masterGain).connect(dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
+    compOut.connect(this.masterGain).connect(dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
     this.masterGain.connect(this.scopeAnalyser);
     this.masterGain.connect(this.specAnalyser);
   }
@@ -285,6 +322,13 @@ export class SynthEngine {
     const p = this.params;
     const t = this.ctx.currentTime;
 
+    // EQ: gains apply only when on; off forces flat 0 dB (transparent).
+    const eqOn = p['fx.eq.on'];
+    this.eqLow.gain.setTargetAtTime(eqOn ? p['fx.eq.low'] : 0, t, 0.02);
+    this.eqMid.gain.setTargetAtTime(eqOn ? p['fx.eq.mid'] : 0, t, 0.02);
+    this.eqMid.frequency.setTargetAtTime(p['fx.eq.mfreq'], t, 0.02);
+    this.eqHigh.gain.setTargetAtTime(eqOn ? p['fx.eq.high'] : 0, t, 0.02);
+
     const amt = p['fx.drive.amt'];
     const { curve, preGain } = makeDriveCurve(amt);
     this.driveShaper.curve = curve;
@@ -304,6 +348,10 @@ export class SynthEngine {
     this.setMix(this.delayMix, p['fx.delay.on'], p['fx.delay.mix'] * 0.85);
 
     this.setMix(this.verbMix, p['fx.reverb.on'], p['fx.reverb.mix'] * 0.9);
+
+    this.compressor.threshold.setTargetAtTime(p['fx.comp.thr'], t, 0.02);
+    this.compMakeup.gain.setTargetAtTime(Math.pow(10, p['fx.comp.gain'] / 20), t, 0.02);
+    this.setMix(this.compMix, p['fx.comp.on'], 1);
 
     const vol = p['master.volume'];
     this.masterGain.gain.setTargetAtTime(vol * vol * 1.6, t, 0.02);

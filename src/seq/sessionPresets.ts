@@ -53,14 +53,18 @@ interface Harmony {
   minor: boolean[];
 }
 
-// Calibrated from the deterministic factory renders in scripts/measure-*.mjs.
-// The fader curve is gain² × 1.4, so quieter voices need a higher fader value.
-const BASS_FADERS: Record<number, number> = { 0: 0.72, 2: 0.73, 4: 0.87, 5: 0.67, 7: 0.71, 8: 0.70, 10: 0.65 };
-const LEAD_FADERS: Record<number, number> = { 3: 1.0, 6: 0.62, 14: 1.0, 15: 0.95, 19: 0.45 };
-const PAD_FADERS: Record<number, number> = { 1: 0.85, 6: 1.0, 11: 0.65, 17: 0.90 };
+// Full-chain, in-context track faders — measured by
+// juce/test/measure_track_levels.cpp, which renders every song's four tracks
+// through their real engine+FX (incl. WT-1's leveling comp) and balances bass /
+// lead / pad to the drum-bus RMS (drums = fixed 0.78 reference) with perceptual
+// per-role offsets (bass +4 dB, pad +2 dB). The fader curve is gain² × 1.4, so
+// quieter voices need a higher fader value.
+const BASS_FADERS: Record<number, number> = { 0: 0.59, 2: 0.59, 4: 0.61, 5: 0.52, 7: 0.55, 8: 0.53 };
+const LEAD_FADERS: Record<number, number> = { 3: 0.77, 6: 0.50, 14: 0.99, 15: 0.66, 19: 0.60 };
+const PAD_FADERS: Record<number, number> = { 1: 0.60, 11: 0.54, 17: 0.64 };
 
 function calibratedTrackGains(programs: Spec['programs']): [number, number, number, number] {
-  return [0.78, BASS_FADERS[programs[1]] ?? 0.72, LEAD_FADERS[programs[2]] ?? 0.8, PAD_FADERS[programs[3]] ?? 0.8];
+  return [0.78, BASS_FADERS[programs[1]] ?? 0.56, LEAD_FADERS[programs[2]] ?? 0.65, PAD_FADERS[programs[3]] ?? 0.59];
 }
 
 // Four-bar harmonic plans. Each variation starts from a recognisable cadence,

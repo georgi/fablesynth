@@ -40,6 +40,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 2, 'mat2.dst': 6, 'mat2.amt': 0.25, 'lfo2.rate': 0.21,
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.55,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.72, 'fx.reverb.mix': 0.42,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -3.5, 'fx.eq.mid': -2, 'fx.eq.mfreq': 405, 'fx.eq.high': 5.5,
     },
   },
 
@@ -54,6 +56,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'master.glide': 0.06,
       'fx.drive.on': 1, 'fx.drive.amt': 0.45, 'fx.drive.mix': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.18, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.22,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 263, 'fx.eq.high': 6,
     },
   },
 
@@ -68,6 +72,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 3, 'mat2.dst': 1, 'mat2.amt': -0.4,
       'fx.delay.on': 1, 'fx.delay.time': 0.42, 'fx.delay.fb': 0.42, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.35,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 3.8, 'fx.eq.mfreq': 709, 'fx.eq.high': -6,
     },
   },
 
@@ -81,6 +87,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'env1.a': 0.01, 'env1.d': 0.4, 'env1.s': 0.9, 'env1.r': 0.5,
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.4, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.22,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 3.6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 598, 'fx.eq.high': -6,
     },
   },
 
@@ -95,6 +103,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.55,
       'mat2.src': 5, 'mat2.dst': 1, 'mat2.amt': 0.3,
       'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 3, 'fx.eq.mid': 4.3, 'fx.eq.mfreq': 916, 'fx.eq.high': -6,
     },
   },
 
@@ -110,6 +120,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'lfo2.rate': 4.6, 'mat2.src': 2, 'mat2.dst': 4, 'mat2.amt': 0.015,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
       'fx.delay.on': 1, 'fx.delay.time': 0.6, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.18,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4.3, 'fx.eq.mfreq': 693, 'fx.eq.high': -6,
     },
   },
 
@@ -126,6 +138,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.5,
       'mat3.src': 1, 'mat3.dst': 2, 'mat3.amt': -0.35,
       'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -5.3, 'fx.eq.mid': 2.1, 'fx.eq.mfreq': 356, 'fx.eq.high': 3.2,
     },
   },
 
@@ -144,6 +158,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.18,
       'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.12,
       'fx.drive.on': 1, 'fx.drive.amt': 0.35, 'fx.drive.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 320, 'fx.eq.high': 6,
     },
   },
 
@@ -160,6 +176,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.35,
       'fx.delay.on': 1, 'fx.delay.time': 0.33, 'fx.delay.fb': 0.32, 'fx.delay.mix': 0.22,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.26,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 3.9, 'fx.eq.mid': 5.6, 'fx.eq.mfreq': 601, 'fx.eq.high': -6,
     },
   },
 
@@ -176,6 +194,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.7,
       'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.4,
       'fx.drive.on': 1, 'fx.drive.amt': 0.55, 'fx.drive.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5.7, 'fx.eq.mfreq': 620, 'fx.eq.high': 6,
     },
   },
 
@@ -192,6 +212,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.2,
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.68, 'fx.reverb.mix': 0.42,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 4.2, 'fx.eq.mid': 5.5, 'fx.eq.mfreq': 431, 'fx.eq.high': -6,
     },
   },
 
@@ -209,6 +231,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat3.src': 4, 'mat3.dst': 3, 'mat3.amt': 0.3,
       'fx.drive.on': 1, 'fx.drive.amt': 0.6, 'fx.drive.mix': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.18,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 1.6, 'fx.eq.mfreq': 734, 'fx.eq.high': -6,
     },
   },
 
@@ -225,6 +249,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 3, 'mat1.dst': 4, 'mat1.amt': 0.25,
       'fx.drive.on': 1, 'fx.drive.amt': 0.3, 'fx.drive.mix': 0.2,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 900, 'fx.eq.high': -6,
     },
   },
 
@@ -240,6 +266,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.3,
       'fx.delay.on': 1, 'fx.delay.time': 0.38, 'fx.delay.fb': 0.4, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.25,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 2.6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 504, 'fx.eq.high': 4.1,
     },
   },
 
@@ -255,6 +283,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 3, 'mat1.dst': 1, 'mat1.amt': -0.3,
       'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.32,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.4,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 3.3, 'fx.eq.mfreq': 680, 'fx.eq.high': -6,
     },
   },
 
@@ -269,6 +299,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.01,
       'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.25, 'fx.delay.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 4.9, 'fx.eq.mid': 6, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
     },
   },
 
@@ -288,6 +320,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat3.src': 2, 'mat3.dst': 6, 'mat3.amt': 0.4,
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5, 'fx.eq.mfreq': 361, 'fx.eq.high': 6,
     },
   },
 
@@ -303,6 +337,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'lfo1.shape': 0, 'lfo1.rate': 4,
       'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.7,
       'fx.drive.on': 1, 'fx.drive.amt': 0.4, 'fx.drive.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -1.9, 'fx.eq.mid': 4.8, 'fx.eq.mfreq': 493, 'fx.eq.high': -2.9,
     },
   },
 
@@ -320,6 +356,8 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.008,
       'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.25,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.45, 'fx.reverb.mix': 0.22,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -0.1, 'fx.eq.mid': -5.4, 'fx.eq.mfreq': 546, 'fx.eq.high': 5.5,
     },
   },
 ];

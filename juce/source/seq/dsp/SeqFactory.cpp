@@ -540,27 +540,31 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             preset.session.bpm = 96.0 + energy * 7.0 + variationIndex;
             preset.session.swing = family == std::string("HOUSE") ? 0.12
                                  : family == std::string("LO-FI") ? 0.18 : 0.0;
+            // Full-chain, in-context track faders — measured by
+            // test/measure_track_levels.cpp, which renders every song's four
+            // tracks through their real engine+FX (incl. WT-1's leveling comp)
+            // and balances each to the drum-bus RMS with perceptual per-role
+            // offsets (bass +4 dB, pad +2 dB). Fader curve is gain² × 1.4.
             const auto calibratedGain = [](size_t track, int program) {
-                if (track == 0) return 0.78f; // drums: fixed reference level
-                if (track == 1) { // measured BL-1 phrase loudness
+                if (track == 0) return 0.78f; // drums: fixed loudness reference
+                if (track == 1) { // BL-1 bass (+4 dB role offset)
                     switch (program) {
-                        case 0: return 0.72f; case 2: return 0.73f;
-                        case 4: return 0.87f; case 5: return 0.67f;
-                        case 7: return 0.71f; case 8: return 0.70f;
-                        case 10: return 0.65f; default: return 0.72f;
+                        case 0: return 0.59f; case 2: return 0.59f;
+                        case 4: return 0.61f; case 5: return 0.52f;
+                        case 7: return 0.55f; case 8: return 0.53f;
+                        default: return 0.56f;
                     }
                 }
-                if (track == 2) { // measured WT-1 lead loudness
+                if (track == 2) { // WT-1 lead (at drum target)
                     switch (program) {
-                        case 3: return 1.00f; case 6: return 0.62f;
-                        case 14: return 1.00f; case 15: return 0.95f;
-                        case 19: return 0.45f; default: return 0.80f;
+                        case 3: return 0.77f; case 6: return 0.50f;
+                        case 14: return 0.99f; case 15: return 0.66f;
+                        case 19: return 0.60f; default: return 0.65f;
                     }
                 }
-                switch (program) { // measured WT-1 pad loudness
-                    case 1: return 0.85f; case 6: return 1.00f;
-                    case 11: return 0.65f; case 17: return 0.90f;
-                    default: return 0.80f;
+                switch (program) { // WT-1 pad (+2 dB role offset)
+                    case 1: return 0.60f; case 11: return 0.54f;
+                    case 17: return 0.64f; default: return 0.59f;
                 }
             };
             for (size_t t = 0; t < programs.size(); ++t) {

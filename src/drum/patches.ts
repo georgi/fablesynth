@@ -28,20 +28,20 @@ export const FACTORY_PATCHES: PadPatch[] = [
   // Kicks — THUD body, pitch envelope does the punch.
   fp('BD DEEP', {
     'oscA.table': 0, 'oscA.tune': -26, 'penv.amt': 24, 'penv.dec': 0.05,
-    'aenv.dec': 0.42, 'aenv.curve': 0.45, 'lvl': 0.9,
+    'aenv.dec': 0.42, 'aenv.curve': 0.45, 'lvl': 0.9, 'fx.reverb.on': 0,
   }),
   fp('BD PUNCH', {
     'oscA.table': 0, 'oscA.tune': -19, 'penv.amt': 32, 'penv.dec': 0.028,
-    'aenv.dec': 0.2, 'aenv.curve': 0.5, 'lvl': 0.9,
+    'aenv.dec': 0.2, 'aenv.curve': 0.5, 'lvl': 0.9, 'fx.reverb.on': 0,
   }),
   fp('BD SUB', {
     'oscA.table': 0, 'oscA.tune': -34, 'penv.amt': 20, 'penv.dec': 0.06,
-    'aenv.dec': 0.95, 'aenv.hold': 0.02, 'aenv.curve': 0.3, 'lvl': 0.92,
+    'aenv.dec': 0.95, 'aenv.hold': 0.02, 'aenv.curve': 0.3, 'lvl': 0.92, 'fx.reverb.on': 0,
   }),
   fp('BD 808', {
     'oscA.table': 0, 'oscA.tune': -24, 'penv.amt': 26, 'penv.dec': 0.075,
     'aenv.dec': 0.65, 'aenv.curve': 0.35, 'flt.on': 1, 'flt.type': 0,
-    'flt.cut': 900, 'flt.drive': 0.35, 'lvl': 0.92,
+    'flt.cut': 900, 'flt.drive': 0.35, 'lvl': 0.92, 'fx.reverb.on': 0,
   }),
   // Snares — tonal crack plus a bright noise layer.
   fp('SD CRACK', {
@@ -72,7 +72,7 @@ export const FACTORY_PATCHES: PadPatch[] = [
   }),
   fp('OH 808', {
     'oscA.level': 0, 'oscB.table': 3, 'oscB.level': 0.9, 'aenv.dec': 0.55, 'flt.on': 1, 'flt.type': 3,
-    'flt.cut': 5200, 'ring.freq': 5197, 'ring.mix': 0.28, 'lvl': 0.7,
+    'flt.cut': 5200, 'ring.freq': 5197, 'ring.mix': 0.28, 'lvl': 0.525,
   }),
   // Cymbal — long sizzle.
   fp('CY 808', {
@@ -124,12 +124,12 @@ export const FACTORY_PATCHES: PadPatch[] = [
   fp('HX BD UZU', {
     'oscA.table': 0, 'oscA.tune': -26, 'oscA.level': 0.50,
     'oscB.table': 16, 'oscB.level': 0.72, 'penv.amt': 22, 'penv.dec': 0.045,
-    'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1400, 'lvl': 0.90,
+    'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1400, 'lvl': 0.90, 'fx.reverb.on': 0,
   }),
   fp('HX BD 808', {
     'oscA.table': 0, 'oscA.tune': -31, 'oscA.level': 0.45,
     'oscB.table': 5, 'oscB.level': 0.68, 'penv.amt': 18, 'penv.dec': 0.055,
-    'aenv.dec': 0.72, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1100, 'lvl': 0.92,
+    'aenv.dec': 0.72, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1100, 'lvl': 0.92, 'fx.reverb.on': 0,
   }),
   fp('HX SD UZU', {
     'oscA.table': 1, 'oscA.tune': -12, 'oscA.level': 0.42,
