@@ -100,8 +100,10 @@ function bassProgression(harmony: Harmony, variation: string): ClipDoc {
 function padProgression(harmony: Harmony, variation: string): ClipDoc {
   const bytes = emptyClipBytes('WT1', 4);
   harmony.roots.forEach((root, bar) => {
+    // Close-voice the triad as pitch classes inside the root octave (+0..+11):
+    // the pad bed stays strictly below the +12..+23 lead band for every root.
     const chord = [root, root + (harmony.minor[bar] ? 3 : 4), root + 7];
-    chord.forEach((note, lane) => putNote(bytes, wtNoteIdx(bar, 0, lane), note, 16));
+    chord.forEach((note, lane) => putNote(bytes, wtNoteIdx(bar, 0, lane), ((note % 12) + 12) % 12, 16));
   });
   return { name: `${variation} CHORDS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
@@ -138,29 +140,18 @@ const LEAD_RHYTHMS: Record<string, Array<[step: number, duration: number]>> = {
   CINEMATIC: [[0, 4], [4, 3], [7, 1], [8, 4], [12, 2], [14, 2]],
 };
 
-function voicedLeadPitch(pitchClass: number, previous: number | null): number {
-  const candidates = [pitchClass - 12, pitchClass, pitchClass + 12].filter((note) => note >= -12 && note <= 23);
-  if (previous === null) return pitchClass + 12;
-  return candidates.reduce((best, note) => {
-    const score = Math.abs(note - previous) + (note < 5 ? 3 : 0);
-    const bestScore = Math.abs(best - previous) + (best < 5 ? 3 : 0);
-    return score < bestScore ? note : best;
-  }, candidates[0]);
-}
-
 function leadProgression(harmony: Harmony, spec: Spec): ClipDoc {
   const bytes = emptyClipBytes('WT1', 4);
   const tonic = harmony.roots[0];
   const line = LEAD_LINES[spec.variationIndex];
   const rhythm = LEAD_RHYTHMS[spec.family] ?? LEAD_RHYTHMS.NEON;
-  let previous: number | null = null;
   line.forEach((barNotes, bar) => {
     barNotes.forEach((relativePitch, event) => {
+      // Voice the melody strictly one octave above the pad bed (+12..+23):
+      // the authored lines carry the contour, so no octave search is needed.
       const pitchClass = (tonic + relativePitch) % 12;
-      const absolute = voicedLeadPitch(pitchClass, previous);
       const [step, duration] = rhythm[event];
-      putNote(bytes, wtNoteIdx(bar, step, 0), absolute, duration, event === 0);
-      previous = absolute;
+      putNote(bytes, wtNoteIdx(bar, step, 0), pitchClass + 12, duration, event === 0);
     });
   });
   return { name: `${spec.variation} MELODY · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };

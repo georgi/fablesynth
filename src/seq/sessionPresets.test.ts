@@ -96,4 +96,28 @@ describe('SQ-4 factory session patch contract', () => {
       }
     }
   });
+
+  it('voices every pad strictly below every lead note', () => {
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      for (const scene of preset.session.scenes) {
+        const lead = scene.clips[2];
+        const pad = scene.clips[3];
+        if (!lead || !pad) continue;
+        const pitches = (pattern: string) => {
+          const bytes = b64ToBytes(pattern);
+          const out: number[] = [];
+          for (let i = 0; i < bytes.length; i += 3) {
+            if (bytes[i]! & 1) out.push((bytes[i + 2]! - 1) * 12 + (bytes[i + 1]! & 0x7f));
+          }
+          return out;
+        };
+        const leadPitches = pitches(lead.pattern);
+        const padPitches = pitches(pad.pattern);
+        expect(Math.min(...leadPitches), `${preset.name} ${scene.name} lead floor`).toBeGreaterThanOrEqual(12);
+        expect(Math.max(...leadPitches), `${preset.name} ${scene.name} lead ceiling`).toBeLessThanOrEqual(23);
+        expect(Math.max(...padPitches), `${preset.name} ${scene.name} pad ceiling`).toBeLessThanOrEqual(11);
+        expect(Math.min(...padPitches), `${preset.name} ${scene.name} pad floor`).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
 });
