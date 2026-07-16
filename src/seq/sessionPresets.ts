@@ -3,7 +3,7 @@
 // instruments present one coherent factory library.
 
 import { factorySession } from './factory';
-import { bytesToB64, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
+import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
 
 export interface SessionPreset {
   name: string;
@@ -157,28 +157,114 @@ function leadProgression(harmony: Harmony, spec: Spec): ClipDoc {
   return { name: `${spec.variation} MELODY · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
 
-function drumClip(spec: Spec, scene: number): ClipDoc {
-  // The rhythm can vary per scene, but it is repeated to the same four-bar
-  // form as the harmonic parts, keeping launches musically aligned.
-  const ids: Record<string, string[]> = {
-    NEON: ['dr1-distant-ticks', 'dr1-hat-rise', 'dr1-neon-drive', 'dr1-neon-drive', 'dr1-hat-rise', 'dr1-ghost-shuffle'],
-    ACID: ['dr1-distant-ticks', 'dr1-hat-rise', 'dr1-neon-drive', 'dr1-jungle-sparks', 'dr1-hat-rise', 'dr1-ghost-shuffle'],
-    AMBIENT: ['dr1-distant-ticks', 'dr1-distant-ticks', 'dr1-hat-rise', 'dr1-hat-rise', 'dr1-distant-ticks', 'dr1-ghost-shuffle'],
-    HOUSE: ['dr1-house-pocket', 'dr1-house-pocket', 'dr1-house-pocket', 'dr1-house-pocket', 'dr1-distant-ticks', 'dr1-ghost-shuffle'],
-    'LO-FI': ['dr1-lofi-break', 'dr1-lofi-break', 'dr1-lofi-break', 'dr1-lofi-break', 'dr1-distant-ticks', 'dr1-ghost-shuffle'],
-    CINEMATIC: ['dr1-cinema-half', 'dr1-cinema-half', 'dr1-cinema-half', 'dr1-cinema-half', 'dr1-distant-ticks', 'dr1-ghost-shuffle'],
-  };
-  const source = (awaitlessFactoryClips.find((clip) => clip.id === ids[spec.family][scene]) ?? awaitlessFactoryClips[0]);
-  const src = source.pattern;
-  const bytes = new Uint8Array(4 * 256);
-  for (let bar = 0; bar < 4; bar++) bytes.set(src.subarray((bar % source.bars) * 256, (bar % source.bars + 1) * 256), bar * 256);
-  return { name: `${source.name} · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
-}
+// ---------- procedural drums ----------
+// Every song gets its own kit patterns: a per-family groove archetype,
+// mutated deterministically by variation and energy, then masked per scene
+// role. No preset references a shared library clip.
 
-// Decode once at module load; the generated library is browser-safe data.
-import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
-import { b64ToBytes } from './protocol';
-const awaitlessFactoryClips = FACTORY_CLIP_LIBRARY.filter((clip) => clip.machine === 'DR1').map((clip) => ({ ...clip, pattern: b64ToBytes(clip.pattern) }));
+const DRUM = { KICK: 0, SNARE: 2, CLAP: 3, RIM: 4, CH: 5, OH: 6, TOM_LO: 8, TOM_MID: 9, TOM_HI: 10, PERC_A: 12, PERC_B: 13 } as const;
+
+interface DrumVoice { pad: number; steps: number[]; accents: number[] }
+interface DrumArchetype { kick: DrumVoice; back: DrumVoice; hat: DrumVoice; open: DrumVoice; perc: DrumVoice[] }
+
+const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
+  NEON: { // driving synthwave: four-on-floor, clap backbeat, offbeat hats
+    kick: { pad: DRUM.KICK, steps: [0, 4, 8, 12], accents: [0] },
+    back: { pad: DRUM.CLAP, steps: [4, 12], accents: [] },
+    hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [2, 10] },
+    open: { pad: DRUM.OH, steps: [2, 10], accents: [] },
+    perc: [{ pad: DRUM.PERC_A, steps: [15], accents: [] }],
+  },
+  ACID: { // warehouse: relentless floor + ghost kick, rolling 16th hats
+    kick: { pad: DRUM.KICK, steps: [0, 4, 8, 12, 14], accents: [0] },
+    back: { pad: DRUM.SNARE, steps: [4, 12], accents: [4, 12] },
+    hat: { pad: DRUM.CH, steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], accents: [2, 6, 10, 14] },
+    open: { pad: DRUM.OH, steps: [7], accents: [] },
+    perc: [],
+  },
+  AMBIENT: { // deep: minimal kick, soft rim, airy hats, lots of space
+    kick: { pad: DRUM.KICK, steps: [0, 8], accents: [] },
+    back: { pad: DRUM.RIM, steps: [8], accents: [] },
+    hat: { pad: DRUM.CH, steps: [4, 12], accents: [] },
+    open: { pad: DRUM.OH, steps: [], accents: [] },
+    perc: [{ pad: DRUM.PERC_A, steps: [2], accents: [] }],
+  },
+  HOUSE: { // club: swung floor (global swing 0.12), open-hat offbeat "tss"
+    kick: { pad: DRUM.KICK, steps: [0, 4, 8, 12], accents: [] },
+    back: { pad: DRUM.CLAP, steps: [4, 12], accents: [] },
+    hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [] },
+    open: { pad: DRUM.OH, steps: [2, 6, 10, 14], accents: [6, 14] },
+    perc: [],
+  },
+  'LO-FI': { // dusty boom-bap: broken kick, laid-back snare, swung hats
+    kick: { pad: DRUM.KICK, steps: [0, 7, 10], accents: [0] },
+    back: { pad: DRUM.SNARE, steps: [4, 12], accents: [] },
+    hat: { pad: DRUM.CH, steps: [0, 3, 6, 8, 11, 14], accents: [] },
+    open: { pad: DRUM.OH, steps: [14], accents: [] },
+    perc: [{ pad: DRUM.PERC_B, steps: [6], accents: [] }],
+  },
+  CINEMATIC: { // epic half-time: sparse kick, big snare on 3, tom colour
+    kick: { pad: DRUM.KICK, steps: [0, 10], accents: [0] },
+    back: { pad: DRUM.SNARE, steps: [8], accents: [8] },
+    hat: { pad: DRUM.CH, steps: [], accents: [] },
+    open: { pad: DRUM.OH, steps: [], accents: [] },
+    perc: [{ pad: DRUM.TOM_LO, steps: [13], accents: [] }],
+  },
+};
+
+// Family-flavoured bar-4 fills: [pad, step, accent].
+const DRUM_FILLS: Record<string, Array<[number, number, boolean]>> = {
+  NEON: [[DRUM.TOM_HI, 10, false], [DRUM.TOM_MID, 12, false], [DRUM.TOM_LO, 14, true]],
+  ACID: [[DRUM.SNARE, 13, false], [DRUM.SNARE, 14, false], [DRUM.SNARE, 15, true]],
+  AMBIENT: [[DRUM.OH, 12, false], [DRUM.PERC_A, 14, false]],
+  HOUSE: [[DRUM.CLAP, 13, false], [DRUM.CLAP, 15, true]],
+  'LO-FI': [[DRUM.PERC_B, 13, false], [DRUM.PERC_B, 15, false]],
+  CINEMATIC: [[DRUM.TOM_HI, 8, false], [DRUM.TOM_MID, 10, false], [DRUM.TOM_LO, 12, true], [DRUM.TOM_LO, 14, true]],
+};
+
+// One ghost hit per variation (index 0 adds none): [pad, step].
+const DRUM_GHOSTS: Array<[number, number] | null> = [null, [DRUM.KICK, 14], [DRUM.SNARE, 11], [DRUM.PERC_B, 3]];
+
+function drumProgression(spec: Spec, scene: number): ClipDoc {
+  const family = DRUM_ARCHETYPES[spec.family] ?? DRUM_ARCHETYPES.NEON!;
+  const bytes = new Uint8Array(4 * 256);
+  const hit = (bar: number, pad: number, step: number, accent = false) => { bytes[dr1Idx(bar, pad, step)] = accent ? 2 : 1; };
+  const intro = scene === 0, build = scene === 1, outro = scene === 5;
+
+  // Energy scales hat density; variation (plus one extra for DROP B) rotates
+  // which hat steps carry the accents, so sibling songs land differently.
+  const hatSteps = spec.energy >= 4 ? Array.from({ length: 16 }, (_, s) => s)
+    : spec.energy <= 2 ? family.hat.steps.filter((_, i) => i % 2 === 0)
+      : family.hat.steps;
+  const shift = spec.variationIndex + (scene === 3 ? 1 : 0);
+  const hatAccents = family.hat.accents.map((_, k) => (hatSteps.length ? hatSteps[(k * 2 + shift) % hatSteps.length]! : -1));
+  const ghost = DRUM_GHOSTS[spec.variationIndex] ?? null;
+
+  for (let bar = 0; bar < 4; bar++) {
+    const lastBar = bar === 3;
+    const kickSteps = intro || outro ? family.kick.steps.filter((step) => step % 8 === 0) : family.kick.steps;
+    for (const step of kickSteps) hit(bar, family.kick.pad, step, family.kick.accents.includes(step));
+    if (!intro && !outro) {
+      for (const step of family.back.steps) hit(bar, family.back.pad, step, family.back.accents.includes(step));
+      if (!build && ghost) hit(bar, ghost[0], ghost[1]);
+    }
+    if (!outro) {
+      // Intros thin the hats and stagger the picks by variation, so each
+      // song opens with its own sparse figure instead of a shared "ticks" loop.
+      const steps = intro ? family.hat.steps.filter((_, i) => (i + spec.variationIndex) % 2 === 0) : hatSteps;
+      for (const step of steps) hit(bar, family.hat.pad, step, !intro && hatAccents.includes(step));
+      if (!intro) for (const step of family.open.steps) hit(bar, family.open.pad, step, family.open.accents.includes(step));
+    }
+    if (!intro) for (const voice of family.perc) for (const step of voice.steps) hit(bar, voice.pad, step, voice.accents.includes(step));
+    if ((intro || outro) && lastBar && ghost && spec.variationIndex >= 2) hit(bar, ghost[0], ghost[1]);
+    if (build && lastBar) for (const step of [12, 13, 14, 15]) hit(bar, DRUM.PERC_A, step, step === 15);
+    if (!intro && !build && !outro && (lastBar || (scene === 3 && bar === 1))) {
+      for (const [pad, step, accent] of DRUM_FILLS[spec.family] ?? []) hit(bar, pad, step, accent);
+    }
+  }
+  const role = intro ? 'INTRO' : build ? 'BUILD' : outro ? 'TAIL' : scene === 3 ? 'DRIVE II' : 'DRIVE';
+  return { name: `${spec.variation} ${role} · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+}
 
 function buildSession(spec: Spec): SessionDoc {
   const session = factorySession();
@@ -195,7 +281,7 @@ function buildSession(spec: Spec): SessionDoc {
   const lead = leadProgression(harmony, spec);
   const pads = padProgression(harmony, spec.variation);
   session.scenes.forEach((scene, s) => {
-    const drums = drumClip(spec, s);
+    const drums = drumProgression(spec, s);
     // Arrange density intentionally; the three tonal parts retain the same
     // progression whenever they enter, so every scene belongs to one song.
     scene.clips = s === 0 ? [drums, null, null, pads]

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FACTORY_PRESETS } from '../presets';
 import { FACTORY_SESSION_PRESETS } from './sessionPresets';
 import { b64ToBytes, wtNoteIdx } from './protocol';
+import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 
 describe('SQ-4 factory session patch contract', () => {
   it('keeps the native session-library ordering and factory patch indices', () => {
@@ -117,6 +118,42 @@ describe('SQ-4 factory session patch contract', () => {
         expect(Math.max(...leadPitches), `${preset.name} ${scene.name} lead ceiling`).toBeLessThanOrEqual(23);
         expect(Math.max(...padPitches), `${preset.name} ${scene.name} pad ceiling`).toBeLessThanOrEqual(11);
         expect(Math.min(...padPitches), `${preset.name} ${scene.name} pad floor`).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('generates a unique drum pattern for every song', () => {
+    // DROP A (scene 2) carries the full groove: all 24 songs must differ.
+    const drops = FACTORY_SESSION_PRESETS.map((preset) => preset.session.scenes[2]!.clips[0]!.pattern);
+    expect(new Set(drops).size).toBe(FACTORY_SESSION_PRESETS.length);
+  });
+
+  it('varies the drums across scenes within each song', () => {
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      const [intro, build, dropA, dropB, brk, outro] = preset.session.scenes.map((scene) => scene.clips[0]);
+      expect(brk, `${preset.name} break stays drumless`).toBeNull();
+      const patterns = [intro, build, dropA, dropB, outro].map((clip) => clip!.pattern);
+      expect(new Set(patterns).size, `${preset.name} scene drums`).toBe(5);
+    }
+  });
+
+  it('ends busy scenes with a bar-4 fill', () => {
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      for (const sceneIndex of [1, 2, 3]) {
+        const clip = preset.session.scenes[sceneIndex]!.clips[0]!;
+        const bytes = b64ToBytes(clip.pattern);
+        const bar = (n: number) => bytes.slice(n * 256, (n + 1) * 256).join(',');
+        expect(bar(3), `${preset.name} scene ${sceneIndex}`).not.toBe(bar(0));
+      }
+    }
+  });
+
+  it('never reuses a library clip in a generated preset', () => {
+    const library = new Set(FACTORY_CLIP_LIBRARY.map((clip) => clip.pattern));
+    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+      for (const scene of preset.session.scenes) {
+        const drums = scene.clips[0];
+        if (drums) expect(library.has(drums.pattern), `${preset.name} ${scene.name}`).toBe(false);
       }
     }
   });
