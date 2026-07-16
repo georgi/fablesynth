@@ -94,7 +94,8 @@ juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
     if (!st.on) return {};
     auto cell = cellBounds(step, st.note);
     const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
-    cell.setWidth(w);
+    const int gridRight = getWidth() - kPadX - kClockW - kClockGap;
+    cell.setWidth(juce::jmax(1, juce::jmin(w, gridRight - cell.getX())));
     return cell.removeFromRight(6).expanded(2, 2);
 }
 
@@ -132,10 +133,12 @@ void NoteSeqView::toggleStepAcc(int step) {
 void NoteSeqView::resizeStep(int step, int duration) {
     auto cur = model.sequenceStep(model.editPattern(), step);
     if (!cur.on) return;
-    int limit = fable::SEQ_MAX_NOTE_STEPS;
-    for (int i = step + 1; i < fable::SEQ_STEPS; ++i) {
-        const auto other = model.sequenceStep(model.editPattern(), i);
-        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = i - step; break; }
+    const int bars = model.capabilities().hosted ? model.clipBars() : (int)model.chain().size();
+    const int absolute = model.editPattern() * fable::SEQ_STEPS + step;
+    int limit = juce::jmin(fable::SEQ_MAX_NOTE_STEPS, bars * fable::SEQ_STEPS - absolute);
+    for (int a = absolute + 1; a < bars * fable::SEQ_STEPS; ++a) {
+        const auto other = model.sequenceStep(a / fable::SEQ_STEPS, a % fable::SEQ_STEPS);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = a - absolute; break; }
     }
     cur.duration = juce::jlimit(1, limit, duration);
     model.setSequenceStep(model.editPattern(), step, cur);

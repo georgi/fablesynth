@@ -19,6 +19,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 2}, {"mat2.dst", 6}, {"mat2.amt", 0.25f}, {"lfo2.rate", 0.21f},
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.55f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.72f}, {"fx.reverb.mix", 0.42f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -3.5f}, {"fx.eq.mid", -2.0f}, {"fx.eq.mfreq", 405}, {"fx.eq.high", 5.5f},
         }},
 
         {"ACID LINE", {
@@ -30,6 +32,8 @@ const std::vector<Preset>& factoryPresets() {
             {"master.glide", 0.06f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.45f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.18f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.22f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -6.0f}, {"fx.eq.mfreq", 263}, {"fx.eq.high", 6.0f},
         }},
 
         {"CRYSTAL PLUCK", {
@@ -41,6 +45,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 3}, {"mat2.dst", 1}, {"mat2.amt", -0.4f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.42f}, {"fx.delay.fb", 0.42f}, {"fx.delay.mix", 0.3f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.55f}, {"fx.reverb.mix", 0.35f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 3.8f}, {"fx.eq.mfreq", 709}, {"fx.eq.high", -6.0f},
         }},
 
         {"HYPER SAW", {
@@ -51,6 +57,8 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.01f}, {"env1.d", 0.4f}, {"env1.s", 0.9f}, {"env1.r", 0.5f},
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.4f}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.22f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 3.6f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 598}, {"fx.eq.high", -6.0f},
         }},
 
         {"VOWEL TALK", {
@@ -62,6 +70,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.55f},
             {"mat2.src", 5}, {"mat2.dst", 1}, {"mat2.amt", 0.3f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.22f}, {"fx.drive.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 3.0f}, {"fx.eq.mid", 4.3f}, {"fx.eq.mfreq", 916}, {"fx.eq.high", -6.0f},
         }},
 
         {"CATHEDRAL BELL", {
@@ -74,6 +84,8 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo2.rate", 4.6f}, {"mat2.src", 2}, {"mat2.dst", 4}, {"mat2.amt", 0.015f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.9f}, {"fx.reverb.mix", 0.5f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.6f}, {"fx.delay.fb", 0.35f}, {"fx.delay.mix", 0.18f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 4.3f}, {"fx.eq.mfreq", 693}, {"fx.eq.high", -6.0f},
         }},
 
         {"NEURO WOBBLE", {
@@ -87,6 +99,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.5f},
             {"mat3.src", 1}, {"mat3.dst", 2}, {"mat3.amt", -0.35f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -5.3f}, {"fx.eq.mid", 2.1f}, {"fx.eq.mfreq", 356}, {"fx.eq.high", 3.2f},
         }},
 
         {"REESE BASS", {
@@ -99,6 +113,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.18f},
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.12f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -6.0f}, {"fx.eq.mfreq", 320}, {"fx.eq.high", 6.0f},
         }},
 
         {"POWER FIFTHS", {
@@ -111,6 +127,8 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.35f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.33f}, {"fx.delay.fb", 0.32f}, {"fx.delay.mix", 0.22f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.26f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 3.9f}, {"fx.eq.mid", 5.6f}, {"fx.eq.mfreq", 601}, {"fx.eq.high", -6.0f},
         }},
 
         {"GROWL BASS", {
@@ -123,6 +141,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.7f},
             {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.4f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.55f}, {"fx.drive.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -5.7f}, {"fx.eq.mfreq", 620}, {"fx.eq.high", 6.0f},
         }},
 
         {"FUTURE CHORD", {
@@ -135,6 +155,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.2f},
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.5f}, {"fx.chorus.mix", 0.5f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.68f}, {"fx.reverb.mix", 0.42f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 4.2f}, {"fx.eq.mid", 5.5f}, {"fx.eq.mfreq", 431}, {"fx.eq.high", -6.0f},
         }},
 
         {"SCREECH LEAD", {
@@ -148,6 +170,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat3.src", 4}, {"mat3.dst", 3}, {"mat3.amt", 0.3f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.6f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.18f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 1.6f}, {"fx.eq.mfreq", 734}, {"fx.eq.high", -6.0f},
         }},
 
         {"DONK STAB", {
@@ -160,6 +184,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 3}, {"mat1.dst", 4}, {"mat1.amt", 0.25f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.2f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 900}, {"fx.eq.high", -6.0f},
         }},
 
         {"HOUSE PLUCK", {
@@ -171,6 +197,8 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.3f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.38f}, {"fx.delay.fb", 0.4f}, {"fx.delay.mix", 0.3f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.25f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 2.6f}, {"fx.eq.mid", -6.0f}, {"fx.eq.mfreq", 504}, {"fx.eq.high", 4.1f},
         }},
 
         {"TRAP BELL", {
@@ -182,6 +210,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 3}, {"mat1.dst", 1}, {"mat1.amt", -0.3f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.3f}, {"fx.delay.fb", 0.45f}, {"fx.delay.mix", 0.32f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.7f}, {"fx.reverb.mix", 0.4f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 3.3f}, {"fx.eq.mfreq", 680}, {"fx.eq.high", -6.0f},
         }},
 
         {"8-BIT LEAD", {
@@ -192,6 +222,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.01f},
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.25f}, {"fx.delay.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 4.9f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 507}, {"fx.eq.high", -6.0f},
         }},
 
         {"DARK DRONE", {
@@ -207,6 +239,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat3.src", 2}, {"mat3.dst", 6}, {"mat3.amt", 0.4f},
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.5f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.9f}, {"fx.reverb.mix", 0.5f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -5.0f}, {"fx.eq.mfreq", 361}, {"fx.eq.high", 6.0f},
         }},
 
         {"WUB BASS", {
@@ -218,6 +252,8 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 0}, {"lfo1.rate", 4},
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.7f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -1.9f}, {"fx.eq.mid", 4.8f}, {"fx.eq.mfreq", 493}, {"fx.eq.high", -2.9f},
         }},
 
         {"GLIDE LEAD", {
@@ -231,6 +267,8 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.008f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.3f}, {"fx.delay.fb", 0.35f}, {"fx.delay.mix", 0.25f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.45f}, {"fx.reverb.mix", 0.22f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -0.1f}, {"fx.eq.mid", -5.4f}, {"fx.eq.mfreq", 546}, {"fx.eq.high", 5.5f},
         }},
     };
     return presets;

@@ -146,7 +146,12 @@ fable::NoteSeqStep HostedWtModel::sequenceStep(int pattern, int step) const {
     if (clip == nullptr || pattern < 0 || pattern >= clip->bars
         || step < 0 || step >= fable::SEQ_STEPS)
         return {};
-    const auto offset = fable::sqWtNoteIdx(pattern, step, 0);
+    int offset = -1;
+    for (int lane = 0; lane < fable::SQ_WT_POLY_LANES; ++lane) {
+        const int candidate = fable::sqWtNoteIdx(pattern, step, lane);
+        if (candidate + 2 < (int)clip->bytes.size() && (clip->bytes[(size_t)candidate] & 1)) { offset = candidate; break; }
+    }
+    if (offset < 0) offset = fable::sqWtNoteIdx(pattern, step, 0);
     if (offset + 2 >= (int)clip->bytes.size()) return {};
     const auto flags = clip->bytes[(size_t)offset];
     const int duration = std::max(1, std::min(fable::SEQ_MAX_NOTE_STEPS,
@@ -162,7 +167,13 @@ void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqS
         || step < 0 || step >= fable::SEQ_STEPS)
         return;
     auto bytes = clip->bytes;
-    const auto offset = fable::sqWtNoteIdx(pattern, step, 0);
+    int lane = 0;
+    for (int candidateLane = 0; candidateLane < fable::SQ_WT_POLY_LANES; ++candidateLane) {
+        const int candidate = fable::sqWtNoteIdx(pattern, step, candidateLane);
+        if (candidate + 2 < (int)bytes.size() && (bytes[(size_t)candidate] & 1)
+            && bytes[(size_t)candidate + 1] == value.note) { lane = candidateLane; break; }
+    }
+    const auto offset = fable::sqWtNoteIdx(pattern, step, lane);
     if (offset + 2 >= (int)bytes.size()) return;
     const int duration = std::min(fable::SEQ_MAX_NOTE_STEPS, std::max(1, value.duration));
     bytes[(size_t)offset] = (uint8_t)((value.on ? 1 : 0) | (value.acc ? 2 : 0) | (duration << 2));

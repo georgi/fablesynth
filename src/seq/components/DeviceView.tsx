@@ -22,6 +22,7 @@ import { OscSection } from '../../drum/components/OscSection';
 import { PadGrid } from '../../drum/components/PadGrid';
 import { PadStrip } from '../../drum/components/PadStrip';
 import { PitchEnvPanel } from '../../drum/components/PitchEnvPanel';
+import { SampleSection } from '../../drum/components/SampleSection';
 import { SelBar } from '../../drum/components/SelBar';
 import { StepSeq } from '../../drum/components/StepSeq';
 import { makeEmptyPatterns as drumEmpty } from '../../drum/seq';
@@ -209,7 +210,7 @@ function DrumPanels() {
           <div id="dr-selbar"><SelBar /></div>
           <div id="dr-oscrow">
             <OscSection osc="oscA" />
-            <OscSection osc="oscB" />
+            <SampleSection />
             <NoiseSection />
           </div>
           <div id="dr-editrow">

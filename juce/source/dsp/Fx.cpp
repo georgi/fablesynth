@@ -10,6 +10,22 @@ static constexpr double PI = 3.14159265358979323846;
 // the gain computer in process() and the WebAudio-matching makeup gain.
 static constexpr double kLimThr = 0.398, kLimRatio = 14.0;
 
+// Leveling compressor: fixed WebAudio DynamicsCompressor settings (ratio 4,
+// knee 9 dB, attack 10 ms, release 200 ms) with THRESH/MAKEUP params. Same
+// static-curve math as DR-1's bus compressor.
+static constexpr double kCompRatio = 4.0, kCompKnee = 9.0;
+
+// WebAudio DynamicsCompressor static curve, in dB of gain reduction (<= 0):
+// below thr 0 dB; within [thr, thr+knee] quadratic transition; above, slope
+// 1/ratio - 1.
+static inline double compGainDb(double xDb, double thrDb) {
+    double over = xDb - thrDb;
+    if (over <= 0) return 0.0;
+    if (over < kCompKnee)
+        return (1.0 / kCompRatio - 1.0) * over * over / (2.0 * kCompKnee);
+    return (1.0 / kCompRatio - 1.0) * (over - kCompKnee * 0.5);
+}
+
 // ---------------- Biquad designs (RBJ cookbook) ----------------
 void Biquad::lowpass(double freq, double q, double sr) {
     double w0 = 2 * PI * std::min(freq, sr * 0.49) / sr;
@@ -32,6 +48,48 @@ void Biquad::highpass(double freq, double q, double sr) {
     b2 = b0;
     a1 = (-2 * cw) / a0;
     a2 = (1 - alpha) / a0;
+}
+// EQ designs — RBJ shelving/peaking. gainDb 0 yields exact unity (transparent
+// bypass). Shelf slope S = 1; peaking uses the passed Q.
+void Biquad::lowShelf(double freq, double gainDb, double sr) {
+    double A = std::pow(10.0, gainDb / 40.0);
+    double w0 = 2 * PI * std::min(freq, sr * 0.49) / sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double S = 1.0; // shelf slope
+    double alpha = sw / 2 * std::sqrt((A + 1 / A) * (1 / S - 1) + 2);
+    double tsa = 2 * std::sqrt(A) * alpha;
+    double a0 = (A + 1) + (A - 1) * cw + tsa;
+    b0 = A * ((A + 1) - (A - 1) * cw + tsa) / a0;
+    b1 = 2 * A * ((A - 1) - (A + 1) * cw) / a0;
+    b2 = A * ((A + 1) - (A - 1) * cw - tsa) / a0;
+    a1 = -2 * ((A - 1) + (A + 1) * cw) / a0;
+    a2 = ((A + 1) + (A - 1) * cw - tsa) / a0;
+}
+void Biquad::highShelf(double freq, double gainDb, double sr) {
+    double A = std::pow(10.0, gainDb / 40.0);
+    double w0 = 2 * PI * std::min(freq, sr * 0.49) / sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double S = 1.0; // shelf slope
+    double alpha = sw / 2 * std::sqrt((A + 1 / A) * (1 / S - 1) + 2);
+    double tsa = 2 * std::sqrt(A) * alpha;
+    double a0 = (A + 1) - (A - 1) * cw + tsa;
+    b0 = A * ((A + 1) + (A - 1) * cw + tsa) / a0;
+    b1 = -2 * A * ((A - 1) + (A + 1) * cw) / a0;
+    b2 = A * ((A + 1) + (A - 1) * cw - tsa) / a0;
+    a1 = 2 * ((A - 1) - (A + 1) * cw) / a0;
+    a2 = ((A + 1) - (A - 1) * cw - tsa) / a0;
+}
+void Biquad::peaking(double freq, double q, double gainDb, double sr) {
+    double A = std::pow(10.0, gainDb / 40.0);
+    double w0 = 2 * PI * std::min(freq, sr * 0.49) / sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw / (2 * q);
+    double a0 = 1 + alpha / A;
+    b0 = (1 + alpha * A) / a0;
+    b1 = (-2 * cw) / a0;
+    b2 = (1 - alpha * A) / a0;
+    a1 = (-2 * cw) / a0;
+    a2 = (1 - alpha / A) / a0;
 }
 
 // ---------------- shared oversampling / limiter helpers ----------------
@@ -106,8 +164,10 @@ void Fx::prepare(double sampleRate) {
     dlTime_.setTime(0.08, sr_); dlFb_.setTime(0.02, sr_);
     dlWet_.setTime(0.02, sr_); dlDry_.setTime(0.02, sr_);
     verbWet_.setTime(0.02, sr_); verbDry_.setTime(0.02, sr_);
+    compThrDb_.setTime(0.02, sr_); compMakeup_.setTime(0.02, sr_);
+    compWet_.setTime(0.02, sr_); compDry_.setTime(0.02, sr_);
     masterGain_.setTime(0.02, sr_);
-    driveDry_.snap(1); chDry_.snap(1); dlDry_.snap(1); verbDry_.snap(1);
+    driveDry_.snap(1); chDry_.snap(1); dlDry_.snap(1); verbDry_.snap(1); compDry_.snap(1);
 
     dcL_.highpass(8, 0.707, sr_);
     dcR_.highpass(8, 0.707, sr_);
@@ -120,6 +180,10 @@ void Fx::prepare(double sampleRate) {
     dryL_.prepare(kDriveLatency + 4);
     dryR_.prepare(kDriveLatency + 4);
     dlDamp_.lowpass(4500, 0.707, sr_);
+
+    // Leveling compressor envelope coefficients (attack 10 ms, release 200 ms).
+    compAtk_ = 1.0 - std::exp(-1.0 / (0.010 * sr_));
+    compRel_ = 1.0 - std::exp(-1.0 / (0.200 * sr_));
 
     // WebAudio's DynamicsCompressor applies spec-defined makeup gain
     // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
@@ -139,17 +203,21 @@ void Fx::reset() {
     for (auto& a : apL_) a.reset();
     for (auto& a : apR_) a.reset();
     dcL_.reset(); dcR_.reset(); dlDamp_.reset();
+    eqLoL_.reset(); eqLoR_.reset(); eqMidL_.reset(); eqMidR_.reset(); eqHiL_.reset(); eqHiR_.reset();
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
+    compEnv_ = 0;
     lim_.reset();
     chPhase_ = 0;
-    driveGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
+    driveGated_ = chorusGated_ = delayGated_ = verbGated_ = compGated_ = false;
     // settle smoothers at their targets so no stale ramp survives a re-prepare
     driveWet_.snap(driveWet_.target); driveDry_.snap(driveDry_.target);
     chWet_.snap(chWet_.target); chDry_.snap(chDry_.target);
     dlTime_.snap(dlTime_.target); dlFb_.snap(dlFb_.target);
     dlWet_.snap(dlWet_.target); dlDry_.snap(dlDry_.target);
     verbWet_.snap(verbWet_.target); verbDry_.snap(verbDry_.target);
+    compThrDb_.snap(compThrDb_.target); compMakeup_.snap(compMakeup_.target);
+    compWet_.snap(compWet_.target); compDry_.snap(compDry_.target);
     masterGain_.snap(masterGain_.target);
 }
 
@@ -159,6 +227,18 @@ static inline float mixGate(bool on, float amount, bool wet) {
 }
 
 void Fx::setParams(const ParamArray& p) {
+    // 3-band tone EQ (first FX). Gains apply only when on; off forces 0 dB, an
+    // exact unity bypass. Shelves at fixed corners (120 Hz / 6 kHz), mid bell
+    // sweepable with fixed Q 0.9 — mirrors the WebAudio graph in synth.ts.
+    bool eqOn = p[FXEQ_ON] > 0.5f;
+    float loDb = eqOn ? p[FXEQ_LOW] : 0.0f;
+    float midDb = eqOn ? p[FXEQ_MID] : 0.0f;
+    float hiDb = eqOn ? p[FXEQ_HIGH] : 0.0f;
+    float mFreq = p[FXEQ_MFREQ];
+    eqLoL_.lowShelf(120.0, loDb, sr_);   eqLoR_.lowShelf(120.0, loDb, sr_);
+    eqMidL_.peaking(mFreq, 0.9, midDb, sr_); eqMidR_.peaking(mFreq, 0.9, midDb, sr_);
+    eqHiL_.highShelf(6000.0, hiDb, sr_); eqHiR_.highShelf(6000.0, hiDb, sr_);
+
     // drive
     float amt = p[FXDRIVE_AMT];
     drivePre_ = 1 + amt * 2;
@@ -199,6 +279,17 @@ void Fx::setParams(const ParamArray& p) {
     verbWet_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, true);
     verbDry_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, false);
 
+    // leveling compressor — implicit spec makeup (static curve at 0 dBFS) times
+    // the user MAKEUP, so quiet patches lift while the 4:1 curve tames loud ones.
+    float thrDb = p[FXCOMP_THR];
+    compThrDb_.target = thrDb;
+    double implicit = std::pow(10.0, -0.6 * compGainDb(0.0, thrDb) / 20.0);
+    compMakeup_.target = (float)(implicit * std::pow(10.0, p[FXCOMP_GAIN] / 20.0));
+    bool kOn = p[FXCOMP_ON] > 0.5f;
+    compOff_ = !kOn;
+    compWet_.target = mixGate(kOn, 1.0f, true);
+    compDry_.target = mixGate(kOn, 1.0f, false);
+
     float vol = p[MASTER_VOLUME];
     masterGain_.target = vol * vol * 1.6f;
 }
@@ -232,6 +323,7 @@ void Fx::process(float* L, float* R, int n) {
     bool chorusGate = chorusOff_ && chWet_.target == 0.0f && std::abs(chWet_.cur) < 1.0e-6f;
     bool delayGate = delayOff_ && dlWet_.target == 0.0f && std::abs(dlWet_.cur) < 1.0e-6f;
     bool verbGate = verbOff_ && verbWet_.target == 0.0f && std::abs(verbWet_.cur) < 1.0e-6f;
+    bool compGate = compOff_ && compWet_.target == 0.0f && std::abs(compWet_.cur) < 1.0e-6f;
 
     if (driveGate && !driveGated_) {
         driveWet_.snap(0); driveDry_.snap(1);
@@ -253,14 +345,23 @@ void Fx::process(float* L, float* R, int n) {
         for (auto& a : apL_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
         for (auto& a : apR_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
     }
+    if (compGate && !compGated_) {
+        compWet_.snap(0); compDry_.snap(1);
+        compEnv_ = 0;
+    }
 
     driveGated_ = driveGate;
     chorusGated_ = chorusGate;
     delayGated_ = delayGate;
     verbGated_ = verbGate;
+    compGated_ = compGate;
 
     for (int i = 0; i < n; i++) {
         float l = L[i], r = R[i];
+
+        // ---- 3-band tone EQ (first FX; 0 dB coeffs = transparent) ----
+        l = (float)eqHiL_.process(eqMidL_.process(eqLoL_.process(l)));
+        r = (float)eqHiR_.process(eqMidR_.process(eqLoR_.process(r)));
 
         // ---- drive (4x oversampled tanh waveshaper) ----
         // The dry/bypass path always runs through a kDriveLatency delay so the
@@ -320,6 +421,23 @@ void Fx::process(float* L, float* R, int n) {
             float wet = verbWet_.next(), dry = verbDry_.next();
             l = dry * l + wet * outL;
             r = dry * r + wet * outR;
+        }
+
+        // ---- leveling compressor (WebAudio DynamicsCompressor semantics) ----
+        // Last FX: peak-linked detector, spec static curve + makeup, brings
+        // patches to roughly the same loudness before the master gain.
+        if (!compGated_) {
+            double pk = std::max(std::abs((double)l), std::abs((double)r));
+            double coef = pk > compEnv_ ? compAtk_ : compRel_;
+            compEnv_ += (pk - compEnv_) * coef;
+            float thrDb = compThrDb_.next();
+            double cg = 1.0;
+            if (compEnv_ > 1.0e-6)
+                cg = std::pow(10.0, compGainDb(20.0 * std::log10(compEnv_), thrDb) / 20.0);
+            cg *= compMakeup_.next();
+            float wet = compWet_.next(), dry = compDry_.next();
+            l = dry * l + wet * (float)(l * cg);
+            r = dry * r + wet * (float)(r * cg);
         }
 
         // ---- master gain ----

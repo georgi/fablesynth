@@ -254,8 +254,8 @@ body::before {
   grid-template-columns: repeat(12, 1fr);
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
-    'filter filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos'
-    'matrix matrix matrix matrix fx fx fx fx fx fx fx fx'
+    'filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos lfos'
+    'matrix matrix matrix fx fx fx fx fx fx fx fx fx'
     'seq seq seq seq seq seq seq seq seq seq seq seq';
   gap: 9px;
 }
@@ -764,7 +764,9 @@ body::before {
 /* ============ fx rack ============ */
 .panel-fx {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* EQ (first module) carries 4 knobs vs 2-3 elsewhere, so give it a wider
+     column; the remaining five share the rest evenly. */
+  grid-template-columns: 1.3fr 1fr 1fr 1fr 1fr 1fr;
   gap: 10px;
 }
 .fx-module {

@@ -83,7 +83,8 @@ juce::Rectangle<int> PitchSeqView::resizeBounds(int step) const {
     if (!st.on) return {};
     auto cell = cellBounds(step, st.note);
     const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
-    cell.setWidth(w);
+    const int gridRight = getWidth() - kPadX;
+    cell.setWidth(juce::jmax(1, juce::jmin(w, gridRight - cell.getX())));
     return cell.removeFromRight(6).expanded(2, 2);
 }
 
@@ -93,7 +94,7 @@ void PitchSeqView::toggleCell(int step, int note) {
     const int pat = proc.editPattern();
     BassSeqStep cur = proc.sequenceStep(pat, step);
     if (cur.on && cur.note == note) {              // tap again = rest
-        cur.on = false; cur.acc = false; cur.slide = false;
+        cur.on = false; cur.acc = false; cur.slide = false; cur.duration = 1;
     } else {
         cur.on = true; cur.note = note;
     }
@@ -130,10 +131,12 @@ void PitchSeqView::toggleStepSlide(int step) {
 void PitchSeqView::resizeStep(int step, int duration) {
     auto cur = proc.sequenceStep(proc.editPattern(), step);
     if (!cur.on) return;
-    int limit = 63;
-    for (int i = step + 1; i < fable::BL_STEPS; ++i) {
-        const auto other = proc.sequenceStep(proc.editPattern(), i);
-        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = i - step; break; }
+    const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
+    const int absolute = proc.editPattern() * fable::BL_STEPS + step;
+    int limit = juce::jmin(63, bars * fable::BL_STEPS - absolute);
+    for (int a = absolute + 1; a < bars * fable::BL_STEPS; ++a) {
+        const auto other = proc.sequenceStep(a / fable::BL_STEPS, a % fable::BL_STEPS);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = a - absolute; break; }
     }
     cur.duration = juce::jlimit(1, limit, duration);
     proc.setSequenceStep(proc.editPattern(), step, cur);
@@ -152,6 +155,7 @@ void PitchSeqView::randomize() {
         s.oct = rng_.nextFloat() < 0.2f ? (rng_.nextFloat() < 0.5f ? -1 : 1) : 0;
         s.acc = s.on && rng_.nextFloat() < 0.25f;
         s.slide = s.on && i > 0 && rng_.nextFloat() < 0.22f;
+        s.duration = 1 + rng_.nextInt(4);
         proc.setSequenceStep(pat, i, s);
     }
     repaint();

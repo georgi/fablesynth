@@ -25,20 +25,20 @@ const std::vector<PadPatch>& factoryPatches() {
         // Kicks — THUD body, pitch envelope does the punch.
         fp("BD DEEP", {
             { "oscA.table", 0 }, { "oscA.tune", -26 }, { "penv.amt", 24 }, { "penv.dec", 0.05f },
-            { "aenv.dec", 0.42f }, { "aenv.curve", 0.45f }, { "lvl", 0.9f },
+            { "aenv.dec", 0.42f }, { "aenv.curve", 0.45f }, { "lvl", 0.9f }, { "fx.reverb.on", 0 },
         }),
         fp("BD PUNCH", {
             { "oscA.table", 0 }, { "oscA.tune", -19 }, { "penv.amt", 32 }, { "penv.dec", 0.028f },
-            { "aenv.dec", 0.2f }, { "aenv.curve", 0.5f }, { "lvl", 0.9f },
+            { "aenv.dec", 0.2f }, { "aenv.curve", 0.5f }, { "lvl", 0.9f }, { "fx.reverb.on", 0 },
         }),
         fp("BD SUB", {
             { "oscA.table", 0 }, { "oscA.tune", -34 }, { "penv.amt", 20 }, { "penv.dec", 0.06f },
-            { "aenv.dec", 0.95f }, { "aenv.hold", 0.02f }, { "aenv.curve", 0.3f }, { "lvl", 0.92f },
+            { "aenv.dec", 0.95f }, { "aenv.hold", 0.02f }, { "aenv.curve", 0.3f }, { "lvl", 0.92f }, { "fx.reverb.on", 0 },
         }),
         fp("BD 808", {
             { "oscA.table", 0 }, { "oscA.tune", -24 }, { "penv.amt", 26 }, { "penv.dec", 0.075f },
             { "aenv.dec", 0.65f }, { "aenv.curve", 0.35f }, { "flt.on", 1 }, { "flt.type", 0 },
-            { "flt.cut", 900 }, { "flt.drive", 0.35f }, { "lvl", 0.92f },
+            { "flt.cut", 900 }, { "flt.drive", 0.35f }, { "lvl", 0.92f }, { "fx.reverb.on", 0 },
         }),
         // Snares — tonal crack plus a bright noise layer.
         fp("SD CRACK", {
@@ -69,7 +69,7 @@ const std::vector<PadPatch>& factoryPatches() {
         }),
         fp("OH 808", {
             { "oscA.level", 0 }, { "oscB.table", 3 }, { "oscB.level", 0.9f }, { "aenv.dec", 0.55f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 5200 }, { "ring.freq", 5197 }, { "ring.mix", 0.28f }, { "lvl", 0.7f },
+            { "flt.cut", 5200 }, { "ring.freq", 5197 }, { "ring.mix", 0.28f }, { "lvl", 0.525f },
         }),
         // Cymbal — long sizzle.
         fp("CY 808", {
@@ -120,11 +120,11 @@ const std::vector<PadPatch>& factoryPatches() {
         // Hybrid voices — procedural transient/body layered with raw samples.
         fp("HX BD UZU", {
             { "oscA.table", 0 }, { "oscA.tune", -26 }, { "oscA.level", .50f }, { "oscB.table", 16 }, { "oscB.level", .72f },
-            { "penv.amt", 22 }, { "penv.dec", .045f }, { "aenv.dec", .60f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1400 }, { "lvl", .90f },
+            { "penv.amt", 22 }, { "penv.dec", .045f }, { "aenv.dec", .60f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1400 }, { "lvl", .90f }, { "fx.reverb.on", 0 },
         }),
         fp("HX BD 808", {
             { "oscA.table", 0 }, { "oscA.tune", -31 }, { "oscA.level", .45f }, { "oscB.table", 5 }, { "oscB.level", .68f },
-            { "penv.amt", 18 }, { "penv.dec", .055f }, { "aenv.dec", .72f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1100 }, { "lvl", .92f },
+            { "penv.amt", 18 }, { "penv.dec", .055f }, { "aenv.dec", .72f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1100 }, { "lvl", .92f }, { "fx.reverb.on", 0 },
         }),
         fp("HX SD UZU", {
             { "oscA.table", 1 }, { "oscA.tune", -12 }, { "oscA.level", .42f }, { "oscB.table", 18 }, { "oscB.level", .70f },

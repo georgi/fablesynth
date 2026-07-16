@@ -421,6 +421,33 @@ add_executable(sq4_engine_test
     source/seq/dsp/Conductor.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
 
+# Calibration tool (not a ctest): renders every factory song's four tracks
+# through their full engine+FX chains and prints recommended mixer faders.
+add_executable(measure_track_levels
+    test/measure_track_levels.cpp
+    source/dsp/Engine.cpp
+    source/dsp/Wavetables.cpp
+    source/dsp/Fx.cpp
+    source/dsp/Params.cpp
+    source/dsp/Presets.cpp
+    source/dsp/UserTables.cpp
+    source/bass/dsp/BassParams.cpp
+    source/bass/dsp/BassEngine.cpp
+    source/bass/dsp/BassFx.cpp
+    source/bass/dsp/BassPatches.cpp
+    source/drum/dsp/DrumParams.cpp
+    source/drum/dsp/DrumTables.cpp
+    source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/OneShotSamples.gen.cpp
+    source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumFx.cpp
+    source/drum/dsp/DrumKits.cpp
+    source/drum/dsp/DrumPatches.cpp
+    source/seq/dsp/ClipLibrary.cpp
+    source/seq/dsp/SeqFactory.cpp
+    source/seq/dsp/Conductor.cpp)
+target_compile_features(measure_track_levels PRIVATE cxx_std_17)
+
 enable_testing()
 add_test(NAME engine_test COMMAND engine_test)
 add_test(NAME drum_engine_test COMMAND drum_engine_test)

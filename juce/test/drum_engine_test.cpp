@@ -930,7 +930,8 @@ int main() {
         check(val(bd, "oscA.table", -1) == 0.0f && val(bd, "oscA.tune", 0) == -26.0f &&
               val(bd, "penv.amt", 0) == 24.0f && val(bd, "penv.dec", 0) == 0.05f &&
               val(bd, "aenv.dec", 0) == 0.42f && val(bd, "aenv.curve", 0) == 0.45f &&
-              val(bd, "lvl", 0) == 0.9f && bd.params.size() == 7,
+              val(bd, "lvl", 0) == 0.9f && val(bd, "fx.reverb.on", -1) == 0.0f &&
+              bd.params.size() == 8,
               "BD DEEP values match web");
         const auto& hh = bank[8];   // HH 808
         check(val(hh, "oscA.level", -1) == 0.0f && val(hh, "oscB.table", -1) == 2.0f &&
