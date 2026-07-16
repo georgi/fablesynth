@@ -221,7 +221,17 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       applyGains();
     },
 
-    toggleTransport: () => (get().playing ? stopTransport() : startTransport()),
+    toggleTransport: () => {
+      const st = get();
+      if (st.playing) return stopTransport();
+      // Starting from a standstill with nothing on the grid launches the first
+      // scene so Play makes sound instead of running an empty transport.
+      const hasActive = st.session.tracks.some(
+        (_, t) => st.owner[t] != null || (st.queue[t] != null && st.queue[t] !== STOP),
+      );
+      if (!hasActive && st.session.scenes.length > 0) return st.launchScene(0);
+      return startTransport();
+    },
 
     launch: (t, s) => {
       let st = get();
