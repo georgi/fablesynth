@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { DeviceView } from './components/DeviceView';
 import { FooterRow } from './components/FooterRow';
 import { Header } from './components/Header';
+import { Onboarding } from './components/Onboarding';
 import { SceneRail } from './components/SceneRail';
 import { SceneRow } from './components/SceneRow';
 import { SqPowerOverlay } from './components/SqPowerOverlay';
@@ -51,6 +52,7 @@ export function SeqApp() {
   return (
     <>
       <SqPowerOverlay />
+      <Onboarding />
       <main id="sq-rack" className={focus ? 'focused' : ''}>
         <Header />
         <TrackHeads />

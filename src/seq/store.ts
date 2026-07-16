@@ -16,6 +16,7 @@ import { embedSessionPatches } from './sessionExport';
 import type { SeqRig } from './rig';
 import type { RuntimeClipLibraryEntry } from './clipLibrary';
 import { loadLibraryClipIntoSession } from './clipLibraryActions';
+import { isTourSeen, markTourSeen, nextTourStep } from './onboarding';
 
 export interface TrackPos {
   step: number;
@@ -42,6 +43,7 @@ export interface SeqStore {
   anchor: number; // songStartFrame — beat zero of the shared timebase
   focus: { track: number; scene: number } | null;
   clipLoadRevision: number;
+  tour: number | null; // active onboarding step index, null = tour hidden
 
   powerOn: (rig?: SeqRig) => Promise<void>;
   toggleTransport: () => void;
@@ -69,6 +71,9 @@ export interface SeqStore {
   enterFocus: (t: number, s?: number) => void;
   exitFocus: () => void;
   focusScene: (s: number) => void;
+  startTour: () => void;
+  advanceTour: (d: number) => void;
+  endTour: () => void;
 }
 
 const initialSession = loadSession(factorySession());
@@ -168,6 +173,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     anchor: 0,
     focus: null,
     clipLoadRevision: 0,
+    tour: null,
 
     powerOn: async (rigIn?: SeqRig) => {
       const session = get().session;
@@ -218,7 +224,9 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         };
       });
 
-      set({ rig, anchor, powered: true, playing: false, beat: 0, bar: 1 });
+      // First visit: open the guided tour right after power-on, once the
+      // grid is actually interactive (the HELP button replays it anytime).
+      set({ rig, anchor, powered: true, playing: false, beat: 0, bar: 1, tour: isTourSeen() ? null : 0 });
       applyGains();
     },
 
@@ -480,6 +488,24 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const f = get().focus;
       if (f) set({ focus: { ...f, scene: clampScene(s) } });
     },
+
+    // The tour anchors to session-grid elements, so it always exits focus
+    // mode first; stepping past the last card ends it and marks it seen.
+    startTour: () => {
+      get().exitFocus();
+      set({ tour: 0 });
+    },
+    advanceTour: (d) => {
+      const cur = get().tour;
+      if (cur == null) return;
+      const next = nextTourStep(cur, d);
+      if (next == null) return get().endTour();
+      set({ tour: next });
+    },
+    endTour: () => {
+      markTourSeen();
+      set({ tour: null });
+    },
   };
 });
 
@@ -506,5 +532,6 @@ export function resetSeqStore(): void {
     anchor: 0,
     focus: null,
     clipLoadRevision: 0,
+    tour: null,
   });
 }
