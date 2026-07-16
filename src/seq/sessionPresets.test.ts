@@ -69,22 +69,26 @@ describe('SQ-4 factory session patch contract', () => {
     }
   });
 
-  it('composes six-note-per-bar lead phrases anchored to each chord', () => {
+  it('composes phrase-shaped lead melodies anchored to each bar chord', () => {
     for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
       const lead = b64ToBytes(preset.session.scenes[2].clips[2]!.pattern);
       const pad = b64ToBytes(preset.session.scenes[2].clips[3]!.pattern);
       const tonic = pad[wtNoteIdx(0, 0, 0) + 1] & 0x7f;
       const minorScale = new Set([0, 2, 3, 5, 7, 8, 10]);
+      const barCounts: number[] = [];
+      let closingDuration = 0;
       for (let bar = 0; bar < 4; bar++) {
         const events = Array.from({ length: 16 }, (_, step) => {
           const offset = wtNoteIdx(bar, step, 0);
           return { step, offset, on: !!(lead[offset] & 1), duration: lead[offset] >> 2, pitch: lead[offset + 1] & 0x7f };
         }).filter((event) => event.on);
-        expect(events).toHaveLength(6);
+        expect(events.length, `${preset.name} bar ${bar + 1} density`).toBeGreaterThanOrEqual(2);
+        expect(events.length, `${preset.name} bar ${bar + 1} density`).toBeLessThanOrEqual(7);
+        barCounts.push(events.length);
+        closingDuration = events[events.length - 1].duration;
 
         const chord = new Set([0, 1, 2].map((lane) => pad[wtNoteIdx(bar, 0, lane) + 1] & 0x7f));
         expect(chord.has(events[0].pitch), `${preset.name} bar ${bar + 1} downbeat`).toBe(true);
-        expect(chord.has(events[3].pitch), `${preset.name} bar ${bar + 1} midpoint`).toBe(true);
 
         events.forEach((event, index) => {
           const nextStep = events[index + 1]?.step ?? 16;
@@ -95,6 +99,10 @@ describe('SQ-4 factory session patch contract', () => {
           expect(minorScale.has(relative) || harmonicLeadingTone, `${preset.name} bar ${bar + 1} scale`).toBe(true);
         });
       }
+      // The phrase breathes — bars vary in density instead of repeating one
+      // grid — and resolves on a held closing tone.
+      expect(new Set(barCounts).size, `${preset.name} phrase shape`).toBeGreaterThan(1);
+      expect(closingDuration, `${preset.name} resolution`).toBeGreaterThanOrEqual(4);
     }
   });
 

@@ -112,51 +112,73 @@ function padProgression(harmony: Harmony, variation: string): ClipDoc {
   return { name: `${variation} CHORDS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
 
-// Authored pitch-class melodies for the four progressions in harmonyFor().
-// Values are semitones above the session tonic. Event 0 and event 3 in each
-// bar are chord-tone anchors; the remaining notes are scale motion, pickups,
-// and resolutions. 11 is the harmonic-minor leading tone over the major V.
-const LEAD_LINES: number[][][] = [
-  [ // i – VI – III – VII
-    [7, 3, 5, 7, 10, 7], [8, 0, 10, 0, 3, 0],
-    [10, 7, 5, 7, 10, 2], [5, 2, 3, 2, 10, 0],
+// Hand-composed lead phrases — one per song, since every (family, variation)
+// pair names exactly one preset. Four bars separated by '|'; a note is
+// `step,duration,semitones` above the session tonic, and '!' marks an accent.
+// Each bar opens on a tone of that bar's chord (see harmonyFor()) and stays in
+// natural minor — 11 appears only as the leading tone over the major V. The
+// phrases are written to breathe rather than fill a grid: dense question bars
+// answered by sparser ones, rests before entrances, and a long held tone to
+// close bar 4. The same strings are transcribed verbatim in SeqFactory.cpp.
+const LEAD_PHRASES: Record<string, [string, string, string, string]> = {
+  NEON: [ // gliding synthwave lines that bloom upward, then settle
+    '0,2,0! 2,2,3 4,2,7 8,3,10 12,2,7 14,2,3 | 0,3,8! 4,2,0 8,4,10 14,2,7 | 0,2,7! 2,2,10 4,2,0 6,2,2 8,2,3 10,2,7 12,4,10 | 0,4,5! 4,2,2 8,8,0',
+    '0,1,0! 2,1,0 4,2,3 6,2,7 8,2,10 11,2,7 14,2,8 | 0,2,5! 3,2,8 6,2,5 8,3,3 12,4,0 | 0,2,8! 2,2,10 4,2,0 8,2,3 10,2,0 12,2,10 14,2,8 | 0,3,7! 4,3,11 8,2,7 10,6,2',
+    '0,3,7! 4,3,3 8,2,5 12,4,7 | 0,3,10! 4,2,7 7,2,5 10,2,3 12,4,2 | 0,2,2! 2,2,5 5,2,7 8,3,10 12,4,7 | 0,4,8! 6,2,7 8,8,5',
+    '0,4,3! 4,3,2 8,4,0 13,3,7 | 0,4,2! 4,2,11 6,2,7 8,4,2 12,4,11 | 0,3,0! 3,3,8 8,2,5 10,2,3 12,4,5 | 0,4,2! 4,2,3 6,2,2 8,8,0',
   ],
-  [ // i – iv – VI – V
-    [3, 7, 10, 7, 5, 3], [5, 8, 0, 8, 7, 5],
-    [3, 0, 8, 0, 3, 0], [2, 7, 11, 2, 11, 7],
+  ACID: [ // coiling sixteenth cells that wind tight, then release
+    '0,1,0! 1,1,0 3,1,3 4,2,0 8,2,10 11,1,8! 12,4,7 | 0,2,8! 3,1,7 4,2,8 8,2,0 10,1,10 12,3,8 | 0,1,3! 1,1,3 3,1,5 4,2,7 8,2,10 10,2,7 13,3,3 | 0,2,10! 4,2,7 8,2,5 12,4,2',
+    '0,1,0! 2,1,3 4,1,0 6,2,7 8,1,5 10,2,3 13,3,0 | 0,2,8! 2,2,5 5,1,3 8,2,8 10,2,10 13,3,5 | 0,1,0! 1,1,0 4,2,8 6,2,10 8,2,8 12,4,3 | 0,2,11! 3,2,7 8,2,2 10,6,7',
+    '0,2,7! 3,1,5 4,2,7 8,2,3 10,2,0 14,2,7 | 0,1,10! 1,1,10 4,2,7 6,2,3 8,3,10 12,4,7 | 0,2,5! 2,2,7 4,1,5 8,2,2 10,2,0 12,2,10 14,2,5 | 0,3,8! 4,2,5 8,8,0',
+    '0,1,7! 1,1,7 3,1,10 4,2,7 8,2,0 10,2,10 13,3,7 | 0,2,2! 2,1,0 4,2,11 8,2,7 10,2,2 13,3,11 | 0,1,8! 2,1,8 4,2,5 6,2,8 8,2,10 12,4,5 | 0,2,10! 4,2,5 6,2,7 8,8,10',
   ],
-  [ // i – III – VII – iv
-    [0, 3, 7, 7, 10, 3], [7, 10, 2, 3, 2, 10],
-    [10, 2, 5, 2, 0, 10], [8, 5, 0, 8, 7, 0],
+  AMBIENT: [ // two-to-four long tones a bar, drifting like slow weather
+    '0,6,0! 8,4,3 13,3,7 | 0,6,8! 8,6,10 | 0,4,10! 6,2,7 8,6,5 | 0,6,2! 8,8,0',
+    '0,4,3! 6,2,7 8,4,8 14,2,7 | 0,6,5! 8,4,8 12,4,0 | 0,4,8! 4,4,10 8,8,0 | 0,4,7! 6,2,2 8,8,11',
+    '0,2,7! 6,2,3 8,4,7 14,2,10 | 0,2,10! 6,2,7 8,6,3 | 0,2,2! 6,2,5 8,4,2 14,2,0 | 0,2,8! 4,2,5 8,8,3',
+    '0,8,0! 10,4,7 | 0,6,11! 8,6,7 | 0,4,8! 6,2,5 8,8,8 | 0,6,5! 8,8,2',
   ],
-  [ // i – V – iv – VII
-    [7, 10, 0, 3, 2, 0], [7, 11, 2, 7, 5, 2],
-    [5, 8, 0, 0, 3, 8], [5, 2, 10, 2, 0, 7],
+  HOUSE: [ // off-beat stabs that skip across the bar line
+    '0,2,0! 3,2,3 7,2,7 10,2,3 14,2,0 | 0,2,8! 3,2,10 7,2,8 11,2,7 14,2,5 | 0,2,3! 3,2,7 7,3,10 11,2,7 14,2,10 | 0,2,2! 3,2,5 7,6,0',
+    '0,2,7! 3,2,10 6,1,7 8,2,3 11,2,5 14,2,7 | 0,2,8! 3,2,7 7,2,5 10,2,8 14,2,10 | 0,2,0! 3,2,10 7,2,8 10,2,7 14,2,8 | 0,2,11! 3,2,7 7,3,2 12,4,7',
+    '0,2,3! 4,2,0 7,2,3 10,2,7 13,3,5 | 0,2,7! 4,2,10 7,2,0 10,2,10 13,3,7 | 0,2,10! 4,2,2 7,2,10 10,2,8 13,3,7 | 0,2,8! 4,2,7 7,2,5 10,6,3',
+    '0,1,0! 3,1,0 6,2,7 8,1,5 11,2,3 14,2,0 | 0,1,2! 3,1,2 6,2,11 8,2,7 11,2,2 14,2,11 | 0,1,5! 3,1,5 6,2,8 8,2,0 11,2,8 14,2,5 | 0,2,2! 3,2,5 6,2,7 8,8,10',
   ],
-];
-
-const LEAD_RHYTHMS: Record<string, Array<[step: number, duration: number]>> = {
-  NEON:     [[0, 3], [3, 3], [6, 2], [8, 3], [11, 3], [14, 2]],
-  ACID:     [[0, 2], [2, 3], [5, 3], [8, 2], [10, 4], [14, 2]],
-  AMBIENT:  [[0, 4], [4, 4], [8, 2], [10, 2], [12, 2], [14, 2]],
-  HOUSE:    [[0, 3], [3, 3], [6, 3], [9, 2], [11, 3], [14, 2]],
-  'LO-FI':  [[0, 4], [4, 3], [7, 2], [9, 3], [12, 3], [15, 1]],
-  CINEMATIC: [[0, 4], [4, 3], [7, 1], [8, 4], [12, 2], [14, 2]],
+  'LO-FI': [ // unhurried, nostalgic lines that trail off mid-bar
+    '0,3,3! 4,3,7 9,2,5 12,4,3 | 0,3,0! 4,3,10 9,5,8 | 0,3,7! 4,3,5 9,2,7 12,4,10 | 0,3,5! 4,2,3 7,2,2 9,7,0',
+    '0,2,0! 3,3,3 8,2,2 10,2,3 13,3,0 | 0,3,8! 4,2,5 8,3,3 12,4,5 | 0,3,3! 4,2,0 8,4,10 13,3,8 | 0,3,7! 4,2,5 7,2,3 9,7,2',
+    '0,1,0! 2,1,3 4,1,7 6,1,3 8,2,10 11,1,7 13,3,0 | 0,1,7! 2,1,10 4,1,7 6,1,3 8,3,2 12,4,3 | 0,1,10! 2,1,2 4,1,5 6,1,2 8,2,7 11,1,5 13,3,10 | 0,2,8! 3,1,7 5,2,5 8,8,0',
+    '0,4,0! 5,2,10 8,3,8 12,4,7 | 0,4,11! 5,2,7 8,4,2 13,3,7 | 0,4,8! 5,2,7 8,3,5 12,4,8 | 0,4,5! 5,2,3 8,8,2',
+  ],
+  CINEMATIC: [ // bold dotted figures and long horizon tones
+    '0,4,0! 6,2,3 8,6,7 14,2,10 | 0,4,8! 6,2,7 8,4,5 12,4,3 | 0,4,10! 6,2,7 8,6,3 14,2,5 | 0,3,5! 3,3,7 8,8,10',
+    '0,2,0! 4,1,0 6,2,0 8,4,3 12,4,2 | 0,2,5! 4,1,5 6,2,5 8,4,8 12,4,7 | 0,2,3! 4,1,3 6,2,3 8,4,10 12,4,8 | 0,2,2! 4,2,2 6,2,2 8,8,11',
+    '0,3,0! 4,3,0 8,3,3 12,2,2 14,2,0 | 0,3,3! 4,3,3 8,3,7 12,2,5 14,2,3 | 0,3,5! 4,3,5 8,3,10 12,2,8 14,2,5 | 0,3,8! 4,3,7 8,8,5',
+    '0,3,0! 4,2,3 6,2,5 8,4,7 12,4,10 | 0,3,11! 4,2,7 6,2,2 8,8,7 | 0,3,8! 4,2,5 6,2,8 8,4,0 12,4,10 | 0,2,10! 2,2,7 4,2,5 6,2,7 8,8,10',
+  ],
 };
+
+interface LeadNote { step: number; duration: number; pitch: number; accent: boolean }
+
+function parseLeadPhrase(phrase: string): LeadNote[][] {
+  return phrase.split('|').map((bar) => bar.trim().split(/\s+/).map((token) => {
+    const accent = token.endsWith('!');
+    const [step, duration, pitch] = (accent ? token.slice(0, -1) : token).split(',').map(Number);
+    return { step: step!, duration: duration!, pitch: pitch!, accent };
+  }));
+}
 
 function leadProgression(harmony: Harmony, spec: Spec): ClipDoc {
   const bytes = emptyClipBytes('WT1', 4);
   const tonic = harmony.roots[0];
-  const line = LEAD_LINES[spec.variationIndex];
-  const rhythm = LEAD_RHYTHMS[spec.family] ?? LEAD_RHYTHMS.NEON;
-  line.forEach((barNotes, bar) => {
-    barNotes.forEach((relativePitch, event) => {
+  const phrase = (LEAD_PHRASES[spec.family] ?? LEAD_PHRASES.NEON!)[spec.variationIndex]!;
+  parseLeadPhrase(phrase).forEach((barNotes, bar) => {
+    for (const note of barNotes) {
       // Voice the melody strictly one octave above the pad bed (+12..+23):
-      // the authored lines carry the contour, so no octave search is needed.
-      const pitchClass = (tonic + relativePitch) % 12;
-      const [step, duration] = rhythm[event];
-      putNote(bytes, wtNoteIdx(bar, step, 0), pitchClass + 12, duration, event === 0);
-    });
+      // the authored phrases carry the contour, so no octave search is needed.
+      putNote(bytes, wtNoteIdx(bar, note.step, 0), ((tonic + note.pitch) % 12) + 12, note.duration, note.accent);
+    }
   });
   return { name: `${spec.variation} MELODY · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
