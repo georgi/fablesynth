@@ -19,31 +19,35 @@ type Spec = Omit<SessionPreset, 'session'> & { programs: [number, number, number
 const spec = (name: string, family: string, variation: string, energy: number, tags: string[], programs: [number, number, number, number], variationIndex: number): Spec =>
   ({ name, family, variation, energy, tags, programs, variationIndex });
 
+// WT-1 program picks (slots 2..3) draw on the expanded factory bank: acoustic
+// & classic keys (20-30), engine-showcase sound design (31-40) and the
+// classic-synth homages (41-50). Leads must stay "clean" voices (no fx.drive /
+// filter.drive) per the patch contract test.
 const specs: Spec[] = [
   ['NEON TALE', 'NEON', 'ORIGINAL', 3, ['bright', 'balanced', 'wide'], [0, 0, 3, 11], 0],
-  ['NEON CHASE', 'NEON', 'CHASE', 5, ['bright', 'driving', 'wide'], [13, 2, 14, 11], 1],
-  ['GLASS CIRCUIT', 'NEON', 'GLASS', 2, ['clean', 'glassy', 'sparse'], [12, 5, 6, 1], 2],
-  ['AFTERGLOW', 'NEON', 'SOFT', 2, ['warm', 'soft', 'wide'], [3, 7, 19, 17], 3],
-  ['WAREHOUSE RAW', 'ACID', 'RAW', 5, ['hard', 'dark', 'driving'], [13, 4, 14, 11], 0],
-  ['ACID FLASH', 'ACID', 'FLASH', 4, ['acid', 'bright', 'punchy'], [3, 0, 3, 1], 1],
-  ['STEEL PULSE', 'ACID', 'METAL', 4, ['metallic', 'tight', 'industrial'], [12, 2, 19, 17], 2],
-  ['PEAK SIGNAL', 'ACID', 'PEAK', 5, ['distorted', 'wide', 'peak-time'], [13, 5, 6, 11], 3],
-  ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [12, 7, 6, 17], 0],
-  ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [13, 0, 19, 1], 1],
-  ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [12, 5, 6, 17], 2],
-  ['AIR TEMPLE', 'AMBIENT', 'TEMPLE', 2, ['warm', 'ceremonial', 'wide'], [3, 7, 15, 1], 3],
-  ['DUST HOUSE', 'HOUSE', 'DUST', 3, ['dusty', 'groovy', 'warm'], [12, 4, 14, 11], 0],
-  ['MIDNIGHT FLOOR', 'HOUSE', 'NIGHT', 4, ['club', 'round', 'wide'], [13, 0, 3, 1], 1],
-  ['TAPE DISCO', 'HOUSE', 'TAPE', 3, ['tape', 'soft', 'groovy'], [3, 7, 15, 17], 2],
-  ['CLEAN CLUB', 'HOUSE', 'CLEAN', 4, ['clean', 'tight', 'bright'], [12, 5, 19, 1], 3],
-  ['VHS GARDEN', 'LO-FI', 'VHS', 2, ['tape', 'dark', 'nostalgic'], [3, 7, 15, 17], 0],
-  ['POCKET DUST', 'LO-FI', 'POCKET', 2, ['dusty', 'small', 'warm'], [12, 5, 3, 1], 1],
-  ['TOY PARADE', 'LO-FI', 'TOY', 4, ['8-bit', 'playful', 'broken'], [13, 2, 15, 17], 2],
-  ['WORN SIGNAL', 'LO-FI', 'WORN', 3, ['distorted', 'dark', 'unstable'], [3, 0, 19, 1], 3],
-  ['CHROME CATHEDRAL', 'CINEMATIC', 'CATHEDRAL', 3, ['large', 'metallic', 'ceremonial'], [13, 7, 6, 17], 0],
-  ['MACHINE TENSION', 'CINEMATIC', 'TENSION', 4, ['industrial', 'tense', 'dark'], [12, 5, 19, 11], 1],
-  ['VOID MARCH', 'CINEMATIC', 'MARCH', 4, ['heavy', 'dark', 'driving'], [3, 4, 6, 17], 2],
-  ['FINAL HORIZON', 'CINEMATIC', 'FINALE', 5, ['epic', 'wide', 'bright'], [13, 8, 19, 11], 3],
+  ['NEON CHASE', 'NEON', 'CHASE', 5, ['bright', 'driving', 'wide'], [13, 2, 50, 42], 1], // PROPHET STAB / JUNO DREAM
+  ['GLASS CIRCUIT', 'NEON', 'GLASS', 2, ['clean', 'glassy', 'sparse'], [12, 5, 31, 35], 2], // HARPSI COMB / TWIN SKY
+  ['AFTERGLOW', 'NEON', 'SOFT', 2, ['warm', 'soft', 'wide'], [3, 7, 20, 27], 3], // MELLOW RHODES / SOFT BRASS
+  ['WAREHOUSE RAW', 'ACID', 'RAW', 5, ['hard', 'dark', 'driving'], [13, 4, 33, 40], 0], // DATA STREAM / PUMP PAD
+  ['ACID FLASH', 'ACID', 'FLASH', 4, ['acid', 'bright', 'punchy'], [3, 0, 49, 1], 1], // LATELY BASS / VELVET PAD
+  ['STEEL PULSE', 'ACID', 'METAL', 4, ['metallic', 'tight', 'industrial'], [12, 2, 47, 17], 2], // WAVE DANCER / DARK DRONE
+  ['PEAK SIGNAL', 'ACID', 'PEAK', 5, ['distorted', 'wide', 'peak-time'], [13, 5, 43, 40], 3], // JUMP BRASS / PUMP PAD
+  ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [12, 7, 45, 34], 0], // FANTA BELLS / OCEAN AIR
+  ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [13, 0, 21, 25], 1], // DYNO EPIANO / CINEMA STRINGS
+  ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [12, 5, 6, 32], 2], // CATHEDRAL BELL / GHOST CHOIR
+  ['AIR TEMPLE', 'AMBIENT', 'TEMPLE', 2, ['warm', 'ceremonial', 'wide'], [3, 7, 30, 27], 3], // CELTIC HARP / SOFT BRASS
+  ['DUST HOUSE', 'HOUSE', 'DUST', 3, ['dusty', 'groovy', 'warm'], [12, 4, 36, 42], 0], // TAPE KEYS / JUNO DREAM
+  ['MIDNIGHT FLOOR', 'HOUSE', 'NIGHT', 4, ['club', 'round', 'wide'], [13, 0, 21, 40], 1], // DYNO EPIANO / PUMP PAD
+  ['TAPE DISCO', 'HOUSE', 'TAPE', 3, ['tape', 'soft', 'groovy'], [3, 7, 28, 27], 2], // NYLON PLUCK / SOFT BRASS
+  ['CLEAN CLUB', 'HOUSE', 'CLEAN', 4, ['clean', 'tight', 'bright'], [12, 5, 22, 42], 3], // DRAWBAR ORGAN / JUNO DREAM
+  ['VHS GARDEN', 'LO-FI', 'VHS', 2, ['tape', 'dark', 'nostalgic'], [3, 7, 36, 34], 0], // TAPE KEYS / OCEAN AIR
+  ['POCKET DUST', 'LO-FI', 'POCKET', 2, ['dusty', 'small', 'warm'], [12, 5, 20, 27], 1], // MELLOW RHODES / SOFT BRASS
+  ['TOY PARADE', 'LO-FI', 'TOY', 4, ['8-bit', 'playful', 'broken'], [13, 2, 29, 42], 2], // KALIMBA PLUCK / JUNO DREAM
+  ['WORN SIGNAL', 'LO-FI', 'WORN', 3, ['distorted', 'dark', 'unstable'], [3, 0, 33, 17], 3], // DATA STREAM / DARK DRONE
+  ['CHROME CATHEDRAL', 'CINEMATIC', 'CATHEDRAL', 3, ['large', 'metallic', 'ceremonial'], [13, 7, 39, 25], 0], // GAMELAN POT / CINEMA STRINGS
+  ['MACHINE TENSION', 'CINEMATIC', 'TENSION', 4, ['industrial', 'tense', 'dark'], [12, 5, 47, 38], 1], // WAVE DANCER / AURORA RISER
+  ['VOID MARCH', 'CINEMATIC', 'MARCH', 4, ['heavy', 'dark', 'driving'], [3, 4, 44, 25], 2], // BLADE BRASS / CINEMA STRINGS
+  ['FINAL HORIZON', 'CINEMATIC', 'FINALE', 5, ['epic', 'wide', 'bright'], [13, 8, 43, 38], 3], // JUMP BRASS / AURORA RISER
 ].map(([name, family, variation, energy, tags, programs, variationIndex]) => spec(
   name as string, family as string, variation as string, energy as number, tags as string[], programs as [number, number, number, number], variationIndex as number,
 ));
@@ -60,8 +64,13 @@ interface Harmony {
 // per-role offsets (bass +4 dB, pad +2 dB). The fader curve is gain² × 1.4, so
 // quieter voices need a higher fader value.
 const BASS_FADERS: Record<number, number> = { 0: 0.59, 2: 0.59, 4: 0.61, 5: 0.52, 7: 0.55, 8: 0.53 };
-const LEAD_FADERS: Record<number, number> = { 3: 0.77, 6: 0.50, 14: 0.99, 15: 0.66, 19: 0.60 };
-const PAD_FADERS: Record<number, number> = { 1: 0.60, 11: 0.54, 17: 0.64 };
+const LEAD_FADERS: Record<number, number> = {
+  3: 0.63, 6: 0.47, 20: 0.67, 21: 0.52, 22: 0.57, 28: 0.80, 29: 0.91, 30: 0.70, 31: 0.96,
+  33: 0.48, 36: 0.71, 39: 0.95, 43: 0.48, 44: 0.49, 45: 0.84, 47: 0.82, 49: 0.51, 50: 0.72,
+};
+const PAD_FADERS: Record<number, number> = {
+  1: 0.61, 11: 0.50, 17: 0.78, 25: 0.58, 27: 0.60, 32: 1.00, 34: 0.57, 35: 0.56, 38: 0.79, 40: 0.56, 42: 0.77,
+};
 
 function calibratedTrackGains(programs: Spec['programs']): [number, number, number, number] {
   return [0.78, BASS_FADERS[programs[1]] ?? 0.56, LEAD_FADERS[programs[2]] ?? 0.65, PAD_FADERS[programs[3]] ?? 0.59];
