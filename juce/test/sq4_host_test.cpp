@@ -386,7 +386,7 @@ int main(int argc, char** argv) {
     hdr.selectLibrarySession(1);
     check(hdr.libraryForTest().getSelectedId() == 2,
           "SQ-4 library selects the complete NEON CHASE session");
-    const std::array<int, 4> neonChase { 13, 2, 4, 11 };
+    const std::array<int, 4> neonChase { 13, 2, 14, 11 };
     bool rigMatches = true;
     for (int t = 0; t < 4; ++t) {
         const auto& patch = p.conductor().session().tracks[(size_t)t].patch;
