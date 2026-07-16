@@ -160,19 +160,25 @@ const AIR_BED_II = wtClip('AIR BED II', 4, [
 ]);
 
 const FOG_STABS = wtClip('FOG STABS', 4, [
-  // Four roots establish a C–Bb–G–F progression for the chord patch.
-  { s: 0, n: 0 }, { s: 2, n: 0 }, { s: 7, n: 3 }, { s: 10, n: 5, a: true }, { s: 12, n: 5 },
-  { s: 16, n: 10, o: -1 }, { s: 18, n: 10, o: -1 }, { s: 23, n: 0 }, { s: 26, n: 2 }, { s: 28, n: 3 },
-  { s: 32, n: 7, o: -1 }, { s: 34, n: 7, o: -1 }, { s: 39, n: 10, o: -1 }, { s: 42, n: 2, a: true }, { s: 44, n: 2 },
-  { s: 48, n: 5, o: -1 }, { s: 50, n: 5, o: -1 }, { s: 55, n: 0 }, { s: 58, n: 3 }, { s: 60, n: 0 },
-].flatMap((step) => [step, { ...step, lane: 1, n: (step.n + 3) % 12, o: (step.o ?? 0) + (step.n >= 9 ? 1 : 0) },
-  { ...step, lane: 2, n: (step.n + 7) % 12, o: (step.o ?? 0) + (step.n >= 5 ? 1 : 0) }]));
+  // Four roots establish a C–Bb–G–F progression for the chord patch,
+  // close-voiced in the low octave (−12..−1) so the stabs never reach the lead.
+  { s: 0, n: 0, o: -1 }, { s: 2, n: 0, o: -1 }, { s: 7, n: 3, o: -1 }, { s: 10, n: 5, o: -1, a: true }, { s: 12, n: 5, o: -1 },
+  { s: 16, n: 10, o: -1 }, { s: 18, n: 10, o: -1 }, { s: 23, n: 0, o: -1 }, { s: 26, n: 2, o: -1 }, { s: 28, n: 3, o: -1 },
+  { s: 32, n: 7, o: -1 }, { s: 34, n: 7, o: -1 }, { s: 39, n: 10, o: -1 }, { s: 42, n: 2, o: -1, a: true }, { s: 44, n: 2, o: -1 },
+  { s: 48, n: 5, o: -1 }, { s: 50, n: 5, o: -1 }, { s: 55, n: 0, o: -1 }, { s: 58, n: 3, o: -1 }, { s: 60, n: 0, o: -1 },
+].flatMap((step) => [step, { ...step, lane: 1, n: (step.n + 3) % 12 }, { ...step, lane: 2, n: (step.n + 7) % 12 }]));
+
+/** A held chord close-voiced in the octave below the root: each tone at its pitch class − 12. */
+function chordHeldLow(s0: number, span: number, root: number, minor = true): NoteStep[] {
+  const intervals = [0, minor ? 3 : 4, 7];
+  return intervals.flatMap((interval, lane) => held(s0, span, ((root + interval) % 12 + 12) % 12, -1, lane));
+}
 
 const FOG_SWELL = wtClip('FOG SWELL', 8, [
-  ...chordHeld(0, 32, 0),
-  ...chordHeld(32, 32, 10, -1, false),
-  ...chordHeld(64, 32, 5, 0, true),
-  ...chordHeld(96, 32, 3, 0, true),
+  ...chordHeldLow(0, 32, 0),
+  ...chordHeldLow(32, 32, 10, false),
+  ...chordHeldLow(64, 32, 5),
+  ...chordHeldLow(96, 32, 3),
 ]);
 
 const AIR_OUT = wtClip('AIR OUT', 8, [
