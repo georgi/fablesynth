@@ -20,7 +20,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.55f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.72f}, {"fx.reverb.mix", 0.42f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -2.9f}, {"fx.eq.mid", -2.0f}, {"fx.eq.mfreq", 405}, {"fx.eq.high", 4.9f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -2.0f}, {"fx.eq.mid", -1.1f}, {"fx.eq.mfreq", 405}, {"fx.eq.high", 3.1f},
         }},
 
         {"ACID LINE", {
@@ -46,7 +46,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.42f}, {"fx.delay.fb", 0.42f}, {"fx.delay.mix", 0.3f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.55f}, {"fx.reverb.mix", 0.35f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 3.8f}, {"fx.eq.mfreq", 709}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 4.7f}, {"fx.eq.mfreq", 709}, {"fx.eq.high", -6.0f},
         }},
 
         {"HYPER SAW", {
@@ -58,7 +58,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.4f}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.22f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 4.2f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 598}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 5.1f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 598}, {"fx.eq.high", -6.0f},
         }},
 
         {"VOWEL TALK", {
@@ -71,7 +71,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 5}, {"mat2.dst", 1}, {"mat2.amt", 0.3f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.22f}, {"fx.drive.mix", 0.2f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 3.6f}, {"fx.eq.mid", 4.3f}, {"fx.eq.mfreq", 916}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 4.5f}, {"fx.eq.mid", 5.2f}, {"fx.eq.mfreq", 916}, {"fx.eq.high", -6.0f},
         }},
 
         {"CATHEDRAL BELL", {
@@ -85,7 +85,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.9f}, {"fx.reverb.mix", 0.5f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.6f}, {"fx.delay.fb", 0.35f}, {"fx.delay.mix", 0.18f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 4.3f}, {"fx.eq.mfreq", 693}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 5.2f}, {"fx.eq.mfreq", 693}, {"fx.eq.high", -6.0f},
         }},
 
         {"NEURO WOBBLE", {
@@ -100,7 +100,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat3.src", 1}, {"mat3.dst", 2}, {"mat3.amt", -0.35f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.2f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -4.7f}, {"fx.eq.mid", 2.1f}, {"fx.eq.mfreq", 356}, {"fx.eq.high", 2.6f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -3.8f}, {"fx.eq.mid", 3.0f}, {"fx.eq.mfreq", 356}, {"fx.eq.high", 0.8f},
         }},
 
         {"REESE BASS", {
@@ -128,7 +128,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.33f}, {"fx.delay.fb", 0.32f}, {"fx.delay.mix", 0.22f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.26f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 4.4f}, {"fx.eq.mid", 5.6f}, {"fx.eq.mfreq", 601}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 5.3f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 601}, {"fx.eq.high", -6.0f},
         }},
 
         {"GROWL BASS", {
@@ -142,7 +142,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.4f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.55f}, {"fx.drive.mix", 0.2f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -5.7f}, {"fx.eq.mfreq", 620}, {"fx.eq.high", 6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -4.8f}, {"fx.eq.mfreq", 620}, {"fx.eq.high", 6.0f},
         }},
 
         {"FUTURE CHORD", {
@@ -156,7 +156,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.5f}, {"fx.chorus.mix", 0.5f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.68f}, {"fx.reverb.mix", 0.42f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 4.7f}, {"fx.eq.mid", 5.5f}, {"fx.eq.mfreq", 431}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 5.7f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 431}, {"fx.eq.high", -6.0f},
         }},
 
         {"SCREECH LEAD", {
@@ -171,7 +171,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.6f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.18f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 1.6f}, {"fx.eq.mfreq", 734}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 2.5f}, {"fx.eq.mfreq", 734}, {"fx.eq.high", -6.0f},
         }},
 
         {"DONK STAB", {
@@ -198,7 +198,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.38f}, {"fx.delay.fb", 0.4f}, {"fx.delay.mix", 0.3f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.25f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 3.1f}, {"fx.eq.mid", -6.0f}, {"fx.eq.mfreq", 504}, {"fx.eq.high", 3.6f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 4.0f}, {"fx.eq.mid", -5.8f}, {"fx.eq.mfreq", 504}, {"fx.eq.high", 1.7f},
         }},
 
         {"TRAP BELL", {
@@ -211,7 +211,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.3f}, {"fx.delay.fb", 0.45f}, {"fx.delay.mix", 0.32f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.7f}, {"fx.reverb.mix", 0.4f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 3.3f}, {"fx.eq.mfreq", 680}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 4.2f}, {"fx.eq.mfreq", 680}, {"fx.eq.high", -6.0f},
         }},
 
         {"8-BIT LEAD", {
@@ -223,7 +223,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.25f}, {"fx.delay.mix", 0.2f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 5.5f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 507}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 507}, {"fx.eq.high", -6.0f},
         }},
 
         {"DARK DRONE", {
@@ -240,7 +240,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.5f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.9f}, {"fx.reverb.mix", 0.5f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -5.0f}, {"fx.eq.mfreq", 361}, {"fx.eq.high", 6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -4.1f}, {"fx.eq.mfreq", 361}, {"fx.eq.high", 6.0f},
         }},
 
         {"WUB BASS", {
@@ -253,7 +253,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.7f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.2f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -1.4f}, {"fx.eq.mid", 4.8f}, {"fx.eq.mfreq", 493}, {"fx.eq.high", -3.5f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -0.4f}, {"fx.eq.mid", 5.7f}, {"fx.eq.mfreq", 493}, {"fx.eq.high", -5.3f},
         }},
 
         {"GLIDE LEAD", {
@@ -268,7 +268,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.3f}, {"fx.delay.fb", 0.35f}, {"fx.delay.mix", 0.25f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.45f}, {"fx.reverb.mix", 0.22f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 0.4f}, {"fx.eq.mid", -5.4f}, {"fx.eq.mfreq", 546}, {"fx.eq.high", 5.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 1.3f}, {"fx.eq.mid", -4.5f}, {"fx.eq.mfreq", 546}, {"fx.eq.high", 3.2f},
         }},
 
         {"MELLOW RHODES", {
@@ -298,7 +298,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.7f}, {"fx.chorus.mix", 0.5f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.24f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 0.5f}, {"fx.eq.mid", 1.4f}, {"fx.eq.mfreq", 443}, {"fx.eq.high", -1.9f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 1.4f}, {"fx.eq.mid", 2.3f}, {"fx.eq.mfreq", 443}, {"fx.eq.high", -3.7f},
         }},
 
         {"DRAWBAR ORGAN", {
@@ -328,7 +328,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.2f},
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 1.2f}, {"fx.chorus.mix", 0.45f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -4.3f}, {"fx.eq.mid", 2.5f}, {"fx.eq.mfreq", 410}, {"fx.eq.high", 1.8f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -3.4f}, {"fx.eq.mid", 3.4f}, {"fx.eq.mfreq", 410}, {"fx.eq.high", 0.0f},
         }},
 
         {"ANALOG STRINGS", {
@@ -342,7 +342,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.5f}, {"fx.chorus.mix", 0.55f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.7f}, {"fx.reverb.mix", 0.35f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 1.7f}, {"fx.eq.mid", 2.0f}, {"fx.eq.mfreq", 467}, {"fx.eq.high", -3.7f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 2.6f}, {"fx.eq.mid", 2.9f}, {"fx.eq.mfreq", 467}, {"fx.eq.high", -5.5f},
         }},
 
         {"CINEMA STRINGS", {
@@ -355,7 +355,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.85f}, {"fx.reverb.mix", 0.45f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -1.5f}, {"fx.eq.mid", 0.3f}, {"fx.eq.mfreq", 392}, {"fx.eq.high", 1.2f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -0.6f}, {"fx.eq.mid", 1.2f}, {"fx.eq.mfreq", 392}, {"fx.eq.high", -0.6f},
         }},
 
         {"BRASS SECTION", {
@@ -371,7 +371,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.25f}, {"fx.drive.mix", 0.2f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.22f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 4.8f}, {"fx.eq.mid", 5.8f}, {"fx.eq.mfreq", 547}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 5.7f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 547}, {"fx.eq.high", -6.0f},
         }},
 
         {"SOFT BRASS", {
@@ -383,7 +383,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.45f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.55f}, {"fx.reverb.mix", 0.3f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 0.3f}, {"fx.eq.mid", 1.1f}, {"fx.eq.mfreq", 443}, {"fx.eq.high", -1.3f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 1.2f}, {"fx.eq.mid", 2.0f}, {"fx.eq.mfreq", 443}, {"fx.eq.high", -3.2f},
         }},
 
         {"NYLON PLUCK", {
@@ -397,7 +397,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.32f}, {"fx.delay.fb", 0.28f}, {"fx.delay.mix", 0.18f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.45f}, {"fx.reverb.mix", 0.25f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -3.4f}, {"fx.eq.mfreq", 276}, {"fx.eq.high", 6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -5.6f}, {"fx.eq.mid", -2.5f}, {"fx.eq.mfreq", 276}, {"fx.eq.high", 6.0f},
         }},
 
         {"KALIMBA PLUCK", {
@@ -425,7 +425,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.36f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.15f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.75f}, {"fx.reverb.mix", 0.38f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -1.5f}, {"fx.eq.mfreq", 273}, {"fx.eq.high", 6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -0.6f}, {"fx.eq.mfreq", 273}, {"fx.eq.high", 6.0f},
         }},
 
         {"HARPSI COMB", {
@@ -450,7 +450,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.45f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.85f}, {"fx.reverb.mix", 0.45f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", -3.9f}, {"fx.eq.mfreq", 582}, {"fx.eq.high", -5.7f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", -3.0f}, {"fx.eq.mfreq", 582}, {"fx.eq.high", -6.0f},
         }},
 
         {"DATA STREAM", {
@@ -463,7 +463,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat3.src", 1}, {"mat3.dst", 6}, {"mat3.amt", 0.5f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.22f}, {"fx.delay.fb", 0.4f}, {"fx.delay.mix", 0.28f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 1.0f}, {"fx.eq.mid", 3.6f}, {"fx.eq.mfreq", 356}, {"fx.eq.high", -4.6f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 1.9f}, {"fx.eq.mid", 4.5f}, {"fx.eq.mfreq", 356}, {"fx.eq.high", -6.0f},
         }},
 
         {"OCEAN AIR", {
@@ -478,7 +478,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.9f}, {"fx.reverb.mix", 0.5f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 2.6f}, {"fx.eq.mid", 4.0f}, {"fx.eq.mfreq", 450}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 3.5f}, {"fx.eq.mid", 4.9f}, {"fx.eq.mfreq", 450}, {"fx.eq.high", -6.0f},
         }},
 
         {"TWIN SKY", {
@@ -493,7 +493,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.5f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.7f}, {"fx.reverb.mix", 0.35f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 4.8f}, {"fx.eq.mid", 5.4f}, {"fx.eq.mfreq", 507}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 5.7f}, {"fx.eq.mid", 6.0f}, {"fx.eq.mfreq", 507}, {"fx.eq.high", -6.0f},
         }},
 
         {"TAPE KEYS", {
@@ -509,7 +509,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.28f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -5.7f}, {"fx.eq.mfreq", 264}, {"fx.eq.high", 6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -4.8f}, {"fx.eq.mfreq", 264}, {"fx.eq.high", 6.0f},
         }},
 
         {"TALKBOX BASS", {
@@ -523,7 +523,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.25f},
             {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.2f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", -0.8f}, {"fx.eq.mfreq", 577}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 0.2f}, {"fx.eq.mfreq", 577}, {"fx.eq.high", -6.0f},
         }},
 
         {"AURORA RISER", {
@@ -539,7 +539,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.45f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.9f}, {"fx.reverb.mix", 0.5f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", -2.4f}, {"fx.eq.mid", -1.4f}, {"fx.eq.mfreq", 372}, {"fx.eq.high", 3.8f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -1.5f}, {"fx.eq.mid", -0.5f}, {"fx.eq.mfreq", 372}, {"fx.eq.high", 2.0f},
         }},
 
         {"GAMELAN POT", {
@@ -553,7 +553,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.45f}, {"fx.delay.fb", 0.35f}, {"fx.delay.mix", 0.22f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.65f}, {"fx.reverb.mix", 0.32f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 5.0f}, {"fx.eq.mfreq", 1183}, {"fx.eq.high", -6.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 5.9f}, {"fx.eq.mfreq", 1183}, {"fx.eq.high", -6.0f},
         }},
 
         {"PUMP PAD", {
@@ -566,7 +566,143 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.3f},
         
-            {"fx.eq.on", 1}, {"fx.eq.low", 2.4f}, {"fx.eq.mid", 2.6f}, {"fx.eq.mfreq", 475}, {"fx.eq.high", -5.0f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 3.3f}, {"fx.eq.mid", 3.5f}, {"fx.eq.mfreq", 475}, {"fx.eq.high", -6.0f},
+        }},
+
+        {"MINI LEAD", {
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.2f}, {"oscA.level", 0.85f},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.oct", -1}, {"oscB.fine", 6}, {"oscB.level", 0.5f},
+            {"filter.type", 1}, {"filter.cutoff", 1300}, {"filter.res", 0.3f}, {"filter.env", 0.55f}, {"filter.key", 0.35f}, {"filter.drive", 0.2f},
+            {"env1.a", 0.004f}, {"env1.d", 0.35f}, {"env1.s", 0.75f}, {"env1.r", 0.15f},
+            {"env2.a", 0.002f}, {"env2.d", 0.4f}, {"env2.s", 0.3f}, {"env2.r", 0.2f},
+            {"master.glide", 0.05f},
+            {"lfo1.rate", 5.2f},
+            {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.005f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.2f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.28f}, {"fx.delay.fb", 0.25f}, {"fx.delay.mix", 0.15f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -3.9f}, {"fx.eq.mid", -3.9f}, {"fx.eq.mfreq", 430}, {"fx.eq.high", 6.0f},
+        }},
+
+        {"JUNO DREAM", {
+            {"oscA.table", 2}, {"oscA.pos", 0.35f}, {"oscA.unison", 3}, {"oscA.detune", 0.15f}, {"oscA.spread", 0.7f}, {"oscA.level", 0.75f},
+            {"sub.on", 1}, {"sub.shape", 1}, {"sub.level", 0.45f}, {"sub.oct", -1},
+            {"filter.type", 1}, {"filter.cutoff", 2000}, {"filter.res", 0.12f}, {"filter.env", 0.25f}, {"filter.key", 0.25f},
+            {"env1.a", 0.4f}, {"env1.d", 1}, {"env1.s", 0.8f}, {"env1.r", 1.4f},
+            {"lfo1.rate", 0.4f}, {"lfo2.rate", 0.17f},
+            {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.3f},
+            {"mat2.src", 2}, {"mat2.dst", 6}, {"mat2.amt", 0.2f},
+            {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.5f}, {"fx.chorus.mix", 0.6f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.6f}, {"fx.reverb.mix", 0.3f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -1.0f}, {"fx.eq.mfreq", 448}, {"fx.eq.high", 6.0f},
+        }},
+
+        {"JUMP BRASS", {
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.8f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.1f}, {"oscB.fine", -7}, {"oscB.level", 0.6f},
+            {"filter.type", 0}, {"filter.cutoff", 4500}, {"filter.res", 0.08f}, {"filter.env", 0.15f}, {"filter.key", 0.3f},
+            {"env1.a", 0.005f}, {"env1.d", 0.4f}, {"env1.s", 0.9f}, {"env1.r", 0.3f},
+            {"env2.a", 0.003f}, {"env2.d", 0.25f}, {"env2.s", 0.4f}, {"env2.r", 0.25f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.35f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.28f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 4.6f}, {"fx.eq.mid", 5.7f}, {"fx.eq.mfreq", 553}, {"fx.eq.high", -6.0f},
+        }},
+
+        {"BLADE BRASS", {
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.8f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.25f}, {"oscB.fine", 9}, {"oscB.level", 0.5f},
+            {"filter.type", 0}, {"filter.cutoff", 900}, {"filter.res", 0.2f}, {"filter.env", 0.6f}, {"filter.key", 0.3f},
+            {"env1.a", 0.15f}, {"env1.d", 0.8f}, {"env1.s", 0.85f}, {"env1.r", 1.6f},
+            {"env2.a", 0.25f}, {"env2.d", 1.2f}, {"env2.s", 0.6f}, {"env2.r", 1},
+            {"master.glide", 0.09f},
+            {"lfo1.rate", 4.2f}, {"lfo1.rise", 1.2f},
+            {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.006f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.3f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.8f}, {"fx.reverb.mix", 0.42f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 3.6f}, {"fx.eq.mid", 2.8f}, {"fx.eq.mfreq", 499}, {"fx.eq.high", -6.0f},
+        }},
+
+        {"FANTA BELLS", {
+            {"oscA.table", 4}, {"oscA.pos", 0.6f}, {"oscA.oct", 1}, {"oscA.level", 0.15f},
+            {"oscB.on", 1}, {"oscB.table", 3}, {"oscB.pos", 0.4f}, {"oscB.unison", 3}, {"oscB.detune", 0.18f}, {"oscB.spread", 0.8f}, {"oscB.level", 0.5f},
+            {"noise.on", 1}, {"noise.type", 1}, {"noise.level", 0.12f},
+            {"filter.type", 0}, {"filter.cutoff", 3500}, {"filter.res", 0.08f}, {"filter.key", 0.4f},
+            {"env1.a", 0.005f}, {"env1.d", 1.5f}, {"env1.s", 0.75f}, {"env1.r", 2},
+            {"env2.a", 0.001f}, {"env2.d", 1.2f}, {"env2.s", 0}, {"env2.r", 1},
+            {"lfo1.rate", 0.3f},
+            {"mat1.src", 3}, {"mat1.dst", 7}, {"mat1.amt", 0.5f},
+            {"mat2.src", 1}, {"mat2.dst", 6}, {"mat2.amt", 0.2f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.35f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.85f}, {"fx.reverb.mix", 0.45f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", 0.9f}, {"fx.eq.mfreq", 624}, {"fx.eq.high", -6.0f},
+        }},
+
+        {"TAURUS PEDAL", {
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.level", 0.8f},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 1}, {"oscB.oct", -1}, {"oscB.level", 0.5f},
+            {"sub.on", 1}, {"sub.level", 0.7f}, {"sub.oct", -1},
+            {"filter.type", 1}, {"filter.cutoff", 380}, {"filter.res", 0.2f}, {"filter.env", 0.45f}, {"filter.drive", 0.3f},
+            {"env1.a", 0.004f}, {"env1.d", 0.5f}, {"env1.s", 0.8f}, {"env1.r", 0.25f},
+            {"env2.a", 0.003f}, {"env2.d", 0.4f}, {"env2.s", 0.2f}, {"env2.r", 0.2f},
+            {"master.glide", 0.07f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -6.0f}, {"fx.eq.mfreq", 288}, {"fx.eq.high", 6.0f},
+        }},
+
+        {"WAVE DANCER", {
+            {"oscA.table", 3}, {"oscA.pos", 0.2f}, {"oscA.level", 0.7f},
+            {"oscB.on", 1}, {"oscB.table", 5}, {"oscB.pos", 0.35f}, {"oscB.oct", 1}, {"oscB.level", 0.3f},
+            {"filter.type", 0}, {"filter.cutoff", 3800}, {"filter.res", 0.15f}, {"filter.key", 0.3f},
+            {"env1.a", 0.004f}, {"env1.d", 0.6f}, {"env1.s", 0.7f}, {"env1.r", 0.4f},
+            {"env2.a", 0.01f}, {"env2.d", 0.6f}, {"env2.s", 0.25f}, {"env2.r", 0.3f},
+            {"mat1.src", 3}, {"mat1.dst", 1}, {"mat1.amt", 0.55f},
+            {"mat2.src", 4}, {"mat2.dst", 1}, {"mat2.amt", 0.3f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.3f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.3f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.2f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 6.0f}, {"fx.eq.mid", -1.4f}, {"fx.eq.mfreq", 694}, {"fx.eq.high", -6.0f},
+        }},
+
+        {"FUNKY WORM", {
+            {"oscA.table", 0}, {"oscA.pos", 0}, {"oscA.oct", 1}, {"oscA.level", 0.9f},
+            {"filter.type", 0}, {"filter.cutoff", 4000}, {"filter.res", 0.1f}, {"filter.key", 0.5f},
+            {"env1.a", 0.002f}, {"env1.d", 0.3f}, {"env1.s", 0.85f}, {"env1.r", 0.15f},
+            {"master.glide", 0.22f},
+            {"lfo1.rate", 5.8f},
+            {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.007f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.2f}, {"fx.drive.mix", 0.2f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.2f}, {"fx.delay.mix", 0.15f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -6.0f}, {"fx.eq.mid", -6.0f}, {"fx.eq.mfreq", 396}, {"fx.eq.high", 6.0f},
+        }},
+
+        {"LATELY BASS", {
+            {"oscA.table", 0}, {"oscA.pos", 0.05f}, {"oscA.level", 0.9f},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.level", 0.45f},
+            {"sub.on", 1}, {"sub.level", 0.4f}, {"sub.oct", -1},
+            {"filter.type", 0}, {"filter.cutoff", 700}, {"filter.res", 0.12f}, {"filter.env", 0.65f}, {"filter.key", 0.4f},
+            {"env1.a", 0.001f}, {"env1.d", 0.4f}, {"env1.s", 0.6f}, {"env1.r", 0.1f},
+            {"env2.a", 0.001f}, {"env2.d", 0.18f}, {"env2.s", 0}, {"env2.r", 0.1f},
+            {"mat1.src", 4}, {"mat1.dst", 3}, {"mat1.amt", 0.4f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", -4.2f}, {"fx.eq.mid", -0.5f}, {"fx.eq.mfreq", 271}, {"fx.eq.high", 4.7f},
+        }},
+
+        {"PROPHET STAB", {
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.75f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.fine", 5}, {"oscB.level", 0.55f},
+            {"filter.type", 0}, {"filter.cutoff", 1700}, {"filter.res", 0.25f}, {"filter.env", 0.55f}, {"filter.key", 0.4f},
+            {"env1.a", 0.003f}, {"env1.d", 0.5f}, {"env1.s", 0.35f}, {"env1.r", 0.3f},
+            {"env2.a", 0.002f}, {"env2.d", 0.35f}, {"env2.s", 0.1f}, {"env2.r", 0.25f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.25f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.45f}, {"fx.reverb.mix", 0.22f},
+        
+            {"fx.eq.on", 1}, {"fx.eq.low", 1.0f}, {"fx.eq.mid", 1.1f}, {"fx.eq.mfreq", 458}, {"fx.eq.high", -2.1f},
         }},
     };
     return presets;

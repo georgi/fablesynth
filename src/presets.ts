@@ -41,7 +41,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.55,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.72, 'fx.reverb.mix': 0.42,
     
-      'fx.eq.on': 1, 'fx.eq.low': -2.9, 'fx.eq.mid': -2, 'fx.eq.mfreq': 405, 'fx.eq.high': 4.9,
+      'fx.eq.on': 1, 'fx.eq.low': -2, 'fx.eq.mid': -1.1, 'fx.eq.mfreq': 405, 'fx.eq.high': 3.1,
     },
   },
 
@@ -73,7 +73,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.42, 'fx.delay.fb': 0.42, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.35,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 3.8, 'fx.eq.mfreq': 709, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4.7, 'fx.eq.mfreq': 709, 'fx.eq.high': -6,
     },
   },
 
@@ -88,7 +88,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.4, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.22,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.2, 'fx.eq.mid': 6, 'fx.eq.mfreq': 598, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.1, 'fx.eq.mid': 6, 'fx.eq.mfreq': 598, 'fx.eq.high': -6,
     },
   },
 
@@ -104,7 +104,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 5, 'mat2.dst': 1, 'mat2.amt': 0.3,
       'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': 3.6, 'fx.eq.mid': 4.3, 'fx.eq.mfreq': 916, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 4.5, 'fx.eq.mid': 5.2, 'fx.eq.mfreq': 916, 'fx.eq.high': -6,
     },
   },
 
@@ -121,7 +121,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
       'fx.delay.on': 1, 'fx.delay.time': 0.6, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.18,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4.3, 'fx.eq.mfreq': 693, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 5.2, 'fx.eq.mfreq': 693, 'fx.eq.high': -6,
     },
   },
 
@@ -139,7 +139,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat3.src': 1, 'mat3.dst': 2, 'mat3.amt': -0.35,
       'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': -4.7, 'fx.eq.mid': 2.1, 'fx.eq.mfreq': 356, 'fx.eq.high': 2.6,
+      'fx.eq.on': 1, 'fx.eq.low': -3.8, 'fx.eq.mid': 3, 'fx.eq.mfreq': 356, 'fx.eq.high': 0.8,
     },
   },
 
@@ -177,7 +177,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.33, 'fx.delay.fb': 0.32, 'fx.delay.mix': 0.22,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.26,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.4, 'fx.eq.mid': 5.6, 'fx.eq.mfreq': 601, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.3, 'fx.eq.mid': 6, 'fx.eq.mfreq': 601, 'fx.eq.high': -6,
     },
   },
 
@@ -195,7 +195,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.4,
       'fx.drive.on': 1, 'fx.drive.amt': 0.55, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5.7, 'fx.eq.mfreq': 620, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -4.8, 'fx.eq.mfreq': 620, 'fx.eq.high': 6,
     },
   },
 
@@ -213,7 +213,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.68, 'fx.reverb.mix': 0.42,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.7, 'fx.eq.mid': 5.5, 'fx.eq.mfreq': 431, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.7, 'fx.eq.mid': 6, 'fx.eq.mfreq': 431, 'fx.eq.high': -6,
     },
   },
 
@@ -232,7 +232,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.drive.on': 1, 'fx.drive.amt': 0.6, 'fx.drive.mix': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.18,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 1.6, 'fx.eq.mfreq': 734, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 2.5, 'fx.eq.mfreq': 734, 'fx.eq.high': -6,
     },
   },
 
@@ -267,7 +267,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.38, 'fx.delay.fb': 0.4, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.25,
     
-      'fx.eq.on': 1, 'fx.eq.low': 3.1, 'fx.eq.mid': -6, 'fx.eq.mfreq': 504, 'fx.eq.high': 3.6,
+      'fx.eq.on': 1, 'fx.eq.low': 4, 'fx.eq.mid': -5.8, 'fx.eq.mfreq': 504, 'fx.eq.high': 1.7,
     },
   },
 
@@ -284,7 +284,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.32,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.4,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 3.3, 'fx.eq.mfreq': 680, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4.2, 'fx.eq.mfreq': 680, 'fx.eq.high': -6,
     },
   },
 
@@ -300,7 +300,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.25, 'fx.delay.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': 5.5, 'fx.eq.mid': 6, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
     },
   },
 
@@ -321,7 +321,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5, 'fx.eq.mfreq': 361, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -4.1, 'fx.eq.mfreq': 361, 'fx.eq.high': 6,
     },
   },
 
@@ -338,7 +338,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.7,
       'fx.drive.on': 1, 'fx.drive.amt': 0.4, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': -1.4, 'fx.eq.mid': 4.8, 'fx.eq.mfreq': 493, 'fx.eq.high': -3.5,
+      'fx.eq.on': 1, 'fx.eq.low': -0.4, 'fx.eq.mid': 5.7, 'fx.eq.mfreq': 493, 'fx.eq.high': -5.3,
     },
   },
 
@@ -357,7 +357,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.25,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.45, 'fx.reverb.mix': 0.22,
     
-      'fx.eq.on': 1, 'fx.eq.low': 0.4, 'fx.eq.mid': -5.4, 'fx.eq.mfreq': 546, 'fx.eq.high': 5,
+      'fx.eq.on': 1, 'fx.eq.low': 1.3, 'fx.eq.mid': -4.5, 'fx.eq.mfreq': 546, 'fx.eq.high': 3.2,
     },
   },
 
@@ -399,7 +399,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.7, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.24,
     
-      'fx.eq.on': 1, 'fx.eq.low': 0.5, 'fx.eq.mid': 1.4, 'fx.eq.mfreq': 443, 'fx.eq.high': -1.9,
+      'fx.eq.on': 1, 'fx.eq.low': 1.4, 'fx.eq.mid': 2.3, 'fx.eq.mfreq': 443, 'fx.eq.high': -3.7,
     },
   },
 
@@ -439,7 +439,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2,
       'fx.chorus.on': 1, 'fx.chorus.rate': 1.2, 'fx.chorus.mix': 0.45,
     
-      'fx.eq.on': 1, 'fx.eq.low': -4.3, 'fx.eq.mid': 2.5, 'fx.eq.mfreq': 410, 'fx.eq.high': 1.8,
+      'fx.eq.on': 1, 'fx.eq.low': -3.4, 'fx.eq.mid': 3.4, 'fx.eq.mfreq': 410, 'fx.eq.high': 0,
     },
   },
 
@@ -458,7 +458,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.55,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.35,
     
-      'fx.eq.on': 1, 'fx.eq.low': 1.7, 'fx.eq.mid': 2, 'fx.eq.mfreq': 467, 'fx.eq.high': -3.7,
+      'fx.eq.on': 1, 'fx.eq.low': 2.6, 'fx.eq.mid': 2.9, 'fx.eq.mfreq': 467, 'fx.eq.high': -5.5,
     },
   },
 
@@ -476,7 +476,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.85, 'fx.reverb.mix': 0.45,
     
-      'fx.eq.on': 1, 'fx.eq.low': -1.5, 'fx.eq.mid': 0.3, 'fx.eq.mfreq': 392, 'fx.eq.high': 1.2,
+      'fx.eq.on': 1, 'fx.eq.low': -0.6, 'fx.eq.mid': 1.2, 'fx.eq.mfreq': 392, 'fx.eq.high': -0.6,
     },
   },
 
@@ -497,7 +497,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.drive.on': 1, 'fx.drive.amt': 0.25, 'fx.drive.mix': 0.2,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.22,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.8, 'fx.eq.mid': 5.8, 'fx.eq.mfreq': 547, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.7, 'fx.eq.mid': 6, 'fx.eq.mfreq': 547, 'fx.eq.high': -6,
     },
   },
 
@@ -514,7 +514,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.45,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.3,
     
-      'fx.eq.on': 1, 'fx.eq.low': 0.3, 'fx.eq.mid': 1.1, 'fx.eq.mfreq': 443, 'fx.eq.high': -1.3,
+      'fx.eq.on': 1, 'fx.eq.low': 1.2, 'fx.eq.mid': 2, 'fx.eq.mfreq': 443, 'fx.eq.high': -3.2,
     },
   },
 
@@ -533,7 +533,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.32, 'fx.delay.fb': 0.28, 'fx.delay.mix': 0.18,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.45, 'fx.reverb.mix': 0.25,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -3.4, 'fx.eq.mfreq': 276, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -5.6, 'fx.eq.mid': -2.5, 'fx.eq.mfreq': 276, 'fx.eq.high': 6,
     },
   },
 
@@ -571,7 +571,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.36, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.15,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.75, 'fx.reverb.mix': 0.38,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -1.5, 'fx.eq.mfreq': 273, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -0.6, 'fx.eq.mfreq': 273, 'fx.eq.high': 6,
     },
   },
 
@@ -611,7 +611,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.45,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.85, 'fx.reverb.mix': 0.45,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': -3.9, 'fx.eq.mfreq': 582, 'fx.eq.high': -5.7,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': -3, 'fx.eq.mfreq': 582, 'fx.eq.high': -6,
     },
   },
 
@@ -629,7 +629,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat3.src': 1, 'mat3.dst': 6, 'mat3.amt': 0.5,
       'fx.delay.on': 1, 'fx.delay.time': 0.22, 'fx.delay.fb': 0.4, 'fx.delay.mix': 0.28,
     
-      'fx.eq.on': 1, 'fx.eq.low': 1, 'fx.eq.mid': 3.6, 'fx.eq.mfreq': 356, 'fx.eq.high': -4.6,
+      'fx.eq.on': 1, 'fx.eq.low': 1.9, 'fx.eq.mid': 4.5, 'fx.eq.mfreq': 356, 'fx.eq.high': -6,
     },
   },
 
@@ -649,7 +649,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
     
-      'fx.eq.on': 1, 'fx.eq.low': 2.6, 'fx.eq.mid': 4, 'fx.eq.mfreq': 450, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 3.5, 'fx.eq.mid': 4.9, 'fx.eq.mfreq': 450, 'fx.eq.high': -6,
     },
   },
 
@@ -669,7 +669,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.35,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.8, 'fx.eq.mid': 5.4, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.7, 'fx.eq.mid': 6, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
     },
   },
 
@@ -690,7 +690,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.28,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5.7, 'fx.eq.mfreq': 264, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -4.8, 'fx.eq.mfreq': 264, 'fx.eq.high': 6,
     },
   },
 
@@ -709,7 +709,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.25,
       'fx.drive.on': 1, 'fx.drive.amt': 0.4, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': -0.8, 'fx.eq.mfreq': 577, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 0.2, 'fx.eq.mfreq': 577, 'fx.eq.high': -6,
     },
   },
 
@@ -730,7 +730,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.45,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
     
-      'fx.eq.on': 1, 'fx.eq.low': -2.4, 'fx.eq.mid': -1.4, 'fx.eq.mfreq': 372, 'fx.eq.high': 3.8,
+      'fx.eq.on': 1, 'fx.eq.low': -1.5, 'fx.eq.mid': -0.5, 'fx.eq.mfreq': 372, 'fx.eq.high': 2,
     },
   },
 
@@ -749,7 +749,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.45, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.22,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.65, 'fx.reverb.mix': 0.32,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 5, 'fx.eq.mfreq': 1183, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 5.9, 'fx.eq.mfreq': 1183, 'fx.eq.high': -6,
     },
   },
 
@@ -767,7 +767,195 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.3,
     
-      'fx.eq.on': 1, 'fx.eq.low': 2.4, 'fx.eq.mid': 2.6, 'fx.eq.mfreq': 475, 'fx.eq.high': -5,
+      'fx.eq.on': 1, 'fx.eq.low': 3.3, 'fx.eq.mid': 3.5, 'fx.eq.mfreq': 475, 'fx.eq.high': -6,
+    },
+  },
+
+  // ---- Hall of fame: classic synth homages --------------------------------
+
+  {
+    // Minimoog-style solo lead: two close saws over an octave-down third osc,
+    // fat 24 dB lowpass with a little drive, short glide and hand vibrato.
+    name: 'MINI LEAD',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.2, 'oscA.level': 0.85,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': -1, 'oscB.fine': 6, 'oscB.level': 0.5,
+      'filter.type': 1, 'filter.cutoff': 1300, 'filter.res': 0.3, 'filter.env': 0.55, 'filter.key': 0.35, 'filter.drive': 0.2,
+      'env1.a': 0.004, 'env1.d': 0.35, 'env1.s': 0.75, 'env1.r': 0.15,
+      'env2.a': 0.002, 'env2.d': 0.4, 'env2.s': 0.3, 'env2.r': 0.2,
+      'master.glide': 0.05,
+      'lfo1.rate': 5.2,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.005,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.3, 'fx.drive.mix': 0.2,
+      'fx.delay.on': 1, 'fx.delay.time': 0.28, 'fx.delay.fb': 0.25, 'fx.delay.mix': 0.15,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -3.9, 'fx.eq.mid': -3.9, 'fx.eq.mfreq': 430, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // Juno-style PWM dream pad: pulse-width motion from a slow LFO, the
+    // trademark square sub an octave down, and thick ensemble chorus.
+    name: 'JUNO DREAM',
+    params: {
+      'oscA.table': 2, 'oscA.pos': 0.35, 'oscA.unison': 3, 'oscA.detune': 0.15, 'oscA.spread': 0.7, 'oscA.level': 0.75,
+      'sub.on': 1, 'sub.shape': 1, 'sub.level': 0.45, 'sub.oct': -1,
+      'filter.type': 1, 'filter.cutoff': 2000, 'filter.res': 0.12, 'filter.env': 0.25, 'filter.key': 0.25,
+      'env1.a': 0.4, 'env1.d': 1, 'env1.s': 0.8, 'env1.r': 1.4,
+      'lfo1.rate': 0.4, 'lfo2.rate': 0.17,
+      'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.3,
+      'mat2.src': 2, 'mat2.dst': 6, 'mat2.amt': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.6,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.6, 'fx.reverb.mix': 0.3,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -1, 'fx.eq.mfreq': 448, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // OB-style "Jump" brass: bright saw + wide pulse hitting an almost-open
+    // filter with just a kiss of envelope — instant arena stab.
+    name: 'JUMP BRASS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.18, 'oscA.spread': 0.6, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.1, 'oscB.fine': -7, 'oscB.level': 0.6,
+      'filter.type': 0, 'filter.cutoff': 4500, 'filter.res': 0.08, 'filter.env': 0.15, 'filter.key': 0.3,
+      'env1.a': 0.005, 'env1.d': 0.4, 'env1.s': 0.9, 'env1.r': 0.3,
+      'env2.a': 0.003, 'env2.d': 0.25, 'env2.s': 0.4, 'env2.r': 0.25,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.35,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.28,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 4.6, 'fx.eq.mid': 5.7, 'fx.eq.mfreq': 553, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // CS-80 film-score brass: slow filter swell, ribbon-style glide and the
+    // signature delayed vibrato (LFO rise), soaked in hall reverb.
+    name: 'BLADE BRASS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.spread': 0.4, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.25, 'oscB.fine': 9, 'oscB.level': 0.5,
+      'filter.type': 0, 'filter.cutoff': 900, 'filter.res': 0.2, 'filter.env': 0.6, 'filter.key': 0.3,
+      'env1.a': 0.15, 'env1.d': 0.8, 'env1.s': 0.85, 'env1.r': 1.6,
+      'env2.a': 0.25, 'env2.d': 1.2, 'env2.s': 0.6, 'env2.r': 1,
+      'master.glide': 0.09,
+      'lfo1.rate': 4.2, 'lfo1.rise': 1.2,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.006,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.3,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.8, 'fx.reverb.mix': 0.42,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 3.6, 'fx.eq.mid': 2.8, 'fx.eq.mfreq': 499, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // D-50-style fantasy patch: a bell strike (mod env lifts osc A) rings out
+    // and hands over to a breathy vox pad with a whisper of pink noise.
+    name: 'FANTA BELLS',
+    params: {
+      'oscA.table': 4, 'oscA.pos': 0.6, 'oscA.oct': 1, 'oscA.level': 0.15,
+      'oscB.on': 1, 'oscB.table': 3, 'oscB.pos': 0.4, 'oscB.unison': 3, 'oscB.detune': 0.18, 'oscB.spread': 0.8, 'oscB.level': 0.5,
+      'noise.on': 1, 'noise.type': 1, 'noise.level': 0.12,
+      'filter.type': 0, 'filter.cutoff': 3500, 'filter.res': 0.08, 'filter.key': 0.4,
+      'env1.a': 0.005, 'env1.d': 1.5, 'env1.s': 0.75, 'env1.r': 2,
+      'env2.a': 0.001, 'env2.d': 1.2, 'env2.s': 0, 'env2.r': 1,
+      'lfo1.rate': 0.3,
+      'mat1.src': 3, 'mat1.dst': 7, 'mat1.amt': 0.5,
+      'mat2.src': 1, 'mat2.dst': 6, 'mat2.amt': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.35,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.85, 'fx.reverb.mix': 0.45,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 0.9, 'fx.eq.mfreq': 624, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // Taurus-style pedal bass: saw + square an octave apart over a deep sub,
+    // dark driven 24 dB lowpass and a slow foot-glide between notes.
+    name: 'TAURUS PEDAL',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 1, 'oscB.oct': -1, 'oscB.level': 0.5,
+      'sub.on': 1, 'sub.level': 0.7, 'sub.oct': -1,
+      'filter.type': 1, 'filter.cutoff': 380, 'filter.res': 0.2, 'filter.env': 0.45, 'filter.drive': 0.3,
+      'env1.a': 0.004, 'env1.d': 0.5, 'env1.s': 0.8, 'env1.r': 0.25,
+      'env2.a': 0.003, 'env2.d': 0.4, 'env2.s': 0.2, 'env2.r': 0.2,
+      'master.glide': 0.07,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.35, 'fx.drive.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 288, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // PPG-style digital wave sweep: the mod env scans the VOX table from dark
+    // to glassy on every note, with a glitchy sparkle layer an octave up.
+    name: 'WAVE DANCER',
+    params: {
+      'oscA.table': 3, 'oscA.pos': 0.2, 'oscA.level': 0.7,
+      'oscB.on': 1, 'oscB.table': 5, 'oscB.pos': 0.35, 'oscB.oct': 1, 'oscB.level': 0.3,
+      'filter.type': 0, 'filter.cutoff': 3800, 'filter.res': 0.15, 'filter.key': 0.3,
+      'env1.a': 0.004, 'env1.d': 0.6, 'env1.s': 0.7, 'env1.r': 0.4,
+      'env2.a': 0.01, 'env2.d': 0.6, 'env2.s': 0.25, 'env2.r': 0.3,
+      'mat1.src': 3, 'mat1.dst': 1, 'mat1.amt': 0.55,
+      'mat2.src': 4, 'mat2.dst': 1, 'mat2.amt': 0.3,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.3,
+      'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.2,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': -1.4, 'fx.eq.mfreq': 694, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // "Funky Worm" whistle lead: a bare sine an octave up with huge
+    // portamento and wide vibrato — the G-funk siren.
+    name: 'FUNKY WORM',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0, 'oscA.oct': 1, 'oscA.level': 0.9,
+      'filter.type': 0, 'filter.cutoff': 4000, 'filter.res': 0.1, 'filter.key': 0.5,
+      'env1.a': 0.002, 'env1.d': 0.3, 'env1.s': 0.85, 'env1.r': 0.15,
+      'master.glide': 0.22,
+      'lfo1.rate': 5.8,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.007,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.2, 'fx.drive.mix': 0.2,
+      'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.2, 'fx.delay.mix': 0.15,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 396, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // DX100-style "Lately Bass": a solid sine core whose bright saw bite
+    // decays away FM-fast, velocity digging the filter open.
+    name: 'LATELY BASS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.05, 'oscA.level': 0.9,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.level': 0.45,
+      'sub.on': 1, 'sub.level': 0.4, 'sub.oct': -1,
+      'filter.type': 0, 'filter.cutoff': 700, 'filter.res': 0.12, 'filter.env': 0.65, 'filter.key': 0.4,
+      'env1.a': 0.001, 'env1.d': 0.4, 'env1.s': 0.6, 'env1.r': 0.1,
+      'env2.a': 0.001, 'env2.d': 0.18, 'env2.s': 0, 'env2.r': 0.1,
+      'mat1.src': 4, 'mat1.dst': 3, 'mat1.amt': 0.4,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -4.2, 'fx.eq.mid': -0.5, 'fx.eq.mfreq': 271, 'fx.eq.high': 4.7,
+    },
+  },
+
+  {
+    // Prophet-style poly stab: saw against a slightly-sharp pulse, snappy
+    // half-sustain envelope and a resonant filter bite.
+    name: 'PROPHET STAB',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.spread': 0.5, 'oscA.level': 0.75,
+      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.3, 'oscB.fine': 5, 'oscB.level': 0.55,
+      'filter.type': 0, 'filter.cutoff': 1700, 'filter.res': 0.25, 'filter.env': 0.55, 'filter.key': 0.4,
+      'env1.a': 0.003, 'env1.d': 0.5, 'env1.s': 0.35, 'env1.r': 0.3,
+      'env2.a': 0.002, 'env2.d': 0.35, 'env2.s': 0.1, 'env2.r': 0.25,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.25,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.45, 'fx.reverb.mix': 0.22,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 1, 'fx.eq.mid': 1.1, 'fx.eq.mfreq': 458, 'fx.eq.high': -2.1,
     },
   },
 ];
