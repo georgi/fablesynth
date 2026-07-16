@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FableSynth · SQ-4 Session — Play a Whole Track in Your Browser</title>
-<meta name="description" content="Press start and play a whole track: SQ-4 launches real clips into DR-1 drums, BL-1 acid bass and two WT-1 wavetable synths — four tracks, six scenes, one engine, free in your browser. WT-1 also runs in your DAW as VST3, AU or Standalone.">
+<meta name="description" content="Four devices, one wavetable engine: WT-1 synth, DR-1 drums, BL-1 acid bass and the SQ-4 session that plays them all. Every device runs as a web UI in your browser and as a VST3/AU instrument in your DAW.">
 <meta property="og:title" content="FableSynth SQ-4 — Press Start, Play a Whole Track">
-<meta property="og:description" content="A session launcher driving three real instruments — DR-1 drums, BL-1 acid bass, WT-1 wavetable synths — on one engine, live in your browser.">
+<meta property="og:description" content="WT-1 synth, DR-1 drums, BL-1 acid bass and the SQ-4 session — all pure wavetable synthesis, each one a web UI in your browser and a VST instrument in your DAW.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="./media/sq4-session-og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Cpath d='M4 20 Q8 8 12 16 T20 14 T28 18' stroke='%234de8ff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -39,26 +39,46 @@
     <canvas class="hero-canvas" id="wt-canvas" aria-hidden="true"></canvas>
     <div class="hero-veil" aria-hidden="true"></div>
     <div class="hero-inner">
-      <p class="kicker">SQ-4 SESSION · THREE INSTRUMENTS · ONE WAVETABLE ENGINE</p>
-      <h1 class="hero-title">FABLE<span class="title-break">SYNTH</span></h1>
-      <p class="hero-lede">
-        Press start and a whole track is under your fingers. SQ-4 launches
-        real clips into DR-1 drums, BL-1 acid bass and two WT-1 synths —
-        four tracks, six scenes, one engine, live in your browser.
-      </p>
-      <div class="cta-row">
-        <a class="btn-start" href="./seq/">
-          <span class="start-ring" aria-hidden="true">
-            <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="99 27" stroke-dashoffset="-13.5" stroke-linecap="round"/><line x1="24" y1="6" x2="24" y2="21" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-          </span>
-          <span class="start-label">
-            <b>START SQ-4</b>
-            <small>play the session in your browser</small>
-          </span>
-        </a>
-        <a class="btn btn-ghost" href="#family">Meet the instruments <span aria-hidden="true">→</span></a>
+      <div class="hero-copy">
+        <p class="kicker">PURE WAVETABLE SYNTHESIS · IN THE BROWSER · IN YOUR DAW</p>
+        <h1 class="hero-title">FABLE<span class="title-break">SYNTH</span></h1>
+        <p class="hero-lede">
+          Four devices, one wavetable engine: WT-1 synth, DR-1 drums, BL-1
+          acid bass and SQ-4, the session that plays them all. Everything is
+          wavetable synthesis, and every device runs both ways — web UI in
+          your browser, VST instrument in your DAW.
+        </p>
+        <div class="cta-row">
+          <a class="btn-start" href="./seq/">
+            <span class="start-ring" aria-hidden="true">
+              <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="99 27" stroke-dashoffset="-13.5" stroke-linecap="round"/><line x1="24" y1="6" x2="24" y2="21" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+            </span>
+            <span class="start-label">
+              <b>START SQ-4</b>
+              <small>play the session in your browser</small>
+            </span>
+          </a>
+          <a class="btn btn-ghost" href="#family">Meet the instruments <span aria-hidden="true">→</span></a>
+        </div>
+        <p class="hero-foot">Free on the web, no install, no account. <span class="dot" aria-hidden="true"></span> VST3, AU and Standalone builds of all four in the releases.</p>
       </div>
-      <p class="hero-foot">Free, no install, no account — one click boots all four instruments. <span class="dot" aria-hidden="true"></span> WT-1 also as VST3, AU and Standalone for your DAW.</p>
+      <div class="hero-gallery reveal" aria-label="The instruments">
+        <a class="hg-card" href="./app/" data-accent="a">
+          <img src="./media/wt1-rack.webp" width="1400" height="875" fetchpriority="high"
+               alt="The WT-1 synthesizer web rack: two wavetable oscillator panels, dual filter, envelopes, LFOs, mod matrix, FX and a note sequencer.">
+          <span class="hg-tag">WT-1 · SYNTH</span>
+        </a>
+        <a class="hg-card" href="./drum/" data-accent="b">
+          <img src="./media/dr1-rack.webp" width="1400" height="768" fetchpriority="high"
+               alt="The DR-1 drum machine web rack: a 4×4 pad grid, wavetable and sample editors, per-pad envelopes and FX, and a 16-step sequencer.">
+          <span class="hg-tag">DR-1 · DRUMS</span>
+        </a>
+        <a class="hg-card" href="./bass/" data-accent="f">
+          <img src="./media/bl1-rack.webp" width="1400" height="805" fetchpriority="high"
+               alt="The BL-1 acid bassline web rack: wavetable oscillator, resonant filter, accent and slide controls, keys and a 16-step pitch sequencer.">
+          <span class="hg-tag">BL-1 · ACID BASS</span>
+        </a>
+      </div>
     </div>
     <div class="scroll-hint" aria-hidden="true"><span></span></div>
   </section>
@@ -133,13 +153,12 @@
         <p class="prose">
           Two morphing wavetable oscillators, a dual filter with real bite,
           modulation on everything and a full FX rack. Leads, pads, keys —
-          the full-range instrument the engine was built for, and the only
-          one that also lives in your DAW.
+          the full-range instrument the engine was built for.
         </p>
         <ul class="family-specs" aria-label="WT-1 at a glance">
           <li>2 osc · 7-voice unison</li>
           <li>Dual filter · mod matrix</li>
-          <li>Browser · VST3 · AU · Standalone</li>
+          <li>Web + VST · SQ-4 tracks 3+4</li>
         </ul>
         <span class="format-go">Launch WT-1 <span aria-hidden="true">→</span></span>
       </a>
@@ -155,7 +174,7 @@
         <ul class="family-specs" aria-label="DR-1 at a glance">
           <li>16 pads · 2 osc + noise each</li>
           <li>16-step sequencer · pattern chains</li>
-          <li>Browser · SQ-4 track 1</li>
+          <li>Web + VST · SQ-4 track 1</li>
         </ul>
         <span class="format-go">Launch DR-1 <span aria-hidden="true">→</span></span>
       </a>
@@ -171,7 +190,7 @@
         <ul class="family-specs" aria-label="BL-1 at a glance">
           <li>Mono voice · slides &amp; accents</li>
           <li>16-step pitch sequencer</li>
-          <li>Browser · SQ-4 track 2</li>
+          <li>Web + VST · SQ-4 track 2</li>
         </ul>
         <span class="format-go">Launch BL-1 <span aria-hidden="true">→</span></span>
       </a>
@@ -299,11 +318,11 @@
       <p class="kicker">WT-1 · THE FLAGSHIP</p>
       <h2>Play it in a tab.<br>Track it in your DAW.</h2>
       <p class="prose">
-        The flagship synthesizer goes wherever the idea goes. Sketch a patch
-        in your browser — or right inside an SQ-4 session — then open the
-        plugin in your DAW and pick up where you left off. Same controls,
-        same presets, the exact same sound. It's one instrument, not a demo
-        and a separate "real" version.
+        Every FableSynth device pairs a web UI with a native plugin — here
+        it's the flagship synth. Sketch a patch in your browser, or right
+        inside an SQ-4 session, then open the plugin in your DAW and pick up
+        where you left off. Same controls, same presets, the exact same
+        sound. It's one instrument, not a demo and a separate "real" version.
       </p>
       <div class="surfaces-cta">
         <a class="btn btn-primary" href="./app/">Open WT-1 in the browser <span aria-hidden="true">→</span></a>
@@ -442,21 +461,21 @@
       <div class="format-card reveal">
         <p class="format-tag">macOS</p>
         <h3>VST3 · AU · App</h3>
-        <p>WT-1 runs native on Apple Silicon and Intel. For Ableton, Logic, Bitwig and friends.</p>
+        <p>All four devices, native on Apple Silicon and Intel. For Ableton, Logic, Bitwig and friends.</p>
         <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
       </div>
 
       <div class="format-card reveal">
         <p class="format-tag">Windows</p>
         <h3>VST3 · App</h3>
-        <p>VST3 plugin and a standalone app. Drop it in your VST3 folder and rescan.</p>
+        <p>VST3 plugins and standalone apps for all four devices. Drop them in your VST3 folder and rescan.</p>
         <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
       </div>
 
       <div class="format-card reveal">
         <p class="format-tag">Linux</p>
         <h3>VST3 · App</h3>
-        <p>Native VST3 and a standalone app for your distro.</p>
+        <p>Native VST3 plugins and standalone apps for your distro.</p>
         <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
       </div>
     </div>
