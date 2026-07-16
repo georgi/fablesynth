@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
     check(sessionLibrary.size() == 24 && p.getNumPrograms() == 24,
           "SQ-4 ships 24 complete session programs");
     std::map<std::string, int> familyCounts;
-    std::set<std::string> rigNames, rigSignatures;
+    std::set<std::string> rigNames;
     bool rigMetadataValid = true, rigProgramsValid = true, completeSessionContent = true;
     for (const auto& preset : sessionLibrary) {
         familyCounts[preset.family]++;
@@ -368,10 +368,6 @@ int main(int argc, char** argv) {
                     hasPlayableClip = true;
             if (!hasPlayableClip) completeSessionContent = false;
         }
-        rigSignatures.insert(std::to_string(preset.session.tracks[0].patch.index) + ":"
-            + std::to_string(preset.session.tracks[1].patch.index) + ":"
-            + std::to_string(preset.session.tracks[2].patch.index) + ":"
-            + std::to_string(preset.session.tracks[3].patch.index));
     }
     bool familiesValid = familyCounts.size() == 6;
     for (const auto& [family, count] : familyCounts)
@@ -380,8 +376,12 @@ int main(int argc, char** argv) {
     check(familiesValid, "session library has six families with four variations each");
     check(rigProgramsValid, "every session references valid device programs");
     check(completeSessionContent, "every session contains playable clips and device patches");
-    check(rigNames.size() == sessionLibrary.size() && rigSignatures.size() == sessionLibrary.size(),
-          "session names and four-device combinations are unique");
+    // Session names are unique. Four-device rig *combinations* are deliberately
+    // not required to be unique: the web source of truth (sessionPresets.ts)
+    // ships TAPE DISCO and VHS GARDEN on the same {3,7,15,17} rig, distinguished
+    // by tempo/swing/harmony/clips rather than device selection.
+    check(rigNames.size() == sessionLibrary.size(),
+          "session names are unique");
 
     const auto clipsBeforeRigPatch = p.conductor().session().scenes[2].clips;
     hdr.selectLibrarySession(1);
@@ -837,6 +837,17 @@ int main(int argc, char** argv) {
                 || std::abs((double)webSession.getProperty("bpm", 0.0) - mine.session.bpm) > 1e-9
                 || std::abs((double)webSession.getProperty("swing", -1.0) - mine.session.swing) > 1e-9)
                 metaMatches = false;
+            const auto* tracks = webSession.getProperty("tracks", {}).getArray();
+            if (tracks == nullptr || tracks->size() != (int)mine.session.tracks.size())
+                metaMatches = false;
+            for (int t = 0; tracks != nullptr && t < tracks->size()
+                            && t < (int)mine.session.tracks.size(); ++t) {
+                const auto& webTrack = (*tracks)[t];
+                const auto& nativeTrack = mine.session.tracks[(size_t)t];
+                if ((int)webTrack.getProperty("patch", {}).getProperty("index", -1) != nativeTrack.patch.index
+                    || std::abs((double)webTrack.getProperty("gain", -1.0) - (double)nativeTrack.gain) > 1e-6)
+                    metaMatches = false;
+            }
             const auto* scenes = webSession.getProperty("scenes", {}).getArray();
             if (scenes == nullptr || scenes->size() != (int)mine.session.scenes.size()) { clipsMatch = false; continue; }
             for (int s = 0; s < scenes->size(); ++s) {

@@ -622,7 +622,7 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 12, 5, 19, 1 }, 3),
 
             // LO-FI / RETRO
-            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 7, 16, 17 }, 0),
+            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 7, 15, 17 }, 0),
             make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 12, 5, 3, 1 }, 1),
             make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 13, 2, 15, 17 }, 2),
             make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 3, 0, 19, 1 }, 3),
