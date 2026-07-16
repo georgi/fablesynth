@@ -333,7 +333,7 @@ code {
 }
 .hero-title {
   font-family: var(--disp);
-  font-size: clamp(54px, 13vw, 140px);
+  font-size: clamp(54px, 11.5vw, 140px);
   line-height: 0.92;
   letter-spacing: 0.02em;
   color: #f1f5fc;
