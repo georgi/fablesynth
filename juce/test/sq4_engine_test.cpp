@@ -21,7 +21,9 @@
 #include <map>
 #include <memory>
 #include <iterator>
+#include <set>
 #include <tuple>
+#include <vector>
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
@@ -1134,6 +1136,47 @@ static void testConductor() {
     }
 }
 
+static void testSessionLibraryMusicality() {
+    using namespace fable;
+    const auto& library = factorySessionLibrary();
+    CHECK(library.size() == 24);
+
+    // Register split: every generated pad sits strictly below every lead note.
+    for (size_t p = 1; p < library.size(); ++p) {
+        for (const auto& scene : library[p].session.scenes) {
+            if (!scene.hasClip[2] || !scene.hasClip[3]) continue;
+            const auto pitches = [](const ClipData& clip) {
+                std::vector<int> out;
+                for (size_t i = 0; i + 2 < clip.bytes.size(); i += SQ_NOTE_STRIDE)
+                    if (clip.bytes[i] & 1)
+                        out.push_back(((int)clip.bytes[i + 2] - 1) * 12 + (clip.bytes[i + 1] & 0x7f));
+                return out;
+            };
+            const auto lead = pitches(scene.clips[2]);
+            const auto pad = pitches(scene.clips[3]);
+            CHECK(!lead.empty() && !pad.empty());
+            CHECK(*std::min_element(lead.begin(), lead.end()) >= 12);
+            CHECK(*std::max_element(lead.begin(), lead.end()) <= 23);
+            CHECK(*std::max_element(pad.begin(), pad.end()) <= 11);
+            CHECK(*std::min_element(pad.begin(), pad.end()) >= 0);
+        }
+    }
+
+    // Unique drums: all 24 DROP-A patterns differ; scenes differ within a song.
+    std::set<std::vector<uint8_t>> dropDrums;
+    for (const auto& preset : library)
+        dropDrums.insert(preset.session.scenes[2].clips[0].bytes);
+    CHECK(dropDrums.size() == library.size());
+    for (size_t p = 1; p < library.size(); ++p) {
+        const auto& scenes = library[p].session.scenes;
+        CHECK(!scenes[4].hasClip[0]); // BREAK stays drumless
+        std::set<std::vector<uint8_t>> perScene;
+        for (size_t s : { (size_t)0, (size_t)1, (size_t)2, (size_t)3, (size_t)5 })
+            perScene.insert(scenes[s].clips[0].bytes);
+        CHECK(perScene.size() == 5);
+    }
+}
+
 int main() {
     testClipLibrarySchema();
     testProtocol();
@@ -1147,6 +1190,7 @@ int main() {
     testBl1ClipSwapGatesOldNote();
     testDr1Hosted();
     testConductor();
+    testSessionLibraryMusicality();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;

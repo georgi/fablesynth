@@ -35,6 +35,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <set>
 #include <vector>
@@ -812,6 +813,53 @@ int main(int argc, char** argv) {
                      webSession.scenes[sc].clips[t].bytes != s.scenes[sc].clips[t].bytes))
                     scenesMatch = false;
         check(scenesMatch, "web fixture clip bytes match fable::factorySession() scene-by-scene, track-by-track");
+    }
+
+    {
+        juce::File fixture = juce::File::getCurrentWorkingDirectory()
+                                 .getChildFile("test/fixtures/web-session-presets.json");
+        if (!fixture.existsAsFile())
+            fixture = juce::File(__FILE__).getSiblingFile("fixtures").getChildFile("web-session-presets.json");
+        check(fixture.existsAsFile(), "web-session-presets.json fixture is present");
+        const auto parsed = juce::JSON::parse(fixture.loadFileAsString());
+        const auto* webPresets = parsed.getArray();
+        const auto& native = fable::factorySessionLibrary();
+        check(webPresets != nullptr && webPresets->size() == (int)native.size(),
+              "fixture carries all 24 presets");
+        bool metaMatches = true, clipsMatch = true;
+        for (int p = 0; webPresets != nullptr && p < webPresets->size(); ++p) {
+            const auto& web = (*webPresets)[p];
+            const auto& mine = native[(size_t)p];
+            const auto webSession = web.getProperty("session", {});
+            if (web.getProperty("name", "").toString() != juce::String(mine.name)
+                || web.getProperty("family", "").toString() != juce::String(mine.family)
+                || (int)web.getProperty("energy", -1) != mine.energy
+                || std::abs((double)webSession.getProperty("bpm", 0.0) - mine.session.bpm) > 1e-9
+                || std::abs((double)webSession.getProperty("swing", -1.0) - mine.session.swing) > 1e-9)
+                metaMatches = false;
+            const auto* scenes = webSession.getProperty("scenes", {}).getArray();
+            if (scenes == nullptr || scenes->size() != (int)mine.session.scenes.size()) { clipsMatch = false; continue; }
+            for (int s = 0; s < scenes->size(); ++s) {
+                const auto* clips = (*scenes)[s].getProperty("clips", {}).getArray();
+                for (int t = 0; clips != nullptr && t < clips->size(); ++t) {
+                    const auto& webClip = (*clips)[t];
+                    const bool webHas = !webClip.isVoid() && webClip.isObject();
+                    if (webHas != mine.session.scenes[(size_t)s].hasClip[(size_t)t]) { clipsMatch = false; continue; }
+                    if (!webHas) continue;
+                    juce::MemoryOutputStream decoded;
+                    juce::Base64::convertFromBase64(decoded, webClip.getProperty("pattern", "").toString());
+                    const auto& nativeBytes = mine.session.scenes[(size_t)s].clips[(size_t)t].bytes;
+                    if (decoded.getDataSize() != nativeBytes.size()
+                        || std::memcmp(decoded.getData(), nativeBytes.data(), nativeBytes.size()) != 0)
+                        clipsMatch = false;
+                    if (webClip.getProperty("name", "").toString()
+                            != juce::String(mine.session.scenes[(size_t)s].clips[(size_t)t].name))
+                        clipsMatch = false;
+                }
+            }
+        }
+        check(metaMatches, "session-preset metadata matches the web generator");
+        check(clipsMatch, "all 24 preset sessions match the web generator byte-for-byte");
     }
 
     // ---- LOAD/SAVE UI test handles (SeqHeader::loadClick/saveClick apply the
