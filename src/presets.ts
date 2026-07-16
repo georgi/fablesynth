@@ -41,7 +41,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.55,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.72, 'fx.reverb.mix': 0.42,
     
-      'fx.eq.on': 1, 'fx.eq.low': -3.5, 'fx.eq.mid': -2, 'fx.eq.mfreq': 405, 'fx.eq.high': 5.5,
+      'fx.eq.on': 1, 'fx.eq.low': -1.4, 'fx.eq.mid': -1.3, 'fx.eq.mfreq': 405, 'fx.eq.high': 2.7,
     },
   },
 
@@ -73,7 +73,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.42, 'fx.delay.fb': 0.42, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.35,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 3.8, 'fx.eq.mfreq': 709, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4.5, 'fx.eq.mfreq': 709, 'fx.eq.high': -6,
     },
   },
 
@@ -88,7 +88,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.4, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.22,
     
-      'fx.eq.on': 1, 'fx.eq.low': 3.6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 598, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 598, 'fx.eq.high': -6,
     },
   },
 
@@ -104,7 +104,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 5, 'mat2.dst': 1, 'mat2.amt': 0.3,
       'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': 3, 'fx.eq.mid': 4.3, 'fx.eq.mfreq': 916, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.1, 'fx.eq.mid': 5, 'fx.eq.mfreq': 916, 'fx.eq.high': -6,
     },
   },
 
@@ -121,7 +121,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
       'fx.delay.on': 1, 'fx.delay.time': 0.6, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.18,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4.3, 'fx.eq.mfreq': 693, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 5, 'fx.eq.mfreq': 693, 'fx.eq.high': -6,
     },
   },
 
@@ -139,7 +139,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat3.src': 1, 'mat3.dst': 2, 'mat3.amt': -0.35,
       'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': -5.3, 'fx.eq.mid': 2.1, 'fx.eq.mfreq': 356, 'fx.eq.high': 3.2,
+      'fx.eq.on': 1, 'fx.eq.low': -3.2, 'fx.eq.mid': 2.8, 'fx.eq.mfreq': 356, 'fx.eq.high': 0.5,
     },
   },
 
@@ -177,7 +177,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.33, 'fx.delay.fb': 0.32, 'fx.delay.mix': 0.22,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.26,
     
-      'fx.eq.on': 1, 'fx.eq.low': 3.9, 'fx.eq.mid': 5.6, 'fx.eq.mfreq': 601, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 5.9, 'fx.eq.mid': 6, 'fx.eq.mfreq': 601, 'fx.eq.high': -6,
     },
   },
 
@@ -195,7 +195,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.4,
       'fx.drive.on': 1, 'fx.drive.amt': 0.55, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5.7, 'fx.eq.mfreq': 620, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5, 'fx.eq.mfreq': 620, 'fx.eq.high': 6,
     },
   },
 
@@ -213,7 +213,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.68, 'fx.reverb.mix': 0.42,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.2, 'fx.eq.mid': 5.5, 'fx.eq.mfreq': 431, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 431, 'fx.eq.high': -6,
     },
   },
 
@@ -232,7 +232,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.drive.on': 1, 'fx.drive.amt': 0.6, 'fx.drive.mix': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.18,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 1.6, 'fx.eq.mfreq': 734, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 2.3, 'fx.eq.mfreq': 734, 'fx.eq.high': -6,
     },
   },
 
@@ -267,7 +267,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.38, 'fx.delay.fb': 0.4, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.25,
     
-      'fx.eq.on': 1, 'fx.eq.low': 2.6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 504, 'fx.eq.high': 4.1,
+      'fx.eq.on': 1, 'fx.eq.low': 4.6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 504, 'fx.eq.high': 1.4,
     },
   },
 
@@ -284,7 +284,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.32,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.4,
     
-      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 3.3, 'fx.eq.mfreq': 680, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 4, 'fx.eq.mfreq': 680, 'fx.eq.high': -6,
     },
   },
 
@@ -300,7 +300,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.2,
       'fx.delay.on': 1, 'fx.delay.time': 0.25, 'fx.delay.fb': 0.25, 'fx.delay.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': 4.9, 'fx.eq.mid': 6, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 507, 'fx.eq.high': -6,
     },
   },
 
@@ -321,7 +321,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.5,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.9, 'fx.reverb.mix': 0.5,
     
-      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -5, 'fx.eq.mfreq': 361, 'fx.eq.high': 6,
+      'fx.eq.on': 1, 'fx.eq.low': -5.9, 'fx.eq.mid': -4.4, 'fx.eq.mfreq': 361, 'fx.eq.high': 6,
     },
   },
 
@@ -338,7 +338,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.7,
       'fx.drive.on': 1, 'fx.drive.amt': 0.4, 'fx.drive.mix': 0.2,
     
-      'fx.eq.on': 1, 'fx.eq.low': -1.9, 'fx.eq.mid': 4.8, 'fx.eq.mfreq': 493, 'fx.eq.high': -2.9,
+      'fx.eq.on': 1, 'fx.eq.low': 0.1, 'fx.eq.mid': 5.5, 'fx.eq.mfreq': 493, 'fx.eq.high': -5.6,
     },
   },
 
@@ -357,7 +357,221 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.3, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.25,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.45, 'fx.reverb.mix': 0.22,
     
-      'fx.eq.on': 1, 'fx.eq.low': -0.1, 'fx.eq.mid': -5.4, 'fx.eq.mfreq': 546, 'fx.eq.high': 5.5,
+      'fx.eq.on': 1, 'fx.eq.low': 1.9, 'fx.eq.mid': -4.7, 'fx.eq.mfreq': 546, 'fx.eq.high': 2.8,
+    },
+  },
+
+  // ---- Acoustic & classic keys ------------------------------------------
+
+  {
+    // Tine e-piano: near-sine body + a quiet CHIME "tine" layer an octave up.
+    // Velocity opens the filter and brings the tine forward; slow pan tremolo.
+    name: 'MELLOW RHODES',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.08, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.12, 'oscB.oct': 1, 'oscB.level': 0.18,
+      'filter.type': 0, 'filter.cutoff': 1200, 'filter.res': 0.1, 'filter.env': 0.45, 'filter.key': 0.4,
+      'env1.a': 0.002, 'env1.d': 1.4, 'env1.s': 0.42, 'env1.r': 0.5,
+      'env2.a': 0.001, 'env2.d': 0.35, 'env2.s': 0, 'env2.r': 0.3,
+      'lfo1.rate': 0.9,
+      'mat1.src': 4, 'mat1.dst': 3, 'mat1.amt': 0.4,
+      'mat2.src': 4, 'mat2.dst': 8, 'mat2.amt': 0.35,
+      'mat3.src': 1, 'mat3.dst': 6, 'mat3.amt': 0.3,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.35,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.35, 'fx.reverb.mix': 0.25,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 302, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // Bright FM-style "Dyno" e-piano: sine body, glassy bell partials two
+    // octaves up, deep chorus. Harder velocity = brighter and more bell.
+    name: 'DYNO EPIANO',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.05, 'oscA.level': 0.75,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.3, 'oscB.oct': 2, 'oscB.level': 0.15,
+      'filter.type': 0, 'filter.cutoff': 2500, 'filter.res': 0.08, 'filter.env': 0.3, 'filter.key': 0.5,
+      'env1.a': 0.001, 'env1.d': 1.8, 'env1.s': 0.3, 'env1.r': 0.6,
+      'env2.a': 0.001, 'env2.d': 0.5, 'env2.s': 0, 'env2.r': 0.4,
+      'mat1.src': 4, 'mat1.dst': 3, 'mat1.amt': 0.45,
+      'mat2.src': 4, 'mat2.dst': 8, 'mat2.amt': 0.4,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.7, 'fx.chorus.mix': 0.5,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.24,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 1.9, 'fx.eq.mid': 2.1, 'fx.eq.mfreq': 443, 'fx.eq.high': -4,
+    },
+  },
+
+  {
+    // Clean drawbar organ: sine 8' + 4' (osc B up an octave) + sine sub as the
+    // 16' drawbar. Gated envelope, rotary-style vibrato + pan from LFO 1.
+    name: 'DRAWBAR ORGAN',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0, 'oscA.level': 0.7,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0, 'oscB.oct': 1, 'oscB.level': 0.5,
+      'sub.on': 1, 'sub.level': 0.6, 'sub.oct': -1,
+      'filter.on': 0,
+      'env1.a': 0.003, 'env1.d': 0.1, 'env1.s': 1, 'env1.r': 0.05,
+      'lfo1.rate': 6.5,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.004,
+      'mat2.src': 1, 'mat2.dst': 6, 'mat2.amt': 0.25,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.8, 'fx.chorus.mix': 0.4,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.35, 'fx.reverb.mix': 0.18,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 309, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // Overdriven rock organ: square stack through drive with a faster
+    // Leslie-style wobble panning the whole thing.
+    name: 'ROCK ORGAN',
+    params: {
+      'oscA.table': 2, 'oscA.pos': 0, 'oscA.unison': 2, 'oscA.detune': 0.08, 'oscA.level': 0.75,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0, 'oscB.oct': 1, 'oscB.level': 0.45,
+      'sub.on': 1, 'sub.level': 0.5, 'sub.oct': -1,
+      'filter.type': 1, 'filter.cutoff': 5000, 'filter.res': 0.1,
+      'env1.a': 0.002, 'env1.d': 0.1, 'env1.s': 1, 'env1.r': 0.06,
+      'lfo1.rate': 5.5,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.005,
+      'mat2.src': 1, 'mat2.dst': 6, 'mat2.amt': 0.35,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 1.2, 'fx.chorus.mix': 0.45,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -2.8, 'fx.eq.mid': 3.1, 'fx.eq.mfreq': 410, 'fx.eq.high': -0.3,
+    },
+  },
+
+  {
+    // Classic analog string machine: wide detuned saws, slow bow-in, heavy
+    // chorus. LFO 1 drifts the table position for ensemble motion.
+    name: 'ANALOG STRINGS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.62, 'oscA.unison': 7, 'oscA.detune': 0.3, 'oscA.spread': 1, 'oscA.level': 0.65,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': 1, 'oscB.unison': 3, 'oscB.detune': 0.22, 'oscB.spread': 0.8, 'oscB.level': 0.3,
+      'filter.type': 0, 'filter.cutoff': 2800, 'filter.res': 0.08, 'filter.key': 0.2,
+      'env1.a': 0.5, 'env1.d': 1, 'env1.s': 0.85, 'env1.r': 1.2,
+      'lfo1.rate': 0.25, 'lfo2.rate': 0.11,
+      'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.12,
+      'mat2.src': 2, 'mat2.dst': 6, 'mat2.amt': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.mix': 0.55,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.35,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 3.2, 'fx.eq.mid': 2.7, 'fx.eq.mfreq': 467, 'fx.eq.high': -5.9,
+    },
+  },
+
+  {
+    // Dark cinematic ensemble: BLOOM stack over a low saw, mod env slowly
+    // blooms the table open while the section swells in a big hall.
+    name: 'CINEMA STRINGS',
+    params: {
+      'oscA.table': 1, 'oscA.pos': 0.45, 'oscA.unison': 5, 'oscA.detune': 0.25, 'oscA.spread': 0.9, 'oscA.level': 0.68,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.6, 'oscB.oct': -1, 'oscB.level': 0.4,
+      'filter.type': 0, 'filter.cutoff': 1500, 'filter.res': 0.1, 'filter.env': 0.3, 'filter.key': 0.2,
+      'env1.a': 1.2, 'env1.d': 2, 'env1.s': 0.75, 'env1.r': 2.5,
+      'env2.a': 2.5, 'env2.d': 3, 'env2.s': 0.4, 'env2.r': 2,
+      'mat1.src': 3, 'mat1.dst': 1, 'mat1.amt': 0.3,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.85, 'fx.reverb.mix': 0.45,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -0.1, 'fx.eq.mid': 1, 'fx.eq.mfreq': 392, 'fx.eq.high': -0.9,
+    },
+  },
+
+  {
+    // Punchy brass section: tight detuned saws, the filter "blats" open on a
+    // slightly-lagged mod env, subtle vibrato, a touch of drive.
+    name: 'BRASS SECTION',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 3, 'oscA.detune': 0.15, 'oscA.spread': 0.5, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.fine': 8, 'oscB.level': 0.5,
+      'sub.on': 1, 'sub.level': 0.3,
+      'filter.type': 0, 'filter.cutoff': 900, 'filter.res': 0.15, 'filter.env': 0.7, 'filter.key': 0.3,
+      'env1.a': 0.03, 'env1.d': 0.3, 'env1.s': 0.85, 'env1.r': 0.2,
+      'env2.a': 0.06, 'env2.d': 0.35, 'env2.s': 0.55, 'env2.r': 0.2,
+      'lfo1.rate': 5,
+      'mat1.src': 4, 'mat1.dst': 3, 'mat1.amt': 0.3,
+      'mat2.src': 1, 'mat2.dst': 4, 'mat2.amt': 0.003,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.25, 'fx.drive.mix': 0.2,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.22,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 6, 'fx.eq.mid': 6, 'fx.eq.mfreq': 547, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // Soft 80s synth brass: wide saws over a low pulse, slower filter swell,
+    // chorused into a warm pad-adjacent brass bed.
+    name: 'SOFT BRASS',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 5, 'oscA.detune': 0.28, 'oscA.spread': 0.9, 'oscA.level': 0.7,
+      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.15, 'oscB.oct': -1, 'oscB.level': 0.45,
+      'filter.type': 0, 'filter.cutoff': 1200, 'filter.res': 0.1, 'filter.env': 0.5, 'filter.key': 0.25,
+      'env1.a': 0.12, 'env1.d': 0.6, 'env1.s': 0.8, 'env1.r': 0.8,
+      'env2.a': 0.15, 'env2.d': 0.8, 'env2.s': 0.4, 'env2.r': 0.6,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.45,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.3,
+    
+      'fx.eq.on': 1, 'fx.eq.low': 1.7, 'fx.eq.mid': 1.8, 'fx.eq.mfreq': 443, 'fx.eq.high': -3.5,
+    },
+  },
+
+  {
+    // Rounded nylon-string pluck: tri-saw body with an octave sine, velocity
+    // brightness and a mod-env flick of table position on the attack.
+    name: 'NYLON PLUCK',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.3, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.05, 'oscB.oct': 1, 'oscB.level': 0.25,
+      'filter.type': 0, 'filter.cutoff': 1800, 'filter.res': 0.12, 'filter.env': 0.5, 'filter.key': 0.6,
+      'env1.a': 0.001, 'env1.d': 0.7, 'env1.s': 0, 'env1.r': 0.35,
+      'env2.a': 0.001, 'env2.d': 0.25, 'env2.s': 0, 'env2.r': 0.2,
+      'mat1.src': 4, 'mat1.dst': 3, 'mat1.amt': 0.35,
+      'mat2.src': 3, 'mat2.dst': 1, 'mat2.amt': 0.25,
+      'fx.delay.on': 1, 'fx.delay.time': 0.32, 'fx.delay.fb': 0.28, 'fx.delay.mix': 0.18,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.45, 'fx.reverb.mix': 0.25,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -5, 'fx.eq.mid': -2.7, 'fx.eq.mfreq': 276, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // Kalimba-style thumb pluck: sparse CHIME partials with a short strike
+    // that flicks the table bright then settles, echoing gently.
+    name: 'KALIMBA PLUCK',
+    params: {
+      'oscA.table': 4, 'oscA.pos': 0.15, 'oscA.level': 0.85,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0, 'oscB.oct': 1, 'oscB.level': 0.2,
+      'filter.type': 0, 'filter.cutoff': 2600, 'filter.res': 0.1, 'filter.env': 0.4, 'filter.key': 0.7,
+      'env1.a': 0.001, 'env1.d': 0.45, 'env1.s': 0, 'env1.r': 0.4,
+      'env2.a': 0.001, 'env2.d': 0.12, 'env2.s': 0, 'env2.r': 0.1,
+      'mat1.src': 3, 'mat1.dst': 1, 'mat1.amt': 0.35,
+      'mat2.src': 4, 'mat2.dst': 3, 'mat2.amt': 0.3,
+      'fx.delay.on': 1, 'fx.delay.time': 0.28, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.22,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.28,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -6, 'fx.eq.mfreq': 277, 'fx.eq.high': 6,
+    },
+  },
+
+  {
+    // Concert harp: warm triangle-ish string with a faint chime sparkle, long
+    // natural decay into a wide hall — glissando-ready.
+    name: 'CELTIC HARP',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.22, 'oscA.unison': 2, 'oscA.detune': 0.06, 'oscA.spread': 0.4, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.08, 'oscB.oct': 1, 'oscB.level': 0.15,
+      'filter.type': 0, 'filter.cutoff': 2200, 'filter.res': 0.1, 'filter.env': 0.45, 'filter.key': 0.65,
+      'env1.a': 0.001, 'env1.d': 1.3, 'env1.s': 0, 'env1.r': 1.1,
+      'env2.a': 0.001, 'env2.d': 0.3, 'env2.s': 0, 'env2.r': 0.25,
+      'mat1.src': 4, 'mat1.dst': 3, 'mat1.amt': 0.35,
+      'mat2.src': 3, 'mat2.dst': 1, 'mat2.amt': 0.2,
+      'fx.delay.on': 1, 'fx.delay.time': 0.36, 'fx.delay.fb': 0.3, 'fx.delay.mix': 0.15,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.75, 'fx.reverb.mix': 0.38,
+    
+      'fx.eq.on': 1, 'fx.eq.low': -6, 'fx.eq.mid': -0.9, 'fx.eq.mfreq': 273, 'fx.eq.high': 6,
     },
   },
 ];
