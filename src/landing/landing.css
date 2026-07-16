@@ -250,7 +250,7 @@ code {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 0 var(--gutter) clamp(56px, 9vh, 110px);
+  padding: clamp(84px, 11vh, 130px) var(--gutter) clamp(56px, 9vh, 110px);
   overflow: hidden;
 }
 .hero-canvas {
@@ -276,6 +276,55 @@ code {
   max-width: var(--maxw);
   width: 100%;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: end;
+}
+
+/* Hero gallery: the three instrument racks fanned like prints on a wall,
+   each a live link into its device. */
+.hero-gallery {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.hg-card {
+  position: relative;
+  display: block;
+  width: min(32vw, 50vh, 440px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ac) 32%, var(--line-2));
+  background: var(--well);
+  box-shadow: 0 26px 60px -26px rgba(0, 0, 0, 0.95),
+    0 0 46px -20px color-mix(in srgb, var(--ac) 40%, transparent);
+  transition: transform 0.5s var(--ease), border-color 0.3s, box-shadow 0.5s var(--ease);
+}
+.hg-card img { width: 100%; height: auto; display: block; }
+.hg-card + .hg-card { margin-top: -6%; }
+.hg-card:nth-child(1) { transform: rotate(-2.2deg) translateX(-7%); z-index: 1; }
+.hg-card:nth-child(2) { transform: rotate(1.7deg) translateX(3%); z-index: 2; }
+.hg-card:nth-child(3) { transform: rotate(-1.3deg) translateX(-2%); z-index: 3; }
+.hg-card:hover {
+  transform: rotate(0deg) translateY(-6px) scale(1.04);
+  border-color: var(--ac);
+  box-shadow: 0 34px 80px -30px rgba(0, 0, 0, 0.95),
+    0 0 60px -14px color-mix(in srgb, var(--ac) 60%, transparent);
+  z-index: 6;
+}
+.hg-tag {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--ac);
+  background: rgba(6, 7, 11, 0.74);
+  border: 1px solid color-mix(in srgb, var(--ac) 40%, transparent);
+  backdrop-filter: blur(6px);
 }
 .hero .kicker {
   color: var(--cyan);
@@ -339,6 +388,17 @@ code {
   30% { opacity: 1; }
   70% { opacity: 1; transform: translateY(11px); }
   100% { opacity: 0; transform: translateY(14px); }
+}
+
+/* Short desktop viewports (13" laptops): tighten the hero so the start
+   button stays above the fold. */
+@media (max-height: 840px) and (min-width: 981px) {
+  .hero { padding-top: 72px; }
+  .hero .kicker { margin-bottom: 14px; }
+  .hero-title { font-size: clamp(48px, 13.5vh, 112px); margin-bottom: 20px; }
+  .hero-lede { font-size: 16px; margin-bottom: 26px; }
+  .cta-row { margin-bottom: 18px; }
+  .hg-card { width: min(30vw, 44vh, 400px); }
 }
 
 /* ---------- section scaffold ---------- */
@@ -721,6 +781,16 @@ figcaption {
 
 /* ---------- responsive ---------- */
 
+@media (max-width: 980px) {
+  .hero-inner { grid-template-columns: 1fr; align-items: start; }
+  .hero-gallery { flex-direction: row; gap: 12px; align-items: stretch; margin-top: 6px; }
+  .hg-card { width: auto; flex: 1; min-width: 0; }
+  .hg-card + .hg-card { margin-top: 0; }
+  .hg-card:nth-child(1), .hg-card:nth-child(2), .hg-card:nth-child(3) { transform: none; }
+  .hg-card:hover { transform: translateY(-4px); }
+  .hg-tag { right: 7px; top: 7px; padding: 3px 7px; letter-spacing: 0.12em; font-size: 9px; }
+}
+
 @media (max-width: 880px) {
   .nav-links > a:not(.btn) { display: none; }
   .surfaces, .precision, .drum-grid { grid-template-columns: 1fr; }
@@ -742,6 +812,8 @@ figcaption {
   .formats-grid .format-card, .formats-grid .format-feature { grid-column: auto; }
   .cta-row { flex-direction: column; align-items: stretch; }
   .cta-row .btn, .cta-row .btn-start { justify-content: center; }
+  .hero-gallery { flex-direction: column; gap: 14px; }
+  .hg-tag { font-size: 10px; letter-spacing: 0.2em; padding: 4px 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
