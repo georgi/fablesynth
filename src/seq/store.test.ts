@@ -88,7 +88,7 @@ describe('power-on', () => {
 
 describe('quantized launching', () => {
   it('launch schedules the clip at the next bar boundary and queues in the UI', () => {
-    st().toggleTransport();
+    st().launch(1, 2); // start the transport on bass, leaving drums idle
     rig.frame = st().anchor + 10; // just past beat zero
     st().launch(0, 2); // DROP A drums
     const d = rig.dev(0);
@@ -374,6 +374,14 @@ describe('transport', () => {
     expect(st().bar).toBe(1);
     expect(st().queue[0]).toBe(STOP);
     expect(rig.dev(0).stops[rig.dev(0).stops.length - 1]).toBe(0);
+  });
+
+  it('play from a standstill with nothing active launches the first scene', () => {
+    st().toggleTransport();
+    expect(st().playing).toBe(true);
+    // Scene 0 fires on the downbeat instead of running an empty transport.
+    expect(rig.dev(0).clips[0].atFrame).toBe(st().anchor);
+    expect(st().queue[0]).toBe(0);
   });
 
   it('ignores a clip-start ack that arrives after transport stop', () => {
