@@ -52,6 +52,7 @@ export interface SeqStore {
   togglePassThrough: (s: number, t: number) => void;
   updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
   createClip: (s: number, t: number) => void;
+  deleteClip: (s: number, t: number) => void;
   loadLibraryClip: (s: number, t: number, entry: RuntimeClipLibraryEntry, semitones?: number) => boolean;
   setTrackPatch: (t: number, patch: PatchDoc) => void;
   loadTrackFactoryPatch: (t: number, index: number) => void;
@@ -328,6 +329,23 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       });
       set({ session: { ...st.session, scenes } });
       clipBytes.set(`${s}:${t}`, bytes);
+      persist();
+    },
+
+    deleteClip: (s, t) => {
+      const st = get();
+      if (!st.session.scenes[s]?.clips[t]) return;
+      // Stop cleanly first so no orphaned playback rides on after the clip is
+      // gone — the boundary stop schedules through the normal launcher path.
+      if (st.owner[t] === s || st.queue[t] === s) st.stopTrack(t);
+      const scenes = st.session.scenes.map((sc, i) => {
+        if (i !== s) return sc;
+        const clips = sc.clips.slice();
+        clips[t] = null;
+        return { ...sc, clips };
+      });
+      set({ session: { ...st.session, scenes } });
+      clipBytes.delete(`${s}:${t}`);
       persist();
     },
 

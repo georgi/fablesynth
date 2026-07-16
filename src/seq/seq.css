@@ -479,6 +479,30 @@
 .sq-cell:hover .sq-cell-editbtn { opacity: 1; }
 .sq-cell:focus-within .sq-cell-editbtn, .sq-cell-editbtn:focus-visible { opacity: 1; }
 
+.sq-cell-delbtn {
+  position: absolute; top: 6px; right: 30px;
+  width: 20px; height: 20px; line-height: 20px; text-align: center;
+  border-radius: 5px; background: #0d1119cc;
+  color: color-mix(in srgb, var(--ac-b) 85%, #fff);
+  opacity: 0; transition: opacity 0.12s, background 0.12s; font-size: 10px;
+  cursor: pointer;
+}
+.sq-cell-delbtn:hover { background: color-mix(in srgb, var(--ac-b) 40%, #0d1119); }
+.sq-cell:hover .sq-cell-delbtn { opacity: 1; }
+.sq-cell:focus-within .sq-cell-delbtn, .sq-cell-delbtn:focus-visible { opacity: 1; }
+
+.sq-cell-addbtn {
+  position: absolute; top: 6px; right: 6px;
+  width: 20px; height: 20px; line-height: 20px; text-align: center;
+  border-radius: 5px; background: #0d1119cc;
+  color: color-mix(in srgb, var(--tc) 80%, #fff);
+  opacity: 0; transition: opacity 0.12s, background 0.12s; font-size: 12px;
+  cursor: pointer; min-height: 0;
+}
+.sq-cell-addbtn:hover { background: color-mix(in srgb, var(--tc) 35%, #0d1119); }
+.sq-cell:hover .sq-cell-addbtn { opacity: 1; }
+.sq-cell:focus-within .sq-cell-addbtn, .sq-cell-addbtn:focus-visible { opacity: 1; }
+
 /* ============ now-playing footer ============ */
 .sq-foot-master {
   border: 1px solid var(--line);

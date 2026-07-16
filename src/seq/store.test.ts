@@ -322,6 +322,31 @@ describe('clip editing', () => {
     expect(st().session.scenes[empty].clips[1]).toBe(again);
   });
 
+  it('deleteClip clears the cell, drops the cache and only touches a filled slot', () => {
+    expect(st().session.scenes[0].clips[0]).not.toBeNull();
+    st().deleteClip(0, 0);
+    expect(st().session.scenes[0].clips[0]).toBeNull();
+    expect(clipPattern(st().session, 0, 0)).toBeNull();
+    const session = st().session;
+    st().deleteClip(0, 0); // already empty → no-op
+    expect(st().session).toBe(session);
+  });
+
+  it('deleteClip stops a live clip before removing it', () => {
+    st().launch(0, 0);
+    rig.dev(0).onClipStart!(0); // owner[0] = 0
+    st().deleteClip(0, 0);
+    expect(rig.dev(0).stops).toHaveLength(1);
+    expect(st().queue[0]).toBe(STOP);
+    expect(st().session.scenes[0].clips[0]).toBeNull();
+  });
+
+  it('deleteClip stops a queued-but-not-live clip too', () => {
+    st().launch(0, 0); // queued, no ack
+    st().deleteClip(0, 0);
+    expect(rig.dev(0).stops).toHaveLength(1);
+  });
+
   it('setTrackPatch swaps the patch doc in place', () => {
     st().setTrackPatch(0, { kind: 'inline', data: { params: { x: 1 } } });
     expect(st().session.tracks[0].patch).toEqual({ kind: 'inline', data: { params: { x: 1 } } });

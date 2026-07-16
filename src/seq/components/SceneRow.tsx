@@ -26,7 +26,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
   // clip keep playing across the scene change.
   if (!clip) {
     const pass = !!session.scenes[s]?.pass?.includes(t);
-    const { togglePassThrough } = useSeqStore.getState();
+    const { togglePassThrough, createClip } = useSeqStore.getState();
     return (
       <button
         className={`sq-cell sq-cell-empty${pass ? ' pass' : ''}`}
@@ -38,6 +38,22 @@ function ClipCell({ s, t }: { s: number; t: number }) {
           : 'Stop button — stops this track on scene launch · right-click for pass-through'}
       >
         <span>{pass ? '≈' : '■'}</span>
+        <span
+          className="sq-cell-addbtn"
+          role="button"
+          tabIndex={0}
+          title="Add a new clip here"
+          onClick={(e) => { e.stopPropagation(); createClip(s, t); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (e.key === ' ') e.preventDefault();
+              e.stopPropagation();
+              createClip(s, t);
+            }
+          }}
+        >
+          ＋
+        </span>
       </button>
     );
   }
@@ -99,6 +115,22 @@ function ClipCell({ s, t }: { s: number; t: number }) {
         }}
       >
         ✎
+      </span>
+      <span
+        className="sq-cell-delbtn"
+        role="button"
+        tabIndex={0}
+        title="Delete clip"
+        onClick={(e) => { e.stopPropagation(); useSeqStore.getState().deleteClip(s, t); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (e.key === ' ') e.preventDefault();
+            e.stopPropagation();
+            useSeqStore.getState().deleteClip(s, t);
+          }
+        }}
+      >
+        🗑
       </span>
       {queuedPlay && <div className="sq-cell-queued" aria-hidden="true" />}
       {queuedStop && <div className="sq-cell-stopping" aria-hidden="true"><span>■ STOP</span></div>}
