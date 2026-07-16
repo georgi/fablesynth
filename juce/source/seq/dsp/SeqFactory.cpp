@@ -581,14 +581,25 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
                 }
                 if (track == 2) { // WT-1 lead (at drum target)
                     switch (program) {
-                        case 3: return 0.77f; case 6: return 0.50f;
-                        case 14: return 0.99f; case 15: return 0.66f;
-                        case 19: return 0.60f; default: return 0.65f;
+                        case 3: return 0.63f; case 6: return 0.47f;
+                        case 20: return 0.67f; case 21: return 0.52f;
+                        case 22: return 0.57f; case 28: return 0.80f;
+                        case 29: return 0.91f; case 30: return 0.70f;
+                        case 31: return 0.96f; case 33: return 0.48f;
+                        case 36: return 0.71f; case 39: return 0.95f;
+                        case 43: return 0.48f; case 44: return 0.49f;
+                        case 45: return 0.84f; case 47: return 0.82f;
+                        case 49: return 0.51f; case 50: return 0.72f;
+                        default: return 0.65f;
                     }
                 }
                 switch (program) { // WT-1 pad (+2 dB role offset)
-                    case 1: return 0.60f; case 11: return 0.54f;
-                    case 17: return 0.64f; default: return 0.59f;
+                    case 1: return 0.61f; case 11: return 0.50f;
+                    case 17: return 0.78f; case 25: return 0.58f;
+                    case 27: return 0.60f; case 32: return 1.00f;
+                    case 34: return 0.57f; case 35: return 0.56f;
+                    case 38: return 0.79f; case 40: return 0.56f;
+                    case 42: return 0.77f; default: return 0.59f;
                 }
             };
             for (size_t t = 0; t < programs.size(); ++t) {
@@ -627,39 +638,39 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
         auto library = std::vector<SessionPreset> {
             // NEON / SYNTHWAVE
             make("NEON TALE",    "NEON", "ORIGINAL", 3, { "bright", "balanced", "wide" }, { 0, 0, 3, 11 }, 0),
-            make("NEON CHASE",   "NEON", "CHASE",    5, { "bright", "driving", "wide" }, { 13, 2, 14, 11 }, 1),
-            make("GLASS CIRCUIT", "NEON", "GLASS",   2, { "clean", "glassy", "sparse" }, { 12, 5, 6, 1 }, 2),
-            make("AFTERGLOW",    "NEON", "SOFT",     2, { "warm", "soft", "wide" }, { 3, 7, 19, 17 }, 3),
+            make("NEON CHASE",   "NEON", "CHASE",    5, { "bright", "driving", "wide" }, { 13, 2, 50, 42 }, 1),
+            make("GLASS CIRCUIT", "NEON", "GLASS",   2, { "clean", "glassy", "sparse" }, { 12, 5, 31, 35 }, 2),
+            make("AFTERGLOW",    "NEON", "SOFT",     2, { "warm", "soft", "wide" }, { 3, 7, 20, 27 }, 3),
 
             // ACID / WAREHOUSE
-            make("WAREHOUSE RAW", "ACID", "RAW",     5, { "hard", "dark", "driving" }, { 13, 4, 14, 11 }, 0),
-            make("ACID FLASH",    "ACID", "FLASH",   4, { "acid", "bright", "punchy" }, { 3, 0, 3, 1 }, 1),
-            make("STEEL PULSE",   "ACID", "METAL",   4, { "metallic", "tight", "industrial" }, { 12, 2, 19, 17 }, 2),
-            make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 6, 11 }, 3),
+            make("WAREHOUSE RAW", "ACID", "RAW",     5, { "hard", "dark", "driving" }, { 13, 4, 33, 40 }, 0),
+            make("ACID FLASH",    "ACID", "FLASH",   4, { "acid", "bright", "punchy" }, { 3, 0, 49, 1 }, 1),
+            make("STEEL PULSE",   "ACID", "METAL",   4, { "metallic", "tight", "industrial" }, { 12, 2, 47, 17 }, 2),
+            make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 43, 40 }, 3),
 
             // AMBIENT / DEEP
-            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 12, 7, 6, 17 }, 0),
-            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 13, 0, 19, 1 }, 1),
-            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 12, 5, 6, 17 }, 2),
-            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 3, 7, 15, 1 }, 3),
+            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 12, 7, 45, 34 }, 0),
+            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 13, 0, 21, 25 }, 1),
+            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 12, 5, 6, 32 }, 2),
+            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 3, 7, 30, 27 }, 3),
 
             // HOUSE / CLUB
-            make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 12, 4, 14, 11 }, 0),
-            make("MIDNIGHT FLOOR", "HOUSE", "NIGHT",  4, { "club", "round", "wide" }, { 13, 0, 3, 1 }, 1),
-            make("TAPE DISCO",    "HOUSE", "TAPE",    3, { "tape", "soft", "groovy" }, { 3, 7, 15, 17 }, 2),
-            make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 12, 5, 19, 1 }, 3),
+            make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 12, 4, 36, 42 }, 0),
+            make("MIDNIGHT FLOOR", "HOUSE", "NIGHT",  4, { "club", "round", "wide" }, { 13, 0, 21, 40 }, 1),
+            make("TAPE DISCO",    "HOUSE", "TAPE",    3, { "tape", "soft", "groovy" }, { 3, 7, 28, 27 }, 2),
+            make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 12, 5, 22, 42 }, 3),
 
             // LO-FI / RETRO
-            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 7, 15, 17 }, 0),
-            make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 12, 5, 3, 1 }, 1),
-            make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 13, 2, 15, 17 }, 2),
-            make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 3, 0, 19, 1 }, 3),
+            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 7, 36, 34 }, 0),
+            make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 12, 5, 20, 27 }, 1),
+            make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 13, 2, 29, 42 }, 2),
+            make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 3, 0, 33, 17 }, 3),
 
             // CINEMATIC / EXPERIMENTAL
-            make("CHROME CATHEDRAL", "CINEMATIC", "CATHEDRAL", 3, { "large", "metallic", "ceremonial" }, { 13, 7, 6, 17 }, 0),
-            make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 12, 5, 19, 11 }, 1),
-            make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 4, 6, 17 }, 2),
-            make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 19, 11 }, 3),
+            make("CHROME CATHEDRAL", "CINEMATIC", "CATHEDRAL", 3, { "large", "metallic", "ceremonial" }, { 13, 7, 39, 25 }, 0),
+            make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 12, 5, 47, 38 }, 1),
+            make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 4, 44, 25 }, 2),
+            make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 43, 38 }, 3),
         };
         // Preserve the hand-authored cross-platform factory session exactly.
         library.front().session = factorySession();

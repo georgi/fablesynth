@@ -21,7 +21,7 @@ describe('SQ-4 factory session patch contract', () => {
     ]);
     expect(FACTORY_SESSION_PRESETS[1].session.tracks.map((track) => track.patch)).toEqual([
       { kind: 'factory', index: 13 }, { kind: 'factory', index: 2 },
-      { kind: 'factory', index: 14 }, { kind: 'factory', index: 11 },
+      { kind: 'factory', index: 50 }, { kind: 'factory', index: 42 },
     ]);
   });
 
