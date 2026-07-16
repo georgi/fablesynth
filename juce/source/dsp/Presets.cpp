@@ -33,7 +33,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"CRYSTAL PLUCK", {
-            {"oscA.table", 4}, {"oscA.pos", 0.72f}, {"oscA.level", 0.8f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f},
+            {"oscA.table", 4}, {"oscA.pos", 0.72f}, {"oscA.oct", 1}, {"oscA.level", 0.8f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f},
             {"filter.type", 0}, {"filter.cutoff", 3200}, {"filter.res", 0.2f}, {"filter.env", 0.6f}, {"filter.key", 0.6f},
             {"env1.a", 0.001f}, {"env1.d", 0.5f}, {"env1.s", 0}, {"env1.r", 0.6f},
             {"env2.a", 0.001f}, {"env2.d", 0.32f}, {"env2.s", 0}, {"env2.r", 0.3f},
@@ -65,8 +65,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"CATHEDRAL BELL", {
-            {"oscA.table", 4}, {"oscA.pos", 1}, {"oscA.level", 0.75f},
-            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.5f}, {"oscB.oct", 1}, {"oscB.fine", 9}, {"oscB.level", 0.3f},
+            {"oscA.table", 4}, {"oscA.pos", 1}, {"oscA.oct", 1}, {"oscA.level", 0.75f},
+            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.5f}, {"oscB.oct", 2}, {"oscB.fine", 9}, {"oscB.level", 0.3f},
             {"filter.type", 0}, {"filter.cutoff", 9000}, {"filter.res", 0.05f}, {"filter.key", 0.5f},
             {"env1.a", 0.001f}, {"env1.d", 2.8f}, {"env1.s", 0.12f}, {"env1.r", 3.5f},
             {"env2.a", 0.001f}, {"env2.d", 1.8f}, {"env2.s", 0}, {"env2.r", 1.5f},
@@ -163,8 +163,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"HOUSE PLUCK", {
-            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 3}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.78f},
-            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.semi", 12}, {"oscB.level", 0.3f},
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.oct", 1}, {"oscA.unison", 3}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.78f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.oct", 1}, {"oscB.semi", 12}, {"oscB.level", 0.3f},
             {"filter.type", 1}, {"filter.cutoff", 2200}, {"filter.res", 0.2f}, {"filter.env", 0.55f}, {"filter.key", 0.5f},
             {"env1.a", 0.003f}, {"env1.d", 0.28f}, {"env1.s", 0}, {"env1.r", 0.2f},
             {"env2.a", 0.003f}, {"env2.d", 0.18f}, {"env2.s", 0}, {"env2.r", 0.15f},
@@ -174,8 +174,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"TRAP BELL", {
-            {"oscA.table", 4}, {"oscA.pos", 0.85f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.8f},
-            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.6f}, {"oscB.semi", 12}, {"oscB.fine", 4}, {"oscB.level", 0.32f},
+            {"oscA.table", 4}, {"oscA.pos", 0.85f}, {"oscA.oct", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.8f},
+            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.6f}, {"oscB.oct", 1}, {"oscB.semi", 12}, {"oscB.fine", 4}, {"oscB.level", 0.32f},
             {"filter.type", 0}, {"filter.cutoff", 7000}, {"filter.res", 0.1f}, {"filter.key", 0.5f},
             {"env1.a", 0.001f}, {"env1.d", 0.9f}, {"env1.s", 0.1f}, {"env1.r", 0.8f},
             {"env2.a", 0.001f}, {"env2.d", 0.4f}, {"env2.s", 0}, {"env2.r", 0.4f},
@@ -221,8 +221,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"GLIDE LEAD", {
-            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.82f},
-            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.4f}, {"oscB.semi", -12}, {"oscB.level", 0.4f},
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.oct", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.82f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.4f}, {"oscB.oct", 1}, {"oscB.semi", -12}, {"oscB.level", 0.4f},
             {"filter.type", 1}, {"filter.cutoff", 1600}, {"filter.res", 0.4f}, {"filter.env", 0.5f}, {"filter.key", 0.4f},
             {"env1.a", 0.005f}, {"env1.d", 0.5f}, {"env1.s", 0.6f}, {"env1.r", 0.25f},
             {"env2.a", 0.005f}, {"env2.d", 0.3f}, {"env2.s", 0.2f}, {"env2.r", 0.2f},

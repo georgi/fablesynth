@@ -60,7 +60,7 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'CRYSTAL PLUCK',
     params: {
-      'oscA.table': 4, 'oscA.pos': 0.72, 'oscA.level': 0.8, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.spread': 0.5,
+      'oscA.table': 4, 'oscA.pos': 0.72, 'oscA.oct': 1, 'oscA.level': 0.8, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.spread': 0.5,
       'filter.type': 0, 'filter.cutoff': 3200, 'filter.res': 0.2, 'filter.env': 0.6, 'filter.key': 0.6,
       'env1.a': 0.001, 'env1.d': 0.5, 'env1.s': 0, 'env1.r': 0.6,
       'env2.a': 0.001, 'env2.d': 0.32, 'env2.s': 0, 'env2.r': 0.3,
@@ -101,8 +101,8 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'CATHEDRAL BELL',
     params: {
-      'oscA.table': 4, 'oscA.pos': 1, 'oscA.level': 0.75,
-      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.5, 'oscB.oct': 1, 'oscB.fine': 9, 'oscB.level': 0.3,
+      'oscA.table': 4, 'oscA.pos': 1, 'oscA.oct': 1, 'oscA.level': 0.75,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.5, 'oscB.oct': 2, 'oscB.fine': 9, 'oscB.level': 0.3,
       'filter.type': 0, 'filter.cutoff': 9000, 'filter.res': 0.05, 'filter.key': 0.5,
       'env1.a': 0.001, 'env1.d': 2.8, 'env1.s': 0.12, 'env1.r': 3.5,
       'env2.a': 0.001, 'env2.d': 1.8, 'env2.s': 0, 'env2.r': 1.5,
@@ -232,8 +232,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Progressive-house pluck: snappy saw, key-tracked filter, ping-pong delay.
     name: 'HOUSE PLUCK',
     params: {
-      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 3, 'oscA.detune': 0.18, 'oscA.spread': 0.6, 'oscA.level': 0.78,
-      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.3, 'oscB.semi': 12, 'oscB.level': 0.3,
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.oct': 1, 'oscA.unison': 3, 'oscA.detune': 0.18, 'oscA.spread': 0.6, 'oscA.level': 0.78,
+      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.3, 'oscB.oct': 1, 'oscB.semi': 12, 'oscB.level': 0.3,
       'filter.type': 1, 'filter.cutoff': 2200, 'filter.res': 0.2, 'filter.env': 0.55, 'filter.key': 0.5,
       'env1.a': 0.003, 'env1.d': 0.28, 'env1.s': 0, 'env1.r': 0.2,
       'env2.a': 0.003, 'env2.d': 0.18, 'env2.s': 0, 'env2.r': 0.15,
@@ -247,8 +247,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Bright trap bell melody: detuned chimes an octave apart, long tail, echo.
     name: 'TRAP BELL',
     params: {
-      'oscA.table': 4, 'oscA.pos': 0.85, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.5, 'oscA.level': 0.8,
-      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.6, 'oscB.semi': 12, 'oscB.fine': 4, 'oscB.level': 0.32,
+      'oscA.table': 4, 'oscA.pos': 0.85, 'oscA.oct': 1, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.5, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.6, 'oscB.oct': 1, 'oscB.semi': 12, 'oscB.fine': 4, 'oscB.level': 0.32,
       'filter.type': 0, 'filter.cutoff': 7000, 'filter.res': 0.1, 'filter.key': 0.5,
       'env1.a': 0.001, 'env1.d': 0.9, 'env1.s': 0.1, 'env1.r': 0.8,
       'env2.a': 0.001, 'env2.d': 0.4, 'env2.s': 0, 'env2.r': 0.4,
@@ -310,8 +310,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Portamento mono-style lead: glide between notes, squelchy resonant filter.
     name: 'GLIDE LEAD',
     params: {
-      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.4, 'oscA.level': 0.82,
-      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.4, 'oscB.semi': -12, 'oscB.level': 0.4,
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.oct': 1, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.4, 'oscA.level': 0.82,
+      'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.4, 'oscB.oct': 1, 'oscB.semi': -12, 'oscB.level': 0.4,
       'filter.type': 1, 'filter.cutoff': 1600, 'filter.res': 0.4, 'filter.env': 0.5, 'filter.key': 0.4,
       'env1.a': 0.005, 'env1.d': 0.5, 'env1.s': 0.6, 'env1.r': 0.25,
       'env2.a': 0.005, 'env2.d': 0.3, 'env2.s': 0.2, 'env2.r': 0.2,
