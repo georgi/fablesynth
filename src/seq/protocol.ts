@@ -10,14 +10,18 @@ export type MachineId = 'DR1' | 'BL1' | 'WT1';
 
 export const STEPS_PER_BAR = 16;
 export const DR1_PADS = 16;
-export const NOTE_STRIDE = 3; // BL1/WT1: flags, note, oct+1 per step
+export const NOTE_STRIDE = 3; // flags, note, oct+1 per voice-step
+/** Maximum simultaneous notes in a WT-1 SQ-4 step (matches the 8-voice engine). */
+export const WT_POLY_LANES = 8;
 export const MAX_BARS = 16;
 
 // Clip payload layouts (must match each worklet's clipRead):
 //   DR1: byte per pad-step, bar-major:  ((bar*16 + pad) * 16) + step
-//   BL1/WT1: 3 bytes per step, bar-major: ((bar*16 + step) * 3)
+//   BL1: 3 bytes per step, bar-major
+//   WT1: 8 poly lanes per step, step-major then lane-major
 export const bytesPerBar = (m: MachineId): number =>
-  m === 'DR1' ? DR1_PADS * STEPS_PER_BAR : STEPS_PER_BAR * NOTE_STRIDE;
+  m === 'DR1' ? DR1_PADS * STEPS_PER_BAR
+    : STEPS_PER_BAR * NOTE_STRIDE * (m === 'WT1' ? WT_POLY_LANES : 1);
 
 export const dr1Idx = (bar: number, pad: number, step: number): number =>
   (bar * DR1_PADS + pad) * STEPS_PER_BAR + step;
@@ -25,14 +29,17 @@ export const dr1Idx = (bar: number, pad: number, step: number): number =>
 export const noteIdx = (bar: number, step: number): number =>
   (bar * STEPS_PER_BAR + step) * NOTE_STRIDE;
 
+export const wtNoteIdx = (bar: number, step: number, lane = 0): number =>
+  ((bar * STEPS_PER_BAR + step) * WT_POLY_LANES + lane) * NOTE_STRIDE;
+
 /** Hosted editor edits at most this many bars (= device NPATTERNS). */
 export const HOSTED_MAX_BARS = 4;
 
-/** A silent clip payload; note machines get the neutral oct byte (=1). */
+/** A silent clip payload; note machines get neutral octave and one-step duration. */
 export function emptyClipBytes(machine: MachineId, bars: number): Uint8Array {
   const out = new Uint8Array(bars * bytesPerBar(machine));
   if (machine !== 'DR1') {
-    for (let i = 2; i < out.length; i += NOTE_STRIDE) out[i] = 1;
+    for (let i = 0; i < out.length; i += NOTE_STRIDE) { out[i] = 1 << 2; out[i + 2] = 1; }
   }
   return out;
 }

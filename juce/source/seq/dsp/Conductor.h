@@ -23,6 +23,7 @@
 
 #include "SeqModel.h"
 #include "SeqProtocol.h"
+#include "ClipLibrary.h"
 #include <unordered_map>
 #include <vector>
 
@@ -44,7 +45,9 @@ class Conductor {
 public:
     Conductor(SessionData session, ConductorIO& io, double sampleRate);
 
-    void powerOn();                       // anchor = now()+256, tempo out, gains out
+    void powerOn();                       // initialise tempo/gains; transport stays stopped
+    void startTransport();                // re-anchor at now()+256 and roll the clock
+    void stopTransport();                 // immediate stop for every owned/queued track
 
     // UI actions (message thread only):
     void launch(int t, int s);
@@ -55,6 +58,14 @@ public:
     void togglePassThrough(int s, int t);
     void updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int bars);
     void createClip(int s, int t);
+    // Replace or create exactly one scene cell from a compatible library
+    // entry. A live/pending target is updated in place (phase preserved).
+    // Note clips are transposed and octave-folded into the packed format's
+    // -12..+23 range.
+    // Returns false without changing the session when validation,
+    // compatibility, bounds, or transposition fails.
+    bool loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
+                         int transposeSemitones = 0);
     void setTrackPatch(int t, PatchRef patch);
     void toggleSceneMute(int s);
     void toggleTrackMute(int t);
@@ -86,6 +97,7 @@ public:
     Quant quant() const { return quant_; }
     double swing() const { return swing_; }
     float trackVol(int t) const;
+    bool playing() const { return playing_; }
     double anchor() const { return anchor_; }
     SqSongPos songPos() const;   // derived from io.now()
 
@@ -101,6 +113,7 @@ private:
     Quant quant_;
     std::vector<float> trackVol_;
     double swing_ = 0, anchor_ = 0;
+    bool playing_ = false;
     ConductorIO& io_;
     double sr_;
 };

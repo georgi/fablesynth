@@ -2,7 +2,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "Theme.h"
-#include "../PluginProcessor.h"
+#include "ParameterSource.h"
+#include "DeviceUiModel.h"
 
 // Visualization views — ports of the canvas displays in src/components/displays:
 //   EnvView.tsx, LFOView.tsx, FilterView.tsx, ScopeView.tsx, SpectrumView.tsx
@@ -12,11 +13,12 @@ namespace fui {
 class EnvView : public juce::Component, private juce::Timer {
 public:
     EnvView(juce::AudioProcessorValueTreeState&, const juce::String& base, juce::Colour accent);
+    EnvView(ParameterSource, const juce::String& base, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
     float p(const char* sfx) const;
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::String base;
     juce::Colour accent;
     float last[4] = {-1, -1, -1, -1};
@@ -30,12 +32,16 @@ public:
             const juce::String& rateId, const juce::String& syncId,
             const juce::String& syncRateId, juce::Colour accent,
             std::function<HostTransport()> transportProvider);
+    LfoView(ParameterSource, const juce::String& shapeId,
+            const juce::String& rateId, const juce::String& syncId,
+            const juce::String& syncRateId, juce::Colour accent,
+            std::function<HostTransport()> transportProvider);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override { repaint(); }
     float currentRate(const HostTransport&) const;   // effective Hz (free or synced)
     bool  synced() const;
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::String shapeId, rateId, syncId, syncRateId;
     juce::Colour accent;
     std::function<HostTransport()> transport;
@@ -46,10 +52,11 @@ private:
 class FilterView : public juce::Component, private juce::Timer {
 public:
     FilterView(juce::AudioProcessorValueTreeState&, juce::Colour accent);
+    FilterView(ParameterSource, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::Colour accent;
     float sig = -1;
 };
@@ -57,11 +64,11 @@ private:
 // Oscilloscope (post-FX time domain).
 class ScopeView : public juce::Component, private juce::Timer {
 public:
-    ScopeView(FableAudioProcessor&, juce::Colour accent);
+    ScopeView(std::function<void(float*, int)> reader, juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override; // repaints only while audio is present
-    FableAudioProcessor& proc;
+    std::function<void(float*, int)> readScope;
     juce::Colour accent;
     bool wasActive_ = true;
 };
@@ -69,11 +76,14 @@ private:
 // Spectrum analyser (post-FX, FFT with smoothing).
 class SpectrumView : public juce::Component, private juce::Timer {
 public:
-    SpectrumView(FableAudioProcessor&, juce::Colour accent);
+    SpectrumView(std::function<void(float*, int)> reader,
+                 std::function<double()> sampleRateProvider,
+                 juce::Colour accent);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override; // repaints while audio present or bars still falling
-    FableAudioProcessor& proc;
+    std::function<void(float*, int)> readScope;
+    std::function<double()> sampleRate;
     juce::Colour accent;
     static constexpr int kOrder = 11, kFFT = 1 << kOrder; // 2048
     juce::dsp::FFT fft{kOrder};

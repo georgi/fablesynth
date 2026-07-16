@@ -1,6 +1,5 @@
-// Transcription of src/drum/kits.ts:18-113. ROOM ONE and BITCRUSH derive from
-// trVoidParams() exactly like the web (same rounding/clamps), so the three
-// kits stay lockstep with the reference by construction.
+// Transcription of src/drum/kits.ts. Derived kits share the same base helpers
+// and rounding/clamps as the web so the factory program banks stay in lockstep.
 #include "DrumKits.h"
 
 #include <algorithm>
@@ -68,9 +67,9 @@ Overrides trVoidParams() {
     set(p, "fx.reverb.mix", 0.16f);
     // [oscA.table, oscA.tune, penv.amt, aenv.dec] per pad
     static const float kSounds[DR_NPADS][4] = {
-        { 0, -14, 22, 0.30f }, { 0,  -7, 16, 0.24f }, { 1,  0,  5, 0.18f }, { 1,   7,  2, 0.14f },
+        { 0, -26, 22, 0.30f }, { 0, -19, 16, 0.24f }, { 1, -12,  5, 0.18f }, { 1,   7,  2, 0.14f },
         { 2,  24,  0, 0.08f }, { 2,  18,  0, 0.04f }, { 2, 12,  0, 0.30f }, { 2,   5,  0, 1.40f },
-        { 0, -12, 12, 0.42f }, { 0,  -5, 10, 0.36f }, { 0,  2,  8, 0.30f }, { 2,   0,  0, 1.80f },
+        { 0, -19, 12, 0.28f }, { 0, -12, 10, 0.24f }, { 0, -5,  8, 0.20f }, { 2,   0,  0, 1.80f },
         { 1,  12, -5, 0.16f }, { 2,  19,  0, 0.20f }, { 7, -5,  0, 0.48f }, { 3, -12,  9, 0.22f },
     };
     for (int i = 0; i < DR_NPADS; i++) {
@@ -83,6 +82,21 @@ Overrides trVoidParams() {
     set(p, padPid(2, "noise.level"), 0.5f);
     set(p, padPid(2, "noise.color"), 0.3f);
     set(p, padPid(3, "noise.level"), 0.35f);
+    // Metallic pads: unrelated fixed-Hz carriers prevent their sidebands from
+    // collapsing back onto the oscillator's harmonic series.
+    set(p, padPid(5, "ring.freq"), 6389); set(p, padPid(5, "ring.mix"), 0.18f);
+    set(p, padPid(6, "ring.freq"), 5197); set(p, padPid(6, "ring.mix"), 0.28f);
+    set(p, padPid(7, "ring.freq"), 1667); set(p, padPid(7, "ring.mix"), 0.46f);
+    set(p, padPid(11, "ring.freq"), 2741); set(p, padPid(11, "ring.mix"), 0.62f);
+    set(p, padPid(12, "oscA.table"), 8); set(p, padPid(12, "oscA.tune"), -5);
+    set(p, padPid(12, "ring.freq"), 731); set(p, padPid(12, "ring.mix"), 0.78f);
+    set(p, padPid(12, "aenv.dec"), 0.16f); set(p, padPid(12, "aenv.curve"), 0.22f);
+    set(p, padPid(13, "oscA.table"), 3); set(p, padPid(13, "oscA.pos"), 0.38f);
+    set(p, padPid(13, "oscA.tune"), 17); set(p, padPid(13, "noise.level"), 0.18f);
+    set(p, padPid(13, "noise.color"), 0.75f); set(p, padPid(13, "ring.freq"), 3271);
+    set(p, padPid(13, "ring.mix"), 0.88f); set(p, padPid(13, "aenv.dec"), 0.20f);
+    set(p, padPid(13, "flt.on"), 1); set(p, padPid(13, "flt.type"), 3);
+    set(p, padPid(13, "flt.cut"), 3600);
     for (int i : { 5, 6 }) {
         set(p, padPid(i, "choke"), 1.0f);
         set(p, padPid(i, "flt.on"), 1.0f);
@@ -118,7 +132,7 @@ Overrides bitcrushParams() {
     set(p, "master.swing", 0.08f);
     set(p, "fx.drive.on", 1.0f);
     set(p, "fx.drive.amt", 0.6f);
-    set(p, "fx.drive.mix", 0.9f);
+    set(p, "fx.drive.mix", 0.2f);
     set(p, "fx.delay.on", 1.0f);
     set(p, "fx.delay.time", 0.18f);
     set(p, "fx.delay.fb", 0.42f);
@@ -132,6 +146,166 @@ Overrides bitcrushParams() {
     return p;
 }
 
+Overrides classic808Params() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 124); set(p, "master.swing", 0.28f); set(p, "fx.reverb.mix", 0.09f);
+    static const int slots[DR_NPADS] = { 5, 5, 0, 1, 6, 2, 3, 4, 13, 14, 15, 4, 7, 9, 8, 12 };
+    static const float decays[DR_NPADS] = { .8f, .55f, .5f, .7f, .2f, .1f, .6f, 2, .7f, .65f, .6f, 2, .8f, .25f, .15f, .6f };
+    for (int pad = 0; pad < DR_NPADS; ++pad) {
+        set(p, padPid(pad, "oscA.level"), 0.0f);
+        set(p, padPid(pad, "oscB.table"), (float)slots[pad]);
+        set(p, padPid(pad, "oscB.level"), 0.9f);
+        set(p, padPid(pad, "aenv.dec"), decays[pad]);
+    }
+    set(p, padPid(1, "oscB.tune"), 3.0f);
+    set(p, padPid(2, "noise.level"), 0.12f);
+    return p;
+}
+
+Overrides uzuParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 128); set(p, "master.swing", 0.18f); set(p, "fx.reverb.mix", 0.12f);
+    static const float decays[DR_NPADS] = { .4f, 2.4f, .6f, .6f, .2f, .45f, 1.8f, 1.1f, 1, .6f, .55f, 1, .35f, .1f, .6f, .2f };
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.level"), 0.0f);
+        set(p, padPid(i, "oscB.table"), (float)(16 + i));
+        set(p, padPid(i, "oscB.level"), 0.92f);
+        set(p, padPid(i, "noise.level"), 0.0f);
+        set(p, padPid(i, "ring.mix"), 0.0f);
+        set(p, padPid(i, "penv.amt"), 0.0f);
+        set(p, padPid(i, "aenv.dec"), decays[i]);
+    }
+    return p;
+}
+
+Overrides hybridParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 126); set(p, "master.swing", 0.24f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.16f); set(p, "fx.drive.mix", 0.2f);
+    set(p, "fx.reverb.mix", 0.14f);
+    static const int samples[DR_NPADS] = { 16, 5, 18, 1, 20, 21, 3, 23, 13, 25, 15, 27, 7, 28, 30, 31 };
+    static const float oscLevels[DR_NPADS] = { .50f, .45f, .42f, .25f, .40f, .18f, .16f, .12f, .45f, .42f, .40f, .12f, .25f, .22f, .30f, .35f };
+    static const float sampleLevels[DR_NPADS] = { .72f, .68f, .70f, .76f, .65f, .76f, .76f, .72f, .66f, .68f, .68f, .72f, .62f, .70f, .66f, .68f };
+    static const float decays[DR_NPADS] = { .60f, .70f, .50f, .70f, .20f, .15f, .70f, 1.20f, .60f, .60f, .60f, 1.20f, .50f, .35f, .60f, .25f };
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.level"), oscLevels[i]);
+        set(p, padPid(i, "oscB.table"), (float)samples[i]);
+        set(p, padPid(i, "oscB.level"), sampleLevels[i]);
+        set(p, padPid(i, "aenv.dec"), decays[i]);
+    }
+    return p;
+}
+
+Overrides deepDubParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 112); set(p, "master.swing", 0.38f);
+    set(p, "fx.delay.on", 1); set(p, "fx.delay.time", 0.48f);
+    set(p, "fx.delay.fb", 0.55f); set(p, "fx.delay.mix", 0.18f);
+    set(p, "fx.reverb.size", 0.72f); set(p, "fx.reverb.mix", 0.24f);
+    for (int i : { 0, 1, 8, 9, 10 }) {
+        set(p, padPid(i, "oscA.tune"), get(p, padPid(i, "oscA.tune"), 0) - 5);
+        set(p, padPid(i, "aenv.dec"), std::min(4.0f, get(p, padPid(i, "aenv.dec"), 0.24f) * 1.65f));
+    }
+    for (int i : { 5, 6 }) set(p, padPid(i, "flt.cut"), i == 5 ? 4300 : 3200);
+    return p;
+}
+
+Overrides dustHouseParams() {
+    Overrides p = roomOneParams();
+    set(p, "seq.bpm", 122); set(p, "master.swing", 0.46f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.28f);
+    set(p, "fx.drive.mix", 0.2f); set(p, "fx.reverb.mix", 0.2f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "noise.level"), i < 4 ? 0.12f : 0.04f);
+        set(p, padPid(i, "oscA.pos"), 0.18f + (float)(i % 3) * 0.08f);
+        set(p, padPid(i, "aenv.curve"), 0.58f);
+    }
+    return p;
+}
+
+Overrides warehouseParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 136); set(p, "master.swing", 0.14f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.72f);
+    set(p, "fx.drive.mix", 0.2f); set(p, "fx.comp.thr", -20);
+    set(p, "fx.comp.gain", 3); set(p, "fx.reverb.mix", 0.1f);
+    for (int i : { 0, 1, 2, 3, 8, 9, 10 }) {
+        set(p, padPid(i, "flt.on"), 1); set(p, padPid(i, "flt.type"), 1);
+        set(p, padPid(i, "flt.cut"), i < 2 ? 1800 : 5200);
+        set(p, padPid(i, "flt.drive"), 0.52f);
+    }
+    return p;
+}
+
+Overrides metalWorkParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 132); set(p, "master.swing", 0.2f);
+    set(p, "fx.chorus.on", 1); set(p, "fx.chorus.rate", 1.8f);
+    set(p, "fx.chorus.depth", 0.52f); set(p, "fx.chorus.mix", 0.24f);
+    set(p, "fx.reverb.size", 0.8f); set(p, "fx.reverb.mix", 0.28f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.table"), i % 3 == 0 ? 8 : 2);
+        set(p, padPid(i, "oscA.tune"), -12 + (i % 6) * 7);
+        set(p, padPid(i, "oscA.fine"), i % 2 ? 11 : -9);
+        set(p, padPid(i, "aenv.dec"), std::min(2.2f, 0.12f + (float)(i % 5) * 0.16f));
+    }
+    return p;
+}
+
+Overrides tapeKitParams() {
+    Overrides p = roomOneParams();
+    set(p, "seq.bpm", 98); set(p, "master.swing", 0.52f);
+    set(p, "fx.chorus.on", 1); set(p, "fx.chorus.rate", 0.22f);
+    set(p, "fx.chorus.depth", 0.24f); set(p, "fx.chorus.mix", 0.18f);
+    set(p, "fx.drive.on", 1); set(p, "fx.drive.amt", 0.18f); set(p, "fx.drive.mix", 0.2f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.fine"), (i % 5) * 3 - 6);
+        set(p, padPid(i, "flt.on"), 1); set(p, padPid(i, "flt.type"), 0);
+        set(p, padPid(i, "flt.cut"), i < 4 ? 4800 : 7600);
+    }
+    return p;
+}
+
+Overrides minimalParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 128); set(p, "master.swing", 0.12f);
+    set(p, "fx.reverb.mix", 0.07f); set(p, "fx.comp.gain", 2);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "aenv.dec"),
+            std::max(0.025f, std::min(0.22f, get(p, padPid(i, "aenv.dec"), 0.24f) * 0.52f)));
+        const bool main = i == 0 || i == 2 || i == 5 || i == 6;
+        set(p, padPid(i, "lvl"), main ? 0.82f : 0.5f);
+    }
+    return p;
+}
+
+Overrides brokenToysParams() {
+    Overrides p = bitcrushParams();
+    set(p, "seq.bpm", 150); set(p, "master.swing", 0.34f);
+    set(p, "fx.delay.time", 0.11f); set(p, "fx.delay.fb", 0.64f); set(p, "fx.delay.mix", 0.3f);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.table"), i % 2 ? 9 : 7);
+        set(p, padPid(i, "oscA.tune"), -24 + (i * 11) % 47);
+        set(p, padPid(i, "pan"), (float)((i % 5) - 2) * 0.28f);
+        set(p, padPid(i, "mod1.src"), 3); set(p, padPid(i, "mod1.dst"), 1);
+        set(p, padPid(i, "mod1.amt"), 0.22f);
+    }
+    return p;
+}
+
+Overrides liveRoomParams() {
+    Overrides p = classic808Params();
+    set(p, "seq.bpm", 110); set(p, "master.swing", 0.2f);
+    set(p, "fx.reverb.size", 0.88f); set(p, "fx.reverb.mix", 0.36f);
+    set(p, "fx.comp.thr", -12); set(p, "fx.comp.gain", 2);
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "aenv.hold"), i < 4 ? 0.04f : 0.02f);
+        set(p, padPid(i, "aenv.dec"), std::min(4.0f, get(p, padPid(i, "aenv.dec"), 0.24f) * 1.35f));
+        set(p, padPid(i, "v2l"), 0.82f);
+    }
+    return p;
+}
+
 } // namespace
 
 const std::vector<DrumKit>& factoryKits() {
@@ -141,6 +315,17 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "TR-VOID", trVoidParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "ROOM ONE", roomOneParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "BITCRUSH", bitcrushParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "808 CLASSIC", classic808Params(), kPadNames, patterns, { 0 } });
+        out.push_back({ "DEEP DUB", deepDubParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "DUST HOUSE", dustHouseParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "WAREHOUSE", warehouseParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "METAL WORK", metalWorkParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "TAPE KIT", tapeKitParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "MINIMAL", minimalParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "BROKEN TOYS", brokenToysParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "LIVE ROOM", liveRoomParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "UZU", uzuParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "808+UZU HYBRID", hybridParams(), kPadNames, patterns, { 0 } });
         return out;
     }();
     return kits;
@@ -150,7 +335,11 @@ DrumParamArray applyKit(const DrumKit& kit) {
     DrumParamArray p = defaultDrumParams();
     for (const auto& [pid, v] : kit.params) {
         int id = drumIdFromString(pid);
-        if (id >= 0) p[(size_t)id] = v;
+        if (id >= 0) {
+            p[(size_t)id] = v;
+        } else if (const int field = legacyDrumFxField(pid); field >= 0) {
+            for (int pad = 0; pad < DR_NPADS; ++pad) p[(size_t)dpid(pad, field)] = v;
+        }
     }
     return p;
 }

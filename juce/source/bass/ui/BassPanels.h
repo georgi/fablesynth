@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../BassProcessor.h"
+#include "BassUiModel.h"
 #include "../../ui/Controls.h"
 
 // BL-1 editor panels — ports of src/bass/components/{OscSection, SubSection,
@@ -16,13 +16,13 @@ namespace fui {
 // highlighting the live frame from getVizPos() (POS param when idle).
 class BassTerrainView : public juce::Component, private juce::Timer {
 public:
-    explicit BassTerrainView(BassAudioProcessor&);
+    explicit BassTerrainView(BassUiModel&);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
     int   tableIndex() const;
     float knobPos() const;
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     float lastShown = -2.0f;
     int   lastTable = -1;
     juce::Image farCache;              // static far-frame pass, re-rendered on table change
@@ -35,11 +35,11 @@ private:
 // prototype, LP24 = squared slope, live vizCut).
 class BassFilterView : public juce::Component, private juce::Timer {
 public:
-    explicit BassFilterView(BassAudioProcessor&);
+    explicit BassFilterView(BassUiModel&);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     float sig = -1.0f;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassFilterView)
 };
@@ -48,12 +48,12 @@ private:
 // (green) with its accent-shortened ghost (dashed amber), amp ADSR (pale).
 class BassEnvView : public juce::Component, private juce::Timer {
 public:
-    explicit BassEnvView(BassAudioProcessor&);
+    explicit BassEnvView(BassUiModel&);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override;
     float val(const char* id) const;
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     float last[7] = { -1e9f, -1e9f, -1e9f, -1e9f, -1e9f, -1e9f, -1e9f };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassEnvView)
 };
@@ -62,11 +62,11 @@ private:
 // the sequencer tempo while playing.
 class BassLfoView : public juce::Component, private juce::Timer {
 public:
-    explicit BassLfoView(BassAudioProcessor&);
+    explicit BassLfoView(BassUiModel&);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override { repaint(); } // free-running, like the web rAF
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     juce::uint32 t0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassLfoView)
 };
@@ -77,7 +77,7 @@ private:
 // POS slider, TUNE/FINE/UNI/DET/SPRD/LVL knobs.
 class BassOscPanel : public juce::Component {
 public:
-    explicit BassOscPanel(BassAudioProcessor&);
+    explicit BassOscPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -91,7 +91,7 @@ private:
 // SUB: SHAPE + OCT stepper rows, LVL knob.
 class BassSubPanel : public juce::Component {
 public:
-    explicit BassSubPanel(BassAudioProcessor&);
+    explicit BassSubPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -104,7 +104,7 @@ private:
 // TRACK knobs.
 class BassFilterPanel : public juce::Component {
 public:
-    explicit BassFilterPanel(BassAudioProcessor&);
+    explicit BassFilterPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -117,7 +117,7 @@ private:
 // ENV: dual-envelope view + F-ATT/F-DEC (green) and ATT/DEC/SUS/REL knobs.
 class BassEnvPanel : public juce::Component {
 public:
-    explicit BassEnvPanel(BassAudioProcessor&);
+    explicit BassEnvPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -129,7 +129,7 @@ private:
 // LFO: waveform view + RATE/SHAPE steppers, DEPTH knob.
 class BassLfoPanel : public juce::Component {
 public:
-    explicit BassLfoPanel(BassAudioProcessor&);
+    explicit BassLfoPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -142,7 +142,7 @@ private:
 // ACCENT · SLIDE: ACC AMT (large) + SLD TIME knobs, one-knob hint.
 class BassAccentPanel : public juce::Component {
 public:
-    explicit BassAccentPanel(BassAudioProcessor&);
+    explicit BassAccentPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
@@ -155,7 +155,7 @@ private:
 // mirrors the sequenced note (port of KeysPanel.tsx).
 class BassKeysPanel : public juce::Component, private juce::Timer {
 public:
-    explicit BassKeysPanel(BassAudioProcessor&);
+    explicit BassKeysPanel(BassUiModel&);
     ~BassKeysPanel() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -167,7 +167,7 @@ public:
 private:
     void timerCallback() override;
     int  hotKey() const;                               // -100 = none
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     juce::Rectangle<int> headArea, keysArea;
     int pressed_ = -1;                                 // key held by the mouse
     int lastHot_ = -100;

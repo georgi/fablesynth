@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../DrumProcessor.h"
+#include "DrumUiModel.h"
 #include "../../ui/Controls.h"
 
 // Selected-pad mix strip — port of src/drum/components/PadStrip.tsx:
@@ -12,7 +12,7 @@ namespace fui {
 
 class PadStrip : public juce::Component, private juce::ChangeListener {
 public:
-    explicit PadStrip(DrumAudioProcessor&);
+    explicit PadStrip(DrumUiModel&);
     ~PadStrip() override;
 
     void paint(juce::Graphics&) override;
@@ -22,7 +22,7 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void rebuild();
 
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     std::unique_ptr<Stepper> choke, out;
     juce::OwnedArray<Knob> knobs;   // lvl, pan, v2l, v2m
     juce::Rectangle<int> headArea, chokeLabel, outLabel;

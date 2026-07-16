@@ -95,9 +95,10 @@ All `AudioWorkletProcessor`s on one `AudioContext` read the same global
   all sequencers stay locked to one clock by construction. Live pattern
   edits (`clipupdate`) re-derive the phase only when the bar count changes —
   a same-length edit is a pure data swap and never touches the transport.
-- **Global pause**: SQ-4's ⏸ maps to `ctx.suspend()` / `ctx.resume()`.
-  Frames freeze, every pending `atFrame` and every playing clip resumes in
-  phase for free. Stop-all is a real command; pause is not.
+- **Transport**: SQ-4 has one Play/Stop control and no pause mode. Power-on
+  leaves the transport stopped while the audio context remains available.
+  Starting re-anchors the shared clock; stopping sends immediate clip stops.
+  Launching a clip or scene while stopped starts it on the new downbeat.
 - **Tempo**: one global BPM owned by the conductor. v1: BPM is editable
   while the transport is stopped (changing it re-derives nothing because
   nothing is scheduled). Changing tempo mid-flight would rescale the anchor

@@ -2,13 +2,13 @@
 
 namespace fui {
 
-PadStrip::PadStrip(DrumAudioProcessor& p) : proc(p) {
-    proc.selectionBroadcaster.addChangeListener(this);
+PadStrip::PadStrip(DrumUiModel& p) : proc(p) {
+    proc.selectionChanges().addChangeListener(this);
     rebuild();
 }
 
 PadStrip::~PadStrip() {
-    proc.selectionBroadcaster.removeChangeListener(this);
+    proc.selectionChanges().removeChangeListener(this);
 }
 
 void PadStrip::changeListenerCallback(juce::ChangeBroadcaster*) {
@@ -16,14 +16,14 @@ void PadStrip::changeListenerCallback(juce::ChangeBroadcaster*) {
 }
 
 void PadStrip::rebuild() {
-    const auto pre = "pad" + juce::String(proc.getSelectedPad()) + ".";
-    choke = std::make_unique<Stepper>(proc.apvts, pre + "choke", Accent::A);
-    out   = std::make_unique<Stepper>(proc.apvts, pre + "out",   Accent::A);
+    const auto pre = "pad" + juce::String(proc.selectedPad()) + ".";
+    choke = std::make_unique<Stepper>(proc.parameters(), pre + "choke", Accent::A);
+    out   = std::make_unique<Stepper>(proc.parameters(), pre + "out",   Accent::A);
     addAndMakeVisible(*choke);
     addAndMakeVisible(*out);
     knobs.clear();
     for (const char* id : { "lvl", "pan", "v2l", "v2m" })
-        addAndMakeVisible(knobs.add(new Knob(proc.apvts, pre + id, Knob::Sm, Accent::A)));
+        addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pre + id, Knob::Sm, Accent::A)));
     resized();
     repaint();   // head shows the pad number
 }
@@ -61,7 +61,7 @@ void PadStrip::paint(juce::Graphics& g) {
     // rebound target explicit since JUCE has no DOM to inspect.
     g.setColour(col::acA);
     g.setFont(dispFont(10.0f));
-    drawSpaced(g, "PAD " + juce::String(proc.getSelectedPad() + 1).paddedLeft('0', 2),
+    drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2),
                headArea, 2.2f);
 
     // .st-label captions for the steppers

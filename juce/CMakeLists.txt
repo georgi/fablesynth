@@ -21,6 +21,28 @@ if(FABLE_BUILD_PLUGIN)
         FetchContent_MakeAvailable(JUCE)
     endif()
 
+    # JUCE modules are compiled directly into each application target, so the
+    # project's warning flags also diagnose JUCE's bundled macOS/HarfBuzz code.
+    # Keep strict warnings for every FableSynth source while isolating the few
+    # diagnostics that originate entirely inside these third-party translation
+    # units. This can be removed when the pinned JUCE version incorporates the
+    # corresponding upstream fixes.
+    if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set_property(SOURCE
+            "${JUCE_SOURCE_DIR}/modules/juce_gui_basics/juce_gui_basics.mm"
+            APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-unused-but-set-variable
+            -Wno-switch-enum)
+        set_property(SOURCE
+            "${JUCE_SOURCE_DIR}/modules/juce_graphics/juce_graphics_Harfbuzz.cpp"
+            APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-nontrivial-memcall)
+        set_property(SOURCE
+            "${JUCE_SOURCE_DIR}/modules/juce_audio_plugin_client/juce_audio_plugin_client_VST3.cpp"
+            APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-nontrivial-memcall)
+    endif()
+
     juce_add_plugin(FableSynth
         PRODUCT_NAME "FableSynth WT-1"
         COMPANY_NAME "FableSynth"
@@ -35,8 +57,12 @@ if(FABLE_BUILD_PLUGIN)
     target_sources(FableSynth PRIVATE
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
+        source/ui/WtDeviceBody.cpp
+        source/ui/StandaloneTopBar.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
         source/ui/Modulation.cpp
         source/ui/NoteSeqView.cpp
@@ -82,6 +108,7 @@ if(FABLE_BUILD_PLUGIN)
     set(FABLE_DRUM_SOURCES
         source/drum/DrumProcessor.cpp
         source/drum/DrumEditor.cpp
+        source/drum/DrumDeviceBody.cpp
         source/drum/ui/DrumHeader.cpp
         source/drum/ui/PadGrid.cpp
         source/drum/ui/PadStrip.cpp
@@ -89,10 +116,13 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/ui/StepSeqView.cpp
         source/drum/ui/DrumFxRack.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
         source/drum/dsp/DrumParams.cpp
         source/drum/dsp/DrumTables.cpp
         source/drum/dsp/SampledTables.gen.cpp
+        source/drum/dsp/OneShotSamples.gen.cpp
         source/drum/dsp/DrumEngine.cpp
         source/drum/dsp/DrumFx.cpp
         source/drum/dsp/DrumKits.cpp
@@ -137,11 +167,14 @@ if(FABLE_BUILD_PLUGIN)
     set(FABLE_BASS_SOURCES
         source/bass/BassProcessor.cpp
         source/bass/BassEditor.cpp
+        source/bass/BassDeviceBody.cpp
         source/bass/ui/BassHeader.cpp
         source/bass/ui/BassPanels.cpp
         source/bass/ui/PitchSeqView.cpp
         source/bass/ui/BassFxRack.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
         source/bass/dsp/BassParams.cpp
         source/bass/dsp/BassEngine.cpp
@@ -189,26 +222,40 @@ if(FABLE_BUILD_PLUGIN)
     set(FABLE_SEQ_SOURCES
         source/seq/SeqProcessor.cpp
         source/seq/SessionCodec.cpp
+        source/seq/ClipLibraryStorage.cpp
         source/seq/SeqEditor.cpp
         source/seq/ui/SeqHeader.cpp
         source/seq/ui/TrackHeadsView.cpp
         source/seq/ui/SceneGridView.cpp
         source/seq/ui/SeqFooterView.cpp
-        source/seq/ui/ClipEditView.cpp
+        source/seq/ui/DeviceFocusView.cpp
+        source/seq/ui/HostedDrumModel.cpp
+        source/seq/ui/HostedBassModel.cpp
+        source/seq/ui/HostedWtModel.cpp
+        source/drum/DrumDeviceBody.cpp
+        source/drum/ui/PadGrid.cpp source/drum/ui/PadStrip.cpp source/drum/ui/DrumPanels.cpp
+        source/drum/ui/StepSeqView.cpp source/drum/ui/DrumFxRack.cpp
+        source/bass/BassDeviceBody.cpp
+        source/bass/ui/BassPanels.cpp source/bass/ui/PitchSeqView.cpp source/bass/ui/BassFxRack.cpp
+        source/ui/WtDeviceBody.cpp source/WavetableView.cpp source/ui/Displays.cpp
+        source/ui/NoteSeqView.cpp source/ui/Panels.cpp
+        source/seq/dsp/ClipLibrary.cpp
         source/seq/dsp/SeqFactory.cpp
         source/seq/dsp/Conductor.cpp
-        source/ui/Controls.cpp source/ui/Modulation.cpp
+        source/ui/Controls.cpp source/ui/ParameterSource.cpp source/ui/DeviceParameterBank.cpp
+        source/ui/Modulation.cpp
         # all three machines' DSP (each list already exists above):
         source/dsp/Engine.cpp source/dsp/Presets.cpp
         source/drum/dsp/DrumParams.cpp source/drum/dsp/DrumTables.cpp
         source/drum/dsp/SampledTables.gen.cpp source/drum/dsp/DrumEngine.cpp
+        source/drum/dsp/OneShotSamples.gen.cpp
         source/drum/dsp/DrumFx.cpp source/drum/dsp/DrumKits.cpp source/drum/dsp/DrumPatches.cpp
         source/bass/dsp/BassParams.cpp source/bass/dsp/BassEngine.cpp
         source/bass/dsp/BassFx.cpp source/bass/dsp/BassPatches.cpp
         source/dsp/Wavetables.cpp source/dsp/Params.cpp source/dsp/UserTables.cpp source/dsp/Fx.cpp)
 
     target_sources(FableSeq PRIVATE ${FABLE_SEQ_SOURCES})
-    target_compile_definitions(FableSeq PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_compile_definitions(FableSeq PUBLIC FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
     juce_generate_juce_header(FableSeq)
     target_link_libraries(FableSeq PRIVATE juce::juce_audio_utils juce::juce_dsp
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
@@ -238,8 +285,12 @@ if(FABLE_BUILD_PLUGIN)
         test/plugin_host_test.cpp
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
+        source/ui/WtDeviceBody.cpp
+        source/ui/StandaloneTopBar.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
+        source/ui/ParameterSource.cpp
+        source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
         source/ui/Modulation.cpp
         source/ui/NoteSeqView.cpp
@@ -294,7 +345,7 @@ if(FABLE_BUILD_PLUGIN)
         test/sq4_host_test.cpp
         ${FABLE_SEQ_SOURCES})
     target_compile_definitions(sq4_host_test PRIVATE
-        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(sq4_host_test PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
@@ -320,6 +371,7 @@ add_executable(drum_engine_test
     source/drum/dsp/DrumParams.cpp
     source/drum/dsp/DrumTables.cpp
     source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
@@ -359,10 +411,12 @@ add_executable(sq4_engine_test
     source/drum/dsp/DrumParams.cpp
     source/drum/dsp/DrumTables.cpp
     source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
+    source/seq/dsp/ClipLibrary.cpp
     source/seq/dsp/SeqFactory.cpp
     source/seq/dsp/Conductor.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)

@@ -6,32 +6,25 @@
 #include "ui/LookAndFeel.h"
 #include "ui/NoteSeqView.h"
 #include "ui/WavetableEditor.h"
+#include "ui/WtDeviceBody.h"
+#include "ui/StandaloneTopBar.h"
 
 // The rack: all panels laid out at a fixed logical size matching the web CSS
 // grid. The editor scales it to the window so the layout stays pixel-faithful.
 class Rack : public juce::Component {
 public:
-    // LH grew by the NOTE SEQ row (270 + 9 gap) when the sequencer landed,
-    // matching the web grid's added 'seq' row.
-    static constexpr int LW = 1400, LH = 1332;
-    Rack(juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
+    // Compact WT rows plus the NOTE SEQ row, matching the web rack geometry.
+    static constexpr int LW = 1520, LH = 982;
+    Rack(fui::WtUiModel&, juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
     void resized() override;
 
     // Forwarded from either oscillator panel's ✎ button (arg = osc index).
     std::function<void(int)> onEditTable;
 
-    fui::NoteSeqView& noteSeq() { return seq; }   // exposed for the host test
+    fui::NoteSeqView& noteSeq() { return body.noteSeq(); }   // exposed for the host test
 private:
-    juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
     fui::TopBar  topBar;
-    fui::OscPanel oscA, oscB;
-    fui::UtilPanel util;
-    fui::FilterPanel filter;
-    fui::EnvPanel env1, env2;
-    fui::LfoPanel lfos;
-    fui::MatrixPanel matrix;
-    fui::FxPanel fx;
-    fui::NoteSeqView seq;
+    WtDeviceBody body;
 };
 
 class FableAudioProcessorEditor : public juce::AudioProcessorEditor,
@@ -47,6 +40,7 @@ public:
 
 private:
     fui::DarkLNF lnf;
+    std::unique_ptr<fui::WtUiModel> model;
     Rack rack;
     fui::WavetableEditor wtEditor;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FableAudioProcessorEditor)

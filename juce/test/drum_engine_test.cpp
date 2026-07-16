@@ -6,6 +6,7 @@
 #include "../source/drum/dsp/DrumParams.h"
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
+#include "../source/drum/dsp/OneShotSamples.gen.h"
 #include "../source/drum/dsp/DrumEngine.h"
 #include "../source/drum/dsp/DrumFx.h"
 #include "../source/drum/dsp/DrumKits.h"
@@ -153,20 +154,22 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 48, "48 per-pad fields");
-    check(DR_NUM_PARAMS == 788, "788 total params");
+    check(DPAD_NFIELDS == 67, "67 per-pad fields including FX");
+    check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3, "per-pad params plus 3 globals");
     const auto& info = drumParamInfo();
     check((int)info.size() == DR_NUM_PARAMS, "info covers all params");
     check(info[dpid(0, DP_OSCA_TABLE)].pid == "pad0.oscA.table", "pad0 table pid");
     check(info[dpid(3, DP_FLT_CUT)].pid == "pad3.flt.cut", "pad3 cut pid");
     check(info[DG_SEQ_BPM].pid == "seq.bpm", "bpm pid");
-    check(info[DG_FXREVERB_MIX].pid == "fx.reverb.mix", "last pid");
+    check(info[dpid(0, DP_FXREVERB_MIX)].pid == "pad0.fx.reverb.mix", "pad FX pid");
+    check(info[dpid(15, DP_FXDELAY_MIX)].pid == "pad15.fx.delay.mix", "last pad FX namespace");
     auto d = defaultDrumParams();
     check(d[DG_SEQ_BPM] == 126.0f, "bpm default 126");
     check(d[dpid(5, DP_OSCA_LEVEL)] == 0.75f && d[dpid(5, DP_OSCB_LEVEL)] == 0.0f, "osc level defaults");
     check(d[dpid(0, DP_AENV_DEC)] == 0.24f && d[dpid(0, DP_LVL)] == 0.8f, "env/lvl defaults");
-    check(d[DG_FXCOMP_ON] == 1.0f && d[DG_FXREVERB_ON] == 1.0f, "comp+reverb default on");
+    check(d[dpid(0, DP_FXCOMP_ON)] == 1.0f && d[dpid(0, DP_FXREVERB_ON)] == 1.0f, "comp+reverb default on");
     check(drumIdFromString("pad15.out") == dpid(15, DP_OUT), "idFromString");
+    check(legacyDrumFxField("fx.delay.mix") == DP_FXDELAY_MIX, "legacy FX migration lookup");
     check(drumIdFromString("nope") == -1, "unknown id -> -1");
     // log-curve mapping identical to web: flt.cut min 20 max 20000, norm 0.5 -> sqrt(20*20000)
     const auto& cut = info[dpid(0, DP_FLT_CUT)];
@@ -176,6 +179,13 @@ int main() {
     auto dt = generateDrumTables();
     check(dt.size() == 4, "4 drum tables");
     check(generateSampledDrumTables().size() == 5, "5 sampled drum tables");
+    check(drumOneShots().size() == 32 && drumOneShots()[0].length == 22051
+          && drumOneShots()[4].length == 110251
+          && std::string(drumOneShots()[5].name) == "808BD"
+          && std::string(drumOneShots()[15].name) == "808HT"
+          && std::string(drumOneShots()[16].name) == "UZU BD1"
+          && std::string(drumOneShots()[31].name) == "UZU MOD",
+          "32 raw one-shots in stable 808 then UZU order");
     check(allTables().size() == 15, "15 tables total (4 drum + 6 synth + 5 sampled)");
     check(dt[0].name == "THUD" && dt[1].name == "CRACK" && dt[2].name == "TINE" && dt[3].name == "GRIT", "names/order");
     // Web-reference overall peaks (vitest run of src/drum/engine/drumtables.ts):
@@ -213,6 +223,24 @@ int main() {
               "rms=" + std::to_string(rms(head)));
         check(eng.vizEnv > 0.0f && eng.vizA >= 0.0f, "viz publishes active pad",
               "env=" + std::to_string(eng.vizEnv) + " a=" + std::to_string(eng.vizA));
+
+        // OSC B's stable parameter slots now drive the raw sample player.
+        eng.panic();
+        eng.setParam(dpid(0, DP_OSCA_LEVEL), 0.0f);
+        eng.setParam(dpid(0, DP_OSCB_TABLE), 3.0f); // 808OH
+        eng.setParam(dpid(0, DP_OSCB_LEVEL), 1.0f);
+        eng.setParam(dpid(0, DP_AENV_DEC), 1.0f);
+        eng.trigger(0, 1.0f);
+        auto sampled = renderMain(eng, 12000);
+        check(finite(sampled) && rms(sampled) > 1e-4 && eng.vizB >= 0.0f,
+              "sample player is audible, finite, and publishes playhead",
+              "rms=" + std::to_string(rms(sampled)));
+        eng.setParam(dpid(0, DP_OSCB_LEVEL), 0.0f);
+        eng.panic(); eng.trigger(0, 1.0f);
+        check(rms(renderMain(eng, 2400)) < 1e-8, "sample level zero is an exact bypass");
+
+        // Restore the default pad before the remaining oscillator checks.
+        eng.setParams(defaultDrumParams());
 
         // accent louder than plain (v2l default 0.6)
         eng.panic(); eng.trigger(1, DR_PLAIN_VEL);  double rp = rms(renderMain(eng, 12000));
@@ -254,6 +282,22 @@ int main() {
         for (int i = 0; i < 12000; i++) { double d = (double)m0[i] - m1[i]; dsum += d * d; }
         check(std::sqrt(dsum / 12000) > 1e-4, "mod env -> cutoff moves filter",
               std::to_string(std::sqrt(dsum / 12000)));
+
+        // fixed-Hz ring carrier creates a substantially different, finite
+        // sideband spectrum while the default MIX=0 path remains dry.
+        DrumEngine dryRing, wetRing;
+        dryRing.prepare(48000); wetRing.prepare(48000);
+        dryRing.setTables(allTables()); wetRing.setTables(allTables());
+        wetRing.setParam(dpid(0, DP_RING_FREQ), 731.0f);
+        wetRing.setParam(dpid(0, DP_RING_MIX), 1.0f);
+        dryRing.trigger(0, 1.0f); wetRing.trigger(0, 1.0f);
+        auto dryMetal = renderMain(dryRing, 12000);
+        auto wetMetal = renderMain(wetRing, 12000);
+        double ringDelta = 0;
+        for (int i = 0; i < 12000; ++i)
+            ringDelta += std::abs((double)dryMetal[(size_t)i] - wetMetal[(size_t)i]);
+        check(finite(wetMetal) && peak(wetMetal) < 2.0f && ringDelta / 12000 > 0.005,
+              "ring mod creates finite metallic sidebands", std::to_string(ringDelta / 12000));
 
         // choke: pads 4+5 in group 1; triggering 5 silences 4's long tail
         eng.panic();
@@ -299,6 +343,39 @@ int main() {
         double f0 = 440.0 * std::pow(2.0, (60 + 24 - 69) / 12.0);
         double fdb = aliasFloorDb(ab.data() + 4800, 32768, 48000, f0);
         check(fdb < -55.0, "GRIT +24st alias floor < -55 dB", std::to_string(fdb) + " dB");
+    }
+    {
+        // Per-pad routing: editing pad 1's chain cannot alter a pad 0 hit,
+        // while applying the same drive to pad 0 must alter it.
+        auto clean = defaultDrumParams();
+        for (int pad = 0; pad < DR_NPADS; ++pad) {
+            clean[(size_t)dpid(pad, DP_FXDRIVE_ON)] = 0;
+            clean[(size_t)dpid(pad, DP_FXCOMP_ON)] = 0;
+            clean[(size_t)dpid(pad, DP_FXCHORUS_ON)] = 0;
+            clean[(size_t)dpid(pad, DP_FXDELAY_ON)] = 0;
+            clean[(size_t)dpid(pad, DP_FXREVERB_ON)] = 0;
+        }
+        auto silentPadFx = clean;
+        silentPadFx[(size_t)dpid(1, DP_FXDRIVE_ON)] = 1;
+        silentPadFx[(size_t)dpid(1, DP_FXDRIVE_AMT)] = 1;
+        auto activePadFx = clean;
+        activePadFx[(size_t)dpid(0, DP_FXDRIVE_ON)] = 1;
+        activePadFx[(size_t)dpid(0, DP_FXDRIVE_AMT)] = 1;
+
+        auto run = [&](const DrumParamArray& params) {
+            DrumEngine e; e.prepare(48000); e.enablePadFx(true);
+            e.setTables(allTables()); e.setParams(params); e.trigger(0, 1.0f);
+            return renderMain(e, 4096);
+        };
+        const auto a = run(clean), b = run(silentPadFx), c = run(activePadFx);
+        double unrelatedDiff = 0, selectedDiff = 0;
+        for (size_t i = 0; i < a.size(); ++i) {
+            unrelatedDiff += std::abs((double)a[i] - b[i]);
+            selectedDiff += std::abs((double)a[i] - c[i]);
+        }
+        check(unrelatedDiff < 1e-9 && selectedDiff > 0.1,
+              "one independent FX chain per pad",
+              "other=" + std::to_string(unrelatedDiff) + " selected=" + std::to_string(selectedDiff));
     }
 
     printf("\n== 4. Sequencer ==\n");
@@ -525,8 +602,8 @@ int main() {
     // Every DrumFx test starts from all-stages-off (comp + reverb default ON).
     auto fxOff = [] {
         auto p = defaultDrumParams();
-        p[DG_FXDRIVE_ON] = 0; p[DG_FXCOMP_ON] = 0; p[DG_FXCHORUS_ON] = 0;
-        p[DG_FXDELAY_ON] = 0; p[DG_FXREVERB_ON] = 0;
+        p[dpid(0, DP_FXDRIVE_ON)] = 0; p[dpid(0, DP_FXCOMP_ON)] = 0; p[dpid(0, DP_FXCHORUS_ON)] = 0;
+        p[dpid(0, DP_FXDELAY_ON)] = 0; p[dpid(0, DP_FXREVERB_ON)] = 0;
         return p;
     };
     {
@@ -534,7 +611,7 @@ int main() {
         // WebAudio-spec limiter makeup ((1/c(1))^0.6 at thr -8 dB ratio 14),
         // matching Fx.cpp / the web DynamicsCompressor limiter.
         DrumFx fx; fx.prepare(fsr);
-        fx.setParams(fxOff());
+        fx.setParams(fxOff(), 0);
         int n = (int)fsr;
         std::vector<float> L(n), R(n);
         for (int i = 0; i < n; i++)
@@ -554,11 +631,11 @@ int main() {
             DrumFx fx; fx.prepare(fsr);
             auto p = fxOff();
             if (compOn) {
-                p[DG_FXCOMP_ON] = 1;
-                p[DG_FXCOMP_THR] = -30.0f;
-                p[DG_FXCOMP_GAIN] = 0.0f;
+                p[dpid(0, DP_FXCOMP_ON)] = 1;
+                p[dpid(0, DP_FXCOMP_THR)] = -30.0f;
+                p[dpid(0, DP_FXCOMP_GAIN)] = 0.0f;
             }
-            fx.setParams(p);
+            fx.setParams(p, 0);
             int n = (int)(4 * fsr);
             std::vector<float> L(n), R(n);
             for (int i = 0; i < n; i++) {
@@ -581,11 +658,11 @@ int main() {
             DrumFx fx; fx.prepare(fsr);
             auto p = fxOff();
             if (driveOn) {
-                p[DG_FXDRIVE_ON] = 1;
-                p[DG_FXDRIVE_AMT] = 1.0f;
-                p[DG_FXDRIVE_MIX] = 1.0f;
+                p[dpid(0, DP_FXDRIVE_ON)] = 1;
+                p[dpid(0, DP_FXDRIVE_AMT)] = 1.0f;
+                p[dpid(0, DP_FXDRIVE_MIX)] = 1.0f;
             }
-            fx.setParams(p);
+            fx.setParams(p, 0);
             int n = 2 * (int)fsr;
             std::vector<float> L(n), R(n);
             for (int i = 0; i < n; i++)
@@ -602,8 +679,8 @@ int main() {
         // delay on: burst in -> echo lands at fx.delay.time (default 0.36 s)
         DrumFx fx; fx.prepare(fsr);
         auto p = fxOff();
-        p[DG_FXDELAY_ON] = 1;   // time 0.36, fb 0.35, mix 0.15 defaults
-        fx.setParams(p);
+        p[dpid(0, DP_FXDELAY_ON)] = 1;   // time 0.36, fb 0.35, mix 0.15 defaults
+        fx.setParams(p, 0);
         std::vector<float> z((int)fsr, 0.0f), z2 = z;
         fx.process(z.data(), z2.data(), (int)z.size());   // settle time smoother
         int n = 24000;
@@ -621,10 +698,10 @@ int main() {
         // reverb on: burst in -> audible tail at 1 s, decayed away by 6 s
         DrumFx fx; fx.prepare(fsr);
         auto p = fxOff();
-        p[DG_FXREVERB_ON] = 1;
-        p[DG_FXREVERB_SIZE] = 0.8f;
-        p[DG_FXREVERB_MIX] = 0.5f;
-        fx.setParams(p);
+        p[dpid(0, DP_FXREVERB_ON)] = 1;
+        p[dpid(0, DP_FXREVERB_SIZE)] = 0.8f;
+        p[dpid(0, DP_FXREVERB_MIX)] = 0.5f;
+        fx.setParams(p, 0);
         std::vector<float> z(24000, 0.0f), z2 = z;
         fx.process(z.data(), z2.data(), (int)z.size());
         int n = (int)(6.5 * fsr);
@@ -643,14 +720,14 @@ int main() {
         DrumFx fx; fx.prepare(fsr);
         auto p = defaultDrumParams();
         p[DG_MASTER_VOLUME] = 1.0f;
-        p[DG_FXDRIVE_ON] = 1;  p[DG_FXDRIVE_AMT] = 1.0f;  p[DG_FXDRIVE_MIX] = 1.0f;
-        p[DG_FXCOMP_ON] = 1;   p[DG_FXCOMP_THR] = -40.0f; p[DG_FXCOMP_GAIN] = 12.0f;
-        p[DG_FXCHORUS_ON] = 1; p[DG_FXCHORUS_RATE] = 8.0f;
-        p[DG_FXCHORUS_DEPTH] = 1.0f; p[DG_FXCHORUS_MIX] = 1.0f;
-        p[DG_FXDELAY_ON] = 1;  p[DG_FXDELAY_TIME] = 0.02f;
-        p[DG_FXDELAY_FB] = 0.92f; p[DG_FXDELAY_MIX] = 1.0f;
-        p[DG_FXREVERB_ON] = 1; p[DG_FXREVERB_SIZE] = 1.0f; p[DG_FXREVERB_MIX] = 1.0f;
-        fx.setParams(p);
+        p[dpid(0, DP_FXDRIVE_ON)] = 1;  p[dpid(0, DP_FXDRIVE_AMT)] = 1.0f;  p[dpid(0, DP_FXDRIVE_MIX)] = 1.0f;
+        p[dpid(0, DP_FXCOMP_ON)] = 1;   p[dpid(0, DP_FXCOMP_THR)] = -40.0f; p[dpid(0, DP_FXCOMP_GAIN)] = 12.0f;
+        p[dpid(0, DP_FXCHORUS_ON)] = 1; p[dpid(0, DP_FXCHORUS_RATE)] = 8.0f;
+        p[dpid(0, DP_FXCHORUS_DEPTH)] = 1.0f; p[dpid(0, DP_FXCHORUS_MIX)] = 1.0f;
+        p[dpid(0, DP_FXDELAY_ON)] = 1;  p[dpid(0, DP_FXDELAY_TIME)] = 0.02f;
+        p[dpid(0, DP_FXDELAY_FB)] = 0.92f; p[dpid(0, DP_FXDELAY_MIX)] = 1.0f;
+        p[dpid(0, DP_FXREVERB_ON)] = 1; p[dpid(0, DP_FXREVERB_SIZE)] = 1.0f; p[dpid(0, DP_FXREVERB_MIX)] = 1.0f;
+        fx.setParams(p, 0);
         int n = 2 * (int)fsr;
         std::vector<float> L(n), R(n);
         uint32_t seed = 0x12345678u;
@@ -670,9 +747,30 @@ int main() {
     printf("\n== 6. DrumKits ==\n");
     {
         const auto& kits = factoryKits();
-        check(kits.size() == 3, "3 factory kits");
+        check(kits.size() == 14, "14 factory kits");
         check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
-              "kit names/order");
+              "original kit names/order stay stable");
+        check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM" && kits[12].name == "UZU"
+              && kits[13].name == "808+UZU HYBRID",
+              "expanded kit bank names/order");
+        auto classic = applyKit(kits[3]);
+        check(classic[dpid(0, DP_OSCB_TABLE)] == 5
+              && classic[dpid(8, DP_OSCB_TABLE)] == 13
+              && classic[dpid(10, DP_OSCB_TABLE)] == 15
+              && classic[dpid(14, DP_OSCB_TABLE)] == 8,
+              "808 CLASSIC maps new kick, tom, and percussion samples");
+        auto uzu = applyKit(kits[12]);
+        check(uzu[dpid(0, DP_OSCB_TABLE)] == 16
+              && uzu[dpid(15, DP_OSCB_TABLE)] == 31
+              && uzu[dpid(0, DP_OSCA_LEVEL)] == 0
+              && std::abs(uzu[dpid(0, DP_OSCB_LEVEL)] - 0.92f) < 1.0e-6f,
+              "UZU factory kit maps all 16 imported one-shots");
+        auto hybrid = applyKit(kits[13]);
+        check(hybrid[dpid(0, DP_OSCB_TABLE)] == 16
+              && hybrid[dpid(15, DP_OSCB_TABLE)] == 31
+              && hybrid[dpid(0, DP_OSCA_LEVEL)] > 0
+              && hybrid[dpid(0, DP_OSCB_LEVEL)] > 0,
+              "hybrid kit keeps oscillator and sample layers active");
 
         // Every override pid resolves and its value is within [min,max].
         bool allResolve = true, allInRange = true;
@@ -680,6 +778,10 @@ int main() {
         for (const auto& kit : kits)
             for (const auto& [pid, v] : kit.params) {
                 int id = drumIdFromString(pid);
+                if (id < 0) {
+                    const int field = legacyDrumFxField(pid);
+                    if (field >= 0) id = dpid(0, field);
+                }
                 if (id < 0) { allResolve = false; badPid = kit.name + ":" + pid; continue; }
                 const auto& pi = drumParamInfo()[(size_t)id];
                 if (v < pi.min || v > pi.max) {
@@ -707,10 +809,26 @@ int main() {
         };
         auto tv = applyKit(kits[0]);
         check(tv[DG_SEQ_BPM] == 126.0f, "TR-VOID bpm 126");
-        check(tv[dpid(0, DP_OSCA_TUNE)] == -14.0f, "TR-VOID pad0 oscA.tune -14");
+        check(tv[dpid(0, DP_OSCA_TUNE)] == -26.0f &&
+              tv[dpid(1, DP_OSCA_TUNE)] == -19.0f &&
+              tv[dpid(2, DP_OSCA_TUNE)] == -12.0f,
+              "TR-VOID kick/snare oscillators pitched down one octave");
         check(tv[dpid(5, DP_CHOKE)] == 1.0f && tv[dpid(6, DP_CHOKE)] == 1.0f &&
               tv[dpid(5, DP_FLT_ON)] == 1.0f && tv[dpid(6, DP_FLT_ON)] == 1.0f,
               "TR-VOID hats choke 1 + flt.on");
+        check(tv[dpid(5, DP_RING_MIX)] == 0.18f && tv[dpid(6, DP_RING_MIX)] == 0.28f &&
+              tv[dpid(7, DP_RING_MIX)] == 0.46f && tv[dpid(11, DP_RING_MIX)] == 0.62f,
+              "TR-VOID hats/ride/crash use metallic ring carriers");
+        check(tv[dpid(12, DP_RING_FREQ)] == 731.0f && tv[dpid(12, DP_RING_MIX)] == 0.78f &&
+              tv[dpid(13, DP_RING_FREQ)] == 3271.0f && tv[dpid(13, DP_RING_MIX)] == 0.88f,
+              "TR-VOID PERC 1/2 use bell/cymbal ring carriers");
+        check(tv[dpid(12, DP_AENV_DEC)] == 0.16f && tv[dpid(13, DP_AENV_DEC)] == 0.20f,
+              "TR-VOID PERC 1/2 use short decay times");
+        check(tv[dpid(8, DP_OSCA_TUNE)] == -19.0f && tv[dpid(9, DP_OSCA_TUNE)] == -12.0f &&
+              tv[dpid(10, DP_OSCA_TUNE)] == -5.0f &&
+              tv[dpid(8, DP_AENV_DEC)] == 0.28f && tv[dpid(9, DP_AENV_DEC)] == 0.24f &&
+              tv[dpid(10, DP_AENV_DEC)] == 0.20f,
+              "TR-VOID toms are seven semitones deeper with shorter tails");
         // Non-overridden params keep defaults.
         check(tv[dpid(1, DP_PAN)] == defaultDrumParams()[dpid(1, DP_PAN)],
               "applyKit keeps defaults elsewhere");
@@ -737,6 +855,18 @@ int main() {
             if (bc[dpid(i, DP_OSCA_TABLE)] != 3.0f) allGrit = false;
         check(allGrit && bc[DG_SEQ_BPM] == 140.0f, "BITCRUSH oscA.table 3 on all pads, bpm 140");
 
+        // Every authored kit must produce a finite, audible kick when loaded.
+        // This catches valid-but-useless combinations such as a silent table,
+        // closed filter, or zero level that range validation cannot detect.
+        for (const auto& kit : kits) {
+            DrumEngine smoke; smoke.prepare(48000); smoke.setTables(allTables());
+            smoke.setParams(applyKit(kit));
+            smoke.trigger(0, 1.0f);
+            const auto hit = renderMain(smoke, 12000);
+            check(finite(hit) && rms(hit) > 1e-5 && peak(hit) < 4.0f,
+                  kit.name + " kick is finite, audible, and bounded");
+        }
+
         // End to end: TR-VOID into a DrumEngine, one bar of audio on MAIN.
         DrumEngine ke; ke.prepare(48000); ke.setTables(allTables());
         ke.setParams(tv);
@@ -752,11 +882,13 @@ int main() {
     printf("\n== 7. DrumPatches ==\n");
     {
         const auto& bank = factoryPatches();
-        // Bank parity with src/drum/patches.ts FACTORY_PATCHES (18 entries).
-        check(bank.size() == 18, "18 factory patches");
+        // Bank parity with src/drum/patches.ts FACTORY_PATCHES.
+        check(bank.size() == 36, "36 factory patches");
         check(bank[0].name == "BD DEEP" && bank[3].name == "BD 808" &&
               bank[8].name == "HH 808" && bank[11].name == "CY 808" &&
-              bank[17].name == "PC GLITCH", "patch names/order match web");
+              bank[16].name == "PC BELL" && bank[17].name == "PC CYMBAL" &&
+              bank[19].name == "PC GLITCH" && bank[20].name == "HX BD UZU" &&
+              bank[35].name == "HX MOD", "patch names/order match web");
 
         // Every override id resolves as a pad-relative field (never out/choke)
         // and its value is within [min,max].
@@ -776,36 +908,45 @@ int main() {
         check(allResolve, "all patch ids resolve as pad fields", bad);
         check(allInRange, "all patch values within [min,max]", bad);
         check(noRouting, "no patch touches out/choke", bad);
-        // Factory patches reference only built-in tables (index <= 14).
+        // Factory patches reference valid oscillator tables and sample slots.
         bool tablesOk = true;
         for (const auto& p : bank)
             for (const auto& [rel, v] : p.params)
-                if (rel == "oscA.table" || rel == "oscB.table")
-                    if (v < 0 || v > 14) tablesOk = false;
-        check(tablesOk, "factory patches use built-in tables only");
-
+                if ((rel == "oscA.table" && (v < 0 || v > 14))
+                    || (rel == "oscB.table" && (v < 0 || v >= (float)DRUM_SAMPLE_NAMES.size())))
+                    tablesOk = false;
+        check(tablesOk, "factory patches use valid built-in oscillator/sample tables");
         // Spot-check 3 patches against the hardcoded web values (patches.ts).
         auto val = [](const PadPatch& p, const char* rel, float fallback) {
             for (const auto& [r, v] : p.params) if (r == rel) return v;
             return fallback;
         };
+        bool hybridLayers = true;
+        for (size_t i = 20; i < bank.size(); ++i)
+            if (val(bank[i], "oscA.level", 0) <= 0 || val(bank[i], "oscB.level", 0) <= 0)
+                hybridLayers = false;
+        check(hybridLayers, "16 HX patches keep oscillator and sample layers active");
         const auto& bd = bank[0];   // BD DEEP
-        check(val(bd, "oscA.table", -1) == 0.0f && val(bd, "oscA.tune", 0) == -14.0f &&
+        check(val(bd, "oscA.table", -1) == 0.0f && val(bd, "oscA.tune", 0) == -26.0f &&
               val(bd, "penv.amt", 0) == 24.0f && val(bd, "penv.dec", 0) == 0.05f &&
               val(bd, "aenv.dec", 0) == 0.42f && val(bd, "aenv.curve", 0) == 0.45f &&
               val(bd, "lvl", 0) == 0.9f && bd.params.size() == 7,
               "BD DEEP values match web");
         const auto& hh = bank[8];   // HH 808
-        check(val(hh, "oscA.table", -1) == 12.0f && val(hh, "aenv.dec", 0) == 0.06f &&
+        check(val(hh, "oscA.level", -1) == 0.0f && val(hh, "oscB.table", -1) == 2.0f &&
+              val(hh, "oscB.level", 0) == 0.9f && val(hh, "aenv.dec", 0) == 0.12f &&
               val(hh, "flt.on", 0) == 1.0f && val(hh, "flt.type", -1) == 3.0f &&
-              val(hh, "flt.cut", 0) == 7200.0f && val(hh, "lvl", 0) == 0.7f &&
-              hh.params.size() == 6,
+              val(hh, "flt.cut", 0) == 7200.0f && val(hh, "ring.freq", 0) == 6389.0f &&
+              val(hh, "ring.mix", 0) == 0.18f && val(hh, "lvl", 0) == 0.7f &&
+              hh.params.size() == 10,
               "HH 808 values match web");
         const auto& cy = bank[11];  // CY 808
-        check(val(cy, "oscA.table", -1) == 14.0f && val(cy, "aenv.dec", 0) == 1.7f &&
+        check(val(cy, "oscA.level", -1) == 0.0f && val(cy, "oscB.table", -1) == 4.0f &&
+              val(cy, "oscB.level", 0) == 0.9f && val(cy, "aenv.dec", 0) == 1.7f &&
               val(cy, "aenv.curve", 0) == 0.25f && val(cy, "flt.on", 0) == 1.0f &&
               val(cy, "flt.type", -1) == 3.0f && val(cy, "flt.cut", 0) == 3800.0f &&
-              val(cy, "lvl", 0) == 0.72f && cy.params.size() == 7,
+              val(cy, "ring.freq", 0) == 2741.0f && val(cy, "ring.mix", 0) == 0.62f &&
+              val(cy, "lvl", 0) == 0.72f && cy.params.size() == 11,
               "CY 808 values match web");
 
         // applyPatchToPad(3, BD DEEP): every included pad3 field gets defaults
@@ -830,7 +971,7 @@ int main() {
         check(inPad3, "all entries target pad 3");
         check(!hasRouting, "no entry for pad3.out/choke");
         for (const auto& [id, v] : entries) pv[(size_t)id] = v;
-        check(pv[dpid(3, DP_OSCA_TUNE)] == -14.0f && pv[dpid(3, DP_PENV_AMT)] == 24.0f &&
+        check(pv[dpid(3, DP_OSCA_TUNE)] == -26.0f && pv[dpid(3, DP_PENV_AMT)] == 24.0f &&
               pv[dpid(3, DP_AENV_DEC)] == 0.42f && pv[dpid(3, DP_LVL)] == 0.9f,
               "overrides land on pad 3");
         check(pv[dpid(3, DP_NOISE_LEVEL)] == d0[dpid(3, DP_NOISE_LEVEL)] &&

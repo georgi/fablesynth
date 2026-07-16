@@ -148,6 +148,23 @@ export function patchName(machine: 'DR1' | 'BL1' | 'WT1', patch: PatchDoc): stri
   }
 }
 
+/** Factory patch names shared by track heads and the focused device toolbar. */
+export function factoryPatchNames(machine: 'DR1' | 'BL1' | 'WT1'): string[] {
+  switch (machine) {
+    case 'DR1': return FACTORY_KITS.map((patch) => patch.name);
+    case 'BL1': return FACTORY_PATCHES.map((patch) => patch.name);
+    default: return FACTORY_PRESETS.map((patch) => patch.name);
+  }
+}
+
+/** Step a factory bank predictably, including when the current patch is inline. */
+export function stepFactoryPatchIndex(machine: 'DR1' | 'BL1' | 'WT1', current: number, delta: number): number {
+  const count = factoryPatchNames(machine).length;
+  if (!count) return 0;
+  if (current < 0) return delta < 0 ? count - 1 : 0;
+  return (current + delta + count) % count;
+}
+
 export function makeDevice(machine: 'DR1' | 'BL1' | 'WT1'): SeqDevice {
   switch (machine) {
     case 'DR1': return new Dr1Device();

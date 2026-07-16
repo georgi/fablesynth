@@ -58,6 +58,10 @@ export function TopBar() {
           <span>SPECTRUM</span>
         </div>
       </div>
+      <div className="top-clock" aria-label="Sequencer timing">
+        <Knob paramId="seq.bpm" size="sm" accent="a" />
+        <Knob paramId="seq.swing" size="sm" accent="a" />
+      </div>
       <div className="status">
         <div className="status-row"><span className={`led${midiActive ? ' on' : ''}`} id="midi-led" />MIDI</div>
         <div className="status-row"><span id="voice-count">{voiceCount}</span>VOICES</div>

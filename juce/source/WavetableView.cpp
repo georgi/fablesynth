@@ -1,25 +1,38 @@
 #include "WavetableView.h"
+#include "dsp/UserTables.h"
+#ifndef FABLE_HOSTED_UI
+#include "PluginProcessor.h"
+#endif
 
-WavetableView::WavetableView(FableAudioProcessor& p, int oscIndex, juce::Colour acc)
-    : proc(p), osc(oscIndex), accent(acc) {
+WavetableView::WavetableView(fui::WtUiModel& m, int oscIndex, juce::Colour acc)
+    : model(m), osc(oscIndex), accent(acc) {
     label = oscIndex == 0 ? "OSC A" : "OSC B";
     startTimerHz(30); // animation cadence (matches the web rAF throttle)
 }
 
+#ifndef FABLE_HOSTED_UI
+WavetableView::WavetableView(FableAudioProcessor& p, int oscIndex, juce::Colour acc)
+    : ownedModel(std::make_unique<StandaloneWtUiModel>(p)), model(*ownedModel),
+      osc(oscIndex), accent(acc) {
+    label = oscIndex == 0 ? "OSC A" : "OSC B";
+    startTimerHz(30);
+}
+#endif
+
 int WavetableView::tableIndex() const {
-    auto* v = proc.apvts.getRawParameterValue(osc == 0 ? "oscA.table" : "oscB.table");
-    return v ? (int)v->load() : 0;
+    auto* p = model.parameters().parameter(osc == 0 ? "oscA.table" : "oscB.table");
+    return p ? (int)p->convertFrom0to1(p->getValue()) : 0;
 }
 
 float WavetableView::knobPos() const {
-    auto* v = proc.apvts.getRawParameterValue(osc == 0 ? "oscA.pos" : "oscB.pos");
-    return v ? v->load() : 0.0f;
+    auto* p = model.parameters().parameter(osc == 0 ? "oscA.pos" : "oscB.pos");
+    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
 }
 
 void WavetableView::timerCallback() {
     // Repaint only when the shown frame or the selected table actually moves
     // (same throttle as the web view) — keeps the UI cheap when nothing changes.
-    float mp = proc.getVizPos(osc);
+    float mp = model.vizPosition(osc);
     float show = mp >= 0 ? mp : knobPos();
     int idx = tableIndex();
     if (idx == lastTable && std::abs(show - lastShown) < 0.004f) return;
@@ -39,7 +52,7 @@ void WavetableView::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
     const int idx = tableIndex();
-    const auto* tp = proc.tableAt(idx);
+    const auto* tp = model.tableAt(idx);
     if (!tp) return; // empty user slot -> nothing to draw
     const auto& t = *tp;
     const int frames = t.frames;
@@ -47,7 +60,7 @@ void WavetableView::paint(juce::Graphics& g) {
     const float* viz = t.viz.data();
     const int N = (int)t.viz.size() / frames;
 
-    const float mp = proc.getVizPos(osc);
+    const float mp = model.vizPosition(osc);
     const float show = mp >= 0 ? mp : knobPos();
 
     // perspective layout (mirrors the web canvas math)
@@ -58,13 +71,13 @@ void WavetableView::paint(juce::Graphics& g) {
     const auto buildPath = [&](int f) {
         // Single-frame tables (drawn / single-cycle import) have frames == 1;
         // guard the depth ratio so it doesn't become 0/0 (NaN coords -> blank).
-        const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+        const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
 
         juce::Path path;
         for (int i = 0; i < N; ++i) {
-            const float x = ox + (i / (float)(N - 1)) * waveW;
+            const float x = ox + (static_cast<float>(i) / static_cast<float>(N - 1)) * waveW;
             const float y = oy - viz[f * N + i] * waveAmp;
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
@@ -73,7 +86,7 @@ void WavetableView::paint(juce::Graphics& g) {
     };
 
     const int cw = getWidth(), ch = getHeight();
-    const int gen = proc.getTablesGeneration();
+    const int gen = model.tablesGeneration();
     const bool cacheValid = cacheTable == idx && cacheGen == gen && cacheW == cw && cacheH == ch;
     if (!cacheValid) {
         farCache = (cw > 0 && ch > 0) ? juce::Image(juce::Image::ARGB, cw * 2, ch * 2, true)
@@ -82,7 +95,7 @@ void WavetableView::paint(juce::Graphics& g) {
             juce::Graphics cg(farCache);
             cg.addTransform(juce::AffineTransform::scale(2.0f));
             for (int f = frames - 1; f >= 0; --f) {
-                const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+                const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
                 cg.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
                 cg.strokePath(buildPath(f), juce::PathStrokeType(1.0f));
             }
@@ -96,10 +109,10 @@ void WavetableView::paint(juce::Graphics& g) {
     if (farCache.isValid())
         g.drawImage(farCache, getLocalBounds().toFloat());
 
-    const float posF = show * (frames - 1);
+    const float posF = show * static_cast<float>(frames - 1);
     // The near frame keeps its cached grey hairline underneath; the glow pass hides it.
     for (int f = frames - 1; f >= 0; --f) {
-        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
+        const float near = juce::jmax(0.0f, 1.0f - std::abs(static_cast<float>(f) - posF));
         if (near <= 0.02f) continue;
 
         auto path = buildPath(f);

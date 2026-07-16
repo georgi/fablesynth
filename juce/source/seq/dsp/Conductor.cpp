@@ -1,5 +1,6 @@
 #include "Conductor.h"
 #include <algorithm>
+#include <cstdint>
 
 namespace fable {
 
@@ -35,9 +36,27 @@ void Conductor::powerOn() {
     applyGains();
 }
 
+void Conductor::startTransport() {
+    if (playing_) return;
+    anchor_ = io_.now() + 256;
+    io_.ioSendTempo(session_.bpm, swing_, anchor_);
+    playing_ = true;
+}
+
+void Conductor::stopTransport() {
+    if (!playing_) return;
+    for (int t = 0; t < (int)session_.tracks.size(); ++t) {
+        if (!owner_.count(t) && !queue_.count(t)) continue;
+        io_.ioScheduleStop(t, 0.0);
+        queue_[t] = SQ_STOP;
+    }
+    playing_ = false;
+}
+
 void Conductor::launch(int t, int s) {
     auto& sc = session_.scenes[(size_t)s];
     if (!sc.hasClip[(size_t)t]) return;
+    startTransport();
     // Stamp the scene as the clip's launch identity: it rides the command to the
     // device and comes back on the Start ack, so onClipStart can attribute the
     // ack to this scene rather than whatever was scheduled last (Finding 1).
@@ -54,6 +73,7 @@ void Conductor::stopTrack(int t) {
 // Empty cells are stop buttons (Ableton semantics): launching a scene stops
 // uncovered tracks unless the cell is marked pass-through.
 void Conductor::launchScene(int s) {
+    startTransport();
     auto& sc = session_.scenes[(size_t)s];
     for (int t = 0; t < (int)sc.clips.size(); t++) {
         if (sc.hasClip[(size_t)t]) {
@@ -108,6 +128,53 @@ void Conductor::createClip(int s, int t) {
     sc.hasClip[(size_t)t] = true;
 }
 
+bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
+                                int transposeSemitones) {
+    if (s < 0 || s >= (int)session_.scenes.size()
+        || t < 0 || t >= (int)session_.tracks.size()
+        || !validateClipLibraryEntry(entry).empty()
+        || entry.machine != session_.tracks[(size_t)t].machine)
+        return false;
+
+    std::vector<uint8_t> bytes = entry.bytes;
+    if (transposeSemitones != 0) {
+        if (!entry.transpose || entry.machine == Machine::DR1) return false;
+        const int lanes = entry.machine == Machine::WT1 ? SQ_WT_POLY_LANES : 1;
+        for (int bar = 0; bar < entry.bars; ++bar) {
+            for (int step = 0; step < SQ_STEPS_PER_BAR; ++step) for (int lane = 0; lane < lanes; ++lane) {
+                const int o = entry.machine == Machine::WT1 ? sqWtNoteIdx(bar, step, lane) : sqNoteIdx(bar, step);
+                if ((bytes[(size_t)o] & 1u) == 0) continue;
+                const uint8_t slide = bytes[(size_t)o + 1] & 0x80;
+                int64_t shifted = (int)(bytes[(size_t)o + 1] & 0x7f)
+                                + 12 * ((int)bytes[(size_t)o + 2] - 1)
+                                + (int64_t)transposeSemitones;
+                // The wire format spans three octaves. Fold by octaves (not
+                // clamp) so pitch class survives even at either boundary,
+                // matching the web library transform.
+                if (shifted > 23) shifted -= ((shifted - 23 + 11) / 12) * 12;
+                if (shifted < -12) shifted += ((-12 - shifted + 11) / 12) * 12;
+                // C++ division truncates toward zero, so offset to a
+                // non-negative 0..35 representation before splitting it.
+                const int encoded = (int)shifted + 12;
+                bytes[(size_t)o + 1] = (uint8_t)(slide | (encoded % 12));
+                bytes[(size_t)o + 2] = (uint8_t)(encoded / 12);
+            }
+        }
+    }
+
+    auto& scene = session_.scenes[(size_t)s];
+    scene.clips[(size_t)t] = ClipData { entry.name, entry.bars, bytes };
+    scene.hasClip[(size_t)t] = true;
+
+    // Same write target as focused edits: a pending clip wins over the
+    // outgoing live owner because ClipHost has only one pending slot.
+    const auto qit = queue_.find(t);
+    const int q = qit != queue_.end() ? qit->second : kNone;
+    const int target = (q != kNone && q != SQ_STOP) ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateClip(t, bytes, entry.bars);
+    return true;
+}
+
 void Conductor::setTrackPatch(int t, PatchRef patch) {
     session_.tracks[(size_t)t].patch = std::move(patch);
 }
@@ -133,10 +200,12 @@ void Conductor::cycleQuant(int d) {
     for (int i = 0; i < 3; i++) if (kOrder[i] == quant_) { ix = i; break; }
     ix = ((ix + d) % 3 + 3) % 3;
     quant_ = kOrder[ix];
+    session_.quant = quant_;
 }
 
 void Conductor::setTrackVol(int t, float v) {
     trackVol_[(size_t)t] = v;
+    session_.tracks[(size_t)t].gain = v;
     applyGains();
 }
 
@@ -144,6 +213,7 @@ void Conductor::setTrackVol(int t, float v) {
 // anchor math (docs §3/§6).
 void Conductor::setSwing(double v) {
     swing_ = v;
+    session_.swing = v;
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
 }
 
@@ -160,6 +230,10 @@ void Conductor::onClipStart(int t, int scene) {
     // newer clip was queued while this ack was in flight, that later launch must
     // stay pending (its own Start ack will promote it). This is the divergence
     // from the web's identity-free acks documented in the header.
+    // A transport stop may overtake an in-flight Start acknowledgement on the
+    // message thread. The immediate Stop command is already queued for the
+    // device, so do not briefly resurrect ownership while transport is down.
+    if (!playing_) return;
     owner_[t] = scene;
     if (queue_.count(t) && queue_[t] == scene) queue_.erase(t);
     applyGains();
@@ -186,6 +260,7 @@ bool Conductor::soloed(int t) const { return solo_[(size_t)t]; }
 float Conductor::trackVol(int t) const { return trackVol_[(size_t)t]; }
 
 SqSongPos Conductor::songPos() const {
+    if (!playing_) return {};
     return sqSongPosition(io_.now(), anchor_, session_.bpm, sr_);
 }
 

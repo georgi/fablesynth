@@ -1,4 +1,52 @@
 #include "DrumEditor.h"
+#include "dsp/DrumParams.h"
+
+namespace fui {
+class StandaloneDrumUiModel final : public DrumUiModel {
+public:
+    explicit StandaloneDrumUiModel(DrumAudioProcessor& p) : proc(p) {}
+    ParameterSource parameters() override { const auto& i = fable::drumParamInfo(); return ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
+    DeviceUiCapabilities capabilities() const override { return {}; }
+    int selectedPad() const override { return proc.getSelectedPad(); }
+    void selectPad(int i) override { proc.setSelectedPad(i); }
+    juce::ChangeBroadcaster& selectionChanges() override { return proc.selectionBroadcaster; }
+    juce::String padName(int i) const override { return proc.getPadName(i); }
+    uint32_t patchContextRevision() const override { return proc.getPatchContextRevision(); }
+    void applyFactoryPadPatch(int i) override { proc.applyFactoryPatch(i); }
+    int currentProgram() const override { return proc.getCurrentProgram(); }
+    int numPrograms() const override { return proc.getNumPrograms(); }
+    juce::String programName(int i) const override { return proc.getProgramName(i); }
+    void selectProgram(int i) override { proc.setCurrentProgram(i); }
+    int numTables() const override { return proc.numTables(); }
+    const fable::GeneratedTable* tableAt(int i) const override { return proc.tableAt(i); }
+    juce::String tableName(int i) const override { return proc.tableName(i); }
+    int tablesGeneration() const override { return proc.getTablesGeneration(); }
+    int addUserTableForPad(int i, fable::UserTable t) override { return proc.addUserTableForPad(i, std::move(t)); }
+    void triggerPad(int i, float v) override { proc.triggerPad(i, v); }
+    uint32_t consumeHitFlags() override { return proc.consumeHitFlags(); }
+    float vizPosition(int i) const override { return proc.getVizPos(i); }
+    float vizEnvelope() const override { return proc.getVizEnv(); }
+    void readScope(float* d, int n) const override { proc.readScope(d, n); }
+    bool midiActive() const override { return proc.getMidiActive(); }
+    bool hostSynced() const override { return proc.isHostSynced(); }
+    double hostBpm() const override { return proc.getHostBpm(); }
+    bool sequencerPlaying() const override { return proc.isSeqPlaying(); }
+    void setSequencerPlaying(bool b) override { proc.setSeqPlaying(b); }
+    int currentStep() const override { return proc.getCurrentStep(); }
+    int currentPattern() const override { return proc.getCurrentPattern(); }
+    int editPattern() const override { return proc.getEditPattern(); }
+    void setEditPattern(int i) override { proc.setEditPattern(i); }
+    uint8_t step(int a, int b, int c) const override { return proc.getStep(a, b, c); }
+    void setStep(int a, int b, int c, uint8_t v) override { proc.setStep(a, b, c, v); }
+    const std::vector<int>& chain() const override { return proc.getChain(); }
+    void setChain(std::vector<int> c) override { proc.setChain(std::move(c)); }
+private:
+    DrumAudioProcessor& proc;
+};
+std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor& p) {
+    return std::make_unique<StandaloneDrumUiModel>(p);
+}
+}
 
 // Web layout, measured from the running DR-1 app (src/drum/drum.css,
 // #drum-rack at its 1460px max-width; rack-relative px):
@@ -9,45 +57,29 @@
 //     #dr-padstrip    (18, 481)  352 x 119
 //     #dr-selbar      (379,103) 1063 x 31
 //     #dr-oscrow      (379,143) 1063 x 243  cols 1fr 1fr 196px, 9px gaps
-//       OSC A (379,143,424) OSC B (812,143,425) NOISE (1246,143,196)
+//       OSC A (379,143,424) SAMPLE (812,143,425) NOISE (1246,143,196)
 //     #dr-editrow     (379,395) 1063 x 209  cols 1fr 1.15fr 1.15fr 1.3fr, 9px gaps
 //       PITCH (379,395,225) AMP (613,395,259) FLT (881,395,259) MOD (1149,395,293)
 //   #dr-stepseq       (18, 613) 1424 x 105
 //   #dr-fxrack        (18, 727) 1424 x 131
 
 // ---- DrumRack ----
-DrumRack::DrumRack(DrumAudioProcessor& p)
-    : header(p), pads(p), padStrip(p), oscA(p, 0), oscB(p, 1), noise(p),
-      pitchEnv(p), ampEnv(p), filter(p), mod(p), selBar(p), stepSeq(p), fxRack(p) {
+DrumRack::DrumRack(fui::DrumUiModel& p) : header(p), body(p) {
+    addAndMakeVisible(body);
+    // The body spans the full logical rack, including the otherwise-empty
+    // header strip. Keep the header above it so its program and master
+    // controls receive mouse events.
     addAndMakeVisible(header);
-    addAndMakeVisible(pads);
-    addAndMakeVisible(padStrip);
-    for (auto* c : std::initializer_list<juce::Component*>{
-             &oscA, &oscB, &noise, &pitchEnv, &ampEnv, &filter, &mod,
-             &selBar, &stepSeq })
-        addAndMakeVisible(*c);
-    addAndMakeVisible(fxRack);
 }
 
 void DrumRack::resized() {
     header.setBounds(18, 14, 1424, 80);
-    pads.setBounds(18, 103, 352, 369);
-    padStrip.setBounds(18, 481, 352, 119);
-    selBar.setBounds(379, 103, 1063, 31);
-    oscA.setBounds(379, 143, 424, 243);
-    oscB.setBounds(812, 143, 425, 243);
-    noise.setBounds(1246, 143, 196, 243);
-    pitchEnv.setBounds(379, 395, 225, 209);
-    ampEnv.setBounds(613, 395, 259, 209);
-    filter.setBounds(881, 395, 259, 209);
-    mod.setBounds(1149, 395, 293, 209);
-    stepSeq.setBounds(18, 613, 1424, 105);
-    fxRack.setBounds(18, 727, 1424, 131);
+    body.setBounds(getLocalBounds());
 }
 
 // ---- DrumEditor ----
 DrumEditor::DrumEditor(DrumAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), rack(p) {
+    : juce::AudioProcessorEditor(p), model(fui::makeStandaloneDrumUiModel(p)), rack(*model) {
     setLookAndFeel(&lnf);
     setWantsKeyboardFocus(true); // QWERTY pad map (PadGrid key-listens on us)
     addAndMakeVisible(rack);
@@ -66,14 +98,20 @@ DrumEditor::~DrumEditor() { setLookAndFeel(nullptr); }
 void DrumEditor::paint(juce::Graphics& g) {
     g.fillAll(fui::col::bg);
     // subtle top radial glow, like the web background
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), getWidth() * 0.5f, -120.0f,
-                                           fui::col::bg, getWidth() * 0.5f, getHeight() * 0.6f, true));
+    const float width = static_cast<float>(getWidth());
+    const float height = static_cast<float>(getHeight());
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), width * 0.5f, -120.0f,
+                                           fui::col::bg, width * 0.5f, height * 0.6f, true));
     g.fillRect(getLocalBounds());
 }
 
 void DrumEditor::resized() {
-    const float sc = juce::jmin(getWidth() / (float)DrumRack::LW, getHeight() / (float)DrumRack::LH);
-    const float dx = (getWidth() - DrumRack::LW * sc) * 0.5f;
-    const float dy = (getHeight() - DrumRack::LH * sc) * 0.5f;
+    const float width = static_cast<float>(getWidth());
+    const float height = static_cast<float>(getHeight());
+    const float rackWidth = static_cast<float>(DrumRack::LW);
+    const float rackHeight = static_cast<float>(DrumRack::LH);
+    const float sc = juce::jmin(width / rackWidth, height / rackHeight);
+    const float dx = (width - rackWidth * sc) * 0.5f;
+    const float dy = (height - rackHeight * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
 }

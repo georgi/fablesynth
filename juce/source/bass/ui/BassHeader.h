@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../BassProcessor.h"
+#include "BassUiModel.h"
 #include "../../ui/Controls.h"
 #include "../../ui/Theme.h"
 
@@ -15,11 +15,11 @@ namespace fui {
 // Post-FX oscilloscope fed by BassAudioProcessor::readScope.
 class BassScopeView : public juce::Component, private juce::Timer {
 public:
-    explicit BassScopeView(BassAudioProcessor&);
+    explicit BassScopeView(BassUiModel&);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override; // repaints only while audio is present
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     bool wasActive_ = true;
 };
 
@@ -27,7 +27,7 @@ private:
 // a tempo it displays getHostBpm() and ignores edits; BassHeader lights SYNC.
 class BassBpmReadout : public juce::Component, private juce::Timer {
 public:
-    explicit BassBpmReadout(BassAudioProcessor&);
+    explicit BassBpmReadout(BassUiModel&);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -38,7 +38,7 @@ private:
     void timerCallback() override;
     int  shown() const;
     void nudge(float deltaNorm);
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     juce::RangedAudioParameter* param = nullptr;
     float lastY = 0;
     int   lastShown = -1;
@@ -47,13 +47,13 @@ private:
 
 class BassHeader : public juce::Component, private juce::Timer {
 public:
-    explicit BassHeader(BassAudioProcessor&);
+    explicit BassHeader(BassUiModel&);
     ~BassHeader() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
     void timerCallback() override;
-    BassAudioProcessor& proc;
+    BassUiModel& proc;
     juce::TextButton prevBtn{"<"}, nextBtn{">"};
     BassScopeView scope;
     BassBpmReadout bpm;

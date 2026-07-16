@@ -343,7 +343,9 @@
   padding-top: 8px;
   flex-wrap: nowrap;
   justify-content: space-evenly;
+  gap: 0;
 }
+.dr-noise-knobs .knob { min-width: 0; }
 
 .pad-grid {
   display: grid;
@@ -610,6 +612,38 @@
   gap: 10px;
 }
 .dr-fx-panel { padding: 8px; }
+.dr-fx-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+  padding: 0 3px 7px;
+}
+.dr-fx-head h2 {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-disp);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+.dr-fx-padname {
+  min-width: 0;
+  color: var(--ac-a);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dr-fx-flow {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 6px;
+  letter-spacing: 0.11em;
+  white-space: nowrap;
+}
 .fx-group {
   min-width: 0;
   min-height: 104px;

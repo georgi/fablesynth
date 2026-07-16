@@ -13,8 +13,9 @@ int factoryPatchCount(fable::Machine m) {
     switch (m) {
         case fable::Machine::DR1: return (int)fable::factoryKits().size();
         case fable::Machine::BL1: return (int)fable::bassFactoryPatches().size();
-        default:                  return (int)fable::factoryPresets().size();
+        case fable::Machine::WT1: return (int)fable::factoryPresets().size();
     }
+    return (int)fable::factoryPresets().size();
 }
 
 juce::String patchName(fable::Machine m, const fable::PatchRef& patch) {
@@ -30,16 +31,18 @@ juce::String patchName(fable::Machine m, const fable::PatchRef& patch) {
             return (patch.index >= 0 && patch.index < (int)v.size())
                        ? juce::String(v[(size_t)patch.index].name) : "PATCH ?";
         }
-        default: {
+        case fable::Machine::WT1: {
             const auto& v = fable::factoryPresets();
             return (patch.index >= 0 && patch.index < (int)v.size())
                        ? juce::String(v[(size_t)patch.index].name) : "PRESET ?";
         }
     }
+    return "PRESET ?";
 }
 
 const char* machineChip(fable::Machine m) {
-    switch (m) { case fable::Machine::DR1: return "DR-1"; case fable::Machine::BL1: return "BL-1"; default: return "WT-1"; }
+    switch (m) { case fable::Machine::DR1: return "DR-1"; case fable::Machine::BL1: return "BL-1"; case fable::Machine::WT1: return "WT-1"; }
+    return "WT-1";
 }
 
 constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";

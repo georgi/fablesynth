@@ -9,24 +9,101 @@
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
 #include "../source/seq/dsp/Conductor.h"
+#include "../source/seq/dsp/ClipLibrary.h"
+#include "../source/seq/dsp/ClipLibrary.gen.h"
 #include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqModel.h"
 #include "../source/seq/dsp/SeqProtocol.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <iterator>
+#include <set>
 #include <tuple>
+#include <vector>
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
+
+static void testClipLibrarySchema() {
+    using namespace fable;
+
+    ClipLibraryEntry lead;
+    lead.id = "neon-lead-01";
+    lead.name = "NEON LEAD";
+    lead.machine = Machine::WT1;
+    lead.bars = 2;
+    lead.bytes = sqEmptyClip(lead.machine, lead.bars);
+    lead.family = "techno";
+    lead.role = "lead";
+    lead.energy = 3;
+    lead.tags = {"bright", "melodic"};
+    lead.root = 0;
+    lead.scale = "minor";
+    lead.transpose = true;
+
+    CHECK(validateClipLibraryEntry(lead).empty());
+    CHECK(sqIsKnownClipRole(Machine::DR1, "four-on-floor"));
+    CHECK(!sqIsKnownClipRole(Machine::DR1, "lead"));
+    CHECK(sqIsKnownClipFamily("lo-fi"));
+    CHECK(!sqIsKnownClipFamily("unknown"));
+
+    auto bad = lead;
+    bad.bytes.pop_back();
+    CHECK(!validateClipLibraryEntry(bad).empty());
+    bad = lead;
+    bad.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 12;
+    CHECK(!validateClipLibraryEntry(bad).empty());
+    bad = lead;
+    bad.energy = 6;
+    CHECK(!validateClipLibraryEntry(bad).empty());
+    bad = lead;
+    bad.role = "four-on-floor";
+    CHECK(!validateClipLibraryEntry(bad).empty());
+
+    std::vector<ClipLibraryEntry> library {lead, lead};
+    CHECK(!validateClipLibrary(library).empty());
+    library[1].id = "neon-lead-02";
+    CHECK(validateClipLibrary(library).empty());
+
+    const auto& factory = factoryClipLibrary();
+    CHECK(factory.size() == 72);
+    CHECK(validateClipLibrary(factory).empty());
+    int dr = 0, bl = 0, wt = 0;
+    for (const auto& clip : factory) {
+        if (clip.machine == Machine::DR1) ++dr;
+        else if (clip.machine == Machine::BL1) ++bl;
+        else if (clip.machine == Machine::WT1) ++wt;
+    }
+    CHECK(dr == 32 && bl == 20 && wt == 20);
+
+    lead.bytes[(size_t)sqWtNoteIdx(0, 0)] = 1 | (1 << 2);
+    lead.bytes[(size_t)sqWtNoteIdx(0, 0) + 1] = 11;
+    lead.bytes[(size_t)sqWtNoteIdx(0, 0) + 2] = 2;
+    lead.bytes[(size_t)sqWtNoteIdx(0, 2) + 1] = 9; // inactive metadata is preserved
+    lead.bytes[(size_t)sqWtNoteIdx(0, 2) + 2] = 1;
+    const auto original = lead.bytes;
+    const auto transposed = transformClipLibraryEntry(lead, ClipTransformKind::transpose, 2);
+    CHECK(lead.bytes == original);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 1] == 1);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 2] == 0);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 2) + 1] == 9);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 2) + 2] == 1);
+    CHECK(transposed.root == 2);
+    const auto rotated = transformClipLibraryEntry(lead, ClipTransformKind::rotate, 1);
+    CHECK((rotated.bytes[(size_t)sqWtNoteIdx(0, 1)] & 1) != 0);
+    const auto repeated = transformClipLibraryEntry(lead, ClipTransformKind::repeat, 4);
+    CHECK(repeated.bars == 4 && repeated.bytes.size() == (size_t)(4 * sqBytesPerBar(Machine::WT1)));
+}
 
 static void testProtocol() {
     using namespace fable;
     CHECK(sqBytesPerBar(Machine::DR1) == 256);
     CHECK(sqBytesPerBar(Machine::BL1) == 48);
-    CHECK(sqBytesPerBar(Machine::WT1) == 48);
+    CHECK(sqBytesPerBar(Machine::WT1) == 384);
     CHECK(sqDr1Idx(1, 2, 3) == (1 * 16 + 2) * 16 + 3);
     CHECK(sqNoteIdx(2, 5) == (2 * 16 + 5) * 3);
 
@@ -35,7 +112,7 @@ static void testProtocol() {
     for (auto b : dr) CHECK(b == 0);
     auto bl = sqEmptyClip(Machine::BL1, 1);
     CHECK(bl.size() == 48);
-    for (int i = 0; i < 48; i++) CHECK(bl[(size_t)i] == (i % 3 == 2 ? 1 : 0));
+    for (int i = 0; i < 48; i++) CHECK(bl[(size_t)i] == (i % 3 == 0 ? 4 : i % 3 == 2 ? 1 : 0));
 
     const double sr = 48000, bpm = 122;
     const double spb = sr * 60 / bpm;
@@ -360,7 +437,7 @@ static void testWt1Hosted() {
 
     // one-bar clip: quarter-note C lane hits on steps 0,4,8,12
     auto clip = sqEmptyClip(Machine::WT1, 1);
-    for (int s : {0, 4, 8, 12}) { clip[(size_t)sqNoteIdx(0, s)] = 1; clip[(size_t)sqNoteIdx(0, s) + 1] = 0; }
+    for (int s : {0, 4, 8, 12}) { clip[(size_t)sqNoteIdx(0, s)] = 1 | (1 << 2); clip[(size_t)sqNoteIdx(0, s) + 1] = 0; }
     e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);   // quant OFF
 
     double frame = 256;
@@ -387,10 +464,11 @@ static void testWt1Hosted() {
 
 // docs/sq4-clips.md §6 rule 4: "the old clip's last gate-off and the new
 // clip's first trigger execute in the same block, old before new." Clip A
-// holds a note via a continuous tie chain (seqToGateOff_ pinned to -1, so it
-// never gates off on its own); clip B is scheduled mid-flight and is all
-// rests, so its own entry-step fire never gates anything off either. Without
-// the swap hook, A's note would keep sounding forever once B takes over.
+// holds a note with a long step duration (seqToGateOff_ = duration * dur,
+// so it never gates off on its own within the test window); clip B is
+// scheduled mid-flight and is all rests, so its own entry-step fire never
+// gates anything off either. Without the swap hook, A's note would keep
+// sounding past its duration once B takes over.
 static void testWt1ClipSwapGatesOldNote() {
     using namespace fable;
     Engine e;
@@ -402,15 +480,13 @@ static void testWt1ClipSwapGatesOldNote() {
     e.setHostClipMode(true);
     e.hostTempo(120, 0, 0);
 
-    // Clip A: step 0 on, step 1 on+tie (keeps the gate held indefinitely —
-    // seqFireAt/clipFireAt's lookahead sees an on+tie next step and sets
-    // seqToGateOff_ = -1). All later steps are irrelevant: the test stops
-    // well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
+    // Clip A: step 0 on with a 63-step duration (keeps the gate held well
+    // past the test window — seqToGateOff_ = 63 * dur). All later steps are
+    // irrelevant: the test stops inside step 0's ~6000-sample first step at
+    // bpm 120/sr 48000.
     auto clipA = sqEmptyClip(Machine::WT1, 1);
-    clipA[(size_t)sqNoteIdx(0, 0)] = 1;                 // on
+    clipA[(size_t)sqNoteIdx(0, 0)] = (uint8_t)(1 | (63 << 2));   // on, 63-step duration
     clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
-    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + tie
-    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
     e.hostClip(clipA.data(), (int)clipA.size(), 1, 0.0); // quant OFF
 
     double frame = 0;
@@ -425,6 +501,51 @@ static void testWt1ClipSwapGatesOldNote() {
     for (int b = 0; b < 3; b++) { e.hostSetFrame(frame); e.render(L, R, 128); frame += 128; }
 
     CHECK(e.seqCurrentNote() < 0);                       // A's note ended at the swap, not left hanging
+}
+
+// WT-1 clips are polyphonic: every active lane gets its own duration timer.
+// A short chord tone must release without cutting a longer tone from the same
+// trigger, and neither may be cut by the following rest step.
+static void testWt1HostedIndependentChordDurations() {
+    using namespace fable;
+    Engine e;
+    e.prepare(48000);
+    std::vector<TablePtr> tables;
+    for (auto& g : generateTables()) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    e.setTables(tables);
+    e.setParams(applyPreset(factoryPresets()[3]));
+    e.setHostClipMode(true);
+    e.hostTempo(120, 0, 0);
+
+    auto clip = sqEmptyClip(Machine::WT1, 1);
+    const auto put = [&](int lane, int note, int duration) {
+        const int o = sqWtNoteIdx(0, 0, lane);
+        clip[(size_t)o] = (uint8_t)(1 | (duration << 2));
+        clip[(size_t)o + 1] = (uint8_t)note;
+        clip[(size_t)o + 2] = 1;
+    };
+    put(0, 0, 3); // C: three 16ths
+    put(1, 4, 1); // E: one 16th
+    e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);
+
+    double frame = 0;
+    float L[128], R[128];
+    auto run = [&](int samples) {
+        while (samples > 0) {
+            const int n = std::min(samples, 128);
+            e.hostSetFrame(frame);
+            e.render(L, R, n);
+            frame += n;
+            samples -= n;
+        }
+    };
+
+    run(128);
+    CHECK(e.seqPendingOffCount() == 2);
+    run(6000);
+    CHECK(e.seqPendingOffCount() == 1);
+    run(12000);
+    CHECK(e.seqPendingOffCount() == 0);
 }
 
 static double rmsBass(fable::BassEngine& e, double& frame, int blocks) {
@@ -455,11 +576,11 @@ static void testBl1Hosted() {
     e.setHostClipMode(true);
     e.hostTempo(122, 0, 256);
 
-    // steps 0..3: 0 on, 1 slide->2, 2 on, 3 off; slide bit = flags bit2
+    // steps 0..3: 0 on, 1 slide->2, 2 on, 3 off.
     auto clip = sqEmptyClip(Machine::BL1, 1);
     auto set = [&](int s, int note, bool slide) {
-        clip[(size_t)sqNoteIdx(0, s)] = (uint8_t)(1 | (slide ? 4 : 0));
-        clip[(size_t)sqNoteIdx(0, s) + 1] = (uint8_t)note;
+        clip[(size_t)sqNoteIdx(0, s)] = 1 | (1 << 2);
+        clip[(size_t)sqNoteIdx(0, s) + 1] = (uint8_t)(note | (slide ? 0x80 : 0));
     };
     set(0, 0, false); set(1, 0, true); set(2, 3, false);
     e.hostClip(clip.data(), (int)clip.size(), 1, 0.0);
@@ -503,10 +624,10 @@ static void testBl1ClipSwapGatesOldNote() {
     // samplesToGateOff_ = -1). All later steps are irrelevant: the test
     // stops well inside step 0's ~6000-sample duration at bpm 120/sr 48000.
     auto clipA = sqEmptyClip(Machine::BL1, 1);
-    clipA[(size_t)sqNoteIdx(0, 0)] = 1;                 // on
+    clipA[(size_t)sqNoteIdx(0, 0)] = 1 | (1 << 2);      // on, one step
     clipA[(size_t)sqNoteIdx(0, 0) + 1] = 0;
-    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | 4;             // on + slide
-    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0;
+    clipA[(size_t)sqNoteIdx(0, 1)] = 1 | (1 << 2);      // on
+    clipA[(size_t)sqNoteIdx(0, 1) + 1] = 0x80;          // slide
     e.hostClip(clipA.data(), (int)clipA.size(), 1, 0.0); // quant OFF
 
     double frame = 0;
@@ -617,6 +738,7 @@ static void testConductor() {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
+        CHECK(!c.playing());
         CHECK(c.anchor() == 256.0);
         CHECK(io.bpm == 122.0);
         CHECK(io.anchor == 256.0);
@@ -630,12 +752,13 @@ static void testConductor() {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
-        io.frame = c.anchor() + 10;
+        io.frame = 1000;
         c.launch(0, 2); // DROP A drums
+        CHECK(c.playing());
         CHECK(io.clips.size() == 1);
-        const double bar = sqBarFrames(122, 48000);
         CHECK(io.clips[0].t == 0 && io.clips[0].bars == 2 && io.clips[0].bytes == 512);
-        CHECK(std::abs(io.clips[0].at - (c.anchor() + bar)) < 1e-6);
+        CHECK(c.anchor() == 1256.0);
+        CHECK(std::abs(io.clips[0].at - c.anchor()) < 1e-6);
         CHECK(c.queueOf(0) == 2);
         CHECK(c.ownerOf(0) == -2);
         CHECK(io.tags.back() == 2); // the scheduled clip carries its scene tag
@@ -791,6 +914,29 @@ static void testConductor() {
         CHECK(io.stops.size() == 4);
     }
 
+    // Combined transport stop is immediate (not launch-quantized), marks the
+    // conductor stopped, and a later scene launch starts from a fresh anchor.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launchScene(2);
+        for (int t = 0; t < 4; ++t) c.onClipStart(t, 2);
+        io.stops.clear();
+        c.stopTransport();
+        CHECK(!c.playing());
+        CHECK(io.stops.size() == 4);
+        for (const auto& stop : io.stops) CHECK(stop.second == 0.0);
+        for (int t = 0; t < 4; ++t) CHECK(c.queueOf(t) == SQ_STOP);
+        CHECK(c.songPos().beat == 0 && c.songPos().bar == 1);
+
+        io.frame = 5000;
+        c.launchScene(3);
+        CHECK(c.playing());
+        CHECK(c.anchor() == 5256.0);
+        CHECK(io.clips.back().at == c.anchor());
+    }
+
     // 11. mute / solo / scene-mute gains.
     {
         FakeIO io;
@@ -909,7 +1055,71 @@ static void testConductor() {
         CHECK(c.session().scenes[0].clips[1].bars == 1);
     }
 
-    // 16. cycleQuant wraps 1 BAR -> 1/4 -> OFF -> 1 BAR in both directions.
+    // 16. Library loads replace/create only the target cell, preserve the
+    //     track patch, reject incompatible machines, hot-update a live or
+    //     pending target, and optionally transpose note payloads.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const auto beforePatch = c.session().tracks[1].patch;
+        const auto beforeDrums = c.session().scenes[0].clips[0];
+        const auto bassIt = std::find_if(factoryClipLibrary().begin(), factoryClipLibrary().end(),
+                                         [](const auto& clip) { return clip.machine == Machine::BL1; });
+        CHECK(bassIt != factoryClipLibrary().end());
+        const auto& bassEntry = *bassIt;
+        CHECK(!c.session().scenes[0].hasClip[1]);
+        CHECK(c.loadLibraryClip(0, 1, bassEntry));
+        CHECK(c.session().scenes[0].hasClip[1]);
+        CHECK(c.session().scenes[0].clips[1].name == bassEntry.name);
+        CHECK(c.session().scenes[0].clips[1].bytes == bassEntry.bytes);
+        CHECK(c.session().tracks[1].patch.factory == beforePatch.factory);
+        CHECK(c.session().tracks[1].patch.index == beforePatch.index);
+        CHECK(c.session().tracks[1].patch.params == beforePatch.params);
+        CHECK(c.session().scenes[0].clips[0].bytes == beforeDrums.bytes);
+        CHECK(io.updates.empty()); // newly-created idle cell: no engine traffic
+
+        const auto saved = c.session().scenes[0].clips[1];
+        CHECK(!c.loadLibraryClip(0, 1, factoryClipLibrary()[0])); // DR1 -> BL1
+        CHECK(c.session().scenes[0].clips[1].bytes == saved.bytes);
+
+        c.launch(1, 0); // pending target
+        CHECK(c.loadLibraryClip(0, 1, *std::next(bassIt)));
+        CHECK(io.updates.size() == 1);
+        CHECK(std::get<0>(io.updates.back()) == 1);
+        c.onClipStart(1, 0); // live target
+        CHECK(c.loadLibraryClip(0, 1, bassEntry));
+        CHECK(io.updates.size() == 2);
+    }
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const auto noteIt = std::find_if(factoryClipLibrary().begin(), factoryClipLibrary().end(),
+                                         [](const auto& clip) { return clip.machine == Machine::WT1; });
+        CHECK(noteIt != factoryClipLibrary().end());
+        ClipLibraryEntry note = *noteIt;
+        note.bytes = sqEmptyClip(Machine::WT1, 1);
+        note.bytes[(size_t)sqNoteIdx(0, 0)] = 1 | (1 << 2);
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 3;
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 1;
+        CHECK(c.loadLibraryClip(0, 2, note, 5)); // empty INTRO lead cell
+        const auto& loaded = c.session().scenes[0].clips[2];
+        CHECK(loaded.bytes[(size_t)sqNoteIdx(0, 0) + 1] == 8);
+        CHECK(loaded.bytes[(size_t)sqNoteIdx(0, 0) + 2] == 1);
+
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 1] = 11;
+        note.bytes[(size_t)sqNoteIdx(0, 0) + 2] = 2; // +23; +1 folds to +12
+        CHECK(c.loadLibraryClip(0, 2, note, 1));
+        const auto folded = c.session().scenes[0].clips[2].bytes;
+        CHECK(folded[(size_t)sqNoteIdx(0, 0) + 1] == 0);
+        CHECK(folded[(size_t)sqNoteIdx(0, 0) + 2] == 2);
+        note.transpose = false;
+        CHECK(!c.loadLibraryClip(0, 2, note, -1));
+        CHECK(c.session().scenes[0].clips[2].bytes == folded);
+    }
+
+    // 17. cycleQuant wraps 1 BAR -> 1/4 -> OFF -> 1 BAR in both directions.
     {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
@@ -926,17 +1136,61 @@ static void testConductor() {
     }
 }
 
+static void testSessionLibraryMusicality() {
+    using namespace fable;
+    const auto& library = factorySessionLibrary();
+    CHECK(library.size() == 24);
+
+    // Register split: every generated pad sits strictly below every lead note.
+    for (size_t p = 1; p < library.size(); ++p) {
+        for (const auto& scene : library[p].session.scenes) {
+            if (!scene.hasClip[2] || !scene.hasClip[3]) continue;
+            const auto pitches = [](const ClipData& clip) {
+                std::vector<int> out;
+                for (size_t i = 0; i + 2 < clip.bytes.size(); i += SQ_NOTE_STRIDE)
+                    if (clip.bytes[i] & 1)
+                        out.push_back(((int)clip.bytes[i + 2] - 1) * 12 + (clip.bytes[i + 1] & 0x7f));
+                return out;
+            };
+            const auto lead = pitches(scene.clips[2]);
+            const auto pad = pitches(scene.clips[3]);
+            CHECK(!lead.empty() && !pad.empty());
+            CHECK(*std::min_element(lead.begin(), lead.end()) >= 12);
+            CHECK(*std::max_element(lead.begin(), lead.end()) <= 23);
+            CHECK(*std::max_element(pad.begin(), pad.end()) <= 11);
+            CHECK(*std::min_element(pad.begin(), pad.end()) >= 0);
+        }
+    }
+
+    // Unique drums: all 24 DROP-A patterns differ; scenes differ within a song.
+    std::set<std::vector<uint8_t>> dropDrums;
+    for (const auto& preset : library)
+        dropDrums.insert(preset.session.scenes[2].clips[0].bytes);
+    CHECK(dropDrums.size() == library.size());
+    for (size_t p = 1; p < library.size(); ++p) {
+        const auto& scenes = library[p].session.scenes;
+        CHECK(!scenes[4].hasClip[0]); // BREAK stays drumless
+        std::set<std::vector<uint8_t>> perScene;
+        for (size_t s : { (size_t)0, (size_t)1, (size_t)2, (size_t)3, (size_t)5 })
+            perScene.insert(scenes[s].clips[0].bytes);
+        CHECK(perScene.size() == 5);
+    }
+}
+
 int main() {
+    testClipLibrarySchema();
     testProtocol();
     testModelAndFactory();
     testClipHost();
     testHostEventLossless();
     testWt1Hosted();
     testWt1ClipSwapGatesOldNote();
+    testWt1HostedIndependentChordDurations();
     testBl1Hosted();
     testBl1ClipSwapGatesOldNote();
     testDr1Hosted();
     testConductor();
+    testSessionLibraryMusicality();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");
     return 0;

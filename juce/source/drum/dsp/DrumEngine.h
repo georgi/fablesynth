@@ -1,6 +1,6 @@
 // DR-1 drum voice engine — C++ port of src/drum/engine/worklet-drum.js.
-// 16 one-shot pad voices: 2 wavetable oscillators (band-limited mip playback
-// with crossfade, unison), tilted noise, pitch env, one-shot AHD amp env,
+// 16 one-shot pad voices: one wavetable oscillator plus a raw sample player,
+// tilted noise, pitch env, one-shot AHD amp env,
 // SVF filter with ADAA drive, 4-slot mod matrix, choke groups, per-pad
 // level/pan/velocity and 5-bus (MAIN + AUX 1-4) output routing.
 //
@@ -11,6 +11,7 @@
 #pragma once
 
 #include "DrumParams.h"
+#include "DrumFx.h"
 #include "../../dsp/ClipHost.h"
 #include "../../dsp/Engine.h"       // fable::Rng + TablePtr (via Wavetables.h)
 
@@ -42,6 +43,8 @@ struct DrumTable {
 class DrumEngine {
 public:
     void prepare(double sampleRate);
+    void enablePadFx(bool on) { padFxEnabled_ = on; }
+    int latencySamples() const { return padFxEnabled_ ? padFx_[0].latencySamples() : 0; }
     void setTables(std::vector<TablePtr> tables);   // same mutex swap scheme as Engine::setTables
     void setParam(int id, float v) { p_[(size_t)id] = v; }
     void setParams(const DrumParamArray& p) { p_ = p; }
@@ -160,14 +163,21 @@ private:
         int    ftype = 0; bool twoPole = false;
         double k1 = 0;
     };
+    struct SampleState {
+        double pos = -1;
+        int index = -1;
+        bool done = false;
+    };
     struct PadVoice {
         bool   active = false;
         double vel = 1, rand = 0;
         long   t = 0;              // samples since trigger
         double ampLevel = 0; bool choking = false;
-        OscState oA, oB;
+        OscState oA;
+        SampleState sample;
         FilterState f;
         double noiseY = 0;
+        double ringPhase = 0.25;
         double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
         double lgPrev = -1;        // level*vel gain ramp start (Finding 7)
 
@@ -184,6 +194,9 @@ private:
     bool setupOsc(OscState& o, int base, double pitchEnv,
                   double mPos, double mFine, double mPitch, int n);
     static void renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n);
+    void renderSample(SampleState& state, int padI, double pitchEnv,
+                      double modStart, double modFine, double modPitch,
+                      float* tmpL, float* tmpR, int off, int n) const;
     void setupFilter(FilterState& fs, int padI, double mCut, double mRes, int n);
     void runFilter(FilterState& fs, const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n) const;
@@ -201,6 +214,8 @@ private:
     // live clip rather than pats_/chain_; no tie/lookahead state to carry
     // (each pad's val is independent, unlike BL-1/WT-1's slide chains).
     void clipFireAt(int abs);
+
+    float param(int id) const { return p_[(size_t)id]; }
 
     // sequencer state (js:82-89)
     std::vector<uint8_t> pats_ =
@@ -244,6 +259,9 @@ private:
     // per-block scratch (worklet process quantum)
     float tmpL_[128] = {0}, tmpR_[128] = {0};
     float fL_[128] = {0}, fR_[128] = {0};
+    float padL_[128] = {0}, padR_[128] = {0};
+    std::array<DrumFx, DR_NPADS> padFx_;
+    bool padFxEnabled_ = false; // pure engine tests/embedders opt in explicitly
 };
 
 } // namespace fable

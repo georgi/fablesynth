@@ -38,9 +38,10 @@ public:
     // (not muted/soloed-out/scene-muted) -- the same gate paintFilledCell
     // uses to dim the cell and show MUTED, exposed without pixel probing.
     bool cellAudible(int s, int t) const;
+    bool cellStopping(int s, int t) const;
 
-    // Task 13's mini-strip mode: render only scene s's row (at local y=0)
-    // plus a slim rail of 6 numbered scene chips for switching between them.
+    // Focus mini-strip: render only scene s's row, with a compact 2x3 rail of
+    // numbered scene chips immediately to its left.
     void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; resized(); repaint(); }
     void clearSingleRow() { singleRow_ = false; resized(); repaint(); }
     std::function<void(int)> onRailScene;

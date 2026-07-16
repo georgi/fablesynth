@@ -10,7 +10,10 @@
 namespace fable {
 
 // Serialize a session to the web SessionDoc v:1 JSON string.
-juce::String sessionToJson(const SessionData& session);
+// `embedFactoryPatches` is for portable files/state: factory references are
+// resolved into inline parameter maps. Internal preset-library comparisons use
+// the compact default representation so their factory identity is preserved.
+juce::String sessionToJson(const SessionData& session, bool embedFactoryPatches = false);
 
 // Parse a SessionDoc v:1 JSON string. Returns true and fills `out` on success;
 // returns false (leaving `out` untouched) on any shape/validation error so the

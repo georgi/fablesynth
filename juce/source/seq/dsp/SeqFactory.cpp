@@ -1,72 +1,99 @@
-// C++ port of src/seq/factory.ts — verbatim clip-for-clip, note-for-note
-// transcription so both builds ship the same NEON TALE factory session.
-// DR-1 pad map (TR-VOID kit): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
+// C++ port of src/seq/factory.ts — note-for-note transcription so both builds
+// ship the same NEON TALE factory session. The session *library* generator
+// (factorySessionLibrary) is likewise a transcription of
+// src/seq/sessionPresets.ts, so the 24 presets match the web byte-for-byte.
+// Clip bytes use the shared packed
+// layout (flags: on/acc/duration, note+slide, oct+1) — identical to the web.
+// DR-1 pad map (shared by 808, UZU, and hybrid kits): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
 // 6 OH HAT · 8..10 TOMS · 12/13 PERC.
 #include "SeqFactory.h"
+#include "ClipLibrary.gen.h"
 
 #include <algorithm>
-#include <tuple>
+#include <map>
+#include <utility>
 
 namespace fable {
 namespace {
 
 // ---------- pattern builders ----------
 
-// One entry per bar; each bar is a list of {pad, steps, accents}.
-using DrumHit = std::tuple<int, std::vector<int>, std::vector<int>>;
-using DrumBar = std::vector<DrumHit>;
-
-ClipData drumClip(std::string name, std::vector<DrumBar> barsSpec) {
-    const int bars = (int)barsSpec.size();
-    ClipData c;
-    c.name = std::move(name);
-    c.bars = bars;
-    c.bytes.assign((size_t)(bars * sqBytesPerBar(Machine::DR1)), 0);
-    for (int b = 0; b < bars; b++) {
-        for (auto& hit : barsSpec[(size_t)b]) {
-            int pad = std::get<0>(hit);
-            const std::vector<int>& steps = std::get<1>(hit);
-            const std::vector<int>& accents = std::get<2>(hit);
-            for (int s : steps) {
-                bool acc = std::find(accents.begin(), accents.end(), s) != accents.end();
-                c.bytes[(size_t)sqDr1Idx(b, pad, s)] = (uint8_t)(acc ? 2 : 1);
-            }
-        }
-    }
-    return c;
-}
-
+// Field order is positional so clip literals read like the web NoteStep:
+// { s, n, o, a, sl, d, lane }. `sl` (BL-1 slide) precedes `d` (duration) so a
+// bare fifth bool still means a slide; durations default to one step.
 struct NoteStep {
     int s;
     int n;
     int o = 0;
     bool a = false;
-    bool t = false;
+    bool sl = false;   // BL-1 legato slide (note-byte bit 7); WT-1 ignores it
+    int d = 1;         // duration in 16th-note steps (1..63)
+    int lane = 0;      // WT-1 chord voice
 };
 
-ClipData noteClip(std::string name, int bars, std::vector<NoteStep> steps) {
+ClipData noteClip(Machine machine, std::string name, int bars, std::vector<NoteStep> steps) {
     ClipData c;
     c.name = std::move(name);
     c.bars = bars;
-    c.bytes.assign((size_t)(bars * sqBytesPerBar(Machine::WT1)), 0);
-    // oct byte defaults to 1 (= oct 0) so rests read back neutral
-    for (size_t i = 2; i < c.bytes.size(); i += SQ_NOTE_STRIDE) c.bytes[i] = 1;
+    c.bytes.assign((size_t)(bars * sqBytesPerBar(machine)), 0);
+    // One-step duration plus neutral octave for every note slot.
+    for (size_t i = 0; i < c.bytes.size(); i += SQ_NOTE_STRIDE) {
+        c.bytes[i] = 1 << 2;
+        c.bytes[i + 2] = 1;
+    }
+    const int clipSteps = bars * SQ_STEPS_PER_BAR;
     for (auto& st : steps) {
-        int o = sqNoteIdx(st.s / 16, st.s % 16);
-        c.bytes[(size_t)o] = (uint8_t)(1 | (st.a ? 2 : 0) | (st.t ? 4 : 0));
-        c.bytes[(size_t)o + 1] = (uint8_t)st.n;
+        const int o = machine == Machine::WT1 ? sqWtNoteIdx(st.s / 16, st.s % 16, st.lane)
+                                              : sqNoteIdx(st.s / 16, st.s % 16);
+        // duration clamps to 63 and to the remaining clip length (web noteClip)
+        const int duration = std::min({ 63, clipSteps - st.s, std::max(1, st.d) });
+        c.bytes[(size_t)o]     = (uint8_t)(1 | (st.a ? 2 : 0) | (duration << 2));
+        c.bytes[(size_t)o + 1] = (uint8_t)(st.n | (machine == Machine::BL1 && st.sl ? 0x80 : 0));
         c.bytes[(size_t)o + 2] = (uint8_t)(st.o + 1);
     }
     return c;
 }
 
-// A held swell: one attack, then a tie on EVERY following step of the span —
-// a tie only sustains when the immediately next step ties in, so gaps in the
-// tie chain would gate the note off (and slow-attack pads would never open).
-std::vector<NoteStep> held(int s0, int span, int n, int o = 0) {
+ClipData bassClip(std::string name, int bars, std::vector<NoteStep> steps) {
+    return noteClip(Machine::BL1, std::move(name), bars, std::move(steps));
+}
+ClipData wtClip(std::string name, int bars, std::vector<NoteStep> steps) {
+    return noteClip(Machine::WT1, std::move(name), bars, std::move(steps));
+}
+
+// A held swell: a single note whose duration spans `span` steps, split only
+// at the packed format's 63-step limit (web factory.ts held). Duration — not a
+// tie chain — sustains the note across steps.
+std::vector<NoteStep> held(int s0, int span, int n, int o = 0, int lane = 0) {
     std::vector<NoteStep> out;
-    out.push_back({ s0, n, o, false, false });
-    for (int s = s0 + 1; s < s0 + span; s++) out.push_back({ s, n, o, false, true });
+    for (int s = s0, remaining = span; remaining > 0;) {
+        const int d = std::min(remaining, 63);
+        out.push_back({ s, n, o, false, false, d, lane });
+        s += d;
+        remaining -= d;
+    }
+    return out;
+}
+
+void append(std::vector<NoteStep>& dst, std::vector<NoteStep> src);
+
+std::vector<NoteStep> chordHeld(int s0, int span, int root, int octave = 0, bool minor = true) {
+    std::vector<NoteStep> out;
+    const int intervals[3] { 0, minor ? 3 : 4, 7 };
+    for (int lane = 0; lane < 3; ++lane) {
+        const int absolute = root + intervals[lane];
+        append(out, held(s0, span, absolute % 12, octave + absolute / 12, lane));
+    }
+    return out;
+}
+
+// A held chord close-voiced in the octave below the root (web chordHeldLow):
+// each tone at its pitch class − 12.
+std::vector<NoteStep> chordHeldLow(int s0, int span, int root, bool minor = true) {
+    std::vector<NoteStep> out;
+    const int intervals[3] { 0, minor ? 3 : 4, 7 };
+    for (int lane = 0; lane < 3; ++lane)
+        append(out, held(s0, span, ((root + intervals[lane]) % 12 + 12) % 12, -1, lane));
     return out;
 }
 
@@ -74,69 +101,67 @@ void append(std::vector<NoteStep>& dst, std::vector<NoteStep> src) {
     for (auto& s : src) dst.push_back(s);
 }
 
+// FOG STABS voicing (web factory.ts FOG_STABS flatMap): each root expands to a
+// close-voiced 3-note chord across lanes 0..2 — root, +3, +7 as pitch classes
+// in the root's octave, so the stabs stay in the −12..−1 band under the lead.
+std::vector<NoteStep> fogVoicing(std::vector<NoteStep> roots) {
+    std::vector<NoteStep> out;
+    for (auto step : roots) {
+        out.push_back(step);                                  // lane 0 (root)
+        NoteStep v1 = step; v1.lane = 1; v1.n = (step.n + 3) % 12;
+        out.push_back(v1);
+        NoteStep v2 = step; v2.lane = 2; v2.n = (step.n + 7) % 12;
+        out.push_back(v2);
+    }
+    return out;
+}
+
 // ---------- drum clips ----------
 
-constexpr int KICK = 0, SNARE = 2, CLAP = 3, RIM = 4, CH = 5, OH = 6, TOM_LO = 8, TOM_HI = 10, PERC = 12;
-
-const std::vector<int> four = { 0, 4, 8, 12 };
-const std::vector<int> off8 = { 2, 6, 10, 14 };
-const std::vector<int> all16 = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
-
-ClipData sparseKick() {
-    return drumClip("SPARSE KICK", {
-        { { KICK, { 0, 8 }, { 0 } }, { RIM, { 10 }, {} } },
-    });
-}
-
-ClipData hatRise() {
-    return drumClip("HAT RISE", {
-        { { KICK, four, { 0 } }, { CH, { 0, 4, 8, 12 }, {} }, { PERC, { 14 }, {} } },
-        { { KICK, four, { 0 } }, { CH, all16, { 4, 12 } }, { OH, { 14 }, {} } },
-    });
-}
-
-ClipData fullKitA() {
-    return drumClip("FULL KIT A", {
-        { { KICK, four, { 0 } }, { SNARE, { 4, 12 }, {} }, { CH, off8, {} }, { OH, { 10 }, {} }, { CLAP, { 12 }, {} } },
-        { { KICK, four, { 0 } }, { SNARE, { 4, 12 }, { 12 } }, { CH, off8, {} }, { OH, { 6, 14 }, {} }, { PERC, { 7, 15 }, {} } },
-    });
-}
-
-ClipData fullKitB() {
-    return drumClip("FULL KIT B", {
-        { { KICK, { 0, 4, 7, 8, 12 }, { 0 } }, { SNARE, { 4, 12 }, {} }, { CH, all16, { 2, 6, 10, 14 } }, { CLAP, { 12 }, {} } },
-        { { KICK, { 0, 4, 8, 10, 12 }, { 0 } }, { SNARE, { 4, 12, 15 }, { 15 } }, { CH, all16, { 2, 6, 10, 14 } }, { TOM_HI, { 13 }, {} }, { TOM_LO, { 14 }, {} } },
-    });
-}
-
-ClipData tailKick() {
-    return drumClip("TAIL KICK", {
-        { { KICK, { 0, 8 }, {} }, { OH, { 8 }, {} }, { PERC, { 12 }, {} } },
-    });
+ClipData libraryDrumClip(const char* id) {
+    for (const auto& clip : factoryClipLibrary())
+        if (clip.machine == Machine::DR1 && clip.id == id)
+            return ClipData { clip.name, clip.bars, clip.bytes };
+    return {};
 }
 
 // ---------- bass clips (BL-1 lanes: 0 = its C, slide bit glides) ----------
 
 ClipData acidCrawl() {
-    return noteClip("ACID CRAWL", 2, {
+    return bassClip("ACID CRAWL", 2, {
         { 0, 0 }, { 3, 0, 0, false, true }, { 8, 3 }, { 11, 0 },
         { 16, 0 }, { 19, 10, -1 }, { 24, 5 }, { 27, 3, 0, false, true },
     });
 }
 
 ClipData acid303() {
-    return noteClip("ACID 303", 1, {
+    return bassClip("ACID 303", 4, {
         { 0, 0, 0, true }, { 2, 0 }, { 3, 0, 1, false, true }, { 4, 0 },
         { 6, 3, 0, true }, { 7, 5, 0, false, true }, { 8, 0 }, { 10, 10, -1 },
         { 11, 0, 0, false, true }, { 12, 7, 0, true }, { 14, 5 }, { 15, 3, 0, false, true },
+        { 16, 10, 0, true }, { 18, 10 }, { 20, 5 }, { 22, 3, 0, false, true },
+        { 24, 10 }, { 26, 0, 1 }, { 28, 7 }, { 30, 5, 0, false, true },
+        { 32, 7, 0, true }, { 34, 7 }, { 36, 2 }, { 38, 0, 0, false, true },
+        { 40, 7 }, { 42, 10, -1 }, { 44, 5 }, { 46, 3, 0, false, true },
+        { 48, 5, 0, true }, { 50, 5 }, { 52, 0 }, { 54, 10, -1, false, true },
+        { 56, 5 }, { 58, 7 }, { 60, 3 }, { 62, 0, 0, false, true },
     });
 }
 
 ClipData acidShift() {
-    return noteClip("ACID SHIFT", 1, {
+    return bassClip("ACID SHIFT", 4, {
         { 0, 3, 0, true }, { 2, 3 }, { 4, 10, -1 }, { 5, 3, 0, false, true },
         { 7, 7 }, { 8, 3, 0, true }, { 10, 5, 0, false, true }, { 12, 0 },
         { 13, 0, 1, false, true }, { 15, 10, -1 },
+        { 16, 0, 0, true }, { 18, 0 }, { 20, 7 }, { 21, 0, 0, false, true },
+        { 23, 10 }, { 24, 0, 0, true }, { 26, 3, 0, false, true }, { 28, 5 },
+        { 30, 7, -1 }, { 31, 10, 0, false, true },
+        { 32, 10, 0, true }, { 34, 10 }, { 36, 5 }, { 37, 10, 0, false, true },
+        { 39, 3 }, { 40, 10, 0, true }, { 42, 0, 0, false, true }, { 44, 3 },
+        { 46, 5, -1 }, { 47, 7, 0, false, true },
+        { 48, 7, 0, true }, { 50, 7 }, { 52, 2 }, { 53, 7, 0, false, true },
+        { 55, 0 }, { 56, 7, 0, true }, { 58, 10, 0, false, true }, { 60, 0 },
+        { 62, 3, -1 },
     });
 }
 
@@ -147,78 +172,89 @@ ClipData subHold() {
     append(steps, held(32, 16, 3, -1));
     append(steps, held(48, 12, 5, -1));
     append(steps, held(60, 4, 7, -1));
-    return noteClip("SUB HOLD", 4, steps);
+    return bassClip("SUB HOLD", 4, steps);
 }
 
 // ---------- lead / pad clips (WT-1, lanes relative to seq.root C3) ----------
 
 ClipData glassHook() {
-    return noteClip("GLASS HOOK", 2, {
+    return wtClip("GLASS HOOK", 4, {
         { 0, 0, 1, true }, { 3, 10 }, { 6, 7 }, { 8, 3, 1 },
-        { 10, 10, 0, false, true }, { 14, 5 },
+        { 10, 10 }, { 14, 5 },
         { 16, 0, 1, true }, { 19, 10 }, { 22, 7 }, { 24, 2, 1 },
-        { 26, 0, 1, false, true }, { 30, 7, 0, false, true },
+        { 26, 0, 1 }, { 30, 7 },
+        { 32, 7, 1, true }, { 35, 5, 1 }, { 38, 2, 1 }, { 40, 10 },
+        { 42, 7, 1 }, { 46, 5 },
+        { 48, 5, 1, true }, { 51, 3, 1 }, { 54, 0, 1 }, { 56, 10 },
+        { 58, 7 }, { 62, 3, 1 },
     });
 }
 
 ClipData glassHookII() {
-    return noteClip("GLASS HOOK II", 2, {
+    return wtClip("GLASS HOOK II", 4, {
         { 0, 3, 1, true }, { 3, 0, 1 }, { 6, 10 }, { 8, 5, 1 },
-        { 10, 3, 1, false, true }, { 14, 7 },
+        { 10, 3, 1 }, { 14, 7 },
         { 16, 3, 1, true }, { 19, 2, 1 }, { 22, 0, 1 }, { 24, 10 },
-        { 26, 7, 0, false, true }, { 30, 10, 0, false, true },
+        { 26, 7 }, { 30, 10 },
+        { 32, 10, 1, true }, { 35, 7, 1 }, { 38, 5 }, { 40, 3, 1 },
+        { 42, 2, 1 }, { 46, 0, 1 },
+        { 48, 7, 1, true }, { 51, 5, 1 }, { 54, 3, 1 }, { 56, 0, 1 },
+        { 58, 10 }, { 62, 7 },
     });
 }
 
 ClipData glassSolo() {
-    return noteClip("GLASS SOLO", 4, {
-        { 0, 0, 1 }, { 4, 10, 0, false, true }, { 8, 7, 0, false, true }, { 12, 10, 0, false, true },
-        { 16, 3, 1 }, { 20, 2, 1, false, true }, { 24, 0, 1, false, true }, { 28, 10, 0, false, true },
-        { 32, 5, 1 }, { 36, 3, 1, false, true }, { 40, 2, 1, false, true }, { 44, 0, 1, false, true },
-        { 48, 10, 0, true }, { 52, 7, 0, false, true }, { 56, 3, 0, false, true }, { 60, 0, 0, false, true },
+    return wtClip("GLASS SOLO", 4, {
+        { 0, 0, 1 }, { 4, 10 }, { 8, 7 }, { 12, 10 },
+        { 16, 3, 1 }, { 20, 2, 1 }, { 24, 0, 1 }, { 28, 10 },
+        { 32, 5, 1 }, { 36, 3, 1 }, { 40, 2, 1 }, { 44, 0, 1 },
+        { 48, 10, 0, true }, { 52, 7 }, { 56, 3 }, { 60, 0 },
     });
 }
 
 ClipData airBed() {
     std::vector<NoteStep> steps;
-    append(steps, held(0, 16, 0));
-    append(steps, held(16, 16, 10, -1));
-    append(steps, held(32, 16, 8, -1));
-    append(steps, held(48, 16, 3));
-    return noteClip("AIR BED", 4, steps);
+    append(steps, chordHeld(0, 16, 0));
+    append(steps, chordHeld(16, 16, 10, -1, false));
+    append(steps, chordHeld(32, 16, 8, -1, false));
+    append(steps, chordHeld(48, 16, 3));
+    return wtClip("AIR BED", 4, steps);
 }
 
 ClipData airBedII() {
     std::vector<NoteStep> steps;
-    append(steps, held(0, 16, 3));
-    append(steps, held(16, 16, 2));
-    append(steps, held(32, 16, 0));
-    append(steps, held(48, 16, 10, -1));
-    return noteClip("AIR BED II", 4, steps);
+    append(steps, chordHeld(0, 16, 3));
+    append(steps, chordHeld(16, 16, 2));
+    append(steps, chordHeld(32, 16, 0));
+    append(steps, chordHeld(48, 16, 10, -1, false));
+    return wtClip("AIR BED II", 4, steps);
 }
 
 ClipData fogStabs() {
-    return noteClip("FOG STABS", 2, {
-        { 0, 0 }, { 2, 0, 0, false, true }, { 7, 3 }, { 10, 5, 0, true }, { 12, 5, 0, false, true },
-        { 16, 10, -1 }, { 18, 10, -1, false, true }, { 23, 0 }, { 26, 2 }, { 28, 3, 0, false, true },
-    });
+    static const std::vector<NoteStep> roots = {
+        { 0, 0, -1 }, { 2, 0, -1 }, { 7, 3, -1 }, { 10, 5, -1, true }, { 12, 5, -1 },
+        { 16, 10, -1 }, { 18, 10, -1 }, { 23, 0, -1 }, { 26, 2, -1 }, { 28, 3, -1 },
+        { 32, 7, -1 }, { 34, 7, -1 }, { 39, 10, -1 }, { 42, 2, -1, true }, { 44, 2, -1 },
+        { 48, 5, -1 }, { 50, 5, -1 }, { 55, 0, -1 }, { 58, 3, -1 }, { 60, 0, -1 },
+    };
+    return wtClip("FOG STABS", 4, fogVoicing(roots));
 }
 
 ClipData fogSwell() {
     std::vector<NoteStep> steps;
-    append(steps, held(0, 32, 0));
-    append(steps, held(32, 32, 10, -1));
-    append(steps, held(64, 32, 5));
-    append(steps, held(96, 32, 3));
-    return noteClip("FOG SWELL", 8, steps);
+    append(steps, chordHeldLow(0, 32, 0));
+    append(steps, chordHeldLow(32, 32, 10, false));
+    append(steps, chordHeldLow(64, 32, 5));
+    append(steps, chordHeldLow(96, 32, 3));
+    return wtClip("FOG SWELL", 8, steps);
 }
 
 ClipData airOut() {
     std::vector<NoteStep> steps;
-    append(steps, held(0, 32, 0));
-    append(steps, held(32, 32, 10, -1));
-    append(steps, held(64, 64, 0, -1));
-    return noteClip("AIR OUT", 8, steps);
+    append(steps, chordHeld(0, 32, 0));
+    append(steps, chordHeld(32, 32, 10, -1, false));
+    append(steps, chordHeld(64, 64, 0, -1));
+    return wtClip("AIR OUT", 8, steps);
 }
 
 // scene[track] convenience: mark hasClip and store the clip, or leave empty.
@@ -238,16 +274,218 @@ SceneData scene(std::string name, std::vector<ClipData*> clips) {
     return sc;
 }
 
+// ---------- procedural session generator (port of src/seq/sessionPresets.ts) ----------
+
+struct Harmony { std::array<int, 4> roots; std::array<bool, 4> minor; };
+
+struct PresetSpec {
+    const char* name; const char* family; const char* variation;
+    int energy; std::vector<std::string> tags;
+    std::array<int, 4> programs; int variationIndex;
+};
+
+Harmony harmonyFor(const PresetSpec& spec) {
+    const auto tonic = [&]() -> int {
+        const std::string f = spec.family;
+        if (f == "NEON") return 0;
+        if (f == "ACID") return 2;
+        if (f == "AMBIENT") return 9;
+        if (f == "HOUSE") return 5;
+        if (f == "LO-FI") return 7;
+        return 4; // CINEMATIC
+    }();
+    static const Harmony plans[4] = {
+        { { 0, 8, 3, 10 }, { true, false, false, false } }, // i–VI–III–VII
+        { { 0, 5, 8, 7 },  { true, true, false, false } },  // i–iv–VI–V
+        { { 0, 3, 10, 5 }, { true, false, false, true } },  // i–III–VII–iv
+        { { 0, 7, 5, 10 }, { true, false, true, false } },  // i–V–iv–VII
+    };
+    Harmony h = plans[spec.variationIndex];
+    for (auto& root : h.roots) root = (root + tonic) % 12;
+    return h;
+}
+
+void putNote(std::vector<uint8_t>& bytes, int offset, int absolute, int duration = 1, bool accent = false) {
+    const int pitchClass = ((absolute % 12) + 12) % 12;
+    bytes[(size_t)offset] = (uint8_t)(1 | (accent ? 2 : 0) | (std::min(63, std::max(1, duration)) << 2));
+    bytes[(size_t)offset + 1] = (uint8_t)pitchClass;
+    bytes[(size_t)offset + 2] = (uint8_t)std::max(0, std::min(2, (absolute - pitchClass) / 12 + 1));
+}
+
+ClipData bassProgression(const Harmony& harmony, const std::string& variation) {
+    ClipData clip { variation + " ROOTS · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
+    for (int bar = 0; bar < 4; ++bar) {
+        // One low root, then one fifth: deliberate space for the drums and pad.
+        putNote(clip.bytes, sqNoteIdx(bar, 0), harmony.roots[(size_t)bar] - 12, 8, true);
+        putNote(clip.bytes, sqNoteIdx(bar, 8), harmony.roots[(size_t)bar] - 5, 8);
+    }
+    return clip;
+}
+
+ClipData padProgression(const Harmony& harmony, const std::string& variation) {
+    ClipData clip { variation + " CHORDS · 4 BAR", 4, sqEmptyClip(Machine::WT1, 4) };
+    for (int bar = 0; bar < 4; ++bar) {
+        // Close-voice the triad as pitch classes inside the root octave (+0..+11):
+        // the pad bed stays strictly below the +12..+23 lead band for every root.
+        const int root = harmony.roots[(size_t)bar];
+        const int chord[3] { root, root + (harmony.minor[(size_t)bar] ? 3 : 4), root + 7 };
+        for (int lane = 0; lane < 3; ++lane)
+            putNote(clip.bytes, sqWtNoteIdx(bar, 0, lane), ((chord[lane] % 12) + 12) % 12, 16);
+    }
+    return clip;
+}
+
+// Authored pitch-class melodies for the four progressions in harmonyFor().
+// (see src/seq/sessionPresets.ts LEAD_LINES for the voice-leading notes)
+constexpr int LEAD_LINES[4][4][6] = {
+    { { 7, 3, 5, 7, 10, 7 }, { 8, 0, 10, 0, 3, 0 }, { 10, 7, 5, 7, 10, 2 }, { 5, 2, 3, 2, 10, 0 } },
+    { { 3, 7, 10, 7, 5, 3 }, { 5, 8, 0, 8, 7, 5 }, { 3, 0, 8, 0, 3, 0 }, { 2, 7, 11, 2, 11, 7 } },
+    { { 0, 3, 7, 7, 10, 3 }, { 7, 10, 2, 3, 2, 10 }, { 10, 2, 5, 2, 0, 10 }, { 8, 5, 0, 8, 7, 0 } },
+    { { 7, 10, 0, 3, 2, 0 }, { 7, 11, 2, 7, 5, 2 }, { 5, 8, 0, 0, 3, 8 }, { 5, 2, 10, 2, 0, 7 } },
+};
+
+struct LeadRhythm { int step; int duration; };
+const std::array<LeadRhythm, 6>& leadRhythmFor(const std::string& family) {
+    static const std::map<std::string, std::array<LeadRhythm, 6>> rhythms = {
+        { "NEON",      { { { 0, 3 }, { 3, 3 }, { 6, 2 }, { 8, 3 }, { 11, 3 }, { 14, 2 } } } },
+        { "ACID",      { { { 0, 2 }, { 2, 3 }, { 5, 3 }, { 8, 2 }, { 10, 4 }, { 14, 2 } } } },
+        { "AMBIENT",   { { { 0, 4 }, { 4, 4 }, { 8, 2 }, { 10, 2 }, { 12, 2 }, { 14, 2 } } } },
+        { "HOUSE",     { { { 0, 3 }, { 3, 3 }, { 6, 3 }, { 9, 2 }, { 11, 3 }, { 14, 2 } } } },
+        { "LO-FI",     { { { 0, 4 }, { 4, 3 }, { 7, 2 }, { 9, 3 }, { 12, 3 }, { 15, 1 } } } },
+        { "CINEMATIC", { { { 0, 4 }, { 4, 3 }, { 7, 1 }, { 8, 4 }, { 12, 2 }, { 14, 2 } } } },
+    };
+    const auto it = rhythms.find(family);
+    return it != rhythms.end() ? it->second : rhythms.at("NEON");
+}
+
+ClipData leadProgression(const Harmony& harmony, const PresetSpec& spec) {
+    ClipData clip { std::string(spec.variation) + " MELODY · 4 BAR", 4, sqEmptyClip(Machine::WT1, 4) };
+    const int tonic = harmony.roots[0];
+    const auto& rhythm = leadRhythmFor(spec.family);
+    for (int bar = 0; bar < 4; ++bar) {
+        for (int event = 0; event < 6; ++event) {
+            // Voice the melody strictly one octave above the pad bed (+12..+23).
+            const int pitchClass = (tonic + LEAD_LINES[spec.variationIndex][bar][event]) % 12;
+            putNote(clip.bytes, sqWtNoteIdx(bar, rhythm[(size_t)event].step, 0),
+                    pitchClass + 12, rhythm[(size_t)event].duration, event == 0);
+        }
+    }
+    return clip;
+}
+
+namespace drum {
+constexpr int KICK = 0, SNARE = 2, CLAP = 3, RIM = 4, CH = 5, OH = 6,
+              TOM_LO = 8, TOM_MID = 9, TOM_HI = 10, PERC_A = 12, PERC_B = 13;
+}
+
+struct DrumVoice { int pad; std::vector<int> steps; std::vector<int> accents; };
+struct DrumArchetype { DrumVoice kick, back, hat, open; std::vector<DrumVoice> perc; };
+struct DrumFillHit { int pad; int step; bool accent; };
+
+const DrumArchetype& drumArchetypeFor(const std::string& family) {
+    using namespace drum;
+    static const std::map<std::string, DrumArchetype> archetypes = {
+        { "NEON", { { KICK, { 0, 4, 8, 12 }, { 0 } }, { CLAP, { 4, 12 }, {} },
+                    { CH, { 2, 6, 10, 14 }, { 2, 10 } }, { OH, { 2, 10 }, {} },
+                    { { PERC_A, { 15 }, {} } } } },
+        { "ACID", { { KICK, { 0, 4, 8, 12, 14 }, { 0 } }, { SNARE, { 4, 12 }, { 4, 12 } },
+                    { CH, { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }, { 2, 6, 10, 14 } },
+                    { OH, { 7 }, {} }, {} } },
+        { "AMBIENT", { { KICK, { 0, 8 }, {} }, { RIM, { 8 }, {} },
+                       { CH, { 4, 12 }, {} }, { OH, {}, {} },
+                       { { PERC_A, { 2 }, {} } } } },
+        { "HOUSE", { { KICK, { 0, 4, 8, 12 }, {} }, { CLAP, { 4, 12 }, {} },
+                     { CH, { 2, 6, 10, 14 }, {} }, { OH, { 2, 6, 10, 14 }, { 6, 14 } }, {} } },
+        { "LO-FI", { { KICK, { 0, 7, 10 }, { 0 } }, { SNARE, { 4, 12 }, {} },
+                     { CH, { 0, 3, 6, 8, 11, 14 }, {} }, { OH, { 14 }, {} },
+                     { { PERC_B, { 6 }, {} } } } },
+        { "CINEMATIC", { { KICK, { 0, 10 }, { 0 } }, { SNARE, { 8 }, { 8 } },
+                         { CH, {}, {} }, { OH, {}, {} },
+                         { { TOM_LO, { 13 }, {} } } } },
+    };
+    const auto it = archetypes.find(family);
+    return it != archetypes.end() ? it->second : archetypes.at("NEON");
+}
+
+const std::vector<DrumFillHit>& drumFillFor(const std::string& family) {
+    using namespace drum;
+    static const std::map<std::string, std::vector<DrumFillHit>> fills = {
+        { "NEON", { { TOM_HI, 10, false }, { TOM_MID, 12, false }, { TOM_LO, 14, true } } },
+        { "ACID", { { SNARE, 13, false }, { SNARE, 14, false }, { SNARE, 15, true } } },
+        { "AMBIENT", { { OH, 12, false }, { PERC_A, 14, false } } },
+        { "HOUSE", { { CLAP, 13, false }, { CLAP, 15, true } } },
+        { "LO-FI", { { PERC_B, 13, false }, { PERC_B, 15, false } } },
+        { "CINEMATIC", { { TOM_HI, 8, false }, { TOM_MID, 10, false }, { TOM_LO, 12, true }, { TOM_LO, 14, true } } },
+    };
+    const auto it = fills.find(family);
+    return it != fills.end() ? it->second : fills.at("NEON");
+}
+
+ClipData drumProgression(const PresetSpec& spec, int scene) {
+    using namespace drum;
+    const auto& family = drumArchetypeFor(spec.family);
+    ClipData clip;
+    clip.bars = 4;
+    clip.bytes.assign(4 * 256, 0);
+    const auto hit = [&](int bar, int pad, int step, bool accent = false) {
+        clip.bytes[(size_t)sqDr1Idx(bar, pad, step)] = (uint8_t)(accent ? 2 : 1);
+    };
+    const auto contains = [](const std::vector<int>& v, int x) {
+        return std::find(v.begin(), v.end(), x) != v.end();
+    };
+    const bool intro = scene == 0, build = scene == 1, outro = scene == 5;
+
+    std::vector<int> hatSteps;
+    if (spec.energy >= 4) for (int s = 0; s < 16; ++s) hatSteps.push_back(s);
+    else if (spec.energy <= 2) {
+        for (size_t i = 0; i < family.hat.steps.size(); i += 2) hatSteps.push_back(family.hat.steps[i]);
+    } else hatSteps = family.hat.steps;
+    const int shift = spec.variationIndex + (scene == 3 ? 1 : 0);
+    std::vector<int> hatAccents;
+    for (size_t k = 0; k < family.hat.accents.size(); ++k)
+        hatAccents.push_back(hatSteps.empty() ? -1 : hatSteps[((size_t)((int)k * 2 + shift)) % hatSteps.size()]);
+    static const std::array<std::pair<int, int>, 4> ghosts { { { -1, -1 }, { KICK, 14 }, { SNARE, 11 }, { PERC_B, 3 } } };
+    const auto ghost = ghosts[(size_t)spec.variationIndex];
+
+    for (int bar = 0; bar < 4; ++bar) {
+        const bool lastBar = bar == 3;
+        std::vector<int> kickSteps;
+        for (int s : family.kick.steps) if (!(intro || outro) || s % 8 == 0) kickSteps.push_back(s);
+        for (int s : kickSteps) hit(bar, family.kick.pad, s, contains(family.kick.accents, s));
+        if (!intro && !outro) {
+            for (int s : family.back.steps) hit(bar, family.back.pad, s, contains(family.back.accents, s));
+            if (!build && ghost.first >= 0) hit(bar, ghost.first, ghost.second);
+        }
+        if (!outro) {
+            std::vector<int> steps;
+            if (intro) {
+                for (size_t i = 0; i < family.hat.steps.size(); ++i)
+                    if (((int)i + spec.variationIndex) % 2 == 0) steps.push_back(family.hat.steps[i]);
+            } else steps = hatSteps;
+            for (int s : steps) hit(bar, family.hat.pad, s, !intro && contains(hatAccents, s));
+            if (!intro) for (int s : family.open.steps) hit(bar, family.open.pad, s, contains(family.open.accents, s));
+        }
+        if (!intro) for (const auto& voice : family.perc) for (int s : voice.steps) hit(bar, voice.pad, s, contains(voice.accents, s));
+        if ((intro || outro) && lastBar && ghost.first >= 0 && spec.variationIndex >= 2) hit(bar, ghost.first, ghost.second);
+        if (build && lastBar) for (int s : { 12, 13, 14, 15 }) hit(bar, PERC_A, s, s == 15);
+        if (!intro && !build && !outro && (lastBar || (scene == 3 && bar == 1)))
+            for (const auto& f : drumFillFor(spec.family)) hit(bar, f.pad, f.step, f.accent);
+    }
+    const char* role = intro ? "INTRO" : build ? "BUILD" : outro ? "TAIL" : scene == 3 ? "DRIVE II" : "DRIVE";
+    clip.name = std::string(spec.variation) + " " + role + " · 4 BAR";
+    return clip;
+}
+
 } // namespace
 
 // ---------- the session ----------
 
 SessionData factorySession() {
-    static ClipData SPARSE_KICK = sparseKick();
-    static ClipData HAT_RISE = hatRise();
-    static ClipData FULL_KIT_A = fullKitA();
-    static ClipData FULL_KIT_B = fullKitB();
-    static ClipData TAIL_KICK = tailKick();
+    static ClipData SPARSE_KICK = libraryDrumClip("dr1-distant-ticks");
+    static ClipData HAT_RISE = libraryDrumClip("dr1-hat-rise");
+    static ClipData FULL_KIT_A = libraryDrumClip("dr1-neon-drive");
+    static ClipData FULL_KIT_B = libraryDrumClip("dr1-jungle-sparks");
+    static ClipData TAIL_KICK = libraryDrumClip("dr1-ghost-shuffle");
     static ClipData ACID_CRAWL = acidCrawl();
     static ClipData ACID_303 = acid303();
     static ClipData ACID_SHIFT = acidShift();
@@ -268,7 +506,7 @@ SessionData factorySession() {
     s.quant = Quant::Bar;
 
     s.tracks = {
-        { Machine::DR1, "DRUMS", 0xff4de8ffu, 0.8f, { true, 0, {} } }, // TR-VOID
+        { Machine::DR1, "DRUMS", 0xff4de8ffu, 0.8f, { true, 13, {} } }, // 808+UZU HYBRID
         { Machine::BL1, "BASS",  0xff4dff9eu, 0.75f, { true, 0, {} } }, // ACID LINE
         { Machine::WT1, "LEAD",  0xffffa14du, 0.85f, { true, 3, {} } }, // CRYSTAL PLUCK
         { Machine::WT1, "PADS",  0xffb18cffu, 1.0f, { true, 11, {} } }, // FUTURE CHORD
@@ -284,6 +522,122 @@ SessionData factorySession() {
     };
 
     return s;
+}
+
+const std::vector<SessionPreset>& factorySessionLibrary() {
+    static const std::vector<SessionPreset> presets = [] {
+        auto make = [](const char* name, const char* family, const char* variation,
+                       int energy, std::initializer_list<const char*> tags,
+                       std::array<int, 4> programs, int variationIndex) {
+            SessionPreset preset;
+            preset.name = name;
+            preset.family = family;
+            preset.variation = variation;
+            preset.energy = energy;
+            for (auto* tag : tags) preset.tags.emplace_back(tag);
+            preset.session = factorySession();
+            preset.session.name = name;
+            preset.session.bpm = 96.0 + energy * 7.0 + variationIndex;
+            preset.session.swing = family == std::string("HOUSE") ? 0.12
+                                 : family == std::string("LO-FI") ? 0.18 : 0.0;
+            const auto calibratedGain = [](size_t track, int program) {
+                if (track == 0) return 0.78f; // drums: fixed reference level
+                if (track == 1) { // measured BL-1 phrase loudness
+                    switch (program) {
+                        case 0: return 0.72f; case 2: return 0.73f;
+                        case 4: return 0.87f; case 5: return 0.67f;
+                        case 7: return 0.71f; case 8: return 0.70f;
+                        case 10: return 0.65f; default: return 0.72f;
+                    }
+                }
+                if (track == 2) { // measured WT-1 lead loudness
+                    switch (program) {
+                        case 3: return 1.00f; case 6: return 0.62f;
+                        case 14: return 1.00f; case 15: return 0.95f;
+                        case 19: return 0.45f; default: return 0.80f;
+                    }
+                }
+                switch (program) { // measured WT-1 pad loudness
+                    case 1: return 0.85f; case 6: return 1.00f;
+                    case 11: return 0.65f; case 17: return 0.90f;
+                    default: return 0.80f;
+                }
+            };
+            for (size_t t = 0; t < programs.size(); ++t) {
+                preset.session.tracks[t].patch = PatchRef { true, programs[t], {} };
+                preset.session.tracks[t].gain = calibratedGain(t, programs[t]);
+            }
+
+            // One harmonic world per song (port of sessionPresets.ts buildSession).
+            const PresetSpec spec { name, family, variation, energy, preset.tags,
+                                    programs, variationIndex };
+            const Harmony harmony = harmonyFor(spec);
+            const ClipData bass = bassProgression(harmony, variation);
+            const ClipData lead = leadProgression(harmony, spec);
+            const ClipData pads = padProgression(harmony, variation);
+            for (size_t s = 0; s < preset.session.scenes.size(); ++s) {
+                auto& sceneData = preset.session.scenes[s];
+                const ClipData drums = drumProgression(spec, (int)s);
+                // Arrange density intentionally; the tonal parts keep one
+                // progression whenever they enter, so every scene is one song.
+                const std::array<const ClipData*, 4> picks =
+                    s == 0 ? std::array<const ClipData*, 4> { &drums, nullptr, nullptr, &pads }
+                    : s == 1 ? std::array<const ClipData*, 4> { &drums, &bass, nullptr, &pads }
+                    : s == 4 ? std::array<const ClipData*, 4> { nullptr, &bass, &lead, &pads }
+                    : s == 5 ? std::array<const ClipData*, 4> { &drums, nullptr, nullptr, &pads }
+                    : std::array<const ClipData*, 4> { &drums, &bass, &lead, &pads };
+                for (size_t t = 0; t < 4; ++t) {
+                    sceneData.hasClip[t] = picks[t] != nullptr;
+                    sceneData.clips[t] = picks[t] ? *picks[t] : ClipData {};
+                }
+            }
+            return preset;
+        };
+
+        // Program order is DR-1, BL-1, WT-1 lead, WT-1 pad. The two WT slots
+        // are voiced as complementary roles rather than interchangeable picks.
+        auto library = std::vector<SessionPreset> {
+            // NEON / SYNTHWAVE
+            make("NEON TALE",    "NEON", "ORIGINAL", 3, { "bright", "balanced", "wide" }, { 0, 0, 3, 11 }, 0),
+            make("NEON CHASE",   "NEON", "CHASE",    5, { "bright", "driving", "wide" }, { 13, 2, 14, 11 }, 1),
+            make("GLASS CIRCUIT", "NEON", "GLASS",   2, { "clean", "glassy", "sparse" }, { 12, 5, 6, 1 }, 2),
+            make("AFTERGLOW",    "NEON", "SOFT",     2, { "warm", "soft", "wide" }, { 3, 7, 19, 17 }, 3),
+
+            // ACID / WAREHOUSE
+            make("WAREHOUSE RAW", "ACID", "RAW",     5, { "hard", "dark", "driving" }, { 13, 4, 14, 11 }, 0),
+            make("ACID FLASH",    "ACID", "FLASH",   4, { "acid", "bright", "punchy" }, { 3, 0, 3, 1 }, 1),
+            make("STEEL PULSE",   "ACID", "METAL",   4, { "metallic", "tight", "industrial" }, { 12, 2, 19, 17 }, 2),
+            make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 6, 11 }, 3),
+
+            // AMBIENT / DEEP
+            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 12, 7, 6, 17 }, 0),
+            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 13, 0, 19, 1 }, 1),
+            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 12, 5, 6, 17 }, 2),
+            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 3, 7, 15, 1 }, 3),
+
+            // HOUSE / CLUB
+            make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 12, 4, 14, 11 }, 0),
+            make("MIDNIGHT FLOOR", "HOUSE", "NIGHT",  4, { "club", "round", "wide" }, { 13, 0, 3, 1 }, 1),
+            make("TAPE DISCO",    "HOUSE", "TAPE",    3, { "tape", "soft", "groovy" }, { 3, 7, 15, 17 }, 2),
+            make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 12, 5, 19, 1 }, 3),
+
+            // LO-FI / RETRO
+            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 7, 15, 17 }, 0),
+            make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 12, 5, 3, 1 }, 1),
+            make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 13, 2, 15, 17 }, 2),
+            make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 3, 0, 19, 1 }, 3),
+
+            // CINEMATIC / EXPERIMENTAL
+            make("CHROME CATHEDRAL", "CINEMATIC", "CATHEDRAL", 3, { "large", "metallic", "ceremonial" }, { 13, 7, 6, 17 }, 0),
+            make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 12, 5, 19, 11 }, 1),
+            make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 4, 6, 17 }, 2),
+            make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 19, 11 }, 3),
+        };
+        // Preserve the hand-authored cross-platform factory session exactly.
+        library.front().session = factorySession();
+        return library;
+    }();
+    return presets;
 }
 
 } // namespace fable

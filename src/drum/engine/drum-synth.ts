@@ -1,10 +1,12 @@
 // Main-thread DR-1 engine: owns the AudioContext, drum worklet and FX graph.
 
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
+import { makeDriveCurve } from '../../engine/drive';
 import { type ParamValues } from '../../params';
-import { defaultDrumParams } from '../params';
+import { defaultDrumParams, PAD_COUNT, pad } from '../params';
 import { generateDrumTables } from './drumtables';
 import { generateSampledDrumTables } from './sampledtables.gen';
+import { loadDrumOneShots, type DrumOneShot } from './oneshots.gen';
 import workletUrl from './worklet-drum.js?url';
 
 export interface VizTable {
@@ -32,6 +34,30 @@ interface WetDry {
   wet: GainNode;
 }
 
+interface PadFxChain {
+  input: GainNode;
+  driveShaper: WaveShaperNode;
+  drivePre: GainNode;
+  driveMix: WetDry;
+  compressor: DynamicsCompressorNode;
+  compMakeup: GainNode;
+  compMix: WetDry;
+  chDelay1: DelayNode;
+  chDelay2: DelayNode;
+  chLfo: OscillatorNode;
+  chDepth1: GainNode;
+  chDepth2: GainNode;
+  chorusMix: WetDry;
+  dlL: DelayNode;
+  dlR: DelayNode;
+  dlFb: GainNode;
+  dlFb2: GainNode;
+  delayMix: WetDry;
+  convolver: ConvolverNode;
+  verbMix: WetDry;
+  verbTimer: ReturnType<typeof setTimeout> | 0;
+}
+
 // Hosted-mode options (SQ-4): share an AudioContext and route the engine's
 // output into a provided node instead of ctx.destination. Defaults keep the
 // standalone behavior byte-for-byte. See docs/sq4-clips.md §7.
@@ -40,13 +66,20 @@ export interface EngineInitOpts {
   output?: AudioNode;
 }
 
-export const isFxParam = (id: string): boolean => id.startsWith('fx.') || id === 'master.volume';
+export const isFxParam = (id: string): boolean =>
+  id.startsWith('fx.') || /^pad(?:[0-9]|1[0-5])\.fx\./.test(id) || id === 'master.volume';
+
+export function fxPadFromParam(id: string): number | null {
+  const match = /^pad([0-9]|1[0-5])\.fx\./.exec(id);
+  return match ? Number(match[1]) : null;
+}
 
 export class DrumEngine {
   params: ParamValues;
   tables: VizTable[] | null;
   builtInTables: GeneratedTable[];
   userTables: GeneratedTable[];
+  samples: DrumOneShot[];
   ready: boolean;
   onstep: ((d: { s: number; pat: number; hits: number[] }) => void) | null;
   onviz: ((d: { a: number; b: number; env: number }) => void) | null;
@@ -58,28 +91,7 @@ export class DrumEngine {
   ctx!: AudioContext;
   node!: AudioWorkletNode;
 
-  fxInput!: GainNode;
-  driveShaper!: WaveShaperNode;
-  drivePre!: GainNode;
-  driveMix!: WetDry;
-  compressor!: DynamicsCompressorNode;
-  compMakeup!: GainNode;
-  compMix!: WetDry;
-  chDelay1!: DelayNode;
-  chDelay2!: DelayNode;
-  chLfo!: OscillatorNode;
-  chDepth1!: GainNode;
-  chDepth2!: GainNode;
-  chorusMix!: WetDry;
-  dlL!: DelayNode;
-  dlR!: DelayNode;
-  dlFb!: GainNode;
-  dlFb2!: GainNode;
-  dlDamp!: BiquadFilterNode;
-  delayMix!: WetDry;
-  convolver!: ConvolverNode;
-  verbMix!: WetDry;
-  verbTimer!: ReturnType<typeof setTimeout> | 0;
+  fxChains: PadFxChain[];
   masterGain!: GainNode;
   dcBlock!: BiquadFilterNode;
   limiter!: DynamicsCompressorNode;
@@ -90,6 +102,7 @@ export class DrumEngine {
     this.tables = null;
     this.builtInTables = [];
     this.userTables = [];
+    this.samples = [];
     this.ready = false;
     this.onstep = null;
     this.onviz = null;
@@ -97,6 +110,7 @@ export class DrumEngine {
     this.onclipstop = null;
     this.onpos = null;
     this.output = null;
+    this.fxChains = [];
   }
 
   async init(opts: EngineInitOpts = {}): Promise<void> {
@@ -107,12 +121,13 @@ export class DrumEngine {
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.builtInTables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()];
+    this.samples = await loadDrumOneShots();
     this.refreshViz();
 
     this.node = new AudioWorkletNode(ctx, 'fable-dr', {
       numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
+      numberOfOutputs: PAD_COUNT,
+      outputChannelCount: Array(PAD_COUNT).fill(2),
     });
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
@@ -124,9 +139,10 @@ export class DrumEngine {
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
     this.pushTables();
+    this.pushSamples();
 
     this.buildFx();
-    this.node.connect(this.fxInput);
+    this.fxChains.forEach((chain, i) => this.node.connect(chain.input, i));
     this.applyAllFx();
   }
 
@@ -144,6 +160,17 @@ export class DrumEngine {
     this.node.port.postMessage({
       t: 'tables',
       list: all.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.slice().buffer })),
+    });
+  }
+
+  pushSamples(): void {
+    if (!this.ready) return;
+    this.node.port.postMessage({
+      t: 'samples',
+      list: this.samples.map((s) => ({
+        sampleRate: s.sampleRate,
+        buf: s.data.slice().buffer,
+      })),
     });
   }
 
@@ -165,80 +192,8 @@ export class DrumEngine {
   buildFx(): void {
     if (!this.ready) return;
     const ctx = this.ctx;
-    this.fxInput = ctx.createGain();
 
-    // -- drive --
-    const driveOut = ctx.createGain();
-    this.driveShaper = ctx.createWaveShaper();
-    this.driveShaper.oversample = '2x';
-    this.drivePre = ctx.createGain();
-    this.fxInput.connect(this.drivePre).connect(this.driveShaper);
-    this.driveMix = this.mkWetDry(this.fxInput, driveOut);
-    this.driveShaper.connect(this.driveMix.wet);
-
-    // -- compressor --
-    const compOut = ctx.createGain();
-    this.compressor = ctx.createDynamicsCompressor();
-    this.compressor.ratio.value = 4;
-    this.compressor.knee.value = 9;
-    this.compressor.attack.value = 0.003;
-    this.compressor.release.value = 0.25;
-    this.compMakeup = ctx.createGain();
-    driveOut.connect(this.compressor).connect(this.compMakeup);
-    this.compMix = this.mkWetDry(driveOut, compOut);
-    this.compMakeup.connect(this.compMix.wet);
-
-    // -- chorus --
-    const chorusOut = ctx.createGain();
-    const merger = ctx.createChannelMerger(2);
-    this.chDelay1 = ctx.createDelay(0.1);
-    this.chDelay2 = ctx.createDelay(0.1);
-    this.chDelay1.delayTime.value = 0.012;
-    this.chDelay2.delayTime.value = 0.017;
-    compOut.connect(this.chDelay1);
-    compOut.connect(this.chDelay2);
-    this.chDelay1.connect(merger, 0, 0);
-    this.chDelay2.connect(merger, 0, 1);
-    this.chLfo = ctx.createOscillator();
-    this.chDepth1 = ctx.createGain();
-    this.chDepth2 = ctx.createGain();
-    this.chLfo.connect(this.chDepth1).connect(this.chDelay1.delayTime);
-    this.chLfo.connect(this.chDepth2).connect(this.chDelay2.delayTime);
-    this.chDepth2.gain.value = -0.003;
-    this.chLfo.start();
-    this.chorusMix = this.mkWetDry(compOut, chorusOut);
-    merger.connect(this.chorusMix.wet);
-
-    // -- ping-pong delay --
-    const delayOut = ctx.createGain();
-    this.dlL = ctx.createDelay(2);
-    this.dlR = ctx.createDelay(2);
-    this.dlFb = ctx.createGain();
-    this.dlFb2 = ctx.createGain();
-    this.dlDamp = ctx.createBiquadFilter();
-    this.dlDamp.type = 'lowpass';
-    this.dlDamp.frequency.value = 4500;
-    const dlMerge = ctx.createChannelMerger(2);
-    const dlIn = ctx.createGain();
-    chorusOut.connect(dlIn);
-    dlIn.connect(this.dlL);
-    this.dlL.connect(dlMerge, 0, 0);
-    this.dlR.connect(dlMerge, 0, 1);
-    this.dlL.connect(this.dlFb).connect(this.dlDamp).connect(this.dlR);
-    this.dlR.connect(this.dlFb2).connect(this.dlL);
-    this.delayMix = this.mkWetDry(chorusOut, delayOut);
-    dlMerge.connect(this.delayMix.wet);
-
-    // -- reverb --
-    const verbOut = ctx.createGain();
-    this.convolver = ctx.createConvolver();
-    delayOut.connect(this.convolver);
-    this.verbMix = this.mkWetDry(delayOut, verbOut);
-    this.convolver.connect(this.verbMix.wet);
-    this.verbTimer = 0;
-    this.renderImpulse();
-
-    // -- master --
+    // -- shared master (the only stage after the per-pad chains) --
     this.masterGain = ctx.createGain();
     this.dcBlock = ctx.createBiquadFilter();
     this.dcBlock.type = 'highpass';
@@ -249,17 +204,101 @@ export class DrumEngine {
     this.limiter.ratio.value = 14;
     this.limiter.attack.value = 0.002;
     this.limiter.release.value = 0.22;
-
     this.scopeAnalyser = ctx.createAnalyser();
     this.scopeAnalyser.fftSize = 2048;
-
-    verbOut.connect(this.masterGain).connect(this.dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
+    this.masterGain.connect(this.dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
     this.masterGain.connect(this.scopeAnalyser);
+
+    this.fxChains = Array.from({ length: PAD_COUNT }, () => this.buildPadFx());
+    for (let i = 0; i < PAD_COUNT; i++) this.renderImpulse(i);
   }
 
-  renderImpulse(): void {
+  buildPadFx(): PadFxChain {
+    const ctx = this.ctx;
+    const input = ctx.createGain();
+
+    // -- drive --
+    const driveOut = ctx.createGain();
+    const driveShaper = ctx.createWaveShaper();
+    driveShaper.oversample = '2x';
+    const drivePre = ctx.createGain();
+    input.connect(drivePre).connect(driveShaper);
+    const driveMix = this.mkWetDry(input, driveOut);
+    driveShaper.connect(driveMix.wet);
+
+    // -- compressor --
+    const compOut = ctx.createGain();
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.ratio.value = 4;
+    compressor.knee.value = 9;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    const compMakeup = ctx.createGain();
+    driveOut.connect(compressor).connect(compMakeup);
+    const compMix = this.mkWetDry(driveOut, compOut);
+    compMakeup.connect(compMix.wet);
+
+    // -- chorus --
+    const chorusOut = ctx.createGain();
+    const merger = ctx.createChannelMerger(2);
+    const chDelay1 = ctx.createDelay(0.1);
+    const chDelay2 = ctx.createDelay(0.1);
+    chDelay1.delayTime.value = 0.012;
+    chDelay2.delayTime.value = 0.017;
+    compOut.connect(chDelay1);
+    compOut.connect(chDelay2);
+    chDelay1.connect(merger, 0, 0);
+    chDelay2.connect(merger, 0, 1);
+    const chLfo = ctx.createOscillator();
+    const chDepth1 = ctx.createGain();
+    const chDepth2 = ctx.createGain();
+    chLfo.connect(chDepth1).connect(chDelay1.delayTime);
+    chLfo.connect(chDepth2).connect(chDelay2.delayTime);
+    chDepth2.gain.value = -0.003;
+    chLfo.start();
+    const chorusMix = this.mkWetDry(compOut, chorusOut);
+    merger.connect(chorusMix.wet);
+
+    // -- ping-pong delay --
+    const delayOut = ctx.createGain();
+    const dlL = ctx.createDelay(2);
+    const dlR = ctx.createDelay(2);
+    const dlFb = ctx.createGain();
+    const dlFb2 = ctx.createGain();
+    const dlDamp = ctx.createBiquadFilter();
+    dlDamp.type = 'lowpass';
+    dlDamp.frequency.value = 4500;
+    const dlMerge = ctx.createChannelMerger(2);
+    const dlIn = ctx.createGain();
+    chorusOut.connect(dlIn);
+    dlIn.connect(dlL);
+    dlL.connect(dlMerge, 0, 0);
+    dlR.connect(dlMerge, 0, 1);
+    dlL.connect(dlFb).connect(dlDamp).connect(dlR);
+    dlR.connect(dlFb2).connect(dlL);
+    const delayMix = this.mkWetDry(chorusOut, delayOut);
+    dlMerge.connect(delayMix.wet);
+
+    // -- reverb --
+    const verbOut = ctx.createGain();
+    const convolver = ctx.createConvolver();
+    delayOut.connect(convolver);
+    const verbMix = this.mkWetDry(delayOut, verbOut);
+    convolver.connect(verbMix.wet);
+    verbOut.connect(this.masterGain);
+
+    return {
+      input, driveShaper, drivePre, driveMix, compressor, compMakeup, compMix,
+      chDelay1, chDelay2, chLfo, chDepth1, chDepth2, chorusMix,
+      dlL, dlR, dlFb, dlFb2, delayMix, convolver, verbMix, verbTimer: 0,
+    };
+  }
+
+  renderImpulse(padI: number): void {
     if (!this.ready) return;
-    const size = this.params['fx.reverb.size'];
+    const chain = this.fxChains[padI];
+    if (!chain) return;
+    const size = this.params[pad(padI, 'fx.reverb.size')];
     const dur = 0.5 + size * 4.5;
     const sr = this.ctx.sampleRate;
     const len = Math.floor(dur * sr);
@@ -272,7 +311,7 @@ export class DrumEngine {
         d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * (i < 80 ? i / 80 : 1);
       }
     }
-    this.convolver.buffer = buf;
+    chain.convolver.buffer = buf;
   }
 
   setMix(mix: WetDry, on: number, amount: number): void {
@@ -284,55 +323,71 @@ export class DrumEngine {
     mix.dry.gain.setTargetAtTime(dry, t, 0.02);
   }
 
-  applyAllFx(): void {
+  applyPadFx(padI: number): void {
     if (!this.ready) return;
     const p = this.params;
+    const chain = this.fxChains[padI];
+    if (!chain) return;
+    const id = (field: string) => pad(padI, field);
     const t = this.ctx.currentTime;
 
-    const amt = p['fx.drive.amt'];
-    const k = 1 + amt * 24;
-    const curve = new Float32Array(513);
-    const norm = Math.tanh(k);
-    for (let i = 0; i < 513; i++) {
-      const x = (i / 256) - 1;
-      curve[i] = Math.tanh(x * k) / norm;
-    }
-    this.driveShaper.curve = curve;
-    this.drivePre.gain.value = 1 + amt * 2;
-    this.setMix(this.driveMix, p['fx.drive.on'], p['fx.drive.mix']);
+    const amt = p[id('fx.drive.amt')];
+    const { curve, preGain } = makeDriveCurve(amt);
+    chain.driveShaper.curve = curve;
+    chain.drivePre.gain.value = preGain;
+    this.setMix(chain.driveMix, p[id('fx.drive.on')], p[id('fx.drive.mix')]);
 
-    this.compressor.threshold.setTargetAtTime(p['fx.comp.thr'], t, 0.02);
-    this.compMakeup.gain.setTargetAtTime(Math.pow(10, p['fx.comp.gain'] / 20), t, 0.02);
-    this.setMix(this.compMix, p['fx.comp.on'], 1);
+    chain.compressor.threshold.setTargetAtTime(p[id('fx.comp.thr')], t, 0.02);
+    chain.compMakeup.gain.setTargetAtTime(Math.pow(10, p[id('fx.comp.gain')] / 20), t, 0.02);
+    this.setMix(chain.compMix, p[id('fx.comp.on')], 1);
 
-    this.chLfo.frequency.setTargetAtTime(p['fx.chorus.rate'], t, 0.05);
-    const depth = 0.0008 + p['fx.chorus.depth'] * 0.0045;
-    this.chDepth1.gain.setTargetAtTime(depth, t, 0.05);
-    this.chDepth2.gain.setTargetAtTime(-depth * 0.8, t, 0.05);
-    this.setMix(this.chorusMix, p['fx.chorus.on'], p['fx.chorus.mix'] * 0.8);
+    chain.chLfo.frequency.setTargetAtTime(p[id('fx.chorus.rate')], t, 0.05);
+    const depth = 0.0008 + p[id('fx.chorus.depth')] * 0.0045;
+    chain.chDepth1.gain.setTargetAtTime(depth, t, 0.05);
+    chain.chDepth2.gain.setTargetAtTime(-depth * 0.8, t, 0.05);
+    this.setMix(chain.chorusMix, p[id('fx.chorus.on')], p[id('fx.chorus.mix')] * 0.8);
 
-    this.dlL.delayTime.setTargetAtTime(p['fx.delay.time'], t, 0.08);
-    this.dlR.delayTime.setTargetAtTime(p['fx.delay.time'], t, 0.08);
-    this.dlFb.gain.setTargetAtTime(p['fx.delay.fb'], t, 0.02);
-    this.dlFb2.gain.setTargetAtTime(p['fx.delay.fb'], t, 0.02);
-    this.setMix(this.delayMix, p['fx.delay.on'], p['fx.delay.mix'] * 0.85);
+    chain.dlL.delayTime.setTargetAtTime(p[id('fx.delay.time')], t, 0.08);
+    chain.dlR.delayTime.setTargetAtTime(p[id('fx.delay.time')], t, 0.08);
+    chain.dlFb.gain.setTargetAtTime(p[id('fx.delay.fb')], t, 0.02);
+    chain.dlFb2.gain.setTargetAtTime(p[id('fx.delay.fb')], t, 0.02);
+    this.setMix(chain.delayMix, p[id('fx.delay.on')], p[id('fx.delay.mix')] * 0.85);
 
-    this.setMix(this.verbMix, p['fx.reverb.on'], p['fx.reverb.mix'] * 0.9);
+    this.setMix(chain.verbMix, p[id('fx.reverb.on')], p[id('fx.reverb.mix')] * 0.9);
+  }
 
-    const vol = p['master.volume'];
-    this.masterGain.gain.setTargetAtTime(vol * vol * 1.6, t, 0.02);
+  applyAllFx(): void {
+    if (!this.ready) return;
+    for (let i = 0; i < PAD_COUNT; i++) this.applyPadFx(i);
+
+    const vol = this.params['master.volume'];
+    this.masterGain.gain.setTargetAtTime(vol * vol * 1.6, this.ctx.currentTime, 0.02);
   }
 
   // ---------- parameter + transport API ----------
   setParam(id: string, v: number): void {
-    this.params[id] = v;
+    // Accept the old global IDs as a compatibility API by broadcasting them.
+    // New callers always use pad-scoped IDs.
+    if (id.startsWith('fx.')) {
+      for (let i = 0; i < PAD_COUNT; i++) this.params[pad(i, id)] = v;
+      delete this.params[id];
+    } else {
+      this.params[id] = v;
+    }
     if (!this.ready) return;
     if (isFxParam(id)) {
-      if (id === 'fx.reverb.size') {
-        clearTimeout(this.verbTimer);
-        this.verbTimer = setTimeout(() => this.renderImpulse(), 180);
+      const targets = id.startsWith('fx.')
+        ? Array.from({ length: PAD_COUNT }, (_, i) => i)
+        : [fxPadFromParam(id)].filter((i): i is number => i !== null);
+      for (const padI of targets) {
+        const chain = this.fxChains[padI];
+        if (id.endsWith('fx.reverb.size')) {
+          clearTimeout(chain.verbTimer);
+          chain.verbTimer = setTimeout(() => this.renderImpulse(padI), 180);
+        }
+        this.applyPadFx(padI);
       }
-      this.applyAllFx();
+      if (id === 'master.volume') this.applyAllFx();
     } else {
       this.node.port.postMessage({ t: 'p', k: id, v });
     }
@@ -342,7 +397,7 @@ export class DrumEngine {
     if (!this.ready) return;
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.applyAllFx();
-    this.renderImpulse();
+    for (let i = 0; i < PAD_COUNT; i++) this.renderImpulse(i);
   }
 
   trigger(pad: number, vel: number): void {

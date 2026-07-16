@@ -17,6 +17,7 @@ import {
   writePattern, type Patterns,
 } from './noteseq';
 import { generateTables, SIZE, type GeneratedTable } from './engine/wavetables';
+import { sequenceChain, sequenceLengthFromChain } from './sequenceLength';
 
 // Singleton audio engine (created once, initialized on power-on).
 export let engine = new SynthEngine();
@@ -52,8 +53,6 @@ interface SynthStore {
   // note sequencer
   patterns: Patterns;
   chain: number[];
-  chaining: boolean;
-  chainFresh: boolean;
   editPattern: number;
   seqPlaying: boolean;
   curStep: number;
@@ -84,14 +83,13 @@ interface SynthStore {
 
   // note sequencer actions (mirror BL-1's pitch-seq conventions)
   _setPatterns: (next: Patterns) => void;
-  toggleCell: (step: number, note: number) => void;
-  cycleStepOct: (step: number) => void;
-  toggleStepAcc: (step: number) => void;
-  toggleStepTie: (step: number) => void;
+  toggleCell: (step: number, note: number, pattern?: number) => void;
+  cycleStepOct: (step: number, pattern?: number) => void;
+  toggleStepAcc: (step: number, pattern?: number) => void;
+  setStepDuration: (step: number, duration: number, pattern?: number) => void;
   randomizeSeq: () => void;
   setEditPattern: (i: number) => void;
-  setChaining: (on: boolean) => void;
-  chainClick: (i: number) => void;
+  setSequenceLength: (length: number) => void;
   seqPlay: () => void;
   seqStop: () => void;
   attachHosted: (e: SynthEngine) => void;
@@ -131,9 +129,7 @@ export const useStore = create<SynthStore>((set, get) => ({
   userTables: loadUserTablePool(),
   editorOsc: null,
   patterns: initialSeq.patterns,
-  chain: initialSeq.chain,
-  chaining: false,
-  chainFresh: false,
+  chain: sequenceChain(sequenceLengthFromChain(initialSeq.chain)),
   editPattern: 0,
   seqPlaying: false,
   curStep: -1,
@@ -282,33 +278,37 @@ export const useStore = create<SynthStore>((set, get) => ({
     if (!get().hosted) saveSeqState(next, get().chain);
   },
 
-  toggleCell: (step, note) => {
+  toggleCell: (step, note, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
     const next = cur.on && cur.note === note
-      ? setStep(patterns, editPattern, step, { on: false, acc: false, tie: false })
-      : setStep(patterns, editPattern, step, { on: true, note });
+      ? setStep(patterns, pat, step, { on: false, acc: false })
+      : setStep(patterns, pat, step, { on: true, note });
     get()._setPatterns(next);
   },
 
-  cycleStepOct: (step) => {
+  cycleStepOct: (step, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
-    get()._setPatterns(setStep(patterns, editPattern, step, { oct: cycleOct(cur.oct) }));
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
+    get()._setPatterns(setStep(patterns, pat, step, { oct: cycleOct(cur.oct) }));
   },
 
-  toggleStepAcc: (step) => {
+  toggleStepAcc: (step, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
     if (!cur.on) return;
-    get()._setPatterns(setStep(patterns, editPattern, step, { acc: !cur.acc }));
+    get()._setPatterns(setStep(patterns, pat, step, { acc: !cur.acc }));
   },
 
-  toggleStepTie: (step) => {
+  setStepDuration: (step, duration, pattern) => {
     const { patterns, editPattern } = get();
-    const cur = getStep(patterns, editPattern, step);
+    const pat = pattern ?? editPattern;
+    const cur = getStep(patterns, pat, step);
     if (!cur.on) return;
-    get()._setPatterns(setStep(patterns, editPattern, step, { tie: !cur.tie }));
+    get()._setPatterns(setStep(patterns, pat, step, { duration }));
   },
 
   randomizeSeq: () => {
@@ -316,35 +316,11 @@ export const useStore = create<SynthStore>((set, get) => ({
     get()._setPatterns(writePattern(patterns, editPattern, randomPattern()));
   },
 
-  setEditPattern: (i) => {
-    if (get().chaining) {
-      set({ editPattern: i });
-      return;
-    }
-    const chain = [i];
-    set({ editPattern: i, chain });
-    engine.setSeqChain(chain);
-    saveSeqState(get().patterns, chain);
-  },
+  setEditPattern: (i) => set({ editPattern: i }),
 
-  setChaining: (on) => {
-    if (on) {
-      set({ chaining: true, chainFresh: true });
-      return;
-    }
-    const chain = get().chain.length ? get().chain : [get().editPattern];
-    set({ chaining: false, chainFresh: false, chain });
-    engine.setSeqChain(chain);
-    saveSeqState(get().patterns, chain);
-  },
-
-  chainClick: (i) => {
-    if (!get().chaining) {
-      get().setEditPattern(i);
-      return;
-    }
-    const chain = get().chainFresh ? [i] : [...get().chain, i];
-    set({ chain, chainFresh: false, editPattern: i });
+  setSequenceLength: (length) => {
+    const chain = sequenceChain(length);
+    set({ chain });
     engine.setSeqChain(chain);
     saveSeqState(get().patterns, chain);
   },
@@ -368,8 +344,6 @@ export const useStore = create<SynthStore>((set, get) => ({
       powered: true,
       seqPlaying: false,
       curStep: -1,
-      chaining: false,
-      chainFresh: false,
       params: { ...e.params },
     });
   },

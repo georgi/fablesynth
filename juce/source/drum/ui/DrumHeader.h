@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../DrumProcessor.h"
+#include "DrumUiModel.h"
 #include "../../ui/Controls.h"
 #include "../../ui/Theme.h"
 
@@ -15,11 +15,11 @@ namespace fui {
 // the WT-1 ScopeView (Displays.cpp), which is hard-bound to FableAudioProcessor.
 class DrumScopeView : public juce::Component, private juce::Timer {
 public:
-    explicit DrumScopeView(DrumAudioProcessor&);
+    explicit DrumScopeView(DrumUiModel&);
     void paint(juce::Graphics&) override;
 private:
     void timerCallback() override; // repaints only while audio is present
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     bool wasActive_ = true;
 };
 
@@ -28,7 +28,7 @@ private:
 // displays getHostBpm() and ignores edits; DrumHeader lights the SYNC tag.
 class BpmReadout : public juce::Component, private juce::Timer {
 public:
-    explicit BpmReadout(DrumAudioProcessor&);
+    explicit BpmReadout(DrumUiModel&);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -39,7 +39,7 @@ private:
     void timerCallback() override;
     int  shown() const;                    // host bpm when synced, else the param
     void nudge(float deltaNorm);
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::RangedAudioParameter* param = nullptr;
     float lastY = 0;
     int   lastShown = -1;
@@ -48,13 +48,13 @@ private:
 
 class DrumHeader : public juce::Component, private juce::Timer {
 public:
-    explicit DrumHeader(DrumAudioProcessor&);
+    explicit DrumHeader(DrumUiModel&);
     ~DrumHeader() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
     void timerCallback() override;
-    DrumAudioProcessor& proc;
+    DrumUiModel& proc;
     juce::TextButton prevBtn{"<"}, nextBtn{">"};
     DrumScopeView scope;
     BpmReadout bpm;

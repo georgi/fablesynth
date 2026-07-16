@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
           proc.getTotalNumOutputChannels());
 
     // ---- boot state: ACID LINE ----
-    check(proc.getNumPrograms() == 3, "3 patch programs", proc.getNumPrograms());
+    check(proc.getNumPrograms() == 12, "12 patch programs", proc.getNumPrograms());
     check(proc.getProgramName(0) == "ACID LINE", "program 0 is ACID LINE");
     float bpm0 = proc.apvts.getRawParameterValue("seq.bpm")->load();
     check(std::abs(bpm0 - 138.0f) < 0.5f, "boot applies seq.bpm=138", bpm0);
@@ -105,7 +105,8 @@ int main(int argc, char** argv) {
             juce::MidiBuffer empty;
             proc.processBlock(buf, b == 0 ? om : empty);
             for (int i = 0; i < block && firstNonZero < 0; ++i)
-                if (buf.getSample(0, i) != 0.0f || buf.getSample(1, i) != 0.0f)
+                if (std::fpclassify(buf.getSample(0, i)) != FP_ZERO
+                    || std::fpclassify(buf.getSample(1, i)) != FP_ZERO)
                     firstNonZero = b * block + i;
         }
         check(firstNonZero >= kOffset, "note-on at offset 100: silence before the offset",
@@ -231,7 +232,7 @@ int main(int argc, char** argv) {
     fable::BassSeqStep edited;
     edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.slide = true;
     proc.setSeqStep(2, 11, edited);
-    proc.setChain({ 0, 2 });
+    proc.setChain({ 0, 2 }); // legacy values now mean a two-bar length
     proc.setEditPattern(2);
 
     juce::MemoryBlock state;
@@ -246,7 +247,7 @@ int main(int argc, char** argv) {
     auto rs = proc2.getSeqStep(2, 11);
     check(rs.on && rs.acc && rs.slide && rs.note == 9 && rs.oct == 1,
           "edited step round-trips");
-    check(proc2.getChain() == std::vector<int>({ 0, 2 }), "chain {A,C} round-trips");
+    check(proc2.getChain() == std::vector<int>({ 0, 1 }), "two-bar length round-trips");
     check(proc2.getEditPattern() == 2, "edit pattern round-trips", proc2.getEditPattern());
 
     // ---- 9. patch programs beyond ACID LINE ----
@@ -289,6 +290,15 @@ int main(int argc, char** argv) {
         juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
         check(img.isValid() && img.getWidth() == BassRack::LW && img.getHeight() == BassRack::LH,
               "snapshot rendered at 1460x931", img.getWidth());
+        // The full-rack device body also occupies the header's coordinates.
+        // The header must remain above it or the patch stepper cannot be clicked.
+        const int programBeforeClick = proc.getCurrentProgram();
+        auto* nextPatchHit = bassEd->getRack().getComponentAt(499, 54);
+        check(dynamic_cast<juce::Button*>(nextPatchHit) != nullptr,
+              "patch stepper is the header hit target");
+        if (auto* button = dynamic_cast<juce::Button*>(nextPatchHit)) button->onClick();
+        check(proc.getCurrentProgram() == (programBeforeClick + 1) % proc.getNumPrograms(),
+              "patch stepper changes program");
         const juce::File out = dir.getChildFile("bass_editor.png");
         writePng(img, out);
         check(out.existsAsFile() && out.getSize() > 0, "bass_editor.png written",
@@ -341,28 +351,32 @@ int main(int argc, char** argv) {
         seq.toggleStepSlide(4);
         s = proc.getSeqStep(0, 4);
         check(s.acc && s.slide, "accent + slide latch on an active step");
+        for (int i = 5; i < fable::BL_STEPS; ++i) proc.setSeqStep(0, i, {});
+        seq.resizeStep(4, 63);
+        s = proc.getSeqStep(0, 4);
+        check(s.duration == 63 && s.slide, "duration resize preserves slide", s.duration);
+        seq.resizeStep(4, -4);
+        check(proc.getSeqStep(0, 4).duration == 1, "bass duration resize clamps at 1");
+        fable::BassSeqStep nextSame; nextSame.on = true; nextSame.note = 0;
+        proc.setSeqStep(0, 7, nextSame);
+        seq.resizeStep(4, 63);
+        s = proc.getSeqStep(0, 4);
+        check(s.duration == 3 && s.slide, "bass resize avoids overlap and preserves slide", s.duration);
+        proc.setSeqStep(0, 7, {});
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == -1, "oct cycles +1 -> -1", proc.getSeqStep(0, 4).oct);
 
-        // pattern click outside chain mode resets the chain (store.setEditPattern)
+        // Bar selection edits independently from the playback length.
         seq.patternClick(1);
-        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
-        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}");
-
-        // chain builder: first click replaces, later clicks append, toggle-off commits
-        seq.setChaining(true);
-        check(seq.isChaining(), "CHAIN toggle latches on");
-        seq.patternClick(0);
-        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh");
+        check(proc.getEditPattern() == 1, "bar click selects 2", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0 }), "bar click preserves length");
+        seq.setSequenceLength(3);
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "length 3 plays bars 1-3");
         seq.patternClick(3);
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends");
-        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
-              proc.getEditPattern());
-        seq.setChaining(false);
-        check(!seq.isChaining(), "CHAIN toggle latches off");
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off");
+        check(proc.getEditPattern() == 3, "bar click selects 4", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length");
 
         // RAND rewrites the edit pattern in place
         proc.setEditPattern(1);

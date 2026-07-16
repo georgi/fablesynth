@@ -6,11 +6,11 @@
 namespace fui {
 
 // ===================== Group =====================
-BassFxRack::Group::Group(BassAudioProcessor& p, const char* fx, const char* t,
+BassFxRack::Group::Group(BassUiModel& p, const char* fx, const char* t,
                          const char* n, std::initializer_list<const char*> knobIds)
-    : title(t), note(n), power(p.apvts, juce::String("fx.") + fx + ".on", Accent::N) {
+    : title(t), note(n), power(p.parameters(), juce::String("fx.") + fx + ".on", Accent::N) {
     for (const char* k : knobIds)
-        knobs.add(new Knob(p.apvts, juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
+        knobs.add(new Knob(p.parameters(), juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
 }
 
 void BassFxRack::Group::layout(juce::Rectangle<int> r) {
@@ -28,7 +28,7 @@ void BassFxRack::Group::layout(juce::Rectangle<int> r) {
     const float cw = (float)inner.getWidth() / (float)n;
     const int kh = juce::jmin(inner.getHeight(), Knob::svgPx(Knob::Sm) + 13); // dia + label
     for (int i = 0; i < n; ++i)
-        knobs[i]->setBounds((int)std::round(inner.getX() + i * cw), inner.getY(),
+        knobs[i]->setBounds((int)std::round(static_cast<float>(inner.getX()) + static_cast<float>(i) * cw), inner.getY(),
                             (int)std::round(cw), kh);
 }
 
@@ -56,7 +56,7 @@ void BassFxRack::Group::paintGroup(juce::Graphics& g) {
 }
 
 // ===================== BassFxRack =====================
-BassFxRack::BassFxRack(BassAudioProcessor& p) {
+BassFxRack::BassFxRack(BassUiModel& p) {
     struct Def {
         const char* fx; const char* title; const char* note;
         std::initializer_list<const char*> k;
@@ -77,9 +77,10 @@ BassFxRack::BassFxRack(BassAudioProcessor& p) {
 void BassFxRack::resized() {
     auto r = getLocalBounds().reduced(8);        // .bl-fx-panel padding
     const int gap = 10;
-    const float cw = (r.getWidth() - gap * 3) / 4.0f;
+    const float cw = static_cast<float>(r.getWidth() - gap * 3) / 4.0f;
     for (int i = 0; i < groups.size(); ++i)
-        groups[i]->layout({ (int)std::round(r.getX() + i * (cw + gap)), r.getY(),
+        groups[i]->layout({ (int)std::round(static_cast<float>(r.getX())
+                                             + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
                             (int)std::round(cw), r.getHeight() });
 }
 

@@ -27,7 +27,7 @@ interface SeqKnobProps {
   value: number; // 0..1
   onChange: (v: number) => void;
   label: string;
-  size?: 'md' | 'xs';
+  size?: 'md' | 'sm' | 'xs';
   defaultValue?: number;
 }
 
@@ -78,7 +78,7 @@ export function SeqKnob({ value, onChange, label, size = 'md', defaultValue = 0.
   return (
     <div
       ref={elRef}
-      className={`knob knob-${size === 'md' ? 'md' : 'xs'}`}
+      className={`knob knob-${size}`}
       data-accent="n"
       tabIndex={0}
       role="slider"

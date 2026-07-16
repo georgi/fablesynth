@@ -2,6 +2,7 @@
 // Same shape as DR-1's DrumEngine, minus the bus compressor — accents live.
 
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
+import { makeDriveCurve } from '../../engine/drive';
 import { type ParamValues } from '../../params';
 import { defaultBassParams } from '../params';
 import workletUrl from './worklet-bass.js?url';
@@ -262,15 +263,9 @@ export class BassEngine {
     const t = this.ctx.currentTime;
 
     const amt = p['fx.drive.amt'];
-    const k = 1 + amt * 24;
-    const curve = new Float32Array(513);
-    const norm = Math.tanh(k);
-    for (let i = 0; i < 513; i++) {
-      const x = (i / 256) - 1;
-      curve[i] = Math.tanh(x * k) / norm;
-    }
+    const { curve, preGain } = makeDriveCurve(amt);
     this.driveShaper.curve = curve;
-    this.drivePre.gain.value = 1 + amt * 2;
+    this.drivePre.gain.value = preGain;
     this.setMix(this.driveMix, p['fx.drive.on'], p['fx.drive.mix']);
 
     this.chLfo.frequency.setTargetAtTime(p['fx.chorus.rate'], t, 0.05);

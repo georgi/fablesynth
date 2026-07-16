@@ -10,6 +10,12 @@
 
 namespace fable {
 
+namespace {
+bool exactlyDifferent(double a, double b) {
+    return std::isless(a, b) || std::isgreater(a, b) || std::isunordered(a, b);
+}
+}
+
 // js:33-36 — log-cosh for the ADAA drive antiderivative
 static inline double lcosh(double z) {
     double a = std::fabs(z);
@@ -120,7 +126,7 @@ void BassEngine::keyOff(int semi) {
     if (isPlaying()) return;
     if (held_.empty()) {
         release();
-    } else if (semiTarget_ != (double)held_.back()) {
+    } else if (exactlyDifferent(semiTarget_, (double)held_.back())) {
         glideTo(held_.back(), false);
     }
 }
@@ -159,7 +165,7 @@ void BassEngine::setBpmOverride(double bpm) {
 
 double BassEngine::effectiveBpm() const {
     if (bpmOverride_ > 0) return bpmOverride_;
-    double pbpm = p_[BL_SEQ_BPM] != 0 ? (double)p_[BL_SEQ_BPM] : 138.0;
+    double pbpm = std::fpclassify(p_[BL_SEQ_BPM]) != FP_ZERO ? (double)p_[BL_SEQ_BPM] : 138.0;
     return clampd(pbpm, 60.0, 200.0);
 }
 
@@ -170,8 +176,9 @@ BassStep BassEngine::readStep(const uint8_t* pats, int pat, int s) {
     BassStep st;
     st.on    = (flags & 1) != 0;
     st.acc   = (flags & 2) != 0;
-    st.slide = (flags & 4) != 0;
-    st.semi  = std::min(11, (int)pats[o + 1]) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
+    st.slide = (pats[o + 1] & 0x80) != 0;
+    st.semi  = std::min(11, (int)(pats[o + 1] & 0x7f)) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
+    st.duration = std::max(1, std::min(63, (int)(flags >> 2)));
     return st;
 }
 
@@ -185,7 +192,7 @@ void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
         const int sN = (s + 1) % BL_STEPS;
         const int patN = sN == 0 ? patNext : pat;
         const BassStep stN = readStep(pats_.data(), patN, sN);
-        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : BL_GATE_FRAC * dur;
+        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : st.duration * dur;
     }
     step_ = s;
 }
@@ -207,7 +214,7 @@ void BassEngine::clipFireAt(int abs) {
         const int absN = (abs + 1) % total;
         const BassStep stN = readStep(clip, absN / BL_STEPS, absN % BL_STEPS);
         const double dur = sqSamplesPerStep(effectiveBpm(), sr_);
-        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : BL_GATE_FRAC * dur;
+        samplesToGateOff_ = (stN.on && stN.slide) ? -1 : st.duration * dur;
     }
 }
 
@@ -594,7 +601,7 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
 
     for (int at = 0; at < n; at += 16) {
         const int count = std::min(16, n - at);
-        if (semi_ != semiTarget_) {
+        if (exactlyDifferent(semi_, semiTarget_)) {
             semi_ += (semiTarget_ - semi_) * gk16;
             if (std::fabs(semiTarget_ - semi_) < 0.001) semi_ = semiTarget_;
         }

@@ -81,7 +81,7 @@ int main() {
         for (int i = 0; i < (int)info.size(); i++) if (info[(size_t)i].id != i) ordered = false;
         check(ordered, "descriptors ordered by flat id");
         auto d = defaultBassParams();
-        check(d[BL_OSC_TUNE] == -12.0f, "osc.tune default -12 ST", num(d[BL_OSC_TUNE]));
+        check(d[BL_OSC_TUNE] == 0.0f, "osc.tune default 0 ST", num(d[BL_OSC_TUNE]));
         check(d[BL_FLT_CUT] == 340.0f, "flt.cut default 340 Hz", num(d[BL_FLT_CUT]));
         check(d[BL_SEQ_BPM] == 138.0f, "seq.bpm default 138", num(d[BL_SEQ_BPM]));
         check(d[BL_SUB_OCT] == -1.0f, "sub.oct default -1", num(d[BL_SUB_OCT]));
@@ -113,9 +113,29 @@ int main() {
     printf("\n== factory patches (patches.ts) ==\n");
     {
         const auto& bank = bassFactoryPatches();
-        check((int)bank.size() == 3, "3 factory patches");
+        check((int)bank.size() == 12, "12 factory patches");
         check(bank[0].name == "ACID LINE" && bank[1].name == "RUBBER SUB"
-              && bank[2].name == "NEON SQUELCH", "patch names + order");
+              && bank[2].name == "NEON SQUELCH", "original patch names/order stay stable");
+        check(bank[3].name == "DEEP DUB" && bank[11].name == "CLEAN SUB",
+              "expanded patch bank names/order");
+        bool allResolve = true, allInRange = true;
+        std::string badOverride;
+        for (const auto& patch : bank)
+            for (const auto& [pid, value] : patch.params) {
+                const int id = bassIdFromString(pid);
+                if (id < 0) { allResolve = false; badOverride = patch.name + ":" + pid; continue; }
+                const auto& info = bassParamInfo()[(size_t)id];
+                if (value < info.min || value > info.max) {
+                    allInRange = false;
+                    badOverride = patch.name + ":" + pid + "=" + std::to_string(value);
+                }
+            }
+        check(allResolve, "all bass patch override pids resolve", badOverride);
+        check(allInRange, "all bass patch overrides are in range", badOverride);
+        bool allNeutralTune = true;
+        for (const auto& patch : bank)
+            allNeutralTune = allNeutralTune && applyBassPatch(patch)[BL_OSC_TUNE] == 0.0f;
+        check(allNeutralTune, "all factory bass patches use neutral oscillator tuning");
         const auto& acid = bank[0];
         auto s0 = getBassStep(acid.patterns.data(), 0, 0);
         check(s0.on && s0.acc && s0.note == 0 && s0.oct == 0, "acid A step 1: accented root");
@@ -126,10 +146,23 @@ int main() {
         check(bank[2].chain == std::vector<int>({ 0, 1 }), "NEON SQUELCH chains A->B");
         auto pv = applyBassPatch(bank[1]);
         check(pv[BL_FLT_CUT] == 210.0f, "RUBBER SUB overrides flt.cut=210", num(pv[BL_FLT_CUT]));
-        check(pv[BL_OSC_TUNE] == -12.0f, "unlisted params keep defaults", num(pv[BL_OSC_TUNE]));
+        check(pv[BL_OSC_TUNE] == 0.0f, "unlisted params keep defaults", num(pv[BL_OSC_TUNE]));
     }
 
     auto tables = makeTables();
+
+    // Program-bank smoke test: every patch must create a finite, audible held
+    // note. Parameter range checks alone cannot catch a closed/silent voice.
+    for (const auto& patch : bassFactoryPatches()) {
+        BassEngine smoke;
+        smoke.prepare(SR);
+        smoke.setTables(tables);
+        smoke.setParams(applyBassPatch(patch));
+        smoke.keyOn(0, 0.8f);
+        const auto note = render(smoke, 12000);
+        check(finite(note) && rms(note, 0, (int)note.size()) > 1e-5 && peak(note) < 4.0f,
+              patch.name + " note is finite, audible, and bounded");
+    }
 
     printf("\n== audition voice (keyOn/keyOff, worklet noteOn/release) ==\n");
     {
@@ -270,10 +303,11 @@ int main() {
         const double dur = (60.0 / 138.0 / 4.0) * SR;
         auto cut = renderTwo(false);
         auto tied = renderTwo(true);
-        // just before the step-2 boundary the tied run must still be sounding
+        // Adjustable one-step duration keeps both runs gated to the boundary;
+        // the slide path must remain audible without reverting to a short gate.
         const int a = (int)(dur * 0.9), b = (int)(dur * 0.99);
-        check(rms(tied, a, b) > rms(cut, a, b) * 2,
-              "tied step keeps sounding across the gate-frac point",
+        check(rms(tied, a, b) > 1e-3,
+              "slide target keeps sounding through the source note duration",
               num(rms(cut, a, b)) + " -> " + num(rms(tied, a, b)));
     }
 

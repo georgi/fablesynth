@@ -8,6 +8,7 @@ import { MOD_DESTS, dstTarget, PARAMS } from '../params';
 import {
   ACCENT_VEL, NPATTERNS, PLAIN_VEL, STEP_STRIDE, STEPS, SWING_MAX,
 } from '../noteseq';
+import { WT_POLY_LANES as PROTOCOL_WT_POLY_LANES } from '../seq/protocol';
 
 // worklet.js can't import params.ts (it's loaded into the AudioWorklet via ?url, a
 // standalone module with no imports), so it hand-copies three tables from the
@@ -108,6 +109,11 @@ describe('worklet SEQ_* parity', () => {
     expect(seqConst('SEQ_STEPS')).toBe(STEPS);
     expect(seqConst('SEQ_NPATTERNS')).toBe(NPATTERNS);
     expect(seqConst('SEQ_STRIDE')).toBe(STEP_STRIDE);
+    expect(seqConst('WT_POLY_LANES')).toBe(PROTOCOL_WT_POLY_LANES);
+  });
+
+  it('hosted WT-1 clip addressing advances by every poly lane', () => {
+    expect(WORKLET_SRC).toContain('(abs * WT_POLY_LANES + lane) * SEQ_STRIDE');
   });
 
   it('velocity + swing constants match', () => {

@@ -16,8 +16,9 @@ import {
   FACTORY_PATCHES, applyPatchToParams, extractPatch, loadUserPatches,
   patchOptions, saveUserPatch, type PadPatch,
 } from './patches';
-import { pad } from './params';
+import { DRUM_TABLE_NAMES, pad } from './params';
 import { cycleStep, patIdx, type Patterns } from './seq';
+import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
 
 export let drumEngine = new DrumEngine();
 const initialKitState = kitToState(FACTORY_KITS[0]);
@@ -43,8 +44,6 @@ export interface DrumStore {
   sel: number;
   patterns: Patterns;
   chain: number[];
-  chaining: boolean;
-  chainFresh: boolean;
   editPattern: number;
   playing: boolean;
   curStep: number;
@@ -69,8 +68,7 @@ export interface DrumStore {
   triggerPad: (i: number, vel: number) => void;
   toggleStep: (step: number) => void;
   setEditPattern: (i: number) => void;
-  setChaining: (on: boolean) => void;
-  chainClick: (i: number) => void;
+  setSequenceLength: (length: number) => void;
   setMode: (mode: 'step' | 'pads') => void;
   setMidiActive: (on: boolean) => void;
   setPadName: (i: number, name: string) => void;
@@ -92,9 +90,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   params: initialKitState.params,
   sel: 0,
   patterns: initialKitState.patterns,
-  chain: initialKitState.chain,
-  chaining: false,
-  chainFresh: false,
+  chain: sequenceChain(sequenceLengthFromChain(initialKitState.chain)),
   editPattern: 0,
   playing: false,
   curStep: -1,
@@ -139,33 +135,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     drumEngine.setPatterns(next);
   },
 
-  setEditPattern: (i) => {
-    if (get().chaining) {
-      set({ editPattern: i });
-      return;
-    }
-    const chain = [i];
-    set({ editPattern: i, chain });
-    drumEngine.setChain(chain);
-  },
+  setEditPattern: (i) => set({ editPattern: i }),
 
-  setChaining: (on) => {
-    if (on) {
-      set({ chaining: true, chainFresh: true });
-      return;
-    }
-    const chain = get().chain.length ? get().chain : [get().editPattern];
-    set({ chaining: false, chainFresh: false, chain });
-    drumEngine.setChain(chain);
-  },
-
-  chainClick: (i) => {
-    if (!get().chaining) {
-      get().setEditPattern(i);
-      return;
-    }
-    const chain = get().chainFresh ? [i] : [...get().chain, i];
-    set({ chain, chainFresh: false, editPattern: i });
+  setSequenceLength: (length) => {
+    const chain = sequenceChain(length);
+    set({ chain });
     drumEngine.setChain(chain);
   },
 
@@ -199,8 +173,6 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       powered: true,
       playing: false,
       curStep: -1,
-      chaining: false,
-      chainFresh: false,
       params: { ...engine.params },
     });
   },
@@ -251,7 +223,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       return;
     }
     const userTables = state.tables.map((table) => deserializeUserTable(table).table);
-    const chain = state.chain.length ? state.chain : [0];
+    const chain = sequenceChain(sequenceLengthFromChain(state.chain));
     drumEngine.panic();
     drumEngine.setUserTables(userTables);
     drumEngine.params = { ...state.params };
@@ -318,6 +290,6 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const userTables = [...get().userTables, table];
     drumEngine.setUserTables(userTables);
     set({ userTables });
-    get().setParam(pad(padI, 'oscA.table'), 10 + userTables.length - 1);
+    get().setParam(pad(padI, 'oscA.table'), DRUM_TABLE_NAMES.length + userTables.length - 1);
   },
 }));

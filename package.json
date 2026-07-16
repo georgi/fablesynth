@@ -7,7 +7,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "clips:generate": "node scripts/generate-clip-library.mjs",
+    "clips:check": "node scripts/generate-clip-library.mjs --check",
+    "drum:loudness": "node scripts/measure-drum-patches.mjs",
+    "bass:loudness": "node scripts/measure-bass-patches.mjs",
+    "wt1:loudness": "node scripts/measure-wt1-presets.mjs",
+    "standalone:build": "cmake --build juce/build --target FableSynth_Standalone FableDrum_Standalone FableBass_Standalone FableSeq_Standalone -j4",
+    "vst:install": "bash scripts/install-vst.sh"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -6,7 +6,7 @@
 #include "ui/TrackHeadsView.h"
 #include "ui/SceneGridView.h"
 #include "ui/SeqFooterView.h"
-#include "ui/ClipEditView.h"
+#include "ui/DeviceFocusView.h"
 #include "../ui/LookAndFeel.h"
 
 #include <utility>
@@ -19,7 +19,7 @@
 // Two layouts share one anatomy (docs/.../sq4-device-focus-design.md §2):
 // session mode is header + heads + full scene grid + footer; focus mode is
 // header + heads (now a device tab strip, focused head lit) + a single-row
-// mini strip for the focused scene + the ClipEditView device panel filling the
+// mini strip for the focused scene + the native device surface filling the
 // rest (the footer hides). There is no FLIP animation — the relayout is
 // instant, which is the JUCE port of the web's animated collapse.
 class SeqRack : public juce::Component {
@@ -32,7 +32,7 @@ public:
     fui::TrackHeadsView& getHeads() { return trackHeads; }
     fui::SceneGridView& getGrid() { return sceneGrid; }
     fui::SeqFooterView& getFooter() { return footer; }
-    fui::ClipEditView& getClipEdit() { return clipEdit; }
+    fui::DeviceFocusView& getDeviceFocus() { return deviceFocus; }
 
     void enterFocus(int track, int scene);
     void exitFocus();
@@ -43,7 +43,7 @@ private:
     fui::TrackHeadsView trackHeads;
     fui::SceneGridView sceneGrid;
     fui::SeqFooterView footer;
-    fui::ClipEditView clipEdit;
+    fui::DeviceFocusView deviceFocus;
     juce::Component hint;
 
     bool focusMode_ = false;
@@ -70,7 +70,7 @@ public:
     fui::TrackHeadsView& heads() { return rack.getHeads(); } // for the host test
     fui::SceneGridView& grid() { return rack.getGrid(); } // for the host test
     fui::SeqFooterView& footer() { return rack.getFooter(); } // for the host test
-    fui::ClipEditView& clipEdit() { return rack.getClipEdit(); } // for the host test
+    fui::DeviceFocusView& deviceFocus() { return rack.getDeviceFocus(); } // for the host test
 
 private:
     int clampScene(int s) const;

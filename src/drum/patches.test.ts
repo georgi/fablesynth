@@ -3,7 +3,7 @@ import {
   FACTORY_PATCHES, PATCH_FIELDS, applyPatchToParams, extractPatch,
   loadUserPatches, saveUserPatch, patchOptions,
 } from './patches';
-import { DRUM_PARAMS, PAD_FIELDS, defaultDrumParams, pad } from './params';
+import { DRUM_PARAMS, DRUM_SAMPLE_NAMES, PAD_FIELDS, defaultDrumParams, pad } from './params';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -51,12 +51,42 @@ describe('patches', () => {
     }
   });
 
-  it('factory patches reference only built-in tables (index <= 14)', () => {
+  it('factory patches reference valid oscillator tables and built-in samples', () => {
     for (const patch of FACTORY_PATCHES) {
-      for (const field of ['oscA.table', 'oscB.table'] as const) {
-        const v = patch.params[field];
-        if (v !== undefined) expect(v, `${patch.name}: ${field}`).toBeLessThanOrEqual(14);
-      }
+      const osc = patch.params['oscA.table'];
+      const sample = patch.params['oscB.table'];
+      if (osc !== undefined) expect(osc, `${patch.name}: oscA.table`).toBeLessThanOrEqual(14);
+      if (sample !== undefined) expect(sample, `${patch.name}: oscB.table`).toBeLessThan(DRUM_SAMPLE_NAMES.length);
+    }
+  });
+
+  it('ships one oscillator/sample hybrid patch for every pad role', () => {
+    const hybrid = FACTORY_PATCHES.filter((patch) => patch.name.startsWith('HX '));
+    expect(hybrid).toHaveLength(16);
+    for (const patch of hybrid) {
+      expect(patch.params['oscA.level'], patch.name).toBeGreaterThan(0);
+      expect(patch.params['oscB.level'], patch.name).toBeGreaterThan(0);
+    }
+  });
+
+  it('pitches kick and snare oscillators one octave lower', () => {
+    const expected: Record<string, number> = {
+      'BD DEEP': -26, 'BD PUNCH': -19, 'BD SUB': -34, 'BD 808': -24,
+      'SD CRACK': -12, 'SD RIM': 0,
+    };
+    for (const [name, tune] of Object.entries(expected)) {
+      expect(FACTORY_PATCHES.find((patch) => patch.name === name)?.params['oscA.tune']).toBe(tune);
+    }
+  });
+
+  it('tunes toms seven semitones deeper with shorter tails', () => {
+    const expected: Record<string, [number, number]> = {
+      'TM LO': [-19, 0.28], 'TM MID': [-12, 0.24], 'TM HI': [-5, 0.20],
+    };
+    for (const [name, [tune, decay]] of Object.entries(expected)) {
+      const patch = FACTORY_PATCHES.find((entry) => entry.name === name);
+      expect(patch?.params['oscA.tune']).toBe(tune);
+      expect(patch?.params['aenv.dec']).toBeCloseTo(decay);
     }
   });
 
@@ -96,7 +126,7 @@ describe('patches', () => {
     expect(params[pad(padI, 'mod2.dst')]).toBe(0);
     expect(params[pad(padI, 'mod2.amt')]).toBe(0);
     // ...while the patch's own overrides landed.
-    expect(params[pad(padI, 'oscA.tune')]).toBe(-14);
+    expect(params[pad(padI, 'oscA.tune')]).toBe(-26);
     expect(params[pad(padI, 'penv.amt')]).toBe(24);
   });
 

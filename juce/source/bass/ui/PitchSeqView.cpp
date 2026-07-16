@@ -1,11 +1,12 @@
 #include "PitchSeqView.h"
+#include "../dsp/BassPatches.h"
 #include <cmath>
 
 namespace fui {
 
 using fable::BassSeqStep;
 
-static const char* const kPatNames[fable::BL_NPATTERNS] = { "A", "B", "C", "D" };
+static const char* const kPatNames[fable::BL_NPATTERNS] = { "1", "2", "3", "4" };
 
 // ---- geometry (bass.css .bl-seq-*, rack-relative px) --------------------------
 // panel padding 9px 12px 11px; head 28px + 10px margin; body: legend 36px +
@@ -22,8 +23,9 @@ static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 14;
 static constexpr int kSldY = kAccY + kAccH + 4, kSldH = 14;
 static constexpr int kNumY = kSldY + kSldH + 4;
 
-PitchSeqView::PitchSeqView(BassAudioProcessor& p) : proc(p) {
+PitchSeqView::PitchSeqView(BassUiModel& p) : proc(p) {
     setInterceptsMouseClicks(true, false);
+    setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 
@@ -36,19 +38,19 @@ juce::Rectangle<int> PitchSeqView::patternBounds(int i) const {
     return { x0 + i * (26 + 5), kHeadY + 2, 26, 24 }; // .bl-pattern 26x24, gap 5
 }
 
-juce::Rectangle<int> PitchSeqView::chainToggleBounds() const {
-    return { patternBounds(3).getRight() + 12, kHeadY + 2, 108, 24 };
+juce::Rectangle<int> PitchSeqView::sequenceLengthBounds() const {
+    return { patternBounds(3).getRight() + 12, kHeadY, 170, 30 };
 }
 
 juce::Rectangle<int> PitchSeqView::randBounds() const {
-    return { chainToggleBounds().getRight() + 12, kHeadY + 2, 52, 24 };
+    return { sequenceLengthBounds().getRight() + 12, kHeadY + 2, 52, 24 };
 }
 
 juce::Rectangle<int> PitchSeqView::colBounds(int step) const {
     const int gx = kPadX + kLegendW + kLegendGap;
     const int gw = getWidth() - kPadX - gx;
     const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
-    const float x = gx + step * (w + kColGap);
+    const float x = static_cast<float>(gx) + static_cast<float>(step) * (w + kColGap);
     return juce::Rectangle<float>(x, (float)kBodyY, w, (float)(kNumY + 10)).toNearestInt();
 }
 
@@ -57,7 +59,7 @@ juce::Rectangle<int> PitchSeqView::cellBounds(int step, int note) const {
     // 12 lanes over kLanesH with 1px gaps, note 11 on top (web lane order)
     const float ch = (kLanesH - 11.0f) / 12.0f;
     const int r = fable::BL_NOTE_LANES - 1 - note;
-    const float y = c.getY() + r * (ch + 1.0f);
+    const float y = static_cast<float>(c.getY()) + static_cast<float>(r) * (ch + 1.0f);
     return juce::Rectangle<float>((float)c.getX(), y, (float)c.getWidth(), ch).toNearestInt();
 }
 
@@ -76,43 +78,65 @@ juce::Rectangle<int> PitchSeqView::slideBounds(int step) const {
     return { c.getX(), c.getY() + kSldY, c.getWidth(), kSldH };
 }
 
+juce::Rectangle<int> PitchSeqView::resizeBounds(int step) const {
+    const auto st = proc.sequenceStep(proc.editPattern(), step);
+    if (!st.on) return {};
+    auto cell = cellBounds(step, st.note);
+    const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+    cell.setWidth(w);
+    return cell.removeFromRight(6).expanded(2, 2);
+}
+
 // ---- store handlers ----------------------------------------------------------
 
 void PitchSeqView::toggleCell(int step, int note) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     if (cur.on && cur.note == note) {              // tap again = rest
         cur.on = false; cur.acc = false; cur.slide = false;
     } else {
         cur.on = true; cur.note = note;
     }
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void PitchSeqView::cycleStepOct(int step) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     cur.oct = cur.oct >= fable::BL_OCT_MAX ? fable::BL_OCT_MIN : cur.oct + 1; // seq.ts cycleOct
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void PitchSeqView::toggleStepAcc(int step) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.acc = !cur.acc;
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void PitchSeqView::toggleStepSlide(int step) {
-    const int pat = proc.getEditPattern();
-    BassSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = proc.editPattern();
+    BassSeqStep cur = proc.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.slide = !cur.slide;
-    proc.setSeqStep(pat, step, cur);
+    proc.setSequenceStep(pat, step, cur);
+    repaint();
+}
+
+void PitchSeqView::resizeStep(int step, int duration) {
+    auto cur = proc.sequenceStep(proc.editPattern(), step);
+    if (!cur.on) return;
+    int limit = 63;
+    for (int i = step + 1; i < fable::BL_STEPS; ++i) {
+        const auto other = proc.sequenceStep(proc.editPattern(), i);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = i - step; break; }
+    }
+    cur.duration = juce::jlimit(1, limit, duration);
+    proc.setSequenceStep(proc.editPattern(), step, cur);
     repaint();
 }
 
@@ -120,7 +144,7 @@ void PitchSeqView::toggleStepSlide(int step) {
 // throws, accents and slides.
 void PitchSeqView::randomize() {
     static const int pool[] = { 0, 0, 0, 3, 5, 7, 10 };
-    const int pat = proc.getEditPattern();
+    const int pat = proc.editPattern();
     for (int i = 0; i < fable::BL_STEPS; ++i) {
         BassSeqStep s;
         s.on = rng_.nextFloat() < 0.6f;
@@ -128,51 +152,44 @@ void PitchSeqView::randomize() {
         s.oct = rng_.nextFloat() < 0.2f ? (rng_.nextFloat() < 0.5f ? -1 : 1) : 0;
         s.acc = s.on && rng_.nextFloat() < 0.25f;
         s.slide = s.on && i > 0 && rng_.nextFloat() < 0.22f;
-        proc.setSeqStep(pat, i, s);
+        proc.setSequenceStep(pat, i, s);
     }
     repaint();
 }
 
 void PitchSeqView::patternClick(int i) {
-    if (!chaining_) {                            // store.setEditPattern
-        proc.setEditPattern(i);
-        proc.setChain({ i });
-    } else {                                     // store.chainClick while chaining
-        std::vector<int> chain;
-        if (!chainFresh_) chain = proc.getChain();
-        chain.push_back(i);
-        chainFresh_ = false;
-        proc.setEditPattern(i);
-        proc.setChain(std::move(chain));
-    }
+    proc.setEditPattern(i);
     repaint();
 }
 
-void PitchSeqView::setChaining(bool on) {
-    if (on) {
-        chaining_ = true;
-        chainFresh_ = true;                      // first click will replace
-    } else {                                     // commit (store.setChaining off)
-        chaining_ = false;
-        chainFresh_ = false;
-        auto chain = proc.getChain();
-        if (chain.empty()) chain.push_back(proc.getEditPattern());
-        proc.setChain(std::move(chain));
-    }
+void PitchSeqView::setSequenceLength(int bars) {
+    bars = juce::jlimit(1, fable::BL_NPATTERNS, bars);
+    std::vector<int> sequence;
+    for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
+    proc.setChain(std::move(sequence));
     repaint();
 }
 
 void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     if (transportBounds().contains(pos)) {       // play/stop
-        proc.setSeqPlaying(!proc.isSeqPlaying());
+        proc.setSequencerPlaying(!proc.sequencerPlaying());
         repaint();
         return;
     }
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
         if (patternBounds(i).contains(pos)) { patternClick(i); return; }
-    if (chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
+    if (proc.capabilities().supportsPatternChain && sequenceLengthBounds().contains(pos)) {
+        const auto length = sequenceLengthBounds();
+        const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
+        if (pos.x < length.getX() + 38) setSequenceLength(bars - 1);
+        else if (pos.x >= length.getRight() - 38) setSequenceLength(bars + 1);
+        return;
+    }
     if (randBounds().contains(pos)) { randomize(); return; }
+    for (int s = 0; s < fable::BL_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
+        resizeStep_ = s; resizeStartDuration_ = proc.sequenceStep(proc.editPattern(), s).duration; return;
+    }
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
         for (int note = 0; note < fable::BL_NOTE_LANES; ++note)
@@ -184,6 +201,16 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     }
 }
 
+void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
+    if (resizeStep_ < 0) return;
+    const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
+    resizeStep(resizeStep_, resizeStartDuration_ + delta);
+}
+
+void PitchSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
+void PitchSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
+bool PitchSeqView::keyPressed(const juce::KeyPress& k) { if (k == juce::KeyPress::escapeKey) { cancelResize(); return true; } return false; }
+
 // ---- animation ----------------------------------------------------------------
 
 // Repaint only when something visible changed: transport/playhead, edit
@@ -191,17 +218,17 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
 void PitchSeqView::timerCallback() {
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = proc.sequencerPlaying();
+    const int edit = proc.editPattern();
     mix(playing ? 1 : 0);
-    mix(playing ? proc.getCurrentStep() : -1);
-    mix(proc.getCurrentPattern());
-    mix(edit); mix(chaining_ ? 1 : 0);
-    const auto& chain = proc.getChain();
+    mix(playing ? proc.currentStep() : -1);
+    mix(proc.currentPattern());
+    mix(edit);
+    const auto& chain = proc.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
     for (int s = 0; s < fable::BL_STEPS; ++s) {
-        const BassSeqStep st = proc.getSeqStep(edit, s);
+        const BassSeqStep st = proc.sequenceStep(edit, s);
         mix((st.on ? 1 : 0) | (st.acc ? 2 : 0) | (st.slide ? 4 : 0));
         mix(st.note); mix(st.oct);
     }
@@ -213,15 +240,20 @@ void PitchSeqView::timerCallback() {
 // .bl-seq-btn: 5px radius, #11141c, dim mono text; active = green border/text
 // over a dark green wash (#0e3122).
 static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::String& text,
-                       bool active, float tracking) {
+                       bool active, float tracking, bool current = false, float fontSize = 8.0f) {
     const auto bf = b.toFloat();
     const juce::Colour green = accentA();
-    g.setColour(active ? juce::Colour(0xff0e3122) : juce::Colour(0xff11141c));
+    g.setColour(current ? green.withAlpha(0.20f)
+                        : active ? juce::Colour(0xff0e3122) : juce::Colour(0xff11141c));
     g.fillRoundedRectangle(bf, 5.0f);
-    g.setColour(active ? green.withAlpha(0.55f) : col::line);
+    g.setColour(current ? green.withAlpha(0.9f) : active ? green.withAlpha(0.55f) : col::line);
     g.drawRoundedRectangle(bf.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(active ? green : col::textDim);
-    g.setFont(monoFont(8.0f));
+    if (active) {
+        g.setColour(green);
+        g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
+    }
+    g.setColour(active || current ? green : col::textDim);
+    g.setFont(monoFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -232,8 +264,8 @@ void PitchSeqView::paint(juce::Graphics& g) {
     g.setColour(green.withAlpha(0.16f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 12.0f, 1.0f);
 
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = proc.sequencerPlaying();
+    const int edit = proc.editPattern();
 
     // ---- head: transport (.bl-transport — green-tinted well) ----
     const auto tb = transportBounds().toFloat();
@@ -258,17 +290,21 @@ void PitchSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "PITCH SEQ",
                { transportBounds().getRight() + 12, kHeadY, 96, kHeadH }, 2.2f);
 
-    // ---- head: pattern buttons + CHAIN + RAND ----
+    // ---- head: bar buttons + sequence length + RAND ----
+    const int bars = proc.capabilities().hosted ? proc.clipBars()
+                                                : juce::jlimit(1, fable::BL_NPATTERNS, (int)proc.chain().size());
+    const int currentBar = playing ? proc.currentPattern() : -1;
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
-        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
-    juce::String chainLabel("CHAIN ");
-    const auto& chain = proc.getChain();
-    for (size_t k = 0; k < chain.size(); ++k) {
-        if (k > 0) chainLabel << ">";
-        const int p = chain[k];
-        chainLabel << (p >= 0 && p < fable::BL_NPATTERNS ? kPatNames[p] : "?");
+        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f,
+                   bars > 1 && currentBar == i);
+    if (proc.capabilities().supportsPatternChain) {
+        auto length = sequenceLengthBounds();
+        const auto minus = length.removeFromLeft(38);
+        const auto plus = length.removeFromRight(38);
+        drawSeqBtn(g, minus, "-", false, 0.0f, false, 15.0f);
+        drawSeqBtn(g, length, "LENGTH " + juce::String(bars) + "B", false, 0.25f);
+        drawSeqBtn(g, plus, "+", false, 0.0f, false, 15.0f);
     }
-    drawSeqBtn(g, chainToggleBounds(), chainLabel, chaining_, 0.5f);
     drawSeqBtn(g, randBounds(), "RAND", false, 0.7f);
 
     // ---- head: hint, right-aligned (.bl-seq-hint) ----
@@ -295,9 +331,9 @@ void PitchSeqView::paint(juce::Graphics& g) {
     }
 
     // ---- step columns ----
-    const int curStep = proc.getCurrentStep(), curPat = proc.getCurrentPattern();
+    const int curStep = proc.currentStep(), curPat = proc.currentPattern();
     BassSeqStep steps[fable::BL_STEPS];
-    for (int s = 0; s < fable::BL_STEPS; ++s) steps[s] = proc.getSeqStep(edit, s);
+    for (int s = 0; s < fable::BL_STEPS; ++s) steps[s] = proc.sequenceStep(edit, s);
 
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         const BassSeqStep& st = steps[s];
@@ -307,12 +343,8 @@ void PitchSeqView::paint(juce::Graphics& g) {
             const auto b = cellBounds(s, note).toFloat();
             const bool active = st.on && st.note == note;
             if (active) {
-                if (st.acc)
-                    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffa4ffd0), b.getX(), b.getY(),
-                                                           juce::Colour(0xff2fbf76), b.getX(), b.getBottom(), false));
-                else
-                    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3ddc8c), b.getX(), b.getY(),
-                                                           juce::Colour(0xff1a8f57), b.getX(), b.getBottom(), false));
+                g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3ddc8c), b.getX(), b.getY(),
+                                                       juce::Colour(0xff1a8f57), b.getX(), b.getBottom(), false));
             } else {
                 g.setColour(note == 0 ? juce::Colour(0xff0c1016) : juce::Colour(0xff0a0d13));
             }
@@ -371,11 +403,31 @@ void PitchSeqView::paint(juce::Graphics& g) {
         }
     }
 
+    // Duration blocks share the WT-1 piano-roll affordance; slide remains a
+    // separate per-step control and is never modified by resizing.
+    const int gridRight = getWidth() - kPadX;
+    for (int s = 0; s < fable::BL_STEPS; ++s) {
+        const auto& st = steps[s];
+        if (!st.on) continue;
+        const auto start = cellBounds(s, st.note);
+        const int pitch = colBounds(s).getWidth();
+        const int width = pitch * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+        auto block = start.withWidth(juce::jmax(pitch, juce::jmin(width, gridRight - start.getX()))).reduced(1, 1);
+        const auto bf = block.toFloat();
+        g.setColour(green.withAlpha(0.78f));
+        g.fillRoundedRectangle(bf, 3.0f);
+        g.setColour(green.withAlpha(0.95f));
+        g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
+        g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
+    }
+
     // ---- slide connectors, drawn INTO a step from its predecessor ----
     // (seq.ts slidesInto: cur.on && cur.slide && prev.on)
     const float laneH = kLanesH / (float)fable::BL_NOTE_LANES;
     auto yOf = [&](const BassSeqStep& st) {
-        return kBodyY + (fable::BL_NOTE_LANES - 1 - st.note + 0.5f) * laneH - st.oct * 4.0f;
+        return static_cast<float>(kBodyY)
+             + (static_cast<float>(fable::BL_NOTE_LANES - 1 - st.note) + 0.5f) * laneH
+             - static_cast<float>(st.oct) * 4.0f;
     };
     g.setColour(green.withAlpha(0.75f));
     for (int i = 1; i < fable::BL_STEPS; ++i) {

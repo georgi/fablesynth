@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Theme.h"
+#include "ParameterSource.h"
 #include <functional>
 
 // Custom rack controls — faithful ports of the web components:
@@ -26,6 +27,8 @@ public:
     enum Size { Lg, Md, Sm, Xs };
     Knob(juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
          Size sz, Accent accent, bool showLabel = true, int modDest = 0);
+    Knob(ParameterSource, const juce::String& paramId,
+         Size sz, Accent accent, bool showLabel = true, int modDest = 0);
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -49,7 +52,7 @@ private:
     void  rebuildRings();                 // refresh rings_ from active slots
     juce::uint64 ringSignature() const;   // cheap hash of this dest's active slots
 
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::String id;
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;
@@ -77,6 +80,7 @@ private:
 class Stepper : public juce::Component, private juce::Timer {
 public:
     Stepper(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent);
+    Stepper(ParameterSource, const juce::String& paramId, Accent accent);
     void paint(juce::Graphics&) override;
     void resized() override;
 
@@ -91,7 +95,7 @@ private:
     void step(int d);
     int  choiceCount() const;
     juce::String displayName() const;
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::String id;
     juce::AudioParameterChoice* choice = nullptr;
     // Set when the param is not a choice (e.g. unison: AudioParameterFloat with
@@ -107,12 +111,13 @@ private:
 class PowerButton : public juce::Component, private juce::Timer {
 public:
     PowerButton(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent);
+    PowerButton(ParameterSource, const juce::String& paramId, Accent accent);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     bool isOn() const;
 private:
     void timerCallback() override;
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::String id;
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;
@@ -126,6 +131,8 @@ private:
 class VSlider : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
 public:
     VSlider(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent,
+            std::function<float()> ghostProvider, int modDest = 0);
+    VSlider(ParameterSource, const juce::String& paramId, Accent accent,
             std::function<float()> ghostProvider, int modDest = 0);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -145,7 +152,7 @@ private:
     void rebuildRings();
     juce::uint64 ringSignature() const;
 
-    juce::AudioProcessorValueTreeState& apvts;
+    ParameterSource parameters;
     juce::String id;
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;

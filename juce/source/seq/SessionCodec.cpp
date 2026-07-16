@@ -2,6 +2,9 @@
 // SessionDoc). The JUCE layer owns base64 (juce::Base64) and JSON
 // (juce::JSON) — the pure model (SeqModel.h) stays JUCE-free.
 #include "SessionCodec.h"
+#include "../dsp/Presets.h"
+#include "../bass/dsp/BassPatches.h"
+#include "../drum/dsp/DrumKits.h"
 
 namespace fable {
 
@@ -30,7 +33,49 @@ static uint32_t colorFromStr(const juce::String& s) {
     return 0xff000000u | (uint32_t)(hex.getHexValue32() & 0x00ffffff);
 }
 
-juce::String sessionToJson(const SessionData& s) {
+// Exports are intentionally self-contained.  The UI may retain a compact
+// factory-bank reference, but a .json session must still load with the exact
+// sound if its factory-bank order ever changes in another build.
+template <typename Array, typename Info>
+static void writeParams(juce::DynamicObject& target, const Array& values, const Info& info) {
+    for (size_t i = 0; i < values.size(); ++i)
+        target.setProperty(juce::Identifier(info[i].pid), values[i]);
+}
+
+static void writeEmbeddedPatchParams(juce::DynamicObject& target, Machine machine, const PatchRef& patch) {
+    if (!patch.factory) {
+        // Inline patches may be sparse when imported from an older session;
+        // make the next export a full, stand-alone machine state.
+        switch (machine) {
+            case Machine::DR1: writeParams(target, defaultDrumParams(), drumParamInfo()); break;
+            case Machine::BL1: writeParams(target, defaultBassParams(), bassParamInfo()); break;
+            case Machine::WT1: writeParams(target, defaultParams(), paramInfo()); break;
+        }
+        for (const auto& kv : patch.params)
+            target.setProperty(juce::Identifier(kv.first), kv.second);
+        return;
+    }
+    const int index = juce::jmax(0, patch.index);
+    switch (machine) {
+        case Machine::DR1: {
+            const auto& bank = factoryKits();
+            writeParams(target, applyKit(bank[(size_t)juce::jmin(index, (int)bank.size() - 1)]), drumParamInfo());
+            break;
+        }
+        case Machine::BL1: {
+            const auto& bank = bassFactoryPatches();
+            writeParams(target, applyBassPatch(bank[(size_t)juce::jmin(index, (int)bank.size() - 1)]), bassParamInfo());
+            break;
+        }
+        case Machine::WT1: {
+            const auto& bank = factoryPresets();
+            writeParams(target, applyPreset(bank[(size_t)juce::jmin(index, (int)bank.size() - 1)]), paramInfo());
+            break;
+        }
+    }
+}
+
+juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
     auto* root = new juce::DynamicObject();
     root->setProperty("v", 1);
     root->setProperty("name", juce::String(s.name));
@@ -46,17 +91,14 @@ juce::String sessionToJson(const SessionData& s) {
         to->setProperty("color", colorStr(t.color));
         to->setProperty("gain", t.gain);
         auto* patch = new juce::DynamicObject();
-        if (t.patch.factory) {
+        if (t.patch.factory && !embedFactoryPatches) {
             patch->setProperty("kind", "factory");
             patch->setProperty("index", t.patch.index);
         } else {
             patch->setProperty("kind", "inline");
-            // Web contract (src/seq/devices.ts inlineParams, protocol.ts
-            // PatchDoc): { kind:"inline", data:{ params:{ name:number,... } } }.
-            // The param map is nested under data.params, not flat in data.
+            // Web contract: { kind:"inline", data:{ params:{ name:number,... } } }.
             auto* paramsObj = new juce::DynamicObject();
-            for (const auto& kv : t.patch.params)
-                paramsObj->setProperty(juce::Identifier(kv.first), kv.second);
+            writeEmbeddedPatchParams(*paramsObj, t.machine, t.patch);
             auto* dataObj = new juce::DynamicObject();
             dataObj->setProperty("params", juce::var(paramsObj));
             patch->setProperty("data", juce::var(dataObj));

@@ -150,8 +150,8 @@ these are browser-input concerns; the plugin receives notes from the host.
 # FableSynth DR-1 — drum machine
 
 A faithful C++/JUCE port of the DR-1 web drum machine (`src/drum/`, the
-lockstep reference): 16 fully synthesized pads — two morphing wavetable
-oscillators plus noise per pad, no samples — a 16-step sequencer with pattern
+lockstep reference): 16 pads — one morphing wavetable oscillator, a tunable
+TR-808 one-shot sample layer, and noise per pad — a 16-step sequencer with pattern
 chaining, choke groups, master FX, and the three factory kits. Ships as a
 second plugin from the same build: **VST3 · AU · Standalone**, product name
 "FableSynth DR-1".
@@ -398,8 +398,9 @@ a fourth plugin from the same build: **VST3 · AU · Standalone**, product name
   owner/queue state machine.
 - `sq4_host_test` — plugin-boundary test: instantiates the real
   `SeqAudioProcessor` and drives it like a DAW + editor timer would (scene
-  launch across all four engines on the shared bar grid, mute, pause, stopAll
-  decay, state round-trip, focus-mode clip editing, the session JSON codec,
+  launch across all four engines on the shared bar grid, mute, combined
+  play/stop transport, stop decay, state round-trip, focus-mode clip editing,
+  the session JSON codec,
   LOAD/SAVE) and renders editor snapshots.
 
 ## Architecture

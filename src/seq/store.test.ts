@@ -8,18 +8,23 @@ import { STOP } from './model';
 import { barFrames } from './protocol';
 import type { SeqRig } from './rig';
 import { clipPattern, resetSeqStore, useSeqStore } from './store';
+import { decodeClipLibrary } from './clipLibrary';
+import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
+
+const library = decodeClipLibrary({ v: 1, clips: FACTORY_CLIP_LIBRARY }).clips;
 
 class FakeDevice implements SeqDevice {
   clips: Array<{ bars: number; atFrame: number; bytes: number }> = [];
   stops: number[] = [];
   tempos: Array<{ bpm: number; swing: number; anchor: number }> = [];
   updates: Array<{ bars: number; bytes: number }> = [];
+  patches: unknown[] = [];
   onClipStart: ((frame: number) => void) | null = null;
   onClipStop: ((frame: number) => void) | null = null;
   onPos: ((step: number, bar: number) => void) | null = null;
 
   async init(): Promise<void> {}
-  applyPatch(): void {}
+  applyPatch(patch: unknown): void { this.patches.push(patch); }
   setTempo(bpm: number, swing: number, anchor: number): void {
     this.tempos.push({ bpm, swing, anchor });
   }
@@ -42,11 +47,8 @@ class FakeRig implements SeqRig {
   trackAnalysers = null;
   gains: Record<number, number> = {};
   master = 0;
-  suspended = false;
 
   now(): number { return this.frame; }
-  async suspend(): Promise<void> { this.suspended = true; }
-  async resume(): Promise<void> { this.suspended = false; }
   setTrackGain(t: number, gain: number): void { this.gains[t] = gain; }
   setMasterGain(gain: number): void { this.master = gain; }
   sendTempo(bpm: number, swing: number, anchor: number): void {
@@ -68,9 +70,9 @@ beforeEach(async () => {
 });
 
 describe('power-on', () => {
-  it('starts the transport: anchor ahead of now, tempo to every device', () => {
+  it('unlocks audio with the transport stopped and sends tempo to every device', () => {
     expect(st().powered).toBe(true);
-    expect(st().playing).toBe(true);
+    expect(st().playing).toBe(false);
     expect(st().anchor).toBeGreaterThan(1000);
     for (let t = 0; t < 4; t++) {
       expect(rig.dev(t).tempos).toHaveLength(1);
@@ -86,6 +88,7 @@ describe('power-on', () => {
 
 describe('quantized launching', () => {
   it('launch schedules the clip at the next bar boundary and queues in the UI', () => {
+    st().toggleTransport();
     rig.frame = st().anchor + 10; // just past beat zero
     st().launch(0, 2); // DROP A drums
     const d = rig.dev(0);
@@ -127,12 +130,12 @@ describe('quantized launching', () => {
     expect(rig.dev(0).clips).toHaveLength(0);
   });
 
-  it('launching while paused resumes the context', () => {
-    st().togglePlay();
-    expect(rig.suspended).toBe(true);
+  it('launching while stopped starts a fresh transport without suspending audio', () => {
+    const temposBefore = rig.dev(0).tempos.length;
     st().launch(0, 2);
-    expect(rig.suspended).toBe(false);
     expect(st().playing).toBe(true);
+    expect(rig.dev(0).tempos).toHaveLength(temposBefore + 1);
+    expect(rig.dev(0).clips[0].atFrame).toBe(st().anchor);
   });
 });
 
@@ -173,6 +176,13 @@ describe('stopping', () => {
 });
 
 describe('scene operations', () => {
+  it('launchScene starts the stopped transport and launches on its new downbeat', () => {
+    expect(st().playing).toBe(false);
+    st().launchScene(2);
+    expect(st().playing).toBe(true);
+    expect(rig.dev(0).clips[0].atFrame).toBe(st().anchor);
+  });
+
   it('launchScene schedules only tracks with clips', () => {
     st().launchScene(1); // BUILD: no LEAD clip
     expect(rig.dev(0).clips).toHaveLength(1);
@@ -317,15 +327,61 @@ describe('clip editing', () => {
     expect(st().session.tracks[0].patch).toEqual({ kind: 'inline', data: { params: { x: 1 } } });
     expect(st().session.tracks[1].patch.kind).toBe('factory');
   });
+
+  it('recalls a factory device patch by the shared bank index', () => {
+    st().loadTrackFactoryPatch(1, 4);
+    expect(st().session.tracks[1].patch).toEqual({ kind: 'factory', index: 4 });
+    expect(rig.dev(1).patches).toEqual([{ kind: 'factory', index: 4 }]);
+  });
+
+  it('loads a compatible library clip into only the target cell and preserves the patch', () => {
+    const entry = library.find((clip) => clip.machine === 'DR1')!;
+    const patch = st().session.tracks[0].patch;
+    const other = st().session.scenes[1].clips[0];
+    expect(st().loadLibraryClip(0, 0, entry)).toBe(true);
+    expect(st().session.scenes[0].clips[0]?.name).toBe(entry.name);
+    expect(clipPattern(st().session, 0, 0)).toEqual(entry.pattern);
+    expect(st().session.scenes[1].clips[0]).toBe(other);
+    expect(st().session.tracks[0].patch).toBe(patch);
+    expect(st().clipLoadRevision).toBe(1);
+  });
+
+  it('rejects a library clip for another machine without changing the session', () => {
+    const entry = library.find((clip) => clip.machine === 'BL1')!;
+    const session = st().session;
+    expect(st().loadLibraryClip(0, 0, entry)).toBe(false);
+    expect(st().session).toBe(session);
+  });
+
+  it('hot-swaps a library load when the target is live or pending', () => {
+    const entry = library.find((clip) => clip.machine === 'DR1')!;
+    st().launch(0, 0);
+    expect(st().loadLibraryClip(0, 0, entry)).toBe(true);
+    expect(rig.dev(0).updates).toEqual([{ bars: entry.bars, bytes: entry.pattern.length }]);
+  });
 });
 
-describe('pause', () => {
-  it('togglePlay suspends and resumes the context', () => {
-    st().togglePlay();
-    expect(rig.suspended).toBe(true);
+describe('transport', () => {
+  it('uses one toggle for play and immediate stop without suspending audio', () => {
+    st().toggleTransport();
+    expect(st().playing).toBe(true);
+    st().launch(0, 2);
+    rig.dev(0).onClipStart!(1);
+
+    st().toggleTransport();
     expect(st().playing).toBe(false);
-    st().togglePlay();
-    expect(rig.suspended).toBe(false);
+    expect(st().beat).toBe(0);
+    expect(st().bar).toBe(1);
+    expect(st().queue[0]).toBe(STOP);
+    expect(rig.dev(0).stops[rig.dev(0).stops.length - 1]).toBe(0);
+  });
+
+  it('ignores a clip-start ack that arrives after transport stop', () => {
+    st().launch(0, 2);
+    st().toggleTransport();
+    rig.dev(0).onClipStart!(1);
+    expect(st().owner[0]).toBeUndefined();
+    expect(st().queue[0]).toBe(STOP);
   });
 });
 

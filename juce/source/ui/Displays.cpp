@@ -5,17 +5,25 @@
 namespace fui {
 
 static constexpr double PI = juce::MathConstants<double>::pi;
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
+static ParameterSource wtSource(juce::AudioProcessorValueTreeState& apvts) {
+    const auto& catalog = fable::paramInfo();
+    return ParameterSource::fromApvts(apvts, catalog.data(), catalog.size());
+}
 
 // ===================== EnvView =====================
 EnvView::EnvView(juce::AudioProcessorValueTreeState& s, const juce::String& b, juce::Colour ac)
-    : apvts(s), base(b), accent(ac) { startTimerHz(20); }
+    : EnvView(wtSource(s), b, ac) {}
+EnvView::EnvView(ParameterSource source, const juce::String& b, juce::Colour ac)
+    : parameters(std::move(source)), base(b), accent(ac) { startTimerHz(20); }
 float EnvView::p(const char* sfx) const {
-    auto* prm = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(base + sfx));
+    auto* prm = parameters.parameter(base + sfx);
     return prm ? prm->convertFrom0to1(prm->getValue()) : 0.0f;
 }
 void EnvView::timerCallback() {
     float v[4] = {p(".a"), p(".d"), p(".s"), p(".r")};
-    if (v[0] != last[0] || v[1] != last[1] || v[2] != last[2] || v[3] != last[3]) {
+    if (floatChanged(v[0], last[0]) || floatChanged(v[1], last[1])
+        || floatChanged(v[2], last[2]) || floatChanged(v[3], last[3])) {
         last[0] = v[0]; last[1] = v[1]; last[2] = v[2]; last[3] = v[3]; repaint();
     }
 }
@@ -54,23 +62,27 @@ void EnvView::paint(juce::Graphics& g) {
 LfoView::LfoView(juce::AudioProcessorValueTreeState& s, const juce::String& sh,
                  const juce::String& ra, const juce::String& sy, const juce::String& sr,
                  juce::Colour ac, std::function<HostTransport()> transportProvider)
-    : apvts(s), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
+    : LfoView(wtSource(s), sh, ra, sy, sr, ac, std::move(transportProvider)) {}
+LfoView::LfoView(ParameterSource source, const juce::String& sh,
+                 const juce::String& ra, const juce::String& sy, const juce::String& sr,
+                 juce::Colour ac, std::function<HostTransport()> transportProvider)
+    : parameters(std::move(source)), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
       transport(std::move(transportProvider)), t0(juce::Time::getMillisecondCounter()) {
     startTimerHz(30);
 }
 bool LfoView::synced() const {
-    auto* syncP = apvts.getParameter(syncId);
+    auto* syncP = parameters.parameter(syncId);
     return syncP && syncP->getValue() >= 0.5f;
 }
 // Effective LFO rate in Hz: synced division * host tempo when sync is on, else
 // the free RATE param. Mirrors Engine::lfoHz so the dot tracks the real speed.
 float LfoView::currentRate(const HostTransport& tr) const {
     if (synced()) {
-        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(syncRateId));
         int idx = srP ? srP->getIndex() : 2;
         return (float)((tr.bpm / 60.0) * fable::lfoDivFactor(idx));
     }
-    auto* rp = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(rateId));
+    auto* rp = parameters.parameter(rateId);
     return rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
 }
 static float lfoFn(int shape, float p) {
@@ -83,14 +95,14 @@ static float lfoFn(int shape, float p) {
     }
 }
 static float shVal(int s) {
-    float v = std::sin(s * 78.233f + 12.9898f) * 43758.5453f;
+    float v = std::sin(static_cast<float>(s) * 78.233f + 12.9898f) * 43758.5453f;
     v = v - std::floor(v);
     return (v - 0.5f) * 2.0f;
 }
 void LfoView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     const HostTransport tr = transport ? transport() : HostTransport{};
-    auto* sp = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(shapeId));
+    auto* sp = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(shapeId));
     int shape = sp ? sp->getIndex() : 0;
     float rate = currentRate(tr);
 
@@ -102,13 +114,14 @@ void LfoView::paint(juce::Graphics& g) {
         const int steps = 8;
         for (int s = 0; s < steps; s++) {
             float y = mid - shVal(s) * amp * 0.9f;
-            float x0 = pad + (s / (float)steps) * W, x1 = pad + ((s + 1) / (float)steps) * W;
+            float x0 = pad + (static_cast<float>(s) / static_cast<float>(steps)) * W;
+            float x1 = pad + (static_cast<float>(s + 1) / static_cast<float>(steps)) * W;
             if (s == 0) path.startNewSubPath(x0, y); else path.lineTo(x0, y);
             path.lineTo(x1, y);
         }
     } else {
         for (int i = 0; i <= 96; i++) {
-            float pp = i / 96.0f, x = pad + pp * W, y = mid - lfoFn(shape, pp) * amp * 0.9f;
+            float pp = static_cast<float>(i) / 96.0f, x = pad + pp * W, y = mid - lfoFn(shape, pp) * amp * 0.9f;
             if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
         }
     }
@@ -120,12 +133,12 @@ void LfoView::paint(juce::Graphics& g) {
     // otherwise free-run at the effective rate.
     float phase;
     if (synced() && tr.playing) {
-        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(syncRateId));
+        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(syncRateId));
         int idx = srP ? srP->getIndex() : 2;
         double ph = tr.ppq * fable::lfoDivFactor(idx);
         phase = (float)(ph - std::floor(ph));
     } else {
-        phase = std::fmod((juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
+        phase = std::fmod(static_cast<float>(juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
     }
     float y;
     if (shape == 4) y = mid - shVal((int)std::floor(phase * 8)) * amp * 0.9f;
@@ -167,18 +180,21 @@ static double magFor(int type, double cutoff, double res, double f) {
     }
     return acc * 0.8;
 }
-FilterView::FilterView(juce::AudioProcessorValueTreeState& s, juce::Colour ac) : apvts(s), accent(ac) { startTimerHz(20); }
+FilterView::FilterView(juce::AudioProcessorValueTreeState& s, juce::Colour ac)
+    : FilterView(wtSource(s), ac) {}
+FilterView::FilterView(ParameterSource source, juce::Colour ac)
+    : parameters(std::move(source)), accent(ac) { startTimerHz(20); }
 void FilterView::timerCallback() {
-    auto get = [&](const char* id) { auto* p = apvts.getParameter(id); return p ? p->getValue() : 0.0f; };
+    auto get = [&](const char* id) { auto* p = parameters.parameter(id); return p ? p->getValue() : 0.0f; };
     float sum = get("filter.on") + get("filter.type") * 1.7f + get("filter.cutoff") * 3.1f + get("filter.res") * 2.3f
               + get("filter2.on") + get("filter2.type") * 1.1f + get("filter2.cutoff") * 0.7f + get("filter2.res") * 1.9f
               + get("filter.route") * 5.0f;
-    if (sum != sig) { sig = sum; repaint(); }
+    if (floatChanged(sum, sig)) { sig = sum; repaint(); }
 }
 void FilterView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     auto val = [&](const char* id) {
-        auto* p = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
+        auto* p = parameters.parameter(id);
         return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
     };
     struct F { int type; double cut, res; bool on; };
@@ -203,7 +219,7 @@ void FilterView::paint(juce::Graphics& g) {
         juce::Path pth;
         for (int i = 0; i <= 120; i++) {
             double f = fmin * std::pow(fmax / fmin, i / 120.0);
-            float x = pad + (i / 120.0f) * (w - pad * 2), y = toY(fn(f));
+            float x = pad + (static_cast<float>(i) / 120.0f) * (w - pad * 2), y = toY(fn(f));
             if (i == 0) pth.startNewSubPath(x, y); else pth.lineTo(x, y);
         }
         g.setColour(stroke);
@@ -221,12 +237,13 @@ void FilterView::paint(juce::Graphics& g) {
 }
 
 // ===================== ScopeView =====================
-ScopeView::ScopeView(FableAudioProcessor& p, juce::Colour ac) : proc(p), accent(ac) { startTimerHz(30); }
+ScopeView::ScopeView(std::function<void(float*, int)> reader, juce::Colour ac)
+    : readScope(std::move(reader)), accent(ac) { startTimerHz(30); }
 void ScopeView::timerCallback() {
     // Silent output draws the same flat line every frame: skip the repaint until
     // audio returns. One extra paint after the transition draws the final flat line.
     std::array<float, 2048> buf;
-    proc.readScope(buf.data(), (int)buf.size());
+    readScope(buf.data(), static_cast<int>(buf.size()));
     float peak = 0;
     for (float v : buf) peak = std::max(peak, std::abs(v));
     bool active = peak > 1.0e-5f;
@@ -236,14 +253,15 @@ void ScopeView::timerCallback() {
 void ScopeView::paint(juce::Graphics& g) {
     const int N = 2048;
     std::array<float, 2048> buf;
-    proc.readScope(buf.data(), N);
+    readScope(buf.data(), N);
     const float w = (float)getWidth(), h = (float)getHeight();
     int start = 0;
-    for (int i = 1; i < N / 2; i++) if (buf[i - 1] <= 0 && buf[i] > 0) { start = i; break; }
+    for (int i = 1; i < N / 2; i++) if (buf[static_cast<size_t>(i - 1)] <= 0 && buf[static_cast<size_t>(i)] > 0) { start = i; break; }
     int M = std::min(900, N - start);
     juce::Path path;
     for (int i = 0; i < M; i++) {
-        float x = (i / (float)(M - 1)) * w, y = h / 2 - buf[start + i] * h * 0.46f;
+        float x = (static_cast<float>(i) / static_cast<float>(M - 1)) * w;
+        float y = h / 2 - buf[static_cast<size_t>(start + i)] * h * 0.46f;
         if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
     }
     g.setColour(accent.withAlpha(0.95f));
@@ -251,10 +269,13 @@ void ScopeView::paint(juce::Graphics& g) {
 }
 
 // ===================== SpectrumView =====================
-SpectrumView::SpectrumView(FableAudioProcessor& p, juce::Colour ac) : proc(p), accent(ac) { startTimerHz(30); }
+SpectrumView::SpectrumView(std::function<void(float*, int)> reader,
+                           std::function<double()> sampleRateProvider,
+                           juce::Colour ac)
+    : readScope(std::move(reader)), sampleRate(std::move(sampleRateProvider)), accent(ac) { startTimerHz(30); }
 void SpectrumView::timerCallback() {
     std::array<float, kFFT> buf;
-    proc.readScope(buf.data(), kFFT);
+    readScope(buf.data(), kFFT);
     float peak = 0;
     for (float v : buf) peak = std::max(peak, std::abs(v));
     bool active = peak > 1.0e-5f;
@@ -265,7 +286,7 @@ void SpectrumView::timerCallback() {
 }
 void SpectrumView::paint(juce::Graphics& g) {
     std::array<float, kFFT * 2> fftData{};
-    proc.readScope(fftData.data(), kFFT);
+    readScope(fftData.data(), kFFT);
     window.multiplyWithWindowingTable(fftData.data(), kFFT);
     fft.performFrequencyOnlyForwardTransform(fftData.data());
 
@@ -274,17 +295,18 @@ void SpectrumView::paint(juce::Graphics& g) {
     std::array<float, kFFT / 2> bytes;
     float maxSm = 0;
     for (int i = 0; i < kFFT / 2; i++) {
-        float mag = fftData[i] / kFFT;
-        smoothed[i] = smoothing * smoothed[i] + (1 - smoothing) * mag;
-        maxSm = std::max(maxSm, smoothed[i]);
-        float db = juce::Decibels::gainToDecibels(smoothed[i] + 1e-9f);
-        bytes[i] = juce::jlimit(0.0f, 1.0f, (db - minDb) / (maxDb - minDb)) * 255.0f;
+        const auto index = static_cast<size_t>(i);
+        float mag = fftData[index] / static_cast<float>(kFFT);
+        smoothed[index] = smoothing * smoothed[index] + (1 - smoothing) * mag;
+        maxSm = std::max(maxSm, smoothed[index]);
+        float db = juce::Decibels::gainToDecibels(smoothed[index] + 1e-9f);
+        bytes[index] = juce::jlimit(0.0f, 1.0f, (db - minDb) / (maxDb - minDb)) * 255.0f;
     }
     decaying_ = maxSm > 1.0e-5f; // 1e-5 == the -100 dB floor where bars are zero
 
     const float w = (float)getWidth(), h = (float)getHeight();
     const int bars = 48;
-    const double sr = proc.getCurrentSr();
+    const double sr = sampleRate();
     const double fmin = 30, fmax = std::min(18000.0, sr / 2);
     g.setGradientFill(juce::ColourGradient(accent.withAlpha(0.33f), 0, h, accent, 0, 0, false));
     for (int b = 0; b < bars; b++) {
@@ -293,9 +315,9 @@ void SpectrumView::paint(juce::Graphics& g) {
         int i0 = (int)((f0 / (sr / 2)) * (kFFT / 2));
         int i1 = std::max(i0 + 1, (int)((f1 / (sr / 2)) * (kFFT / 2)));
         float m = 0;
-        for (int i = i0; i < i1 && i < kFFT / 2; i++) m = std::max(m, bytes[i]);
-        float v = m / 255.0f, bh = std::pow(v, 1.4f) * (h - 2), bw = w / bars;
-        g.fillRect(b * bw + 0.5f, h - bh, bw - 1.5f, bh);
+        for (int i = i0; i < i1 && i < kFFT / 2; i++) m = std::max(m, bytes[static_cast<size_t>(i)]);
+        float v = m / 255.0f, bh = std::pow(v, 1.4f) * (h - 2), bw = w / static_cast<float>(bars);
+        g.fillRect(static_cast<float>(b) * bw + 0.5f, h - bh, bw - 1.5f, bh);
     }
 }
 

@@ -5,13 +5,13 @@ namespace fui {
 
 using fable::NoteSeqStep;
 
-static const char* const kPatNames[fable::SEQ_NPATTERNS] = { "A", "B", "C", "D" };
+static const char* const kPatNames[fable::SEQ_NPATTERNS] = { "1", "2", "3", "4" };
 
 // ---- geometry (index.css .ns-*, rack-relative px) -----------------------------
 // panel padding 8px 12px 10px; head 24px + 10px margin; body: legend 36px +
 // 8px gap, 16 columns with 5px gaps, then the clock column (border-left,
 // 6px padding). Column: 143px of lanes (12 cells, 1px gaps), oct 5+20,
-// acc 4+14, tie 4+14, step number 4+10.
+// acc 4+14, step number 4+10.
 
 static constexpr int kPadX = 12, kHeadY = 8, kHeadH = 24;
 static constexpr int kBodyY = kHeadY + kHeadH + 10;
@@ -20,20 +20,14 @@ static constexpr int kLanesH = 143;
 static constexpr float kColGap = 5.0f;
 static constexpr int kOctY = kLanesH + 5, kOctH = 20;
 static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 14;
-static constexpr int kTieY = kAccY + kAccH + 4, kTieH = 14;
-static constexpr int kNumY = kTieY + kTieH + 4;
+static constexpr int kNumY = kAccY + kAccH + 4;
 static constexpr int kClockW = 60, kClockGap = 6;
 
-NoteSeqView::NoteSeqView(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
-    : proc(p),
-      bpm_(s, "seq.bpm", Knob::Sm, Accent::A),
-      swing_(s, "seq.swing", Knob::Sm, Accent::A),
-      gate_(s, "seq.gate", Knob::Sm, Accent::A),
-      root_(s, "seq.root", Accent::A) {
+NoteSeqView::NoteSeqView(WtUiModel& m)
+    : model(m),
+      root_(m.parameters(), "seq.root", Accent::A) {
     setInterceptsMouseClicks(true, true);
-    addAndMakeVisible(bpm_);
-    addAndMakeVisible(swing_);
-    addAndMakeVisible(gate_);
+    setWantsKeyboardFocus(true);
     addAndMakeVisible(root_);
     // params.ts fmtNote: seq.root shows a note name (48 -> C3), not the number.
     root_.nameProvider = [](int v) {
@@ -46,13 +40,9 @@ NoteSeqView::NoteSeqView(juce::AudioProcessorValueTreeState& s, FableAudioProces
 }
 
 void NoteSeqView::resized() {
-    // .ns-clock: knobs + ROOT stepper stacked on the right, behind a border.
+    // .ns-clock: ROOT stays with pitch editing; timing lives in the top bar.
     const int x = getWidth() - kPadX - kClockW;
-    int y = kBodyY;
-    bpm_.setBounds(x, y, kClockW, 57);   y += 57 + 4;
-    swing_.setBounds(x, y, kClockW, 57); y += 57 + 4;
-    gate_.setBounds(x, y, kClockW, 57);  y += 57 + 4;
-    root_.setBounds(x, y, kClockW, 18);
+    root_.setBounds(x, kBodyY, kClockW, 18);
 }
 
 juce::Rectangle<int> NoteSeqView::transportBounds() const {
@@ -64,19 +54,19 @@ juce::Rectangle<int> NoteSeqView::patternBounds(int i) const {
     return { x0 + i * (26 + 5), kHeadY, 26, kHeadH }; // .ns-pattern 26x24, gap 5
 }
 
-juce::Rectangle<int> NoteSeqView::chainToggleBounds() const {
-    return { patternBounds(3).getRight() + 12, kHeadY, 108, kHeadH };
+juce::Rectangle<int> NoteSeqView::sequenceLengthBounds() const {
+    return { patternBounds(3).getRight() + 12, kHeadY - 3, 170, 30 };
 }
 
 juce::Rectangle<int> NoteSeqView::randBounds() const {
-    return { chainToggleBounds().getRight() + 12, kHeadY, 52, kHeadH };
+    return { sequenceLengthBounds().getRight() + 12, kHeadY, 52, kHeadH };
 }
 
 juce::Rectangle<int> NoteSeqView::colBounds(int step) const {
     const int gx = kPadX + kLegendW + kLegendGap;
     const int gw = getWidth() - kPadX - kClockW - kClockGap - kLegendGap - gx;
     const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
-    const float x = gx + step * (w + kColGap);
+    const float x = static_cast<float>(gx) + static_cast<float>(step) * (w + kColGap);
     return juce::Rectangle<float>(x, (float)kBodyY, w, (float)(kNumY + 10)).toNearestInt();
 }
 
@@ -85,7 +75,7 @@ juce::Rectangle<int> NoteSeqView::cellBounds(int step, int note) const {
     // 12 lanes over kLanesH with 1px gaps, note 11 on top (web lane order)
     const float ch = (kLanesH - 11.0f) / 12.0f;
     const int r = fable::SEQ_NOTE_LANES - 1 - note;
-    const float y = c.getY() + r * (ch + 1.0f);
+    const float y = static_cast<float>(c.getY()) + static_cast<float>(r) * (ch + 1.0f);
     return juce::Rectangle<float>((float)c.getX(), y, (float)c.getWidth(), ch).toNearestInt();
 }
 
@@ -99,118 +89,133 @@ juce::Rectangle<int> NoteSeqView::accBounds(int step) const {
     return { c.getX(), c.getY() + kAccY, c.getWidth(), kAccH };
 }
 
-juce::Rectangle<int> NoteSeqView::tieBounds(int step) const {
-    const auto c = colBounds(step);
-    return { c.getX(), c.getY() + kTieY, c.getWidth(), kTieH };
+juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
+    const auto st = model.sequenceStep(model.editPattern(), step);
+    if (!st.on) return {};
+    auto cell = cellBounds(step, st.note);
+    const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+    cell.setWidth(w);
+    return cell.removeFromRight(6).expanded(2, 2);
 }
 
 // ---- store handlers ----------------------------------------------------------
 
 void NoteSeqView::toggleCell(int step, int note) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     if (cur.on && cur.note == note) {              // tap again = rest
-        cur.on = false; cur.acc = false; cur.tie = false;
+        cur.on = false; cur.acc = false; cur.duration = 1;
     } else {
         cur.on = true; cur.note = note;
     }
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void NoteSeqView::cycleStepOct(int step) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     cur.oct = cur.oct >= fable::SEQ_OCT_MAX ? fable::SEQ_OCT_MIN : cur.oct + 1; // noteseq.ts cycleOct
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
 void NoteSeqView::toggleStepAcc(int step) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+    const int pat = model.editPattern();
+    NoteSeqStep cur = model.sequenceStep(pat, step);
     if (!cur.on) return;
     cur.acc = !cur.acc;
-    proc.setSeqStep(pat, step, cur);
+    model.setSequenceStep(pat, step, cur);
     repaint();
 }
 
-void NoteSeqView::toggleStepTie(int step) {
-    const int pat = proc.getEditPattern();
-    NoteSeqStep cur = proc.getSeqStep(pat, step);
+void NoteSeqView::resizeStep(int step, int duration) {
+    auto cur = model.sequenceStep(model.editPattern(), step);
     if (!cur.on) return;
-    cur.tie = !cur.tie;
-    proc.setSeqStep(pat, step, cur);
+    int limit = fable::SEQ_MAX_NOTE_STEPS;
+    for (int i = step + 1; i < fable::SEQ_STEPS; ++i) {
+        const auto other = model.sequenceStep(model.editPattern(), i);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = i - step; break; }
+    }
+    cur.duration = juce::jlimit(1, limit, duration);
+    model.setSequenceStep(model.editPattern(), step, cur);
     repaint();
 }
 
 // noteseq.ts randomPattern: a sparse minor line with occasional octave throws,
-// accents and legato ties — melodic flavor rather than BL-1's acid crawl.
+// accents and varied note lengths — melodic flavor rather than BL-1's acid crawl.
 void NoteSeqView::randomize() {
     static const int pool[] = { 0, 0, 2, 3, 5, 7, 10 };
-    const int pat = proc.getEditPattern();
+    const int pat = model.editPattern();
     for (int i = 0; i < fable::SEQ_STEPS; ++i) {
         NoteSeqStep s;
         s.on = rng_.nextFloat() < 0.62f;
         s.note = pool[rng_.nextInt(7)];
         s.oct = rng_.nextFloat() < 0.18f ? (rng_.nextFloat() < 0.5f ? -1 : 1) : 0;
         s.acc = s.on && rng_.nextFloat() < 0.22f;
-        s.tie = s.on && i > 0 && rng_.nextFloat() < 0.25f;
-        proc.setSeqStep(pat, i, s);
+        s.duration = 1 + rng_.nextInt(4);   // 1..4 steps (noteseq.ts randomPattern)
+        model.setSequenceStep(pat, i, s);
     }
     repaint();
 }
 
 void NoteSeqView::patternClick(int i) {
-    if (!chaining_) {                            // store.setEditPattern
-        proc.setEditPattern(i);
-        proc.setChain({ i });
-    } else {                                     // store.chainClick while chaining
-        std::vector<int> chain;
-        if (!chainFresh_) chain = proc.getChain();
-        chain.push_back(i);
-        chainFresh_ = false;
-        proc.setEditPattern(i);
-        proc.setChain(std::move(chain));
-    }
+    model.setEditPattern(i);
     repaint();
 }
 
-void NoteSeqView::setChaining(bool on) {
-    if (on) {
-        chaining_ = true;
-        chainFresh_ = true;                      // first click will replace
-    } else {                                     // commit (store.setChaining off)
-        chaining_ = false;
-        chainFresh_ = false;
-        auto chain = proc.getChain();
-        if (chain.empty()) chain.push_back(proc.getEditPattern());
-        proc.setChain(std::move(chain));
-    }
+void NoteSeqView::setSequenceLength(int bars) {
+    bars = juce::jlimit(1, fable::SEQ_NPATTERNS, bars);
+    std::vector<int> sequence;
+    for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
+    model.setChain(std::move(sequence));
     repaint();
 }
 
 void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
-    if (transportBounds().contains(pos)) {       // play/stop
-        proc.setSeqPlaying(!proc.isSeqPlaying());
+    const auto caps = model.capabilities();
+    if (!model.hasTargetClip()) {
+        if (randBounds().contains(pos)) model.createTargetClip();
+        return;
+    }
+    if (caps.ownsTransport && transportBounds().contains(pos)) {       // play/stop
+        model.setSequencerPlaying(!model.sequencerPlaying());
         repaint();
         return;
     }
-    for (int i = 0; i < fable::SEQ_NPATTERNS; ++i)
+    for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
         if (patternBounds(i).contains(pos)) { patternClick(i); return; }
-    if (chainToggleBounds().contains(pos)) { setChaining(!chaining_); return; }
+    if (caps.supportsPatternChain && sequenceLengthBounds().contains(pos)) {
+        const auto length = sequenceLengthBounds();
+        const int bars = caps.hosted ? model.clipBars() : (int)model.chain().size();
+        if (pos.x < length.getX() + 38) setSequenceLength(bars - 1);
+        else if (pos.x >= length.getRight() - 38) setSequenceLength(bars + 1);
+        return;
+    }
     if (randBounds().contains(pos)) { randomize(); return; }
+    for (int s = 0; s < fable::SEQ_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
+        resizeStep_ = s; resizeStartDuration_ = model.sequenceStep(model.editPattern(), s).duration; return;
+    }
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
         for (int note = 0; note < fable::SEQ_NOTE_LANES; ++note)
             if (cellBounds(s, note).contains(pos)) { toggleCell(s, note); return; }
         if (octBounds(s).contains(pos)) { cycleStepOct(s); return; }
         if (accBounds(s).contains(pos)) { toggleStepAcc(s); return; }
-        if (tieBounds(s).contains(pos)) { toggleStepTie(s); return; }
         return;
     }
 }
+
+void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
+    if (resizeStep_ < 0) return;
+    const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
+    resizeStep(resizeStep_, resizeStartDuration_ + delta);
+}
+
+void NoteSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
+void NoteSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
+bool NoteSeqView::keyPressed(const juce::KeyPress& k) { if (k == juce::KeyPress::escapeKey) { cancelResize(); return true; } return false; }
 
 // ---- animation ----------------------------------------------------------------
 
@@ -219,20 +224,21 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
 void NoteSeqView::timerCallback() {
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = model.sequencerPlaying();
+    const int edit = model.editPattern();
     mix(playing ? 1 : 0);
-    mix(playing ? proc.getCurrentStep() : -1);
-    mix(proc.getCurrentPattern());
-    mix(edit); mix(chaining_ ? 1 : 0);
-    mix(proc.isHostSynced() ? 1 : 0);
-    mix((int)std::lround(proc.getHostBpm()));
-    const auto& chain = proc.getChain();
+    mix(playing ? model.currentStep() : -1);
+    mix(model.currentPattern());
+    mix(edit);
+    mix(model.hostSynced() ? 1 : 0);
+    mix((int)std::lround(model.hostBpm()));
+    const auto& chain = model.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
-        const NoteSeqStep st = proc.getSeqStep(edit, s);
-        mix((st.on ? 1 : 0) | (st.acc ? 2 : 0) | (st.tie ? 4 : 0));
+        const NoteSeqStep st = model.sequenceStep(edit, s);
+        mix((st.on ? 1 : 0) | (st.acc ? 2 : 0));
+        mix(st.duration);
         mix(st.note); mix(st.oct);
     }
     if (sig != lastSig_) { lastSig_ = sig; repaint(); }
@@ -243,15 +249,20 @@ void NoteSeqView::timerCallback() {
 // .ns-btn: 5px radius, #11141c, dim mono text; active = cyan border/text over
 // a dark cyan wash (#0c2a33).
 static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::String& text,
-                       bool active, float tracking) {
+                       bool active, float tracking, bool current = false, float fontSize = 8.0f) {
     const auto bf = b.toFloat();
     const juce::Colour cyan = accentA();
-    g.setColour(active ? juce::Colour(0xff0c2a33) : juce::Colour(0xff11141c));
+    g.setColour(current ? cyan.withAlpha(0.20f)
+                        : active ? juce::Colour(0xff0c2a33) : juce::Colour(0xff11141c));
     g.fillRoundedRectangle(bf, 5.0f);
-    g.setColour(active ? cyan.withAlpha(0.55f) : col::line);
+    g.setColour(current ? cyan.withAlpha(0.9f) : active ? cyan.withAlpha(0.55f) : col::line);
     g.drawRoundedRectangle(bf.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(active ? cyan : col::textDim);
-    g.setFont(monoFont(8.0f));
+    if (active) {
+        g.setColour(cyan);
+        g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
+    }
+    g.setColour(active || current ? cyan : col::textDim);
+    g.setFont(monoFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -262,50 +273,64 @@ void NoteSeqView::paint(juce::Graphics& g) {
     g.setColour(cyan.withAlpha(0.16f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 12.0f, 1.0f);
 
-    const bool playing = proc.isSeqPlaying();
-    const int edit = proc.getEditPattern();
+    const bool playing = model.sequencerPlaying();
+    const int edit = model.editPattern();
+    const auto caps = model.capabilities();
+
+    if (!model.hasTargetClip()) {
+        g.setColour(cyan);
+        g.setFont(dispFont(10.0f));
+        drawSpaced(g, "NOTE SEQ", { kPadX, kHeadY, 110, kHeadH }, 2.2f);
+        drawSeqBtn(g, randBounds(), "CREATE CLIP", false, 0.7f);
+        return;
+    }
 
     // ---- head: transport (.ns-transport — cyan-tinted well) ----
-    const auto tb = transportBounds().toFloat();
-    g.setColour(juce::Colour(0xff0c2a33));
-    g.fillRoundedRectangle(tb, 5.0f);
-    g.setColour(cyan.withAlpha(playing ? 0.9f : 0.55f));
-    g.drawRoundedRectangle(tb.reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(cyan);
-    if (playing) {                               // stop square
-        g.fillRect(juce::Rectangle<float>(8.0f, 8.0f).withCentre(tb.getCentre()));
-    } else {                                     // play triangle
-        juce::Path p;
-        p.addTriangle(tb.getCentreX() - 3.5f, tb.getCentreY() - 5.0f,
-                      tb.getCentreX() - 3.5f, tb.getCentreY() + 5.0f,
-                      tb.getCentreX() + 5.5f, tb.getCentreY());
-        g.fillPath(p);
+    if (caps.ownsTransport) {
+        const auto tb = transportBounds().toFloat();
+        g.setColour(juce::Colour(0xff0c2a33));
+        g.fillRoundedRectangle(tb, 5.0f);
+        g.setColour(cyan.withAlpha(playing ? 0.9f : 0.55f));
+        g.drawRoundedRectangle(tb.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(cyan);
+        if (playing) g.fillRect(juce::Rectangle<float>(8.0f, 8.0f).withCentre(tb.getCentre()));
+        else {
+            juce::Path p;
+            p.addTriangle(tb.getCentreX() - 3.5f, tb.getCentreY() - 5.0f,
+                          tb.getCentreX() - 3.5f, tb.getCentreY() + 5.0f,
+                          tb.getCentreX() + 5.5f, tb.getCentreY());
+            g.fillPath(p);
+        }
     }
 
     // ---- head: title ----
     g.setColour(cyan);
     g.setFont(dispFont(10.0f));
-    drawSpaced(g, "NOTE SEQ",
-               { transportBounds().getRight() + 12, kHeadY, 96, kHeadH }, 2.2f);
+    drawSpaced(g, "NOTE SEQ", { caps.ownsTransport ? transportBounds().getRight() + 12 : kPadX,
+                                 kHeadY, 96, kHeadH }, 2.2f);
 
-    // ---- head: pattern buttons + CHAIN + RAND ----
-    for (int i = 0; i < fable::SEQ_NPATTERNS; ++i)
-        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f);
-    juce::String chainLabel("CHAIN ");
-    const auto& chain = proc.getChain();
-    for (size_t k = 0; k < chain.size(); ++k) {
-        if (k > 0) chainLabel << ">";
-        const int p = chain[k];
-        chainLabel << (p >= 0 && p < fable::SEQ_NPATTERNS ? kPatNames[p] : "?");
+    // ---- head: bar buttons + sequence length + RAND ----
+    const int bars = caps.hosted ? model.clipBars()
+                                 : juce::jlimit(1, fable::SEQ_NPATTERNS, (int)model.chain().size());
+    const int currentBar = playing ? model.currentPattern() : -1;
+    for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
+        drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f,
+                   bars > 1 && currentBar == i);
+    if (caps.supportsPatternChain) {
+        auto length = sequenceLengthBounds();
+        const auto minus = length.removeFromLeft(38);
+        const auto plus = length.removeFromRight(38);
+        drawSeqBtn(g, minus, "-", false, 0.0f, false, 15.0f);
+        drawSeqBtn(g, length, "LENGTH " + juce::String(bars) + "B", false, 0.25f);
+        drawSeqBtn(g, plus, "+", false, 0.0f, false, 15.0f);
     }
-    drawSeqBtn(g, chainToggleBounds(), chainLabel, chaining_, 0.5f);
     drawSeqBtn(g, randBounds(), "RAND", false, 0.7f);
 
     // ---- head: SYNC badge + hint, right-aligned (.ns-hint) ----
     int hintRight = getWidth() - kPadX;
-    if (proc.isHostSynced()) {
+    if (model.hostSynced()) {
         // host tempo overrides seq.bpm — surface it like DR-1's SYNC tag
-        const juce::String sync = "SYNC " + juce::String((int)std::lround(proc.getHostBpm()));
+        const juce::String sync = "SYNC " + juce::String((int)std::lround(model.hostBpm()));
         const juce::Rectangle<int> sb{ hintRight - 64, kHeadY + 3, 64, kHeadH - 6 };
         g.setColour(juce::Colour(0xff0c2a33));
         g.fillRoundedRectangle(sb.toFloat(), 4.0f);
@@ -318,9 +343,10 @@ void NoteSeqView::paint(juce::Graphics& g) {
     }
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
-    // web "TAP LANE = NOTE · TIE HOLDS FROM PREV STEP — GLIDE MAKES IT SLIDE"
-    drawSpaced(g, "TAP LANE = NOTE - TIE HOLDS FROM PREV STEP - GLIDE MAKES IT SLIDE",
-               { hintRight - 420, kHeadY, 420, kHeadH }, 0.9f,
+    // web "TAP LANE = NOTE · CYCLE OCT · ACCENT" (tie retired; note length
+    // lives in the duration bits, surfaced by the milestone-3 piano roll)
+    drawSpaced(g, "TAP LANE = NOTE - CYCLE OCT - ACCENT",
+               { hintRight - 360, kHeadY, 360, kHeadH }, 0.9f,
                juce::Justification::right);
 
     // ---- legend column (.ns-legend) ----
@@ -334,8 +360,6 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.drawText("OCT",  legend.withHeight(kOctH).translated(0, kOctY), juce::Justification::centredRight);
         g.setColour(col::acB);
         g.drawText("ACC",  legend.withHeight(kAccH).translated(0, kAccY), juce::Justification::centredRight);
-        g.setColour(cyan);
-        g.drawText("TIE",  legend.withHeight(kTieH).translated(0, kTieY), juce::Justification::centredRight);
     }
 
     // ---- clock column divider (.ns-clock border-left) ----
@@ -351,9 +375,9 @@ void NoteSeqView::paint(juce::Graphics& g) {
     }
 
     // ---- step columns ----
-    const int curStep = proc.getCurrentStep(), curPat = proc.getCurrentPattern();
+    const int curStep = model.currentStep(), curPat = model.currentPattern();
     NoteSeqStep steps[fable::SEQ_STEPS];
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) steps[s] = proc.getSeqStep(edit, s);
+    for (int s = 0; s < fable::SEQ_STEPS; ++s) steps[s] = model.sequenceStep(edit, s);
 
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         const NoteSeqStep& st = steps[s];
@@ -390,7 +414,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
                        octBounds(s), juce::Justification::centred);
         }
 
-        // accent / tie buttons (.ns-acc-btn / .ns-tie-btn)
+        // accent button (.ns-acc-btn)
         auto drawToggle = [&](juce::Rectangle<int> bi, bool on, juce::Colour top, juce::Colour bot) {
             const auto b = bi.toFloat();
             if (on) {
@@ -406,8 +430,6 @@ void NoteSeqView::paint(juce::Graphics& g) {
         };
         drawToggle(accBounds(s), st.on && st.acc,
                    juce::Colour(0xffffc98d), juce::Colour(0xffcc7a2e));
-        drawToggle(tieBounds(s), st.on && st.tie,
-                   juce::Colour(0xff7de6ff), juce::Colour(0xff2293b4));
 
         // step number (.ns-step-num)
         const auto c = colBounds(s);
@@ -419,7 +441,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
         // playhead cursor (.ns-step-cursor)
         if (playing && curStep == s && curPat == edit) {
             const auto cf = juce::Rectangle<float>((float)c.getX() - 2, (float)c.getY() - 2,
-                                                   (float)c.getWidth() + 4, (float)(kTieY + kTieH) + 4);
+                                                   (float)c.getWidth() + 4, (float)(kAccY + kAccH) + 4);
             g.setColour(cyan.withAlpha(0.85f));
             g.drawRoundedRectangle(cf, 6.0f, 1.0f);
             g.setColour(cyan.withAlpha(0.18f));
@@ -427,18 +449,22 @@ void NoteSeqView::paint(juce::Graphics& g) {
         }
     }
 
-    // ---- tie connectors, drawn INTO a step from its predecessor ----
-    // (noteseq.ts tiesInto: cur.on && cur.tie && prev.on)
-    const float laneH = kLanesH / (float)fable::SEQ_NOTE_LANES;
-    auto yOf = [&](const NoteSeqStep& st) {
-        return kBodyY + (fable::SEQ_NOTE_LANES - 1 - st.note + 0.5f) * laneH - st.oct * 4.0f;
-    };
-    g.setColour(cyan.withAlpha(0.75f));
-    for (int i = 1; i < fable::SEQ_STEPS; ++i) {
-        if (!fable::seqTiesInto(steps[i - 1], steps[i])) continue;
-        const auto c0 = colBounds(i - 1), c1 = colBounds(i);
-        g.drawLine((float)c0.getCentreX(), yOf(steps[i - 1]),
-                   (float)c1.getCentreX(), yOf(steps[i]), 1.4f);
+    // Painted piano-roll layer: each trigger owns a horizontal duration block.
+    // The final 5px is a bright grab handle for right-edge resizing.
+    const int gridRight = getWidth() - kPadX - kClockW - kClockGap;
+    for (int s = 0; s < fable::SEQ_STEPS; ++s) {
+        const auto& st = steps[s];
+        if (!st.on) continue;
+        const auto start = cellBounds(s, st.note);
+        const int pitch = colBounds(s).getWidth();
+        const int width = pitch * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
+        auto block = start.withWidth(juce::jmax(pitch, juce::jmin(width, gridRight - start.getX()))).reduced(1, 1);
+        const auto bf = block.toFloat();
+        g.setColour((st.acc ? juce::Colour(0xffaef2ff) : cyan).withAlpha(0.78f));
+        g.fillRoundedRectangle(bf, 3.0f);
+        g.setColour(cyan.withAlpha(0.95f));
+        g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
+        g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
     }
 }
 

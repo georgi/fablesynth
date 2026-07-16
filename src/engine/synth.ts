@@ -3,6 +3,7 @@
 // else is forwarded to the worklet.
 
 import { generateTables, type GeneratedTable } from './wavetables';
+import { makeDriveCurve } from './drive';
 import { defaultParams, type ParamValues } from '../params';
 // The DSP core runs in the audio render thread. `?url` makes Vite copy it
 // verbatim and hand us the served URL for `audioWorklet.addModule`.
@@ -285,15 +286,9 @@ export class SynthEngine {
     const t = this.ctx.currentTime;
 
     const amt = p['fx.drive.amt'];
-    const k = 1 + amt * 24;
-    const curve = new Float32Array(513);
-    const norm = Math.tanh(k);
-    for (let i = 0; i < 513; i++) {
-      const x = (i / 256) - 1;
-      curve[i] = Math.tanh(x * k) / norm;
-    }
+    const { curve, preGain } = makeDriveCurve(amt);
     this.driveShaper.curve = curve;
-    this.drivePre.gain.value = 1 + amt * 2;
+    this.drivePre.gain.value = preGain;
     this.setMix(this.driveMix, p['fx.drive.on'], p['fx.drive.mix']);
 
     this.chLfo.frequency.setTargetAtTime(p['fx.chorus.rate'], t, 0.05);

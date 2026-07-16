@@ -14,7 +14,9 @@ enum class Quant { Bar, Quarter, Off };
 
 constexpr int SQ_STEPS_PER_BAR = 16;
 constexpr int SQ_DR1_PADS      = 16;
-constexpr int SQ_NOTE_STRIDE   = 3;   // BL1/WT1: flags, note, oct+1 per step
+constexpr int SQ_NOTE_STRIDE   = 3;   // flags, note, oct+1 per voice-step
+// Maximum simultaneous notes in a WT-1 SQ-4 step — matches Engine's 8 voices.
+constexpr int SQ_WT_POLY_LANES = 8;
 constexpr int SQ_MAX_BARS      = 16;
 constexpr int SQ_HOSTED_MAX_BARS = 4; // hosted editor cap (= device NPATTERNS)
 constexpr int SQ_STOP          = -1;  // queue sentinel: "stop the track"
@@ -22,7 +24,7 @@ constexpr double SQ_SWING_MAX  = 0.667; // odd-16th delay fraction of a step (ma
 
 inline int sqBytesPerBar(Machine m) {
     return m == Machine::DR1 ? SQ_DR1_PADS * SQ_STEPS_PER_BAR
-                             : SQ_STEPS_PER_BAR * SQ_NOTE_STRIDE;
+        : SQ_STEPS_PER_BAR * SQ_NOTE_STRIDE * (m == Machine::WT1 ? SQ_WT_POLY_LANES : 1);
 }
 inline int sqDr1Idx(int bar, int pad, int step) {
     return (bar * SQ_DR1_PADS + pad) * SQ_STEPS_PER_BAR + step;
@@ -30,12 +32,17 @@ inline int sqDr1Idx(int bar, int pad, int step) {
 inline int sqNoteIdx(int bar, int step) {
     return (bar * SQ_STEPS_PER_BAR + step) * SQ_NOTE_STRIDE;
 }
+inline int sqWtNoteIdx(int bar, int step, int lane = 0) {
+    return ((bar * SQ_STEPS_PER_BAR + step) * SQ_WT_POLY_LANES + lane) * SQ_NOTE_STRIDE;
+}
 
-// A silent clip payload; note machines get the neutral oct byte (=1).
+// A silent clip payload; note machines get one-step duration + neutral octave.
 inline std::vector<uint8_t> sqEmptyClip(Machine m, int bars) {
     std::vector<uint8_t> out((size_t)(bars * sqBytesPerBar(m)), 0);
-    if (m != Machine::DR1)
-        for (size_t i = 2; i < out.size(); i += SQ_NOTE_STRIDE) out[i] = 1;
+    if (m != Machine::DR1) for (size_t i = 0; i < out.size(); i += SQ_NOTE_STRIDE) {
+        out[i] = 1 << 2;
+        out[i + 2] = 1;
+    }
     return out;
 }
 

@@ -1,5 +1,8 @@
 #include "DrumPanels.h"
 #include "../../ui/Format.h"
+#include "../../dsp/Wavetables.h"
+#include "../dsp/OneShotSamples.gen.h"
+#include "../dsp/DrumParams.h"
 #include <cmath>
 
 // Web layout (src/drum/drum.css), rack-relative px:
@@ -8,6 +11,12 @@
 //   .dr-env-view / .dr-filter-view height 58px; knob rows fill the rest.
 //   .dr-mod-row height 30px, gap 5px; .dr-mod-head min-height 34px.
 namespace fui {
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
+
+static float parameterValue(DrumUiModel& model, const juce::String& id) {
+    auto* p = model.parameters().parameter(id);
+    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
+}
 
 // ---- shared bits -------------------------------------------------------------
 
@@ -56,7 +65,7 @@ static void layoutKnobRow(juce::Rectangle<int> area, const juce::OwnedArray<Knob
     if (n == 0) return;
     const float cw = (float)area.getWidth() / (float)n;
     for (int i = 0; i < n; ++i) {
-        juce::Rectangle<int> cell((int)std::round(area.getX() + i * cw), area.getY(),
+        juce::Rectangle<int> cell((int)std::round(static_cast<float>(area.getX()) + static_cast<float>(i) * cw), area.getY(),
                                   (int)std::round(cw), area.getHeight());
         const int kh = juce::jmin(area.getHeight(), sizesPx[i] + 13); // dia + label strip
         knobs[i]->setBounds(cell.withSizeKeepingCentre(cell.getWidth(), kh));
@@ -64,7 +73,7 @@ static void layoutKnobRow(juce::Rectangle<int> area, const juce::OwnedArray<Knob
 }
 
 // ===================== DrumTerrainView =====================
-DrumTerrainView::DrumTerrainView(DrumAudioProcessor& p, int pad, int oscIndex, juce::Colour acc)
+DrumTerrainView::DrumTerrainView(DrumUiModel& p, int pad, int oscIndex, juce::Colour acc)
     : proc(p), osc(oscIndex), accent(acc) {
     const auto pre = "pad" + juce::String(pad) + (osc == 0 ? ".oscA" : ".oscB");
     tableId = pre + ".table";
@@ -73,19 +82,17 @@ DrumTerrainView::DrumTerrainView(DrumAudioProcessor& p, int pad, int oscIndex, j
 }
 
 int DrumTerrainView::tableIndex() const {
-    auto* v = proc.apvts.getRawParameterValue(tableId);
-    return v ? (int)v->load() : 0;
+    return (int)parameterValue(proc, tableId);
 }
 
 float DrumTerrainView::knobPos() const {
-    auto* v = proc.apvts.getRawParameterValue(posId);
-    return v ? v->load() : 0.0f;
+    return parameterValue(proc, posId);
 }
 
 void DrumTerrainView::timerCallback() {
     // Repaint only when the shown frame or the table actually moves (same
     // throttle as WavetableView.cpp).
-    const float mp = proc.getVizPos(osc);
+    const float mp = proc.vizPosition(osc);
     const float show = mp >= 0 ? mp : knobPos();
     const int idx = tableIndex();
     if (idx == lastTable && std::abs(show - lastShown) < 0.004f) return;
@@ -105,6 +112,32 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(0.5f), 9.0f, 1.0f);
 
     const int idx = tableIndex();
+    if (osc == 1) {
+        const auto& bank = fable::drumOneShots();
+        if (idx < 0 || idx >= (int)bank.size()) return;
+        const auto& sample = bank[(size_t)idx];
+        g.setColour(accent);
+        juce::Path waveform;
+        const float mid = h * 0.5f;
+        for (int x = 1; x < (int)w - 1; ++x) {
+            const int from = x * sample.length / std::max(1, (int)w);
+            const int to = std::max(from + 1, (x + 1) * sample.length / std::max(1, (int)w));
+            int peak = 0;
+            for (int i = from; i < std::min(sample.length, to); ++i)
+                peak = std::max(peak, std::abs((int)sample.data[i]));
+            const float amp = (static_cast<float>(peak) / 32768.0f) * h * 0.44f;
+            waveform.startNewSubPath((float)x, mid - amp);
+            waveform.lineTo((float)x, mid + amp);
+        }
+        g.strokePath(waveform, juce::PathStrokeType(1.1f));
+        const float mp = proc.vizPosition(osc);
+        if (mp >= 0) {
+            g.setColour(juce::Colour(0xfffff3e8));
+            const float x = juce::jlimit(0.0f, 1.0f, mp) * w;
+            g.drawVerticalLine((int)x, 3.0f, h - 3.0f);
+        }
+        return;
+    }
     const auto* tp = proc.tableAt(idx);
     if (!tp) return; // empty user slot
     const auto& t = *tp;
@@ -113,7 +146,7 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     const float* viz = t.viz.data();
     const int N = (int)t.viz.size() / frames;
 
-    const float mp = proc.getVizPos(osc);
+    const float mp = proc.vizPosition(osc);
     const float show = mp >= 0 ? mp : knobPos();
 
     // perspective layout (mirrors the web canvas math / WavetableView.cpp)
@@ -122,12 +155,12 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     const float x0 = w * 0.06f, y0 = h * 0.78f;
 
     const auto buildPath = [&](int f) {
-        const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f; // 1-frame guard
+        const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f; // 1-frame guard
         const float ox = x0 + d * depthX;
         const float oy = y0 - d * depthY;
         juce::Path path;
         for (int i = 0; i < N; ++i) {
-            const float x = ox + (i / (float)(N - 1)) * waveW;
+            const float x = ox + (static_cast<float>(i) / static_cast<float>(N - 1)) * waveW;
             const float y = oy - viz[f * N + i] * waveAmp;
             if (i == 0) path.startNewSubPath(x, y);
             else        path.lineTo(x, y);
@@ -136,7 +169,7 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     };
 
     const int cw = getWidth(), ch = getHeight();
-    const int gen = proc.getTablesGeneration();
+    const int gen = proc.tablesGeneration();
     const bool cacheValid = cacheTable == idx && cacheGen == gen && cacheW == cw && cacheH == ch;
     if (!cacheValid) {
         farCache = (cw > 0 && ch > 0) ? juce::Image(juce::Image::ARGB, cw * 2, ch * 2, true)
@@ -145,7 +178,7 @@ void DrumTerrainView::paint(juce::Graphics& g) {
             juce::Graphics cg(farCache);
             cg.addTransform(juce::AffineTransform::scale(2.0f));
             for (int f = frames - 1; f >= 0; --f) {
-                const float d = frames > 1 ? (float)f / (frames - 1) : 0.0f;
+                const float d = frames > 1 ? static_cast<float>(f) / static_cast<float>(frames - 1) : 0.0f;
                 cg.setColour(juce::Colour(0xff8893a8).withAlpha(0.16f + d * 0.10f));
                 cg.strokePath(buildPath(f), juce::PathStrokeType(1.0f));
             }
@@ -159,9 +192,9 @@ void DrumTerrainView::paint(juce::Graphics& g) {
     if (farCache.isValid())
         g.drawImage(farCache, getLocalBounds().toFloat());
 
-    const float posF = show * (frames - 1);
+    const float posF = show * static_cast<float>(frames - 1);
     for (int f = frames - 1; f >= 0; --f) {
-        const float near = juce::jmax(0.0f, 1.0f - std::abs(f - posF));
+        const float near = juce::jmax(0.0f, 1.0f - std::abs(static_cast<float>(f) - posF));
         if (near <= 0.02f) continue;
         auto path = buildPath(f);
         g.setColour(accent.withAlpha(near * 0.22f)); // bloom ≈ canvas shadowBlur
@@ -182,7 +215,7 @@ static float noiseRand(uint32_t& s) {
     return (float)((double)(s ^ (s >> 14)) / 4294967296.0);
 }
 
-DrumNoiseView::DrumNoiseView(DrumAudioProcessor& p, int pad) : proc(p) {
+DrumNoiseView::DrumNoiseView(DrumUiModel& p, int pad) : proc(p) {
     colorId = "pad" + juce::String(pad) + ".noise.color";
     startTimerHz(15); // web reseeds the walk every 66 ms
 }
@@ -195,8 +228,7 @@ void DrumNoiseView::paint(juce::Graphics& g) {
     g.setColour(col::line);
     g.drawRoundedRectangle(bounds.reduced(0.5f), 9.0f, 1.0f);
 
-    auto* cp = proc.apvts.getRawParameterValue(colorId);
-    const float color = cp ? cp->load() : 0.0f;
+    const float color = parameterValue(proc, colorId);
     uint32_t seed = (uint32_t)(juce::Time::getMillisecondCounter() / 66);
     const float normColor = juce::jlimit(0.0f, 1.0f, (color + 1.0f) / 2.0f);
     const float smoothing = 0.15f + normColor * 0.7f;
@@ -207,7 +239,7 @@ void DrumNoiseView::paint(juce::Graphics& g) {
     juce::Path path;
     for (int i = 0; i < points; ++i) {
         y += (noiseRand(seed) * 2.0f - 1.0f - y) * smoothing;
-        const float x = padX + (i / (float)(points - 1)) * (w - padX * 2.0f);
+        const float x = padX + (static_cast<float>(i) / static_cast<float>(points - 1)) * (w - padX * 2.0f);
         const float py = h * 0.5f + y * h * 0.38f;
         if (i == 0) path.startNewSubPath(x, py);
         else        path.lineTo(x, py);
@@ -221,14 +253,13 @@ void DrumNoiseView::paint(juce::Graphics& g) {
 }
 
 // ===================== DrumEnvView =====================
-DrumEnvView::DrumEnvView(DrumAudioProcessor& p, int pad, Mode m, juce::Colour acc)
+DrumEnvView::DrumEnvView(DrumUiModel& p, int pad, Mode m, juce::Colour acc)
     : proc(p), base("pad" + juce::String(pad) + "."), mode(m), accent(acc) {
     startTimerHz(30);
 }
 
 float DrumEnvView::val(const juce::String& id) const {
-    auto* v = proc.apvts.getRawParameterValue(id);
-    return v ? v->load() : 0.0f;
+    return parameterValue(proc, id);
 }
 
 void DrumEnvView::timerCallback() {
@@ -240,10 +271,10 @@ void DrumEnvView::timerCallback() {
         cur[0] = val(base + "aenv.att");  cur[1] = val(base + "aenv.hold");
         cur[2] = val(base + "aenv.dec");  cur[3] = val(base + "aenv.curve");
     }
-    cur[4] = std::round(proc.getVizEnv() * 100.0f); // hit pulse, quantised
+    cur[4] = std::round(proc.vizEnvelope() * 100.0f); // hit pulse, quantised
     bool dirty = false;
     for (int i = 0; i < 5; ++i)
-        if (cur[i] != last[i]) { last[i] = cur[i]; dirty = true; }
+        if (floatChanged(cur[i], last[i])) { last[i] = cur[i]; dirty = true; }
     if (dirty) repaint();
 }
 
@@ -257,7 +288,7 @@ void DrumEnvView::paint(juce::Graphics& g) {
 
     const float pad = 6.0f;
     const float width = w - pad * 2.0f;
-    const float env = juce::jlimit(0.0f, 1.0f, proc.getVizEnv());
+    const float env = juce::jlimit(0.0f, 1.0f, proc.vizEnvelope());
 
     if (mode == Pitch) {
         // DrumEnvView.tsx pitch branch: exp(-7p) sweep around a zero line.
@@ -274,7 +305,7 @@ void DrumEnvView::paint(juce::Graphics& g) {
 
         juce::Path trace;
         for (int i = 0; i <= 60; ++i) {
-            const float p = i / 60.0f;
+            const float p = static_cast<float>(i) / 60.0f;
             const float x = pad + p * width, y = yFor(p);
             if (i == 0) trace.startNewSubPath(x, y);
             else        trace.lineTo(x, y);
@@ -320,7 +351,7 @@ void DrumEnvView::paint(juce::Graphics& g) {
     trace.lineTo(xFor(attackEnd), yFor(1));
     trace.lineTo(xFor(holdEnd), yFor(1));
     for (int i = 1; i <= 60; ++i) {
-        const float progress = i / 60.0f;
+        const float progress = static_cast<float>(i) / 60.0f;
         const float linear = 1.0f - progress;
         const float exponential = std::exp(-4.5f * progress);
         const float value = linear + (exponential - linear) * curve;
@@ -364,25 +395,23 @@ static double drumFltMag(int type, double cutoff, double res, double f) {
     }
 }
 
-DrumFilterView::DrumFilterView(DrumAudioProcessor& p, int pad)
+DrumFilterView::DrumFilterView(DrumUiModel& p, int pad)
     : proc(p), base("pad" + juce::String(pad) + ".flt.") {
     startTimerHz(20);
 }
 
 void DrumFilterView::timerCallback() {
     auto get = [&](const char* sfx) {
-        auto* v = proc.apvts.getRawParameterValue(base + sfx);
-        return v ? v->load() : 0.0f;
+        return parameterValue(proc, base + sfx);
     };
     const float sum = get("on") + get("type") * 1.7f + get("cut") * 0.001f + get("res") * 2.3f;
-    if (sum != sig) { sig = sum; repaint(); }
+    if (floatChanged(sum, sig)) { sig = sum; repaint(); }
 }
 
 void DrumFilterView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     auto get = [&](const char* sfx) {
-        auto* v = proc.apvts.getRawParameterValue(base + sfx);
-        return v ? v->load() : 0.0f;
+        return parameterValue(proc, base + sfx);
     };
     const bool on = get("on") > 0.5f;
     const int type = (int)std::lround(get("type"));
@@ -404,7 +433,7 @@ void DrumFilterView::paint(juce::Graphics& g) {
         juce::Path pth;
         for (int i = 0; i <= 120; ++i) {
             const double f = fmin * std::pow(fmax / fmin, i / 120.0);
-            const float x = pad + (i / 120.0f) * (w - pad * 2), y = toY(fn(f));
+            const float x = pad + (static_cast<float>(i) / 120.0f) * (w - pad * 2), y = toY(fn(f));
             if (i == 0) pth.startNewSubPath(x, y);
             else        pth.lineTo(x, y);
         }
@@ -421,16 +450,16 @@ void DrumFilterView::paint(juce::Graphics& g) {
 }
 
 // ===================== PadBoundPanel =====================
-PadBoundPanel::PadBoundPanel(DrumAudioProcessor& p) : proc(p) {
-    proc.selectionBroadcaster.addChangeListener(this);
+PadBoundPanel::PadBoundPanel(DrumUiModel& p) : proc(p) {
+    proc.selectionChanges().addChangeListener(this);
 }
 
 PadBoundPanel::~PadBoundPanel() {
-    proc.selectionBroadcaster.removeChangeListener(this);
+    proc.selectionChanges().removeChangeListener(this);
 }
 
 juce::String PadBoundPanel::pid(const char* field) const {
-    return "pad" + juce::String(proc.getSelectedPad()) + "." + field;
+    return "pad" + juce::String(proc.selectedPad()) + "." + field;
 }
 
 void PadBoundPanel::changeListenerCallback(juce::ChangeBroadcaster*) {
@@ -440,31 +469,36 @@ void PadBoundPanel::changeListenerCallback(juce::ChangeBroadcaster*) {
 }
 
 // ===================== DrumOscPanel =====================
-DrumOscPanel::DrumOscPanel(DrumAudioProcessor& p, int oscIndex)
+DrumOscPanel::DrumOscPanel(DrumUiModel& p, int oscIndex)
     : PadBoundPanel(p), osc(oscIndex), ac(oscIndex == 0 ? Accent::A : Accent::B) {
     rebuild();
 }
 
 void DrumOscPanel::rebuild() {
-    const int sel = proc.getSelectedPad();
+    const int sel = proc.selectedPad();
     const auto pre = juce::String(osc == 0 ? "oscA." : "oscB.");
-    table = std::make_unique<Stepper>(proc.apvts, pid((pre + "table").toRawUTF8()), ac);
+    table = std::make_unique<Stepper>(proc.parameters(), pid((pre + "table").toRawUTF8()), ac);
     // Cycle only over the live tables and show live (user) names — WT-1 scheme.
-    table->countProvider = [this] { return proc.numTables(); };
-    table->nameProvider  = [this](int idx) { return proc.tableName(idx); };
+    table->countProvider = [this] { return osc == 0 ? proc.numTables() : (int)fable::DRUM_SAMPLE_NAMES.size(); };
+    table->nameProvider  = [this](int idx) {
+        return osc == 0 ? proc.tableName(idx) : juce::String(fable::DRUM_SAMPLE_NAMES[(size_t)idx]);
+    };
     addAndMakeVisible(*table);
     wt = std::make_unique<DrumTerrainView>(proc, sel, osc, accentColour(ac));
     addAndMakeVisible(*wt);
     auto& pr = proc;
     const int o = osc;
-    pos = std::make_unique<VSlider>(proc.apvts, pid((pre + "pos").toRawUTF8()), ac,
-                                    [&pr, o] { return pr.getVizPos(o); });
+    pos = std::make_unique<VSlider>(proc.parameters(), pid((pre + "pos").toRawUTF8()), ac,
+                                    [&pr, o] { return pr.vizPosition(o); });
     addAndMakeVisible(*pos);
     knobs.clear();
-    const char* ids[] = { "tune", "fine", "phase", "unison", "detune", "level" };
-    for (int i = 0; i < 6; ++i)
-        addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid((pre + ids[i]).toRawUTF8()),
-                                             i == 5 ? Knob::Md : Knob::Sm, ac)));
+    const char* oscIds[] = { "tune", "fine", "phase", "unison", "detune", "level" };
+    const char* sampleIds[] = { "tune", "fine", "detune", "phase", "level" };
+    const char** ids = osc == 0 ? oscIds : sampleIds;
+    const int count = osc == 0 ? 6 : 5;
+    for (int i = 0; i < count; ++i)
+        addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid((pre + ids[i]).toRawUTF8()),
+                                             i == count - 1 ? Knob::Md : Knob::Sm, ac)));
 }
 
 void DrumOscPanel::resized() {
@@ -479,9 +513,10 @@ void DrumOscPanel::resized() {
     if (wt)  wt->setBounds(body);
     if (pos) pos->setBounds(posCol);
     r.removeFromTop(4);
-    static const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
-                                 Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
-                                 Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md) };
+    const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
+                          Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Sm),
+                          osc == 0 ? Knob::svgPx(Knob::Sm) : Knob::svgPx(Knob::Md),
+                          Knob::svgPx(Knob::Md) };
     layoutKnobRow(r, knobs, sizes);
 }
 
@@ -491,18 +526,20 @@ void DrumOscPanel::paint(juce::Graphics& g) {
     drawDrLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(),
               accentColour(ac));
     head.removeFromLeft(8);
-    drawHeadTitle(g, head, osc == 0 ? "OSC A" : "OSC B", accentColour(ac));
+    drawHeadTitle(g, head, osc == 0 ? "OSC A" : "SAMPLE", accentColour(ac));
 }
 
 // ===================== DrumNoisePanel =====================
-DrumNoisePanel::DrumNoisePanel(DrumAudioProcessor& p) : PadBoundPanel(p) { rebuild(); }
+DrumNoisePanel::DrumNoisePanel(DrumUiModel& p) : PadBoundPanel(p) { rebuild(); }
 
 void DrumNoisePanel::rebuild() {
-    view = std::make_unique<DrumNoiseView>(proc, proc.getSelectedPad());
+    view = std::make_unique<DrumNoiseView>(proc, proc.selectedPad());
     addAndMakeVisible(*view);
     knobs.clear();
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("noise.color"), Knob::Sm, Accent::B)));
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("noise.level"), Knob::Md, Accent::B)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("noise.color"), Knob::Sm, Accent::B)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("noise.level"), Knob::Md, Accent::B)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("ring.freq"), Knob::Sm, Accent::B)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("ring.mix"), Knob::Md, Accent::B)));
 }
 
 void DrumNoisePanel::resized() {
@@ -511,7 +548,8 @@ void DrumNoisePanel::resized() {
     r.removeFromTop(8);
     if (view) view->setBounds(r.removeFromTop(104));
     r.removeFromTop(8);
-    static const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md) };
+    static const int sizes[] = { Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md),
+                                 Knob::svgPx(Knob::Sm), Knob::svgPx(Knob::Md) };
     layoutKnobRow(r, knobs, sizes);
 }
 
@@ -520,20 +558,20 @@ void DrumNoisePanel::paint(juce::Graphics& g) {
     auto head = headArea;
     drawDrLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), col::acB);
     head.removeFromLeft(8);
-    drawValueWell(g, head.removeFromRight(65).withSizeKeepingCentre(65, 18), "WHITE");
-    drawHeadTitle(g, head, "NOISE", col::acB);
+    drawValueWell(g, head.removeFromRight(52).withSizeKeepingCentre(52, 18), "METAL");
+    drawHeadTitle(g, head, "NOISE + RING", col::acB);
 }
 
 // ===================== DrumPitchEnvPanel =====================
-DrumPitchEnvPanel::DrumPitchEnvPanel(DrumAudioProcessor& p) : PadBoundPanel(p) { rebuild(); }
+DrumPitchEnvPanel::DrumPitchEnvPanel(DrumUiModel& p) : PadBoundPanel(p) { rebuild(); }
 
 void DrumPitchEnvPanel::rebuild() {
-    view = std::make_unique<DrumEnvView>(proc, proc.getSelectedPad(),
+    view = std::make_unique<DrumEnvView>(proc, proc.selectedPad(),
                                          DrumEnvView::Pitch, col::acA);
     addAndMakeVisible(*view);
     knobs.clear();
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("penv.amt"), Knob::Md, Accent::A)));
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("penv.dec"), Knob::Md, Accent::A)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("penv.amt"), Knob::Md, Accent::A)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("penv.dec"), Knob::Md, Accent::A)));
 }
 
 void DrumPitchEnvPanel::resized() {
@@ -552,15 +590,15 @@ void DrumPitchEnvPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== DrumAmpEnvPanel =====================
-DrumAmpEnvPanel::DrumAmpEnvPanel(DrumAudioProcessor& p) : PadBoundPanel(p) { rebuild(); }
+DrumAmpEnvPanel::DrumAmpEnvPanel(DrumUiModel& p) : PadBoundPanel(p) { rebuild(); }
 
 void DrumAmpEnvPanel::rebuild() {
-    view = std::make_unique<DrumEnvView>(proc, proc.getSelectedPad(),
+    view = std::make_unique<DrumEnvView>(proc, proc.selectedPad(),
                                          DrumEnvView::Ahd, col::ptr);
     addAndMakeVisible(*view);
     knobs.clear();
     for (const char* id : { "aenv.att", "aenv.hold", "aenv.dec", "aenv.curve" })
-        addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid(id), Knob::Sm, Accent::N)));
+        addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid(id), Knob::Sm, Accent::N)));
 }
 
 void DrumAmpEnvPanel::resized() {
@@ -586,22 +624,22 @@ void DrumAmpEnvPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== DrumFilterPanel =====================
-DrumFilterPanel::DrumFilterPanel(DrumAudioProcessor& p) : PadBoundPanel(p) {
+DrumFilterPanel::DrumFilterPanel(DrumUiModel& p) : PadBoundPanel(p) {
     rebuild();
     startTimerHz(10);
 }
 
 void DrumFilterPanel::rebuild() {
-    power = std::make_unique<PowerButton>(proc.apvts, pid("flt.on"), Accent::F);
+    power = std::make_unique<PowerButton>(proc.parameters(), pid("flt.on"), Accent::F);
     addAndMakeVisible(*power);
-    type = std::make_unique<Stepper>(proc.apvts, pid("flt.type"), Accent::F);
+    type = std::make_unique<Stepper>(proc.parameters(), pid("flt.type"), Accent::F);
     addAndMakeVisible(*type);
-    view = std::make_unique<DrumFilterView>(proc, proc.getSelectedPad());
+    view = std::make_unique<DrumFilterView>(proc, proc.selectedPad());
     addAndMakeVisible(*view);
     knobs.clear();
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("flt.cut"),   Knob::Md, Accent::F)));
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("flt.res"),   Knob::Sm, Accent::F)));
-    addAndMakeVisible(knobs.add(new Knob(proc.apvts, pid("flt.drive"), Knob::Sm, Accent::F)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("flt.cut"),   Knob::Md, Accent::F)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("flt.res"),   Knob::Sm, Accent::F)));
+    addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pid("flt.drive"), Knob::Sm, Accent::F)));
     lastOn = -1; // re-apply the dimming to the fresh children
 }
 
@@ -644,7 +682,7 @@ void DrumFilterPanel::paint(juce::Graphics& g) {
 }
 
 // ===================== DrumModPanel =====================
-DrumModPanel::DrumModPanel(DrumAudioProcessor& p) : PadBoundPanel(p) {
+DrumModPanel::DrumModPanel(DrumUiModel& p) : PadBoundPanel(p) {
     rebuild();
     startTimerHz(10);
 }
@@ -653,23 +691,22 @@ void DrumModPanel::rebuild() {
     for (int n = 0; n < 4; ++n) {
         const auto pre = "mod" + juce::String(n + 1) + ".";
         auto& row = rows[(size_t)n];
-        row.src = std::make_unique<Stepper>(proc.apvts, pid((pre + "src").toRawUTF8()), Accent::N);
-        row.dst = std::make_unique<Stepper>(proc.apvts, pid((pre + "dst").toRawUTF8()), Accent::N);
-        row.amt = std::make_unique<Knob>(proc.apvts, pid((pre + "amt").toRawUTF8()),
+        row.src = std::make_unique<Stepper>(proc.parameters(), pid((pre + "src").toRawUTF8()), Accent::N);
+        row.dst = std::make_unique<Stepper>(proc.parameters(), pid((pre + "dst").toRawUTF8()), Accent::N);
+        row.amt = std::make_unique<Knob>(proc.parameters(), pid((pre + "amt").toRawUTF8()),
                                          Knob::Xs, Accent::N, false);
         addAndMakeVisible(*row.src);
         addAndMakeVisible(*row.dst);
         addAndMakeVisible(*row.amt);
     }
-    decKnob = std::make_unique<Knob>(proc.apvts, pid("modenv.dec"), Knob::Xs, Accent::N, false);
+    decKnob = std::make_unique<Knob>(proc.parameters(), pid("modenv.dec"), Knob::Xs, Accent::N, false);
     addAndMakeVisible(*decKnob);
     lastDec = -1.0f;
 }
 
 void DrumModPanel::timerCallback() {
-    auto* v = proc.apvts.getRawParameterValue(pid("modenv.dec"));
-    const float dec = v ? v->load() : 0.0f;
-    if (dec != lastDec) { lastDec = dec; repaint(headArea); }
+    const float dec = parameterValue(proc, pid("modenv.dec"));
+    if (floatChanged(dec, lastDec)) { lastDec = dec; repaint(headArea); }
 }
 
 void DrumModPanel::resized() {
@@ -698,10 +735,10 @@ void DrumModPanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     drawHeadTitle(g, headArea.withTrimmedRight(160), "MOD", col::text);
     // .dr-mod-env hint: "MOD ENV DEC <fmtSec>" next to the compact decay knob
-    auto* v = proc.apvts.getRawParameterValue(pid("modenv.dec"));
+    const float v = parameterValue(proc, pid("modenv.dec"));
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
-    drawSpaced(g, "MOD ENV DEC " + fmtSec(v ? v->load() : 0.0f).toUpperCase(),
+    drawSpaced(g, "MOD ENV DEC " + fmtSec(v).toUpperCase(),
                decHintArea, 0.9f, juce::Justification::right);
     // ▸ arrows between src and dst (ASCII: default mono font lacks U+25B8)
     g.setColour(col::textDim);

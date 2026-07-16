@@ -14,19 +14,19 @@
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
 // Focus mode reuses header + heads unchanged, collapses the scene grid to a
-// single-row mini strip (row 96 + scene rail 24 = ~128 tall), and drops the
-// ClipEditView device panel into the freed space down to the footer slot,
+// single-row mini strip (96 tall, with the scene rail on its left), and drops the
+// selected native device body into the freed space down to the footer slot,
 // which hides. Instant relayout, no FLIP (spec §2).
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
-    : header(p), trackHeads(p), sceneGrid(p), footer(p), clipEdit(p) {
+    : header(p), trackHeads(p), sceneGrid(p), footer(p), deviceFocus(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(trackHeads);
     addAndMakeVisible(sceneGrid);
     addAndMakeVisible(footer);
     addAndMakeVisible(hint);
-    addChildComponent(clipEdit); // hidden until focus is entered
+    addChildComponent(deviceFocus); // hidden until focus is entered
 }
 
 void SeqRack::enterFocus(int track, int scene) {
@@ -35,10 +35,10 @@ void SeqRack::enterFocus(int track, int scene) {
     trackHeads.setFocusMode(true);
     trackHeads.setFocusedTrack(track);
     sceneGrid.setSingleRow(scene);
-    clipEdit.setTarget(scene, track);
+    deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
     hint.setVisible(false);
-    clipEdit.setVisible(true);
+    deviceFocus.setVisible(true);
     resized();
 }
 
@@ -48,30 +48,30 @@ void SeqRack::exitFocus() {
     trackHeads.setFocusMode(false);
     trackHeads.setFocusedTrack(-1);
     sceneGrid.clearSingleRow();
-    clipEdit.setTarget(-1, -1);
+    deviceFocus.setTarget(-1, -1);
     footer.setVisible(true);
     hint.setVisible(true);
-    clipEdit.setVisible(false);
+    deviceFocus.setVisible(false);
     resized();
 }
 
 void SeqRack::setFocusScene(int scene) {
     if (!focusMode_) return;
     sceneGrid.setSingleRow(scene);
-    clipEdit.setTarget(scene, focusTrack_);
+    deviceFocus.setTarget(scene, focusTrack_);
 }
 
 void SeqRack::resized() {
     header.setBounds(18, 14, 1424, 66);
     trackHeads.setBounds(18, 89, 1424, 54);
     if (focusMode_) {
-        sceneGrid.setBounds(18, 152, 1424, 128);  // mini strip: row (96) + rail (24)
-        clipEdit.setBounds(18, 288, 1424, 618);   // device panel -> down to ~906
+        sceneGrid.setBounds(18, 152, 1424, 96);   // mini strip: scene rail + row
+        deviceFocus.setBounds(18, 256, 1424, 650); // native device -> down to ~906
     } else {
         sceneGrid.setBounds(18, 152, 1424, 630);
         footer.setBounds(18, 782, 1424, 68);
         hint.setBounds(18, 858, 1424, 20);
-        clipEdit.setBounds(0, 0, LW, LH);
+        deviceFocus.setBounds(0, 0, LW, LH);
     }
 }
 
@@ -89,6 +89,7 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
     heads().onExitFocus  = [this]() { exitFocus(); };
     grid().onEditClip    = [this](int s, int t) { enterFocus(t, s); };
     grid().onRailScene   = [this](int s) { focusScene(s); };
+    header().onLibrarySessionChanged = [this] { deviceFocus().reloadPatchesFromSession(); };
 
     setWantsKeyboardFocus(true);
 
@@ -156,14 +157,16 @@ bool SeqEditor::keyPressed(const juce::KeyPress& k) {
 void SeqEditor::paint(juce::Graphics& g) {
     g.fillAll(fui::col::bg);
     // subtle top radial glow, like the web background
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), getWidth() * 0.5f, -120.0f,
-                                           fui::col::bg, getWidth() * 0.5f, getHeight() * 0.6f, true));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff11141d), static_cast<float>(getWidth()) * 0.5f, -120.0f,
+                                           fui::col::bg, static_cast<float>(getWidth()) * 0.5f,
+                                           static_cast<float>(getHeight()) * 0.6f, true));
     g.fillRect(getLocalBounds());
 }
 
 void SeqEditor::resized() {
-    const float sc = juce::jmin(getWidth() / (float)SeqRack::LW, getHeight() / (float)SeqRack::LH);
-    const float dx = (getWidth() - SeqRack::LW * sc) * 0.5f;
-    const float dy = (getHeight() - SeqRack::LH * sc) * 0.5f;
+    const float sc = juce::jmin(static_cast<float>(getWidth()) / static_cast<float>(SeqRack::LW),
+                               static_cast<float>(getHeight()) / static_cast<float>(SeqRack::LH));
+    const float dx = (static_cast<float>(getWidth()) - static_cast<float>(SeqRack::LW) * sc) * 0.5f;
+    const float dy = (static_cast<float>(getHeight()) - static_cast<float>(SeqRack::LH) * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
 }

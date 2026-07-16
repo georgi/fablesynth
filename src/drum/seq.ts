@@ -5,7 +5,7 @@ import { PAD_COUNT } from './params';
 
 export const STEPS = 16;
 export const NPATTERNS = 4;
-export const PATTERN_NAMES = ['A', 'B', 'C', 'D'];
+export const PATTERN_NAMES = ['1', '2', '3', '4'];
 export type StepVal = 0 | 1 | 2; // off / on / accent
 export const ACCENT_VEL = 1.0;
 export const PLAIN_VEL = 0.72;

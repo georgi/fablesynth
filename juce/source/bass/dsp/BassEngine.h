@@ -45,6 +45,7 @@ struct BassTable {
 struct BassStep {
     bool on = false, acc = false, slide = false;
     int  semi = 0;                 // note 0..11 + 12*oct, offset from BL_ROOT_MIDI
+    int  duration = 1;             // 16th-note steps
 };
 
 class BassEngine {

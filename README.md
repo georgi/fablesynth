@@ -127,9 +127,9 @@ half of the groundwork for the FableSeq SQ-4 session launcher.
 
 ## DR-1 drum machine
 
-DR-1 is a 16-pad drum machine built on the same wavetable engine. Every sound
-is **fully synthesized, no samples**: each pad is a complete drum voice you can
-retune, reshape or mangle. It comes in two forms:
+DR-1 is a 16-pad drum machine built on the same wavetable engine. Each pad
+combines a morphing wavetable oscillator with a true one-shot sample player,
+plus noise, modulation and shaping. It comes in two forms:
 
 - **Plugin** — **FableSynth DR-1** (VST3 · AU · Standalone), a faithful
   C++/JUCE port built from the same [`juce/`](juce/) project as WT-1, adding
@@ -145,9 +145,11 @@ The web build:
 
 ![The DR-1 drum machine](docs/dr1.png)
 
-- **16 pads**, each with **2 wavetable oscillators** (4 drum tables — THUD,
+- **16 pads**, each with a **wavetable oscillator** (4 drum tables — THUD,
   CRACK, TINE, GRIT — plus WT-1's six procedural tables, with the same POS
-  morphing and up to 7-voice unison) and a **noise** layer with color control.
+  morphing and up to 7-voice unison), a tunable **32-voice one-shot sample
+  player** with the CC0 808 and public-domain UZU banks, and a **noise** layer
+  with color control.
 - **Per-pad shaping** — pitch envelope (±48 st), AHD amp envelope with
   adjustable curve, a switchable filter (LP12/LP24/BP/HP/Notch) with drive, and
   a **4-slot mod matrix** (MOD ENV / VELO / RAND → wavetable pos, pitch, cutoff,
@@ -160,8 +162,13 @@ The web build:
 - **Choke groups** (4) so open/closed hats cut each other, and per-pad output
   routing (MAIN + 4 aux buses).
 - **Master FX** — drive, bus compressor, chorus, delay, reverb.
-- **Kits** — 3 factory kits (TR-VOID, ROOM ONE, BITCRUSH); saved kits persist in
+- **Kits** — 14 factory kits, including sample-based 808 CLASSIC and UZU plus
+  the oscillator/sample-blended 808+UZU HYBRID;
+  saved kits persist in
   `localStorage`, including patterns, chains and any dropped-in wavetables.
+- **Pad patches and SQ-4 content** — 36 pad patches include 16 `HX` hybrids
+  with both oscillator and sample layers active; 32 DR-1 clips and the six
+  factory scenes are voiced around the 808, UZU and blended kits.
 - **Play it** — pads map to `Z X C V / A S D F / Q W E R / 1 2 3 4` (bottom row
   = pads 1–4), `Esc` stops, and MIDI notes 36–51 (C1 up) trigger pads 1–16.
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numeric>
 
 using namespace fable;
 
@@ -141,9 +142,9 @@ void BassAudioProcessor::setSeqStep(int pattern, int step, const fable::BassSeqS
 }
 
 void BassAudioProcessor::setChain(std::vector<int> c) {
-    chain_.clear();
-    for (int p : c) chain_.push_back(juce::jlimit(0, BL_NPATTERNS - 1, p));
-    if (chain_.empty()) chain_.push_back(0);
+    const int bars = juce::jlimit(1, BL_NPATTERNS, (int)c.size());
+    chain_.resize((size_t)bars);
+    std::iota(chain_.begin(), chain_.end(), 0);
     shareSeqState(false, true);
 }
 
@@ -175,7 +176,9 @@ void BassAudioProcessor::setCurrentProgram(int index) {
     // Non-param patch content: patterns + chain (patchToState).
     if ((int)patch.patterns.size() == BL_PATTERN_BYTES)
         std::copy(patch.patterns.begin(), patch.patterns.end(), patterns_.begin());
-    chain_ = patch.chain.empty() ? std::vector<int>{0} : patch.chain;
+    const int bars = juce::jlimit(1, BL_NPATTERNS, (int)patch.chain.size());
+    chain_.resize((size_t)bars);
+    std::iota(chain_.begin(), chain_.end(), 0);
     for (int& c : chain_) c = juce::jlimit(0, BL_NPATTERNS - 1, c);
     editPattern_ = chain_[0];
     pushCmd(CmdPanic, 0, 0);          // web loadPatchByValue panics the voice
@@ -363,7 +366,9 @@ void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
         for (const auto& s : chainStr)
             if (s.trim().isNotEmpty())
                 c.push_back(juce::jlimit(0, BL_NPATTERNS - 1, s.getIntValue()));
-        chain_ = c.empty() ? std::vector<int>{0} : std::move(c);
+        const int bars = juce::jlimit(1, BL_NPATTERNS, (int)c.size());
+        chain_.resize((size_t)bars);
+        std::iota(chain_.begin(), chain_.end(), 0);
         editPattern_ = juce::jlimit(0, BL_NPATTERNS - 1,
                                     (int)bass.getProperty("editPattern", 0));
     }

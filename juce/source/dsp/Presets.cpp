@@ -28,12 +28,12 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.002f}, {"env1.d", 0.3f}, {"env1.s", 0.45f}, {"env1.r", 0.08f},
             {"env2.a", 0.001f}, {"env2.d", 0.19f}, {"env2.s", 0}, {"env2.r", 0.12f},
             {"master.glide", 0.06f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.45f}, {"fx.drive.mix", 0.8f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.45f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.18f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.22f},
         }},
 
         {"CRYSTAL PLUCK", {
-            {"oscA.table", 4}, {"oscA.pos", 0.72f}, {"oscA.level", 0.8f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f},
+            {"oscA.table", 4}, {"oscA.pos", 0.72f}, {"oscA.oct", 1}, {"oscA.level", 0.8f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f},
             {"filter.type", 0}, {"filter.cutoff", 3200}, {"filter.res", 0.2f}, {"filter.env", 0.6f}, {"filter.key", 0.6f},
             {"env1.a", 0.001f}, {"env1.d", 0.5f}, {"env1.s", 0}, {"env1.r", 0.6f},
             {"env2.a", 0.001f}, {"env2.d", 0.32f}, {"env2.s", 0}, {"env2.r", 0.3f},
@@ -61,12 +61,12 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 1}, {"lfo1.rate", 0.6f},
             {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.55f},
             {"mat2.src", 5}, {"mat2.dst", 1}, {"mat2.amt", 0.3f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.22f}, {"fx.drive.mix", 0.6f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.22f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"CATHEDRAL BELL", {
-            {"oscA.table", 4}, {"oscA.pos", 1}, {"oscA.level", 0.75f},
-            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.5f}, {"oscB.oct", 1}, {"oscB.fine", 9}, {"oscB.level", 0.3f},
+            {"oscA.table", 4}, {"oscA.pos", 1}, {"oscA.oct", 1}, {"oscA.level", 0.75f},
+            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.5f}, {"oscB.oct", 2}, {"oscB.fine", 9}, {"oscB.level", 0.3f},
             {"filter.type", 0}, {"filter.cutoff", 9000}, {"filter.res", 0.05f}, {"filter.key", 0.5f},
             {"env1.a", 0.001f}, {"env1.d", 2.8f}, {"env1.s", 0.12f}, {"env1.r", 3.5f},
             {"env2.a", 0.001f}, {"env2.d", 1.8f}, {"env2.s", 0}, {"env2.r", 1.5f},
@@ -86,7 +86,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.55f},
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.5f},
             {"mat3.src", 1}, {"mat3.dst", 2}, {"mat3.amt", -0.35f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.7f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"REESE BASS", {
@@ -98,7 +98,7 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 0}, {"lfo1.rate", 0.16f},
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.18f},
             {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.12f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.7f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"POWER FIFTHS", {
@@ -122,7 +122,7 @@ const std::vector<Preset>& factoryPresets() {
             {"lfo1.shape", 1}, {"lfo1.rate", 5.5f},
             {"mat1.src", 1}, {"mat1.dst", 1}, {"mat1.amt", 0.7f},
             {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.4f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.55f}, {"fx.drive.mix", 0.85f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.55f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"FUTURE CHORD", {
@@ -146,7 +146,7 @@ const std::vector<Preset>& factoryPresets() {
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.5f},
             {"mat2.src", 1}, {"mat2.dst", 2}, {"mat2.amt", 0.4f},
             {"mat3.src", 4}, {"mat3.dst", 3}, {"mat3.amt", 0.3f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.6f}, {"fx.drive.mix", 0.8f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.6f}, {"fx.drive.mix", 0.2f},
             {"fx.delay.on", 1}, {"fx.delay.time", 0.25f}, {"fx.delay.fb", 0.3f}, {"fx.delay.mix", 0.18f},
         }},
 
@@ -158,13 +158,13 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.002f}, {"env1.d", 0.16f}, {"env1.s", 0}, {"env1.r", 0.1f},
             {"env2.a", 0.002f}, {"env2.d", 0.05f}, {"env2.s", 0}, {"env2.r", 0.05f},
             {"mat1.src", 3}, {"mat1.dst", 4}, {"mat1.amt", 0.25f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.6f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.2f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.4f}, {"fx.reverb.mix", 0.2f},
         }},
 
         {"HOUSE PLUCK", {
-            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 3}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.78f},
-            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.semi", 12}, {"oscB.level", 0.3f},
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.oct", 1}, {"oscA.unison", 3}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.78f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.oct", 1}, {"oscB.semi", 12}, {"oscB.level", 0.3f},
             {"filter.type", 1}, {"filter.cutoff", 2200}, {"filter.res", 0.2f}, {"filter.env", 0.55f}, {"filter.key", 0.5f},
             {"env1.a", 0.003f}, {"env1.d", 0.28f}, {"env1.s", 0}, {"env1.r", 0.2f},
             {"env2.a", 0.003f}, {"env2.d", 0.18f}, {"env2.s", 0}, {"env2.r", 0.15f},
@@ -174,8 +174,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"TRAP BELL", {
-            {"oscA.table", 4}, {"oscA.pos", 0.85f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.8f},
-            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.6f}, {"oscB.semi", 12}, {"oscB.fine", 4}, {"oscB.level", 0.32f},
+            {"oscA.table", 4}, {"oscA.pos", 0.85f}, {"oscA.oct", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.8f},
+            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.6f}, {"oscB.oct", 1}, {"oscB.semi", 12}, {"oscB.fine", 4}, {"oscB.level", 0.32f},
             {"filter.type", 0}, {"filter.cutoff", 7000}, {"filter.res", 0.1f}, {"filter.key", 0.5f},
             {"env1.a", 0.001f}, {"env1.d", 0.9f}, {"env1.s", 0.1f}, {"env1.r", 0.8f},
             {"env2.a", 0.001f}, {"env2.d", 0.4f}, {"env2.s", 0}, {"env2.r", 0.4f},
@@ -217,12 +217,12 @@ const std::vector<Preset>& factoryPresets() {
             {"env1.a", 0.004f}, {"env1.d", 0.3f}, {"env1.s", 0.95f}, {"env1.r", 0.12f},
             {"lfo1.shape", 0}, {"lfo1.rate", 4},
             {"mat1.src", 1}, {"mat1.dst", 3}, {"mat1.amt", 0.7f},
-            {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.75f},
+            {"fx.drive.on", 1}, {"fx.drive.amt", 0.4f}, {"fx.drive.mix", 0.2f},
         }},
 
         {"GLIDE LEAD", {
-            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.82f},
-            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.4f}, {"oscB.semi", -12}, {"oscB.level", 0.4f},
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.oct", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.82f},
+            {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.4f}, {"oscB.oct", 1}, {"oscB.semi", -12}, {"oscB.level", 0.4f},
             {"filter.type", 1}, {"filter.cutoff", 1600}, {"filter.res", 0.4f}, {"filter.env", 0.5f}, {"filter.key", 0.4f},
             {"env1.a", 0.005f}, {"env1.d", 0.5f}, {"env1.s", 0.6f}, {"env1.r", 0.25f},
             {"env2.a", 0.005f}, {"env2.d", 0.3f}, {"env2.s", 0.2f}, {"env2.r", 0.2f},
@@ -240,7 +240,7 @@ ParamArray applyPreset(const Preset& preset) {
     ParamArray p = defaultParams();
     for (const auto& kv : preset.params) {
         int id = idFromString(kv.first);
-        if (id >= 0) p[id] = kv.second;
+        if (id >= 0) p[(size_t)id] = kv.second;
     }
     return p;
 }

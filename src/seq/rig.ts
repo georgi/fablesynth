@@ -11,8 +11,6 @@ export interface SeqRig {
   devices: SeqDevice[];
   /** Current context frame (the shared timebase). */
   now(): number;
-  suspend(): Promise<void>;
-  resume(): Promise<void>;
   setTrackGain(t: number, gain: number): void;
   setMasterGain(gain: number): void;
   sendTempo(bpm: number, swing: number, anchor: number): void;
@@ -66,14 +64,6 @@ export class WebAudioRig implements SeqRig {
 
   now(): number {
     return Math.round(this.ctx.currentTime * this.ctx.sampleRate);
-  }
-
-  async suspend(): Promise<void> {
-    await this.ctx.suspend();
-  }
-
-  async resume(): Promise<void> {
-    await this.ctx.resume();
   }
 
   setTrackGain(t: number, gain: number): void {

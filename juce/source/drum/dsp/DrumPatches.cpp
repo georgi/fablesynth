@@ -24,75 +24,90 @@ const std::vector<PadPatch>& factoryPatches() {
     static const std::vector<PadPatch> bank = {
         // Kicks — THUD body, pitch envelope does the punch.
         fp("BD DEEP", {
-            { "oscA.table", 0 }, { "oscA.tune", -14 }, { "penv.amt", 24 }, { "penv.dec", 0.05f },
+            { "oscA.table", 0 }, { "oscA.tune", -26 }, { "penv.amt", 24 }, { "penv.dec", 0.05f },
             { "aenv.dec", 0.42f }, { "aenv.curve", 0.45f }, { "lvl", 0.9f },
         }),
         fp("BD PUNCH", {
-            { "oscA.table", 0 }, { "oscA.tune", -7 }, { "penv.amt", 32 }, { "penv.dec", 0.028f },
+            { "oscA.table", 0 }, { "oscA.tune", -19 }, { "penv.amt", 32 }, { "penv.dec", 0.028f },
             { "aenv.dec", 0.2f }, { "aenv.curve", 0.5f }, { "lvl", 0.9f },
         }),
         fp("BD SUB", {
-            { "oscA.table", 0 }, { "oscA.tune", -22 }, { "penv.amt", 20 }, { "penv.dec", 0.06f },
+            { "oscA.table", 0 }, { "oscA.tune", -34 }, { "penv.amt", 20 }, { "penv.dec", 0.06f },
             { "aenv.dec", 0.95f }, { "aenv.hold", 0.02f }, { "aenv.curve", 0.3f }, { "lvl", 0.92f },
         }),
         fp("BD 808", {
-            { "oscA.table", 0 }, { "oscA.tune", -12 }, { "penv.amt", 26 }, { "penv.dec", 0.075f },
+            { "oscA.table", 0 }, { "oscA.tune", -24 }, { "penv.amt", 26 }, { "penv.dec", 0.075f },
             { "aenv.dec", 0.65f }, { "aenv.curve", 0.35f }, { "flt.on", 1 }, { "flt.type", 0 },
             { "flt.cut", 900 }, { "flt.drive", 0.35f }, { "lvl", 0.92f },
         }),
         // Snares — tonal crack plus a bright noise layer.
         fp("SD CRACK", {
-            { "oscA.table", 1 }, { "oscA.tune", 0 }, { "penv.amt", 5 }, { "penv.dec", 0.03f },
+            { "oscA.table", 1 }, { "oscA.tune", -12 }, { "penv.amt", 5 }, { "penv.dec", 0.03f },
             { "noise.level", 0.5f }, { "noise.color", 0.3f }, { "aenv.dec", 0.18f }, { "lvl", 0.85f },
         }),
         fp("SD 808", {
-            { "oscA.table", 10 }, { "oscA.tune", 0 }, { "penv.amt", 3 }, { "penv.dec", 0.025f },
-            { "noise.level", 0.35f }, { "noise.color", 0.45f }, { "aenv.dec", 0.22f }, { "lvl", 0.85f },
+            { "oscA.level", 0 }, { "oscB.table", 0 }, { "oscB.level", 0.9f },
+            { "noise.level", 0.12f }, { "noise.color", 0.45f }, { "aenv.dec", 0.42f }, { "lvl", 0.85f },
         }),
         fp("SD RIM", {
-            { "oscA.table", 1 }, { "oscA.tune", 12 }, { "penv.amt", 2 }, { "penv.dec", 0.015f },
+            { "oscA.table", 1 }, { "oscA.tune", 0 }, { "penv.amt", 2 }, { "penv.dec", 0.015f },
             { "noise.level", 0.18f }, { "noise.color", 0.6f }, { "aenv.dec", 0.08f }, { "lvl", 0.8f },
         }),
         // Clap — sampled 808 clap with a room-friendly tail.
         fp("CP 808", {
-            { "oscA.table", 11 }, { "oscA.tune", 0 }, { "noise.level", 0.3f }, { "noise.color", 0.5f },
-            { "aenv.hold", 0.02f }, { "aenv.dec", 0.3f }, { "aenv.curve", 0.4f }, { "lvl", 0.85f },
+            { "oscA.level", 0 }, { "oscB.table", 1 }, { "oscB.level", 0.9f },
+            { "aenv.hold", 0.02f }, { "aenv.dec", 0.65f }, { "aenv.curve", 0.4f }, { "lvl", 0.85f },
         }),
         // Hats — sampled 808 hats, high-passed to sit above the kit.
         fp("HH 808", {
-            { "oscA.table", 12 }, { "aenv.dec", 0.06f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 7200 }, { "lvl", 0.7f },
+            { "oscA.level", 0 }, { "oscB.table", 2 }, { "oscB.level", 0.9f }, { "aenv.dec", 0.12f }, { "flt.on", 1 }, { "flt.type", 3 },
+            { "flt.cut", 7200 }, { "ring.freq", 6389 }, { "ring.mix", 0.18f }, { "lvl", 0.7f },
         }),
         fp("HH TIGHT", {
-            { "oscA.table", 12 }, { "aenv.dec", 0.035f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 9200 }, { "lvl", 0.65f },
+            { "oscA.level", 0 }, { "oscB.table", 2 }, { "oscB.level", 0.9f }, { "aenv.dec", 0.055f }, { "flt.on", 1 }, { "flt.type", 3 },
+            { "flt.cut", 9200 }, { "ring.freq", 7919 }, { "ring.mix", 0.22f }, { "lvl", 0.65f },
         }),
         fp("OH 808", {
-            { "oscA.table", 13 }, { "aenv.dec", 0.55f }, { "flt.on", 1 }, { "flt.type", 3 },
-            { "flt.cut", 5200 }, { "lvl", 0.7f },
+            { "oscA.level", 0 }, { "oscB.table", 3 }, { "oscB.level", 0.9f }, { "aenv.dec", 0.55f }, { "flt.on", 1 }, { "flt.type", 3 },
+            { "flt.cut", 5200 }, { "ring.freq", 5197 }, { "ring.mix", 0.28f }, { "lvl", 0.7f },
         }),
         // Cymbal — long sizzle.
         fp("CY 808", {
-            { "oscA.table", 14 }, { "aenv.dec", 1.7f }, { "aenv.curve", 0.25f }, { "flt.on", 1 },
-            { "flt.type", 3 }, { "flt.cut", 3800 }, { "lvl", 0.72f },
+            { "oscA.level", 0 }, { "oscB.table", 4 }, { "oscB.level", 0.9f },
+            { "aenv.dec", 1.7f }, { "aenv.curve", 0.25f }, { "flt.on", 1 },
+            { "flt.type", 3 }, { "flt.cut", 3800 }, { "ring.freq", 2741 }, { "ring.mix", 0.62f },
+            { "lvl", 0.72f },
         }),
         // Toms — THUD tuned across the range with a modest pitch sweep.
         fp("TM LO", {
-            { "oscA.table", 0 }, { "oscA.tune", -12 }, { "penv.amt", 12 }, { "penv.dec", 0.07f },
-            { "aenv.dec", 0.42f }, { "lvl", 0.85f },
+            { "oscA.table", 0 }, { "oscA.tune", -19 }, { "penv.amt", 12 }, { "penv.dec", 0.07f },
+            { "aenv.dec", 0.28f }, { "lvl", 0.85f },
         }),
         fp("TM MID", {
-            { "oscA.table", 0 }, { "oscA.tune", -5 }, { "penv.amt", 10 }, { "penv.dec", 0.06f },
-            { "aenv.dec", 0.36f }, { "lvl", 0.85f },
+            { "oscA.table", 0 }, { "oscA.tune", -12 }, { "penv.amt", 10 }, { "penv.dec", 0.06f },
+            { "aenv.dec", 0.24f }, { "lvl", 0.85f },
         }),
         fp("TM HI", {
-            { "oscA.table", 0 }, { "oscA.tune", 2 }, { "penv.amt", 8 }, { "penv.dec", 0.05f },
-            { "aenv.dec", 0.3f }, { "lvl", 0.85f },
+            { "oscA.table", 0 }, { "oscA.tune", -5 }, { "penv.amt", 8 }, { "penv.dec", 0.05f },
+            { "aenv.dec", 0.2f }, { "lvl", 0.85f },
         }),
-        // Perc / vox / glitch flavors from the procedural tables.
+        // Perc / vox / glitch flavors. Fixed-Hz ring modulation supplies the
+        // inharmonic sidebands that the pitched procedural tables lack.
         fp("PC TINE", {
-            { "oscA.table", 2 }, { "oscA.tune", 12 }, { "oscA.fine", -5 }, { "aenv.dec", 0.16f },
-            { "lvl", 0.75f },
+            { "oscA.table", 2 }, { "oscA.tune", 7 }, { "oscA.fine", -5 }, { "ring.freq", 1187 },
+            { "ring.mix", 0.62f }, { "aenv.dec", 0.42f }, { "aenv.curve", 0.28f }, { "lvl", 0.75f },
+        }),
+        fp("PC BELL", {
+            { "oscA.table", 8 }, { "oscA.tune", -5 }, { "oscA.level", 0.7f }, { "ring.freq", 731 },
+            { "ring.mix", 0.78f }, { "aenv.att", 0.0005f }, { "aenv.hold", 0.018f },
+            { "aenv.dec", 1.35f }, { "aenv.curve", 0.2f }, { "flt.on", 1 }, { "flt.type", 2 },
+            { "flt.cut", 2400 }, { "flt.res", 0.35f }, { "lvl", 0.78f },
+        }),
+        fp("PC CYMBAL", {
+            { "oscA.table", 3 }, { "oscA.pos", 0.38f }, { "oscA.tune", 17 }, { "noise.level", 0.22f },
+            { "noise.color", 0.75f }, { "ring.freq", 3271 }, { "ring.mix", 0.88f },
+            { "aenv.hold", 0.014f }, { "aenv.dec", 1.6f }, { "aenv.curve", 0.24f },
+            { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 3600 }, { "lvl", 0.72f },
         }),
         fp("PC VOX", {
             { "oscA.table", 7 }, { "oscA.tune", -5 }, { "aenv.dec", 0.48f }, { "aenv.curve", 0.3f },
@@ -101,6 +116,71 @@ const std::vector<PadPatch>& factoryPatches() {
         fp("PC GLITCH", {
             { "oscA.table", 3 }, { "oscA.tune", -12 }, { "oscA.pos", 0.5f }, { "penv.amt", 9 },
             { "penv.dec", 0.04f }, { "aenv.dec", 0.22f }, { "lvl", 0.78f },
+        }),
+        // Hybrid voices — procedural transient/body layered with raw samples.
+        fp("HX BD UZU", {
+            { "oscA.table", 0 }, { "oscA.tune", -26 }, { "oscA.level", .50f }, { "oscB.table", 16 }, { "oscB.level", .72f },
+            { "penv.amt", 22 }, { "penv.dec", .045f }, { "aenv.dec", .60f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1400 }, { "lvl", .90f },
+        }),
+        fp("HX BD 808", {
+            { "oscA.table", 0 }, { "oscA.tune", -31 }, { "oscA.level", .45f }, { "oscB.table", 5 }, { "oscB.level", .68f },
+            { "penv.amt", 18 }, { "penv.dec", .055f }, { "aenv.dec", .72f }, { "flt.on", 1 }, { "flt.type", 0 }, { "flt.cut", 1100 }, { "lvl", .92f },
+        }),
+        fp("HX SD UZU", {
+            { "oscA.table", 1 }, { "oscA.tune", -12 }, { "oscA.level", .42f }, { "oscB.table", 18 }, { "oscB.level", .70f },
+            { "noise.level", .16f }, { "aenv.dec", .50f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 900 }, { "lvl", .84f },
+        }),
+        fp("HX CP CROSS", {
+            { "oscA.table", 1 }, { "oscA.tune", 7 }, { "oscA.level", .25f }, { "oscB.table", 1 }, { "oscB.level", .76f },
+            { "noise.level", .12f }, { "aenv.hold", .02f }, { "aenv.dec", .70f }, { "lvl", .82f },
+        }),
+        fp("HX RIM", {
+            { "oscA.table", 2 }, { "oscA.tune", 19 }, { "oscA.level", .40f }, { "oscB.table", 20 }, { "oscB.level", .65f },
+            { "ring.freq", 1831 }, { "ring.mix", .34f }, { "aenv.dec", .20f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 2900 }, { "lvl", .78f },
+        }),
+        fp("HX HH", {
+            { "oscA.table", 3 }, { "oscA.tune", 24 }, { "oscA.level", .18f }, { "oscB.table", 21 }, { "oscB.level", .76f },
+            { "ring.freq", 6389 }, { "ring.mix", .24f }, { "aenv.dec", .15f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 6900 }, { "lvl", .68f },
+        }),
+        fp("HX OH", {
+            { "oscA.table", 3 }, { "oscA.tune", 17 }, { "oscA.level", .16f }, { "oscB.table", 3 }, { "oscB.level", .76f },
+            { "ring.freq", 5197 }, { "ring.mix", .26f }, { "aenv.dec", .70f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 4800 }, { "lvl", .70f },
+        }),
+        fp("HX RD", {
+            { "oscA.table", 8 }, { "oscA.tune", 7 }, { "oscA.level", .12f }, { "oscB.table", 23 }, { "oscB.level", .72f },
+            { "ring.freq", 2741 }, { "ring.mix", .38f }, { "aenv.dec", 1.20f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 3300 }, { "lvl", .70f },
+        }),
+        fp("HX LT", {
+            { "oscA.table", 0 }, { "oscA.tune", -19 }, { "oscA.level", .45f }, { "oscB.table", 13 }, { "oscB.level", .66f },
+            { "penv.amt", 8 }, { "penv.dec", .065f }, { "aenv.dec", .60f }, { "lvl", .84f },
+        }),
+        fp("HX MT", {
+            { "oscA.table", 0 }, { "oscA.tune", -12 }, { "oscA.level", .42f }, { "oscB.table", 25 }, { "oscB.level", .68f },
+            { "penv.amt", 7 }, { "penv.dec", .055f }, { "aenv.dec", .60f }, { "lvl", .84f },
+        }),
+        fp("HX HT", {
+            { "oscA.table", 0 }, { "oscA.tune", -5 }, { "oscA.level", .40f }, { "oscB.table", 15 }, { "oscB.level", .68f },
+            { "penv.amt", 6 }, { "penv.dec", .05f }, { "aenv.dec", .60f }, { "lvl", .84f },
+        }),
+        fp("HX CR", {
+            { "oscA.table", 3 }, { "oscA.pos", .38f }, { "oscA.tune", 17 }, { "oscA.level", .12f }, { "oscB.table", 27 }, { "oscB.level", .72f },
+            { "ring.freq", 3271 }, { "ring.mix", .48f }, { "aenv.dec", 1.20f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 3200 }, { "lvl", .70f },
+        }),
+        fp("HX CB", {
+            { "oscA.table", 8 }, { "oscA.tune", -5 }, { "oscA.level", .25f }, { "oscB.table", 7 }, { "oscB.level", .62f },
+            { "ring.freq", 731 }, { "ring.mix", .42f }, { "aenv.dec", .50f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 2400 }, { "lvl", .76f },
+        }),
+        fp("HX SH", {
+            { "oscA.table", 2 }, { "oscA.tune", 24 }, { "oscA.level", .22f }, { "oscB.table", 29 }, { "oscB.level", .70f },
+            { "noise.level", .14f }, { "aenv.dec", .10f }, { "flt.on", 1 }, { "flt.type", 3 }, { "flt.cut", 6200 }, { "lvl", .70f },
+        }),
+        fp("HX TB", {
+            { "oscA.table", 7 }, { "oscA.tune", -5 }, { "oscA.level", .30f }, { "oscB.table", 30 }, { "oscB.level", .66f },
+            { "ring.freq", 1187 }, { "ring.mix", .28f }, { "aenv.dec", .60f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 1800 }, { "lvl", .76f },
+        }),
+        fp("HX MOD", {
+            { "oscA.table", 9 }, { "oscA.pos", .55f }, { "oscA.tune", -12 }, { "oscA.level", .35f }, { "oscB.table", 31 }, { "oscB.level", .68f },
+            { "ring.freq", 2203 }, { "ring.mix", .32f }, { "aenv.dec", .25f }, { "flt.on", 1 }, { "flt.type", 2 }, { "flt.cut", 2600 }, { "lvl", .76f },
         }),
     };
     return bank;

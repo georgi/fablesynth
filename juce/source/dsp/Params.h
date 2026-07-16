@@ -73,34 +73,34 @@ enum LfoField  { LFO_SHAPE, LFO_RATE, LFO_SYNC, LFO_SYNCRATE, LFO_RISE, LFO_PHAS
 // engine can address either with base + field (see Engine::setupOsc/setupFilter).
 enum Pid : int {
     OSCA_BASE   = 0,                          // 11 fields
-    OSCB_BASE   = OSCA_BASE + OSC_NFIELDS,    // 11
-    SUB_ON      = OSCB_BASE + OSC_NFIELDS,    // 22
+    OSCB_BASE   = static_cast<int>(OSCA_BASE) + static_cast<int>(OSC_NFIELDS), // 11
+    SUB_ON      = static_cast<int>(OSCB_BASE) + static_cast<int>(OSC_NFIELDS), // 22
     SUB_SHAPE, SUB_OCT, SUB_LEVEL,
     NOISE_ON, NOISE_TYPE, NOISE_LEVEL,
     FILTER1_BASE,                             // 7 fields
-    FILTER_ROUTE = FILTER1_BASE + FLT_NFIELDS,
+    FILTER_ROUTE = static_cast<int>(FILTER1_BASE) + static_cast<int>(FLT_NFIELDS),
     FILTER2_BASE,                             // 7 fields
-    ENV1_BASE   = FILTER2_BASE + FLT_NFIELDS, // a,d,s,r
+    ENV1_BASE   = static_cast<int>(FILTER2_BASE) + static_cast<int>(FLT_NFIELDS), // a,d,s,r
     ENV2_BASE   = ENV1_BASE + 4,
     LFO1_BASE   = ENV2_BASE + 4,              // shape,rate,sync,syncrate,rise,phase,retrig
-    LFO2_BASE   = LFO1_BASE + LFO_NFIELDS,
-    MAT1_BASE   = LFO2_BASE + LFO_NFIELDS,    // 16 slots x 3
-    MAT2_BASE   = MAT1_BASE + MAT_NFIELDS,
-    MAT3_BASE   = MAT2_BASE + MAT_NFIELDS,
-    MAT4_BASE   = MAT3_BASE + MAT_NFIELDS,
-    MAT5_BASE   = MAT4_BASE + MAT_NFIELDS,
-    MAT6_BASE   = MAT5_BASE + MAT_NFIELDS,
-    MAT7_BASE   = MAT6_BASE + MAT_NFIELDS,
-    MAT8_BASE   = MAT7_BASE + MAT_NFIELDS,
-    MAT9_BASE   = MAT8_BASE + MAT_NFIELDS,
-    MAT10_BASE  = MAT9_BASE + MAT_NFIELDS,
-    MAT11_BASE  = MAT10_BASE + MAT_NFIELDS,
-    MAT12_BASE  = MAT11_BASE + MAT_NFIELDS,
-    MAT13_BASE  = MAT12_BASE + MAT_NFIELDS,
-    MAT14_BASE  = MAT13_BASE + MAT_NFIELDS,
-    MAT15_BASE  = MAT14_BASE + MAT_NFIELDS,
-    MAT16_BASE  = MAT15_BASE + MAT_NFIELDS,
-    FXDRIVE_ON = MAT16_BASE + MAT_NFIELDS,    // on,amt,mix
+    LFO2_BASE   = static_cast<int>(LFO1_BASE) + static_cast<int>(LFO_NFIELDS),
+    MAT1_BASE   = static_cast<int>(LFO2_BASE) + static_cast<int>(LFO_NFIELDS), // 16 slots x 3
+    MAT2_BASE   = static_cast<int>(MAT1_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT3_BASE   = static_cast<int>(MAT2_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT4_BASE   = static_cast<int>(MAT3_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT5_BASE   = static_cast<int>(MAT4_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT6_BASE   = static_cast<int>(MAT5_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT7_BASE   = static_cast<int>(MAT6_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT8_BASE   = static_cast<int>(MAT7_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT9_BASE   = static_cast<int>(MAT8_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT10_BASE  = static_cast<int>(MAT9_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT11_BASE  = static_cast<int>(MAT10_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT12_BASE  = static_cast<int>(MAT11_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT13_BASE  = static_cast<int>(MAT12_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT14_BASE  = static_cast<int>(MAT13_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT15_BASE  = static_cast<int>(MAT14_BASE) + static_cast<int>(MAT_NFIELDS),
+    MAT16_BASE  = static_cast<int>(MAT15_BASE) + static_cast<int>(MAT_NFIELDS),
+    FXDRIVE_ON = static_cast<int>(MAT16_BASE) + static_cast<int>(MAT_NFIELDS), // on,amt,mix
     FXDRIVE_AMT, FXDRIVE_MIX,
     FXCHORUS_ON, FXCHORUS_RATE, FXCHORUS_DEPTH, FXCHORUS_MIX,
     FXDELAY_ON, FXDELAY_TIME, FXDELAY_FB, FXDELAY_MIX,
@@ -117,6 +117,22 @@ inline constexpr int oscBase(int i)  { return i == 0 ? OSCA_BASE : OSCB_BASE; }
 inline constexpr int fltBase(int i)  { return i == 0 ? FILTER1_BASE : FILTER2_BASE; }
 inline constexpr int matBase(int s)  { return MAT1_BASE + (s - 1) * MAT_NFIELDS; } // s = 1..16
 
+// Typed block-offset helpers keep parameter IDs explicit and prevent accidental
+// arithmetic between unrelated field enums. They return the same flat integer
+// indices used by ParamArray and the DSP engines.
+inline constexpr int paramIndex(Pid base, OscField field) {
+    return static_cast<int>(base) + static_cast<int>(field);
+}
+inline constexpr int paramIndex(Pid base, FiltField field) {
+    return static_cast<int>(base) + static_cast<int>(field);
+}
+inline constexpr int paramIndex(Pid base, LfoField field) {
+    return static_cast<int>(base) + static_cast<int>(field);
+}
+inline constexpr int paramIndex(Pid base, MatField field) {
+    return static_cast<int>(base) + static_cast<int>(field);
+}
+
 // ---- modulation destination -> target (canonical, juce-free) ----
 // Per-param dests return a flat Pid; "none" and the three global dests return a
 // negative sentinel handled directly by the engine (PITCH/AMP/PAN math unchanged).
@@ -125,33 +141,33 @@ enum DstSentinel : int { DST_NONE = -1, DST_PITCH = -2, DST_AMP = -3, DST_PAN = 
 inline constexpr int dstTarget(int dst) {
     switch (dst) {
         case 0:  return DST_NONE;
-        case 1:  return OSCA_BASE   + OSC_POS;
-        case 2:  return OSCB_BASE   + OSC_POS;
-        case 3:  return FILTER1_BASE + FLT_CUTOFF;
+        case 1:  return paramIndex(OSCA_BASE, OSC_POS);
+        case 2:  return paramIndex(OSCB_BASE, OSC_POS);
+        case 3:  return paramIndex(FILTER1_BASE, FLT_CUTOFF);
         case 4:  return DST_PITCH;
         case 5:  return DST_AMP;
         case 6:  return DST_PAN;
-        case 7:  return OSCA_BASE   + OSC_LEVEL;
-        case 8:  return OSCB_BASE   + OSC_LEVEL;
-        case 9:  return FILTER2_BASE + FLT_CUTOFF;
-        case 10: return FILTER2_BASE + FLT_RES;
-        case 11: return OSCA_BASE   + OSC_DETUNE;
-        case 12: return OSCA_BASE   + OSC_SPREAD;
-        case 13: return OSCA_BASE   + OSC_PAN;
-        case 14: return OSCB_BASE   + OSC_DETUNE;
-        case 15: return OSCB_BASE   + OSC_SPREAD;
-        case 16: return OSCB_BASE   + OSC_PAN;
-        case 17: return FILTER1_BASE + FLT_RES;
-        case 18: return FILTER1_BASE + FLT_DRIVE;
-        case 19: return FILTER1_BASE + FLT_ENV;
-        case 20: return FILTER1_BASE + FLT_KEY;
-        case 21: return FILTER2_BASE + FLT_DRIVE;
-        case 22: return FILTER2_BASE + FLT_ENV;
-        case 23: return FILTER2_BASE + FLT_KEY;
+        case 7:  return paramIndex(OSCA_BASE, OSC_LEVEL);
+        case 8:  return paramIndex(OSCB_BASE, OSC_LEVEL);
+        case 9:  return paramIndex(FILTER2_BASE, FLT_CUTOFF);
+        case 10: return paramIndex(FILTER2_BASE, FLT_RES);
+        case 11: return paramIndex(OSCA_BASE, OSC_DETUNE);
+        case 12: return paramIndex(OSCA_BASE, OSC_SPREAD);
+        case 13: return paramIndex(OSCA_BASE, OSC_PAN);
+        case 14: return paramIndex(OSCB_BASE, OSC_DETUNE);
+        case 15: return paramIndex(OSCB_BASE, OSC_SPREAD);
+        case 16: return paramIndex(OSCB_BASE, OSC_PAN);
+        case 17: return paramIndex(FILTER1_BASE, FLT_RES);
+        case 18: return paramIndex(FILTER1_BASE, FLT_DRIVE);
+        case 19: return paramIndex(FILTER1_BASE, FLT_ENV);
+        case 20: return paramIndex(FILTER1_BASE, FLT_KEY);
+        case 21: return paramIndex(FILTER2_BASE, FLT_DRIVE);
+        case 22: return paramIndex(FILTER2_BASE, FLT_ENV);
+        case 23: return paramIndex(FILTER2_BASE, FLT_KEY);
         case 24: return SUB_LEVEL;
         case 25: return NOISE_LEVEL;
-        case 26: return OSCA_BASE   + OSC_BLEND;
-        case 27: return OSCB_BASE   + OSC_BLEND;
+        case 26: return paramIndex(OSCA_BASE, OSC_BLEND);
+        case 27: return paramIndex(OSCB_BASE, OSC_BLEND);
         default: return DST_NONE;
     }
 }

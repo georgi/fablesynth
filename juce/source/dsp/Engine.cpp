@@ -1,12 +1,19 @@
 #include "Engine.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace fable {
 
 static constexpr double PI = 3.14159265358979323846;
 static constexpr double LN2 = 0.6931471805599453;
 static const double DC_R = 0.9998; // DC-blocker pole at the 48 kHz reference (Finding 9: prepare() maps it to sr)
+
+static constexpr size_t slot(int index) { return (size_t)index; }
+template <typename T>
+static bool exactlyEqual(T a, T b) { return std::equal_to<T>{}(a, b); }
+template <typename T>
+static bool exactlyZero(T value) { return std::fpclassify(value) == FP_ZERO; }
 
 // Finding 6: chunk-invariant smoothers. Legacy applied a fixed coef per render
 // chunk (0.35 wavetable pos, 0.5 cutoff, per 128 samples at 48 kHz), so the
@@ -43,7 +50,8 @@ void Env::set(double a, double d, double sus, double r, double sr) {
     s = sus;
     // sr is part of the key: hosts can re-prepare at a new sample rate, and the
     // coefficients below bake it in (the web worklet's sr is immutable).
-    if (a != a_ || d != d_ || r != r_ || sr != sr_) {
+    if (!exactlyEqual(a, a_) || !exactlyEqual(d, d_)
+        || !exactlyEqual(r, r_) || !exactlyEqual(sr, sr_)) {
         a_ = a; d_ = d; r_ = r; sr_ = sr;
         ca = 1 - std::exp(-1 / (std::max(0.0008, a) * sr));
         cd = 1 - std::exp(-1 / (std::max(0.002, d / 4.5) * sr));
@@ -155,9 +163,9 @@ void Engine::prepare(double sampleRate) {
 }
 
 double Engine::lfoHz(int base) const {
-    if (p_[base + LFO_SYNC] != 0)
-        return (bpm_ / 60.0) * lfoDivFactor((int)p_[base + LFO_SYNCRATE]);
-    return p_[base + LFO_RATE];
+    if (!exactlyZero(p_[slot(base + LFO_SYNC)]))
+        return (bpm_ / 60.0) * lfoDivFactor((int)p_[slot(base + LFO_SYNCRATE)]);
+    return p_[slot(base + LFO_RATE)];
 }
 
 // Update a free-running global LFO once per block. When synced AND the host is
@@ -166,8 +174,8 @@ double Engine::lfoHz(int base) const {
 // unsynced — or synced but stopped — it free-runs at its Hz so movement
 // continues. (Retrig LFOs are per-voice / note-aligned and skip this.)
 void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
-    if (p_[base + LFO_SYNC] != 0 && playing_) {
-        double ph = ppqChunk * lfoDivFactor((int)p_[base + LFO_SYNCRATE]);
+    if (!exactlyZero(p_[slot(base + LFO_SYNC)]) && playing_) {
+        double ph = ppqChunk * lfoDivFactor((int)p_[slot(base + LFO_SYNCRATE)]);
         ph -= std::floor(ph);
         if (ph < g.phase) g.hold = rng_.next() * 2 - 1; // grid wrap -> new S&H value
         g.phase = ph;
@@ -235,25 +243,23 @@ void Engine::noteOff(int n) {
     }
 }
 
-// ---------------- note sequencer (worklet.js seqRead/seqGateOff/seqTie/seqFire) ----------------
+// ---------------- note sequencer (worklet.js seqRead/seqGateOff/seqFire) ----------------
 
 void Engine::seqPlay() {
     if (hostClipMode_) return;     // hosted clip owns the transport
     if (seqHostPlaying_) return;   // host owns the transport while rolling
+    seqGateOff();                  // restarting must not orphan an old gate
     seqPlaying_ = true;
     seqStep_ = -1;
     seqChainPos_ = 0;
     seqToNext_ = 0;
-    seqToGateOff_ = -1;
-    seqNote_ = -1;
     seqSongPos_ = 0;
 }
 
 void Engine::seqStop() {
     seqPlaying_ = false;
     seqStep_ = -1;
-    seqToGateOff_ = -1;
-    seqGateOff();
+    seqGateOff();                    // worklet 'stop' gates off every sounding note
 }
 
 void Engine::setSeqPatterns(const uint8_t* data, int n) {
@@ -275,91 +281,102 @@ void Engine::setBpmOverride(double bpm) {
 
 double Engine::seqEffectiveBpm() const {
     if (bpmOverride_ > 0) return bpmOverride_;
-    double pbpm = p_[SEQ_BPM] != 0 ? (double)p_[SEQ_BPM] : 120.0;
+    double pbpm = !exactlyZero(p_[SEQ_BPM]) ? (double)p_[SEQ_BPM] : 120.0;
     return std::min(200.0, std::max(60.0, pbpm));
 }
 
-// worklet seqRead (noteseq.ts getStep folded to a semitone offset)
+// worklet seqRead (noteseq.ts getStep folded to a semitone offset + duration)
 Engine::SeqReadStep Engine::readSeqStep(const uint8_t* pats, int pat, int s) {
     const int o = (pat * SEQ_STEPS + s) * SEQ_STEP_STRIDE;
     const uint8_t flags = pats[o];
     SeqReadStep st;
     st.on   = (flags & 1) != 0;
     st.acc  = (flags & 2) != 0;
-    st.tie  = (flags & 4) != 0;
+    st.duration = std::max(1, std::min(SEQ_MAX_NOTE_STEPS, (int)((flags >> 2) & 0x3f)));
     st.semi = std::min(11, (int)pats[o + 1]) + 12 * (std::min(2, (int)pats[o + 2]) - 1);
     return st;
 }
 
+// Gate off every sounding sequencer note (worklet seqGateOff): used on
+// stop, clip swap and clip stop. Drains the per-note off queue.
 void Engine::seqGateOff() {
-    if (seqNote_ >= 0) {
-        noteOff(seqNote_);
-        seqNote_ = -1;
+    for (int i = 0; i < seqOffCount_; ++i) noteOff(seqOff_[i].note);
+    seqOffCount_ = 0;
+    seqLastNote_ = -1;
+}
+
+// Per-note off queue (worklet seqScheduleOff). A retriggered pitch supersedes
+// any pending off for it (one voice per note), so overlapping DIFFERENT notes
+// ring concurrently while a repeated pitch takes the new duration.
+void Engine::seqScheduleOff(int note, double remaining) {
+    int w = 0;                       // de-dup by note value (swap-remove)
+    for (int i = 0; i < seqOffCount_; ++i)
+        if (seqOff_[i].note != note) seqOff_[w++] = seqOff_[i];
+    seqOffCount_ = w;
+    if (seqOffCount_ < kSeqOffCap) {
+        seqOff_[seqOffCount_].note = note;
+        seqOff_[seqOffCount_].remaining = remaining;
+        ++seqOffCount_;
+    } else {
+        // Cap exceeded (>> realistic overlap): drop the oldest to make room.
+        for (int i = 1; i < kSeqOffCap; ++i) seqOff_[i - 1] = seqOff_[i];
+        seqOff_[kSeqOffCap - 1].note = note;
+        seqOff_[kSeqOffCap - 1].remaining = remaining;
     }
+    seqLastNote_ = note;
 }
 
-// Legato retune of the sounding sequencer voice: no envelope retrigger; the
-// renderVoice glide slew takes v.pitch to the new note (instant at GLIDE 0).
-void Engine::seqTie(int n, double vel) {
-    Voice* voice = nullptr;
-    for (auto& v : voices_)
-        if (v.gate && v.note == seqNote_) { voice = &v; break; }
-    if (!voice) { noteOn(n, vel); return; } // voice got stolen — retrigger
-    voice->note = n;
-    lastPitch_ = n;
+// Smallest pending-off remaining (-1 when nothing is scheduled). The render
+// loop splits a block at this sample so each off lands on its exact frame.
+double Engine::seqEarliestOff() const {
+    double m = -1.0;
+    for (int i = 0; i < seqOffCount_; ++i)
+        if (m < 0.0 || seqOff_[i].remaining < m) m = seqOff_[i].remaining;
+    return m;
 }
 
-// Shared step-fire body: trigger the step and schedule the gate, holding
-// through when the NEXT step ties in (worklet seqFire lines 428-441).
-void Engine::seqFireAt(int s, int pat, int patNext, double dur) {
+// Shared step-fire body (worklet seqFire). noteOn then schedule this note's
+// own gate-off at st.duration 16th-steps — no seqGateOff first, so a note can
+// overlap the next step's note when its duration extends past it.
+void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
     const SeqReadStep st = readSeqStep(seqPats_.data(), pat, s);
     if (st.on) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
         const int n = root + st.semi;
         const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-        if (st.tie && seqNote_ >= 0) seqTie(n, vel);
-        else { seqGateOff(); noteOn(n, vel); }
-        seqNote_ = n;
-        // hold through the step when the NEXT step ties in
-        const int sN = (s + 1) % SEQ_STEPS;
-        const int patN = sN == 0 ? patNext : pat;
-        const SeqReadStep stN = readSeqStep(seqPats_.data(), patN, sN);
-        double gate = p_[SEQ_GATE] != 0 ? (double)p_[SEQ_GATE] : 0.55;
-        gate = std::min(0.98, std::max(0.1, gate));
-        seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
+        noteOn(n, vel);
+        seqScheduleOff(n, st.duration * dur);
     }
     seqStep_ = s;
 }
 
-// Hosted twin of seqFireAt (docs/sq4-clips.md §6): identical gate-off
-// ordering, tie legato and accent velocities — only the byte source changes
-// from the pattern banks (seqPats_/chain) to the ClipHost's live clip, whose
-// layout (flags, note, oct+1 per step) is byte-identical to a seq pattern, so
-// readSeqStep() reads it directly with the clip's bar standing in for `pat`.
+// Hosted twin of seqFireAt (docs/sq4-clips.md §6): each on-lane gates for its
+// OWN duration (worklet clipFire), so a chord's voices release independently.
+// Only the byte source differs — the clip layout (flags, note, oct+1 per
+// lane) is byte-identical to a seq pattern, so readSeqStep() reads it with
+// the clip's bar standing in for `pat`.
 void Engine::clipFireAt(int abs) {
     const uint8_t* clip = clipHost_.clipData();
-    const int total = std::max(1, clipHost_.clipBars() * SEQ_STEPS);
     const int bar = abs / SEQ_STEPS;
     const int s   = abs % SEQ_STEPS;
-    const SeqReadStep st = readSeqStep(clip, bar, s);
-    if (st.on) {
+    std::array<SeqReadStep, SQ_WT_POLY_LANES> chord {};
+    bool any = false;
+    for (int lane = 0; lane < SQ_WT_POLY_LANES; ++lane) {
+        const int o = sqWtNoteIdx(bar, s, lane);
+        chord[(size_t)lane] = readSeqStep(clip + o, 0, 0);
+        any = any || chord[(size_t)lane].on;
+    }
+    if (any) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
-        const int n = root + st.semi;
-        const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-        if (st.tie && seqNote_ >= 0) seqTie(n, vel);
-        else { seqGateOff(); noteOn(n, vel); }
-        seqNote_ = n;
-        // hold through the step when the NEXT step (wrapping within the
-        // clip's own bar count, not a separate chain) ties in
-        const int absN = (abs + 1) % total;
-        const SeqReadStep stN = readSeqStep(clip, absN / SEQ_STEPS, absN % SEQ_STEPS);
         const double bpm = std::max(60.0, std::min(200.0, bpm_));
         const double dur = sqSamplesPerStep(bpm, sr_);
-        double gate = p_[SEQ_GATE] != 0 ? (double)p_[SEQ_GATE] : 0.55;
-        gate = std::min(0.98, std::max(0.1, gate));
-        seqToGateOff_ = (stN.on && stN.tie) ? -1 : gate * dur;
+        for (const auto& st : chord) if (st.on) {
+            const int n = root + st.semi;
+            noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+            seqScheduleOff(n, st.duration * dur);
+        }
     }
 }
 
@@ -391,7 +408,6 @@ void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
     if (playing && !seqHostPlaying_) {
         seqPlaying_ = false;           // host takes over; internal transport yields
         seqStep_ = -1;
-        seqToGateOff_ = -1;
         seqHostSynced_ = false;
         seqGateOff();
     }
@@ -399,7 +415,6 @@ void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
         seqHostSynced_ = false;        // loop / relocate -> resync from ppq
     if (!playing && seqHostPlaying_) { // host stopped
         seqStep_ = -1;
-        seqToGateOff_ = -1;
         seqGateOff();
     }
     seqHostPlaying_ = playing;
@@ -434,14 +449,15 @@ void Engine::seqFireHostStep(long k) {
 // Reads the modulated snapshot pm for the per-param dests (pos/level/pan/detune/
 // spread); pitch and the pan global offset stay as direct additive terms.
 bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n) {
-    if (p_[base + OSC_ON] < 0.5) return false;
-    int ti = (int)p_[base + OSC_TABLE];
+    if (p_[slot(base + OSC_ON)] < 0.5) return false;
+    int ti = (int)p_[slot(base + OSC_TABLE)];
     if (ti < 0 || ti >= (int)curTables_->size()) return false;
-    const EngineTable& table = (*curTables_)[ti];
+    const EngineTable& table = (*curTables_)[(size_t)ti];
     if (!table.data) return false; // empty slot
 
-    double basePitch = v.pitch + bend_ + p_[base + OSC_OCT] * 12 + p_[base + OSC_SEMI]
-                     + p_[base + OSC_FINE] / 100.0 + mPitch * 12;
+    double basePitch = v.pitch + bend_ + p_[slot(base + OSC_OCT)] * 12
+                     + p_[slot(base + OSC_SEMI)] + p_[slot(base + OSC_FINE)] / 100.0
+                     + mPitch * 12;
     double freq = 440 * std::pow(2.0, (basePitch - 69) / 12);
     if (!(freq > 0 && freq <= sr_ * 0.45)) return false; // inverted: NaN-safe
 
@@ -449,7 +465,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     level *= level;
     if (level < 1e-5) return false;
 
-    int uni = std::max(1, std::min(MAXUNI, (int)p_[base + OSC_UNISON]));
+    int uni = std::max(1, std::min(MAXUNI, (int)p_[slot(base + OSC_UNISON)]));
     double det = pm[base + OSC_DETUNE];
     double spr = pm[base + OSC_SPREAD];
     double blend = std::min(1.0, std::max(0.0, pm[base + OSC_BLEND]));
@@ -487,7 +503,8 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     o.mask = table.mask;
     o.size = table.size;
     o.uni = uni;
-    if (o.cacheUni != uni || o.cacheDet != det || o.cacheSpr != spr || o.cacheBlend != blend || o.cachePan != basePan) {
+    if (o.cacheUni != uni || !exactlyEqual(o.cacheDet, det) || !exactlyEqual(o.cacheSpr, spr)
+        || !exactlyEqual(o.cacheBlend, blend) || !exactlyEqual(o.cachePan, basePan)) {
         double sumW2 = 0;
         for (int u = 0; u < uni; u++) {
             double sprd = uni > 1 ? (double)u / (uni - 1) * 2 - 1 : 0;
@@ -584,14 +601,14 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
 }
 
 void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n) {
-    int ftype = (int)p_[base + FLT_TYPE];
+    int ftype = (int)p_[slot(base + FLT_TYPE)];
     fs.ftype = ftype;
 
     // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
     // exponent stays in a single std::pow — bit-identical to the legacy
     // p[CUTOFF] * 2^(env*4*e2 + key*(note-60)/12 + x*5). env/key are still read from
     // pm so THEY remain modulatable; the base cutoff is read straight from p_.
-    double fc = p_[base + FLT_CUTOFF] *
+    double fc = p_[slot(base + FLT_CUTOFF)] *
         std::pow(2.0, pm[base + FLT_ENV] * 4 * e2 + (pm[base + FLT_KEY] * (v.note - 60)) / 12.0 + mCut * 5.0);
     fc = std::min(sr_ * 0.45, std::max(20.0, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
@@ -762,11 +779,16 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         v.pitch += (v.note - v.pitch) * c;
     } else v.pitch = v.note;
 
-    bool   rt1 = p_[LFO1_BASE + LFO_RETRIG] != 0, rt2 = p_[LFO2_BASE + LFO_RETRIG] != 0;
-    double l1 = (rt1 ? v.lfo1 : gLfo1_).valueOff((int)p_[LFO1_BASE + LFO_SHAPE], p_[LFO1_BASE + LFO_PHASE])
-                * v.lfo1.riseGain(p_[LFO1_BASE + LFO_RISE], sr_);
-    double l2 = (rt2 ? v.lfo2 : gLfo2_).valueOff((int)p_[LFO2_BASE + LFO_SHAPE], p_[LFO2_BASE + LFO_PHASE])
-                * v.lfo2.riseGain(p_[LFO2_BASE + LFO_RISE], sr_);
+    bool   rt1 = !exactlyZero(p_[(size_t)paramIndex(LFO1_BASE, LFO_RETRIG)]),
+           rt2 = !exactlyZero(p_[(size_t)paramIndex(LFO2_BASE, LFO_RETRIG)]);
+    double l1 = (rt1 ? v.lfo1 : gLfo1_).valueOff(
+                    (int)p_[(size_t)paramIndex(LFO1_BASE, LFO_SHAPE)],
+                    p_[(size_t)paramIndex(LFO1_BASE, LFO_PHASE)])
+                * v.lfo1.riseGain(p_[(size_t)paramIndex(LFO1_BASE, LFO_RISE)], sr_);
+    double l2 = (rt2 ? v.lfo2 : gLfo2_).valueOff(
+                    (int)p_[(size_t)paramIndex(LFO2_BASE, LFO_SHAPE)],
+                    p_[(size_t)paramIndex(LFO2_BASE, LFO_PHASE)])
+                * v.lfo2.riseGain(p_[(size_t)paramIndex(LFO2_BASE, LFO_RISE)], sr_);
     double e2 = v.modEnv.level;
     double srcs[6] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0};
 
@@ -777,10 +799,10 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     double modAccum[NUM_PARAMS] = {0};
     for (int s = 1; s <= MOD_MATRIX_SIZE; s++) {
         int b = matBase(s);
-        int src = (int)p_[b + MAT_SRC];
-        int dst = (int)p_[b + MAT_DST];
+        int src = (int)p_[slot(b + MAT_SRC)];
+        int dst = (int)p_[slot(b + MAT_DST)];
         if (!src || !dst) continue;
-        double x = srcs[src] * p_[b + MAT_AMT];
+        double x = srcs[src] * p_[slot(b + MAT_AMT)];
         int target = dstTarget(dst);
         switch (target) {
             case DST_NONE:  break;
@@ -799,14 +821,15 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     const auto& info = paramInfo();
     for (int P = 0; P < NUM_PARAMS; P++) {
         double x = modAccum[P];
-        if (x == 0) continue;
+        if (exactlyZero(x)) continue;
         // The filter cutoff routes are NOT folded into pm_: they are applied as the
         // single-exponent mCut term inside setupFilter so the result is IEEE-bit-
         // identical to the legacy single pow. All other Log/Lin dests fold here.
-        if (P == FILTER1_BASE + FLT_CUTOFF || P == FILTER2_BASE + FLT_CUTOFF) continue;
-        const ParamInfo& d = info[P];
-        if (d.curve == Curve::Log)      pm_[P] = (double)p_[P] * std::pow(2.0, x * 5.0);
-        else if (d.curve == Curve::Lin) pm_[P] = (double)p_[P] + x * ((double)d.max - (double)d.min);
+        if (P == paramIndex(FILTER1_BASE, FLT_CUTOFF)
+            || P == paramIndex(FILTER2_BASE, FLT_CUTOFF)) continue;
+        const ParamInfo& d = info[(size_t)P];
+        if (d.curve == Curve::Log)      pm_[P] = (double)p_[(size_t)P] * std::pow(2.0, x * 5.0);
+        else if (d.curve == Curve::Lin) pm_[P] = (double)p_[(size_t)P] + x * ((double)d.max - (double)d.min);
     }
 
     int route = (int)p_[FILTER_ROUTE];
@@ -889,12 +912,15 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     }
 
     // ---- per-voice filters with routing ----
-    bool f1on = p_[FILTER1_BASE + FLT_ON] > 0.5;
-    bool f2on = p_[FILTER2_BASE + FLT_ON] > 0.5;
-    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2, modAccum[FILTER1_BASE + FLT_CUTOFF], pm_, n);
-    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2, modAccum[FILTER2_BASE + FLT_CUTOFF], pm_, n);
+    bool f1on = p_[(size_t)paramIndex(FILTER1_BASE, FLT_ON)] > 0.5;
+    bool f2on = p_[(size_t)paramIndex(FILTER2_BASE, FLT_ON)] > 0.5;
+    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2,
+                          modAccum[(size_t)paramIndex(FILTER1_BASE, FLT_CUTOFF)], pm_, n);
+    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2,
+                          modAccum[(size_t)paramIndex(FILTER2_BASE, FLT_CUTOFF)], pm_, n);
 
-    double dr1 = pm_[FILTER1_BASE + FLT_DRIVE], dr2 = pm_[FILTER2_BASE + FLT_DRIVE];
+    double dr1 = pm_[(size_t)paramIndex(FILTER1_BASE, FLT_DRIVE)];
+    double dr2 = pm_[(size_t)paramIndex(FILTER2_BASE, FLT_DRIVE)];
     float* oL; float* oR;
 
     if (split) {
@@ -1028,8 +1054,11 @@ void Engine::render(float* L, float* R, int n) {
             for (size_t i = evBefore; i < clipHost_.events.size(); i++)
                 if (clipHost_.events[i].t == HostEvent::T::Stop) seqGateOff();
         }
-        if (seqToGateOff_ >= 0)
-            run = std::min(run, std::max(1, (int)std::ceil(seqToGateOff_)));
+        // Split the run at the next pending note-off so each off lands on its
+        // exact sample (worklet seqOffQueue countdown; native is sample-accurate).
+        const double earliestOff = seqEarliestOff();
+        if (earliestOff >= 0)
+            run = std::min(run, std::max(1, (int)std::ceil(earliestOff)));
 
         const double chunkPpq = hostRun    ? seqHostPpq_ + off * ppqPerSample
                               : internalRun ? seqSongPos_ * seqBeatsPerSample
@@ -1041,12 +1070,17 @@ void Engine::render(float* L, float* R, int n) {
             seqSongPos_ += run;
         }
         if (hostClipMode_) hostFrame_ += run;
-        if (seqToGateOff_ >= 0) {
-            seqToGateOff_ -= run;
-            if (seqToGateOff_ <= 0) {
-                seqGateOff();
-                seqToGateOff_ = -1;
+        // Drain the per-note off queue: decrement every pending off, fire
+        // noteOff for those due, compact the survivors (no alloc).
+        if (seqOffCount_ > 0) {
+            int w = 0;
+            for (int i = 0; i < seqOffCount_; ++i) {
+                seqOff_[i].remaining -= run;
+                if (seqOff_[i].remaining <= 0.0) noteOff(seqOff_[i].note);
+                else seqOff_[w++] = seqOff_[i];
             }
+            seqOffCount_ = w;
+            seqLastNote_ = w > 0 ? seqOff_[w - 1].note : -1;
         }
         off += run;
     }

@@ -7,6 +7,7 @@ namespace fui {
 
 static constexpr double A0 = -135.0, A1 = 135.0; // knob sweep (degrees, 0 = up)
 static float clamp01(float x) { return juce::jlimit(0.0f, 1.0f, x); }
+static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
 
 // See Controls.h — pre-WT-1-table metadata resolver installed by the DR-1
 // editor. Zero-initialised before any dynamic initialisation, so an installer
@@ -23,16 +24,24 @@ static const fable::ParamInfo& lookupInfo(const juce::String& id) {
     return fable::paramInfo()[(size_t)fable::idFromString(id.toStdString())];
 }
 
+static ParameterSource legacySource(juce::AudioProcessorValueTreeState& apvts) {
+    return {
+        [&apvts](const juce::String& id) {
+            return dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
+        },
+        [](const juce::String& id) { return &lookupInfo(id); }
+    };
+}
+
 // Cache the 48 mat src/dst/amt RangedAudioParameters into a [16][3] table so a
 // mod-target control can read active slots every timer tick without string
 // lookups. Shared by Knob and VSlider.
-static void cacheMatParams(juce::AudioProcessorValueTreeState& s,
+static void cacheMatParams(const ParameterSource& s,
                            juce::RangedAudioParameter* (&table)[16][3]) {
     const char* fields[] = {".src", ".dst", ".amt"};
     for (int slot = 0; slot < 16; ++slot)
         for (int f = 0; f < 3; ++f)
-            table[slot][f] = dynamic_cast<juce::RangedAudioParameter*>(
-                s.getParameter("mat" + juce::String(slot + 1) + fields[f]));
+            table[slot][f] = s.parameter("mat" + juce::String(slot + 1) + fields[f]);
 }
 static float matRealValue(juce::RangedAudioParameter* p) {
     return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
@@ -41,15 +50,20 @@ static float matRealValue(juce::RangedAudioParameter* p) {
 // ======================= Knob =======================
 Knob::Knob(juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
            Size sz, Accent ac, bool showLbl, int modDest)
-    : apvts(s), id(paramId), accent(accentColour(ac)), size(sz), showLabel(showLbl),
+    : Knob(legacySource(s), paramId, sz, ac, showLbl, modDest) {}
+
+Knob::Knob(ParameterSource source, const juce::String& paramId,
+           Size sz, Accent ac, bool showLbl, int modDest)
+    : parameters(std::move(source)), id(paramId), accent(accentColour(ac)), size(sz), showLabel(showLbl),
       modDest_(modDest) {
-    param = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
-    const auto& info = lookupInfo(id);
+    param = parameters.parameter(id);
+    const auto* sourceInfo = parameters.info(id);
+    const auto& info = sourceInfo != nullptr ? *sourceInfo : lookupInfo(id);
     bipolar = info.min < 0;
     midNorm = fable::valueToNorm(info, 0.0f);
     label = juce::String(info.label).toUpperCase();
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-    if (modDest_ > 0) cacheMatParams(apvts, matParams_);
+    if (modDest_ > 0) cacheMatParams(parameters, matParams_);
     startTimerHz(30);
 }
 
@@ -83,7 +97,7 @@ void Knob::rebuildRings() {
 
 void Knob::timerCallback() {
     bool dirty = false;
-    if (norm() != lastNorm) { lastNorm = norm(); dirty = true; }
+    if (floatChanged(norm(), lastNorm)) { lastNorm = norm(); dirty = true; }
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
@@ -124,7 +138,7 @@ void Knob::mouseDown(const juce::MouseEvent& e) {
             grabbedRing_ = i;
             if (e.mods.isRightButtonDown()) {
                 int slot = rings_[(size_t)i].slot;
-                fui::clearSlot(apvts, slot);
+                fui::clearSlot(parameters, slot);
                 lastRingSig_ = ~(juce::uint64)0; // force ring rebuild next tick
                 grabbedRing_ = -1;
                 repaint();
@@ -187,7 +201,7 @@ void Knob::itemDropped(const SourceDetails& d) {
     dragHover_ = false;
     int src = parseModSrc(d.description);
     if (src > 0 && modDest_ > 0) {
-        fui::addRoute(apvts, src, modDest_);
+        fui::addRoute(parameters, src, modDest_);
         lastRingSig_ = ~(juce::uint64)0; // force rebuild next tick
     }
     repaint();
@@ -196,7 +210,7 @@ void Knob::itemDropped(const SourceDetails& d) {
 void Knob::paint(juce::Graphics& g) {
     const float avail = (float)juce::jmin(getWidth(), getHeight() - (showLabel ? 13 : 0));
     const float dia = juce::jmin(avail, (float)svgPx(size));
-    const float cx = getWidth() * 0.5f, cy = dia * 0.5f + 1.0f;
+    const float cx = static_cast<float>(getWidth()) * 0.5f, cy = dia * 0.5f + 1.0f;
     const float scale = dia / 80.0f;
     const float bodyR = 26 * scale, arcR = 33 * scale, ptrLen = 23 * scale;
     const float n = clamp01(norm());
@@ -281,10 +295,13 @@ void Knob::paint(juce::Graphics& g) {
 
 // ======================= Stepper =======================
 Stepper::Stepper(juce::AudioProcessorValueTreeState& s, const juce::String& paramId, Accent ac)
-    : apvts(s), id(paramId), accent(accentColour(ac)) {
-    choice = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id));
+    : Stepper(legacySource(s), paramId, ac) {}
+
+Stepper::Stepper(ParameterSource source, const juce::String& paramId, Accent ac)
+    : parameters(std::move(source)), id(paramId), accent(accentColour(ac)) {
+    choice = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(id));
     if (!choice)
-        ranged = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
+        ranged = parameters.parameter(id);
     auto styleBtn = [this](juce::TextButton& b, int dir) {
         b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
         b.setColour(juce::TextButton::textColourOffId, col::textDim);
@@ -320,7 +337,7 @@ void Stepper::timerCallback() {
     }
     if (ranged) {
         float v = ranged->getValue();
-        if (v != lastValue) { lastValue = v; repaint(); }
+        if (floatChanged(v, lastValue)) { lastValue = v; repaint(); }
     }
 }
 void Stepper::step(int d) {
@@ -335,8 +352,8 @@ void Stepper::step(int d) {
         const auto& r = ranged->getNormalisableRange();
         float stepBy = r.interval > 0.0f ? r.interval : 1.0f;
         float cur  = ranged->convertFrom0to1(ranged->getValue());
-        float next = juce::jlimit(r.start, r.end, cur + (float)d * stepBy);
-        ranged->setValueNotifyingHost(ranged->convertTo0to1(next));
+        float nextValue = juce::jlimit(r.start, r.end, cur + static_cast<float>(d) * stepBy);
+        ranged->setValueNotifyingHost(ranged->convertTo0to1(nextValue));
         repaint();
     }
 }
@@ -358,8 +375,11 @@ void Stepper::paint(juce::Graphics& g) {
 
 // ======================= PowerButton =======================
 PowerButton::PowerButton(juce::AudioProcessorValueTreeState& s, const juce::String& paramId, Accent ac)
-    : apvts(s), id(paramId), accent(accentColour(ac)) {
-    param = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
+    : PowerButton(legacySource(s), paramId, ac) {}
+
+PowerButton::PowerButton(ParameterSource source, const juce::String& paramId, Accent ac)
+    : parameters(std::move(source)), id(paramId), accent(accentColour(ac)) {
+    param = parameters.parameter(id);
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
     startTimerHz(20);
 }
@@ -391,11 +411,15 @@ void PowerButton::paint(juce::Graphics& g) {
 // ======================= VSlider =======================
 VSlider::VSlider(juce::AudioProcessorValueTreeState& s, const juce::String& paramId, Accent ac,
                  std::function<float()> ghostFn, int modDest)
-    : apvts(s), id(paramId), accent(accentColour(ac)), ghost(std::move(ghostFn)),
+    : VSlider(legacySource(s), paramId, ac, std::move(ghostFn), modDest) {}
+
+VSlider::VSlider(ParameterSource source, const juce::String& paramId, Accent ac,
+                 std::function<float()> ghostFn, int modDest)
+    : parameters(std::move(source)), id(paramId), accent(accentColour(ac)), ghost(std::move(ghostFn)),
       modDest_(modDest) {
-    param = dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter(id));
+    param = parameters.parameter(id);
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-    if (modDest_ > 0) cacheMatParams(apvts, matParams_);
+    if (modDest_ > 0) cacheMatParams(parameters, matParams_);
     startTimerHz(30);
 }
 juce::uint64 VSlider::ringSignature() const {
@@ -425,7 +449,7 @@ void VSlider::rebuildRings() {
 void VSlider::timerCallback() {
     float n = param ? param->getValue() : 0.0f, gh = ghost ? ghost() : -1.0f;
     bool dirty = false;
-    if (n != lastNorm || gh != lastGhost) { lastNorm = n; lastGhost = gh; dirty = true; }
+    if (floatChanged(n, lastNorm) || floatChanged(gh, lastGhost)) { lastNorm = n; lastGhost = gh; dirty = true; }
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
@@ -462,7 +486,7 @@ void VSlider::mouseDown(const juce::MouseEvent& e) {
             grabbedRing_ = i;
             if (e.mods.isRightButtonDown()) {
                 int slot = rings_[(size_t)i].slot;
-                fui::clearSlot(apvts, slot);
+                fui::clearSlot(parameters, slot);
                 lastRingSig_ = ~(juce::uint64)0;
                 grabbedRing_ = -1;
                 repaint();
@@ -571,7 +595,7 @@ void VSlider::itemDropped(const SourceDetails& d) {
     dragHover_ = false;
     int src = parseModSrc(d.description);
     if (src > 0 && modDest_ > 0) {
-        fui::addRoute(apvts, src, modDest_);
+        fui::addRoute(parameters, src, modDest_);
         lastRingSig_ = ~(juce::uint64)0;
     }
     repaint();

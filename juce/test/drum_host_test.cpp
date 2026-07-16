@@ -64,10 +64,10 @@ int main(int argc, char** argv) {
 
     printf("\n== DR-1 plugin-boundary test (DrumAudioProcessor) ==\n");
 
-    // ---- 1. parameter surface: 788 params in the APVTS ----
+    // ---- 1. parameter surface: all per-pad + global params in the APVTS ----
     const int nParams = (int)proc.getParameters().size();
     check(nParams == fable::DR_NUM_PARAMS || nParams == fable::DR_NUM_PARAMS + 1, // + host bypass
-          "788 host parameters", nParams);
+          "DR-1 host parameter catalog", nParams);
     check(proc.getName() == "FableSynth DR-1", "plugin name");
 
     // ---- 2. bus layout: 5 stereo output buses ----
@@ -97,7 +97,8 @@ int main(int argc, char** argv) {
             proc.processBlock(buf, b == 0 ? om : empty);
             auto bb = proc.getBusBuffer(buf, false, 0);
             for (int i = 0; i < block && firstNonZero < 0; ++i)
-                if (bb.getSample(0, i) != 0.0f || bb.getSample(1, i) != 0.0f)
+                if (std::fpclassify(bb.getSample(0, i)) != FP_ZERO
+                    || std::fpclassify(bb.getSample(1, i)) != FP_ZERO)
                     firstNonZero = b * block + i;
         }
         check(firstNonZero >= kOffset, "pad trigger at offset 100: silence before the offset",
@@ -167,7 +168,7 @@ int main(int argc, char** argv) {
     render(40, -1, 0); // decay (program 0 below restores fx.reverb.on)
 
     // ---- 5. sequencer with TR-VOID (program 0) ----
-    check(proc.getNumPrograms() == 3, "3 kit programs", proc.getNumPrograms());
+    check(proc.getNumPrograms() == 14, "14 kit programs", proc.getNumPrograms());
     check(proc.getProgramName(0) == "TR-VOID", "program 0 is TR-VOID");
     const auto patchRevisionBeforeKit = proc.getPatchContextRevision();
     proc.setCurrentProgram(0);
@@ -289,13 +290,22 @@ int main(int argc, char** argv) {
     printf("\n== legacy state ==\n");
     {
         DrumAudioProcessor proc3;
-        auto bare = proc3.apvts.copyState(); // no DR1STATE wrapper, no DRUM child
+        juce::ValueTree bare(proc3.apvts.state.getType()); // no DR1STATE wrapper, no DRUM child
         bare.setProperty(juce::Identifier("nonsense"), 42, nullptr);
+        juce::ValueTree legacyFx("PARAM");
+        legacyFx.setProperty("id", "fx.delay.mix", nullptr);
+        legacyFx.setProperty("value", 0.42f, nullptr);
+        bare.appendChild(legacyFx, nullptr);
         juce::MemoryBlock legacy;
         if (auto xml = bare.createXml()) BinPacker::pack(*xml, legacy);
         check(legacy.getSize() > 0, "legacy blob built", (double)legacy.getSize());
         proc3.setStateInformation(legacy.getData(), (int)legacy.getSize());
         check(proc3.getParameters().size() > 0, "processor alive after legacy load");
+        bool broadcast = true;
+        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+            broadcast = broadcast && std::abs(proc3.apvts.getRawParameterValue(
+                "pad" + juce::String(pad) + ".fx.delay.mix")->load() - 0.42f) < 0.001f;
+        check(broadcast, "legacy top-level FX broadcasts to every pad");
         // Garbage bytes must not crash either.
         const char junk[] = "not a state blob";
         proc3.setStateInformation(junk, (int)sizeof(junk));
@@ -308,11 +318,21 @@ int main(int argc, char** argv) {
         juce::File dir(argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[1])
                                 : juce::File::getCurrentWorkingDirectory());
         std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
-        check(dynamic_cast<DrumEditor*>(ed.get()) != nullptr, "createEditor returns DrumEditor");
+        auto* drumEd = dynamic_cast<DrumEditor*>(ed.get());
+        check(drumEd != nullptr, "createEditor returns DrumEditor");
         ed->setSize(DrumRack::LW, DrumRack::LH); // logical rack size — 1:1 render
         juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
         check(img.isValid() && img.getWidth() == DrumRack::LW && img.getHeight() == DrumRack::LH,
               "snapshot rendered at 1460x880", img.getWidth());
+        // The full-rack device body also occupies the header's coordinates.
+        // The header must remain above it or the kit stepper cannot be clicked.
+        const int programBeforeClick = proc.getCurrentProgram();
+        auto* nextKitHit = drumEd->getRack().getComponentAt(455, 54);
+        check(dynamic_cast<juce::Button*>(nextKitHit) != nullptr,
+              "kit stepper is the header hit target");
+        if (auto* button = dynamic_cast<juce::Button*>(nextKitHit)) button->onClick();
+        check(proc.getCurrentProgram() == (programBeforeClick + 1) % proc.getNumPrograms(),
+              "kit stepper changes program");
         const juce::File out = dir.getChildFile("drum_editor.png");
         writePng(img, out);
         check(out.existsAsFile() && out.getSize() > 0, "drum_editor.png written",
@@ -325,8 +345,8 @@ int main(int argc, char** argv) {
             { "header",    700,  54 },
             { "pad grid",  194, 287 },
             { "osc row",   910, 264 },
-            { "step seq",  730, 665 },
-            { "fx rack",   730, 792 },
+            { "fx rack",   730, 665 },
+            { "step seq",  730, 805 },
             // Task 11 pad editor panels (centres of view/knob areas)
             { "osc A terrain",   560, 230 },
             { "noise view",     1344, 230 },
@@ -335,8 +355,8 @@ int main(int argc, char** argv) {
             { "filter view",    1010, 458 },
             { "mod rows",       1200, 452 },
             // Task 13 FX rack + OUT panel (DRIVE knob body / MAIN route dot)
-            { "fx drive knob",    89, 787 },
-            { "out main dot",   1256, 772 },
+            { "fx drive knob",    89, 673 },
+            { "out main dot",   1256, 658 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);
@@ -426,28 +446,15 @@ int main(int argc, char** argv) {
         check(seq.stepBounds(3).getCentre().y > 47, "step tiles sit in the row band",
               seq.stepBounds(3).getCentre().y);
 
-        // Pattern click outside chain mode: selects for editing AND resets the
-        // chain to just that pattern (store.setEditPattern).
+        // Bar selection edits independently from the playback length.
         seq.patternClick(1);
-        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
-        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}");
-
-        // Chain builder: toggle on -> first click replaces, later clicks append,
-        // toggle off commits (store.chainClick / setChaining).
-        seq.setChaining(true);
-        check(seq.isChaining(), "CHAIN toggle latches on");
-        seq.patternClick(0);
-        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh");
+        check(proc.getEditPattern() == 1, "bar click selects 2", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0 }), "bar click preserves length");
+        seq.setSequenceLength(3);
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "length 3 plays bars 1-3");
         seq.patternClick(3);
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends");
-        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
-              proc.getEditPattern());
-        seq.setChaining(false);
-        check(!seq.isChaining(), "CHAIN toggle latches off");
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off");
-
-        seq.patternClick(0); // restore pattern A / chain {A}
-        check(proc.getChain() == std::vector<int>({ 0 }), "post-chain click resets to {A}");
+        check(proc.getEditPattern() == 3, "bar click selects 4", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length");
     }
 
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");

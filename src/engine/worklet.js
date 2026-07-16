@@ -28,6 +28,7 @@ const MOD_MATRIX_SIZE = 16;
 const SEQ_STEPS = 16;
 const SEQ_NPATTERNS = 4;
 const SEQ_STRIDE = 3;
+const WT_POLY_LANES = 8;
 const SEQ_ACCENT_VEL = 1.0;
 const SEQ_PLAIN_VEL = 0.72;
 const SEQ_SWING_MAX = 0.667;
@@ -310,8 +311,8 @@ class FableProcessor extends AudioWorkletProcessor {
     this.seqChain = [0];
     this.seqChainPos = 0;
     this.seqToNext = 0; // samples until the next step fires
-    this.seqToGateOff = -1; // samples until the current step's gate closes (-1 = none/tied)
-    this.seqNote = -1; // midi note the sequencer is currently sounding (-1 = none)
+    this.seqOffQueue = []; // { note, remaining } per sounding seq note (poly)
+    this.seqLastNote = -1; // most recent fired note (-1 = none), for viz
     // ---- hosted clip transport (SQ-4) ----
     this.hosted = false;
     this.hostBpm = 120;
@@ -375,23 +376,21 @@ class FableProcessor extends AudioWorkletProcessor {
         break;
       case 'play':
         if (this.hosted) break; // conductor owns the transport
+        this.seqGateOff(); // restarting must not orphan an old gate
         this.seqPlaying = true;
         this.seqStep = -1;
         this.seqChainPos = 0;
         this.seqToNext = 0;
-        this.seqToGateOff = -1;
-        this.seqNote = -1;
         break;
       case 'stop':
         this.seqPlaying = false;
         this.seqStep = -1;
-        this.seqToGateOff = -1;
         this.seqGateOff();
         break;
       case 'panic':
         for (const v of this.voices) v.kill();
-        this.seqNote = -1;
-        this.seqToGateOff = -1;
+        this.seqOffQueue.length = 0;
+        this.seqLastNote = -1;
         this.clip = null;
         this.clipPend = null;
         this.clipStopAt = -1;
@@ -439,41 +438,46 @@ class FableProcessor extends AudioWorkletProcessor {
     return {
       on: (flags & 1) !== 0,
       acc: (flags & 2) !== 0,
-      tie: (flags & 4) !== 0,
+      duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)),
       semi: Math.min(11, this.seqPats[o + 1]) + 12 * (Math.min(2, this.seqPats[o + 2]) - 1),
     };
   }
 
+  // Gate off every sounding sequencer note (stop / clip swap / clip stop).
   seqGateOff() {
-    if (this.seqNote >= 0) {
-      this.noteOff(this.seqNote);
-      this.seqNote = -1;
-    }
+    for (const e of this.seqOffQueue) this.noteOff(e.note);
+    this.seqOffQueue.length = 0;
+    this.seqLastNote = -1;
   }
 
-  // Legato retune of the sounding sequencer voice: no envelope retrigger; the
-  // renderVoice glide slew takes v.pitch to the new note (instant at GLIDE 0).
-  seqTie(n, vel) {
-    let voice = null;
-    for (const v of this.voices) {
-      if (v.gate && v.note === this.seqNote) { voice = v; break; }
+  // Schedule an independent note-off for `note` at `remaining` samples. A
+  // retriggered pitch supersedes any pending off for it (one voice per note),
+  // so overlapping DIFFERENT notes ring concurrently while a repeated pitch
+  // takes the new duration.
+  seqScheduleOff(note, remaining) {
+    // Compact in place: the audio thread must not allocate an array for each
+    // sequencer event.
+    let w = 0;
+    for (let i = 0; i < this.seqOffQueue.length; i++) {
+      const e = this.seqOffQueue[i];
+      if (e.note !== note) this.seqOffQueue[w++] = e;
     }
-    if (!voice) { this.noteOn(n, vel); return; } // voice got stolen — retrigger
-    voice.note = n;
-    this.lastPitch = n;
+    this.seqOffQueue.length = w;
+    this.seqOffQueue.push({ note, remaining });
+    this.seqLastNote = note;
   }
 
   // ---------- hosted clip transport ----------
   // A clip is bars*16 steps of the same 3-byte layout, bar-major. Pending
   // commands execute in the render quantum containing their atFrame — every
   // device on the shared context resolves the same frame to the same block.
-  clipRead(abs) {
-    const o = abs * SEQ_STRIDE;
+  clipRead(abs, lane = 0) {
+    const o = (abs * WT_POLY_LANES + lane) * SEQ_STRIDE;
     const flags = this.clip.data[o];
     return {
       on: (flags & 1) !== 0,
       acc: (flags & 2) !== 0,
-      tie: (flags & 4) !== 0,
+      duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)),
       semi: Math.min(11, this.clip.data[o + 1]) + 12 * (Math.min(2, this.clip.data[o + 2]) - 1),
     };
   }
@@ -526,18 +530,15 @@ class FableProcessor extends AudioWorkletProcessor {
     const total = this.clip.bars * SEQ_STEPS;
     const abs = (this.clipStep + 1) % total;
     const s = abs % SEQ_STEPS;
-    const st = this.clipRead(abs);
+    const chord = Array.from({ length: WT_POLY_LANES }, (_, lane) => this.clipRead(abs, lane)).filter((st) => st.on);
 
-    if (st.on) {
+    if (chord.length) {
       const root = (this.p['seq.root'] | 0) || 48;
-      const note = root + st.semi;
-      const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-      if (st.tie && this.seqNote >= 0) this.seqTie(note, vel);
-      else { this.seqGateOff(); this.noteOn(note, vel); }
-      this.seqNote = note;
-      const stN = this.clipRead((abs + 1) % total);
-      const gate = Math.min(0.98, Math.max(0.1, this.p['seq.gate'] || 0.55));
-      this.seqToGateOff = stN.on && stN.tie ? -1 : gate * dur;
+      for (const st of chord) {
+        const note = root + st.semi;
+        this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+        this.seqScheduleOff(note, st.duration * dur);
+      }
     }
 
     this.clipStep = abs;
@@ -568,15 +569,8 @@ class FableProcessor extends AudioWorkletProcessor {
       const root = (this.p['seq.root'] | 0) || 48;
       const n = root + st.semi;
       const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
-      if (st.tie && this.seqNote >= 0) this.seqTie(n, vel);
-      else { this.seqGateOff(); this.noteOn(n, vel); }
-      this.seqNote = n;
-      // hold through the step when the NEXT step ties in
-      const sN = (s + 1) % SEQ_STEPS;
-      const patN = sN === 0 ? this.seqChain[(this.seqChainPos + 1) % this.seqChain.length] | 0 : pat;
-      const stN = this.seqRead(patN, sN);
-      const gate = Math.min(0.98, Math.max(0.1, this.p['seq.gate'] || 0.55));
-      this.seqToGateOff = stN.on && stN.tie ? -1 : gate * dur;
+      this.noteOn(n, vel);
+      this.seqScheduleOff(n, st.duration * dur);
     }
 
     this.seqStep = s;
@@ -1170,9 +1164,16 @@ class FableProcessor extends AudioWorkletProcessor {
     // arrive at); step *durations* are counted in real samples so the clock
     // never drifts. Gate-off runs before the fire so a full-length gate
     // releases just ahead of its retrigger.
-    if (this.seqToGateOff >= 0) {
-      this.seqToGateOff -= n;
-      if (this.seqToGateOff < 0) this.seqGateOff();
+    if (this.seqOffQueue.length) {
+      let w = 0;
+      for (let i = 0; i < this.seqOffQueue.length; i++) {
+        const e = this.seqOffQueue[i];
+        e.remaining -= n;
+        if (e.remaining <= 0) this.noteOff(e.note);
+        else this.seqOffQueue[w++] = e;
+      }
+      this.seqOffQueue.length = w;
+      this.seqLastNote = w ? this.seqOffQueue[w - 1].note : -1;
     }
     if (this.hosted) {
       this.hostTick(n);

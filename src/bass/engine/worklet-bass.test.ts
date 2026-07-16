@@ -151,41 +151,7 @@ describe('bass sequencer', () => {
     expect(play(true)).toBeGreaterThan(play(false) * 1.1);
   });
 
-  it('slide ties steps: no amp retrigger, pitch glides into the slid step', () => {
-    const p = defaultBassParams();
-    p['aenv.sus'] = 1;
-    p['aenv.rel'] = 0.01;
-    p['osc.unison'] = 1;
-    p['osc.tune'] = 0; // C2 so zero-crossings resolve pitch
-    p['sub.level'] = 0;
-    p['slide.time'] = 0.03; // glide mostly done ~2τ into the slid step
-    p['flt.cut'] = 20000;
-    p['flt.env'] = 0;
-    p['lfo.depth'] = 0;
-    const h = boot(p);
-    const data = patsWith((pp) => {
-      pp = setStep(pp, 0, 0, { on: true, note: 0 });
-      pp = setStep(pp, 0, 1, { on: true, note: 0, oct: 1, slide: true });
-      return pp;
-    });
-    h.send({ t: 'pats', data });
-    h.send({ t: 'chain', list: [0] });
-    h.send({ t: 'play' });
-    const dur = stepDurSamples(138, 48000);
-    const twoSteps = Math.ceil((dur * 2) / 128);
-    const { L } = h.render(twoSteps);
-    // the region straddling the step boundary stays loud (tied gate, no gap)
-    const boundary = Math.floor(dur);
-    const straddle = L.slice(boundary - 512, boundary + 512);
-    expect(peak(straddle)).toBeGreaterThan(0.02);
-    // pitch rises into the slid step: crossings well after the boundary
-    // (glide mostly settled, gate still open at <55%) beat mid-step-0's
-    const before = crossings(L.slice(512, 2560));
-    const after = crossings(L.slice(boundary + 2048, boundary + 4096));
-    expect(after).toBeGreaterThan(before * 1.3);
-  });
-
-  it('non-slide gates close inside the step (staccato)', () => {
+  it('one-step notes remain gated through their step', () => {
     const p = defaultBassParams();
     p['aenv.sus'] = 1;
     p['aenv.rel'] = 0.005;
@@ -198,9 +164,26 @@ describe('bass sequencer', () => {
     const dur = stepDurSamples(138, 48000);
     const oneStep = Math.ceil(dur / 128);
     const { L } = h.render(oneStep);
-    // gate at 55% + 5ms release → the last 10% of the step is silent
-    expect(peak(L.slice(Math.floor(dur * 0.9), Math.floor(dur)))).toBeLessThan(1e-3);
+    expect(peak(L.slice(Math.floor(dur * 0.9), Math.floor(dur)))).toBeGreaterThan(0.02);
     expect(peak(L.slice(0, Math.floor(dur * 0.5)))).toBeGreaterThan(0.02);
+  });
+
+  it('slides into the next step while retaining adjustable duration', () => {
+    const h = boot();
+    const data = patsWith((p) => {
+      p = setStep(p, 0, 0, { on: true, note: 0, duration: 1 });
+      return setStep(p, 0, 1, { on: true, note: 7, slide: true, duration: 4 });
+    });
+    h.send({ t: 'pats', data });
+    h.send({ t: 'chain', list: [0] });
+    h.send({ t: 'play' });
+    h.render(Math.ceil(stepDurSamples(138, 48000) * 2 / 128) + 2);
+    const steps = h.sent.filter((m) => m.t === 'step');
+    expect(steps[1]).toMatchObject({ s: 1, slide: true, semi: 7 });
+    const proc = h.proc as unknown as { gate: boolean; semiTarget: number; samplesToGateOff: number };
+    expect(proc.gate).toBe(true);
+    expect(proc.semiTarget).toBe(7);
+    expect(proc.samplesToGateOff).toBeGreaterThan(stepDurSamples(138, 48000) * 2);
   });
 
   it('stop releases the voice and keyboard is ignored while playing', () => {

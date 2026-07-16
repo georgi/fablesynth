@@ -3,8 +3,10 @@
 #include "../SeqProcessor.h"
 #include "../../ui/Theme.h"
 
+#include <functional>
+
 // SQ-4 top bar — port of src/seq/components/Header.tsx + Scope.tsx: logo,
-// transport (play/pause = ctx.suspend, stop-all), launch quantize stepper,
+// combined play/stop transport, launch quantize stepper,
 // beat dots + bar/BPM readout from the shared timebase, a master scope, and
 // the SWING/VOL master knobs. Everything is drawn directly in paint() and hit
 // -tested in mouseDown/Drag — no juce::Button/Knob children — since the whole
@@ -27,7 +29,6 @@ public:
 
     // Test handles (also the real click targets, wired from mouseDown).
     void playClick();
-    void stopAllClick();
     void quantStep(int d);
 
     // Session import/export — web-compatible SessionDoc v:1 JSON (no web
@@ -37,9 +38,15 @@ public:
     // directly without opening an OS dialog.
     void loadClick();
     void saveClick();
+    void selectLibrarySession(int index);
+
+    std::function<void()> onLibrarySessionChanged;
+    juce::ComboBox& libraryForTest() { return library_; }
+    void syncLibraryForTest() { refreshLibrarySelection(); }
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
+    void refreshLibrarySelection();
 
     float swingValue() const;                  // 0..1, from the conductor
     float volValue() const;                    // 0..1, from the "master" APVTS param
@@ -53,8 +60,12 @@ private:
 
     SeqAudioProcessor& proc;
 
-    juce::Rectangle<int> logoArea, playBtn, stopBtn, quantTagArea, quantPrevBtn, quantValArea,
-        quantNextBtn, beatsArea, clockLineArea, loadBtn, saveBtn, scopeArea, swingKnob, volKnob;
+    juce::Rectangle<int> logoArea, playBtn, quantTagArea, quantPrevBtn, quantValArea,
+        quantNextBtn, beatsArea, clockLineArea, libraryLabelArea, loadBtn, saveBtn,
+        scopeArea, swingKnob, volKnob;
+
+    juce::ComboBox library_;
+    int shownLibrarySession_ = -2;
 
     std::unique_ptr<juce::FileChooser> chooser_;
 

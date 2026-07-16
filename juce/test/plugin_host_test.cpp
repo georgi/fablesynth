@@ -50,6 +50,28 @@ static void snapshotEditor(FableAudioProcessor& proc, const juce::File& out) {
     writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
 }
 
+static juce::Button* findButtonNamed(juce::Component& root, const juce::String& name) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        auto* child = root.getChildComponent(i);
+        if (auto* button = dynamic_cast<juce::Button*>(child); button != nullptr
+            && button->getName() == name)
+            return button;
+        if (auto* nested = findButtonNamed(*child, name)) return nested;
+    }
+    return nullptr;
+}
+
+// Exercise the native filter-tab interaction headlessly. The full F1/matrix
+// snapshots remain the visual fixtures; this check covers the F2 state change
+// without relying on JUCE's invalidated-descendant repaint behaviour.
+static bool selectEditorFilter2(FableAudioProcessor& proc) {
+    std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    ed->setSize(Rack::LW, Rack::LH);
+    auto* f2 = findButtonNamed(*ed, "F2");
+    if (f2 != nullptr && f2->onClick) f2->onClick();
+    return f2 != nullptr && f2->getToggleState();
+}
+
 // Render the two live wavetable views to a PNG (headless software renderer),
 // proving the visualization actually draws.
 static void snapshotViews(FableAudioProcessor& proc, const juce::File& out) {
@@ -101,7 +123,8 @@ int main(int argc, char** argv) {
             juce::MidiBuffer empty;
             proc.processBlock(buf, b == 0 ? om : empty);
             for (int i = 0; i < block && firstNonZero < 0; ++i)
-                if (buf.getSample(0, i) != 0.0f || buf.getSample(1, i) != 0.0f)
+                if (std::fpclassify(buf.getSample(0, i)) != FP_ZERO
+                    || std::fpclassify(buf.getSample(1, i)) != FP_ZERO)
                     firstNonZero = b * block + i;
         }
         // release + settle so the main measurement below starts clean-ish
@@ -137,7 +160,7 @@ int main(int argc, char** argv) {
                 sumSq += (double)v * v; count++;
             }
     }
-    double rms = std::sqrt(sumSq / count);
+    double rms = std::sqrt(sumSq / (double)count);
 
     // Flush the release tail so all voices free, then the viz feed should idle.
     for (int b = 0; b < (int)(3.0 * sr / block); ++b) {
@@ -311,7 +334,7 @@ int main(int argc, char** argv) {
         }
         int active = 0;
         for (int slot = 1; slot <= 12; ++slot)
-            if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() != 0.0f) active++;
+            if (proc.apvts.getRawParameterValue("mat" + juce::String(slot) + ".src")->load() >= 0.5f) active++;
         check(active == 12, "12 mod-matrix routes active (list overflows -> scrollable viewport)", (float)active);
     }
 
@@ -329,18 +352,18 @@ int main(int argc, char** argv) {
               "seq.swing / seq.gate / seq.root exist", 0);
 
         auto renderBlocks = [&](int nBlocks) {
-            double sumSq = 0; long cnt = 0;
+            double seqSumSq = 0; long cnt = 0;
             for (int b = 0; b < nBlocks; ++b) {
                 buf.clear();
                 juce::MidiBuffer midi;
                 proc.processBlock(buf, midi);
                 for (int ch = 0; ch < 2; ++ch) {
                     const float* d = buf.getReadPointer(ch);
-                    for (int i = 0; i < block; ++i) sumSq += (double)d[i] * d[i];
+                    for (int i = 0; i < block; ++i) seqSumSq += (double)d[i] * d[i];
                 }
                 cnt += 2 * block;
             }
-            return std::sqrt(sumSq / (double)cnt);
+            return std::sqrt(seqSumSq / (double)cnt);
         };
 
         // write a line into pattern A and play the internal clock
@@ -423,9 +446,9 @@ int main(int argc, char** argv) {
 
         // patterns + chain round-trip through getState/setState (packed web layout)
         fable::NoteSeqStep edited;
-        edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.tie = true;
+        edited.on = true; edited.note = 9; edited.oct = 1; edited.acc = true; edited.duration = 5;
         proc.setSeqStep(2, 11, edited);
-        proc.setChain({ 0, 2 });
+        proc.setChain({ 0, 2 }); // legacy values now mean a two-bar length
         proc.setEditPattern(2);
         juce::MemoryBlock seqState;
         proc.getStateInformation(seqState);
@@ -433,9 +456,9 @@ int main(int argc, char** argv) {
         check(!proc2.getSeqStep(2, 11).on, "fresh instance differs before restore", 0);
         proc2.setStateInformation(seqState.getData(), (int)seqState.getSize());
         auto rs = proc2.getSeqStep(2, 11);
-        check(rs.on && rs.acc && rs.tie && rs.note == 9 && rs.oct == 1,
+        check(rs.on && rs.acc && rs.duration == 5 && rs.note == 9 && rs.oct == 1,
               "edited step round-trips", rs.note);
-        check(proc2.getChain() == std::vector<int>({ 0, 2 }), "chain {A,C} round-trips", 0);
+        check(proc2.getChain() == std::vector<int>({ 0, 1 }), "two-bar length round-trips", 0);
         check(proc2.getEditPattern() == 2, "edit pattern round-trips", proc2.getEditPattern());
 
         // restore the snapshot-friendly state: pattern A, simple chain
@@ -466,36 +489,38 @@ int main(int argc, char** argv) {
         s = proc.getSeqStep(0, 4);
         check(!s.on, "tap active lane rests the step", 0);
 
-        // acc/tie only latch on active steps
+        // acc only latches on active steps (tie retired; duration lives in
+        // the packed bits and is surfaced by the milestone-3 piano roll)
         seq.toggleStepAcc(4);
         check(!proc.getSeqStep(0, 4).acc, "accent ignored on a rest", 0);
         seq.toggleCell(4, 0);
         seq.toggleStepAcc(4);
-        seq.toggleStepTie(4);
         s = proc.getSeqStep(0, 4);
-        check(s.acc && s.tie, "accent + tie latch on an active step", 0);
+        check(s.acc && s.duration >= 1, "accent latches on an active step", s.duration);
+        for (int i = 5; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
+        seq.resizeStep(4, 63);
+        check(proc.getSeqStep(0, 4).duration == 63, "duration resize clamps at 63", proc.getSeqStep(0, 4).duration);
+        seq.resizeStep(4, -4);
+        check(proc.getSeqStep(0, 4).duration == 1, "duration resize clamps at 1", proc.getSeqStep(0, 4).duration);
+        fable::NoteSeqStep nextSame; nextSame.on = true; nextSame.note = 0;
+        proc.setSeqStep(0, 7, nextSame);
+        seq.resizeStep(4, 63);
+        check(proc.getSeqStep(0, 4).duration == 3, "duration resize stops before same-lane note", proc.getSeqStep(0, 4).duration);
+        proc.setSeqStep(0, 7, {});
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == 1, "oct cycles 0 -> +1", proc.getSeqStep(0, 4).oct);
         seq.cycleStepOct(4);
         check(proc.getSeqStep(0, 4).oct == -1, "oct cycles +1 -> -1", proc.getSeqStep(0, 4).oct);
 
-        // pattern click outside chain mode resets the chain (store.setEditPattern)
+        // Bar selection edits independently from the playback length.
         seq.patternClick(1);
-        check(proc.getEditPattern() == 1, "pattern click selects B", proc.getEditPattern());
-        check(proc.getChain() == std::vector<int>({ 1 }), "pattern click resets chain to {B}", 0);
-
-        // chain builder: first click replaces, later clicks append, toggle-off commits
-        seq.setChaining(true);
-        check(seq.isChaining(), "CHAIN toggle latches on", 1);
-        seq.patternClick(0);
-        check(proc.getChain() == std::vector<int>({ 0 }), "first chained click starts fresh", 0);
+        check(proc.getEditPattern() == 1, "bar click selects 2", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0 }), "bar click preserves length", 0);
+        seq.setSequenceLength(3);
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "length 3 plays bars 1-3", 0);
         seq.patternClick(3);
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "second chained click appends", 0);
-        check(proc.getEditPattern() == 3, "edit pattern follows chained clicks",
-              proc.getEditPattern());
-        seq.setChaining(false);
-        check(!seq.isChaining(), "CHAIN toggle latches off", 0);
-        check(proc.getChain() == std::vector<int>({ 0, 3 }), "chain A->D survives toggle-off", 0);
+        check(proc.getEditPattern() == 3, "bar click selects 4", proc.getEditPattern());
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length", 0);
 
         // RAND rewrites the edit pattern in place
         proc.setEditPattern(1);
@@ -521,6 +546,7 @@ int main(int argc, char** argv) {
     snapshotEditor(proc, dir.getChildFile("plugin_editor_mat5.png")); // editor with mat5 route assigned
     snapshotEditor(proc, dir.getChildFile("plugin_editor_newdest.png")); // editor with mat6 -> SUB LVL (new dest)
     snapshotEditor(proc, dir.getChildFile("plugin_editor_matrixfull.png")); // 12 routes -> scrollable matrix
+    check(selectEditorFilter2(proc), "F2 filter tab selects the second filter controls", 0);
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");

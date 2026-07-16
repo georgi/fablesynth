@@ -25,8 +25,6 @@ describe('bass store', () => {
       params: defaultBassParams(),
       patterns: makeEmptyPatterns(),
       chain: [0],
-      chaining: false,
-      chainFresh: false,
       editPattern: 0,
       playing: false,
       heldSemis: [],
@@ -43,18 +41,20 @@ describe('bass store', () => {
     useBassStore.getState().toggleCell(4, 3); // different lane: move, keep on
     expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: true, note: 3 });
     useBassStore.getState().toggleCell(4, 3); // same lane: rest + clear flags
-    expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: false, acc: false, slide: false });
+    expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: false, acc: false, slide: false, duration: 1 });
   });
 
-  it('acc/slide toggles only apply to on steps; oct cycles', () => {
+  it('acc/slide/duration controls only apply to on steps; oct cycles', () => {
     const s = useBassStore.getState();
     s.toggleStepAcc(0);
+    s.setStepDuration(0, 4);
     s.toggleStepSlide(0);
-    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ acc: false, slide: false });
+    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ acc: false, slide: false, duration: 1 });
     useBassStore.getState().toggleCell(0, 0);
     useBassStore.getState().toggleStepAcc(0);
+    useBassStore.getState().setStepDuration(0, 2);
     useBassStore.getState().toggleStepSlide(0);
-    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, acc: true, slide: true });
+    expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, acc: true, slide: true, duration: 2 });
     useBassStore.getState().cycleStepOct(0);
     expect(getStep(useBassStore.getState().patterns, 0, 0).oct).toBe(1);
     useBassStore.getState().cycleStepOct(0);
@@ -66,15 +66,15 @@ describe('bass store', () => {
     expect(useBassStore.getState().params['flt.cut']).toBe(777);
   });
 
-  it('chain building: chaining mode appends, leaving keeps ≥1 entry', () => {
+  it('sequence length plays bars from 1 through N and editing does not change it', () => {
     const s = useBassStore.getState();
-    s.setChaining(true);
-    s.chainClick(0); s.chainClick(1); s.chainClick(0);
-    expect(useBassStore.getState().chain).toEqual([0, 1, 0]);
-    useBassStore.getState().setChaining(false);
-    useBassStore.getState().chainClick(2);
+    s.setSequenceLength(3);
+    expect(useBassStore.getState().chain).toEqual([0, 1, 2]);
+    useBassStore.getState().setEditPattern(2);
     expect(useBassStore.getState().editPattern).toBe(2);
-    expect(useBassStore.getState().chain).toEqual([2]);
+    expect(useBassStore.getState().chain).toEqual([0, 1, 2]);
+    useBassStore.getState().setSequenceLength(0);
+    expect(useBassStore.getState().chain).toEqual([0]);
   });
 
   it('note tracking: audition updates curSemi via held stack', () => {

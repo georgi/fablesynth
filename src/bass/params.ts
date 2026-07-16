@@ -25,7 +25,7 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   // ---- oscillator ----
   { id: 'osc.table', type: 'enum', options: TABLE_NAMES, def: 0 },
   { id: 'osc.pos', label: 'POS', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
-  { id: 'osc.tune', label: 'TUNE', min: -24, max: 24, def: -12, curve: 'int', fmt: fmtSt },
+  { id: 'osc.tune', label: 'TUNE', min: -24, max: 24, def: 0, curve: 'int', fmt: fmtSt },
   { id: 'osc.fine', label: 'FINE', min: -100, max: 100, def: 0, curve: 'int', fmt: fmtCt },
   { id: 'osc.unison', label: 'UNI', min: 1, max: 7, def: 1, curve: 'int', fmt: (v) => String(Math.round(v)) },
   { id: 'osc.detune', label: 'DET', min: 0, max: 1, def: 0.2, curve: 'lin', fmt: fmtPct },
@@ -59,7 +59,7 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   // ---- FX (post-accent drive · no compressor, accents live) ----
   { id: 'fx.drive.on', type: 'bool', def: 1 },
   { id: 'fx.drive.amt', label: 'AMT', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
-  { id: 'fx.drive.mix', label: 'MIX', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.drive.mix', label: 'MIX', min: 0, max: 1, def: 0.2, curve: 'lin', fmt: fmtPct },
   { id: 'fx.chorus.on', type: 'bool', def: 0 },
   { id: 'fx.chorus.rate', label: 'RATE', min: 0.05, max: 8, def: 0.6, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
   { id: 'fx.chorus.depth', label: 'DEPTH', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
@@ -74,7 +74,8 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   // ---- transport + master ----
   { id: 'seq.bpm', label: 'BPM', min: 60, max: 200, def: 138, curve: 'int', fmt: (v) => String(Math.round(v)) },
   { id: 'master.swing', label: 'SWING', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
-  { id: 'master.volume', label: 'VOL', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
+  // Final visible gain stage: after FX, before the limiter.
+  { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
 ];
 
 export const BASS_PARAMS: Record<string, ParamDef> = Object.fromEntries(BASS_PARAM_DEFS.map((d) => [d.id, d]));

@@ -1,5 +1,6 @@
 #include "SeqHeader.h"
 #include "../../ui/Controls.h"
+#include "../dsp/SeqFactory.h"
 
 #include <array>
 #include <cmath>
@@ -26,16 +27,42 @@ const bool g_seqResolverInstalled = [] {
 // whatever fonts the CI box has) — ASCII stand-ins, same call BassHeader made
 // for the middle dot in its voice-mode line.
 namespace {
-constexpr const char* kPlayGlyph = "PLAY", *kPauseGlyph = "PAUSE", *kStopGlyph = "STOP";
+constexpr const char* kPlayGlyph = "PLAY", *kStopGlyph = "STOP";
 constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
 } // namespace
 
-SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
+SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
+    juce::String lastFamily;
+    const auto& sessions = fable::factorySessionLibrary();
+    for (int i = 0; i < proc.getNumPrograms(); ++i) {
+        const juce::String family(sessions[(size_t)i].family);
+        if (family != lastFamily) {
+            library_.addSectionHeading(family);
+            lastFamily = family;
+        }
+        library_.addItem(proc.getProgramName(i), i + 1);
+    }
+    library_.addItem("CUSTOM", proc.getNumPrograms() + 1);
+    library_.setItemEnabled(proc.getNumPrograms() + 1, false);
+    library_.onChange = [this] {
+        const int index = library_.getSelectedId() - 1;
+        if (index >= 0 && index < proc.getNumPrograms()) selectLibrarySession(index);
+        shownLibrarySession_ = -2;
+        refreshLibrarySelection();
+    };
+    addAndMakeVisible(library_);
+    refreshLibrarySelection();
+    startTimerHz(30);
+}
 
 // ---- actions (also the test handles) ---------------------------------------
 
-void SeqHeader::playClick() { proc.setPaused(!proc.paused()); repaint(); }
-void SeqHeader::stopAllClick() { proc.conductor().stopAll(); }
+void SeqHeader::playClick() {
+    auto& conductor = proc.conductor();
+    if (conductor.playing()) conductor.stopTransport();
+    else conductor.startTransport();
+    repaint();
+}
 
 void SeqHeader::loadClick() {
     chooser_ = std::make_unique<juce::FileChooser>("Load session", juce::File{}, "*.json");
@@ -48,7 +75,11 @@ void SeqHeader::loadClick() {
         auto* self = safe.getComponent();
         auto file = fc.getResult();
         if (file == juce::File{}) return;
-        self->proc.applySessionJson(file.loadFileAsString());
+        if (self->proc.applySessionJson(file.loadFileAsString())
+            && self->onLibrarySessionChanged)
+            self->onLibrarySessionChanged();
+        self->shownLibrarySession_ = -2;
+        self->refreshLibrarySelection();
         self->repaint();
     });
 }
@@ -64,6 +95,37 @@ void SeqHeader::saveClick() {
         if (file == juce::File{}) return;
         file.replaceWithText(self->proc.currentSessionJson());
     });
+}
+
+void SeqHeader::selectLibrarySession(int index) {
+    proc.applySessionPreset(index);
+    if (onLibrarySessionChanged) onLibrarySessionChanged();
+    shownLibrarySession_ = -2;
+    refreshLibrarySelection();
+    repaint();
+}
+
+void SeqHeader::refreshLibrarySelection() {
+    const int session = proc.currentSessionPreset();
+    if (shownLibrarySession_ == session) return;
+    const bool changedExternally = shownLibrarySession_ != -2;
+    library_.setSelectedId(session >= 0 ? session + 1 : proc.getNumPrograms() + 1,
+                           juce::dontSendNotification);
+    shownLibrarySession_ = session;
+    // Host program changes and per-track patch steppers do not pass through
+    // selectLibrarySession(). Keep any open native device bank aligned with the
+    // session before its next edit can snapshot stale parameter values.
+    // Ordinary clip/patch edits move a factory session to CUSTOM. They already
+    // originated in the focused model, so reloading it here would overwrite
+    // transient UI state (notably DR-1's selected pad patch). A non-custom
+    // session appearing externally is a real recall and does need a reload.
+    if (changedExternally && session >= 0 && onLibrarySessionChanged)
+        onLibrarySessionChanged();
+}
+
+void SeqHeader::timerCallback() {
+    refreshLibrarySelection();
+    repaint();
 }
 
 void SeqHeader::quantStep(int d) {
@@ -95,7 +157,6 @@ float SeqHeader::volValue() const {
 void SeqHeader::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     if (playBtn.contains(pos))            playClick();
-    else if (stopBtn.contains(pos))       stopAllClick();
     else if (quantPrevBtn.contains(pos))  quantStep(-1);
     else if (quantNextBtn.contains(pos))  quantStep(+1);
     else if (loadBtn.contains(pos))       loadClick();
@@ -157,9 +218,7 @@ void SeqHeader::resized() {
     logoArea = r.removeFromLeft(190);
     r.removeFromLeft(20);
 
-    playBtn = r.removeFromLeft(56).withSizeKeepingCentre(56, 32);
-    r.removeFromLeft(6);
-    stopBtn = r.removeFromLeft(52).withSizeKeepingCentre(52, 32);
+    playBtn = r.removeFromLeft(62).withSizeKeepingCentre(62, 32);
     r.removeFromLeft(20);
 
     quantTagArea = r.removeFromLeft(40).withSizeKeepingCentre(40, 16);
@@ -187,6 +246,12 @@ void SeqHeader::resized() {
     saveBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
     r.removeFromRight(6);
     loadBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
+
+    r.removeFromRight(14);
+    auto libraryArea = r.removeFromRight(224).withSizeKeepingCentre(224, 28);
+    libraryLabelArea = libraryArea.removeFromLeft(54);
+    libraryArea.removeFromLeft(6);
+    library_.setBounds(libraryArea);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -211,12 +276,16 @@ void SeqHeader::paint(juce::Graphics& g) {
     paintClock(g);
     paintScope(g);
 
+    g.setColour(col::textDim);
+    g.setFont(monoFont(8.0f));
+    drawSpaced(g, "LIBRARY", libraryLabelArea, 1.2f, juce::Justification::centredRight);
+
     paintKnob(g, swingKnob, "SWING", swingValue());
     paintKnob(g, volKnob, "VOL", volValue());
 }
 
 void SeqHeader::paintButtons(juce::Graphics& g) {
-    const bool playing = !proc.paused();
+    const bool playing = proc.conductor().playing();
     auto drawBtn = [&](juce::Rectangle<int> r, const juce::String& txt, bool on) {
         auto rf = r.toFloat();
         g.setColour(on ? juce::Colour(0xff0e3120) : juce::Colour(0xff11141c));
@@ -227,8 +296,7 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
         g.setFont(monoFont(10.0f));
         g.drawText(txt, r, juce::Justification::centred);
     };
-    drawBtn(playBtn, playing ? kPauseGlyph : kPlayGlyph, playing);
-    drawBtn(stopBtn, kStopGlyph, false);
+    drawBtn(playBtn, playing ? kStopGlyph : kPlayGlyph, playing);
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
 }
@@ -262,7 +330,7 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
 }
 
 void SeqHeader::paintClock(juce::Graphics& g) {
-    const bool playing = !proc.paused();
+    const bool playing = proc.conductor().playing();
     const auto pos = proc.conductor().songPos();
 
     auto r = beatsArea;
@@ -294,7 +362,7 @@ void SeqHeader::paintScope(juce::Graphics& g) {
     const float x0 = (float)scopeArea.getX(), y0 = (float)scopeArea.getY();
     juce::Path path;
     for (int i = 0; i < N; ++i) {
-        const float x = x0 + (i / (float)(N - 1)) * w;
+        const float x = x0 + (static_cast<float>(i) / static_cast<float>(N - 1)) * w;
         const float y = y0 + h * 0.5f - buf[(size_t)i] * h * 0.46f;
         if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
     }

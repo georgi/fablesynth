@@ -2,7 +2,6 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/DrumEngine.h"
-#include "dsp/DrumFx.h"
 #include "dsp/DrumKits.h"
 #include "dsp/DrumParams.h"
 #include "../dsp/UserTables.h"
@@ -13,7 +12,7 @@
 #include <vector>
 
 // FableSynth DR-1 VST/AU processor. Owns the JUCE-independent DSP core
-// (DrumEngine + DrumFx) and bridges the APVTS parameter tree, MIDI pads
+// (DrumEngine, including one FX chain per pad) and bridges the APVTS parameter tree, MIDI pads
 // (notes 36-51), host tempo, and the 5-bus multi-out (MAIN + AUX 1-4) to it.
 //
 // Threading model (mirrors FableAudioProcessor):
@@ -111,7 +110,6 @@ private:
     void shareSeqState(bool patterns, bool chain);   // copy message-thread seq state for the audio thread
 
     fable::DrumEngine engine;
-    fable::DrumFx fx;
     std::vector<fable::TablePtr> tables_;            // procedural: 4 drum + 6 WT-1
     std::vector<fable::UserTable> userTables_;       // imported tables
     std::atomic<int> tablesGen_{0};

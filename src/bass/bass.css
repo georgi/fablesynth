@@ -389,10 +389,16 @@
 .bl-legend-acc { color: var(--ac-b); }
 .bl-legend-sld { color: var(--ac-a); }
 
-.bl-seq-grid {
-  position: relative;
+.bl-seq-grid-scroll {
   flex: 1;
   min-width: 0;
+  padding-bottom: 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.bl-seq-grid {
+  position: relative;
+  width: 100%;
 }
 .bl-seq-cols {
   display: flex;
@@ -405,15 +411,32 @@
   flex-direction: column;
   min-width: 0;
 }
+.bl-seq-col.bar-start::before {
+  position: absolute;
+  z-index: 8;
+  top: -2px;
+  bottom: 10px;
+  left: -4px;
+  width: 1px;
+  background: rgba(77, 255, 158, 0.5);
+  box-shadow: 0 0 6px rgba(77, 255, 158, 0.25);
+  content: '';
+  pointer-events: none;
+}
 .bl-seq-lanes {
   display: flex;
   flex-direction: column;
   gap: 1px;
   height: 143px;
 }
-.bl-cell {
+.bl-cell-wrap {
+  position: relative;
   flex: 1;
-  min-width: 0;
+  min-height: 0;
+}
+.bl-cell {
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.045);
   border-radius: 2px;
@@ -423,13 +446,45 @@
 }
 .bl-cell.root { background: #0c1016; }
 .bl-cell.on {
+  background: #0a0d13;
+  box-shadow: none;
+}
+.bl-note-paint {
+  position: absolute;
+  z-index: 4;
+  top: -1px;
+  left: -1px;
+  height: calc(100% + 2px);
+  border: 1px solid rgba(132, 255, 188, 0.8);
+  border-radius: 3px;
   background: linear-gradient(180deg, #3ddc8c, #1a8f57);
   box-shadow: 0 0 8px rgba(77, 255, 158, 0.4);
+  pointer-events: none;
 }
-.bl-cell.on.acc {
-  background: linear-gradient(180deg, #a4ffd0, #2fbf76);
-  box-shadow: 0 0 12px rgba(77, 255, 158, 0.75);
+.bl-note-handle {
+  position: absolute;
+  top: 1px;
+  right: -6px;
+  bottom: 1px;
+  width: 13px;
+  border-radius: 2px;
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
 }
+.bl-note-handle::after {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(232, 237, 247, 0.82);
+  content: '';
+}
+.bl-note-handle:hover::after,
+.bl-note-handle:focus-visible::after { background: #e8edf7; }
+.bl-note-handle:focus-visible { outline: 1px solid var(--ac-a); outline-offset: 2px; }
 .bl-oct-btn {
   height: 20px;
   margin-top: 5px;
@@ -483,16 +538,6 @@
   pointer-events: none;
 }
 .bl-step-cursor.cur { opacity: 1; }
-.bl-slide-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 143px;
-  overflow: visible;
-  pointer-events: none;
-  filter: drop-shadow(0 0 3px rgba(77, 255, 158, 0.8));
-}
 
 /* ============ fx rack ============ */
 .fx-rack {

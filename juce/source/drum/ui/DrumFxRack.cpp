@@ -1,4 +1,5 @@
 #include "DrumFxRack.h"
+#include "../dsp/DrumEngine.h"
 #include <cmath>
 
 // Web layout (src/drum/drum.css), rack-relative px:
@@ -10,11 +11,11 @@
 namespace fui {
 
 // ===================== Group =====================
-DrumFxRack::Group::Group(DrumAudioProcessor& p, const char* fx, const char* t,
+DrumFxRack::Group::Group(DrumUiModel& p, const char* fx, const char* t,
                          std::initializer_list<const char*> knobIds)
-    : title(t), power(p.apvts, juce::String("fx.") + fx + ".on", Accent::N) {
+    : title(t), power(p.parameters(), "pad" + juce::String(p.selectedPad()) + ".fx." + fx + ".on", Accent::N) {
     for (const char* k : knobIds)
-        knobs.add(new Knob(p.apvts, juce::String("fx.") + fx + "." + k, Knob::Sm, Accent::N));
+        knobs.add(new Knob(p.parameters(), "pad" + juce::String(p.selectedPad()) + ".fx." + fx + "." + k, Knob::Sm, Accent::N));
 }
 
 void DrumFxRack::Group::layout(juce::Rectangle<int> r) {
@@ -33,7 +34,7 @@ void DrumFxRack::Group::layout(juce::Rectangle<int> r) {
     const float cw = (float)inner.getWidth() / (float)n;
     const int kh = juce::jmin(inner.getHeight(), Knob::svgPx(Knob::Sm) + 13); // dia + label
     for (int i = 0; i < n; ++i)
-        knobs[i]->setBounds((int)std::round(inner.getX() + i * cw), inner.getY(),
+        knobs[i]->setBounds((int)std::round(static_cast<float>(inner.getX()) + static_cast<float>(i) * cw), inner.getY(),
                             (int)std::round(cw), kh);
 }
 
@@ -55,7 +56,23 @@ void DrumFxRack::Group::paintGroup(juce::Graphics& g) {
 }
 
 // ===================== DrumFxRack =====================
-DrumFxRack::DrumFxRack(DrumAudioProcessor& p) : proc(p) {
+DrumFxRack::DrumFxRack(DrumUiModel& p) : proc(p) {
+    proc.selectionChanges().addChangeListener(this);
+    rebuild();
+    lastSig = routeSignature();
+    startTimerHz(1); // OUT panel reflects live pad.out routing + renames
+}
+
+DrumFxRack::~DrumFxRack() {
+    proc.selectionChanges().removeChangeListener(this);
+}
+
+void DrumFxRack::changeListenerCallback(juce::ChangeBroadcaster*) {
+    rebuild();
+}
+
+void DrumFxRack::rebuild() {
+    groups.clear();
     struct Def { const char* fx; const char* title; std::initializer_list<const char*> k; };
     const Def defs[] = {
         {"drive",  "DRIVE",  {"amt", "mix"}},
@@ -65,20 +82,21 @@ DrumFxRack::DrumFxRack(DrumAudioProcessor& p) : proc(p) {
         {"reverb", "REVERB", {"size", "mix"}},
     };
     for (const auto& d : defs) {
-        auto* m = groups.add(new Group(p, d.fx, d.title, d.k));
+        auto* m = groups.add(new Group(proc, d.fx, d.title, d.k));
         addAndMakeVisible(m->power);
         for (auto* k : m->knobs) addAndMakeVisible(*k);
     }
-    lastSig = routeSignature();
-    startTimerHz(1); // OUT panel reflects live pad.out routing + renames
+    resized();
+    repaint();
 }
 
 void DrumFxRack::resized() {
     auto r = getLocalBounds().reduced(8);        // .dr-fx-panel padding
     const int gap = 10, outW = 190;
-    const float cw = (r.getWidth() - outW - gap * 5) / 5.0f;
+    const float cw = static_cast<float>(r.getWidth() - outW - gap * 5) / 5.0f;
     for (int i = 0; i < groups.size(); ++i)
-        groups[i]->layout({ (int)std::round(r.getX() + i * (cw + gap)), r.getY(),
+        groups[i]->layout({ (int)std::round(static_cast<float>(r.getX())
+                                             + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
                             (int)std::round(cw), r.getHeight() });
     outBounds = { r.getRight() - outW, r.getY(), outW, r.getHeight() };
 }
@@ -86,8 +104,8 @@ void DrumFxRack::resized() {
 juce::String DrumFxRack::routeSignature() const {
     juce::String sig;
     for (int i = 0; i < fable::DR_NPADS; ++i) {
-        auto* v = proc.apvts.getRawParameterValue("pad" + juce::String(i) + ".out");
-        sig << (v ? (int)std::lround(v->load()) : 0) << ':' << proc.getPadName(i) << ';';
+        auto* v = proc.parameters().parameter("pad" + juce::String(i) + ".out");
+        sig << (v ? (int)std::lround(v->convertFrom0to1(v->getValue())) : 0) << ':' << proc.padName(i) << ';';
     }
     return sig;
 }
@@ -101,6 +119,10 @@ void DrumFxRack::timerCallback() {
 
 void DrumFxRack::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
+    g.setColour(col::acA);
+    g.setFont(dispFont(8.0f));
+    drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2) + " FX",
+               { 17, 2, 100, 12 }, 1.4f);
     for (auto* m : groups) m->paintGroup(g);
     paintOutPanel(g);
 }
@@ -118,16 +140,16 @@ void DrumFxRack::paintOutPanel(juce::Graphics& g) {
     drawSpaced(g, "OUT", head, 1.4f);
     g.setColour(col::textDim);
     g.setFont(monoFont(6.5f));
-    drawSpaced(g, juce::String::fromUTF8("FX \xe2\x86\x92 MAIN ONLY"), head, 0.6f,
+    drawSpaced(g, juce::String::fromUTF8("PAD FX \xe2\x86\x92 OUT"), head, 0.6f,
                juce::Justification::right);
     inner.removeFromTop(6);
 
     // Pad -> output assignments (params are live; the timer diffs for repaint).
     std::array<juce::StringArray, 5> assigned;
     for (int i = 0; i < fable::DR_NPADS; ++i) {
-        auto* v = proc.apvts.getRawParameterValue("pad" + juce::String(i) + ".out");
-        const int out = juce::jlimit(0, 4, v ? (int)std::lround(v->load()) : 0);
-        assigned[(size_t)out].add(proc.getPadName(i));
+        auto* v = proc.parameters().parameter("pad" + juce::String(i) + ".out");
+        const int out = juce::jlimit(0, 4, v ? (int)std::lround(v->convertFrom0to1(v->getValue())) : 0);
+        assigned[(size_t)out].add(proc.padName(i));
     }
 
     for (int o = 0; o < 5; ++o) {

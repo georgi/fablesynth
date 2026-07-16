@@ -2,12 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumProcessor.h"
+#include "DrumDeviceBody.h"
 #include "ui/DrumHeader.h"
-#include "ui/PadGrid.h"
-#include "ui/PadStrip.h"
-#include "ui/DrumPanels.h"
-#include "ui/StepSeqView.h"
-#include "ui/DrumFxRack.h"
 #include "../ui/LookAndFeel.h"
 
 // The DR-1 rack: all sections laid out at a fixed logical size matching the
@@ -16,22 +12,12 @@
 class DrumRack : public juce::Component {
 public:
     static constexpr int LW = 1460, LH = 880;
-    explicit DrumRack(DrumAudioProcessor&);
+    explicit DrumRack(fui::DrumUiModel&);
     void resized() override;
 
 private:
     fui::DrumHeader header;
-    fui::PadGrid pads;
-    fui::PadStrip padStrip;
-    fui::DrumOscPanel oscA, oscB;
-    fui::DrumNoisePanel noise;
-    fui::DrumPitchEnvPanel pitchEnv;
-    fui::DrumAmpEnvPanel ampEnv;
-    fui::DrumFilterPanel filter;
-    fui::DrumModPanel mod;
-    fui::SelBarView selBar;
-    fui::StepSeqView stepSeq;
-    fui::DrumFxRack fxRack;
+    DrumDeviceBody body;
 };
 
 class DrumEditor : public juce::AudioProcessorEditor,
@@ -43,8 +29,11 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    DrumRack& getRack() { return rack; }
+
 private:
     fui::DarkLNF lnf;
+    std::unique_ptr<fui::DrumUiModel> model;
     DrumRack rack;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumEditor)
 };
