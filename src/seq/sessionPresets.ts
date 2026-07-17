@@ -22,16 +22,17 @@ const spec = (name: string, family: string, variation: string, energy: number, t
 // WT-1 program picks (slots 2..3) draw on the expanded factory bank: acoustic
 // & classic keys (20-30), engine-showcase sound design (31-40) and the
 // classic-synth homages (41-50). Leads must stay "clean" voices (no fx.drive /
-// filter.drive) per the patch contract test.
+// filter.drive) per the patch contract test — except songs listed in the
+// test's DRIVEN_LEADS set, where the distortion is the point.
 const specs: Spec[] = [
-  ['NEON TALE', 'NEON', 'ORIGINAL', 3, ['bright', 'balanced', 'wide'], [0, 0, 3, 11], 0],
-  ['NEON CHASE', 'NEON', 'CHASE', 5, ['bright', 'driving', 'wide'], [13, 2, 50, 42], 1], // PROPHET STAB / JUNO DREAM
-  ['GLASS CIRCUIT', 'NEON', 'GLASS', 2, ['clean', 'glassy', 'sparse'], [12, 5, 31, 35], 2], // HARPSI COMB / TWIN SKY
-  ['AFTERGLOW', 'NEON', 'SOFT', 2, ['warm', 'soft', 'wide'], [3, 7, 20, 27], 3], // MELLOW RHODES / SOFT BRASS
+  ['NEON TALE', 'NEON', 'ORIGINAL', 3, ['bright', 'balanced', 'wide'], [13, 0, 3, 11], 0], // CRYSTAL PLUCK / FUTURE CHORD
+  ['NEON CHASE', 'NEON', 'CHASE', 5, ['bright', 'driving', 'wide'], [13, 2, 3, 40], 1], // CRYSTAL PLUCK / PUMP PAD
+  ['GLASS CIRCUIT', 'NEON', 'GLASS', 2, ['clean', 'glassy', 'sparse'], [12, 9, 45, 35], 2], // FANTA BELLS / TWIN SKY
+  ['AFTERGLOW', 'NEON', 'SOFT', 2, ['warm', 'soft', 'wide'], [3, 5, 21, 24], 3], // DYNO EPIANO / ANALOG STRINGS
   ['WAREHOUSE RAW', 'ACID', 'RAW', 5, ['hard', 'dark', 'driving'], [13, 4, 33, 40], 0], // DATA STREAM / PUMP PAD
   ['ACID FLASH', 'ACID', 'FLASH', 4, ['acid', 'bright', 'punchy'], [3, 0, 49, 1], 1], // LATELY BASS / VELVET PAD
-  ['STEEL PULSE', 'ACID', 'METAL', 4, ['metallic', 'tight', 'industrial'], [12, 2, 47, 17], 2], // WAVE DANCER / DARK DRONE
-  ['PEAK SIGNAL', 'ACID', 'PEAK', 5, ['distorted', 'wide', 'peak-time'], [13, 5, 43, 40], 3], // JUMP BRASS / PUMP PAD
+  ['STEEL PULSE', 'ACID', 'METAL', 4, ['metallic', 'tight', 'industrial'], [12, 2, 29, 17], 2], // KALIMBA PLUCK / DARK DRONE
+  ['PEAK SIGNAL', 'ACID', 'PEAK', 5, ['distorted', 'wide', 'peak-time'], [13, 5, 6, 40], 3], // NEURO WOBBLE / PUMP PAD
   ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [15, 7, 51, 34], 0], // FOG LIGHT / OCEAN AIR
   ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [15, 0, 52, 25], 1], // GLASS RIBBON / CINEMA STRINGS
   ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [15, 5, 53, 32], 2], // NORTH WIRE / GHOST CHOIR
@@ -59,24 +60,23 @@ interface Harmony {
 
 // Full-chain, in-context track faders — measured by
 // juce/test/measure_track_levels.cpp, which renders every song's four tracks
-// through their real engine+FX (incl. WT-1's leveling comp) and balances bass /
-// lead / pad to the drum-bus RMS (drums = fixed 0.78 reference) with perceptual
-// per-role offsets (bass +4 dB, pad +2 dB). The fader curve is gain² × 1.4, so
-// quieter voices need a higher fader value.
-const BASS_FADERS: Record<number, number> = { 0: 0.59, 2: 0.59, 4: 0.61, 5: 0.52, 7: 0.55, 8: 0.53 };
+// through their real engine+FX (incl. WT-1's leveling comp) and balances every
+// track to the mean drum-bus RMS with perceptual per-role offsets (bass +4 dB,
+// pad +2 dB). The fader curve is gain² × 1.4, so quieter voices need a higher
+// fader value. Tables carry only currently-used programs; the ?? fallbacks
+// cover future picks until the next measure_track_levels run.
+const DRUM_FADERS: Record<number, number> = { 3: 0.80, 12: 0.80, 13: 0.87, 15: 0.63 };
+const BASS_FADERS: Record<number, number> = { 0: 0.49, 2: 0.52, 4: 0.50, 5: 0.48, 7: 0.49, 8: 0.47, 9: 0.84 };
 const LEAD_FADERS: Record<number, number> = {
-  3: 0.63, 6: 0.47, 20: 0.67, 21: 0.52, 22: 0.57, 28: 0.80, 29: 0.91, 30: 0.70, 31: 0.96,
-  33: 0.48, 36: 0.71, 39: 0.95, 43: 0.48, 44: 0.49, 45: 0.84, 47: 0.82, 49: 0.51, 50: 0.72,
-  // 51-54 (ambient glide leads) are ear-balanced estimates pending a
-  // measure_track_levels re-run: quiet sine voices sit near FANTA BELLS' 0.84.
-  51: 0.85, 52: 0.85, 53: 0.85, 54: 0.85,
+  3: 0.67, 20: 0.70, 21: 0.54, 22: 0.60, 28: 0.84, 29: 0.96, 33: 0.51, 36: 0.75, 39: 1.00,
+  43: 0.51, 44: 0.52, 45: 0.79, 47: 0.87, 49: 0.54, 51: 0.48, 52: 0.53, 53: 0.49, 54: 0.49,
 };
 const PAD_FADERS: Record<number, number> = {
-  1: 0.61, 11: 0.50, 17: 0.78, 25: 0.58, 27: 0.60, 32: 1.00, 34: 0.57, 35: 0.56, 38: 0.79, 40: 0.56, 42: 0.77,
+  1: 0.65, 11: 0.53, 17: 0.83, 24: 0.63, 25: 0.62, 27: 0.63, 32: 1.00, 34: 0.60, 35: 0.59, 38: 0.83, 40: 0.60, 42: 0.82,
 };
 
 function calibratedTrackGains(programs: Spec['programs']): [number, number, number, number] {
-  return [0.78, BASS_FADERS[programs[1]] ?? 0.56, LEAD_FADERS[programs[2]] ?? 0.65, PAD_FADERS[programs[3]] ?? 0.59];
+  return [DRUM_FADERS[programs[0]] ?? 0.78, BASS_FADERS[programs[1]] ?? 0.50, LEAD_FADERS[programs[2]] ?? 0.65, PAD_FADERS[programs[3]] ?? 0.59];
 }
 
 // Four-bar harmonic plans. Each variation starts from a recognisable cadence,
@@ -103,14 +103,28 @@ const putNote = (bytes: Uint8Array, offset: number, absolute: number, duration =
   bytes[offset + 2] = Math.max(0, Math.min(2, Math.floor(absolute / 12) + 1));
 };
 
-function bassProgression(harmony: Harmony, variation: string): ClipDoc {
+function bassProgression(harmony: Harmony, spec: Spec): ClipDoc {
   const bytes = emptyClipBytes('BL1', 4);
+  if (spec.family === 'NEON') {
+    // Synthwave engine room: staccato 16ths pumping the low root, one 16th of
+    // every beat lifted an octave (rotated per variation so sibling songs pump
+    // differently), accents on the quarters, and a pickup into each new bar.
+    const lift = 2 + (spec.variationIndex % 2);
+    harmony.roots.forEach((root, bar) => {
+      const next = harmony.roots[(bar + 1) % 4]!;
+      for (let step = 0; step < 16; step++) {
+        const pitch = step === 15 ? next - 12 : step % 4 === lift ? root : root - 12;
+        putNote(bytes, noteIdx(bar, step), pitch, 1, step % 4 === 0);
+      }
+    });
+    return { name: `${spec.variation} DRIVE · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  }
   harmony.roots.forEach((root, bar) => {
     // One low root, then one fifth: deliberate space for the drums and pad.
     putNote(bytes, noteIdx(bar, 0), root - 12, 8, true);
     putNote(bytes, noteIdx(bar, 8), root - 5, 8);
   });
-  return { name: `${variation} ROOTS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  return { name: `${spec.variation} ROOTS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
 
 function padProgression(harmony: Harmony, variation: string): ClipDoc {
@@ -263,6 +277,10 @@ const DRUM_FILLS: Record<string, Array<[number, number, boolean]>> = {
 
 // One ghost hit per variation (index 0 adds none): [pad, step].
 const DRUM_GHOSTS: Array<[number, number] | null> = [null, [DRUM.KICK, 14], [DRUM.SNARE, 11], [DRUM.PERC_B, 3]];
+// AMBIENT keeps its ghosts on the eighth grid with soft voices — off-grid
+// kick/snare pokes read as glitches in so sparse a field. Each variation still
+// gets a distinct hit so sibling songs stay unique.
+const AMBIENT_GHOSTS: Array<[number, number] | null> = [null, [DRUM.CH, 10], [DRUM.RIM, 12], [DRUM.PERC_B, 6]];
 
 function drumProgression(spec: Spec, scene: number): ClipDoc {
   const family = DRUM_ARCHETYPES[spec.family] ?? DRUM_ARCHETYPES.NEON!;
@@ -277,7 +295,7 @@ function drumProgression(spec: Spec, scene: number): ClipDoc {
       : family.hat.steps;
   const shift = spec.variationIndex + (scene === 3 ? 1 : 0);
   const hatAccents = family.hat.accents.map((_, k) => (hatSteps.length ? hatSteps[(k * 2 + shift) % hatSteps.length]! : -1));
-  const ghost = DRUM_GHOSTS[spec.variationIndex] ?? null;
+  const ghost = (spec.family === 'AMBIENT' ? AMBIENT_GHOSTS : DRUM_GHOSTS)[spec.variationIndex] ?? null;
 
   for (let bar = 0; bar < 4; bar++) {
     const lastBar = bar === 3;
@@ -318,7 +336,7 @@ function buildSession(spec: Spec): SessionDoc {
     track.gain = gains[t];
   });
   const harmony = harmonyFor(spec);
-  const bass = bassProgression(harmony, spec.variation);
+  const bass = bassProgression(harmony, spec);
   const lead = leadProgression(harmony, spec);
   const pads = padProgression(harmony, spec.variation);
   session.scenes.forEach((scene, s) => {
@@ -334,9 +352,9 @@ function buildSession(spec: Spec): SessionDoc {
   return session;
 }
 
-export const FACTORY_SESSION_PRESETS: SessionPreset[] = specs.map((spec, index) => ({
+export const FACTORY_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
   ...spec,
-  session: index === 0 ? factorySession() : buildSession(spec),
+  session: buildSession(spec),
 }));
 
 /** Session data is edited in the store, so preset recall always needs a copy. */

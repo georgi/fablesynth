@@ -313,7 +313,25 @@ void putNote(std::vector<uint8_t>& bytes, int offset, int absolute, int duration
     bytes[(size_t)offset + 2] = (uint8_t)std::max(0, std::min(2, (absolute - pitchClass) / 12 + 1));
 }
 
-ClipData bassProgression(const Harmony& harmony, const std::string& variation) {
+ClipData bassProgression(const Harmony& harmony, const PresetSpec& spec) {
+    const std::string variation = spec.variation;
+    if (spec.family == std::string("NEON")) {
+        // Synthwave engine room: staccato 16ths pumping the low root, one 16th
+        // of every beat lifted an octave (rotated per variation so sibling
+        // songs pump differently), accents on the quarters, and a pickup into
+        // each new bar.
+        ClipData clip { variation + " DRIVE · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
+        const int lift = 2 + (spec.variationIndex % 2);
+        for (int bar = 0; bar < 4; ++bar) {
+            const int root = harmony.roots[(size_t)bar];
+            const int next = harmony.roots[(size_t)((bar + 1) % 4)];
+            for (int step = 0; step < 16; ++step) {
+                const int pitch = step == 15 ? next - 12 : step % 4 == lift ? root : root - 12;
+                putNote(clip.bytes, sqNoteIdx(bar, step), pitch, 1, step % 4 == 0);
+            }
+        }
+        return clip;
+    }
     ClipData clip { variation + " ROOTS · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
     for (int bar = 0; bar < 4; ++bar) {
         // One low root, then one fifth: deliberate space for the drums and pad.
@@ -467,7 +485,11 @@ ClipData drumProgression(const PresetSpec& spec, int scene) {
     for (size_t k = 0; k < family.hat.accents.size(); ++k)
         hatAccents.push_back(hatSteps.empty() ? -1 : hatSteps[((size_t)((int)k * 2 + shift)) % hatSteps.size()]);
     static const std::array<std::pair<int, int>, 4> ghosts { { { -1, -1 }, { KICK, 14 }, { SNARE, 11 }, { PERC_B, 3 } } };
-    const auto ghost = ghosts[(size_t)spec.variationIndex];
+    // AMBIENT keeps its ghosts on the eighth grid with soft voices — off-grid
+    // kick/snare pokes read as glitches in so sparse a field. Each variation
+    // still gets a distinct hit so sibling songs stay unique.
+    static const std::array<std::pair<int, int>, 4> ambientGhosts { { { -1, -1 }, { CH, 10 }, { RIM, 12 }, { PERC_B, 6 } } };
+    const auto ghost = (spec.family == std::string("AMBIENT") ? ambientGhosts : ghosts)[(size_t)spec.variationIndex];
 
     for (int bar = 0; bar < 4; ++bar) {
         const bool lastBar = bar == 3;
@@ -567,43 +589,49 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             // Full-chain, in-context track faders — measured by
             // test/measure_track_levels.cpp, which renders every song's four
             // tracks through their real engine+FX (incl. WT-1's leveling comp)
-            // and balances each to the drum-bus RMS with perceptual per-role
-            // offsets (bass +4 dB, pad +2 dB). Fader curve is gain² × 1.4.
+            // and balances each to the mean drum-bus RMS with perceptual
+            // per-role offsets (bass +4 dB, pad +2 dB). Fader curve is
+            // gain² × 1.4. Tables carry only currently-used programs; defaults
+            // cover future picks until the next measure_track_levels run.
             const auto calibratedGain = [](size_t track, int program) {
-                if (track == 0) return 0.78f; // drums: fixed loudness reference
+                if (track == 0) { // DR-1 kits, leveled to the drum-bus mean
+                    switch (program) {
+                        case 3: return 0.80f; case 12: return 0.80f;
+                        case 13: return 0.87f; case 15: return 0.63f;
+                        default: return 0.78f;
+                    }
+                }
                 if (track == 1) { // BL-1 bass (+4 dB role offset)
                     switch (program) {
-                        case 0: return 0.59f; case 2: return 0.59f;
-                        case 4: return 0.61f; case 5: return 0.52f;
-                        case 7: return 0.55f; case 8: return 0.53f;
-                        default: return 0.56f;
+                        case 0: return 0.49f; case 2: return 0.52f;
+                        case 4: return 0.50f; case 5: return 0.48f;
+                        case 7: return 0.49f; case 8: return 0.47f;
+                        case 9: return 0.84f;
+                        default: return 0.50f;
                     }
                 }
                 if (track == 2) { // WT-1 lead (at drum target)
                     switch (program) {
-                        case 3: return 0.63f; case 6: return 0.47f;
-                        case 20: return 0.67f; case 21: return 0.52f;
-                        case 22: return 0.57f; case 28: return 0.80f;
-                        case 29: return 0.91f; case 30: return 0.70f;
-                        case 31: return 0.96f; case 33: return 0.48f;
-                        case 36: return 0.71f; case 39: return 0.95f;
-                        case 43: return 0.48f; case 44: return 0.49f;
-                        case 45: return 0.84f; case 47: return 0.82f;
-                        case 49: return 0.51f; case 50: return 0.72f;
-                        // 51-54 (ambient glide leads): ear-balanced estimates
-                        // pending a measure_track_levels re-run.
-                        case 51: return 0.85f; case 52: return 0.85f;
-                        case 53: return 0.85f; case 54: return 0.85f;
+                        case 3: return 0.67f; case 20: return 0.70f;
+                        case 21: return 0.54f; case 22: return 0.60f;
+                        case 28: return 0.84f; case 29: return 0.96f;
+                        case 33: return 0.51f; case 36: return 0.75f;
+                        case 39: return 1.00f; case 43: return 0.51f;
+                        case 44: return 0.52f; case 45: return 0.79f;
+                        case 47: return 0.87f; case 49: return 0.54f;
+                        case 51: return 0.48f; case 52: return 0.53f;
+                        case 53: return 0.49f; case 54: return 0.49f;
                         default: return 0.65f;
                     }
                 }
                 switch (program) { // WT-1 pad (+2 dB role offset)
-                    case 1: return 0.61f; case 11: return 0.50f;
-                    case 17: return 0.78f; case 25: return 0.58f;
-                    case 27: return 0.60f; case 32: return 1.00f;
-                    case 34: return 0.57f; case 35: return 0.56f;
-                    case 38: return 0.79f; case 40: return 0.56f;
-                    case 42: return 0.77f; default: return 0.59f;
+                    case 1: return 0.65f; case 11: return 0.53f;
+                    case 17: return 0.83f; case 24: return 0.63f;
+                    case 25: return 0.62f; case 27: return 0.63f;
+                    case 32: return 1.00f; case 34: return 0.60f;
+                    case 35: return 0.59f; case 38: return 0.83f;
+                    case 40: return 0.60f; case 42: return 0.82f;
+                    default: return 0.59f;
                 }
             };
             for (size_t t = 0; t < programs.size(); ++t) {
@@ -615,7 +643,7 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             const PresetSpec spec { name, family, variation, energy, preset.tags,
                                     programs, variationIndex };
             const Harmony harmony = harmonyFor(spec);
-            const ClipData bass = bassProgression(harmony, variation);
+            const ClipData bass = bassProgression(harmony, spec);
             const ClipData lead = leadProgression(harmony, spec);
             const ClipData pads = padProgression(harmony, variation);
             for (size_t s = 0; s < preset.session.scenes.size(); ++s) {
@@ -641,16 +669,16 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
         // are voiced as complementary roles rather than interchangeable picks.
         auto library = std::vector<SessionPreset> {
             // NEON / SYNTHWAVE
-            make("NEON TALE",    "NEON", "ORIGINAL", 3, { "bright", "balanced", "wide" }, { 0, 0, 3, 11 }, 0),
-            make("NEON CHASE",   "NEON", "CHASE",    5, { "bright", "driving", "wide" }, { 13, 2, 50, 42 }, 1),
-            make("GLASS CIRCUIT", "NEON", "GLASS",   2, { "clean", "glassy", "sparse" }, { 12, 5, 31, 35 }, 2),
-            make("AFTERGLOW",    "NEON", "SOFT",     2, { "warm", "soft", "wide" }, { 3, 7, 20, 27 }, 3),
+            make("NEON TALE",    "NEON", "ORIGINAL", 3, { "bright", "balanced", "wide" }, { 13, 0, 3, 11 }, 0), // CRYSTAL PLUCK / FUTURE CHORD
+            make("NEON CHASE",   "NEON", "CHASE",    5, { "bright", "driving", "wide" }, { 13, 2, 3, 40 }, 1),   // CRYSTAL PLUCK / PUMP PAD
+            make("GLASS CIRCUIT", "NEON", "GLASS",   2, { "clean", "glassy", "sparse" }, { 12, 9, 45, 35 }, 2),  // FANTA BELLS / TWIN SKY
+            make("AFTERGLOW",    "NEON", "SOFT",     2, { "warm", "soft", "wide" }, { 3, 5, 21, 24 }, 3),        // DYNO EPIANO / ANALOG STRINGS
 
             // ACID / WAREHOUSE
             make("WAREHOUSE RAW", "ACID", "RAW",     5, { "hard", "dark", "driving" }, { 13, 4, 33, 40 }, 0),
             make("ACID FLASH",    "ACID", "FLASH",   4, { "acid", "bright", "punchy" }, { 3, 0, 49, 1 }, 1),
-            make("STEEL PULSE",   "ACID", "METAL",   4, { "metallic", "tight", "industrial" }, { 12, 2, 47, 17 }, 2),
-            make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 43, 40 }, 3),
+            make("STEEL PULSE",   "ACID", "METAL",   4, { "metallic", "tight", "industrial" }, { 12, 2, 29, 17 }, 2),
+            make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 6, 40 }, 3),
 
             // AMBIENT / DEEP
             make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 15, 7, 51, 34 }, 0),      // ACID CAVE / FOG LIGHT
@@ -676,8 +704,6 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 4, 44, 25 }, 2),
             make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 43, 38 }, 3),
         };
-        // Preserve the hand-authored cross-platform factory session exactly.
-        library.front().session = factorySession();
         return library;
     }();
     return presets;

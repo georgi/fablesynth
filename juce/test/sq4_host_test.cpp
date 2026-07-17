@@ -387,7 +387,7 @@ int main(int argc, char** argv) {
     hdr.selectLibrarySession(1);
     check(hdr.libraryForTest().getSelectedId() == 2,
           "SQ-4 library selects the complete NEON CHASE session");
-    const std::array<int, 4> neonChase { 13, 2, 50, 42 };
+    const std::array<int, 4> neonChase { 13, 2, 3, 40 };
     bool rigMatches = true;
     for (int t = 0; t < 4; ++t) {
         const auto& patch = p.conductor().session().tracks[(size_t)t].patch;
@@ -619,9 +619,21 @@ int main(int argc, char** argv) {
     focusView.patchSelectorForTest().setSelectedId(nextBassProgram + 1,
                                                    juce::sendNotificationSync);
 
+    check(focusView.clipSelectorForTest().getNumItems() == 20,
+          "BL-1 focus filters its factory clips without auxiliary load controls");
+    const auto bassPatchBeforeClipLoad = p.conductor().session().tracks[1].patch;
+    focusView.clipSelectorForTest().setSelectedId(1, juce::sendNotificationSync); // ACID CRAWL
+    check(p.conductor().session().scenes[2].clips[1].name == "ACID CRAWL",
+          "native note-clip selection applies the factory entry");
+    check(p.conductor().session().tracks[1].patch.factory == bassPatchBeforeClipLoad.factory
+              && p.conductor().session().tracks[1].patch.index == bassPatchBeforeClipLoad.index
+              && p.conductor().session().tracks[1].patch.params == bassPatchBeforeClipLoad.params,
+          "native clip selection preserves the BL-1 patch");
+
     // BL-1 native sequencer: exact byte encoding at sqNoteIdx. Focus is
-    // BASS / DROP A (ACID 303, one bar); edit a rest step with the same model
-    // used by PitchSeqView.
+    // BASS / DROP A, just loaded as ACID CRAWL whose step 5 is a rest (the
+    // generated NEON DRIVE line fills every 16th, so the library session has
+    // none); edit that rest with the same model used by PitchSeqView.
     auto noteByte = [&](int off) {
         return p.conductor().session().scenes[2].clips[1].bytes[(size_t)(fable::sqNoteIdx(0, 5) + off)];
     };
@@ -636,17 +648,6 @@ int main(int argc, char** argv) {
     check(noteByte(1) == (7 | 0x80), "native BL-1 writes the pitch lane + slide bit", noteByte(1));
     check(noteByte(2) == 0, "native BL-1 writes octave as oct+1", noteByte(2));
 
-    check(focusView.clipSelectorForTest().getNumItems() == 20,
-          "BL-1 focus filters its factory clips without auxiliary load controls");
-    const auto bassPatchBeforeClipLoad = p.conductor().session().tracks[1].patch;
-    focusView.clipSelectorForTest().setSelectedId(1, juce::sendNotificationSync); // ACID CRAWL
-    check(p.conductor().session().scenes[2].clips[1].name == "ACID CRAWL",
-          "native note-clip selection applies the factory entry");
-    check(p.conductor().session().tracks[1].patch.factory == bassPatchBeforeClipLoad.factory
-              && p.conductor().session().tracks[1].patch.index == bassPatchBeforeClipLoad.index
-              && p.conductor().session().tracks[1].patch.params == bassPatchBeforeClipLoad.params,
-          "native clip selection preserves the BL-1 patch");
-
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
     if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
         juce::File out(argv[3]);
@@ -657,8 +658,16 @@ int main(int argc, char** argv) {
 
     // Locked (>4-bar) clip: view-only. Edits and the bars stepper are ignored,
     // the clip keeps its length, and the lock-banner paint path (no chips) runs.
-    ed2->enterFocus(3, 4);                 // PADS / BREAK = FOG SWELL, 8 bars
-    check(ed2->focus() == std::make_pair(3, 4), "enterFocus(3,4) targets the 8-bar FOG SWELL");
+    // The generated library ships only 4-bar clips, so double the BREAK pad
+    // chords into an 8-bar clip first — the same shape session recall installs.
+    {
+        const auto fourBars = p.conductor().session().scenes[4].clips[3].bytes;
+        auto eightBars = fourBars;
+        eightBars.insert(eightBars.end(), fourBars.begin(), fourBars.end());
+        p.conductor().updateClipBytes(4, 3, eightBars, 8);
+    }
+    ed2->enterFocus(3, 4);                 // PADS / BREAK, now 8 bars
+    check(ed2->focus() == std::make_pair(3, 4), "enterFocus(3,4) targets the 8-bar locked pad clip");
     check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::wt3,
           "PADS focus shows the second native WT-1 body");
     auto locked0 = p.conductor().session().scenes[4].clips[3].bytes;

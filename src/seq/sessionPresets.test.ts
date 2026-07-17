@@ -21,31 +21,38 @@ describe('SQ-4 factory session patch contract', () => {
     ]);
     expect(FACTORY_SESSION_PRESETS[1].session.tracks.map((track) => track.patch)).toEqual([
       { kind: 'factory', index: 13 }, { kind: 'factory', index: 2 },
-      { kind: 'factory', index: 50 }, { kind: 'factory', index: 42 },
+      { kind: 'factory', index: 3 }, { kind: 'factory', index: 40 },
     ]);
   });
 
   it('uses clean lead voices and measured per-track scene faders', () => {
+    // Songs whose whole point is a distorted lead may break the clean-voice
+    // rule; everything else keeps drive off so the lead sits on top unfuzzed.
+    const DRIVEN_LEADS = new Set(['PEAK SIGNAL']);
+    const drumGains = new Set<number>();
     const bassGains = new Set<number>();
     const leadGains = new Set<number>();
     const padGains = new Set<number>();
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       const [drums, bass, lead, pad] = preset.session.tracks;
-      expect(drums!.gain).toBe(0.78);
+      drumGains.add(drums!.gain);
       const leadPatch = FACTORY_PRESETS[(lead!.patch as { index: number }).index]!;
-      expect(leadPatch.params['fx.drive.on'] ?? 0).toBe(0);
-      expect(leadPatch.params['filter.drive'] ?? 0).toBe(0);
+      if (!DRIVEN_LEADS.has(preset.name)) {
+        expect(leadPatch.params['fx.drive.on'] ?? 0).toBe(0);
+        expect(leadPatch.params['filter.drive'] ?? 0).toBe(0);
+      }
       bassGains.add(bass!.gain);
       leadGains.add(lead!.gain);
       padGains.add(pad!.gain);
     }
+    expect(drumGains.size).toBeGreaterThanOrEqual(3);
     expect(bassGains.size).toBeGreaterThan(3);
     expect(leadGains.size).toBeGreaterThan(3);
     expect(padGains.size).toBeGreaterThanOrEqual(3);
   });
 
   it('writes each pad chord as three bar-length notes', () => {
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       for (const scene of preset.session.scenes) {
         const pad = scene.clips[3]!;
         const bytes = b64ToBytes(pad.pattern);
@@ -70,7 +77,7 @@ describe('SQ-4 factory session patch contract', () => {
   });
 
   it('composes phrase-shaped lead melodies anchored to each bar chord', () => {
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       const lead = b64ToBytes(preset.session.scenes[2].clips[2]!.pattern);
       const pad = b64ToBytes(preset.session.scenes[2].clips[3]!.pattern);
       const tonic = pad[wtNoteIdx(0, 0, 0) + 1] & 0x7f;
@@ -107,7 +114,7 @@ describe('SQ-4 factory session patch contract', () => {
   });
 
   it('voices every pad strictly below every lead note', () => {
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       for (const scene of preset.session.scenes) {
         const lead = scene.clips[2];
         const pad = scene.clips[3];
@@ -137,7 +144,7 @@ describe('SQ-4 factory session patch contract', () => {
   });
 
   it('varies the drums across scenes within each song', () => {
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       const [intro, build, dropA, dropB, brk, outro] = preset.session.scenes.map((scene) => scene.clips[0]);
       expect(brk, `${preset.name} break stays drumless`).toBeNull();
       const patterns = [intro, build, dropA, dropB, outro].map((clip) => clip!.pattern);
@@ -146,7 +153,7 @@ describe('SQ-4 factory session patch contract', () => {
   });
 
   it('ends busy scenes with a bar-4 fill', () => {
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       for (const sceneIndex of [1, 2, 3]) {
         const clip = preset.session.scenes[sceneIndex]!.clips[0]!;
         const bytes = b64ToBytes(clip.pattern);
@@ -158,7 +165,7 @@ describe('SQ-4 factory session patch contract', () => {
 
   it('never reuses a library clip in a generated preset', () => {
     const library = new Set(FACTORY_CLIP_LIBRARY.map((clip) => clip.pattern));
-    for (const preset of FACTORY_SESSION_PRESETS.slice(1)) {
+    for (const preset of FACTORY_SESSION_PRESETS) {
       for (const scene of preset.session.scenes) {
         const drums = scene.clips[0];
         if (drums) expect(library.has(drums.pattern), `${preset.name} ${scene.name}`).toBe(false);

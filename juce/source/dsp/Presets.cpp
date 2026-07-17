@@ -379,7 +379,7 @@ const std::vector<Preset>& factoryPresets() {
             {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.15f}, {"oscB.oct", -1}, {"oscB.level", 0.45f},
             {"filter.type", 0}, {"filter.cutoff", 1200}, {"filter.res", 0.1f}, {"filter.env", 0.5f}, {"filter.key", 0.25f},
             {"env1.a", 0.12f}, {"env1.d", 0.6f}, {"env1.s", 0.8f}, {"env1.r", 0.8f},
-            {"env2.a", 0.15f}, {"env2.d", 0.8f}, {"env2.s", 0.4f}, {"env2.r", 0.6f},
+            {"env2.a", 1.5f}, {"env2.d", 0.8f}, {"env2.s", 0.4f}, {"env2.r", 0.6f},
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.45f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.55f}, {"fx.reverb.mix", 0.3f},
         
@@ -562,7 +562,7 @@ const std::vector<Preset>& factoryPresets() {
             {"filter.type", 0}, {"filter.cutoff", 3000}, {"filter.res", 0.1f},
             {"env1.a", 0.05f}, {"env1.d", 0.5f}, {"env1.s", 0.9f}, {"env1.r", 0.4f},
             {"lfo1.shape", 2}, {"lfo1.sync", 1}, {"lfo1.syncrate", 2}, {"lfo1.retrig", 0},
-            {"mat1.src", 1}, {"mat1.dst", 5}, {"mat1.amt", -0.45f},
+            {"mat1.src", 1}, {"mat1.dst", 5}, {"mat1.amt", -1},
             {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.4f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.3f},
         

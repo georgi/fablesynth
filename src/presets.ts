@@ -512,7 +512,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.15, 'oscB.oct': -1, 'oscB.level': 0.45,
       'filter.type': 0, 'filter.cutoff': 1200, 'filter.res': 0.1, 'filter.env': 0.5, 'filter.key': 0.25,
       'env1.a': 0.12, 'env1.d': 0.6, 'env1.s': 0.8, 'env1.r': 0.8,
-      'env2.a': 0.15, 'env2.d': 0.8, 'env2.s': 0.4, 'env2.r': 0.6,
+      'env2.a': 1.5, 'env2.d': 0.8, 'env2.s': 0.4, 'env2.r': 0.6,
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.45,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.3,
     
@@ -765,7 +765,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'filter.type': 0, 'filter.cutoff': 3000, 'filter.res': 0.1,
       'env1.a': 0.05, 'env1.d': 0.5, 'env1.s': 0.9, 'env1.r': 0.4,
       'lfo1.shape': 2, 'lfo1.sync': 1, 'lfo1.syncrate': 2, 'lfo1.retrig': 0,
-      'mat1.src': 1, 'mat1.dst': 5, 'mat1.amt': -0.45,
+      'mat1.src': 1, 'mat1.dst': 5, 'mat1.amt': -1,
       'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.3,
     
