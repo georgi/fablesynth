@@ -20,11 +20,11 @@ if (typeof localStorage === 'undefined') {
 describe('kits', () => {
   beforeEach(() => localStorage.clear());
 
-  it('ships 14 distinct factory kits; TR-VOID keeps the mockup names', () => {
+  it('ships 18 distinct factory kits; TR-VOID keeps the mockup names', () => {
     expect(FACTORY_KITS.map((k) => k.name)).toEqual([
       'TR-VOID', 'ROOM ONE', 'BITCRUSH', '808 CLASSIC', 'DEEP DUB', 'DUST HOUSE',
       'WAREHOUSE', 'METAL WORK', 'TAPE KIT', 'MINIMAL', 'BROKEN TOYS', 'LIVE ROOM', 'UZU',
-      '808+UZU HYBRID',
+      '808+UZU HYBRID', 'NEON GRID', 'ACID CAVE', 'BOOM BAP', 'PIRATE RADIO',
     ]);
     const tv = FACTORY_KITS[0];
     expect(tv.padNames).toHaveLength(PAD_COUNT);
@@ -66,6 +66,56 @@ describe('kits', () => {
     expect(hybrid.params[pad(15, 'oscB.table')]).toBe(31);
     expect(hybrid.params[pad(0, 'oscA.level')]).toBeGreaterThan(0);
     expect(hybrid.params[pad(0, 'oscB.level')]).toBeGreaterThan(0);
+  });
+
+  it('authored kits mix osc and sample layers with their own grooves', () => {
+    const byName = (name: string) => FACTORY_KITS.find((k) => k.name === name)!;
+
+    // NEON GRID layers a THUD osc kick with a sampled UZU BD2 transient and
+    // sweeps its noise pad's band-pass with the mod env.
+    const neon = kitToState(byName('NEON GRID'));
+    expect(neon.params[pad(0, 'oscA.tune')]).toBe(-22);
+    expect(neon.params[pad(0, 'oscB.table')]).toBe(17);
+    expect(neon.params[pad(0, 'oscB.level')]).toBeCloseTo(0.55);
+    expect(neon.params[pad(15, 'noise.level')]).toBeCloseTo(0.85);
+    expect(neon.params[pad(15, 'mod1.dst')]).toBe(4); // CUTOFF
+
+    // ACID CAVE's blips squelch: resonant LP24 driven hard by the mod env.
+    const acid = kitToState(byName('ACID CAVE'));
+    for (const i of [8, 9, 10]) {
+      expect(acid.params[pad(i, 'flt.type')]).toBe(1);
+      expect(acid.params[pad(i, 'flt.res')]).toBeCloseTo(0.72);
+      expect(acid.params[pad(i, 'mod1.src')]).toBe(1); // MOD ENV
+      expect(acid.params[pad(i, 'mod1.dst')]).toBe(4);
+    }
+    expect(acid.params[pad(1, 'fx.reverb.mix')]).toBeCloseTo(0.55); // rumble pad
+
+    // BOOM BAP is sample-forward, lo-fi capped, with a reversed UZU MOD pad.
+    const bap = kitToState(byName('BOOM BAP'));
+    expect(bap.params[pad(0, 'oscB.table')]).toBe(16);
+    expect(bap.params[pad(0, 'oscA.level')]).toBeCloseTo(0.5); // THUD glue kept
+    expect(bap.params[pad(15, 'oscB.phase')]).toBe(1); // reverse on
+    expect(bap.params[pad(5, 'flt.cut')]).toBe(8500);
+
+    // PIRATE RADIO swings hard and jitters its vox chop pitch per hit.
+    const pirate = kitToState(byName('PIRATE RADIO'));
+    expect(pirate.params['master.swing']).toBeCloseTo(0.58);
+    expect(pirate.params[pad(14, 'mod1.src')]).toBe(3); // RAND
+    expect(pirate.params[pad(14, 'mod1.dst')]).toBe(5); // PITCH
+
+    // Each authored kit ships its own groove (not the TR-VOID pattern) as a
+    // 4-bar A A A B loop: slots 1-3 repeat the groove, slot 4 is the fill.
+    for (const name of ['NEON GRID', 'ACID CAVE', 'BOOM BAP', 'PIRATE RADIO']) {
+      const kit = byName(name);
+      expect(kit.patterns, name).not.toEqual(FACTORY_KITS[0].patterns);
+      const slot = (p: number) => kit.patterns.slice(patIdx(p, 0, 0), patIdx(p + 1, 0, 0));
+      expect(slot(1), name).toEqual(slot(0));
+      expect(slot(2), name).toEqual(slot(0));
+      expect(slot(3).some((v) => v > 0), name).toBe(true);
+      expect(slot(3), name).not.toEqual(slot(0));
+      expect(kit.chain, name).toEqual([0, 1, 2, 3]);
+      expect(kit.padNames, name).toHaveLength(PAD_COUNT);
+    }
   });
 
   it('every factory kit param id exists in DRUM_PARAMS and is in range', () => {
