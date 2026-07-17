@@ -794,12 +794,11 @@ export const FACTORY_PRESETS: Preset[] = [
   },
 
   {
-    // Juno-style PWM dream pad: pulse-width motion from a slow LFO, the
-    // trademark square sub an octave down, and thick ensemble chorus.
+    // Juno-style PWM dream pad: pulse-width motion from a slow LFO and thick
+    // ensemble chorus, kept sub-free so the pad stays open rather than muddy.
     name: 'JUNO DREAM',
     params: {
       'oscA.table': 2, 'oscA.pos': 0.35, 'oscA.unison': 3, 'oscA.detune': 0.15, 'oscA.spread': 0.7, 'oscA.level': 0.75,
-      'sub.on': 1, 'sub.shape': 1, 'sub.level': 0.45, 'sub.oct': -1,
       'filter.type': 1, 'filter.cutoff': 2000, 'filter.res': 0.12, 'filter.env': 0.25, 'filter.key': 0.25,
       'env1.a': 0.4, 'env1.d': 1, 'env1.s': 0.8, 'env1.r': 1.4,
       'lfo1.rate': 0.4, 'lfo2.rate': 0.17,
