@@ -638,8 +638,10 @@ body::before {
 .lfo-div .st-btn { flex: none; }
 
 /* ============ matrix ============ */
-.panel-matrix,
-.panel-fx { height: 124px; }
+.panel-matrix { height: 124px; }
+/* min-height, not height: the fx modules are sized to fit at the rack's
+   min-width, but if content ever wraps the card must grow, not clip. */
+.panel-fx { min-height: 124px; }
 .panel-matrix {
   display: grid;
   grid-template-columns: 172px minmax(0, 1fr);
@@ -772,7 +774,10 @@ body::before {
 .fx-module {
   border: 1px solid var(--line);
   border-radius: 9px;
-  padding: 8px 8px 4px;
+  /* 5px sides: at the rack's 1420px min-width the EQ (4 knobs) and
+     chorus/delay (3) rows are within ~2px of their column width — 8px
+     padding made them wrap and spill out of the 124px row. */
+  padding: 8px 5px 4px;
   background: rgba(0, 0, 0, 0.18);
   min-width: 0;
 }
