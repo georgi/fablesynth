@@ -134,3 +134,22 @@ describe('mono + hosted clip chords', () => {
     expect(gs[0].note).toBe(48);
   });
 });
+
+describe('held stack survives mono<->poly flips', () => {
+  beforeEach(() => { g.currentFrame = 0; });
+
+  it('a key released while in poly must not linger in the held stack for a later mono note-off', () => {
+    const h = bootWt({ 'master.mono': 1 });
+    h.send({ t: 'on', n: 57, v: 1 });      // mono: held=[57]
+    h.render(4);
+    h.send({ t: 'p', k: 'master.mono', v: 0 }); // flip poly
+    h.send({ t: 'off', n: 57 });           // poly off: must drain held too
+    h.render(4);
+    h.send({ t: 'p', k: 'master.mono', v: 1 }); // flip back to mono
+    h.send({ t: 'on', n: 64, v: 1 });      // from silence
+    h.render(4);
+    h.send({ t: 'off', n: 64 });           // no keys held anywhere
+    h.render(200);
+    expect(gated(h)).toHaveLength(0);      // stuck note if held=[57] leaked
+  });
+});
