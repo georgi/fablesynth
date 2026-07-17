@@ -302,6 +302,7 @@ class FableProcessor extends AudioWorkletProcessor {
     this.gLfo1 = new LFO(); this.gLfo1.reset();
     this.gLfo2 = new LFO(); this.gLfo2.reset();
     this.lastPitch = 60;
+    this.held = []; // mono press-order stack of {n, vel}, newest last
     this.clock = 0;
     // ---- note sequencer state ----
     this.seqPlaying = false;
@@ -390,6 +391,7 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'panic':
         for (const v of this.voices) v.kill();
         this.seqOffQueue.length = 0;
+        this.held.length = 0;
         this.seqLastNote = -1;
         this.clip = null;
         this.clipPend = null;
@@ -582,6 +584,51 @@ class FableProcessor extends AudioWorkletProcessor {
   }
 
   noteOn(n, vel) {
+    if (this.p['master.mono']) this.monoNoteOn(n, vel);
+    else this.polyNoteOn(n, vel);
+  }
+
+  monoNoteOn(n, vel) {
+    // Re-press of a held pitch moves it to the top of the stack. Compact in
+    // place: the audio thread must not allocate per note event.
+    let w = 0;
+    for (let i = 0; i < this.held.length; i++) if (this.held[i].n !== n) this.held[w++] = this.held[i];
+    this.held.length = w;
+    this.held.push({ n, vel });
+
+    // The newest gated voice carries the mono line; release any others (they
+    // can only exist right after a poly -> mono flip).
+    let voice = null;
+    for (const v of this.voices) {
+      if (!v.gate) continue;
+      if (!voice) { voice = v; continue; }
+      if (v.age > voice.age) { voice.noteOff(); voice = v; } else v.noteOff();
+    }
+    if (voice) {
+      // Legato: retune only — renderVoice glides v.pitch toward v.note, and
+      // not calling Voice.noteOn is what keeps the envelopes running.
+      voice.note = n;
+      this.lastPitch = n;
+      return;
+    }
+    this.polyNoteOn(n, vel); // from silence: normal trigger (glide-from-lastPitch, steal fade)
+  }
+
+  monoNoteOff(n) {
+    let w = 0;
+    for (let i = 0; i < this.held.length; i++) if (this.held[i].n !== n) this.held[w++] = this.held[i];
+    this.held.length = w;
+    for (const v of this.voices) {
+      if (v.pending && v.pending.n === n) v.pending = null;
+      if (v.gate && v.note === n) {
+        const back = this.held[this.held.length - 1];
+        if (back) { v.note = back.n; this.lastPitch = back.n; } // fall back to the held note, no retrigger
+        else v.noteOff();
+      }
+    }
+  }
+
+  polyNoteOn(n, vel) {
     let voice = this.voices.find((v) => v.gate && v.note === n);
     if (!voice) voice = this.voices.find((v) => !v.active);
     if (!voice) {
@@ -610,6 +657,7 @@ class FableProcessor extends AudioWorkletProcessor {
   }
 
   noteOff(n) {
+    if (this.p['master.mono']) { this.monoNoteOff(n); return; }
     for (const v of this.voices) {
       // A note released before its steal fade finished must not start at all.
       if (v.pending && v.pending.n === n) v.pending = null;
