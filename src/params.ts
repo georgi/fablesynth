@@ -260,6 +260,7 @@ export const PARAM_DEFS: ParamDef[] = [
   // Final visible gain stage: after FX, before DC blocking and limiting.
   { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.75, curve: 'lin', fmt: fmtPct },
   { id: 'master.glide', label: 'GLIDE', min: 0, max: 0.5, def: 0, curve: 'lin', fmt: fmtSec },
+  { id: 'master.mono', type: 'bool', def: 0 },
 
   // Note sequencer. seq.bpm also drives the worklet's virtual transport, so
   // synced LFOs phase-lock to the sequencer tempo while it plays.
