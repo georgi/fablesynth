@@ -812,6 +812,22 @@ body::before {
 .oct-ctl button:hover { border-color: var(--ac-a); color: var(--ac-a); }
 #oct-label { font-size: 11px; color: var(--ac-a); min-width: 24px; text-align: center; }
 
+#mono-toggle {
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+#mono-toggle.on {
+  color: var(--ac-n);
+  border-color: currentColor;
+}
+
 #keyboard {
   flex: 1;
   position: relative;
