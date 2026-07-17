@@ -101,3 +101,36 @@ describe('mono mode', () => {
     expect(gs[0].note).toBe(72);
   });
 });
+
+describe('mono + hosted clip chords', () => {
+  function playChordStep(h: WtHarness) {
+    g.currentFrame = 0;
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    const data = new Uint8Array(16 * 8 * 3);
+    const set = (step: number, lane: number, semi: number) => {
+      const o = (step * 8 + lane) * 3;
+      data[o] = 1 | (4 << 2); // on, duration 4 steps
+      data[o + 1] = semi;
+      data[o + 2] = 1; // oct 0
+    };
+    set(0, 0, 0); // root (48)
+    set(0, 1, 7); // fifth (55)
+    h.send({ t: 'clip', data: data.buffer, bars: 1, atFrame: 0 });
+    for (let b = 0; b < 4; b++) { h.render(1); g.currentFrame += 128; }
+  }
+
+  it('poly: a two-lane chord step gates two voices', () => {
+    const h = bootWt();
+    playChordStep(h);
+    expect(gated(h).map((v) => v.note).sort()).toEqual([48, 55]);
+  });
+
+  it('mono: the chord collapses to the first active lane', () => {
+    const h = bootWt({ 'master.mono': 1 });
+    playChordStep(h);
+    const gs = gated(h);
+    expect(gs).toHaveLength(1);
+    expect(gs[0].note).toBe(48);
+  });
+});

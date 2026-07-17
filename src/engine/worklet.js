@@ -533,6 +533,9 @@ class FableProcessor extends AudioWorkletProcessor {
     const abs = (this.clipStep + 1) % total;
     const s = abs % SEQ_STEPS;
     const chord = Array.from({ length: WT_POLY_LANES }, (_, lane) => this.clipRead(abs, lane)).filter((st) => st.on);
+    // Mono: the melody lives in the first active lane; the rest of a chord
+    // step would just steal the line note for note.
+    if (this.p['master.mono'] && chord.length > 1) chord.length = 1;
 
     if (chord.length) {
       const root = (this.p['seq.root'] | 0) || 48;
