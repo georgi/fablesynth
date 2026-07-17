@@ -499,7 +499,8 @@ int main(int argc, char** argv) {
         check(s.acc && s.duration >= 1, "accent latches on an active step", s.duration);
         for (int i = 5; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
         seq.resizeStep(4, 63);
-        check(proc.getSeqStep(0, 4).duration == 63, "duration resize clamps at 63", proc.getSeqStep(0, 4).duration);
+        // chain is one bar: NoteLengthHandle.tsx clamps at totalSteps - absoluteStep (16 - 4)
+        check(proc.getSeqStep(0, 4).duration == 12, "duration resize clamps at the playback length", proc.getSeqStep(0, 4).duration);
         seq.resizeStep(4, -4);
         check(proc.getSeqStep(0, 4).duration == 1, "duration resize clamps at 1", proc.getSeqStep(0, 4).duration);
         fable::NoteSeqStep nextSame; nextSame.on = true; nextSame.note = 0;

@@ -811,6 +811,28 @@ juce::AudioProcessorEditor* SeqAudioProcessor::createEditor() {
 // ---- session import/export (message thread) --------------------------------
 
 bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
+    if (!restoreSessionJson(json)) return false;
+    // An external load replaced the document wholesale — old edit snapshots
+    // would restore a different session, so drop them (editing-concept:
+    // history cleared on session load / preset apply, both of which funnel
+    // through here).
+    history_.clear();
+    return true;
+}
+
+bool SeqAudioProcessor::undo() {
+    auto snap = history_.undo(currentSessionJson());
+    if (!snap) return false;
+    return restoreSessionJson(*snap);
+}
+
+bool SeqAudioProcessor::redo() {
+    auto snap = history_.redo(currentSessionJson());
+    if (!snap) return false;
+    return restoreSessionJson(*snap);
+}
+
+bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
     SessionData restored;
     if (!fable::sessionFromJson(json, restored)) return false;
     if (!sqLayoutMatches(restored)) return false; // reject: not the fixed {DR1,BL1,WT1,WT1} rig

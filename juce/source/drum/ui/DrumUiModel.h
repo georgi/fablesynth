@@ -55,6 +55,13 @@ public:
     virtual bool hasTargetClip() const { return true; }
     virtual void createTargetClip() {}
     virtual int clipBars() const { return 1; }
+
+    // Identity of the currently-hosted pattern/clip source. Standalone never
+    // changes (always 0); the hosted model returns something that changes
+    // whenever the SQ-4 focus target switches to a different scene, so the
+    // step editor can clear its undo history on the swap (decision 6: cross-
+    // clip undo corruption is a hazard identical to the web's).
+    virtual int clipIdentity() const { return 0; }
 };
 
 std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor&);

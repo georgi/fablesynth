@@ -50,7 +50,9 @@ private:
     int focusTrack_ = -1;
 };
 
-class SeqEditor : public juce::AudioProcessorEditor {
+// The editor is the DragAndDropContainer for the grid's clip-block drags
+// (same idiom as the WT-1/DR-1 editors' mod-chip drags — ui/Modulation.cpp).
+class SeqEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer {
 public:
     explicit SeqEditor(SeqAudioProcessor&);
     ~SeqEditor() override;

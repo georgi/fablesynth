@@ -5,6 +5,7 @@
 #include "dsp/Conductor.h"
 #include "dsp/ClipLibrary.h"
 #include "dsp/SeqModel.h"
+#include "dsp/SnapshotHistory.h"
 #include "../dsp/Engine.h"
 #include "../dsp/Fx.h"
 #include "../dsp/ClipHost.h"   // fable::HostEvent
@@ -93,6 +94,23 @@ public:
     // JSON fails validation.
     bool applySessionJson(const juce::String& json);
     juce::String currentSessionJson() const;
+
+    // ---- editing undo substrate (message thread) -----------------------------
+    // Bounded (50) session-JSON snapshot stack over currentSessionJson()/
+    // applySessionJson (editing-concept: undo covers editing verbs only).
+    // Callers push exactly ONE snapshot per gesture, BEFORE mutating (a
+    // continuous drag coalesces to one entry). undo()/redo() restore via the
+    // same rebuild-the-conductor path as applySessionJson — a coarse restore
+    // that stops all tracks is accepted for v1 — but do NOT clear the history;
+    // external loads (applySessionJson: LOAD button, setStateInformation,
+    // applySessionPreset) DO clear it, because those snapshots would restore a
+    // different document.
+    void pushUndoSnapshot() { history_.push(currentSessionJson()); }
+    bool undo();
+    bool redo();
+    void clearHistory() { history_.clear(); }
+    bool canUndo() const { return history_.canUndo(); }
+    bool canRedo() const { return history_.canRedo(); }
 
     // ---- SQ-4 surface --------------------------------------------------------
     // The conductor half (message thread). Valid after prepareToPlay().
@@ -240,6 +258,10 @@ private:
     // ---- session param polling (message thread) -----------------------------
     void pollSessionParams();
 
+    // applySessionJson minus the history clear — the shared restore path used
+    // by external loads AND by undo/redo (which must keep their stacks).
+    bool restoreSessionJson(const juce::String& json);
+
     // juce::Timer: the processor's own 30 Hz pump for drainAcks() (see the
     // threading note above) — private since only the processor drives it.
     void timerCallback() override { drainAcks(); }
@@ -261,6 +283,9 @@ private:
     // conductor_->session(), never this member, or it'll act on a stale copy
     // (see applyTrackPatch's history — it did exactly that).
     fable::SessionData initialSession_;
+
+    // Editing-verb undo history (see the public undo API above).
+    fable::SnapshotHistory<juce::String> history_ { 50 };
 
     // Sample rate from the most recent prepareToPlay() call. applySessionJson
     // uses this (not getSampleRate()) to decide whether it's safe to rebuild

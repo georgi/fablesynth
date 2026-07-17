@@ -233,6 +233,21 @@ describe('clipupdate (hosted hot-swap)', () => {
     expect(poses.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('reports fired pads in the pos message so hosted LEDs can flash', () => {
+    g.currentFrame = 0;
+    const h = makeDrumProcessor();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    const data = new Uint8Array(256);
+    for (let s = 0; s < 16; s++) data[(0 * 16 + 5) * 16 + s] = 1; // pad 5 every step
+    h.send({ t: 'clip', data, bars: 1, atFrame: 0 });
+    runBlocks(h, 100); // several steps fire
+    const withHits = h.sent.filter(
+      (m) => m.t === 'pos' && (m as unknown as { hits: number[] }).hits.includes(5),
+    );
+    expect(withHits.length).toBeGreaterThanOrEqual(1);
+  });
+
   it('re-wraps clipStep when the clip shrinks below the current position', () => {
     g.currentFrame = 0;
     const h = makeDrumProcessor();

@@ -74,6 +74,11 @@ public:
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
 
+    // Decision-6: bulk pattern-buffer access for StepEditOps.h range/pattern
+    // ops and the view's undo history (mirrors the per-step accessors above).
+    std::vector<uint8_t> getPatternBytes() const;
+    void setPatternBytes(const std::vector<uint8_t>& bytes);
+
     // ---- tables (the 6 WT-1 procedurals) ----
     int numTables() const { return (int)tables_.size(); }
     const fable::GeneratedTable* tableAt(int idx) const;

@@ -66,6 +66,21 @@ public:
     // compatibility, bounds, or transposition fails.
     bool loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
                          int transposeSemitones = 0);
+    // Editing verbs (editing-concept: selection -> verbs -> transport). All
+    // follow the same mutate-then-emit pattern as loadLibraryClip and return
+    // false without changing the session when the target is invalid.
+    // deleteClip: clear a filled cell; if the track owns or queues that cell,
+    // an immediate stop is emitted first (the clip no longer exists, so there
+    // is nothing musical to wait for).
+    bool deleteClip(int s, int t);
+    // pasteClip: replace or create one cell from clipboard data. The machine-
+    // compat gate is the same byte-length check validateSession enforces:
+    // bytes.size() must equal bars * sqBytesPerBar(track machine). Overwrite
+    // is allowed; a live/pending target is hot-updated in place.
+    bool pasteClip(int s, int t, const ClipData& clip);
+    // moveClip: move (or with copy=true, duplicate) a filled cell to another
+    // cell. Rejected across different machines and onto itself.
+    bool moveClip(int fromS, int fromT, int toS, int toT, bool copy);
     void setTrackPatch(int t, PatchRef patch);
     void toggleSceneMute(int s);
     void toggleTrackMute(int t);

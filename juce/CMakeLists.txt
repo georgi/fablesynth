@@ -222,6 +222,7 @@ if(FABLE_BUILD_PLUGIN)
     set(FABLE_SEQ_SOURCES
         source/seq/SeqProcessor.cpp
         source/seq/SessionCodec.cpp
+        source/seq/ClipClipboardCodec.cpp
         source/seq/ClipLibraryStorage.cpp
         source/seq/SeqEditor.cpp
         source/seq/ui/SeqHeader.cpp
@@ -421,6 +422,26 @@ add_executable(sq4_engine_test
     source/seq/dsp/Conductor.cpp)
 target_compile_features(sq4_engine_test PRIVATE cxx_std_17)
 
+# When the JUCE tree is available, sq4_engine_test additionally covers the
+# JUCE-layer codecs (SessionCodec, ClipClipboardCodec) and the session-JSON
+# undo round-trip; those tests compile behind FABLE_SQ4_TEST_JUCE so the
+# harness still builds JUCE-free with -DFABLE_BUILD_PLUGIN=OFF.
+if(FABLE_BUILD_PLUGIN)
+    target_sources(sq4_engine_test PRIVATE
+        source/seq/SessionCodec.cpp
+        source/seq/ClipClipboardCodec.cpp)
+    target_link_libraries(sq4_engine_test PRIVATE juce::juce_core)
+    target_compile_definitions(sq4_engine_test PRIVATE
+        FABLE_SQ4_TEST_JUCE=1
+        JUCE_STANDALONE_APPLICATION=1
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+endif()
+
+# ---- StepEditOps headless verification harness (no JUCE) ----
+add_executable(step_edit_ops_test
+    test/step_edit_ops_test.cpp)
+target_compile_features(step_edit_ops_test PRIVATE cxx_std_17)
+
 # Calibration tool (not a ctest): renders every factory song's four tracks
 # through their full engine+FX chains and prints recommended mixer faders.
 add_executable(measure_track_levels
@@ -453,3 +474,4 @@ add_test(NAME engine_test COMMAND engine_test)
 add_test(NAME drum_engine_test COMMAND drum_engine_test)
 add_test(NAME bass_engine_test COMMAND bass_engine_test)
 add_test(NAME sq4_engine_test COMMAND sq4_engine_test)
+add_test(NAME step_edit_ops_test COMMAND step_edit_ops_test)

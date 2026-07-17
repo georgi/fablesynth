@@ -939,6 +939,13 @@ body::before {
   background: color-mix(in srgb, var(--ac-a) 22%, #0a0d13);
   box-shadow: inset 0 -3px 0 var(--ac-a), inset 0 0 0 1px var(--ac-a), 0 0 9px color-mix(in srgb, var(--ac-a) 20%, transparent);
 }
+/* Bar-chip drag: pointer-drag one chip onto another to move (swap) its
+   pattern; Alt-drag copies. See SequenceLengthControl's onMovePattern. */
+.seq-bar.dragging { opacity: 0.45; cursor: grabbing; }
+.seq-bar.drop-target {
+  color: var(--ac-a);
+  box-shadow: inset 0 0 0 2px var(--ac-a), 0 0 10px color-mix(in srgb, var(--ac-a) 35%, transparent);
+}
 .seq-bar:hover,
 .seq-length button:hover:not(:disabled),
 .seq-bar:focus-visible,
@@ -1178,12 +1185,20 @@ body::before {
   box-shadow: 0 0 8px rgba(255, 161, 77, 0.6);
 }
 .ns-step-num {
+  width: 100%;
   margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-dim);
+  font: inherit;
   font-size: 7px;
   letter-spacing: 0.1em;
   text-align: center;
+  cursor: pointer;
+  touch-action: none;
 }
+.ns-step-num.selected { color: var(--ac-a); }
 .ns-step-cursor {
   position: absolute;
   top: -2px;
@@ -1197,6 +1212,20 @@ body::before {
   pointer-events: none;
 }
 .ns-step-cursor.cur { opacity: 1; }
+.ns-step-sel {
+  position: absolute;
+  z-index: 1;
+  top: -2px;
+  right: -2px;
+  bottom: 12px;
+  left: -2px;
+  border: 1px solid rgba(126, 235, 255, 0.4);
+  border-radius: 6px;
+  background: rgba(126, 235, 255, 0.08);
+  opacity: 0;
+  pointer-events: none;
+}
+.ns-step-sel.on { opacity: 1; }
 .ns-clock {
   display: flex;
   flex: none;

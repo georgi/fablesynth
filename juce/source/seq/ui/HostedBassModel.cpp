@@ -151,6 +151,23 @@ void HostedBassModel::setSequenceStep(int pattern, int step,
     proc_.conductor().updateClipBytes(scene_, kTrack, std::move(bytes), clip.bars);
 }
 
+std::vector<uint8_t> HostedBassModel::patternBytes() const {
+    if (!hasTargetClip()) return {};
+    return proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack].bytes;
+}
+
+void HostedBassModel::setPatternBytes(std::vector<uint8_t> bytes) {
+    if (!hasTargetClip()) return;
+    const auto& clip = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack];
+    if (clip.bars > fable::SQ_HOSTED_MAX_BARS) return;
+    // A buffer whose length disagrees with the clip's bar count would ship a
+    // short/long clip to the audio thread (out-of-bounds step reads) and break
+    // validateSession on the next save. Reject it outright — callers must
+    // resize via setChain first.
+    if ((int)bytes.size() != clip.bars * fable::sqBytesPerBar(fable::Machine::BL1)) return;
+    proc_.conductor().updateClipBytes(scene_, kTrack, std::move(bytes), clip.bars);
+}
+
 void HostedBassModel::setChain(std::vector<int> chain) {
     if (!hasTargetClip()) return;
     const auto& current = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack];

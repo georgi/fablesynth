@@ -8,6 +8,16 @@ using fable::BassSeqStep;
 
 static const char* const kPatNames[fable::BL_NPATTERNS] = { "1", "2", "3", "4" };
 
+// Decision-6 (step-range editing): BL-1's packed byte layout for
+// StepEditOps.h — stride 3 (flags/note+slide/oct), 16 steps, one lane
+// (laneOffset 0, patternSize == stepsPerPattern*stride). The empty-step
+// bytes match makeEmptyBassPatterns()/BassSeqStep{}: duration 1, oct 0 — so
+// clearRange never produces a step JUCE reads back as anything but a rest.
+static fable::StepLayout seqLayout() {
+    return { fable::BL_STEP_STRIDE, fable::BL_STEPS, fable::BL_STEPS * fable::BL_STEP_STRIDE, 0 };
+}
+static const fable::StepBytes kEmptyStep{ (uint8_t)(1 << 2), 0, 1 };
+
 // ---- geometry (bass.css .bl-seq-*, rack-relative px) --------------------------
 // panel padding 9px 12px 11px; head 28px + 10px margin; body: legend 36px +
 // 8px gap, then 16 columns with 5px gaps. Column: 143px of lanes (12 cells,
@@ -174,6 +184,144 @@ void PitchSeqView::setSequenceLength(int bars) {
     repaint();
 }
 
+int PitchSeqView::stepAt(int x) const {
+    const int gx = kPadX + kLegendW + kLegendGap;
+    const int gw = getWidth() - kPadX - gx;
+    const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
+    if (w + kColGap <= 0.0f) return 0;
+    const int step = (int)std::floor(((float)x - (float)gx) / (w + kColGap));
+    return juce::jlimit(0, fable::BL_STEPS - 1, step);
+}
+
+int PitchSeqView::patternIndexAt(juce::Point<int> p) const {
+    for (int i = 0; i < fable::BL_NPATTERNS; ++i)
+        if (patternBounds(i).contains(p)) return i;
+    return -1;
+}
+
+// ---- Decision-6: selection + verbs (seqEdit.ts port via StepEditOps.h) ------
+
+void PitchSeqView::shiftClickStep(int step) {
+    step = juce::jlimit(0, fable::BL_STEPS - 1, step);
+    if (!hasSelection()) selAnchor_ = step;  // first shift-click: start the range here
+    selHead_ = step;                          // subsequent shift-clicks: extend from the anchor
+    repaint();
+}
+
+void PitchSeqView::selectAll() { selAnchor_ = 0; selHead_ = fable::BL_STEPS - 1; repaint(); }
+void PitchSeqView::clearSelection() { selAnchor_ = selHead_ = -1; repaint(); }
+
+void PitchSeqView::copySelection() {
+    const int pat = proc.editPattern();
+    const int lo = hasSelection() ? selectionLo() : 0;
+    const int hi = hasSelection() ? selectionHi() : fable::BL_STEPS - 1;
+    clipboard_ = fable::copyRange(proc.patternBytes(), seqLayout(), pat, lo, hi);
+}
+
+void PitchSeqView::cutSelection() {
+    copySelection();
+    const int pat = proc.editPattern();
+    const int lo = hasSelection() ? selectionLo() : 0;
+    const int hi = hasSelection() ? selectionHi() : fable::BL_STEPS - 1;
+    pushHistory();
+    proc.setPatternBytes(fable::clearRange(proc.patternBytes(), seqLayout(), pat, lo, hi, kEmptyStep));
+    repaint();
+}
+
+void PitchSeqView::pasteAtSelection() {
+    if (clipboard_.empty()) return;
+    const int pat = proc.editPattern();
+    const int at = hasSelection() ? selectionLo() : 0;
+    pushHistory();
+    proc.setPatternBytes(fable::pasteRange(proc.patternBytes(), seqLayout(), pat, at, clipboard_));
+    repaint();
+}
+
+void PitchSeqView::deleteSelection() {
+    if (!hasSelection()) return;              // distinct from toggling: only clears a real range
+    const int pat = proc.editPattern();
+    pushHistory();
+    proc.setPatternBytes(fable::clearRange(proc.patternBytes(), seqLayout(), pat,
+                                            selectionLo(), selectionHi(), kEmptyStep));
+    repaint();
+}
+
+void PitchSeqView::duplicateSelection() {
+    const int pat = proc.editPattern();
+    if (hasSelection()) {
+        const int lo = selectionLo(), hi = selectionHi();
+        const int len = hi - lo + 1;
+        const auto data = fable::copyRange(proc.patternBytes(), seqLayout(), pat, lo, hi);
+        pushHistory();
+        proc.setPatternBytes(fable::pasteRange(proc.patternBytes(), seqLayout(), pat, hi + 1, data));
+        selAnchor_ = juce::jmin(fable::BL_STEPS - 1, hi + 1);
+        selHead_   = juce::jmin(fable::BL_STEPS - 1, hi + len);
+        repaint();
+        return;
+    }
+    // No selection: the classic "duplicate bar" gesture — copy the whole
+    // edit pattern to editPattern+1, extending sequence length up to 4 bars
+    // if that bar isn't played yet.
+    const int target = pat + 1;
+    if (target >= fable::BL_NPATTERNS) return; // already at the last pattern slot
+    const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
+    if (target >= bars) {
+        std::vector<int> next;
+        for (int i = 0; i <= target; ++i) next.push_back(i);
+        proc.setChain(std::move(next)); // may grow the hosted clip's byte buffer
+    }
+    pushHistory();
+    const auto data = fable::copyRange(proc.patternBytes(), seqLayout(), pat, 0, fable::BL_STEPS - 1);
+    proc.setPatternBytes(fable::pasteRange(proc.patternBytes(), seqLayout(), target, 0, data));
+    proc.setEditPattern(target);
+    repaint();
+}
+
+void PitchSeqView::undo() {
+    fable::StepBytes restored;
+    if (history_.undo(proc.patternBytes(), restored)) { proc.setPatternBytes(restored); repaint(); }
+}
+
+void PitchSeqView::redo() {
+    fable::StepBytes restored;
+    if (history_.redo(proc.patternBytes(), restored)) { proc.setPatternBytes(restored); repaint(); }
+}
+
+void PitchSeqView::shiftRangeTo(int destStep, bool copy) {
+    if (!hasSelection()) return;
+    const int pat = proc.editPattern();
+    const int lo = selectionLo(), hi = selectionHi();
+    const int len = hi - lo + 1;
+    // Clamp dest so the whole range fits: shiftRange does NOT clamp internally
+    // (pasteRange silently drops the overshooting tail), so an edge-overshoot
+    // drag-move would truncate the moved steps and desync the selection — the
+    // web review's overshoot-drag fix, mirrored from NoteSeqView::shiftStepSel.
+    const int dest = juce::jlimit(0, fable::BL_STEPS - len, destStep);
+    if (dest == lo && !copy) return; // dropped back on itself: no-op, skip a spurious history entry
+    pushHistory();
+    fable::ShiftOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep;
+    proc.setPatternBytes(fable::shiftRange(proc.patternBytes(), seqLayout(), pat, lo, hi, dest, opts));
+    selAnchor_ = dest;
+    selHead_   = dest + len - 1;
+    repaint();
+}
+
+void PitchSeqView::moveBar(int fromPattern, int toPattern, bool copy) {
+    const int bars = proc.capabilities().hosted ? proc.clipBars() : fable::BL_NPATTERNS;
+    if (fromPattern < 0 || toPattern < 0 || fromPattern >= bars || toPattern >= bars
+        || fromPattern == toPattern) return;
+    pushHistory();
+    const auto bytes = proc.patternBytes();
+    const auto a = fable::copyPattern(bytes, seqLayout(), fromPattern);
+    auto next = fable::pastePattern(bytes, seqLayout(), toPattern, a);
+    if (!copy) {
+        const auto b = fable::copyPattern(bytes, seqLayout(), toPattern);
+        next = fable::pastePattern(next, seqLayout(), fromPattern, b);
+    }
+    proc.setPatternBytes(next);
+    repaint();
+}
+
 void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     if (transportBounds().contains(pos)) {       // play/stop
@@ -181,8 +329,14 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
         repaint();
         return;
     }
+    // Bar chip: plain click still selects the edit pattern (mouseUp fires it
+    // if the click never crosses the drag threshold); past the threshold it
+    // becomes a bar-chip drag (move, Alt = copy) resolved in mouseUp.
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
-        if (patternBounds(i).contains(pos)) { patternClick(i); return; }
+        if (patternBounds(i).contains(pos)) {
+            barDragFrom_ = i; barDragStarted_ = false; barDragHover_ = -1;
+            return;
+        }
     if (proc.capabilities().supportsPatternChain && sequenceLengthBounds().contains(pos)) {
         const auto length = sequenceLengthBounds();
         const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
@@ -193,6 +347,27 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     if (randBounds().contains(pos)) { randomize(); return; }
     for (int s = 0; s < fable::BL_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
         resizeStep_ = s; resizeStartDuration_ = proc.sequenceStep(proc.editPattern(), s).duration; return;
+    }
+    // A plain (non-Shift) click landing inside the current selection grabs
+    // it for a step-range drag-shift instead of toggling the cell under it.
+    if (hasSelection() && !e.mods.isShiftDown()) {
+        for (int s = 0; s < fable::BL_STEPS; ++s) {
+            if (!colBounds(s).contains(pos)) continue;
+            if (s >= selectionLo() && s <= selectionHi()) {
+                stepDragActive_ = true;
+                stepDragAnchorCol_ = s;
+                stepDragHoverDest_ = selectionLo();
+            }
+            break;
+        }
+        if (stepDragActive_) return;
+    }
+    // Shift-click/-sweep sets or extends the range; a stationary shift-click
+    // must never also toggle the step underneath it.
+    if (e.mods.isShiftDown()) {
+        for (int s = 0; s < fable::BL_STEPS; ++s)
+            if (colBounds(s).contains(pos)) { shiftClickStep(s); return; }
+        return;
     }
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
@@ -206,20 +381,96 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
 }
 
 void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
-    if (resizeStep_ < 0) return;
-    const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
-    resizeStep(resizeStep_, resizeStartDuration_ + delta);
+    if (resizeStep_ >= 0) {
+        const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
+        resizeStep(resizeStep_, resizeStartDuration_ + delta);
+        return;
+    }
+    if (barDragFrom_ >= 0) {
+        if (!barDragStarted_ && e.getDistanceFromDragStart() > 4) barDragStarted_ = true;
+        if (barDragStarted_) {
+            const int hover = patternIndexAt(e.getPosition());
+            if (hover != barDragHover_) { barDragHover_ = hover; repaint(); }
+        }
+        return;
+    }
+    if (stepDragActive_) {
+        const int col = stepAt(e.getPosition().x);
+        const int len = selectionHi() - selectionLo() + 1;
+        const int dest = juce::jlimit(0, fable::BL_STEPS - len,
+                                       selectionLo() + (col - stepDragAnchorCol_));
+        if (dest != stepDragHoverDest_) { stepDragHoverDest_ = dest; repaint(); }
+        return;
+    }
 }
 
-void PitchSeqView::mouseUp(const juce::MouseEvent&) { resizeStep_ = -1; }
+void PitchSeqView::mouseUp(const juce::MouseEvent& e) {
+    if (resizeStep_ >= 0) { resizeStep_ = -1; return; }
+    if (barDragFrom_ >= 0) {
+        if (barDragStarted_) {
+            const int target = patternIndexAt(e.getPosition());
+            if (target >= 0 && target != barDragFrom_) moveBar(barDragFrom_, target, e.mods.isAltDown());
+        } else {
+            patternClick(barDragFrom_);      // plain click: unchanged bar-select behavior
+        }
+        barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1;
+        repaint();
+        return;
+    }
+    if (stepDragActive_) {
+        stepDragActive_ = false;
+        if (stepDragHoverDest_ != selectionLo()) shiftRangeTo(stepDragHoverDest_, e.mods.isAltDown());
+        stepDragHoverDest_ = -1;
+        repaint();
+        return;
+    }
+}
+
 void PitchSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
-bool PitchSeqView::keyPressed(const juce::KeyPress& k) { if (k == juce::KeyPress::escapeKey) { cancelResize(); return true; } return false; }
+
+bool PitchSeqView::keyPressed(const juce::KeyPress& k) {
+    if (k == juce::KeyPress::escapeKey) {
+        if (stepDragActive_) { stepDragActive_ = false; stepDragHoverDest_ = -1; repaint(); return true; }
+        if (barDragFrom_ >= 0) { barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1; repaint(); return true; }
+        if (hasSelection()) { clearSelection(); return true; }
+        cancelResize();
+        return true;
+    }
+    const auto mods = k.getModifiers();
+    if (mods.isCommandDown()) {
+        switch (k.getKeyCode()) {
+            case 'A': selectAll();        return true;
+            case 'C': copySelection();    return true;
+            case 'X': cutSelection();     return true;
+            case 'V': pasteAtSelection(); return true;
+            case 'D': duplicateSelection(); return true;
+            case 'Z': mods.isShiftDown() ? redo() : undo(); return true;
+            default: break;
+        }
+    }
+    if (k.getKeyCode() == juce::KeyPress::deleteKey || k.getKeyCode() == juce::KeyPress::backspaceKey) {
+        deleteSelection();
+        return true;
+    }
+    return false;
+}
 
 // ---- animation ----------------------------------------------------------------
 
 // Repaint only when something visible changed: transport/playhead, edit
 // pattern, chain, chaining mode, or the pattern content itself.
 void PitchSeqView::timerCallback() {
+    // Decision-6: when the hosted clip/pattern source is swapped (SQ-4 focus
+    // switching to a different scene), the undo history and selection would
+    // otherwise silently apply to the wrong clip — clear both. The sentinel
+    // start value means the very first tick never spuriously fires this.
+    const int srcId = proc.patternSourceId();
+    if (srcId != lastPatternSrc_) {
+        lastPatternSrc_ = srcId;
+        history_.clear();
+        selAnchor_ = selHead_ = -1;
+    }
+
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
     const bool playing = proc.sequencerPlaying();
@@ -439,6 +690,36 @@ void PitchSeqView::paint(juce::Graphics& g) {
         const auto c0 = colBounds(i - 1), c1 = colBounds(i);
         g.drawLine((float)c0.getCentreX(), yOf(steps[i - 1]),
                    (float)c1.getCentreX(), yOf(steps[i]), 1.4f);
+    }
+
+    // ---- Decision-6: selection outline + drag-preview highlights ----
+    // A neutral tint (col::acN) so the selection reads distinctly from the
+    // green active/slide affordances above.
+    if (hasSelection()) {
+        for (int s = selectionLo(); s <= selectionHi(); ++s) {
+            g.setColour(col::acN.withAlpha(0.10f));
+            g.fillRoundedRectangle(colBounds(s).toFloat().reduced(1.0f), 4.0f);
+        }
+        const auto lo = colBounds(selectionLo()), hi = colBounds(selectionHi());
+        const juce::Rectangle<float> outline((float)lo.getX() - 2.0f, (float)lo.getY() - 2.0f,
+                                              (float)(hi.getRight() - lo.getX()) + 4.0f,
+                                              (float)lo.getHeight() + 4.0f);
+        g.setColour(col::acN.withAlpha(0.85f));
+        g.drawRoundedRectangle(outline, 6.0f, 1.5f);
+    }
+    if (stepDragActive_ && stepDragHoverDest_ >= 0) {
+        const int len = selectionHi() - selectionLo() + 1;
+        const int hiCol = juce::jmin(fable::BL_STEPS - 1, stepDragHoverDest_ + len - 1);
+        const auto lo = colBounds(stepDragHoverDest_), hi = colBounds(hiCol);
+        const juce::Rectangle<float> preview((float)lo.getX() - 2.0f, (float)lo.getY() - 2.0f,
+                                              (float)(hi.getRight() - lo.getX()) + 4.0f,
+                                              (float)lo.getHeight() + 4.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.35f));
+        g.drawRoundedRectangle(preview, 6.0f, 1.2f);
+    }
+    if (barDragFrom_ >= 0 && barDragStarted_ && barDragHover_ >= 0) {
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
+        g.drawRoundedRectangle(patternBounds(barDragHover_).toFloat().expanded(2.0f), 6.0f, 2.0f);
     }
 }
 

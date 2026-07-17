@@ -142,15 +142,53 @@ void SeqEditor::focusScene(int s) {
 }
 
 bool SeqEditor::keyPressed(const juce::KeyPress& k) {
+    auto& g = rack.getGrid();
+    const auto mods = k.getModifiers();
+    const bool cmd = mods.isCommandDown();
+    // Letter keycodes arrive uppercase from the OS but tests may build a
+    // KeyPress from the lowercase character — normalise.
+    int code = k.getKeyCode();
+    if (code >= 'a' && code <= 'z') code -= 'a' - 'A';
+
+    // Undo/redo (editing-concept: bounded snapshot stack over editing verbs)
+    // work in session AND focus mode.
+    if (cmd && code == 'Z') {
+        if (mods.isShiftDown()) proc_.redo(); else proc_.undo();
+        return true;
+    }
+
     if (k == juce::KeyPress::escapeKey) {
+        if (g.isDragActive()) { g.cancelActiveDrag(); return true; } // cancel the drag first
         if (focusTrack_ >= 0) { exitFocus(); return true; }
+        if (g.hasSelection()) { g.clearSelection(); return true; }
         return false;
     }
-    if (focusTrack_ < 0) return false;
-    if (k == juce::KeyPress::upKey)   { focusScene(focusScene_ - 1); return true; }
-    if (k == juce::KeyPress::downKey) { focusScene(focusScene_ + 1); return true; }
-    const auto ch = k.getTextCharacter();
-    if (ch >= '1' && ch <= '4') { enterFocus((int)(ch - '1')); return true; }
+
+    // Focus-mode keys keep their existing meanings (arrows = scene, digits =
+    // device) — the grid verbs below are session-mode only.
+    if (focusTrack_ >= 0) {
+        if (k == juce::KeyPress::upKey)   { focusScene(focusScene_ - 1); return true; }
+        if (k == juce::KeyPress::downKey) { focusScene(focusScene_ + 1); return true; }
+        const auto ch = k.getTextCharacter();
+        if (ch >= '1' && ch <= '4') { enterFocus((int)(ch - '1')); return true; }
+        return false;
+    }
+
+    // Session-mode editing verbs over the grid selection.
+    if (cmd && code == 'A') { g.selectAll(); return true; }
+    if (cmd && code == 'C') { g.selCopy(); return true; }
+    if (cmd && code == 'X') { g.selCut(); return true; }
+    if (cmd && code == 'V') { g.selPaste(); return true; }
+    if (cmd && code == 'D') { g.selDuplicate(); return true; }
+    if (k.isKeyCode(juce::KeyPress::deleteKey) || k.isKeyCode(juce::KeyPress::backspaceKey)) {
+        g.selDelete();
+        return true;
+    }
+    const bool ext = mods.isShiftDown();
+    if (k.isKeyCode(juce::KeyPress::upKey))    { g.moveSelection(-1, 0, ext); return true; }
+    if (k.isKeyCode(juce::KeyPress::downKey))  { g.moveSelection(1, 0, ext); return true; }
+    if (k.isKeyCode(juce::KeyPress::leftKey))  { g.moveSelection(0, -1, ext); return true; }
+    if (k.isKeyCode(juce::KeyPress::rightKey)) { g.moveSelection(0, 1, ext); return true; }
     return false;
 }
 

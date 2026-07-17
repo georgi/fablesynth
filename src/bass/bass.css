@@ -423,6 +423,15 @@
   content: '';
   pointer-events: none;
 }
+/* Step-range selection: shift-click a column or drag across the step-number
+   row (see PitchSeq's shiftClickStep / sweep-drag). Distinct from the
+   playhead cursor and the "on" cell fill. */
+.bl-seq-col.selected {
+  background: color-mix(in srgb, var(--ac-a) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 45%, transparent);
+  border-radius: 3px;
+}
+.bl-seq-col.selected .bl-step-num { color: var(--ac-a); }
 .bl-seq-lanes {
   display: flex;
   flex-direction: column;
@@ -524,6 +533,9 @@
   font-size: 7px;
   letter-spacing: 0.1em;
   text-align: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
 }
 .bl-step-cursor {
   position: absolute;

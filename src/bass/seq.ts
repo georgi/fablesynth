@@ -4,6 +4,8 @@
 // Uint8Array. The worklet re-implements the same unpack + timing internally
 // (self-contained); the parity test asserts the constants.
 
+import type { SeqLayout } from '../shared/seqEdit';
+
 export const STEPS = 16;
 export const NPATTERNS = 4;
 export const PATTERN_NAMES = ['1', '2', '3', '4'];
@@ -32,6 +34,14 @@ export interface Step {
 }
 
 export type Patterns = Uint8Array;
+
+// Shared-editing layout (src/shared/seqEdit.ts): 3 bytes/step, 16 steps,
+// 48 bytes/pattern — same shape as WT-1's noteseq. copyRange/pasteRange/
+// shiftRange operate on the raw bytes, so the slide bit (byte1 bit7) rides
+// along untouched; see the "slide bit survives copy/paste" test.
+export const LAYOUT: SeqLayout = { stride: STEP_STRIDE, stepsPerPattern: STEPS, patternSize: STEPS * STEP_STRIDE };
+// A cleared step: duration 1, neutral octave (mirrors makeEmptyPatterns).
+export const EMPTY_STEP = Uint8Array.of(1 << 2, 0, 1);
 
 export const stepOff = (pat: number, step: number): number =>
   (pat * STEPS + step) * STEP_STRIDE;

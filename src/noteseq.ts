@@ -4,6 +4,8 @@
 // The worklet re-implements the same unpack + timing internally
 // (self-contained); the parity test asserts the constants.
 
+import type { SeqLayout } from './shared/seqEdit';
+
 export const STEPS = 16;
 export const NPATTERNS = 4;
 export const PATTERN_NAMES = ['1', '2', '3', '4'];
@@ -29,6 +31,13 @@ export interface SeqStep {
 }
 
 export type Patterns = Uint8Array;
+
+// Layout descriptor for src/shared/seqEdit.ts's pure range helpers.
+export const WT1_LAYOUT: SeqLayout = { stride: STEP_STRIDE, stepsPerPattern: STEPS, patternSize: STEPS * STEP_STRIDE };
+
+// Byte pattern of a cleared step: duration 1, neutral octave, rest note — the
+// same "empty step" makeEmptyPatterns() writes, not all-zero (see setStep).
+export const EMPTY_STEP: Uint8Array = Uint8Array.of(1 << 2, 0, 1);
 
 export const stepOff = (pat: number, step: number): number =>
   (pat * STEPS + step) * STEP_STRIDE;

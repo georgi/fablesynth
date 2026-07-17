@@ -86,6 +86,9 @@ export class DrumEngine {
   onclipstart: ((frame: number) => void) | null;
   onclipstop: ((frame: number) => void) | null;
   onpos: ((d: { step: number; bar: number }) => void) | null;
+  // Pads triggered by a hosted clip step, so the UI can flash their LEDs.
+  // Standalone playback reports hits via onstep instead.
+  onhit: ((pads: number[]) => void) | null;
   output: AudioNode | null; // hosted-mode output (null = ctx.destination)
 
   ctx!: AudioContext;
@@ -109,6 +112,7 @@ export class DrumEngine {
     this.onclipstart = null;
     this.onclipstop = null;
     this.onpos = null;
+    this.onhit = null;
     this.output = null;
     this.fxChains = [];
   }
@@ -132,7 +136,11 @@ export class DrumEngine {
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as DrumVizMessage);
-      if (e.data.t === 'pos' && this.onpos) this.onpos({ step: e.data.step as number, bar: e.data.bar as number });
+      if (e.data.t === 'pos') {
+        if (this.onpos) this.onpos({ step: e.data.step as number, bar: e.data.bar as number });
+        const hits = e.data.hits as number[] | undefined;
+        if (this.onhit && hits && hits.length) this.onhit(hits);
+      }
       if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
       if (e.data.t === 'clipstop' && this.onclipstop) this.onclipstop(e.data.frame as number);
     };

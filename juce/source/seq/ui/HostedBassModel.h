@@ -2,6 +2,7 @@
 
 #include "../../bass/ui/BassUiModel.h"
 #include "../../ui/DeviceParameterBank.h"
+#include "../dsp/SeqProtocol.h"
 
 #include <juce_events/juce_events.h>
 
@@ -52,6 +53,16 @@ public:
     void setSequenceStep(int pattern, int step, const fable::BassSeqStep&) override;
     const std::vector<int>& chain() const override { return chain_; }
     void setChain(std::vector<int>) override;
+
+    std::vector<uint8_t> patternBytes() const override;
+    void setPatternBytes(std::vector<uint8_t>) override;
+    // Fold the bar count in so PitchSeqView drops its bytes-only undo history
+    // whenever the clip's byte buffer is resized (setChain / duplicate-bar):
+    // stale shorter/longer snapshots must never be restored against the new
+    // bar count. Injective for scene_ >= -1, bars in [1, SQ_HOSTED_MAX_BARS].
+    int patternSourceId() const override {
+        return scene_ * (fable::SQ_HOSTED_MAX_BARS + 1) + clipBars();
+    }
 
     bool hasTargetClip() const override;
     void createTargetClip() override;

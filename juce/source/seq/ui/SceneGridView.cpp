@@ -80,6 +80,266 @@ void SceneGridView::sceneLaunch(int s) { proc.conductor().launchScene(s); }
 void SceneGridView::sceneMute(int s)   { proc.conductor().toggleSceneMute(s); }
 void SceneGridView::sceneStop(int s)   { proc.conductor().stopScene(s); }
 
+// ---- selection --------------------------------------------------------------
+
+void SceneGridView::selectCell(int s, int t) {
+    const int scenes = (int)proc.conductor().session().scenes.size();
+    if (s < 0 || s >= scenes || t < 0 || t >= kTracks) return;
+    selAnchorS_ = selHeadS_ = s;
+    selAnchorT_ = selHeadT_ = t;
+    repaint();
+}
+
+void SceneGridView::extendSelection(int s, int t) {
+    if (!hasSelection()) { selectCell(s, t); return; }
+    const int scenes = (int)proc.conductor().session().scenes.size();
+    if (s < 0 || s >= scenes || t < 0 || t >= kTracks) return;
+    selHeadS_ = s;
+    selHeadT_ = t;
+    repaint();
+}
+
+void SceneGridView::clearSelection() {
+    selAnchorS_ = selAnchorT_ = selHeadS_ = selHeadT_ = -1;
+    repaint();
+}
+
+bool SceneGridView::cellSelected(int s, int t) const {
+    if (!hasSelection()) return false;
+    return s >= juce::jmin(selAnchorS_, selHeadS_) && s <= juce::jmax(selAnchorS_, selHeadS_)
+        && t >= juce::jmin(selAnchorT_, selHeadT_) && t <= juce::jmax(selAnchorT_, selHeadT_);
+}
+
+void SceneGridView::selectAll() {
+    const int scenes = (int)proc.conductor().session().scenes.size();
+    if (scenes == 0) return;
+    selAnchorS_ = 0; selAnchorT_ = 0;
+    selHeadS_ = scenes - 1; selHeadT_ = kTracks - 1;
+    repaint();
+}
+
+void SceneGridView::moveSelection(int ds, int dt, bool extend) {
+    const int scenes = (int)proc.conductor().session().scenes.size();
+    if (scenes == 0) return;
+    if (!hasSelection()) { selectCell(0, 0); return; }
+    const int s = juce::jlimit(0, scenes - 1, selHeadS_ + ds);
+    const int t = juce::jlimit(0, kTracks - 1, selHeadT_ + dt);
+    if (extend) extendSelection(s, t);
+    else selectCell(s, t);
+}
+
+// ---- editing verbs -----------------------------------------------------------
+
+fable::ClipClipboardData SceneGridView::captureSelection() const {
+    fable::ClipClipboardData data;
+    if (!hasSelection()) return data;
+    const auto& sess = proc.conductor().session();
+    const int s0 = juce::jmin(selAnchorS_, selHeadS_);
+    const int s1 = juce::jmin((int)sess.scenes.size() - 1, juce::jmax(selAnchorS_, selHeadS_));
+    const int t0 = juce::jmin(selAnchorT_, selHeadT_), t1 = juce::jmax(selAnchorT_, selHeadT_);
+    if (s0 > s1) return data;
+    for (int t = t0; t <= t1; ++t)
+        data.machines.push_back(sess.tracks[(size_t)t].machine);
+    for (int s = s0; s <= s1; ++s) {
+        std::vector<fable::ClipData> row;
+        std::vector<bool> has;
+        for (int t = t0; t <= t1; ++t) {
+            const bool h = sess.scenes[(size_t)s].hasClip[(size_t)t];
+            has.push_back(h);
+            row.push_back(h ? sess.scenes[(size_t)s].clips[(size_t)t] : fable::ClipData {});
+        }
+        data.cells.push_back(std::move(row));
+        data.hasCell.push_back(std::move(has));
+    }
+    return data;
+}
+
+bool SceneGridView::selCopy() {
+    if (!hasSelection()) return false;
+    const juce::String json = fable::clipClipboardToJson(captureSelection());
+    juce::SystemClipboard::copyTextToClipboard(json);
+    localClipboard_ = json;
+    return true;
+}
+
+bool SceneGridView::selDelete() {
+    if (!hasSelection()) return false;
+    auto& cond = proc.conductor();
+    const auto& sess = cond.session();
+    const int s0 = juce::jmin(selAnchorS_, selHeadS_);
+    const int s1 = juce::jmin((int)sess.scenes.size() - 1, juce::jmax(selAnchorS_, selHeadS_));
+    const int t0 = juce::jmin(selAnchorT_, selHeadT_), t1 = juce::jmax(selAnchorT_, selHeadT_);
+    bool any = false;
+    for (int s = s0; s <= s1; ++s)
+        for (int t = t0; t <= t1; ++t)
+            if (sess.scenes[(size_t)s].hasClip[(size_t)t]) any = true;
+    if (!any) return false;
+    proc.pushUndoSnapshot();
+    for (int s = s0; s <= s1; ++s)
+        for (int t = t0; t <= t1; ++t)
+            if (cond.session().scenes[(size_t)s].hasClip[(size_t)t]) cond.deleteClip(s, t);
+    repaint();
+    return true;
+}
+
+bool SceneGridView::selCut() {
+    if (!selCopy()) return false;
+    selDelete(); // cut of an all-empty rectangle copies nulls, deletes nothing
+    return true;
+}
+
+bool SceneGridView::pasteData(const fable::ClipClipboardData& data, int atS, int atT) {
+    auto& cond = proc.conductor();
+    const auto& sess = cond.session();
+    const int scenes = (int)sess.scenes.size();
+    struct Op { int s, t; const fable::ClipData* clip; };
+    std::vector<Op> ops;
+    for (int r = 0; r < (int)data.cells.size(); ++r) {
+        for (int c = 0; c < (int)data.machines.size(); ++c) {
+            if (!data.hasCell[(size_t)r][(size_t)c]) continue;    // null slot: paste nothing
+            const int s = atS + r, t = atT + c;
+            if (s < 0 || s >= scenes || t < 0 || t >= kTracks) continue; // clamp at edges
+            if (sess.tracks[(size_t)t].machine != data.machines[(size_t)c]) continue; // skip column
+            ops.push_back({ s, t, &data.cells[(size_t)r][(size_t)c] });
+        }
+    }
+    if (ops.empty()) return false;
+    proc.pushUndoSnapshot();
+    for (const auto& op : ops) cond.pasteClip(op.s, op.t, *op.clip);
+    repaint();
+    return true;
+}
+
+bool SceneGridView::selPaste() {
+    if (!hasSelection()) return false;
+    fable::ClipClipboardData data;
+    if (!fable::clipClipboardFromJson(juce::SystemClipboard::getTextFromClipboard(), data)
+        && !fable::clipClipboardFromJson(localClipboard_, data))
+        return false;
+    return pasteData(data, juce::jmin(selAnchorS_, selHeadS_), juce::jmin(selAnchorT_, selHeadT_));
+}
+
+bool SceneGridView::selDuplicate() {
+    if (!hasSelection()) return false;
+    const auto data = captureSelection();
+    const int s1 = juce::jmax(selAnchorS_, selHeadS_);
+    const int t0 = juce::jmin(selAnchorT_, selHeadT_);
+    return pasteData(data, s1 + 1, t0); // one scene below the bottom edge
+}
+
+// ---- drag-and-drop -----------------------------------------------------------
+
+void SceneGridView::dragBlock(int fromS, int fromT, int& s0, int& t0, int& s1, int& t1) const {
+    if (hasSelection() && cellSelected(fromS, fromT)) {
+        s0 = juce::jmin(selAnchorS_, selHeadS_); s1 = juce::jmax(selAnchorS_, selHeadS_);
+        t0 = juce::jmin(selAnchorT_, selHeadT_); t1 = juce::jmax(selAnchorT_, selHeadT_);
+    } else {
+        s0 = s1 = fromS;
+        t0 = t1 = fromT;
+    }
+}
+
+bool SceneGridView::dropCells(int fromS, int fromT, int toS, int toT, bool copy) {
+    auto& cond = proc.conductor();
+    const auto& sess = cond.session();
+    const int scenes = (int)sess.scenes.size();
+    if (fromS < 0 || fromS >= scenes || fromT < 0 || fromT >= kTracks) return false;
+    if (toS < 0 || toS >= scenes || toT < 0 || toT >= kTracks) return false;
+    if (!sess.scenes[(size_t)fromS].hasClip[(size_t)fromT]) return false;
+    if (fromS == toS && fromT == toT) return false;
+
+    int s0, t0, s1, t1;
+    dragBlock(fromS, fromT, s0, t0, s1, t1);
+    const int ds = toS - fromS, dt = toT - fromT;
+
+    // capture sources first so overlapping move targets read pre-move bytes.
+    // Only cells whose destination is in-grid and machine-compatible become
+    // sources: skipped cells stay put (web gridEdit.ts moveWrites parity) —
+    // they must never be deleted by the move branch below.
+    struct Src { int s, t; fable::ClipData clip; };
+    std::vector<Src> srcs;
+    struct Op { int s, t; size_t src; };
+    std::vector<Op> ops;
+    for (int s = s0; s <= s1 && s < scenes; ++s) {
+        for (int t = t0; t <= t1; ++t) {
+            if (!sess.scenes[(size_t)s].hasClip[(size_t)t]) continue;
+            const int ns = s + ds, nt = t + dt;
+            if (ns < 0 || ns >= scenes || nt < 0 || nt >= kTracks) continue;
+            if (sess.tracks[(size_t)nt].machine != sess.tracks[(size_t)t].machine) continue;
+            srcs.push_back({ s, t, sess.scenes[(size_t)s].clips[(size_t)t] });
+            ops.push_back({ ns, nt, srcs.size() - 1 });
+        }
+    }
+    if (ops.empty()) return false;
+
+    proc.pushUndoSnapshot();
+    if (!copy)
+        for (const auto& src : srcs)
+            cond.deleteClip(src.s, src.t);
+    for (const auto& op : ops) cond.pasteClip(op.s, op.t, srcs[op.src].clip);
+
+    // selection follows the block, clamped into the grid
+    selAnchorS_ = juce::jlimit(0, scenes - 1, s0 + ds);
+    selAnchorT_ = juce::jlimit(0, kTracks - 1, t0 + dt);
+    selHeadS_ = juce::jlimit(0, scenes - 1, s1 + ds);
+    selHeadT_ = juce::jlimit(0, kTracks - 1, t1 + dt);
+    repaint();
+    return true;
+}
+
+bool SceneGridView::dropHighlight(int s, int t) const {
+    if (!dragActive_ || dragCancelled_ || hoverS_ < 0 || dragFromS_ < 0) return false;
+    const auto& sess = proc.conductor().session();
+    int s0, t0, s1, t1;
+    dragBlock(dragFromS_, dragFromT_, s0, t0, s1, t1);
+    const int ds = hoverS_ - dragFromS_, dt = hoverT_ - dragFromT_;
+    const int ss = s - ds, st = t - dt;   // the source cell that would land here
+    if (ss < s0 || ss > s1 || st < t0 || st > t1) return false;
+    if (ss >= (int)sess.scenes.size() || !sess.scenes[(size_t)ss].hasClip[(size_t)st]) return false;
+    return sess.tracks[(size_t)t].machine == sess.tracks[(size_t)st].machine;
+}
+
+void SceneGridView::cancelActiveDrag() {
+    if (!dragActive_) return;
+    dragCancelled_ = true;
+    hoverS_ = hoverT_ = -1;
+    repaint();
+}
+
+int SceneGridView::cellAt(juce::Point<int> pos, int& outT) const {
+    for (int s = 0; s < kScenes; ++s) {
+        if (singleRow_ && s != singleRowScene_) continue;
+        for (int t = 0; t < kTracks; ++t)
+            if (cellR[s][t].contains(pos)) { outT = t; return s; }
+    }
+    outT = -1;
+    return -1;
+}
+
+bool SceneGridView::isInterestedInDragSource(const SourceDetails& d) {
+    return d.description == "sq4-cells" && d.sourceComponent == this;
+}
+
+void SceneGridView::itemDragMove(const SourceDetails& d) {
+    int t = -1;
+    const int s = cellAt(d.localPosition, t);
+    if (s != hoverS_ || t != hoverT_) { hoverS_ = s; hoverT_ = t; repaint(); }
+}
+
+void SceneGridView::itemDragExit(const SourceDetails&) {
+    if (hoverS_ >= 0) { hoverS_ = hoverT_ = -1; repaint(); }
+}
+
+void SceneGridView::itemDropped(const SourceDetails& d) {
+    itemDragMove(d);
+    const bool copy = juce::ModifierKeys::getCurrentModifiers().isAltDown();
+    if (!dragCancelled_ && hoverS_ >= 0)
+        dropCells(dragFromS_, dragFromT_, hoverS_, hoverT_, copy);
+    dragActive_ = dragCancelled_ = false;
+    dragFromS_ = dragFromT_ = hoverS_ = hoverT_ = -1;
+    repaint();
+}
+
 // ---- mouse -----------------------------------------------------------------
 
 void SceneGridView::mouseDown(const juce::MouseEvent& e) {
@@ -99,11 +359,45 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         for (int t = 0; t < kTracks; ++t) {
             if (editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
             if (cellR[s][t].contains(pos)) {
-                if (right) cellRightClick(s, t); else cellClick(s, t);
+                if (right) { cellRightClick(s, t); return; }
+                // editing-concept decision 4: plain click launches AND anchors
+                // (launch deferred to mouseUp so a drag can suppress it),
+                // Cmd-click selects only, Shift-click extends the rectangle.
+                const bool cmd = e.mods.isCommandDown(), shift = e.mods.isShiftDown();
+                if (shift) extendSelection(s, t);
+                else selectCell(s, t);
+                pressedS_ = s; pressedT_ = t;
+                pressedLaunch_ = !cmd && !shift;
+                didDrag_ = false;
                 return;
             }
         }
     }
+}
+
+void SceneGridView::mouseDrag(const juce::MouseEvent& e) {
+    if (pressedS_ < 0 || didDrag_) return;
+    if (e.getDistanceFromDragStart() < 4) return;   // click/drag threshold
+    const auto& scenes = proc.conductor().session().scenes;
+    if (pressedS_ >= (int)scenes.size() || !scenes[(size_t)pressedS_].hasClip[(size_t)pressedT_])
+        return;                                      // only filled cells drag
+    if (auto* c = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
+        if (!c->isDragAndDropActive()) {
+            didDrag_ = true;
+            dragActive_ = true;
+            dragCancelled_ = false;
+            dragFromS_ = pressedS_;
+            dragFromT_ = pressedT_;
+            c->startDragging("sq4-cells", this);
+        }
+    }
+}
+
+void SceneGridView::mouseUp(const juce::MouseEvent&) {
+    if (pressedS_ >= 0 && !didDrag_ && pressedLaunch_)
+        cellClick(pressedS_, pressedT_);            // suppressed after a drag
+    pressedS_ = pressedT_ = -1;
+    didDrag_ = false;
 }
 
 // ---- layout ------------------------------------------------------------------
@@ -265,6 +559,21 @@ void SceneGridView::paintCell(juce::Graphics& g, int s, int t) {
     const auto& scenes = proc.conductor().session().scenes;
     if (scenes[(size_t)s].hasClip[(size_t)t]) paintFilledCell(g, s, t);
     else paintEmptyCell(g, s, t);
+
+    auto rf = cellR[s][t].toFloat().reduced(0.5f);
+    // Compatible drop target during a drag: soft fill + violet ring.
+    if (dropHighlight(s, t)) {
+        g.setColour(col::acF.withAlpha(0.12f));
+        g.fillRoundedRectangle(rf, 10.0f);
+        g.setColour(col::acF.withAlpha(0.9f));
+        g.drawRoundedRectangle(rf.reduced(1.0f), 9.0f, 1.6f);
+    }
+    // Selection outline — violet (col::acF), inset, so it reads apart from the
+    // solid track-colour live border and the pulsing queued/stopping rings.
+    if (cellSelected(s, t)) {
+        g.setColour(col::acF);
+        g.drawRoundedRectangle(rf.reduced(2.0f), 8.0f, 1.8f);
+    }
 }
 
 void SceneGridView::paintEmptyCell(juce::Graphics& g, int s, int t) {

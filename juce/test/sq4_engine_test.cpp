@@ -14,6 +14,11 @@
 #include "../source/seq/dsp/SeqFactory.h"
 #include "../source/seq/dsp/SeqModel.h"
 #include "../source/seq/dsp/SeqProtocol.h"
+#include "../source/seq/dsp/SnapshotHistory.h"
+#if FABLE_SQ4_TEST_JUCE
+#include "../source/seq/SessionCodec.h"
+#include "../source/seq/ClipClipboardCodec.h"
+#endif
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -22,6 +27,7 @@
 #include <memory>
 #include <iterator>
 #include <set>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -1136,6 +1142,220 @@ static void testConductor() {
     }
 }
 
+// Editing verbs (concept decisions 1-3): delete/paste/move on the Conductor,
+// following the loadLibraryClip mutate-then-emit pattern.
+static void testConductorEditVerbs() {
+    using namespace fable;
+
+    // deleteClip stops-and-clears an owned cell: immediate stop emitted, cell
+    // nulled, owner cleared on the Stop ack.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2); // DROP A drums
+        c.onClipStart(0, 2);
+        io.stops.clear();
+        CHECK(c.deleteClip(2, 0));
+        CHECK(!c.session().scenes[2].hasClip[0]);
+        CHECK(c.session().scenes[2].clips[0].bytes.empty());
+        CHECK(io.stops.size() == 1);
+        CHECK(io.stops[0].first == 0 && io.stops[0].second == 0.0); // immediate
+        CHECK(c.queueOf(0) == SQ_STOP);
+        c.onClipStop(0);
+        CHECK(c.ownerOf(0) == -2 && c.queueOf(0) == -2);
+        // deleting an already-empty cell is a no-op
+        CHECK(!c.deleteClip(2, 0));
+        CHECK(io.stops.size() == 1);
+        // out-of-range cells are rejected
+        CHECK(!c.deleteClip(-1, 0));
+        CHECK(!c.deleteClip(0, 99));
+    }
+    // deleteClip disarms a queued (pending, never started) cell too; deleting
+    // a cell the track neither owns nor queues emits no stop.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2); // queued only, no ack yet
+        io.stops.clear();
+        CHECK(c.deleteClip(2, 0));
+        CHECK(io.stops.size() == 1);
+        CHECK(c.queueOf(0) == SQ_STOP);
+        CHECK(c.deleteClip(3, 0)); // DROP B drums: idle cell
+        CHECK(io.stops.size() == 1); // no extra stop
+    }
+    // pasteClip: machine-compat gate (byte length vs the target track's
+    // machine), overwrite allowed, live target hot-updated in place.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const auto before = c.session().scenes[0].clips[0];
+        ClipData bass { "BASSLINE", 1, sqEmptyClip(Machine::BL1, 1) };
+        CHECK(!c.pasteClip(0, 0, bass)); // BL1 payload onto the DR1 track
+        CHECK(c.session().scenes[0].clips[0].bytes == before.bytes); // untouched
+        ClipData drums { "PASTED", 2, sqEmptyClip(Machine::DR1, 2) };
+        drums.bytes[(size_t)sqDr1Idx(0, 0, 0)] = 2;
+        CHECK(c.pasteClip(0, 0, drums)); // overwrite the INTRO drum clip
+        CHECK(c.session().scenes[0].clips[0].name == "PASTED");
+        CHECK(c.session().scenes[0].clips[0].bars == 2);
+        CHECK(io.updates.empty()); // idle target: no engine traffic
+        CHECK(c.pasteClip(4, 0, drums)); // create in the empty BREAK cell
+        CHECK(c.session().scenes[4].hasClip[0]);
+        c.launch(0, 0);
+        c.onClipStart(0, 0); // owner[0] = scene 0
+        CHECK(c.pasteClip(0, 0, drums)); // live target hot-updates
+        CHECK(io.updates.size() == 1);
+        CHECK(std::get<0>(io.updates[0]) == 0 && std::get<2>(io.updates[0]) == 2);
+        ClipData bad { "BAD", 0, {} };
+        CHECK(!c.pasteClip(0, 0, bad));       // bars out of range
+        CHECK(!c.pasteClip(-1, 0, drums));    // bounds
+        CHECK(!c.pasteClip(0, 9, drums));
+    }
+    // moveClip: move clears the source, copy keeps it; cross-machine, onto
+    // itself, and empty-source moves are rejected.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        const auto src = c.session().scenes[2].clips[0]; // DROP A drums
+        CHECK(!c.session().scenes[4].hasClip[0]);        // BREAK is drumless
+        CHECK(c.moveClip(2, 0, 4, 0, /*copy*/ false));
+        CHECK(!c.session().scenes[2].hasClip[0]);        // moved away
+        CHECK(c.session().scenes[4].hasClip[0]);
+        CHECK(c.session().scenes[4].clips[0].bytes == src.bytes);
+        CHECK(c.moveClip(4, 0, 2, 0, /*copy*/ true));    // copy back
+        CHECK(c.session().scenes[4].hasClip[0]);         // source survives
+        CHECK(c.session().scenes[2].hasClip[0]);
+        CHECK(c.session().scenes[2].clips[0].bytes == src.bytes);
+        const auto bass = c.session().scenes[2].clips[1]; // DROP A bass
+        CHECK(!c.moveClip(2, 0, 2, 1, false));           // DR1 -> BL1 track
+        CHECK(c.session().scenes[2].hasClip[0]);         // rejected: unchanged
+        CHECK(c.session().scenes[2].clips[1].bytes == bass.bytes);
+        CHECK(!c.moveClip(2, 0, 2, 0, false));           // onto itself
+        CHECK(!c.moveClip(0, 1, 1, 1, false));           // INTRO bass is empty
+    }
+    // moving the owned clip away stops the track (the delete half) and the landing
+    // cell needs its own launch to sound.
+    {
+        FakeIO io;
+        Conductor c(factorySession(), io, 48000);
+        c.powerOn();
+        c.launch(0, 2);
+        c.onClipStart(0, 2);
+        io.stops.clear();
+        CHECK(c.moveClip(2, 0, 4, 0, false));
+        CHECK(io.stops.size() == 1); // the owned source cell was cleared
+        CHECK(c.queueOf(0) == SQ_STOP);
+    }
+}
+
+// Bounded snapshot history (concept decision 2): one snapshot per gesture,
+// linear undo/redo, oldest dropped past the limit.
+static void testSnapshotHistory() {
+    using namespace fable;
+    SnapshotHistory<std::string> h(3);
+    CHECK(!h.canUndo() && !h.canRedo());
+    CHECK(!h.undo("cur").has_value());
+    CHECK(!h.redo("cur").has_value());
+
+    h.push("a"); // state was "a", an edit made it "b"
+    h.push("b"); // ... then "c"
+    auto u = h.undo("c");
+    CHECK(u.has_value() && *u == "b");
+    CHECK(h.canRedo());
+    auto r = h.redo("b");
+    CHECK(r.has_value() && *r == "c");
+    // a fresh edit invalidates the redo branch
+    (void)h.undo("c");
+    h.push("b");
+    CHECK(!h.canRedo());
+
+    // bounded: pushing past the limit drops the oldest snapshot
+    h.clear();
+    for (int i = 0; i < 60; i++) h.push(std::to_string(i));
+    CHECK(h.undoDepth() == 3);
+    auto last = h.undo("cur");
+    CHECK(last.has_value() && *last == "59");
+
+    // the substrate default is 50 (editing-concept)
+    SnapshotHistory<std::string> h50;
+    for (int i = 0; i < 60; i++) h50.push(std::to_string(i));
+    CHECK(h50.undoDepth() == 50);
+    h50.clear();
+    CHECK(!h50.canUndo() && !h50.canRedo());
+}
+
+#if FABLE_SQ4_TEST_JUCE
+// Clip-clipboard codec (concept decision 3): tagged JSON, per-column machine
+// tags, null slots, whole-document rejection of foreign/tampered payloads.
+static void testClipClipboardCodec() {
+    using namespace fable;
+    ClipClipboardData d;
+    d.machines = { Machine::DR1, Machine::BL1 };
+    ClipData drum { "KICKS", 2, sqEmptyClip(Machine::DR1, 2) };
+    drum.bytes[(size_t)sqDr1Idx(0, 0, 0)] = 2;
+    drum.bytes[(size_t)sqDr1Idx(0, 1, 4)] = 1;
+    d.cells = { { drum, ClipData{} } };
+    d.hasCell = { { true, false } };
+
+    const juce::String json = clipClipboardToJson(d);
+    CHECK(json.contains("\"fable\""));
+    CHECK(json.contains("sq4-clips"));
+
+    ClipClipboardData back;
+    CHECK(clipClipboardFromJson(json, back));
+    CHECK(back.machines == d.machines);
+    CHECK(back.cells.size() == 1 && back.cells[0].size() == 2);
+    CHECK(back.hasCell[0][0] && !back.hasCell[0][1]);
+    CHECK(back.cells[0][0].name == "KICKS");
+    CHECK(back.cells[0][0].bars == 2);
+    CHECK(back.cells[0][0].bytes == drum.bytes); // byte-exact round-trip
+
+    // foreign or untagged clipboard text is ignored wholesale
+    ClipClipboardData ignore;
+    CHECK(!clipClipboardFromJson("plain text", ignore));
+    CHECK(!clipClipboardFromJson("{\"fable\":\"other\",\"v\":1}", ignore));
+    CHECK(!clipClipboardFromJson("{\"v\":1,\"machines\":[],\"cells\":[]}", ignore));
+    // a tampered column machine no longer matches the cell's byte count
+    CHECK(!clipClipboardFromJson(json.replace("\"DR1\"", "\"BL1\""), ignore));
+}
+
+// Undo substrate wiring (the same shape SeqProcessor::undo uses): snapshot
+// the session JSON before the verb, restore by rebuilding a conductor from
+// the decoded snapshot. Coarse restore (fresh conductor, tracks stopped) is
+// the accepted v1 contract.
+static void testUndoRestoresDeletedClip() {
+    using namespace fable;
+    FakeIO io;
+    auto c = std::make_unique<Conductor>(factorySession(), io, 48000);
+    c->powerOn();
+    SnapshotHistory<juce::String> history(50);
+
+    history.push(sessionToJson(c->session())); // one snapshot, before the verb
+    CHECK(c->deleteClip(2, 0));
+    CHECK(!c->session().scenes[2].hasClip[0]);
+
+    auto snap = history.undo(sessionToJson(c->session()));
+    CHECK(snap.has_value());
+    SessionData restored;
+    CHECK(sessionFromJson(*snap, restored));
+    c = std::make_unique<Conductor>(restored, io, 48000);
+    c->powerOn();
+    CHECK(c->session().scenes[2].hasClip[0]); // the deleted clip is back
+    CHECK(c->session().scenes[2].clips[0].bytes
+          == factorySession().scenes[2].clips[0].bytes);
+
+    auto again = history.redo(sessionToJson(c->session()));
+    CHECK(again.has_value());
+    SessionData redone;
+    CHECK(sessionFromJson(*again, redone));
+    CHECK(!redone.scenes[2].hasClip[0]); // redo re-deletes
+    CHECK(!history.canRedo());
+}
+#endif // FABLE_SQ4_TEST_JUCE
+
 static void testSessionLibraryMusicality() {
     using namespace fable;
     const auto& library = factorySessionLibrary();
@@ -1190,6 +1410,12 @@ int main() {
     testBl1ClipSwapGatesOldNote();
     testDr1Hosted();
     testConductor();
+    testConductorEditVerbs();
+    testSnapshotHistory();
+#if FABLE_SQ4_TEST_JUCE
+    testClipClipboardCodec();
+    testUndoRestoresDeletedClip();
+#endif
     testSessionLibraryMusicality();
     if (failures) { std::printf("%d FAILURES\n", failures); return 1; }
     std::printf("ALL PASS\n");

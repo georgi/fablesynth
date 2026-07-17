@@ -141,6 +141,15 @@ void BassAudioProcessor::setSeqStep(int pattern, int step, const fable::BassSeqS
     shareSeqState(true, false);
 }
 
+std::vector<uint8_t> BassAudioProcessor::getPatternBytes() const {
+    return std::vector<uint8_t>(patterns_.begin(), patterns_.end());
+}
+
+void BassAudioProcessor::setPatternBytes(const std::vector<uint8_t>& bytes) {
+    std::copy_n(bytes.begin(), std::min(bytes.size(), patterns_.size()), patterns_.begin());
+    shareSeqState(true, false);
+}
+
 void BassAudioProcessor::setChain(std::vector<int> c) {
     const int bars = juce::jlimit(1, BL_NPATTERNS, (int)c.size());
     chain_.resize((size_t)bars);

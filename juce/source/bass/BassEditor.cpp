@@ -31,6 +31,10 @@ public:
     void setSequenceStep(int p, int s, const fable::BassSeqStep& v) override { proc.setSeqStep(p, s, v); }
     const std::vector<int>& chain() const override { return proc.getChain(); }
     void setChain(std::vector<int> c) override { proc.setChain(std::move(c)); }
+    std::vector<uint8_t> patternBytes() const override { return proc.getPatternBytes(); }
+    void setPatternBytes(std::vector<uint8_t> b) override { proc.setPatternBytes(b); }
+    // patternSourceId() defaults to 0 — the standalone plugin never swaps
+    // its pattern source, so undo history never needs clearing underneath it.
 private:
     BassAudioProcessor& proc;
 };

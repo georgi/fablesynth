@@ -29,3 +29,22 @@ export const swingDelaySamples = (step: number, swing: number, stepDur: number):
 
 export const nextChainPos = (chainLen: number, pos: number): number =>
   chainLen > 0 ? (pos + 1) % chainLen : 0;
+
+// Step-range selection on the currently selected pad's row: an anchor/head
+// pair (SQ-4-style) rather than a pre-normalized [from, to], so shift-click
+// extension always keeps the original anchor while the head follows the
+// pointer/click in either direction.
+export interface StepSel {
+  anchor: number;
+  head: number;
+}
+
+// Normalize anchor/head into an inclusive [lo, hi] range, or null if no
+// selection is active.
+export const stepSelRange = (sel: StepSel | null): [number, number] | null =>
+  sel ? (sel.anchor <= sel.head ? [sel.anchor, sel.head] : [sel.head, sel.anchor]) : null;
+
+export const inStepSel = (sel: StepSel | null, step: number): boolean => {
+  const range = stepSelRange(sel);
+  return range !== null && step >= range[0] && step <= range[1];
+};

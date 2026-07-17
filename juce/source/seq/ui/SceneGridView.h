@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../SeqProcessor.h"
+#include "../ClipClipboardCodec.h"
 #include "../../ui/Theme.h"
 
 #include <functional>
@@ -15,7 +16,7 @@
 // x=218+9+t*(292+9) w=292.
 namespace fui {
 
-class SceneGridView : public juce::Component, private juce::Timer {
+class SceneGridView : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
 public:
     explicit SceneGridView(SeqAudioProcessor&);
     ~SceneGridView() override { stopTimer(); }
@@ -23,6 +24,8 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 
     // Test handles (also the real click targets, wired from mouseDown).
     void cellClick(int s, int t);
@@ -46,6 +49,46 @@ public:
     void clearSingleRow() { singleRow_ = false; resized(); repaint(); }
     std::function<void(int)> onRailScene;
 
+    // ---- selection rectangle (editing-concept decision 4) -------------------
+    // Anchor/head cell pair; plain click launches AND anchors, Cmd-click
+    // selects only, Shift-click extends. All are also test handles.
+    void selectCell(int s, int t);           // anchor = head = (s, t)
+    void extendSelection(int s, int t);      // head only (anchor kept)
+    void clearSelection();
+    bool hasSelection() const { return selAnchorS_ >= 0; }
+    bool cellSelected(int s, int t) const;
+    void selectAll();
+    void moveSelection(int ds, int dt, bool extend); // arrow / Shift-arrow nav
+
+    // ---- editing verbs over the selection (routed from SeqEditor keys) ------
+    // Copy/cut serialise the selected rectangle to juce::SystemClipboard as
+    // tagged JSON (ClipClipboardCodec) with an in-process fallback for
+    // headless runs; paste/duplicate anchor the payload top-left and skip
+    // machine-mismatched cells. Each mutating verb pushes exactly ONE undo
+    // snapshot (before mutating) and only when something will change.
+    bool selCopy();
+    bool selCut();
+    bool selPaste();
+    bool selDuplicate();     // paste one scene below the selection's bottom edge
+    bool selDelete();
+
+    // ---- drag-and-drop (editing-concept decision 5) -------------------------
+    // The grid is its own DragAndDropTarget; SeqEditor is the container.
+    // A >=4px drag of a filled cell starts a block drag (the selection if the
+    // grab is inside it, else the single cell); Alt at drop = copy; only
+    // machine-compatible target cells highlight; Escape cancels.
+    bool isDragActive() const { return dragActive_ && !dragCancelled_; }
+    void cancelActiveDrag();
+    // The drop verb itself (also the headless test handle): move/copy the
+    // block grabbed at (fromS,fromT) so the grab lands on (toS,toT).
+    bool dropCells(int fromS, int fromT, int toS, int toT, bool copy);
+
+    bool isInterestedInDragSource(const SourceDetails&) override;
+    void itemDragEnter(const SourceDetails& d) override { itemDragMove(d); }
+    void itemDragMove(const SourceDetails&) override;
+    void itemDragExit(const SourceDetails&) override;
+    void itemDropped(const SourceDetails&) override;
+
 private:
     static constexpr int kScenes = 6, kTracks = 4;
 
@@ -62,10 +105,41 @@ private:
     void paintFilledCell(juce::Graphics&, int s, int t);
     void paintRail(juce::Graphics&);
 
+    // Block geometry shared by the drop verb and the drag-highlight paint:
+    // the rectangle that travels (selection if it contains the grab, else the
+    // grab cell alone), normalized to s0<=s1, t0<=t1.
+    void dragBlock(int fromS, int fromT, int& s0, int& t0, int& s1, int& t1) const;
+    bool dropHighlight(int s, int t) const;  // (s,t) is a compatible drag target
+    int cellAt(juce::Point<int> pos, int& outT) const; // scene index or -1
+    // Paste a clipboard rectangle anchored top-left at (atS,atT); skips
+    // machine-mismatched / out-of-bounds / null cells; one undo snapshot when
+    // anything applies. Shared by selPaste and selDuplicate.
+    bool pasteData(const fable::ClipClipboardData&, int atS, int atT);
+    fable::ClipClipboardData captureSelection() const;
+
     SeqAudioProcessor& proc;
 
     bool singleRow_ = false;
     int singleRowScene_ = 0;
+
+    // selection (anchor/head; -1 = none)
+    int selAnchorS_ = -1, selAnchorT_ = -1, selHeadS_ = -1, selHeadT_ = -1;
+
+    // press/drag bookkeeping (mouseDown defers the launch to mouseUp so a
+    // >=4px drag can suppress it — editing-concept: suppress launch on
+    // drag-release)
+    int pressedS_ = -1, pressedT_ = -1;
+    bool pressedLaunch_ = false, didDrag_ = false;
+
+    // active drag state
+    bool dragActive_ = false, dragCancelled_ = false;
+    int dragFromS_ = -1, dragFromT_ = -1;   // grabbed cell
+    int hoverS_ = -1, hoverT_ = -1;         // current drop cell under the drag
+
+    // In-process clipboard fallback: copy writes both this and the system
+    // clipboard; paste falls back here when the system text isn't a tagged
+    // clip document (headless runs without a pasteboard).
+    juce::String localClipboard_;
 
     // scene-card sub-regions
     juce::Rectangle<int> sceneCardR[kScenes], launchBtn[kScenes], muteBtnR[kScenes], stopBtnR[kScenes],

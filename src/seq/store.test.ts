@@ -418,6 +418,263 @@ describe('transport', () => {
   });
 });
 
+describe('grid selection', () => {
+  it('setGridSelection defaults head to anchor and clears again', () => {
+    st().setGridSelection({ s: 1, t: 2 });
+    expect(st().gridSel).toEqual({ anchor: { s: 1, t: 2 }, head: { s: 1, t: 2 } });
+    st().setGridSelection({ s: 1, t: 2 }, { s: 3, t: 0 });
+    expect(st().gridSel!.head).toEqual({ s: 3, t: 0 });
+    st().clearGridSelection();
+    expect(st().gridSel).toBeNull();
+  });
+
+  it('clamps anchor and head to the grid bounds', () => {
+    st().setGridSelection({ s: -3, t: 99 }, { s: 42, t: -1 });
+    expect(st().gridSel).toEqual({
+      anchor: { s: 0, t: 3 },
+      head: { s: 5, t: 0 },
+    });
+  });
+
+  it('setGridDrag stores and clears the live drag', () => {
+    const drag = { from: { s: 0, t: 0 }, to: { s: 1, t: 0 }, copy: false };
+    st().setGridDrag(drag);
+    expect(st().gridDrag).toEqual(drag);
+    st().setGridDrag(null);
+    expect(st().gridDrag).toBeNull();
+  });
+});
+
+describe('grid clipboard verbs', () => {
+  it('copySelection captures the rectangle with per-column machines', () => {
+    st().setGridSelection({ s: 2, t: 2 }, { s: 3, t: 3 });
+    st().copySelection();
+    const cb = st().gridClipboard!;
+    expect(cb.machines).toEqual(['WT1', 'WT1']);
+    expect(cb.cells.map((row) => row.map((c) => c?.name ?? null))).toEqual([
+      ['GLASS HOOK', 'FOG STABS'],
+      ['GLASS HOOK II', 'FOG STABS'],
+    ]);
+    expect(st().session.scenes[2].clips[2]).not.toBeNull(); // copy leaves sources
+  });
+
+  it('copySelection without a selection is a no-op', () => {
+    st().copySelection();
+    expect(st().gridClipboard).toBeNull();
+  });
+
+  it('cutSelection captures then clears the source cells and cache', () => {
+    st().setGridSelection({ s: 0, t: 0 });
+    st().cutSelection();
+    expect(st().gridClipboard!.cells[0][0]?.name).toBeDefined();
+    expect(st().session.scenes[0].clips[0]).toBeNull();
+    expect(clipPattern(st().session, 0, 0)).toBeNull();
+  });
+
+  it('cutSelection boundary-stops a cut cell that owns its track', () => {
+    st().launch(0, 0);
+    rig.dev(0).onClipStart!(1);
+    st().setGridSelection({ s: 0, t: 0 });
+    st().cutSelection();
+    expect(rig.dev(0).stops).toHaveLength(1);
+    expect(st().queue[0]).toBe(STOP);
+  });
+
+  it('pasteAt writes the payload, replacing filled cells', () => {
+    st().setGridSelection({ s: 2, t: 2 }); // GLASS HOOK
+    st().copySelection();
+    st().pasteAt(0, 2); // empty WT1 cell
+    expect(st().session.scenes[0].clips[2]?.name).toBe('GLASS HOOK');
+    expect(clipPattern(st().session, 0, 2)).toEqual(clipPattern(st().session, 2, 2));
+    st().pasteAt(3, 2); // over GLASS HOOK II
+    expect(st().session.scenes[3].clips[2]?.name).toBe('GLASS HOOK');
+  });
+
+  it('pasteAt skips machine-mismatched cells without touching the session', () => {
+    st().setGridSelection({ s: 0, t: 0 }); // DR1 clip
+    st().copySelection();
+    const session = st().session;
+    st().pasteAt(0, 1); // BL1 column
+    expect(st().session).toBe(session);
+  });
+
+  it('pasteAt hot-swaps the device when the target cell is live', () => {
+    st().launch(2, 2);
+    rig.dev(2).onClipStart!(1); // GLASS HOOK live on track 2
+    st().setGridSelection({ s: 3, t: 2 }); // GLASS HOOK II
+    st().copySelection();
+    st().pasteAt(2, 2);
+    expect(rig.dev(2).updates).toHaveLength(1);
+    expect(rig.dev(2).updates[0].bars).toBe(4);
+  });
+
+  it('duplicateSelection pastes the rectangle one scene down (nulls included)', () => {
+    st().setGridSelection({ s: 0, t: 0 }, { s: 0, t: 3 }); // whole INTRO row
+    st().duplicateSelection();
+    const intro = st().session.scenes[0].clips;
+    const build = st().session.scenes[1].clips;
+    expect(build[0]?.name).toBe(intro[0]?.name);
+    expect(build[1]).toBeNull(); // payload null replaces ACID CRAWL
+    expect(build[3]?.name).toBe(intro[3]?.name);
+  });
+
+  it('duplicateSelection on the last scene is clamped away (no scene creation)', () => {
+    const last = st().session.scenes.length - 1;
+    st().setGridSelection({ s: last, t: 0 }, { s: last, t: 3 });
+    const session = st().session;
+    st().duplicateSelection();
+    expect(st().session).toBe(session);
+    expect(st().session.scenes).toHaveLength(last + 1);
+  });
+
+  it('deleteSelection clears every filled cell in the rectangle', () => {
+    st().setGridSelection({ s: 0, t: 0 }, { s: 1, t: 1 });
+    st().deleteSelection();
+    for (const s of [0, 1]) {
+      for (const t of [0, 1]) {
+        expect(st().session.scenes[s].clips[t]).toBeNull();
+        expect(clipPattern(st().session, s, t)).toBeNull();
+      }
+    }
+  });
+});
+
+describe('grid drag / moveClips', () => {
+  it('moves a single cell: source cleared, target written', () => {
+    const name = st().session.scenes[0].clips[0]!.name;
+    st().moveClips({ s: 0, t: 0 }, { s: 4, t: 0 }); // BREAK drums is empty
+    expect(st().session.scenes[0].clips[0]).toBeNull();
+    expect(st().session.scenes[4].clips[0]?.name).toBe(name);
+    expect(clipPattern(st().session, 0, 0)).toBeNull();
+    expect(clipPattern(st().session, 4, 0)).not.toBeNull();
+  });
+
+  it('Alt-copy keeps the source cell', () => {
+    st().moveClips({ s: 0, t: 0 }, { s: 4, t: 0 }, { copy: true });
+    expect(st().session.scenes[0].clips[0]).not.toBeNull();
+    expect(st().session.scenes[4].clips[0]).not.toBeNull();
+  });
+
+  it('boundary-stops a moved cell that owns its track', () => {
+    st().launch(0, 0);
+    rig.dev(0).onClipStart!(1);
+    st().moveClips({ s: 0, t: 0 }, { s: 4, t: 0 });
+    expect(rig.dev(0).stops).toHaveLength(1);
+    expect(st().queue[0]).toBe(STOP);
+  });
+
+  it('a machine-mismatched drop is a no-op', () => {
+    const session = st().session;
+    st().moveClips({ s: 0, t: 0 }, { s: 0, t: 1 }); // DR1 → BL1
+    expect(st().session).toBe(session);
+  });
+
+  it('moves the selected block when grabbed inside it, selection follows', () => {
+    st().setGridSelection({ s: 2, t: 2 }, { s: 2, t: 3 }); // GLASS HOOK + FOG STABS
+    st().moveClips({ s: 2, t: 2 }, { s: 4, t: 2 });
+    expect(st().session.scenes[2].clips[2]).toBeNull();
+    expect(st().session.scenes[2].clips[3]).toBeNull();
+    expect(st().session.scenes[4].clips[2]?.name).toBe('GLASS HOOK');
+    expect(st().session.scenes[4].clips[3]?.name).toBe('FOG STABS');
+    expect(st().gridSel).toEqual({ anchor: { s: 4, t: 2 }, head: { s: 4, t: 3 } });
+  });
+
+  it('drags only the grabbed cell when the grab point is outside the selection', () => {
+    st().setGridSelection({ s: 0, t: 0 });
+    st().moveClips({ s: 2, t: 2 }, { s: 0, t: 2 });
+    expect(st().session.scenes[0].clips[2]?.name).toBe('GLASS HOOK');
+    expect(st().session.scenes[0].clips[0]).not.toBeNull(); // selection untouched
+  });
+});
+
+describe('grid undo/redo', () => {
+  it('undo restores a deleted clip including its pattern cache', () => {
+    const before = clipPattern(st().session, 0, 0)!;
+    st().setGridSelection({ s: 0, t: 0 });
+    st().deleteSelection();
+    expect(st().session.scenes[0].clips[0]).toBeNull();
+    st().undo();
+    expect(st().session.scenes[0].clips[0]).not.toBeNull();
+    expect(clipPattern(st().session, 0, 0)).toEqual(before);
+  });
+
+  it('redo reapplies and a fresh verb clears the redo stack', () => {
+    st().setGridSelection({ s: 0, t: 0 });
+    st().deleteSelection();
+    st().undo();
+    st().redo();
+    expect(st().session.scenes[0].clips[0]).toBeNull();
+    st().undo(); // filled again
+    st().setGridSelection({ s: 0, t: 3 });
+    st().deleteSelection(); // new verb → redo history gone
+    st().redo();
+    expect(st().session.scenes[0].clips[3]).toBeNull(); // redo was a no-op
+    expect(st().session.scenes[0].clips[0]).not.toBeNull();
+  });
+
+  it('undo hot-swaps a restored clip that is still the live target', () => {
+    st().launch(0, 0);
+    rig.dev(0).onClipStart!(1);
+    st().setGridSelection({ s: 0, t: 0 });
+    st().deleteSelection(); // schedules the stop, owner unchanged until ack
+    st().undo();
+    expect(rig.dev(0).updates).toHaveLength(1);
+  });
+
+  it('undo with an empty history is a no-op', () => {
+    const session = st().session;
+    st().undo();
+    expect(st().session).toBe(session);
+    st().redo();
+    expect(st().session).toBe(session);
+  });
+
+  it('undo merges clips only: a patch change made after the snapshot survives', () => {
+    st().setGridSelection({ s: 0, t: 0 });
+    st().deleteSelection(); // snapshot taken before this verb
+    st().setTrackPatch(0, { kind: 'inline', data: { params: { x: 9 } } });
+    st().undo();
+    expect(st().session.scenes[0].clips[0]).not.toBeNull(); // clip edit reverted
+    expect(st().session.tracks[0].patch).toMatchObject({ kind: 'inline' }); // patch kept
+  });
+
+  it('loadSessionPreset resets the undo history', () => {
+    st().setGridSelection({ s: 0, t: 0 });
+    st().deleteSelection(); // one undoable verb
+    st().loadSessionPreset(0);
+    const after = st().session;
+    st().undo(); // must not resurrect the pre-preset document
+    expect(st().session).toBe(after);
+  });
+
+  it('a move whose source clear stops the queued clip still hot-swaps the target from fresh state', () => {
+    // Fill scene 1 / track 0 with a same-machine clip so it can be launched.
+    st().setGridSelection({ s: 0, t: 0 });
+    st().copySelection();
+    st().pasteAt(1, 0);
+    st().launch(0, 1);
+    rig.dev(0).onClipStart!(1); // owner: scene 1
+    st().launch(0, 0); // queue: scene 0
+    st().moveClips({ s: 0, t: 0 }, { s: 1, t: 0 }); // drag the queued clip onto the owner cell
+    // A stale state snapshot in syncWrites read queue as still s0 and skipped
+    // this updateClip; fresh state resolves the target to the owner scene.
+    expect(rig.dev(0).updates).toHaveLength(1);
+    expect(st().queue[0]).toBe(STOP);
+  });
+
+  it('history is bounded, dropping the oldest snapshots past 50', () => {
+    for (let i = 0; i < 60; i++) {
+      st().setGridSelection(i % 2 === 0 ? { s: 2, t: 2 } : { s: 3, t: 2 });
+      st().copySelection();
+      st().pasteAt(0, 2);
+    }
+    for (let i = 0; i < 70; i++) st().undo();
+    // Only the last 50 verbs unwind: the cell keeps verb #10's payload
+    // (GLASS HOOK II) instead of returning to its empty initial state.
+    expect(st().session.scenes[0].clips[2]?.name).toBe('GLASS HOOK II');
+  });
+});
+
 describe('focus', () => {
   it('starts in session mode and enters on a track head', () => {
     expect(st().focus).toBeNull();

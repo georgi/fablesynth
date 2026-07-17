@@ -54,6 +54,7 @@ public:
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;
+    int clipIdentity() const override { return scene_; }
 
 private:
     void timerCallback() override { flushPendingPatch(); }

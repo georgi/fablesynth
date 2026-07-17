@@ -522,6 +522,14 @@
   border-color: var(--ac-b);
   box-shadow: 0 0 0 1px rgba(255, 161, 77, 0.3), 0 0 8px rgba(255, 161, 77, 0.18);
 }
+/* Step-range selection: shift-click a step or shift-drag across the row
+   (see StepSeq's onStepPointerDown/setStepSelHead). Distinct from the
+   playhead cursor (.cur) and the on/accent fill. */
+.step.selected {
+  background: color-mix(in srgb, var(--ac-a) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 45%, transparent);
+}
+.step.selected .step-num { color: var(--ac-a); }
 
 .dr-stepseq { padding: 9px 12px 11px; }
 .dr-stepseq-head {

@@ -894,6 +894,172 @@ int main(int argc, char** argv) {
         check(p2.conductor().session().name == "RENAMED", "a rejected applySessionJson leaves the session untouched");
     }
 
+    // ---- editing undo substrate (pushUndoSnapshot/undo/redo/clearHistory
+    // over currentSessionJson/applySessionJson; editing-concept decision 2) ----
+    {
+        std::printf("\n== editing undo substrate ==\n");
+        SeqAudioProcessor p2;
+        p2.prepareToPlay(48000.0, 128);
+        check(!p2.canUndo() && !p2.canRedo(), "fresh processor has no edit history");
+        check(!p2.undo() && !p2.redo(), "undo/redo on an empty history are no-ops");
+
+        // one snapshot per gesture, BEFORE the verb, then delete a clip
+        p2.pushUndoSnapshot();
+        check(p2.conductor().deleteClip(2, 0), "deleteClip clears the DROP A drum cell");
+        check(!p2.conductor().session().scenes[2].hasClip[0], "cell is empty after delete");
+        check(p2.canUndo(), "the gesture left one undo entry");
+
+        check(p2.undo(), "undo applies the pre-delete snapshot");
+        check(p2.conductor().session().scenes[2].hasClip[0], "undo restores the deleted clip");
+        check(p2.conductor().session().scenes[2].clips[0].bytes
+                  == fable::factorySession().scenes[2].clips[0].bytes,
+              "restored clip is byte-identical to the factory clip");
+        check(p2.canRedo(), "undo leaves a redo entry");
+
+        check(p2.redo(), "redo re-applies the delete");
+        check(!p2.conductor().session().scenes[2].hasClip[0], "redo re-deletes the clip");
+        check(p2.undo(), "undo after redo restores again");
+
+        // an external session load clears the whole history (after the final
+        // undo the surviving entry sits on the redo branch)
+        check(p2.canRedo(), "history is non-empty before the external load");
+        check(p2.applySessionJson(p2.currentSessionJson()), "external load applies");
+        check(!p2.canUndo() && !p2.canRedo(), "applySessionJson clears the edit history");
+        check(!p2.undo(), "undo after a session load is a no-op");
+        renderRms(p2, buf, 4); // must not crash after the rebuilds
+    }
+
+    // ---- grid editing UI: selection rectangle, keyboard verbs, clipboard,
+    // drag-and-drop drop verb (editing-concept decisions 4-5, 7) ----
+    {
+        std::printf("\n== grid editing: selection + verbs + dnd ==\n");
+        SeqAudioProcessor p6;
+        p6.prepareToPlay(48000.0, 128);
+        std::unique_ptr<juce::AudioProcessorEditor> ed6(p6.createEditor());
+        auto* se = dynamic_cast<SeqEditor*>(ed6.get());
+        check(se != nullptr, "grid-editing editor is a SeqEditor");
+        auto& g6 = se->grid();
+        auto sess = [&]() -> const fable::SessionData& { return p6.conductor().session(); };
+
+        // -- selection rectangle (anchor/head)
+        check(!g6.hasSelection(), "grid starts with no selection");
+        g6.selectCell(2, 0);
+        check(g6.cellSelected(2, 0) && !g6.cellSelected(2, 1), "selectCell anchors a single cell");
+        g6.extendSelection(3, 1);
+        check(g6.cellSelected(2, 0) && g6.cellSelected(2, 1) && g6.cellSelected(3, 1)
+                  && !g6.cellSelected(4, 0),
+              "extendSelection spans the anchor/head rectangle");
+
+        // -- keyboard nav routed through SeqEditor::keyPressed (session mode)
+        check(se->keyPressed(juce::KeyPress(juce::KeyPress::downKey)),
+              "down-arrow is claimed in session mode");
+        check(g6.cellSelected(4, 1) && !g6.cellSelected(2, 0),
+              "plain arrow collapses the rect and moves from the head");
+        check(se->keyPressed(juce::KeyPress(juce::KeyPress::upKey,
+                                            juce::ModifierKeys::shiftModifier, 0)),
+              "shift-arrow is claimed");
+        check(g6.cellSelected(3, 1) && g6.cellSelected(4, 1), "shift-arrow extends the rect");
+        check(se->keyPressed(juce::KeyPress('a', juce::ModifierKeys::commandModifier, 'a')),
+              "cmd-A is claimed");
+        check(g6.cellSelected(0, 0) && g6.cellSelected(5, 3), "cmd-A selects the whole grid");
+        check(se->keyPressed(juce::KeyPress(juce::KeyPress::escapeKey)),
+              "escape is claimed while a selection exists");
+        check(!g6.hasSelection(), "escape clears the selection");
+
+        // -- copy / paste within the drum column (scene 2 filled, scene 4 empty)
+        const auto kitA = sess().scenes[2].clips[0].bytes;
+        g6.selectCell(2, 0);
+        check(g6.selCopy(), "selCopy serialises the selected drum cell");
+        check(!sess().scenes[4].hasClip[0], "BREAK/DRUMS starts empty");
+        g6.selectCell(4, 0);
+        check(g6.selPaste(), "selPaste fills the empty same-machine cell");
+        check(sess().scenes[4].hasClip[0] && sess().scenes[4].clips[0].bytes == kitA,
+              "pasted clip is byte-identical to the copied one");
+        check(p6.canUndo(), "paste pushed exactly one undo snapshot");
+        check(se->keyPressed(juce::KeyPress('z', juce::ModifierKeys::commandModifier, 'z')),
+              "cmd-Z is claimed");
+        check(!sess().scenes[4].hasClip[0], "cmd-Z undoes the paste");
+        check(se->keyPressed(juce::KeyPress('z',
+                  juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 'z')),
+              "shift-cmd-Z is claimed");
+        check(sess().scenes[4].hasClip[0], "shift-cmd-Z redoes the paste");
+        p6.undo();
+
+        // -- machine-mismatched paste is rejected wholesale
+        g6.selectCell(0, 1); // INTRO/BASS: empty BL1 cell, clipboard holds a DR1 payload
+        check(!g6.selPaste(), "DR1 payload onto the BL1 column is rejected");
+        check(!sess().scenes[0].hasClip[1], "mismatched paste leaves the cell empty");
+        check(!p6.canUndo(), "a rejected paste pushes no undo snapshot");
+
+        // -- cut = copy + clear, one snapshot each for cut and the later paste
+        g6.selectCell(2, 0);
+        check(g6.selCut(), "selCut copies then clears the source");
+        check(!sess().scenes[2].hasClip[0], "cut clears DROP A / DRUMS");
+        g6.selectCell(4, 0);
+        check(g6.selPaste(), "cut payload pastes elsewhere in the column");
+        check(sess().scenes[4].clips[0].bytes == kitA, "cut+paste moves the exact bytes");
+        p6.undo(); p6.undo();
+        check(sess().scenes[2].hasClip[0] && !sess().scenes[4].hasClip[0],
+              "two undos restore the pre-cut grid");
+
+        // -- multi-cell delete is ONE gesture / ONE snapshot
+        g6.selectCell(2, 0);
+        g6.extendSelection(2, 3);
+        check(g6.selDelete(), "selDelete clears the filled cells in the rect");
+        bool anyLeft = false;
+        for (int t = 0; t < 4; ++t) if (sess().scenes[2].hasClip[(size_t)t]) anyLeft = true;
+        check(!anyLeft, "all four DROP A cells cleared");
+        check(p6.undo() && sess().scenes[2].hasClip[0] && sess().scenes[2].hasClip[3],
+              "a single undo restores the whole multi-cell delete");
+
+        // -- duplicate = paste one scene down (DROP A row -> DROP B row)
+        const auto dropB0 = sess().scenes[3].clips[0].bytes;
+        g6.selectCell(2, 0);
+        g6.extendSelection(2, 3);
+        check(g6.selDuplicate(), "selDuplicate pastes one scene down");
+        check(sess().scenes[3].clips[0].bytes == sess().scenes[2].clips[0].bytes,
+              "DROP B now carries DROP A's drums");
+        check(p6.undo(), "duplicate is one undo step");
+        check(sess().scenes[3].clips[0].bytes == dropB0, "undo restores DROP B's own drums");
+
+        // -- multi-cell rect copy/paste anchored top-left, per-column machines
+        g6.selectCell(2, 0);
+        g6.extendSelection(2, 1); // DRUMS + BASS of DROP A
+        check(g6.selCopy(), "rect copy captures a two-machine rectangle");
+        g6.selectCell(4, 0);      // BREAK: DRUMS empty, BASS filled (overwrite allowed)
+        check(g6.selPaste(), "rect paste lands anchored at the selection top-left");
+        check(sess().scenes[4].clips[0].bytes == sess().scenes[2].clips[0].bytes
+                  && sess().scenes[4].clips[1].bytes == sess().scenes[2].clips[1].bytes,
+              "both columns pasted into their matching machines");
+        p6.undo();
+        g6.selectCell(4, 1);      // shifted one column: DR1->BL1, BL1->WT1 — all skip
+        check(!g6.selPaste(), "a wholly machine-mismatched rect paste is rejected");
+
+        // -- drag-and-drop drop verb (block move/copy)
+        g6.clearSelection();
+        check(g6.dropCells(2, 0, 4, 0, false), "dropCells moves the grabbed cell");
+        check(!sess().scenes[2].hasClip[0], "move clears the source");
+        check(sess().scenes[4].clips[0].bytes == kitA, "move lands the exact bytes");
+        check(g6.cellSelected(4, 0), "selection follows the dropped block");
+        check(p6.undo(), "a drop is one undo step");
+        g6.clearSelection();
+        check(g6.dropCells(2, 0, 4, 0, true), "dropCells copies with copy=true (Alt)");
+        check(sess().scenes[2].hasClip[0] && sess().scenes[4].clips[0].bytes == kitA,
+              "copy keeps the source and fills the target");
+        p6.undo();
+        check(!g6.dropCells(2, 0, 2, 1, false), "a cross-machine drop target is rejected");
+        check(!g6.dropCells(4, 0, 2, 0, false), "dragging an empty cell is rejected");
+        check(!g6.dropCells(2, 0, 2, 0, false), "a self-drop is a no-op");
+
+        // -- focus-mode keys keep their existing meanings
+        se->enterFocus(0, 2);
+        check(se->keyPressed(juce::KeyPress(juce::KeyPress::downKey)),
+              "down-arrow still claimed in focus mode");
+        check(se->focus() == std::make_pair(0, 3), "focus-mode down-arrow moves the scene, not the selection");
+        check(se->keyPressed(juce::KeyPress(juce::KeyPress::escapeKey)), "escape claimed in focus mode");
+        check(se->focus() == std::make_pair(-1, -1), "escape still exits focus mode");
+    }
+
     // ---- layout guard: this processor hardcodes a 4-track {DR1,BL1,WT1,WT1}
     // rig; a schema-valid doc that doesn't match it (fewer tracks, or a
     // swapped machine) must be rejected by applySessionJson (and by

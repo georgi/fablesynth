@@ -1,6 +1,9 @@
 // Computer keyboard -> notes (audition when stopped, legato = slide).
 // Two rows AWSEDFTGYHUJKOLP;' cover 18 semis; Z/X shift the octave window
-// within the BL-1 keyboard's two-octave range. Esc stops/panics.
+// within the BL-1 keyboard's two-octave range. Esc clears a step selection,
+// else stops/panics. Cmd/Ctrl-combos run the sequencer's editing verb table
+// (copy/cut/paste/duplicate/select-all/undo/redo); Delete/Backspace (no
+// note bound to them) clear the selection.
 
 import { useEffect } from 'react';
 import { KEY_COUNT } from '../params';
@@ -10,6 +13,17 @@ const KEYMAP: Record<string, number> = {
   KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, KeyG: 7,
   KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14,
   KeyP: 15, Semicolon: 16, Quote: 17,
+};
+
+// Ignore keys targeting form controls / rich-text / slider handles — plain
+// keys stay free for note-playing everywhere else.
+const isEditableTarget = (el: Element | null): boolean => {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return true;
+  if (el.getAttribute('contenteditable') != null) return true;
+  if (el.getAttribute('role') === 'slider') return true;
+  return false;
 };
 
 export function useBassKeys() {
@@ -24,12 +38,40 @@ export function useBassKeys() {
     let octave = 0;
 
     const keydown = (e: KeyboardEvent) => {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-      const tag = document.activeElement && document.activeElement.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (isEditableTarget(document.activeElement)) return;
+
+      if (e.metaKey || e.ctrlKey) {
+        if (e.repeat) return;
+        const {
+          copySelection, cutSelection, pasteSelection, duplicateSelection,
+          selectAllSteps, clearStepSelection, undo, redo,
+        } = useBassStore.getState();
+        switch (e.code) {
+          case 'KeyC': e.preventDefault(); copySelection(); return;
+          case 'KeyX': e.preventDefault(); cutSelection(); return;
+          case 'KeyV': e.preventDefault(); pasteSelection(); return;
+          case 'KeyD': e.preventDefault(); duplicateSelection(); return;
+          case 'KeyA': e.preventDefault(); selectAllSteps(); return;
+          case 'KeyZ': e.preventDefault(); e.shiftKey ? redo() : undo(); return;
+          case 'Escape': clearStepSelection(); return;
+          default: return;
+        }
+      }
+      if (e.altKey) return;
+      if (e.repeat) return;
+
       if (e.code === 'KeyZ') { octave = Math.max(0, octave - 1); return; }
       if (e.code === 'KeyX') { octave = Math.min(1, octave + 1); return; }
-      if (e.code === 'Escape') { stop(); return; }
+      if (e.code === 'Escape') {
+        const { stepSel, clearStepSelection } = useBassStore.getState();
+        if (stepSel) { clearStepSelection(); return; }
+        stop();
+        return;
+      }
+      if (e.code === 'Delete' || e.code === 'Backspace') {
+        useBassStore.getState().deleteSelection();
+        return;
+      }
       const off = KEYMAP[e.code];
       if (off === undefined) return;
       const semi = Math.min(KEY_COUNT - 1, octave * 12 + off);

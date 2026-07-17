@@ -57,6 +57,13 @@ public:
     virtual bool hasTargetClip() const { return true; }
     virtual void createTargetClip() {}
     virtual int clipBars() const { return 1; }
+
+    // Identity of the currently-targeted clip/pattern source. Changes when a
+    // hosted (SQ-4) clip is retargeted into this same view instance; views
+    // must clear step-edit selection/clipboard/undo history on change (the
+    // web's cross-clip undo corruption hazard applies identically here).
+    // Non-hosted models never swap source, so the default constant is fine.
+    virtual int clipIdentity() const { return 0; }
 };
 
 } // namespace fui

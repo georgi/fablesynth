@@ -12,11 +12,13 @@ import { FxPanel } from './components/panels/FxPanel';
 import { SeqPanel } from './components/panels/SeqPanel';
 import { KeyboardBar } from './components/panels/KeyboardBar';
 import { useComputerKeys } from './hooks/useComputerKeys';
+import { useSeqEditKeys } from './hooks/useSeqEditKeys';
 import { useMidi } from './hooks/useMidi';
 import { engine, useStore } from './store';
 
 export function App() {
   useComputerKeys();
+  useSeqEditKeys();
   useMidi();
 
   // exposed for debugging / automated verification

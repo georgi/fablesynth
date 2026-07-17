@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  cycleOct, getStep, makeEmptyPatterns, NPATTERNS, randomPattern, setStep,
+  cycleOct, EMPTY_STEP, getStep, LAYOUT, makeEmptyPatterns, NPATTERNS, randomPattern, setStep,
   STEP_STRIDE, stepDurSamples, STEPS, stepSemi, swingDelaySamples,
   SWING_MAX, writePattern,
 } from './seq';
+import { copyRange, pasteRange } from '../shared/seqEdit';
 
 describe('bass seq model', () => {
   it('empty patterns read back as neutral rests', () => {
@@ -74,5 +75,19 @@ describe('bass seq model', () => {
         if (!s.on) continue;
       }
     }
+  });
+
+  it('LAYOUT/EMPTY_STEP match the seqEdit shared model; EMPTY_STEP reads back as a neutral rest', () => {
+    expect(LAYOUT).toEqual({ stride: STEP_STRIDE, stepsPerPattern: STEPS, patternSize: STEPS * STEP_STRIDE });
+    const p = makeEmptyPatterns();
+    p.set(EMPTY_STEP, 5 * STEP_STRIDE);
+    expect(getStep(p, 0, 5)).toEqual({ on: false, note: 0, oct: 0, acc: false, slide: false, duration: 1 });
+  });
+
+  it('slide bit survives copyRange/pasteRange (raw-byte copy, not re-encoded)', () => {
+    const p = setStep(makeEmptyPatterns(), 0, 3, { on: true, note: 9, slide: true, duration: 5 });
+    const data = copyRange(p, LAYOUT, 0, 3, 3);
+    const next = pasteRange(makeEmptyPatterns(), LAYOUT, 1, 7, data);
+    expect(getStep(next, 1, 7)).toMatchObject({ on: true, note: 9, slide: true, duration: 5 });
   });
 });

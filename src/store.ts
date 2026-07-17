@@ -13,11 +13,14 @@ import {
   makeUserTable, framesFromGenerated, type UserTable,
 } from './engine/usertables';
 import {
-  cycleOct, getStep, loadSeqState, randomPattern, saveSeqState, setStep,
-  writePattern, type Patterns,
+  cycleOct, EMPTY_STEP, getStep, loadSeqState, NPATTERNS, randomPattern, saveSeqState, setStep,
+  STEPS, WT1_LAYOUT, writePattern, type Patterns,
 } from './noteseq';
 import { generateTables, SIZE, type GeneratedTable } from './engine/wavetables';
 import { sequenceChain, sequenceLengthFromChain } from './sequenceLength';
+import {
+  clearRange, copyPattern, copyRange, makeHistory, pastePattern, pasteRange, shiftRange,
+} from './shared/seqEdit';
 
 // Singleton audio engine (created once, initialized on power-on).
 export let engine = new SynthEngine();
@@ -27,6 +30,12 @@ export interface PresetOption {
   name: string;
   group: 'FACTORY' | 'USER';
 }
+
+export interface StepSel { from: number; to: number }
+export type SeqClipboard =
+  | { kind: 'range'; data: Uint8Array }
+  | { kind: 'pattern'; data: Uint8Array }
+  | null;
 
 export function presetOptions(userPresets: Preset[]): PresetOption[] {
   const opts: PresetOption[] = FACTORY_PRESETS.map((p, i) => ({ value: 'f' + i, name: p.name, group: 'FACTORY' as const }));
@@ -57,6 +66,8 @@ interface SynthStore {
   seqPlaying: boolean;
   curStep: number;
   curPat: number;
+  stepSel: StepSel | null;
+  clipboard: SeqClipboard;
 
   setParam: (id: string, v: number) => void;
   // Modulation routing over the 16 fixed `mat{n}` slots (params-as-truth):
@@ -90,6 +101,22 @@ interface SynthStore {
   randomizeSeq: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
+
+  // step-sequencer editing: selection, clipboard, undo/redo, DnD (docs/editing-concept.md)
+  setStepSel: (sel: StepSel | null) => void;
+  selectAllSteps: () => void;
+  clearStepSel: () => void;
+  copySteps: () => void;
+  cutSteps: () => void;
+  pasteSteps: () => void;
+  duplicateSteps: () => void;
+  deleteSteps: () => void;
+  shiftStepSel: (dest: number, opts?: { copy?: boolean }) => void;
+  movePattern: (from: number, to: number, opts?: { copy?: boolean }) => void;
+  undoSeq: () => void;
+  redoSeq: () => void;
+  _clearSeqHistory: () => void;
+
   seqPlay: () => void;
   seqStop: () => void;
   attachHosted: (e: SynthEngine) => void;
@@ -113,7 +140,16 @@ export function factoryTables(): GeneratedTable[] {
   return factoryTablesCache;
 }
 
-export const useStore = create<SynthStore>((set, get) => ({
+// Bounded undo/redo stack for sequencer editing verbs (module state, mirrors
+// BL-1/DR-1 — see makeHistory in shared/seqEdit.ts). Snapshots capture both
+// patterns and chain since duplicate-bar can extend the sequence length.
+interface SeqSnapshot { patterns: Patterns; chain: number[] }
+const seqHistory = makeHistory<SeqSnapshot>(50);
+
+export const useStore = create<SynthStore>((set, get) => {
+  const pushSeqHistory = () => seqHistory.push({ patterns: get().patterns, chain: get().chain });
+
+  return {
   params: defaultParams(),
   modDrag: 0,
   powered: false,
@@ -134,6 +170,8 @@ export const useStore = create<SynthStore>((set, get) => ({
   seqPlaying: false,
   curStep: -1,
   curPat: 0,
+  stepSel: null,
+  clipboard: null,
 
   setParam: (id, v) => {
     engine.setParam(id, v);
@@ -325,6 +363,128 @@ export const useStore = create<SynthStore>((set, get) => ({
     saveSeqState(get().patterns, chain);
   },
 
+  // ---------- step-sequencer editing (docs/editing-concept.md) ----------
+  setStepSel: (sel) => set({
+    stepSel: sel
+      ? { from: Math.min(STEPS - 1, Math.max(0, sel.from | 0)), to: Math.min(STEPS - 1, Math.max(0, sel.to | 0)) }
+      : null,
+  }),
+
+  selectAllSteps: () => set({ stepSel: { from: 0, to: STEPS - 1 } }),
+
+  clearStepSel: () => set({ stepSel: null }),
+
+  copySteps: () => {
+    const { patterns, editPattern, stepSel } = get();
+    if (stepSel) {
+      set({ clipboard: { kind: 'range', data: copyRange(patterns, WT1_LAYOUT, editPattern, stepSel.from, stepSel.to) } });
+    } else {
+      set({ clipboard: { kind: 'pattern', data: copyPattern(patterns, WT1_LAYOUT, editPattern) } });
+    }
+  },
+
+  cutSteps: () => {
+    const { patterns, editPattern, stepSel } = get();
+    get().copySteps();
+    pushSeqHistory();
+    const [from, to] = stepSel ? [stepSel.from, stepSel.to] : [0, STEPS - 1];
+    get()._setPatterns(clearRange(patterns, WT1_LAYOUT, editPattern, from, to, EMPTY_STEP));
+  },
+
+  pasteSteps: () => {
+    const { patterns, editPattern, stepSel, clipboard } = get();
+    if (!clipboard) return;
+    pushSeqHistory();
+    if (clipboard.kind === 'pattern') {
+      get()._setPatterns(pastePattern(patterns, WT1_LAYOUT, editPattern, clipboard.data));
+    } else {
+      const at = stepSel ? Math.min(stepSel.from, stepSel.to) : 0;
+      get()._setPatterns(pasteRange(patterns, WT1_LAYOUT, editPattern, at, clipboard.data));
+    }
+  },
+
+  duplicateSteps: () => {
+    const { patterns, editPattern, stepSel, chain } = get();
+    if (stepSel) {
+      const lo = Math.min(stepSel.from, stepSel.to);
+      const hi = Math.max(stepSel.from, stepSel.to);
+      const at = hi + 1;
+      // Nothing past the last step to paste onto — a full no-op (no history).
+      if (at >= STEPS) return;
+      pushSeqHistory();
+      const data = copyRange(patterns, WT1_LAYOUT, editPattern, lo, hi);
+      get()._setPatterns(pasteRange(patterns, WT1_LAYOUT, editPattern, at, data));
+      const len = hi - lo + 1;
+      get().setStepSel({ from: at, to: Math.min(STEPS - 1, at + len - 1) });
+    } else {
+      pushSeqHistory();
+      // No selection: classic "duplicate bar" — copy the edit pattern onto the
+      // next bar, extending the sequence length if that bar isn't in it yet.
+      const nextPat = Math.min(NPATTERNS - 1, editPattern + 1);
+      const data = copyPattern(patterns, WT1_LAYOUT, editPattern);
+      get()._setPatterns(pastePattern(patterns, WT1_LAYOUT, nextPat, data));
+      if (chain.length <= nextPat) get().setSequenceLength(nextPat + 1);
+      set({ editPattern: nextPat });
+    }
+  },
+
+  deleteSteps: () => {
+    const { patterns, editPattern, stepSel } = get();
+    if (!stepSel) return;
+    pushSeqHistory();
+    get()._setPatterns(clearRange(patterns, WT1_LAYOUT, editPattern, stepSel.from, stepSel.to, EMPTY_STEP));
+  },
+
+  shiftStepSel: (dest, opts = {}) => {
+    const { patterns, editPattern, stepSel } = get();
+    if (!stepSel) return;
+    const lo = Math.min(stepSel.from, stepSel.to);
+    const hi = Math.max(stepSel.from, stepSel.to);
+    const len = hi - lo + 1;
+    // Clamp the destination so the whole range stays inside the pattern —
+    // the paste target and the stored selection must always agree.
+    const clampedDest = Math.min(STEPS - len, Math.max(0, dest | 0));
+    if (clampedDest === lo) return; // no movement: full no-op
+    pushSeqHistory();
+    const next = shiftRange(patterns, WT1_LAYOUT, editPattern, lo, hi, clampedDest, { copy: opts.copy, emptyStep: EMPTY_STEP });
+    get()._setPatterns(next);
+    set({ stepSel: { from: clampedDest, to: clampedDest + len - 1 } });
+  },
+
+  movePattern: (from, to, opts = {}) => {
+    const a = Math.min(NPATTERNS - 1, Math.max(0, from | 0));
+    const b = Math.min(NPATTERNS - 1, Math.max(0, to | 0));
+    if (a === b) return;
+    const { patterns } = get();
+    pushSeqHistory();
+    const dataA = copyPattern(patterns, WT1_LAYOUT, a);
+    if (opts.copy) {
+      get()._setPatterns(pastePattern(patterns, WT1_LAYOUT, b, dataA));
+    } else {
+      const dataB = copyPattern(patterns, WT1_LAYOUT, b);
+      const swapped = pastePattern(pastePattern(patterns, WT1_LAYOUT, a, dataB), WT1_LAYOUT, b, dataA);
+      get()._setPatterns(swapped);
+    }
+  },
+
+  undoSeq: () => {
+    const prev = seqHistory.undo({ patterns: get().patterns, chain: get().chain });
+    if (!prev) return;
+    set({ chain: prev.chain });
+    engine.setSeqChain(prev.chain);
+    get()._setPatterns(prev.patterns);
+  },
+
+  redoSeq: () => {
+    const next = seqHistory.redo({ patterns: get().patterns, chain: get().chain });
+    if (!next) return;
+    set({ chain: next.chain });
+    engine.setSeqChain(next.chain);
+    get()._setPatterns(next.patterns);
+  },
+
+  _clearSeqHistory: () => seqHistory.clear(),
+
   seqPlay: () => {
     if (get().hosted) return;
     engine.seqPlay();
@@ -390,4 +550,5 @@ export const useStore = create<SynthStore>((set, get) => ({
 
   setOctave: (o) => set({ octave: o }),
   setMidiActive: (on) => set({ midiActive: on }),
-}));
+  };
+});

@@ -72,6 +72,7 @@ public:
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;
+    int clipIdentity() const override { return scene_; }
 
     // Kept available for a future hosted keyboard component. These always use
     // the processor FIFO; the UI model never touches the WT engine directly.

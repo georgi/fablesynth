@@ -503,6 +503,26 @@
 .sq-cell:hover .sq-cell-addbtn { opacity: 1; }
 .sq-cell:focus-within .sq-cell-addbtn, .sq-cell-addbtn:focus-visible { opacity: 1; }
 
+/* ============ grid selection / drag-and-drop ============ */
+/* Selection outline is neutral (cool white) so it reads apart from the
+   track-colored live/queued borders on both filled and empty cells. */
+.sq-cell.sel {
+  outline: 2px solid color-mix(in srgb, var(--ac-n) 75%, #fff);
+  outline-offset: -2px;
+}
+.sq-cell.dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+.sq-cell.drop-ok {
+  outline: 2px dashed color-mix(in srgb, var(--tc) 75%, #fff);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 16px color-mix(in srgb, var(--tc) 16%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--tc) 10%, transparent), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(180deg, #151924, #0c0f16);
+}
+
 /* ============ now-playing footer ============ */
 .sq-foot-master {
   border: 1px solid var(--line);

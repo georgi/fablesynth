@@ -175,6 +175,63 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
     return true;
 }
 
+bool Conductor::deleteClip(int s, int t) {
+    if (s < 0 || s >= (int)session_.scenes.size()
+        || t < 0 || t >= (int)session_.tracks.size())
+        return false;
+    auto& sc = session_.scenes[(size_t)s];
+    if (!sc.hasClip[(size_t)t]) return false;
+    // Stop-and-clear when the track owns or queues this cell: the clip is
+    // gone, so stop immediately (not launch-quantized) like stopTransport's
+    // per-track stops, and let the Stop ack clear the owner.
+    if (ownerOf(t) == s || queueOf(t) == s) {
+        io_.ioScheduleStop(t, 0.0);
+        queue_[t] = SQ_STOP;
+    }
+    sc.clips[(size_t)t] = ClipData{};
+    sc.hasClip[(size_t)t] = false;
+    return true;
+}
+
+bool Conductor::pasteClip(int s, int t, const ClipData& clip) {
+    if (s < 0 || s >= (int)session_.scenes.size()
+        || t < 0 || t >= (int)session_.tracks.size())
+        return false;
+    // Machine-compat gate, same shape as loadLibraryClip/validateSession:
+    // pattern bytes are machine-specific, so a payload whose byte count does
+    // not match this track's machine is rejected (no partial corruption).
+    if (!(clip.bars >= 1 && clip.bars <= SQ_MAX_BARS)) return false;
+    if ((int)clip.bytes.size() != clip.bars * sqBytesPerBar(session_.tracks[(size_t)t].machine))
+        return false;
+
+    auto& scene = session_.scenes[(size_t)s];
+    scene.clips[(size_t)t] = clip;
+    scene.hasClip[(size_t)t] = true;
+
+    // Same write target as loadLibraryClip: a pending clip wins over the
+    // outgoing live owner because ClipHost has only one pending slot.
+    const auto qit = queue_.find(t);
+    const int q = qit != queue_.end() ? qit->second : kNone;
+    const int target = (q != kNone && q != SQ_STOP) ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateClip(t, clip.bytes, clip.bars);
+    return true;
+}
+
+bool Conductor::moveClip(int fromS, int fromT, int toS, int toT, bool copy) {
+    if (fromS < 0 || fromS >= (int)session_.scenes.size()
+        || fromT < 0 || fromT >= (int)session_.tracks.size()
+        || toS < 0 || toS >= (int)session_.scenes.size()
+        || toT < 0 || toT >= (int)session_.tracks.size())
+        return false;
+    if (fromS == toS && fromT == toT) return false;
+    if (!session_.scenes[(size_t)fromS].hasClip[(size_t)fromT]) return false;
+    if (session_.tracks[(size_t)fromT].machine != session_.tracks[(size_t)toT].machine)
+        return false;
+    const ClipData clip = session_.scenes[(size_t)fromS].clips[(size_t)fromT];
+    if (!copy) deleteClip(fromS, fromT);
+    return pasteClip(toS, toT, clip);
+}
+
 void Conductor::setTrackPatch(int t, PatchRef patch) {
     session_.tracks[(size_t)t].patch = std::move(patch);
 }

@@ -2,10 +2,25 @@
 // live status line) followed by one clip cell per track. Cells preview the
 // clip's real pattern bytes; live cells sweep at the clip's actual length.
 
+import { useRef } from 'react';
 import type * as React from 'react';
+import { inRect, isDropTarget, selRect } from '../gridEdit';
 import { isTrackAudible, pad2, previewSteps, STOP } from '../model';
 import { barSeconds } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
+
+const DRAG_THRESHOLD = 4; // px of pointer travel before a click becomes a drag
+
+/** Modifier clicks select without launching; plain clicks anchor + launch. */
+function selectOnClick(e: React.MouseEvent, s: number, t: number): boolean {
+  const st = useSeqStore.getState();
+  if (e.shiftKey && st.gridSel) {
+    st.setGridSelection(st.gridSel.anchor, { s, t });
+    return true;
+  }
+  st.setGridSelection({ s, t });
+  return e.shiftKey || e.metaKey || e.ctrlKey;
+}
 
 function ClipCell({ s, t }: { s: number; t: number }) {
   const session = useSeqStore((st) => st.session);
@@ -15,11 +30,62 @@ function ClipCell({ s, t }: { s: number; t: number }) {
   const muted = useSeqStore(
     (st) => st.owner[t] === s && !isTrackAudible(t, st.owner, st.trackMute, st.sceneMute, st.solo),
   );
+  const selected = useSeqStore((st) => !!st.gridSel && inRect(selRect(st.gridSel), s, t));
+  const dragging = useSeqStore(
+    (st) => !!st.gridDrag && !!st.gridSel && inRect(selRect(st.gridSel), s, t)
+      && inRect(selRect(st.gridSel), st.gridDrag.from.s, st.gridDrag.from.t),
+  );
+  const dropOk = useSeqStore((st) => isDropTarget(st.session, st.gridSel, st.gridDrag, s, t));
   const { launch, stopTrack } = useSeqStore.getState();
+
+  // Pointer-drag state (NoteLengthHandle idiom): the origin cell captures the
+  // pointer, a ~4px travel threshold separates drags from launches, and the
+  // click that follows a drag-release is swallowed so it can't launch.
+  const drag = useRef<{ x: number; y: number; started: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('[role="button"]')) return; // ✎ / 🗑 chips
+    drag.current = { x: e.clientX, y: e.clientY, started: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const st = useSeqStore.getState();
+    if (!d.started) {
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < DRAG_THRESHOLD) return;
+      d.started = true;
+      // A grab outside the selection drags just this cell (re-anchor);
+      // inside it, the whole selected block travels with the pointer.
+      if (!(st.gridSel && inRect(selRect(st.gridSel), s, t))) st.setGridSelection({ s, t });
+    } else if (!st.gridDrag) {
+      return; // Esc cancelled this drag — ignore until release
+    }
+    const cell = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-cell]');
+    const to = cell instanceof HTMLElement
+      ? { s: Number(cell.dataset.s), t: Number(cell.dataset.t) }
+      : { s, t };
+    useSeqStore.getState().setGridDrag({ from: { s, t }, to, copy: e.altKey });
+  };
+
+  const onPointerUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d?.started) return; // plain click — onClick takes it from here
+    suppressClick.current = true;
+    const st = useSeqStore.getState();
+    const active = st.gridDrag;
+    st.setGridDrag(null);
+    if (active) st.moveClips(active.from, active.to, { copy: active.copy });
+  };
 
   const tr = session.tracks[t];
   const clip = session.scenes[s]?.clips[t];
   const style = { '--tc': tr.color } as React.CSSProperties;
+  const stateCls = `${selected ? ' sel' : ''}${dragging ? ' dragging' : ''}${dropOk ? ' drop-ok' : ''}`;
 
   // Ableton semantics: an empty cell is a stop button (fires on scene
   // launch too); right-click removes it — pass-through lets the previous
@@ -29,9 +95,15 @@ function ClipCell({ s, t }: { s: number; t: number }) {
     const { togglePassThrough, createClip } = useSeqStore.getState();
     return (
       <button
-        className={`sq-cell sq-cell-empty${pass ? ' pass' : ''}`}
+        className={`sq-cell sq-cell-empty${pass ? ' pass' : ''}${stateCls}`}
         style={style}
-        onClick={() => { if (!pass) stopTrack(t); }}
+        data-cell=""
+        data-s={s}
+        data-t={t}
+        onClick={(e) => {
+          if (selectOnClick(e, s, t)) return;
+          if (!pass) stopTrack(t);
+        }}
         onContextMenu={(e) => { e.preventDefault(); togglePassThrough(s, t); }}
         title={pass
           ? 'Pass-through — previous clip rides through this scene · right-click to restore stop'
@@ -66,9 +138,26 @@ function ClipCell({ s, t }: { s: number; t: number }) {
   if (muted) cls.push('muted');
   return (
     <button
-      className={cls.join(' ')}
+      className={cls.join(' ') + stateCls}
       style={style}
-      onClick={() => (live ? (queuedStop ? undefined : stopTrack(t)) : launch(t, s))}
+      data-cell=""
+      data-s={s}
+      data-t={t}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onClick={(e) => {
+        if (suppressClick.current) {
+          suppressClick.current = false;
+          return; // drag-release, not a launch
+        }
+        if (selectOnClick(e, s, t)) return;
+        if (live) {
+          if (!queuedStop) stopTrack(t);
+        } else {
+          launch(t, s);
+        }
+      }}
       title={queuedStop ? 'Clip stop queued' : live ? 'Stop clip' : 'Launch clip'}
     >
       <div className="sq-cell-body">

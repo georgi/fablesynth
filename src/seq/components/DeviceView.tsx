@@ -59,7 +59,14 @@ const HOSTS: Record<MachineId, HostedStore> = {
   DR1: {
     attach: (e) => useDrumStore.getState().attachHosted(e as never),
     getPatterns: () => useDrumStore.getState().patterns,
-    setPatterns: (p) => useDrumStore.setState({ patterns: p, editPattern: 0 }),
+    // setPatterns swaps ANOTHER clip's patterns into the device store, so the
+    // step selection and the undo history (which snapshot the previous clip)
+    // must not survive the swap — a later undo would restore one clip's
+    // patterns into a different clip.
+    setPatterns: (p) => {
+      useDrumStore.getState()._clearHistory();
+      useDrumStore.setState({ patterns: p, editPattern: 0, stepSel: null, selAllPads: false });
+    },
     getParams: () => useDrumStore.getState().params,
     setPos: (step, bar, playing) => useDrumStore.setState({ curStep: step, curPat: bar, playing }),
     subscribe: (fn) => useDrumStore.subscribe(fn),
@@ -68,7 +75,10 @@ const HOSTS: Record<MachineId, HostedStore> = {
   BL1: {
     attach: (e) => useBassStore.getState().attachHosted(e as never),
     getPatterns: () => useBassStore.getState().patterns,
-    setPatterns: (p) => useBassStore.setState({ patterns: p, editPattern: 0 }),
+    setPatterns: (p) => {
+      useBassStore.getState()._clearHistory();
+      useBassStore.setState({ patterns: p, editPattern: 0, stepSel: null });
+    },
     getParams: () => useBassStore.getState().params,
     setPos: (step, bar, playing) => useBassStore.setState({ curStep: step, curPat: bar, playing }),
     subscribe: (fn) => useBassStore.subscribe(fn),
@@ -77,7 +87,10 @@ const HOSTS: Record<MachineId, HostedStore> = {
   WT1: {
     attach: (e) => useWtStore.getState().attachHosted(e as never),
     getPatterns: () => useWtStore.getState().patterns,
-    setPatterns: (p) => useWtStore.setState({ patterns: p, editPattern: 0 }),
+    setPatterns: (p) => {
+      useWtStore.getState()._clearSeqHistory();
+      useWtStore.setState({ patterns: p, editPattern: 0, stepSel: null });
+    },
     getParams: () => useWtStore.getState().params,
     setPos: (step, bar, playing) => useWtStore.setState({ curStep: step, curPat: bar, seqPlaying: playing }),
     subscribe: (fn) => useWtStore.subscribe(fn),

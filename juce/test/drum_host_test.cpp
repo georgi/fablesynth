@@ -457,6 +457,212 @@ int main(int argc, char** argv) {
         check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length");
     }
 
+    // ---- 14. step sequencer editing: selection, verbs, drag, undo (decision 6) ----
+    printf("\n== step seq editing (decision 6) ==\n");
+    {
+        fui::StepSeqView seq(proc);
+        seq.setBounds(0, 0, 1424, 105);
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
+        for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)
+            for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+                for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(pat, pad, s, 0);
+
+        // -- selection: extend from an anchor, re-anchor on a fresh Shift-click --
+        proc.setSelectedPad(2);
+        seq.extendSelection(2);
+        check(seq.hasSelection() && !seq.isSelectAll() && seq.selectionFrom() == 2 && seq.selectionTo() == 2,
+              "extendSelection sets a 1-step anchor");
+        seq.extendSelection(5);
+        check(seq.selectionFrom() == 2 && seq.selectionTo() == 5, "extendSelection extends to the head");
+        seq.extendSelection(1); // head crosses back past the anchor
+        check(seq.selectionFrom() == 1 && seq.selectionTo() == 2,
+              "extendSelection re-normalizes when the head passes the anchor");
+        seq.clearSelection();
+        check(!seq.hasSelection(), "Esc-equivalent clearSelection empties the selection");
+
+        // -- Cmd-A sets the select-all flag; any narrowing clears it --
+        seq.selectAllPattern();
+        check(seq.hasSelection() && seq.isSelectAll(), "Cmd-A sets select-all");
+        seq.extendSelection(3);
+        check(seq.hasSelection() && !seq.isSelectAll() && seq.selectionFrom() == 3 && seq.selectionTo() == 3,
+              "narrowing the selection clears select-all");
+
+        // -- copy/paste a range: pad 2 steps 2..5 -> pad 3 steps 0..3 --
+        proc.setStep(0, 2, 2, 1); proc.setStep(0, 2, 3, 2); proc.setStep(0, 2, 4, 1); proc.setStep(0, 2, 5, 2);
+        seq.clearSelection(); // fresh anchor: extendSelection continues from the OLD anchor otherwise
+        seq.extendSelection(2); seq.extendSelection(5);
+        check(seq.selectionFrom() == 2 && seq.selectionTo() == 5, "range re-selected for copy");
+        seq.copySelection();
+        check(seq.hasClipboard(), "copySelection fills the clipboard");
+        proc.setSelectedPad(3);
+        seq.clearSelection(); // paste with no selection lands at step 0
+        seq.pasteSelection();
+        check(proc.getStep(0, 3, 0) == 1 && proc.getStep(0, 3, 1) == 2
+              && proc.getStep(0, 3, 2) == 1 && proc.getStep(0, 3, 3) == 2,
+              "pasteRange lands the copied range at step 0 with no selection");
+        check(proc.getStep(0, 2, 2) == 1, "copy left the source pad untouched");
+
+        // -- cut clears the source and still fills the clipboard --
+        proc.setSelectedPad(2);
+        seq.extendSelection(2); seq.extendSelection(5);
+        seq.cutSelection();
+        check(proc.getStep(0, 2, 2) == 0 && proc.getStep(0, 2, 5) == 0, "cutSelection clears the source range");
+        proc.setSelectedPad(4);
+        seq.clearSelection();
+        seq.pasteSelection();
+        check(proc.getStep(0, 4, 0) == 1 && proc.getStep(0, 4, 3) == 2, "cut payload pastes elsewhere");
+
+        // -- paste/duplicate starting past the pattern end is a total no-op (fixed semantics) --
+        proc.setSelectedPad(5);
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, 5, s, (uint8_t)((s % 2) + 1));
+        seq.clearSelection();
+        seq.extendSelection(fable::DR_STEPS - 2); seq.extendSelection(fable::DR_STEPS - 1);
+        auto beforeNoop = std::vector<int>();
+        for (int s = 0; s < fable::DR_STEPS; ++s) beforeNoop.push_back(proc.getStep(0, 5, s));
+        seq.duplicateSelection(); // dest = 16, past the end -> no-op
+        bool unchanged = true;
+        for (int s = 0; s < fable::DR_STEPS; ++s) unchanged = unchanged && proc.getStep(0, 5, s) == beforeNoop[(size_t)s];
+        check(unchanged, "duplicate/paste starting past the pattern end is a no-op (no wrap)");
+
+        // -- duplicate within range: paste immediately after, clamped --
+        proc.setSelectedPad(6);
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, 6, s, 0);
+        proc.setStep(0, 6, 0, 1); proc.setStep(0, 6, 1, 2);
+        seq.clearSelection();
+        seq.extendSelection(0); seq.extendSelection(1);
+        seq.duplicateSelection();
+        check(proc.getStep(0, 6, 2) == 1 && proc.getStep(0, 6, 3) == 2,
+              "duplicateSelection pastes the range right after itself");
+
+        // -- delete only acts on an explicit selection --
+        proc.setSelectedPad(7);
+        proc.setStep(0, 7, 0, 1);
+        seq.clearSelection();
+        seq.deleteSelection();
+        check(proc.getStep(0, 7, 0) == 1, "deleteSelection with nothing selected is a no-op");
+        seq.extendSelection(0);
+        seq.deleteSelection();
+        check(proc.getStep(0, 7, 0) == 0, "deleteSelection clears the selected step");
+
+        // -- step-range drag-shift: move (source vacated) and Alt-copy (source kept) --
+        proc.setSelectedPad(8);
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, 8, s, 0);
+        proc.setStep(0, 8, 0, 1); proc.setStep(0, 8, 1, 2);
+        seq.clearSelection();
+        seq.extendSelection(0); seq.extendSelection(1);
+        seq.shiftSelection(10, false); // move to steps 10-11
+        check(proc.getStep(0, 8, 0) == 0 && proc.getStep(0, 8, 1) == 0, "shiftRange move vacates the source");
+        check(proc.getStep(0, 8, 10) == 1 && proc.getStep(0, 8, 11) == 2, "shiftRange move lands at dest");
+        check(seq.selectionFrom() == 10 && seq.selectionTo() == 11, "selection follows the moved range");
+        seq.clearSelection(); // fresh anchor for the re-select, not a continued extend
+        seq.extendSelection(10); seq.extendSelection(11); // re-select the moved pair
+        seq.shiftSelection(0, true); // Alt-copy back to steps 0-1
+        check(proc.getStep(0, 8, 0) == 1 && proc.getStep(0, 8, 1) == 2, "shiftRange copy writes the dest");
+        check(proc.getStep(0, 8, 10) == 1 && proc.getStep(0, 8, 11) == 2, "shiftRange copy leaves the source intact");
+
+        // -- shiftRange dest-at-end: vacates the source without bleeding past the pattern --
+        proc.setSelectedPad(9);
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, 9, s, 0);
+        proc.setStep(0, 9, 0, 1); proc.setStep(0, 9, 1, 2); proc.setStep(0, 9, 2, 1);
+        seq.clearSelection();
+        seq.extendSelection(0); seq.extendSelection(2);
+        seq.shiftSelection(fable::DR_STEPS - 1, false); // dest = 15, only step 0's value fits
+        check(proc.getStep(0, 9, 15) == 1, "shiftRange dest-at-end keeps only what fits");
+        check(proc.getStep(0, 9, 0) == 0 && proc.getStep(0, 9, 1) == 0 && proc.getStep(0, 9, 2) == 0,
+              "shiftRange dest-at-end still vacates the whole source range");
+
+        // -- whole-pattern copy/paste (Cmd-A scope) --
+        proc.setEditPattern(0);
+        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+            for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, pad, s, (uint8_t)((pad + s) % 3));
+        seq.selectAllPattern();
+        seq.copySelection();
+        proc.setEditPattern(1);
+        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+            for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(1, pad, s, 0);
+        seq.clearSelection();
+        seq.pasteSelection();
+        bool wholePatternMatches = true;
+        for (int pad = 0; pad < fable::DR_NPADS && wholePatternMatches; ++pad)
+            for (int s = 0; s < fable::DR_STEPS && wholePatternMatches; ++s)
+                wholePatternMatches = proc.getStep(1, pad, s) == proc.getStep(0, pad, s);
+        check(wholePatternMatches, "select-all copy/paste moves the whole pattern (all pads)");
+
+        // -- duplicate with no selection: copy pattern to next bar, extending length --
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
+        proc.setStep(0, 0, 0, 2);
+        seq.clearSelection();
+        seq.duplicatePattern();
+        check(proc.getStep(1, 0, 0) == 2, "duplicatePattern copies pattern 0 into pattern 1");
+        check(proc.getChain() == std::vector<int>({ 0, 1 }), "duplicatePattern extends the sequence length");
+        proc.setEditPattern(fable::DR_NPATTERNS - 1);
+        auto chainBefore = proc.getChain();
+        seq.duplicatePattern();
+        check(proc.getChain() == chainBefore, "duplicatePattern on the last bar is a no-op (no bar 5)");
+
+        // -- bar-chip drag: plain = swap, Alt = copy (leaves source untouched) --
+        proc.setChain({ 0, 1, 2, 3 });
+        for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)
+            for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+                for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(pat, pad, s, 0);
+        proc.setStep(0, 0, 0, 1); // marker A in pattern 0
+        proc.setStep(2, 0, 0, 2); // marker B in pattern 2
+        seq.movePattern(0, 2, false); // swap patterns 0 and 2
+        check(proc.getStep(0, 0, 0) == 2 && proc.getStep(2, 0, 0) == 1,
+              "movePattern(copy=false) swaps the two patterns");
+        seq.movePattern(0, 1, true); // Alt-copy pattern 0 (now marker B=2) over pattern 1
+        check(proc.getStep(1, 0, 0) == 2 && proc.getStep(0, 0, 0) == 2,
+              "movePattern(copy=true) copies without touching the source");
+
+        // -- undo/redo: one entry per verb, restoring the mutated cell --
+        proc.setEditPattern(0);   // earlier duplicatePattern-on-last-bar test left editPattern at 3
+        proc.setSelectedPad(11);
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, 11, s, 0);
+        proc.setStep(0, 11, 0, 1);
+        seq.clearSelection();
+        seq.extendSelection(0);
+        seq.deleteSelection();
+        check(proc.getStep(0, 11, 0) == 0, "delete applied");
+        check(seq.canUndo() && !seq.canRedo(), "delete pushed one undo entry");
+        seq.undo();
+        check(proc.getStep(0, 11, 0) == 1, "undo restores the deleted step");
+        check(seq.canRedo(), "undo enables redo");
+        seq.redo();
+        check(proc.getStep(0, 11, 0) == 0, "redo re-applies the delete");
+
+        // -- keyPressed: modifier combos only; plain Escape/Delete fall through when idle --
+        seq.clearSelection();
+        check(!seq.keyPressed(juce::KeyPress(juce::KeyPress::escapeKey)),
+              "plain Escape with no selection/drag falls through (PadGrid stop stays live)");
+        check(!seq.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)),
+              "plain Delete with no selection falls through");
+        seq.extendSelection(0);
+        check(seq.keyPressed(juce::KeyPress(juce::KeyPress::escapeKey)), "Escape with an active selection is claimed");
+        check(!seq.hasSelection(), "Escape cleared the selection");
+
+        proc.setSelectedPad(12);
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, 12, s, 0);
+        proc.setStep(0, 12, 4, 2);
+        seq.extendSelection(4);
+        const juce::ModifierKeys cmd(juce::ModifierKeys::commandModifier);
+        const juce::ModifierKeys cmdShift(juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier);
+        check(seq.keyPressed(juce::KeyPress('c', cmd, 'c')), "Cmd-C claimed");
+        check(seq.hasClipboard(), "Cmd-C copied to the clipboard");
+        check(seq.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey, {}, 0)),
+              "Delete claimed while a selection is active");
+        check(proc.getStep(0, 12, 4) == 0, "Delete cleared the selected step");
+        seq.extendSelection(4);
+        check(seq.keyPressed(juce::KeyPress('v', cmd, 'v')), "Cmd-V claimed");
+        check(proc.getStep(0, 12, 4) == 2, "Cmd-V pasted the clipboard back");
+        check(seq.keyPressed(juce::KeyPress('a', cmd, 'a')), "Cmd-A claimed");
+        check(seq.isSelectAll(), "Cmd-A selected the whole pattern");
+        check(seq.keyPressed(juce::KeyPress('z', cmd, 'z')), "Cmd-Z claimed");
+        check(seq.keyPressed(juce::KeyPress('z', cmdShift, 'z')), "Shift-Cmd-Z claimed");
+        check(!seq.keyPressed(juce::KeyPress('c', {}, 'c')), "plain 'c' (no modifier) is not claimed");
+    }
+
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
     return g_fail == 0 ? 0 : 1;
 }

@@ -354,7 +354,8 @@ int main(int argc, char** argv) {
         for (int i = 5; i < fable::BL_STEPS; ++i) proc.setSeqStep(0, i, {});
         seq.resizeStep(4, 63);
         s = proc.getSeqStep(0, 4);
-        check(s.duration == 63 && s.slide, "duration resize preserves slide", s.duration);
+        // chain is one bar: NoteLengthHandle.tsx clamps at totalSteps - absoluteStep (16 - 4)
+        check(s.duration == 12 && s.slide, "duration resize clamps at playback length, preserves slide", s.duration);
         seq.resizeStep(4, -4);
         check(proc.getSeqStep(0, 4).duration == 1, "bass duration resize clamps at 1");
         fable::BassSeqStep nextSame; nextSame.on = true; nextSame.note = 0;
@@ -390,6 +391,222 @@ int main(int argc, char** argv) {
             for (int i = 0; i < fable::BL_STEPS && !changed; ++i)
                 if (proc.getSeqStep(1, i).on) changed = true; }
         check(changed, "RAND writes a pattern");
+
+        // ---- 13. decision-6: step-range selection + verbs ----
+        printf("\n== pitch seq view: selection + verbs (decision 6) ==\n");
+        auto stepsEqual = [](const fable::BassSeqStep& a, const fable::BassSeqStep& b) {
+            return a.on == b.on && a.note == b.note && a.oct == b.oct
+                && a.acc == b.acc && a.slide == b.slide && a.duration == b.duration;
+        };
+        auto snapshot = [&](int pat) {
+            std::vector<fable::BassSeqStep> v;
+            for (int i = 0; i < fable::BL_STEPS; ++i) v.push_back(proc.getSeqStep(pat, i));
+            return v;
+        };
+        auto vecsEqual = [&](const std::vector<fable::BassSeqStep>& a,
+                             const std::vector<fable::BassSeqStep>& b) {
+            if (a.size() != b.size()) return false;
+            for (size_t i = 0; i < a.size(); ++i) if (!stepsEqual(a[i], b[i])) return false;
+            return true;
+        };
+
+        // -- selection: shift-click set/extend, Cmd-A, Esc; stationary
+        //    shift-click must not also toggle the step. --
+        proc.setEditPattern(2);
+        for (int i = 0; i < fable::BL_STEPS; ++i) proc.setSeqStep(2, i, {});
+        fable::BassSeqStep srcStep;
+        srcStep.on = true; srcStep.note = 3; srcStep.oct = 1; srcStep.acc = true;
+        srcStep.slide = true; srcStep.duration = 2;
+        proc.setSeqStep(2, 0, srcStep);
+        fable::BassSeqStep srcStep1; srcStep1.on = true; srcStep1.note = 5;
+        proc.setSeqStep(2, 1, srcStep1);
+
+        check(!seq.hasSelection(), "no selection by default");
+        seq.shiftClickStep(0);
+        check(seq.hasSelection() && seq.selectionLo() == 0 && seq.selectionHi() == 0,
+              "shift-click sets a single-step range");
+        seq.shiftClickStep(0); // stationary shift-click on the same step
+        check(stepsEqual(proc.getSeqStep(2, 0), srcStep),
+              "stationary shift-click does not toggle the step");
+        seq.shiftClickStep(3);
+        check(seq.selectionLo() == 0 && seq.selectionHi() == 3,
+              "shift-click extends the range from the anchor");
+        seq.selectAll();
+        check(seq.selectionLo() == 0 && seq.selectionHi() == fable::BL_STEPS - 1,
+              "Cmd-A selects the whole pattern");
+        seq.clearSelection();
+        check(!seq.hasSelection(), "Esc/clearSelection drops the range");
+
+        // -- copy/paste: slide flags survive the raw-byte round trip --
+        seq.shiftClickStep(0);
+        seq.copySelection();
+        seq.clearSelection();
+        seq.shiftClickStep(5);
+        seq.pasteAtSelection();
+        check(stepsEqual(proc.getSeqStep(2, 5), srcStep),
+              "paste at selection reproduces the copied step, slide flag included");
+
+        // -- cut clears the source; the clipboard still holds the payload --
+        seq.clearSelection();
+        seq.shiftClickStep(1);
+        const auto preCut = proc.getSeqStep(2, 1);
+        seq.cutSelection();
+        check(!proc.getSeqStep(2, 1).on, "cut clears the source step");
+        seq.undo();
+        check(stepsEqual(proc.getSeqStep(2, 1), preCut), "undo restores the cut step");
+        seq.redo();
+        check(!proc.getSeqStep(2, 1).on, "redo re-applies the cut");
+        seq.clearSelection();
+        seq.shiftClickStep(6);
+        seq.pasteAtSelection(); // clipboard still holds step1's pre-cut content
+        check(stepsEqual(proc.getSeqStep(2, 6), preCut), "cut's clipboard pastes elsewhere");
+
+        // -- delete: distinct from toggling, and a no-op without a selection --
+        seq.clearSelection();
+        seq.deleteSelection();
+        check(true, "delete with no selection does not crash");
+        seq.shiftClickStep(6);
+        seq.deleteSelection();
+        check(!proc.getSeqStep(2, 6).on, "delete clears the selected step");
+
+        // -- duplicate with a selection: paste right after the range --
+        fable::BassSeqStep d0; d0.on = true; d0.note = 1;
+        fable::BassSeqStep d1; d1.on = true; d1.note = 2;
+        proc.setSeqStep(2, 8, d0);
+        proc.setSeqStep(2, 9, d1);
+        seq.clearSelection();
+        seq.shiftClickStep(8);
+        seq.shiftClickStep(9);
+        seq.duplicateSelection();
+        check(stepsEqual(proc.getSeqStep(2, 10), d0) && stepsEqual(proc.getSeqStep(2, 11), d1),
+              "duplicate-with-selection pastes right after the range");
+        check(seq.selectionLo() == 10 && seq.selectionHi() == 11,
+              "duplicate-with-selection moves the selection onto the copy");
+
+        // -- duplicate with no selection: copy pattern to next bar, extending
+        //    the chain (already at 3 bars from the sequence-length test) --
+        proc.setEditPattern(3);
+        seq.clearSelection();
+        seq.duplicateSelection();
+        check(proc.getEditPattern() == 3,
+              "duplicate-to-next-bar is a no-op at the last pattern slot");
+
+        proc.setEditPattern(2);
+        const auto preDup = proc.getPatternBytes();
+        const auto srcPat2 = snapshot(2);
+        seq.duplicateSelection();
+        const auto postDup = proc.getPatternBytes();
+        check(postDup != preDup, "duplicate-to-next-bar changes the pattern buffer");
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2, 3 }),
+              "duplicate-to-next-bar extends the chain to 4 bars");
+        check(proc.getEditPattern() == 3, "duplicate-to-next-bar moves edit focus to the new bar");
+        check(vecsEqual(snapshot(3), srcPat2), "duplicated pattern content matches its source");
+        seq.undo();
+        check(proc.getPatternBytes() == preDup, "undo restores the pre-duplicate pattern buffer");
+        check(proc.getChain() == std::vector<int>({ 0, 1, 2, 3 }),
+              "undo does not revert the chain-length side effect (scope: pattern bytes only)");
+        seq.redo();
+        check(proc.getPatternBytes() == postDup, "redo restores the post-duplicate pattern buffer");
+
+        // -- step-range drag-shift: move (source vacates), clamp at the
+        //    pattern end (content and selection agree), Alt = copy, and a
+        //    same-position drop is a no-op that skips the history entry --
+        proc.setEditPattern(2);
+        for (int i = 0; i < fable::BL_STEPS; ++i) proc.setSeqStep(2, i, {});
+        fable::BassSeqStep sa; sa.on = true; sa.note = 4; sa.oct = -1; sa.acc = true;
+        sa.slide = true; sa.duration = 3;
+        fable::BassSeqStep sb; sb.on = true; sb.note = 6;
+        proc.setSeqStep(2, 2, sa);
+        proc.setSeqStep(2, 3, sb);
+        seq.clearSelection();
+        seq.shiftClickStep(2);
+        seq.shiftClickStep(3);
+        seq.shiftRangeTo(10, false);
+        check(stepsEqual(proc.getSeqStep(2, 10), sa) && stepsEqual(proc.getSeqStep(2, 11), sb),
+              "shift-move lands the range at the destination");
+        check(!proc.getSeqStep(2, 2).on && !proc.getSeqStep(2, 3).on,
+              "shift-move vacates the source range");
+        check(seq.selectionLo() == 10 && seq.selectionHi() == 11,
+              "selection follows the moved range");
+
+        seq.shiftRangeTo(15, false); // overshoot: dest clamps to STEPS-len so the whole range fits
+        check(stepsEqual(proc.getSeqStep(2, 14), sa) && stepsEqual(proc.getSeqStep(2, 15), sb),
+              "shift clamp: the whole range lands flush with the pattern end");
+        check(seq.selectionLo() == 14 && seq.selectionHi() == 15,
+              "shift clamp: selection clamps to STEPS-len so content and selection agree");
+
+        seq.clearSelection();
+        seq.shiftClickStep(14);
+        seq.shiftRangeTo(0, true); // Alt = copy
+        check(stepsEqual(proc.getSeqStep(2, 0), sa), "shift-copy writes the destination");
+        check(stepsEqual(proc.getSeqStep(2, 14), sa), "shift-copy preserves the source");
+
+        seq.clearSelection();
+        seq.shiftClickStep(0);
+        const auto beforeNoop = proc.getPatternBytes();
+        seq.shiftRangeTo(0, false);
+        check(proc.getPatternBytes() == beforeNoop,
+              "dropping a shift-drag back on its own position is a no-op");
+
+        // -- bar-chip drag: move (swap) / Alt-copy the pattern selector --
+        const auto before0 = snapshot(0), before1 = snapshot(1);
+        seq.moveBar(0, 1, false);
+        check(vecsEqual(snapshot(0), before1) && vecsEqual(snapshot(1), before0),
+              "bar-chip move swaps pattern content");
+        seq.undo();
+        check(vecsEqual(snapshot(0), before0) && vecsEqual(snapshot(1), before1),
+              "bar-chip move is undoable");
+        seq.redo();
+        check(vecsEqual(snapshot(0), before1) && vecsEqual(snapshot(1), before0),
+              "bar-chip move redo reapplies the swap");
+
+        const auto before2 = snapshot(2);
+        seq.moveBar(2, 2, true);
+        check(vecsEqual(snapshot(2), before2), "bar-chip drag onto itself is a no-op");
+
+        const auto copySrc = snapshot(0);
+        seq.moveBar(0, 3, true); // Alt-copy: overwrite pattern 3, leave pattern 0 untouched
+        check(vecsEqual(snapshot(0), copySrc), "bar-chip Alt-copy leaves the source untouched");
+        check(vecsEqual(snapshot(3), copySrc), "bar-chip Alt-copy overwrites the destination");
+
+        // -- keyPressed dispatch: the actual shortcut table, not just the
+        //    handler methods it calls. --
+        proc.setEditPattern(2);
+        for (int i = 0; i < fable::BL_STEPS; ++i) proc.setSeqStep(2, i, {});
+        fable::BassSeqStep kStep;
+        kStep.on = true; kStep.note = 9; kStep.slide = true; kStep.acc = true; kStep.duration = 4;
+        proc.setSeqStep(2, 5, kStep);
+        seq.clearSelection();
+
+        check(seq.keyPressed(juce::KeyPress('A', juce::ModifierKeys(juce::ModifierKeys::commandModifier), 'A')),
+              "Cmd-A handled");
+        check(seq.selectionLo() == 0 && seq.selectionHi() == fable::BL_STEPS - 1,
+              "Cmd-A (via keyPressed) selects the whole pattern");
+        check(seq.keyPressed(juce::KeyPress(juce::KeyPress::escapeKey, juce::ModifierKeys(), 0)),
+              "Esc handled");
+        check(!seq.hasSelection(), "Esc (via keyPressed) clears the selection");
+
+        seq.shiftClickStep(5); // narrow the selection to just the slide-flagged step
+        check(seq.keyPressed(juce::KeyPress('C', juce::ModifierKeys(juce::ModifierKeys::commandModifier), 'C')),
+              "Cmd-C handled");
+        seq.clearSelection();
+        seq.shiftClickStep(11);
+        check(seq.keyPressed(juce::KeyPress('V', juce::ModifierKeys(juce::ModifierKeys::commandModifier), 'V')),
+              "Cmd-V handled");
+        check(stepsEqual(proc.getSeqStep(2, 11), kStep),
+              "Cmd-V (via keyPressed) pastes the slide-flagged step");
+        check(seq.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey, juce::ModifierKeys(), 0)),
+              "Delete handled");
+        check(!proc.getSeqStep(2, 11).on, "Delete (via keyPressed) clears the selected step");
+        check(seq.keyPressed(juce::KeyPress('Z', juce::ModifierKeys(juce::ModifierKeys::commandModifier), 'Z')),
+              "Cmd-Z handled");
+        check(proc.getSeqStep(2, 11).on, "undo (via keyPressed) restores the deleted step");
+        check(seq.keyPressed(juce::KeyPress('Z', juce::ModifierKeys(juce::ModifierKeys::commandModifier
+                                                                     | juce::ModifierKeys::shiftModifier), 'Z')),
+              "Shift-Cmd-Z handled");
+        check(!proc.getSeqStep(2, 11).on, "redo (via keyPressed) re-applies the delete");
+        check(!seq.keyPressed(juce::KeyPress('Q', juce::ModifierKeys(), 'q')),
+              "an unclaimed plain key falls through unhandled");
     }
 
     printf("%s\n", g_fail == 0 ? "BASS PLUGIN CHECKS PASSED" : "BASS PLUGIN CHECKS FAILED");

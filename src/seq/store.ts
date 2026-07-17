@@ -16,6 +16,10 @@ import { embedSessionPatches } from './sessionExport';
 import type { SeqRig } from './rig';
 import type { RuntimeClipLibraryEntry } from './clipLibrary';
 import { loadLibraryClipIntoSession } from './clipLibraryActions';
+import {
+  applyWrites, type CellWrite, copyRect, type GridClipboard, type GridPos, type GridSel,
+  inRect, moveWrites, pasteWrites, selRect,
+} from './gridEdit';
 import { isTourSeen, markTourSeen, nextTourStep } from './onboarding';
 
 export interface TrackPos {
@@ -44,6 +48,9 @@ export interface SeqStore {
   focus: { track: number; scene: number } | null;
   clipLoadRevision: number;
   tour: number | null; // active onboarding step index, null = tour hidden
+  gridSel: GridSel | null; // session-grid cell selection (anchor/head rectangle)
+  gridClipboard: GridClipboard | null; // in-memory, per-app (not persisted)
+  gridDrag: { from: GridPos; to: GridPos; copy: boolean } | null; // live pointer drag
 
   powerOn: (rig?: SeqRig) => Promise<void>;
   toggleTransport: () => void;
@@ -74,6 +81,17 @@ export interface SeqStore {
   startTour: () => void;
   advanceTour: (d: number) => void;
   endTour: () => void;
+  setGridSelection: (anchor: GridPos, head?: GridPos) => void;
+  clearGridSelection: () => void;
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteAt: (s: number, t: number) => void;
+  duplicateSelection: () => void;
+  deleteSelection: () => void;
+  moveClips: (from: GridPos, to: GridPos, opts?: { copy?: boolean }) => void;
+  setGridDrag: (drag: { from: GridPos; to: GridPos; copy: boolean } | null) => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 const initialSession = loadSession(factorySession());
@@ -98,6 +116,12 @@ function bytesFor(session: SessionDoc, s: number, t: number): Uint8Array | null 
 export function clipPattern(session: SessionDoc, s: number, t: number): Uint8Array | null {
   return bytesFor(session, s, t);
 }
+
+// Bounded undo/redo for grid editing verbs only (not knob/param changes).
+// Sessions are immutable, so a snapshot is just the document reference.
+const HISTORY_LIMIT = 50;
+const undoStack: SessionDoc[] = [];
+const redoStack: SessionDoc[] = [];
 
 const gainCurve = (v: number) => v * v * 1.4;
 
@@ -153,6 +177,78 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     saveSession(embedSessionPatches({ ...st.session, quant: st.quant, swing: st.swing }));
   };
 
+  const clampPos = (p: GridPos): GridPos => ({
+    s: Math.max(0, Math.min(get().session.scenes.length - 1, p.s)),
+    t: Math.max(0, Math.min(get().session.tracks.length - 1, p.t)),
+  });
+
+  const pushHistory = () => {
+    undoStack.push(get().session);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+  };
+
+  // Per changed cell: keep the clipBytes cache in sync and mirror the
+  // updateClipBytes / deleteClip runtime semantics — hot-swap the device when
+  // the cell is the track's live/queued target, boundary-stop a cleared cell
+  // that is playing or queued. Runs against the already-updated session.
+  const syncWrites = (writes: CellWrite[]) => {
+    for (const w of writes) {
+      // Re-read per write: an earlier stopTrack in this loop mutates queue,
+      // and the hot-swap target below must see that fresh state (a stale
+      // snapshot would skip the updateClip for a moved clip's new home).
+      const st = get();
+      const key = `${w.s}:${w.t}`;
+      if (w.clip == null) {
+        clipBytes.delete(key);
+        if (st.owner[w.t] === w.s || st.queue[w.t] === w.s) st.stopTrack(w.t);
+      } else {
+        const bytes = b64ToBytes(w.clip.pattern);
+        clipBytes.set(key, bytes);
+        const q = st.queue[w.t];
+        const target = q != null && q !== STOP ? q : st.owner[w.t];
+        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars);
+      }
+    }
+  };
+
+  // One chokepoint for every grid verb: history push, immutable session
+  // rebuild, cache/runtime sync, persist. Skipped cells (machine mismatch)
+  // are surfaced as a log line — never partially written.
+  const applyGridWrites = (writes: CellWrite[], skipped: number) => {
+    if (skipped) console.info(`SQ-4: skipped ${skipped} machine-mismatched cell(s)`);
+    if (!writes.length) return;
+    pushHistory();
+    set({ session: applyWrites(get().session, writes) });
+    syncWrites(writes);
+    persist();
+  };
+
+  // Undo/redo covers grid editing verbs ONLY, so restoring a snapshot merges
+  // its clips into the CURRENT session — bpm, quant, swing, track patches and
+  // scene pass flags mutated after the snapshot keep their live values (the
+  // rig was never told to revert them).
+  const restoreSession = (snapshot: SessionDoc) => {
+    const cur = get().session;
+    const writes: CellWrite[] = [];
+    for (let s = 0; s < snapshot.scenes.length; s++) {
+      for (let t = 0; t < snapshot.tracks.length; t++) {
+        const a = cur.scenes[s]?.clips[t] ?? null;
+        const b = snapshot.scenes[s].clips[t];
+        if (a === b) continue;
+        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name) continue;
+        writes.push({ s, t, clip: b });
+      }
+    }
+    const next: SessionDoc = {
+      ...cur,
+      scenes: cur.scenes.map((sc, s) => (snapshot.scenes[s] ? { ...sc, clips: snapshot.scenes[s].clips } : sc)),
+    };
+    set({ session: next });
+    syncWrites(writes);
+    persist();
+  };
+
   return {
     session: initialSession,
     powered: false,
@@ -174,6 +270,9 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     focus: null,
     clipLoadRevision: 0,
     tour: null,
+    gridSel: null,
+    gridClipboard: null,
+    gridDrag: null,
 
     powerOn: async (rigIn?: SeqRig) => {
       const session = get().session;
@@ -455,12 +554,18 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const anchor = st.rig ? st.rig.now() + 256 : 0;
       st.rig?.sendTempo(session.bpm, session.swing, anchor);
       clipBytes.clear();
+      // A preset load replaces the whole document AND reprograms the rig
+      // (patches, tempo); pre-load snapshots would undo the doc but not the
+      // rig, desyncing audible vs persisted state — so history resets here.
+      undoStack.length = 0;
+      redoStack.length = 0;
       set({
         session, quant: session.quant, swing: session.swing,
         trackVol: session.tracks.map((track) => track.gain),
         playing: false, beat: 0, bar: 1, owner: {}, queue: {},
         pos: session.tracks.map(() => null), anchor, focus: null,
         clipLoadRevision: st.clipLoadRevision + 1,
+        gridSel: null, gridDrag: null,
       });
       persist();
     },
@@ -506,12 +611,108 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       markTourSeen();
       set({ tour: null });
     },
+
+    setGridSelection: (anchor, head) => {
+      const a = clampPos(anchor);
+      set({ gridSel: { anchor: a, head: head ? clampPos(head) : a } });
+    },
+
+    clearGridSelection: () => set({ gridSel: null }),
+
+    copySelection: () => {
+      const st = get();
+      if (!st.gridSel) return;
+      set({ gridClipboard: copyRect(st.session, selRect(st.gridSel)) });
+    },
+
+    cutSelection: () => {
+      const st = get();
+      if (!st.gridSel) return;
+      const rect = selRect(st.gridSel);
+      set({ gridClipboard: copyRect(st.session, rect) });
+      const writes: CellWrite[] = [];
+      for (let s = rect.s0; s <= rect.s1; s++) {
+        for (let t = rect.t0; t <= rect.t1; t++) {
+          if (st.session.scenes[s]?.clips[t]) writes.push({ s, t, clip: null });
+        }
+      }
+      applyGridWrites(writes, 0);
+    },
+
+    pasteAt: (s, t) => {
+      const st = get();
+      if (!st.gridClipboard) return;
+      const plan = pasteWrites(st.session, st.gridClipboard, { s, t });
+      applyGridWrites(plan.writes, plan.skipped);
+    },
+
+    // Ableton-style duplicate: the selection pasted one scene below its
+    // bottom edge on the same tracks; rows past the last scene are clamped
+    // away (no scene creation in v1).
+    duplicateSelection: () => {
+      const st = get();
+      if (!st.gridSel) return;
+      const rect = selRect(st.gridSel);
+      const plan = pasteWrites(st.session, copyRect(st.session, rect), { s: rect.s1 + 1, t: rect.t0 });
+      applyGridWrites(plan.writes, plan.skipped);
+    },
+
+    deleteSelection: () => {
+      const st = get();
+      if (!st.gridSel) return;
+      const rect = selRect(st.gridSel);
+      const writes: CellWrite[] = [];
+      for (let s = rect.s0; s <= rect.s1; s++) {
+        for (let t = rect.t0; t <= rect.t1; t++) {
+          if (st.session.scenes[s]?.clips[t]) writes.push({ s, t, clip: null });
+        }
+      }
+      applyGridWrites(writes, 0);
+    },
+
+    // Drag-and-drop commit: moves the selected block (when the grab point is
+    // inside the selection) or the single grabbed cell by the grab→drop
+    // vector; `copy` keeps the sources (Alt-drag).
+    moveClips: (from, to, opts = {}) => {
+      const st = get();
+      const rect = st.gridSel && inRect(selRect(st.gridSel), from.s, from.t)
+        ? selRect(st.gridSel)
+        : { s0: from.s, s1: from.s, t0: from.t, t1: from.t };
+      const plan = moveWrites(st.session, rect, from, to, !!opts.copy);
+      applyGridWrites(plan.writes, plan.skipped);
+      if (plan.writes.length) {
+        const ds = to.s - from.s;
+        const dt = to.t - from.t;
+        get().setGridSelection(
+          { s: rect.s0 + ds, t: rect.t0 + dt },
+          { s: rect.s1 + ds, t: rect.t1 + dt },
+        );
+      }
+    },
+
+    setGridDrag: (drag) => set({ gridDrag: drag }),
+
+    undo: () => {
+      const target = undoStack.pop();
+      if (!target) return;
+      redoStack.push(get().session);
+      restoreSession(target);
+    },
+
+    redo: () => {
+      const target = redoStack.pop();
+      if (!target) return;
+      undoStack.push(get().session);
+      restoreSession(target);
+    },
   };
 });
 
 /** Reset launcher state (used by tests). */
 export function resetSeqStore(): void {
   clipBytes.clear();
+  undoStack.length = 0;
+  redoStack.length = 0;
   useSeqStore.setState({
     session: factorySession(),
     powered: false,
@@ -533,5 +734,8 @@ export function resetSeqStore(): void {
     focus: null,
     clipLoadRevision: 0,
     tour: null,
+    gridSel: null,
+    gridClipboard: null,
+    gridDrag: null,
   });
 }

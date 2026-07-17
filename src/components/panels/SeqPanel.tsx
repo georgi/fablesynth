@@ -2,6 +2,7 @@
 // = rest), draggable note lengths, octave / accent rows, bars 1–4 + sequence
 // length, RAND, transport and ROOT controls.
 
+import { useEffect, useRef } from 'react';
 import { getStep, NOTE_LANES, STEPS, type SeqStep } from '../../noteseq';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
@@ -33,6 +34,41 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const setEditPattern = useStore((s) => s.setEditPattern);
   const setSequenceLength = useStore((s) => s.setSequenceLength);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
+  const stepSel = useStore((s) => s.stepSel);
+  const setStepSel = useStore((s) => s.setStepSel);
+  const shiftStepSel = useStore((s) => s.shiftStepSel);
+  const movePattern = useStore((s) => s.movePattern);
+
+  // Step-range selection (docs/editing-concept.md): a step-number header press
+  // starts either a sweep-select (unselected step, or Shift held) or a
+  // content-move drag (pressing inside the current selection). The move is
+  // committed once, on release, via shiftStepSel — never per pointer-move, so
+  // it costs a single undo entry.
+  const sweepingRef = useRef(false);
+  const moveRef = useRef<{ selFrom: number; origin: number; hover: number; altKey: boolean } | null>(null);
+
+  useEffect(() => {
+    const commitAndReset = () => {
+      if (moveRef.current) {
+        const { selFrom, origin, hover, altKey } = moveRef.current;
+        shiftStepSel(selFrom + (hover - origin), { copy: altKey });
+      }
+      moveRef.current = null;
+      sweepingRef.current = false;
+    };
+    const onPointerUp = () => commitAndReset();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      moveRef.current = null; // cancel without committing
+      sweepingRef.current = false;
+    };
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [shiftStepSel]);
 
   const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
   const totalSteps = barCount * STEPS;
@@ -66,6 +102,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
               playingBar={seqPlaying ? curPat : null}
               onEditBar={setEditPattern}
               onLengthChange={setSequenceLength}
+              onMovePattern={movePattern}
             />
           </>
         )}
@@ -86,6 +123,10 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               const current = seqPlaying && curStep === step && curPat === pattern;
               const voices = polySteps?.[absoluteStep]?.length ? polySteps[absoluteStep] : [s];
+              const editable = pattern === editPattern;
+              const selLo = stepSel ? Math.min(stepSel.from, stepSel.to) : -1;
+              const selHi = stepSel ? Math.max(stepSel.from, stepSel.to) : -1;
+              const selected = editable && stepSel !== null && step >= selLo && step <= selHi;
               return (
                 <div className={`ns-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
                   <div className="ns-lanes">
@@ -132,7 +173,37 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                     aria-pressed={s.on && s.acc}
                     onClick={() => toggleStepAcc(step, pattern)}
                   />
-                  <span className="ns-step-num">{step === 0 ? `BAR ${bar + 1}` : step + 1}</span>
+                  <button
+                    type="button"
+                    className={`ns-step-num${selected ? ' selected' : ''}`}
+                    aria-label={`bar ${bar + 1}, step ${step + 1}, select`}
+                    aria-pressed={selected}
+                    onPointerDown={(event) => {
+                      // Hosted (SQ-4 focus) has no edit-verb/undo/Esc key
+                      // surface for step ranges — selection and drag-move are
+                      // standalone-only, mirroring DR-1's StepSeq gate.
+                      if (hosted || !editable) return;
+                      if (event.shiftKey) {
+                        setStepSel({ from: stepSel ? stepSel.from : step, to: step });
+                        sweepingRef.current = true;
+                        return;
+                      }
+                      if (selected && stepSel) {
+                        moveRef.current = { selFrom: selLo, origin: step, hover: step, altKey: event.altKey };
+                        return;
+                      }
+                      setStepSel({ from: step, to: step });
+                      sweepingRef.current = true;
+                    }}
+                    onPointerEnter={(event) => {
+                      if (hosted || !editable || event.buttons !== 1) return;
+                      if (moveRef.current) { moveRef.current.hover = step; moveRef.current.altKey = event.altKey; return; }
+                      if (sweepingRef.current && stepSel) setStepSel({ from: stepSel.from, to: step });
+                    }}
+                  >
+                    {step === 0 ? `BAR ${bar + 1}` : step + 1}
+                  </button>
+                  <div className={`ns-step-sel${selected ? ' on' : ''}`} aria-hidden="true" />
                   <div className={`ns-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
                 </div>
               );

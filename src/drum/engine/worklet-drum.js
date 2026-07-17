@@ -232,9 +232,13 @@ class DrumProcessor extends AudioWorkletProcessor {
     const abs = (this.clipStep + 1) % total;
     const s = abs % STEPS;
     const bar = (abs / STEPS) | 0;
+    const hits = [];
     for (let i = 0; i < NPADS; i++) {
       const val = this.clip.data[(bar * NPADS + i) * STEPS + s];
-      if (val) this.trigger(i, val === 2 ? ACCENT_VEL : PLAIN_VEL);
+      if (val) {
+        this.trigger(i, val === 2 ? ACCENT_VEL : PLAIN_VEL);
+        hits.push(i);
+      }
     }
     this.clipStep = abs;
     const offNow = s % 2 === 1 ? swing * SWING_MAX * dur : 0;
@@ -245,7 +249,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     // each fire and drifts late without bound against the shared timebase.
     const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
     this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - currentFrame;
-    this.port.postMessage({ t: 'pos', step: s, bar });
+    this.port.postMessage({ t: 'pos', step: s, bar, hits });
   }
 
   trigger(padI, vel) {

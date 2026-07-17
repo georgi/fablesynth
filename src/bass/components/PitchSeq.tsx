@@ -1,7 +1,10 @@
 // The 16-step pitch sequencer: 12 note lanes per step (tap = set note,
 // tap again = rest), draggable note lengths, octave / accent / slide rows,
-// bars 1–4 and sequence length.
+// bars 1–4 and sequence length. Shift-click or drag across the step-number
+// row selects a range (highlighted); Cmd-A/Esc/Cmd-C/X/V/D/Delete work the
+// clipboard verbs from useBassKeys.
 
+import { useRef } from 'react';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
 import { getStep, NOTE_LANES, STEPS } from '../seq';
@@ -15,6 +18,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   const editPattern = useBassStore((s) => s.editPattern);
   const chain = useBassStore((s) => s.chain);
   const patterns = useBassStore((s) => s.patterns);
+  const stepSel = useBassStore((s) => s.stepSel);
   const play = useBassStore((s) => s.play);
   const stop = useBassStore((s) => s.stop);
   const toggleCell = useBassStore((s) => s.toggleCell);
@@ -25,6 +29,68 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   const setEditPattern = useBassStore((s) => s.setEditPattern);
   const setSequenceLength = useBassStore((s) => s.setSequenceLength);
   const randomize = useBassStore((s) => s.randomize);
+  const shiftClickStep = useBassStore((s) => s.shiftClickStep);
+  const setStepSelection = useBassStore((s) => s.setStepSelection);
+  const shiftSelection = useBassStore((s) => s.shiftSelection);
+  const movePattern = useBassStore((s) => s.movePattern);
+
+  // Sweep-drag across the step-number row (pointer events, not HTML5 drag):
+  // pointerdown anchors the range on the edited pattern's row, pointermove
+  // over any step-number cell (found via elementFromPoint, matched to the
+  // edited pattern) extends it.
+  const sweepAnchor = useRef<number | null>(null);
+  const startSweep = (step: number, pattern: number) => {
+    if (pattern !== editPattern) return;
+    sweepAnchor.current = step;
+    setStepSelection({ from: step, to: step });
+    const move = (ev: PointerEvent) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const cell = el instanceof Element ? el.closest<HTMLElement>('[data-step-num]') : null;
+      if (!cell || Number(cell.dataset.pattern) !== editPattern || sweepAnchor.current === null) return;
+      setStepSelection({ from: sweepAnchor.current, to: Number(cell.dataset.step) });
+    };
+    const up = () => {
+      sweepAnchor.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  // Step-range drag: pointerdown *inside* the current selection shifts it
+  // (move; Alt = copy) to wherever the pointer is released, via shiftRange.
+  // Esc cancels — the shift only commits on pointerup.
+  const shiftDrag = useRef<{ offset: number; dest: number } | null>(null);
+  const startShiftDrag = (step: number, pattern: number) => {
+    if (!stepSel || pattern !== editPattern) return;
+    const lo = Math.min(stepSel.from, stepSel.to);
+    shiftDrag.current = { offset: step - lo, dest: lo };
+    const move = (ev: PointerEvent) => {
+      if (!shiftDrag.current) return;
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const cell = el instanceof Element ? el.closest<HTMLElement>('[data-step-num]') : null;
+      if (!cell || Number(cell.dataset.pattern) !== editPattern) return;
+      shiftDrag.current.dest = Number(cell.dataset.step) - shiftDrag.current.offset;
+    };
+    const cancel = () => {
+      shiftDrag.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('keydown', keydown);
+    };
+    const up = (ev: PointerEvent) => {
+      if (shiftDrag.current) shiftSelection(shiftDrag.current.dest, { copy: ev.altKey });
+      cancel();
+    };
+    const keydown = (ev: KeyboardEvent) => { if (ev.key === 'Escape') cancel(); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('keydown', keydown);
+  };
+
+  const isInSelection = (step: number, pattern: number) => pattern === editPattern && stepSel !== null
+    && step >= Math.min(stepSel.from, stepSel.to) && step <= Math.max(stepSel.from, stepSel.to);
 
   const barCount = Math.max(1, Math.min(4, bars ?? chain.length));
   const totalSteps = barCount * STEPS;
@@ -58,6 +124,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
               playingBar={playing ? curPat : null}
               onEditBar={setEditPattern}
               onLengthChange={setSequenceLength}
+              onMovePattern={movePattern}
             />
           </>
         )}
@@ -78,8 +145,12 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
           <div className="bl-seq-cols">
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               const current = playing && curStep === step && curPat === pattern;
+              const inSel = isInSelection(step, pattern);
               return (
-                <div className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
+                <div
+                  className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}${inSel ? ' selected' : ''}`}
+                  key={absoluteStep}
+                >
                   <div className="bl-seq-lanes">
                     {Array.from({ length: NOTE_LANES }, (_, r) => {
                       const note = NOTE_LANES - 1 - r;
@@ -91,7 +162,10 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                             className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
-                            onClick={() => toggleCell(step, note, pattern)}
+                            onClick={(event) => {
+                              if (event.shiftKey) { if (pattern === editPattern) shiftClickStep(step); return; }
+                              toggleCell(step, note, pattern);
+                            }}
                           />
                           {active && (
                             <NoteLengthHandle
@@ -128,7 +202,19 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                     aria-pressed={s.on && s.slide}
                     onClick={() => toggleStepSlide(step, pattern)}
                   />
-                  <span className="bl-step-num">{step === 0 ? `BAR ${bar + 1}` : step + 1}</span>
+                  <span
+                    className="bl-step-num"
+                    data-step-num
+                    data-step={step}
+                    data-pattern={pattern}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      if (isInSelection(step, pattern)) startShiftDrag(step, pattern);
+                      else startSweep(step, pattern);
+                    }}
+                  >
+                    {step === 0 ? `BAR ${bar + 1}` : step + 1}
+                  </span>
                   <div className={`bl-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
                 </div>
               );
