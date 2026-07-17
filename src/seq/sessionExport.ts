@@ -13,7 +13,7 @@ function embeddedPatch(machine: SessionDoc['tracks'][number]['machine'], patch: 
   if (patch.kind === 'inline') {
     const data = patch.data as { params?: Record<string, number> };
     const defaults = machine === 'DR1' ? defaultDrumParams() : machine === 'BL1' ? defaultBassParams() : defaultParams();
-    return { kind: 'inline', data: { params: { ...defaults, ...data.params } } };
+    return { kind: 'inline', data: { params: { ...defaults, ...data.params } }, base: patch.base };
   }
   const index = patch.index;
   const params = machine === 'DR1'

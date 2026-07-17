@@ -138,14 +138,29 @@ export class Wt1Device extends EngineDevice<SynthEngine> {
   }
 }
 
-/** Display name of a track's patch (the head-card chip). */
-export function patchName(machine: 'DR1' | 'BL1' | 'WT1', patch: PatchDoc): string {
-  if (patch.kind !== 'factory') return 'CUSTOM';
+/** Factory index a patch resolves to for display/stepping: the factory
+ *  index, an inline patch's remembered base, or -1 when it has no origin. */
+export function patchBaseIndex(patch: PatchDoc): number {
+  if (patch.kind === 'factory') return patch.index;
+  return patch.base ?? -1;
+}
+
+function factoryName(machine: 'DR1' | 'BL1' | 'WT1', index: number): string {
   switch (machine) {
-    case 'DR1': return FACTORY_KITS[patch.index]?.name ?? 'KIT ?';
-    case 'BL1': return FACTORY_PATCHES[patch.index]?.name ?? 'PATCH ?';
-    default: return FACTORY_PRESETS[patch.index]?.name ?? 'PRESET ?';
+    case 'DR1': return FACTORY_KITS[index]?.name ?? 'KIT ?';
+    case 'BL1': return FACTORY_PATCHES[index]?.name ?? 'PATCH ?';
+    default: return FACTORY_PRESETS[index]?.name ?? 'PRESET ?';
   }
+}
+
+/** Display name of a track's patch (the head-card chip). Inline edits keep
+ *  their factory origin's name with a `*` dirty marker; only origin-less
+ *  patches read as CUSTOM. */
+export function patchName(machine: 'DR1' | 'BL1' | 'WT1', patch: PatchDoc): string {
+  const base = patchBaseIndex(patch);
+  if (base < 0) return 'CUSTOM';
+  const name = factoryName(machine, base);
+  return patch.kind === 'inline' ? `${name} *` : name;
 }
 
 /** Factory patch names shared by track heads and the focused device toolbar. */

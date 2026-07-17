@@ -65,10 +65,13 @@ export interface TrackDoc {
 }
 
 // v1 sessions use factory patches; 'inline' embeds a machine-native patch
-// payload (DrumKit / BassPatch / Preset JSON) for portability later.
+// payload (DrumKit / BassPatch / Preset JSON) for portability later. `base`
+// records the factory index the inline edits started from, so the UI can keep
+// showing that patch's name (with a dirty marker) instead of falling back to
+// CUSTOM. Absent when the patch has no factory origin (imported/raw).
 export type PatchDoc =
   | { kind: 'factory'; index: number }
-  | { kind: 'inline'; data: unknown };
+  | { kind: 'inline'; data: unknown; base?: number };
 
 export interface SceneDoc {
   name: string;

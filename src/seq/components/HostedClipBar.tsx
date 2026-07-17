@@ -9,7 +9,7 @@ import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { patternsToClip } from '../hostBridge';
 import { HOSTED_MAX_BARS, type MachineId } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
-import { factoryPatchNames, stepFactoryPatchIndex } from '../devices';
+import { factoryPatchNames, patchBaseIndex, stepFactoryPatchIndex } from '../devices';
 import { ClipLibraryBrowser } from './ClipLibraryBrowser';
 
 const BAR_STORE = {
@@ -101,7 +101,10 @@ function HostedPatchSelect({ machine }: { machine: MachineId }) {
   const focus = useSeqStore((s) => s.focus)!;
   const patch = useSeqStore((s) => s.session.tracks[focus.track].patch);
   const names = factoryPatchNames(machine);
-  const current = patch.kind === 'factory' ? patch.index : -1;
+  // The selector tracks the factory origin even after edits; a `*` marks the
+  // patch as dirty rather than dropping the whole selection to CUSTOM.
+  const current = patchBaseIndex(patch);
+  const dirty = patch.kind === 'inline' && current >= 0;
   const load = (index: number) => useSeqStore.getState().loadTrackFactoryPatch(focus.track, index);
   const step = (delta: number) => load(stepFactoryPatchIndex(machine, current, delta));
 
@@ -113,6 +116,7 @@ function HostedPatchSelect({ machine }: { machine: MachineId }) {
         {current < 0 && <option value={-1}>CUSTOM</option>}
         {names.map((name, index) => <option key={`${index}:${name}`} value={index}>{name}</option>)}
       </select>
+      {dirty && <span className="sq-device-patch-dirty" title="Patch has unsaved edits" aria-label="edited">*</span>}
       <button type="button" onClick={() => step(1)} aria-label="Next factory patch">▸</button>
     </div>
   );

@@ -741,6 +741,10 @@
   border-color: color-mix(in srgb, var(--tc) 65%, #303a50);
   outline: none;
 }
+.sq-device-patch-dirty {
+  margin-left: -1px; color: var(--tc); font: 700 13px var(--font-mono);
+  line-height: 1;
+}
 .sq-clipbar-name { font-weight: 700; letter-spacing: 0.08em; }
 .sq-clipbar .seq-bars-control { margin-left: auto; --ac-a: var(--tc); }
 .sq-clipbar-hint, .sq-clipbar-lock { font-size: 10px; color: #667; letter-spacing: 0.06em; }

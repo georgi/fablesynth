@@ -147,16 +147,24 @@ export function DeviceView() {
     let prev = host.getParams();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const write = () => {
+      const cur = useSeqStore.getState().session.tracks[focus.track].patch;
+      // Remember the factory origin: from a clean factory patch it's the
+      // current index; once inline, carry the existing base forward.
+      const base = cur.kind === 'factory' ? cur.index : cur.base;
       useSeqStore.getState().setTrackPatch(focus.track, {
         kind: 'inline',
         data: { params: { ...host.getParams() } },
+        base,
       });
     };
     const unsub = host.subscribe(() => {
-      if (patchSyncing.current) return;
       const next = host.getParams();
       if (next === prev) return;
+      // Always advance the baseline first: a programmatic param replacement
+      // (engine attach / factory-patch load) must not later read as a user
+      // edit and get snapshotted back over the patch we just loaded.
       prev = next;
+      if (patchSyncing.current) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         timer = undefined;

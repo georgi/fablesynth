@@ -2,7 +2,7 @@
 // live LED, machine chip, mute/solo and a volume (fader) knob.
 
 import type * as React from 'react';
-import { patchName, stepFactoryPatchIndex } from '../devices';
+import { patchBaseIndex, patchName, stepFactoryPatchIndex } from '../devices';
 import { isTrackAudible } from '../model';
 import { useSeqStore } from '../store';
 import { SeqKnob } from './SeqKnob';
@@ -35,7 +35,7 @@ export function TrackHeads() {
         const audible = playing && isTrackAudible(t, owner, trackMute, sceneMute, solo);
         const machineLabel = tr.machine === 'DR1' ? 'DR-1' : tr.machine === 'BL1' ? 'BL-1' : 'WT-1';
         const patchLabel = patchName(tr.machine, tr.patch);
-        const patchIndex = tr.patch.kind === 'factory' ? tr.patch.index : -1;
+        const patchIndex = patchBaseIndex(tr.patch);
         const stepPatch = (delta: number) => loadTrackFactoryPatch(t, stepFactoryPatchIndex(tr.machine, patchIndex, delta));
         return (
           <div
