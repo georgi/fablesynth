@@ -1,4 +1,4 @@
-// Dumps all 24 web factory session presets as JSON — the JUCE side's
+// Dumps all 40 web factory session presets as JSON — the JUCE side's
 // cross-platform fixture (juce/test/fixtures/web-session-presets.json), so
 // sq4_host_test can prove the two generators agree byte-for-byte. Regenerate:
 //   npx tsx scripts/dump-session-presets.ts > juce/test/fixtures/web-session-presets.json

@@ -83,7 +83,7 @@ describe('mono leads', () => {
   const MONO_LEADS = [
     'ACID LINE', 'SCREECH LEAD', '8-BIT LEAD', 'GLIDE LEAD', 'MINI LEAD',
     'FUNKY WORM', 'TAURUS PEDAL', 'FOG LIGHT', 'GLASS RIBBON', 'NORTH WIRE',
-    'TEMPLE BREATH',
+    'TEMPLE BREATH', 'MELODICA', 'BLEEP TECH',
   ];
 
   it('exactly the lead presets set master.mono', () => {

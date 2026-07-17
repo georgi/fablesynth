@@ -49,6 +49,22 @@ const specs: Spec[] = [
   ['MACHINE TENSION', 'CINEMATIC', 'TENSION', 4, ['industrial', 'tense', 'dark'], [12, 5, 47, 38], 1], // WAVE DANCER / AURORA RISER
   ['VOID MARCH', 'CINEMATIC', 'MARCH', 4, ['heavy', 'dark', 'driving'], [3, 4, 44, 25], 2], // BLADE BRASS / CINEMA STRINGS
   ['FINAL HORIZON', 'CINEMATIC', 'FINALE', 5, ['epic', 'wide', 'bright'], [13, 8, 43, 38], 3], // JUMP BRASS / AURORA RISER
+  ['GRAY ROOM', 'MINIMAL', 'ROOM', 4, ['hypnotic', 'dry', 'tight'], [9, 2, 33, 17], 0], // DATA STREAM / DARK DRONE
+  ['CLICK FIELD', 'MINIMAL', 'CLICK', 4, ['clicky', 'sparse', 'precise'], [9, 11, 57, 40], 1], // BLEEP TECH / PUMP PAD
+  ['COLD ROTOR', 'MINIMAL', 'ROTOR', 5, ['dark', 'driving', 'hypnotic'], [6, 6, 50, 35], 2], // PROPHET STAB / TWIN SKY
+  ['NIGHT GRID', 'MINIMAL', 'GRID', 4, ['deep', 'rolling', 'late'], [9, 5, 14, 34], 3], // HOUSE PLUCK / OCEAN AIR
+  ['SUGAR RUSH', 'FUTURE BASS', 'RUSH', 5, ['bright', 'bouncy', 'wide'], [0, 8, 4, 11], 0], // HYPER SAW / FUTURE CHORD
+  ['PASTEL SKY', 'FUTURE BASS', 'PASTEL', 4, ['soft', 'lush', 'wide'], [2, 1, 15, 42], 1], // TRAP BELL / JUNO DREAM
+  ['STARBURST', 'FUTURE BASS', 'BURST', 5, ['euphoric', 'punchy', 'bright'], [0, 11, 45, 40], 2], // FANTA BELLS / PUMP PAD
+  ['HEART WIRE', 'FUTURE BASS', 'WIRE', 4, ['emotive', 'glassy', 'wide'], [2, 8, 52, 38], 3], // GLASS RIBBON / AURORA RISER
+  ['VELVET SMOKE', 'TRIP HOP', 'SMOKE', 2, ['smoky', 'dusty', 'slow'], [16, 7, 20, 34], 0], // MELLOW RHODES / OCEAN AIR
+  ['NIGHT BUS', 'TRIP HOP', 'BUS', 2, ['nocturnal', 'warm', 'tape'], [16, 10, 36, 32], 1], // TAPE KEYS / GHOST CHOIR
+  ['CRACKED LENS', 'TRIP HOP', 'LENS', 3, ['broken', 'eerie', 'dusty'], [8, 10, 29, 17], 2], // KALIMBA PLUCK / DARK DRONE
+  ['STONE GARDEN', 'TRIP HOP', 'STONE', 3, ['organic', 'moody', 'deep'], [16, 7, 28, 1], 3], // NYLON PLUCK / VELVET PAD
+  ['ECHO CHAMBER', 'DUB', 'ECHO', 2, ['spacious', 'deep', 'smoky'], [4, 3, 55, 56], 0], // MELODICA / DUB SKANK
+  ['KING STEPPER', 'DUB', 'STEPPER', 3, ['rootsy', 'driving', 'warm'], [4, 11, 55, 22], 1], // MELODICA / DRAWBAR ORGAN
+  ['ROOTS RADAR', 'DUB', 'RADAR', 2, ['heavy', 'hazy', 'wide'], [4, 3, 22, 56], 2], // DRAWBAR ORGAN / DUB SKANK
+  ['ZION GATE', 'DUB', 'GATE', 3, ['uplifting', 'rootsy', 'wide'], [4, 11, 55, 1], 3], // MELODICA / VELVET PAD
 ].map(([name, family, variation, energy, tags, programs, variationIndex]) => spec(
   name as string, family as string, variation as string, energy as number, tags as string[], programs as [number, number, number, number], variationIndex as number,
 ));
@@ -86,7 +102,10 @@ function harmonyFor(spec: Spec): Harmony {
   // Give every family its own tonal centre. Combined with the four variation
   // plans below, this guarantees that changing session changes BL-1, lead and
   // pad clip data too, rather than only selecting a different drum clip.
-  const tonic: Record<string, number> = { NEON: 0, ACID: 2, AMBIENT: 9, HOUSE: 5, 'LO-FI': 7, CINEMATIC: 4 };
+  const tonic: Record<string, number> = {
+    NEON: 0, ACID: 2, AMBIENT: 9, HOUSE: 5, 'LO-FI': 7, CINEMATIC: 4,
+    MINIMAL: 1, 'FUTURE BASS': 6, 'TRIP HOP': 10, DUB: 3,
+  };
   const plans = [
     { roots: [0, 8, 3, 10], minor: [true, false, false, false] }, // i–VI–III–VII
     { roots: [0, 5, 8, 7], minor: [true, true, false, false] },  // i–iv–VI–V
@@ -118,6 +137,51 @@ function bassProgression(harmony: Harmony, spec: Spec): ClipDoc {
       }
     });
     return { name: `${spec.variation} DRIVE · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  }
+  if (spec.family === 'MINIMAL') {
+    // Offbeat eighth stabs — the kick owns the downbeats and the bass answers
+    // between them; per variation one offbeat lifts to the fifth so sibling
+    // songs rock on a different beat.
+    const lifted = 2 + spec.variationIndex * 4;
+    harmony.roots.forEach((root, bar) => {
+      for (const step of [2, 6, 10, 14]) putNote(bytes, noteIdx(bar, step), step === lifted ? root - 5 : root - 12, 1, step === 2);
+    });
+    return { name: `${spec.variation} PULSE · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  }
+  if (spec.family === 'FUTURE BASS') {
+    // Half-time sub bed: one long low root under each chord, an octave pop on
+    // beat 4, and a two-step slide into the next bar's root.
+    harmony.roots.forEach((root, bar) => {
+      const next = harmony.roots[(bar + 1) % 4]!;
+      putNote(bytes, noteIdx(bar, 0), root - 12, 10, true);
+      putNote(bytes, noteIdx(bar, 12), root, 2);
+      putNote(bytes, noteIdx(bar, 14), next - 12, 2);
+    });
+    return { name: `${spec.variation} SUB · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  }
+  if (spec.family === 'TRIP HOP') {
+    // Slow head-nod line: root anchored on the one, a late off-beat push, the
+    // fifth answering on beat 3's tail, and a pickup dragging into the next bar.
+    harmony.roots.forEach((root, bar) => {
+      const next = harmony.roots[(bar + 1) % 4]!;
+      putNote(bytes, noteIdx(bar, 0), root - 12, 6, true);
+      putNote(bytes, noteIdx(bar, 7), root - 12, 2);
+      putNote(bytes, noteIdx(bar, 10), root - 5, 3);
+      putNote(bytes, noteIdx(bar, 14), next - 12, 2);
+    });
+    return { name: `${spec.variation} NOD · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  }
+  if (spec.family === 'DUB') {
+    // Steppers bassline: a tight push on the one, a rest where the skank
+    // breathes, then a syncopated answer through the fifth below.
+    harmony.roots.forEach((root, bar) => {
+      putNote(bytes, noteIdx(bar, 0), root - 12, 3, true);
+      putNote(bytes, noteIdx(bar, 3), root - 12, 2);
+      putNote(bytes, noteIdx(bar, 8), root - 12, 2);
+      putNote(bytes, noteIdx(bar, 10), root - 5, 2);
+      putNote(bytes, noteIdx(bar, 13), root - 12, 2);
+    });
+    return { name: `${spec.variation} STEP · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
   }
   harmony.roots.forEach((root, bar) => {
     // One low root, then one fifth: deliberate space for the drums and pad.
@@ -183,6 +247,30 @@ const LEAD_PHRASES: Record<string, [string, string, string, string]> = {
     '0,2,0! 4,1,0 6,2,0 8,4,3 12,4,2 | 0,2,5! 4,1,5 6,2,5 8,4,8 12,4,7 | 0,2,3! 4,1,3 6,2,3 8,4,10 12,4,8 | 0,2,2! 4,2,2 6,2,2 8,8,11',
     '0,3,0! 4,3,0 8,3,3 12,2,2 14,2,0 | 0,3,3! 4,3,3 8,3,7 12,2,5 14,2,3 | 0,3,5! 4,3,5 8,3,10 12,2,8 14,2,5 | 0,3,8! 4,3,7 8,8,5',
     '0,3,0! 4,2,3 6,2,5 8,4,7 12,4,10 | 0,3,11! 4,2,7 6,2,2 8,8,7 | 0,3,8! 4,2,5 6,2,8 8,4,0 12,4,10 | 0,2,10! 2,2,7 4,2,5 6,2,7 8,8,10',
+  ],
+  MINIMAL: [ // clipped one-step cells that mutate slowly, never filling the grid
+    '0,1,0! 4,1,0 8,1,3 10,1,2 14,1,0 | 0,1,8! 4,1,8 10,1,7 14,1,5 | 0,1,3! 4,1,3 8,1,5 10,1,3 14,1,2 | 0,1,10! 4,1,7 8,8,10',
+    '0,1,0! 2,1,0 6,1,3 8,1,0 12,1,2 | 0,1,5! 4,1,5 8,1,8 12,1,7 | 0,1,8! 2,1,8 6,1,10 8,1,8 12,1,7 | 0,1,7! 4,1,2 8,8,7',
+    '0,1,7! 4,1,7 8,1,5 12,1,3 | 0,1,7! 4,1,10 8,1,7 10,1,5 14,1,3 | 0,1,10! 4,1,10 8,1,0 12,1,10 | 0,1,5! 4,1,3 6,1,2 8,8,0',
+    '0,1,3! 4,1,3 8,1,2 12,1,0 | 0,1,2! 4,1,2 8,1,11 12,1,7 | 0,1,0! 4,1,8 8,1,7 10,1,5 14,1,3 | 0,1,2! 4,1,0 8,8,10',
+  ],
+  'FUTURE BASS': [ // wide syncopated chord-tone leaps that land on long drops
+    '0,2,0! 3,2,3 6,2,7 10,3,10 14,2,7 | 0,2,8! 3,2,7 6,4,3 11,2,5 14,2,8 | 0,2,7! 3,2,10 6,4,7 12,4,3 | 0,3,10! 4,2,7 6,2,5 8,8,2',
+    '0,2,0! 3,2,3 6,2,5 8,3,7 12,4,3 | 0,2,5! 3,2,8 6,4,5 12,4,0 | 0,2,8! 3,2,10 6,2,8 8,4,7 13,3,5 | 0,2,7! 3,2,10 6,2,7 8,8,2',
+    '0,2,3! 3,2,7 6,4,10 11,2,7 14,2,5 | 0,2,10! 3,2,7 6,4,3 12,4,7 | 0,2,2! 3,2,5 6,2,10 8,4,7 13,3,5 | 0,2,8! 4,2,5 8,8,0',
+    '0,2,7! 3,2,3 6,4,0 11,2,3 14,2,7 | 0,2,11! 3,2,7 6,4,2 12,4,7 | 0,2,5! 3,2,8 6,2,0 8,4,10 13,3,8 | 0,2,10! 4,2,7 8,8,5',
+  ],
+  'TRIP HOP': [ // behind-the-beat fragments that trail into smoke
+    '0,3,0! 5,2,3 8,3,5 13,3,3 | 0,3,8! 5,2,7 9,4,5 | 0,3,3! 5,2,5 8,3,7 13,3,10 | 0,3,5! 5,2,3 9,7,2',
+    '0,3,3! 4,2,2 8,3,0 13,3,3 | 0,3,5! 5,2,8 9,4,7 | 0,3,0! 4,2,10 8,3,8 13,3,5 | 0,3,7! 5,2,5 9,7,2',
+    '0,2,0! 3,2,3 8,2,5 11,2,3 14,2,0 | 0,3,10! 5,2,7 9,4,3 | 0,2,2! 3,2,5 8,2,7 11,2,5 14,2,2 | 0,3,8! 5,2,7 9,7,5',
+    '0,3,7! 5,2,8 8,3,7 13,3,5 | 0,3,2! 5,2,0 9,4,10 | 0,3,5! 4,2,3 8,3,2 13,3,0 | 0,3,10! 5,2,8 9,7,7',
+  ],
+  DUB: [ // unhurried melodica calls with space for the echo to answer
+    '0,4,0! 6,2,10 8,4,7 14,2,5 | 0,4,8! 6,2,7 8,6,5 | 0,4,7! 6,2,5 8,4,3 13,3,2 | 0,3,5! 4,2,3 8,8,2',
+    '0,4,3! 6,2,5 8,4,7 14,2,10 | 0,4,5! 6,2,3 8,6,0 | 0,4,8! 6,2,10 8,4,8 13,3,7 | 0,3,7! 4,2,5 8,8,3',
+    '0,4,7! 6,2,8 8,4,10 14,2,7 | 0,4,10! 6,2,8 8,6,7 | 0,4,5! 6,2,3 8,4,2 13,3,0 | 0,3,8! 4,2,7 8,8,5',
+    '0,4,0! 6,2,2 8,4,3 14,2,5 | 0,4,7! 6,2,5 8,6,2 | 0,4,5! 6,2,7 8,4,8 13,3,7 | 0,3,2! 4,2,3 8,8,10',
   ],
 };
 
@@ -263,6 +351,34 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
     open: { pad: DRUM.OH, steps: [], accents: [] },
     perc: [{ pad: DRUM.TOM_LO, steps: [13], accents: [] }],
   },
+  MINIMAL: { // clicking techno: strict floor, rim backbeat, one late open hat
+    kick: { pad: DRUM.KICK, steps: [0, 4, 8, 12], accents: [0] },
+    back: { pad: DRUM.RIM, steps: [4, 12], accents: [] },
+    hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [2, 10] },
+    open: { pad: DRUM.OH, steps: [10], accents: [] },
+    perc: [{ pad: DRUM.PERC_A, steps: [7], accents: [] }],
+  },
+  'FUTURE BASS': { // half-time bounce: tumbling kick, snare on 3, hat rolls
+    kick: { pad: DRUM.KICK, steps: [0, 6, 10], accents: [0] },
+    back: { pad: DRUM.SNARE, steps: [8], accents: [8] },
+    hat: { pad: DRUM.CH, steps: [0, 2, 4, 6, 8, 10, 12, 14], accents: [4, 12] },
+    open: { pad: DRUM.OH, steps: [6], accents: [] },
+    perc: [],
+  },
+  'TRIP HOP': { // slow boom bap: dragging kick, heavy backbeat, loose hats
+    kick: { pad: DRUM.KICK, steps: [0, 3, 10], accents: [0] },
+    back: { pad: DRUM.SNARE, steps: [4, 12], accents: [12] },
+    hat: { pad: DRUM.CH, steps: [0, 4, 6, 10, 14], accents: [6, 14] },
+    open: { pad: DRUM.OH, steps: [7], accents: [] },
+    perc: [{ pad: DRUM.PERC_B, steps: [11], accents: [] }],
+  },
+  DUB: { // one drop: kick and snare share beat 3, offbeat skank hats
+    kick: { pad: DRUM.KICK, steps: [8], accents: [8] },
+    back: { pad: DRUM.SNARE, steps: [8], accents: [] },
+    hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [6, 14] },
+    open: { pad: DRUM.OH, steps: [12], accents: [] },
+    perc: [{ pad: DRUM.PERC_B, steps: [3, 11], accents: [] }],
+  },
 };
 
 // Family-flavoured bar-4 fills: [pad, step, accent].
@@ -273,6 +389,10 @@ const DRUM_FILLS: Record<string, Array<[number, number, boolean]>> = {
   HOUSE: [[DRUM.CLAP, 13, false], [DRUM.CLAP, 15, true]],
   'LO-FI': [[DRUM.PERC_B, 13, false], [DRUM.PERC_B, 15, false]],
   CINEMATIC: [[DRUM.TOM_HI, 8, false], [DRUM.TOM_MID, 10, false], [DRUM.TOM_LO, 12, true], [DRUM.TOM_LO, 14, true]],
+  MINIMAL: [[DRUM.PERC_A, 12, false], [DRUM.PERC_A, 14, true]],
+  'FUTURE BASS': [[DRUM.SNARE, 10, false], [DRUM.SNARE, 12, false], [DRUM.SNARE, 14, true]],
+  'TRIP HOP': [[DRUM.SNARE, 10, false], [DRUM.RIM, 13, false], [DRUM.SNARE, 15, true]],
+  DUB: [[DRUM.TOM_MID, 11, false], [DRUM.TOM_LO, 13, false], [DRUM.SNARE, 15, true]],
 };
 
 // One ghost hit per variation (index 0 adds none): [pad, step].
@@ -328,8 +448,12 @@ function drumProgression(spec: Spec, scene: number): ClipDoc {
 function buildSession(spec: Spec): SessionDoc {
   const session = factorySession();
   session.name = spec.name;
-  session.bpm = 96 + spec.energy * 7 + spec.variationIndex;
-  session.swing = spec.family === 'HOUSE' ? 0.12 : spec.family === 'LO-FI' ? 0.18 : 0;
+  // Slow families anchor below the shared 96 base so energy still spreads the
+  // tempo without pushing trip hop or dub into house territory.
+  const bpmBase: Record<string, number> = { 'TRIP HOP': 62, DUB: 56 };
+  const swing: Record<string, number> = { HOUSE: 0.12, 'LO-FI': 0.18, 'TRIP HOP': 0.16, DUB: 0.08 };
+  session.bpm = (bpmBase[spec.family] ?? 96) + spec.energy * 7 + spec.variationIndex;
+  session.swing = swing[spec.family] ?? 0;
   const gains = calibratedTrackGains(spec.programs);
   session.tracks.forEach((track, t) => {
     track.patch = { kind: 'factory', index: spec.programs[t] };
