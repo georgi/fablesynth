@@ -317,6 +317,423 @@ function liveRoomParams(): Partial<ParamValues> {
   return params;
 }
 
+// -- Authored kits ------------------------------------------------------------
+// The kits below are written from scratch (not derived from TR-VOID). Each
+// ships a main groove in pattern slots 1-3 and a fill in slot 4; the store
+// treats chain as a sequence length, so [0,1,2,3] plays a 4-bar A A A B loop.
+
+type PatternSpec = Record<number, { on: number[]; acc?: number[] }>;
+
+function buildPatterns(groove: PatternSpec, fill: PatternSpec): number[] {
+  const patterns = makeEmptyPatterns();
+  [groove, groove, groove, fill].forEach((spec, patI) => {
+    for (const [padS, { on, acc = [] }] of Object.entries(spec)) {
+      for (const step of on) {
+        patterns[patIdx(patI, Number(padS), step)] = acc.includes(step) ? 2 : 1;
+      }
+    }
+  });
+  return Array.from(patterns);
+}
+
+const AB_CHAIN = [0, 1, 2, 3];
+
+// NEON GRID — 118 BPM synthwave / electro. Wavetable kick with a sampled UZU
+// transient glued on top, PULSE synth-toms, pitch-envelope zaps, and a
+// mod-env noise sweep on the last pad.
+const NEON_GRID_PADS = [
+  'KICK', 'SUB KICK', 'SNARE', 'CLAP', 'RIM ZAP', 'CH HAT', 'OH HAT', 'RIDE',
+  'SYN TOM L', 'SYN TOM M', 'SYN TOM H', 'CRASH', 'ZAP DOWN', 'ZAP UP', 'VOX', 'SWEEP',
+];
+
+function neonGridParams(): Partial<ParamValues> {
+  const params: Partial<ParamValues> = {
+    'seq.bpm': 118,
+    'master.swing': 0.1,
+    'fx.comp.on': 1,
+    'fx.chorus.on': 1, 'fx.chorus.rate': 0.8, 'fx.chorus.depth': 0.35, 'fx.chorus.mix': 0.16,
+    'fx.reverb.on': 1, 'fx.reverb.size': 0.58, 'fx.reverb.mix': 0.2,
+  };
+  Object.assign(params, {
+    // Kick: THUD body + UZU BD2 sample click, dry so the low end stays tight.
+    [pad(0, 'oscA.tune')]: -22, [pad(0, 'penv.amt')]: 30, [pad(0, 'penv.dec')]: 0.03,
+    [pad(0, 'oscB.table')]: 17, [pad(0, 'oscB.level')]: 0.55,
+    [pad(0, 'aenv.dec')]: 0.34, [pad(0, 'lvl')]: 0.9, [pad(0, 'fx.reverb.on')]: 0,
+    [pad(1, 'oscA.tune')]: -34, [pad(1, 'penv.amt')]: 10, [pad(1, 'penv.dec')]: 0.06,
+    [pad(1, 'aenv.dec')]: 1.3, [pad(1, 'lvl')]: 0.85, [pad(1, 'fx.reverb.on')]: 0,
+    // Snare: CRACK + noise with an 808SD layer underneath, gated tail.
+    [pad(2, 'oscA.table')]: 1, [pad(2, 'oscA.tune')]: -8,
+    [pad(2, 'penv.amt')]: 6, [pad(2, 'penv.dec')]: 0.03,
+    [pad(2, 'noise.level')]: 0.4, [pad(2, 'noise.color')]: 0.5,
+    [pad(2, 'oscB.table')]: 0, [pad(2, 'oscB.level')]: 0.35,
+    [pad(2, 'aenv.dec')]: 0.24, [pad(2, 'aenv.curve')]: 0.7,
+    [pad(3, 'oscA.level')]: 0, [pad(3, 'oscB.table')]: 1, [pad(3, 'oscB.level')]: 0.85,
+    [pad(3, 'aenv.hold')]: 0.02, [pad(3, 'aenv.dec')]: 0.6, [pad(3, 'fx.reverb.mix')]: 0.34,
+    // Rim zap: PULSE with a fast steep pitch drop — pure electro.
+    [pad(4, 'oscA.table')]: 6, [pad(4, 'oscA.tune')]: 14,
+    [pad(4, 'penv.amt')]: 40, [pad(4, 'penv.dec')]: 0.02, [pad(4, 'aenv.dec')]: 0.09,
+    [pad(7, 'oscA.level')]: 0, [pad(7, 'oscB.table')]: 23, [pad(7, 'oscB.level')]: 0.8,
+    [pad(7, 'aenv.dec')]: 1.1,
+    [pad(11, 'oscA.level')]: 0, [pad(11, 'oscB.table')]: 27, [pad(11, 'oscB.level')]: 0.8,
+    [pad(11, 'aenv.dec')]: 2.0,
+    // Zap pair: GRIT lasers, one falling and one rising, panned apart.
+    [pad(12, 'oscA.table')]: 3, [pad(12, 'oscA.tune')]: 18,
+    [pad(12, 'penv.amt')]: 48, [pad(12, 'penv.dec')]: 0.05,
+    [pad(12, 'aenv.dec')]: 0.16, [pad(12, 'pan')]: -0.25,
+    [pad(13, 'oscA.table')]: 3, [pad(13, 'oscA.tune')]: 6,
+    [pad(13, 'penv.amt')]: -40, [pad(13, 'penv.dec')]: 0.09,
+    [pad(13, 'aenv.dec')]: 0.2, [pad(13, 'pan')]: 0.25,
+    [pad(14, 'oscA.table')]: 7, [pad(14, 'oscA.tune')]: -5,
+    [pad(14, 'aenv.dec')]: 0.4, [pad(14, 'fx.chorus.mix')]: 0.3,
+    // Sweep: pure noise through a band-pass whose cutoff rides the mod env.
+    [pad(15, 'oscA.level')]: 0, [pad(15, 'noise.level')]: 0.85, [pad(15, 'noise.color')]: 0.2,
+    [pad(15, 'flt.on')]: 1, [pad(15, 'flt.type')]: 2, [pad(15, 'flt.cut')]: 900,
+    [pad(15, 'flt.res')]: 0.55, [pad(15, 'mod1.src')]: 1, [pad(15, 'mod1.dst')]: 4,
+    [pad(15, 'mod1.amt')]: 0.85, [pad(15, 'modenv.dec')]: 0.9, [pad(15, 'aenv.dec')]: 1.4,
+  });
+  // 808 hats + disco PULSE toms panned across the field.
+  const hats: Array<[number, number, number, number]> = [[5, 2, 0.06, 7500], [6, 3, 0.42, 5600]];
+  for (const [padI, sample, dec, cut] of hats) {
+    params[pad(padI, 'oscA.level')] = 0;
+    params[pad(padI, 'oscB.table')] = sample;
+    params[pad(padI, 'oscB.level')] = 0.8;
+    params[pad(padI, 'aenv.dec')] = dec;
+    params[pad(padI, 'flt.on')] = 1;
+    params[pad(padI, 'flt.type')] = 3;
+    params[pad(padI, 'flt.cut')] = cut;
+    params[pad(padI, 'choke')] = 1;
+  }
+  [[-9, -0.4], [-2, 0], [5, 0.4]].forEach(([tune, panV], i) => {
+    params[pad(8 + i, 'oscA.table')] = 6;
+    params[pad(8 + i, 'oscA.tune')] = tune;
+    params[pad(8 + i, 'penv.amt')] = 16;
+    params[pad(8 + i, 'penv.dec')] = 0.05;
+    params[pad(8 + i, 'aenv.dec')] = 0.3 - i * 0.04;
+    params[pad(8 + i, 'pan')] = panV;
+  });
+  return params;
+}
+
+const NEON_GRID_PATTERNS = buildPatterns(
+  {
+    0: { on: [0, 7, 10], acc: [0] },
+    1: { on: [0, 8] },
+    2: { on: [4, 12], acc: [12] },
+    3: { on: [12] },
+    4: { on: [3] },
+    5: { on: [0, 2, 4, 6, 8, 10, 12, 14], acc: [2, 6, 10, 14] },
+    6: { on: [14] },
+    12: { on: [6] },
+    13: { on: [13] },
+    15: { on: [8] },
+  },
+  {
+    0: { on: [0, 7, 10], acc: [0] },
+    2: { on: [4, 12, 15], acc: [12] },
+    3: { on: [4, 12] },
+    5: { on: [0, 2, 4, 6, 8, 10], acc: [2, 6] },
+    8: { on: [8] },
+    9: { on: [9, 10] },
+    10: { on: [11], acc: [11] },
+    11: { on: [0] },
+    12: { on: [6, 14] },
+    13: { on: [3, 13] },
+    14: { on: [12] },
+  },
+);
+
+// ACID CAVE — 138 BPM dark techno. A dry punch kick over a cavernous rumble
+// pad, squelching GRIT blips whose filter rides the mod env, and metallic
+// ring-mod percussion.
+const ACID_CAVE_PADS = [
+  'KICK', 'RUMBLE', 'SNARE', 'CLAP', 'RIM', 'CH HAT', 'OH HAT', 'RIDE',
+  'BLIP LO', 'BLIP MD', 'BLIP HI', 'CRASH', 'TINE HIT', 'PERC', 'STAB', 'GLITCH',
+];
+
+function acidCaveParams(): Partial<ParamValues> {
+  const params: Partial<ParamValues> = {
+    'seq.bpm': 138,
+    'master.swing': 0.04,
+    'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.gain': 4,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2,
+    'fx.delay.on': 1, 'fx.delay.time': 0.33, 'fx.delay.fb': 0.5, 'fx.delay.mix': 0.14,
+    'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.12,
+  };
+  Object.assign(params, {
+    [pad(0, 'oscA.tune')]: -25, [pad(0, 'penv.amt')]: 28, [pad(0, 'penv.dec')]: 0.035,
+    [pad(0, 'aenv.dec')]: 0.3, [pad(0, 'aenv.curve')]: 0.5,
+    [pad(0, 'lvl')]: 0.92, [pad(0, 'fx.reverb.on')]: 0,
+    // Rumble: same THUD an octave under the kick, low-passed and drowned in a
+    // huge per-pad reverb — the classic sub-rumble trick.
+    [pad(1, 'oscA.tune')]: -25, [pad(1, 'penv.amt')]: 8, [pad(1, 'penv.dec')]: 0.08,
+    [pad(1, 'aenv.dec')]: 2.6, [pad(1, 'lvl')]: 0.55,
+    [pad(1, 'flt.on')]: 1, [pad(1, 'flt.type')]: 1, [pad(1, 'flt.cut')]: 300,
+    [pad(1, 'fx.reverb.size')]: 0.85, [pad(1, 'fx.reverb.mix')]: 0.55,
+    [pad(2, 'oscA.table')]: 3, [pad(2, 'oscA.tune')]: -7,
+    [pad(2, 'noise.level')]: 0.55, [pad(2, 'noise.color')]: 0.1, [pad(2, 'aenv.dec')]: 0.16,
+    [pad(3, 'oscA.level')]: 0, [pad(3, 'oscB.table')]: 19, [pad(3, 'oscB.tune')]: -3,
+    [pad(3, 'oscB.level')]: 0.8, [pad(3, 'noise.level')]: 0.2, [pad(3, 'aenv.dec')]: 0.4,
+    [pad(4, 'oscA.level')]: 0, [pad(4, 'oscB.table')]: 20, [pad(4, 'oscB.tune')]: -2,
+    [pad(4, 'oscB.level')]: 0.75, [pad(4, 'aenv.dec')]: 0.08,
+    [pad(11, 'oscA.level')]: 0, [pad(11, 'oscB.table')]: 4, [pad(11, 'oscB.level')]: 0.7,
+    [pad(11, 'aenv.dec')]: 2.2, [pad(11, 'flt.on')]: 1, [pad(11, 'flt.type')]: 3,
+    [pad(11, 'flt.cut')]: 5000,
+    [pad(12, 'oscA.table')]: 2, [pad(12, 'oscA.tune')]: 7,
+    [pad(12, 'ring.freq')]: 3907, [pad(12, 'ring.mix')]: 0.5, [pad(12, 'aenv.dec')]: 0.12,
+    [pad(13, 'oscA.level')]: 0, [pad(13, 'oscB.table')]: 28, [pad(13, 'oscB.tune')]: 4,
+    [pad(13, 'oscB.level')]: 0.7, [pad(13, 'aenv.dec')]: 0.15, [pad(13, 'pan')]: 0.3,
+    // Stab: VOX through a resonant band-pass, pitch jittered per hit.
+    [pad(14, 'oscA.table')]: 7, [pad(14, 'oscA.tune')]: -12, [pad(14, 'aenv.dec')]: 0.18,
+    [pad(14, 'flt.on')]: 1, [pad(14, 'flt.type')]: 2, [pad(14, 'flt.cut')]: 1200,
+    [pad(14, 'flt.res')]: 0.5, [pad(14, 'mod1.src')]: 3, [pad(14, 'mod1.dst')]: 5,
+    [pad(14, 'mod1.amt')]: 0.3,
+    [pad(15, 'oscA.table')]: 9, [pad(15, 'aenv.dec')]: 0.1,
+    [pad(15, 'mod1.src')]: 3, [pad(15, 'mod1.dst')]: 1, [pad(15, 'mod1.amt')]: 0.6,
+  });
+  // Hats/ride: UZU metals, high-passed thin.
+  const metals: Array<[number, number, number, number]> = [
+    [5, 21, 0.05, 8000], [6, 22, 0.3, 6000], [7, 23, 0.9, 4500],
+  ];
+  for (const [padI, sample, dec, cut] of metals) {
+    params[pad(padI, 'oscA.level')] = 0;
+    params[pad(padI, 'oscB.table')] = sample;
+    params[pad(padI, 'oscB.level')] = 0.75;
+    params[pad(padI, 'aenv.dec')] = dec;
+    params[pad(padI, 'flt.on')] = 1;
+    params[pad(padI, 'flt.type')] = 3;
+    params[pad(padI, 'flt.cut')] = cut;
+    if (padI < 7) params[pad(padI, 'choke')] = 1;
+  }
+  // Acid blips: 303-ish squelch — resonant LP24 swept hard by the mod env.
+  [-17, -12, -5].forEach((tune, i) => {
+    params[pad(8 + i, 'oscA.table')] = 3;
+    params[pad(8 + i, 'oscA.pos')] = 0.3;
+    params[pad(8 + i, 'oscA.tune')] = tune;
+    params[pad(8 + i, 'aenv.dec')] = 0.14;
+    params[pad(8 + i, 'flt.on')] = 1;
+    params[pad(8 + i, 'flt.type')] = 1;
+    params[pad(8 + i, 'flt.cut')] = 700;
+    params[pad(8 + i, 'flt.res')] = 0.72;
+    params[pad(8 + i, 'mod1.src')] = 1;
+    params[pad(8 + i, 'mod1.dst')] = 4;
+    params[pad(8 + i, 'mod1.amt')] = 0.9;
+    params[pad(8 + i, 'modenv.dec')] = 0.12;
+  });
+  return params;
+}
+
+const ACID_CAVE_PATTERNS = buildPatterns(
+  {
+    0: { on: [0, 4, 8, 12], acc: [0, 4, 8, 12] },
+    1: { on: [0] },
+    3: { on: [4, 12] },
+    5: { on: [0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15] },
+    6: { on: [2, 6, 10, 14], acc: [2, 10] },
+    8: { on: [3, 11] },
+    9: { on: [6, 14] },
+    10: { on: [7] },
+    15: { on: [15] },
+  },
+  {
+    0: { on: [0, 4, 8, 12], acc: [0, 4, 8, 12] },
+    1: { on: [0, 8] },
+    2: { on: [12] },
+    3: { on: [4] },
+    6: { on: [2, 6, 10, 14], acc: [2, 10] },
+    7: { on: [0, 2, 4, 6, 8, 10, 12, 14] },
+    8: { on: [3, 7, 11] },
+    9: { on: [6, 10, 14] },
+    10: { on: [7, 15], acc: [15] },
+    13: { on: [5, 13] },
+    14: { on: [2, 10] },
+  },
+);
+
+// BOOM BAP — 90 BPM hip-hop. Sample-forward with wavetable glue under the
+// kick, every sample capped by a lazy low-pass for dust, RAND modulation for
+// MPC-style humanization, and a reversed UZU MOD transition pad.
+const BOOM_BAP_PADS = [
+  'KICK', 'KICK 808', 'SNARE', 'CLAP', 'RIM', 'CH HAT', 'OH HAT', 'SHAKER',
+  'TOM LO', 'TOM MD', 'TOM HI', 'CRASH', 'COWBELL', 'MARACAS', 'VOX', 'REVERSE',
+];
+
+function boomBapParams(): Partial<ParamValues> {
+  const params: Partial<ParamValues> = {
+    'seq.bpm': 90,
+    'master.swing': 0.56,
+    'fx.comp.on': 1, 'fx.comp.thr': -14,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.35, 'fx.drive.mix': 0.2,
+    'fx.reverb.on': 1, 'fx.reverb.size': 0.35, 'fx.reverb.mix': 0.1,
+  };
+  // Sampled backbone: [pad, sample, tune, level, decay].
+  const samples: Array<[number, number, number, number, number]> = [
+    [0, 16, -2, 0.85, 0.4], [1, 5, -5, 0.85, 0.55], [2, 18, -4, 0.8, 0.3],
+    [3, 19, -6, 0.8, 0.5], [4, 6, 0, 0.75, 0.12], [5, 2, -7, 0.75, 0.07],
+    [6, 3, -5, 0.75, 0.35], [7, 29, 0, 0.7, 0.14], [8, 13, -3, 0.75, 0.4],
+    [9, 14, -3, 0.75, 0.38], [10, 15, -3, 0.75, 0.36], [11, 27, -4, 0.7, 1.8],
+    [12, 7, -7, 0.6, 0.2], [13, 8, 0, 0.7, 0.1], [15, 31, 0, 0.75, 0.8],
+  ];
+  for (const [padI, sample, tune, level, dec] of samples) {
+    params[pad(padI, 'oscA.level')] = 0;
+    params[pad(padI, 'oscB.table')] = sample;
+    params[pad(padI, 'oscB.tune')] = tune;
+    params[pad(padI, 'oscB.level')] = level;
+    params[pad(padI, 'aenv.dec')] = dec;
+    // The dust: cap everything with a dull low-pass like a worn 12-bit sampler.
+    params[pad(padI, 'flt.on')] = 1;
+    params[pad(padI, 'flt.type')] = 1;
+    params[pad(padI, 'flt.cut')] = 8500;
+  }
+  Object.assign(params, {
+    // THUD glue under the sampled kick so the low end hits like a sub.
+    [pad(0, 'oscA.tune')]: -24, [pad(0, 'oscA.level')]: 0.5,
+    [pad(0, 'penv.amt')]: 18, [pad(0, 'penv.dec')]: 0.04,
+    [pad(0, 'lvl')]: 0.9, [pad(0, 'fx.reverb.on')]: 0,
+    [pad(1, 'fx.reverb.on')]: 0,
+    [pad(2, 'noise.level')]: 0.25, [pad(2, 'noise.color')]: 0.35,
+    [pad(2, 'mod1.src')]: 3, [pad(2, 'mod1.dst')]: 2, [pad(2, 'mod1.amt')]: 0.15,
+    [pad(5, 'mod1.src')]: 3, [pad(5, 'mod1.dst')]: 7, [pad(5, 'mod1.amt')]: 0.2,
+    [pad(5, 'choke')]: 1, [pad(6, 'choke')]: 1,
+    [pad(7, 'pan')]: 0.3, [pad(13, 'pan')]: -0.3,
+    // Dusty vocal chop on the wavetable side.
+    [pad(14, 'oscA.table')]: 7, [pad(14, 'oscA.tune')]: -10, [pad(14, 'aenv.dec')]: 0.5,
+    [pad(14, 'flt.on')]: 1, [pad(14, 'flt.type')]: 0, [pad(14, 'flt.cut')]: 3500,
+    // Reversed sample sweep into the downbeat.
+    [pad(15, 'oscB.phase')]: 1,
+  });
+  return params;
+}
+
+const BOOM_BAP_PATTERNS = buildPatterns(
+  {
+    0: { on: [0, 7, 10], acc: [0] },
+    2: { on: [4, 12], acc: [4, 12] },
+    5: { on: [0, 2, 4, 6, 8, 10, 12, 14], acc: [0, 8] },
+    7: { on: [3, 11] },
+    4: { on: [14] },
+  },
+  {
+    0: { on: [0, 5, 10, 11], acc: [0] },
+    1: { on: [8] },
+    2: { on: [4, 12, 14], acc: [4, 12] },
+    5: { on: [0, 2, 4, 6, 8, 10, 14], acc: [0, 8] },
+    6: { on: [12] },
+    7: { on: [3, 11] },
+    12: { on: [7] },
+    14: { on: [6] },
+    15: { on: [12] },
+  },
+);
+
+// PIRATE RADIO — 133 BPM UK garage 2-step. Bright UZU kit swung hard, a THUD
+// sub for basslines, a mod-env wobble stab, random-pitch vox chops, and a
+// detuned BLOOM organ stab.
+const PIRATE_RADIO_PADS = [
+  'KICK', 'SUB BASS', 'SNARE', 'CLAP', 'RIM', 'CH HAT', 'OH HAT', 'SHAKER',
+  'PERC L', 'PERC M', 'PERC H', 'CRASH', 'WOBBLE', 'TAMB', 'VOX CHOP', 'ORGAN',
+];
+
+function pirateRadioParams(): Partial<ParamValues> {
+  const params: Partial<ParamValues> = {
+    'seq.bpm': 133,
+    'master.swing': 0.58,
+    'fx.comp.on': 1,
+    'fx.chorus.on': 1, 'fx.chorus.rate': 0.5, 'fx.chorus.depth': 0.3, 'fx.chorus.mix': 0.12,
+    'fx.delay.on': 1, 'fx.delay.time': 0.34, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.16,
+    'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.18,
+  };
+  Object.assign(params, {
+    // Kick: tight UZU BD2 with a THUD knock on top.
+    [pad(0, 'oscA.tune')]: -20, [pad(0, 'oscA.level')]: 0.4,
+    [pad(0, 'penv.amt')]: 22, [pad(0, 'penv.dec')]: 0.025,
+    [pad(0, 'oscB.table')]: 17, [pad(0, 'oscB.level')]: 0.85,
+    [pad(0, 'aenv.dec')]: 0.28, [pad(0, 'lvl')]: 0.9, [pad(0, 'fx.reverb.on')]: 0,
+    // Sub: long THUD for one-finger basslines between the drums.
+    [pad(1, 'oscA.tune')]: -31, [pad(1, 'penv.amt')]: 6, [pad(1, 'penv.dec')]: 0.05,
+    [pad(1, 'aenv.dec')]: 1.2, [pad(1, 'lvl')]: 0.9, [pad(1, 'fx.reverb.on')]: 0,
+    [pad(2, 'oscA.level')]: 0, [pad(2, 'oscB.table')]: 18, [pad(2, 'oscB.tune')]: 3,
+    [pad(2, 'oscB.level')]: 0.8, [pad(2, 'noise.level')]: 0.2, [pad(2, 'noise.color')]: 0.6,
+    [pad(2, 'aenv.dec')]: 0.22,
+    [pad(3, 'oscA.level')]: 0, [pad(3, 'oscB.table')]: 19, [pad(3, 'oscB.tune')]: 2,
+    [pad(3, 'oscB.level')]: 0.8, [pad(3, 'aenv.dec')]: 0.45, [pad(3, 'fx.reverb.mix')]: 0.3,
+    // Rim: pitch jitters per hit so the skippy 2-step rims never repeat.
+    [pad(4, 'oscA.level')]: 0, [pad(4, 'oscB.table')]: 20, [pad(4, 'oscB.tune')]: 6,
+    [pad(4, 'oscB.level')]: 0.8, [pad(4, 'aenv.dec')]: 0.09, [pad(4, 'pan')]: -0.2,
+    [pad(4, 'mod1.src')]: 3, [pad(4, 'mod1.dst')]: 5, [pad(4, 'mod1.amt')]: 0.15,
+    [pad(7, 'oscA.level')]: 0, [pad(7, 'oscB.table')]: 29, [pad(7, 'oscB.tune')]: 4,
+    [pad(7, 'oscB.level')]: 0.75, [pad(7, 'aenv.dec')]: 0.12,
+    [pad(11, 'oscA.level')]: 0, [pad(11, 'oscB.table')]: 27, [pad(11, 'oscB.level')]: 0.75,
+    [pad(11, 'aenv.dec')]: 1.6,
+    // Wobble: GRIT sub stab, resonant LP24 pumped by the mod env.
+    [pad(12, 'oscA.table')]: 3, [pad(12, 'oscA.tune')]: -24,
+    [pad(12, 'aenv.dec')]: 0.5, [pad(12, 'flt.on')]: 1, [pad(12, 'flt.type')]: 1,
+    [pad(12, 'flt.cut')]: 500, [pad(12, 'flt.res')]: 0.6,
+    [pad(12, 'mod1.src')]: 1, [pad(12, 'mod1.dst')]: 4, [pad(12, 'mod1.amt')]: 0.7,
+    [pad(12, 'modenv.dec')]: 0.3,
+    [pad(13, 'oscA.level')]: 0, [pad(13, 'oscB.table')]: 30, [pad(13, 'oscB.tune')]: 3,
+    [pad(13, 'oscB.level')]: 0.7, [pad(13, 'aenv.dec')]: 0.15, [pad(13, 'pan')]: 0.3,
+    // Vox chop: pitch dives in and lands somewhere new every hit.
+    [pad(14, 'oscA.table')]: 7, [pad(14, 'oscA.tune')]: 7,
+    [pad(14, 'penv.amt')]: -12, [pad(14, 'penv.dec')]: 0.06, [pad(14, 'aenv.dec')]: 0.22,
+    [pad(14, 'fx.chorus.mix')]: 0.25,
+    [pad(14, 'mod1.src')]: 3, [pad(14, 'mod1.dst')]: 5, [pad(14, 'mod1.amt')]: 0.4,
+    // Organ stab: detuned BLOOM unison, low-passed warm.
+    [pad(15, 'oscA.table')]: 5, [pad(15, 'oscA.unison')]: 3, [pad(15, 'oscA.detune')]: 0.3,
+    [pad(15, 'aenv.dec')]: 0.3, [pad(15, 'flt.on')]: 1, [pad(15, 'flt.type')]: 0,
+    [pad(15, 'flt.cut')]: 4000,
+  });
+  // Shuffled UZU hats + pitched-up perc toms.
+  const hats: Array<[number, number, number, number]> = [[5, 21, 0.05, 8500], [6, 22, 0.35, 6000]];
+  for (const [padI, sample, dec, cut] of hats) {
+    params[pad(padI, 'oscA.level')] = 0;
+    params[pad(padI, 'oscB.table')] = sample;
+    params[pad(padI, 'oscB.tune')] = 2;
+    params[pad(padI, 'oscB.level')] = 0.75;
+    params[pad(padI, 'aenv.dec')] = dec;
+    params[pad(padI, 'flt.on')] = 1;
+    params[pad(padI, 'flt.type')] = 3;
+    params[pad(padI, 'flt.cut')] = cut;
+    params[pad(padI, 'choke')] = 1;
+    params[pad(padI, 'v2l')] = 0.9;
+  }
+  [24, 25, 26].forEach((sample, i) => {
+    params[pad(8 + i, 'oscA.level')] = 0;
+    params[pad(8 + i, 'oscB.table')] = sample;
+    params[pad(8 + i, 'oscB.tune')] = 2;
+    params[pad(8 + i, 'oscB.level')] = 0.75;
+    params[pad(8 + i, 'aenv.dec')] = 0.3;
+    params[pad(8 + i, 'pan')] = (i - 1) * 0.35;
+  });
+  return params;
+}
+
+const PIRATE_RADIO_PATTERNS = buildPatterns(
+  {
+    0: { on: [0, 10], acc: [0] },
+    1: { on: [0, 7] },
+    2: { on: [4, 12], acc: [12] },
+    4: { on: [7, 15] },
+    5: { on: [2, 3, 6, 7, 11, 14], acc: [2, 6] },
+    6: { on: [10] },
+    14: { on: [13] },
+    15: { on: [8] },
+  },
+  {
+    0: { on: [0, 7, 10], acc: [0] },
+    1: { on: [0, 7, 11] },
+    2: { on: [4, 12], acc: [12] },
+    3: { on: [12] },
+    4: { on: [7, 13, 15] },
+    5: { on: [2, 3, 6, 7, 11, 14], acc: [2, 6] },
+    6: { on: [10] },
+    8: { on: [5] },
+    10: { on: [14] },
+    12: { on: [6, 14] },
+    14: { on: [3, 13] },
+    15: { on: [8, 11] },
+  },
+);
+
 const PATTERNS = trVoidPatterns();
 
 export const FACTORY_KITS: Kit[] = [
@@ -334,6 +751,10 @@ export const FACTORY_KITS: Kit[] = [
   { name: 'LIVE ROOM', params: liveRoomParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
   { name: 'UZU', params: uzuParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
   { name: '808+UZU HYBRID', params: hybridParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
+  { name: 'NEON GRID', params: neonGridParams(), padNames: [...NEON_GRID_PADS], patterns: NEON_GRID_PATTERNS, chain: [...AB_CHAIN] },
+  { name: 'ACID CAVE', params: acidCaveParams(), padNames: [...ACID_CAVE_PADS], patterns: ACID_CAVE_PATTERNS, chain: [...AB_CHAIN] },
+  { name: 'BOOM BAP', params: boomBapParams(), padNames: [...BOOM_BAP_PADS], patterns: BOOM_BAP_PATTERNS, chain: [...AB_CHAIN] },
+  { name: 'PIRATE RADIO', params: pirateRadioParams(), padNames: [...PIRATE_RADIO_PADS], patterns: PIRATE_RADIO_PATTERNS, chain: [...AB_CHAIN] },
 ];
 
 export function kitToState(kit: Kit): {
