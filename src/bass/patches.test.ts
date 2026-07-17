@@ -54,9 +54,9 @@ describe('bass patches', () => {
     }
   });
 
-  it('keeps every driven factory bass patch at 20% wet', () => {
+  it('keeps every driven factory bass patch at 65% wet', () => {
     for (const patch of FACTORY_PATCHES) {
-      if (patchToState(patch).params['fx.drive.on']) expect(patchToState(patch).params['fx.drive.mix'], patch.name).toBe(0.2);
+      if (patchToState(patch).params['fx.drive.on']) expect(patchToState(patch).params['fx.drive.mix'], patch.name).toBe(0.65);
     }
   });
 

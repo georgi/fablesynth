@@ -191,10 +191,10 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
     name: 'PLUCKED WIRE',
     params: {
       'osc.table': 2, 'osc.pos': 0.62, 'osc.tune': 0, 'osc.unison': 2,
-      'osc.detune': 0.1, 'osc.spread': 0.28, 'osc.level': 0.66,
-      'sub.level': 0.18, 'flt.type': 2, 'flt.cut': 1500, 'flt.res': 0.42,
+      'osc.detune': 0.1, 'osc.spread': 0.28, 'osc.level': 1,
+      'sub.level': 0.18, 'flt.type': 1, 'flt.cut': 1500, 'flt.res': 0.42,
       'flt.drive': 0.26, 'flt.env': 0.88, 'flt.track': 0.62,
-      'fenv.dec': 0.075, 'aenv.dec': 0.11, 'aenv.sus': 0.08, 'aenv.rel': 0.05,
+      'fenv.dec': 0.075, 'aenv.dec': 0.11, 'aenv.sus': 0.5, 'aenv.rel': 0.05,
       'acc.amt': 0.8, 'slide.time': 0.035, 'lfo.depth': 0,
       'fx.drive.amt': 0.24, 'fx.delay.on': 1, 'fx.delay.time': 0.31,
       'fx.delay.fb': 0.34, 'fx.delay.mix': 0.18,
@@ -238,9 +238,15 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
 
 // Factory BL-1 sounds stay dry so their sequence and filter character read
 // clearly in a mix. Users can still enable either effect after loading a patch.
+// Drive, where a patch enables it, blends at a common 65% mix.
 export const FACTORY_PATCHES: BassPatch[] = FACTORY_PATCHES_RAW.map((patch) => ({
   ...patch,
-  params: { ...patch.params, 'fx.delay.on': 0, 'fx.reverb.on': 0 },
+  params: {
+    ...patch.params,
+    'fx.delay.on': 0,
+    'fx.reverb.on': 0,
+    ...(patch.params['fx.drive.on'] === 0 ? {} : { 'fx.drive.mix': 0.65 }),
+  },
 }));
 
 

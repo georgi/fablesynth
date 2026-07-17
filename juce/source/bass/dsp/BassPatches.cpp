@@ -196,10 +196,10 @@ const std::vector<BassPatch>& bassFactoryPatches() {
         }, acid, { 0, 1 } });
         out.push_back({ "PLUCKED WIRE", Overrides{
             { "osc.table", 2 }, { "osc.pos", 0.62f }, { "osc.tune", 0 }, { "osc.unison", 2 },
-            { "osc.detune", 0.1f }, { "osc.spread", 0.28f }, { "osc.level", 0.66f },
-            { "sub.level", 0.18f }, { "flt.type", 2 }, { "flt.cut", 1500 }, { "flt.res", 0.42f },
+            { "osc.detune", 0.1f }, { "osc.spread", 0.28f }, { "osc.level", 1 },
+            { "sub.level", 0.18f }, { "flt.type", 1 }, { "flt.cut", 1500 }, { "flt.res", 0.42f },
             { "flt.drive", 0.26f }, { "flt.env", 0.88f }, { "flt.track", 0.62f },
-            { "fenv.dec", 0.075f }, { "aenv.dec", 0.11f }, { "aenv.sus", 0.08f }, { "aenv.rel", 0.05f },
+            { "fenv.dec", 0.075f }, { "aenv.dec", 0.11f }, { "aenv.sus", 0.5f }, { "aenv.rel", 0.05f },
             { "acc.amt", 0.8f }, { "slide.time", 0.035f }, { "lfo.depth", 0 },
             { "fx.drive.amt", 0.24f }, { "fx.delay.on", 1 }, { "fx.delay.time", 0.31f },
             { "fx.delay.fb", 0.34f }, { "fx.delay.mix", 0.18f },
@@ -240,9 +240,11 @@ BassParamArray applyBassPatch(const BassPatch& patch) {
         int id = bassIdFromString(pid);
         if (id >= 0) p[(size_t)id] = v;
     }
-    // Keep the factory bank dry, matching the web factory patch transform.
+    // Keep the factory bank dry, matching the web factory patch transform;
+    // drive, where a patch enables it, blends at a common 65% mix.
     p[(size_t)BL_FXDELAY_ON] = 0.0f;
     p[(size_t)BL_FXREVERB_ON] = 0.0f;
+    if (p[(size_t)BL_FXDRIVE_ON] >= 0.5f) p[(size_t)BL_FXDRIVE_MIX] = 0.65f;
     return p;
 }
 
