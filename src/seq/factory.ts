@@ -161,11 +161,12 @@ const AIR_BED_II = wtClip('AIR BED II', 4, [
 
 const FOG_STABS = wtClip('FOG STABS', 4, [
   // Four roots establish a C–Bb–G–F progression for the chord patch,
-  // close-voiced in the low octave (−12..−1) so the stabs never reach the lead.
-  { s: 0, n: 0, o: -1 }, { s: 2, n: 0, o: -1 }, { s: 7, n: 3, o: -1 }, { s: 10, n: 5, o: -1, a: true }, { s: 12, n: 5, o: -1 },
-  { s: 16, n: 10, o: -1 }, { s: 18, n: 10, o: -1 }, { s: 23, n: 0, o: -1 }, { s: 26, n: 2, o: -1 }, { s: 28, n: 3, o: -1 },
-  { s: 32, n: 7, o: -1 }, { s: 34, n: 7, o: -1 }, { s: 39, n: 10, o: -1 }, { s: 42, n: 2, o: -1, a: true }, { s: 44, n: 2, o: -1 },
-  { s: 48, n: 5, o: -1 }, { s: 50, n: 5, o: -1 }, { s: 55, n: 0, o: -1 }, { s: 58, n: 3, o: -1 }, { s: 60, n: 0, o: -1 },
+  // close-voiced in the root octave (0..11): clear of the bass register below
+  // while staying under the +12..+23 lead band.
+  { s: 0, n: 0 }, { s: 2, n: 0 }, { s: 7, n: 3 }, { s: 10, n: 5, a: true }, { s: 12, n: 5 },
+  { s: 16, n: 10 }, { s: 18, n: 10 }, { s: 23, n: 0 }, { s: 26, n: 2 }, { s: 28, n: 3 },
+  { s: 32, n: 7 }, { s: 34, n: 7 }, { s: 39, n: 10 }, { s: 42, n: 2, a: true }, { s: 44, n: 2 },
+  { s: 48, n: 5 }, { s: 50, n: 5 }, { s: 55, n: 0 }, { s: 58, n: 5 }, { s: 60, n: 0 },
 ].flatMap((step) => [step, { ...step, lane: 1, n: (step.n + 3) % 12 }, { ...step, lane: 2, n: (step.n + 7) % 12 }]));
 
 /** A held chord close-voiced in the octave below the root: each tone at its pitch class − 12. */

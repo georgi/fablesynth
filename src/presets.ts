@@ -957,6 +957,91 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.eq.on': 1, 'fx.eq.low': 1, 'fx.eq.mid': 1.1, 'fx.eq.mfreq': 458, 'fx.eq.high': -2.1,
     },
   },
+
+  // ---- Ambient glide leads (51+) -----------------------------------------
+  // Smooth near-sine voices for the AMBIENT sessions: slow attacks, long
+  // releases, master.glide portamento and prominent long delays. All stay
+  // "clean" (no drive) per the session-preset lead contract.
+
+  {
+    // Foghorn drifting in the dark: pure sine over a sine sub, closed LP24,
+    // vibrato that fades in late and a long delay smeared into big reverb.
+    name: 'FOG LIGHT',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.02, 'oscA.level': 0.8,
+      'sub.on': 1, 'sub.shape': 0, 'sub.oct': -1, 'sub.level': 0.45,
+      'filter.type': 1, 'filter.cutoff': 1100, 'filter.res': 0.08, 'filter.env': 0.15, 'filter.key': 0.3,
+      'env1.a': 0.25, 'env1.d': 1.5, 'env1.s': 0.85, 'env1.r': 2.5,
+      'env2.a': 0.4, 'env2.d': 1.2, 'env2.s': 0.3, 'env2.r': 1.5,
+      'master.glide': 0.22,
+      'lfo1.shape': 0, 'lfo1.rate': 4.5, 'lfo1.rise': 1.2,
+      'lfo2.rate': 0.08,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.006,
+      'mat2.src': 2, 'mat2.dst': 3, 'mat2.amt': 0.15,
+      'fx.delay.on': 1, 'fx.delay.time': 0.8, 'fx.delay.fb': 0.55, 'fx.delay.mix': 0.4,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.85, 'fx.reverb.mix': 0.45,
+      'fx.eq.on': 1, 'fx.eq.low': 1.5, 'fx.eq.high': -4,
+    },
+  },
+
+  {
+    // Liquid glass ribbon: sine core with a breathing chime shimmer an octave
+    // up, soft chorus and a long delay that lets each glide bloom.
+    name: 'GLASS RIBBON',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0, 'oscA.level': 0.75,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.2, 'oscB.oct': 1, 'oscB.level': 0.22,
+      'filter.type': 0, 'filter.cutoff': 3500, 'filter.res': 0.1,
+      'env1.a': 0.12, 'env1.d': 1.2, 'env1.s': 0.8, 'env1.r': 2,
+      'master.glide': 0.14,
+      'lfo1.shape': 0, 'lfo1.rate': 5, 'lfo1.rise': 1,
+      'lfo2.rate': 0.15,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.007,
+      'mat2.src': 2, 'mat2.dst': 8, 'mat2.amt': 0.15,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.4, 'fx.chorus.mix': 0.4,
+      'fx.delay.on': 1, 'fx.delay.time': 0.7, 'fx.delay.fb': 0.5, 'fx.delay.mix': 0.38,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.35,
+      'fx.eq.on': 1, 'fx.eq.low': 0.5, 'fx.eq.high': 1,
+    },
+  },
+
+  {
+    // Cold wire in the north sky: a bare high sine pair, barely detuned, with
+    // the longest, iciest delay of the set and a slow vibrato rise.
+    name: 'NORTH WIRE',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0, 'oscA.oct': 1, 'oscA.unison': 2, 'oscA.detune': 0.06, 'oscA.spread': 0.3, 'oscA.level': 0.8,
+      'filter.type': 0, 'filter.cutoff': 6000, 'filter.res': 0.05,
+      'env1.a': 0.06, 'env1.d': 1, 'env1.s': 0.75, 'env1.r': 1.8,
+      'master.glide': 0.18,
+      'lfo1.shape': 0, 'lfo1.rate': 5.5, 'lfo1.rise': 1.5,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.005,
+      'fx.delay.on': 1, 'fx.delay.time': 1.0, 'fx.delay.fb': 0.65, 'fx.delay.mix': 0.5,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.8, 'fx.reverb.mix': 0.35,
+      'fx.eq.on': 1, 'fx.eq.low': -2, 'fx.eq.high': 2,
+    },
+  },
+
+  {
+    // Ceremonial breath flute: warm sine with a whisper of pink noise that
+    // swells slowly, gentle vibrato and a long warm delay.
+    name: 'TEMPLE BREATH',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.05, 'oscA.level': 0.78,
+      'noise.on': 1, 'noise.type': 1, 'noise.level': 0.12,
+      'filter.type': 0, 'filter.cutoff': 2400, 'filter.res': 0.12, 'filter.key': 0.3,
+      'env1.a': 0.18, 'env1.d': 1.4, 'env1.s': 0.85, 'env1.r': 2.2,
+      'master.glide': 0.16,
+      'lfo1.shape': 0, 'lfo1.rate': 4.2, 'lfo1.rise': 1.4,
+      'lfo2.rate': 0.1,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.008,
+      'mat2.src': 2, 'mat2.dst': 25, 'mat2.amt': 0.1,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.3,
+      'fx.delay.on': 1, 'fx.delay.time': 0.7, 'fx.delay.fb': 0.52, 'fx.delay.mix': 0.36,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.75, 'fx.reverb.mix': 0.4,
+      'fx.eq.on': 1, 'fx.eq.low': 2, 'fx.eq.mid': 1.5, 'fx.eq.mfreq': 500, 'fx.eq.high': -3,
+    },
+  },
 ];
 
 

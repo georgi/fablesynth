@@ -32,10 +32,10 @@ const specs: Spec[] = [
   ['ACID FLASH', 'ACID', 'FLASH', 4, ['acid', 'bright', 'punchy'], [3, 0, 49, 1], 1], // LATELY BASS / VELVET PAD
   ['STEEL PULSE', 'ACID', 'METAL', 4, ['metallic', 'tight', 'industrial'], [12, 2, 47, 17], 2], // WAVE DANCER / DARK DRONE
   ['PEAK SIGNAL', 'ACID', 'PEAK', 5, ['distorted', 'wide', 'peak-time'], [13, 5, 43, 40], 3], // JUMP BRASS / PUMP PAD
-  ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [12, 7, 45, 34], 0], // FANTA BELLS / OCEAN AIR
-  ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [13, 0, 21, 25], 1], // DYNO EPIANO / CINEMA STRINGS
-  ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [12, 5, 6, 32], 2], // CATHEDRAL BELL / GHOST CHOIR
-  ['AIR TEMPLE', 'AMBIENT', 'TEMPLE', 2, ['warm', 'ceremonial', 'wide'], [3, 7, 30, 27], 3], // CELTIC HARP / SOFT BRASS
+  ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [15, 7, 51, 34], 0], // FOG LIGHT / OCEAN AIR
+  ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [15, 0, 52, 25], 1], // GLASS RIBBON / CINEMA STRINGS
+  ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [15, 5, 53, 32], 2], // NORTH WIRE / GHOST CHOIR
+  ['AIR TEMPLE', 'AMBIENT', 'TEMPLE', 2, ['warm', 'ceremonial', 'wide'], [15, 7, 54, 27], 3], // TEMPLE BREATH / SOFT BRASS
   ['DUST HOUSE', 'HOUSE', 'DUST', 3, ['dusty', 'groovy', 'warm'], [12, 4, 36, 42], 0], // TAPE KEYS / JUNO DREAM
   ['MIDNIGHT FLOOR', 'HOUSE', 'NIGHT', 4, ['club', 'round', 'wide'], [13, 0, 21, 40], 1], // DYNO EPIANO / PUMP PAD
   ['TAPE DISCO', 'HOUSE', 'TAPE', 3, ['tape', 'soft', 'groovy'], [3, 7, 28, 27], 2], // NYLON PLUCK / SOFT BRASS
@@ -67,6 +67,9 @@ const BASS_FADERS: Record<number, number> = { 0: 0.59, 2: 0.59, 4: 0.61, 5: 0.52
 const LEAD_FADERS: Record<number, number> = {
   3: 0.63, 6: 0.47, 20: 0.67, 21: 0.52, 22: 0.57, 28: 0.80, 29: 0.91, 30: 0.70, 31: 0.96,
   33: 0.48, 36: 0.71, 39: 0.95, 43: 0.48, 44: 0.49, 45: 0.84, 47: 0.82, 49: 0.51, 50: 0.72,
+  // 51-54 (ambient glide leads) are ear-balanced estimates pending a
+  // measure_track_levels re-run: quiet sine voices sit near FANTA BELLS' 0.84.
+  51: 0.85, 52: 0.85, 53: 0.85, 54: 0.85,
 };
 const PAD_FADERS: Record<number, number> = {
   1: 0.61, 11: 0.50, 17: 0.78, 25: 0.58, 27: 0.60, 32: 1.00, 34: 0.57, 35: 0.56, 38: 0.79, 40: 0.56, 42: 0.77,
@@ -142,11 +145,12 @@ const LEAD_PHRASES: Record<string, [string, string, string, string]> = {
     '0,2,7! 3,1,5 4,2,7 8,2,3 10,2,0 14,2,7 | 0,1,10! 1,1,10 4,2,7 6,2,3 8,3,10 12,4,7 | 0,2,5! 2,2,7 4,1,5 8,2,2 10,2,0 12,2,10 14,2,5 | 0,3,8! 4,2,5 8,8,0',
     '0,1,7! 1,1,7 3,1,10 4,2,7 8,2,0 10,2,10 13,3,7 | 0,2,2! 2,1,0 4,2,11 8,2,7 10,2,2 13,3,11 | 0,1,8! 2,1,8 4,2,5 6,2,8 8,2,10 12,4,5 | 0,2,10! 4,2,5 6,2,7 8,8,10',
   ],
-  AMBIENT: [ // two-to-four long tones a bar, drifting like slow weather
-    '0,6,0! 8,4,3 13,3,7 | 0,6,8! 8,6,10 | 0,4,10! 6,2,7 8,6,5 | 0,6,2! 8,8,0',
-    '0,4,3! 6,2,7 8,4,8 14,2,7 | 0,6,5! 8,4,8 12,4,0 | 0,4,8! 4,4,10 8,8,0 | 0,4,7! 6,2,2 8,8,11',
-    '0,2,7! 6,2,3 8,4,7 14,2,10 | 0,2,10! 6,2,7 8,6,3 | 0,2,2! 6,2,5 8,4,2 14,2,0 | 0,2,8! 4,2,5 8,8,3',
-    '0,8,0! 10,4,7 | 0,6,11! 8,6,7 | 0,4,8! 6,2,5 8,8,8 | 0,6,5! 8,8,2',
+  AMBIENT: [ // gapless winding tones for the glide leads — each note starts as
+    // the last one ends, so the portamento snakes continuously through the bar
+    '0,8,0! 8,4,3 12,4,5 | 0,6,3! 6,6,2 12,4,0 | 0,8,10! 8,4,7 12,4,8 | 0,6,2! 6,10,0',
+    '0,4,7! 4,4,8 8,4,7 12,4,10 | 0,6,8! 6,4,7 10,6,5 | 0,4,0! 4,4,10 8,8,8 | 0,4,11! 4,4,7 8,8,2',
+    '0,4,7! 4,4,3 8,8,10 | 0,6,10! 6,10,7 | 0,8,2! 8,8,0 | 0,4,5! 4,12,3',
+    '0,6,0! 6,4,2 10,6,3 | 0,4,7! 4,4,8 8,8,11 | 0,6,8! 6,4,7 10,6,5 | 0,4,10! 4,12,7',
   ],
   HOUSE: [ // off-beat stabs that skip across the bar line
     '0,2,0! 3,2,3 7,2,7 10,2,3 14,2,0 | 0,2,8! 3,2,10 7,2,8 11,2,7 14,2,5 | 0,2,3! 3,2,7 7,3,10 11,2,7 14,2,10 | 0,2,2! 3,2,5 7,6,0',
@@ -208,7 +212,7 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
     back: { pad: DRUM.CLAP, steps: [4, 12], accents: [] },
     hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [2, 10] },
     open: { pad: DRUM.OH, steps: [2, 10], accents: [] },
-    perc: [{ pad: DRUM.PERC_A, steps: [15], accents: [] }],
+    perc: [],
   },
   ACID: { // warehouse: relentless floor + ghost kick, rolling 16th hats
     kick: { pad: DRUM.KICK, steps: [0, 4, 8, 12, 14], accents: [0] },
@@ -222,7 +226,7 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
     back: { pad: DRUM.RIM, steps: [8], accents: [] },
     hat: { pad: DRUM.CH, steps: [4, 12], accents: [] },
     open: { pad: DRUM.OH, steps: [], accents: [] },
-    perc: [{ pad: DRUM.PERC_A, steps: [2], accents: [] }],
+    perc: [],
   },
   HOUSE: { // club: swung floor (global swing 0.12), open-hat offbeat "tss"
     kick: { pad: DRUM.KICK, steps: [0, 4, 8, 12], accents: [] },
@@ -251,7 +255,7 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
 const DRUM_FILLS: Record<string, Array<[number, number, boolean]>> = {
   NEON: [[DRUM.TOM_HI, 10, false], [DRUM.TOM_MID, 12, false], [DRUM.TOM_LO, 14, true]],
   ACID: [[DRUM.SNARE, 13, false], [DRUM.SNARE, 14, false], [DRUM.SNARE, 15, true]],
-  AMBIENT: [[DRUM.OH, 12, false], [DRUM.PERC_A, 14, false]],
+  AMBIENT: [[DRUM.OH, 12, false]],
   HOUSE: [[DRUM.CLAP, 13, false], [DRUM.CLAP, 15, true]],
   'LO-FI': [[DRUM.PERC_B, 13, false], [DRUM.PERC_B, 15, false]],
   CINEMATIC: [[DRUM.TOM_HI, 8, false], [DRUM.TOM_MID, 10, false], [DRUM.TOM_LO, 12, true], [DRUM.TOM_LO, 14, true]],
@@ -292,7 +296,9 @@ function drumProgression(spec: Spec, scene: number): ClipDoc {
     }
     if (!intro) for (const voice of family.perc) for (const step of voice.steps) hit(bar, voice.pad, step, voice.accents.includes(step));
     if ((intro || outro) && lastBar && ghost && spec.variationIndex >= 2) hit(bar, ghost[0], ghost[1]);
-    if (build && lastBar) for (const step of [12, 13, 14, 15]) hit(bar, DRUM.PERC_A, step, step === 15);
+    // Builds climb into the drop on their own backbeat voice (snare/clap/rim)
+    // rather than a perc pad — perc voices vary too wildly across kits.
+    if (build && lastBar) for (const step of [12, 13, 14, 15]) hit(bar, family.back.pad, step, step === 15);
     if (!intro && !build && !outro && (lastBar || (scene === 3 && bar === 1))) {
       for (const [pad, step, accent] of DRUM_FILLS[spec.family] ?? []) hit(bar, pad, step, accent);
     }

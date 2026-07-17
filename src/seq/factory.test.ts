@@ -42,16 +42,18 @@ describe('NEON TALE factory session registers', () => {
     }
   });
 
-  it('keeps FOG pads at or below the root octave, under every lead', () => {
+  it('keeps FOG pads below the +12 lead band', () => {
     const session = factorySession();
     // DROP A / DROP B / BREAK: the scenes where a lead and pad both play.
+    // FOG STABS sits in the root octave (0..11) — above the bass register,
+    // below every lead; FOG SWELL stays in the low octave underneath.
     for (const sceneIndex of [2, 3, 4]) {
       const pad = session.scenes[sceneIndex]!.clips[3]!;
       const bytes = b64ToBytes(pad.pattern);
       for (let i = 0; i < bytes.length; i += NOTE_STRIDE) {
         if (!(bytes[i]! & 1)) continue;
         const pitch = (bytes[i + 2]! - 1) * 12 + (bytes[i + 1]! & 0x7f);
-        expect(pitch, `${pad.name} note`).toBeLessThanOrEqual(0);
+        expect(pitch, `${pad.name} note`).toBeLessThan(12);
       }
     }
   });

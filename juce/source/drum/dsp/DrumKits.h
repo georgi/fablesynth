@@ -1,7 +1,8 @@
-// DR-1 factory kits — C++ port of src/drum/kits.ts (TR-VOID, ROOM ONE,
-// BITCRUSH). Factory entries contain only authored overrides on top of the
-// canonical drum defaults; applyKit() fills the rest, mirroring kitToState.
-// JUCE-free.
+// DR-1 factory kits — C++ port of src/drum/kits.ts. The 14 derived kits
+// (TR-VOID … 808+UZU HYBRID) plus four authored kits (NEON GRID, ACID CAVE,
+// BOOM BAP, PIRATE RADIO) that ship multi-pattern A A A B chains. Factory
+// entries contain only authored overrides on top of the canonical drum
+// defaults; applyKit() fills the rest, mirroring kitToState. JUCE-free.
 #pragma once
 
 #include "DrumParams.h"
@@ -22,7 +23,7 @@ struct DrumKit {
     std::vector<int> chain;                               // e.g. {0}
 };
 
-// TR-VOID, ROOM ONE, BITCRUSH — same order as FACTORY_KITS in kits.ts.
+// All 18 kits in the same order as FACTORY_KITS in kits.ts.
 const std::vector<DrumKit>& factoryKits();
 
 // defaultDrumParams() + kit overrides (resolved via drumIdFromString).

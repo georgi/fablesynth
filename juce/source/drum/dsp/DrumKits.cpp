@@ -36,6 +36,31 @@ int patIdx(int pat, int padI, int step) {
     return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
 }
 
+// kits.ts buildPatterns(): fills pattern slots [groove, groove, groove, fill]
+// so chain [0,1,2,3] plays a 4-bar A A A B loop. Each spec entry names a pad,
+// its active steps, and the subset of those steps that hit accented (value 2).
+struct PadPat {
+    int pad;
+    std::vector<int> on;
+    std::vector<int> acc;
+};
+using PatternSpec = std::vector<PadPat>;
+
+std::vector<uint8_t> buildPatterns(const PatternSpec& groove, const PatternSpec& fill) {
+    std::vector<uint8_t> patterns(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+    const PatternSpec* specs[4] = { &groove, &groove, &groove, &fill };
+    for (int patI = 0; patI < 4; ++patI) {
+        for (const auto& pp : *specs[patI]) {
+            for (int step : pp.on) {
+                const bool accent =
+                    std::find(pp.acc.begin(), pp.acc.end(), step) != pp.acc.end();
+                patterns[(size_t)patIdx(patI, pp.pad, step)] = accent ? 2 : 1;
+            }
+        }
+    }
+    return patterns;
+}
+
 // kits.ts trVoidPatterns()
 std::vector<uint8_t> trVoidPatterns() {
     std::vector<uint8_t> patterns(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
@@ -306,6 +331,416 @@ Overrides liveRoomParams() {
     return p;
 }
 
+// -- Authored kits ------------------------------------------------------------
+// The kits below are written from scratch (not derived from TR-VOID). Each ships
+// a main groove in pattern slots 1-3 and a fill in slot 4; chain [0,1,2,3] plays
+// a 4-bar A A A B loop. Unlike the derived kits, these start from empty
+// Overrides (matching the TS `Partial<ParamValues>` literals) and applyKit()
+// fills the rest from defaultDrumParams().
+
+// NEON GRID — 118 BPM synthwave / electro. Wavetable kick with a sampled UZU
+// transient glued on top, PULSE synth-toms, pitch-envelope zaps, and a
+// mod-env noise sweep on the last pad.
+const std::array<std::string, DR_NPADS> kNeonGridPads = {
+    "KICK", "SUB KICK", "SNARE", "CLAP", "RIM ZAP", "CH HAT", "OH HAT", "RIDE",
+    "SYN TOM L", "SYN TOM M", "SYN TOM H", "CRASH", "ZAP DOWN", "ZAP UP", "VOX", "SWEEP",
+};
+
+// kits.ts neonGridParams()
+Overrides neonGridParams() {
+    Overrides p;
+    set(p, "seq.bpm", 118.0f);
+    set(p, "master.swing", 0.1f);
+    set(p, "fx.comp.on", 1.0f);
+    set(p, "fx.chorus.on", 1.0f); set(p, "fx.chorus.rate", 0.8f);
+    set(p, "fx.chorus.depth", 0.35f); set(p, "fx.chorus.mix", 0.16f);
+    set(p, "fx.reverb.on", 1.0f); set(p, "fx.reverb.size", 0.58f); set(p, "fx.reverb.mix", 0.2f);
+    // Kick: THUD body + UZU BD2 sample click, dry so the low end stays tight.
+    set(p, padPid(0, "oscA.tune"), -22.0f); set(p, padPid(0, "penv.amt"), 30.0f); set(p, padPid(0, "penv.dec"), 0.03f);
+    set(p, padPid(0, "oscB.table"), 17.0f); set(p, padPid(0, "oscB.level"), 0.55f);
+    set(p, padPid(0, "aenv.dec"), 0.34f); set(p, padPid(0, "lvl"), 0.9f); set(p, padPid(0, "fx.reverb.on"), 0.0f);
+    set(p, padPid(1, "oscA.tune"), -34.0f); set(p, padPid(1, "penv.amt"), 10.0f); set(p, padPid(1, "penv.dec"), 0.06f);
+    set(p, padPid(1, "aenv.dec"), 1.3f); set(p, padPid(1, "lvl"), 0.85f); set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    // Snare: CRACK + noise with an 808SD layer underneath, gated tail.
+    set(p, padPid(2, "oscA.table"), 1.0f); set(p, padPid(2, "oscA.tune"), -8.0f);
+    set(p, padPid(2, "penv.amt"), 6.0f); set(p, padPid(2, "penv.dec"), 0.03f);
+    set(p, padPid(2, "noise.level"), 0.4f); set(p, padPid(2, "noise.color"), 0.5f);
+    set(p, padPid(2, "oscB.table"), 0.0f); set(p, padPid(2, "oscB.level"), 0.35f);
+    set(p, padPid(2, "aenv.dec"), 0.24f); set(p, padPid(2, "aenv.curve"), 0.7f);
+    set(p, padPid(3, "oscA.level"), 0.0f); set(p, padPid(3, "oscB.table"), 1.0f); set(p, padPid(3, "oscB.level"), 0.85f);
+    set(p, padPid(3, "aenv.hold"), 0.02f); set(p, padPid(3, "aenv.dec"), 0.6f); set(p, padPid(3, "fx.reverb.mix"), 0.34f);
+    // Rim zap: PULSE with a fast steep pitch drop — pure electro.
+    set(p, padPid(4, "oscA.table"), 6.0f); set(p, padPid(4, "oscA.tune"), 14.0f);
+    set(p, padPid(4, "penv.amt"), 40.0f); set(p, padPid(4, "penv.dec"), 0.02f); set(p, padPid(4, "aenv.dec"), 0.09f);
+    set(p, padPid(7, "oscA.level"), 0.0f); set(p, padPid(7, "oscB.table"), 23.0f); set(p, padPid(7, "oscB.level"), 0.8f);
+    set(p, padPid(7, "aenv.dec"), 1.1f);
+    set(p, padPid(11, "oscA.level"), 0.0f); set(p, padPid(11, "oscB.table"), 27.0f); set(p, padPid(11, "oscB.level"), 0.8f);
+    set(p, padPid(11, "aenv.dec"), 2.0f);
+    // Zap pair: GRIT lasers, one falling and one rising, panned apart.
+    set(p, padPid(12, "oscA.table"), 3.0f); set(p, padPid(12, "oscA.tune"), 18.0f);
+    set(p, padPid(12, "penv.amt"), 48.0f); set(p, padPid(12, "penv.dec"), 0.05f);
+    set(p, padPid(12, "aenv.dec"), 0.16f); set(p, padPid(12, "pan"), -0.25f);
+    set(p, padPid(13, "oscA.table"), 3.0f); set(p, padPid(13, "oscA.tune"), 6.0f);
+    set(p, padPid(13, "penv.amt"), -40.0f); set(p, padPid(13, "penv.dec"), 0.09f);
+    set(p, padPid(13, "aenv.dec"), 0.2f); set(p, padPid(13, "pan"), 0.25f);
+    set(p, padPid(14, "oscA.table"), 7.0f); set(p, padPid(14, "oscA.tune"), -5.0f);
+    set(p, padPid(14, "aenv.dec"), 0.4f); set(p, padPid(14, "fx.chorus.mix"), 0.3f);
+    // Sweep: pure noise through a band-pass whose cutoff rides the mod env.
+    set(p, padPid(15, "oscA.level"), 0.0f); set(p, padPid(15, "noise.level"), 0.85f); set(p, padPid(15, "noise.color"), 0.2f);
+    set(p, padPid(15, "flt.on"), 1.0f); set(p, padPid(15, "flt.type"), 2.0f); set(p, padPid(15, "flt.cut"), 900.0f);
+    set(p, padPid(15, "flt.res"), 0.55f); set(p, padPid(15, "mod1.src"), 1.0f); set(p, padPid(15, "mod1.dst"), 4.0f);
+    set(p, padPid(15, "mod1.amt"), 0.85f); set(p, padPid(15, "modenv.dec"), 0.9f); set(p, padPid(15, "aenv.dec"), 1.4f);
+    // 808 hats + disco PULSE toms panned across the field.
+    // [padI, sample, dec, cut]
+    static const float kHats[2][4] = { { 5, 2, 0.06f, 7500 }, { 6, 3, 0.42f, 5600 } };
+    for (const auto& h : kHats) {
+        const int padI = (int)h[0];
+        set(p, padPid(padI, "oscA.level"), 0.0f);
+        set(p, padPid(padI, "oscB.table"), h[1]);
+        set(p, padPid(padI, "oscB.level"), 0.8f);
+        set(p, padPid(padI, "aenv.dec"), h[2]);
+        set(p, padPid(padI, "flt.on"), 1.0f);
+        set(p, padPid(padI, "flt.type"), 3.0f);
+        set(p, padPid(padI, "flt.cut"), h[3]);
+        set(p, padPid(padI, "choke"), 1.0f);
+    }
+    // [tune, pan] for PULSE toms on pads 8..10; decay 0.3 - i*0.04.
+    static const float kToms[3][2] = { { -9, -0.4f }, { -2, 0 }, { 5, 0.4f } };
+    for (int i = 0; i < 3; ++i) {
+        set(p, padPid(8 + i, "oscA.table"), 6.0f);
+        set(p, padPid(8 + i, "oscA.tune"), kToms[i][0]);
+        set(p, padPid(8 + i, "penv.amt"), 16.0f);
+        set(p, padPid(8 + i, "penv.dec"), 0.05f);
+        set(p, padPid(8 + i, "aenv.dec"), 0.3f - (float)i * 0.04f);
+        set(p, padPid(8 + i, "pan"), kToms[i][1]);
+    }
+    return p;
+}
+
+std::vector<uint8_t> neonGridPatterns() {
+    return buildPatterns(
+        {
+            { 0, { 0, 7, 10 }, { 0 } },
+            { 1, { 0, 8 }, {} },
+            { 2, { 4, 12 }, { 12 } },
+            { 3, { 12 }, {} },
+            { 4, { 3 }, {} },
+            { 5, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 2, 6, 10, 14 } },
+            { 6, { 14 }, {} },
+            { 12, { 6 }, {} },
+            { 13, { 13 }, {} },
+            { 15, { 8 }, {} },
+        },
+        {
+            { 0, { 0, 7, 10 }, { 0 } },
+            { 2, { 4, 12, 15 }, { 12 } },
+            { 3, { 4, 12 }, {} },
+            { 5, { 0, 2, 4, 6, 8, 10 }, { 2, 6 } },
+            { 8, { 8 }, {} },
+            { 9, { 9, 10 }, {} },
+            { 10, { 11 }, { 11 } },
+            { 11, { 0 }, {} },
+            { 12, { 6, 14 }, {} },
+            { 13, { 3, 13 }, {} },
+            { 14, { 12 }, {} },
+        });
+}
+
+// ACID CAVE — 138 BPM dark techno. A dry punch kick over a cavernous rumble
+// pad, squelching GRIT blips whose filter rides the mod env, and metallic
+// ring-mod percussion.
+const std::array<std::string, DR_NPADS> kAcidCavePads = {
+    "KICK", "RUMBLE", "SNARE", "CLAP", "RIM", "CH HAT", "OH HAT", "RIDE",
+    "BLIP LO", "BLIP MD", "BLIP HI", "CRASH", "TINE HIT", "PERC", "STAB", "GLITCH",
+};
+
+// kits.ts acidCaveParams()
+Overrides acidCaveParams() {
+    Overrides p;
+    set(p, "seq.bpm", 138.0f);
+    set(p, "master.swing", 0.04f);
+    set(p, "fx.comp.on", 1.0f); set(p, "fx.comp.thr", -22.0f); set(p, "fx.comp.gain", 4.0f);
+    set(p, "fx.drive.on", 1.0f); set(p, "fx.drive.amt", 0.5f); set(p, "fx.drive.mix", 0.2f);
+    set(p, "fx.delay.on", 1.0f); set(p, "fx.delay.time", 0.33f); set(p, "fx.delay.fb", 0.5f); set(p, "fx.delay.mix", 0.14f);
+    set(p, "fx.reverb.on", 1.0f); set(p, "fx.reverb.size", 0.7f); set(p, "fx.reverb.mix", 0.12f);
+    set(p, padPid(0, "oscA.tune"), -25.0f); set(p, padPid(0, "penv.amt"), 28.0f); set(p, padPid(0, "penv.dec"), 0.035f);
+    set(p, padPid(0, "aenv.dec"), 0.3f); set(p, padPid(0, "aenv.curve"), 0.5f);
+    set(p, padPid(0, "lvl"), 0.92f); set(p, padPid(0, "fx.reverb.on"), 0.0f);
+    // Rumble: same THUD an octave under the kick, low-passed and drowned in a
+    // huge per-pad reverb — the classic sub-rumble trick.
+    set(p, padPid(1, "oscA.tune"), -25.0f); set(p, padPid(1, "penv.amt"), 8.0f); set(p, padPid(1, "penv.dec"), 0.08f);
+    set(p, padPid(1, "aenv.dec"), 2.6f); set(p, padPid(1, "lvl"), 0.55f);
+    set(p, padPid(1, "flt.on"), 1.0f); set(p, padPid(1, "flt.type"), 1.0f); set(p, padPid(1, "flt.cut"), 300.0f);
+    set(p, padPid(1, "fx.reverb.size"), 0.85f); set(p, padPid(1, "fx.reverb.mix"), 0.55f);
+    set(p, padPid(2, "oscA.table"), 3.0f); set(p, padPid(2, "oscA.tune"), -7.0f);
+    set(p, padPid(2, "noise.level"), 0.55f); set(p, padPid(2, "noise.color"), 0.1f); set(p, padPid(2, "aenv.dec"), 0.16f);
+    set(p, padPid(3, "oscA.level"), 0.0f); set(p, padPid(3, "oscB.table"), 19.0f); set(p, padPid(3, "oscB.tune"), -3.0f);
+    set(p, padPid(3, "oscB.level"), 0.8f); set(p, padPid(3, "noise.level"), 0.2f); set(p, padPid(3, "aenv.dec"), 0.4f);
+    set(p, padPid(4, "oscA.level"), 0.0f); set(p, padPid(4, "oscB.table"), 20.0f); set(p, padPid(4, "oscB.tune"), -2.0f);
+    set(p, padPid(4, "oscB.level"), 0.75f); set(p, padPid(4, "aenv.dec"), 0.08f);
+    set(p, padPid(11, "oscA.level"), 0.0f); set(p, padPid(11, "oscB.table"), 4.0f); set(p, padPid(11, "oscB.level"), 0.7f);
+    set(p, padPid(11, "aenv.dec"), 2.2f); set(p, padPid(11, "flt.on"), 1.0f); set(p, padPid(11, "flt.type"), 3.0f);
+    set(p, padPid(11, "flt.cut"), 5000.0f);
+    set(p, padPid(12, "oscA.table"), 2.0f); set(p, padPid(12, "oscA.tune"), 7.0f);
+    set(p, padPid(12, "ring.freq"), 3907.0f); set(p, padPid(12, "ring.mix"), 0.5f); set(p, padPid(12, "aenv.dec"), 0.12f);
+    set(p, padPid(13, "oscA.level"), 0.0f); set(p, padPid(13, "oscB.table"), 28.0f); set(p, padPid(13, "oscB.tune"), 4.0f);
+    set(p, padPid(13, "oscB.level"), 0.7f); set(p, padPid(13, "aenv.dec"), 0.15f); set(p, padPid(13, "pan"), 0.3f);
+    // Stab: VOX through a resonant band-pass, pitch jittered per hit.
+    set(p, padPid(14, "oscA.table"), 7.0f); set(p, padPid(14, "oscA.tune"), -12.0f); set(p, padPid(14, "aenv.dec"), 0.18f);
+    set(p, padPid(14, "flt.on"), 1.0f); set(p, padPid(14, "flt.type"), 2.0f); set(p, padPid(14, "flt.cut"), 1200.0f);
+    set(p, padPid(14, "flt.res"), 0.5f); set(p, padPid(14, "mod1.src"), 3.0f); set(p, padPid(14, "mod1.dst"), 5.0f);
+    set(p, padPid(14, "mod1.amt"), 0.3f);
+    set(p, padPid(15, "oscA.table"), 9.0f); set(p, padPid(15, "aenv.dec"), 0.1f);
+    set(p, padPid(15, "mod1.src"), 3.0f); set(p, padPid(15, "mod1.dst"), 1.0f); set(p, padPid(15, "mod1.amt"), 0.6f);
+    // Hats/ride: UZU metals, high-passed thin. [padI, sample, dec, cut]
+    static const float kMetals[3][4] = {
+        { 5, 21, 0.05f, 8000 }, { 6, 22, 0.3f, 6000 }, { 7, 23, 0.9f, 4500 },
+    };
+    for (const auto& m : kMetals) {
+        const int padI = (int)m[0];
+        set(p, padPid(padI, "oscA.level"), 0.0f);
+        set(p, padPid(padI, "oscB.table"), m[1]);
+        set(p, padPid(padI, "oscB.level"), 0.75f);
+        set(p, padPid(padI, "aenv.dec"), m[2]);
+        set(p, padPid(padI, "flt.on"), 1.0f);
+        set(p, padPid(padI, "flt.type"), 3.0f);
+        set(p, padPid(padI, "flt.cut"), m[3]);
+        if (padI < 7) set(p, padPid(padI, "choke"), 1.0f);
+    }
+    // Acid blips: 303-ish squelch — resonant LP24 swept hard by the mod env.
+    static const float kBlipTunes[3] = { -17, -12, -5 };
+    for (int i = 0; i < 3; ++i) {
+        set(p, padPid(8 + i, "oscA.table"), 3.0f);
+        set(p, padPid(8 + i, "oscA.pos"), 0.3f);
+        set(p, padPid(8 + i, "oscA.tune"), kBlipTunes[i]);
+        set(p, padPid(8 + i, "aenv.dec"), 0.14f);
+        set(p, padPid(8 + i, "flt.on"), 1.0f);
+        set(p, padPid(8 + i, "flt.type"), 1.0f);
+        set(p, padPid(8 + i, "flt.cut"), 700.0f);
+        set(p, padPid(8 + i, "flt.res"), 0.72f);
+        set(p, padPid(8 + i, "mod1.src"), 1.0f);
+        set(p, padPid(8 + i, "mod1.dst"), 4.0f);
+        set(p, padPid(8 + i, "mod1.amt"), 0.9f);
+        set(p, padPid(8 + i, "modenv.dec"), 0.12f);
+    }
+    return p;
+}
+
+std::vector<uint8_t> acidCavePatterns() {
+    return buildPatterns(
+        {
+            { 0, { 0, 4, 8, 12 }, { 0, 4, 8, 12 } },
+            { 1, { 0 }, {} },
+            { 3, { 4, 12 }, {} },
+            { 5, { 0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15 }, {} },
+            { 6, { 2, 6, 10, 14 }, { 2, 10 } },
+            { 8, { 3, 11 }, {} },
+            { 9, { 6, 14 }, {} },
+            { 10, { 7 }, {} },
+            { 15, { 15 }, {} },
+        },
+        {
+            { 0, { 0, 4, 8, 12 }, { 0, 4, 8, 12 } },
+            { 1, { 0, 8 }, {} },
+            { 2, { 12 }, {} },
+            { 3, { 4 }, {} },
+            { 6, { 2, 6, 10, 14 }, { 2, 10 } },
+            { 7, { 0, 2, 4, 6, 8, 10, 12, 14 }, {} },
+            { 8, { 3, 7, 11 }, {} },
+            { 9, { 6, 10, 14 }, {} },
+            { 10, { 7, 15 }, { 15 } },
+            { 13, { 5, 13 }, {} },
+            { 14, { 2, 10 }, {} },
+        });
+}
+
+// BOOM BAP — 90 BPM hip-hop. Sample-forward with wavetable glue under the
+// kick, every sample capped by a lazy low-pass for dust, RAND modulation for
+// MPC-style humanization, and a reversed UZU MOD transition pad.
+const std::array<std::string, DR_NPADS> kBoomBapPads = {
+    "KICK", "KICK 808", "SNARE", "CLAP", "RIM", "CH HAT", "OH HAT", "SHAKER",
+    "TOM LO", "TOM MD", "TOM HI", "CRASH", "COWBELL", "MARACAS", "VOX", "REVERSE",
+};
+
+// kits.ts boomBapParams()
+Overrides boomBapParams() {
+    Overrides p;
+    set(p, "seq.bpm", 90.0f);
+    set(p, "master.swing", 0.56f);
+    set(p, "fx.comp.on", 1.0f); set(p, "fx.comp.thr", -14.0f);
+    set(p, "fx.drive.on", 1.0f); set(p, "fx.drive.amt", 0.35f); set(p, "fx.drive.mix", 0.2f);
+    set(p, "fx.reverb.on", 1.0f); set(p, "fx.reverb.size", 0.35f); set(p, "fx.reverb.mix", 0.1f);
+    // Sampled backbone: [pad, sample, tune, level, decay].
+    static const float kSamples[15][5] = {
+        { 0, 16, -2, 0.85f, 0.4f }, { 1, 5, -5, 0.85f, 0.55f }, { 2, 18, -4, 0.8f, 0.3f },
+        { 3, 19, -6, 0.8f, 0.5f }, { 4, 6, 0, 0.75f, 0.12f }, { 5, 2, -7, 0.75f, 0.07f },
+        { 6, 3, -5, 0.75f, 0.35f }, { 7, 29, 0, 0.7f, 0.14f }, { 8, 13, -3, 0.75f, 0.4f },
+        { 9, 14, -3, 0.75f, 0.38f }, { 10, 15, -3, 0.75f, 0.36f }, { 11, 27, -4, 0.7f, 1.8f },
+        { 12, 7, -7, 0.6f, 0.2f }, { 13, 8, 0, 0.7f, 0.1f }, { 15, 31, 0, 0.75f, 0.8f },
+    };
+    for (const auto& s : kSamples) {
+        const int padI = (int)s[0];
+        set(p, padPid(padI, "oscA.level"), 0.0f);
+        set(p, padPid(padI, "oscB.table"), s[1]);
+        set(p, padPid(padI, "oscB.tune"), s[2]);
+        set(p, padPid(padI, "oscB.level"), s[3]);
+        set(p, padPid(padI, "aenv.dec"), s[4]);
+        // The dust: cap everything with a dull low-pass like a worn 12-bit sampler.
+        set(p, padPid(padI, "flt.on"), 1.0f);
+        set(p, padPid(padI, "flt.type"), 1.0f);
+        set(p, padPid(padI, "flt.cut"), 8500.0f);
+    }
+    // THUD glue under the sampled kick so the low end hits like a sub.
+    set(p, padPid(0, "oscA.tune"), -24.0f); set(p, padPid(0, "oscA.level"), 0.5f);
+    set(p, padPid(0, "penv.amt"), 18.0f); set(p, padPid(0, "penv.dec"), 0.04f);
+    set(p, padPid(0, "lvl"), 0.9f); set(p, padPid(0, "fx.reverb.on"), 0.0f);
+    set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    set(p, padPid(2, "noise.level"), 0.25f); set(p, padPid(2, "noise.color"), 0.35f);
+    set(p, padPid(2, "mod1.src"), 3.0f); set(p, padPid(2, "mod1.dst"), 2.0f); set(p, padPid(2, "mod1.amt"), 0.15f);
+    set(p, padPid(5, "mod1.src"), 3.0f); set(p, padPid(5, "mod1.dst"), 7.0f); set(p, padPid(5, "mod1.amt"), 0.2f);
+    set(p, padPid(5, "choke"), 1.0f); set(p, padPid(6, "choke"), 1.0f);
+    set(p, padPid(7, "pan"), 0.3f); set(p, padPid(13, "pan"), -0.3f);
+    // Dusty vocal chop on the wavetable side.
+    set(p, padPid(14, "oscA.table"), 7.0f); set(p, padPid(14, "oscA.tune"), -10.0f); set(p, padPid(14, "aenv.dec"), 0.5f);
+    set(p, padPid(14, "flt.on"), 1.0f); set(p, padPid(14, "flt.type"), 0.0f); set(p, padPid(14, "flt.cut"), 3500.0f);
+    // Reversed sample sweep into the downbeat.
+    set(p, padPid(15, "oscB.phase"), 1.0f);
+    return p;
+}
+
+std::vector<uint8_t> boomBapPatterns() {
+    return buildPatterns(
+        {
+            { 0, { 0, 7, 10 }, { 0 } },
+            { 2, { 4, 12 }, { 4, 12 } },
+            { 5, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 0, 8 } },
+            { 7, { 3, 11 }, {} },
+            { 4, { 14 }, {} },
+        },
+        {
+            { 0, { 0, 5, 10, 11 }, { 0 } },
+            { 1, { 8 }, {} },
+            { 2, { 4, 12, 14 }, { 4, 12 } },
+            { 5, { 0, 2, 4, 6, 8, 10, 14 }, { 0, 8 } },
+            { 6, { 12 }, {} },
+            { 7, { 3, 11 }, {} },
+            { 12, { 7 }, {} },
+            { 14, { 6 }, {} },
+            { 15, { 12 }, {} },
+        });
+}
+
+// PIRATE RADIO — 133 BPM UK garage 2-step. Bright UZU kit swung hard, a THUD
+// sub for basslines, a mod-env wobble stab, random-pitch vox chops, and a
+// detuned BLOOM organ stab.
+const std::array<std::string, DR_NPADS> kPirateRadioPads = {
+    "KICK", "SUB BASS", "SNARE", "CLAP", "RIM", "CH HAT", "OH HAT", "SHAKER",
+    "PERC L", "PERC M", "PERC H", "CRASH", "WOBBLE", "TAMB", "VOX CHOP", "ORGAN",
+};
+
+// kits.ts pirateRadioParams()
+Overrides pirateRadioParams() {
+    Overrides p;
+    set(p, "seq.bpm", 133.0f);
+    set(p, "master.swing", 0.58f);
+    set(p, "fx.comp.on", 1.0f);
+    set(p, "fx.chorus.on", 1.0f); set(p, "fx.chorus.rate", 0.5f); set(p, "fx.chorus.depth", 0.3f); set(p, "fx.chorus.mix", 0.12f);
+    set(p, "fx.delay.on", 1.0f); set(p, "fx.delay.time", 0.34f); set(p, "fx.delay.fb", 0.45f); set(p, "fx.delay.mix", 0.16f);
+    set(p, "fx.reverb.on", 1.0f); set(p, "fx.reverb.size", 0.5f); set(p, "fx.reverb.mix", 0.18f);
+    // Kick: tight UZU BD2 with a THUD knock on top.
+    set(p, padPid(0, "oscA.tune"), -20.0f); set(p, padPid(0, "oscA.level"), 0.4f);
+    set(p, padPid(0, "penv.amt"), 22.0f); set(p, padPid(0, "penv.dec"), 0.025f);
+    set(p, padPid(0, "oscB.table"), 17.0f); set(p, padPid(0, "oscB.level"), 0.85f);
+    set(p, padPid(0, "aenv.dec"), 0.28f); set(p, padPid(0, "lvl"), 0.9f); set(p, padPid(0, "fx.reverb.on"), 0.0f);
+    // Sub: long THUD for one-finger basslines between the drums.
+    set(p, padPid(1, "oscA.tune"), -31.0f); set(p, padPid(1, "penv.amt"), 6.0f); set(p, padPid(1, "penv.dec"), 0.05f);
+    set(p, padPid(1, "aenv.dec"), 1.2f); set(p, padPid(1, "lvl"), 0.9f); set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    set(p, padPid(2, "oscA.level"), 0.0f); set(p, padPid(2, "oscB.table"), 18.0f); set(p, padPid(2, "oscB.tune"), 3.0f);
+    set(p, padPid(2, "oscB.level"), 0.8f); set(p, padPid(2, "noise.level"), 0.2f); set(p, padPid(2, "noise.color"), 0.6f);
+    set(p, padPid(2, "aenv.dec"), 0.22f);
+    set(p, padPid(3, "oscA.level"), 0.0f); set(p, padPid(3, "oscB.table"), 19.0f); set(p, padPid(3, "oscB.tune"), 2.0f);
+    set(p, padPid(3, "oscB.level"), 0.8f); set(p, padPid(3, "aenv.dec"), 0.45f); set(p, padPid(3, "fx.reverb.mix"), 0.3f);
+    // Rim: pitch jitters per hit so the skippy 2-step rims never repeat.
+    set(p, padPid(4, "oscA.level"), 0.0f); set(p, padPid(4, "oscB.table"), 20.0f); set(p, padPid(4, "oscB.tune"), 6.0f);
+    set(p, padPid(4, "oscB.level"), 0.8f); set(p, padPid(4, "aenv.dec"), 0.09f); set(p, padPid(4, "pan"), -0.2f);
+    set(p, padPid(4, "mod1.src"), 3.0f); set(p, padPid(4, "mod1.dst"), 5.0f); set(p, padPid(4, "mod1.amt"), 0.15f);
+    set(p, padPid(7, "oscA.level"), 0.0f); set(p, padPid(7, "oscB.table"), 29.0f); set(p, padPid(7, "oscB.tune"), 4.0f);
+    set(p, padPid(7, "oscB.level"), 0.75f); set(p, padPid(7, "aenv.dec"), 0.12f);
+    set(p, padPid(11, "oscA.level"), 0.0f); set(p, padPid(11, "oscB.table"), 27.0f); set(p, padPid(11, "oscB.level"), 0.75f);
+    set(p, padPid(11, "aenv.dec"), 1.6f);
+    // Wobble: GRIT sub stab, resonant LP24 pumped by the mod env.
+    set(p, padPid(12, "oscA.table"), 3.0f); set(p, padPid(12, "oscA.tune"), -24.0f);
+    set(p, padPid(12, "aenv.dec"), 0.5f); set(p, padPid(12, "flt.on"), 1.0f); set(p, padPid(12, "flt.type"), 1.0f);
+    set(p, padPid(12, "flt.cut"), 500.0f); set(p, padPid(12, "flt.res"), 0.6f);
+    set(p, padPid(12, "mod1.src"), 1.0f); set(p, padPid(12, "mod1.dst"), 4.0f); set(p, padPid(12, "mod1.amt"), 0.7f);
+    set(p, padPid(12, "modenv.dec"), 0.3f);
+    set(p, padPid(13, "oscA.level"), 0.0f); set(p, padPid(13, "oscB.table"), 30.0f); set(p, padPid(13, "oscB.tune"), 3.0f);
+    set(p, padPid(13, "oscB.level"), 0.7f); set(p, padPid(13, "aenv.dec"), 0.15f); set(p, padPid(13, "pan"), 0.3f);
+    // Vox chop: pitch dives in and lands somewhere new every hit.
+    set(p, padPid(14, "oscA.table"), 7.0f); set(p, padPid(14, "oscA.tune"), 7.0f);
+    set(p, padPid(14, "penv.amt"), -12.0f); set(p, padPid(14, "penv.dec"), 0.06f); set(p, padPid(14, "aenv.dec"), 0.22f);
+    set(p, padPid(14, "fx.chorus.mix"), 0.25f);
+    set(p, padPid(14, "mod1.src"), 3.0f); set(p, padPid(14, "mod1.dst"), 5.0f); set(p, padPid(14, "mod1.amt"), 0.4f);
+    // Organ stab: detuned BLOOM unison, low-passed warm.
+    set(p, padPid(15, "oscA.table"), 5.0f); set(p, padPid(15, "oscA.unison"), 3.0f); set(p, padPid(15, "oscA.detune"), 0.3f);
+    set(p, padPid(15, "aenv.dec"), 0.3f); set(p, padPid(15, "flt.on"), 1.0f); set(p, padPid(15, "flt.type"), 0.0f);
+    set(p, padPid(15, "flt.cut"), 4000.0f);
+    // Shuffled UZU hats + pitched-up perc toms. [padI, sample, dec, cut]
+    static const float kHats[2][4] = { { 5, 21, 0.05f, 8500 }, { 6, 22, 0.35f, 6000 } };
+    for (const auto& h : kHats) {
+        const int padI = (int)h[0];
+        set(p, padPid(padI, "oscA.level"), 0.0f);
+        set(p, padPid(padI, "oscB.table"), h[1]);
+        set(p, padPid(padI, "oscB.tune"), 2.0f);
+        set(p, padPid(padI, "oscB.level"), 0.75f);
+        set(p, padPid(padI, "aenv.dec"), h[2]);
+        set(p, padPid(padI, "flt.on"), 1.0f);
+        set(p, padPid(padI, "flt.type"), 3.0f);
+        set(p, padPid(padI, "flt.cut"), h[3]);
+        set(p, padPid(padI, "choke"), 1.0f);
+        set(p, padPid(padI, "v2l"), 0.9f);
+    }
+    // Perc toms on pads 8..10, panned (i-1)*0.35.
+    static const float kPercSamples[3] = { 24, 25, 26 };
+    for (int i = 0; i < 3; ++i) {
+        set(p, padPid(8 + i, "oscA.level"), 0.0f);
+        set(p, padPid(8 + i, "oscB.table"), kPercSamples[i]);
+        set(p, padPid(8 + i, "oscB.tune"), 2.0f);
+        set(p, padPid(8 + i, "oscB.level"), 0.75f);
+        set(p, padPid(8 + i, "aenv.dec"), 0.3f);
+        set(p, padPid(8 + i, "pan"), (float)(i - 1) * 0.35f);
+    }
+    return p;
+}
+
+std::vector<uint8_t> pirateRadioPatterns() {
+    return buildPatterns(
+        {
+            { 0, { 0, 10 }, { 0 } },
+            { 1, { 0, 7 }, {} },
+            { 2, { 4, 12 }, { 12 } },
+            { 4, { 7, 15 }, {} },
+            { 5, { 2, 3, 6, 7, 11, 14 }, { 2, 6 } },
+            { 6, { 10 }, {} },
+            { 14, { 13 }, {} },
+            { 15, { 8 }, {} },
+        },
+        {
+            { 0, { 0, 7, 10 }, { 0 } },
+            { 1, { 0, 7, 11 }, {} },
+            { 2, { 4, 12 }, { 12 } },
+            { 3, { 12 }, {} },
+            { 4, { 7, 13, 15 }, {} },
+            { 5, { 2, 3, 6, 7, 11, 14 }, { 2, 6 } },
+            { 6, { 10 }, {} },
+            { 8, { 5 }, {} },
+            { 10, { 14 }, {} },
+            { 12, { 6, 14 }, {} },
+            { 14, { 3, 13 }, {} },
+            { 15, { 8, 11 }, {} },
+        });
+}
+
 } // namespace
 
 const std::vector<DrumKit>& factoryKits() {
@@ -326,6 +761,10 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "LIVE ROOM", liveRoomParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "UZU", uzuParams(), kPadNames, patterns, { 0 } });
         out.push_back({ "808+UZU HYBRID", hybridParams(), kPadNames, patterns, { 0 } });
+        out.push_back({ "NEON GRID", neonGridParams(), kNeonGridPads, neonGridPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "ACID CAVE", acidCaveParams(), kAcidCavePads, acidCavePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "BOOM BAP", boomBapParams(), kBoomBapPads, boomBapPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "PIRATE RADIO", pirateRadioParams(), kPirateRadioPads, pirateRadioPatterns(), { 0, 1, 2, 3 } });
         return out;
     }();
     return kits;

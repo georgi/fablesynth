@@ -104,7 +104,7 @@ void append(std::vector<NoteStep>& dst, std::vector<NoteStep> src) {
 
 // FOG STABS voicing (web factory.ts FOG_STABS flatMap): each root expands to a
 // close-voiced 3-note chord across lanes 0..2 — root, +3, +7 as pitch classes
-// in the root's octave, so the stabs stay in the −12..−1 band under the lead.
+// in the root octave (0..11), clear of the bass register and under the lead.
 std::vector<NoteStep> fogVoicing(std::vector<NoteStep> roots) {
     std::vector<NoteStep> out;
     for (auto step : roots) {
@@ -233,10 +233,10 @@ ClipData airBedII() {
 
 ClipData fogStabs() {
     static const std::vector<NoteStep> roots = {
-        { 0, 0, -1 }, { 2, 0, -1 }, { 7, 3, -1 }, { 10, 5, -1, true }, { 12, 5, -1 },
-        { 16, 10, -1 }, { 18, 10, -1 }, { 23, 0, -1 }, { 26, 2, -1 }, { 28, 3, -1 },
-        { 32, 7, -1 }, { 34, 7, -1 }, { 39, 10, -1 }, { 42, 2, -1, true }, { 44, 2, -1 },
-        { 48, 5, -1 }, { 50, 5, -1 }, { 55, 0, -1 }, { 58, 3, -1 }, { 60, 0, -1 },
+        { 0, 0, 0 }, { 2, 0, 0 }, { 7, 3, 0 }, { 10, 5, 0, true }, { 12, 5, 0 },
+        { 16, 10, 0 }, { 18, 10, 0 }, { 23, 0, 0 }, { 26, 2, 0 }, { 28, 3, 0 },
+        { 32, 7, 0 }, { 34, 7, 0 }, { 39, 10, 0 }, { 42, 2, 0, true }, { 44, 2, 0 },
+        { 48, 5, 0 }, { 50, 5, 0 }, { 55, 0, 0 }, { 58, 5, 0 }, { 60, 0, 0 },
     };
     return wtClip("FOG STABS", 4, fogVoicing(roots));
 }
@@ -353,10 +353,10 @@ const std::array<const char*, 4>& leadPhrasesFor(const std::string& family) {
             "0,2,7! 3,1,5 4,2,7 8,2,3 10,2,0 14,2,7 | 0,1,10! 1,1,10 4,2,7 6,2,3 8,3,10 12,4,7 | 0,2,5! 2,2,7 4,1,5 8,2,2 10,2,0 12,2,10 14,2,5 | 0,3,8! 4,2,5 8,8,0",
             "0,1,7! 1,1,7 3,1,10 4,2,7 8,2,0 10,2,10 13,3,7 | 0,2,2! 2,1,0 4,2,11 8,2,7 10,2,2 13,3,11 | 0,1,8! 2,1,8 4,2,5 6,2,8 8,2,10 12,4,5 | 0,2,10! 4,2,5 6,2,7 8,8,10" } },
         { "AMBIENT", {
-            "0,6,0! 8,4,3 13,3,7 | 0,6,8! 8,6,10 | 0,4,10! 6,2,7 8,6,5 | 0,6,2! 8,8,0",
-            "0,4,3! 6,2,7 8,4,8 14,2,7 | 0,6,5! 8,4,8 12,4,0 | 0,4,8! 4,4,10 8,8,0 | 0,4,7! 6,2,2 8,8,11",
-            "0,2,7! 6,2,3 8,4,7 14,2,10 | 0,2,10! 6,2,7 8,6,3 | 0,2,2! 6,2,5 8,4,2 14,2,0 | 0,2,8! 4,2,5 8,8,3",
-            "0,8,0! 10,4,7 | 0,6,11! 8,6,7 | 0,4,8! 6,2,5 8,8,8 | 0,6,5! 8,8,2" } },
+            "0,8,0! 8,4,3 12,4,5 | 0,6,3! 6,6,2 12,4,0 | 0,8,10! 8,4,7 12,4,8 | 0,6,2! 6,10,0",
+            "0,4,7! 4,4,8 8,4,7 12,4,10 | 0,6,8! 6,4,7 10,6,5 | 0,4,0! 4,4,10 8,8,8 | 0,4,11! 4,4,7 8,8,2",
+            "0,4,7! 4,4,3 8,8,10 | 0,6,10! 6,10,7 | 0,8,2! 8,8,0 | 0,4,5! 4,12,3",
+            "0,6,0! 6,4,2 10,6,3 | 0,4,7! 4,4,8 8,8,11 | 0,6,8! 6,4,7 10,6,5 | 0,4,10! 4,12,7" } },
         { "HOUSE", {
             "0,2,0! 3,2,3 7,2,7 10,2,3 14,2,0 | 0,2,8! 3,2,10 7,2,8 11,2,7 14,2,5 | 0,2,3! 3,2,7 7,3,10 11,2,7 14,2,10 | 0,2,2! 3,2,5 7,6,0",
             "0,2,7! 3,2,10 6,1,7 8,2,3 11,2,5 14,2,7 | 0,2,8! 3,2,7 7,2,5 10,2,8 14,2,10 | 0,2,0! 3,2,10 7,2,8 10,2,7 14,2,8 | 0,2,11! 3,2,7 7,3,2 12,4,7",
@@ -410,14 +410,12 @@ const DrumArchetype& drumArchetypeFor(const std::string& family) {
     using namespace drum;
     static const std::map<std::string, DrumArchetype> archetypes = {
         { "NEON", { { KICK, { 0, 4, 8, 12 }, { 0 } }, { CLAP, { 4, 12 }, {} },
-                    { CH, { 2, 6, 10, 14 }, { 2, 10 } }, { OH, { 2, 10 }, {} },
-                    { { PERC_A, { 15 }, {} } } } },
+                    { CH, { 2, 6, 10, 14 }, { 2, 10 } }, { OH, { 2, 10 }, {} }, {} } },
         { "ACID", { { KICK, { 0, 4, 8, 12, 14 }, { 0 } }, { SNARE, { 4, 12 }, { 4, 12 } },
                     { CH, { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }, { 2, 6, 10, 14 } },
                     { OH, { 7 }, {} }, {} } },
         { "AMBIENT", { { KICK, { 0, 8 }, {} }, { RIM, { 8 }, {} },
-                       { CH, { 4, 12 }, {} }, { OH, {}, {} },
-                       { { PERC_A, { 2 }, {} } } } },
+                       { CH, { 4, 12 }, {} }, { OH, {}, {} }, {} } },
         { "HOUSE", { { KICK, { 0, 4, 8, 12 }, {} }, { CLAP, { 4, 12 }, {} },
                      { CH, { 2, 6, 10, 14 }, {} }, { OH, { 2, 6, 10, 14 }, { 6, 14 } }, {} } },
         { "LO-FI", { { KICK, { 0, 7, 10 }, { 0 } }, { SNARE, { 4, 12 }, {} },
@@ -436,7 +434,7 @@ const std::vector<DrumFillHit>& drumFillFor(const std::string& family) {
     static const std::map<std::string, std::vector<DrumFillHit>> fills = {
         { "NEON", { { TOM_HI, 10, false }, { TOM_MID, 12, false }, { TOM_LO, 14, true } } },
         { "ACID", { { SNARE, 13, false }, { SNARE, 14, false }, { SNARE, 15, true } } },
-        { "AMBIENT", { { OH, 12, false }, { PERC_A, 14, false } } },
+        { "AMBIENT", { { OH, 12, false } } },
         { "HOUSE", { { CLAP, 13, false }, { CLAP, 15, true } } },
         { "LO-FI", { { PERC_B, 13, false }, { PERC_B, 15, false } } },
         { "CINEMATIC", { { TOM_HI, 8, false }, { TOM_MID, 10, false }, { TOM_LO, 12, true }, { TOM_LO, 14, true } } },
@@ -491,7 +489,9 @@ ClipData drumProgression(const PresetSpec& spec, int scene) {
         }
         if (!intro) for (const auto& voice : family.perc) for (int s : voice.steps) hit(bar, voice.pad, s, contains(voice.accents, s));
         if ((intro || outro) && lastBar && ghost.first >= 0 && spec.variationIndex >= 2) hit(bar, ghost.first, ghost.second);
-        if (build && lastBar) for (int s : { 12, 13, 14, 15 }) hit(bar, PERC_A, s, s == 15);
+        // Builds climb into the drop on their own backbeat voice (snare/clap/rim)
+        // rather than a perc pad — perc voices vary too wildly across kits.
+        if (build && lastBar) for (int s : { 12, 13, 14, 15 }) hit(bar, family.back.pad, s, s == 15);
         if (!intro && !build && !outro && (lastBar || (scene == 3 && bar == 1)))
             for (const auto& f : drumFillFor(spec.family)) hit(bar, f.pad, f.step, f.accent);
     }
@@ -590,6 +590,10 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
                         case 43: return 0.48f; case 44: return 0.49f;
                         case 45: return 0.84f; case 47: return 0.82f;
                         case 49: return 0.51f; case 50: return 0.72f;
+                        // 51-54 (ambient glide leads): ear-balanced estimates
+                        // pending a measure_track_levels re-run.
+                        case 51: return 0.85f; case 52: return 0.85f;
+                        case 53: return 0.85f; case 54: return 0.85f;
                         default: return 0.65f;
                     }
                 }
@@ -649,10 +653,10 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 43, 40 }, 3),
 
             // AMBIENT / DEEP
-            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 12, 7, 45, 34 }, 0),
-            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 13, 0, 21, 25 }, 1),
-            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 12, 5, 6, 32 }, 2),
-            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 3, 7, 30, 27 }, 3),
+            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 15, 7, 51, 34 }, 0),      // ACID CAVE / FOG LIGHT
+            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 15, 0, 52, 25 }, 1),   // ACID CAVE / GLASS RIBBON
+            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 15, 5, 53, 32 }, 2),   // ACID CAVE / NORTH WIRE
+            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 15, 7, 54, 27 }, 3), // ACID CAVE / TEMPLE BREATH
 
             // HOUSE / CLUB
             make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 12, 4, 36, 42 }, 0),

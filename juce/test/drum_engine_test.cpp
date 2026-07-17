@@ -747,12 +747,15 @@ int main() {
     printf("\n== 6. DrumKits ==\n");
     {
         const auto& kits = factoryKits();
-        check(kits.size() == 14, "14 factory kits");
+        check(kits.size() == 18, "18 factory kits");
         check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
               "original kit names/order stay stable");
         check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM" && kits[12].name == "UZU"
               && kits[13].name == "808+UZU HYBRID",
               "expanded kit bank names/order");
+        check(kits[14].name == "NEON GRID" && kits[15].name == "ACID CAVE"
+              && kits[16].name == "BOOM BAP" && kits[17].name == "PIRATE RADIO",
+              "authored kit bank names/order");
         auto classic = applyKit(kits[3]);
         check(classic[dpid(0, DP_OSCB_TABLE)] == 5
               && classic[dpid(8, DP_OSCB_TABLE)] == 13
@@ -792,12 +795,18 @@ int main() {
         check(allResolve, "all override pids resolve", badPid);
         check(allInRange, "all override values within [min,max]", badPid);
 
-        // Structural invariants shared by all kits.
-        for (const auto& kit : kits) {
+        // Structural invariants: classic kits (0-13) share the TR-VOID pad map
+        // and a single pattern; authored kits (14+) ship their own pads and an
+        // A A A B chain (kits.test.ts asserts the same on the web side).
+        for (size_t k = 0; k < kits.size(); ++k) {
+            const auto& kit = kits[k];
             check((int)kit.patterns.size() == DR_NPATTERNS * DR_NPADS * DR_STEPS,
                   kit.name + " patterns 4*16*16");
-            check(kit.chain == std::vector<int>{0}, kit.name + " chain {0}");
-            check(kit.padNames[0] == "KICK" && kit.padNames[15] == "GLITCH",
+            const bool authored = k >= 14;
+            check(kit.chain == (authored ? std::vector<int>{0, 1, 2, 3} : std::vector<int>{0}),
+                  kit.name + (authored ? " chain {0,1,2,3}" : " chain {0}"));
+            check(kit.padNames[0] == "KICK"
+                      && (authored ? !kit.padNames[15].empty() : kit.padNames[15] == "GLITCH"),
                   kit.name + " pad names");
         }
 
