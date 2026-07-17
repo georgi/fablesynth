@@ -13,6 +13,8 @@ export interface WtHarness {
   sent: { t: string; [k: string]: unknown }[];
   send(msg: unknown): void;
   render(blocks: number): { L: Float32Array; R: Float32Array };
+  /** Position the emulated AudioWorklet `currentFrame` clock (hosted transport tests). */
+  setFrame(frame: number): void;
 }
 
 export function makeWtProcessor(sampleRate = 48000): WtHarness {
@@ -32,17 +34,28 @@ export function makeWtProcessor(sampleRate = 48000): WtHarness {
   );
   const proc = new Proc!();
   const send = (msg: unknown) => proc.port.onmessage!({ data: msg });
+  // AudioWorkletGlobalScope exposes a live `currentFrame` global; mirror it so
+  // hosted-transport paths (clip scheduling, anchor-locked synced LFOs) run
+  // under vitest. The getter reads this harness's counter — create/render one
+  // harness at a time, as the global can only track the most recent harness.
+  let frame = 0;
+  Object.defineProperty(globalThis, 'currentFrame', {
+    configurable: true,
+    get: () => frame,
+    set: (f: number) => { frame = f; }, // tests may also position the clock directly
+  });
   const render = (blocks: number) => {
     const L = new Float32Array(blocks * 128);
     const R = new Float32Array(blocks * 128);
     for (let b = 0; b < blocks; b++) {
       const l = new Float32Array(128), r = new Float32Array(128);
       proc.process([], [[l, r]]);
+      frame += 128;
       L.set(l, b * 128); R.set(r, b * 128);
     }
     return { L, R };
   };
-  return { proc, sent, send, render };
+  return { proc, sent, send, render, setFrame: (f: number) => { frame = f; } };
 }
 
 const TABLES = generateTables();

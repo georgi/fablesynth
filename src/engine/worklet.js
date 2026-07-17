@@ -1208,8 +1208,13 @@ class FableProcessor extends AudioWorkletProcessor {
     const n = L.length;
 
     // Update the global (free-run/transport-locked) LFOs before voices read
-    // them. ppq = beats since audio start (block-start position).
-    const ppq = this.transportBeats;
+    // them. ppq = beats since audio start (block-start position). Hosted
+    // (SQ-4), the conductor's anchor is beat zero of the shared timebase, so
+    // every device's synced LFO lands on the same downbeat regardless of when
+    // it joined the song.
+    const ppq = this.hosted
+      ? Math.max(0, currentFrame - this.hostAnchor) * (this.bpm / 60) / sampleRate
+      : this.transportBeats;
     this.updateGlobalLfo(this.gLfo1, 'lfo1', ppq, n);
     this.updateGlobalLfo(this.gLfo2, 'lfo2', ppq, n);
     this.transportBeats += (n / sampleRate) * (this.bpm / 60);

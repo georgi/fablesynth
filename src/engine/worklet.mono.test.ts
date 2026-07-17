@@ -117,7 +117,7 @@ describe('mono + hosted clip chords', () => {
     set(0, 0, 0); // root (48)
     set(0, 1, 7); // fifth (55)
     h.send({ t: 'clip', data: data.buffer, bars: 1, atFrame: 0 });
-    for (let b = 0; b < 4; b++) { h.render(1); g.currentFrame += 128; }
+    for (let b = 0; b < 4; b++) h.render(1); // render() advances currentFrame per block
   }
 
   it('poly: a two-lane chord step gates two voices', () => {

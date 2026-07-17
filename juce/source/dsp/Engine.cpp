@@ -1022,7 +1022,9 @@ void Engine::render(float* L, float* R, int n) {
     const double seqBeatsPerSample = (seqEffectiveBpm() / 60.0) / sr_;
     const bool internalRun = seqPlaying_ && !hostRun && !hostClipMode_;
     const bool hostPlayingFlag = playing_;
-    if (internalRun) playing_ = true;   // synced LFOs treat the seq as transport
+    // Synced LFOs treat the seq as transport; hosted (SQ-4) the conductor's
+    // shared anchor is the transport, so they phase-lock there too.
+    if (internalRun || hostClipMode_) playing_ = true;
 
     int off = 0;
     while (off < n) {
@@ -1060,8 +1062,12 @@ void Engine::render(float* L, float* R, int n) {
         if (earliestOff >= 0)
             run = std::min(run, std::max(1, (int)std::ceil(earliestOff)));
 
+        // Hosted, hostFrame_ is this chunk's absolute start frame (advanced
+        // per chunk below), and the anchor is beat zero — the same timebase
+        // the web worklet derives its hosted ppq from.
         const double chunkPpq = hostRun    ? seqHostPpq_ + off * ppqPerSample
                               : internalRun ? seqSongPos_ * seqBeatsPerSample
+                              : hostClipMode_ ? std::max(0.0, hostFrame_ - hostAnchor_) * beatsPerSample
                                             : ppq_ + off * beatsPerSample;
         renderBlock(L + off, R + off, run, chunkPpq);
 

@@ -205,6 +205,7 @@ public:
     }
     void hostTempo(double bpm, double swing, double anchorFrame) {
         setBpm(bpm);
+        hostAnchor_ = anchorFrame; // beat zero of the shared timebase (synced-LFO phase)
         clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
     }
     void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
@@ -333,6 +334,7 @@ private:
     // ---- hosted-clip mode state (SQ-4) ----
     bool     hostClipMode_ = false;
     double   hostFrame_ = 0;
+    double   hostAnchor_ = 0;         // shared-timebase beat zero (hostTempo)
     ClipHost clipHost_;
 
     // host transport lock state (BassEngine scheme)

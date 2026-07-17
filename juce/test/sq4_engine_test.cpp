@@ -468,6 +468,64 @@ static void testWt1Hosted() {
     CHECK(rmsOf(e, frame, 200) < 1e-4);                  // silent tail after release
 }
 
+// Hosted synced-LFO contract (mirror of src/engine/worklet.sync.test.ts): the
+// LFO phase derives from the conductor's shared anchor, not from the engine's
+// own render history, so a device that joins mid-song ducks on the same
+// downbeats as everyone else. PUMP PAD (40) is the probe: its beat-synced saw
+// LFO fully ducks the amp, so the RMS minimum's position exposes the phase.
+static void testWt1HostedSyncedLfoAnchorLock() {
+    using namespace fable;
+    std::vector<TablePtr> tables;
+    for (auto& g : generateTables()) tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    const double kBeat = 24000.0; // 120 BPM @ 48 kHz
+    const double kAnchor = 256.0;
+    auto boot = [&](Engine& e) {
+        e.prepare(48000);
+        e.setTables(tables);
+        e.setParams(applyPreset(factoryPresets()[40])); // PUMP PAD
+        e.setHostClipMode(true);
+        e.hostTempo(120.0, 0.0, kAnchor);
+        e.noteOn(60, 1.0);
+    };
+    // Windowed RMS: one value per rendered 128-sample block.
+    auto profile = [](Engine& e, double startFrame, int blocks, std::vector<double>* out) {
+        float L[128], R[128];
+        double frame = startFrame;
+        for (int b = 0; b < blocks; ++b) {
+            e.hostSetFrame(frame);
+            e.render(L, R, 128);
+            frame += 128;
+            if (out) {
+                double s = 0;
+                for (int i = 0; i < 128; ++i) s += (double)L[i] * L[i] + (double)R[i] * R[i];
+                out->push_back(std::sqrt(s / 256.0));
+            }
+        }
+    };
+    const double compareStart = kAnchor + 16.0 * kBeat;
+    const int cmpBlocks = (int)(kBeat / 128.0); // one full duck cycle of windows
+    Engine a, b;
+    boot(a); boot(b);
+    std::vector<double> pa, pb;
+    profile(a, kAnchor, 3000, nullptr);                    // A: 16 beats of history
+    profile(a, compareStart, cmpBlocks, &pa);
+    profile(b, kAnchor + 8.0 * kBeat + 5120.0, 1460, nullptr); // B joins late, mid-beat
+    profile(b, compareStart, cmpBlocks, &pb);
+    double peak = 0;
+    for (double v : pa) peak = std::max(peak, v);
+    CHECK(peak > 1e-4);
+    // Same absolute frames -> the duck minimum lands in the same window. A
+    // free-running LFO puts B's minimum ~40 windows away.
+    const auto argmin = [](const std::vector<double>& v) {
+        size_t best = 0;
+        for (size_t i = 1; i < v.size(); ++i) if (v[i] < v[best]) best = i;
+        return (long)best;
+    };
+    const long da = argmin(pa), db = argmin(pb), span = (long)pa.size();
+    const long diff = std::labs(da - db);
+    CHECK(std::min(diff, span - diff) <= 2);
+}
+
 // docs/sq4-clips.md §6 rule 4: "the old clip's last gate-off and the new
 // clip's first trigger execute in the same block, old before new." Clip A
 // holds a note with a long step duration (seqToGateOff_ = duration * dur,
@@ -1362,7 +1420,7 @@ static void testSessionLibraryMusicality() {
     CHECK(library.size() == 24);
 
     // Register split: every generated pad sits strictly below every lead note.
-    for (size_t p = 1; p < library.size(); ++p) {
+    for (size_t p = 0; p < library.size(); ++p) {
         for (const auto& scene : library[p].session.scenes) {
             if (!scene.hasClip[2] || !scene.hasClip[3]) continue;
             const auto pitches = [](const ClipData& clip) {
@@ -1387,7 +1445,7 @@ static void testSessionLibraryMusicality() {
     for (const auto& preset : library)
         dropDrums.insert(preset.session.scenes[2].clips[0].bytes);
     CHECK(dropDrums.size() == library.size());
-    for (size_t p = 1; p < library.size(); ++p) {
+    for (size_t p = 0; p < library.size(); ++p) {
         const auto& scenes = library[p].session.scenes;
         CHECK(!scenes[4].hasClip[0]); // BREAK stays drumless
         std::set<std::vector<uint8_t>> perScene;
@@ -1404,6 +1462,7 @@ int main() {
     testClipHost();
     testHostEventLossless();
     testWt1Hosted();
+    testWt1HostedSyncedLfoAnchorLock();
     testWt1ClipSwapGatesOldNote();
     testWt1HostedIndependentChordDurations();
     testBl1Hosted();
