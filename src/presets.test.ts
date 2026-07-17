@@ -78,3 +78,20 @@ describe('resolvePresetMods', () => {
     }
   });
 });
+
+describe('mono leads', () => {
+  const MONO_LEADS = [
+    'ACID LINE', 'SCREECH LEAD', '8-BIT LEAD', 'GLIDE LEAD', 'MINI LEAD',
+    'FUNKY WORM', 'TAURUS PEDAL', 'FOG LIGHT', 'GLASS RIBBON', 'NORTH WIRE',
+    'TEMPLE BREATH',
+  ];
+
+  it('exactly the lead presets set master.mono', () => {
+    for (const p of FACTORY_PRESETS) {
+      expect(!!p.params['master.mono'], p.name).toBe(MONO_LEADS.includes(p.name));
+    }
+    // guard against a typo silently shrinking the list
+    const names = new Set(FACTORY_PRESETS.map((p) => p.name));
+    for (const n of MONO_LEADS) expect(names.has(n), n).toBe(true);
+  });
+});
