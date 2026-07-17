@@ -30,7 +30,12 @@ export function TopBar() {
           id="preset-select"
           aria-label="preset"
           value={presetValue}
-          onChange={(e) => loadPresetByValue(e.target.value)}
+          onChange={(e) => {
+            loadPresetByValue(e.target.value);
+            // Release focus so the computer keyboard plays notes instead of
+            // navigating the select (which swallows key events while focused).
+            e.currentTarget.blur();
+          }}
         >
           <optgroup label="FACTORY">
             {FACTORY_PRESETS.map((p, i) => (
