@@ -40,16 +40,18 @@ private:
 // editor scales it to the window so the layout stays pixel-faithful — same
 // scheme as the WT-1/DR-1/BL-1 racks.
 //
-// Two layouts share one anatomy (docs/.../sq4-device-focus-design.md §2):
-// session mode is header + heads + full scene grid + footer; focus mode is
-// header + heads (now a device tab strip, focused head lit) + a single-row
-// mini strip for the focused scene + the native device surface filling the
-// rest (the footer hides). The collapse between the two is eased over
-// ~180ms — see applyLayout() — the JUCE analogue of the web's animated
-// FLIP collapse.
+// Two layouts share one anatomy (docs/.../sq4-device-focus-design.md §2,
+// re-pitched 2026-07-18 to match the web's single-strip focus mode): session
+// mode is header + heads + full scene grid + footer; focus mode hides the
+// heads row and the full grid entirely, replacing them with one horizontal
+// strip (a "< SESSION" back chip + the 6 scene chips, reusing SceneGridView
+// in its singleRow_ mode) directly under the header, with the native device
+// surface filling the rest (the footer hides too). The collapse between the
+// two is eased over ~180ms — see applyLayout() — the JUCE analogue of the
+// web's animated FLIP collapse.
 class SeqRack : public juce::Component, private juce::Timer {
 public:
-    static constexpr int LW = 1460, LH = 764;
+    static constexpr int LW = 1460, LH = 744;
     explicit SeqRack(SeqAudioProcessor&);
     void resized() override;
 

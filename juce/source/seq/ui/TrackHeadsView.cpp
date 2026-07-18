@@ -85,10 +85,7 @@ float TrackHeadsView::volValue(int t) const {
 
 void TrackHeadsView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
-    if (sceneCard.contains(pos)) {
-        if (focusMode_ && onExitFocus) onExitFocus();
-        return;
-    }
+    if (sceneCard.contains(pos)) return; // scene card is a static label, no longer a back button
     for (int t = 0; t < 4; ++t) {
         if (muteBtn[t].contains(pos))       { muteClick(t); return; }
         if (soloBtn[t].contains(pos))       { soloClick(t); return; }
@@ -203,24 +200,15 @@ void TrackHeadsView::paintScenesCard(juce::Graphics& g) {
 
     auto r = sceneCard.reduced(12, 8);
     auto titleArea = r.removeFromTop(14);
-    if (focusMode_) {
-        g.setColour(juce::Colour(0xffcfd6e4));
-        g.setFont(dispFont(10.0f));
-        drawSpaced(g, "< SESSION", titleArea, 2.4f);
-        g.setColour(col::textHint);
-        g.setFont(monoFont(7.0f));
-        drawSpaced(g, "ESC - 1-4 SWITCH DEVICE", r.removeFromTop(10), 1.6f);
-    } else {
-        g.setColour(col::text);
-        g.setFont(dispFont(10.0f));
-        drawSpaced(g, "SCENES", titleArea, 2.4f);
-        g.setColour(col::textHint);
-        g.setFont(monoFont(7.0f));
-        const int scenes = (int)proc.conductor().session().scenes.size();
-        const int tracks = (int)proc.conductor().session().tracks.size();
-        drawSpaced(g, juce::String(scenes) + " SCENES - " + juce::String(tracks) + " TRACKS",
-                   r.removeFromTop(10), 1.6f);
-    }
+    g.setColour(col::text);
+    g.setFont(dispFont(10.0f));
+    drawSpaced(g, "SCENES", titleArea, 2.4f);
+    g.setColour(col::textHint);
+    g.setFont(monoFont(7.0f));
+    const int scenes = (int)proc.conductor().session().scenes.size();
+    const int tracks = (int)proc.conductor().session().tracks.size();
+    drawSpaced(g, juce::String(scenes) + " SCENES - " + juce::String(tracks) + " TRACKS",
+               r.removeFromTop(10), 1.6f);
 }
 
 void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
@@ -233,14 +221,8 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
                                            col::panelLo, rf.getX(), rf.getBottom(), false));
     g.fillRoundedRectangle(rf, 10.0f);
-    // Focus mode: the focused head is lit in its track color (tab-strip cue).
-    const bool focused = focusMode_ && t == focusedTrack_;
-    g.setColour(focused ? tc.withAlpha(0.9f) : col::line);
-    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, focused ? 1.6f : 1.0f);
-    if (focused) {
-        g.setColour(tc.withAlpha(0.85f));
-        g.fillRoundedRectangle(rf.removeFromBottom(2.5f).reduced(10.0f, 0.0f), 1.2f);
-    }
+    g.setColour(col::line);
+    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, 1.0f);
 
     // LED
     const bool audible = proc.conductor().ownerOf(t) != -2;
@@ -250,9 +232,9 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
 
     // name row: name + (hover) edit glyph + machine chip
     auto nr = nameRow[t];
-    // A hovered, non-focused head lights a faint track-tinted background and an
-    // edit (✎) glyph so it's clear the whole head opens the device editor.
-    const bool hovered = hoverTrack_ == t && !focused;
+    // A hovered head lights a faint track-tinted background and an edit (✎)
+    // glyph so it's clear the whole head opens the device editor.
+    const bool hovered = hoverTrack_ == t;
     if (hovered) {
         g.setColour(tc.withAlpha(0.10f));
         g.fillRoundedRectangle(nameRow[t].toFloat().expanded(3.0f, 2.0f), 6.0f);

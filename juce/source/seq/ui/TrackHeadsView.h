@@ -45,13 +45,12 @@ public:
     void headClick(int t);
     void patchStep(int t, int d);
 
-    // Task 13 wires these: headClick(t) calls onFocusTrack(t) if set; the
-    // scenes card becomes a "< SESSION" back button that calls onExitFocus().
+    // headClick(t) calls onFocusTrack(t) if set (SeqEditor wires it to
+    // enterFocus). The heads row is hidden entirely in focus mode (SeqRack::
+    // enterFocus/exitFocus), so there is no focused-track glow or back-button
+    // state here any more -- the back affordance lives in SceneGridView's
+    // focus strip now.
     std::function<void(int)> onFocusTrack;
-    std::function<void()> onExitFocus;
-    void setFocusMode(bool f) { focusMode_ = f; repaint(); }
-    // Focus mode: the focused head glows in its track color (tab-strip role).
-    void setFocusedTrack(int t) { focusedTrack_ = t; repaint(); }
 
 private:
     void timerCallback() override { repaint(); }
@@ -69,8 +68,6 @@ private:
     juce::Rectangle<int> trackHead[4], led[4], nameRow[4], patchPrev[4], patchNext[4],
         muteBtn[4], soloBtn[4], volKnob[4];
 
-    bool focusMode_ = false;
-    int focusedTrack_ = -1;
     int hoverTrack_ = -1;   // name row hovered -> show the edit (✎) affordance
 
     enum class Drag { None, Vol };

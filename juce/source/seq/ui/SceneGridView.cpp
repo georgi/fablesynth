@@ -298,8 +298,8 @@ void SceneGridView::cancelActiveDrag() {
 }
 
 int SceneGridView::cellAt(juce::Point<int> pos, int& outT) const {
+    if (singleRow_) { outT = -1; return -1; } // focus strip has no clip cells
     for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
         for (int t = 0; t < kTracks; ++t)
             if (cellR[s][t].contains(pos)) { outT = t; return s; }
     }
@@ -338,14 +338,19 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
     const bool right = e.mods.isPopupMenu();
 
     if (singleRow_) {
-        for (int s = 0; s < kScenes; ++s)
-            if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
+        // Focus strip: only the back chip and the 6 scene chips are live --
+        // no scene card, no clip cells.
+        if (!right) {
+            if (backChipR.contains(pos)) { if (onExitFocus) onExitFocus(); return; }
+            for (int s = 0; s < kScenes; ++s)
+                if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
+        }
+        return;
     }
 
     const auto& scenes = proc.conductor().session().scenes;
 
     for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
         if (launchBtn[s].contains(pos)) { sceneLaunch(s); return; }
         if (muteBtnR[s].contains(pos))  { sceneMute(s); return; }
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
@@ -430,20 +435,13 @@ void SceneGridView::mouseExit(const juce::MouseEvent&) { hoverCell(-1, -1); }
 // ---- layout ------------------------------------------------------------------
 
 void SceneGridView::resized() {
-    for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
-        layoutRow(s);
-    }
-    if (singleRow_) layoutRail();
+    if (singleRow_) { layoutFocusStrip(); return; }
+    for (int s = 0; s < kScenes; ++s) layoutRow(s);
 }
 
 void SceneGridView::layoutRow(int s) {
-    const int y = singleRow_ ? 0 : s * 82;
-    const int rowX = singleRow_ ? 73 : 0;
-    const int sceneWidth = singleRow_ ? 200 : 218;
-    const int cellWidth = singleRow_
-        ? juce::jmax(1, (getWidth() - rowX - sceneWidth - 4 * 9) / kTracks)
-        : 292;
+    const int y = s * 82;
+    constexpr int rowX = 0, sceneWidth = 218, cellWidth = 292;
     sceneCardR[s] = { rowX, y, sceneWidth, 73 };
     for (int t = 0; t < kTracks; ++t)
         cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 73 };
@@ -467,28 +465,27 @@ void SceneGridView::layoutRow(int s) {
     }
 }
 
-void SceneGridView::layoutRail() {
-    railArea = { 0, 0, 64, 73 };
-    constexpr int chipWidth = 28, chipHeight = 21, gap = 3;
-    const int top = (railArea.getHeight() - (3 * chipHeight + 2 * gap)) / 2;
-    for (int s = 0; s < kScenes; ++s) {
-        const int column = s % 2;
-        const int row = s / 2;
-        railChip[s] = { railArea.getX() + column * (chipWidth + gap),
-                        railArea.getY() + top + row * (chipHeight + gap),
-                        chipWidth, chipHeight };
-    }
+// Focus strip: a "< SESSION" back chip (fixed width) followed by the 6 scene
+// chips sharing whatever width remains, laid out horizontally across the
+// full rack width (web parity: .sq-strip / .sq-strip-back / .sq-rail).
+void SceneGridView::layoutFocusStrip() {
+    constexpr int h = 30, backW = 110, gap = 8, chipGap = 6;
+    backChipR = { 0, 0, backW, h };
+    const int railX = backW + gap;
+    const int railW = juce::jmax(1, getWidth() - railX);
+    const int chipW = juce::jmax(1, (railW - (kScenes - 1) * chipGap) / kScenes);
+    for (int s = 0; s < kScenes; ++s)
+        railChip[s] = { railX + s * (chipW + chipGap), 0, chipW, h };
 }
 
 // ---- paint -------------------------------------------------------------------
 
 void SceneGridView::paint(juce::Graphics& g) {
+    if (singleRow_) { paintFocusStrip(g); return; }
     for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
         paintSceneCard(g, s);
         for (int t = 0; t < kTracks; ++t) paintCell(g, s, t);
     }
-    if (singleRow_) paintRail(g);
 }
 
 void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
@@ -799,6 +796,22 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         g.setFont(monoFont(6.5f));
         drawSpaced(g, "MUTED", { full.getRight() - 60, full.getY() + 5, 40, 10 }, 1.4f, juce::Justification::right);
     }
+}
+
+void SceneGridView::paintFocusStrip(juce::Graphics& g) {
+    // Back chip: relocated from TrackHeadsView's SCENES card now that the
+    // heads row is hidden entirely in focus (web parity: .sq-strip-back).
+    auto rf = backChipR.toFloat();
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff141824), rf.getX(), rf.getY(),
+                                           juce::Colour(0xff0c0f16), rf.getX(), rf.getBottom(), false));
+    g.fillRoundedRectangle(rf, 8.0f);
+    g.setColour(col::line);
+    g.drawRoundedRectangle(rf.reduced(0.5f), 8.0f, 1.0f);
+    g.setColour(juce::Colour(0xffcfd6e4));
+    g.setFont(dispFont(9.0f));
+    drawSpaced(g, "< SESSION", backChipR, 1.8f, juce::Justification::centred);
+
+    paintRail(g);
 }
 
 void SceneGridView::paintRail(juce::Graphics& g) {

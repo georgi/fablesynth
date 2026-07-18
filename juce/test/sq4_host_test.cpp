@@ -388,12 +388,13 @@ int main(int argc, char** argv) {
     // ---- 8. Editor: correct logical size, paints without crashing, snapshot PNG. ----
     auto* ed = p.createEditor();
     check(ed != nullptr, "createEditor returns non-null");
-    ed->setSize(SeqRack::LW, SeqRack::LH); // 1460 x 764 (re-pitched session rack)
+    ed->setSize(SeqRack::LW, SeqRack::LH); // 1460 x 744 (re-pitched session rack, tighter header)
     juce::Image img(juce::Image::ARGB, SeqRack::LW, SeqRack::LH, true);
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
-    check(img.getPixelAt(4, 760).getAlpha() == 255, "editor background pixel opaque",
-          img.getPixelAt(4, 760).getAlpha());
+    // (4, 740): just inside the re-pitched 744-tall rack, below the footer.
+    check(img.getPixelAt(4, 740).getAlpha() == 255, "editor background pixel opaque",
+          img.getPixelAt(4, 740).getAlpha());
 
     // ---- 9. Header interactions drive the conductor. ----
     std::printf("\n== header ==\n");

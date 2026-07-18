@@ -209,17 +209,21 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 // origin (18,14)). Flow order left-to-right: logo, play, library/session
 // select, quant, clock, [gap], scope, LOAD/SAVE (JUCE-only, parked in the
 // web's narrow help-icon slot), master knobs.
+// Re-pitched for the VST's tighter 66px header (2026-07-18): the right-side
+// elements (scope, LOAD/SAVE, master knobs) never needed the web's 86px --
+// shrunk to fit, and every group re-centered vertically for 66. x positions
+// are unchanged from the web-derived table (only y/height move).
 void SeqHeader::resized() {
-    logoArea = { 17, 31, 185, 25 };
+    logoArea = { 17, 20, 185, 25 };
 
-    playBtn = { 216, 27, 44, 32 };
+    playBtn = { 216, 17, 44, 32 };
 
-    auto libGroup = juce::Rectangle<int>(274, 25, 208, 37);
+    auto libGroup = juce::Rectangle<int>(274, 15, 208, 37);
     libraryLabelArea = libGroup.removeFromLeft(54);
     libGroup.removeFromLeft(6);
     library_.setBounds(libGroup);
 
-    auto quantGroup = juce::Rectangle<int>(496, 33, 139, 21);
+    auto quantGroup = juce::Rectangle<int>(496, 22, 139, 21);
     quantTagArea = quantGroup.removeFromLeft(40).withSizeKeepingCentre(40, 16);
     quantGroup.removeFromLeft(4);
     quantPrevBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
@@ -228,23 +232,23 @@ void SeqHeader::resized() {
     quantGroup.removeFromLeft(4);
     quantNextBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
 
-    auto clockArea = juce::Rectangle<int>(649, 32, 112, 23);
-    beatsArea = clockArea.removeFromTop(8); // beat-dot row, web parity (667,46,47,8)
+    auto clockArea = juce::Rectangle<int>(649, 21, 112, 23);
+    beatsArea = clockArea.removeFromTop(8); // beat-dot row
     clockLineArea = clockArea;
 
-    scopeArea = { 1073, 23, 190, 40 };
+    scopeArea = { 1073, 16, 190, 34 };
 
-    // LOAD/SAVE (JUCE-only surface, no web equivalent): stacked to fit the
-    // web's narrow (1295,44,26,26) help-icon gap between the scope and the
-    // master knobs.
-    auto helpSlot = juce::Rectangle<int>(1266, 23, 48, 40);
-    loadBtn = helpSlot.removeFromTop(18);
+    // LOAD/SAVE (JUCE-only surface, no web equivalent): a compact stacked
+    // pair matching the scope's new 34px height.
+    auto helpSlot = juce::Rectangle<int>(1266, 16, 48, 34);
+    loadBtn = helpSlot.removeFromTop(15);
     helpSlot.removeFromTop(4);
     saveBtn = helpSlot;
 
-    auto knobsArea = juce::Rectangle<int>(1317, 8, 90, 70);
-    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 70);
-    volKnob = knobsArea.withSizeKeepingCentre(44, 70);
+    // Master knobs: 34px circles (paintKnob) + a 10px label, centered in 66.
+    auto knobsArea = juce::Rectangle<int>(1317, 10, 90, 46);
+    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 46);
+    volKnob = knobsArea.withSizeKeepingCentre(44, 46);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -393,7 +397,7 @@ void SeqHeader::paintScope(juce::Graphics& g) {
 }
 
 void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce::String& label, float v) {
-    const float d = 44.0f;
+    const float d = 34.0f;
     auto circle = juce::Rectangle<float>(0, 0, d, d).withCentre(
         juce::Point<float>((float)r.getCentreX(), (float)r.getY() + d * 0.5f));
 

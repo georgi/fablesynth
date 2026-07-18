@@ -49,11 +49,16 @@ public:
     bool cellAudible(int s, int t) const;
     bool cellStopping(int s, int t) const;
 
-    // Focus mini-strip: render only scene s's row, with a compact 2x3 rail of
-    // numbered scene chips immediately to its left.
+    // Focus strip: the scene card + clip cells disappear entirely (the heads
+    // row is hidden too -- SeqRack::enterFocus); this component instead
+    // renders one horizontal strip: a "< SESSION" back chip followed by the
+    // 6 scene chips, spanning the full rack width.
     void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
     void clearSingleRow() { singleRow_ = false; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
     std::function<void(int)> onRailScene;
+    // Back chip's click target -- relocated from TrackHeadsView's SCENES
+    // card now that the heads row is invisible in focus.
+    std::function<void()> onExitFocus;
 
     // ---- selection rectangle (editing-concept decision 4) -------------------
     // Anchor/head cell pair; plain click launches AND anchors, Cmd-click
@@ -103,12 +108,13 @@ private:
     bool isPassThrough(int s, int t) const;
 
     void layoutRow(int s);
-    void layoutRail();
+    void layoutFocusStrip();
 
     void paintSceneCard(juce::Graphics&, int s);
     void paintCell(juce::Graphics&, int s, int t);
     void paintEmptyCell(juce::Graphics&, int s, int t);
     void paintFilledCell(juce::Graphics&, int s, int t);
+    void paintFocusStrip(juce::Graphics&);
     void paintRail(juce::Graphics&);
 
     // Block geometry shared by the drop verb and the drag-highlight paint:
@@ -156,8 +162,8 @@ private:
         idArea[kScenes], dotsArea[kScenes];
     // clip-cell regions
     juce::Rectangle<int> cellR[kScenes][kTracks], editGlyph[kScenes][kTracks], trashGlyph[kScenes][kTracks];
-    // rail (single-row mode)
-    juce::Rectangle<int> railArea, railChip[kScenes];
+    // focus strip (singleRow_ mode): back chip + the 6 scene chips
+    juce::Rectangle<int> backChipR, railChip[kScenes];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SceneGridView)
 };

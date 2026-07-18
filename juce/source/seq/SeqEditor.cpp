@@ -1,27 +1,27 @@
 #include "SeqEditor.h"
 #include "../ui/Controls.h"
 
-// Web layout, re-measured 2026-07-18 from the running SQ-4 app at its current
-// 1460px-wide / 764px-tall rack (src/seq/seq.css, #seq-rack; the anatomy is
-// unchanged since the Task 9 port, but the web rack has since compacted --
-// see .superpowers/sdd/typography-calibration.md for the live-DOM numbers):
-//   rack              1460 x 764
-//   header            (18,  14) 1424 x 86
-//   track heads       (18, 109) 1424 x 60
-//   scene grid        (18, 178) 1424 x 491   (6 rows, 73 tall, 82 step)
-//   footer            (18, 669) 1424 x 65
-//   hint line          18, 742
-// The web fits its footer at y=656 because two of its content-auto rows are
-// only 66px; JUCE's uniform 73px rows run to 178+5*82+73=661, so the footer
-// (and hint) shift down 13px from the web's raw numbers to clear row 6.
+// Layout, re-pitched 2026-07-18 for the VST's tighter header (the web-derived
+// 86px header never needed that much for the scope/LOAD-SAVE/knobs on the
+// right, so it's now 66px; the whole session rack shifts up 20px to match):
+//   rack              1460 x 744
+//   header            (18,  14) 1424 x 66
+//   track heads       (18,  89) 1424 x 60
+//   scene grid        (18, 158) 1424 x 491   (6 rows, 73 tall, 82 step)
+//   footer            (18, 649) 1424 x 65
+//   hint line          18, 722
+// JUCE's uniform 73px scene rows run to 158+5*82+73=641; the footer sits 8px
+// below that to clear row 6.
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
-// Focus mode reuses header + heads unchanged, collapses the scene grid to a
-// single-row mini strip (73 tall, with the scene rail on its left), and drops the
-// selected native device body into the freed space down to the footer slot,
-// which hides. The collapse is eased over ~180ms — see SeqRack::applyLayout()
-// (spec §2).
+// Focus mode hides the heads row entirely and collapses the scene grid down
+// to a single horizontal strip (30 tall) sitting where the heads used to be
+// (y=89): a "< SESSION" back chip + the 6 scene chips (SceneGridView's
+// singleRow_ mode -- see SceneGridView::paintFocusStrip). The native device
+// body fills the freed space below down to the footer slot, which hides.
+// Both the grid's y and height animate over ~180ms between the session and
+// focus geometries — see SeqRack::applyLayout().
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
@@ -37,8 +37,7 @@ SeqRack::SeqRack(SeqAudioProcessor& p)
 void SeqRack::enterFocus(int track, int scene) {
     focusMode_ = true;
     focusTrack_ = track;
-    trackHeads.setFocusMode(true);
-    trackHeads.setFocusedTrack(track);
+    trackHeads.setVisible(false); // heads + mini clip row disappear entirely in focus
     sceneGrid.setSingleRow(scene);
     deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
@@ -51,8 +50,7 @@ void SeqRack::enterFocus(int track, int scene) {
 void SeqRack::exitFocus() {
     focusMode_ = false;
     focusTrack_ = -1;
-    trackHeads.setFocusMode(false);
-    trackHeads.setFocusedTrack(-1);
+    trackHeads.setVisible(true);
     sceneGrid.clearSingleRow();
     deviceFocus.setTarget(-1, -1);
     footer.setVisible(true);
@@ -72,29 +70,30 @@ void SeqRack::setFocusScene(int scene) {
 void SeqRack::resized() { applyLayout(); }
 
 // Eased focus collapse — the JUCE analogue of the web's FLIP animation
-// (seq.css sq-focus-in): the grid shrinks 630→96 while the device surface
-// grows into the freed space. ~180ms at 30Hz; headless (never showing)
-// snaps instantly so the host tests see final geometry synchronously.
+// (seq.css sq-focus-in): the scene grid slides from the full session table
+// up to the 30px focus strip (where the heads row used to sit) while the
+// device surface grows into the freed space. ~180ms at 30Hz; headless (never
+// showing) snaps instantly so the host tests see final geometry
+// synchronously.
 void SeqRack::applyLayout() {
     const float t = focusT_ * focusT_ * (3.0f - 2.0f * focusT_); // smoothstep
-    header.setBounds(18, 14, 1424, 86);
-    trackHeads.setBounds(18, 109, 1424, 60);
-    constexpr int gridY = 178, sessionGridH = 491, focusGridH = 73; // 491 = footerY(669) - gridY
-    const int gridH = juce::roundToInt(sessionGridH + (focusGridH - sessionGridH) * t);
+    header.setBounds(18, 14, 1424, 66);
+    trackHeads.setBounds(18, 89, 1424, 60); // hidden (setVisible(false)) in focus
+    constexpr int sessionGridY = 158, sessionGridH = 491; // 491 = footerY(649) - sessionGridY
+    constexpr int focusStripY = 89, focusStripH = 30;
+    const int gridY = juce::roundToInt(sessionGridY + (focusStripY - sessionGridY) * t);
+    const int gridH = juce::roundToInt(sessionGridH + (focusStripH - sessionGridH) * t);
     sceneGrid.setBounds(18, gridY, 1424, gridH);
     const int devY = gridY + gridH + 8;
     // Hint stays fixed at its session y in both modes (calibration note:
     // "keep fixed -- simplest correct wins"); the device surface grows into
-    // the freed space as the grid collapses, down to 8px above it. Both the
-    // footer and hint sit 13px below their raw web numbers (656/733) so the
-    // footer clears row 6 of JUCE's uniform 73px-tall scene rows (see the
-    // file header comment).
-    constexpr int hintY = 742, hintH = 14;
+    // the freed space as the grid collapses, down to 8px above it.
+    constexpr int hintY = 722, hintH = 14;
     deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching on focusMode_.
-    footer.setBounds(18, 669, 1424, 65);
+    footer.setBounds(18, 649, 1424, 65);
     hint.setBounds(18, hintY, 1424, hintH);
 }
 
@@ -113,22 +112,23 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
     addAndMakeVisible(rack);
     rack.setBounds(0, 0, SeqRack::LW, SeqRack::LH);
 
-    // Focus wiring: a head click focuses that device, the scenes-card back
-    // button exits, the cell ✎ opens exactly that clip, and the mini-strip
-    // rail jumps scenes (docs/.../sq4-device-focus-design.md §2-§3).
+    // Focus wiring: a head click focuses that device (session mode only --
+    // heads are hidden in focus), the focus strip's back chip exits, the
+    // cell ✎ opens exactly that clip, and the focus strip's scene chips jump
+    // scenes (docs/.../sq4-device-focus-design.md §2-§3, re-pitched
+    // 2026-07-18 for the single-strip focus layout).
     heads().onFocusTrack = [this](int t) { enterFocus(t); };
-    heads().onExitFocus  = [this]() { exitFocus(); };
+    grid().onExitFocus   = [this]() { exitFocus(); };
     grid().onEditClip    = [this](int s, int t) { enterFocus(t, s); };
     grid().onRailScene   = [this](int s) { focusScene(s); };
     header().onLibrarySessionChanged = [this] { deviceFocus().reloadPatchesFromSession(); };
 
-    // Hint copy mirrors SeqApp.tsx's two .sq-hint strings; ✎ has no glyph
-    // coverage, so the word EDIT stands in.
+    // Hint copy mirrors SeqApp.tsx's two .sq-hint strings.
     rack.getHint().setProvider([this]() -> juce::String {
         const auto dot = juce::String::fromUTF8(" \xc2\xb7 ");
         if (focusTrack_ >= 0)
-            return "MINI STRIP STAYS LIVE - TAP CELLS TO LAUNCH" + dot
-                 + "EDIT RETARGETS THE EDITOR" + dot + "ESC BACK TO SESSION";
+            return "SCENE CHIPS RETARGET THE EDITOR" + dot
+                 + "1-4 SWITCH DEVICE" + dot + "ESC BACK TO SESSION";
         return "TAP CLIP TO LAUNCH" + dot + "TAP AGAIN TO STOP" + dot
              + "LAUNCHES QUANTIZE TO " + header().quantLabel() + dot
              + "CMD-CLICK SELECTS" + dot + "DRAG MOVES (ALT COPIES)" + dot
