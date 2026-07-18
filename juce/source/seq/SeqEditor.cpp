@@ -8,9 +8,12 @@
 //   rack              1460 x 764
 //   header            (18,  14) 1424 x 86
 //   track heads       (18, 109) 1424 x 60
-//   scene grid        (18, 178) 1424 x 478   (6 rows, 73 tall, 82 step)
-//   footer            (18, 656) 1424 x 65
-//   hint line          18, 733
+//   scene grid        (18, 178) 1424 x 491   (6 rows, 73 tall, 82 step)
+//   footer            (18, 669) 1424 x 65
+//   hint line          18, 742
+// The web fits its footer at y=656 because two of its content-auto rows are
+// only 66px; JUCE's uniform 73px rows run to 178+5*82+73=661, so the footer
+// (and hint) shift down 13px from the web's raw numbers to clear row 6.
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
@@ -76,19 +79,22 @@ void SeqRack::applyLayout() {
     const float t = focusT_ * focusT_ * (3.0f - 2.0f * focusT_); // smoothstep
     header.setBounds(18, 14, 1424, 86);
     trackHeads.setBounds(18, 109, 1424, 60);
-    constexpr int gridY = 178, sessionGridH = 478, focusGridH = 73; // 478 = footerY(656) - gridY
+    constexpr int gridY = 178, sessionGridH = 491, focusGridH = 73; // 491 = footerY(669) - gridY
     const int gridH = juce::roundToInt(sessionGridH + (focusGridH - sessionGridH) * t);
     sceneGrid.setBounds(18, gridY, 1424, gridH);
     const int devY = gridY + gridH + 8;
     // Hint stays fixed at its session y in both modes (calibration note:
-    // "keep fixed at 733 -- simplest correct wins"); the device surface
-    // grows into the freed space as the grid collapses, down to 8px above it.
-    constexpr int hintY = 733, hintH = 14;
+    // "keep fixed -- simplest correct wins"); the device surface grows into
+    // the freed space as the grid collapses, down to 8px above it. Both the
+    // footer and hint sit 13px below their raw web numbers (656/733) so the
+    // footer clears row 6 of JUCE's uniform 73px-tall scene rows (see the
+    // file header comment).
+    constexpr int hintY = 742, hintH = 14;
     deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching on focusMode_.
-    footer.setBounds(18, 656, 1424, 65);
+    footer.setBounds(18, 669, 1424, 65);
     hint.setBounds(18, hintY, 1424, hintH);
 }
 

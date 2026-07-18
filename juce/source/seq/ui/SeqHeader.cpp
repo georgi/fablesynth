@@ -252,13 +252,27 @@ void SeqHeader::resized() {
 void SeqHeader::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
-    // logo: FABLE (white) SEQ (amber) SQ-4 (dim tag) -- web .sq-logo
+    // logo: FABLE (white) SEQ (amber) SQ-4 (dim tag) -- web .sq-logo. FABLE+SEQ
+    // read as one continuous word (no gap between them), so the SEQ segment's
+    // x must be measured off FABLE's actual rendered width, not a hardcoded
+    // guess -- withPointHeight (commit 428bbce) sizes the embedded Michroma
+    // by em, which is wider per-point than the old withHeight, and a stale
+    // fixed 60px/46px split let the segments overlap.
     auto lb = logoArea;
-    g.setFont(dispFont(15.0f));
+    const auto logoFont = dispFont(15.0f);
+    g.setFont(logoFont);
+    auto spacedWidth = [&](const juce::String& s, float tracking) {
+        float total = 0;
+        for (int i = 0; i < s.length(); ++i)
+            total += juce::GlyphArrangement::getStringWidth(logoFont, s.substring(i, i + 1)) + tracking;
+        return total - tracking;
+    };
+    const int fableW = (int)std::ceil(spacedWidth("FABLE", 1.2f));
+    const int seqW = (int)std::ceil(spacedWidth("SEQ", 1.2f));
     g.setColour(col::text);
-    drawSpaced(g, "FABLE", lb.removeFromLeft(60), 1.2f);
+    drawSpaced(g, "FABLE", lb.removeFromLeft(fableW), 1.2f);
     g.setColour(col::acB);
-    drawSpaced(g, "SEQ", lb.removeFromLeft(46), 1.2f);
+    drawSpaced(g, "SEQ", lb.removeFromLeft(seqW), 1.2f);
     lb.removeFromLeft(10);
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
