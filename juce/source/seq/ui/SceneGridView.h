@@ -37,6 +37,13 @@ public:
     void sceneLaunch(int s);
     void sceneMute(int s);
     void sceneStop(int s);
+    // Focus-strip trigger zone (railTrigger[s]) test handle -- mirrors
+    // cellClick/sceneLaunch: mouseDown's singleRow_ branch routes here too.
+    // Launches the scene (quantized) without retargeting focus.
+    void railTriggerClick(int s) { sceneLaunch(s); }
+    // Geometry test hooks for the focus-strip trigger/retarget rects.
+    juce::Rectangle<int> railTriggerR(int s) const { return railTrigger[s]; }
+    juce::Rectangle<int> railChipR(int s) const { return railChip[s]; }
     // Sets hover state exactly as mouseMove would; (-1,-1) clears. Public so
     // headless tests can drive the hover-revealed chips/affordance below.
     void hoverCell(int s, int t);
@@ -162,8 +169,10 @@ private:
         idArea[kScenes], dotsArea[kScenes];
     // clip-cell regions
     juce::Rectangle<int> cellR[kScenes][kTracks], editGlyph[kScenes][kTracks], trashGlyph[kScenes][kTracks];
-    // focus strip (singleRow_ mode): back chip + the 6 scene chips
-    juce::Rectangle<int> backChipR, railChip[kScenes];
+    // focus strip (singleRow_ mode): back chip + the 6 scene chips, each with
+    // a leading trigger zone (railTrigger[s]) ahead of the retarget chip body
+    // (railChip[s]) -- web parity with .sq-rail-launch / .sq-rail-target.
+    juce::Rectangle<int> backChipR, railChip[kScenes], railTrigger[kScenes];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SceneGridView)
 };

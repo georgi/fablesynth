@@ -674,6 +674,30 @@ int main(int argc, char** argv) {
     focusView.clipSourceForTest().setSelectedId(2, juce::sendNotificationSync);
     check(ed2->focus() == std::make_pair(1, 2), "switching heads keeps the scene");
 
+    // Focus strip trigger zones (railTrigger[s]): geometry contract -- each
+    // sits ahead of its retarget chip (railChip[s]) and stays inside the
+    // strip -- then a routed click (railTriggerClick, the same handle
+    // mouseDown's singleRow_ branch calls) launches without retargeting.
+    bool railTriggersNonEmpty = true, railTriggersAheadOfChips = true;
+    for (int s = 0; s < 6; ++s) {
+        if (grid.railTriggerR(s).getWidth() <= 0 || grid.railTriggerR(s).getHeight() <= 0)
+            railTriggersNonEmpty = false;
+        if (grid.railTriggerR(s).getRight() > grid.railChipR(s).getX())
+            railTriggersAheadOfChips = false;
+    }
+    check(railTriggersNonEmpty, "every railTrigger(s) has non-empty geometry");
+    check(railTriggersAheadOfChips, "every railTrigger(s) sits ahead of its retarget chip");
+    grid.railTriggerClick(3);                      // DROP B, does not retarget focus
+    check(p.conductor().queueOf(0) == 3 && p.conductor().queueOf(3) == 3,
+          "railTriggerClick(3) queues every track of scene 3 (sceneLaunch semantics)");
+    check(ed2->focus() == std::make_pair(1, 2),
+          "railTriggerClick does not retarget the focused scene/track");
+    renderRms(p, buf, 800); p.drainAcks();
+    footer.stopAllClick();
+    renderRms(p, buf, 1200); p.drainAcks();
+    check(p.conductor().ownerOf(0) == -2, "stopAllClick clears the rail-trigger launch",
+          p.conductor().ownerOf(0));
+
     check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::bass,
           "head switch replaces DR-1 with the native BL-1 body");
     const int bassProgram = focusView.bassModelForTest().currentProgram();

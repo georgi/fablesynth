@@ -342,8 +342,10 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         // no scene card, no clip cells.
         if (!right) {
             if (backChipR.contains(pos)) { if (onExitFocus) onExitFocus(); return; }
-            for (int s = 0; s < kScenes; ++s)
+            for (int s = 0; s < kScenes; ++s) {
+                if (railTrigger[s].contains(pos)) { railTriggerClick(s); return; }
                 if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
+            }
         }
         return;
     }
@@ -470,12 +472,17 @@ void SceneGridView::layoutRow(int s) {
 // full rack width (web parity: .sq-strip / .sq-strip-back / .sq-rail).
 void SceneGridView::layoutFocusStrip() {
     constexpr int h = 30, backW = 110, gap = 8, chipGap = 6;
+    constexpr int triggerW = 22, triggerGap = 4;
     backChipR = { 0, 0, backW, h };
     const int railX = backW + gap;
     const int railW = juce::jmax(1, getWidth() - railX);
     const int chipW = juce::jmax(1, (railW - (kScenes - 1) * chipGap) / kScenes);
-    for (int s = 0; s < kScenes; ++s)
-        railChip[s] = { railX + s * (chipW + chipGap), 0, chipW, h };
+    for (int s = 0; s < kScenes; ++s) {
+        const int chipX = railX + s * (chipW + chipGap);
+        railTrigger[s] = { chipX, 0, triggerW, h };
+        railChip[s] = { chipX + triggerW + triggerGap, 0,
+                         juce::jmax(1, chipW - triggerW - triggerGap), h };
+    }
 }
 
 // ---- paint -------------------------------------------------------------------
@@ -819,8 +826,11 @@ void SceneGridView::paintRail(juce::Graphics& g) {
     for (int s = 0; s < kScenes; ++s) {
         auto r = railChip[s].toFloat();
         const bool current = s == singleRowScene_;
-        bool live = false;
-        for (int t = 0; t < kTracks; ++t) if (cond.ownerOf(t) == s) live = true;
+        bool live = false, queued = false;
+        for (int t = 0; t < kTracks; ++t) {
+            if (cond.ownerOf(t) == s) live = true;
+            if (cond.queueOf(t) == s) queued = true;
+        }
 
         g.setColour(current ? juce::Colour(0xff11141c) : juce::Colour(0xff0a0d13));
         g.fillRoundedRectangle(r, 4.0f);
@@ -833,6 +843,16 @@ void SceneGridView::paintRail(juce::Graphics& g) {
             g.setColour(juce::Colour(0xff4dff9e));
             g.fillEllipse(juce::Rectangle<float>(4, 4).withCentre({ r.getRight() - 5.0f, r.getY() + 5.0f }));
         }
+
+        // Trigger zone: a small filled play glyph, same colour logic as
+        // paintSceneCard's launch button (web parity: .sq-rail-launch).
+        auto tr = railTrigger[s].toFloat();
+        g.setColour(live ? juce::Colour(0xff0e3120) : juce::Colour(0xff121826));
+        g.fillRoundedRectangle(tr, 5.0f);
+        g.setColour(live ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colour(0xff232b3d));
+        g.drawRoundedRectangle(tr.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(queued ? col::text.withAlpha(qpulse()) : live ? juce::Colour(0xff4dff9e) : col::acN);
+        g.fillPath(iconPlay(tr.withSizeKeepingCentre(6.0f, 8.0f)));
     }
 }
 
