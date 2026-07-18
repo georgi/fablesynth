@@ -230,7 +230,7 @@ const std::vector<Preset>& factoryPresets() {
             {"oscA.table", 1}, {"oscA.pos", 0.2f}, {"oscA.unison", 4}, {"oscA.detune", 0.3f}, {"oscA.spread", 0.9f}, {"oscA.level", 0.7f},
             {"oscB.on", 1}, {"oscB.table", 3}, {"oscB.pos", 0.5f}, {"oscB.oct", -1}, {"oscB.unison", 2}, {"oscB.detune", 0.2f}, {"oscB.level", 0.45f},
             {"sub.on", 1}, {"sub.level", 0.35f}, {"sub.oct", -2},
-            {"filter.type", 1}, {"filter.cutoff", 900}, {"filter.res", 0.15f},
+            {"filter.type", 1}, {"filter.cutoff", 300}, {"filter.res", 0.15f},
             {"env1.a", 2.5f}, {"env1.d", 3}, {"env1.s", 0.7f}, {"env1.r", 4},
             {"lfo1.shape", 0}, {"lfo1.rate", 0.08f},
             {"lfo2.shape", 0}, {"lfo2.rate", 0.05f},
@@ -811,6 +811,68 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.delay.on", 1}, {"fx.delay.time", 0.28f}, {"fx.delay.fb", 0.45f}, {"fx.delay.mix", 0.3f},
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.3f}, {"fx.reverb.mix", 0.12f},
             {"fx.eq.on", 1}, {"fx.eq.low", -4.0f}, {"fx.eq.mid", -1.0f}, {"fx.eq.mfreq", 500}, {"fx.eq.high", 3.0f},
+        }},
+        // 58 — bowed solo-strings lead for the CINEMATIC songs. Unlike the
+        // CINEMA STRINGS pad it speaks in ~120 ms rather than swelling for a
+        // bar, so it can carry a melody, but it sustains flat: whole and half
+        // notes hold their level instead of decaying like the plucked leads do.
+        {"CINEMA LEAD", {
+            {"oscA.table", 1}, {"oscA.pos", 0.42f}, {"oscA.unison", 4}, {"oscA.detune", 0.16f},
+            {"oscA.spread", 0.55f}, {"oscA.level", 0.8f},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.5f}, {"oscB.oct", -1}, {"oscB.level", 0.3f},
+            {"filter.type", 0}, {"filter.cutoff", 2600}, {"filter.res", 0.12f}, {"filter.env", 0.25f}, {"filter.key", 0.35f},
+            {"env1.a", 0.12f}, {"env1.d", 1.2f}, {"env1.s", 0.82f}, {"env1.r", 1.1f},
+            {"env2.a", 0.3f}, {"env2.d", 1.5f}, {"env2.s", 0.5f}, {"env2.r", 0.9f},
+            // The web bank also sets master.mono here; JUCE has no such param
+            // yet (the WT-1 mono port is still pending), so it is omitted —
+            // same as the other thirteen mono leads in this bank.
+            {"master.glide", 0.04f},
+            {"lfo1.shape", 0}, {"lfo1.rate", 5.0f}, {"lfo1.rise", 1.2f},
+            {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.007f},
+            {"mat2.src", 3}, {"mat2.dst", 1}, {"mat2.amt", 0.3f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.28f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.8f}, {"fx.reverb.mix", 0.34f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -2.0f}, {"fx.eq.mid", 2.0f}, {"fx.eq.mfreq", 800}, {"fx.eq.high", 1.0f},
+        }},
+        // 59-61: MINIMAL leads. All three follow the same rules — one short
+        // percussive hit with no sustain, a low-pass well under 1 kHz so
+        // nothing reads as bright, and a tempo-matched delay plus reverb doing
+        // the rhythmic work. The MINIMAL clips play a single repeated pitch, so
+        // the groove comes from the echoes rather than from the notes. Delay
+        // times target 124-133 BPM: 0.36 s = 3/16, 0.24 s = 1/8.
+        {"DEEP TICK", {
+            {"oscA.table", 0}, {"oscA.pos", 0.08f}, {"oscA.level", 1},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.05f}, {"oscB.oct", -1}, {"oscB.level", 0.45f},
+            {"filter.type", 1}, {"filter.cutoff", 780}, {"filter.res", 0.24f}, {"filter.env", 0.35f}, {"filter.key", 0.3f},
+            {"env1.a", 0.001f}, {"env1.d", 0.16f}, {"env1.s", 0}, {"env1.r", 0.12f},
+            {"env2.a", 0.001f}, {"env2.d", 0.09f}, {"env2.s", 0}, {"env2.r", 0.08f},
+            {"mat1.src", 2}, {"mat1.dst", 3}, {"mat1.amt", 0.2f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.36f}, {"fx.delay.fb", 0.58f}, {"fx.delay.mix", 0.42f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.55f}, {"fx.reverb.mix", 0.26f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 1.0f}, {"fx.eq.mid", -1.0f}, {"fx.eq.mfreq", 420}, {"fx.eq.high", -6.0f},
+        }},
+        {"ROOM KNOCK", {
+            {"oscA.table", 1}, {"oscA.pos", 0.2f}, {"oscA.level", 1},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.1f}, {"oscB.oct", -1}, {"oscB.level", 0.6f},
+            {"filter.type", 1}, {"filter.cutoff", 680}, {"filter.res", 0.3f}, {"filter.env", 0.4f}, {"filter.key", 0.25f},
+            {"env1.a", 0.002f}, {"env1.d", 0.22f}, {"env1.s", 0}, {"env1.r", 0.16f},
+            {"env2.a", 0.001f}, {"env2.d", 0.12f}, {"env2.s", 0}, {"env2.r", 0.1f},
+            {"mat1.src", 2}, {"mat1.dst", 3}, {"mat1.amt", 0.25f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.24f}, {"fx.delay.fb", 0.62f}, {"fx.delay.mix", 0.44f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.72f}, {"fx.reverb.mix", 0.32f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 2.0f}, {"fx.eq.mid", -2.0f}, {"fx.eq.mfreq", 380}, {"fx.eq.high", -6.0f},
+        }},
+        {"CELLAR BLIP", {
+            {"oscA.table", 0}, {"oscA.pos", 0.12f}, {"oscA.level", 1},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.08f}, {"oscB.oct", -1}, {"oscB.level", 0.5f},
+            {"filter.type", 1}, {"filter.cutoff", 820}, {"filter.res", 0.28f}, {"filter.env", 0.3f}, {"filter.key", 0.35f},
+            {"env1.a", 0.001f}, {"env1.d", 0.12f}, {"env1.s", 0}, {"env1.r", 0.1f},
+            {"env2.a", 0.001f}, {"env2.d", 0.05f}, {"env2.s", 0}, {"env2.r", 0.05f},
+            {"mat1.src", 2}, {"mat1.dst", 3}, {"mat1.amt", 0.22f},
+            {"mat2.src", 4}, {"mat2.dst", 3}, {"mat2.amt", 0.15f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.12f}, {"fx.delay.fb", 0.7f}, {"fx.delay.mix", 0.46f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.6f}, {"fx.reverb.mix", 0.3f},
+            {"fx.eq.on", 1}, {"fx.eq.low", 0}, {"fx.eq.mid", -1.5f}, {"fx.eq.mfreq", 450}, {"fx.eq.high", -6.0f},
         }},
     };
     return presets;

@@ -117,6 +117,14 @@ describe('drum store', () => {
     expect(useDrumStore.getState().params['pad1.penv.amt']).toBe(30);
     expect(useDrumStore.getState().patterns[patIdx(0, 1, 0)]).toBe(1);
   });
+
+  it('clears pattern undo history when a standalone kit replaces the song buffer', () => {
+    useDrumStore.getState().toggleStep(0);
+    useDrumStore.getState().loadKitByValue('f1');
+    const loaded = useDrumStore.getState().patterns;
+    useDrumStore.getState().undo();
+    expect(useDrumStore.getState().patterns).toBe(loaded);
+  });
 });
 
 describe('step selection', () => {

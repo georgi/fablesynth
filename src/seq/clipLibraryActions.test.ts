@@ -68,6 +68,12 @@ describe('clip-library transposition', () => {
     expect(bytes[1]).toBe(0x80 | 11); // input is immutable
   });
 
+  it('folds a top-octave B upward by one octave without jumping to the bottom octave', () => {
+    const bytes = emptyClipBytes('BL1', 1);
+    bytes.set([1, 11, 2], noteIdx(0, 0));
+    expect(Array.from(transposeNotePattern(bytes, 1).slice(0, 3))).toEqual([1, 0, 2]);
+  });
+
   it('only applies a target root to transposable melodic entries', () => {
     const melodic = byMachine('BL1');
     const shifted = prepareLibraryClip(melodic, { targetRoot: (melodic.root! + 2) % 12 });

@@ -450,6 +450,9 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     drumEngine.applyAllParams();
     drumEngine.setPatterns(state.patterns);
     drumEngine.setChain(chain);
+    // A kit replaces the entire song buffer, so snapshots from the prior kit
+    // must never be allowed to overwrite it through undo.
+    get()._clearHistory();
     set({
       params: state.params,
       padNames: state.padNames,

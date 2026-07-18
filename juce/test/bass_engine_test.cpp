@@ -113,7 +113,7 @@ int main() {
     printf("\n== factory patches (patches.ts) ==\n");
     {
         const auto& bank = bassFactoryPatches();
-        check((int)bank.size() == 12, "12 factory patches");
+        check((int)bank.size() == 22, "22 factory patches");
         check(bank[0].name == "ACID LINE" && bank[1].name == "RUBBER SUB"
               && bank[2].name == "NEON SQUELCH", "original patch names/order stay stable");
         check(bank[3].name == "DEEP DUB" && bank[11].name == "CLEAN SUB",

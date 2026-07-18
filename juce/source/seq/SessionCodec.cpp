@@ -55,21 +55,23 @@ static void writeEmbeddedPatchParams(juce::DynamicObject& target, Machine machin
             target.setProperty(juce::Identifier(kv.first), kv.second);
         return;
     }
-    const int index = juce::jmax(0, patch.index);
     switch (machine) {
         case Machine::DR1: {
             const auto& bank = factoryKits();
-            writeParams(target, applyKit(bank[(size_t)juce::jmin(index, (int)bank.size() - 1)]), drumParamInfo());
+            const int index = patch.index >= 0 && patch.index < (int)bank.size() ? patch.index : 0;
+            writeParams(target, applyKit(bank[(size_t)index]), drumParamInfo());
             break;
         }
         case Machine::BL1: {
             const auto& bank = bassFactoryPatches();
-            writeParams(target, applyBassPatch(bank[(size_t)juce::jmin(index, (int)bank.size() - 1)]), bassParamInfo());
+            const int index = patch.index >= 0 && patch.index < (int)bank.size() ? patch.index : 0;
+            writeParams(target, applyBassPatch(bank[(size_t)index]), bassParamInfo());
             break;
         }
         case Machine::WT1: {
             const auto& bank = factoryPresets();
-            writeParams(target, applyPreset(bank[(size_t)juce::jmin(index, (int)bank.size() - 1)]), paramInfo());
+            const int index = patch.index >= 0 && patch.index < (int)bank.size() ? patch.index : 0;
+            writeParams(target, applyPreset(bank[(size_t)index]), paramInfo());
             break;
         }
     }

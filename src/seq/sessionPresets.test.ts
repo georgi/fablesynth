@@ -32,7 +32,9 @@ describe('SQ-4 factory session patch contract', () => {
   it('uses clean lead voices and measured per-track scene faders', () => {
     // Songs whose whole point is a distorted lead may break the clean-voice
     // rule; everything else keeps drive off so the lead sits on top unfuzzed.
-    const DRIVEN_LEADS = new Set(['PEAK SIGNAL']);
+    // FINAL HORIZON's TAURUS PEDAL is a driven pedal-synth voice — the grit is
+    // the patch, not an oversight.
+    const DRIVEN_LEADS = new Set(['PEAK SIGNAL', 'FINAL HORIZON']);
     const drumGains = new Set<number>();
     const bassGains = new Set<number>();
     const leadGains = new Set<number>();
@@ -55,15 +57,17 @@ describe('SQ-4 factory session patch contract', () => {
     expect(padGains.size).toBeGreaterThanOrEqual(3);
   });
 
-  it('writes each pad chord as three bar-length notes', () => {
+  it('writes each pad chord as bar-length notes — triads, or a bare-fifth MINIMAL drone', () => {
     for (const preset of FACTORY_SESSION_PRESETS) {
+      // MINIMAL pads carry no third: a two-lane root+fifth drone, not a chord.
+      const lanes = preset.family === 'MINIMAL' ? [0, 1] : [0, 1, 2];
       for (const scene of preset.session.scenes) {
         const pad = scene.clips[3]!;
         const bytes = b64ToBytes(pad.pattern);
         expect(pad.bars).toBe(4);
         for (let bar = 0; bar < 4; bar++) {
-          expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, 0, lane)] & 1)).toEqual([1, 1, 1]);
-          expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, 0, lane)] >> 2)).toEqual([16, 16, 16]);
+          expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, 0, lane)] & 1)).toEqual([0, 1, 2].map((lane) => (lanes.includes(lane) ? 1 : 0)));
+          expect(lanes.map((lane) => bytes[wtNoteIdx(bar, 0, lane)] >> 2)).toEqual(lanes.map(() => 16));
           for (let step = 1; step < 16; step++) {
             expect([0, 1, 2].map((lane) => bytes[wtNoteIdx(bar, step, lane)] & 1)).toEqual([0, 0, 0]);
           }
@@ -93,12 +97,15 @@ describe('SQ-4 factory session patch contract', () => {
           const offset = wtNoteIdx(bar, step, 0);
           return { step, offset, on: !!(lead[offset] & 1), duration: lead[offset] >> 2, pitch: lead[offset + 1] & 0x7f };
         }).filter((event) => event.on);
-        expect(events.length, `${preset.name} bar ${bar + 1} density`).toBeGreaterThanOrEqual(2);
+        // CINEMATIC moves in whole and half notes, so a bar may hold one note.
+        const minDensity = preset.family === 'CINEMATIC' ? 1 : 2;
+        expect(events.length, `${preset.name} bar ${bar + 1} density`).toBeGreaterThanOrEqual(minDensity);
         expect(events.length, `${preset.name} bar ${bar + 1} density`).toBeLessThanOrEqual(7);
         barCounts.push(events.length);
         closingDuration = events[events.length - 1].duration;
 
-        const chord = new Set([0, 1, 2].map((lane) => pad[wtNoteIdx(bar, 0, lane) + 1] & 0x7f));
+        const chordLanes = preset.family === 'MINIMAL' ? [0, 1] : [0, 1, 2];
+        const chord = new Set(chordLanes.map((lane) => pad[wtNoteIdx(bar, 0, lane) + 1] & 0x7f));
         expect(chord.has(events[0].pitch), `${preset.name} bar ${bar + 1} downbeat`).toBe(true);
 
         events.forEach((event, index) => {

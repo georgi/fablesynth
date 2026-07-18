@@ -313,7 +313,7 @@ export const FACTORY_PRESETS: Preset[] = [
       'oscA.table': 1, 'oscA.pos': 0.2, 'oscA.unison': 4, 'oscA.detune': 0.3, 'oscA.spread': 0.9, 'oscA.level': 0.7,
       'oscB.on': 1, 'oscB.table': 3, 'oscB.pos': 0.5, 'oscB.oct': -1, 'oscB.unison': 2, 'oscB.detune': 0.2, 'oscB.level': 0.45,
       'sub.on': 1, 'sub.level': 0.35, 'sub.oct': -2,
-      'filter.type': 1, 'filter.cutoff': 900, 'filter.res': 0.15,
+      'filter.type': 1, 'filter.cutoff': 300, 'filter.res': 0.15,
       'env1.a': 2.5, 'env1.d': 3, 'env1.s': 0.7, 'env1.r': 4,
       'lfo1.shape': 0, 'lfo1.rate': 0.08,
       'lfo2.shape': 0, 'lfo2.rate': 0.05,
@@ -1102,6 +1102,90 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.delay.on': 1, 'fx.delay.time': 0.28, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.3,
       'fx.reverb.on': 1, 'fx.reverb.size': 0.3, 'fx.reverb.mix': 0.12,
       'fx.eq.on': 1, 'fx.eq.low': -4, 'fx.eq.mid': -1, 'fx.eq.mfreq': 500, 'fx.eq.high': 3,
+    },
+  },
+
+  {
+    // 58 — bowed solo-strings lead for the CINEMATIC songs. Unlike the
+    // CINEMA STRINGS pad it speaks in ~120 ms rather than swelling for a bar,
+    // so it can carry a melody, but it sustains flat: whole and half notes
+    // hold their level instead of decaying like the plucked leads do. Vibrato
+    // rises after the onset, and env2 opens the filter as the bow digs in.
+    name: 'CINEMA LEAD',
+    params: {
+      'oscA.table': 1, 'oscA.pos': 0.42, 'oscA.unison': 4, 'oscA.detune': 0.16,
+      'oscA.spread': 0.55, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.5, 'oscB.oct': -1, 'oscB.level': 0.3,
+      'filter.type': 0, 'filter.cutoff': 2600, 'filter.res': 0.12, 'filter.env': 0.25, 'filter.key': 0.35,
+      'env1.a': 0.12, 'env1.d': 1.2, 'env1.s': 0.82, 'env1.r': 1.1,
+      'env2.a': 0.3, 'env2.d': 1.5, 'env2.s': 0.5, 'env2.r': 0.9,
+      'master.glide': 0.04, 'master.mono': 1,
+      'lfo1.shape': 0, 'lfo1.rate': 5, 'lfo1.rise': 1.2,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.007,
+      'mat2.src': 3, 'mat2.dst': 1, 'mat2.amt': 0.3,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.28,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.8, 'fx.reverb.mix': 0.34,
+      'fx.eq.on': 1, 'fx.eq.low': -2, 'fx.eq.mid': 2, 'fx.eq.mfreq': 800, 'fx.eq.high': 1,
+    },
+  },
+
+  // 59-61: MINIMAL leads. All three follow the same rules — one short
+  // percussive hit with no sustain, a low-pass well under 1 kHz so nothing
+  // reads as bright, and a tempo-matched delay plus reverb doing the actual
+  // rhythmic work. The MINIMAL clips play a single repeated pitch, so the
+  // groove has to come from the echoes rather than from the notes.
+  // Delay times target the family's 124-133 BPM: 0.36 s = 3/16, 0.24 s = 1/8.
+
+  {
+    // Dry knock with a 3/16 echo trail — the classic techno delay figure.
+    name: 'DEEP TICK',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.08, 'oscA.level': 1,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.05, 'oscB.oct': -1, 'oscB.level': 0.45,
+      'filter.type': 1, 'filter.cutoff': 780, 'filter.res': 0.24, 'filter.env': 0.35, 'filter.key': 0.3,
+      'env1.a': 0.001, 'env1.d': 0.16, 'env1.s': 0, 'env1.r': 0.12,
+      'env2.a': 0.001, 'env2.d': 0.09, 'env2.s': 0, 'env2.r': 0.08,
+      'master.mono': 1,
+      'mat1.src': 2, 'mat1.dst': 3, 'mat1.amt': 0.2,
+      'fx.delay.on': 1, 'fx.delay.time': 0.36, 'fx.delay.fb': 0.58, 'fx.delay.mix': 0.42,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.26,
+      'fx.eq.on': 1, 'fx.eq.low': 1, 'fx.eq.mid': -1, 'fx.eq.mfreq': 420, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // Woody and even darker — a closed-room knock, 1/8 delay, long tail.
+    name: 'ROOM KNOCK',
+    params: {
+      'oscA.table': 1, 'oscA.pos': 0.2, 'oscA.level': 1,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.1, 'oscB.oct': -1, 'oscB.level': 0.6,
+      'filter.type': 1, 'filter.cutoff': 680, 'filter.res': 0.3, 'filter.env': 0.4, 'filter.key': 0.25,
+      'env1.a': 0.002, 'env1.d': 0.22, 'env1.s': 0, 'env1.r': 0.16,
+      'env2.a': 0.001, 'env2.d': 0.12, 'env2.s': 0, 'env2.r': 0.1,
+      'master.mono': 1,
+      'mat1.src': 2, 'mat1.dst': 3, 'mat1.amt': 0.25,
+      'fx.delay.on': 1, 'fx.delay.time': 0.24, 'fx.delay.fb': 0.62, 'fx.delay.mix': 0.44,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.72, 'fx.reverb.mix': 0.32,
+      'fx.eq.on': 1, 'fx.eq.low': 2, 'fx.eq.mid': -2, 'fx.eq.mfreq': 380, 'fx.eq.high': -6,
+    },
+  },
+
+  {
+    // The shortest of the three: a muted blip whose 1/16 delay smears it into
+    // a pulse, so one note per bar still fills the grid.
+    name: 'CELLAR BLIP',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.12, 'oscA.level': 1,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.08, 'oscB.oct': -1, 'oscB.level': 0.5,
+      'filter.type': 1, 'filter.cutoff': 820, 'filter.res': 0.28, 'filter.env': 0.3, 'filter.key': 0.35,
+      'env1.a': 0.001, 'env1.d': 0.12, 'env1.s': 0, 'env1.r': 0.1,
+      'env2.a': 0.001, 'env2.d': 0.05, 'env2.s': 0, 'env2.r': 0.05,
+      'master.mono': 1,
+      'mat1.src': 2, 'mat1.dst': 3, 'mat1.amt': 0.22,
+      'mat2.src': 4, 'mat2.dst': 3, 'mat2.amt': 0.15,
+      'fx.delay.on': 1, 'fx.delay.time': 0.12, 'fx.delay.fb': 0.7, 'fx.delay.mix': 0.46,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.6, 'fx.reverb.mix': 0.3,
+      'fx.eq.on': 1, 'fx.eq.low': 0, 'fx.eq.mid': -1.5, 'fx.eq.mfreq': 450, 'fx.eq.high': -6,
     },
   },
 ];

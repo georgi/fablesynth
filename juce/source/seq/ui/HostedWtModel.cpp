@@ -167,11 +167,25 @@ void HostedWtModel::setSequenceStep(int pattern, int step, const fable::NoteSeqS
         || step < 0 || step >= fable::SEQ_STEPS)
         return;
     auto bytes = clip->bytes;
+    // The hosted note editor is monophonic, whereas a WT-1 clip can contain
+    // eight voices at a step.  Select the same first active lane that
+    // sequenceStep() projects into the editor, then clear all sibling lanes
+    // so a changed/rested chord cannot leave invisible notes sounding.
     int lane = 0;
     for (int candidateLane = 0; candidateLane < fable::SQ_WT_POLY_LANES; ++candidateLane) {
         const int candidate = fable::sqWtNoteIdx(pattern, step, candidateLane);
-        if (candidate + 2 < (int)bytes.size() && (bytes[(size_t)candidate] & 1)
-            && bytes[(size_t)candidate + 1] == value.note) { lane = candidateLane; break; }
+        if (candidate + 2 < (int)bytes.size() && (bytes[(size_t)candidate] & 1)) {
+            lane = candidateLane;
+            break;
+        }
+    }
+    for (int candidateLane = 0; candidateLane < fable::SQ_WT_POLY_LANES; ++candidateLane) {
+        if (candidateLane == lane) continue;
+        const int candidate = fable::sqWtNoteIdx(pattern, step, candidateLane);
+        if (candidate + 2 >= (int)bytes.size()) return;
+        bytes[(size_t)candidate] = 1 << 2;
+        bytes[(size_t)candidate + 1] = 0;
+        bytes[(size_t)candidate + 2] = 1;
     }
     const auto offset = fable::sqWtNoteIdx(pattern, step, lane);
     if (offset + 2 >= (int)bytes.size()) return;

@@ -40,4 +40,14 @@ describe('clip ↔ pattern codec', () => {
     expect(result.slice(wtNoteIdx(0, 0, 1), wtNoteIdx(0, 0, 1) + 3)).toEqual(Uint8Array.from([1, 3, 1]));
     expect(result.slice(wtNoteIdx(0, 0, 2), wtNoteIdx(0, 0, 2) + 3)).toEqual(Uint8Array.from([1, 7, 1]));
   });
+
+  it('grows a hosted WT1 clip while retaining its existing polyphonic lanes', () => {
+    const clip = emptyClipBytes('WT1', 1);
+    clip.set([1, 7, 0], wtNoteIdx(0, 0, 3));
+    const pats = clipToPatterns('WT1', clip, wtEmpty());
+    const grown = patternsToClip('WT1', pats, 2, clip);
+    expect(grown.length).toBe(2 * bytesPerBar('WT1'));
+    expect(grown.slice(wtNoteIdx(0, 0, 3), wtNoteIdx(0, 0, 3) + 3)).toEqual(Uint8Array.from([1, 7, 0]));
+    expect(grown[wtNoteIdx(1, 0, 0) + 2]).toBe(1);
+  });
 });

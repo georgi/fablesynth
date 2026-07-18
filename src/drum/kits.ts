@@ -193,6 +193,14 @@ function deepDubParams(): Partial<ParamValues> {
     params[pad(i, 'aenv.dec')] = Math.min(4, (params[pad(i, 'aenv.dec')] ?? 0.24) * 1.65);
   }
   for (const i of [5, 6]) params[pad(i, 'flt.cut')] = i === 5 ? 4300 : 3200;
+  // Snare: the sample layer (808SD, the default) carries the crack at full
+  // level while the oscillator drops two octaves and sits half back, so it
+  // reads as body under the sample rather than as a second pitched hit. A
+  // 100 ms decay keeps it short enough for the delay to do the dub work.
+  params[pad(2, 'oscA.tune')] = -24;
+  params[pad(2, 'oscA.level')] = 0.5;
+  params[pad(2, 'oscB.level')] = 1;
+  params[pad(2, 'aenv.dec')] = 0.1;
   return params;
 }
 

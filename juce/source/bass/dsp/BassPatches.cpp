@@ -158,12 +158,15 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 124 }, { "master.swing", 0.32f },
         }, acid, { 0 } });
         out.push_back({ "METAL PULSE", Overrides{
+            // A bandpass on a bass throws away most of its energy; the level
+            // here is set so the patch can still reach the mix target at a
+            // sane track fader.
             { "osc.table", 4 }, { "osc.pos", 0.86f }, { "osc.fine", 9 },
-            { "osc.unison", 3 }, { "osc.detune", 0.12f }, { "osc.spread", 0.32f }, { "osc.level", 0.72f },
-            { "sub.shape", 1 }, { "sub.level", 0.3f },
-            { "flt.type", 2 }, { "flt.cut", 920 }, { "flt.res", 0.58f }, { "flt.drive", 0.38f },
+            { "osc.unison", 3 }, { "osc.detune", 0.12f }, { "osc.spread", 0.32f }, { "osc.level", 1 },
+            { "sub.shape", 1 }, { "sub.level", 0.9f },
+            { "flt.type", 2 }, { "flt.cut", 620 }, { "flt.res", 0.58f }, { "flt.drive", 0.38f },
             { "flt.env", 0.62f }, { "fenv.dec", 0.19f },
-            { "aenv.dec", 0.24f }, { "aenv.sus", 0.48f }, { "acc.amt", 0.72f },
+            { "aenv.dec", 0.4f }, { "aenv.sus", 0.75f }, { "acc.amt", 0.72f },
             { "lfo.rate", 8 }, { "lfo.shape", 2 }, { "lfo.depth", 0.24f },
             { "fx.chorus.on", 1 }, { "fx.chorus.rate", 1.4f }, { "fx.chorus.depth", 0.5f },
             { "fx.chorus.mix", 0.22f }, { "fx.delay.on", 1 }, { "fx.delay.time", 0.22f },
@@ -228,6 +231,141 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "acc.amt", 0.32f }, { "slide.time", 0.07f }, { "lfo.depth", 0 },
             { "fx.drive.on", 0 }, { "fx.chorus.on", 0 }, { "fx.delay.on", 0 }, { "fx.reverb.on", 0 },
             { "seq.bpm", 120 }, { "master.swing", 0.26f },
+        }, acid, { 0 } });
+        // ---- genre bank: one purpose-built voice per SQ-4 song family, so no
+        // family has to borrow a bass that fights its groove. Levelled to land
+        // in the same -7..-13 dB pre-fader window as the originals (measured by
+        // test/measure_track_levels.cpp in real song context).
+        out.push_back({ "SOFT HORIZON", Overrides{
+            // AMBIENT: no attack, no bite — a bass that behaves like a low pad.
+            { "osc.table", 1 }, { "osc.pos", 0.34f }, { "osc.unison", 3 }, { "osc.detune", 0.14f },
+            { "osc.spread", 0.3f }, { "osc.level", 0.62f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.78f },
+            { "flt.type", 1 }, { "flt.cut", 320 }, { "flt.res", 0.14f }, { "flt.drive", 0.12f },
+            { "flt.env", 0.18f }, { "flt.track", 0.4f },
+            { "fenv.att", 0.06f }, { "fenv.dec", 1.2f },
+            { "aenv.att", 0.05f }, { "aenv.dec", 0.9f }, { "aenv.sus", 0.9f }, { "aenv.rel", 0.45f },
+            { "acc.amt", 0.22f }, { "slide.time", 0.2f }, { "lfo.rate", 1 }, { "lfo.depth", 0.12f },
+            { "fx.drive.amt", 0.1f }, { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.22f },
+            { "fx.chorus.depth", 0.34f }, { "fx.chorus.mix", 0.18f },
+            { "fx.reverb.size", 0.7f }, { "fx.reverb.mix", 0.2f },
+            { "seq.bpm", 96 }, { "master.swing", 0.2f },
+        }, acid, { 0 } });
+        out.push_back({ "HOUSE ORGAN", Overrides{
+            // HOUSE: the classic organ-ish bump — short, round, under a 4/4 kick.
+            { "osc.table", 2 }, { "osc.pos", 0.42f }, { "osc.unison", 2 }, { "osc.detune", 0.12f },
+            { "osc.spread", 0.2f }, { "osc.level", 0.72f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.7f },
+            { "flt.type", 1 }, { "flt.cut", 420 }, { "flt.res", 0.3f }, { "flt.drive", 0.4f },
+            { "flt.env", 0.5f }, { "flt.track", 0.35f },
+            { "fenv.dec", 0.16f }, { "aenv.dec", 0.24f }, { "aenv.sus", 0.55f }, { "aenv.rel", 0.09f },
+            { "acc.amt", 0.62f }, { "slide.time", 0.05f }, { "lfo.depth", 0.06f },
+            { "fx.drive.amt", 0.34f }, { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.7f },
+            { "fx.chorus.depth", 0.24f }, { "fx.chorus.mix", 0.14f },
+            { "fx.reverb.mix", 0.06f }, { "seq.bpm", 124 }, { "master.swing", 0.1f },
+        }, acid, { 0 } });
+        out.push_back({ "DUSTY FELT", Overrides{
+            // LO-FI: dark, slightly flat, felt-muted — the tape hiss's companion.
+            { "osc.table", 0 }, { "osc.pos", 0.22f }, { "osc.fine", -5 }, { "osc.unison", 2 },
+            { "osc.detune", 0.1f }, { "osc.spread", 0.14f }, { "osc.level", 0.6f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.74f },
+            { "flt.type", 1 }, { "flt.cut", 280 }, { "flt.res", 0.16f }, { "flt.drive", 0.26f },
+            { "flt.env", 0.3f }, { "flt.track", 0.3f },
+            { "fenv.att", 0.012f }, { "fenv.dec", 0.34f },
+            { "aenv.att", 0.014f }, { "aenv.dec", 0.42f }, { "aenv.sus", 0.66f }, { "aenv.rel", 0.18f },
+            { "acc.amt", 0.36f }, { "slide.time", 0.12f }, { "lfo.rate", 2 }, { "lfo.depth", 0.07f },
+            { "fx.drive.amt", 0.24f }, { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.14f },
+            { "fx.chorus.depth", 0.26f }, { "fx.chorus.mix", 0.14f },
+            { "fx.reverb.mix", 0.08f }, { "seq.bpm", 88 }, { "master.swing", 0.52f },
+        }, acid, { 0 } });
+        out.push_back({ "CINEMA SUB", Overrides{
+            // CINEMATIC: almost all sub, two octaves down, swelled not played.
+            { "osc.table", 0 }, { "osc.pos", 0.1f }, { "osc.unison", 3 }, { "osc.detune", 0.2f },
+            { "osc.spread", 0.24f }, { "osc.level", 0.44f },
+            { "sub.shape", 0 }, { "sub.oct", -2 }, { "sub.level", 0.95f },
+            { "flt.type", 1 }, { "flt.cut", 190 }, { "flt.res", 0.2f }, { "flt.drive", 0.3f },
+            { "flt.env", 0.24f }, { "flt.track", 0.2f },
+            { "fenv.att", 0.09f }, { "fenv.dec", 1.6f },
+            { "aenv.att", 0.03f }, { "aenv.dec", 1.1f }, { "aenv.sus", 0.92f }, { "aenv.rel", 0.5f },
+            { "acc.amt", 0.42f }, { "slide.time", 0.22f }, { "lfo.rate", 0 }, { "lfo.depth", 0.1f },
+            { "fx.drive.amt", 0.4f }, { "fx.reverb.size", 0.8f }, { "fx.reverb.mix", 0.18f },
+            { "seq.bpm", 96 }, { "master.swing", 0 },
+        }, acid, { 0 } });
+        out.push_back({ "SUB STAB", Overrides{
+            // MINIMAL: a sub stab. The oscillator is only there to give the
+            // note an edge to speak with — the weight is all sub, and a 260 Hz
+            // low-pass keeps any of it from reading as bright. Dry, and gone
+            // before the next step.
+            { "osc.table", 0 }, { "osc.pos", 0.1f }, { "osc.unison", 1 }, { "osc.level", 0.34f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 1 },
+            { "flt.type", 1 }, { "flt.cut", 260 }, { "flt.res", 0.16f }, { "flt.drive", 0.3f },
+            { "flt.env", 0.3f }, { "flt.track", 0.25f },
+            { "fenv.dec", 0.1f }, { "aenv.dec", 0.3f }, { "aenv.sus", 0.6f }, { "aenv.rel", 0.09f },
+            { "acc.amt", 0.45f }, { "slide.time", 0.04f }, { "lfo.depth", 0 },
+            { "fx.drive.on", 0 }, { "fx.chorus.on", 0 }, { "fx.delay.on", 0 }, { "fx.reverb.on", 0 },
+            { "seq.bpm", 132 }, { "master.swing", 0 },
+        }, acid, { 0 } });
+        out.push_back({ "808 GLIDE", Overrides{
+            // FUTURE BASS: the 808 — pure sub, long tail, glides between roots.
+            { "osc.table", 0 }, { "osc.pos", 0.06f }, { "osc.unison", 1 }, { "osc.level", 0.3f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 1 },
+            { "flt.type", 1 }, { "flt.cut", 240 }, { "flt.res", 0.1f }, { "flt.drive", 0.35f },
+            { "flt.env", 0.15f }, { "flt.track", 0.3f },
+            { "fenv.dec", 0.8f }, { "aenv.att", 0.003f }, { "aenv.dec", 1.4f }, { "aenv.sus", 0.85f },
+            { "aenv.rel", 0.35f }, { "acc.amt", 0.5f }, { "slide.time", 0.14f }, { "lfo.depth", 0 },
+            { "fx.drive.amt", 0.45f }, { "fx.reverb.mix", 0.05f },
+            { "seq.bpm", 150 }, { "master.swing", 0 },
+        }, acid, { 0 } });
+        out.push_back({ "GROWL WIDE", Overrides{
+            // FUTURE BASS: the other half — wide detuned growl, 1/8 filter motion.
+            { "osc.table", 5 }, { "osc.pos", 0.48f }, { "osc.unison", 5 }, { "osc.detune", 0.38f },
+            { "osc.spread", 0.42f }, { "osc.level", 0.66f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.62f },
+            { "flt.type", 1 }, { "flt.cut", 300 }, { "flt.res", 0.4f }, { "flt.drive", 0.6f },
+            { "flt.env", 0.5f }, { "flt.track", 0.25f },
+            { "fenv.dec", 0.3f }, { "aenv.dec", 0.5f }, { "aenv.sus", 0.8f }, { "aenv.rel", 0.18f },
+            { "acc.amt", 0.6f }, { "slide.time", 0.08f },
+            { "lfo.rate", 5 }, { "lfo.shape", 1 }, { "lfo.depth", 0.4f },
+            { "fx.drive.amt", 0.55f }, { "fx.chorus.on", 1 }, { "fx.chorus.rate", 0.5f },
+            { "fx.chorus.depth", 0.4f }, { "fx.chorus.mix", 0.2f },
+            { "fx.reverb.mix", 0.06f }, { "seq.bpm", 150 }, { "master.swing", 0 },
+        }, acid, { 0, 1 } });
+        out.push_back({ "UPRIGHT FELT", Overrides{
+            // TRIP HOP: woody and finger-soft, a hair behind the beat.
+            { "osc.table", 1 }, { "osc.pos", 0.16f }, { "osc.unison", 1 }, { "osc.level", 0.7f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.8f },
+            { "flt.type", 1 }, { "flt.cut", 250 }, { "flt.res", 0.22f }, { "flt.drive", 0.28f },
+            { "flt.env", 0.42f }, { "flt.track", 0.42f },
+            { "fenv.att", 0.008f }, { "fenv.dec", 0.22f },
+            { "aenv.att", 0.01f }, { "aenv.dec", 0.55f }, { "aenv.sus", 0.6f }, { "aenv.rel", 0.22f },
+            { "acc.amt", 0.48f }, { "slide.time", 0.14f }, { "lfo.depth", 0.04f },
+            { "fx.drive.amt", 0.2f }, { "fx.reverb.size", 0.5f }, { "fx.reverb.mix", 0.12f },
+            { "seq.bpm", 86 }, { "master.swing", 0.42f },
+        }, acid, { 0 } });
+        out.push_back({ "STEPPER ROOT", Overrides{
+            // DUB: the steppers root — enormous, round, slow to speak, long to leave.
+            { "osc.table", 0 }, { "osc.pos", 0.14f }, { "osc.unison", 1 }, { "osc.level", 0.4f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.98f },
+            { "flt.type", 1 }, { "flt.cut", 165 }, { "flt.res", 0.18f }, { "flt.drive", 0.3f },
+            { "flt.env", 0.28f }, { "flt.track", 0.25f },
+            { "fenv.att", 0.02f }, { "fenv.dec", 0.5f },
+            { "aenv.att", 0.014f }, { "aenv.dec", 0.6f }, { "aenv.sus", 0.88f }, { "aenv.rel", 0.26f },
+            { "acc.amt", 0.4f }, { "slide.time", 0.16f }, { "lfo.depth", 0.03f },
+            { "fx.drive.amt", 0.22f }, { "fx.reverb.size", 0.6f }, { "fx.reverb.mix", 0.14f },
+            { "seq.bpm", 74 }, { "master.swing", 0.14f },
+        }, acid, { 0 } });
+        out.push_back({ "TECHNO SUB", Overrides{
+            // MINIMAL: the held counterpart to SUB STAB — a pure sine sub that
+            // sits under the whole bar. No oscillator content above the
+            // low-pass at all, so it reads as weight rather than as a part.
+            { "osc.table", 0 }, { "osc.pos", 0.04f }, { "osc.unison", 1 }, { "osc.level", 0.22f },
+            { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 1 },
+            { "flt.type", 1 }, { "flt.cut", 210 }, { "flt.res", 0.1f }, { "flt.drive", 0.24f },
+            { "flt.env", 0.16f }, { "flt.track", 0.22f },
+            { "fenv.dec", 0.4f }, { "aenv.att", 0.004f }, { "aenv.dec", 0.7f }, { "aenv.sus", 0.88f },
+            { "aenv.rel", 0.16f }, { "acc.amt", 0.35f }, { "slide.time", 0.08f }, { "lfo.depth", 0 },
+            { "fx.drive.amt", 0.2f }, { "fx.chorus.on", 0 }, { "fx.delay.on", 0 }, { "fx.reverb.on", 0 },
+            { "seq.bpm", 130 }, { "master.swing", 0 },
         }, acid, { 0 } });
         return out;
     }();

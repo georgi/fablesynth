@@ -232,6 +232,14 @@ Overrides deepDubParams() {
         set(p, padPid(i, "aenv.dec"), std::min(4.0f, get(p, padPid(i, "aenv.dec"), 0.24f) * 1.65f));
     }
     for (int i : { 5, 6 }) set(p, padPid(i, "flt.cut"), i == 5 ? 4300 : 3200);
+    // Snare: the sample layer (808SD, the default) carries the crack at full
+    // level while the oscillator drops two octaves and sits half back, so it
+    // reads as body under the sample rather than as a second pitched hit. A
+    // 100 ms decay keeps it short enough for the delay to do the dub work.
+    set(p, padPid(2, "oscA.tune"), -24);
+    set(p, padPid(2, "oscA.level"), 0.5f);
+    set(p, padPid(2, "oscB.level"), 1);
+    set(p, padPid(2, "aenv.dec"), 0.1f);
     return p;
 }
 

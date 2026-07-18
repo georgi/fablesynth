@@ -74,7 +74,11 @@ export function useBassKeys() {
       }
       const off = KEYMAP[e.code];
       if (off === undefined) return;
-      const semi = Math.min(KEY_COUNT - 1, octave * 12 + off);
+      const semi = octave * 12 + off;
+      // The upper part of the shifted keyboard row lies above BL-1's C2..C4
+      // range. Ignore it; clamping makes distinct physical keys share C4,
+      // so releasing either key cuts a note the other still holds.
+      if (semi >= KEY_COUNT) return;
       if (held.has(e.code)) return;
       held.set(e.code, semi);
       noteOn(semi, 0.85);

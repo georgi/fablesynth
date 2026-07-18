@@ -30,6 +30,7 @@ export function useSeqEditKeys() {
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
       if (isFormTarget(e.target)) return;
+      if (e.repeat) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod) {
         switch (e.code) {

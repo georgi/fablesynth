@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
           proc.getTotalNumOutputChannels());
 
     // ---- boot state: ACID LINE ----
-    check(proc.getNumPrograms() == 12, "12 patch programs", proc.getNumPrograms());
+    check(proc.getNumPrograms() == 22, "22 patch programs", proc.getNumPrograms());
     check(proc.getProgramName(0) == "ACID LINE", "program 0 is ACID LINE");
     float bpm0 = proc.apvts.getRawParameterValue("seq.bpm")->load();
     check(std::abs(bpm0 - 138.0f) < 0.5f, "boot applies seq.bpm=138", bpm0);

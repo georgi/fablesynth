@@ -178,10 +178,14 @@ ClipLibraryEntry transformClipLibraryEntry(const ClipLibraryEntry& source,
         for (size_t o = 0; o < out.bytes.size(); o += 3) {
             if ((out.bytes[o] & 1) == 0) continue;
             const uint8_t slide = out.bytes[o + 1] & 0x80;
-            const int absolute = (int)(out.bytes[o + 1] & 0x7f) + (int)out.bytes[o + 2] * 12 + amount;
-            const int folded = positiveMod(absolute, 36);
-            out.bytes[o + 1] = (uint8_t)(slide | (folded % 12));
-            out.bytes[o + 2] = (uint8_t)(folded / 12);
+            int64_t shifted = (int)(out.bytes[o + 1] & 0x7f)
+                            + 12 * ((int)out.bytes[o + 2] - 1)
+                            + (int64_t)amount;
+            if (shifted > 23) shifted -= ((shifted - 23 + 11) / 12) * 12;
+            if (shifted < -12) shifted += ((-12 - shifted + 11) / 12) * 12;
+            const int encoded = (int)shifted + 12;
+            out.bytes[o + 1] = (uint8_t)(slide | (encoded % 12));
+            out.bytes[o + 2] = (uint8_t)(encoded / 12);
         }
         if (out.root >= 0) out.root = positiveMod(out.root + amount, 12);
     } else if (kind == ClipTransformKind::rotate || kind == ClipTransformKind::reverse) {
@@ -232,7 +236,10 @@ ClipLibraryEntry transformClipLibraryEntry(const ClipLibraryEntry& source,
             }
         }
     } else if (kind == ClipTransformKind::humanize) {
-        uint32_t state = (uint32_t)amount;
+        // Xorshift's all-zero state is a fixed point. Map that one seed to a
+        // non-zero state so a valid deterministic seed still humanizes rather
+        // than accenting every active event.
+        uint32_t state = amount == 0 ? 1u : (uint32_t)amount;
         auto random = [&state] { state ^= state << 13; state ^= state >> 17; state ^= state << 5; return state; };
         for (size_t o = 0; o < out.bytes.size(); o += (size_t)stride) {
             const bool on = source.machine == Machine::DR1 ? out.bytes[o] != 0 : (out.bytes[o] & 1) != 0;

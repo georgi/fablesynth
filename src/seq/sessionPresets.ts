@@ -33,38 +33,38 @@ const specs: Spec[] = [
   ['ACID FLASH', 'ACID', 'FLASH', 4, ['acid', 'bright', 'punchy'], [3, 0, 49, 1], 1], // LATELY BASS / VELVET PAD
   ['STEEL PULSE', 'ACID', 'METAL', 4, ['metallic', 'tight', 'industrial'], [12, 2, 29, 17], 2], // KALIMBA PLUCK / DARK DRONE
   ['PEAK SIGNAL', 'ACID', 'PEAK', 5, ['distorted', 'wide', 'peak-time'], [13, 5, 6, 40], 3], // NEURO WOBBLE / PUMP PAD
-  ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [15, 7, 51, 34], 0], // FOG LIGHT / OCEAN AIR
-  ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [15, 0, 52, 25], 1], // GLASS RIBBON / CINEMA STRINGS
-  ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [15, 5, 53, 32], 2], // NORTH WIRE / GHOST CHOIR
-  ['AIR TEMPLE', 'AMBIENT', 'TEMPLE', 2, ['warm', 'ceremonial', 'wide'], [15, 7, 54, 27], 3], // TEMPLE BREATH / SOFT BRASS
-  ['DUST HOUSE', 'HOUSE', 'DUST', 3, ['dusty', 'groovy', 'warm'], [12, 4, 36, 42], 0], // TAPE KEYS / JUNO DREAM
-  ['MIDNIGHT FLOOR', 'HOUSE', 'NIGHT', 4, ['club', 'round', 'wide'], [13, 0, 21, 40], 1], // DYNO EPIANO / PUMP PAD
-  ['TAPE DISCO', 'HOUSE', 'TAPE', 3, ['tape', 'soft', 'groovy'], [3, 7, 28, 27], 2], // NYLON PLUCK / SOFT BRASS
-  ['CLEAN CLUB', 'HOUSE', 'CLEAN', 4, ['clean', 'tight', 'bright'], [12, 5, 22, 42], 3], // DRAWBAR ORGAN / JUNO DREAM
-  ['VHS GARDEN', 'LO-FI', 'VHS', 2, ['tape', 'dark', 'nostalgic'], [3, 7, 36, 34], 0], // TAPE KEYS / OCEAN AIR
-  ['POCKET DUST', 'LO-FI', 'POCKET', 2, ['dusty', 'small', 'warm'], [12, 5, 20, 27], 1], // MELLOW RHODES / SOFT BRASS
-  ['TOY PARADE', 'LO-FI', 'TOY', 4, ['8-bit', 'playful', 'broken'], [13, 2, 29, 42], 2], // KALIMBA PLUCK / JUNO DREAM
-  ['WORN SIGNAL', 'LO-FI', 'WORN', 3, ['distorted', 'dark', 'unstable'], [3, 0, 33, 17], 3], // DATA STREAM / DARK DRONE
-  ['CHROME CATHEDRAL', 'CINEMATIC', 'CATHEDRAL', 3, ['large', 'metallic', 'ceremonial'], [13, 7, 39, 25], 0], // GAMELAN POT / CINEMA STRINGS
-  ['MACHINE TENSION', 'CINEMATIC', 'TENSION', 4, ['industrial', 'tense', 'dark'], [12, 5, 47, 38], 1], // WAVE DANCER / AURORA RISER
-  ['VOID MARCH', 'CINEMATIC', 'MARCH', 4, ['heavy', 'dark', 'driving'], [3, 4, 44, 25], 2], // BLADE BRASS / CINEMA STRINGS
-  ['FINAL HORIZON', 'CINEMATIC', 'FINALE', 5, ['epic', 'wide', 'bright'], [13, 8, 43, 38], 3], // JUMP BRASS / AURORA RISER
-  ['GRAY ROOM', 'MINIMAL', 'ROOM', 4, ['hypnotic', 'dry', 'tight'], [9, 2, 33, 17], 0], // DATA STREAM / DARK DRONE
-  ['CLICK FIELD', 'MINIMAL', 'CLICK', 4, ['clicky', 'sparse', 'precise'], [9, 11, 57, 40], 1], // BLEEP TECH / PUMP PAD
-  ['COLD ROTOR', 'MINIMAL', 'ROTOR', 5, ['dark', 'driving', 'hypnotic'], [6, 6, 50, 35], 2], // PROPHET STAB / TWIN SKY
-  ['NIGHT GRID', 'MINIMAL', 'GRID', 4, ['deep', 'rolling', 'late'], [9, 5, 14, 34], 3], // HOUSE PLUCK / OCEAN AIR
-  ['SUGAR RUSH', 'FUTURE BASS', 'RUSH', 5, ['bright', 'bouncy', 'wide'], [0, 8, 4, 11], 0], // HYPER SAW / FUTURE CHORD
-  ['PASTEL SKY', 'FUTURE BASS', 'PASTEL', 4, ['soft', 'lush', 'wide'], [2, 1, 15, 42], 1], // TRAP BELL / JUNO DREAM
-  ['STARBURST', 'FUTURE BASS', 'BURST', 5, ['euphoric', 'punchy', 'bright'], [0, 11, 45, 40], 2], // FANTA BELLS / PUMP PAD
-  ['HEART WIRE', 'FUTURE BASS', 'WIRE', 4, ['emotive', 'glassy', 'wide'], [2, 8, 52, 38], 3], // GLASS RIBBON / AURORA RISER
-  ['VELVET SMOKE', 'TRIP HOP', 'SMOKE', 2, ['smoky', 'dusty', 'slow'], [16, 7, 20, 34], 0], // MELLOW RHODES / OCEAN AIR
-  ['NIGHT BUS', 'TRIP HOP', 'BUS', 2, ['nocturnal', 'warm', 'tape'], [16, 10, 36, 32], 1], // TAPE KEYS / GHOST CHOIR
-  ['CRACKED LENS', 'TRIP HOP', 'LENS', 3, ['broken', 'eerie', 'dusty'], [8, 10, 29, 17], 2], // KALIMBA PLUCK / DARK DRONE
-  ['STONE GARDEN', 'TRIP HOP', 'STONE', 3, ['organic', 'moody', 'deep'], [16, 7, 28, 1], 3], // NYLON PLUCK / VELVET PAD
-  ['ECHO CHAMBER', 'DUB', 'ECHO', 2, ['spacious', 'deep', 'smoky'], [4, 3, 55, 56], 0], // MELODICA / DUB SKANK
-  ['KING STEPPER', 'DUB', 'STEPPER', 3, ['rootsy', 'driving', 'warm'], [4, 11, 55, 22], 1], // MELODICA / DRAWBAR ORGAN
-  ['ROOTS RADAR', 'DUB', 'RADAR', 2, ['heavy', 'hazy', 'wide'], [4, 3, 22, 56], 2], // DRAWBAR ORGAN / DUB SKANK
-  ['ZION GATE', 'DUB', 'GATE', 3, ['uplifting', 'rootsy', 'wide'], [4, 11, 55, 1], 3], // MELODICA / VELVET PAD
+  ['DEEP FOG', 'AMBIENT', 'FOG', 1, ['dark', 'deep', 'slow'], [15, 12, 51, 34], 0], // SOFT HORIZON · FOG LIGHT / OCEAN AIR
+  ['GLASS BLOOM', 'AMBIENT', 'BLOOM', 2, ['glassy', 'clean', 'lush'], [15, 7, 52, 25], 1], // TAPE BASS · GLASS RIBBON / CINEMA STRINGS
+  ['FROZEN BELL', 'AMBIENT', 'FROZEN', 2, ['cold', 'bell', 'sparse'], [15, 11, 53, 32], 2], // CLEAN SUB · NORTH WIRE / GHOST CHOIR
+  ['AIR TEMPLE', 'AMBIENT', 'TEMPLE', 2, ['warm', 'ceremonial', 'wide'], [15, 12, 54, 27], 3], // SOFT HORIZON · TEMPLE BREATH / SOFT BRASS
+  ['DUST HOUSE', 'HOUSE', 'DUST', 3, ['dusty', 'groovy', 'warm'], [12, 13, 36, 42], 0], // HOUSE ORGAN · TAPE KEYS / JUNO DREAM
+  ['MIDNIGHT FLOOR', 'HOUSE', 'NIGHT', 4, ['club', 'round', 'wide'], [13, 4, 21, 40], 1], // WAREHOUSE · DYNO EPIANO / PUMP PAD
+  ['TAPE DISCO', 'HOUSE', 'TAPE', 3, ['tape', 'soft', 'groovy'], [3, 13, 28, 27], 2], // HOUSE ORGAN · NYLON PLUCK / SOFT BRASS
+  ['CLEAN CLUB', 'HOUSE', 'CLEAN', 4, ['clean', 'tight', 'bright'], [12, 5, 22, 42], 3], // ROUNDHOUSE · DRAWBAR ORGAN / JUNO DREAM
+  ['VHS GARDEN', 'LO-FI', 'VHS', 2, ['tape', 'dark', 'nostalgic'], [3, 14, 36, 34], 0], // DUSTY FELT · TAPE KEYS / OCEAN AIR
+  ['POCKET DUST', 'LO-FI', 'POCKET', 2, ['dusty', 'small', 'warm'], [12, 7, 20, 27], 1], // TAPE BASS · MELLOW RHODES / SOFT BRASS
+  ['TOY PARADE', 'LO-FI', 'TOY', 4, ['8-bit', 'playful', 'broken'], [13, 14, 29, 42], 2], // DUSTY FELT · KALIMBA PLUCK / JUNO DREAM
+  ['WORN SIGNAL', 'LO-FI', 'WORN', 3, ['distorted', 'dark', 'unstable'], [3, 4, 33, 17], 3], // WAREHOUSE · DATA STREAM / DARK DRONE
+  ['CHROME CATHEDRAL', 'CINEMATIC', 'CATHEDRAL', 3, ['large', 'metallic', 'ceremonial'], [13, 15, 58, 25], 0], // CINEMA SUB · CINEMA LEAD / CINEMA STRINGS
+  ['MACHINE TENSION', 'CINEMATIC', 'TENSION', 4, ['industrial', 'tense', 'dark'], [12, 10, 35, 38], 1], // DARK CURRENT · TWIN SKY / AURORA RISER
+  ['VOID MARCH', 'CINEMATIC', 'MARCH', 4, ['heavy', 'dark', 'driving'], [3, 15, 44, 25], 2], // CINEMA SUB · BLADE BRASS / CINEMA STRINGS
+  ['FINAL HORIZON', 'CINEMATIC', 'FINALE', 5, ['epic', 'wide', 'bright'], [13, 8, 46, 38], 3], // REESE MONO · TAURUS PEDAL / AURORA RISER
+  ['GRAY ROOM', 'MINIMAL', 'ROOM', 4, ['hypnotic', 'dry', 'tight'], [9, 16, 59, 17], 0], // SUB STAB · DEEP TICK / DARK DRONE
+  ['CLICK FIELD', 'MINIMAL', 'CLICK', 4, ['clicky', 'sparse', 'precise'], [9, 21, 61, 17], 1], // TECHNO SUB · CELLAR BLIP / DARK DRONE
+  ['COLD ROTOR', 'MINIMAL', 'ROTOR', 5, ['dark', 'driving', 'hypnotic'], [6, 21, 60, 35], 2], // TECHNO SUB · ROOM KNOCK / TWIN SKY
+  ['NIGHT GRID', 'MINIMAL', 'GRID', 4, ['deep', 'rolling', 'late'], [9, 16, 59, 34], 3], // SUB STAB · DEEP TICK / OCEAN AIR
+  ['SUGAR RUSH', 'FUTURE BASS', 'RUSH', 5, ['bright', 'bouncy', 'wide'], [0, 17, 4, 11], 0], // 808 GLIDE · HYPER SAW / FUTURE CHORD
+  ['PASTEL SKY', 'FUTURE BASS', 'PASTEL', 4, ['soft', 'lush', 'wide'], [2, 18, 15, 42], 1], // GROWL WIDE · TRAP BELL / JUNO DREAM
+  ['STARBURST', 'FUTURE BASS', 'BURST', 5, ['euphoric', 'punchy', 'bright'], [0, 17, 45, 40], 2], // 808 GLIDE · FANTA BELLS / PUMP PAD
+  ['HEART WIRE', 'FUTURE BASS', 'WIRE', 4, ['emotive', 'glassy', 'wide'], [2, 18, 52, 38], 3], // GROWL WIDE · GLASS RIBBON / AURORA RISER
+  ['VELVET SMOKE', 'TRIP HOP', 'SMOKE', 2, ['smoky', 'dusty', 'slow'], [16, 19, 20, 34], 0], // UPRIGHT FELT · MELLOW RHODES / OCEAN AIR
+  ['NIGHT BUS', 'TRIP HOP', 'BUS', 2, ['nocturnal', 'warm', 'tape'], [16, 19, 36, 32], 1], // UPRIGHT FELT · TAPE KEYS / GHOST CHOIR
+  ['CRACKED LENS', 'TRIP HOP', 'LENS', 3, ['broken', 'eerie', 'dusty'], [8, 10, 29, 17], 2], // DARK CURRENT · KALIMBA PLUCK / DARK DRONE
+  ['STONE GARDEN', 'TRIP HOP', 'STONE', 3, ['organic', 'moody', 'deep'], [16, 14, 28, 1], 3], // DUSTY FELT · NYLON PLUCK / VELVET PAD
+  ['ECHO CHAMBER', 'DUB', 'ECHO', 2, ['spacious', 'deep', 'smoky'], [4, 20, 55, 56], 0], // STEPPER ROOT · MELODICA / DUB SKANK
+  ['KING STEPPER', 'DUB', 'STEPPER', 3, ['rootsy', 'driving', 'warm'], [4, 3, 55, 22], 1], // DEEP DUB · MELODICA / DRAWBAR ORGAN
+  ['ROOTS RADAR', 'DUB', 'RADAR', 2, ['heavy', 'hazy', 'wide'], [4, 20, 22, 56], 2], // STEPPER ROOT · DRAWBAR ORGAN / DUB SKANK
+  ['ZION GATE', 'DUB', 'GATE', 3, ['uplifting', 'rootsy', 'wide'], [4, 20, 55, 1], 3], // STEPPER ROOT · MELODICA / VELVET PAD
 ].map(([name, family, variation, energy, tags, programs, variationIndex]) => spec(
   name as string, family as string, variation as string, energy as number, tags as string[], programs as [number, number, number, number], variationIndex as number,
 ));
@@ -81,18 +81,25 @@ interface Harmony {
 // pad +2 dB). The fader curve is gain² × 1.4, so quieter voices need a higher
 // fader value. Tables carry only currently-used programs; the ?? fallbacks
 // cover future picks until the next measure_track_levels run.
-const DRUM_FADERS: Record<number, number> = { 3: 0.80, 12: 0.80, 13: 0.87, 15: 0.63 };
-const BASS_FADERS: Record<number, number> = { 0: 0.49, 2: 0.52, 4: 0.50, 5: 0.48, 7: 0.49, 8: 0.47, 9: 0.84 };
+const DRUM_FADERS: Record<number, number> = {
+  0: 1.00, 2: 0.71, 3: 0.74, 4: 1.00, 6: 0.48, 8: 0.80, 9: 1.00, 12: 0.74, 13: 0.80, 15: 0.58, 16: 0.87,
+};
+const BASS_FADERS: Record<number, number> = {
+  0: 0.43, 2: 0.46, 3: 0.44, 4: 0.44, 5: 0.42, 7: 0.43, 8: 0.41, 9: 0.74, 10: 0.45, 11: 0.50,
+  12: 0.42, 13: 0.41, 14: 0.41, 15: 0.41, 16: 0.71, 17: 0.38, 18: 0.40, 19: 0.42, 20: 0.41, 21: 0.50,
+};
 const LEAD_FADERS: Record<number, number> = {
-  3: 0.67, 20: 0.70, 21: 0.54, 22: 0.60, 28: 0.84, 29: 0.96, 33: 0.51, 36: 0.75, 39: 1.00,
-  43: 0.51, 44: 0.52, 45: 0.79, 47: 0.87, 49: 0.54, 51: 0.48, 52: 0.53, 53: 0.49, 54: 0.49,
+  3: 0.59, 4: 0.45, 6: 0.43, 15: 0.56, 20: 0.64, 21: 0.48, 22: 0.51, 28: 0.79, 29: 0.89,
+  33: 0.45, 35: 0.47, 36: 0.68, 44: 0.43, 45: 0.70, 46: 0.31, 49: 0.48, 51: 0.43,
+  52: 0.46, 53: 0.43, 54: 0.43, 55: 0.71, 58: 0.44, 59: 0.80, 60: 0.78, 61: 0.87,
 };
 const PAD_FADERS: Record<number, number> = {
-  1: 0.65, 11: 0.53, 17: 0.83, 24: 0.63, 25: 0.62, 27: 0.63, 32: 1.00, 34: 0.60, 35: 0.59, 38: 0.83, 40: 0.60, 42: 0.82,
+  1: 0.59, 11: 0.47, 17: 0.76, 22: 0.47, 24: 0.56, 25: 0.55, 27: 0.55, 32: 1.00, 34: 0.52, 35: 0.53,
+  38: 0.73, 40: 0.53, 42: 0.72, 56: 1.00,
 };
 
 function calibratedTrackGains(programs: Spec['programs']): [number, number, number, number] {
-  return [DRUM_FADERS[programs[0]] ?? 0.78, BASS_FADERS[programs[1]] ?? 0.50, LEAD_FADERS[programs[2]] ?? 0.65, PAD_FADERS[programs[3]] ?? 0.59];
+  return [DRUM_FADERS[programs[0]] ?? 0.78, BASS_FADERS[programs[1]] ?? 0.45, LEAD_FADERS[programs[2]] ?? 0.65, PAD_FADERS[programs[3]] ?? 0.59];
 }
 
 // Four-bar harmonic plans. Each variation starts from a recognisable cadence,
@@ -106,13 +113,24 @@ function harmonyFor(spec: Spec): Harmony {
     NEON: 0, ACID: 2, AMBIENT: 9, HOUSE: 5, 'LO-FI': 7, CINEMATIC: 4,
     MINIMAL: 1, 'FUTURE BASS': 6, 'TRIP HOP': 10, DUB: 3,
   };
+  const key = tonic[spec.family] ?? 0;
+  if (spec.family === 'MINIMAL') {
+    // AAAB, not a cadence: three bars locked on i, then one late move — the
+    // hypnosis comes from the lock, and the single change lands harder for it.
+    const move = [
+      { root: 10, minor: false }, // …VII
+      { root: 5, minor: true },   // …iv
+      { root: 8, minor: false },  // …VI
+      { root: 7, minor: true },   // …v
+    ][spec.variationIndex]!;
+    return { roots: [0, 0, 0, move.root].map((root) => (root + key) % 12), minor: [true, true, true, move.minor] };
+  }
   const plans = [
     { roots: [0, 8, 3, 10], minor: [true, false, false, false] }, // i–VI–III–VII
     { roots: [0, 5, 8, 7], minor: [true, true, false, false] },  // i–iv–VI–V
     { roots: [0, 3, 10, 5], minor: [true, false, false, true] }, // i–III–VII–iv
     { roots: [0, 7, 5, 10], minor: [true, false, true, false] }, // i–V–iv–VII
   ][spec.variationIndex];
-  const key = tonic[spec.family] ?? 0;
   return { roots: plans.roots.map((root) => (root + key) % 12), minor: plans.minor };
 }
 
@@ -191,15 +209,23 @@ function bassProgression(harmony: Harmony, spec: Spec): ClipDoc {
   return { name: `${spec.variation} ROOTS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
 
-function padProgression(harmony: Harmony, variation: string): ClipDoc {
+function padProgression(harmony: Harmony, spec: Spec): ClipDoc {
   const bytes = emptyClipBytes('WT1', 4);
+  if (spec.family === 'MINIMAL') {
+    // No chords at all: a bare-fifth drone (no third) so the pad is texture,
+    // not harmony — it only shifts when the AAAB plan moves in bar 4.
+    harmony.roots.forEach((root, bar) => {
+      [root, root + 7].forEach((note, lane) => putNote(bytes, wtNoteIdx(bar, 0, lane), ((note % 12) + 12) % 12, 16));
+    });
+    return { name: `${spec.variation} DRONE · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  }
   harmony.roots.forEach((root, bar) => {
     // Close-voice the triad as pitch classes inside the root octave (+0..+11):
     // the pad bed stays strictly below the +12..+23 lead band for every root.
     const chord = [root, root + (harmony.minor[bar] ? 3 : 4), root + 7];
     chord.forEach((note, lane) => putNote(bytes, wtNoteIdx(bar, 0, lane), ((note % 12) + 12) % 12, 16));
   });
-  return { name: `${variation} CHORDS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
+  return { name: `${spec.variation} CHORDS · 4 BAR`, bars: 4, pattern: bytesToB64(bytes) };
 }
 
 // Hand-composed lead phrases — one per song, since every (family, variation)
@@ -242,17 +268,21 @@ const LEAD_PHRASES: Record<string, [string, string, string, string]> = {
     '0,1,0! 2,1,3 4,1,7 6,1,3 8,2,10 11,1,7 13,3,0 | 0,1,7! 2,1,10 4,1,7 6,1,3 8,3,2 12,4,3 | 0,1,10! 2,1,2 4,1,5 6,1,2 8,2,7 11,1,5 13,3,10 | 0,2,8! 3,1,7 5,2,5 8,8,0',
     '0,4,0! 5,2,10 8,3,8 12,4,7 | 0,4,11! 5,2,7 8,4,2 13,3,7 | 0,4,8! 5,2,7 8,3,5 12,4,8 | 0,4,5! 5,2,3 8,8,2',
   ],
-  CINEMATIC: [ // bold dotted figures and long horizon tones
-    '0,4,0! 6,2,3 8,6,7 14,2,10 | 0,4,8! 6,2,7 8,4,5 12,4,3 | 0,4,10! 6,2,7 8,6,3 14,2,5 | 0,3,5! 3,3,7 8,8,10',
-    '0,2,0! 4,1,0 6,2,0 8,4,3 12,4,2 | 0,2,5! 4,1,5 6,2,5 8,4,8 12,4,7 | 0,2,3! 4,1,3 6,2,3 8,4,10 12,4,8 | 0,2,2! 4,2,2 6,2,2 8,8,11',
-    '0,3,0! 4,3,0 8,3,3 12,2,2 14,2,0 | 0,3,3! 4,3,3 8,3,7 12,2,5 14,2,3 | 0,3,5! 4,3,5 8,3,10 12,2,8 14,2,5 | 0,3,8! 4,3,7 8,8,5',
-    '0,3,0! 4,2,3 6,2,5 8,4,7 12,4,10 | 0,3,11! 4,2,7 6,2,2 8,8,7 | 0,3,8! 4,2,5 6,2,8 8,4,0 12,4,10 | 0,2,10! 2,2,7 4,2,5 6,2,7 8,8,10',
+  CINEMATIC: [ // whole and half notes only — the melody moves at one or two
+    // events per bar so each note is an event, not a phrase. Written for
+    // sustaining voices (CINEMA LEAD, the brasses); a plucked patch would just
+    // decay into the gap.
+    '0,16,0! | 0,8,8! 8,8,3 | 0,16,7! | 0,8,10! 8,8,5',
+    '0,8,0! 8,8,3 | 0,16,5! | 0,8,8! 8,8,0 | 0,16,7!',
+    '0,16,0! | 0,8,3! 8,8,7 | 0,8,10! 8,8,2 | 0,16,5!',
+    '0,8,0! 8,8,7 | 0,16,7! | 0,8,5! 8,8,8 | 0,16,10!',
   ],
-  MINIMAL: [ // clipped one-step cells that mutate slowly, never filling the grid
-    '0,1,0! 4,1,0 8,1,3 10,1,2 14,1,0 | 0,1,8! 4,1,8 10,1,7 14,1,5 | 0,1,3! 4,1,3 8,1,5 10,1,3 14,1,2 | 0,1,10! 4,1,7 8,8,10',
-    '0,1,0! 2,1,0 6,1,3 8,1,0 12,1,2 | 0,1,5! 4,1,5 8,1,8 12,1,7 | 0,1,8! 2,1,8 6,1,10 8,1,8 12,1,7 | 0,1,7! 4,1,2 8,8,7',
-    '0,1,7! 4,1,7 8,1,5 12,1,3 | 0,1,7! 4,1,10 8,1,7 10,1,5 14,1,3 | 0,1,10! 4,1,10 8,1,0 12,1,10 | 0,1,5! 4,1,3 6,1,2 8,8,0',
-    '0,1,3! 4,1,3 8,1,2 12,1,0 | 0,1,2! 4,1,2 8,1,11 12,1,7 | 0,1,0! 4,1,8 8,1,7 10,1,5 14,1,3 | 0,1,2! 4,1,0 8,8,10',
+  MINIMAL: [ // deliberately not melodies: one pitch, repeated. The interest is
+    // rhythmic placement and the bar-4 shift to the AAAB move — nothing hums.
+    '0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,0! 4,1,0 8,1,0 | 0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,10! 4,1,10 8,8,10',
+    '0,1,0! 2,1,0 8,1,0 10,1,0 | 0,1,0! 2,1,0 8,1,0 | 0,1,0! 2,1,0 8,1,0 10,1,0 14,1,0 | 0,1,5! 2,1,5 8,8,5',
+    '0,1,7! 4,1,7 8,1,7 12,1,7 | 0,1,7! 4,1,7 12,1,7 | 0,1,7! 4,1,7 8,1,7 12,1,7 | 0,1,8! 4,1,8 8,8,8',
+    '0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,0! 4,1,0 8,1,0 12,1,0 14,1,0 | 0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,7! 4,1,7 8,8,7',
   ],
   'FUTURE BASS': [ // wide syncopated chord-tone leaps that land on long drops
     '0,2,0! 3,2,3 6,2,7 10,3,10 14,2,7 | 0,2,8! 3,2,7 6,4,3 11,2,5 14,2,8 | 0,2,7! 3,2,10 6,4,7 12,4,3 | 0,3,10! 4,2,7 6,2,5 8,8,2',
@@ -462,7 +492,7 @@ function buildSession(spec: Spec): SessionDoc {
   const harmony = harmonyFor(spec);
   const bass = bassProgression(harmony, spec);
   const lead = leadProgression(harmony, spec);
-  const pads = padProgression(harmony, spec.variation);
+  const pads = padProgression(harmony, spec);
   session.scenes.forEach((scene, s) => {
     const drums = drumProgression(spec, s);
     // Arrange density intentionally; the three tonal parts retain the same

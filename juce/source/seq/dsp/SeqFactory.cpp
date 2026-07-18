@@ -299,6 +299,20 @@ Harmony harmonyFor(const PresetSpec& spec) {
         if (f == "DUB") return 3;
         return 4; // CINEMATIC
     }();
+    if (spec.family == std::string("MINIMAL")) {
+        // AAAB, not a cadence: three bars locked on i, then one late move — the
+        // hypnosis comes from the lock, and the single change lands harder for it.
+        static const std::pair<int, bool> moves[4] = {
+            { 10, false }, // …VII
+            { 5, true },   // …iv
+            { 8, false },  // …VI
+            { 7, true },   // …v
+        };
+        const auto& move = moves[spec.variationIndex];
+        Harmony h { { 0, 0, 0, move.first }, { true, true, true, move.second } };
+        for (auto& root : h.roots) root = (root + tonic) % 12;
+        return h;
+    }
     static const Harmony plans[4] = {
         { { 0, 8, 3, 10 }, { true, false, false, false } }, // i–VI–III–VII
         { { 0, 5, 8, 7 },  { true, true, false, false } },  // i–iv–VI–V
@@ -400,7 +414,20 @@ ClipData bassProgression(const Harmony& harmony, const PresetSpec& spec) {
     return clip;
 }
 
-ClipData padProgression(const Harmony& harmony, const std::string& variation) {
+ClipData padProgression(const Harmony& harmony, const PresetSpec& spec) {
+    const std::string variation = spec.variation;
+    if (spec.family == std::string("MINIMAL")) {
+        // No chords at all: a bare-fifth drone (no third) so the pad is texture,
+        // not harmony — it only shifts when the AAAB plan moves in bar 4.
+        ClipData clip { variation + " DRONE · 4 BAR", 4, sqEmptyClip(Machine::WT1, 4) };
+        for (int bar = 0; bar < 4; ++bar) {
+            const int root = harmony.roots[(size_t)bar];
+            const int dyad[2] { root, root + 7 };
+            for (int lane = 0; lane < 2; ++lane)
+                putNote(clip.bytes, sqWtNoteIdx(bar, 0, lane), ((dyad[lane] % 12) + 12) % 12, 16);
+        }
+        return clip;
+    }
     ClipData clip { variation + " CHORDS · 4 BAR", 4, sqEmptyClip(Machine::WT1, 4) };
     for (int bar = 0; bar < 4; ++bar) {
         // Close-voice the triad as pitch classes inside the root octave (+0..+11):
@@ -445,15 +472,15 @@ const std::array<const char*, 4>& leadPhrasesFor(const std::string& family) {
             "0,1,0! 2,1,3 4,1,7 6,1,3 8,2,10 11,1,7 13,3,0 | 0,1,7! 2,1,10 4,1,7 6,1,3 8,3,2 12,4,3 | 0,1,10! 2,1,2 4,1,5 6,1,2 8,2,7 11,1,5 13,3,10 | 0,2,8! 3,1,7 5,2,5 8,8,0",
             "0,4,0! 5,2,10 8,3,8 12,4,7 | 0,4,11! 5,2,7 8,4,2 13,3,7 | 0,4,8! 5,2,7 8,3,5 12,4,8 | 0,4,5! 5,2,3 8,8,2" } },
         { "CINEMATIC", {
-            "0,4,0! 6,2,3 8,6,7 14,2,10 | 0,4,8! 6,2,7 8,4,5 12,4,3 | 0,4,10! 6,2,7 8,6,3 14,2,5 | 0,3,5! 3,3,7 8,8,10",
-            "0,2,0! 4,1,0 6,2,0 8,4,3 12,4,2 | 0,2,5! 4,1,5 6,2,5 8,4,8 12,4,7 | 0,2,3! 4,1,3 6,2,3 8,4,10 12,4,8 | 0,2,2! 4,2,2 6,2,2 8,8,11",
-            "0,3,0! 4,3,0 8,3,3 12,2,2 14,2,0 | 0,3,3! 4,3,3 8,3,7 12,2,5 14,2,3 | 0,3,5! 4,3,5 8,3,10 12,2,8 14,2,5 | 0,3,8! 4,3,7 8,8,5",
-            "0,3,0! 4,2,3 6,2,5 8,4,7 12,4,10 | 0,3,11! 4,2,7 6,2,2 8,8,7 | 0,3,8! 4,2,5 6,2,8 8,4,0 12,4,10 | 0,2,10! 2,2,7 4,2,5 6,2,7 8,8,10" } },
+            "0,16,0! | 0,8,8! 8,8,3 | 0,16,7! | 0,8,10! 8,8,5",
+            "0,8,0! 8,8,3 | 0,16,5! | 0,8,8! 8,8,0 | 0,16,7!",
+            "0,16,0! | 0,8,3! 8,8,7 | 0,8,10! 8,8,2 | 0,16,5!",
+            "0,8,0! 8,8,7 | 0,16,7! | 0,8,5! 8,8,8 | 0,16,10!" } },
         { "MINIMAL", {
-            "0,1,0! 4,1,0 8,1,3 10,1,2 14,1,0 | 0,1,8! 4,1,8 10,1,7 14,1,5 | 0,1,3! 4,1,3 8,1,5 10,1,3 14,1,2 | 0,1,10! 4,1,7 8,8,10",
-            "0,1,0! 2,1,0 6,1,3 8,1,0 12,1,2 | 0,1,5! 4,1,5 8,1,8 12,1,7 | 0,1,8! 2,1,8 6,1,10 8,1,8 12,1,7 | 0,1,7! 4,1,2 8,8,7",
-            "0,1,7! 4,1,7 8,1,5 12,1,3 | 0,1,7! 4,1,10 8,1,7 10,1,5 14,1,3 | 0,1,10! 4,1,10 8,1,0 12,1,10 | 0,1,5! 4,1,3 6,1,2 8,8,0",
-            "0,1,3! 4,1,3 8,1,2 12,1,0 | 0,1,2! 4,1,2 8,1,11 12,1,7 | 0,1,0! 4,1,8 8,1,7 10,1,5 14,1,3 | 0,1,2! 4,1,0 8,8,10" } },
+            "0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,0! 4,1,0 8,1,0 | 0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,10! 4,1,10 8,8,10",
+            "0,1,0! 2,1,0 8,1,0 10,1,0 | 0,1,0! 2,1,0 8,1,0 | 0,1,0! 2,1,0 8,1,0 10,1,0 14,1,0 | 0,1,5! 2,1,5 8,8,5",
+            "0,1,7! 4,1,7 8,1,7 12,1,7 | 0,1,7! 4,1,7 12,1,7 | 0,1,7! 4,1,7 8,1,7 12,1,7 | 0,1,8! 4,1,8 8,8,8",
+            "0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,0! 4,1,0 8,1,0 12,1,0 14,1,0 | 0,1,0! 4,1,0 8,1,0 12,1,0 | 0,1,7! 4,1,7 8,8,7" } },
         { "FUTURE BASS", {
             "0,2,0! 3,2,3 6,2,7 10,3,10 14,2,7 | 0,2,8! 3,2,7 6,4,3 11,2,5 14,2,8 | 0,2,7! 3,2,10 6,4,7 12,4,3 | 0,3,10! 4,2,7 6,2,5 8,8,2",
             "0,2,0! 3,2,3 6,2,5 8,3,7 12,4,3 | 0,2,5! 3,2,8 6,4,5 12,4,0 | 0,2,8! 3,2,10 6,2,8 8,4,7 13,3,5 | 0,2,7! 3,2,10 6,2,7 8,8,2",
@@ -698,41 +725,56 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             const auto calibratedGain = [](size_t track, int program) {
                 if (track == 0) { // DR-1 kits, leveled to the drum-bus mean
                     switch (program) {
-                        case 3: return 0.80f; case 12: return 0.80f;
-                        case 13: return 0.87f; case 15: return 0.63f;
+                        case 0: return 1.00f; case 2: return 0.71f;
+                        case 3: return 0.74f; case 4: return 1.00f;
+                        case 6: return 0.48f; case 8: return 0.80f;
+                        case 9: return 1.00f; case 12: return 0.74f;
+                        case 13: return 0.80f; case 15: return 0.58f;
+                        case 16: return 0.87f;
                         default: return 0.78f;
                     }
                 }
                 if (track == 1) { // BL-1 bass (+4 dB role offset)
                     switch (program) {
-                        case 0: return 0.49f; case 2: return 0.52f;
-                        case 4: return 0.50f; case 5: return 0.48f;
-                        case 7: return 0.49f; case 8: return 0.47f;
-                        case 9: return 0.84f;
-                        default: return 0.50f;
+                        case 0: return 0.43f; case 2: return 0.46f;
+                        case 3: return 0.44f; case 4: return 0.44f;
+                        case 5: return 0.42f; case 7: return 0.43f;
+                        case 8: return 0.41f; case 9: return 0.74f;
+                        case 10: return 0.45f; case 11: return 0.50f;
+                        case 12: return 0.42f; case 13: return 0.41f;
+                        case 14: return 0.41f; case 15: return 0.41f;
+                        case 16: return 0.71f; case 17: return 0.38f;
+                        case 18: return 0.40f; case 19: return 0.42f;
+                        case 20: return 0.41f; case 21: return 0.50f;
+                        default: return 0.45f;
                     }
                 }
                 if (track == 2) { // WT-1 lead (at drum target)
                     switch (program) {
-                        case 3: return 0.67f; case 20: return 0.70f;
-                        case 21: return 0.54f; case 22: return 0.60f;
-                        case 28: return 0.84f; case 29: return 0.96f;
-                        case 33: return 0.51f; case 36: return 0.75f;
-                        case 39: return 1.00f; case 43: return 0.51f;
-                        case 44: return 0.52f; case 45: return 0.79f;
-                        case 47: return 0.87f; case 49: return 0.54f;
-                        case 51: return 0.48f; case 52: return 0.53f;
-                        case 53: return 0.49f; case 54: return 0.49f;
+                        case 3: return 0.59f; case 4: return 0.45f;
+                        case 6: return 0.43f; case 15: return 0.56f;
+                        case 20: return 0.64f; case 21: return 0.48f;
+                        case 22: return 0.51f; case 28: return 0.79f;
+                        case 29: return 0.89f; case 33: return 0.45f;
+                        case 35: return 0.47f; case 36: return 0.68f;
+                        case 44: return 0.43f; case 45: return 0.70f;
+                        case 46: return 0.31f; case 49: return 0.48f;
+                        case 51: return 0.43f; case 52: return 0.46f;
+                        case 53: return 0.43f; case 54: return 0.43f;
+                        case 55: return 0.71f; case 58: return 0.44f;
+                        case 59: return 0.80f; case 60: return 0.78f;
+                        case 61: return 0.87f;
                         default: return 0.65f;
                     }
                 }
                 switch (program) { // WT-1 pad (+2 dB role offset)
-                    case 1: return 0.65f; case 11: return 0.53f;
-                    case 17: return 0.83f; case 24: return 0.63f;
-                    case 25: return 0.62f; case 27: return 0.63f;
-                    case 32: return 1.00f; case 34: return 0.60f;
-                    case 35: return 0.59f; case 38: return 0.83f;
-                    case 40: return 0.60f; case 42: return 0.82f;
+                    case 1: return 0.59f; case 11: return 0.47f;
+                    case 17: return 0.76f; case 22: return 0.47f;
+                    case 24: return 0.56f; case 25: return 0.55f;
+                    case 27: return 0.55f; case 32: return 1.00f;
+                    case 34: return 0.52f; case 35: return 0.53f;
+                    case 38: return 0.73f; case 40: return 0.53f;
+                    case 42: return 0.72f; case 56: return 1.00f;
                     default: return 0.59f;
                 }
             };
@@ -747,7 +789,7 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             const Harmony harmony = harmonyFor(spec);
             const ClipData bass = bassProgression(harmony, spec);
             const ClipData lead = leadProgression(harmony, spec);
-            const ClipData pads = padProgression(harmony, variation);
+            const ClipData pads = padProgression(harmony, spec);
             for (size_t s = 0; s < preset.session.scenes.size(); ++s) {
                 auto& sceneData = preset.session.scenes[s];
                 const ClipData drums = drumProgression(spec, (int)s);
@@ -783,52 +825,52 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("PEAK SIGNAL",   "ACID", "PEAK",    5, { "distorted", "wide", "peak-time" }, { 13, 5, 6, 40 }, 3),
 
             // AMBIENT / DEEP
-            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 15, 7, 51, 34 }, 0),      // ACID CAVE / FOG LIGHT
-            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 15, 0, 52, 25 }, 1),   // ACID CAVE / GLASS RIBBON
-            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 15, 5, 53, 32 }, 2),   // ACID CAVE / NORTH WIRE
-            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 15, 7, 54, 27 }, 3), // ACID CAVE / TEMPLE BREATH
+            make("DEEP FOG",      "AMBIENT", "FOG",   1, { "dark", "deep", "slow" }, { 15, 12, 51, 34 }, 0),      // SOFT HORIZON · FOG LIGHT
+            make("GLASS BLOOM",   "AMBIENT", "BLOOM", 2, { "glassy", "clean", "lush" }, { 15, 7, 52, 25 }, 1),      // TAPE BASS · GLASS RIBBON
+            make("FROZEN BELL",   "AMBIENT", "FROZEN", 2, { "cold", "bell", "sparse" }, { 15, 11, 53, 32 }, 2),     // CLEAN SUB · NORTH WIRE
+            make("AIR TEMPLE",    "AMBIENT", "TEMPLE", 2, { "warm", "ceremonial", "wide" }, { 15, 12, 54, 27 }, 3), // SOFT HORIZON · TEMPLE BREATH
 
             // HOUSE / CLUB
-            make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 12, 4, 36, 42 }, 0),
-            make("MIDNIGHT FLOOR", "HOUSE", "NIGHT",  4, { "club", "round", "wide" }, { 13, 0, 21, 40 }, 1),
-            make("TAPE DISCO",    "HOUSE", "TAPE",    3, { "tape", "soft", "groovy" }, { 3, 7, 28, 27 }, 2),
-            make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 12, 5, 22, 42 }, 3),
+            make("DUST HOUSE",    "HOUSE", "DUST",    3, { "dusty", "groovy", "warm" }, { 12, 13, 36, 42 }, 0),   // HOUSE ORGAN
+            make("MIDNIGHT FLOOR", "HOUSE", "NIGHT",  4, { "club", "round", "wide" }, { 13, 4, 21, 40 }, 1),      // WAREHOUSE
+            make("TAPE DISCO",    "HOUSE", "TAPE",    3, { "tape", "soft", "groovy" }, { 3, 13, 28, 27 }, 2),     // HOUSE ORGAN
+            make("CLEAN CLUB",    "HOUSE", "CLEAN",   4, { "clean", "tight", "bright" }, { 12, 5, 22, 42 }, 3),   // ROUNDHOUSE
 
             // LO-FI / RETRO
-            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 7, 36, 34 }, 0),
-            make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 12, 5, 20, 27 }, 1),
-            make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 13, 2, 29, 42 }, 2),
-            make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 3, 0, 33, 17 }, 3),
+            make("VHS GARDEN",    "LO-FI", "VHS",     2, { "tape", "dark", "nostalgic" }, { 3, 14, 36, 34 }, 0),  // DUSTY FELT
+            make("POCKET DUST",   "LO-FI", "POCKET",  2, { "dusty", "small", "warm" }, { 12, 7, 20, 27 }, 1),     // TAPE BASS
+            make("TOY PARADE",    "LO-FI", "TOY",     4, { "8-bit", "playful", "broken" }, { 13, 14, 29, 42 }, 2), // DUSTY FELT
+            make("WORN SIGNAL",   "LO-FI", "WORN",    3, { "distorted", "dark", "unstable" }, { 3, 4, 33, 17 }, 3), // WAREHOUSE
 
             // CINEMATIC / EXPERIMENTAL
-            make("CHROME CATHEDRAL", "CINEMATIC", "CATHEDRAL", 3, { "large", "metallic", "ceremonial" }, { 13, 7, 39, 25 }, 0),
-            make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 12, 5, 47, 38 }, 1),
-            make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 4, 44, 25 }, 2),
-            make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 43, 38 }, 3),
+            make("CHROME CATHEDRAL", "CINEMATIC", "CATHEDRAL", 3, { "large", "metallic", "ceremonial" }, { 13, 15, 58, 25 }, 0), // CINEMA SUB · CINEMA LEAD
+            make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 12, 10, 35, 38 }, 1),     // DARK CURRENT · TWIN SKY
+            make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 15, 44, 25 }, 2),         // CINEMA SUB
+            make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 46, 38 }, 3),           // REESE MONO · TAURUS PEDAL
 
             // MINIMAL / TECHNO
-            make("GRAY ROOM",   "MINIMAL", "ROOM",  4, { "hypnotic", "dry", "tight" }, { 9, 2, 33, 17 }, 0),      // DATA STREAM / DARK DRONE
-            make("CLICK FIELD", "MINIMAL", "CLICK", 4, { "clicky", "sparse", "precise" }, { 9, 11, 57, 40 }, 1),  // BLEEP TECH / PUMP PAD
-            make("COLD ROTOR",  "MINIMAL", "ROTOR", 5, { "dark", "driving", "hypnotic" }, { 6, 6, 50, 35 }, 2),   // PROPHET STAB / TWIN SKY
-            make("NIGHT GRID",  "MINIMAL", "GRID",  4, { "deep", "rolling", "late" }, { 9, 5, 14, 34 }, 3),       // HOUSE PLUCK / OCEAN AIR
+            make("GRAY ROOM",   "MINIMAL", "ROOM",  4, { "hypnotic", "dry", "tight" }, { 9, 16, 59, 17 }, 0),     // SUB STAB · DEEP TICK / DARK DRONE
+            make("CLICK FIELD", "MINIMAL", "CLICK", 4, { "clicky", "sparse", "precise" }, { 9, 21, 61, 17 }, 1),  // TECHNO SUB · CELLAR BLIP / DARK DRONE
+            make("COLD ROTOR",  "MINIMAL", "ROTOR", 5, { "dark", "driving", "hypnotic" }, { 6, 21, 60, 35 }, 2),  // TECHNO SUB · ROOM KNOCK / TWIN SKY
+            make("NIGHT GRID",  "MINIMAL", "GRID",  4, { "deep", "rolling", "late" }, { 9, 16, 59, 34 }, 3),      // SUB STAB · DEEP TICK / OCEAN AIR
 
             // FUTURE BASS
-            make("SUGAR RUSH", "FUTURE BASS", "RUSH",   5, { "bright", "bouncy", "wide" }, { 0, 8, 4, 11 }, 0),    // HYPER SAW / FUTURE CHORD
-            make("PASTEL SKY", "FUTURE BASS", "PASTEL", 4, { "soft", "lush", "wide" }, { 2, 1, 15, 42 }, 1),       // TRAP BELL / JUNO DREAM
-            make("STARBURST",  "FUTURE BASS", "BURST",  5, { "euphoric", "punchy", "bright" }, { 0, 11, 45, 40 }, 2), // FANTA BELLS / PUMP PAD
-            make("HEART WIRE", "FUTURE BASS", "WIRE",   4, { "emotive", "glassy", "wide" }, { 2, 8, 52, 38 }, 3),  // GLASS RIBBON / AURORA RISER
+            make("SUGAR RUSH", "FUTURE BASS", "RUSH",   5, { "bright", "bouncy", "wide" }, { 0, 17, 4, 11 }, 0),   // 808 GLIDE · HYPER SAW / FUTURE CHORD
+            make("PASTEL SKY", "FUTURE BASS", "PASTEL", 4, { "soft", "lush", "wide" }, { 2, 18, 15, 42 }, 1),      // GROWL WIDE · TRAP BELL / JUNO DREAM
+            make("STARBURST",  "FUTURE BASS", "BURST",  5, { "euphoric", "punchy", "bright" }, { 0, 17, 45, 40 }, 2), // 808 GLIDE · FANTA BELLS / PUMP PAD
+            make("HEART WIRE", "FUTURE BASS", "WIRE",   4, { "emotive", "glassy", "wide" }, { 2, 18, 52, 38 }, 3),  // GROWL WIDE · GLASS RIBBON / AURORA RISER
 
             // TRIP HOP
-            make("VELVET SMOKE", "TRIP HOP", "SMOKE", 2, { "smoky", "dusty", "slow" }, { 16, 7, 20, 34 }, 0),      // MELLOW RHODES / OCEAN AIR
-            make("NIGHT BUS",    "TRIP HOP", "BUS",   2, { "nocturnal", "warm", "tape" }, { 16, 10, 36, 32 }, 1),  // TAPE KEYS / GHOST CHOIR
-            make("CRACKED LENS", "TRIP HOP", "LENS",  3, { "broken", "eerie", "dusty" }, { 8, 10, 29, 17 }, 2),    // KALIMBA PLUCK / DARK DRONE
-            make("STONE GARDEN", "TRIP HOP", "STONE", 3, { "organic", "moody", "deep" }, { 16, 7, 28, 1 }, 3),     // NYLON PLUCK / VELVET PAD
+            make("VELVET SMOKE", "TRIP HOP", "SMOKE", 2, { "smoky", "dusty", "slow" }, { 16, 19, 20, 34 }, 0),     // UPRIGHT FELT · MELLOW RHODES / OCEAN AIR
+            make("NIGHT BUS",    "TRIP HOP", "BUS",   2, { "nocturnal", "warm", "tape" }, { 16, 19, 36, 32 }, 1),  // UPRIGHT FELT · TAPE KEYS / GHOST CHOIR
+            make("CRACKED LENS", "TRIP HOP", "LENS",  3, { "broken", "eerie", "dusty" }, { 8, 10, 29, 17 }, 2),    // DARK CURRENT · KALIMBA PLUCK / DARK DRONE
+            make("STONE GARDEN", "TRIP HOP", "STONE", 3, { "organic", "moody", "deep" }, { 16, 14, 28, 1 }, 3),    // DUSTY FELT · NYLON PLUCK / VELVET PAD
 
             // DUB
-            make("ECHO CHAMBER", "DUB", "ECHO",    2, { "spacious", "deep", "smoky" }, { 4, 3, 55, 56 }, 0),       // MELODICA / DUB SKANK
-            make("KING STEPPER", "DUB", "STEPPER", 3, { "rootsy", "driving", "warm" }, { 4, 11, 55, 22 }, 1),      // MELODICA / DRAWBAR ORGAN
-            make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 3, 22, 56 }, 2),           // DRAWBAR ORGAN / DUB SKANK
-            make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 11, 55, 1 }, 3),     // MELODICA / VELVET PAD
+            make("ECHO CHAMBER", "DUB", "ECHO",    2, { "spacious", "deep", "smoky" }, { 4, 20, 55, 56 }, 0),      // STEPPER ROOT · MELODICA / DUB SKANK
+            make("KING STEPPER", "DUB", "STEPPER", 3, { "rootsy", "driving", "warm" }, { 4, 3, 55, 22 }, 1),       // DEEP DUB · MELODICA / DRAWBAR ORGAN
+            make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 20, 22, 56 }, 2),          // STEPPER ROOT · DRAWBAR ORGAN / DUB SKANK
+            make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 20, 55, 1 }, 3),     // STEPPER ROOT · MELODICA / VELVET PAD
         };
         return library;
     }();

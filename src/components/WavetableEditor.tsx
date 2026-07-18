@@ -272,7 +272,14 @@ export function WavetableEditor() {
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => { if (drawingRef.current) paint(e); };
   // Sync the edited frame into the list once, at stroke end — avoids resampling
   // + remounting the strip/stack on every pointer move.
-  const onUp = () => { drawingRef.current = false; lastIdxRef.current = -1; if (!readOnly) syncCurrentFrame(); };
+  const onUp = () => {
+    // Pointer leave can occur without a stroke. Only resample a frame after a
+    // real draw, otherwise merely hovering over the pad corrupts its samples.
+    const drew = drawingRef.current;
+    drawingRef.current = false;
+    lastIdxRef.current = -1;
+    if (drew && !readOnly) syncCurrentFrame();
+  };
 
   return (
     <div className="wte-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
@@ -309,7 +316,7 @@ export function WavetableEditor() {
               <div className="wte-body">
                 <div className="wte-edit-row">
                   <canvas ref={drawRef} className={'wte-draw' + (readOnly ? ' ro' : '')}
-                    onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp} />
+                    onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} />
                   <StackPreview frames={framesRef.current} current={current} accent={accentColor} />
                 </div>
                 <FrameStrip

@@ -95,7 +95,7 @@ static void testClipLibrarySchema() {
     const auto transposed = transformClipLibraryEntry(lead, ClipTransformKind::transpose, 2);
     CHECK(lead.bytes == original);
     CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 1] == 1);
-    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 2] == 0);
+    CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 0) + 2] == 2);
     CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 2) + 1] == 9);
     CHECK(transposed.bytes[(size_t)sqWtNoteIdx(0, 2) + 2] == 1);
     CHECK(transposed.root == 2);
@@ -103,6 +103,36 @@ static void testClipLibrarySchema() {
     CHECK((rotated.bytes[(size_t)sqWtNoteIdx(0, 1)] & 1) != 0);
     const auto repeated = transformClipLibraryEntry(lead, ClipTransformKind::repeat, 4);
     CHECK(repeated.bars == 4 && repeated.bytes.size() == (size_t)(4 * sqBytesPerBar(Machine::WT1)));
+
+    // The octave byte is signed-octave + 1. Crossing the top boundary folds
+    // down one octave while retaining the top encoded octave, rather than
+    // wrapping all the way to the bottom of the three-octave lane range.
+    ClipLibraryEntry boundary = lead;
+    boundary.bars = 1;
+    boundary.bytes = sqEmptyClip(Machine::WT1, 1);
+    boundary.bytes[0] = 1 | (1 << 2);
+    boundary.bytes[1] = 11;
+    boundary.bytes[2] = 2;
+    const auto transposedBoundary = transformClipLibraryEntry(boundary, ClipTransformKind::transpose, 1);
+    CHECK(transposedBoundary.bytes[1] == 0 && transposedBoundary.bytes[2] == 2);
+
+    // Zero is a valid deterministic humanize seed, not a request to accent
+    // every active event (xorshift's zero state otherwise never advances).
+    ClipLibraryEntry humanize = lead;
+    humanize.machine = Machine::DR1;
+    humanize.bars = 1;
+    humanize.bytes = sqEmptyClip(Machine::DR1, 1);
+    humanize.id = "humanize-zero";
+    humanize.name = "HUMANIZE ZERO";
+    humanize.role = "four-on-floor";
+    humanize.root = -1;
+    humanize.scale.clear();
+    humanize.transpose = false;
+    for (int i = 0; i < 16; ++i) humanize.bytes[(size_t)i] = 1;
+    const auto zeroSeed = transformClipLibraryEntry(humanize, ClipTransformKind::humanize, 0);
+    int zeroSeedAccents = 0;
+    for (int i = 0; i < 16; ++i) if (zeroSeed.bytes[(size_t)i] == 2) ++zeroSeedAccents;
+    CHECK(zeroSeedAccents > 0 && zeroSeedAccents < 16);
 }
 
 static void testProtocol() {

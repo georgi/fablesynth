@@ -23,10 +23,13 @@ if (typeof localStorage === 'undefined') {
 describe('bass patches', () => {
   beforeEach(() => localStorage.clear());
 
-  it('ships 12 distinct factory patches without moving the original programs', () => {
+  it('ships 22 distinct factory patches without moving the original programs', () => {
     expect(FACTORY_PATCHES.map((p) => p.name)).toEqual([
       'ACID LINE', 'RUBBER SUB', 'NEON SQUELCH', 'DEEP DUB', 'WAREHOUSE', 'ROUNDHOUSE',
       'METAL PULSE', 'TAPE BASS', 'REESE MONO', 'PLUCKED WIRE', 'DARK CURRENT', 'CLEAN SUB',
+      // genre bank — appended, so the twelve original program numbers never move
+      'SOFT HORIZON', 'HOUSE ORGAN', 'DUSTY FELT', 'CINEMA SUB', 'SUB STAB',
+      '808 GLIDE', 'GROWL WIDE', 'UPRIGHT FELT', 'STEPPER ROOT', 'TECHNO SUB',
     ]);
   });
 

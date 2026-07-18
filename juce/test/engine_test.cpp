@@ -464,6 +464,26 @@ int main() {
         for (size_t i = 0; i < r1.size(); ++i) dAccum += std::abs(r3[i] - r1[i]);
         check(dAccum > 1.0, "stacking routes on one dest changes output (accumulation, not last-wins)",
               "dAccum=" + std::to_string(dAccum));
+
+        // A malformed/heavily-stacked DETUNE modulation must stay within the
+        // parameter's 0..1 range before it reaches the oscillator table reader.
+        // The intentionally extreme route depth would previously let phase jump
+        // beyond a wavetable in one sample.
+        Engine detune; detune.prepare(sr); detune.setTables(tables);
+        auto& detuneParams = detune.params(); detuneParams = defaultParams();
+        detuneParams[OSCA_BASE + OSC_UNISON] = 16;
+        for (int slot = 1; slot <= MOD_MATRIX_SIZE; ++slot) {
+            int base = matBase(slot);
+            detuneParams[base + MAT_SRC] = 4;   // velocity: a stable +1 source
+            detuneParams[base + MAT_DST] = 11;  // A DETUNE
+            detuneParams[base + MAT_AMT] = 100;
+        }
+        detune.noteOn(127, 1.0);
+        std::vector<float> detuneL(4096), detuneR(4096);
+        detune.render(detuneL.data(), detuneR.data(), (int)detuneL.size());
+        check(finite(detuneL) && finite(detuneR) && peak(detuneL) < 4.0f,
+              "heavy A DETUNE modulation stays finite and bounded",
+              "peak=" + std::to_string(peak(detuneL)));
     }
 
     printf("\n== 11. Generic mod destinations (per-param curve rules) ==\n");

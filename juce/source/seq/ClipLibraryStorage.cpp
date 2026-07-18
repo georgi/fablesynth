@@ -67,6 +67,11 @@ bool entryFromVar(const juce::var& v, ClipLibraryEntry& e, juce::String& error) 
     if (o->hasProperty("root") && !isIntegerVar(v["root"])) {
         error = "root must be an integer"; return false;
     }
+    // `-1` is an in-memory sentinel for an omitted root.  It is not a valid
+    // serialized value: the web schema accepts only explicit pitch classes.
+    if (o->hasProperty("root") && ((int)v["root"] < 0 || (int)v["root"] > 11)) {
+        error = "root out of range"; return false;
+    }
     if (o->hasProperty("scale") && !v["scale"].isString()) {
         error = "scale must be a string"; return false;
     }

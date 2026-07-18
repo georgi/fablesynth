@@ -24,6 +24,18 @@ static const double POS_TAU = 128.0 / (48000.0 * 0.4307829160924542); // 0.35 pe
 static const double CUT_TAU = 128.0 / (48000.0 * LN2);                // 0.5 per 128
 static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
 
+// Oscillator phase normally advances by less than one table length per sample,
+// but defensive wrapping keeps a malformed/modulated parameter snapshot from
+// turning the table index into an out-of-bounds read on the audio thread.
+static inline double wrapOscPhase(double phase, int size) {
+    if (!std::isfinite(phase)) return 0.0;
+    if (phase < 0.0 || phase >= size) {
+        phase = std::fmod(phase, (double)size);
+        if (phase < 0.0) phase += size;
+    }
+    return phase;
+}
+
 // Finding 10: 4-point cubic Hermite (Catmull-Rom) table read. Indices are
 // pre-wrapped by the caller (branchless & mask), off selects the frame/mip.
 static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i2, double f) {
@@ -466,7 +478,13 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     if (level < 1e-5) return false;
 
     int uni = std::max(1, std::min(MAXUNI, (int)p_[slot(base + OSC_UNISON)]));
+    // DETUNE is a linear 0..1 parameter. Unlike the UI-controlled base
+    // value, its modulation snapshot can exceed that range when routes stack.
+    // Keeping it bounded also keeps oscillator increments within the table
+    // reader's expected range.
     double det = pm[base + OSC_DETUNE];
+    if (!std::isfinite(det)) det = 0.0;
+    else det = std::max(0.0, std::min(1.0, det));
     double spr = pm[base + OSC_SPREAD];
     double blend = std::min(1.0, std::max(0.0, pm[base + OSC_BLEND]));
     double basePan = std::max(-1.0, std::min(1.0, pm[base + OSC_PAN] + mPan));
@@ -554,7 +572,7 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
     int off0 = o.off0, off1 = o.off1;
     double blend = o.mipBlend;
     for (int u = 0; u < o.uni; u++) {
-        double ph = o.phases[u];
+        double ph = wrapOscPhase(o.phases[u], size);
         const double inc1 = o.incs[u];
         const double inc0 = rp ? o.pIncs[u] : inc1;
         const double dInc = (inc1 - inc0) * invN;
@@ -563,7 +581,7 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
         const double dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
         if (blend < 0.001) {
             for (int i = 0; i < n; i++) {
-                int idx = (int)ph;
+                int idx = (int)ph & mask;
                 double frac = ph - idx;
                 int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
                 double s0 = rdH(data, off0, im1, idx, i2, i3, frac);
@@ -571,12 +589,12 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
                 double s = s0 + (ft0 + dFt * i) * (s1 - s0);
                 tmpL[i] += (float)(s * (gl0 + dGl * i));
                 tmpR[i] += (float)(s * (gr0 + dGr * i));
-                ph += inc0 + dInc * i; if (ph >= size) ph -= size;
+                ph = wrapOscPhase(ph + inc0 + dInc * i, size);
             }
         } else {
             const int off0b = o.off0b, off1b = o.off1b;
             for (int i = 0; i < n; i++) {
-                int idx = (int)ph;
+                int idx = (int)ph & mask;
                 double frac = ph - idx;
                 int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
                 double ftN = ft0 + dFt * i;
@@ -589,7 +607,7 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
                 double s = sc + blend * (sf - sc);
                 tmpL[i] += (float)(s * (gl0 + dGl * i));
                 tmpR[i] += (float)(s * (gr0 + dGr * i));
-                ph += inc0 + dInc * i; if (ph >= size) ph -= size;
+                ph = wrapOscPhase(ph + inc0 + dInc * i, size);
             }
         }
         o.phases[u] = ph;

@@ -96,6 +96,17 @@ int main(int argc, char** argv) {
             .replace("\"bars\": 2", "\"bars\": \"2\"");
         check(!importedAgain.importSqclip(malformed, &error),
               "native .sqclip rejects coerced field types");
+        auto explicitRoot = *std::find_if(fable::factoryClipLibrary().begin(),
+                                          fable::factoryClipLibrary().end(),
+                                          [](const auto& clip) { return clip.machine != fable::Machine::DR1; });
+        explicitRoot.root = 0;
+        explicitRoot.scale = "minor";
+        explicitRoot.transpose = true;
+        const auto withRoot = fable::ClipLibraryStorage::encodeSqclip({ explicitRoot });
+        const auto sentinelRoot = withRoot.replace("\"root\": 0", "\"root\": -1");
+        check(withRoot != sentinelRoot && !importedAgain.importSqclip(sentinelRoot, &error)
+                  && error.contains("root out of range"),
+              "native .sqclip rejects an explicit root sentinel");
         root.deleteRecursively();
     }
 
@@ -186,6 +197,56 @@ int main(int argc, char** argv) {
               "WT-1 native sequencer round-trips a hosted clip step");
         check(wt3.sequenceStep(0, 1).note != 9 || wt3.sequenceStep(0, 1).duration != 4,
               "WT-1 clip edit remains isolated from the second WT track");
+
+        // The hosted WT-1 editor projects a polyphonic clip step to its first
+        // active lane. Editing it must select that same lane and silence every
+        // invisible sibling lane, including when the visible note is rested.
+        auto chordBytes = hosted.conductor().session().scenes[2].clips[2].bytes;
+        const auto setChord = [&] {
+            for (int lane = 0; lane < fable::SQ_WT_POLY_LANES; ++lane) {
+                const int offset = fable::sqWtNoteIdx(0, 2, lane);
+                chordBytes[(size_t)offset] = 1 << 2;
+                chordBytes[(size_t)offset + 1] = 0;
+                chordBytes[(size_t)offset + 2] = 1;
+            }
+            const int first = fable::sqWtNoteIdx(0, 2, 0);
+            chordBytes[(size_t)first] = 1 | (2 << 2);
+            chordBytes[(size_t)first + 1] = 3;
+            chordBytes[(size_t)first + 2] = 1;
+            const int sibling = fable::sqWtNoteIdx(0, 2, 3);
+            chordBytes[(size_t)sibling] = 1 | 2 | (5 << 2);
+            chordBytes[(size_t)sibling + 1] = 7;
+            chordBytes[(size_t)sibling + 2] = 2;
+        };
+        const int wtBars = hosted.conductor().session().scenes[2].clips[2].bars;
+        setChord();
+        hosted.conductor().updateClipBytes(2, 2, chordBytes, wtBars);
+        auto chordStep = wt2.sequenceStep(0, 2);
+        check(chordStep.on && chordStep.note == 3 && chordStep.oct == 0 && !chordStep.acc
+                  && chordStep.duration == 2,
+              "WT-1 hosted editor projects the first polyphonic lane");
+        chordStep.note = 9; chordStep.oct = -1; chordStep.acc = true; chordStep.duration = 4;
+        wt2.setSequenceStep(0, 2, chordStep);
+        const auto& editedChord = hosted.conductor().session().scenes[2].clips[2].bytes;
+        const int editedFirst = fable::sqWtNoteIdx(0, 2, 0);
+        const int editedSibling = fable::sqWtNoteIdx(0, 2, 3);
+        check(editedChord[(size_t)editedFirst] == (1 | 2 | (4 << 2))
+                  && editedChord[(size_t)editedFirst + 1] == 9
+                  && editedChord[(size_t)editedFirst + 2] == 0
+                  && editedChord[(size_t)editedSibling] == (1 << 2)
+                  && editedChord[(size_t)editedSibling + 1] == 0
+                  && editedChord[(size_t)editedSibling + 2] == 1,
+              "WT-1 hosted edit updates the displayed lane and clears chord siblings");
+        setChord();
+        hosted.conductor().updateClipBytes(2, 2, chordBytes, wtBars);
+        auto restChord = wt2.sequenceStep(0, 2);
+        restChord.on = false;
+        wt2.setSequenceStep(0, 2, restChord);
+        const auto& restedChord = hosted.conductor().session().scenes[2].clips[2].bytes;
+        bool anyChordLaneOn = false;
+        for (int lane = 0; lane < fable::SQ_WT_POLY_LANES; ++lane)
+            anyChordLaneOn |= (restedChord[(size_t)fable::sqWtNoteIdx(0, 2, lane)] & 1) != 0;
+        check(!anyChordLaneOn, "WT-1 hosted rest silences every polyphonic lane");
 
         wt2.auditionNoteOn(60, 0.8f);
         renderRms(hosted, hostedBuf, 2);
@@ -341,8 +402,8 @@ int main(int argc, char** argv) {
     check(!p.conductor().playing(), "combined transport button stops playback");
 
     const auto& sessionLibrary = fable::factorySessionLibrary();
-    check(sessionLibrary.size() == 24 && p.getNumPrograms() == 24,
-          "SQ-4 ships 24 complete session programs");
+    check(sessionLibrary.size() == 40 && p.getNumPrograms() == 40,
+          "SQ-4 ships 40 complete session programs");
     std::map<std::string, int> familyCounts;
     std::set<std::string> rigNames;
     bool rigMetadataValid = true, rigProgramsValid = true, completeSessionContent = true;
@@ -369,11 +430,11 @@ int main(int argc, char** argv) {
             if (!hasPlayableClip) completeSessionContent = false;
         }
     }
-    bool familiesValid = familyCounts.size() == 6;
+    bool familiesValid = familyCounts.size() == 10;
     for (const auto& [family, count] : familyCounts)
         if (family.empty() || count != 4) familiesValid = false;
     check(rigMetadataValid, "every SQ-4 library entry is a valid complete session");
-    check(familiesValid, "session library has six families with four variations each");
+    check(familiesValid, "session library has ten families with four variations each");
     check(rigProgramsValid, "every session references valid device programs");
     check(completeSessionContent, "every session contains playable clips and device patches");
     // Session names are unique. Four-device rig *combinations* are deliberately
@@ -793,6 +854,27 @@ int main(int argc, char** argv) {
                       std::abs(rf.tracks[2].patch.params["reso"] - 0.7f) < 1e-4f,
                       "legacy flat inline patch yields the same params map");
             }
+        }
+
+        // Portable exports resolve invalid factory indices exactly like the
+        // web/device path: any out-of-range index falls back to bank entry 0,
+        // rather than accidentally embedding the final factory kit.
+        {
+            fable::SessionData invalidFactory = fable::factorySession();
+            invalidFactory.tracks[0].patch.index = 1000000;
+            const auto embedded = juce::JSON::parse(fable::sessionToJson(invalidFactory, true));
+            const auto params = embedded.getProperty("tracks", juce::var())[0]
+                                        .getProperty("patch", juce::var())
+                                        .getProperty("data", juce::var())
+                                        .getProperty("params", juce::var());
+            const auto firstKitParams = fable::applyKit(fable::factoryKits()[0]);
+            const auto& info = fable::drumParamInfo();
+            bool fallsBackToFirst = params.getDynamicObject() != nullptr;
+            for (size_t i = 0; fallsBackToFirst && i < firstKitParams.size(); ++i)
+                if (std::abs((double)params.getProperty(juce::Identifier(info[i].pid), -999.0)
+                             - firstKitParams[i]) > 1e-6)
+                    fallsBackToFirst = false;
+            check(fallsBackToFirst, "embedded out-of-range factory index falls back to first kit");
         }
 
         // rejects bad docs.

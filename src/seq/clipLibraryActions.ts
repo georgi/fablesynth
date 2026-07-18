@@ -72,10 +72,10 @@ export function rootTransposeSemitones(sourceRoot: number, targetRoot: number): 
 }
 
 function foldToLaneRange(semitone: number): number {
-  // SQ note clips encode three lane octaves: -12..23. Octave-fold only at
-  // the boundary so pitch class survives without corrupting note bytes.
-  while (semitone < -12) semitone += 12;
-  while (semitone > 23) semitone -= 12;
+  // SQ note clips encode three signed octaves: -12..23. Fold by octaves at
+  // either boundary so the pitch class survives without jumping two octaves.
+  if (semitone > 23) semitone -= Math.ceil((semitone - 23) / 12) * 12;
+  if (semitone < -12) semitone += Math.ceil((-12 - semitone) / 12) * 12;
   return semitone;
 }
 
@@ -91,10 +91,9 @@ export function transposeNotePattern(pattern: Uint8Array, semitones: number): Ui
     if ((out[offset] & 1) === 0) continue;
     const slide = out[offset + 1] & 0x80;
     const absolute = (out[offset + 1] & 0x7f) + 12 * (out[offset + 2] - 1);
-    const shifted = foldToLaneRange(absolute + semitones);
-    const octave = Math.floor(shifted / 12);
-    out[offset + 1] = slide | (((shifted % 12) + 12) % 12);
-    out[offset + 2] = octave + 1;
+    const encoded = foldToLaneRange(absolute + semitones) + 12;
+    out[offset + 1] = slide | (encoded % 12);
+    out[offset + 2] = Math.floor(encoded / 12);
   }
   return out;
 }
