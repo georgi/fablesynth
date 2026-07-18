@@ -125,18 +125,18 @@ inline juce::Typeface::Ptr plexSemiBold() { return nullptr; }
 
 inline juce::Font monoFont(float h, bool bold = false) {
     if (auto tf = bold ? detail::plexSemiBold() : detail::plexRegular())
-        return juce::Font(juce::FontOptions(tf).withHeight(h));
+        return juce::Font(juce::FontOptions(tf).withPointHeight(h));
     return juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), h,
                                         bold ? juce::Font::bold : juce::Font::plain));
 }
 inline juce::Font monoFontMedium(float h) {
     if (auto tf = detail::plexMedium())
-        return juce::Font(juce::FontOptions(tf).withHeight(h));
+        return juce::Font(juce::FontOptions(tf).withPointHeight(h));
     return monoFont(h);
 }
 inline juce::Font dispFont(float h) {
     if (auto tf = detail::michroma())
-        return juce::Font(juce::FontOptions(tf).withHeight(h));
+        return juce::Font(juce::FontOptions(tf).withPointHeight(h));
     return juce::Font(juce::FontOptions(h, juce::Font::bold));
 }
 

@@ -117,6 +117,8 @@ int main(int argc, char** argv) {
     check(fui::monoFont(10.0f).getTypefaceName().startsWith("IBM Plex Mono"), "monoFont is embedded IBM Plex Mono");
     check(fui::monoFont(10.0f, true).getTypefaceName().startsWith("IBM Plex Mono"), "bold monoFont is embedded IBM Plex Mono");
     check(fui::monoFontMedium(10.0f).getTypefaceName().startsWith("IBM Plex Mono"), "monoFontMedium is embedded IBM Plex Mono");
+    check(fui::monoFont(10.0f).getHeight() > 12.0f, "monoFont sizes by em (point height)");
+    check(fui::dispFont(10.0f).getHeight() > 13.5f, "dispFont sizes by em (point height)");
 
     // ---- shared hosted parameter backing ---------------------------------
     // A bank uses canonical descriptors, exposes the same parameter gestures
