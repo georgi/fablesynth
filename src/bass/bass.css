@@ -211,11 +211,12 @@
 .bl-sub-section { display: flex; flex-direction: column; }
 .bl-sub-body {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
   flex: 1;
-  gap: 16px;
-  padding: 6px 4px;
+  gap: 10px;
+  padding: 10px 8px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%), #07090e;
