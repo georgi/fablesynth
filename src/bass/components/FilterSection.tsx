@@ -71,14 +71,30 @@ function FilterView() {
       ctx.font = '7px "IBM Plex Mono"';
       ctx.fillText('LFO + ENV → CUT', pad + 2, 10);
     };
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
     const frame = () => {
       const canvas = canvasRef.current;
       if (canvas) draw(canvas);
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+    const start = () => {
+      stop();
+      if (mq.matches) {
+        const canvas = canvasRef.current;
+        if (canvas) draw(canvas); // single static frame
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    start();
+    mq.addEventListener('change', start);
+    return () => {
+      stop();
+      mq.removeEventListener('change', start);
+    };
+    // Re-run on param changes so reduced-motion mode still repaints on knob moves.
+  }, [cut, res, type, vizCut]);
 
   return <canvas ref={canvasRef} className="bl-display" />;
 }

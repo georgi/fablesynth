@@ -20,7 +20,7 @@ import {
   applyWrites, type CellWrite, copyRect, type GridClipboard, type GridPos, type GridSel,
   inRect, moveWrites, pasteWrites, selRect,
 } from './gridEdit';
-import { isTourSeen, markTourSeen, nextTourStep } from './onboarding';
+import { isTourSeen, markTourSeen, nextTourStep, TOUR_STEPS } from './onboarding';
 
 export interface TrackPos {
   step: number;
@@ -150,6 +150,18 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     const st = get();
     if (!st.rig) return 0;
     return boundaryFrame(st.quant, st.rig.now(), st.anchor, st.session.bpm, st.rig.sampleRate);
+  };
+
+  // Auto-advance the tour when the user actually performs a step's gesture,
+  // so the coach mark doesn't linger once its point is made. A gesture from a
+  // later step (e.g. launching a scene while still on "play") skips past every
+  // card up to and including it — the earlier gestures are implied.
+  const advanceTourStep = (id: string) => {
+    const st = get();
+    if (st.tour == null) return;
+    const idx = TOUR_STEPS.findIndex((s) => s.id === id);
+    if (idx < st.tour) return;
+    get().advanceTour(idx - st.tour + 1);
   };
 
   const startTransport = () => {
@@ -332,6 +344,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     toggleTransport: () => {
       const st = get();
       if (st.playing) return stopTransport();
+      advanceTourStep('play');
       // Starting from a standstill with nothing on the grid launches the first
       // scene so Play makes sound instead of running an empty transport.
       const hasActive = st.session.tracks.some(
@@ -346,6 +359,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const bytes = bytesFor(st.session, s, t);
       const clip = st.session.scenes[s]?.clips[t];
       if (!st.rig || !bytes || !clip) return;
+      advanceTourStep('scenes');
       const rig = st.rig;
       if (!st.playing) {
         startTransport();
@@ -367,6 +381,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     // Empty cells are stop buttons (Ableton semantics): launching a scene
     // stops uncovered tracks unless the cell is marked pass-through.
     launchScene: (s) => {
+      advanceTourStep('scenes');
       if (!get().playing) startTransport();
       const st = get();
       const sc = st.session.scenes[s];
@@ -545,6 +560,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     loadSessionPreset: (index) => {
       const preset = FACTORY_SESSION_PRESETS[index];
       if (!preset) return;
+      advanceTourStep('songs');
       const session = copySession(preset.session);
       const st = get();
       st.rig?.devices.forEach((device, t) => {
@@ -578,6 +594,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     },
 
     enterFocus: (t, s) => {
+      advanceTourStep('devices');
       const st = get();
       const scene = s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene;
       set({ focus: { track: t, scene: clampScene(scene) } });

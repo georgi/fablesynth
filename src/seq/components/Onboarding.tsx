@@ -21,6 +21,7 @@ const CARD_W = 316;
 
 export function Onboarding() {
   const step = useSeqStore((s) => s.tour);
+  const focused = useSeqStore((s) => s.focus != null);
   const { advanceTour, endTour } = useSeqStore.getState();
   const [rect, setRect] = useState<SpotRect | null>(null);
 
@@ -52,9 +53,10 @@ export function Onboarding() {
     return () => cancelAnimationFrame(raf);
   }, [step]);
 
-  // Keyboard: → / Enter next, ← back, Esc closes.
+  // Keyboard: → / Enter next, ← back, Esc closes. Suspended while a device is
+  // focused so Esc reaches the focus-mode handler instead of closing the tour.
   useEffect(() => {
-    if (step == null) return;
+    if (step == null || focused) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -65,9 +67,9 @@ export function Onboarding() {
     // Capture phase so Esc closes the tour before the focus-mode handler.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [step, advanceTour, endTour]);
+  }, [step, focused, advanceTour, endTour]);
 
-  if (step == null || !rect) return null;
+  if (step == null || focused || !rect) return null;
 
   const info = TOUR_STEPS[step];
   const last = step === TOUR_STEPS.length - 1;

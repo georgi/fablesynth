@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type * as React from 'react';
 import {
   CLIP_FAMILIES,
   CLIP_ROLES,
@@ -51,6 +52,49 @@ function PatternPreview({ entry, label }: { entry: RuntimeClipLibraryEntry; labe
   );
 }
 
+/** Inline name well replacing window.prompt(): Enter commits, Escape/blur
+ * cancels. Auto-focuses and selects so typing immediately replaces the
+ * seed text. The input is excluded from note-playing by the same
+ * `closest('input, ...')` guard the global key handler already uses. */
+function InlineNameField({ initial, onCommit, onCancel }: {
+  initial: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  const committed = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const commit = () => {
+    committed.current = true;
+    const name = value.trim();
+    if (name) onCommit(name);
+    else onCancel();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+  };
+
+  return (
+    <input
+      ref={ref}
+      className="sq-lib-namefield"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={onKeyDown}
+      onBlur={() => { if (!committed.current) onCancel(); }}
+    />
+  );
+}
+
 interface Props {
   machine: MachineId;
   onClose: () => void;
@@ -76,6 +120,8 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
   const [transpose, setTranspose] = useState(0);
   const [transformKind, setTransformKind] = useState('rotate');
   const [transformValue, setTransformValue] = useState(1);
+  const [editing, setEditing] = useState<'save' | 'rename' | null>(null);
+  useEffect(() => setEditing(null), [selectedId]);
   const importInput = useRef<HTMLInputElement>(null);
   const allSources = useMemo(() => [...FACTORY, ...users, ...imported], [users, imported]);
   const all = useMemo(() => allSources.filter((entry) => entry.machine === machine), [allSources, machine]);
@@ -110,10 +156,8 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
     setFavorites(next);
     try { localStorage.setItem(FAV_KEY, JSON.stringify(next)); } catch { /* storage optional */ }
   };
-  const saveCurrent = () => {
+  const saveCurrent = (name: string) => {
     if (!current) return;
-    const name = window.prompt('Clip name', uniqueClipName(`${current.name} COPY`, allSources))?.trim();
-    if (!name) return;
     if (allSources.some((clip) => clip.name.trim().toLowerCase() === name.toLowerCase())) {
       window.alert('A clip with that name already exists.'); return;
     }
@@ -137,10 +181,9 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
     setAndPersistUsers([...users, copy]);
     setSelectedId(copy.id);
   };
-  const rename = () => {
+  const rename = (name: string) => {
     if (!selected || !isUser) return;
-    const name = window.prompt('Clip name', selected.name)?.trim();
-    if (name && !allSources.some((clip) => clip.id !== selected.id && clip.name.trim().toLowerCase() === name.toLowerCase())) {
+    if (!allSources.some((clip) => clip.id !== selected.id && clip.name.trim().toLowerCase() === name.toLowerCase())) {
       setAndPersistUsers(users.map((entry) => entry.id === selected.id ? { ...entry, name } : entry));
     }
   };
@@ -234,7 +277,15 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
           {selected && <><PatternPreview entry={selected} label={`SELECTED · ${selected.name}`} /><p>{selected.tags.join(' · ') || 'untagged'}</p></>}
           {selected?.transpose && <label>TRANSPOSE <input type="number" min={-24} max={24} value={transpose} onChange={(e) => setTranspose(Math.max(-24, Math.min(24, Number(e.target.value))))} /> ST</label>}
           <button className="primary" disabled={!selected} onClick={load}>LOAD INTO TARGET</button>
-          <button disabled={!current} onClick={saveCurrent}>SAVE CURRENT</button>
+          {editing === 'save' ? (
+            <InlineNameField
+              initial={current ? uniqueClipName(`${current.name} COPY`, allSources) : ''}
+              onCommit={(name) => { saveCurrent(name); setEditing(null); }}
+              onCancel={() => setEditing(null)}
+            />
+          ) : (
+            <button disabled={!current} onClick={() => setEditing('save')}>SAVE CURRENT</button>
+          )}
           <button disabled={!selected} onClick={duplicate}>DUPLICATE</button>
           <button onClick={() => importInput.current?.click()}>IMPORT .SQCLIP</button>
           <input ref={importInput} hidden type="file" accept=".sqclip,application/json" onChange={(e) => void importFile(e.target.files?.[0])} />
@@ -257,7 +308,15 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
                 value={transformValue} onChange={(e) => setTransformValue(Number(e.target.value))} />
             </label>}
           <button disabled={!selected} onClick={saveTransform}>SAVE TRANSFORM AS NEW</button>
-          <button disabled={!isUser} onClick={rename}>RENAME</button>
+          {editing === 'rename' ? (
+            <InlineNameField
+              initial={selected?.name ?? ''}
+              onCommit={(name) => { rename(name); setEditing(null); }}
+              onCancel={() => setEditing(null)}
+            />
+          ) : (
+            <button disabled={!isUser} onClick={() => setEditing('rename')}>RENAME</button>
+          )}
           <button disabled={!isMutable} onClick={remove}>DELETE</button>
         </aside>
       </div>

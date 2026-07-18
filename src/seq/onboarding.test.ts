@@ -70,3 +70,55 @@ describe('store tour state', () => {
     expect(useSeqStore.getState().tour).toBeNull();
   });
 });
+
+describe('tour auto-advance on performed gestures', () => {
+  beforeEach(() => resetSeqStore());
+
+  it('advances past "play" when the transport actually starts', () => {
+    useSeqStore.getState().startTour();
+    expect(useSeqStore.getState().tour).toBe(0); // 'play'
+    useSeqStore.getState().toggleTransport();
+    // From a standstill, PLAY also launches scene 0 (see toggleTransport),
+    // which fulfils the 'scenes' gesture too — so both steps clear at once.
+    expect(useSeqStore.getState().tour).toBe(2); // 'devices'
+  });
+
+  it('advances past "scenes" on a scene launch', () => {
+    useSeqStore.getState().startTour();
+    useSeqStore.getState().advanceTour(1);
+    expect(useSeqStore.getState().tour).toBe(1); // 'scenes'
+    useSeqStore.getState().launchScene(0);
+    expect(useSeqStore.getState().tour).toBe(2); // 'devices'
+  });
+
+  it('advances past "devices" on entering focus mode', () => {
+    useSeqStore.getState().startTour();
+    useSeqStore.getState().advanceTour(2);
+    expect(useSeqStore.getState().tour).toBe(2); // 'devices'
+    useSeqStore.getState().enterFocus(0);
+    expect(useSeqStore.getState().tour).toBe(3); // 'songs'
+  });
+
+  it('ends the tour on loading a different session while on "songs"', () => {
+    useSeqStore.getState().startTour();
+    useSeqStore.getState().advanceTour(3);
+    expect(useSeqStore.getState().tour).toBe(3); // 'songs'
+    useSeqStore.getState().loadSessionPreset(1);
+    expect(useSeqStore.getState().tour).toBeNull();
+  });
+
+  it('skips forward past a later step when its gesture happens first', () => {
+    useSeqStore.getState().startTour();
+    expect(useSeqStore.getState().tour).toBe(0); // 'play'
+    useSeqStore.getState().launchScene(0); // 'scenes' gesture implies 'play' too
+    expect(useSeqStore.getState().tour).toBe(2); // 'devices'
+  });
+
+  it('never regresses on a gesture from an already-cleared step', () => {
+    useSeqStore.getState().startTour();
+    useSeqStore.getState().advanceTour(2);
+    expect(useSeqStore.getState().tour).toBe(2); // 'devices'
+    useSeqStore.getState().toggleTransport(); // 'play' gesture, already behind us
+    expect(useSeqStore.getState().tour).toBe(2);
+  });
+});

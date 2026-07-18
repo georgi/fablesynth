@@ -14,9 +14,10 @@ export function Scope() {
     if (!cv) return;
     let raf = 0;
     let buf: Float32Array<ArrayBuffer> | null = null;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const draw = () => {
-      raf = requestAnimationFrame(draw);
+      if (!reduceMotion.matches) raf = requestAnimationFrame(draw);
       const st = useSeqStore.getState();
       const w = cv.clientWidth, h = cv.clientHeight;
       if (!w || !h) return;
@@ -55,7 +56,21 @@ export function Scope() {
     };
 
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    // Reduced motion: draw a single static frame instead of looping, redrawn
+    // on relevant state changes and if the OS preference flips live.
+    const onMotionChange = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(draw);
+    };
+    reduceMotion.addEventListener('change', onMotionChange);
+    const unsubscribe = useSeqStore.subscribe(() => {
+      if (reduceMotion.matches) draw();
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      reduceMotion.removeEventListener('change', onMotionChange);
+      unsubscribe();
+    };
   }, []);
 
   return (

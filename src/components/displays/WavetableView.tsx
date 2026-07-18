@@ -19,9 +19,14 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
   const propsRef = useRef({ table, pos, modPos, accent });
   propsRef.current = { table, pos, modPos, accent };
   const stRef = useRef({ dirty: true, lastDrawnMod: -2 });
+  const redrawRef = useRef<(() => void) | null>(null);
 
-  // table / pos changes force a redraw
-  useEffect(() => { stRef.current.dirty = true; }, [table, pos]);
+  // table / pos changes force a redraw. Under reduced motion the rAF loop
+  // isn't running, so draw the static frame directly via the shared redraw fn.
+  useEffect(() => {
+    stRef.current.dirty = true;
+    redrawRef.current?.();
+  }, [table, pos]);
 
   useEffect(() => {
     const onResize = () => { stRef.current.dirty = true; };
@@ -31,6 +36,7 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
 
   useEffect(() => {
     let raf = 0;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const frame = () => {
       const canvas = canvasRef.current;
       if (canvas) draw(canvas);
@@ -84,8 +90,25 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
       ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    redrawRef.current = () => {
+      if (!mq.matches) return; // rAF loop already redraws every frame
+      const canvas = canvasRef.current;
+      if (canvas) draw(canvas);
+    };
+    const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
+    const start = () => {
+      stop();
+      if (mq.matches) {
+        stRef.current.dirty = true;
+        const canvas = canvasRef.current;
+        if (canvas) draw(canvas); // single static frame
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    start();
+    mq.addEventListener('change', start);
+    return () => { stop(); mq.removeEventListener('change', start); redrawRef.current = null; };
   }, []);
 
   return <canvas ref={canvasRef} className={className} />;

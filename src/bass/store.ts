@@ -62,6 +62,7 @@ export interface BassStore {
   vizGate: boolean;
   hitTick: number; // performance.now() of the last (non-slid) seq hit
   hitAcc: boolean;
+  dirty: boolean; // any param/pattern change since the patch was loaded/saved
 
   stepSel: StepSel | null;
   clipboard: SeqClipboard | null;
@@ -125,13 +126,14 @@ export const useBassStore = create<BassStore>((set, get) => ({
   vizGate: false,
   hitTick: 0,
   hitAcc: false,
+  dirty: false,
 
   stepSel: null,
   clipboard: null,
 
   setParam: (id, v) => {
     bassEngine.setParam(id, v);
-    set((state) => ({ params: { ...state.params, [id]: v } }));
+    set((state) => ({ params: { ...state.params, [id]: v }, dirty: true }));
   },
 
   noteOn: (semi, vel) => {
@@ -160,7 +162,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   _setPatterns(next: Patterns) {
     durationGestureKey = null;
     history.push(get().patterns);
-    set({ patterns: next });
+    set({ patterns: next, dirty: true });
     bassEngine.setPatterns(next);
   },
 
@@ -213,7 +215,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
     if (durationGestureKey !== key) history.push(patterns);
     durationGestureKey = key;
     const next = setStep(patterns, pat, step, { duration });
-    set({ patterns: next });
+    set({ patterns: next, dirty: true });
     bassEngine.setPatterns(next);
   },
 
@@ -349,7 +351,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   setSequenceLength: (length) => {
     const chain = sequenceChain(length);
-    set({ chain });
+    set({ chain, dirty: true });
     bassEngine.setChain(chain);
   },
 
@@ -405,7 +407,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
     const patch = stateToPatch(name, state.params, state.patterns, state.chain);
     const userPatches = saveUserPatch(name, patch);
     const savedIndex = userPatches.findIndex((entry) => entry.name === name);
-    set({ userPatches, patchValue: savedIndex >= 0 ? `u${savedIndex}` : state.patchValue });
+    set({ userPatches, patchValue: savedIndex >= 0 ? `u${savedIndex}` : state.patchValue, dirty: false });
   },
 
   loadPatchByValue: (value) => {
@@ -421,7 +423,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
       bassEngine.panic();
       bassEngine.params = { ...state.params };
       bassEngine.applyAllParams();
-      set({ params: state.params, patchValue: value });
+      set({ params: state.params, patchValue: value, dirty: false });
       return;
     }
     bassEngine.panic();
@@ -436,6 +438,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
       chain,
       editPattern: 0,
       patchValue: value,
+      dirty: false,
     });
   },
 

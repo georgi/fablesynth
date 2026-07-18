@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   STEPS, NPATTERNS, makeEmptyPatterns, patIdx, cycleStep,
   stepDurSamples, swingDelaySamples, nextChainPos, ACCENT_VEL, PLAIN_VEL,
-  stepSelRange, inStepSel,
+  stepSelRange, inStepSel, randomizePadPattern,
 } from './seq';
 
 describe('sequencer model', () => {
@@ -56,5 +56,34 @@ describe('step selection (anchor/head)', () => {
     expect(inStepSel(sel, 3)).toBe(false);
     expect(inStepSel(sel, 9)).toBe(false);
     expect(inStepSel(null, 0)).toBe(false);
+  });
+});
+
+describe('randomizePadPattern (RAND button)', () => {
+  it('only rewrites the target pad row within the target pattern', () => {
+    const p = makeEmptyPatterns();
+    p[patIdx(0, 5, 2)] = 1; // another pad, same pattern — must survive
+    p[patIdx(1, 2, 2)] = 2; // same pad, another pattern — must survive
+    const next = randomizePadPattern(p, 0, 2, () => 0.9); // rng always "off"
+    expect(next[patIdx(0, 5, 2)]).toBe(1);
+    expect(next[patIdx(1, 2, 2)]).toBe(2);
+    for (let step = 0; step < STEPS; step++) expect(next[patIdx(0, 2, step)]).toBe(0);
+  });
+
+  it('every written step is a valid StepVal (0/1/2), never on without a preceding on-roll', () => {
+    let call = 0;
+    const seq = [0.1, 0.1, 0.5, 0.5, 0.9, 0.9];
+    const rng = () => seq[call++ % seq.length];
+    const next = randomizePadPattern(makeEmptyPatterns(), 0, 0, rng);
+    for (let step = 0; step < STEPS; step++) {
+      const v = next[patIdx(0, 0, step)];
+      expect([0, 1, 2]).toContain(v);
+    }
+  });
+
+  it('is deterministic for a fixed rng', () => {
+    const a = randomizePadPattern(makeEmptyPatterns(), 0, 0, () => 0.2);
+    const b = randomizePadPattern(makeEmptyPatterns(), 0, 0, () => 0.2);
+    expect(a).toEqual(b);
   });
 });

@@ -18,9 +18,11 @@ export function NoiseView({ color }: NoiseViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colorRef = useRef(color);
   colorRef.current = color;
+  // Ref so the reduced-motion effect (keyed on `color`) can trigger a
+  // single static repaint without duplicating the draw routine.
+  const drawRef = useRef<(time: number) => void>(() => undefined);
 
   useEffect(() => {
-    let raf = 0;
     const draw = (time: number) => {
       const canvas = canvasRef.current;
       if (canvas) {
@@ -49,11 +51,40 @@ export function NoiseView({ color }: NoiseViewProps) {
         ctx.globalAlpha = 1;
         ctx.shadowBlur = 0;
       }
-      raf = requestAnimationFrame(draw);
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    drawRef.current = draw;
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let raf = 0;
+
+    const loop = (time: number) => {
+      draw(time);
+      raf = requestAnimationFrame(loop);
+    };
+
+    const start = () => {
+      if (media.matches) draw(0);
+      else raf = requestAnimationFrame(loop);
+    };
+    start();
+
+    const onChange = () => {
+      cancelAnimationFrame(raf);
+      start();
+    };
+    media.addEventListener('change', onChange);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      media.removeEventListener('change', onChange);
+    };
   }, []);
+
+  // Reduced motion: the loop above only paints once at mount, so redraw the
+  // static frame whenever the noise color changes.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) drawRef.current(0);
+  }, [color]);
 
   return <canvas ref={canvasRef} className="dr-noise-view" />;
 }

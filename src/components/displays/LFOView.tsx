@@ -79,9 +79,23 @@ export function LFOView({ shape, rate, accent, className }: LFOViewProps) {
       if (canvas) draw(canvas);
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
+    const start = () => {
+      stop();
+      if (mq.matches) {
+        // Static frame: freeze the phase clock so the dot doesn't drift, then
+        // draw once instead of running the free-run loop.
+        const canvas = canvasRef.current;
+        if (canvas) draw(canvas);
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    start();
+    mq.addEventListener('change', start);
+    return () => { stop(); mq.removeEventListener('change', start); };
+  }, [shape, rate, accent]);
 
   return <canvas ref={canvasRef} className={className} />;
 }
