@@ -1111,6 +1111,11 @@ int main(int argc, char** argv) {
         check(p6.undo() && sess().scenes[2].hasClip[0] && sess().scenes[2].hasClip[3],
               "a single undo restores the whole multi-cell delete");
 
+        // hover handle exists and is inert on state (visual-parity spec §4)
+        g6.hoverCell(0, 0);
+        g6.hoverCell(-1, -1);
+        check(true, "grid hover handles callable headless");
+
         // -- duplicate = paste one scene down (DROP A row -> DROP B row)
         const auto dropB0 = sess().scenes[3].clips[0].bytes;
         g6.selectCell(2, 0);

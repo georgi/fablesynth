@@ -26,6 +26,8 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
     // Test handles (also the real click targets, wired from mouseDown).
     void cellClick(int s, int t);
@@ -34,6 +36,9 @@ public:
     void sceneLaunch(int s);
     void sceneMute(int s);
     void sceneStop(int s);
+    // Sets hover state exactly as mouseMove would; (-1,-1) clears. Public so
+    // headless tests can drive the hover-revealed chips/affordance below.
+    void hoverCell(int s, int t);
 
     std::function<void(int, int)> onEditClip;
 
@@ -131,6 +136,10 @@ private:
     int pressedS_ = -1, pressedT_ = -1;
     bool pressedLaunch_ = false, didDrag_ = false;
 
+    // hover state (mouseMove/mouseExit; drives hover-revealed edit/delete
+    // chips and the empty-cell + affordance, web parity with .sq-cell-tools)
+    int hoverCellS_ = -1, hoverCellT_ = -1;
+
     // active drag state
     bool dragActive_ = false, dragCancelled_ = false;
     int dragFromS_ = -1, dragFromT_ = -1;   // grabbed cell
@@ -145,7 +154,7 @@ private:
     juce::Rectangle<int> sceneCardR[kScenes], launchBtn[kScenes], muteBtnR[kScenes], stopBtnR[kScenes],
         idArea[kScenes], dotsArea[kScenes];
     // clip-cell regions
-    juce::Rectangle<int> cellR[kScenes][kTracks], editGlyph[kScenes][kTracks];
+    juce::Rectangle<int> cellR[kScenes][kTracks], editGlyph[kScenes][kTracks], trashGlyph[kScenes][kTracks];
     // rail (single-row mode)
     juce::Rectangle<int> railArea, railChip[kScenes];
 

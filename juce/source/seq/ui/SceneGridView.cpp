@@ -349,6 +349,22 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
         for (int t = 0; t < kTracks; ++t) {
             if (editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
+            const auto& scenes = proc.conductor().session().scenes;
+            const bool hasClip = s < (int)scenes.size() && scenes[(size_t)s].hasClip[(size_t)t];
+            if (trashGlyph[s][t].contains(pos) && hasClip) {
+                selectCell(s, t);   // route through the selection verb: one undo
+                selDelete();        // snapshot + machine-safe clearing, already tested
+                return;
+            }
+            if (!hasClip) {
+                // Empty-cell + affordance: top-right 24x24 corner of the cell,
+                // matching where paintEmptyCell draws the + (rf.getRight()-12,
+                // rf.getY()+12, 9x9). Opens the device focused on this cell.
+                const juce::Rectangle<int> addCorner {
+                    cellR[s][t].getRight() - 24, cellR[s][t].getY(), 24, 24
+                };
+                if (addCorner.contains(pos)) { if (onEditClip) onEditClip(s, t); return; }
+            }
             if (cellR[s][t].contains(pos)) {
                 if (right) { cellRightClick(s, t); return; }
                 // editing-concept decision 4: plain click launches AND anchors
@@ -391,6 +407,20 @@ void SceneGridView::mouseUp(const juce::MouseEvent&) {
     didDrag_ = false;
 }
 
+void SceneGridView::hoverCell(int s, int t) {
+    if (s == hoverCellS_ && t == hoverCellT_) return;
+    hoverCellS_ = s; hoverCellT_ = t;
+    repaint();
+}
+
+void SceneGridView::mouseMove(const juce::MouseEvent& e) {
+    int t = -1;
+    const int s = cellAt(e.getPosition(), t);
+    hoverCell(s, t);
+}
+
+void SceneGridView::mouseExit(const juce::MouseEvent&) { hoverCell(-1, -1); }
+
 // ---- layout ------------------------------------------------------------------
 
 void SceneGridView::resized() {
@@ -425,9 +455,12 @@ void SceneGridView::layoutRow(int s) {
     r.removeFromTop(9);
     dotsArea[s] = r.removeFromTop(16);
 
-    // clip cells: a 16x16 edit-glyph corner in the top-right.
-    for (int t = 0; t < kTracks; ++t)
+    // clip cells: a 16x16 edit-glyph corner in the top-right, with the
+    // trash-glyph the same size immediately to its left (4px gap).
+    for (int t = 0; t < kTracks; ++t) {
         editGlyph[s][t] = { cellR[s][t].getRight() - 22, cellR[s][t].getY() + 6, 16, 16 };
+        trashGlyph[s][t] = { editGlyph[s][t].getX() - 4 - 16, editGlyph[s][t].getY(), 16, 16 };
+    }
 }
 
 void SceneGridView::layoutRail() {
@@ -609,6 +642,14 @@ void SceneGridView::paintEmptyCell(juce::Graphics& g, int s, int t) {
         g.setColour(juce::Colour(0xff4a5266));
         g.fillRect(juce::Rectangle<float>(7.0f, 7.0f).withCentre(centre));
     }
+
+    if (hoverCellS_ == s && hoverCellT_ == t) {
+        // + add chip (web .sq-cell-add): opens the device focused on this cell
+        // so CREATE CLIP lands exactly here.
+        g.setColour(tc.withAlpha(0.75f));
+        g.fillPath(iconPlus(juce::Rectangle<float>(9.0f, 9.0f)
+            .withCentre({ rf.getRight() - 12.0f, rf.getY() + 12.0f })));
+    }
 }
 
 void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
@@ -725,10 +766,13 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     }
 
-    // edit glyph -- brief calls for hover-lit; this pass has no hover tracking,
-    // so a steady dim glyph keeps the click target visible and legible.
-    g.setColour(tc.withAlpha(0.85f));
-    g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
+    // edit / delete chips — hover-revealed, like the web's .sq-cell-tools.
+    if (hoverCellS_ == s && hoverCellT_ == t) {
+        g.setColour(tc.withAlpha(0.90f));
+        g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
+        g.setColour(col::textDim);
+        g.fillPath(iconTrash(trashGlyph[s][t].toFloat().withSizeKeepingCentre(8.0f, 9.0f)));
+    }
 
     if (queued) {
         g.setColour(tc.withAlpha(qpulse()));
