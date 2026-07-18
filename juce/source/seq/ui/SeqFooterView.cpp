@@ -3,10 +3,6 @@
 
 namespace fui {
 
-namespace {
-constexpr const char* kStopGlyph = "S";
-}
-
 SeqFooterView::SeqFooterView(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
 
 // ---- actions (also the test handles) ---------------------------------------
@@ -132,8 +128,7 @@ void SeqFooterView::paint(juce::Graphics& g) {
         g.setColour(col::line);
         g.drawRoundedRectangle(bf.reduced(0.5f), 5.0f, 1.0f);
         g.setColour(col::textDim);
-        g.setFont(monoFont(9.0f, true));
-        g.drawText(kStopGlyph, cellStopBtn[t], juce::Justification::centred);
+        g.fillPath(iconStop(cellStopBtn[t].toFloat().withSizeKeepingCentre(7.0f, 7.0f)));
 
         const int owner = cond.ownerOf(t);
         const bool live = owner != -2;
