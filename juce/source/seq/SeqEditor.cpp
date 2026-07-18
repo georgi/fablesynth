@@ -16,7 +16,8 @@
 // Focus mode reuses header + heads unchanged, collapses the scene grid to a
 // single-row mini strip (96 tall, with the scene rail on its left), and drops the
 // selected native device body into the freed space down to the footer slot,
-// which hides. Instant relayout, no FLIP (spec §2).
+// which hides. The collapse is eased over ~180ms — see SeqRack::applyLayout()
+// (spec §2).
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
@@ -39,7 +40,9 @@ void SeqRack::enterFocus(int track, int scene) {
     footer.setVisible(false);
     hint.setVisible(false);
     deviceFocus.setVisible(true);
-    resized();
+    focusTarget_ = 1.0f;
+    if (!isShowing()) { focusT_ = 1.0f; applyLayout(); }
+    else startTimerHz(30);
 }
 
 void SeqRack::exitFocus() {
@@ -52,7 +55,9 @@ void SeqRack::exitFocus() {
     footer.setVisible(true);
     hint.setVisible(true);
     deviceFocus.setVisible(false);
-    resized();
+    focusTarget_ = 0.0f;
+    if (!isShowing()) { focusT_ = 0.0f; applyLayout(); }
+    else startTimerHz(30);
 }
 
 void SeqRack::setFocusScene(int scene) {
@@ -61,18 +66,30 @@ void SeqRack::setFocusScene(int scene) {
     deviceFocus.setTarget(scene, focusTrack_);
 }
 
-void SeqRack::resized() {
+void SeqRack::resized() { applyLayout(); }
+
+// Eased focus collapse — the JUCE analogue of the web's FLIP animation
+// (seq.css sq-focus-in): the grid shrinks 630→96 while the device surface
+// grows into the freed space. ~180ms at 30Hz; headless (never showing)
+// snaps instantly so the host tests see final geometry synchronously.
+void SeqRack::applyLayout() {
+    const float t = focusT_ * focusT_ * (3.0f - 2.0f * focusT_); // smoothstep
     header.setBounds(18, 14, 1424, 66);
     trackHeads.setBounds(18, 89, 1424, 54);
-    if (focusMode_) {
-        sceneGrid.setBounds(18, 152, 1424, 96);   // mini strip: scene rail + row
-        deviceFocus.setBounds(18, 256, 1424, 650); // native device -> down to ~906
-    } else {
-        sceneGrid.setBounds(18, 152, 1424, 630);
-        footer.setBounds(18, 782, 1424, 68);
-        hint.setBounds(18, 858, 1424, 20);
-        deviceFocus.setBounds(0, 0, LW, LH);
-    }
+    const int gridH = juce::roundToInt(630.0f + (96.0f - 630.0f) * t);
+    sceneGrid.setBounds(18, 152, 1424, gridH);
+    const int devY = 152 + gridH + 8;
+    deviceFocus.setBounds(18, devY, 1424, 906 - devY);
+    footer.setBounds(18, 782, 1424, 68);
+    hint.setBounds(18, 858, 1424, 20);
+}
+
+void SeqRack::timerCallback() {
+    const float step = 1.0f / (0.18f * 30.0f); // full sweep in ~180ms
+    focusT_ = focusTarget_ > focusT_ ? juce::jmin(focusTarget_, focusT_ + step)
+                                     : juce::jmax(focusTarget_, focusT_ - step);
+    applyLayout();
+    if (juce::approximatelyEqual(focusT_, focusTarget_)) stopTimer();
 }
 
 // ---- SeqEditor ----

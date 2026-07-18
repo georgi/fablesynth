@@ -43,9 +43,10 @@ private:
 // session mode is header + heads + full scene grid + footer; focus mode is
 // header + heads (now a device tab strip, focused head lit) + a single-row
 // mini strip for the focused scene + the native device surface filling the
-// rest (the footer hides). There is no FLIP animation — the relayout is
-// instant, which is the JUCE port of the web's animated collapse.
-class SeqRack : public juce::Component {
+// rest (the footer hides). The collapse between the two is eased over
+// ~180ms — see applyLayout() — the JUCE analogue of the web's animated
+// FLIP collapse.
+class SeqRack : public juce::Component, private juce::Timer {
 public:
     static constexpr int LW = 1460, LH = 920;
     explicit SeqRack(SeqAudioProcessor&);
@@ -69,6 +70,10 @@ private:
     fui::SeqFooterView footer;
     fui::DeviceFocusView deviceFocus;
     HintBar hint;
+
+    void timerCallback() override;
+    void applyLayout();
+    float focusT_ = 0.0f, focusTarget_ = 0.0f; // 0 = session, 1 = focus
 
     bool focusMode_ = false;
     int focusTrack_ = -1;
