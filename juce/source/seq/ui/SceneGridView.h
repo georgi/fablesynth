@@ -9,10 +9,11 @@
 // SQ-4 launcher grid — port of src/seq/components/SceneRow.tsx + seq.css.
 // Six scene rows, each a scene card (launch/mute/stop, dots, status) followed
 // by one clip cell per track. Painted directly and hit-tested in mouseDown,
-// same scheme as TrackHeadsView -- the whole slot is a single 1424x630 strip.
+// same scheme as TrackHeadsView -- the whole slot is a single 1424x478 strip
+// (SeqRack::applyLayout's session-mode scene-grid section).
 //
 // Local geometry (matches TrackHeadsView.cpp's column table): row r at
-// y = r*105, h=96; scene card x=0 w=218; clip cell for track t at
+// y = r*82, h=73; scene card x=0 w=218; clip cell for track t at
 // x=218+9+t*(292+9) w=292.
 namespace fui {
 

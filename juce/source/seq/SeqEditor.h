@@ -49,7 +49,7 @@ private:
 // FLIP collapse.
 class SeqRack : public juce::Component, private juce::Timer {
 public:
-    static constexpr int LW = 1460, LH = 920;
+    static constexpr int LW = 1460, LH = 764;
     explicit SeqRack(SeqAudioProcessor&);
     void resized() override;
 

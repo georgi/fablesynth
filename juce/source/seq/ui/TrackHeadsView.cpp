@@ -186,8 +186,8 @@ void TrackHeadsView::resized() {
         // stepper row below (css sq-track-name-row / sq-track-patch).
         nameRow[t] = content.removeFromTop(content.getHeight() / 2);
         auto patchRow = content;
-        patchPrev[t] = patchRow.removeFromLeft(11).withSizeKeepingCentre(11, 11);
-        patchNext[t] = patchRow.removeFromRight(11).withSizeKeepingCentre(11, 11);
+        patchPrev[t] = patchRow.removeFromLeft(22).withSizeKeepingCentre(22, 22);
+        patchNext[t] = patchRow.removeFromRight(22).withSizeKeepingCentre(22, 22);
     }
 }
 

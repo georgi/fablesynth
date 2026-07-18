@@ -438,28 +438,26 @@ void SceneGridView::resized() {
 }
 
 void SceneGridView::layoutRow(int s) {
-    const int y = singleRow_ ? 0 : s * 105;
+    const int y = singleRow_ ? 0 : s * 82;
     const int rowX = singleRow_ ? 73 : 0;
     const int sceneWidth = singleRow_ ? 200 : 218;
     const int cellWidth = singleRow_
         ? juce::jmax(1, (getWidth() - rowX - sceneWidth - 4 * 9) / kTracks)
         : 292;
-    sceneCardR[s] = { rowX, y, sceneWidth, 96 };
+    sceneCardR[s] = { rowX, y, sceneWidth, 73 };
     for (int t = 0; t < kTracks; ++t)
-        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 96 };
+        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 73 };
 
-    // scene card: [launch] [id: num+name / status] [M] [S], then dots row.
-    auto r = sceneCardR[s].reduced(10, 8);
-    auto top = r.removeFromTop(32);
-    launchBtn[s] = top.removeFromLeft(32);
-    top.removeFromLeft(8);
-    stopBtnR[s] = top.removeFromRight(22).withSizeKeepingCentre(22, 22);
-    top.removeFromRight(6);
-    muteBtnR[s] = top.removeFromRight(22).withSizeKeepingCentre(22, 22);
-    top.removeFromRight(8);
-    idArea[s] = top;
-    r.removeFromTop(9);
-    dotsArea[s] = r.removeFromTop(16);
+    // scene card internals (web SceneRow.tsx, card-relative): launch 32x32 at
+    // (11,9); id column (num+name / status, split by paintSceneCard) at
+    // x=51 w=99; mute/stop minis 22x22 at (155,14) and (180,14); dots+count
+    // row along the bottom.
+    const auto& card = sceneCardR[s];
+    launchBtn[s] = { card.getX() + 11, card.getY() + 9, 32, 32 };
+    idArea[s] = { card.getX() + 51, card.getY() + 12, 99, 27 };
+    muteBtnR[s] = { card.getX() + 155, card.getY() + 14, 22, 22 };
+    stopBtnR[s] = { card.getX() + 180, card.getY() + 14, 22, 22 };
+    dotsArea[s] = { card.getX() + 10, card.getBottom() - 24, sceneWidth - 20, 16 };
 
     // clip cells: a 16x16 edit-glyph corner in the top-right, with the
     // trash-glyph the same size immediately to its left (4px gap).
@@ -470,8 +468,8 @@ void SceneGridView::layoutRow(int s) {
 }
 
 void SceneGridView::layoutRail() {
-    railArea = { 0, 0, 64, 96 };
-    constexpr int chipWidth = 28, chipHeight = 28, gap = 4;
+    railArea = { 0, 0, 64, 73 };
+    constexpr int chipWidth = 28, chipHeight = 21, gap = 3;
     const int top = (railArea.getHeight() - (3 * chipHeight + 2 * gap)) / 2;
     for (int s = 0; s < kScenes; ++s) {
         const int column = s % 2;
@@ -699,8 +697,9 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     const float bodyAlpha = muted ? 0.32f : live ? 1.0f : 0.72f;
 
-    auto content = full.reduced(9, 7);
-    auto head = content.removeFromTop(14);
+    // Cell internals (web ClipCell, cell-relative): head row y 9..24, steps
+    // preview at (10, 31, w-20, 20), progress bar at (10, 57, w-20, 4).
+    auto head = juce::Rectangle<int>(full.getX() + 9, full.getY() + 9, full.getWidth() - 18, 15);
 
     // eq / idle icon
     auto iconArea = head.removeFromLeft(16);
@@ -735,8 +734,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     g.setFont(monoFontMedium(9.5f));
     g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
 
-    content.removeFromTop(6);
-    auto stepsArea = content.removeFromTop(20);
+    auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
     if (!clip.bytes.empty()) {
         auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
         const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
@@ -751,8 +749,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     }
 
-    content.removeFromTop(6);
-    auto progress = content.removeFromTop(3);
+    auto progress = juce::Rectangle<int>(full.getX() + 10, full.getY() + 57, full.getWidth() - 20, 4);
     g.setColour(juce::Colours::white.withAlpha(0.06f));
     g.fillRoundedRectangle(progress.toFloat(), 1.5f);
     if (live && clip.bars > 0) {

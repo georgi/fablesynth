@@ -1,20 +1,21 @@
 #include "SeqEditor.h"
 #include "../ui/Controls.h"
 
-// Web layout, measured from the running SQ-4 app (src/seq/seq.css, #seq-rack
-// at its 1460px max-width; page grid 218px repeat(4, 1fr), gap 9, padding
-// 14/18/22; rack-relative px):
-//   rack              1460 x 920
-//   header            (18,  14) 1424 x 66
-//   track heads       (18,  89) 1424 x 54
-//   scene grid        (18, 152) 1424 x 630   (6 rows, 96 tall, 105 step)
-//   footer            (18, 782) 1424 x 68
-//   hint line          18, 858
+// Web layout, re-measured 2026-07-18 from the running SQ-4 app at its current
+// 1460px-wide / 764px-tall rack (src/seq/seq.css, #seq-rack; the anatomy is
+// unchanged since the Task 9 port, but the web rack has since compacted --
+// see .superpowers/sdd/typography-calibration.md for the live-DOM numbers):
+//   rack              1460 x 764
+//   header            (18,  14) 1424 x 86
+//   track heads       (18, 109) 1424 x 60
+//   scene grid        (18, 178) 1424 x 478   (6 rows, 73 tall, 82 step)
+//   footer            (18, 656) 1424 x 65
+//   hint line          18, 733
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
 // Focus mode reuses header + heads unchanged, collapses the scene grid to a
-// single-row mini strip (96 tall, with the scene rail on its left), and drops the
+// single-row mini strip (73 tall, with the scene rail on its left), and drops the
 // selected native device body into the freed space down to the footer slot,
 // which hides. The collapse is eased over ~180ms — see SeqRack::applyLayout()
 // (spec §2).
@@ -73,21 +74,22 @@ void SeqRack::resized() { applyLayout(); }
 // snaps instantly so the host tests see final geometry synchronously.
 void SeqRack::applyLayout() {
     const float t = focusT_ * focusT_ * (3.0f - 2.0f * focusT_); // smoothstep
-    header.setBounds(18, 14, 1424, 66);
-    trackHeads.setBounds(18, 89, 1424, 54);
-    const int gridH = juce::roundToInt(630.0f + (96.0f - 630.0f) * t);
-    sceneGrid.setBounds(18, 152, 1424, gridH);
-    const int devY = 152 + gridH + 8;
-    // Focus mode keeps the hint visible (it swaps to the mini-strip copy)
-    // and carves its row out of the device surface instead of hiding it;
-    // interpolate the hint's y from 858 (session) to 896 (focus).
-    const int hintY = juce::roundToInt(858.0f + 38.0f * t);
+    header.setBounds(18, 14, 1424, 86);
+    trackHeads.setBounds(18, 109, 1424, 60);
+    constexpr int gridY = 178, sessionGridH = 478, focusGridH = 73; // 478 = footerY(656) - gridY
+    const int gridH = juce::roundToInt(sessionGridH + (focusGridH - sessionGridH) * t);
+    sceneGrid.setBounds(18, gridY, 1424, gridH);
+    const int devY = gridY + gridH + 8;
+    // Hint stays fixed at its session y in both modes (calibration note:
+    // "keep fixed at 733 -- simplest correct wins"); the device surface
+    // grows into the freed space as the grid collapses, down to 8px above it.
+    constexpr int hintY = 733, hintH = 14;
     deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching on focusMode_.
-    footer.setBounds(18, 782, 1424, 68);
-    hint.setBounds(18, hintY, 1424, 20);
+    footer.setBounds(18, 656, 1424, 65);
+    hint.setBounds(18, hintY, 1424, hintH);
 }
 
 void SeqRack::timerCallback() {

@@ -203,46 +203,48 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 
 // ---- layout --------------------------------------------------------------
 
+// Header internals, absolute-positioned to the calibration table
+// (.superpowers/sdd/typography-calibration.md, "Header internals"), converted
+// to header-local coordinates (web absolute minus the header's own rack
+// origin (18,14)). Flow order left-to-right: logo, play, library/session
+// select, quant, clock, [gap], scope, LOAD/SAVE (JUCE-only, parked in the
+// web's narrow help-icon slot), master knobs.
 void SeqHeader::resized() {
-    auto r = getLocalBounds().reduced(16, 8); // content row, ~1392 x 50
+    logoArea = { 17, 31, 185, 25 };
 
-    logoArea = r.removeFromLeft(190);
-    r.removeFromLeft(20);
+    playBtn = { 216, 27, 44, 32 };
 
-    playBtn = r.removeFromLeft(62).withSizeKeepingCentre(62, 32);
-    r.removeFromLeft(20);
+    auto libGroup = juce::Rectangle<int>(274, 25, 208, 37);
+    libraryLabelArea = libGroup.removeFromLeft(54);
+    libGroup.removeFromLeft(6);
+    library_.setBounds(libGroup);
 
-    quantTagArea = r.removeFromLeft(40).withSizeKeepingCentre(40, 16);
-    r.removeFromLeft(4);
-    quantPrevBtn = r.removeFromLeft(18).withSizeKeepingCentre(18, 18);
-    r.removeFromLeft(4);
-    quantValArea = r.removeFromLeft(56).withSizeKeepingCentre(56, 20);
-    r.removeFromLeft(4);
-    quantNextBtn = r.removeFromLeft(18).withSizeKeepingCentre(18, 18);
-    r.removeFromLeft(20);
+    auto quantGroup = juce::Rectangle<int>(496, 33, 139, 21);
+    quantTagArea = quantGroup.removeFromLeft(40).withSizeKeepingCentre(40, 16);
+    quantGroup.removeFromLeft(4);
+    quantPrevBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
+    quantGroup.removeFromLeft(4);
+    quantValArea = quantGroup.removeFromLeft(56).withSizeKeepingCentre(56, 20);
+    quantGroup.removeFromLeft(4);
+    quantNextBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
 
-    auto clockArea = r.removeFromLeft(130);
-    beatsArea = clockArea.removeFromTop(clockArea.getHeight() / 2);
+    auto clockArea = juce::Rectangle<int>(649, 32, 112, 23);
+    beatsArea = clockArea.removeFromTop(8); // beat-dot row, web parity (667,46,47,8)
     clockLineArea = clockArea;
 
-    auto knobsArea = r.removeFromRight(90).withSizeKeepingCentre(90, 44);
-    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(40, 44);
-    volKnob = knobsArea.withSizeKeepingCentre(40, 44);
-    r.removeFromRight(14);
-    scopeArea = r.removeFromRight(190).withSizeKeepingCentre(190, 46);
-    r.removeFromRight(14);
+    scopeArea = { 1073, 23, 190, 40 };
 
-    // LOAD/SAVE (JUCE-only surface, no web equivalent) sit right of the clock,
-    // in the same flexible middle gap the clock area leaves before the scope.
-    saveBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
-    r.removeFromRight(6);
-    loadBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
+    // LOAD/SAVE (JUCE-only surface, no web equivalent): stacked to fit the
+    // web's narrow (1295,44,26,26) help-icon gap between the scope and the
+    // master knobs.
+    auto helpSlot = juce::Rectangle<int>(1266, 23, 48, 40);
+    loadBtn = helpSlot.removeFromTop(18);
+    helpSlot.removeFromTop(4);
+    saveBtn = helpSlot;
 
-    r.removeFromRight(14);
-    auto libraryArea = r.removeFromRight(224).withSizeKeepingCentre(224, 28);
-    libraryLabelArea = libraryArea.removeFromLeft(54);
-    libraryArea.removeFromLeft(6);
-    library_.setBounds(libraryArea);
+    auto knobsArea = juce::Rectangle<int>(1317, 8, 90, 70);
+    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 70);
+    volKnob = knobsArea.withSizeKeepingCentre(44, 70);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -377,7 +379,7 @@ void SeqHeader::paintScope(juce::Graphics& g) {
 }
 
 void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce::String& label, float v) {
-    const float d = 22.0f;
+    const float d = 44.0f;
     auto circle = juce::Rectangle<float>(0, 0, d, d).withCentre(
         juce::Point<float>((float)r.getCentreX(), (float)r.getY() + d * 0.5f));
 
