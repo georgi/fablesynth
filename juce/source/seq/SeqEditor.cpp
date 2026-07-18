@@ -36,6 +36,12 @@ SeqRack::SeqRack(SeqAudioProcessor& p)
 
 void SeqRack::enterFocus(int track, int scene) {
     focusMode_ = true;
+    // The rack's own logical extent (its coordinate space for applyLayout(),
+    // and the size the editor scales via its transform) snaps to the focus
+    // height immediately -- only the internal collapse animates, not this
+    // outer canvas size, else the taller focus content would clip against
+    // the still-session-sized parent bounds.
+    setBounds(0, 0, LW, LHF);
     focusTrack_ = track;
     trackHeads.setVisible(false); // heads + mini clip row disappear entirely in focus
     sceneGrid.setSingleRow(scene);
@@ -49,6 +55,7 @@ void SeqRack::enterFocus(int track, int scene) {
 
 void SeqRack::exitFocus() {
     focusMode_ = false;
+    setBounds(0, 0, LW, LH); // snap the outer canvas back to the session extent
     focusTrack_ = -1;
     trackHeads.setVisible(true);
     sceneGrid.clearSingleRow();
@@ -85,10 +92,13 @@ void SeqRack::applyLayout() {
     const int gridH = juce::roundToInt(sessionGridH + (focusStripH - sessionGridH) * t);
     sceneGrid.setBounds(18, gridY, 1424, gridH);
     const int devY = gridY + gridH + 8;
-    // Hint stays fixed at its session y in both modes (calibration note:
-    // "keep fixed -- simplest correct wins"); the device surface grows into
-    // the freed space as the grid collapses, down to 8px above it.
-    constexpr int hintY = 700, hintH = 14;
+    // The hint line eases from its session y down to near the bottom of the
+    // (now taller) focus rack, same smoothstep t as the grid -- so the device
+    // surface grows into the freed space as the grid collapses, filling down
+    // to 8px above the hint at every point in the collapse, not just t=1.
+    constexpr int sessionHintY = 700, hintH = 14;
+    constexpr int focusHintY = LHF - 14 /* bottom margin */ - hintH; // 941-14-14=913
+    const int hintY = juce::roundToInt(sessionHintY + (focusHintY - sessionHintY) * t);
     deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
@@ -165,6 +175,7 @@ void SeqEditor::enterFocus(int t, int s) {
     focusTrack_ = t;
     focusScene_ = scene;
     rack.enterFocus(t, scene);
+    growToFocusSize();
     // Only grab focus when we're actually on screen: grabbing keyboard focus on
     // a component with no peer (headless render, or before the editor is shown)
     // is a no-op that trips JUCE's isShowing()/isOnDesktop() assert in
@@ -177,6 +188,31 @@ void SeqEditor::exitFocus() {
     if (focusTrack_ >= 0) lastFocusScene_ = focusScene_;
     focusTrack_ = focusScene_ = -1;
     rack.exitFocus();
+    shrinkToSessionSize();
+}
+
+// Focus mode grows the window taller so the native device body renders near
+// 1:1 (Matti: "vst window should be taller to make space for the focus
+// device view") -- the JUCE analogue of the web rack's viewport-height
+// auto-grow in focus mode. The width is left alone; only the height (and the
+// constrainer's aspect/limits) change. Hosts animate window resizes poorly,
+// so this snaps rather than easing like the internal SeqRack collapse does.
+// Both standalone (StandalonePluginHolder tracks the editor's size) and
+// hosted instances resize through the same setSize() call.
+void SeqEditor::growToFocusSize() {
+    if (auto* c = getConstrainer())
+        c->setFixedAspectRatio((double)SeqRack::LW / (double)SeqRack::LHF);
+    setResizeLimits(840, (int)(840 * (double)SeqRack::LHF / SeqRack::LW),
+                    2100, (int)(2100 * (double)SeqRack::LHF / SeqRack::LW));
+    setSize(getWidth(), juce::roundToInt((float)getWidth() * (float)SeqRack::LHF / (float)SeqRack::LW));
+}
+
+void SeqEditor::shrinkToSessionSize() {
+    if (auto* c = getConstrainer())
+        c->setFixedAspectRatio((double)SeqRack::LW / (double)SeqRack::LH);
+    setResizeLimits(840, (int)(840 * (double)SeqRack::LH / SeqRack::LW),
+                    2100, (int)(2100 * (double)SeqRack::LH / SeqRack::LW));
+    setSize(getWidth(), juce::roundToInt((float)getWidth() * (float)SeqRack::LH / (float)SeqRack::LW));
 }
 
 void SeqEditor::focusScene(int s) {
@@ -246,9 +282,13 @@ void SeqEditor::paint(juce::Graphics& g) {
 }
 
 void SeqEditor::resized() {
+    // The rack's logical size is mode-dependent (session 1460x722, focus
+    // 1460xLHF -- SeqRack::logicalHeight()); the transform below just scales
+    // that logical canvas to whatever the window currently is.
+    const int lh = rack.logicalHeight();
     const float sc = juce::jmin(static_cast<float>(getWidth()) / static_cast<float>(SeqRack::LW),
-                               static_cast<float>(getHeight()) / static_cast<float>(SeqRack::LH));
+                               static_cast<float>(getHeight()) / static_cast<float>(lh));
     const float dx = (static_cast<float>(getWidth()) - static_cast<float>(SeqRack::LW) * sc) * 0.5f;
-    const float dy = (static_cast<float>(getHeight()) - static_cast<float>(SeqRack::LH) * sc) * 0.5f;
+    const float dy = (static_cast<float>(getHeight()) - static_cast<float>(lh) * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
 }

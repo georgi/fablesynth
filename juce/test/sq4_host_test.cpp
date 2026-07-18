@@ -589,6 +589,22 @@ int main(int argc, char** argv) {
     auto* ed2 = seqEditor;
     auto& focusView = ed2->deviceFocus();
 
+    // Focus mode grows the editor window (SeqEditor::growToFocusSize) so the
+    // native device body renders near 1:1 -- the `img` snapshot canvas above
+    // was sized for the session rack (SeqRack::LW/LH) and is too short once
+    // focus mode is entered. Focus-mode snapshots use a canvas matching the
+    // editor's *current* (now taller) size instead.
+    auto snapshotFocusedEditor = [&](int argvIndex) {
+        juce::Image shot(juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+        { juce::Graphics g(shot); ed->paintEntireComponent(g, true); }
+        if (argc > argvIndex) {
+            juce::File out(argv[argvIndex]);
+            out.deleteFile();
+            juce::FileOutputStream os(out);
+            juce::PNGImageFormat().writeImageToStream(shot, os);
+        }
+    };
+
     ed2->enterFocus(0, 2);            // DRUMS, DROP A
     focusView.clipSourceForTest().setSelectedId(2, juce::sendNotificationSync);
     check(ed2->focus() == std::make_pair(0, 2), "enterFocus(0,2) targets scene 2 / track 0");
@@ -744,13 +760,7 @@ int main(int argc, char** argv) {
     check(noteByte(1) == (7 | 0x80), "native BL-1 writes the pitch lane + slide bit", noteByte(1));
     check(noteByte(2) == 0, "native BL-1 writes octave as oct+1", noteByte(2));
 
-    { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
-    if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
-        juce::File out(argv[3]);
-        out.deleteFile();
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
+    snapshotFocusedEditor(3); // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
 
     // Locked (>4-bar) clip: view-only. Edits and the bars stepper are ignored,
     // the clip keeps its length, and the lock-banner paint path (no chips) runs.
@@ -773,13 +783,7 @@ int main(int argc, char** argv) {
     check(p.conductor().session().scenes[4].clips[3].bytes == locked0,
           "native device edits are ignored on an over-four-bar view-only clip");
     check(p.conductor().session().scenes[4].clips[3].bars == 8, "locked clip keeps its 8 bars");
-    { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // lock-banner paint, no chips
-    if (argc > 4) {
-        juce::File out(argv[4]);
-        out.deleteFile();
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
+    snapshotFocusedEditor(4); // lock-banner paint, no chips
 
     ed2->enterFocus(1, 2);                 // back to BASS / DROP A for the following checks
     ed2->focusScene(4);
@@ -810,13 +814,7 @@ int main(int argc, char** argv) {
     check(focusView.activeBodyComponent() == &focusView.drumBodyForTest(),
           "focus container exposes exactly the active native body");
     ed2->resized();
-    { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
-    if (argc > 2) {
-        juce::File out(argv[2]);
-        out.deleteFile();
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
+    snapshotFocusedEditor(2); // DRUMS / DROP A clip editor over the live scene
     ed2->exitFocus();
 
     delete ed;

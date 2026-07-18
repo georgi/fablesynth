@@ -52,8 +52,27 @@ private:
 class SeqRack : public juce::Component, private juce::Timer {
 public:
     static constexpr int LW = 1460, LH = 722;
+    // Focus-mode logical height. The web rack auto-grows to viewport height
+    // in focus mode (SeqApp.tsx); the JUCE analogue grows the editor window
+    // instead (see SeqEditor::enterFocus/exitFocus). Derivation, top to
+    // bottom of the focus rack (see SeqRack::applyLayout()'s focus geometry):
+    //   header            14 + 44           = 58  (bottom)
+    //   focus strip       67 + 30           = 97  (bottom)
+    //   gap                                 + 8
+    //   DeviceFocusView                     + 800 (38 toolbar + content, sized
+    //                                                so BASS -- 1460x931
+    //                                                logical, the tallest
+    //                                                hosted body -- renders
+    //                                                at ~0.92 scale, near-1:1)
+    //   gap                                 + 8
+    //   hint line                           + 14
+    //   bottom margin                       + 14
+    //   ----------------------------------------------
+    //   97 + 8 + 800 + 8 + 14 + 14          = 941
+    static constexpr int LHF = 941;
     explicit SeqRack(SeqAudioProcessor&);
     void resized() override;
+    int logicalHeight() const { return focusMode_ ? LHF : LH; }
 
     fui::SeqHeader& getHeader() { return header; }
     fui::TrackHeadsView& getHeads() { return trackHeads; }
@@ -108,6 +127,8 @@ public:
 
 private:
     int clampScene(int s) const;
+    void growToFocusSize();
+    void shrinkToSessionSize();
 
     fui::DarkLNF lnf;
     SeqAudioProcessor& proc_;
