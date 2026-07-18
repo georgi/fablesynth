@@ -140,4 +140,60 @@ inline juce::Font dispFont(float h) {
     return juce::Font(juce::FontOptions(h, juce::Font::bold));
 }
 
+// ---- Vector icons (visual-parity spec §2) -----------------------------------
+// The web uses raw glyphs (▶ ■ ✎ …); no embedded font reliably covers them,
+// so the icons are Paths — resolution-independent and identical headless.
+// Caller sets the colour; fill every path except iconChevron (stroke 1.6f).
+
+inline juce::Path iconPlay(juce::Rectangle<float> r) {
+    juce::Path p;
+    p.addTriangle(r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
+    return p;
+}
+
+inline juce::Path iconStop(juce::Rectangle<float> r) {
+    juce::Path p;
+    p.addRectangle(r.reduced(r.getWidth() * 0.08f));
+    return p;
+}
+
+inline juce::Path iconChevron(juce::Rectangle<float> r, bool pointsRight) {
+    juce::Path p;
+    const float xBack = pointsRight ? r.getX() : r.getRight();
+    const float xTip  = pointsRight ? r.getRight() : r.getX();
+    p.startNewSubPath(xBack, r.getY());
+    p.lineTo(xTip, r.getCentreY());
+    p.lineTo(xBack, r.getBottom());
+    return p; // stroke with PathStrokeType(1.6f), do not fill
+}
+
+inline juce::Path iconPencil(juce::Rectangle<float> r) {
+    juce::Path p;
+    const float w = r.getWidth() * 0.30f, h = r.getHeight();
+    p.addRectangle(-w * 0.5f, -h * 0.5f, w, h * 0.68f);                       // shaft
+    p.addTriangle(-w * 0.5f, h * 0.24f, w * 0.5f, h * 0.24f, 0.0f, h * 0.5f); // tip
+    p.applyTransform(juce::AffineTransform::rotation(juce::MathConstants<float>::pi * 0.25f)
+                         .translated(r.getCentreX(), r.getCentreY()));
+    return p;
+}
+
+inline juce::Path iconTrash(juce::Rectangle<float> r) {
+    juce::Path p;
+    p.addRoundedRectangle(r.withTrimmedTop(r.getHeight() * 0.30f)
+                              .reduced(r.getWidth() * 0.14f, 0.0f), 1.0f);     // bin
+    p.addRectangle(r.getX(), r.getY() + r.getHeight() * 0.16f,
+                   r.getWidth(), r.getHeight() * 0.09f);                       // lid
+    p.addRectangle(r.getCentreX() - r.getWidth() * 0.16f, r.getY() + r.getHeight() * 0.02f,
+                   r.getWidth() * 0.32f, r.getHeight() * 0.10f);               // handle
+    return p;
+}
+
+inline juce::Path iconPlus(juce::Rectangle<float> r) {
+    juce::Path p;
+    const float t = juce::jmax(1.5f, r.getWidth() * 0.18f);
+    p.addRectangle(r.getCentreX() - t * 0.5f, r.getY(), t, r.getHeight());
+    p.addRectangle(r.getX(), r.getCentreY() - t * 0.5f, r.getWidth(), t);
+    return p;
+}
+
 } // namespace fui
