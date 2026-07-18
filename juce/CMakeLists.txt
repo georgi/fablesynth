@@ -43,6 +43,20 @@ if(FABLE_BUILD_PLUGIN)
             -Wno-nontrivial-memcall)
     endif()
 
+    # Embedded UI fonts (SIL OFL, vendored in assets/fonts): Michroma display +
+    # IBM Plex Mono — the web app's typefaces (index.html loads them from Google
+    # Fonts). One static lib shared by every editor target and host test so the
+    # headless tests exercise the exact shipping typefaces.
+    juce_add_binary_data(FableFonts
+        HEADER_NAME FableFonts.h
+        NAMESPACE fablefonts
+        SOURCES
+            assets/fonts/Michroma-Regular.ttf
+            assets/fonts/IBMPlexMono-Regular.ttf
+            assets/fonts/IBMPlexMono-Medium.ttf
+            assets/fonts/IBMPlexMono-SemiBold.ttf)
+    set_target_properties(FableFonts PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
     juce_add_plugin(FableSynth
         PRODUCT_NAME "FableSynth WT-1"
         COMPANY_NAME "FableSynth"
@@ -83,6 +97,7 @@ if(FABLE_BUILD_PLUGIN)
     juce_generate_juce_header(FableSynth)
 
     target_link_libraries(FableSynth PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -142,6 +157,7 @@ if(FABLE_BUILD_PLUGIN)
     juce_generate_juce_header(FableDrum)
 
     target_link_libraries(FableDrum PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -195,6 +211,7 @@ if(FABLE_BUILD_PLUGIN)
     juce_generate_juce_header(FableBass)
 
     target_link_libraries(FableBass PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -258,7 +275,7 @@ if(FABLE_BUILD_PLUGIN)
     target_sources(FableSeq PRIVATE ${FABLE_SEQ_SOURCES})
     target_compile_definitions(FableSeq PUBLIC FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
     juce_generate_juce_header(FableSeq)
-    target_link_libraries(FableSeq PRIVATE juce::juce_audio_utils juce::juce_dsp
+    target_link_libraries(FableSeq PRIVATE FableFonts juce::juce_audio_utils juce::juce_dsp
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
     # On macOS, JUCE regenerates moduleinfo.json as a post-build step *after* the
@@ -306,6 +323,7 @@ if(FABLE_BUILD_PLUGIN)
     target_compile_definitions(plugin_host_test PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(plugin_host_test PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -320,6 +338,7 @@ if(FABLE_BUILD_PLUGIN)
     target_compile_definitions(drum_host_test PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(drum_host_test PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -334,6 +353,7 @@ if(FABLE_BUILD_PLUGIN)
     target_compile_definitions(bass_host_test PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(bass_host_test PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -348,6 +368,7 @@ if(FABLE_BUILD_PLUGIN)
     target_compile_definitions(sq4_host_test PRIVATE
         FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(sq4_host_test PRIVATE
+        FableFonts
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
