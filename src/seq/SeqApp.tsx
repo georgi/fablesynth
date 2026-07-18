@@ -94,11 +94,13 @@ export function SeqApp() {
       <Onboarding />
       <main id="sq-rack" className={focus ? 'focused' : ''}>
         <Header />
-        <TrackHeads />
+        {!focus && <TrackHeads />}
         {focus ? (
           <div className="sq-focus" key={`f${focus.track}`}>
             <div className="sq-strip">
-              <div className="sq-strip-row"><SceneRow s={focus.scene} /></div>
+              <button className="sq-strip-back" onClick={() => useSeqStore.getState().exitFocus()}>
+                ◂ SESSION
+              </button>
               <SceneRail />
             </div>
             <DeviceView />
@@ -109,7 +111,7 @@ export function SeqApp() {
         {!focus && <FooterRow />}
         <div className="sq-hint">
           {focus
-            ? 'MINI STRIP STAYS LIVE — TAP CELLS TO LAUNCH · ✎ RETARGETS THE EDITOR · ESC BACK TO SESSION'
+            ? 'SCENE CHIPS RETARGET THE EDITOR · 1–4 SWITCH DEVICE · ESC BACK TO SESSION'
             : `TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO ${quant} · CMD-CLICK SELECTS · DRAG MOVES (ALT COPIES) · CMD-C/X/V/D/Z EDIT · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH`}
         </div>
       </main>

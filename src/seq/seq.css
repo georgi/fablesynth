@@ -230,9 +230,6 @@
   opacity: 1;
   color: var(--tc);
 }
-.sq-track-head.focused { border-color: var(--tc); box-shadow: 0 0 12px color-mix(in srgb, var(--tc) 35%, transparent); }
-.sq-back { cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
-.sq-back .sq-scenes-title { color: #cfd6e4; }
 /* Overflow is clipped at the track-id edge so nothing spills onto the stepper
    when the head narrows. The name keeps priority (never shrinks); the machine
    chip is the first thing to clip, then the name truncates if still too tight. */
@@ -877,7 +874,6 @@
 
 /* ---------- focus mode ---------- */
 #sq-rack.focused { height: 100vh; display: flex; flex-direction: column; padding-bottom: 12px; }
-#sq-rack.focused .sq-heads { margin-bottom: 0; }
 #sq-rack.focused .sq-hint { margin-top: 8px; }
 .sq-focus {
   display: flex; flex-direction: column; gap: 8px;
@@ -888,13 +884,25 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
 }
-/* Strip stacks the launchable scene row over the scene selector, so the whole
-   block aligns with the track heads and the 1–6 chips tuck into the dead space
-   under the scene card (VST layout) instead of stealing a left column. */
-.sq-strip { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-.sq-strip-row { min-width: 0; }
-/* Selector row is constrained to the first grid column (the scene card). */
-.sq-rail { display: flex; flex-direction: row; gap: 5px; width: 218px; }
+/* Focus mode collapses track heads and the mini clip row down to one strip:
+   a back-to-session button followed by the 6 scene chips, filling the width
+   that used to be split between the track-head grid and the mini row. */
+.sq-strip { display: flex; flex-direction: row; align-items: stretch; gap: 8px; min-height: 0; }
+.sq-strip-back {
+  flex: none;
+  display: flex; flex-direction: column; justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #141824, #0c0f16);
+  padding: 8px 14px;
+  font-family: var(--font-disp);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: #cfd6e4;
+  cursor: pointer;
+}
+.sq-strip-back:hover { border-color: #333d54; }
+.sq-rail { display: flex; flex-direction: row; gap: 5px; flex: 1; min-width: 0; }
 .sq-rail-chip {
   flex: 1; min-width: 0;
   display: flex; align-items: center; justify-content: center; gap: 5px;
