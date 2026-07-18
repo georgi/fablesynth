@@ -198,6 +198,7 @@ private:
     juce::Rectangle<int> headArea, decHintArea;
     std::array<juce::Rectangle<int>, 4> arrowAreas;
     float lastDec = -1.0f;
+    int lastNoRoutes = -1;
 };
 
 } // namespace fui

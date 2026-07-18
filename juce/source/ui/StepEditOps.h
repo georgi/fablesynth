@@ -106,6 +106,24 @@ inline StepBytes shiftRange(const StepBytes& p, const StepLayout& l, int pat, in
     return pasteRange(next, l, pat, dest, data);
 }
 
+// The DR-1 RAND button: sparse hits with occasional accents on one lane only
+// (web parity: randomizePadPattern in src/drum/seq.ts — same density/flavor
+// as BL-1's randomPattern, scoped to a single lane since a drum pad has no
+// per-step pitch to randomize). Rewrites every step byte of the lane; other
+// lanes/patterns are untouched. `rng` returns [0,1) and is injected so tests
+// are deterministic; the call order (one draw per step, a second only when
+// the step lands on) matches the web function exactly.
+template <typename Rng>
+inline StepBytes randomizeLane(const StepBytes& p, const StepLayout& l, int pat, Rng&& rng) {
+    StepBytes next = p;
+    for (int s = 0; s < l.stepsPerPattern; s++) {
+        const bool on = rng() < 0.4;
+        const bool accent = on && rng() < 0.3;
+        next[(size_t)stepOffset(l, pat, s)] = (uint8_t)(on ? (accent ? 2 : 1) : 0);
+    }
+    return next;
+}
+
 // Whole-pattern block ops — the full patternSize bytes (all pads for DR-1).
 inline StepBytes copyPattern(const StepBytes& p, const StepLayout& l, int pat) {
     const int begin = pat * l.patternSize;

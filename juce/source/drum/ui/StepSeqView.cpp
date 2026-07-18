@@ -125,6 +125,7 @@ void SelBarView::paint(juce::Graphics& g) {
 // .step-row: 16 x 45px steps, 5px gaps, extra 8px after steps 4/8/12.
 
 static constexpr int kPadX = 12, kHeadY = 9, kHeadH = 28, kTitleW = 88;
+static constexpr int kNameW = 100;               // .dr-stepseq-target slot after the title
 static constexpr int kRowY = 47, kStepH = 45;
 static constexpr float kStepGap = 5.0f, kGroupGap = 8.0f;
 
@@ -148,12 +149,17 @@ juce::Rectangle<int> StepSeqView::transportBounds() const {
 }
 
 juce::Rectangle<int> StepSeqView::patternBounds(int i) const {
-    const int x0 = kPadX + 34 + 8 + kTitleW + 8; // transport, gap, title, gap
+    const int x0 = kPadX + 34 + 8 + kTitleW + 8   // transport, gap, title, gap
+                 + kNameW + 8;                    // editing-pad name, gap
     return { x0 + i * (26 + 4), kHeadY + 2, 26, 24 }; // .dr-pattern 26x24, gap 4
 }
 
 juce::Rectangle<int> StepSeqView::sequenceLengthBounds() const {
     return { patternBounds(3).getRight() + 10, kHeadY, 170, 30 };
+}
+
+juce::Rectangle<int> StepSeqView::randButtonBounds() const {
+    return { sequenceLengthBounds().getRight() + 8, kHeadY + 2, 44, 24 };
 }
 
 juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
@@ -186,6 +192,16 @@ void StepSeqView::setSequenceLength(int bars) {
     std::vector<int> sequence;
     for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
     proc.setChain(std::move(sequence));
+    repaint();
+}
+
+// RAND button: rewrite the selected pad's row in the current edit pattern
+// only — other pads' lanes are untouched (web store.randomizePad).
+void StepSeqView::randomizePad(std::function<float()> rng) {
+    pushHistoryEntry();
+    const int pad = proc.selectedPad(), pat = proc.editPattern();
+    if (!rng) rng = [] { return juce::Random::getSystemRandom().nextFloat(); };
+    applyPatternBuffer(pat, fable::randomizeLane(buildPatternBuffer(pat), padLayout(pad), 0, rng));
     repaint();
 }
 
@@ -450,6 +466,10 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
         else if (pos.x >= length.getRight() - 38) setSequenceLength(bars + 1);
         return;
     }
+    if (!proc.capabilities().hosted && randButtonBounds().contains(pos)) {
+        randomizePad();
+        return;
+    }
     for (int s = 0; s < fable::DR_STEPS; ++s) {
         if (!stepBounds(s).contains(pos)) continue;
         if (e.mods.isShiftDown()) {              // Shift-click set/extend; never toggles
@@ -661,6 +681,14 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "STEP SEQ",
                { transportBounds().getRight() + 8, kHeadY, kTitleW, kHeadH }, 2.2f);
 
+    // ---- head: editing-pad name (.dr-stepseq-target) — tied directly to the
+    // STEP SEQ nameplate in the accent color instead of sitting disconnected
+    // on the far right.
+    g.setColour(col::acA);
+    g.setFont(monoFont(9.0f, true));
+    drawSpaced(g, proc.padName(sel),
+               { transportBounds().getRight() + 8 + kTitleW + 8, kHeadY, kNameW, kHeadH }, 1.0f);
+
     // ---- head: bar buttons + sequence length ----
     const int bars = proc.capabilities().hosted ? proc.clipBars()
                                                 : juce::jlimit(1, fable::DR_NPATTERNS, (int)proc.chain().size());
@@ -683,32 +711,19 @@ void StepSeqView::paint(juce::Graphics& g) {
         drawSeqBtn(g, length, "LENGTH " + juce::String(bars) + "B", false, 0.25f);
         drawSeqBtn(g, plus, "+", false, 0.0f, false, 15.0f);
     }
+    if (!proc.capabilities().hosted)
+        drawSeqBtn(g, randButtonBounds(), "RAND", false, 0.9f);
 
-    // ---- head: EDITING <pad name> + tap hint, right-aligned ----
+    // ---- head: tap hint, right-aligned (the pad name moved next to the
+    // title; the web dropped the standalone EDITING label with it) ----
     auto right = getLocalBounds().withY(kHeadY).withHeight(kHeadH)
-                     .withTrimmedRight(kPadX).withTrimmedLeft(560);
-    g.setColour(col::textDim);
+                     .withTrimmedRight(kPadX).withTrimmedLeft(660);
+    g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
-    // web "TAP STEP · ON → ACCENT → OFF" — ASCII substitutes (mono font glyphs)
-    drawSpaced(g, "TAP STEP - ON -> ACCENT -> OFF", right.removeFromRight(180), 0.9f,
-               juce::Justification::right);
-    right.removeFromRight(7);
-    const auto name = proc.padName(sel);
-    const auto nameFont = monoFont(8.0f);
-    const int nameW = juce::jmin(120, (int)std::ceil(juce::GlyphArrangement::getStringWidth(nameFont, name)
-                                          + 0.8f * (float)name.length()) + 14);
-    const auto nameBox = right.removeFromRight(nameW).withSizeKeepingCentre(nameW, 17);
-    g.setColour(juce::Colour(0xff0a0d13));                  // .dr-step-editing strong
-    g.fillRoundedRectangle(nameBox.toFloat(), 4.0f);
-    g.setColour(col::acA.withAlpha(0.18f));
-    g.drawRoundedRectangle(nameBox.toFloat().reduced(0.5f), 4.0f, 1.0f);
-    g.setColour(col::acA);
-    g.setFont(nameFont);
-    drawSpaced(g, name, nameBox, 0.8f, juce::Justification::centred);
-    right.removeFromRight(7);
-    g.setColour(col::textDim);
-    g.setFont(monoFont(7.0f));
-    drawSpaced(g, "EDITING", right, 0.9f, juce::Justification::right);
+    // web "TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT" — ASCII
+    // substitutes (mono font glyphs)
+    drawSpaced(g, "TAP STEP - ON -> ACCENT -> OFF - SHIFT-DRAG TO SELECT",
+               right.removeFromRight(320), 0.9f, juce::Justification::right);
 
     // ---- step row ----
     const int curStep = proc.currentStep(), curPat = proc.currentPattern();
@@ -731,22 +746,36 @@ void StepSeqView::paint(juce::Graphics& g) {
         }
         g.drawRoundedRectangle(b.reduced(0.5f), 6.0f, 1.0f);
 
-        // .step-accent: 2px bar at top 5, inset 5 (amber when accented)
-        const juce::Rectangle<float> ab(b.getX() + 5.0f, b.getY() + 5.0f,
-                                        b.getWidth() - 10.0f, 2.0f);
-        if (v == 2) {
-            g.setColour(col::acB.withAlpha(0.55f));         // glow
-            g.fillRoundedRectangle(ab.expanded(1.5f), 3.0f);
-            g.setColour(col::acB);
+        // .step-accent: an accent must read at a glance, not just on close
+        // inspection — a taller, brighter, near-white cap plus a wider glow set
+        // it clearly apart from a plain on-step (web parity: .step.accented
+        // .step-accent — top 3, height 4, #fff2e0).
+        const bool accented = v == 2;
+        const juce::Rectangle<float> ab = accented
+            ? juce::Rectangle<float>(b.getX() + 5.0f, b.getY() + 3.0f, b.getWidth() - 10.0f, 4.0f)
+            : juce::Rectangle<float>(b.getX() + 5.0f, b.getY() + 5.0f, b.getWidth() - 10.0f, 2.0f);
+        if (accented) {
+            g.setColour(col::acB.withAlpha(0.9f));          // wider glow
+            g.fillRoundedRectangle(ab.expanded(2.0f), 3.0f);
+            g.setColour(juce::Colour(0xfffff2e0));          // near-white cap
         } else {
             g.setColour(col::acB.withAlpha(0.12f));
         }
         g.fillRoundedRectangle(ab, 2.0f);
 
-        // .step-fill: inset 5, top 10, bottom 12 (cyan when on)
+        // .step-fill: inset 5, top 10, bottom 12 (cyan when on; a brighter,
+        // fully-opaque amber wash when accented so the whole cell — not just the
+        // cap — reads as accented, matching .step.accented .step-fill).
         const juce::Rectangle<float> fb(b.getX() + 5.0f, b.getY() + 10.0f,
                                         b.getWidth() - 10.0f, b.getHeight() - 22.0f);
-        if (v >= 1) {
+        if (accented) {
+            g.setGradientFill(juce::ColourGradient(
+                juce::Colour(0xfffff6ea), fb.getX(), fb.getY(),
+                col::acB.withAlpha(0.55f), fb.getX(), fb.getBottom(), false));
+            g.fillRoundedRectangle(fb, 3.0f);
+            g.setColour(juce::Colour(0xfffff2e0).withAlpha(0.55f));
+            g.fillRect(fb.withHeight(1.0f));                // brighter inner top highlight
+        } else if (v == 1) {
             g.setGradientFill(juce::ColourGradient(
                 juce::Colour(0xff77f2ff).withAlpha(0.76f), fb.getX(), fb.getY(),
                 col::acA.withAlpha(0.28f), fb.getX(), fb.getBottom(), false));

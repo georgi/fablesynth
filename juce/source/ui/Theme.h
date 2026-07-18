@@ -13,6 +13,9 @@ namespace col {
     const juce::Colour line     {juce::Colours::white.withAlpha(0.07f)};
     const juce::Colour text     {0xffdfe6f3};
     const juce::Colour textDim  {0xff6b768c};
+    // Lighter than textDim, reserved for tiny hint/legend copy that must still
+    // clear ~4.5:1 contrast on the panel background at 7-9px sizes (--text-hint).
+    const juce::Colour textHint {0xff93a0b8};
     const juce::Colour acA      {0xff4de8ff}; // osc A  (cyan)
     const juce::Colour acB      {0xffffa14d}; // osc B  (amber)
     const juce::Colour acF      {0xffb18cff}; // filter (violet)

@@ -59,7 +59,7 @@ private:
     BassBpmReadout bpm;
     Knob swing, vol;
     juce::Rectangle<int> brandArea, patchNameArea, voiceModeArea, scopeBox, midiArea, syncArea;
-    bool lastMidi = false, lastSync = false;
+    bool lastMidi = false, lastSync = false, lastDirty = false;
     int  lastProgram = -1;
 };
 

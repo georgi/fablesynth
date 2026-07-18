@@ -14,12 +14,12 @@ public:
 private:
     void timerCallback() override;
     FableAudioProcessor& proc;
-    juce::TextButton prev{"<"}, next{">"}, save{"SAVE"};
+    juce::TextButton prev{"<"}, next{">"};
     juce::ComboBox presets;
     ScopeView scope; SpectrumView spectrum;
     Knob bpm, swing, master;
-    juce::Rectangle<int> brandArea, scopeBox, specBox, statusArea;
-    int lastVoices = -1; bool lastMidi = false;
+    juce::Rectangle<int> brandArea, dirtyArea, scopeBox, specBox, statusArea;
+    int lastVoices = -1; bool lastMidi = false, lastDirty = false;
 };
 
 } // namespace fui

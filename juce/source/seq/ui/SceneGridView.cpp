@@ -582,8 +582,16 @@ void SceneGridView::paintEmptyCell(juce::Graphics& g, int s, int t) {
     const bool pass = isPassThrough(s, t);
 
     auto rf = cellR[s][t].toFloat().reduced(0.5f);
-    g.setColour(juce::Colours::black.withAlpha(0.16f));
+    // A stop cell (the default) reads as a small solid square on a slightly
+    // denser well; pass-through reads as hollow with a dotted track-tinted
+    // border and a soft dot, so the two states are legible without the tooltip
+    // (web parity: .sq-cell-empty vs .sq-cell-empty.pass).
+    g.setColour(juce::Colours::black.withAlpha(pass ? 0.10f : 0.28f));
     g.fillRoundedRectangle(rf, 10.0f);
+    if (!pass) {
+        g.setColour(juce::Colours::white.withAlpha(0.02f));
+        g.drawRoundedRectangle(rf.reduced(0.5f), 9.5f, 1.0f); // inset hairline
+    }
 
     juce::Path outline;
     outline.addRoundedRectangle(rf, 10.0f);
@@ -591,12 +599,19 @@ void SceneGridView::paintEmptyCell(juce::Graphics& g, int s, int t) {
     float dashLengths[] = { pass ? 1.0f : 3.0f, pass ? 2.0f : 3.0f };
     juce::Path dashed;
     stroke.createDashedStroke(dashed, outline, dashLengths, 2);
-    g.setColour(pass ? tc.withAlpha(0.28f) : juce::Colours::white.withAlpha(0.06f));
+    g.setColour(pass ? tc.withAlpha(0.28f) : juce::Colours::white.withAlpha(0.14f));
     g.fillPath(dashed);
 
-    g.setColour(pass ? tc.withAlpha(0.6f) : juce::Colour(0xff333a48));
-    g.setFont(monoFont(pass ? 13.0f : 10.0f, true));
-    g.drawText(pass ? kPassGlyph : kStopGlyph, cellR[s][t], juce::Justification::centred);
+    const auto centre = cellR[s][t].toFloat().getCentre();
+    if (pass) {
+        // hollow dot (◦) — a passed-through track rides its previous clip.
+        g.setColour(tc.interpolatedWith(juce::Colour(0xff333a48), 0.40f));
+        g.drawEllipse(juce::Rectangle<float>(7.0f, 7.0f).withCentre(centre), 1.2f);
+    } else {
+        // solid square (■) — an empty cell stops its track on scene launch.
+        g.setColour(juce::Colour(0xff4a5266));
+        g.fillRect(juce::Rectangle<float>(7.0f, 7.0f).withCentre(centre));
+    }
 }
 
 void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
@@ -624,8 +639,19 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
                                            col::panelLo, rf.getX(), rf.getBottom(), false));
     g.fillRoundedRectangle(rf, 10.0f);
-    g.setColour(live ? tc.withAlpha(0.67f) : juce::Colours::white.withAlpha(0.08f));
-    g.drawRoundedRectangle(rf, 10.0f, live ? 1.4f : 1.0f);
+    // A playing clip should be unmistakable at a glance: a brighter track-color
+    // border plus a soft, gently-breathing outer glow (web parity: .sq-cell.live
+    // border 85% + sq-live-pulse). Stopping cells keep the plain border so the
+    // amber stop ring reads instead.
+    if (live && !stopping) {
+        const float pulse = 0.5f + 0.5f * qpulse(); // 0.6..1.0-ish, slow breathe
+        for (int ring = 2; ring >= 1; --ring) {
+            g.setColour(tc.withAlpha(0.10f * pulse / (float)ring));
+            g.drawRoundedRectangle(rf.expanded((float)ring * 1.5f), 11.0f, 1.5f);
+        }
+    }
+    g.setColour(live ? tc.withAlpha(0.85f) : juce::Colours::white.withAlpha(0.08f));
+    g.drawRoundedRectangle(rf, 10.0f, live ? 1.5f : 1.0f);
 
     const float bodyAlpha = muted ? 0.32f : live ? 1.0f : 0.72f;
 
@@ -695,7 +721,11 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
             const int pos = ((bar * fable::SQ_STEPS_PER_BAR + step) % totalSteps + totalSteps) % totalSteps;
             const float frac = juce::jlimit(0.0f, 1.0f, (float)pos / (float)totalSteps);
             auto lit = progress.withWidth((int)(static_cast<float>(progress.getWidth()) * frac));
-            g.setColour(tc);
+            // Brighter than the plain track color + a soft glow so the live
+            // sweep stands out (web parity: .sq-cell-progress div).
+            g.setColour(tc.withAlpha(0.35f));
+            g.fillRoundedRectangle(lit.toFloat().expanded(0.0f, 1.5f), 2.0f);
+            g.setColour(tc.interpolatedWith(juce::Colours::white, 0.12f));
             g.fillRoundedRectangle(lit.toFloat(), 1.5f);
         }
     }

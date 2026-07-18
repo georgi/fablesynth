@@ -5,6 +5,7 @@
 #include "dsp/BassFx.h"
 #include "dsp/BassParams.h"
 #include "dsp/BassPatches.h"
+#include "../ui/ProgramDirty.h"
 
 #include <array>
 #include <atomic>
@@ -54,6 +55,9 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
+
+    // Edited-since-patch-load flag for the header's dirty dot.
+    bool isProgramDirty() const { return programDirty_.isDirty(); }
 
     // ---- audition / transport (message thread -> engine via the command FIFO) ----
     void noteOn(int semi, float vel);             // UI keyboard audition
@@ -120,6 +124,7 @@ private:
 
     int editPattern_ = 0;
     int currentProgram_ = 0;
+    fui::ProgramDirtyTracker programDirty_{*this};
 
     // atomics published from the audio thread
     std::atomic<bool> seqPlaying_{false};

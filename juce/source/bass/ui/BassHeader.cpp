@@ -38,6 +38,15 @@ void BassScopeView::paint(juce::Graphics& g) {
     int start = 0;
     for (int i = 1; i < N / 2; i++)
         if (buf[static_cast<size_t>(i - 1)] <= 0 && buf[static_cast<size_t>(i)] > 0) { start = i; break; }
+    // Idle: a faint neutral centre line instead of a full-brightness flat trace
+    // (web parity: ScopeView.tsx drawIdle).
+    float peak = 0;
+    for (float v : buf) peak = std::max(peak, std::abs(v));
+    if (peak <= 1.0e-5f) {
+        g.setColour(col::textHint.withAlpha(0.22f));
+        g.drawLine(0, h / 2, w, h / 2, 1.0f);
+        return;
+    }
     int M = std::min(900, N - start);
     juce::Path path;
     for (int i = 0; i < M; i++) {
@@ -137,6 +146,10 @@ void BassHeader::timerCallback() {
         lastProgram = proc.currentProgram();
         repaint(patchNameArea);
     }
+    if (proc.programDirty() != lastDirty) {
+        lastDirty = proc.programDirty();
+        repaint(patchNameArea);
+    }
 }
 
 void BassHeader::paint(juce::Graphics& g) {
@@ -170,6 +183,16 @@ void BassHeader::paint(juce::Graphics& g) {
     g.setFont(monoFont(10.0f));
     drawSpaced(g, proc.programName(proc.currentProgram()),
                patchNameArea.reduced(10, 0), 0.8f, juce::Justification::centred);
+    // Dirty dot (.bl-patch-dirty): acid green, lit once the patch has unsaved
+    // edits.
+    if (proc.programDirty()) {
+        const auto dot = patchNameArea.withTrimmedLeft(patchNameArea.getWidth() - 14)
+                             .withSizeKeepingCentre(5, 5).toFloat();
+        g.setColour(accentA().withAlpha(0.4f));
+        g.fillEllipse(dot.expanded(2.5f));
+        g.setColour(accentA());
+        g.fillEllipse(dot);
+    }
 
     // voice-mode hint (.bl-voicemode), two dim lines
     g.setColour(col::textDim);

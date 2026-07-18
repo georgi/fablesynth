@@ -255,6 +255,16 @@ void ScopeView::paint(juce::Graphics& g) {
     std::array<float, 2048> buf;
     readScope(buf.data(), N);
     const float w = (float)getWidth(), h = (float)getHeight();
+    // Idle: a faint neutral centre line instead of a full-brightness flat trace,
+    // so a silent scope reads as "no signal", not a stuck display (web parity:
+    // ScopeView.tsx drawIdle).
+    float peak = 0;
+    for (float v : buf) peak = std::max(peak, std::abs(v));
+    if (peak <= 1.0e-5f) {
+        g.setColour(col::textHint.withAlpha(0.22f));
+        g.drawLine(0, h / 2, w, h / 2, 1.0f);
+        return;
+    }
     int start = 0;
     for (int i = 1; i < N / 2; i++) if (buf[static_cast<size_t>(i - 1)] <= 0 && buf[static_cast<size_t>(i)] > 0) { start = i; break; }
     int M = std::min(900, N - start);
@@ -306,6 +316,16 @@ void SpectrumView::paint(juce::Graphics& g) {
 
     const float w = (float)getWidth(), h = (float)getHeight();
     const int bars = 48;
+    // Idle: faint baseline stubs where the bars would rise, so a silent
+    // analyser still reads as an analyser (web parity: SpectrumView.tsx drawIdle).
+    if (!decaying_) {
+        g.setColour(col::textHint.withAlpha(0.14f));
+        for (int b = 0; b < bars; b++) {
+            float bw = w / static_cast<float>(bars);
+            g.fillRect(static_cast<float>(b) * bw + 0.5f, h - 2, bw - 1.5f, 2.0f);
+        }
+        return;
+    }
     const double sr = sampleRate();
     const double fmin = 30, fmax = std::min(18000.0, sr / 2);
     g.setGradientFill(juce::ColourGradient(accent.withAlpha(0.33f), 0, h, accent, 0, 0, false));

@@ -59,8 +59,8 @@ private:
     DrumScopeView scope;
     BpmReadout bpm;
     Knob swing, vol;
-    juce::Rectangle<int> brandArea, kitNameArea, scopeBox, midiArea, syncArea;
-    bool lastMidi = false, lastSync = false;
+    juce::Rectangle<int> brandArea, kitLabelArea, kitNameArea, scopeBox, midiArea, syncArea;
+    bool lastMidi = false, lastSync = false, lastDirty = false;
     int  lastProgram = -1;
 };
 

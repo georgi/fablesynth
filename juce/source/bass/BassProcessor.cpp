@@ -138,6 +138,7 @@ void BassAudioProcessor::setSeqStep(int pattern, int step, const fable::BassSeqS
     if (pattern < 0 || pattern >= BL_NPATTERNS || step < 0 || step >= BL_STEPS)
         return;
     setBassStep(patterns_.data(), pattern, step, s);
+    programDirty_.markEdited();
     shareSeqState(true, false);
 }
 
@@ -147,6 +148,7 @@ std::vector<uint8_t> BassAudioProcessor::getPatternBytes() const {
 
 void BassAudioProcessor::setPatternBytes(const std::vector<uint8_t>& bytes) {
     std::copy_n(bytes.begin(), std::min(bytes.size(), patterns_.size()), patterns_.begin());
+    programDirty_.markEdited();
     shareSeqState(true, false);
 }
 
@@ -154,6 +156,7 @@ void BassAudioProcessor::setChain(std::vector<int> c) {
     const int bars = juce::jlimit(1, BL_NPATTERNS, (int)c.size());
     chain_.resize((size_t)bars);
     std::iota(chain_.begin(), chain_.end(), 0);
+    programDirty_.markEdited();
     shareSeqState(false, true);
 }
 
@@ -167,6 +170,7 @@ void BassAudioProcessor::setCurrentProgram(int index) {
     const auto& bank = bassFactoryPatches();
     if (index < 0 || index >= (int)bank.size()) return;
     currentProgram_ = index;
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
     const BassPatch& patch = bank[(size_t)index];
 
     // Apply patch values onto the APVTS so the host + UI reflect them.
@@ -354,6 +358,7 @@ void BassAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
 
     juce::ValueTree params, bass;
     if (xml->hasTagName("BL1STATE")) {

@@ -98,6 +98,7 @@ void FableAudioProcessor::setSeqStep(int pattern, int step, const fable::NoteSeq
     if (pattern < 0 || pattern >= fable::SEQ_NPATTERNS || step < 0 || step >= fable::SEQ_STEPS)
         return;
     fable::setNoteSeqStep(patterns_.data(), pattern, step, s);
+    programDirty_.markEdited();
     shareSeqState(true, false);
 }
 
@@ -105,6 +106,7 @@ void FableAudioProcessor::setChain(std::vector<int> c) {
     const int bars = juce::jlimit(1, fable::SEQ_NPATTERNS, (int)c.size());
     chain_.resize((size_t)bars);
     std::iota(chain_.begin(), chain_.end(), 0);
+    programDirty_.markEdited();
     shareSeqState(false, true);
 }
 
@@ -333,6 +335,7 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 void FableAudioProcessor::setCurrentProgram(int index) {
     if (index < 0 || index >= (int)factoryPresets().size()) return;
     currentProgram = index;
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
     // Apply preset values onto the APVTS so the host + UI reflect them.
     ParamArray pv = applyPreset(factoryPresets()[(size_t)index]);
     const auto& info = paramInfo();
@@ -357,6 +360,7 @@ fui::ParameterSource StandaloneWtUiModel::parameters() {
     const auto& info = fable::paramInfo();
     return fui::ParameterSource::fromApvts(proc.apvts, info.data(), info.size());
 }
+bool StandaloneWtUiModel::programDirty() const { return proc.isProgramDirty(); }
 int StandaloneWtUiModel::currentProgram() const { return proc.getCurrentProgram(); }
 int StandaloneWtUiModel::numPrograms() const { return proc.getNumPrograms(); }
 juce::String StandaloneWtUiModel::programName(int i) const { return proc.getProgramName(i); }
@@ -428,6 +432,7 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
 
     juce::ValueTree params, pool, seq;
     if (xml->hasTagName("FABLESTATE")) {

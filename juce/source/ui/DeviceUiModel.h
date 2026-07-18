@@ -27,6 +27,12 @@ public:
     virtual ~DeviceUiModel() = default;
     virtual ParameterSource parameters() = 0;
     virtual DeviceUiCapabilities capabilities() const = 0;
+
+    // True once any param/pattern edit has landed since the current program
+    // (preset/kit/patch) was loaded — drives the small dirty dot the headers
+    // draw next to the program name (web parity: the stores' dirty flags).
+    // Hosted SQ-4 models have no program concept and keep the default.
+    virtual bool programDirty() const { return false; }
 };
 
 } // namespace fui

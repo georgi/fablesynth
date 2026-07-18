@@ -651,6 +651,7 @@ void DrumFilterPanel::timerCallback() {
     const float a = on != 0 ? 1.0f : 0.4f;
     if (view) view->setAlpha(a);
     for (auto* k : knobs) k->setAlpha(a);
+    repaint(headArea); // OFF tag tracks the power state
 }
 
 void DrumFilterPanel::resized() {
@@ -679,6 +680,17 @@ void DrumFilterPanel::paint(juce::Graphics& g) {
     drawDrLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), col::acF);
     head.removeFromLeft(8);
     drawHeadTitle(g, head, "FILTER", col::acF);
+    // .dr-filter-off-tag: the dimmed body alone can read as "quiet", not
+    // "bypassed" — say OFF explicitly next to the power button.
+    if (power && !power->isOn()) {
+        head.removeFromLeft(68); // clear the title + power button
+        const auto tag = head.removeFromLeft(26).withSizeKeepingCentre(26, 13).toFloat();
+        g.setColour(col::textDim.withAlpha(0.5f));
+        g.drawRoundedRectangle(tag.reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(col::textHint);
+        g.setFont(monoFont(7.0f));
+        drawSpaced(g, "OFF", tag.toNearestInt(), 1.4f, juce::Justification::centred);
+    }
 }
 
 // ===================== DrumModPanel =====================
@@ -707,6 +719,12 @@ void DrumModPanel::rebuild() {
 void DrumModPanel::timerCallback() {
     const float dec = parameterValue(proc, pid("modenv.dec"));
     if (floatChanged(dec, lastDec)) { lastDec = dec; repaint(headArea); }
+    int assigned = 0;
+    for (int n = 0; n < 4; ++n)
+        if (parameterValue(proc, pid(("mod" + juce::String(n + 1) + ".src").toRawUTF8())) >= 0.5f)
+            ++assigned;
+    const int empty = assigned == 0 ? 1 : 0;
+    if (empty != lastNoRoutes) { lastNoRoutes = empty; repaint(headArea); }
 }
 
 void DrumModPanel::resized() {
@@ -734,6 +752,18 @@ void DrumModPanel::resized() {
 void DrumModPanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     drawHeadTitle(g, headArea.withTrimmedRight(160), "MOD", col::text);
+    // .dr-mod-hint: with no source routed the four "—" rows explain nothing;
+    // tell the user what this panel is for.
+    bool noRoutes = true;
+    for (int n = 0; n < 4 && noRoutes; ++n)
+        noRoutes = parameterValue(proc, pid(("mod" + juce::String(n + 1) + ".src").toRawUTF8())) < 0.5f;
+    if (noRoutes) {
+        g.setColour(col::textHint);
+        g.setFont(monoFont(7.0f));
+        drawSpaced(g, "ROUTE A SOURCE TO ANY PAD PARAM",
+                   headArea.withTrimmedLeft(46).withTrimmedRight(160), 0.9f,
+                   juce::Justification::horizontallyCentred);
+    }
     // .dr-mod-env hint: "MOD ENV DEC <fmtSec>" next to the compact decay knob
     const float v = parameterValue(proc, pid("modenv.dec"));
     g.setColour(col::textDim);
