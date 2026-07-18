@@ -22,15 +22,6 @@ const bool g_seqResolverInstalled = [] {
 }();
 } // namespace
 
-// The JUCE default font has no reliable glyph coverage for the web's
-// ▶ / ❚❚ / ■ / ◂ / ▸ symbols (and the headless snapshot test renders with
-// whatever fonts the CI box has) — ASCII stand-ins. (The embedded IBM Plex
-// Mono does cover Latin-1, so the middle dot elsewhere is real "·" now.)
-namespace {
-constexpr const char* kPlayGlyph = "PLAY", *kStopGlyph = "STOP";
-constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
-} // namespace
-
 SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
     juce::String lastFamily;
     const auto& sessions = fable::factorySessionLibrary();
@@ -296,7 +287,13 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
         g.setFont(monoFont(10.0f));
         g.drawText(txt, r, juce::Justification::centred);
     };
-    drawBtn(playBtn, playing ? kStopGlyph : kPlayGlyph, playing);
+    // drawBtn keeps drawing text for other buttons; the transport gets an icon.
+    drawBtn(playBtn, "", playing);
+    {
+        auto ir = playBtn.toFloat().withSizeKeepingCentre(11.0f, 11.0f);
+        g.setColour(playing ? accentA() : col::text); // same fg colours drawBtn used for its text
+        g.fillPath(playing ? iconStop(ir) : iconPlay(ir.reduced(1.0f, 0.0f)));
+    }
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
 }
@@ -306,17 +303,17 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
     g.setFont(monoFont(8.0f));
     drawSpaced(g, "QUANT", quantTagArea, 1.6f);
 
-    auto drawStep = [&](juce::Rectangle<int> r, const char* txt) {
+    auto drawStep = [&](juce::Rectangle<int> r, bool pointsRight) {
         g.setColour(juce::Colour(0xff11141c));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
         g.setColour(col::line);
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
         g.setColour(col::textDim);
-        g.setFont(monoFont(9.0f));
-        g.drawText(txt, r, juce::Justification::centred);
+        g.strokePath(iconChevron(r.toFloat().withSizeKeepingCentre(5.0f, 9.0f), pointsRight),
+                     juce::PathStrokeType(1.6f));
     };
-    drawStep(quantPrevBtn, kPrevGlyph);
-    drawStep(quantNextBtn, kNextGlyph);
+    drawStep(quantPrevBtn, false);
+    drawStep(quantNextBtn, true);
 
     const auto q = proc.conductor().quant();
     const char* label = q == fable::Quant::Bar ? "1 BAR" : q == fable::Quant::Quarter ? "1/4" : "OFF";

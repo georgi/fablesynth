@@ -6,16 +6,7 @@
 
 namespace fui {
 
-// The JUCE default font has no reliable glyph coverage for the web's
-// ▶ / ■ / ▷ / ≈ / ✎ symbols (and the headless snapshot test renders with
-// whatever fonts the CI box has) — ASCII stand-ins, same call SeqHeader made.
 namespace {
-constexpr const char* kPlayGlyph = ">";
-constexpr const char* kStopGlyph = "S";
-constexpr const char* kIdleGlyph = ">";
-constexpr const char* kPassGlyph = "~";
-constexpr const char* kEditGlyph = "E";
-
 // 0.8s pulse, matches the web's sq-qpulse keyframe (opacity 0.2..1).
 float qpulse() {
     const double t = juce::Time::getMillisecondCounterHiRes() / 1000.0;
@@ -498,8 +489,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
     g.setColour(anyOwner ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colours::white.withAlpha(0.1f));
     g.drawRoundedRectangle(lb.reduced(0.5f), 8.0f, 1.0f);
     g.setColour(queued ? col::text.withAlpha(qpulse()) : anyOwner ? juce::Colour(0xff4dff9e) : col::acN);
-    g.setFont(monoFont(12.0f, true));
-    g.drawText(kPlayGlyph, launchBtn[s], juce::Justification::centred);
+    g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
 
     // num + name / status
     auto id = idArea[s];
@@ -535,7 +525,15 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
         g.drawText(txt, r, juce::Justification::centred);
     };
     drawToggle(muteBtnR[s], "M", muted, col::acB);
-    drawToggle(stopBtnR[s], kStopGlyph, false, col::acB);
+    { // stop button: same chrome as drawToggle, square icon instead of a letter
+        auto rf2 = stopBtnR[s].toFloat();
+        g.setColour(juce::Colour(0xff11141c));
+        g.fillRoundedRectangle(rf2, 5.0f);
+        g.setColour(col::line);
+        g.drawRoundedRectangle(rf2.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(col::textDim);
+        g.fillPath(iconStop(stopBtnR[s].toFloat().withSizeKeepingCentre(7.0f, 7.0f)));
+    }
 
     // dots + clip count
     auto dr = dotsArea[s];
@@ -672,12 +670,10 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     } else if (stopping) {
         g.setColour(col::acB.withAlpha(0.65f + stopPulse() * 0.35f));
-        g.setFont(monoFont(9.0f, true));
-        g.drawText(kStopGlyph, iconArea, juce::Justification::centredLeft);
+        g.fillPath(iconStop(iconArea.toFloat().withSizeKeepingCentre(8.0f, 8.0f)));
     } else {
         g.setColour(juce::Colour(0xff4a5266).withAlpha(bodyAlpha));
-        g.setFont(monoFont(9.0f));
-        g.drawText(kIdleGlyph, iconArea, juce::Justification::centredLeft);
+        g.fillPath(iconPlay(iconArea.toFloat().withSizeKeepingCentre(7.0f, 9.0f)));
     }
     head.removeFromLeft(6);
 
@@ -689,7 +685,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     head.removeFromRight(4);
 
     g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
-    g.setFont(monoFont(9.5f));
+    g.setFont(monoFontMedium(9.5f));
     g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
 
     content.removeFromTop(6);
@@ -732,8 +728,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     // edit glyph -- brief calls for hover-lit; this pass has no hover tracking,
     // so a steady dim glyph keeps the click target visible and legible.
     g.setColour(tc.withAlpha(0.85f));
-    g.setFont(monoFont(9.0f, true));
-    g.drawText(kEditGlyph, editGlyph[s][t], juce::Justification::centred);
+    g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
 
     if (queued) {
         g.setColour(tc.withAlpha(qpulse()));

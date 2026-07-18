@@ -45,8 +45,6 @@ const char* machineChip(fable::Machine m) {
     return "WT-1";
 }
 
-constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
-
 } // namespace
 
 TrackHeadsView::TrackHeadsView(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
@@ -266,8 +264,7 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     drawSpaced(g, juce::String(tr.name), nameArea, 1.6f);
     if (hovered) {
         g.setColour(tc);
-        g.setFont(monoFont(9.0f));
-        g.drawText("E", editSlot, juce::Justification::centred); // ✎ stand-in (ASCII font)
+        g.fillPath(iconPencil(editSlot.toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
     }
 
     auto chip = nr.withSizeKeepingCentre(nr.getWidth(), 12);
@@ -278,13 +275,13 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     g.drawText(machineChip(tr.machine), chip, juce::Justification::centred);
 
     // patch stepper: <  name  >
-    auto drawArrow = [&](juce::Rectangle<int> r, const char* txt) {
+    auto drawArrow = [&](juce::Rectangle<int> r, bool pointsRight) {
         g.setColour(col::textDim);
-        g.setFont(monoFont(9.0f));
-        g.drawText(txt, r, juce::Justification::centred);
+        g.strokePath(iconChevron(r.toFloat().withSizeKeepingCentre(5.0f, 9.0f), pointsRight),
+                     juce::PathStrokeType(1.6f));
     };
-    drawArrow(patchPrev[t], kPrevGlyph);
-    drawArrow(patchNext[t], kNextGlyph);
+    drawArrow(patchPrev[t], false);
+    drawArrow(patchNext[t], true);
     auto patchTextArea = juce::Rectangle<int>(patchPrev[t].getRight(), patchPrev[t].getY(),
                                                patchNext[t].getX() - patchPrev[t].getRight(),
                                                patchPrev[t].getHeight());
