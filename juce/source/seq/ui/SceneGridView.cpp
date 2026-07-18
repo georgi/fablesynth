@@ -342,6 +342,8 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
             if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
     }
 
+    const auto& scenes = proc.conductor().session().scenes;
+
     for (int s = 0; s < kScenes; ++s) {
         if (singleRow_ && s != singleRowScene_) continue;
         if (launchBtn[s].contains(pos)) { sceneLaunch(s); return; }
@@ -349,14 +351,17 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
         for (int t = 0; t < kTracks; ++t) {
             if (editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
-            const auto& scenes = proc.conductor().session().scenes;
             const bool hasClip = s < (int)scenes.size() && scenes[(size_t)s].hasClip[(size_t)t];
-            if (trashGlyph[s][t].contains(pos) && hasClip) {
+            // Right-click always falls through to cellRightClick below: it's
+            // a no-op on filled cells and the only way to toggle pass-through
+            // on empty ones, so the hover chips/affordance only claim plain
+            // left-clicks.
+            if (!right && trashGlyph[s][t].contains(pos) && hasClip) {
                 selectCell(s, t);   // route through the selection verb: one undo
                 selDelete();        // snapshot + machine-safe clearing, already tested
                 return;
             }
-            if (!hasClip) {
+            if (!right && !hasClip) {
                 // Empty-cell + affordance: top-right 24x24 corner of the cell,
                 // matching where paintEmptyCell draws the + (rf.getRight()-12,
                 // rf.getY()+12, 9x9). Opens the device focused on this cell.
