@@ -11,6 +11,29 @@
 
 #include <utility>
 
+// The web's .sq-hint legend line (SeqApp.tsx): tiny contextual key/mouse help
+// under the rack. Text comes from a provider so the quant value stays current;
+// 2 Hz repaint is plenty for copy changes.
+class HintBar : public juce::Component, private juce::Timer {
+public:
+    HintBar() { startTimerHz(2); setInterceptsMouseClicks(false, false); }
+    ~HintBar() override { stopTimer(); }
+    void setProvider(std::function<juce::String()> p) { provider_ = std::move(p); repaint(); }
+    void paint(juce::Graphics& g) override {
+        if (!provider_) return;
+        g.setColour(fui::col::textHint.withAlpha(0.85f));
+        g.setFont(fui::monoFont(8.0f));
+        fui::drawSpaced(g, provider_(), getLocalBounds(), 1.1f, juce::Justification::centred);
+    }
+private:
+    void timerCallback() override {
+        auto now = provider_ ? provider_() : juce::String();
+        if (now != last_) { last_ = now; repaint(); }
+    }
+    std::function<juce::String()> provider_;
+    juce::String last_;
+};
+
 // The SQ-4 rack: all sections laid out at a fixed logical size matching the
 // web CSS grid (src/seq/seq.css, #seq-rack at its 1460px max-width). The
 // editor scales it to the window so the layout stays pixel-faithful — same
@@ -33,6 +56,7 @@ public:
     fui::SceneGridView& getGrid() { return sceneGrid; }
     fui::SeqFooterView& getFooter() { return footer; }
     fui::DeviceFocusView& getDeviceFocus() { return deviceFocus; }
+    HintBar& getHint() { return hint; }
 
     void enterFocus(int track, int scene);
     void exitFocus();
@@ -44,7 +68,7 @@ private:
     fui::SceneGridView sceneGrid;
     fui::SeqFooterView footer;
     fui::DeviceFocusView deviceFocus;
-    juce::Component hint;
+    HintBar hint;
 
     bool focusMode_ = false;
     int focusTrack_ = -1;

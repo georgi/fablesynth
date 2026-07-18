@@ -91,6 +91,19 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
     grid().onRailScene   = [this](int s) { focusScene(s); };
     header().onLibrarySessionChanged = [this] { deviceFocus().reloadPatchesFromSession(); };
 
+    // Hint copy mirrors SeqApp.tsx's two .sq-hint strings; ✎ has no glyph
+    // coverage, so the word EDIT stands in.
+    rack.getHint().setProvider([this]() -> juce::String {
+        const auto dot = juce::String::fromUTF8(" \xc2\xb7 ");
+        if (focusTrack_ >= 0)
+            return "MINI STRIP STAYS LIVE - TAP CELLS TO LAUNCH" + dot
+                 + "EDIT RETARGETS THE EDITOR" + dot + "ESC BACK TO SESSION";
+        return "TAP CLIP TO LAUNCH" + dot + "TAP AGAIN TO STOP" + dot
+             + "LAUNCHES QUANTIZE TO " + header().quantLabel() + dot
+             + "CMD-CLICK SELECTS" + dot + "DRAG MOVES (ALT COPIES)" + dot
+             + "CMD-C/X/V/D/Z EDIT" + dot + "RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH";
+    });
+
     setWantsKeyboardFocus(true);
 
     setResizable(true, true);

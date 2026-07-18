@@ -315,8 +315,7 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
     drawStep(quantPrevBtn, false);
     drawStep(quantNextBtn, true);
 
-    const auto q = proc.conductor().quant();
-    const char* label = q == fable::Quant::Bar ? "1 BAR" : q == fable::Quant::Quarter ? "1/4" : "OFF";
+    const auto label = quantLabel();
     g.setColour(juce::Colour(0xff0a0d13));
     g.fillRoundedRectangle(quantValArea.toFloat(), 4.0f);
     g.setColour(col::line);
@@ -324,6 +323,11 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
     g.setColour(col::acB);
     g.setFont(monoFont(10.0f));
     g.drawText(label, quantValArea, juce::Justification::centred);
+}
+
+juce::String SeqHeader::quantLabel() const {
+    const auto q = proc.conductor().quant();
+    return q == fable::Quant::Bar ? "1 BAR" : q == fable::Quant::Quarter ? "1/4" : "OFF";
 }
 
 void SeqHeader::paintClock(juce::Graphics& g) {
