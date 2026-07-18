@@ -209,21 +209,22 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 // origin (18,14)). Flow order left-to-right: logo, play, library/session
 // select, quant, clock, [gap], scope, LOAD/SAVE (JUCE-only, parked in the
 // web's narrow help-icon slot), master knobs.
-// Re-pitched for the VST's tighter 66px header (2026-07-18): the right-side
-// elements (scope, LOAD/SAVE, master knobs) never needed the web's 86px --
-// shrunk to fit, and every group re-centered vertically for 66. x positions
-// are unchanged from the web-derived table (only y/height move).
+// Re-pitched for the VST's half-height 44px header (2026-07-18, matching the
+// web's bb7f768 pass): every group is a compact version of its old self,
+// re-centered on the header's y=22 midline. x positions are unchanged from
+// the web-derived table (only y/height move, and the knob circles/logo
+// shrink to match the web's smaller right-side controls).
 void SeqHeader::resized() {
-    logoArea = { 17, 20, 185, 25 };
+    logoArea = { 17, 12, 175, 20 };
 
-    playBtn = { 216, 17, 44, 32 };
+    playBtn = { 216, 8, 44, 28 };
 
-    auto libGroup = juce::Rectangle<int>(274, 15, 208, 37);
+    auto libGroup = juce::Rectangle<int>(274, 9, 208, 26);
     libraryLabelArea = libGroup.removeFromLeft(54);
     libGroup.removeFromLeft(6);
     library_.setBounds(libGroup);
 
-    auto quantGroup = juce::Rectangle<int>(496, 22, 139, 21);
+    auto quantGroup = juce::Rectangle<int>(496, 11, 139, 21);
     quantTagArea = quantGroup.removeFromLeft(40).withSizeKeepingCentre(40, 16);
     quantGroup.removeFromLeft(4);
     quantPrevBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
@@ -232,23 +233,25 @@ void SeqHeader::resized() {
     quantGroup.removeFromLeft(4);
     quantNextBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
 
-    auto clockArea = juce::Rectangle<int>(649, 21, 112, 23);
+    auto clockArea = juce::Rectangle<int>(649, 10, 112, 23);
     beatsArea = clockArea.removeFromTop(8); // beat-dot row
     clockLineArea = clockArea;
 
-    scopeArea = { 1073, 16, 190, 34 };
+    scopeArea = { 1073, 9, 190, 26 };
 
     // LOAD/SAVE (JUCE-only surface, no web equivalent): a compact stacked
-    // pair matching the scope's new 34px height.
-    auto helpSlot = juce::Rectangle<int>(1266, 16, 48, 34);
+    // pair -- side-by-side doesn't leave enough width per button to read
+    // "LOAD"/"SAVE" at this font, so this stays a tight 2x15 stack,
+    // re-centered for the 44px header.
+    auto helpSlot = juce::Rectangle<int>(1266, 5, 48, 34);
     loadBtn = helpSlot.removeFromTop(15);
     helpSlot.removeFromTop(4);
     saveBtn = helpSlot;
 
-    // Master knobs: 34px circles (paintKnob) + a 10px label, centered in 66.
-    auto knobsArea = juce::Rectangle<int>(1317, 10, 90, 46);
-    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 46);
-    volKnob = knobsArea.withSizeKeepingCentre(44, 46);
+    // Master knobs: 24px circles (paintKnob) + a tiny label, centered in 44.
+    auto knobsArea = juce::Rectangle<int>(1317, 5, 90, 34);
+    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 34);
+    volKnob = knobsArea.withSizeKeepingCentre(44, 34);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -263,7 +266,7 @@ void SeqHeader::paint(juce::Graphics& g) {
     // by em, which is wider per-point than the old withHeight, and a stale
     // fixed 60px/46px split let the segments overlap.
     auto lb = logoArea;
-    const auto logoFont = dispFont(15.0f);
+    const auto logoFont = dispFont(14.0f);
     g.setFont(logoFont);
     auto spacedWidth = [&](const juce::String& s, float tracking) {
         float total = 0;
@@ -397,7 +400,7 @@ void SeqHeader::paintScope(juce::Graphics& g) {
 }
 
 void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce::String& label, float v) {
-    const float d = 34.0f;
+    const float d = 24.0f;
     auto circle = juce::Rectangle<float>(0, 0, d, d).withCentre(
         juce::Point<float>((float)r.getCentreX(), (float)r.getY() + d * 0.5f));
 
@@ -426,9 +429,9 @@ void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce:
     g.setColour(col::ptr);
     g.drawLine({ c, tip }, 1.6f);
 
-    auto labelArea = r.withY(r.getY() + (int)d + 2).withHeight(10);
+    auto labelArea = r.withY(r.getY() + (int)d + 2).withHeight(8);
     g.setColour(col::textDim);
-    g.setFont(monoFont(7.0f));
+    g.setFont(monoFont(6.0f));
     g.drawText(label, labelArea, juce::Justification::centred);
 }
 

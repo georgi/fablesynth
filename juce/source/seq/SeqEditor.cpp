@@ -1,23 +1,23 @@
 #include "SeqEditor.h"
 #include "../ui/Controls.h"
 
-// Layout, re-pitched 2026-07-18 for the VST's tighter header (the web-derived
-// 86px header never needed that much for the scope/LOAD-SAVE/knobs on the
-// right, so it's now 66px; the whole session rack shifts up 20px to match):
-//   rack              1460 x 744
-//   header            (18,  14) 1424 x 66
-//   track heads       (18,  89) 1424 x 60
-//   scene grid        (18, 158) 1424 x 491   (6 rows, 73 tall, 82 step)
-//   footer            (18, 649) 1424 x 65
-//   hint line          18, 722
-// JUCE's uniform 73px scene rows run to 158+5*82+73=641; the footer sits 8px
+// Layout, re-pitched 2026-07-18 to match the web's half-height header
+// (commit bb7f768: .sq-top now 44px total, right-side controls shrunk to
+// match) -- the whole session rack shifts up another 22px to follow:
+//   rack              1460 x 722
+//   header            (18,  14) 1424 x 44
+//   track heads       (18,  67) 1424 x 60
+//   scene grid        (18, 136) 1424 x 491   (6 rows, 73 tall, 82 step)
+//   footer            (18, 627) 1424 x 65
+//   hint line          18, 700
+// JUCE's uniform 73px scene rows run to 136+5*82+73=619; the footer sits 8px
 // below that to clear row 6.
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
 // Focus mode hides the heads row entirely and collapses the scene grid down
 // to a single horizontal strip (30 tall) sitting where the heads used to be
-// (y=89): a "< SESSION" back chip + the 6 scene chips (SceneGridView's
+// (y=67): a "< SESSION" back chip + the 6 scene chips (SceneGridView's
 // singleRow_ mode -- see SceneGridView::paintFocusStrip). The native device
 // body fills the freed space below down to the footer slot, which hides.
 // Both the grid's y and height animate over ~180ms between the session and
@@ -77,10 +77,10 @@ void SeqRack::resized() { applyLayout(); }
 // synchronously.
 void SeqRack::applyLayout() {
     const float t = focusT_ * focusT_ * (3.0f - 2.0f * focusT_); // smoothstep
-    header.setBounds(18, 14, 1424, 66);
-    trackHeads.setBounds(18, 89, 1424, 60); // hidden (setVisible(false)) in focus
-    constexpr int sessionGridY = 158, sessionGridH = 491; // 491 = footerY(649) - sessionGridY
-    constexpr int focusStripY = 89, focusStripH = 30;
+    header.setBounds(18, 14, 1424, 44);
+    trackHeads.setBounds(18, 67, 1424, 60); // hidden (setVisible(false)) in focus
+    constexpr int sessionGridY = 136, sessionGridH = 491; // 491 = footerY(627) - sessionGridY
+    constexpr int focusStripY = 67, focusStripH = 30;
     const int gridY = juce::roundToInt(sessionGridY + (focusStripY - sessionGridY) * t);
     const int gridH = juce::roundToInt(sessionGridH + (focusStripH - sessionGridH) * t);
     sceneGrid.setBounds(18, gridY, 1424, gridH);
@@ -88,12 +88,12 @@ void SeqRack::applyLayout() {
     // Hint stays fixed at its session y in both modes (calibration note:
     // "keep fixed -- simplest correct wins"); the device surface grows into
     // the freed space as the grid collapses, down to 8px above it.
-    constexpr int hintY = 722, hintH = 14;
+    constexpr int hintY = 700, hintH = 14;
     deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching on focusMode_.
-    footer.setBounds(18, 649, 1424, 65);
+    footer.setBounds(18, 627, 1424, 65);
     hint.setBounds(18, hintY, 1424, hintH);
 }
 

@@ -51,7 +51,7 @@ private:
 // web's animated FLIP collapse.
 class SeqRack : public juce::Component, private juce::Timer {
 public:
-    static constexpr int LW = 1460, LH = 744;
+    static constexpr int LW = 1460, LH = 722;
     explicit SeqRack(SeqAudioProcessor&);
     void resized() override;
 
