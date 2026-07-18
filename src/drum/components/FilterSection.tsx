@@ -33,6 +33,7 @@ export function FilterSection() {
           aria-pressed={on === 1}
           onClick={() => setParam(onId, on === 1 ? 0 : 1)}
         />
+        {on !== 1 && <span className="dr-filter-off-tag">OFF</span>}
         <div className="dr-filter-stepper">
           <DrumStepper paramId={typeId} accent="f" />
         </div>

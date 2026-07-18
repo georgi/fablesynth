@@ -9,6 +9,9 @@
   --line: rgba(255, 255, 255, 0.07);
   --text: #dfe6f3;
   --text-dim: #6b768c;
+  /* Lighter than --text-dim, reserved for tiny hint/legend copy that must
+     still clear ~4.5:1 contrast on the panel background at 7-9px sizes. */
+  --text-hint: #93a0b8;
   --ac-a: #4de8ff;
   --ac-b: #ffa14d;
   --ac-f: #b18cff;
@@ -207,6 +210,33 @@ body::before {
 }
 #preset-select:focus { outline: 1px solid var(--ac-a); }
 
+.pb-name-input {
+  height: 28px;
+  min-width: 190px;
+  padding: 0 12px;
+  border: 1px solid var(--ac-a);
+  border-radius: 6px;
+  background: #0a0d13;
+  color: var(--ac-a);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ac-a) 35%, transparent);
+}
+.pb-name-input::placeholder { color: var(--text-dim); text-transform: none; letter-spacing: 0.06em; }
+
+.pb-dirty {
+  width: 6px;
+  height: 6px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--ac-a);
+  box-shadow: 0 0 6px var(--ac-a);
+  flex: none;
+}
+
 .hud { display: flex; gap: 10px; margin-left: auto; }
 .hud-cell {
   position: relative;
@@ -236,7 +266,10 @@ body::before {
   border-left: 1px solid var(--line);
 }
 
-.status { font-size: 9px; color: var(--text-dim); letter-spacing: 0.18em; }
+.status { font-size: 9px; color: var(--text-dim); letter-spacing: 0.18em; transition: opacity 0.2s; }
+/* Unpowered + no MIDI: this isn't an error state, just "nothing plugged in
+   yet" — dim it further so it doesn't read as a fault indicator. */
+.status.dim { opacity: 0.45; }
 .status-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
 .status-row .led, .led {
   width: 7px;
@@ -657,15 +690,16 @@ body::before {
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+  overflow-x: auto;
   height: 102px;
   scrollbar-gutter: stable;
 }
-.mx-row { display: flex; flex: 0 0 24px; align-items: center; gap: 4px; }
+.mx-row { display: flex; flex: 0 0 24px; align-items: center; gap: 6px; min-width: 220px; }
 .mx-select {
   appearance: none;
   -webkit-appearance: none;
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 64px;
+  min-width: 64px;
   height: 22px;
   padding: 0 16px 0 8px;
   border: 1px solid var(--line);
@@ -695,7 +729,7 @@ body::before {
   cursor: pointer;
 }
 .mx-del:hover { color: #ff9b9b; border-color: rgba(255, 90, 90, 0.4); }
-.mx-empty { margin: 0; font-size: 9px; color: var(--text-dim); letter-spacing: 0.08em; }
+.mx-empty { margin: 0; font-size: 9px; color: var(--text-hint); letter-spacing: 0.08em; }
 .mx-add {
   margin-top: auto;
   height: 22px;
@@ -1020,7 +1054,7 @@ body::before {
 }
 .ns-hint {
   margin-left: auto;
-  color: var(--text-dim);
+  color: var(--text-hint);
   font-size: 8px;
   letter-spacing: 0.16em;
   white-space: nowrap;
@@ -1120,7 +1154,14 @@ body::before {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
-.ns-cell.root { background: #0c1016; }
+/* Piano-style lane shading (see SHARP_LANE in SeqPanel.tsx) so the 12
+   chromatic rows are distinguishable at a glance. */
+.ns-cell.natural { background: #0c0f16; }
+.ns-cell.sharp { background: #080a0f; }
+.ns-cell.root {
+  background: color-mix(in srgb, var(--ac-a) 9%, #0c0f16);
+  border-color: color-mix(in srgb, var(--ac-a) 30%, transparent);
+}
 .ns-cell.on {
   background: #0a0d13;
   box-shadow: none;
@@ -1342,7 +1383,7 @@ body::before {
   background: #0a0d13;
   margin-bottom: 8px;
 }
-.wte-hint { font-size: 9px; line-height: 1.6; color: var(--text-dim); margin: 0 0 12px; }
+.wte-hint { font-size: 9px; line-height: 1.6; color: var(--text-hint); margin: 0 0 12px; }
 .wte-draw {
   width: 100%;
   height: 150px;

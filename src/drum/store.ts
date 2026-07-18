@@ -18,7 +18,7 @@ import {
 } from './patches';
 import { DRUM_TABLE_NAMES, PAD_COUNT, pad } from './params';
 import {
-  cycleStep, NPATTERNS, patIdx, STEPS, stepSelRange, type Patterns, type StepSel,
+  cycleStep, NPATTERNS, patIdx, randomizePadPattern, STEPS, stepSelRange, type Patterns, type StepSel,
 } from './seq';
 import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
 import {
@@ -95,6 +95,7 @@ export interface DrumStore {
   stepSel: StepSel | null;
   selAllPads: boolean;
   clipboard: DrumClipboard;
+  kitDirty: boolean;
 
   setParam: (id: string, v: number) => void;
   selectPad: (i: number) => void;
@@ -103,6 +104,7 @@ export interface DrumStore {
   _pushHistory: () => void;
   _clearHistory: () => void;
   toggleStep: (step: number) => void;
+  randomizePad: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
   setStepSelHead: (step: number) => void;
@@ -160,10 +162,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   stepSel: null,
   selAllPads: false,
   clipboard: null,
+  kitDirty: false,
 
   setParam: (id, v) => {
     drumEngine.setParam(id, v);
-    set((state) => ({ params: { ...state.params, [id]: v } }));
+    set((state) => ({ params: { ...state.params, [id]: v }, kitDirty: true }));
   },
 
   selectPad: (i) => {
@@ -180,7 +183,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // Every pattern mutation writes the store and pushes to the engine in one
   // place. (Patterns persist inside kits, not standalone — no localStorage.)
   _setPatterns(next: Patterns) {
-    set({ patterns: next });
+    set({ patterns: next, kitDirty: true });
     drumEngine.setPatterns(next);
   },
 
@@ -197,6 +200,15 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const index = patIdx(editPattern, sel, step);
     next[index] = cycleStep(next[index]);
     get()._setPatterns(next);
+  },
+
+  // RAND button: rewrites the selected pad's row in the current edit
+  // pattern only — other pads' lanes are untouched (mirrors BL-1's randomize,
+  // scoped down to one lane since DR-1 has no per-step pitch/duration).
+  randomizePad: () => {
+    const { patterns, editPattern, sel } = get();
+    get()._pushHistory();
+    get()._setPatterns(randomizePadPattern(patterns, editPattern, sel));
   },
 
   setEditPattern: (i) => set({ editPattern: i }),
@@ -346,7 +358,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   setPadName: (i, name) => set((state) => {
     const padNames = state.padNames.slice();
     padNames[i] = name.toUpperCase().slice(0, 14);
-    return { padNames };
+    return { padNames, kitDirty: true };
   }),
 
   play: () => {
@@ -407,7 +419,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const kit = stateToKit(name, state.params, state.padNames, state.patterns, state.chain, tables);
     const userKits = saveUserKit(name, kit);
     const savedIndex = userKits.findIndex((entry) => entry.name === name);
-    set({ userKits, kitValue: savedIndex >= 0 ? `u${savedIndex}` : state.kitValue });
+    set({ userKits, kitValue: savedIndex >= 0 ? `u${savedIndex}` : state.kitValue, kitDirty: false });
   },
 
   loadKitByValue: (value) => {
@@ -424,7 +436,10 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       drumEngine.setUserTables(userTables);
       drumEngine.params = { ...state.params };
       drumEngine.applyAllParams();
-      set({ params: state.params, padNames: state.padNames, userTables, kitValue: value, patchValue: '' });
+      set({
+        params: state.params, padNames: state.padNames, userTables, kitValue: value,
+        patchValue: '', kitDirty: false,
+      });
       return;
     }
     const userTables = state.tables.map((table) => deserializeUserTable(table).table);
@@ -444,6 +459,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       userTables,
       kitValue: value,
       patchValue: '',
+      kitDirty: false,
     });
   },
 

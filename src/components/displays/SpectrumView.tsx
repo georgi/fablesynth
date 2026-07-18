@@ -1,10 +1,12 @@
-// Spectrum analyser. Reads the frequency-domain analyser every frame.
+// Spectrum analyser. Reads the frequency-domain analyser every frame; draws a
+// faint idle baseline/grid when unpowered/silent, and respects
+// prefers-reduced-motion by rendering a single static frame instead of looping.
 
 import { useEffect, useRef } from 'react';
 import { setupCanvas } from './canvas';
 
 interface SpectrumViewProps {
-  analyser: AnalyserNode;
+  analyser: AnalyserNode | null;
   accent: string;
 }
 
@@ -12,8 +14,26 @@ export function SpectrumView({ analyser, accent }: SpectrumViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    const drawIdle = (canvas: HTMLCanvasElement) => {
+      const { ctx, w, h } = setupCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const bars = 48;
+      ctx.fillStyle = '#93a0b8';
+      ctx.globalAlpha = 0.14;
+      for (let b = 0; b < bars; b++) {
+        const bw = w / bars;
+        ctx.fillRect(b * bw + 0.5, h - 2, bw - 1.5, 2);
+      }
+      ctx.globalAlpha = 1;
+    };
+
+    if (!analyser) {
+      const canvas = canvasRef.current;
+      if (canvas) drawIdle(canvas);
+      return;
+    }
+
     const buf = new Uint8Array(analyser.frequencyBinCount);
-    let raf = 0;
     const draw = (canvas: HTMLCanvasElement) => {
       const { ctx, w, h } = setupCanvas(canvas);
       analyser.getByteFrequencyData(buf);
@@ -38,13 +58,27 @@ export function SpectrumView({ analyser, accent }: SpectrumViewProps) {
         ctx.fillRect(b * bw + 0.5, h - bh, bw - 1.5, bh);
       }
     };
+
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let raf = 0;
+    const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
     const frame = () => {
       const canvas = canvasRef.current;
       if (canvas) draw(canvas);
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    const start = () => {
+      stop();
+      if (mq.matches) {
+        const canvas = canvasRef.current;
+        if (canvas) draw(canvas); // single static frame
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    start();
+    mq.addEventListener('change', start);
+    return () => { stop(); mq.removeEventListener('change', start); };
   }, [analyser, accent]);
 
   return <canvas ref={canvasRef} />;

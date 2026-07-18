@@ -1,10 +1,12 @@
-// Oscilloscope. Reads the time-domain analyser every frame.
+// Oscilloscope. Reads the time-domain analyser every frame; draws a faint
+// idle trace when unpowered/silent, and respects prefers-reduced-motion by
+// rendering a single static frame instead of looping.
 
 import { useEffect, useRef } from 'react';
 import { setupCanvas } from './canvas';
 
 interface ScopeViewProps {
-  analyser: AnalyserNode;
+  analyser: AnalyserNode | null;
   accent: string;
 }
 
@@ -12,8 +14,26 @@ export function ScopeView({ analyser, accent }: ScopeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    const drawIdle = (canvas: HTMLCanvasElement) => {
+      const { ctx, w, h } = setupCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.strokeStyle = '#93a0b8';
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.22;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    };
+
+    if (!analyser) {
+      const canvas = canvasRef.current;
+      if (canvas) drawIdle(canvas);
+      return;
+    }
+
     const buf = new Float32Array(analyser.fftSize);
-    let raf = 0;
     const draw = (canvas: HTMLCanvasElement) => {
       const { ctx, w, h } = setupCanvas(canvas);
       analyser.getFloatTimeDomainData(buf);
@@ -36,13 +56,27 @@ export function ScopeView({ analyser, accent }: ScopeViewProps) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     };
+
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let raf = 0;
+    const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
     const frame = () => {
       const canvas = canvasRef.current;
       if (canvas) draw(canvas);
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    const start = () => {
+      stop();
+      if (mq.matches) {
+        const canvas = canvasRef.current;
+        if (canvas) draw(canvas); // single static frame
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    start();
+    mq.addEventListener('change', start);
+    return () => { stop(); mq.removeEventListener('change', start); };
   }, [analyser, accent]);
 
   return <canvas ref={canvasRef} />;

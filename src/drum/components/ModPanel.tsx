@@ -39,11 +39,15 @@ function ModRow({ sel, route }: ModRowProps) {
   );
 }
 
+const ROUTES: Array<1 | 2 | 3 | 4> = [1, 2, 3, 4];
+
 export function ModPanel() {
   const sel = useDrumStore((s) => s.sel);
   const decayId = pad(sel, 'modenv.dec');
   const decay = useDrumStore((s) => s.params[decayId]);
   const decayText = DRUM_PARAMS[decayId].fmt?.(decay).toUpperCase() ?? String(decay);
+  const params = useDrumStore((s) => s.params);
+  const noRoutesAssigned = ROUTES.every((route) => params[pad(sel, `mod${route}.src`)] === 0);
 
   return (
     <section className="panel dr-edit-panel dr-mod-panel">
@@ -54,6 +58,7 @@ export function ModPanel() {
           <DrumKnob paramId={decayId} size="xs" label="" />
         </div>
       </div>
+      {noRoutesAssigned && <div className="dr-mod-hint">ROUTE A SOURCE TO ANY PAD PARAM</div>}
       <div className="dr-mod-routes">
         <ModRow sel={sel} route={1} />
         <ModRow sel={sel} route={2} />

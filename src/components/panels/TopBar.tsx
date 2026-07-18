@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Knob } from '../Knob';
 import { ScopeView } from '../displays/ScopeView';
 import { SpectrumView } from '../displays/SpectrumView';
@@ -11,55 +12,93 @@ export function TopBar() {
   const voiceCount = useStore((s) => s.voiceCount);
   const userPresets = useStore((s) => s.userPresets);
   const presetValue = useStore((s) => s.presetValue);
+  const dirty = useStore((s) => s.dirty);
   const loadPresetByValue = useStore((s) => s.loadPresetByValue);
   const stepPreset = useStore((s) => s.stepPreset);
   const savePreset = useStore((s) => s.savePreset);
 
-  const onSave = () => {
-    const name = (window.prompt('Preset name:') || '').trim().toUpperCase();
+  const [naming, setNaming] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (naming) { nameRef.current?.focus(); nameRef.current?.select(); }
+  }, [naming]);
+
+  const commitName = () => {
+    const name = (nameRef.current?.value || '').trim().toUpperCase();
+    setNaming(false);
     if (!name) return;
     savePreset(name);
   };
+
+  const midiDim = !midiActive && !powered;
 
   return (
     <header className="top-bar">
       <div className="brand">FABLE<em>SYNTH</em><small>WT‑1</small></div>
       <div className="preset-bar">
-        <button className="pb-btn" id="preset-prev" aria-label="previous preset" onClick={() => stepPreset(-1)}>◂</button>
-        <select
-          id="preset-select"
-          aria-label="preset"
-          value={presetValue}
-          onChange={(e) => {
-            loadPresetByValue(e.target.value);
-            // Release focus so the computer keyboard plays notes instead of
-            // navigating the select (which swallows key events while focused).
-            e.currentTarget.blur();
-          }}
-        >
-          <optgroup label="FACTORY">
-            {FACTORY_PRESETS.map((p, i) => (
-              <option key={'f' + i} value={'f' + i}>{p.name}</option>
-            ))}
-          </optgroup>
-          {userPresets.length ? (
-            <optgroup label="USER">
-              {userPresets.map((p, i) => (
-                <option key={'u' + i} value={'u' + i}>{p.name}</option>
+        <button className="pb-btn" id="preset-prev" aria-label="previous preset" onClick={() => stepPreset(-1)} disabled={naming}>◂</button>
+        {naming ? (
+          <input
+            ref={nameRef}
+            className="pb-name-input"
+            aria-label="preset name"
+            defaultValue=""
+            placeholder="PRESET NAME"
+            maxLength={24}
+            onKeyDown={(e) => {
+              // Stop the global computer-keyboard handler from treating
+              // typed characters as note-play while this field is focused.
+              e.stopPropagation();
+              if (e.key === 'Enter') { e.preventDefault(); commitName(); }
+              else if (e.key === 'Escape') { e.preventDefault(); setNaming(false); }
+            }}
+            onBlur={() => setNaming(false)}
+          />
+        ) : (
+          <select
+            id="preset-select"
+            aria-label="preset"
+            value={presetValue}
+            onChange={(e) => {
+              loadPresetByValue(e.target.value);
+              // Release focus so the computer keyboard plays notes instead of
+              // navigating the select (which swallows key events while focused).
+              e.currentTarget.blur();
+            }}
+          >
+            <optgroup label="FACTORY">
+              {FACTORY_PRESETS.map((p, i) => (
+                <option key={'f' + i} value={'f' + i}>{p.name}</option>
               ))}
             </optgroup>
-          ) : null}
-        </select>
-        <button className="pb-btn" id="preset-next" aria-label="next preset" onClick={() => stepPreset(1)}>▸</button>
-        <button className="pb-btn pb-save" id="preset-save" onClick={onSave}>SAVE</button>
+            {userPresets.length ? (
+              <optgroup label="USER">
+                {userPresets.map((p, i) => (
+                  <option key={'u' + i} value={'u' + i}>{p.name}</option>
+                ))}
+              </optgroup>
+            ) : null}
+          </select>
+        )}
+        {!naming && dirty && <span className="pb-dirty" aria-label="unsaved changes" title="unsaved changes" />}
+        <button className="pb-btn" id="preset-next" aria-label="next preset" onClick={() => stepPreset(1)} disabled={naming}>▸</button>
+        {naming ? (
+          <>
+            <button className="pb-btn pb-save" onClick={commitName}>OK</button>
+            <button className="pb-btn" onClick={() => setNaming(false)}>✕</button>
+          </>
+        ) : (
+          <button className="pb-btn pb-save" id="preset-save" onClick={() => setNaming(true)}>SAVE</button>
+        )}
       </div>
       <div className="hud">
         <div className="hud-cell">
-          {powered ? <ScopeView analyser={engine.scopeAnalyser} accent={ACCENTS.a} /> : <canvas />}
+          <ScopeView analyser={powered ? engine.scopeAnalyser : null} accent={ACCENTS.a} />
           <span>SCOPE</span>
         </div>
         <div className="hud-cell">
-          {powered ? <SpectrumView analyser={engine.specAnalyser} accent={ACCENTS.b} /> : <canvas />}
+          <SpectrumView analyser={powered ? engine.specAnalyser : null} accent={ACCENTS.b} />
           <span>SPECTRUM</span>
         </div>
       </div>
@@ -67,7 +106,7 @@ export function TopBar() {
         <Knob paramId="seq.bpm" size="sm" accent="a" />
         <Knob paramId="seq.swing" size="sm" accent="a" />
       </div>
-      <div className="status">
+      <div className={`status${midiDim ? ' dim' : ''}`}>
         <div className="status-row"><span className={`led${midiActive ? ' on' : ''}`} id="midi-led" />MIDI</div>
         <div className="status-row"><span id="voice-count">{voiceCount}</span>VOICES</div>
       </div>

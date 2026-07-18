@@ -3,7 +3,7 @@
 // instead of a synth parameter table.
 
 import type * as React from 'react';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 const A0 = -135, A1 = 135;
 
@@ -63,9 +63,21 @@ export function SeqKnob({ value, onChange, label, size = 'md', defaultValue = 0.
     elRef.current?.classList.remove('dragging');
     try { elRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   };
-  const onWheel = (e: React.WheelEvent) => {
-    nudge((e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 0.005 : 0.03));
-  };
+  // Non-passive wheel so preventDefault works (same pattern as Knob.tsx) —
+  // React's synthetic onWheel is passive, which would let the page scroll
+  // under the pointer instead of nudging the value.
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      nudge((e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 0.005 : 0.03));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 0.005 : 0.02;
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { nudge(step); e.preventDefault(); }
@@ -90,7 +102,6 @@ export function SeqKnob({ value, onChange, label, size = 'md', defaultValue = 0.
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
-      onWheel={onWheel}
       onDoubleClick={() => onChange(defaultValue)}
       onKeyDown={onKeyDown}
     >

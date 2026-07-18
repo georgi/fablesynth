@@ -9,6 +9,11 @@ import { NoteLengthHandle } from '../NoteLengthHandle';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
 
+// Piano-style shading for the 12 chromatic lanes (lane 0 = root/tonic), so
+// the grid reads at a glance the way a keyboard does: natural-degree lanes
+// sit slightly lighter than sharp-degree lanes.
+const SHARP_LANE = [false, true, false, true, false, false, true, false, true, false, true, false];
+
 interface SeqPanelProps {
   /** Hosted SQ-4 clips have up to eight WT voices per step; standalone patterns do not. */
   polySteps?: SeqStep[][];
@@ -138,7 +143,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                         <div className="ns-cell-wrap" key={r}>
                           <button
                             type="button"
-                            className={'ns-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '')}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onClick={() => onToggleChordNote ? onToggleChordNote(absoluteStep, note) : toggleCell(step, note, pattern)}

@@ -59,6 +59,7 @@ export function TrackHeads() {
             >
               <div className="sq-track-name-row">
                 <span className="sq-track-name">{tr.name}</span>
+                {focus?.track !== t && <span className="sq-track-editglyph" aria-hidden="true">✎</span>}
                 <span className="sq-machine-chip">{machineLabel}</span>
               </div>
               <div className="sq-track-patch">{patchLabel}</div>

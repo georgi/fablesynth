@@ -36,6 +36,7 @@ export function StepSeq() {
   const setStepSelHead = useDrumStore((s) => s.setStepSelHead);
   const shiftSelection = useDrumStore((s) => s.shiftSelection);
   const movePattern = useDrumStore((s) => s.movePattern);
+  const randomizePad = useDrumStore((s) => s.randomizePad);
 
   const rowRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<DragState | null>(null);
@@ -119,6 +120,7 @@ export function StepSeq() {
           </button>
         )}
         <h2>STEP SEQ</h2>
+        <span className="dr-stepseq-target">{padName}</span>
         {!hosted && (
           <>
             <SequenceLengthControl
@@ -129,11 +131,10 @@ export function StepSeq() {
               onLengthChange={setSequenceLength}
               onMovePattern={movePattern}
             />
+            <button className="dr-seq-btn" type="button" onClick={randomizePad}>RAND</button>
           </>
         )}
         <div className="dr-step-editing">
-          <span>EDITING</span>
-          <strong>{padName}</strong>
           <span>TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT</span>
         </div>
       </div>

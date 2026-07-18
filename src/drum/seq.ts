@@ -48,3 +48,21 @@ export const inStepSel = (sel: StepSel | null, step: number): boolean => {
   const range = stepSelRange(sel);
   return range !== null && step >= range[0] && step <= range[1];
 };
+
+// The RAND button: sparse hits with occasional accents on the selected pad's
+// row only — same density/flavor as BL-1's randomPattern (seq.ts), scoped to
+// one lane since a drum pad has no per-step pitch to randomize.
+export function randomizePadPattern(
+  patterns: Patterns,
+  pat: number,
+  padI: number,
+  rng: () => number = Math.random,
+): Patterns {
+  const next = patterns.slice();
+  for (let step = 0; step < STEPS; step++) {
+    const on = rng() < 0.4;
+    const accent = on && rng() < 0.3;
+    next[patIdx(pat, padI, step)] = (on ? (accent ? 2 : 1) : 0) as StepVal;
+  }
+  return next;
+}

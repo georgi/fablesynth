@@ -16,6 +16,7 @@
 .dr-header .brand { flex: none; }
 .dr-kitbar { flex: none; }
 .dr-kitname {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -30,6 +31,36 @@
   letter-spacing: 0.08em;
   white-space: nowrap;
 }
+.dr-kitbar .dr-mini-head {
+  color: var(--text-dim);
+  font-size: 7px;
+}
+.dr-dirty-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--ac-b);
+  box-shadow: 0 0 5px rgba(255, 161, 77, 0.75);
+}
+/* Inline SAVE name field — replaces window.prompt(). Styled like the app's
+   value wells (dark well bg, mono, uppercase accent text). */
+.dr-name-input {
+  height: 21px;
+  min-width: 110px;
+  padding: 0 8px;
+  border: 1px solid var(--ac-a);
+  border-radius: 6px;
+  outline: none;
+  background: #07090e;
+  color: var(--ac-a);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dr-kitbar .dr-name-input { height: 28px; font-size: 10px; }
 
 .dr-mode { display: flex; gap: 4px; }
 .dr-mode .pb-btn {
@@ -200,6 +231,16 @@
   background: radial-gradient(circle at 38% 32%, #f4edff, var(--ac-f) 38%, #593a87 76%);
   box-shadow: 0 0 8px rgba(177, 140, 255, 0.75);
 }
+.dr-filter-off-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid rgba(107, 118, 140, 0.5);
+  border-radius: 3px;
+  color: #93a0b8;
+  font-family: var(--font-disp);
+  font-size: 7px;
+  letter-spacing: 0.14em;
+}
 .dr-filter-stepper {
   min-width: 0;
   margin-left: auto;
@@ -253,6 +294,13 @@
   flex: none;
   color: var(--text-dim);
   font-size: 8px;
+}
+.dr-mod-hint {
+  margin: 2px 0 5px;
+  color: #93a0b8;
+  font-size: 7px;
+  letter-spacing: 0.14em;
+  text-align: center;
 }
 .dr-osc-section,
 .dr-noise-section { min-height: 238px; }
@@ -385,7 +433,7 @@
 }
 .panel-hint {
   margin-left: auto;
-  color: var(--text-dim);
+  color: #93a0b8;
   font-size: 7px;
   letter-spacing: 0.16em;
 }
@@ -503,9 +551,18 @@
   background: linear-gradient(180deg, rgba(119, 242, 255, 0.76), rgba(77, 232, 255, 0.28));
   box-shadow: inset 0 1px 0 rgba(232, 252, 255, 0.34), 0 0 8px rgba(77, 232, 255, 0.28);
 }
+/* Accents must read at a glance, not just on close inspection: a brighter,
+   fully-opaque fill plus a taller/brighter top cap distinguish them from a
+   plain on-step. */
+.step.accented .step-fill {
+  background: linear-gradient(180deg, #fff6ea, var(--ac-b) 46%, rgba(255, 161, 77, 0.55));
+  box-shadow: inset 0 1px 0 rgba(255, 242, 224, 0.55), 0 0 11px rgba(255, 161, 77, 0.55);
+}
 .step.accented .step-accent {
-  background: var(--ac-b);
-  box-shadow: 0 0 6px rgba(255, 161, 77, 0.68);
+  top: 3px;
+  height: 4px;
+  background: #fff2e0;
+  box-shadow: 0 0 8px rgba(255, 161, 77, 0.9);
 }
 .step-num {
   position: absolute;
@@ -535,6 +592,15 @@
 .dr-stepseq-head {
   min-height: 28px;
   margin-bottom: 10px;
+}
+/* The pad being edited, tied directly to the STEP SEQ nameplate in the
+   pad's own accent color instead of sitting disconnected on the far right. */
+.dr-stepseq-target {
+  color: var(--ac-a);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--ac-a) 45%, transparent);
 }
 .dr-transport {
   width: 34px;
@@ -582,7 +648,7 @@
 }
 .dr-chain-readout {
   max-width: 180px;
-  color: var(--text-dim);
+  color: #93a0b8;
   font-size: 7px;
   letter-spacing: 0.1em;
   overflow: hidden;
@@ -595,7 +661,7 @@
   gap: 7px;
   min-width: 0;
   margin-left: auto;
-  color: var(--text-dim);
+  color: #93a0b8;
   font-size: 7px;
   letter-spacing: 0.13em;
   white-space: nowrap;

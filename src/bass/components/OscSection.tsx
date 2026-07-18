@@ -50,13 +50,15 @@ export function SubSection() {
         <h2>SUB</h2>
       </div>
       <div className="bl-sub-body">
-        <div className="bl-sub-row">
-          <span className="bl-sub-label">SHAPE</span>
-          <BassStepper paramId="sub.shape" accent="n" />
-        </div>
-        <div className="bl-sub-row">
-          <span className="bl-sub-label">OCT</span>
-          <BassStepper paramId="sub.oct" accent="n" />
+        <div className="bl-sub-steppers">
+          <div className="bl-sub-row">
+            <span className="bl-sub-label">SHAPE</span>
+            <BassStepper paramId="sub.shape" accent="n" />
+          </div>
+          <div className="bl-sub-row">
+            <span className="bl-sub-label">OCT</span>
+            <BassStepper paramId="sub.oct" accent="n" />
+          </div>
         </div>
         <div className="bl-sub-knob">
           <BassKnob paramId="sub.level" size="md" accent="n" />

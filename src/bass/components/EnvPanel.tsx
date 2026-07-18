@@ -81,27 +81,43 @@ function EnvView() {
       ctx.stroke();
       ctx.globalAlpha = 1;
 
-      ctx.font = '7px "IBM Plex Mono"';
+      ctx.font = '600 8px "IBM Plex Mono"';
       ctx.fillStyle = '#4dff9e';
       ctx.fillText('FILTER', pad + 2, 10);
-      ctx.fillStyle = 'rgba(255,161,77,0.8)';
-      ctx.fillText('ACCENT', pad + 40, 10);
-      ctx.fillStyle = '#9fb4d8';
-      ctx.fillText('AMP', pad + 84, 10);
+      ctx.fillStyle = 'rgba(255,161,77,0.95)';
+      ctx.fillText('ACCENT', pad + 42, 10);
+      ctx.fillStyle = '#e8edf7';
+      ctx.fillText('AMP', pad + 88, 10);
     };
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
     const frame = () => {
       const canvas = canvasRef.current;
       if (canvas) draw(canvas);
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    const onResize = () => { lastKey = ''; };
-    window.addEventListener('resize', onResize);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
+    const start = () => {
+      stop();
+      if (mq.matches) {
+        lastKey = '';
+        const canvas = canvasRef.current;
+        if (canvas) draw(canvas); // single static frame
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
     };
-  }, []);
+    start();
+    const onResize = () => { lastKey = ''; if (mq.matches) start(); };
+    window.addEventListener('resize', onResize);
+    mq.addEventListener('change', start);
+    return () => {
+      stop();
+      window.removeEventListener('resize', onResize);
+      mq.removeEventListener('change', start);
+    };
+    // Re-run on param changes too, so reduced-motion mode (which stops the
+    // rAF loop) still repaints when a knob moves.
+  }, [fatt, fdec, att, dec, sus, rel, accAmt]);
 
   return <canvas ref={canvasRef} className="bl-display" />;
 }

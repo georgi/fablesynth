@@ -109,7 +109,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
           ? 'Pass-through — previous clip rides through this scene · right-click to restore stop'
           : 'Stop button — stops this track on scene launch · right-click for pass-through'}
       >
-        <span>{pass ? '≈' : '■'}</span>
+        <span>{pass ? '◦' : '■'}</span>
         <span
           className="sq-cell-addbtn"
           role="button"

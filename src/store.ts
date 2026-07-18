@@ -56,6 +56,9 @@ interface SynthStore {
   activeNotes: Set<number>;
   userPresets: Preset[];
   presetValue: string;
+  // True once any param has changed since the last preset load/save; drives
+  // the small dirty indicator next to the preset select.
+  dirty: boolean;
   userTables: UserTable[];
   editorOsc: 'oscA' | 'oscB' | null;
 
@@ -162,6 +165,7 @@ export const useStore = create<SynthStore>((set, get) => {
   activeNotes: new Set<number>(),
   userPresets: loadUserPresets(),
   presetValue: 'f0',
+  dirty: false,
   userTables: loadUserTablePool(),
   editorOsc: null,
   patterns: initialSeq.patterns,
@@ -175,7 +179,7 @@ export const useStore = create<SynthStore>((set, get) => {
 
   setParam: (id, v) => {
     engine.setParam(id, v);
-    set((s) => ({ params: { ...s.params, [id]: v } }));
+    set((s) => ({ params: { ...s.params, [id]: v }, dirty: true }));
   },
 
   // Allocate the next fully-empty slot and write the route into it. The matrix
@@ -211,7 +215,7 @@ export const useStore = create<SynthStore>((set, get) => {
     const params = resolvePresetMods(presetParams, presetMods);
     engine.panic();
     engine.params = { ...params };
-    set({ params });
+    set({ params, dirty: false });
     engine.applyAllParams();
   },
 
@@ -244,7 +248,7 @@ export const useStore = create<SynthStore>((set, get) => {
     const opts = presetOptions(userPresets);
     // USER only: a factory preset with the same name sorts first in opts.
     const found = opts.find((o) => o.group === 'USER' && o.name === name);
-    set({ userPresets, presetValue: found ? found.value : get().presetValue });
+    set({ userPresets, presetValue: found ? found.value : get().presetValue, dirty: false });
   },
 
   addUserTable: (u) => {

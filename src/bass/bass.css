@@ -32,6 +32,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   min-width: 128px;
   height: 28px;
   padding: 0 10px;
@@ -42,6 +43,29 @@
   font-size: 10px;
   letter-spacing: 0.08em;
   white-space: nowrap;
+}
+.bl-patch-dirty {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ac-a);
+  box-shadow: 0 0 6px rgba(77, 255, 158, 0.8);
+  flex: none;
+}
+.bl-patchname-input {
+  min-width: 128px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ac-a);
+  border-radius: 6px;
+  background: #07090e;
+  color: var(--ac-a);
+  font-family: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  outline: none;
+  box-shadow: 0 0 8px rgba(77, 255, 158, 0.25);
 }
 .bl-voicemode {
   color: var(--text-dim);
@@ -99,7 +123,7 @@
 
 .bl-head-note {
   margin-left: auto;
-  color: var(--text-dim);
+  color: #93a0b8;
   font-size: 8px;
   letter-spacing: 0.16em;
   white-space: nowrap;
@@ -187,8 +211,18 @@
 .bl-sub-section { display: flex; flex-direction: column; }
 .bl-sub-body {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   flex: 1;
+  gap: 16px;
+  padding: 6px 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%), #07090e;
+}
+.bl-sub-steppers {
+  display: flex;
+  flex-direction: column;
   gap: 7px;
 }
 .bl-sub-row {
@@ -206,7 +240,6 @@
 .bl-sub-knob {
   display: flex;
   justify-content: center;
-  margin-top: auto;
 }
 
 /* ---- FILTER / ENV ---- */
@@ -246,7 +279,7 @@
 .bl-acc-knobs { justify-content: space-evenly; }
 .bl-acc-hint {
   margin-top: 2px;
-  color: var(--text-dim);
+  color: #93a0b8;
   font-size: 7px;
   letter-spacing: 0.18em;
   text-align: center;
@@ -342,7 +375,7 @@
 }
 .bl-seq-hint {
   margin-left: auto;
-  color: var(--text-dim);
+  color: #93a0b8;
   font-size: 8px;
   letter-spacing: 0.16em;
   white-space: nowrap;
@@ -383,7 +416,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  height: 14px;
+  height: 28px;
   margin-top: 4px;
 }
 .bl-legend-acc { color: var(--ac-b); }
@@ -507,10 +540,15 @@
   letter-spacing: 0.06em;
   cursor: pointer;
 }
-.bl-oct-btn.set { color: var(--ac-n); }
+.bl-oct-btn.set {
+  border-color: color-mix(in srgb, var(--ac-n) 55%, transparent);
+  background: color-mix(in srgb, var(--ac-n) 18%, #0c0f16);
+  color: var(--ac-n);
+  font-weight: 600;
+}
 .bl-acc-btn,
 .bl-sld-btn {
-  height: 14px;
+  height: 28px;
   margin-top: 4px;
   padding: 0;
   border: 1px solid var(--line);
