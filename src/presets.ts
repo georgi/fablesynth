@@ -1044,6 +1044,66 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.eq.on': 1, 'fx.eq.low': 2, 'fx.eq.mid': 1.5, 'fx.eq.mfreq': 500, 'fx.eq.high': -3,
     },
   },
+
+  // 55-57: genre voices for the MINIMAL / FUTURE BASS / TRIP HOP / DUB
+  // session presets (SQ-4 references these by index — append only).
+
+  {
+    // Reedy mono dub lead: VOX table with a breath layer, slow vibrato that
+    // rises after the onset, and a long dotted echo doing the dub work.
+    name: 'MELODICA',
+    params: {
+      'oscA.table': 3, 'oscA.pos': 0.3, 'oscA.level': 0.82,
+      'noise.on': 1, 'noise.type': 1, 'noise.level': 0.08,
+      'filter.type': 1, 'filter.cutoff': 1900, 'filter.res': 0.14, 'filter.env': 0.2, 'filter.key': 0.35,
+      'env1.a': 0.03, 'env1.d': 0.6, 'env1.s': 0.8, 'env1.r': 0.35,
+      'env2.a': 0.02, 'env2.d': 0.5, 'env2.s': 0.3, 'env2.r': 0.3,
+      'master.glide': 0.05, 'master.mono': 1,
+      'lfo1.shape': 0, 'lfo1.rate': 5.2, 'lfo1.rise': 0.9,
+      'mat1.src': 1, 'mat1.dst': 4, 'mat1.amt': 0.006,
+      'fx.delay.on': 1, 'fx.delay.time': 0.56, 'fx.delay.fb': 0.58, 'fx.delay.mix': 0.38,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.6, 'fx.reverb.mix': 0.24,
+      'fx.eq.on': 1, 'fx.eq.low': -2, 'fx.eq.mid': 2.5, 'fx.eq.mfreq': 900, 'fx.eq.high': 1.5,
+    },
+  },
+
+  {
+    // Offbeat-organ chord stab for the DUB pads: sustain-free hit whose tail
+    // is all echo and room, so a held chord reads as one skank per bar.
+    name: 'DUB SKANK',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.04, 'oscA.level': 0.72,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.02, 'oscB.oct': 1, 'oscB.level': 0.45,
+      'filter.type': 1, 'filter.cutoff': 2600, 'filter.res': 0.18, 'filter.env': 0.12, 'filter.key': 0.3,
+      'env1.a': 0.002, 'env1.d': 0.32, 'env1.s': 0, 'env1.r': 0.28,
+      'env2.a': 0.002, 'env2.d': 0.25, 'env2.s': 0, 'env2.r': 0.2,
+      'lfo2.rate': 0.14,
+      'mat1.src': 2, 'mat1.dst': 6, 'mat1.amt': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.3,
+      'fx.delay.on': 1, 'fx.delay.time': 0.42, 'fx.delay.fb': 0.62, 'fx.delay.mix': 0.44,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.35,
+      'fx.eq.on': 1, 'fx.eq.low': -3, 'fx.eq.mid': 1, 'fx.eq.mfreq': 700, 'fx.eq.high': 2,
+    },
+  },
+
+  {
+    // Minimal-techno bleep: one narrow pulse frame, hair-trigger pluck
+    // envelope, and a 3/16 ping-pong so single notes become the whole groove.
+    name: 'BLEEP TECH',
+    params: {
+      'oscA.table': 2, 'oscA.pos': 0.12, 'oscA.oct': 1, 'oscA.level': 0.8,
+      'filter.type': 1, 'filter.cutoff': 3200, 'filter.res': 0.22, 'filter.env': 0.3, 'filter.key': 0.5,
+      'env1.a': 0.001, 'env1.d': 0.14, 'env1.s': 0, 'env1.r': 0.1,
+      'env2.a': 0.001, 'env2.d': 0.1, 'env2.s': 0, 'env2.r': 0.08,
+      'master.mono': 1,
+      'lfo2.rate': 0.11,
+      'mat1.src': 2, 'mat1.dst': 6, 'mat1.amt': 0.3,
+      'mat2.src': 4, 'mat2.dst': 3, 'mat2.amt': 0.25,
+      'fx.delay.on': 1, 'fx.delay.time': 0.28, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.3,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.3, 'fx.reverb.mix': 0.12,
+      'fx.eq.on': 1, 'fx.eq.low': -4, 'fx.eq.mid': -1, 'fx.eq.mfreq': 500, 'fx.eq.high': 3,
+    },
+  },
 ];
 
 

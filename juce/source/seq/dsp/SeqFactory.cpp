@@ -1,7 +1,7 @@
 // C++ port of src/seq/factory.ts — note-for-note transcription so both builds
 // ship the same NEON TALE factory session. The session *library* generator
 // (factorySessionLibrary) is likewise a transcription of
-// src/seq/sessionPresets.ts, so the 24 presets match the web byte-for-byte.
+// src/seq/sessionPresets.ts, so the 40 presets match the web byte-for-byte.
 // Clip bytes use the shared packed
 // layout (flags: on/acc/duration, note+slide, oct+1) — identical to the web.
 // DR-1 pad map (shared by 808, UZU, and hybrid kits): 0 KICK · 2 SNARE · 3 CLAP · 4 RIM · 5 CH HAT ·
@@ -293,6 +293,10 @@ Harmony harmonyFor(const PresetSpec& spec) {
         if (f == "AMBIENT") return 9;
         if (f == "HOUSE") return 5;
         if (f == "LO-FI") return 7;
+        if (f == "MINIMAL") return 1;
+        if (f == "FUTURE BASS") return 6;
+        if (f == "TRIP HOP") return 10;
+        if (f == "DUB") return 3;
         return 4; // CINEMATIC
     }();
     static const Harmony plans[4] = {
@@ -329,6 +333,61 @@ ClipData bassProgression(const Harmony& harmony, const PresetSpec& spec) {
                 const int pitch = step == 15 ? next - 12 : step % 4 == lift ? root : root - 12;
                 putNote(clip.bytes, sqNoteIdx(bar, step), pitch, 1, step % 4 == 0);
             }
+        }
+        return clip;
+    }
+    if (spec.family == std::string("MINIMAL")) {
+        // Offbeat eighth stabs — the kick owns the downbeats and the bass
+        // answers between them; per variation one offbeat lifts to the fifth
+        // so sibling songs rock on a different beat.
+        ClipData clip { variation + " PULSE · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
+        const int lifted = 2 + spec.variationIndex * 4;
+        for (int bar = 0; bar < 4; ++bar) {
+            const int root = harmony.roots[(size_t)bar];
+            for (int step : { 2, 6, 10, 14 })
+                putNote(clip.bytes, sqNoteIdx(bar, step), step == lifted ? root - 5 : root - 12, 1, step == 2);
+        }
+        return clip;
+    }
+    if (spec.family == std::string("FUTURE BASS")) {
+        // Half-time sub bed: one long low root under each chord, an octave pop
+        // on beat 4, and a two-step slide into the next bar's root.
+        ClipData clip { variation + " SUB · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
+        for (int bar = 0; bar < 4; ++bar) {
+            const int root = harmony.roots[(size_t)bar];
+            const int next = harmony.roots[(size_t)((bar + 1) % 4)];
+            putNote(clip.bytes, sqNoteIdx(bar, 0), root - 12, 10, true);
+            putNote(clip.bytes, sqNoteIdx(bar, 12), root, 2);
+            putNote(clip.bytes, sqNoteIdx(bar, 14), next - 12, 2);
+        }
+        return clip;
+    }
+    if (spec.family == std::string("TRIP HOP")) {
+        // Slow head-nod line: root anchored on the one, a late off-beat push,
+        // the fifth answering on beat 3's tail, and a pickup dragging into the
+        // next bar.
+        ClipData clip { variation + " NOD · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
+        for (int bar = 0; bar < 4; ++bar) {
+            const int root = harmony.roots[(size_t)bar];
+            const int next = harmony.roots[(size_t)((bar + 1) % 4)];
+            putNote(clip.bytes, sqNoteIdx(bar, 0), root - 12, 6, true);
+            putNote(clip.bytes, sqNoteIdx(bar, 7), root - 12, 2);
+            putNote(clip.bytes, sqNoteIdx(bar, 10), root - 5, 3);
+            putNote(clip.bytes, sqNoteIdx(bar, 14), next - 12, 2);
+        }
+        return clip;
+    }
+    if (spec.family == std::string("DUB")) {
+        // Steppers bassline: a tight push on the one, a rest where the skank
+        // breathes, then a syncopated answer through the fifth below.
+        ClipData clip { variation + " STEP · 4 BAR", 4, sqEmptyClip(Machine::BL1, 4) };
+        for (int bar = 0; bar < 4; ++bar) {
+            const int root = harmony.roots[(size_t)bar];
+            putNote(clip.bytes, sqNoteIdx(bar, 0), root - 12, 3, true);
+            putNote(clip.bytes, sqNoteIdx(bar, 3), root - 12, 2);
+            putNote(clip.bytes, sqNoteIdx(bar, 8), root - 12, 2);
+            putNote(clip.bytes, sqNoteIdx(bar, 10), root - 5, 2);
+            putNote(clip.bytes, sqNoteIdx(bar, 13), root - 12, 2);
         }
         return clip;
     }
@@ -390,6 +449,26 @@ const std::array<const char*, 4>& leadPhrasesFor(const std::string& family) {
             "0,2,0! 4,1,0 6,2,0 8,4,3 12,4,2 | 0,2,5! 4,1,5 6,2,5 8,4,8 12,4,7 | 0,2,3! 4,1,3 6,2,3 8,4,10 12,4,8 | 0,2,2! 4,2,2 6,2,2 8,8,11",
             "0,3,0! 4,3,0 8,3,3 12,2,2 14,2,0 | 0,3,3! 4,3,3 8,3,7 12,2,5 14,2,3 | 0,3,5! 4,3,5 8,3,10 12,2,8 14,2,5 | 0,3,8! 4,3,7 8,8,5",
             "0,3,0! 4,2,3 6,2,5 8,4,7 12,4,10 | 0,3,11! 4,2,7 6,2,2 8,8,7 | 0,3,8! 4,2,5 6,2,8 8,4,0 12,4,10 | 0,2,10! 2,2,7 4,2,5 6,2,7 8,8,10" } },
+        { "MINIMAL", {
+            "0,1,0! 4,1,0 8,1,3 10,1,2 14,1,0 | 0,1,8! 4,1,8 10,1,7 14,1,5 | 0,1,3! 4,1,3 8,1,5 10,1,3 14,1,2 | 0,1,10! 4,1,7 8,8,10",
+            "0,1,0! 2,1,0 6,1,3 8,1,0 12,1,2 | 0,1,5! 4,1,5 8,1,8 12,1,7 | 0,1,8! 2,1,8 6,1,10 8,1,8 12,1,7 | 0,1,7! 4,1,2 8,8,7",
+            "0,1,7! 4,1,7 8,1,5 12,1,3 | 0,1,7! 4,1,10 8,1,7 10,1,5 14,1,3 | 0,1,10! 4,1,10 8,1,0 12,1,10 | 0,1,5! 4,1,3 6,1,2 8,8,0",
+            "0,1,3! 4,1,3 8,1,2 12,1,0 | 0,1,2! 4,1,2 8,1,11 12,1,7 | 0,1,0! 4,1,8 8,1,7 10,1,5 14,1,3 | 0,1,2! 4,1,0 8,8,10" } },
+        { "FUTURE BASS", {
+            "0,2,0! 3,2,3 6,2,7 10,3,10 14,2,7 | 0,2,8! 3,2,7 6,4,3 11,2,5 14,2,8 | 0,2,7! 3,2,10 6,4,7 12,4,3 | 0,3,10! 4,2,7 6,2,5 8,8,2",
+            "0,2,0! 3,2,3 6,2,5 8,3,7 12,4,3 | 0,2,5! 3,2,8 6,4,5 12,4,0 | 0,2,8! 3,2,10 6,2,8 8,4,7 13,3,5 | 0,2,7! 3,2,10 6,2,7 8,8,2",
+            "0,2,3! 3,2,7 6,4,10 11,2,7 14,2,5 | 0,2,10! 3,2,7 6,4,3 12,4,7 | 0,2,2! 3,2,5 6,2,10 8,4,7 13,3,5 | 0,2,8! 4,2,5 8,8,0",
+            "0,2,7! 3,2,3 6,4,0 11,2,3 14,2,7 | 0,2,11! 3,2,7 6,4,2 12,4,7 | 0,2,5! 3,2,8 6,2,0 8,4,10 13,3,8 | 0,2,10! 4,2,7 8,8,5" } },
+        { "TRIP HOP", {
+            "0,3,0! 5,2,3 8,3,5 13,3,3 | 0,3,8! 5,2,7 9,4,5 | 0,3,3! 5,2,5 8,3,7 13,3,10 | 0,3,5! 5,2,3 9,7,2",
+            "0,3,3! 4,2,2 8,3,0 13,3,3 | 0,3,5! 5,2,8 9,4,7 | 0,3,0! 4,2,10 8,3,8 13,3,5 | 0,3,7! 5,2,5 9,7,2",
+            "0,2,0! 3,2,3 8,2,5 11,2,3 14,2,0 | 0,3,10! 5,2,7 9,4,3 | 0,2,2! 3,2,5 8,2,7 11,2,5 14,2,2 | 0,3,8! 5,2,7 9,7,5",
+            "0,3,7! 5,2,8 8,3,7 13,3,5 | 0,3,2! 5,2,0 9,4,10 | 0,3,5! 4,2,3 8,3,2 13,3,0 | 0,3,10! 5,2,8 9,7,7" } },
+        { "DUB", {
+            "0,4,0! 6,2,10 8,4,7 14,2,5 | 0,4,8! 6,2,7 8,6,5 | 0,4,7! 6,2,5 8,4,3 13,3,2 | 0,3,5! 4,2,3 8,8,2",
+            "0,4,3! 6,2,5 8,4,7 14,2,10 | 0,4,5! 6,2,3 8,6,0 | 0,4,8! 6,2,10 8,4,8 13,3,7 | 0,3,7! 4,2,5 8,8,3",
+            "0,4,7! 6,2,8 8,4,10 14,2,7 | 0,4,10! 6,2,8 8,6,7 | 0,4,5! 6,2,3 8,4,2 13,3,0 | 0,3,8! 4,2,7 8,8,5",
+            "0,4,0! 6,2,2 8,4,3 14,2,5 | 0,4,7! 6,2,5 8,6,2 | 0,4,5! 6,2,7 8,4,8 13,3,7 | 0,3,2! 4,2,3 8,8,10" } },
     };
     const auto it = phrases.find(family);
     return it != phrases.end() ? it->second : phrases.at("NEON");
@@ -442,6 +521,18 @@ const DrumArchetype& drumArchetypeFor(const std::string& family) {
         { "CINEMATIC", { { KICK, { 0, 10 }, { 0 } }, { SNARE, { 8 }, { 8 } },
                          { CH, {}, {} }, { OH, {}, {} },
                          { { TOM_LO, { 13 }, {} } } } },
+        { "MINIMAL", { { KICK, { 0, 4, 8, 12 }, { 0 } }, { RIM, { 4, 12 }, {} },
+                       { CH, { 2, 6, 10, 14 }, { 2, 10 } }, { OH, { 10 }, {} },
+                       { { PERC_A, { 7 }, {} } } } },
+        { "FUTURE BASS", { { KICK, { 0, 6, 10 }, { 0 } }, { SNARE, { 8 }, { 8 } },
+                           { CH, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 4, 12 } },
+                           { OH, { 6 }, {} }, {} } },
+        { "TRIP HOP", { { KICK, { 0, 3, 10 }, { 0 } }, { SNARE, { 4, 12 }, { 12 } },
+                        { CH, { 0, 4, 6, 10, 14 }, { 6, 14 } }, { OH, { 7 }, {} },
+                        { { PERC_B, { 11 }, {} } } } },
+        { "DUB", { { KICK, { 8 }, { 8 } }, { SNARE, { 8 }, {} },
+                   { CH, { 2, 6, 10, 14 }, { 6, 14 } }, { OH, { 12 }, {} },
+                   { { PERC_B, { 3, 11 }, {} } } } },
     };
     const auto it = archetypes.find(family);
     return it != archetypes.end() ? it->second : archetypes.at("NEON");
@@ -456,6 +547,10 @@ const std::vector<DrumFillHit>& drumFillFor(const std::string& family) {
         { "HOUSE", { { CLAP, 13, false }, { CLAP, 15, true } } },
         { "LO-FI", { { PERC_B, 13, false }, { PERC_B, 15, false } } },
         { "CINEMATIC", { { TOM_HI, 8, false }, { TOM_MID, 10, false }, { TOM_LO, 12, true }, { TOM_LO, 14, true } } },
+        { "MINIMAL", { { PERC_A, 12, false }, { PERC_A, 14, true } } },
+        { "FUTURE BASS", { { SNARE, 10, false }, { SNARE, 12, false }, { SNARE, 14, true } } },
+        { "TRIP HOP", { { SNARE, 10, false }, { RIM, 13, false }, { SNARE, 15, true } } },
+        { "DUB", { { TOM_MID, 11, false }, { TOM_LO, 13, false }, { SNARE, 15, true } } },
     };
     const auto it = fills.find(family);
     return it != fills.end() ? it->second : fills.at("NEON");
@@ -583,9 +678,16 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             for (auto* tag : tags) preset.tags.emplace_back(tag);
             preset.session = factorySession();
             preset.session.name = name;
-            preset.session.bpm = 96.0 + energy * 7.0 + variationIndex;
+            // Slow families anchor below the shared 96 base so energy still
+            // spreads the tempo without pushing trip hop or dub into house
+            // territory.
+            const double bpmBase = family == std::string("TRIP HOP") ? 62.0
+                                 : family == std::string("DUB") ? 56.0 : 96.0;
+            preset.session.bpm = bpmBase + energy * 7.0 + variationIndex;
             preset.session.swing = family == std::string("HOUSE") ? 0.12
-                                 : family == std::string("LO-FI") ? 0.18 : 0.0;
+                                 : family == std::string("LO-FI") ? 0.18
+                                 : family == std::string("TRIP HOP") ? 0.16
+                                 : family == std::string("DUB") ? 0.08 : 0.0;
             // Full-chain, in-context track faders — measured by
             // test/measure_track_levels.cpp, which renders every song's four
             // tracks through their real engine+FX (incl. WT-1's leveling comp)
@@ -703,6 +805,30 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("MACHINE TENSION",  "CINEMATIC", "TENSION",   4, { "industrial", "tense", "dark" }, { 12, 5, 47, 38 }, 1),
             make("VOID MARCH",       "CINEMATIC", "MARCH",     4, { "heavy", "dark", "driving" }, { 3, 4, 44, 25 }, 2),
             make("FINAL HORIZON",    "CINEMATIC", "FINALE",    5, { "epic", "wide", "bright" }, { 13, 8, 43, 38 }, 3),
+
+            // MINIMAL / TECHNO
+            make("GRAY ROOM",   "MINIMAL", "ROOM",  4, { "hypnotic", "dry", "tight" }, { 9, 2, 33, 17 }, 0),      // DATA STREAM / DARK DRONE
+            make("CLICK FIELD", "MINIMAL", "CLICK", 4, { "clicky", "sparse", "precise" }, { 9, 11, 57, 40 }, 1),  // BLEEP TECH / PUMP PAD
+            make("COLD ROTOR",  "MINIMAL", "ROTOR", 5, { "dark", "driving", "hypnotic" }, { 6, 6, 50, 35 }, 2),   // PROPHET STAB / TWIN SKY
+            make("NIGHT GRID",  "MINIMAL", "GRID",  4, { "deep", "rolling", "late" }, { 9, 5, 14, 34 }, 3),       // HOUSE PLUCK / OCEAN AIR
+
+            // FUTURE BASS
+            make("SUGAR RUSH", "FUTURE BASS", "RUSH",   5, { "bright", "bouncy", "wide" }, { 0, 8, 4, 11 }, 0),    // HYPER SAW / FUTURE CHORD
+            make("PASTEL SKY", "FUTURE BASS", "PASTEL", 4, { "soft", "lush", "wide" }, { 2, 1, 15, 42 }, 1),       // TRAP BELL / JUNO DREAM
+            make("STARBURST",  "FUTURE BASS", "BURST",  5, { "euphoric", "punchy", "bright" }, { 0, 11, 45, 40 }, 2), // FANTA BELLS / PUMP PAD
+            make("HEART WIRE", "FUTURE BASS", "WIRE",   4, { "emotive", "glassy", "wide" }, { 2, 8, 52, 38 }, 3),  // GLASS RIBBON / AURORA RISER
+
+            // TRIP HOP
+            make("VELVET SMOKE", "TRIP HOP", "SMOKE", 2, { "smoky", "dusty", "slow" }, { 16, 7, 20, 34 }, 0),      // MELLOW RHODES / OCEAN AIR
+            make("NIGHT BUS",    "TRIP HOP", "BUS",   2, { "nocturnal", "warm", "tape" }, { 16, 10, 36, 32 }, 1),  // TAPE KEYS / GHOST CHOIR
+            make("CRACKED LENS", "TRIP HOP", "LENS",  3, { "broken", "eerie", "dusty" }, { 8, 10, 29, 17 }, 2),    // KALIMBA PLUCK / DARK DRONE
+            make("STONE GARDEN", "TRIP HOP", "STONE", 3, { "organic", "moody", "deep" }, { 16, 7, 28, 1 }, 3),     // NYLON PLUCK / VELVET PAD
+
+            // DUB
+            make("ECHO CHAMBER", "DUB", "ECHO",    2, { "spacious", "deep", "smoky" }, { 4, 3, 55, 56 }, 0),       // MELODICA / DUB SKANK
+            make("KING STEPPER", "DUB", "STEPPER", 3, { "rootsy", "driving", "warm" }, { 4, 11, 55, 22 }, 1),      // MELODICA / DRAWBAR ORGAN
+            make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 3, 22, 56 }, 2),           // DRAWBAR ORGAN / DUB SKANK
+            make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 11, 55, 1 }, 3),     // MELODICA / VELVET PAD
         };
         return library;
     }();

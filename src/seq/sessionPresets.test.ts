@@ -6,7 +6,7 @@ import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 
 describe('SQ-4 factory session patch contract', () => {
   it('keeps the native session-library ordering and factory patch indices', () => {
-    expect(FACTORY_SESSION_PRESETS).toHaveLength(24);
+    expect(FACTORY_SESSION_PRESETS).toHaveLength(40);
     expect(FACTORY_SESSION_PRESETS.map((preset) => preset.name)).toEqual([
       'NEON TALE', 'NEON CHASE', 'GLASS CIRCUIT', 'AFTERGLOW',
       'WAREHOUSE RAW', 'ACID FLASH', 'STEEL PULSE', 'PEAK SIGNAL',
@@ -14,6 +14,10 @@ describe('SQ-4 factory session patch contract', () => {
       'DUST HOUSE', 'MIDNIGHT FLOOR', 'TAPE DISCO', 'CLEAN CLUB',
       'VHS GARDEN', 'POCKET DUST', 'TOY PARADE', 'WORN SIGNAL',
       'CHROME CATHEDRAL', 'MACHINE TENSION', 'VOID MARCH', 'FINAL HORIZON',
+      'GRAY ROOM', 'CLICK FIELD', 'COLD ROTOR', 'NIGHT GRID',
+      'SUGAR RUSH', 'PASTEL SKY', 'STARBURST', 'HEART WIRE',
+      'VELVET SMOKE', 'NIGHT BUS', 'CRACKED LENS', 'STONE GARDEN',
+      'ECHO CHAMBER', 'KING STEPPER', 'ROOTS RADAR', 'ZION GATE',
     ]);
     expect(FACTORY_SESSION_PRESETS[0].session.tracks.map((track) => track.patch)).toEqual([
       { kind: 'factory', index: 13 }, { kind: 'factory', index: 0 },

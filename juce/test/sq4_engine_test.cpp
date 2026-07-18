@@ -1417,7 +1417,7 @@ static void testUndoRestoresDeletedClip() {
 static void testSessionLibraryMusicality() {
     using namespace fable;
     const auto& library = factorySessionLibrary();
-    CHECK(library.size() == 24);
+    CHECK(library.size() == 40);
 
     // Register split: every generated pad sits strictly below every lead note.
     for (size_t p = 0; p < library.size(); ++p) {
@@ -1440,7 +1440,7 @@ static void testSessionLibraryMusicality() {
         }
     }
 
-    // Unique drums: all 24 DROP-A patterns differ; scenes differ within a song.
+    // Unique drums: all 40 DROP-A patterns differ; scenes differ within a song.
     std::set<std::vector<uint8_t>> dropDrums;
     for (const auto& preset : library)
         dropDrums.insert(preset.session.scenes[2].clips[0].bytes);

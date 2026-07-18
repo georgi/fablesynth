@@ -768,6 +768,50 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.75f}, {"fx.reverb.mix", 0.4f},
             {"fx.eq.on", 1}, {"fx.eq.low", 2.0f}, {"fx.eq.mid", 1.5f}, {"fx.eq.mfreq", 500}, {"fx.eq.high", -3.0f},
         }},
+
+        // 55-57: genre voices for the MINIMAL / FUTURE BASS / TRIP HOP / DUB
+        // session presets (SQ-4 references these by index — append only).
+
+        {"MELODICA", {
+            {"oscA.table", 3}, {"oscA.pos", 0.3f}, {"oscA.level", 0.82f},
+            {"noise.on", 1}, {"noise.type", 1}, {"noise.level", 0.08f},
+            {"filter.type", 1}, {"filter.cutoff", 1900}, {"filter.res", 0.14f}, {"filter.env", 0.2f}, {"filter.key", 0.35f},
+            {"env1.a", 0.03f}, {"env1.d", 0.6f}, {"env1.s", 0.8f}, {"env1.r", 0.35f},
+            {"env2.a", 0.02f}, {"env2.d", 0.5f}, {"env2.s", 0.3f}, {"env2.r", 0.3f},
+            {"master.glide", 0.05f},
+            {"lfo1.shape", 0}, {"lfo1.rate", 5.2f}, {"lfo1.rise", 0.9f},
+            {"mat1.src", 1}, {"mat1.dst", 4}, {"mat1.amt", 0.006f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.56f}, {"fx.delay.fb", 0.58f}, {"fx.delay.mix", 0.38f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.6f}, {"fx.reverb.mix", 0.24f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -2.0f}, {"fx.eq.mid", 2.5f}, {"fx.eq.mfreq", 900}, {"fx.eq.high", 1.5f},
+        }},
+
+        {"DUB SKANK", {
+            {"oscA.table", 0}, {"oscA.pos", 0.04f}, {"oscA.level", 0.72f},
+            {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.02f}, {"oscB.oct", 1}, {"oscB.level", 0.45f},
+            {"filter.type", 1}, {"filter.cutoff", 2600}, {"filter.res", 0.18f}, {"filter.env", 0.12f}, {"filter.key", 0.3f},
+            {"env1.a", 0.002f}, {"env1.d", 0.32f}, {"env1.s", 0}, {"env1.r", 0.28f},
+            {"env2.a", 0.002f}, {"env2.d", 0.25f}, {"env2.s", 0}, {"env2.r", 0.2f},
+            {"lfo2.rate", 0.14f},
+            {"mat1.src", 2}, {"mat1.dst", 6}, {"mat1.amt", 0.2f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.3f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.42f}, {"fx.delay.fb", 0.62f}, {"fx.delay.mix", 0.44f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.7f}, {"fx.reverb.mix", 0.35f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -3.0f}, {"fx.eq.mid", 1.0f}, {"fx.eq.mfreq", 700}, {"fx.eq.high", 2.0f},
+        }},
+
+        {"BLEEP TECH", {
+            {"oscA.table", 2}, {"oscA.pos", 0.12f}, {"oscA.oct", 1}, {"oscA.level", 0.8f},
+            {"filter.type", 1}, {"filter.cutoff", 3200}, {"filter.res", 0.22f}, {"filter.env", 0.3f}, {"filter.key", 0.5f},
+            {"env1.a", 0.001f}, {"env1.d", 0.14f}, {"env1.s", 0}, {"env1.r", 0.1f},
+            {"env2.a", 0.001f}, {"env2.d", 0.1f}, {"env2.s", 0}, {"env2.r", 0.08f},
+            {"lfo2.rate", 0.11f},
+            {"mat1.src", 2}, {"mat1.dst", 6}, {"mat1.amt", 0.3f},
+            {"mat2.src", 4}, {"mat2.dst", 3}, {"mat2.amt", 0.25f},
+            {"fx.delay.on", 1}, {"fx.delay.time", 0.28f}, {"fx.delay.fb", 0.45f}, {"fx.delay.mix", 0.3f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.3f}, {"fx.reverb.mix", 0.12f},
+            {"fx.eq.on", 1}, {"fx.eq.low", -4.0f}, {"fx.eq.mid", -1.0f}, {"fx.eq.mfreq", 500}, {"fx.eq.high", 3.0f},
+        }},
     };
     return presets;
 }

@@ -834,7 +834,7 @@ int main(int argc, char** argv) {
         const auto* webPresets = parsed.getArray();
         const auto& native = fable::factorySessionLibrary();
         check(webPresets != nullptr && webPresets->size() == (int)native.size(),
-              "fixture carries all 24 presets");
+              "fixture carries all 40 presets");
         bool metaMatches = true, clipsMatch = true;
         for (int p = 0; webPresets != nullptr && p < webPresets->size(); ++p) {
             const auto& web = (*webPresets)[p];
@@ -879,7 +879,7 @@ int main(int argc, char** argv) {
             }
         }
         check(metaMatches, "session-preset metadata matches the web generator");
-        check(clipsMatch, "all 24 preset sessions match the web generator byte-for-byte");
+        check(clipsMatch, "all 40 preset sessions match the web generator byte-for-byte");
     }
 
     // ---- LOAD/SAVE UI test handles (SeqHeader::loadClick/saveClick apply the
