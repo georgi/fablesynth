@@ -11,6 +11,12 @@ constexpr int kImportAction = 2;
 constexpr int kExportAction = 3;
 constexpr int kTransformActionBase = 100;
 
+// Height of the toolbar strip reserved at the top of the view (patch/clip
+// controls). layoutBody() offsets the hosted device body below this same
+// extent, so paint() reuses it to draw the panel background under the
+// toolbar row without touching resized()'s geometry.
+constexpr int kToolbarHeight = 38;
+
 const std::array<const char*, 10> kTransformNames {{
     "ROTATE +1", "REVERSE", "DENSITY x2", "DENSITY /2", "SHIFT ACCENTS",
     "HUMANIZE", "EXTRACT BAR 1", "REPEAT 2 BARS", "TRANSPOSE +1", "REMAP DRUMS"
@@ -95,6 +101,18 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
     createClipButton_.setTooltip("Create an empty clip for this scene and device");
     createClipButton_.onClick = [this] { createActiveClip(); };
     addChildComponent(createClipButton_);
+
+    // Toolbar typography + colours — match SeqHeader's hand-drawn chrome.
+    for (auto* l : { &patchLabel_, &clipTargetLabel_, &clipMetadataLabel_ }) {
+        l->setFont(monoFont(8.0f));
+        l->setColour(juce::Label::textColourId, col::textDim);
+    }
+    clipTargetLabel_.setFont(monoFontMedium(9.0f));
+    clipTargetLabel_.setColour(juce::Label::textColourId, col::text);
+    createClipButton_.setColour(juce::TextButton::buttonColourId, accentA().withAlpha(0.14f));
+    createClipButton_.setColour(juce::TextButton::textColourOffId, accentA());
+    previousPatchButton_.setColour(juce::TextButton::textColourOffId, col::textDim);
+    nextPatchButton_.setColour(juce::TextButton::textColourOffId, col::textDim);
 
     startTimerHz(10);
 }
@@ -500,7 +518,7 @@ void DeviceFocusView::timerCallback() {
 void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,
                                  int logicalHeight, int contentTop) {
     if (getWidth() <= 0 || getHeight() <= 0) return;
-    constexpr int selectorHeight = 38;
+    constexpr int selectorHeight = kToolbarHeight;
     const int contentHeight = logicalHeight - contentTop;
     const float scale = std::min(static_cast<float>(getWidth()) / static_cast<float>(logicalWidth),
                                  static_cast<float>(juce::jmax(1, getHeight() - selectorHeight))
@@ -511,6 +529,15 @@ void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,
            - static_cast<float>(contentHeight) * scale) * 0.5f;
     body.setTransform(juce::AffineTransform::translation(0.0f, (float)-contentTop)
                           .scaled(scale).translated(dx, dy));
+}
+
+void DeviceFocusView::paint(juce::Graphics& g) {
+    // The toolbar strip gets the standard machined panel so it stops reading
+    // as bare stock widgets floating over the editor background (spec §5).
+    // The hosted device body below paints itself; kToolbarHeight matches the
+    // same extent layoutBody() reserves above the body (see resized()).
+    auto toolbar = getLocalBounds().removeFromTop(kToolbarHeight);
+    if (!toolbar.isEmpty()) drawPanel(g, toolbar.toFloat(), 10.0f);
 }
 
 void DeviceFocusView::resized() {

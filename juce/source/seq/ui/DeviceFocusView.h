@@ -48,6 +48,7 @@ public:
     const juce::String clipTargetForTest() const { return clipTargetLabel_.getText(); }
     const juce::String clipMetadataForTest() const { return clipMetadataLabel_.getText(); }
 
+    void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
