@@ -97,7 +97,7 @@ public:
 private:
     Stepper shape, oct;
     Knob level;
-    juce::Rectangle<int> headArea, shapeLabel, octLabel;
+    juce::Rectangle<int> headArea, bodyArea, shapeLabel, octLabel;
 };
 
 // FILTER: LED + title + type stepper, live response view, CUT/RES/DRIVE/ENV/

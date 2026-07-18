@@ -206,6 +206,7 @@ void DrumAudioProcessor::setStep(int pattern, int pad, int step, uint8_t v) {
         || step < 0 || step >= DR_STEPS) return;
     patterns_[(size_t)(pattern * DR_NPADS * DR_STEPS + pad * DR_STEPS + step)] =
         (uint8_t)juce::jmin((int)v, 2);
+    programDirty_.markEdited();
     shareSeqState(true, false);
 }
 
@@ -213,6 +214,7 @@ void DrumAudioProcessor::setChain(std::vector<int> c) {
     const int bars = juce::jlimit(1, DR_NPATTERNS, (int)c.size());
     chain_.resize((size_t)bars);
     std::iota(chain_.begin(), chain_.end(), 0);
+    programDirty_.markEdited();
     shareSeqState(false, true);
 }
 
@@ -228,6 +230,7 @@ void DrumAudioProcessor::setPadName(int i, juce::String n) {
     if (i < 0 || i >= DR_NPADS) return;
     n = n.replaceCharacter('\n', ' ').trim();
     padNames_[(size_t)i] = n.substring(0, 14);
+    programDirty_.markEdited();
 }
 
 // ---- kits as programs ------------------------------------------------------
@@ -237,6 +240,7 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
     if (index < 0 || index >= (int)kits.size()) return;
     patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
     currentProgram_ = index;
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
     const DrumKit& kit = kits[(size_t)index];
 
     // Apply kit values onto the APVTS so the host + UI reflect them (WT-1 scheme).
@@ -474,6 +478,7 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
     if (!xml) return;
 
     patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
 
     juce::ValueTree params, pool, drum;
     if (xml->hasTagName("DR1STATE")) {

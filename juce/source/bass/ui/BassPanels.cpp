@@ -42,9 +42,9 @@ static void drawHeadTitle(juce::Graphics& g, juce::Rectangle<int> area,
     drawSpaced(g, t, area, 2.2f);
 }
 
-// .bl-head-note — dim right-aligned hint in a panel head.
+// .bl-head-note — right-aligned hint in a panel head (raised to ~AA contrast).
 static void drawHeadNote(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& t) {
-    g.setColour(col::textDim);
+    g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, t, area, 1.1f, juce::Justification::right);
 }
@@ -314,14 +314,16 @@ void BassEnvView::paint(juce::Graphics& g) {
     g.strokePath(amp, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
                                            juce::PathStrokeType::rounded));
 
-    // captions
-    g.setFont(monoFont(7.0f));
+    // captions — a colored legend that reads at a glance which curve is which:
+    // bold and near-opaque, each in its own trace's color (web parity: bass
+    // EnvPanel.tsx '600 8px', ACCENT 0.95, AMP #e8edf7).
+    g.setFont(monoFont(8.0f, true));
     g.setColour(green);
-    g.drawText("FILTER", (int)pad + 2, 4, 40, 10, juce::Justification::centredLeft);
-    g.setColour(col::acB.withAlpha(0.8f));
-    g.drawText("ACCENT", (int)pad + 40, 4, 44, 10, juce::Justification::centredLeft);
-    g.setColour(col::acN);
-    g.drawText("AMP", (int)pad + 84, 4, 30, 10, juce::Justification::centredLeft);
+    g.drawText("FILTER", (int)pad + 2, 3, 40, 10, juce::Justification::centredLeft);
+    g.setColour(col::acB.withAlpha(0.95f));
+    g.drawText("ACCENT", (int)pad + 42, 3, 44, 10, juce::Justification::centredLeft);
+    g.setColour(juce::Colour(0xffe8edf7));
+    g.drawText("AMP", (int)pad + 88, 3, 30, 10, juce::Justification::centredLeft);
 }
 
 // ===================== BassLfoView =====================
@@ -430,15 +432,24 @@ void BassSubPanel::resized() {
     auto r = contentBox(*this);
     headArea = r.removeFromTop(18);
     r.removeFromTop(8);
-    auto row1 = r.removeFromTop(20);
-    shapeLabel = row1.removeFromLeft(44);
+    // .bl-sub-body: a bordered inset well holding the stepper column beside
+    // the level knob, both vertically centred (web parity: tightened SUB).
+    bodyArea = r;
+    auto inner = r.reduced(10, 8);
+    auto steppers = inner.removeFromLeft(inner.getWidth() * 5 / 9);
+    inner.removeFromLeft(12);
+    // Two stacked SHAPE/OCT rows centred vertically in the stepper column.
+    const int rowH = 18, gap = 7;
+    auto col = steppers.withSizeKeepingCentre(steppers.getWidth(), rowH * 2 + gap);
+    auto row1 = col.removeFromTop(rowH);
+    shapeLabel = row1.removeFromLeft(40);
     shape.setBounds(row1.withSizeKeepingCentre(row1.getWidth(), 18));
-    r.removeFromTop(7);
-    auto row2 = r.removeFromTop(20);
-    octLabel = row2.removeFromLeft(44);
+    col.removeFromTop(gap);
+    auto row2 = col.removeFromTop(rowH);
+    octLabel = row2.removeFromLeft(40);
     oct.setBounds(row2.withSizeKeepingCentre(row2.getWidth(), 18));
-    level.setBounds(r.withSizeKeepingCentre(Knob::svgPx(Knob::Md) + 16,
-                                            Knob::svgPx(Knob::Md) + 13));
+    level.setBounds(inner.withSizeKeepingCentre(Knob::svgPx(Knob::Md) + 16,
+                                                Knob::svgPx(Knob::Md) + 13));
 }
 
 void BassSubPanel::paint(juce::Graphics& g) {
@@ -447,6 +458,9 @@ void BassSubPanel::paint(juce::Graphics& g) {
     drawIdleLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
     head.removeFromLeft(8);
     drawHeadTitle(g, head, "SUB", col::text);
+    // .bl-sub-body inset well: dark background + hairline, so the SHAPE/OCT/
+    // LEVEL cluster reads as one grouped control rather than floating labels.
+    drawDisplayBox(g, bodyArea.toFloat(), 9.0f);
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SHAPE", shapeLabel, 1.4f);
@@ -582,7 +596,7 @@ void BassAccentPanel::paint(juce::Graphics& g) {
     drawBlLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), accentA());
     head.removeFromLeft(8);
     drawHeadTitle(g, head, "ACCENT - SLIDE", accentA());
-    g.setColour(col::textDim);
+    g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "ONE KNOB - LEVEL + ENV + DECAY", hintArea, 1.2f,
                juce::Justification::horizontallyCentred);

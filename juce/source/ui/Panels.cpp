@@ -541,13 +541,13 @@ void MatrixPanel::relayoutRows() {
 void MatrixPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, "MOD MATRIX", col::text);
-    g.setColour(col::textDim);
+    g.setColour(col::textHint);
     g.setFont(monoFont(7.5f));
     g.drawFittedText("Drag to a control, or add a route.", hintArea,
                      juce::Justification::centredLeft, 2);
     // (each Row paints its own ▸ arrow between src and dst, so it scrolls correctly)
     if (lastVisible.empty()) {
-        g.setColour(col::textDim);
+        g.setColour(col::textHint);
         g.setFont(monoFont(10.0f));
         g.drawText("Drag a source onto a control, or ADD ROUTE.",
                    rowsArea, juce::Justification::centredTop);

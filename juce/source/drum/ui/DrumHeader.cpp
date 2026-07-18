@@ -38,6 +38,15 @@ void DrumScopeView::paint(juce::Graphics& g) {
     int start = 0;
     for (int i = 1; i < N / 2; i++)
         if (buf[static_cast<size_t>(i - 1)] <= 0 && buf[static_cast<size_t>(i)] > 0) { start = i; break; }
+    // Idle: a faint neutral centre line instead of a full-brightness flat trace
+    // (web parity: ScopeView.tsx drawIdle).
+    float peak = 0;
+    for (float v : buf) peak = std::max(peak, std::abs(v));
+    if (peak <= 1.0e-5f) {
+        g.setColour(col::textHint.withAlpha(0.22f));
+        g.drawLine(0, h / 2, w, h / 2, 1.0f);
+        return;
+    }
     int M = std::min(900, N - start);
     juce::Path path;
     for (int i = 0; i < M; i++) {
@@ -138,6 +147,10 @@ void DrumHeader::timerCallback() {
         lastProgram = proc.currentProgram();
         repaint(kitNameArea);
     }
+    if (proc.programDirty() != lastDirty) {
+        lastDirty = proc.programDirty();
+        repaint(kitNameArea);
+    }
 }
 
 void DrumHeader::paint(juce::Graphics& g) {
@@ -155,6 +168,12 @@ void DrumHeader::paint(juce::Graphics& g) {
     g.setFont(monoFont(9.0f));
     drawSpaced(g, "DR-1", { bx + fableW + 88, by + 4, 50, brandArea.getHeight() }, 2.0f);
 
+    // KIT mini-head (.dr-kitbar .dr-mini-head): names what the stepper steps
+    // through now that pads also carry a PAD PATCH stepper.
+    g.setColour(col::textDim);
+    g.setFont(monoFont(7.0f));
+    drawSpaced(g, "KIT", kitLabelArea, 1.2f, juce::Justification::centredLeft);
+
     // kit name readout (.dr-kitname): dark well, cyan 10px, current program
     g.setColour(juce::Colour(0xff0c0f16));
     g.fillRoundedRectangle(kitNameArea.toFloat(), 6.0f);
@@ -164,6 +183,15 @@ void DrumHeader::paint(juce::Graphics& g) {
     g.setFont(monoFont(10.0f));
     drawSpaced(g, proc.programName(proc.currentProgram()),
                kitNameArea.reduced(10, 0), 0.8f, juce::Justification::centred);
+    // Dirty dot (.dr-dirty-dot): amber, lit once the kit has unsaved edits.
+    if (proc.programDirty()) {
+        const auto dot = kitNameArea.withTrimmedLeft(kitNameArea.getWidth() - 14)
+                             .withSizeKeepingCentre(5, 5).toFloat();
+        g.setColour(col::acB.withAlpha(0.35f));
+        g.fillEllipse(dot.expanded(2.5f));
+        g.setColour(col::acB);
+        g.fillEllipse(dot);
+    }
 
     // scope well (.hud-cell) + caption
     drawDisplayBox(g, scopeBox.toFloat(), 8.0f);
@@ -196,7 +224,9 @@ void DrumHeader::resized() {
     brandArea = r.removeFromLeft(228).withSizeKeepingCentre(228, 24);
     r.removeFromLeft(12);
 
-    // kit stepper: prev(28) 6 name(128) 6 next(28) — SAVE dropped
+    // kit stepper: KIT(18) 6 prev(28) 6 name(128) 6 next(28) — SAVE dropped
+    kitLabelArea = r.removeFromLeft(18).withSizeKeepingCentre(18, 28);
+    r.removeFromLeft(6);
     auto kit = r.removeFromLeft(196).withSizeKeepingCentre(196, 28);
     prevBtn.setBounds(kit.removeFromLeft(28));
     kit.removeFromLeft(6);

@@ -5,6 +5,7 @@
 #include "dsp/DrumKits.h"
 #include "dsp/DrumParams.h"
 #include "../dsp/UserTables.h"
+#include "../ui/ProgramDirty.h"
 
 #include <array>
 #include <atomic>
@@ -53,6 +54,9 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
+
+    // Edited-since-kit-load flag for the header's dirty dot.
+    bool isProgramDirty() const { return programDirty_.isDirty(); }
 
     // ---- pads / transport (message thread -> engine via the command FIFO) ----
     void triggerPad(int pad, float vel);              // UI audition
@@ -136,6 +140,7 @@ private:
     int editPattern_ = 0;
     int currentProgram_ = 0;
     std::atomic<uint32_t> patchContextRevision_{0};
+    fui::ProgramDirtyTracker programDirty_{*this};
 
     // atomics published from the audio thread
     std::atomic<bool> seqPlaying_{false};

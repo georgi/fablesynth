@@ -7,6 +7,7 @@ public:
     explicit StandaloneBassUiModel(BassAudioProcessor& p) : proc(p) {}
     fui::ParameterSource parameters() override { const auto& i = fable::bassParamInfo(); return fui::ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    bool programDirty() const override { return proc.isProgramDirty(); }
     int currentProgram() const override { return proc.getCurrentProgram(); }
     int numPrograms() const override { return proc.getNumPrograms(); }
     juce::String programName(int i) const override { return proc.getProgramName(i); }

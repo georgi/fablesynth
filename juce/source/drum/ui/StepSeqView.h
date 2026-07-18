@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumUiModel.h"
 #include "../../ui/StepEditOps.h"
@@ -72,6 +73,10 @@ public:
     void toggleStep(int step);              // store.toggleStep
     void patternClick(int i);               // choose bar to edit
     void setSequenceLength(int bars);        // play bars 1 through N
+    // RAND: randomize the selected pad's row in the edit pattern. The rng
+    // (returning [0,1)) is injectable so the host test is deterministic;
+    // default is the system RNG.
+    void randomizePad(std::function<float()> rng = nullptr);
 
     // ---- decision 6: selection, verbs, drag results ----
     // Public so the host test drives them the same way it drives toggleStep/
@@ -109,6 +114,7 @@ public:
     juce::Rectangle<int> transportBounds() const;
     juce::Rectangle<int> patternBounds(int i) const;
     juce::Rectangle<int> sequenceLengthBounds() const;
+    juce::Rectangle<int> randButtonBounds() const;
     juce::Rectangle<int> stepBounds(int step) const;
 
 private:

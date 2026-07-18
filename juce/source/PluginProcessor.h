@@ -6,6 +6,7 @@
 #include "dsp/Params.h"
 #include "dsp/Presets.h"
 #include "dsp/UserTables.h"
+#include "ui/ProgramDirty.h"
 #include "ui/WtUiModel.h"
 
 // FableSynth VST/AU processor. Owns the JUCE-independent DSP core (Engine + Fx)
@@ -39,6 +40,9 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState apvts;
+
+    // Edited-since-preset-load flag for the header's dirty dot.
+    bool isProgramDirty() const { return programDirty_.isDirty(); }
 
     // ---- wavetable visualization feed (read on the message thread) ----
     // The live modulated frame position per oscillator is published from the
@@ -126,6 +130,7 @@ private:
     std::array<std::atomic<float>*, fable::NUM_PARAMS> rawParams{};
     int currentProgram = 0;
     bool prepared = false;
+    fui::ProgramDirtyTracker programDirty_{*this};
 
     // ---- note sequencer bridge (BassAudioProcessor scheme) ----
     enum CmdType { CmdPlay = 0, CmdStop, CmdPanic };
@@ -156,6 +161,7 @@ public:
     explicit StandaloneWtUiModel(FableAudioProcessor& p) : proc(p) {}
     fui::ParameterSource parameters() override;
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    bool programDirty() const override;
     int currentProgram() const override;
     int numPrograms() const override;
     juce::String programName(int) const override;

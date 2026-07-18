@@ -326,8 +326,10 @@ int main(int argc, char** argv) {
               "snapshot rendered at 1460x880", img.getWidth());
         // The full-rack device body also occupies the header's coordinates.
         // The header must remain above it or the kit stepper cannot be clicked.
+        // (The "next kit" button sits right of the KIT label + prev + name well;
+        // the KIT mini-head shifted the stepper ~24px right of the old layout.)
         const int programBeforeClick = proc.getCurrentProgram();
-        auto* nextKitHit = drumEd->getRack().getComponentAt(455, 54);
+        auto* nextKitHit = drumEd->getRack().getComponentAt(480, 54);
         check(dynamic_cast<juce::Button*>(nextKitHit) != nullptr,
               "kit stepper is the header hit target");
         if (auto* button = dynamic_cast<juce::Button*>(nextKitHit)) button->onClick();
@@ -455,6 +457,40 @@ int main(int argc, char** argv) {
         seq.patternClick(3);
         check(proc.getEditPattern() == 3, "bar click selects 4", proc.getEditPattern());
         check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "editing bar 4 preserves length");
+
+        // RAND: rewrites the selected pad's row in the edit pattern only.
+        // A deterministic rng ("always off") clears the target lane and must
+        // not touch any other pad's lane or another pattern.
+        proc.setEditPattern(2);
+        proc.setSelectedPad(5);
+        proc.setStep(2, 6, 4, 1);  // another pad, same pattern — must survive
+        proc.setStep(3, 5, 4, 2);  // same pad, another pattern — must survive
+        for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(2, 5, s, 1);
+        seq.randomizePad([] { return 0.9f; });  // rng always "off"
+        bool laneCleared = true;
+        for (int s = 0; s < fable::DR_STEPS; ++s) laneCleared = laneCleared && proc.getStep(2, 5, s) == 0;
+        check(laneCleared, "RAND (rng=off) clears the target pad row");
+        check(proc.getStep(2, 6, 4) == 1, "RAND leaves other pads in the pattern untouched");
+        check(proc.getStep(3, 5, 4) == 2, "RAND leaves the same pad in other patterns untouched");
+
+        // A deterministic "always accent" rng fills the lane with accents (2),
+        // and every written byte is a valid step value.
+        seq.randomizePad([] { return 0.0f; });  // on and accent both fire
+        bool allAccent = true, allValid = true;
+        for (int s = 0; s < fable::DR_STEPS; ++s) {
+            const auto v = proc.getStep(2, 5, s);
+            allAccent = allAccent && v == 2;
+            allValid = allValid && v <= 2;
+        }
+        check(allAccent, "RAND (rng=0) fills the lane with accents");
+        check(allValid, "RAND only ever writes valid step values");
+
+        // RAND is undoable — undo restores the state before the last RAND
+        // (the all-off lane the first RAND produced).
+        seq.undo();
+        bool restored = true;
+        for (int s = 0; s < fable::DR_STEPS; ++s) restored = restored && proc.getStep(2, 5, s) == 0;
+        check(restored, "RAND pushes an undo entry");
     }
 
     // ---- 14. step sequencer editing: selection, verbs, drag, undo (decision 6) ----

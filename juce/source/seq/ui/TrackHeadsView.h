@@ -36,6 +36,8 @@ public:
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
     // Test handles (also the real click targets, wired from mouseDown).
     void muteClick(int t);
@@ -69,6 +71,7 @@ private:
 
     bool focusMode_ = false;
     int focusedTrack_ = -1;
+    int hoverTrack_ = -1;   // name row hovered -> show the edit (✎) affordance
 
     enum class Drag { None, Vol };
     Drag dragging_ = Drag::None;

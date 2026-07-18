@@ -125,6 +125,22 @@ void TrackHeadsView::mouseUp(const juce::MouseEvent&) {
     dragTrack_ = -1;
 }
 
+void TrackHeadsView::mouseMove(const juce::MouseEvent& e) {
+    // Track which head's name row the pointer is over so paintTrack can light
+    // the edit (✎) affordance — the whole head is clickable to focus the
+    // device, but nothing signalled that until now (web parity:
+    // .sq-track-editglyph, hover-revealed).
+    const auto pos = e.getPosition();
+    int hit = -1;
+    for (int t = 0; t < 4; ++t)
+        if (nameRow[t].contains(pos)) { hit = t; break; }
+    if (hit != hoverTrack_) { hoverTrack_ = hit; repaint(); }
+}
+
+void TrackHeadsView::mouseExit(const juce::MouseEvent&) {
+    if (hoverTrack_ != -1) { hoverTrack_ = -1; repaint(); }
+}
+
 void TrackHeadsView::mouseDoubleClick(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     for (int t = 0; t < 4; ++t) {
@@ -193,14 +209,14 @@ void TrackHeadsView::paintScenesCard(juce::Graphics& g) {
         g.setColour(juce::Colour(0xffcfd6e4));
         g.setFont(dispFont(10.0f));
         drawSpaced(g, "< SESSION", titleArea, 2.4f);
-        g.setColour(col::textDim);
+        g.setColour(col::textHint);
         g.setFont(monoFont(7.0f));
         drawSpaced(g, "ESC - 1-4 SWITCH DEVICE", r.removeFromTop(10), 1.6f);
     } else {
         g.setColour(col::text);
         g.setFont(dispFont(10.0f));
         drawSpaced(g, "SCENES", titleArea, 2.4f);
-        g.setColour(col::textDim);
+        g.setColour(col::textHint);
         g.setFont(monoFont(7.0f));
         const int scenes = (int)proc.conductor().session().scenes.size();
         const int tracks = (int)proc.conductor().session().tracks.size();
@@ -234,12 +250,25 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     g.fillEllipse(led[t].toFloat());
     if (audible) { g.setColour(tc.withAlpha(0.5f)); g.fillEllipse(led[t].toFloat().expanded(2.5f)); }
 
-    // name row: name + machine chip
+    // name row: name + (hover) edit glyph + machine chip
     auto nr = nameRow[t];
+    // A hovered, non-focused head lights a faint track-tinted background and an
+    // edit (✎) glyph so it's clear the whole head opens the device editor.
+    const bool hovered = hoverTrack_ == t && !focused;
+    if (hovered) {
+        g.setColour(tc.withAlpha(0.10f));
+        g.fillRoundedRectangle(nameRow[t].toFloat().expanded(3.0f, 2.0f), 6.0f);
+    }
     auto nameArea = nr.removeFromLeft(nr.getWidth() * 3 / 5);
+    auto editSlot = nameArea.removeFromRight(12);
     g.setColour(col::text);
     g.setFont(dispFont(10.0f));
     drawSpaced(g, juce::String(tr.name), nameArea, 1.6f);
+    if (hovered) {
+        g.setColour(tc);
+        g.setFont(monoFont(9.0f));
+        g.drawText("E", editSlot, juce::Justification::centred); // ✎ stand-in (ASCII font)
+    }
 
     auto chip = nr.withSizeKeepingCentre(nr.getWidth(), 12);
     g.setColour(tc.withAlpha(0.33f));

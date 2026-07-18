@@ -141,7 +141,9 @@ void SeqFooterView::paint(juce::Graphics& g) {
         const bool audible = live && cond.trackAudible(t);
 
         auto na = nowArea[t];
-        g.setColour(col::textDim);
+        // NOW label brightens to the hint tone while a clip owns the track, so
+        // "which scene is playing here" reads at a glance.
+        g.setColour(live ? col::textHint : col::textDim);
         g.setFont(monoFont(7.0f));
         drawSpaced(g, "NOW", na.removeFromTop(10), 1.8f);
 
@@ -156,8 +158,11 @@ void SeqFooterView::paint(juce::Graphics& g) {
             label = juce::String(owner + 1).paddedLeft('0', 2) + " " + juce::String(sc.name)
                   + " - " + juce::String(clip.name) + pos;
         }
-        g.setColour(audible ? tc : juce::Colour(0xff4a5266));
-        g.setFont(monoFont(9.0f));
+        // A brighter, near-white-tinted owner label when audible so it stands
+        // out from an idle track (web parity: .sq-foot-owner.on color 92%).
+        g.setColour(audible ? tc.interpolatedWith(juce::Colours::white, 0.12f)
+                            : juce::Colour(0xff4a5266));
+        g.setFont(monoFont(9.0f, audible));
         g.drawText(label, na, juce::Justification::centredLeft);
 
         // VU

@@ -7,6 +7,7 @@ public:
     explicit StandaloneDrumUiModel(DrumAudioProcessor& p) : proc(p) {}
     ParameterSource parameters() override { const auto& i = fable::drumParamInfo(); return ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     DeviceUiCapabilities capabilities() const override { return {}; }
+    bool programDirty() const override { return proc.isProgramDirty(); }
     int selectedPad() const override { return proc.getSelectedPad(); }
     void selectPad(int i) override { proc.setSelectedPad(i); }
     juce::ChangeBroadcaster& selectionChanges() override { return proc.selectionBroadcaster; }

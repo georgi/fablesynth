@@ -659,7 +659,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
         drawSpaced(g, sync, sb, 0.7f, juce::Justification::centred);
         hintRight = sb.getX() - 10;
     }
-    g.setColour(col::textDim);
+    g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
     // web "TAP LANE = NOTE · CYCLE OCT · ACCENT" (tie retired; note length
     // lives in the duration bits, surfaced by the milestone-3 piano roll)
@@ -700,10 +700,16 @@ void NoteSeqView::paint(juce::Graphics& g) {
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         const NoteSeqStep& st = steps[s];
 
-        // note lanes (.ns-cell / .ns-cell.on / .ns-cell.on.acc)
+        // note lanes (.ns-cell / .ns-cell.on / .ns-cell.on.acc) with the web's
+        // piano-style shading (SHARP_LANE in SeqPanel.tsx): the root lane is
+        // accent-tinted, natural-degree lanes sit slightly lighter than
+        // sharp-degree lanes, so the 12 chromatic rows read like a keyboard.
+        static const bool kSharpLane[12] = {false, true, false, true, false, false,
+                                            true, false, true, false, true, false};
         for (int note = 0; note < fable::SEQ_NOTE_LANES; ++note) {
             const auto b = cellBounds(s, note).toFloat();
             const bool active = st.on && st.note == note;
+            const bool rootLane = note == 0;
             if (active) {
                 if (st.acc)
                     g.setGradientFill(juce::ColourGradient(juce::Colour(0xffaef2ff), b.getX(), b.getY(),
@@ -711,11 +717,15 @@ void NoteSeqView::paint(juce::Graphics& g) {
                 else
                     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3fd0e8), b.getX(), b.getY(),
                                                            juce::Colour(0xff1a7c94), b.getX(), b.getBottom(), false));
+            } else if (rootLane) {
+                g.setColour(juce::Colour(0xff0c0f16).interpolatedWith(cyan, 0.09f));
             } else {
-                g.setColour(note == 0 ? juce::Colour(0xff0c1016) : juce::Colour(0xff0a0d13));
+                g.setColour(kSharpLane[note % 12] ? juce::Colour(0xff080a0f) : juce::Colour(0xff0c0f16));
             }
             g.fillRoundedRectangle(b, 2.0f);
-            g.setColour(active ? cyan.withAlpha(0.5f) : juce::Colours::white.withAlpha(0.045f));
+            g.setColour(active ? cyan.withAlpha(0.5f)
+                       : rootLane ? cyan.withAlpha(0.30f)
+                                  : juce::Colours::white.withAlpha(0.045f));
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
         }
 

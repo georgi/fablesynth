@@ -26,11 +26,16 @@ static const fable::StepBytes kEmptyStep{ (uint8_t)(1 << 2), 0, 1 };
 static constexpr int kPadX = 12, kHeadY = 9, kHeadH = 28;
 static constexpr int kBodyY = kHeadY + kHeadH + 10;
 static constexpr int kLegendW = 36, kLegendGap = 8;
-static constexpr int kLanesH = 143;
+static constexpr int kLanesH = 136;
 static constexpr float kColGap = 5.0f;
+// The ACC/SLD toggle lanes were cramped 14px targets; the web made them taller
+// (.bl-acc-btn/.bl-sld-btn height 28) so they're easier to hit and read. The
+// fixed JUCE grid can't double them, so they grow to 22px each by reclaiming a
+// few px from the tall note lanes (a ~5% note-lane trim for a ~57% taller
+// toggle target).
 static constexpr int kOctY = kLanesH + 5, kOctH = 20;
-static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 14;
-static constexpr int kSldY = kAccY + kAccH + 4, kSldH = 14;
+static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 22;
+static constexpr int kSldY = kAccY + kAccH + 4, kSldH = 22;
 static constexpr int kNumY = kSldY + kSldH + 4;
 
 PitchSeqView::PitchSeqView(BassUiModel& p) : proc(p) {
@@ -563,7 +568,7 @@ void PitchSeqView::paint(juce::Graphics& g) {
     drawSeqBtn(g, randBounds(), "RAND", false, 0.7f);
 
     // ---- head: hint, right-aligned (.bl-seq-hint) ----
-    g.setColour(col::textDim);
+    g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
     // web "TAP LANE = NOTE · SLIDE TIES INTO STEP FROM PREV" — ASCII middle dot
     drawSpaced(g, "TAP LANE = NOTE - SLIDE TIES INTO STEP FROM PREV",
@@ -608,15 +613,19 @@ void PitchSeqView::paint(juce::Graphics& g) {
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
         }
 
-        // octave button (.bl-oct-btn)
+        // octave button (.bl-oct-btn) — a nonzero octave is highlighted with a
+        // tinted fill + border and bold text so an octave throw is visible at a
+        // glance instead of a lone "+1"/"-1" glyph (web parity: .bl-oct-btn.set).
         {
             const auto b = octBounds(s).toFloat();
-            g.setColour(juce::Colour(0xff0c0f16));
+            const bool set = st.oct != 0;
+            g.setColour(set ? juce::Colour(0xff0c0f16).interpolatedWith(col::acN, 0.18f)
+                            : juce::Colour(0xff0c0f16));
             g.fillRoundedRectangle(b, 4.0f);
-            g.setColour(col::line);
+            g.setColour(set ? col::acN.withAlpha(0.55f) : col::line);
             g.drawRoundedRectangle(b.reduced(0.5f), 4.0f, 1.0f);
-            g.setColour(st.oct != 0 ? col::acN : col::textDim);
-            g.setFont(monoFont(9.0f));
+            g.setColour(set ? col::acN : col::textDim);
+            g.setFont(monoFont(9.0f, set));
             g.drawText(st.oct == 0 ? "0" : st.oct > 0 ? "+1" : "-1",
                        octBounds(s), juce::Justification::centred);
         }
