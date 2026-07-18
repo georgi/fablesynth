@@ -350,12 +350,12 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         if (muteBtnR[s].contains(pos))  { sceneMute(s); return; }
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
         for (int t = 0; t < kTracks; ++t) {
-            if (editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
             const bool hasClip = s < (int)scenes.size() && scenes[(size_t)s].hasClip[(size_t)t];
             // Right-click always falls through to cellRightClick below: it's
             // a no-op on filled cells and the only way to toggle pass-through
             // on empty ones, so the hover chips/affordance only claim plain
             // left-clicks.
+            if (!right && hasClip && editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
             if (!right && trashGlyph[s][t].contains(pos) && hasClip) {
                 selectCell(s, t);   // route through the selection verb: one undo
                 selDelete();        // snapshot + machine-safe clearing, already tested
@@ -400,6 +400,7 @@ void SceneGridView::mouseDrag(const juce::MouseEvent& e) {
             dragCancelled_ = false;
             dragFromS_ = pressedS_;
             dragFromT_ = pressedT_;
+            hoverCell(-1, -1); // freeze-proof: block-drag owns the paint, not hover chips
             c->startDragging("sq4-cells", this);
         }
     }

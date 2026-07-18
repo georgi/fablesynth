@@ -50,8 +50,8 @@ public:
 
     // Focus mini-strip: render only scene s's row, with a compact 2x3 rail of
     // numbered scene chips immediately to its left.
-    void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; resized(); repaint(); }
-    void clearSingleRow() { singleRow_ = false; resized(); repaint(); }
+    void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
+    void clearSingleRow() { singleRow_ = false; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
     std::function<void(int)> onRailScene;
 
     // ---- selection rectangle (editing-concept decision 4) -------------------

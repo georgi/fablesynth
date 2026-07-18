@@ -38,7 +38,6 @@ void SeqRack::enterFocus(int track, int scene) {
     sceneGrid.setSingleRow(scene);
     deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
-    hint.setVisible(false);
     deviceFocus.setVisible(true);
     focusTarget_ = 1.0f;
     if (!isShowing()) { focusT_ = 1.0f; applyLayout(); }
@@ -79,9 +78,16 @@ void SeqRack::applyLayout() {
     const int gridH = juce::roundToInt(630.0f + (96.0f - 630.0f) * t);
     sceneGrid.setBounds(18, 152, 1424, gridH);
     const int devY = 152 + gridH + 8;
-    deviceFocus.setBounds(18, devY, 1424, 906 - devY);
+    // Focus mode keeps the hint visible (it swaps to the mini-strip copy)
+    // and carves its row out of the device surface instead of hiding it;
+    // interpolate the hint's y from 858 (session) to 896 (focus).
+    const int hintY = juce::roundToInt(858.0f + 38.0f * t);
+    deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
+    // Footer bounds are set unconditionally even though it's hidden in
+    // focus mode — bounds on a hidden component are inert, so this stays
+    // simple rather than branching on focusMode_.
     footer.setBounds(18, 782, 1424, 68);
-    hint.setBounds(18, 858, 1424, 20);
+    hint.setBounds(18, hintY, 1424, 20);
 }
 
 void SeqRack::timerCallback() {

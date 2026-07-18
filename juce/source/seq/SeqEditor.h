@@ -9,6 +9,7 @@
 #include "ui/DeviceFocusView.h"
 #include "../ui/LookAndFeel.h"
 
+#include <functional>
 #include <utility>
 
 // The web's .sq-hint legend line (SeqApp.tsx): tiny contextual key/mouse help
