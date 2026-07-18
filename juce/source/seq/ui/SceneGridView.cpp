@@ -513,8 +513,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
 
     juce::String status;
     juce::Colour statusColour = col::textDim;
-    // web "LIVE · MUTED" -- ASCII middle dot substitute (BassHeader.cpp:175 convention)
-    if (muted && liveAny)      { status = "LIVE - MUTED"; statusColour = col::acB; }
+    if (muted && liveAny)      { status = juce::String::fromUTF8("LIVE \xc2\xb7 MUTED"); statusColour = col::acB; }
     else if (muted)            { status = "MUTED"; statusColour = col::acB; }
     else if (queued)           { status = "QUEUED"; statusColour = col::text; }
     else if (full)             { status = "LIVE"; statusColour = juce::Colour(0xff4dff9e); }

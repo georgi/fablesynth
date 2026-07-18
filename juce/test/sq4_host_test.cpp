@@ -30,6 +30,7 @@
 #include "../source/seq/ui/HostedDrumModel.h"
 #include "../source/seq/ui/HostedBassModel.h"
 #include "../source/seq/ui/HostedWtModel.h"
+#include "../source/ui/Theme.h"
 
 #include <algorithm>
 #include <array>
@@ -109,6 +110,13 @@ int main(int argc, char** argv) {
               "native .sqclip rejects an explicit root sentinel");
         root.deleteRecursively();
     }
+
+    // ---- Embedded fonts (visual-parity spec §1): the shared Theme must serve
+    // the web's real typefaces, not the default-font stand-ins. ----
+    check(fui::dispFont(10.0f).getTypefaceName() == "Michroma", "dispFont is embedded Michroma");
+    check(fui::monoFont(10.0f).getTypefaceName().startsWith("IBM Plex Mono"), "monoFont is embedded IBM Plex Mono");
+    check(fui::monoFont(10.0f, true).getTypefaceName().startsWith("IBM Plex Mono"), "bold monoFont is embedded IBM Plex Mono");
+    check(fui::monoFontMedium(10.0f).getTypefaceName().startsWith("IBM Plex Mono"), "monoFontMedium is embedded IBM Plex Mono");
 
     // ---- shared hosted parameter backing ---------------------------------
     // A bank uses canonical descriptors, exposes the same parameter gestures

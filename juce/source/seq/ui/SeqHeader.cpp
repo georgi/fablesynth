@@ -24,8 +24,8 @@ const bool g_seqResolverInstalled = [] {
 
 // The JUCE default font has no reliable glyph coverage for the web's
 // ▶ / ❚❚ / ■ / ◂ / ▸ symbols (and the headless snapshot test renders with
-// whatever fonts the CI box has) — ASCII stand-ins, same call BassHeader made
-// for the middle dot in its voice-mode line.
+// whatever fonts the CI box has) — ASCII stand-ins. (The embedded IBM Plex
+// Mono does cover Latin-1, so the middle dot elsewhere is real "·" now.)
 namespace {
 constexpr const char* kPlayGlyph = "PLAY", *kStopGlyph = "STOP";
 constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
@@ -348,7 +348,7 @@ void SeqHeader::paintClock(juce::Graphics& g) {
     g.setFont(monoFont(9.0f));
     juce::String bar = "BAR " + juce::String(pos.bar).paddedLeft('0', 2);
     juce::String bpm = juce::String((int)std::lround(proc.conductor().session().bpm)) + " BPM";
-    g.drawText(bar + " - " + bpm, clockLineArea, juce::Justification::centredLeft);
+    g.drawText(bar + juce::String::fromUTF8(" \xc2\xb7 ") + bpm, clockLineArea, juce::Justification::centredLeft);
 }
 
 void SeqHeader::paintScope(juce::Graphics& g) {

@@ -94,9 +94,8 @@ void SeqFooterView::paint(juce::Graphics& g) {
             for (int t = 0; t < 4; ++t) if (cond.ownerOf(t) == s) live = true;
             if (!live) continue;
             any = true;
-            // web "01 DROP A ·M" -- ASCII middle dot substitute (BassHeader.cpp:175 convention)
             juce::String txt = juce::String(s + 1).paddedLeft('0', 2) + " " + juce::String(session.scenes[(size_t)s].name)
-                              + (cond.sceneMuted(s) ? " -M" : "");
+                              + (cond.sceneMuted(s) ? juce::String::fromUTF8(" \xc2\xb7M") : juce::String());
             g.setFont(monoFont(7.0f));
             juce::GlyphArrangement glyphs;
             glyphs.addLineOfText(g.getCurrentFont(), txt, 0.0f, 0.0f);
@@ -154,9 +153,9 @@ void SeqFooterView::paint(juce::Graphics& g) {
             juce::String pos;
             const int bar = proc.trackBar[t].load();
             if (bar >= 0 && clip.bars > 0)
-                pos = " - " + juce::String(bar % clip.bars + 1) + "/" + juce::String(clip.bars);
+                pos = juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(bar % clip.bars + 1) + "/" + juce::String(clip.bars);
             label = juce::String(owner + 1).paddedLeft('0', 2) + " " + juce::String(sc.name)
-                  + " - " + juce::String(clip.name) + pos;
+                  + juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(clip.name) + pos;
         }
         // A brighter, near-white-tinted owner label when audible so it stands
         // out from an idle track (web parity: .sq-foot-owner.on color 92%).
