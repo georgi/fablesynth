@@ -131,8 +131,8 @@ function DeviceModeToggle() {
   const setDeviceMode = useSeqStore.getState().setDeviceMode;
   return (
     <div className="sq-mode-toggle" role="group" aria-label="Device view mode">
-      <button type="button" className={mode === 'seq' ? 'on' : ''} onClick={() => setDeviceMode('seq')}>SEQ</button>
-      <button type="button" className={mode === 'edit' ? 'on' : ''} onClick={() => setDeviceMode('edit')}>EDIT</button>
+      <button type="button" className={mode === 'seq' ? 'on' : ''} aria-pressed={mode === 'seq'} onClick={() => setDeviceMode('seq')}>SEQ</button>
+      <button type="button" className={mode === 'edit' ? 'on' : ''} aria-pressed={mode === 'edit'} onClick={() => setDeviceMode('edit')}>EDIT</button>
     </div>
   );
 }
