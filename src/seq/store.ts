@@ -46,6 +46,7 @@ export interface SeqStore {
   rig: SeqRig | null;
   anchor: number; // songStartFrame — beat zero of the shared timebase
   focus: { track: number; scene: number } | null;
+  deviceMode: 'seq' | 'edit'; // focus-mode device view; resets to 'seq' on track change
   clipLoadRevision: number;
   tour: number | null; // active onboarding step index, null = tour hidden
   gridSel: GridSel | null; // session-grid cell selection (anchor/head rectangle)
@@ -78,6 +79,7 @@ export interface SeqStore {
   enterFocus: (t: number, s?: number) => void;
   exitFocus: () => void;
   focusScene: (s: number) => void;
+  setDeviceMode: (m: 'seq' | 'edit') => void;
   startTour: () => void;
   advanceTour: (d: number) => void;
   endTour: () => void;
@@ -125,14 +127,14 @@ const redoStack: SessionDoc[] = [];
 
 const gainCurve = (v: number) => v * v * 1.4;
 
+// Scene to reopen on the next head-click focus (survives exit, not reload).
+let lastFocusScene = 0;
+
 export const useSeqStore = create<SeqStore>((set, get) => {
   // The scene most recently scheduled per track — the clipstart ack promotes
   // it to owner (acks don't carry a clip identity; devices hold one pending
   // slot, so the last schedule is by construction the one that started).
   const lastScheduled: Record<number, number> = {};
-
-  // Scene to reopen on the next head-click focus (survives exit, not reload).
-  let lastFocusScene = 0;
 
   const clampScene = (s: number): number =>
     Math.max(0, Math.min(get().session.scenes.length - 1, s));
@@ -280,6 +282,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     rig: null,
     anchor: 0,
     focus: null,
+    deviceMode: 'seq',
     clipLoadRevision: 0,
     tour: null,
     gridSel: null,
@@ -597,7 +600,10 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       advanceTourStep('devices');
       const st = get();
       const scene = s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene;
-      set({ focus: { track: t, scene: clampScene(scene) } });
+      set({
+        focus: { track: t, scene: clampScene(scene) },
+        deviceMode: st.focus?.track === t ? st.deviceMode : 'seq',
+      });
     },
 
     exitFocus: () => {
@@ -610,6 +616,8 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const f = get().focus;
       if (f) set({ focus: { ...f, scene: clampScene(s) } });
     },
+
+    setDeviceMode: (m) => set({ deviceMode: m }),
 
     // The tour anchors to session-grid elements, so it always exits focus
     // mode first; stepping past the last card ends it and marks it seen.
@@ -727,6 +735,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
 
 /** Reset launcher state (used by tests). */
 export function resetSeqStore(): void {
+  lastFocusScene = 0;
   clipBytes.clear();
   undoStack.length = 0;
   redoStack.length = 0;
@@ -749,6 +758,7 @@ export function resetSeqStore(): void {
     rig: null,
     anchor: 0,
     focus: null,
+    deviceMode: 'seq',
     clipLoadRevision: 0,
     tour: null,
     gridSel: null,

@@ -40,6 +40,10 @@ public:
     void saveClick();
     void selectLibrarySession(int index);
 
+    // Exact text painted in the quant value pill (extracted from paintQuant()
+    // so HintBar's session-mode copy can quote the live quant setting).
+    juce::String quantLabel() const;
+
     std::function<void()> onLibrarySessionChanged;
     juce::ComboBox& libraryForTest() { return library_; }
     void syncLibraryForTest() { refreshLibrarySelection(); }

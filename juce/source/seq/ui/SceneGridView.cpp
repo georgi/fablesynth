@@ -6,16 +6,7 @@
 
 namespace fui {
 
-// The JUCE default font has no reliable glyph coverage for the web's
-// ▶ / ■ / ▷ / ≈ / ✎ symbols (and the headless snapshot test renders with
-// whatever fonts the CI box has) — ASCII stand-ins, same call SeqHeader made.
 namespace {
-constexpr const char* kPlayGlyph = ">";
-constexpr const char* kStopGlyph = "S";
-constexpr const char* kIdleGlyph = ">";
-constexpr const char* kPassGlyph = "~";
-constexpr const char* kEditGlyph = "E";
-
 // 0.8s pulse, matches the web's sq-qpulse keyframe (opacity 0.2..1).
 float qpulse() {
     const double t = juce::Time::getMillisecondCounterHiRes() / 1000.0;
@@ -307,8 +298,8 @@ void SceneGridView::cancelActiveDrag() {
 }
 
 int SceneGridView::cellAt(juce::Point<int> pos, int& outT) const {
+    if (singleRow_) { outT = -1; return -1; } // focus strip has no clip cells
     for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
         for (int t = 0; t < kTracks; ++t)
             if (cellR[s][t].contains(pos)) { outT = t; return s; }
     }
@@ -347,17 +338,45 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
     const bool right = e.mods.isPopupMenu();
 
     if (singleRow_) {
-        for (int s = 0; s < kScenes; ++s)
-            if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
+        // Focus strip: only the back chip and the 6 scene chips are live --
+        // no scene card, no clip cells.
+        if (!right) {
+            if (backChipR.contains(pos)) { if (onExitFocus) onExitFocus(); return; }
+            for (int s = 0; s < kScenes; ++s) {
+                if (railTrigger[s].contains(pos)) { railTriggerClick(s); return; }
+                if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
+            }
+        }
+        return;
     }
 
+    const auto& scenes = proc.conductor().session().scenes;
+
     for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
         if (launchBtn[s].contains(pos)) { sceneLaunch(s); return; }
         if (muteBtnR[s].contains(pos))  { sceneMute(s); return; }
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
         for (int t = 0; t < kTracks; ++t) {
-            if (editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
+            const bool hasClip = s < (int)scenes.size() && scenes[(size_t)s].hasClip[(size_t)t];
+            // Right-click always falls through to cellRightClick below: it's
+            // a no-op on filled cells and the only way to toggle pass-through
+            // on empty ones, so the hover chips/affordance only claim plain
+            // left-clicks.
+            if (!right && hasClip && editGlyph[s][t].contains(pos)) { cellEditClick(s, t); return; }
+            if (!right && trashGlyph[s][t].contains(pos) && hasClip) {
+                selectCell(s, t);   // route through the selection verb: one undo
+                selDelete();        // snapshot + machine-safe clearing, already tested
+                return;
+            }
+            if (!right && !hasClip) {
+                // Empty-cell + affordance: top-right 24x24 corner of the cell,
+                // matching where paintEmptyCell draws the + (rf.getRight()-12,
+                // rf.getY()+12, 9x9). Opens the device focused on this cell.
+                const juce::Rectangle<int> addCorner {
+                    cellR[s][t].getRight() - 24, cellR[s][t].getY(), 24, 24
+                };
+                if (addCorner.contains(pos)) { if (onEditClip) onEditClip(s, t); return; }
+            }
             if (cellR[s][t].contains(pos)) {
                 if (right) { cellRightClick(s, t); return; }
                 // editing-concept decision 4: plain click launches AND anchors
@@ -388,6 +407,7 @@ void SceneGridView::mouseDrag(const juce::MouseEvent& e) {
             dragCancelled_ = false;
             dragFromS_ = pressedS_;
             dragFromT_ = pressedT_;
+            hoverCell(-1, -1); // freeze-proof: block-drag owns the paint, not hover chips
             c->startDragging("sq4-cells", this);
         }
     }
@@ -400,67 +420,79 @@ void SceneGridView::mouseUp(const juce::MouseEvent&) {
     didDrag_ = false;
 }
 
+void SceneGridView::hoverCell(int s, int t) {
+    if (s == hoverCellS_ && t == hoverCellT_) return;
+    hoverCellS_ = s; hoverCellT_ = t;
+    repaint();
+}
+
+void SceneGridView::mouseMove(const juce::MouseEvent& e) {
+    int t = -1;
+    const int s = cellAt(e.getPosition(), t);
+    hoverCell(s, t);
+}
+
+void SceneGridView::mouseExit(const juce::MouseEvent&) { hoverCell(-1, -1); }
+
 // ---- layout ------------------------------------------------------------------
 
 void SceneGridView::resized() {
-    for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
-        layoutRow(s);
-    }
-    if (singleRow_) layoutRail();
+    if (singleRow_) { layoutFocusStrip(); return; }
+    for (int s = 0; s < kScenes; ++s) layoutRow(s);
 }
 
 void SceneGridView::layoutRow(int s) {
-    const int y = singleRow_ ? 0 : s * 105;
-    const int rowX = singleRow_ ? 73 : 0;
-    const int sceneWidth = singleRow_ ? 200 : 218;
-    const int cellWidth = singleRow_
-        ? juce::jmax(1, (getWidth() - rowX - sceneWidth - 4 * 9) / kTracks)
-        : 292;
-    sceneCardR[s] = { rowX, y, sceneWidth, 96 };
+    const int y = s * 82;
+    constexpr int rowX = 0, sceneWidth = 218, cellWidth = 292;
+    sceneCardR[s] = { rowX, y, sceneWidth, 73 };
     for (int t = 0; t < kTracks; ++t)
-        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 96 };
+        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 73 };
 
-    // scene card: [launch] [id: num+name / status] [M] [S], then dots row.
-    auto r = sceneCardR[s].reduced(10, 8);
-    auto top = r.removeFromTop(32);
-    launchBtn[s] = top.removeFromLeft(32);
-    top.removeFromLeft(8);
-    stopBtnR[s] = top.removeFromRight(22).withSizeKeepingCentre(22, 22);
-    top.removeFromRight(6);
-    muteBtnR[s] = top.removeFromRight(22).withSizeKeepingCentre(22, 22);
-    top.removeFromRight(8);
-    idArea[s] = top;
-    r.removeFromTop(9);
-    dotsArea[s] = r.removeFromTop(16);
+    // scene card internals (web SceneRow.tsx, card-relative): launch 32x32 at
+    // (11,9); id column (num+name / status, split by paintSceneCard) at
+    // x=51 w=99; mute/stop minis 22x22 at (155,14) and (180,14); dots+count
+    // row along the bottom.
+    const auto& card = sceneCardR[s];
+    launchBtn[s] = { card.getX() + 11, card.getY() + 9, 32, 32 };
+    idArea[s] = { card.getX() + 51, card.getY() + 12, 99, 27 };
+    muteBtnR[s] = { card.getX() + 155, card.getY() + 14, 22, 22 };
+    stopBtnR[s] = { card.getX() + 180, card.getY() + 14, 22, 22 };
+    dotsArea[s] = { card.getX() + 10, card.getBottom() - 24, sceneWidth - 20, 16 };
 
-    // clip cells: a 16x16 edit-glyph corner in the top-right.
-    for (int t = 0; t < kTracks; ++t)
+    // clip cells: a 16x16 edit-glyph corner in the top-right, with the
+    // trash-glyph the same size immediately to its left (4px gap).
+    for (int t = 0; t < kTracks; ++t) {
         editGlyph[s][t] = { cellR[s][t].getRight() - 22, cellR[s][t].getY() + 6, 16, 16 };
+        trashGlyph[s][t] = { editGlyph[s][t].getX() - 4 - 16, editGlyph[s][t].getY(), 16, 16 };
+    }
 }
 
-void SceneGridView::layoutRail() {
-    railArea = { 0, 0, 64, 96 };
-    constexpr int chipWidth = 28, chipHeight = 28, gap = 4;
-    const int top = (railArea.getHeight() - (3 * chipHeight + 2 * gap)) / 2;
+// Focus strip: a "< SESSION" back chip (fixed width) followed by the 6 scene
+// chips sharing whatever width remains, laid out horizontally across the
+// full rack width (web parity: .sq-strip / .sq-strip-back / .sq-rail).
+void SceneGridView::layoutFocusStrip() {
+    constexpr int h = 30, backW = 110, gap = 8, chipGap = 6;
+    constexpr int triggerW = 22, triggerGap = 4;
+    backChipR = { 0, 0, backW, h };
+    const int railX = backW + gap;
+    const int railW = juce::jmax(1, getWidth() - railX);
+    const int chipW = juce::jmax(1, (railW - (kScenes - 1) * chipGap) / kScenes);
     for (int s = 0; s < kScenes; ++s) {
-        const int column = s % 2;
-        const int row = s / 2;
-        railChip[s] = { railArea.getX() + column * (chipWidth + gap),
-                        railArea.getY() + top + row * (chipHeight + gap),
-                        chipWidth, chipHeight };
+        const int chipX = railX + s * (chipW + chipGap);
+        railTrigger[s] = { chipX, 0, triggerW, h };
+        railChip[s] = { chipX + triggerW + triggerGap, 0,
+                         juce::jmax(1, chipW - triggerW - triggerGap), h };
     }
 }
 
 // ---- paint -------------------------------------------------------------------
 
 void SceneGridView::paint(juce::Graphics& g) {
+    if (singleRow_) { paintFocusStrip(g); return; }
     for (int s = 0; s < kScenes; ++s) {
-        if (singleRow_ && s != singleRowScene_) continue;
         paintSceneCard(g, s);
         for (int t = 0; t < kTracks; ++t) paintCell(g, s, t);
     }
-    if (singleRow_) paintRail(g);
 }
 
 void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
@@ -498,8 +530,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
     g.setColour(anyOwner ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colours::white.withAlpha(0.1f));
     g.drawRoundedRectangle(lb.reduced(0.5f), 8.0f, 1.0f);
     g.setColour(queued ? col::text.withAlpha(qpulse()) : anyOwner ? juce::Colour(0xff4dff9e) : col::acN);
-    g.setFont(monoFont(12.0f, true));
-    g.drawText(kPlayGlyph, launchBtn[s], juce::Justification::centred);
+    g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
 
     // num + name / status
     auto id = idArea[s];
@@ -513,8 +544,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
 
     juce::String status;
     juce::Colour statusColour = col::textDim;
-    // web "LIVE · MUTED" -- ASCII middle dot substitute (BassHeader.cpp:175 convention)
-    if (muted && liveAny)      { status = "LIVE - MUTED"; statusColour = col::acB; }
+    if (muted && liveAny)      { status = juce::String::fromUTF8("LIVE \xc2\xb7 MUTED"); statusColour = col::acB; }
     else if (muted)            { status = "MUTED"; statusColour = col::acB; }
     else if (queued)           { status = "QUEUED"; statusColour = col::text; }
     else if (full)             { status = "LIVE"; statusColour = juce::Colour(0xff4dff9e); }
@@ -536,7 +566,15 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
         g.drawText(txt, r, juce::Justification::centred);
     };
     drawToggle(muteBtnR[s], "M", muted, col::acB);
-    drawToggle(stopBtnR[s], kStopGlyph, false, col::acB);
+    { // stop button: same chrome as drawToggle, square icon instead of a letter
+        auto rf2 = stopBtnR[s].toFloat();
+        g.setColour(juce::Colour(0xff11141c));
+        g.fillRoundedRectangle(rf2, 5.0f);
+        g.setColour(col::line);
+        g.drawRoundedRectangle(rf2.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(col::textDim);
+        g.fillPath(iconStop(stopBtnR[s].toFloat().withSizeKeepingCentre(7.0f, 7.0f)));
+    }
 
     // dots + clip count
     auto dr = dotsArea[s];
@@ -612,6 +650,14 @@ void SceneGridView::paintEmptyCell(juce::Graphics& g, int s, int t) {
         g.setColour(juce::Colour(0xff4a5266));
         g.fillRect(juce::Rectangle<float>(7.0f, 7.0f).withCentre(centre));
     }
+
+    if (hoverCellS_ == s && hoverCellT_ == t) {
+        // + add chip (web .sq-cell-add): opens the device focused on this cell
+        // so CREATE CLIP lands exactly here.
+        g.setColour(tc.withAlpha(0.75f));
+        g.fillPath(iconPlus(juce::Rectangle<float>(9.0f, 9.0f)
+            .withCentre({ rf.getRight() - 12.0f, rf.getY() + 12.0f })));
+    }
 }
 
 void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
@@ -655,8 +701,9 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     const float bodyAlpha = muted ? 0.32f : live ? 1.0f : 0.72f;
 
-    auto content = full.reduced(9, 7);
-    auto head = content.removeFromTop(14);
+    // Cell internals (web ClipCell, cell-relative): head row y 9..24, steps
+    // preview at (10, 31, w-20, 20), progress bar at (10, 57, w-20, 4).
+    auto head = juce::Rectangle<int>(full.getX() + 9, full.getY() + 9, full.getWidth() - 18, 15);
 
     // eq / idle icon
     auto iconArea = head.removeFromLeft(16);
@@ -673,12 +720,10 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     } else if (stopping) {
         g.setColour(col::acB.withAlpha(0.65f + stopPulse() * 0.35f));
-        g.setFont(monoFont(9.0f, true));
-        g.drawText(kStopGlyph, iconArea, juce::Justification::centredLeft);
+        g.fillPath(iconStop(iconArea.toFloat().withSizeKeepingCentre(8.0f, 8.0f)));
     } else {
         g.setColour(juce::Colour(0xff4a5266).withAlpha(bodyAlpha));
-        g.setFont(monoFont(9.0f));
-        g.drawText(kIdleGlyph, iconArea, juce::Justification::centredLeft);
+        g.fillPath(iconPlay(iconArea.toFloat().withSizeKeepingCentre(7.0f, 9.0f)));
     }
     head.removeFromLeft(6);
 
@@ -690,11 +735,10 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     head.removeFromRight(4);
 
     g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
-    g.setFont(monoFont(9.5f));
+    g.setFont(monoFontMedium(9.5f));
     g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
 
-    content.removeFromTop(6);
-    auto stepsArea = content.removeFromTop(20);
+    auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
     if (!clip.bytes.empty()) {
         auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
         const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
@@ -709,8 +753,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     }
 
-    content.removeFromTop(6);
-    auto progress = content.removeFromTop(3);
+    auto progress = juce::Rectangle<int>(full.getX() + 10, full.getY() + 57, full.getWidth() - 20, 4);
     g.setColour(juce::Colours::white.withAlpha(0.06f));
     g.fillRoundedRectangle(progress.toFloat(), 1.5f);
     if (live && clip.bars > 0) {
@@ -730,11 +773,13 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     }
 
-    // edit glyph -- brief calls for hover-lit; this pass has no hover tracking,
-    // so a steady dim glyph keeps the click target visible and legible.
-    g.setColour(tc.withAlpha(0.85f));
-    g.setFont(monoFont(9.0f, true));
-    g.drawText(kEditGlyph, editGlyph[s][t], juce::Justification::centred);
+    // edit / delete chips — hover-revealed, like the web's .sq-cell-tools.
+    if (hoverCellS_ == s && hoverCellT_ == t) {
+        g.setColour(tc.withAlpha(0.90f));
+        g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
+        g.setColour(col::textDim);
+        g.fillPath(iconTrash(trashGlyph[s][t].toFloat().withSizeKeepingCentre(8.0f, 9.0f)));
+    }
 
     if (queued) {
         g.setColour(tc.withAlpha(qpulse()));
@@ -760,13 +805,32 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     }
 }
 
+void SceneGridView::paintFocusStrip(juce::Graphics& g) {
+    // Back chip: relocated from TrackHeadsView's SCENES card now that the
+    // heads row is hidden entirely in focus (web parity: .sq-strip-back).
+    auto rf = backChipR.toFloat();
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff141824), rf.getX(), rf.getY(),
+                                           juce::Colour(0xff0c0f16), rf.getX(), rf.getBottom(), false));
+    g.fillRoundedRectangle(rf, 8.0f);
+    g.setColour(col::line);
+    g.drawRoundedRectangle(rf.reduced(0.5f), 8.0f, 1.0f);
+    g.setColour(juce::Colour(0xffcfd6e4));
+    g.setFont(dispFont(9.0f));
+    drawSpaced(g, "< SESSION", backChipR, 1.8f, juce::Justification::centred);
+
+    paintRail(g);
+}
+
 void SceneGridView::paintRail(juce::Graphics& g) {
     const auto& cond = proc.conductor();
     for (int s = 0; s < kScenes; ++s) {
         auto r = railChip[s].toFloat();
         const bool current = s == singleRowScene_;
-        bool live = false;
-        for (int t = 0; t < kTracks; ++t) if (cond.ownerOf(t) == s) live = true;
+        bool live = false, queued = false;
+        for (int t = 0; t < kTracks; ++t) {
+            if (cond.ownerOf(t) == s) live = true;
+            if (cond.queueOf(t) == s) queued = true;
+        }
 
         g.setColour(current ? juce::Colour(0xff11141c) : juce::Colour(0xff0a0d13));
         g.fillRoundedRectangle(r, 4.0f);
@@ -779,6 +843,16 @@ void SceneGridView::paintRail(juce::Graphics& g) {
             g.setColour(juce::Colour(0xff4dff9e));
             g.fillEllipse(juce::Rectangle<float>(4, 4).withCentre({ r.getRight() - 5.0f, r.getY() + 5.0f }));
         }
+
+        // Trigger zone: a small filled play glyph, same colour logic as
+        // paintSceneCard's launch button (web parity: .sq-rail-launch).
+        auto tr = railTrigger[s].toFloat();
+        g.setColour(live ? juce::Colour(0xff0e3120) : juce::Colour(0xff121826));
+        g.fillRoundedRectangle(tr, 5.0f);
+        g.setColour(live ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colour(0xff232b3d));
+        g.drawRoundedRectangle(tr.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(queued ? col::text.withAlpha(qpulse()) : live ? juce::Colour(0xff4dff9e) : col::acN);
+        g.fillPath(iconPlay(tr.withSizeKeepingCentre(6.0f, 8.0f)));
     }
 }
 

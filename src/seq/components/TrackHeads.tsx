@@ -15,22 +15,14 @@ export function TrackHeads() {
   const sceneMute = useSeqStore((s) => s.sceneMute);
   const solo = useSeqStore((s) => s.solo);
   const trackVol = useSeqStore((s) => s.trackVol);
-  const focus = useSeqStore((s) => s.focus);
-  const { toggleTrackMute, toggleSolo, setTrackVol, enterFocus, exitFocus, loadTrackFactoryPatch } = useSeqStore.getState();
+  const { toggleTrackMute, toggleSolo, setTrackVol, enterFocus, loadTrackFactoryPatch } = useSeqStore.getState();
 
   return (
     <div className="sq-grid sq-heads">
-      {focus ? (
-        <button className="sq-scenes-card sq-back" onClick={() => exitFocus()}>
-          <div className="sq-scenes-title">◂ SESSION</div>
-          <div className="sq-scenes-sub">ESC · 1–4 SWITCH DEVICE · ↑↓ SCENE</div>
-        </button>
-      ) : (
-        <div className="sq-scenes-card">
-          <div className="sq-scenes-title">SCENES</div>
-          <div className="sq-scenes-sub">EMPTY CELLS STOP THEIR TRACK · ≈ PASSES THROUGH</div>
-        </div>
-      )}
+      <div className="sq-scenes-card">
+        <div className="sq-scenes-title">SCENES</div>
+        <div className="sq-scenes-sub">EMPTY CELLS STOP THEIR TRACK · ≈ PASSES THROUGH</div>
+      </div>
       {tracks.map((tr, t) => {
         const audible = playing && isTrackAudible(t, owner, trackMute, sceneMute, solo);
         const machineLabel = tr.machine === 'DR1' ? 'DR-1' : tr.machine === 'BL1' ? 'BL-1' : 'WT-1';
@@ -40,7 +32,7 @@ export function TrackHeads() {
         return (
           <div
             key={t}
-            className={`sq-track-head${focus?.track === t ? ' focused' : ''}`}
+            className="sq-track-head"
             style={{ '--tc': tr.color } as React.CSSProperties}
           >
             <span className={`sq-led${audible ? ' on' : ''}`} />
@@ -48,7 +40,7 @@ export function TrackHeads() {
               className="sq-track-id sq-track-id-btn"
               role="button"
               tabIndex={0}
-              title={focus?.track === t ? undefined : 'Open device'}
+              title="Open device"
               onClick={() => enterFocus(t)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -59,7 +51,7 @@ export function TrackHeads() {
             >
               <div className="sq-track-name-row">
                 <span className="sq-track-name">{tr.name}</span>
-                {focus?.track !== t && <span className="sq-track-editglyph" aria-hidden="true">✎</span>}
+                <span className="sq-track-editglyph" aria-hidden="true">✎</span>
                 <span className="sq-machine-chip">{machineLabel}</span>
               </div>
               <div className="sq-track-patch">{patchLabel}</div>

@@ -9,10 +9,11 @@
 // SQ-4 launcher grid — port of src/seq/components/SceneRow.tsx + seq.css.
 // Six scene rows, each a scene card (launch/mute/stop, dots, status) followed
 // by one clip cell per track. Painted directly and hit-tested in mouseDown,
-// same scheme as TrackHeadsView -- the whole slot is a single 1424x630 strip.
+// same scheme as TrackHeadsView -- the whole slot is a single 1424x478 strip
+// (SeqRack::applyLayout's session-mode scene-grid section).
 //
 // Local geometry (matches TrackHeadsView.cpp's column table): row r at
-// y = r*105, h=96; scene card x=0 w=218; clip cell for track t at
+// y = r*82, h=73; scene card x=0 w=218; clip cell for track t at
 // x=218+9+t*(292+9) w=292.
 namespace fui {
 
@@ -26,6 +27,8 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
     // Test handles (also the real click targets, wired from mouseDown).
     void cellClick(int s, int t);
@@ -34,6 +37,16 @@ public:
     void sceneLaunch(int s);
     void sceneMute(int s);
     void sceneStop(int s);
+    // Focus-strip trigger zone (railTrigger[s]) test handle -- mirrors
+    // cellClick/sceneLaunch: mouseDown's singleRow_ branch routes here too.
+    // Launches the scene (quantized) without retargeting focus.
+    void railTriggerClick(int s) { sceneLaunch(s); }
+    // Geometry test hooks for the focus-strip trigger/retarget rects.
+    juce::Rectangle<int> railTriggerR(int s) const { return railTrigger[s]; }
+    juce::Rectangle<int> railChipR(int s) const { return railChip[s]; }
+    // Sets hover state exactly as mouseMove would; (-1,-1) clears. Public so
+    // headless tests can drive the hover-revealed chips/affordance below.
+    void hoverCell(int s, int t);
 
     std::function<void(int, int)> onEditClip;
 
@@ -43,11 +56,16 @@ public:
     bool cellAudible(int s, int t) const;
     bool cellStopping(int s, int t) const;
 
-    // Focus mini-strip: render only scene s's row, with a compact 2x3 rail of
-    // numbered scene chips immediately to its left.
-    void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; resized(); repaint(); }
-    void clearSingleRow() { singleRow_ = false; resized(); repaint(); }
+    // Focus strip: the scene card + clip cells disappear entirely (the heads
+    // row is hidden too -- SeqRack::enterFocus); this component instead
+    // renders one horizontal strip: a "< SESSION" back chip followed by the
+    // 6 scene chips, spanning the full rack width.
+    void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
+    void clearSingleRow() { singleRow_ = false; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
     std::function<void(int)> onRailScene;
+    // Back chip's click target -- relocated from TrackHeadsView's SCENES
+    // card now that the heads row is invisible in focus.
+    std::function<void()> onExitFocus;
 
     // ---- selection rectangle (editing-concept decision 4) -------------------
     // Anchor/head cell pair; plain click launches AND anchors, Cmd-click
@@ -97,12 +115,13 @@ private:
     bool isPassThrough(int s, int t) const;
 
     void layoutRow(int s);
-    void layoutRail();
+    void layoutFocusStrip();
 
     void paintSceneCard(juce::Graphics&, int s);
     void paintCell(juce::Graphics&, int s, int t);
     void paintEmptyCell(juce::Graphics&, int s, int t);
     void paintFilledCell(juce::Graphics&, int s, int t);
+    void paintFocusStrip(juce::Graphics&);
     void paintRail(juce::Graphics&);
 
     // Block geometry shared by the drop verb and the drag-highlight paint:
@@ -131,6 +150,10 @@ private:
     int pressedS_ = -1, pressedT_ = -1;
     bool pressedLaunch_ = false, didDrag_ = false;
 
+    // hover state (mouseMove/mouseExit; drives hover-revealed edit/delete
+    // chips and the empty-cell + affordance, web parity with .sq-cell-tools)
+    int hoverCellS_ = -1, hoverCellT_ = -1;
+
     // active drag state
     bool dragActive_ = false, dragCancelled_ = false;
     int dragFromS_ = -1, dragFromT_ = -1;   // grabbed cell
@@ -145,9 +168,11 @@ private:
     juce::Rectangle<int> sceneCardR[kScenes], launchBtn[kScenes], muteBtnR[kScenes], stopBtnR[kScenes],
         idArea[kScenes], dotsArea[kScenes];
     // clip-cell regions
-    juce::Rectangle<int> cellR[kScenes][kTracks], editGlyph[kScenes][kTracks];
-    // rail (single-row mode)
-    juce::Rectangle<int> railArea, railChip[kScenes];
+    juce::Rectangle<int> cellR[kScenes][kTracks], editGlyph[kScenes][kTracks], trashGlyph[kScenes][kTracks];
+    // focus strip (singleRow_ mode): back chip + the 6 scene chips, each with
+    // a leading trigger zone (railTrigger[s]) ahead of the retarget chip body
+    // (railChip[s]) -- web parity with .sq-rail-launch / .sq-rail-target.
+    juce::Rectangle<int> backChipR, railChip[kScenes], railTrigger[kScenes];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SceneGridView)
 };

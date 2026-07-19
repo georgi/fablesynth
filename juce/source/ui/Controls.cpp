@@ -63,8 +63,23 @@ Knob::Knob(ParameterSource source, const juce::String& paramId,
     midNorm = fable::valueToNorm(info, 0.0f);
     label = juce::String(info.label).toUpperCase();
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-    if (modDest_ > 0) cacheMatParams(parameters, matParams_);
+    if (modDest_ > 0) {
+        cacheMatParams(parameters, matParams_);
+        // Live-dot curve rule (mirrors the web's modNormOffset): Log params
+        // sweep x·5/log2(max/min) of the arc per unit route sum, Lin sweep x.
+        if (info.curve == fable::Curve::Log && info.min > 0.0f && info.max > info.min)
+            liveNormPerX_ = 5.0f / std::log2(info.max / info.min);
+    }
     startTimerHz(30);
+}
+
+// Current MODULATED position on the knob arc (0..1), or -1 when the dot should
+// hide: no active route on this dest, or the live feed is idle (NaN).
+float Knob::liveNorm() const {
+    if (rings_.empty()) return -1.0f;
+    const float x = parameters.liveMod(modDest_);
+    if (!std::isfinite(x)) return -1.0f;
+    return clamp01(norm() + x * liveNormPerX_);
 }
 
 // Cheap signature of this dest's active slots (slot + src + quantized amt), so
@@ -101,6 +116,13 @@ void Knob::timerCallback() {
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
+        // Repaint for the live dot only on a meaningful move (~sub-pixel on the
+        // arc) or a shown/hidden flip — idle knobs never repaint per tick.
+        const float ln = liveNorm();
+        if ((ln < 0) != (lastLiveNorm_ < 0) || std::abs(ln - lastLiveNorm_) > 0.004f) {
+            lastLiveNorm_ = ln;
+            dirty = true;
+        }
     }
     if (dirty) repaint();
 }
@@ -268,6 +290,23 @@ void Knob::paint(juce::Graphics& g) {
             g.setColour(c);
             g.strokePath(ringArc, juce::PathStrokeType(ringThk * 0.7f,
                          juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+        }
+    }
+
+    // live modulation dot: the current MODULATED position (base + the sounding
+    // voice's route sums) on the value-arc radius, tinted with the first route's
+    // source colour — the web Knob's .k-live circle. liveNorm() is -1 while the
+    // feed is idle, so a released voice never leaves a stale frozen dot.
+    if (modDest_ > 0) {
+        const float ln = liveNorm();
+        if (ln >= 0) {
+            const float lr = degToRad(A0 + (A1 - A0) * ln);
+            const juce::Point<float> dp(cx + arcR * std::sin(lr), cy - arcR * std::cos(lr));
+            const float dotR = 3.4f * scale, halo = 1.4f * scale;
+            g.setColour(col::knobBody); // dark outline so it reads against the arc/rings
+            g.fillEllipse(dp.x - dotR - halo, dp.y - dotR - halo, (dotR + halo) * 2, (dotR + halo) * 2);
+            g.setColour(modSourceColour(rings_[0].src));
+            g.fillEllipse(dp.x - dotR, dp.y - dotR, dotR * 2, dotR * 2);
         }
     }
 

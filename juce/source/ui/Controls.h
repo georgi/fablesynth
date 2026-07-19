@@ -51,6 +51,7 @@ private:
     float norm() const { return param ? param->getValue() : 0.0f; }
     void  rebuildRings();                 // refresh rings_ from active slots
     juce::uint64 ringSignature() const;   // cheap hash of this dest's active slots
+    float liveNorm() const;               // modulated arc position, -1 = dot hidden
 
     ParameterSource parameters;
     juce::String id;
@@ -74,6 +75,11 @@ private:
     juce::uint64 lastRingSig_ = ~(juce::uint64)0;
     // Cached mat src/dst/amt params (16 slots x 3 = 48), indexed [slot-1][field].
     juce::RangedAudioParameter* matParams_[16][3] = {};
+    // ---- live modulation dot (web Knob .k-live parity) ----
+    // Route sum x -> normalized arc offset: Lin folds p + x·(hi−lo) so the
+    // offset IS x; Log folds p·2^(x·5) so it's x·5/log2(max/min).
+    float liveNormPerX_ = 1.0f;
+    float lastLiveNorm_ = -1.0f;          // timer change-cache; -1 = hidden
 };
 
 // ---- enum stepper  (◂ VALUE ▸) -------------------------------------------

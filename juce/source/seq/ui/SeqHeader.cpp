@@ -22,15 +22,6 @@ const bool g_seqResolverInstalled = [] {
 }();
 } // namespace
 
-// The JUCE default font has no reliable glyph coverage for the web's
-// ▶ / ❚❚ / ■ / ◂ / ▸ symbols (and the headless snapshot test renders with
-// whatever fonts the CI box has) — ASCII stand-ins, same call BassHeader made
-// for the middle dot in its voice-mode line.
-namespace {
-constexpr const char* kPlayGlyph = "PLAY", *kStopGlyph = "STOP";
-constexpr const char* kPrevGlyph = "<", *kNextGlyph = ">";
-} // namespace
-
 SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
     juce::String lastFamily;
     const auto& sessions = fable::factorySessionLibrary();
@@ -212,46 +203,55 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 
 // ---- layout --------------------------------------------------------------
 
+// Header internals, absolute-positioned to the calibration table
+// (.superpowers/sdd/typography-calibration.md, "Header internals"), converted
+// to header-local coordinates (web absolute minus the header's own rack
+// origin (18,14)). Flow order left-to-right: logo, play, library/session
+// select, quant, clock, [gap], scope, LOAD/SAVE (JUCE-only, parked in the
+// web's narrow help-icon slot), master knobs.
+// Re-pitched for the VST's half-height 44px header (2026-07-18, matching the
+// web's bb7f768 pass): every group is a compact version of its old self,
+// re-centered on the header's y=22 midline. x positions are unchanged from
+// the web-derived table (only y/height move, and the knob circles/logo
+// shrink to match the web's smaller right-side controls).
 void SeqHeader::resized() {
-    auto r = getLocalBounds().reduced(16, 8); // content row, ~1392 x 50
+    logoArea = { 17, 12, 175, 20 };
 
-    logoArea = r.removeFromLeft(190);
-    r.removeFromLeft(20);
+    playBtn = { 216, 8, 44, 28 };
 
-    playBtn = r.removeFromLeft(62).withSizeKeepingCentre(62, 32);
-    r.removeFromLeft(20);
+    auto libGroup = juce::Rectangle<int>(274, 9, 208, 26);
+    libraryLabelArea = libGroup.removeFromLeft(54);
+    libGroup.removeFromLeft(6);
+    library_.setBounds(libGroup);
 
-    quantTagArea = r.removeFromLeft(40).withSizeKeepingCentre(40, 16);
-    r.removeFromLeft(4);
-    quantPrevBtn = r.removeFromLeft(18).withSizeKeepingCentre(18, 18);
-    r.removeFromLeft(4);
-    quantValArea = r.removeFromLeft(56).withSizeKeepingCentre(56, 20);
-    r.removeFromLeft(4);
-    quantNextBtn = r.removeFromLeft(18).withSizeKeepingCentre(18, 18);
-    r.removeFromLeft(20);
+    auto quantGroup = juce::Rectangle<int>(496, 11, 139, 21);
+    quantTagArea = quantGroup.removeFromLeft(40).withSizeKeepingCentre(40, 16);
+    quantGroup.removeFromLeft(4);
+    quantPrevBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
+    quantGroup.removeFromLeft(4);
+    quantValArea = quantGroup.removeFromLeft(56).withSizeKeepingCentre(56, 20);
+    quantGroup.removeFromLeft(4);
+    quantNextBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
 
-    auto clockArea = r.removeFromLeft(130);
-    beatsArea = clockArea.removeFromTop(clockArea.getHeight() / 2);
+    auto clockArea = juce::Rectangle<int>(649, 10, 112, 23);
+    beatsArea = clockArea.removeFromTop(8); // beat-dot row
     clockLineArea = clockArea;
 
-    auto knobsArea = r.removeFromRight(90).withSizeKeepingCentre(90, 44);
-    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(40, 44);
-    volKnob = knobsArea.withSizeKeepingCentre(40, 44);
-    r.removeFromRight(14);
-    scopeArea = r.removeFromRight(190).withSizeKeepingCentre(190, 46);
-    r.removeFromRight(14);
+    scopeArea = { 1073, 9, 190, 26 };
 
-    // LOAD/SAVE (JUCE-only surface, no web equivalent) sit right of the clock,
-    // in the same flexible middle gap the clock area leaves before the scope.
-    saveBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
-    r.removeFromRight(6);
-    loadBtn = r.removeFromRight(48).withSizeKeepingCentre(48, 26);
+    // LOAD/SAVE (JUCE-only surface, no web equivalent): a compact stacked
+    // pair -- side-by-side doesn't leave enough width per button to read
+    // "LOAD"/"SAVE" at this font, so this stays a tight 2x15 stack,
+    // re-centered for the 44px header.
+    auto helpSlot = juce::Rectangle<int>(1266, 5, 48, 34);
+    loadBtn = helpSlot.removeFromTop(15);
+    helpSlot.removeFromTop(4);
+    saveBtn = helpSlot;
 
-    r.removeFromRight(14);
-    auto libraryArea = r.removeFromRight(224).withSizeKeepingCentre(224, 28);
-    libraryLabelArea = libraryArea.removeFromLeft(54);
-    libraryArea.removeFromLeft(6);
-    library_.setBounds(libraryArea);
+    // Master knobs: 24px circles (paintKnob) + a tiny label, centered in 44.
+    auto knobsArea = juce::Rectangle<int>(1317, 5, 90, 34);
+    swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 34);
+    volKnob = knobsArea.withSizeKeepingCentre(44, 34);
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -259,13 +259,27 @@ void SeqHeader::resized() {
 void SeqHeader::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
-    // logo: FABLE (white) SEQ (amber) SQ-4 (dim tag) -- web .sq-logo
+    // logo: FABLE (white) SEQ (amber) SQ-4 (dim tag) -- web .sq-logo. FABLE+SEQ
+    // read as one continuous word (no gap between them), so the SEQ segment's
+    // x must be measured off FABLE's actual rendered width, not a hardcoded
+    // guess -- withPointHeight (commit 428bbce) sizes the embedded Michroma
+    // by em, which is wider per-point than the old withHeight, and a stale
+    // fixed 60px/46px split let the segments overlap.
     auto lb = logoArea;
-    g.setFont(dispFont(15.0f));
+    const auto logoFont = dispFont(14.0f);
+    g.setFont(logoFont);
+    auto spacedWidth = [&](const juce::String& s, float tracking) {
+        float total = 0;
+        for (int i = 0; i < s.length(); ++i)
+            total += juce::GlyphArrangement::getStringWidth(logoFont, s.substring(i, i + 1)) + tracking;
+        return total - tracking;
+    };
+    const int fableW = (int)std::ceil(spacedWidth("FABLE", 1.2f));
+    const int seqW = (int)std::ceil(spacedWidth("SEQ", 1.2f));
     g.setColour(col::text);
-    drawSpaced(g, "FABLE", lb.removeFromLeft(60), 1.2f);
+    drawSpaced(g, "FABLE", lb.removeFromLeft(fableW), 1.2f);
     g.setColour(col::acB);
-    drawSpaced(g, "SEQ", lb.removeFromLeft(46), 1.2f);
+    drawSpaced(g, "SEQ", lb.removeFromLeft(seqW), 1.2f);
     lb.removeFromLeft(10);
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
@@ -296,7 +310,13 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
         g.setFont(monoFont(10.0f));
         g.drawText(txt, r, juce::Justification::centred);
     };
-    drawBtn(playBtn, playing ? kStopGlyph : kPlayGlyph, playing);
+    // drawBtn keeps drawing text for other buttons; the transport gets an icon.
+    drawBtn(playBtn, "", playing);
+    {
+        auto ir = playBtn.toFloat().withSizeKeepingCentre(11.0f, 11.0f);
+        g.setColour(playing ? accentA() : col::text); // same fg colours drawBtn used for its text
+        g.fillPath(playing ? iconStop(ir) : iconPlay(ir.reduced(1.0f, 0.0f)));
+    }
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
 }
@@ -306,20 +326,19 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
     g.setFont(monoFont(8.0f));
     drawSpaced(g, "QUANT", quantTagArea, 1.6f);
 
-    auto drawStep = [&](juce::Rectangle<int> r, const char* txt) {
+    auto drawStep = [&](juce::Rectangle<int> r, bool pointsRight) {
         g.setColour(juce::Colour(0xff11141c));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
         g.setColour(col::line);
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
         g.setColour(col::textDim);
-        g.setFont(monoFont(9.0f));
-        g.drawText(txt, r, juce::Justification::centred);
+        g.strokePath(iconChevron(r.toFloat().withSizeKeepingCentre(5.0f, 9.0f), pointsRight),
+                     juce::PathStrokeType(1.6f));
     };
-    drawStep(quantPrevBtn, kPrevGlyph);
-    drawStep(quantNextBtn, kNextGlyph);
+    drawStep(quantPrevBtn, false);
+    drawStep(quantNextBtn, true);
 
-    const auto q = proc.conductor().quant();
-    const char* label = q == fable::Quant::Bar ? "1 BAR" : q == fable::Quant::Quarter ? "1/4" : "OFF";
+    const auto label = quantLabel();
     g.setColour(juce::Colour(0xff0a0d13));
     g.fillRoundedRectangle(quantValArea.toFloat(), 4.0f);
     g.setColour(col::line);
@@ -327,6 +346,11 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
     g.setColour(col::acB);
     g.setFont(monoFont(10.0f));
     g.drawText(label, quantValArea, juce::Justification::centred);
+}
+
+juce::String SeqHeader::quantLabel() const {
+    const auto q = proc.conductor().quant();
+    return q == fable::Quant::Bar ? "1 BAR" : q == fable::Quant::Quarter ? "1/4" : "OFF";
 }
 
 void SeqHeader::paintClock(juce::Graphics& g) {
@@ -348,7 +372,7 @@ void SeqHeader::paintClock(juce::Graphics& g) {
     g.setFont(monoFont(9.0f));
     juce::String bar = "BAR " + juce::String(pos.bar).paddedLeft('0', 2);
     juce::String bpm = juce::String((int)std::lround(proc.conductor().session().bpm)) + " BPM";
-    g.drawText(bar + " - " + bpm, clockLineArea, juce::Justification::centredLeft);
+    g.drawText(bar + juce::String::fromUTF8(" \xc2\xb7 ") + bpm, clockLineArea, juce::Justification::centredLeft);
 }
 
 void SeqHeader::paintScope(juce::Graphics& g) {
@@ -376,7 +400,7 @@ void SeqHeader::paintScope(juce::Graphics& g) {
 }
 
 void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce::String& label, float v) {
-    const float d = 22.0f;
+    const float d = 24.0f;
     auto circle = juce::Rectangle<float>(0, 0, d, d).withCentre(
         juce::Point<float>((float)r.getCentreX(), (float)r.getY() + d * 0.5f));
 
@@ -405,9 +429,9 @@ void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce:
     g.setColour(col::ptr);
     g.drawLine({ c, tip }, 1.6f);
 
-    auto labelArea = r.withY(r.getY() + (int)d + 2).withHeight(10);
+    auto labelArea = r.withY(r.getY() + (int)d + 2).withHeight(8);
     g.setColour(col::textDim);
-    g.setFont(monoFont(7.0f));
+    g.setFont(monoFont(6.0f));
     g.drawText(label, labelArea, juce::Justification::centred);
 }
 

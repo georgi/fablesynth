@@ -220,8 +220,9 @@ export function DeviceView() {
 }
 
 function DrumPanels() {
+  const mode = useSeqStore((s) => s.deviceMode);
   return (
-    <div id="drum-rack" className="sq-hosted-rack">
+    <div id="drum-rack" className="sq-hosted-rack" data-mode={mode}>
       <div className="dr-main">
         <div className="dr-left">
           <div id="dr-pads"><PadGrid /></div>
@@ -234,42 +235,51 @@ function DrumPanels() {
             <SampleSection />
             <NoiseSection />
           </div>
-          <div id="dr-editrow">
-            <PitchEnvPanel />
-            <AmpEnvPanel />
-            <FilterSection />
-            <ModPanel />
-          </div>
+          {mode === 'edit' && (
+            <div id="dr-editrow">
+              <PitchEnvPanel />
+              <AmpEnvPanel />
+              <FilterSection />
+              <ModPanel />
+            </div>
+          )}
         </div>
       </div>
-      <div id="dr-fxrack"><FxRack /></div>
-      <div id="dr-stepseq"><StepSeq /></div>
+      {mode === 'edit' && <div id="dr-fxrack"><FxRack /></div>}
+      {mode === 'seq' && <div id="dr-stepseq"><StepSeq /></div>}
     </div>
   );
 }
 
 function BassPanels({ bars }: { bars?: number }) {
+  const mode = useSeqStore((s) => s.deviceMode);
   return (
-    <div id="bass-rack" className="sq-hosted-rack">
+    <div id="bass-rack" className="sq-hosted-rack" data-mode={mode}>
       <div id="bl-editrow">
         <BassOscSection />
         <SubSection />
-        <BassFilterSection />
-        <BassEnvPanel />
+        {mode === 'edit' && <BassFilterSection />}
+        {mode === 'edit' && <BassEnvPanel />}
       </div>
       <div id="bl-modrow">
-        <BassLfoPanel />
-        <AccentPanel />
-        <KeysPanel />
+        {mode === 'edit' ? (
+          <>
+            <BassLfoPanel />
+            <AccentPanel />
+          </>
+        ) : (
+          <KeysPanel />
+        )}
       </div>
-      <div id="bl-seq"><PitchSeq bars={bars} /></div>
-      <div id="bl-fxrack"><BassFxRack /></div>
+      {mode === 'seq' && <div id="bl-seq"><PitchSeq bars={bars} /></div>}
+      {mode === 'edit' && <div id="bl-fxrack"><BassFxRack /></div>}
     </div>
   );
 }
 
 function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) {
   const focus = useSeqStore((s) => s.focus);
+  const mode = useSeqStore((s) => s.deviceMode);
   const polySteps = useMemo<SeqStep[][] | undefined>(() => {
     if (!clip) return undefined;
     const bytes = b64ToBytes(clip.pattern);
@@ -313,20 +323,26 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
     useSeqStore.getState().updateClipBytes(focus.scene, focus.track, bytes, clip.bars);
   };
   return (
-    <div id="rack" className="sq-hosted-rack">
+    <div id="rack" className="sq-hosted-rack" data-mode={mode}>
       <div className="panels">
         <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
         <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
         <UtilPanel />
-        <FilterPanel />
-        <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
-        <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
-        <LfoPanel />
-        <MatrixPanel />
-        <FxPanel />
-        <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} />
+        {mode === 'edit' && (
+          <>
+            <FilterPanel />
+            <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
+            <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
+            <LfoPanel />
+            <MatrixPanel />
+            <FxPanel />
+          </>
+        )}
+        {mode === 'seq' && (
+          <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} />
+        )}
       </div>
-      <KeyboardBar />
+      {mode === 'seq' && <KeyboardBar />}
     </div>
   );
 }

@@ -15,6 +15,7 @@
 
 #include <array>
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <map>
 #include <unordered_map>
@@ -163,6 +164,9 @@ public:
     int bassCurrentSemitone() const { return bassVizSemi_.load(); }
     float wtVizPosition(int track, int oscillator) const;
     int wtVoiceCount(int track) const;
+    // Live route sum for a WT track's MOD_DESTS index; NaN while idle so the
+    // hosted knob live dots hide (same contract as FableAudioProcessor).
+    float wtLiveMod(int track, int dest) const;
     double preparedSampleRate() const { return preparedSampleRate_; }
 
     // Test hook: snapshot of a track's live audio-thread param array. Used to
@@ -332,6 +336,8 @@ private:
     std::atomic<int> bassVizSemi_ { -100 };
     std::atomic<float> wtVizA_[2] {{ -1 }, { -1 }}, wtVizB_[2] {{ -1 }, { -1 }};
     std::atomic<int> wtVoices_[2] {{ 0 }, { 0 }};
+    std::array<std::array<std::atomic<float>, fable::NUM_MOD_DESTS>, 2> wtLiveMod_{};
+    std::atomic<bool> wtLiveModAny_[2] {{ false }, { false }};
 
     // cached raw params for the message-thread poll (swing / bpm / vol0..3).
     std::atomic<float>* rawSwing_ = nullptr;

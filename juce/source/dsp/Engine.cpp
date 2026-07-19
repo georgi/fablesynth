@@ -814,7 +814,9 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     // existing math; per-param dests sum into modAccum[targetPid] and are folded
     // into the pm_ snapshot below via the curve rules.
     double mPitch = 0, mAmp = 0, mPan = 0;
-    double modAccum[NUM_PARAMS] = {0};
+    double* modAccum = modAccum_;
+    std::fill(modAccum_, modAccum_ + NUM_PARAMS, 0.0);
+    modAnyRoute_ = false;
     for (int s = 1; s <= MOD_MATRIX_SIZE; s++) {
         int b = matBase(s);
         int src = (int)p_[slot(b + MAT_SRC)];
@@ -827,7 +829,7 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
             case DST_PITCH: mPitch += x; break;
             case DST_AMP:   mAmp += x; break;
             case DST_PAN:   mPan += x; break;
-            default:        modAccum[target] += x; break;
+            default:        modAccum[target] += x; modAnyRoute_ = true; break;
         }
     }
 
@@ -1005,11 +1007,24 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
         renderVoice(v, L, R, n);
         // Prefer held voices for the POS viz, like the worklet's `if (v.gate ||
         // !viz)`: release tails must not yank the indicator off the held note.
-        if (v.gate || !vizSet) { vizA = v.oA.posSm; vizB = v.oB.posSm; vizSet = true; }
+        // The live-mod snapshot rides the same selection so the knob dots and
+        // the wavetable highlight always describe the same voice.
+        if (v.gate || !vizSet) { vizA = v.oA.posSm; vizB = v.oB.posSm; vizSet = true; snapshotVizMod(); }
         act++;
     }
     vizActive = act;
-    if (act == 0) { vizA = -1; vizB = -1; } // idle -> let the UI fall back to the knob
+    if (act == 0) { vizA = -1; vizB = -1; vizModAny = false; } // idle -> hide indicators
+}
+
+// Copy the just-rendered voice's per-destination route sums (modAccum_, still
+// valid right after its renderVoice) into the vizMod snapshot the processor
+// publishes. Globals (PITCH/AMP/PAN, negative sentinels) have no owning knob.
+void Engine::snapshotVizMod() {
+    for (int d = 1; d < NUM_MOD_DESTS; d++) {
+        const int t = dstTarget(d);
+        vizMod[d] = t >= 0 ? modAccum_[t] : 0.0;
+    }
+    vizModAny = modAnyRoute_;
 }
 
 void Engine::render(float* L, float* R, int n) {

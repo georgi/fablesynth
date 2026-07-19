@@ -9,7 +9,7 @@ export function SceneRail() {
   const focus = useSeqStore((s) => s.focus)!;
   const owner = useSeqStore((s) => s.owner);
   const queue = useSeqStore((s) => s.queue);
-  const { focusScene } = useSeqStore.getState();
+  const { focusScene, launchScene } = useSeqStore.getState();
 
   return (
     <div className="sq-rail">
@@ -17,15 +17,23 @@ export function SceneRail() {
         const live = Object.values(owner).includes(s);
         const queued = Object.values(queue).includes(s);
         return (
-          <button
-            key={s}
-            className={`sq-rail-chip${focus.scene === s ? ' active' : ''}${live ? ' live' : ''}${queued ? ' queued' : ''}`}
-            onClick={() => focusScene(s)}
-            title={sc.name}
-          >
-            {pad2(s + 1)}
-            <span className="sq-rail-dot" />
-          </button>
+          <div key={s} className={`sq-rail-chip${focus.scene === s ? ' active' : ''}`}>
+            <button
+              className={`sq-rail-launch${live ? ' live' : ''}${queued ? ' queued' : ''}`}
+              onClick={() => launchScene(s)}
+              title={`Launch ${sc.name}`}
+            >
+              ▶
+            </button>
+            <button
+              className="sq-rail-target"
+              onClick={() => focusScene(s)}
+              title={sc.name}
+            >
+              {pad2(s + 1)}
+              <span className={`sq-rail-dot${live ? ' live' : ''}${queued ? ' queued' : ''}`} />
+            </button>
+          </div>
         );
       })}
     </div>

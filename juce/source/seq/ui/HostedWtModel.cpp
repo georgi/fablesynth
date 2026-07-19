@@ -46,7 +46,12 @@ void HostedWtModel::setTarget(int scene) {
     for (int bar = 0; bar < clipBars(); ++bar) chain_.push_back(bar);
 }
 
-ParameterSource HostedWtModel::parameters() { return parameters_.source(); }
+ParameterSource HostedWtModel::parameters() {
+    auto source = parameters_.source();
+    // Feed the hosted knob live-mod dots from this track's engine atomics.
+    source.setLiveModLookup([&p = proc_, t = track_](int dest) { return p.wtLiveMod(t, dest); });
+    return source;
+}
 
 DeviceUiCapabilities HostedWtModel::capabilities() const {
     const auto* target = targetClip();

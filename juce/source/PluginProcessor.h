@@ -8,6 +8,7 @@
 #include "dsp/UserTables.h"
 #include "ui/ProgramDirty.h"
 #include "ui/WtUiModel.h"
+#include <limits>
 
 // FableSynth VST/AU processor. Owns the JUCE-independent DSP core (Engine + Fx)
 // and bridges the APVTS parameter tree + MIDI to it.
@@ -49,6 +50,16 @@ public:
     // audio thread via atomics (-1 = idle).
     float getVizPos(int osc) const { return (osc == 0 ? vizPosA : vizPosB).load(); }
     int getTablesGeneration() const { return tablesGen.load(); }
+
+    // Live route sum for a MOD_DESTS index (engine vizMod, published per block).
+    // NaN while idle / no routed voice — the knob live dots hide on NaN, so a
+    // released note never leaves a stale frozen indicator (web telemetry parity).
+    float getLiveMod(int dest) const {
+        if (dest <= 0 || dest >= fable::NUM_MOD_DESTS
+            || !liveModAny_.load(std::memory_order_relaxed))
+            return std::numeric_limits<float>::quiet_NaN();
+        return liveMod_[(size_t)dest].load(std::memory_order_relaxed);
+    }
 
     // Full transport snapshot for the LFO displays (tempo + position + running).
     // The synced-LFO dot tracks ppq while playing so it sits on the beat grid.
@@ -115,6 +126,8 @@ private:
     std::vector<fable::UserTable> userTables;    // imported / drawn tables
     std::atomic<int> tablesGen{0};
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
+    std::array<std::atomic<float>, fable::NUM_MOD_DESTS> liveMod_{};
+    std::atomic<bool> liveModAny_{false};
     std::atomic<float> hostBpm{120.0f};
     std::atomic<double> hostPpq{0.0};
     std::atomic<bool> hostPlaying{false};

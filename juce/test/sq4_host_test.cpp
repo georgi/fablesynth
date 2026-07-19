@@ -30,6 +30,7 @@
 #include "../source/seq/ui/HostedDrumModel.h"
 #include "../source/seq/ui/HostedBassModel.h"
 #include "../source/seq/ui/HostedWtModel.h"
+#include "../source/ui/Theme.h"
 
 #include <algorithm>
 #include <array>
@@ -109,6 +110,15 @@ int main(int argc, char** argv) {
               "native .sqclip rejects an explicit root sentinel");
         root.deleteRecursively();
     }
+
+    // ---- Embedded fonts (visual-parity spec §1): the shared Theme must serve
+    // the web's real typefaces, not the default-font stand-ins. ----
+    check(fui::dispFont(10.0f).getTypefaceName() == "Michroma", "dispFont is embedded Michroma");
+    check(fui::monoFont(10.0f).getTypefaceName().startsWith("IBM Plex Mono"), "monoFont is embedded IBM Plex Mono");
+    check(fui::monoFont(10.0f, true).getTypefaceName().startsWith("IBM Plex Mono"), "bold monoFont is embedded IBM Plex Mono");
+    check(fui::monoFontMedium(10.0f).getTypefaceName().startsWith("IBM Plex Mono"), "monoFontMedium is embedded IBM Plex Mono");
+    check(fui::monoFont(10.0f).getHeight() > 12.0f, "monoFont sizes by em (point height)");
+    check(fui::dispFont(10.0f).getHeight() > 13.5f, "dispFont sizes by em (point height)");
 
     // ---- shared hosted parameter backing ---------------------------------
     // A bank uses canonical descriptors, exposes the same parameter gestures
@@ -378,12 +388,13 @@ int main(int argc, char** argv) {
     // ---- 8. Editor: correct logical size, paints without crashing, snapshot PNG. ----
     auto* ed = p.createEditor();
     check(ed != nullptr, "createEditor returns non-null");
-    ed->setSize(1460, 920);
-    juce::Image img(juce::Image::ARGB, 1460, 920, true);
+    ed->setSize(SeqRack::LW, SeqRack::LH); // 1460 x 722 (half-height header, re-pitched session rack)
+    juce::Image img(juce::Image::ARGB, SeqRack::LW, SeqRack::LH, true);
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
-    check(img.getPixelAt(4, 900).getAlpha() == 255, "editor background pixel opaque",
-          img.getPixelAt(4, 900).getAlpha());
+    // (4, 718): just inside the re-pitched 722-tall rack, below the footer.
+    check(img.getPixelAt(4, 718).getAlpha() == 255, "editor background pixel opaque",
+          img.getPixelAt(4, 718).getAlpha());
 
     // ---- 9. Header interactions drive the conductor. ----
     std::printf("\n== header ==\n");
@@ -578,6 +589,22 @@ int main(int argc, char** argv) {
     auto* ed2 = seqEditor;
     auto& focusView = ed2->deviceFocus();
 
+    // Focus mode grows the editor window (SeqEditor::growToFocusSize) so the
+    // native device body renders near 1:1 -- the `img` snapshot canvas above
+    // was sized for the session rack (SeqRack::LW/LH) and is too short once
+    // focus mode is entered. Focus-mode snapshots use a canvas matching the
+    // editor's *current* (now taller) size instead.
+    auto snapshotFocusedEditor = [&](int argvIndex) {
+        juce::Image shot(juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+        { juce::Graphics g(shot); ed->paintEntireComponent(g, true); }
+        if (argc > argvIndex) {
+            juce::File out(argv[argvIndex]);
+            out.deleteFile();
+            juce::FileOutputStream os(out);
+            juce::PNGImageFormat().writeImageToStream(shot, os);
+        }
+    };
+
     ed2->enterFocus(0, 2);            // DRUMS, DROP A
     focusView.clipSourceForTest().setSelectedId(2, juce::sendNotificationSync);
     check(ed2->focus() == std::make_pair(0, 2), "enterFocus(0,2) targets scene 2 / track 0");
@@ -663,6 +690,30 @@ int main(int argc, char** argv) {
     focusView.clipSourceForTest().setSelectedId(2, juce::sendNotificationSync);
     check(ed2->focus() == std::make_pair(1, 2), "switching heads keeps the scene");
 
+    // Focus strip trigger zones (railTrigger[s]): geometry contract -- each
+    // sits ahead of its retarget chip (railChip[s]) and stays inside the
+    // strip -- then a routed click (railTriggerClick, the same handle
+    // mouseDown's singleRow_ branch calls) launches without retargeting.
+    bool railTriggersNonEmpty = true, railTriggersAheadOfChips = true;
+    for (int s = 0; s < 6; ++s) {
+        if (grid.railTriggerR(s).getWidth() <= 0 || grid.railTriggerR(s).getHeight() <= 0)
+            railTriggersNonEmpty = false;
+        if (grid.railTriggerR(s).getRight() > grid.railChipR(s).getX())
+            railTriggersAheadOfChips = false;
+    }
+    check(railTriggersNonEmpty, "every railTrigger(s) has non-empty geometry");
+    check(railTriggersAheadOfChips, "every railTrigger(s) sits ahead of its retarget chip");
+    grid.railTriggerClick(3);                      // DROP B, does not retarget focus
+    check(p.conductor().queueOf(0) == 3 && p.conductor().queueOf(3) == 3,
+          "railTriggerClick(3) queues every track of scene 3 (sceneLaunch semantics)");
+    check(ed2->focus() == std::make_pair(1, 2),
+          "railTriggerClick does not retarget the focused scene/track");
+    renderRms(p, buf, 800); p.drainAcks();
+    footer.stopAllClick();
+    renderRms(p, buf, 1200); p.drainAcks();
+    check(p.conductor().ownerOf(0) == -2, "stopAllClick clears the rail-trigger launch",
+          p.conductor().ownerOf(0));
+
     check(focusView.activeBody() == fui::DeviceFocusView::ActiveBody::bass,
           "head switch replaces DR-1 with the native BL-1 body");
     const int bassProgram = focusView.bassModelForTest().currentProgram();
@@ -709,13 +760,7 @@ int main(int argc, char** argv) {
     check(noteByte(1) == (7 | 0x80), "native BL-1 writes the pitch lane + slide bit", noteByte(1));
     check(noteByte(2) == 0, "native BL-1 writes octave as oct+1", noteByte(2));
 
-    { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // paints the note grid
-    if (argc > 3) { // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
-        juce::File out(argv[3]);
-        out.deleteFile();
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
+    snapshotFocusedEditor(3); // BASS / ACID 303 focus: the 12-lane pitch + OCT/ACC/TIE editor
 
     // Locked (>4-bar) clip: view-only. Edits and the bars stepper are ignored,
     // the clip keeps its length, and the lock-banner paint path (no chips) runs.
@@ -738,13 +783,7 @@ int main(int argc, char** argv) {
     check(p.conductor().session().scenes[4].clips[3].bytes == locked0,
           "native device edits are ignored on an over-four-bar view-only clip");
     check(p.conductor().session().scenes[4].clips[3].bars == 8, "locked clip keeps its 8 bars");
-    { juce::Graphics g(img); ed->paintEntireComponent(g, true); } // lock-banner paint, no chips
-    if (argc > 4) {
-        juce::File out(argv[4]);
-        out.deleteFile();
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
+    snapshotFocusedEditor(4); // lock-banner paint, no chips
 
     ed2->enterFocus(1, 2);                 // back to BASS / DROP A for the following checks
     ed2->focusScene(4);
@@ -775,13 +814,7 @@ int main(int argc, char** argv) {
     check(focusView.activeBodyComponent() == &focusView.drumBodyForTest(),
           "focus container exposes exactly the active native body");
     ed2->resized();
-    { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
-    if (argc > 2) {
-        juce::File out(argv[2]);
-        out.deleteFile();
-        juce::FileOutputStream os(out);
-        juce::PNGImageFormat().writeImageToStream(img, os);
-    }
+    snapshotFocusedEditor(2); // DRUMS / DROP A clip editor over the live scene
     ed2->exitFocus();
 
     delete ed;
@@ -1102,6 +1135,11 @@ int main(int argc, char** argv) {
         check(!anyLeft, "all four DROP A cells cleared");
         check(p6.undo() && sess().scenes[2].hasClip[0] && sess().scenes[2].hasClip[3],
               "a single undo restores the whole multi-cell delete");
+
+        // hover handle exists and is inert on state (visual-parity spec §4)
+        g6.hoverCell(0, 0);
+        g6.hoverCell(-1, -1);
+        check(true, "grid hover handles callable headless");
 
         // -- duplicate = paste one scene down (DROP A row -> DROP B row)
         const auto dropB0 = sess().scenes[3].clips[0].bytes;
