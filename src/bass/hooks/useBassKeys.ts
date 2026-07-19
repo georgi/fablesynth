@@ -63,8 +63,8 @@ export function useBassKeys() {
       if (e.code === 'KeyZ') { octave = Math.max(0, octave - 1); return; }
       if (e.code === 'KeyX') { octave = Math.min(1, octave + 1); return; }
       if (e.code === 'Escape') {
-        const { stepSel, clearStepSelection } = useBassStore.getState();
-        if (stepSel) { clearStepSelection(); return; }
+        const { rectSel, clearStepSelection } = useBassStore.getState();
+        if (rectSel) { clearStepSelection(); return; }
         stop();
         return;
       }

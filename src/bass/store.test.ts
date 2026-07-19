@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useBassStore } from './store';
-import { getStep, makeEmptyPatterns } from './seq';
+import { getStep, makeEmptyPatterns, NOTE_LANES, STEPS } from './seq';
 import { defaultBassParams } from './params';
 import { FACTORY_PATCHES } from './patches';
 
@@ -31,10 +31,14 @@ describe('bass store', () => {
       curSemi: -100,
       patchValue: 'f0',
       userPatches: [],
-      stepSel: null,
+      rectSel: null,
+      lastCell: null,
       clipboard: null,
     });
   });
+
+  // Full note-lane band, mirroring the old 1D step-range tests' intent.
+  const fullRect = (from: number, to: number) => ({ stepFrom: from, stepTo: to, noteFrom: 0, noteTo: NOTE_LANES - 1 });
 
   it('toggleCell sets a note, same lane clears, other lane moves', () => {
     const s = useBassStore.getState();
@@ -113,18 +117,16 @@ describe('bass store', () => {
     expect(state.patchValue).toBe('u0');
   });
 
-  describe('step selection', () => {
-    it('shiftClickStep anchors then extends; selectAllSteps/clearStepSelection', () => {
+  describe('rect selection', () => {
+    it('setRectSel clamps to the pattern and clearStepSelection/selectAllSteps toggle it', () => {
       const s = useBassStore.getState();
-      expect(s.stepSel).toBeNull();
-      s.shiftClickStep(4);
-      expect(useBassStore.getState().stepSel).toEqual({ from: 4, to: 4 });
-      useBassStore.getState().shiftClickStep(9); // extends from the same anchor
-      expect(useBassStore.getState().stepSel).toEqual({ from: 4, to: 9 });
+      expect(s.rectSel).toBeNull();
+      s.setRectSel({ stepFrom: -3, stepTo: 99, noteFrom: -3, noteTo: 99 });
+      expect(useBassStore.getState().rectSel).toEqual({ stepFrom: 0, stepTo: STEPS - 1, noteFrom: 0, noteTo: NOTE_LANES - 1 });
       useBassStore.getState().selectAllSteps();
-      expect(useBassStore.getState().stepSel).toEqual({ from: 0, to: 15 });
+      expect(useBassStore.getState().rectSel).toEqual({ stepFrom: 0, stepTo: STEPS - 1, noteFrom: 0, noteTo: NOTE_LANES - 1 });
       useBassStore.getState().clearStepSelection();
-      expect(useBassStore.getState().stepSel).toBeNull();
+      expect(useBassStore.getState().rectSel).toBeNull();
     });
   });
 
@@ -133,9 +135,9 @@ describe('bass store', () => {
       const s = useBassStore.getState();
       s.toggleCell(2, 5); // on, note 5
       s.toggleStepAcc(2);
-      s.setStepSelection({ from: 2, to: 2 });
+      s.setRectSel(fullRect(2, 2));
       s.copySelection();
-      s.setStepSelection({ from: 10, to: 10 });
+      s.setRectSel(fullRect(10, 10));
       useBassStore.getState().pasteSelection();
       expect(getStep(useBassStore.getState().patterns, 0, 10)).toMatchObject({ on: true, note: 5, acc: true });
       expect(getStep(useBassStore.getState().patterns, 0, 2)).toMatchObject({ on: true, note: 5, acc: true });
@@ -144,10 +146,10 @@ describe('bass store', () => {
     it('cut clears the selected range after capturing it', () => {
       const s = useBassStore.getState();
       s.toggleCell(3, 6);
-      s.setStepSelection({ from: 3, to: 3 });
+      s.setRectSel(fullRect(3, 3));
       s.cutSelection();
       expect(getStep(useBassStore.getState().patterns, 0, 3).on).toBe(false);
-      s.setStepSelection({ from: 0, to: 0 });
+      s.setRectSel(fullRect(0, 0));
       useBassStore.getState().pasteSelection();
       expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, note: 6 });
     });
@@ -165,10 +167,10 @@ describe('bass store', () => {
     it('duplicate with a range selected pastes a copy right after it (clamped)', () => {
       const s = useBassStore.getState();
       s.toggleCell(14, 4);
-      s.setStepSelection({ from: 14, to: 14 });
+      s.setRectSel(fullRect(14, 14));
       s.duplicateSelection();
       expect(getStep(useBassStore.getState().patterns, 0, 15)).toMatchObject({ on: true, note: 4 });
-      expect(useBassStore.getState().stepSel).toEqual({ from: 15, to: 15 });
+      expect(useBassStore.getState().rectSel).toEqual(fullRect(15, 15));
     });
 
     it('duplicate with no selection copies the edit pattern to the next bar, extending the chain', () => {
@@ -186,36 +188,109 @@ describe('bass store', () => {
       const s = useBassStore.getState();
       s.toggleCell(14, 3);
       s.toggleCell(15, 9);
-      s.setStepSelection({ from: 14, to: 15 });
+      s.setRectSel(fullRect(14, 15));
       const before = useBassStore.getState().patterns;
       useBassStore.getState().duplicateSelection();
       expect(useBassStore.getState().patterns).toBe(before); // step 15 not corrupted
-      expect(useBassStore.getState().stepSel).toEqual({ from: 14, to: 15 });
+      expect(useBassStore.getState().rectSel).toEqual(fullRect(14, 15));
     });
 
     it('delete zeros the selected range only', () => {
       const s = useBassStore.getState();
       s.toggleCell(5, 3);
       s.toggleCell(6, 3);
-      s.setStepSelection({ from: 5, to: 5 });
+      s.setRectSel(fullRect(5, 5));
       s.deleteSelection();
       expect(getStep(useBassStore.getState().patterns, 0, 5).on).toBe(false);
       expect(getStep(useBassStore.getState().patterns, 0, 6).on).toBe(true);
     });
 
-    it('shiftSelection moves the range to dest (or copies with {copy:true}) and updates the selection', () => {
+    it('moveRectSel moves the range to dest (or copies with {copy:true}) and updates the selection', () => {
       const s = useBassStore.getState();
       s.toggleCell(0, 8);
-      s.setStepSelection({ from: 0, to: 0 });
-      s.shiftSelection(5);
+      s.setRectSel(fullRect(0, 0));
+      s.moveRectSel(5, 0);
       expect(getStep(useBassStore.getState().patterns, 0, 5)).toMatchObject({ on: true, note: 8 });
       expect(getStep(useBassStore.getState().patterns, 0, 0).on).toBe(false);
-      expect(useBassStore.getState().stepSel).toEqual({ from: 5, to: 5 });
+      expect(useBassStore.getState().rectSel).toEqual(fullRect(5, 5));
 
-      useBassStore.getState().setStepSelection({ from: 5, to: 5 });
-      useBassStore.getState().shiftSelection(8, { copy: true });
+      useBassStore.getState().setRectSel(fullRect(5, 5));
+      useBassStore.getState().moveRectSel(3, 0, { copy: true });
       expect(getStep(useBassStore.getState().patterns, 0, 8)).toMatchObject({ on: true, note: 8 });
       expect(getStep(useBassStore.getState().patterns, 0, 5).on).toBe(true); // copy keeps source
+    });
+  });
+
+  describe('rect selection verbs (Task 3 mirror)', () => {
+    // helper: light a step via the store
+    const light = (step: number, note: number) => useBassStore.getState().toggleCell(step, note, 0);
+
+    it('deleteSelection clears only notes inside the pitch band', () => {
+      light(2, 5); light(3, 11);
+      useBassStore.getState().setRectSel({ stepFrom: 2, stepTo: 3, noteFrom: 4, noteTo: 7 });
+      useBassStore.getState().deleteSelection();
+      const p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 2).on).toBe(false);
+      expect(getStep(p, 0, 3).on).toBe(true);
+    });
+
+    it('cutSelection copies then clears; pasteSelection anchors at the rect top-left', () => {
+      light(0, 5); light(1, 7);
+      useBassStore.getState().setRectSel({ stepFrom: 0, stepTo: 1, noteFrom: 0, noteTo: 11 });
+      useBassStore.getState().cutSelection();
+      expect(getStep(useBassStore.getState().patterns, 0, 0).on).toBe(false);
+      useBassStore.getState().setRectSel({ stepFrom: 8, stepTo: 9, noteFrom: 0, noteTo: 11 });
+      useBassStore.getState().pasteSelection();
+      const p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 8).note).toBe(5);
+      expect(getStep(p, 0, 9).note).toBe(7);
+    });
+
+    it('pasteSelection with no selection anchors at lastCell, transposing to it', () => {
+      light(0, 5);
+      useBassStore.getState().setRectSel({ stepFrom: 0, stepTo: 0, noteFrom: 5, noteTo: 5 });
+      useBassStore.getState().copySelection();
+      useBassStore.getState().clearStepSelection();
+      light(10, 8); // sets lastCell = { step: 10, note: 8 }
+      useBassStore.getState().pasteSelection();
+      expect(getStep(useBassStore.getState().patterns, 0, 10).note).toBe(8);
+    });
+
+    it('duplicateSelection pastes right of the rect and reselects', () => {
+      light(2, 5);
+      useBassStore.getState().setRectSel({ stepFrom: 2, stepTo: 3, noteFrom: 0, noteTo: 11 });
+      useBassStore.getState().duplicateSelection();
+      expect(getStep(useBassStore.getState().patterns, 0, 4).note).toBe(5);
+      expect(useBassStore.getState().rectSel).toEqual({ stepFrom: 4, stepTo: 5, noteFrom: 0, noteTo: 11 });
+    });
+
+    it('moveRectSel moves in both dimensions as a single undo entry', () => {
+      light(2, 5);
+      useBassStore.getState().setRectSel({ stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 });
+      useBassStore.getState().moveRectSel(3, -2);
+      let p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 2).on).toBe(false);
+      expect(getStep(p, 0, 5).note).toBe(3);
+      useBassStore.getState().undo();
+      p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 2).note).toBe(5);
+      expect(getStep(p, 0, 5).on).toBe(false);
+    });
+
+    it('selectAllSteps selects the full grid rect', () => {
+      useBassStore.getState().selectAllSteps();
+      expect(useBassStore.getState().rectSel).toEqual({ stepFrom: 0, stepTo: 15, noteFrom: 0, noteTo: 11 });
+    });
+
+    it('rect move preserves the slide flag', () => {
+      useBassStore.getState().toggleCell(2, 5, 0);
+      useBassStore.getState().toggleStepSlide(2, 0);
+      useBassStore.getState().setRectSel({ stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 });
+      useBassStore.getState().moveRectSel(1, 1);
+      const s = getStep(useBassStore.getState().patterns, 0, 3);
+      expect(s.on).toBe(true);
+      expect(s.note).toBe(6);
+      expect(s.slide).toBe(true);
     });
   });
 

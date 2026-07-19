@@ -77,7 +77,7 @@ const HOSTS: Record<MachineId, HostedStore> = {
     getPatterns: () => useBassStore.getState().patterns,
     setPatterns: (p) => {
       useBassStore.getState()._clearHistory();
-      useBassStore.setState({ patterns: p, editPattern: 0, stepSel: null });
+      useBassStore.setState({ patterns: p, editPattern: 0, rectSel: null });
     },
     getParams: () => useBassStore.getState().params,
     setPos: (step, bar, playing) => useBassStore.setState({ curStep: step, curPat: bar, playing }),

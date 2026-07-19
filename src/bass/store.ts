@@ -9,24 +9,21 @@ import {
   saveUserPatch, stateToPatch, type BassPatch,
 } from './patches';
 import {
-  cycleOct, EMPTY_STEP, getStep, LAYOUT, NPATTERNS, randomPattern, setStep, STEPS, writePattern, type Patterns,
+  cycleOct, EMPTY_STEP, getStep, LAYOUT, NOTE_LANES, NPATTERNS, randomPattern, setStep, STEPS, writePattern, type Patterns,
 } from './seq';
 import {
-  copyPattern, copyRange, clearRange, makeHistory, pasteRange, pastePattern, shiftRange,
+  clearRect, copyPattern, clearRange, copyRect, makeHistory, moveRect, pasteRect, pastePattern, rectNorm,
+  type RectCells, type RectSel,
 } from '../shared/seqEdit';
 import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
 
 export let bassEngine = new BassEngine();
 const initialState = patchToState(FACTORY_PATCHES[0]);
 
-// Contiguous step range within the currently edited pattern.
-export interface StepSel { from: number; to: number }
+export type { RectSel } from '../shared/seqEdit';
 export type SeqClipboard =
-  | { kind: 'range'; data: Uint8Array }
+  | { kind: 'rect'; data: RectCells }
   | { kind: 'pattern'; data: Uint8Array };
-
-const seqNorm = (sel: StepSel): [number, number] =>
-  sel.from <= sel.to ? [sel.from, sel.to] : [sel.to, sel.from];
 
 // Module-level undo/redo stack over the full patterns buffer, pushed by every
 // mutation that goes through `_setPatterns`. Not store state — mirrors
@@ -64,7 +61,8 @@ export interface BassStore {
   hitAcc: boolean;
   dirty: boolean; // any param/pattern change since the patch was loaded/saved
 
-  stepSel: StepSel | null;
+  rectSel: RectSel | null;
+  lastCell: { step: number; note: number } | null;
   clipboard: SeqClipboard | null;
 
   setParam: (id: string, v: number) => void;
@@ -81,8 +79,7 @@ export interface BassStore {
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
 
-  setStepSelection: (sel: StepSel | null) => void;
-  shiftClickStep: (step: number) => void;
+  setRectSel: (sel: RectSel | null) => void;
   selectAllSteps: () => void;
   clearStepSelection: () => void;
   copySelection: () => void;
@@ -90,7 +87,7 @@ export interface BassStore {
   pasteSelection: () => void;
   duplicateSelection: () => void;
   deleteSelection: () => void;
-  shiftSelection: (dest: number, opts?: { copy?: boolean }) => void;
+  moveRectSel: (dStep: number, dNote: number, opts?: { copy?: boolean }) => void;
   moveStepNote: (from: number, to: number, note: number, opts?: { copy?: boolean }, pattern?: number) => void;
   movePattern: (from: number, to: number, opts?: { copy?: boolean }) => void;
   undo: () => void;
@@ -129,7 +126,8 @@ export const useBassStore = create<BassStore>((set, get) => ({
   hitAcc: false,
   dirty: false,
 
-  stepSel: null,
+  rectSel: null,
+  lastCell: null,
   clipboard: null,
 
   setParam: (id, v) => {
@@ -180,6 +178,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
       ? setStep(patterns, pat, step, { on: false, acc: false, slide: false, duration: 1 })
       : setStep(patterns, pat, step, { on: true, note });
     get()._setPatterns(next);
+    if (pat === get().editPattern) set({ lastCell: { step, note } });
   },
 
   cycleStepOct: (step, pattern) => {
@@ -229,67 +228,78 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
   // ---------- selection ----------
 
-  setStepSelection: (sel) => set({ stepSel: sel }),
+  setRectSel: (sel) => set({
+    rectSel: sel
+      ? {
+          stepFrom: Math.min(STEPS - 1, Math.max(0, sel.stepFrom | 0)),
+          stepTo: Math.min(STEPS - 1, Math.max(0, sel.stepTo | 0)),
+          noteFrom: Math.min(NOTE_LANES - 1, Math.max(0, sel.noteFrom | 0)),
+          noteTo: Math.min(NOTE_LANES - 1, Math.max(0, sel.noteTo | 0)),
+        }
+      : null,
+  }),
 
-  // Shift-click: first click anchors a single-step range; further shift-clicks
-  // extend the range from that anchor (plain click keeps toggling cells).
-  shiftClickStep: (step) => {
-    const cur = get().stepSel;
-    set({ stepSel: cur ? { from: cur.from, to: step } : { from: step, to: step } });
-  },
+  selectAllSteps: () => set({ rectSel: { stepFrom: 0, stepTo: STEPS - 1, noteFrom: 0, noteTo: NOTE_LANES - 1 } }),
 
-  selectAllSteps: () => set({ stepSel: { from: 0, to: STEPS - 1 } }),
-
-  clearStepSelection: () => set({ stepSel: null }),
+  clearStepSelection: () => set({ rectSel: null }),
 
   // ---------- verbs ----------
+  // _setPatterns pushes the undo entry itself, so each mutating verb below
+  // makes exactly one _setPatterns call; copySelection makes none.
 
   copySelection: () => {
-    const { patterns, editPattern, stepSel } = get();
-    if (stepSel) {
-      const [lo, hi] = seqNorm(stepSel);
-      set({ clipboard: { kind: 'range', data: copyRange(patterns, LAYOUT, editPattern, lo, hi) } });
+    const { patterns, editPattern, rectSel } = get();
+    if (rectSel) {
+      set({ clipboard: { kind: 'rect', data: copyRect(patterns, LAYOUT, editPattern, rectSel) } });
     } else {
       set({ clipboard: { kind: 'pattern', data: copyPattern(patterns, LAYOUT, editPattern) } });
     }
   },
 
   cutSelection: () => {
-    const { patterns, editPattern, stepSel } = get();
-    if (stepSel) {
-      const [lo, hi] = seqNorm(stepSel);
-      set({ clipboard: { kind: 'range', data: copyRange(patterns, LAYOUT, editPattern, lo, hi) } });
-      get()._setPatterns(clearRange(patterns, LAYOUT, editPattern, lo, hi, EMPTY_STEP));
+    const { patterns, editPattern, rectSel } = get();
+    get().copySelection();
+    if (rectSel) {
+      get()._setPatterns(clearRect(patterns, LAYOUT, editPattern, rectSel, EMPTY_STEP));
     } else {
-      set({ clipboard: { kind: 'pattern', data: copyPattern(patterns, LAYOUT, editPattern) } });
       get()._setPatterns(clearRange(patterns, LAYOUT, editPattern, 0, STEPS - 1, EMPTY_STEP));
     }
   },
 
   pasteSelection: () => {
-    const { patterns, editPattern, stepSel, clipboard } = get();
+    const { patterns, editPattern, rectSel, lastCell, clipboard } = get();
     if (!clipboard) return;
-    if (clipboard.kind === 'range') {
-      const at = stepSel ? seqNorm(stepSel)[0] : 0;
-      get()._setPatterns(pasteRange(patterns, LAYOUT, editPattern, at, clipboard.data));
-    } else {
+    if (clipboard.kind === 'pattern') {
       get()._setPatterns(pastePattern(patterns, LAYOUT, editPattern, clipboard.data));
+      return;
     }
+    // Anchor: current rect's top-left, else the last-touched cell, else in place.
+    const anchor = rectSel
+      ? { step: rectNorm(rectSel).stepLo, note: rectNorm(rectSel).noteHi }
+      : lastCell ?? { step: 0, note: clipboard.data.noteHi };
+    const dNote = anchor.note - clipboard.data.noteHi;
+    get()._setPatterns(pasteRect(patterns, LAYOUT, editPattern, anchor.step, dNote, clipboard.data, NOTE_LANES - 1));
+    get().setRectSel({
+      stepFrom: anchor.step,
+      stepTo: anchor.step + clipboard.data.wSteps - 1,
+      noteFrom: anchor.note - (clipboard.data.noteHi - clipboard.data.noteLo),
+      noteTo: anchor.note,
+    });
   },
 
-  // With a range selected: paste a copy immediately after it (clamped).
+  // With a rect selected: paste a copy immediately after it (clamped).
   // With no selection: copy the edit pattern to the next bar, extending the
   // sequence length if needed (up to 4 bars) — the classic "duplicate bar".
   duplicateSelection: () => {
-    const { patterns, editPattern, stepSel, chain } = get();
-    if (stepSel) {
-      const [lo, hi] = seqNorm(stepSel);
-      const dest = hi + 1;
-      // Range ends on the last step: nothing past it to paste onto — no-op.
-      if (dest >= STEPS) return;
-      const data = copyRange(patterns, LAYOUT, editPattern, lo, hi);
-      get()._setPatterns(pasteRange(patterns, LAYOUT, editPattern, dest, data));
-      set({ stepSel: { from: dest, to: Math.min(STEPS - 1, dest + (hi - lo)) } });
+    const { patterns, editPattern, rectSel, chain } = get();
+    if (rectSel) {
+      const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rectSel);
+      const at = stepHi + 1;
+      // Rect ends on the last step: nothing past it to paste onto — no-op.
+      if (at >= STEPS) return;
+      const data = copyRect(patterns, LAYOUT, editPattern, rectSel);
+      get()._setPatterns(pasteRect(patterns, LAYOUT, editPattern, at, 0, data, NOTE_LANES - 1));
+      get().setRectSel({ stepFrom: at, stepTo: at + (stepHi - stepLo), noteFrom: noteLo, noteTo: noteHi });
       return;
     }
     const target = Math.min(NPATTERNS - 1, editPattern + 1);
@@ -300,24 +310,24 @@ export const useBassStore = create<BassStore>((set, get) => ({
   },
 
   deleteSelection: () => {
-    const { patterns, editPattern, stepSel } = get();
-    if (!stepSel) return;
-    const [lo, hi] = seqNorm(stepSel);
-    get()._setPatterns(clearRange(patterns, LAYOUT, editPattern, lo, hi, EMPTY_STEP));
+    const { patterns, editPattern, rectSel } = get();
+    if (!rectSel) return;
+    get()._setPatterns(clearRect(patterns, LAYOUT, editPattern, rectSel, EMPTY_STEP));
   },
 
-  // Step-range drag: with a range selected, dragging inside it shifts the
-  // range so it starts at `dest` (move; Alt = copy) via shared `shiftRange`.
-  // Cancelling (Esc) never calls this, so nothing to undo there.
-  shiftSelection: (dest, opts) => {
-    const { patterns, editPattern, stepSel } = get();
-    if (!stepSel) return;
-    const [lo, hi] = seqNorm(stepSel);
-    const clampedDest = Math.max(0, Math.min(STEPS - 1, dest | 0));
-    get()._setPatterns(
-      shiftRange(patterns, LAYOUT, editPattern, lo, hi, clampedDest, { copy: opts?.copy, emptyStep: EMPTY_STEP }),
-    );
-    set({ stepSel: { from: clampedDest, to: Math.min(STEPS - 1, clampedDest + (hi - lo)) } });
+  // Rect drag: with a rect selected, dragging inside it moves (Alt = copy)
+  // it by (dStep, dNote), clamped so the whole rect stays inside the grid —
+  // stored selection and moved content must always agree. Cancelling (Esc)
+  // never calls this, so nothing to undo there.
+  moveRectSel: (dStep, dNote, opts = {}) => {
+    const { patterns, editPattern, rectSel } = get();
+    if (!rectSel) return;
+    const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rectSel);
+    const ds = Math.min(STEPS - 1 - stepHi, Math.max(-stepLo, dStep | 0));
+    const dn = Math.min(NOTE_LANES - 1 - noteHi, Math.max(-noteLo, dNote | 0));
+    if (ds === 0 && dn === 0) return;
+    get()._setPatterns(moveRect(patterns, LAYOUT, editPattern, rectSel, ds, dn, { copy: opts.copy, emptyStep: EMPTY_STEP, maxNote: NOTE_LANES - 1 }));
+    set({ rectSel: { stepFrom: stepLo + ds, stepTo: stepHi + ds, noteFrom: noteLo + dn, noteTo: noteHi + dn } });
   },
 
   // Grid note drag: move (or Alt-copy) one lit step to another step/lane,
@@ -432,7 +442,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
       : get().userPatches[Number(value.slice(1))];
     if (!patch) return;
     get()._clearHistory();
-    set({ stepSel: null, clipboard: null });
+    set({ rectSel: null, lastCell: null, clipboard: null });
 
     const state = patchToState(patch);
     if (get().hosted) {
