@@ -41,12 +41,14 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   const bars = BAR_STORE[machine];
   const editBar = bars.use();
   const patchSelect = <HostedPatchSelect machine={machine} />;
+  const modeToggle = <DeviceModeToggle />;
 
   if (!clip) {
     return (
       <>
         <div className="sq-clipbar">
           {patchSelect}
+          {modeToggle}
           <button className="sq-clipbar-create" onClick={() => createClip(focus.scene, focus.track)}>＋ CREATE CLIP</button>
           <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
           <span className="sq-clipbar-hint">EMPTY SLOT — LOAD A CLIP OR CREATE ONE</span>
@@ -61,6 +63,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
       <>
         <div className="sq-clipbar">
           {patchSelect}
+          {modeToggle}
           <span className="sq-clipbar-name">{clip.name}</span>
           <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
           <span className="sq-clipbar-lock">CLIP IS {clip.bars} BARS — EDITING CAPS AT {HOSTED_MAX_BARS} (PLAYBACK UNAFFECTED)</span>
@@ -82,6 +85,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
     <>
       <div className="sq-clipbar">
         {patchSelect}
+        {modeToggle}
         <span className="sq-clipbar-name">{clip.name}</span>
         <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
         <SequenceLengthControl
@@ -118,6 +122,17 @@ function HostedPatchSelect({ machine }: { machine: MachineId }) {
       </select>
       {dirty && <span className="sq-device-patch-dirty" title="Patch has unsaved edits" aria-label="edited">*</span>}
       <button type="button" onClick={() => step(1)} aria-label="Next factory patch">▸</button>
+    </div>
+  );
+}
+
+function DeviceModeToggle() {
+  const mode = useSeqStore((s) => s.deviceMode);
+  const setDeviceMode = useSeqStore.getState().setDeviceMode;
+  return (
+    <div className="sq-mode-toggle" role="group" aria-label="Device view mode">
+      <button type="button" className={mode === 'seq' ? 'on' : ''} onClick={() => setDeviceMode('seq')}>SEQ</button>
+      <button type="button" className={mode === 'edit' ? 'on' : ''} onClick={() => setDeviceMode('edit')}>EDIT</button>
     </div>
   );
 }

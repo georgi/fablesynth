@@ -821,6 +821,16 @@
   font-size: 10px; letter-spacing: .08em;
 }
 
+.sq-mode-toggle { display: inline-flex; border: 1px solid #303a50; border-radius: 5px; overflow: hidden; }
+.sq-mode-toggle button {
+  padding: 5px 10px; border: 0; background: #151c2a; color: #8791a5;
+  cursor: pointer; font: inherit; font-size: 10px; letter-spacing: .08em;
+}
+.sq-mode-toggle button + button { border-left: 1px solid #303a50; }
+.sq-mode-toggle button.on {
+  background: color-mix(in srgb, var(--tc) 22%, #151c2a); color: var(--tc);
+}
+
 /* Focus-mode clip library. It floats over the device so browsing never
    disturbs the machine panel or the currently sounding clip. */
 .sq-lib {
