@@ -89,7 +89,7 @@ const HOSTS: Record<MachineId, HostedStore> = {
     getPatterns: () => useWtStore.getState().patterns,
     setPatterns: (p) => {
       useWtStore.getState()._clearSeqHistory();
-      useWtStore.setState({ patterns: p, editPattern: 0, stepSel: null });
+      useWtStore.setState({ patterns: p, editPattern: 0, rectSel: null });
     },
     getParams: () => useWtStore.getState().params,
     setPos: (step, bar, playing) => useWtStore.setState({ curStep: step, curPat: bar, seqPlaying: playing }),

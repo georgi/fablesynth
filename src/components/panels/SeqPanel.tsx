@@ -2,14 +2,15 @@
 // = rest), draggable note lengths, octave / accent rows, bars 1–4 + sequence
 // length, RAND, transport and ROOT controls.
 
-import { useEffect, useRef } from 'react';
 import { getStep, NOTE_LANES, STEPS, type SeqStep } from '../../noteseq';
+import { rectNorm } from '../../shared/seqEdit';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
 import { SeqSelectionMenu } from '../SeqSelectionMenu';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
 import { useSeqNoteDrag } from '../useSeqNoteDrag';
+import { useSeqRectSelect } from '../useSeqRectSelect';
 
 // Piano-style shading for the 12 chromatic lanes (lane 0 = root/tonic), so
 // the grid reads at a glance the way a keyboard does: natural-degree lanes
@@ -41,9 +42,9 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const setEditPattern = useStore((s) => s.setEditPattern);
   const setSequenceLength = useStore((s) => s.setSequenceLength);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
-  const stepSel = useStore((s) => s.stepSel);
-  const setStepSel = useStore((s) => s.setStepSel);
-  const shiftStepSel = useStore((s) => s.shiftStepSel);
+  const rectSel = useStore((s) => s.rectSel);
+  const setRectSel = useStore((s) => s.setRectSel);
+  const moveRectSel = useStore((s) => s.moveRectSel);
   const movePattern = useStore((s) => s.movePattern);
   const moveStepNote = useStore((s) => s.moveStepNote);
   const cutSteps = useStore((s) => s.cutSteps);
@@ -57,39 +58,25 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   // Standalone-only, like the step-range selection below.
   const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
     moveStepNote(from, to, note, { copy }, pattern);
-    if (pattern === useStore.getState().editPattern) setStepSel({ from: to, to });
+    if (pattern === useStore.getState().editPattern) setRectSel({ stepFrom: to, stepTo: to, noteFrom: note, noteTo: note });
   });
 
-  // Step-range selection (docs/editing-concept.md): a step-number header press
-  // starts either a sweep-select (unselected step, or Shift held) or a
-  // content-move drag (pressing inside the current selection). The move is
-  // committed once, on release, via shiftStepSel — never per pointer-move, so
-  // it costs a single undo entry.
-  const sweepingRef = useRef(false);
-  const moveRef = useRef<{ selFrom: number; origin: number; hover: number; altKey: boolean } | null>(null);
-
-  useEffect(() => {
-    const commitAndReset = () => {
-      if (moveRef.current) {
-        const { selFrom, origin, hover, altKey } = moveRef.current;
-        shiftStepSel(selFrom + (hover - origin), { copy: altKey });
-      }
-      moveRef.current = null;
-      sweepingRef.current = false;
-    };
-    const onPointerUp = () => commitAndReset();
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      moveRef.current = null; // cancel without committing
-      sweepingRef.current = false;
-    };
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [shiftStepSel]);
+  // Rectangle selection + in-rect block-move
+  // (docs/superpowers/specs/2026-07-19-seq-rect-selection-design.md):
+  // shift-drag a cell to sweep a step × note-lane rect; drag inside the
+  // current rect to move (Alt-drag copies) it. Both gestures commit once, on
+  // pointer release, so each costs a single undo entry. Standalone-only.
+  const { pending, startRectSelect, startRectMove, consumeRectClick } = useSeqRectSelect({
+    editPattern,
+    onSelect: setRectSel,
+    onMove: (dStep, dNote, copy) => moveRectSel(dStep, dNote, { copy }),
+  });
+  const rect = pending ?? rectSel;
+  const inRect = (step: number, note: number): boolean => {
+    if (!rect) return false;
+    const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
+    return step >= stepLo && step <= stepHi && note >= noteLo && note <= noteHi;
+  };
 
   const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
   const totalSteps = barCount * STEPS;
@@ -128,7 +115,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
           </>
         )}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
-        <span className="ns-hint">TAP = NOTE · DRAG = MOVE · EDGE = LENGTH</span>
+        <span className="ns-hint">TAP = NOTE · DRAG = MOVE · SHIFT-DRAG = SELECT</span>
       </div>
 
       <div className="ns-body">
@@ -145,9 +132,6 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
               const current = seqPlaying && curStep === step && curPat === pattern;
               const voices = polySteps?.[absoluteStep]?.length ? polySteps[absoluteStep] : [s];
               const editable = pattern === editPattern;
-              const selLo = stepSel ? Math.min(stepSel.from, stepSel.to) : -1;
-              const selHi = stepSel ? Math.max(stepSel.from, stepSel.to) : -1;
-              const selected = editable && stepSel !== null && step >= selLo && step <= selHi;
               return (
                 <div className={`ns-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
                   <div className="ns-lanes">
@@ -165,14 +149,16 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                             data-step={step}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '')}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (editable && inRect(step, note) ? ' sel' : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
                               // Grab a lit cell — or the painted body of a longer
                               // note covering this cell — to move it; standalone
                               // mono grid only (hosted poly keeps chord callbacks).
-                              if (hosted || onToggleChordNote || event.shiftKey) return;
+                              if (hosted || onToggleChordNote) return;
+                              if (editable && event.shiftKey) { startRectSelect(event, step, note); return; }
+                              if (editable && rectSel && inRect(step, note) && !pending) { startRectMove(event, step, note); return; }
                               let srcStep = step;
                               if (!active) {
                                 srcStep = -1;
@@ -185,14 +171,9 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                               event.preventDefault();
                               startNoteDrag(event, srcStep, note, pattern, step);
                             }}
-                            onClick={(event) => {
-                              if (consumeDragClick()) return;
+                            onClick={() => {
+                              if (consumeRectClick() || consumeDragClick()) return;
                               if (onToggleChordNote) { onToggleChordNote(absoluteStep, note); return; }
-                              if (!hosted && event.shiftKey) {
-                                // Shift-click in the grid: anchor/extend the step range.
-                                if (editable) setStepSel({ from: stepSel ? stepSel.from : step, to: step });
-                                return;
-                              }
                               toggleCell(step, note, pattern);
                             }}
                           />
@@ -226,49 +207,22 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                     aria-pressed={s.on && s.acc}
                     onClick={() => toggleStepAcc(step, pattern)}
                   />
-                  <button
-                    type="button"
-                    className={`ns-step-num${selected ? ' selected' : ''}`}
-                    aria-label={`bar ${bar + 1}, step ${step + 1}, select`}
-                    aria-pressed={selected}
-                    onPointerDown={(event) => {
-                      // Hosted (SQ-4 focus) has no edit-verb/undo/Esc key
-                      // surface for step ranges — selection and drag-move are
-                      // standalone-only, mirroring DR-1's StepSeq gate.
-                      if (hosted || !editable) return;
-                      if (event.shiftKey) {
-                        setStepSel({ from: stepSel ? stepSel.from : step, to: step });
-                        sweepingRef.current = true;
-                        return;
-                      }
-                      if (selected && stepSel) {
-                        moveRef.current = { selFrom: selLo, origin: step, hover: step, altKey: event.altKey };
-                        return;
-                      }
-                      setStepSel({ from: step, to: step });
-                      sweepingRef.current = true;
-                    }}
-                    onPointerEnter={(event) => {
-                      if (hosted || !editable || event.buttons !== 1) return;
-                      if (moveRef.current) { moveRef.current.hover = step; moveRef.current.altKey = event.altKey; return; }
-                      if (sweepingRef.current && stepSel) setStepSel({ from: stepSel.from, to: step });
-                    }}
-                  >
+                  <button type="button" className="ns-step-num" aria-label={`bar ${bar + 1}, step ${step + 1}`}>
                     {step === 0 ? `BAR ${bar + 1}` : step + 1}
                   </button>
-                  <div className={`ns-step-sel${selected ? ' on' : ''}`} aria-hidden="true" />
                   <div className={`ns-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
                 </div>
               );
             })}
           </div>
-          {!hosted && stepSel && (() => {
+          {!hosted && rectSel && (() => {
             const editBarIdx = Array.from({ length: barCount }, (_, b) => chain[b] ?? b).indexOf(editPattern);
             const barOffset = Math.max(0, editBarIdx) * STEPS;
+            const { stepLo, stepHi } = rectNorm(rectSel);
             return (
               <SeqSelectionMenu
-                visibleLo={barOffset + Math.min(stepSel.from, stepSel.to)}
-                visibleHi={barOffset + Math.max(stepSel.from, stepSel.to)}
+                visibleLo={barOffset + stepLo}
+                visibleHi={barOffset + stepHi}
                 totalSteps={totalSteps}
                 onCut={cutSteps}
                 onCopy={copySteps}
