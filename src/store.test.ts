@@ -198,4 +198,39 @@ describe('WT-1 step-sequencer editing', () => {
     expect(useStore.getState().chain).toEqual([0]);
     expect(getStep(useStore.getState().patterns, 1, 0)).toMatchObject({ on: false }); // pattern 1 write undone too
   });
+
+  it('moveStepNote moves a note preserving oct/acc/duration and clears the source', () => {
+    const s = useStore.getState();
+    s.toggleCell(2, 4);
+    s.toggleStepAcc(2);
+    s.cycleStepOct(2);
+    s.setStepDuration(2, 3);
+    s.moveStepNote(2, 6, 9);
+    expect(getStep(useStore.getState().patterns, 0, 2)).toMatchObject({ on: false });
+    expect(getStep(useStore.getState().patterns, 0, 6)).toMatchObject({ on: true, note: 9, acc: true, oct: 1, duration: 3 });
+  });
+
+  it('moveStepNote with copy keeps the source, and one undo unwinds the whole move', () => {
+    const s = useStore.getState();
+    s.toggleCell(0, 5);
+    s.moveStepNote(0, 4, 5, { copy: true });
+    expect(getStep(useStore.getState().patterns, 0, 0)).toMatchObject({ on: true, note: 5 });
+    expect(getStep(useStore.getState().patterns, 0, 4)).toMatchObject({ on: true, note: 5 });
+    s.undoSeq();
+    expect(getStep(useStore.getState().patterns, 0, 4)).toMatchObject({ on: false });
+    expect(getStep(useStore.getState().patterns, 0, 0)).toMatchObject({ on: true, note: 5 });
+  });
+
+  it('moveStepNote changes pitch in place and no-ops on an off source or same target', () => {
+    const s = useStore.getState();
+    s.toggleCell(3, 2);
+    s.moveStepNote(3, 3, 10); // pitch change in place
+    expect(getStep(useStore.getState().patterns, 0, 3)).toMatchObject({ on: true, note: 10 });
+    const before = useStore.getState().patterns;
+    s.moveStepNote(3, 3, 10); // nothing changes
+    expect(useStore.getState().patterns).toBe(before);
+    s.moveStepNote(7, 9, 4); // off source
+    expect(useStore.getState().patterns).toBe(before);
+    expect(getStep(useStore.getState().patterns, 0, 9)).toMatchObject({ on: false });
+  });
 });

@@ -270,4 +270,41 @@ describe('bass store', () => {
       expect(getStep(useBassStore.getState().patterns, 0, 1)).toMatchObject({ on: true, note: 5 });
     });
   });
+
+  describe('moveStepNote', () => {
+    it('moves a note preserving oct/acc/slide/duration and clears the source', () => {
+      const s = useBassStore.getState();
+      s.toggleCell(2, 4);
+      s.toggleStepAcc(2);
+      s.toggleStepSlide(2);
+      s.cycleStepOct(2);
+      s.setStepDuration(2, 3);
+      s.moveStepNote(2, 6, 9);
+      expect(getStep(useBassStore.getState().patterns, 0, 2)).toMatchObject({ on: false });
+      expect(getStep(useBassStore.getState().patterns, 0, 6)).toMatchObject({ on: true, note: 9, acc: true, slide: true, oct: 1, duration: 3 });
+    });
+
+    it('copy keeps the source and one undo unwinds the whole move', () => {
+      const s = useBassStore.getState();
+      s.toggleCell(0, 5);
+      s.moveStepNote(0, 4, 5, { copy: true });
+      expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, note: 5 });
+      expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: true, note: 5 });
+      useBassStore.getState().undo();
+      expect(getStep(useBassStore.getState().patterns, 0, 4)).toMatchObject({ on: false });
+      expect(getStep(useBassStore.getState().patterns, 0, 0)).toMatchObject({ on: true, note: 5 });
+    });
+
+    it('changes pitch in place and no-ops on an off source or unchanged target', () => {
+      const s = useBassStore.getState();
+      s.toggleCell(3, 2);
+      s.moveStepNote(3, 3, 10);
+      expect(getStep(useBassStore.getState().patterns, 0, 3)).toMatchObject({ on: true, note: 10 });
+      const before = useBassStore.getState().patterns;
+      s.moveStepNote(3, 3, 10);
+      expect(useBassStore.getState().patterns).toBe(before);
+      s.moveStepNote(7, 9, 4);
+      expect(useBassStore.getState().patterns).toBe(before);
+    });
+  });
 });

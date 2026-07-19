@@ -492,6 +492,14 @@
   background: #0a0d13;
   box-shadow: none;
 }
+/* Grid note drag (shared gesture with WT-1 — see .ns-cell.drag-* in index.css). */
+.bl-cell.drag-src { opacity: 0.35; }
+.bl-cell.drag-over {
+  border-color: var(--ac-a);
+  background: color-mix(in srgb, var(--ac-a) 25%, #0a0d13);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ac-a) 45%, transparent);
+}
+.bl-cell.drag-over.copy { border-style: dashed; }
 .bl-note-paint {
   position: absolute;
   z-index: 4;

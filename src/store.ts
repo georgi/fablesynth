@@ -116,6 +116,7 @@ interface SynthStore {
   duplicateSteps: () => void;
   deleteSteps: () => void;
   shiftStepSel: (dest: number, opts?: { copy?: boolean }) => void;
+  moveStepNote: (from: number, to: number, note: number, opts?: { copy?: boolean }, pattern?: number) => void;
   movePattern: (from: number, to: number, opts?: { copy?: boolean }) => void;
   undoSeq: () => void;
   redoSeq: () => void;
@@ -466,6 +467,21 @@ export const useStore = create<SynthStore>((set, get) => {
     const next = shiftRange(patterns, WT1_LAYOUT, editPattern, lo, hi, clampedDest, { copy: opts.copy, emptyStep: EMPTY_STEP });
     get()._setPatterns(next);
     set({ stepSel: { from: clampedDest, to: clampedDest + len - 1 } });
+  },
+
+  // Grid note drag: move (or Alt-copy) one lit step to another step/lane,
+  // carrying oct/acc/duration along. One history push → one undo entry.
+  moveStepNote: (from, to, note, opts = {}, pattern) => {
+    const { patterns, editPattern } = get();
+    const pat = pattern ?? editPattern;
+    const src = getStep(patterns, pat, from);
+    if (!src.on) return;
+    if (from === to && src.note === note) return;
+    pushSeqHistory();
+    let next = patterns;
+    if (from !== to && !opts.copy) next = setStep(next, pat, from, { on: false, acc: false });
+    next = setStep(next, pat, to, { on: true, note, oct: src.oct, acc: src.acc, duration: src.duration });
+    get()._setPatterns(next);
   },
 
   movePattern: (from, to, opts = {}) => {
