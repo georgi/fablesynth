@@ -91,6 +91,7 @@ export interface BassStore {
   duplicateSelection: () => void;
   deleteSelection: () => void;
   shiftSelection: (dest: number, opts?: { copy?: boolean }) => void;
+  moveStepNote: (from: number, to: number, note: number, opts?: { copy?: boolean }, pattern?: number) => void;
   movePattern: (from: number, to: number, opts?: { copy?: boolean }) => void;
   undo: () => void;
   redo: () => void;
@@ -317,6 +318,21 @@ export const useBassStore = create<BassStore>((set, get) => ({
       shiftRange(patterns, LAYOUT, editPattern, lo, hi, clampedDest, { copy: opts?.copy, emptyStep: EMPTY_STEP }),
     );
     set({ stepSel: { from: clampedDest, to: Math.min(STEPS - 1, clampedDest + (hi - lo)) } });
+  },
+
+  // Grid note drag: move (or Alt-copy) one lit step to another step/lane,
+  // carrying oct/acc/slide/duration along. _setPatterns pushes the single
+  // history entry.
+  moveStepNote: (from, to, note, opts, pattern) => {
+    const { patterns, editPattern } = get();
+    const pat = pattern ?? editPattern;
+    const src = getStep(patterns, pat, from);
+    if (!src.on) return;
+    if (from === to && src.note === note) return;
+    let next = patterns;
+    if (from !== to && !opts?.copy) next = setStep(next, pat, from, { on: false, acc: false, slide: false, duration: 1 });
+    next = setStep(next, pat, to, { on: true, note, oct: src.oct, acc: src.acc, slide: src.slide, duration: src.duration });
+    get()._setPatterns(next);
   },
 
   // Bar-chip drag: move pattern `from` onto `to` (swap); Alt-drag copies

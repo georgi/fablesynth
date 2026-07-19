@@ -7,6 +7,8 @@
 import { useRef } from 'react';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
+import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
+import { useSeqNoteDrag } from '../../components/useSeqNoteDrag';
 import { getStep, NOTE_LANES, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
@@ -33,6 +35,18 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   const setStepSelection = useBassStore((s) => s.setStepSelection);
   const shiftSelection = useBassStore((s) => s.shiftSelection);
   const movePattern = useBassStore((s) => s.movePattern);
+  const moveStepNote = useBassStore((s) => s.moveStepNote);
+  const copySelection = useBassStore((s) => s.copySelection);
+  const duplicateSelection = useBassStore((s) => s.duplicateSelection);
+  const deleteSelection = useBassStore((s) => s.deleteSelection);
+  const clearStepSelection = useBassStore((s) => s.clearStepSelection);
+
+  // Grid note drag (docs/superpowers/specs/2026-07-19-seq-note-drag-selection-menu-design.md):
+  // grab a lit cell and drop it on another step/lane of the same pattern.
+  const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
+    moveStepNote(from, to, note, { copy }, pattern);
+    if (pattern === useBassStore.getState().editPattern) setStepSelection({ from: to, to });
+  });
 
   // Sweep-drag across the step-number row (pointer events, not HTML5 drag):
   // pointerdown anchors the range on the edited pattern's row, pointermove
@@ -129,7 +143,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
           </>
         )}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
-        <span className="bl-seq-hint">DRAG EDGE = LENGTH · SLD = LEGATO</span>
+        <span className="bl-seq-hint">DRAG = MOVE · EDGE = LENGTH · SLD = LEGATO</span>
       </div>
 
       <div className="bl-seq-body">
@@ -155,14 +169,38 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                     {Array.from({ length: NOTE_LANES }, (_, r) => {
                       const note = NOTE_LANES - 1 - r;
                       const active = s.on && s.note === note;
+                      const dragSrc = !!drag?.active && drag.pattern === pattern && drag.srcStep === step && drag.srcNote === note;
+                      const dragOver = !!drag?.active && drag.pattern === pattern && drag.overStep === step && drag.overNote === note;
                       return (
                         <div className="bl-cell-wrap" key={r}>
                           <button
                             type="button"
-                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '')}
+                            data-seq-cell
+                            data-step={step}
+                            data-note={note}
+                            data-pattern={pattern}
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
+                            onPointerDown={(event) => {
+                              // Grab a lit cell — or the painted body of a longer
+                              // note covering this cell — to move it (Alt = copy,
+                              // Esc cancels).
+                              if (hosted || event.shiftKey) return;
+                              let srcStep = step;
+                              if (!active) {
+                                srcStep = -1;
+                                for (let c = step - 1; c >= 0; c--) {
+                                  const cand = getStep(patterns, pattern, c);
+                                  if (cand.on && cand.note === note && c + cand.duration > step) { srcStep = c; break; }
+                                }
+                                if (srcStep < 0) return;
+                              }
+                              event.preventDefault();
+                              startNoteDrag(event, srcStep, note, pattern, step);
+                            }}
                             onClick={(event) => {
+                              if (consumeDragClick()) return;
                               if (event.shiftKey) { if (pattern === editPattern) shiftClickStep(step); return; }
                               toggleCell(step, note, pattern);
                             }}
@@ -220,6 +258,21 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
               );
             })}
           </div>
+          {!hosted && stepSel && (() => {
+            const editBarIdx = Array.from({ length: barCount }, (_, b) => chain[b] ?? b).indexOf(editPattern);
+            const barOffset = Math.max(0, editBarIdx) * STEPS;
+            return (
+              <SeqSelectionMenu
+                visibleLo={barOffset + Math.min(stepSel.from, stepSel.to)}
+                visibleHi={barOffset + Math.max(stepSel.from, stepSel.to)}
+                totalSteps={totalSteps}
+                onCopy={copySelection}
+                onDuplicate={duplicateSelection}
+                onDelete={deleteSelection}
+                onDismiss={clearStepSelection}
+              />
+            );
+          })()}
         </div>
         </div>
       </div>

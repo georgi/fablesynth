@@ -6,8 +6,10 @@ import { useEffect, useRef } from 'react';
 import { getStep, NOTE_LANES, STEPS, type SeqStep } from '../../noteseq';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
+import { SeqSelectionMenu } from '../SeqSelectionMenu';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
+import { useSeqNoteDrag } from '../useSeqNoteDrag';
 
 // Piano-style shading for the 12 chromatic lanes (lane 0 = root/tonic), so
 // the grid reads at a glance the way a keyboard does: natural-degree lanes
@@ -43,6 +45,19 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const setStepSel = useStore((s) => s.setStepSel);
   const shiftStepSel = useStore((s) => s.shiftStepSel);
   const movePattern = useStore((s) => s.movePattern);
+  const moveStepNote = useStore((s) => s.moveStepNote);
+  const copySteps = useStore((s) => s.copySteps);
+  const duplicateSteps = useStore((s) => s.duplicateSteps);
+  const deleteSteps = useStore((s) => s.deleteSteps);
+  const clearStepSel = useStore((s) => s.clearStepSel);
+
+  // Grid note drag (docs/superpowers/specs/2026-07-19-seq-note-drag-selection-menu-design.md):
+  // grab a lit cell and drop it on another step/lane of the same pattern.
+  // Standalone-only, like the step-range selection below.
+  const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
+    moveStepNote(from, to, note, { copy }, pattern);
+    if (pattern === useStore.getState().editPattern) setStepSel({ from: to, to });
+  });
 
   // Step-range selection (docs/editing-concept.md): a step-number header press
   // starts either a sweep-select (unselected step, or Shift held) or a
@@ -112,7 +127,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
           </>
         )}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
-        <span className="ns-hint">TAP = NOTE · DRAG RIGHT EDGE = LENGTH</span>
+        <span className="ns-hint">TAP = NOTE · DRAG = MOVE · EDGE = LENGTH</span>
       </div>
 
       <div className="ns-body">
@@ -139,14 +154,46 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                       const note = NOTE_LANES - 1 - r;
                       const voice = voices.find((candidate) => candidate.on && candidate.note === note);
                       const active = !!voice;
+                      const dragSrc = !!drag?.active && drag.pattern === pattern && drag.srcStep === step && drag.srcNote === note;
+                      const dragOver = !!drag?.active && drag.pattern === pattern && drag.overStep === step && drag.overNote === note;
                       return (
                         <div className="ns-cell-wrap" key={r}>
                           <button
                             type="button"
-                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '')}
+                            data-seq-cell
+                            data-step={step}
+                            data-note={note}
+                            data-pattern={pattern}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
-                            onClick={() => onToggleChordNote ? onToggleChordNote(absoluteStep, note) : toggleCell(step, note, pattern)}
+                            onPointerDown={(event) => {
+                              // Grab a lit cell — or the painted body of a longer
+                              // note covering this cell — to move it; standalone
+                              // mono grid only (hosted poly keeps chord callbacks).
+                              if (hosted || onToggleChordNote || event.shiftKey) return;
+                              let srcStep = step;
+                              if (!active) {
+                                srcStep = -1;
+                                for (let c = step - 1; c >= 0; c--) {
+                                  const cand = getStep(patterns, pattern, c);
+                                  if (cand.on && cand.note === note && c + cand.duration > step) { srcStep = c; break; }
+                                }
+                                if (srcStep < 0) return;
+                              }
+                              event.preventDefault();
+                              startNoteDrag(event, srcStep, note, pattern, step);
+                            }}
+                            onClick={(event) => {
+                              if (consumeDragClick()) return;
+                              if (onToggleChordNote) { onToggleChordNote(absoluteStep, note); return; }
+                              if (!hosted && event.shiftKey) {
+                                // Shift-click in the grid: anchor/extend the step range.
+                                if (editable) setStepSel({ from: stepSel ? stepSel.from : step, to: step });
+                                return;
+                              }
+                              toggleCell(step, note, pattern);
+                            }}
                           />
                           {active && voice && (
                             <NoteLengthHandle
@@ -214,6 +261,21 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
               );
             })}
           </div>
+          {!hosted && stepSel && (() => {
+            const editBarIdx = Array.from({ length: barCount }, (_, b) => chain[b] ?? b).indexOf(editPattern);
+            const barOffset = Math.max(0, editBarIdx) * STEPS;
+            return (
+              <SeqSelectionMenu
+                visibleLo={barOffset + Math.min(stepSel.from, stepSel.to)}
+                visibleHi={barOffset + Math.max(stepSel.from, stepSel.to)}
+                totalSteps={totalSteps}
+                onCopy={copySteps}
+                onDuplicate={duplicateSteps}
+                onDelete={deleteSteps}
+                onDismiss={clearStepSel}
+              />
+            );
+          })()}
           </div>
         </div>
 
