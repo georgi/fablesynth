@@ -675,6 +675,32 @@ describe('grid undo/redo', () => {
   });
 });
 
+describe('deviceMode', () => {
+  beforeEach(() => resetSeqStore());
+  const stLocal = () => useSeqStore.getState();
+
+  it('defaults to seq and toggles via setDeviceMode', () => {
+    expect(stLocal().deviceMode).toBe('seq');
+    stLocal().setDeviceMode('edit');
+    expect(stLocal().deviceMode).toBe('edit');
+  });
+
+  it('survives scene changes and same-track refocus, resets on track change or refocus from null', () => {
+    stLocal().enterFocus(0);
+    stLocal().setDeviceMode('edit');
+    stLocal().focusScene(1); // same track, different scene — mode survives
+    expect(stLocal().deviceMode).toBe('edit');
+    stLocal().enterFocus(0, 2); // re-focus same track while focused — mode survives
+    expect(stLocal().deviceMode).toBe('edit');
+    stLocal().enterFocus(1); // different track — resets
+    expect(stLocal().deviceMode).toBe('seq');
+    stLocal().setDeviceMode('edit');
+    stLocal().exitFocus();
+    stLocal().enterFocus(1); // entering from null resets, even to the same track
+    expect(stLocal().deviceMode).toBe('seq');
+  });
+});
+
 describe('focus', () => {
   it('starts in session mode and enters on a track head', () => {
     expect(st().focus).toBeNull();
