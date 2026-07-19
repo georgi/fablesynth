@@ -247,13 +247,22 @@ describe('bass store', () => {
     });
 
     it('pasteSelection with no selection anchors at lastCell, transposing to it', () => {
-      light(0, 5);
-      useBassStore.getState().setRectSel({ stepFrom: 0, stepTo: 0, noteFrom: 5, noteTo: 5 });
+      // Two-step rect on different lanes: dStep0's note (7) is the rect's
+      // noteHi, so it lands exactly on the anchor note (8); dStep1's note (5)
+      // must transpose by the same +1 to land on 6. Both assertions only pass
+      // if paste actually ran and applied the transpose.
+      light(0, 7);
+      light(1, 5);
+      useBassStore.getState().setRectSel({ stepFrom: 0, stepTo: 1, noteFrom: 5, noteTo: 7 });
       useBassStore.getState().copySelection();
       useBassStore.getState().clearStepSelection();
       light(10, 8); // sets lastCell = { step: 10, note: 8 }
       useBassStore.getState().pasteSelection();
-      expect(getStep(useBassStore.getState().patterns, 0, 10).note).toBe(8);
+      const p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 10).on).toBe(true);
+      expect(getStep(p, 0, 10).note).toBe(8);
+      expect(getStep(p, 0, 11).on).toBe(true);
+      expect(getStep(p, 0, 11).note).toBe(6);
     });
 
     it('duplicateSelection pastes right of the rect and reselects', () => {

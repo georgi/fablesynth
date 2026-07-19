@@ -54,12 +54,14 @@ longer starts a range selection.
 **Paste anchor**: pasting re-anchors the clipboard rect's top-left corner at
 whichever of these is available, in order — the *current* rectangle
 selection's top-left, else the last cell you clicked or dragged, else the
-pattern's start. So the common flow is: select and copy a rect, click an
-empty cell to move the anchor there (Cmd-V would otherwise paste back onto
-the still-active selection), then Cmd-V. Paste drops any cell that would land
-outside the pattern's step range or the grid's note-lane range — it never
-wraps or clamps into bounds. After a paste, the rectangle selection moves to
-cover the pasted cells.
+pattern's start. So the common flow is either: paste with a selection still
+active, which lands at that selection's top-left; or, to anchor somewhere
+else, first dismiss the selection (Esc or ✕ — a plain click does *not*
+dismiss it), then click a cell to move the anchor there (this also toggles a
+note on at that cell, which the paste will overwrite as it lands), then
+Cmd-V. Paste drops any cell that would land outside the pattern's step range
+or the grid's note-lane range — it never wraps or clamps into bounds. After a
+paste, the rectangle selection moves to cover the pasted cells.
 
 **Drag-move**: dragging from inside the current rectangle (rather than
 starting a fresh shift-drag) moves the whole block — both step and note lane

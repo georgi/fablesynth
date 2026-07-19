@@ -33,13 +33,22 @@ export function useSeqRectSelect({ editPattern, onSelect, onMove }: HookOpts) {
     const cleanup = () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', up);
-      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('keydown', keydown, { capture: true });
     };
     const up = (ev: PointerEvent) => { cleanup(); onUp(ev); };
-    const keydown = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { cleanup(); onCancel(); } };
+    const keydown = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      // Capture-phase + stopPropagation: while sweeping the FIRST selection
+      // the store's rectSel is still null (this pending rect is hook-local),
+      // so a bubble-phase Escape would fall through to the app's own
+      // shortcut (e.g. BL-1's stop()) and kill playback mid-gesture.
+      ev.stopPropagation();
+      cleanup();
+      onCancel();
+    };
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', up);
-    window.addEventListener('keydown', keydown);
+    window.addEventListener('keydown', keydown, { capture: true });
   };
 
   const startRectSelect = (ev: React.PointerEvent, step: number, note: number) => {
@@ -53,7 +62,16 @@ export function useSeqRectSelect({ editPattern, onSelect, onMove }: HookOpts) {
         rect = { stepFrom: step, stepTo: c.step, noteFrom: note, noteTo: c.note };
         setPending(rect);
       },
-      () => { setPending(null); suppressClick.current = true; onSelect(rect); },
+      () => {
+        setPending(null);
+        // A drag that ends on a different cell than it started fires click on
+        // the common ancestor, not a cell — consumeRectClick never runs to
+        // clear the flag. Release it on the next tick so it can't eat a later
+        // real tap (see useSeqNoteDrag for the same pattern).
+        suppressClick.current = true;
+        setTimeout(() => { suppressClick.current = false; }, 0);
+        onSelect(rect);
+      },
       () => setPending(null),
     );
   };
@@ -65,7 +83,10 @@ export function useSeqRectSelect({ editPattern, onSelect, onMove }: HookOpts) {
       (e) => { const c = findCell(e); if (c) dest = c; },
       (e) => {
         if (dest.step === step && dest.note === note) return; // plain tap inside rect: fall through to click
+        // Same seam as above: the drag may end off the common ancestor, so
+        // consumeRectClick never fires to clear the flag. Release it next tick.
         suppressClick.current = true;
+        setTimeout(() => { suppressClick.current = false; }, 0);
         onMove(dest.step - step, dest.note - note, e.altKey);
       },
       () => undefined,
