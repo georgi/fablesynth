@@ -339,15 +339,31 @@ describe('rect selection verbs', () => {
     expect(useStore.getState().rectSel).toEqual({ stepFrom: 8, stepTo: 9, noteFrom: 1, noteTo: 5 });
   });
 
-  it('dropRect across bars cuts from the source pattern, pastes into the target and switches the edit bar', () => {
-    light(2, 5); // pattern 0
+  it('dropRect across a bar boundary cuts from bar 1 and lands in bar 2', () => {
+    useStore.getState().setSequenceLength(2); // chain [0, 1]
+    light(2, 5); // pattern 0, abs step 2
     const src = { stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 };
     const data = copyRect(useStore.getState().patterns, WT1_LAYOUT, 0, src);
-    useStore.getState().dropRect(data, 6, 0, src, { src: 0, dst: 1 });
+    useStore.getState().dropRect(data, 22, 0, src); // abs 22 = bar 2, step 6
     const p = useStore.getState().patterns;
     expect(getStep(p, 0, 2).on).toBe(false); // cleared in pattern 0
     expect(getStep(p, 1, 6).note).toBe(5); // landed in pattern 1
-    expect(useStore.getState().editPattern).toBe(1);
+  });
+
+  it('cut/paste of a rect spanning the bar boundary works across patterns', () => {
+    useStore.getState().setSequenceLength(2);
+    light(15, 5); // bar 1, last step (abs 15)
+    useStore.getState().toggleCell(0, 7, 1); // bar 2, first step (abs 16)
+    useStore.getState().setRectSel({ stepFrom: 15, stepTo: 16, noteFrom: 0, noteTo: 11 });
+    useStore.getState().cutSteps();
+    let p = useStore.getState().patterns;
+    expect(getStep(p, 0, 15).on).toBe(false);
+    expect(getStep(p, 1, 0).on).toBe(false);
+    useStore.getState().setRectSel({ stepFrom: 15, stepTo: 16, noteFrom: 0, noteTo: 11 });
+    useStore.getState().pasteSteps(); // anchors at abs 15 — second cell lands in bar 2
+    p = useStore.getState().patterns;
+    expect(getStep(p, 0, 15).note).toBe(5);
+    expect(getStep(p, 1, 0).note).toBe(7); // crossed the boundary into pattern 1
   });
 
   it('dropRect with clearSrc (CUT) clears the source in the same undo entry', () => {

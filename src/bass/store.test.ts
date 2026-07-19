@@ -314,15 +314,26 @@ describe('bass store', () => {
       expect(useBassStore.getState().rectSel).toEqual({ stepFrom: 8, stepTo: 9, noteFrom: 1, noteTo: 5 });
     });
 
-    it('dropRect across bars cuts from the source pattern, pastes into the target and switches the edit bar', () => {
-      light(2, 5); // pattern 0
+    it('dropRect across a bar boundary cuts from bar 1 and lands in bar 2', () => {
+      useBassStore.getState().setSequenceLength(2); // chain [0, 1]
+      light(2, 5); // pattern 0, abs step 2
       const src = { stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 };
       const data = copyRect(useBassStore.getState().patterns, LAYOUT, 0, src);
-      useBassStore.getState().dropRect(data, 6, 0, src, { src: 0, dst: 1 });
+      useBassStore.getState().dropRect(data, 22, 0, src); // abs 22 = bar 2, step 6
       const p = useBassStore.getState().patterns;
       expect(getStep(p, 0, 2).on).toBe(false); // cleared in pattern 0
       expect(getStep(p, 1, 6).note).toBe(5); // landed in pattern 1
-      expect(useBassStore.getState().editPattern).toBe(1);
+    });
+
+    it('delete clears a rect spanning the bar boundary', () => {
+      useBassStore.getState().setSequenceLength(2);
+      light(15, 5); // abs 15 (bar 1)
+      useBassStore.getState().toggleCell(0, 7, 1); // abs 16 (bar 2)
+      useBassStore.getState().setRectSel({ stepFrom: 15, stepTo: 16, noteFrom: 0, noteTo: 11 });
+      useBassStore.getState().deleteSelection();
+      const p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 15).on).toBe(false);
+      expect(getStep(p, 1, 0).on).toBe(false);
     });
 
     it('dropRect with clearSrc (CUT) clears the source in the same undo entry', () => {

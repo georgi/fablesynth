@@ -11,7 +11,7 @@ import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
 import { useSeqGhostPaste } from '../../components/useSeqGhostPaste';
 import { useSeqNoteDrag } from '../../components/useSeqNoteDrag';
 import { useSeqRectSelect } from '../../components/useSeqRectSelect';
-import { copyRect, rectNorm } from '../../shared/seqEdit';
+import { copyRectChain, rectNorm } from '../../shared/seqEdit';
 import { getStep, LAYOUT, NOTE_LANES, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
@@ -47,7 +47,8 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   // grab a lit cell and drop it on another step/lane of the same pattern.
   const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
     moveStepNote(from, to, note, { copy }, pattern);
-    if (pattern === useBassStore.getState().editPattern) setRectSel({ stepFrom: to, stepTo: to, noteFrom: note, noteTo: note });
+    const bar = useBassStore.getState().chain.indexOf(pattern);
+    if (bar >= 0) setRectSel({ stepFrom: bar * STEPS + to, stepTo: bar * STEPS + to, noteFrom: note, noteTo: note });
   });
 
   // Rectangle selection + in-rect block-move
@@ -56,7 +57,6 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   // current rect to move (Alt-drag copies) it. Both gestures commit once, on
   // pointer release, so each costs a single undo entry.
   const { pending, startRectSelect, startRectMove, consumeRectClick } = useSeqRectSelect({
-    editPattern,
     onSelect: setRectSel,
     onMove: (dStep, dNote, copy) => moveRectSel(dStep, dNote, { copy }),
   });
@@ -71,14 +71,11 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   // cells trail the cursor as ghosts, and the next click drops them (Escape
   // or clicking outside the grid cancels; a cancelled CUT changes nothing).
   const dropRect = useBassStore((s) => s.dropRect);
-  const { ghost, beginGhost, ghostAt, isCutSrc } = useSeqGhostPaste({
-    onDrop: (data, atStep, dNote, clearSrc, srcPattern, dstPattern) =>
-      dropRect(data, atStep, dNote, clearSrc, { src: srcPattern, dst: dstPattern }),
-  });
+  const { ghost, beginGhost, ghostAt, isCutSrc } = useSeqGhostPaste({ onDrop: dropRect });
   const pickUpSelection = (cut: boolean) => {
     if (!rectSel) return;
     copySelection(); // keep the clipboard in sync so Cmd-V still pastes the same cells
-    beginGhost(copyRect(patterns, LAYOUT, editPattern, rectSel), { cut, src: rectSel, srcPattern: editPattern });
+    beginGhost(copyRectChain(patterns, LAYOUT, chain, rectSel), { cut, src: rectSel });
     clearStepSelection();
   };
 
@@ -135,7 +132,6 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
           <div className="bl-seq-cols">
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               const current = playing && curStep === step && curPat === pattern;
-              const editable = pattern === editPattern;
               return (
                 <div
                   className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}`}
@@ -153,9 +149,10 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                             type="button"
                             data-seq-cell
                             data-step={step}
+                            data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (editable && inRect(step, note) ? ' sel' : '') + (ghost ? (ghostAt(step, note, pattern) ? ' ghost' : isCutSrc(step, note, pattern) ? ' drag-src' : '') : '')}
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (inRect(absoluteStep, note) ? ' sel' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
@@ -164,14 +161,10 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                               // Esc cancels). Shift-drag sweeps a selection rect;
                               // a plain drag inside the current rect moves it.
                               if (hosted) return;
-                              if (event.shiftKey) {
-                                // Shift-drag works on any bar: starting on a
-                                // non-edit bar makes it the edit bar first.
-                                if (!editable) setEditPattern(pattern);
-                                startRectSelect(event, step, note, pattern);
-                                return;
-                              }
-                              if (editable && rectSel && inRect(step, note) && !pending) { startRectMove(event, step, note); return; }
+                              // Selection is timeline-wide: shift-drag sweeps
+                              // across bars, and both gestures use absolute steps.
+                              if (event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
+                              if (rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
                               let srcStep = step;
                               if (!active) {
                                 srcStep = -1;
@@ -233,13 +226,11 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
             })}
           </div>
           {!hosted && rectSel && (() => {
-            const editBarIdx = Array.from({ length: barCount }, (_, b) => chain[b] ?? b).indexOf(editPattern);
-            const barOffset = Math.max(0, editBarIdx) * STEPS;
             const { stepLo, stepHi } = rectNorm(rectSel);
             return (
               <SeqSelectionMenu
-                visibleLo={barOffset + stepLo}
-                visibleHi={barOffset + stepHi}
+                visibleLo={stepLo}
+                visibleHi={stepHi}
                 totalSteps={totalSteps}
                 onCut={() => pickUpSelection(true)}
                 onCopy={() => pickUpSelection(false)}

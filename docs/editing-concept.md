@@ -25,8 +25,8 @@ persistence stay centralized.
 ## WT-1 / BL-1: step × note-lane rectangle selection
 
 Both note grids (WT-1's NOTE SEQ, BL-1's PITCH SEQ) select a **rectangle**
-over step (x) and note lane (y), not a 1-D step range. Shift-drag any cell of
-the pattern currently being edited to sweep the rect; the highlighted cells
+over step (x) and note lane (y), not a 1-D step range. Shift-drag any cell —
+on any bar — to sweep the rect; the highlighted cells
 update live as the pointer moves, and the selection commits once on
 pointer-release (one gesture, no intermediate store writes). Escape while
 dragging cancels without committing. Selection is standalone-only — hosted
@@ -36,10 +36,9 @@ A floating **CUT · COPY · DUP · DEL · ✕** menu appears centered over the
 selected columns once a rectangle exists:
 
 - **CUT / COPY** pick the selection up: the menu closes and the captured
-  cells trail the pointer as dashed **ghost notes** — over any bar, not just
-  the current edit bar — until the next click drops them at the hovered
-  position (top-left anchored, transposed to the hovered lane; dropping on
-  another bar pastes into that bar's pattern and makes it the edit bar).
+  cells trail the pointer as dashed **ghost notes** over any bar until the
+  next click drops them at the hovered position (top-left anchored,
+  transposed to the hovered lane; a drop may straddle a bar boundary).
   Escape or clicking outside the grid cancels; a cancelled CUT changes
   nothing, because the source cells (shown dimmed while carrying) are only
   cleared at drop time, in the same undo entry as the paste. Both verbs
@@ -57,18 +56,19 @@ Cmd-Shift-Z** drive the same verbs from the keyboard (copy / cut / paste /
 duplicate / delete / select-all / clear-selection / undo / redo). Plain click
 on a lit or empty cell still just toggles that one note — the step-number
 row underneath the grid is a plain label now, not a click target, and no
-longer starts a range selection. Shift-drag works on any bar: starting the
-drag on a bar that isn't the edit bar switches editing to that bar first.
+longer starts a range selection. Selection is timeline-wide: rect steps are
+absolute (0 .. bars×16−1), so a shift-drag sweeps across bar boundaries and
+every verb reads/writes through the bar chain into each bar's pattern.
 
 **Paste anchor**: pasting re-anchors the clipboard rect's top-left corner at
 whichever of these is available, in order — the *current* rectangle
 selection's top-left, else the last cell you clicked or dragged, else the
-pattern's start. So the common flow is either: paste with a selection still
+timeline start. So the common flow is either: paste with a selection still
 active, which lands at that selection's top-left; or, to anchor somewhere
 else, first dismiss the selection (Esc or ✕ — a plain click does *not*
 dismiss it), then click a cell to move the anchor there (this also toggles a
 note on at that cell, which the paste will overwrite as it lands), then
-Cmd-V. Paste drops any cell that would land outside the pattern's step range
+Cmd-V. Paste drops any cell that would land outside the timeline's step range
 or the grid's note-lane range — it never wraps or clamps into bounds. After a
 paste, the rectangle selection moves to cover the pasted cells.
 

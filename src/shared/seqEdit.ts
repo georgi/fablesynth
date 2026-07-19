@@ -156,6 +156,71 @@ export function moveRect(
   return pasteRect(base, l, pat, stepLo + dStep, dNote, data, opts.maxNote ?? 11);
 }
 
+// ---------- chain-aware rect ops (absolute timeline steps) ----------
+// The same four verbs over the *visible timeline*: rect steps are absolute
+// (0 .. chain.length*stepsPerPattern-1) and each bar b maps to pattern
+// chain[b], so a selection may span bar boundaries. Assumes each pattern
+// appears at most once in the chain (standalone chains are the identity
+// [0..len-1]; movePattern swaps content, never the chain). Cells landing
+// past the timeline end are dropped, never wrapped.
+
+const chainOffset = (l: SeqLayout, chain: number[], absStep: number): number | null => {
+  const bar = Math.floor(absStep / l.stepsPerPattern);
+  if (absStep < 0 || bar >= chain.length) return null;
+  return stepOffset(l, chain[bar], absStep % l.stepsPerPattern);
+};
+
+export function copyRectChain(p: Patterns, l: SeqLayout, chain: number[], rect: RectSel): RectCells {
+  const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
+  const cells: RectCells['cells'] = [];
+  for (let s = stepLo; s <= stepHi; s++) {
+    const o = chainOffset(l, chain, s);
+    if (o === null) continue;
+    const n = cellNote(p, o);
+    if (cellOn(p, o) && n >= noteLo && n <= noteHi) cells.push({ dStep: s - stepLo, bytes: p.slice(o, o + l.stride) });
+  }
+  return { wSteps: stepHi - stepLo + 1, noteLo, noteHi, cells };
+}
+
+export function clearRectChain(p: Patterns, l: SeqLayout, chain: number[], rect: RectSel, emptyStep?: Uint8Array): Patterns {
+  const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
+  const next = p.slice();
+  for (let s = stepLo; s <= stepHi; s++) {
+    const o = chainOffset(l, chain, s);
+    if (o === null) continue;
+    const n = cellNote(next, o);
+    if (cellOn(next, o) && n >= noteLo && n <= noteHi) {
+      for (let b = 0; b < l.stride; b++) next[o + b] = emptyStep ? emptyStep[b] : 0;
+    }
+  }
+  return next;
+}
+
+export function pasteRectChain(
+  p: Patterns, l: SeqLayout, chain: number[], atStep: number, dNote: number, data: RectCells, maxNote = 11,
+): Patterns {
+  const next = p.slice();
+  for (const c of data.cells) {
+    const o = chainOffset(l, chain, atStep + c.dStep);
+    if (o === null) continue;
+    const note = (c.bytes[1] & 0x7f) + dNote;
+    if (note < 0 || note > maxNote) continue;
+    next.set(c.bytes, o);
+    next[o + 1] = (c.bytes[1] & 0x80) | note;
+  }
+  return next;
+}
+
+export function moveRectChain(
+  p: Patterns, l: SeqLayout, chain: number[], rect: RectSel, dStep: number, dNote: number,
+  opts: { copy?: boolean; emptyStep?: Uint8Array; maxNote?: number } = {},
+): Patterns {
+  const { stepLo } = rectNorm(rect);
+  const data = copyRectChain(p, l, chain, rect);
+  const base = opts.copy ? p.slice() : clearRectChain(p, l, chain, rect, opts.emptyStep);
+  return pasteRectChain(base, l, chain, stepLo + dStep, dNote, data, opts.maxNote ?? 11);
+}
+
 // Whole-pattern block ops — the full patternSize bytes (all pads for DR-1).
 export function copyPattern(p: Patterns, l: SeqLayout, pat: number): Uint8Array {
   return p.slice(pat * l.patternSize, (pat + 1) * l.patternSize);

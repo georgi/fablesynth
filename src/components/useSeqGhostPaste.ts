@@ -13,16 +13,12 @@ import type { RectCells, RectSel } from '../shared/seqEdit';
 interface Ghost {
   data: RectCells;
   cut: boolean;
-  src: RectSel | null; // source rect to clear on drop (CUT only)
-  srcPattern: number; // pattern the pickup came from (CUT clears there)
-  hover: { step: number; note: number; pattern: number } | null;
+  src: RectSel | null; // source rect (absolute steps) to clear on drop (CUT only)
+  hover: { step: number; note: number } | null;
 }
 
 interface HookOpts {
-  onDrop: (
-    data: RectCells, atStep: number, dNote: number,
-    clearSrc: RectSel | null, srcPattern: number, dstPattern: number,
-  ) => void;
+  onDrop: (data: RectCells, atStep: number, dNote: number, clearSrc: RectSel | null) => void;
 }
 
 export function useSeqGhostPaste({ onDrop }: HookOpts) {
@@ -30,19 +26,19 @@ export function useSeqGhostPaste({ onDrop }: HookOpts) {
   const live = useRef<Ghost | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
-  // Any grid cell is a drop target — dropping on another bar pastes into
-  // that bar's pattern (the store switches the edit bar to match).
+  // Any grid cell is a drop target — steps are absolute timeline steps, so
+  // a drop can land on any bar and straddle a boundary.
   const findCell = (ev: PointerEvent | MouseEvent): Ghost['hover'] => {
     const el = document.elementFromPoint(ev.clientX, ev.clientY);
     const cell = el instanceof Element ? el.closest<HTMLElement>('[data-seq-cell]') : null;
     if (!cell) return null;
-    return { step: Number(cell.dataset.step), note: Number(cell.dataset.note), pattern: Number(cell.dataset.pattern) };
+    return { step: Number(cell.dataset.absStep), note: Number(cell.dataset.note) };
   };
 
-  const beginGhost = (data: RectCells, opts: { cut: boolean; src: RectSel | null; srcPattern: number }) => {
+  const beginGhost = (data: RectCells, opts: { cut: boolean; src: RectSel | null }) => {
     if (!data.cells.length) return;
     cleanupRef.current?.();
-    const state: Ghost = { data, cut: opts.cut, src: opts.src, srcPattern: opts.srcPattern, hover: null };
+    const state: Ghost = { data, cut: opts.cut, src: opts.src, hover: null };
     live.current = state;
     setGhost(state);
 
@@ -64,9 +60,7 @@ export function useSeqGhostPaste({ onDrop }: HookOpts) {
       ev.stopPropagation();
       const cur = live.current;
       const at = findCell(ev);
-      if (cur && at) {
-        onDrop(cur.data, at.step, at.note - cur.data.noteHi, cur.cut ? cur.src : null, cur.srcPattern, at.pattern);
-      }
+      if (cur && at) onDrop(cur.data, at.step, at.note - cur.data.noteHi, cur.cut ? cur.src : null);
       window.addEventListener('click', swallowClick, { capture: true });
       finish(true);
     };
@@ -95,18 +89,18 @@ export function useSeqGhostPaste({ onDrop }: HookOpts) {
     window.addEventListener('keydown', keydown, { capture: true });
   };
 
-  // Would a ghost note land on (step, note) of this bar at the current hover?
-  const ghostAt = (step: number, note: number, pattern: number): boolean => {
-    if (!ghost?.hover || ghost.hover.pattern !== pattern) return false;
+  // Would a ghost note land on (absolute step, note) at the current hover?
+  const ghostAt = (step: number, note: number): boolean => {
+    if (!ghost?.hover) return false;
     const dNote = ghost.hover.note - ghost.data.noteHi;
     return ghost.data.cells.some(
       (c) => ghost.hover!.step + c.dStep === step && (c.bytes[1] & 0x7f) + dNote === note,
     );
   };
 
-  // Is (step, note) a picked-up CUT source cell (shown dimmed until dropped)?
-  const isCutSrc = (step: number, note: number, pattern: number): boolean => {
-    if (!ghost?.cut || !ghost.src || ghost.srcPattern !== pattern) return false;
+  // Is (absolute step, note) a picked-up CUT source cell (dimmed until dropped)?
+  const isCutSrc = (step: number, note: number): boolean => {
+    if (!ghost?.cut || !ghost.src) return false;
     const lo = Math.min(ghost.src.stepFrom, ghost.src.stepTo);
     return ghost.data.cells.some((c) => lo + c.dStep === step && (c.bytes[1] & 0x7f) === note);
   };

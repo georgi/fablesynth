@@ -20,8 +20,8 @@ import {
 import { generateTables, SIZE, type GeneratedTable } from './engine/wavetables';
 import { sequenceChain, sequenceLengthFromChain } from './sequenceLength';
 import {
-  clearRange, clearRect, copyPattern, copyRect, makeHistory, moveRect, pastePattern,
-  pasteRect, rectNorm, type RectCells, type RectSel,
+  clearRange, clearRectChain, copyPattern, copyRectChain, makeHistory, moveRectChain, pastePattern,
+  pasteRectChain, rectNorm, type RectCells, type RectSel,
 } from './shared/seqEdit';
 
 // Singleton audio engine (created once, initialized on power-on).
@@ -118,7 +118,7 @@ interface SynthStore {
   duplicateSteps: () => void;
   deleteSteps: () => void;
   moveRectSel: (dStep: number, dNote: number, opts?: { copy?: boolean }) => void;
-  dropRect: (data: RectCells, atStep: number, dNote: number, clearSrc?: RectSel | null, pats?: { src?: number; dst?: number }) => void;
+  dropRect: (data: RectCells, atStep: number, dNote: number, clearSrc?: RectSel | null) => void;
   moveStepNote: (from: number, to: number, note: number, opts?: { copy?: boolean }, pattern?: number) => void;
   movePattern: (from: number, to: number, opts?: { copy?: boolean }) => void;
   undoSeq: () => void;
@@ -346,7 +346,9 @@ export const useStore = create<SynthStore>((set, get) => {
       ? setStep(patterns, pat, step, { on: false, acc: false })
       : setStep(patterns, pat, step, { on: true, note });
     get()._setPatterns(next);
-    if (pat === get().editPattern) set({ lastCell: { step, note } });
+    // Paste anchor, in absolute timeline steps (bar offset + local step).
+    const bar = get().chain.indexOf(pat);
+    if (bar >= 0) set({ lastCell: { step: bar * STEPS + step, note } });
   },
 
   cycleStepOct: (step, pattern) => {
@@ -387,55 +389,62 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   // ---------- step-sequencer editing (docs/editing-concept.md) ----------
-  setRectSel: (sel) => set({
-    rectSel: sel
-      ? {
-          stepFrom: Math.min(STEPS - 1, Math.max(0, sel.stepFrom | 0)),
-          stepTo: Math.min(STEPS - 1, Math.max(0, sel.stepTo | 0)),
-          noteFrom: Math.min(NOTE_LANES - 1, Math.max(0, sel.noteFrom | 0)),
-          noteTo: Math.min(NOTE_LANES - 1, Math.max(0, sel.noteTo | 0)),
-        }
-      : null,
-  }),
+  // Rect selections live in *absolute timeline steps* (0 .. bars*16-1) so a
+  // rectangle can span bar boundaries; the chain-aware helpers map each
+  // absolute step onto its bar's pattern.
+  setRectSel: (sel) => {
+    const maxStep = get().chain.length * STEPS - 1;
+    set({
+      rectSel: sel
+        ? {
+            stepFrom: Math.min(maxStep, Math.max(0, sel.stepFrom | 0)),
+            stepTo: Math.min(maxStep, Math.max(0, sel.stepTo | 0)),
+            noteFrom: Math.min(NOTE_LANES - 1, Math.max(0, sel.noteFrom | 0)),
+            noteTo: Math.min(NOTE_LANES - 1, Math.max(0, sel.noteTo | 0)),
+          }
+        : null,
+    });
+  },
 
-  selectAllSteps: () => set({ rectSel: { stepFrom: 0, stepTo: STEPS - 1, noteFrom: 0, noteTo: NOTE_LANES - 1 } }),
+  selectAllSteps: () => set({ rectSel: { stepFrom: 0, stepTo: get().chain.length * STEPS - 1, noteFrom: 0, noteTo: NOTE_LANES - 1 } }),
 
   clearStepSel: () => set({ rectSel: null }),
 
   copySteps: () => {
-    const { patterns, editPattern, rectSel } = get();
+    const { patterns, editPattern, chain, rectSel } = get();
     if (rectSel) {
-      set({ clipboard: { kind: 'rect', data: copyRect(patterns, WT1_LAYOUT, editPattern, rectSel) } });
+      set({ clipboard: { kind: 'rect', data: copyRectChain(patterns, WT1_LAYOUT, chain, rectSel) } });
     } else {
       set({ clipboard: { kind: 'pattern', data: copyPattern(patterns, WT1_LAYOUT, editPattern) } });
     }
   },
 
   cutSteps: () => {
-    const { patterns, editPattern, rectSel } = get();
+    const { patterns, editPattern, chain, rectSel } = get();
     get().copySteps();
     pushSeqHistory();
     if (rectSel) {
-      get()._setPatterns(clearRect(patterns, WT1_LAYOUT, editPattern, rectSel, EMPTY_STEP));
+      get()._setPatterns(clearRectChain(patterns, WT1_LAYOUT, chain, rectSel, EMPTY_STEP));
     } else {
       get()._setPatterns(clearRange(patterns, WT1_LAYOUT, editPattern, 0, STEPS - 1, EMPTY_STEP));
     }
   },
 
   pasteSteps: () => {
-    const { patterns, editPattern, rectSel, lastCell, clipboard } = get();
+    const { patterns, editPattern, chain, rectSel, lastCell, clipboard } = get();
     if (!clipboard) return;
     pushSeqHistory();
     if (clipboard.kind === 'pattern') {
       get()._setPatterns(pastePattern(patterns, WT1_LAYOUT, editPattern, clipboard.data));
       return;
     }
-    // Anchor: current rect's top-left, else the last-touched cell, else in place.
+    // Anchor: current rect's top-left, else the last-touched cell, else the
+    // timeline start (all in absolute steps).
     const anchor = rectSel
       ? { step: rectNorm(rectSel).stepLo, note: rectNorm(rectSel).noteHi }
       : lastCell ?? { step: 0, note: clipboard.data.noteHi };
     const dNote = anchor.note - clipboard.data.noteHi;
-    get()._setPatterns(pasteRect(patterns, WT1_LAYOUT, editPattern, anchor.step, dNote, clipboard.data, NOTE_LANES - 1));
+    get()._setPatterns(pasteRectChain(patterns, WT1_LAYOUT, chain, anchor.step, dNote, clipboard.data, NOTE_LANES - 1));
     get().setRectSel({
       stepFrom: anchor.step,
       stepTo: anchor.step + clipboard.data.wSteps - 1,
@@ -449,10 +458,10 @@ export const useStore = create<SynthStore>((set, get) => {
     if (rectSel) {
       const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rectSel);
       const at = stepHi + 1;
-      if (at >= STEPS) return; // nothing past the last step — full no-op
+      if (at >= chain.length * STEPS) return; // nothing past the timeline end — full no-op
       pushSeqHistory();
-      const data = copyRect(patterns, WT1_LAYOUT, editPattern, rectSel);
-      get()._setPatterns(pasteRect(patterns, WT1_LAYOUT, editPattern, at, 0, data, NOTE_LANES - 1));
+      const data = copyRectChain(patterns, WT1_LAYOUT, chain, rectSel);
+      get()._setPatterns(pasteRectChain(patterns, WT1_LAYOUT, chain, at, 0, data, NOTE_LANES - 1));
       get().setRectSel({ stepFrom: at, stepTo: at + (stepHi - stepLo), noteFrom: noteLo, noteTo: noteHi });
     } else {
       pushSeqHistory();
@@ -467,39 +476,36 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   deleteSteps: () => {
-    const { patterns, editPattern, rectSel } = get();
+    const { patterns, chain, rectSel } = get();
     if (!rectSel) return;
     pushSeqHistory();
-    get()._setPatterns(clearRect(patterns, WT1_LAYOUT, editPattern, rectSel, EMPTY_STEP));
+    get()._setPatterns(clearRectChain(patterns, WT1_LAYOUT, chain, rectSel, EMPTY_STEP));
   },
 
   moveRectSel: (dStep, dNote, opts = {}) => {
-    const { patterns, editPattern, rectSel } = get();
+    const { patterns, chain, rectSel } = get();
     if (!rectSel) return;
     const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rectSel);
-    // Clamp so the whole rect stays inside the grid — stored selection and
-    // pasted content must always agree.
-    const ds = Math.min(STEPS - 1 - stepHi, Math.max(-stepLo, dStep | 0));
+    // Clamp so the whole rect stays inside the timeline — stored selection
+    // and pasted content must always agree.
+    const ds = Math.min(chain.length * STEPS - 1 - stepHi, Math.max(-stepLo, dStep | 0));
     const dn = Math.min(NOTE_LANES - 1 - noteHi, Math.max(-noteLo, dNote | 0));
     if (ds === 0 && dn === 0) return;
     pushSeqHistory();
-    get()._setPatterns(moveRect(patterns, WT1_LAYOUT, editPattern, rectSel, ds, dn, { copy: opts.copy, emptyStep: EMPTY_STEP, maxNote: NOTE_LANES - 1 }));
+    get()._setPatterns(moveRectChain(patterns, WT1_LAYOUT, chain, rectSel, ds, dn, { copy: opts.copy, emptyStep: EMPTY_STEP, maxNote: NOTE_LANES - 1 }));
     set({ rectSel: { stepFrom: stepLo + ds, stepTo: stepHi + ds, noteFrom: noteLo + dn, noteTo: noteHi + dn } });
   },
 
   // Ghost-paste drop (menu CUT/COPY → cells follow the cursor → click): stamp
-  // the picked-up cells at the drop anchor, clearing the CUT source in the
-  // same undo entry. Out-of-range cells are dropped, like any paste. A drop
-  // on another bar pastes into that bar's pattern and makes it the edit bar.
-  dropRect: (data, atStep, dNote, clearSrc, pats) => {
-    const { patterns, editPattern } = get();
+  // the picked-up cells at the drop anchor (absolute steps, so drops land on
+  // any bar and may straddle a boundary), clearing the CUT source in the
+  // same undo entry. Out-of-range cells are dropped, like any paste.
+  dropRect: (data, atStep, dNote, clearSrc) => {
+    const { patterns, chain } = get();
     if (!data.cells.length) return;
-    const srcPat = pats?.src ?? editPattern;
-    const dstPat = pats?.dst ?? editPattern;
     pushSeqHistory();
-    const base = clearSrc ? clearRect(patterns, WT1_LAYOUT, srcPat, clearSrc, EMPTY_STEP) : patterns;
-    get()._setPatterns(pasteRect(base, WT1_LAYOUT, dstPat, atStep, dNote, data, NOTE_LANES - 1));
-    if (dstPat !== editPattern) set({ editPattern: dstPat });
+    const base = clearSrc ? clearRectChain(patterns, WT1_LAYOUT, chain, clearSrc, EMPTY_STEP) : patterns;
+    get()._setPatterns(pasteRectChain(base, WT1_LAYOUT, chain, atStep, dNote, data, NOTE_LANES - 1));
     get().setRectSel({
       stepFrom: atStep,
       stepTo: atStep + data.wSteps - 1,
