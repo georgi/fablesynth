@@ -46,6 +46,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const shiftStepSel = useStore((s) => s.shiftStepSel);
   const movePattern = useStore((s) => s.movePattern);
   const moveStepNote = useStore((s) => s.moveStepNote);
+  const cutSteps = useStore((s) => s.cutSteps);
   const copySteps = useStore((s) => s.copySteps);
   const duplicateSteps = useStore((s) => s.duplicateSteps);
   const deleteSteps = useStore((s) => s.deleteSteps);
@@ -269,6 +270,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                 visibleLo={barOffset + Math.min(stepSel.from, stepSel.to)}
                 visibleHi={barOffset + Math.max(stepSel.from, stepSel.to)}
                 totalSteps={totalSteps}
+                onCut={cutSteps}
                 onCopy={copySteps}
                 onDuplicate={duplicateSteps}
                 onDelete={deleteSteps}

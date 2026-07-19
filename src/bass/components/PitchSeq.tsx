@@ -36,6 +36,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   const shiftSelection = useBassStore((s) => s.shiftSelection);
   const movePattern = useBassStore((s) => s.movePattern);
   const moveStepNote = useBassStore((s) => s.moveStepNote);
+  const cutSelection = useBassStore((s) => s.cutSelection);
   const copySelection = useBassStore((s) => s.copySelection);
   const duplicateSelection = useBassStore((s) => s.duplicateSelection);
   const deleteSelection = useBassStore((s) => s.deleteSelection);
@@ -266,6 +267,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                 visibleLo={barOffset + Math.min(stepSel.from, stepSel.to)}
                 visibleHi={barOffset + Math.max(stepSel.from, stepSel.to)}
                 totalSteps={totalSteps}
+                onCut={cutSelection}
                 onCopy={copySelection}
                 onDuplicate={duplicateSelection}
                 onDelete={deleteSelection}
