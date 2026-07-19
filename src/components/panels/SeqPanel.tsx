@@ -3,7 +3,7 @@
 // length, RAND, transport and ROOT controls.
 
 import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
-import { copyRectChain, rectNorm } from '../../shared/seqEdit';
+import { copyRectChain, rectNorm, type RectCells, type RectSel } from '../../shared/seqEdit';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
 import { SeqSelectionMenu } from '../SeqSelectionMenu';
@@ -18,15 +18,30 @@ import { useSeqRectSelect } from '../useSeqRectSelect';
 // sit slightly lighter than sharp-degree lanes.
 const SHARP_LANE = [false, true, false, true, false, false, true, false, true, false, true, false];
 
+/** Rect-selection verbs. Standalone defaults to the store's chain-aware
+ * verbs; hosted SQ-4 passes poly-aware implementations over the clip bytes
+ * (src/seq/wtClipRect.ts) so chords survive cut/copy/move. */
+export interface SeqRectOps {
+  copyData: (rect: RectSel) => RectCells;
+  drop: (data: RectCells, atStep: number, dNote: number, clearSrc: RectSel | null) => void;
+  move: (dStep: number, dNote: number, copy: boolean) => void;
+  dup: () => void;
+  del: () => void;
+}
+
 interface SeqPanelProps {
   /** Hosted SQ-4 clips have up to eight WT voices per step; standalone patterns do not. */
   polySteps?: SeqStep[][];
   bars?: number;
   onToggleChordNote?: (step: number, note: number) => void;
   onSetChordDuration?: (step: number, note: number, duration: number) => void;
+  /** Hosted-only: enables rect selection with these verb implementations. */
+  rectOps?: SeqRectOps;
+  /** Hosted-only: move (Alt-copy) one chord voice; enables grid note drag. */
+  onMoveChordNote?: (from: number, to: number, note: number, srcNote: number, copy: boolean, pattern: number) => void;
 }
 
-export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration }: SeqPanelProps = {}) {
+export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
   const seqPlaying = useStore((s) => s.seqPlaying);
   const curStep = useStore((s) => s.curStep);
@@ -51,13 +66,15 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const copySteps = useStore((s) => s.copySteps);
   const duplicateSteps = useStore((s) => s.duplicateSteps);
   const deleteSteps = useStore((s) => s.deleteSteps);
+  const dropRect = useStore((s) => s.dropRect);
   const clearStepSel = useStore((s) => s.clearStepSel);
 
   // Grid note drag (docs/superpowers/specs/2026-07-19-seq-note-drag-selection-menu-design.md):
   // grab a lit cell and drop it on another step/lane of the same pattern.
   // Standalone-only, like the step-range selection below.
-  const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
-    moveStepNote(from, to, note, { copy }, pattern);
+  const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern, srcNote) => {
+    if (onMoveChordNote) onMoveChordNote(from, to, note, srcNote, copy, pattern);
+    else moveStepNote(from, to, note, { copy }, pattern);
     const bar = useStore.getState().chain.indexOf(pattern);
     if (bar >= 0) setRectSel({ stepFrom: bar * STEPS + to, stepTo: bar * STEPS + to, noteFrom: note, noteTo: note });
   });
@@ -67,9 +84,18 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   // shift-drag a cell to sweep a step × note-lane rect; drag inside the
   // current rect to move (Alt-drag copies) it. Both gestures commit once, on
   // pointer release, so each costs a single undo entry. Standalone-only.
+  // Rect selection works standalone and (with rectOps) hosted in SQ-4.
+  const selectable = !hosted || !!rectOps;
+  const ops: SeqRectOps = rectOps ?? {
+    copyData: (r) => copyRectChain(patterns, WT1_LAYOUT, chain, r),
+    drop: dropRect,
+    move: (dStep, dNote, copy) => moveRectSel(dStep, dNote, { copy }),
+    dup: duplicateSteps,
+    del: deleteSteps,
+  };
   const { pending, startRectSelect, startRectMove, consumeRectClick } = useSeqRectSelect({
     onSelect: setRectSel,
-    onMove: (dStep, dNote, copy) => moveRectSel(dStep, dNote, { copy }),
+    onMove: (dStep, dNote, copy) => ops.move(dStep, dNote, copy),
   });
   const rect = pending ?? rectSel;
   const inRect = (step: number, note: number): boolean => {
@@ -81,12 +107,11 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   // Ghost paste: menu CUT/COPY picks the selection up — the menu closes, the
   // cells trail the cursor as ghosts, and the next click drops them (Escape
   // or clicking outside the grid cancels; a cancelled CUT changes nothing).
-  const dropRect = useStore((s) => s.dropRect);
-  const { ghost, beginGhost, ghostAt, isCutSrc } = useSeqGhostPaste({ onDrop: dropRect });
+  const { ghost, beginGhost, ghostAt, isCutSrc } = useSeqGhostPaste({ onDrop: ops.drop });
   const pickUpSelection = (cut: boolean) => {
     if (!rectSel) return;
-    copySteps(); // keep the clipboard in sync so Cmd-V still pastes the same cells
-    beginGhost(copyRectChain(patterns, WT1_LAYOUT, chain, rectSel), { cut, src: rectSel });
+    if (!rectOps) copySteps(); // keep the Cmd-V clipboard in sync (standalone only)
+    beginGhost(ops.copyData(rectSel), { cut, src: rectSel });
     clearStepSel();
   };
 
@@ -168,17 +193,22 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                               // Grab a lit cell — or the painted body of a longer
                               // note covering this cell — to move it; standalone
                               // mono grid only (hosted poly keeps chord callbacks).
-                              if (hosted || onToggleChordNote) return;
                               // Selection is timeline-wide: shift-drag sweeps
                               // across bars, and both gestures use absolute steps.
-                              if (event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
-                              if (rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
+                              if (selectable && event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
+                              if (selectable && rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
+                              if (hosted && !onMoveChordNote) return;
                               let srcStep = step;
                               if (!active) {
+                                // Grab the painted body of a longer note: find
+                                // the covering voice (poly clip hosted, mono
+                                // store patterns standalone).
                                 srcStep = -1;
                                 for (let c = step - 1; c >= 0; c--) {
-                                  const cand = getStep(patterns, pattern, c);
-                                  if (cand.on && cand.note === note && c + cand.duration > step) { srcStep = c; break; }
+                                  const cand = hosted
+                                    ? polySteps?.[bar * STEPS + c]?.find((v) => v.on && v.note === note && c + v.duration > step)
+                                    : (() => { const g = getStep(patterns, pattern, c); return g.on && g.note === note && c + g.duration > step ? g : undefined; })();
+                                  if (cand) { srcStep = c; break; }
                                 }
                                 if (srcStep < 0) return;
                               }
@@ -229,7 +259,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
               );
             })}
           </div>
-          {!hosted && rect && (() => {
+          {selectable && rect && (() => {
             // One translucent, bordered rectangle over the selection —
             // geometry mirrors the flex columns (5px gaps) and the fixed
             // 12 × 11px (+1px gap) lane stack.
@@ -249,7 +279,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
               />
             );
           })()}
-          {!hosted && rectSel && (() => {
+          {selectable && rectSel && (() => {
             const { stepLo, stepHi } = rectNorm(rectSel);
             return (
               <SeqSelectionMenu
@@ -258,8 +288,8 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                 totalSteps={totalSteps}
                 onCut={() => pickUpSelection(true)}
                 onCopy={() => pickUpSelection(false)}
-                onDuplicate={duplicateSteps}
-                onDelete={deleteSteps}
+                onDuplicate={ops.dup}
+                onDelete={ops.del}
                 onDismiss={clearStepSel}
               />
             );

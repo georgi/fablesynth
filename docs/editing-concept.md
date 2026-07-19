@@ -29,8 +29,13 @@ over step (x) and note lane (y), not a 1-D step range. Shift-drag any cell —
 on any bar — to sweep the rect; the highlighted cells
 update live as the pointer moves, and the selection commits once on
 pointer-release (one gesture, no intermediate store writes). Escape while
-dragging cancels without committing. Selection is standalone-only — hosted
-(SQ-4-driven) instances of these grids don't expose it.
+dragging cancels without committing. Selection also works hosted (SQ-4
+device focus): BL-1's verbs run on the device store and sync back to the
+session clip, while WT-1 uses poly-aware verbs over the clip bytes
+(src/seq/wtClipRect.ts) so chords survive cut/copy/move — pasted voices
+stack into free chord slots and drop when a step's eight voices are full.
+Grid note drag is hosted-enabled too (WT-1 moves a single chord voice).
+Only the keyboard verb surface (Cmd-C/X/V/…) stays standalone.
 
 A floating **CUT · COPY · DUP · DEL · ✕** menu appears centered over the
 selected columns once a rectangle exists:

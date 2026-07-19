@@ -160,9 +160,10 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                               // note covering this cell — to move it (Alt = copy,
                               // Esc cancels). Shift-drag sweeps a selection rect;
                               // a plain drag inside the current rect moves it.
-                              if (hosted) return;
                               // Selection is timeline-wide: shift-drag sweeps
-                              // across bars, and both gestures use absolute steps.
+                              // across bars, and both gestures use absolute
+                              // steps. Rect selection also works hosted (SQ-4
+                              // focus) — verbs flow back via _setPatterns.
                               if (event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
                               if (rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
                               let srcStep = step;
@@ -225,7 +226,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
               );
             })}
           </div>
-          {!hosted && rect && (() => {
+          {rect && (() => {
             // One translucent, bordered rectangle over the selection —
             // geometry mirrors the flex columns (5px gaps) and the fixed
             // 12 × 11px (+1px gap) lane stack.
@@ -245,7 +246,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
               />
             );
           })()}
-          {!hosted && rectSel && (() => {
+          {rectSel && (() => {
             const { stepLo, stepHi } = rectNorm(rectSel);
             return (
               <SeqSelectionMenu
