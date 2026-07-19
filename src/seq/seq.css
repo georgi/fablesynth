@@ -777,6 +777,24 @@
    so the rack renders as an embedded panel, not a full page. */
 .sq-hosted-rack { width: auto; min-height: 0; margin: 0; padding: 12px; }
 
+/* SEQ/EDIT device modes: the hidden group is unmounted, so each rack's grid
+   is re-declared per mode to let the visible group fill the vacated space.
+   ID-scoped selectors deliberately outrank index.css's responsive overrides. */
+#bass-rack[data-mode='seq'] #bl-editrow { grid-template-columns: 1.7fr 0.7fr; }
+#bass-rack[data-mode='seq'] #bl-modrow { grid-template-columns: 1fr; }
+#bass-rack[data-mode='edit'] #bl-modrow { grid-template-columns: 290px 1fr; }
+#rack[data-mode='seq'] .panels {
+  grid-template-areas:
+    'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
+    'seq seq seq seq seq seq seq seq seq seq seq seq';
+}
+#rack[data-mode='edit'] .panels {
+  grid-template-areas:
+    'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
+    'filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos lfos'
+    'matrix matrix matrix fx fx fx fx fx fx fx fx fx';
+}
+
 .sq-clipbar {
   display: flex; align-items: center; gap: 12px;
   padding: 8px 12px; border-bottom: 1px solid #1a2030;
