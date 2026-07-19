@@ -469,6 +469,7 @@
   min-height: 0;
 }
 .bl-cell {
+  display: block; /* inline-block buttons sag ~2px on the baseline, overflowing the 11px wrap */
   width: 100%;
   height: 100%;
   padding: 0;
@@ -486,8 +487,14 @@
 /* Rectangle selection (step × note-lane): shift-drag a cell to sweep, or
    drag inside the current rect to move it (see useSeqRectSelect). Distinct
    from the playhead cursor and the "on" cell fill. */
-.bl-cell.sel {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 75%, transparent);
+/* Single translucent, bordered rectangle over the current selection —
+   sized/positioned inline by PitchSeq to match the flex-column geometry. */
+.bl-sel-rect {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--ac-a) 85%, transparent);
+  border-radius: 3px;
   background: color-mix(in srgb, var(--ac-a) 14%, transparent);
 }
 

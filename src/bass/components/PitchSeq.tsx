@@ -152,7 +152,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                             data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (inRect(absoluteStep, note) ? ' sel' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
@@ -225,6 +225,26 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
               );
             })}
           </div>
+          {!hosted && rect && (() => {
+            // One translucent, bordered rectangle over the selection —
+            // geometry mirrors the flex columns (5px gaps) and the fixed
+            // 12 × 11px (+1px gap) lane stack.
+            const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
+            const gaps = (totalSteps - 1) * 5;
+            const span = stepHi - stepLo + 1;
+            return (
+              <div
+                className="bl-sel-rect"
+                aria-hidden="true"
+                style={{
+                  left: `calc((100% - ${gaps}px) / ${totalSteps} * ${stepLo} + ${stepLo * 5}px)`,
+                  width: `calc((100% - ${gaps}px) / ${totalSteps} * ${span} + ${(span - 1) * 5}px)`,
+                  top: `${(NOTE_LANES - 1 - noteHi) * 12}px`,
+                  height: `${(noteHi - noteLo + 1) * 12 - 1}px`,
+                }}
+              />
+            );
+          })()}
           {!hosted && rectSel && (() => {
             const { stepLo, stepHi } = rectNorm(rectSel);
             return (
