@@ -22,9 +22,14 @@ export function useSeqNoteDrag(
   const [drag, setDrag] = useState<SeqNoteDrag | null>(null);
   const suppressClick = useRef(false);
 
-  const startNoteDrag = (e: React.PointerEvent, step: number, note: number, pattern: number) => {
+  const startNoteDrag = (e: React.PointerEvent, step: number, note: number, pattern: number, grabStep = step) => {
     suppressClick.current = false;
-    let cur: SeqNoteDrag = { srcStep: step, srcNote: note, pattern, overStep: step, overNote: note, active: false, copy: e.altKey };
+    // Long notes can be grabbed by their painted body: `step` is the note's
+    // origin, `grabStep` the column actually under the pointer. The drag arms
+    // relative to the grab point, and the drop keeps the grab offset so the
+    // note lands where the grabbed part is released.
+    const offset = grabStep - step;
+    let cur: SeqNoteDrag = { srcStep: step, srcNote: note, pattern, overStep: grabStep, overNote: note, active: false, copy: e.altKey };
     setDrag(cur);
     const move = (ev: PointerEvent) => {
       const el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -36,7 +41,7 @@ export function useSeqNoteDrag(
         ...cur,
         overStep,
         overNote,
-        active: cur.active || overStep !== cur.srcStep || overNote !== cur.srcNote,
+        active: cur.active || overStep !== grabStep || overNote !== cur.srcNote,
         copy: ev.altKey,
       };
       setDrag(cur);
@@ -54,7 +59,7 @@ export function useSeqNoteDrag(
         // so release the flag on the next tick lest it eat a later real tap.
         suppressClick.current = true;
         setTimeout(() => { suppressClick.current = false; }, 0);
-        onCommit(cur.srcStep, cur.overStep, cur.overNote, ev.altKey, cur.pattern);
+        onCommit(cur.srcStep, Math.max(0, cur.overStep - offset), cur.overNote, ev.altKey, cur.pattern);
       }
       finish();
     };

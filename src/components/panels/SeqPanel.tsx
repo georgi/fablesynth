@@ -168,11 +168,21 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
-                              // Grab a lit cell to move it; standalone mono grid only
-                              // (hosted poly steps keep their chord callbacks).
-                              if (hosted || onToggleChordNote || !active || event.shiftKey) return;
+                              // Grab a lit cell — or the painted body of a longer
+                              // note covering this cell — to move it; standalone
+                              // mono grid only (hosted poly keeps chord callbacks).
+                              if (hosted || onToggleChordNote || event.shiftKey) return;
+                              let srcStep = step;
+                              if (!active) {
+                                srcStep = -1;
+                                for (let c = step - 1; c >= 0; c--) {
+                                  const cand = getStep(patterns, pattern, c);
+                                  if (cand.on && cand.note === note && c + cand.duration > step) { srcStep = c; break; }
+                                }
+                                if (srcStep < 0) return;
+                              }
                               event.preventDefault();
-                              startNoteDrag(event, step, note, pattern);
+                              startNoteDrag(event, srcStep, note, pattern, step);
                             }}
                             onClick={(event) => {
                               if (consumeDragClick()) return;
