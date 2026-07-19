@@ -447,8 +447,11 @@ ClipData padProgression(const Harmony& harmony, const PresetSpec& spec) {
 const std::array<const char*, 4>& leadPhrasesFor(const std::string& family) {
     static const std::map<std::string, std::array<const char*, 4>> phrases = {
         { "NEON", {
-            "0,2,0! 2,2,3 4,2,7 8,3,10 12,2,7 14,2,3 | 0,3,8! 4,2,0 8,4,10 14,2,7 | 0,2,7! 2,2,10 4,2,0 6,2,2 8,2,3 10,2,7 12,4,10 | 0,4,5! 4,2,2 8,8,0",
-            "0,1,0! 2,1,0 4,2,3 6,2,7 8,2,10 11,2,7 14,2,8 | 0,2,5! 3,2,8 6,2,5 8,3,3 12,4,0 | 0,2,8! 2,2,10 4,2,0 8,2,3 10,2,0 12,2,10 14,2,8 | 0,3,7! 4,3,11 8,2,7 10,6,2",
+            // Variations 0 and 1 deliberately avoid running the chord straight
+            // up and back down in even eighths — that symmetry is what makes a
+            // synth line read as a nursery tune.
+            "0,3,7! 3,1,8 5,3,10 10,2,7 13,3,3 | 0,5,0! 6,2,3 9,1,2 11,3,8 15,1,10 | 0,6,10! 7,2,7 10,3,5 14,2,3 | 0,3,10! 4,2,8 7,2,5 10,6,2",
+            "0,2,3! 2,1,3 4,2,7 7,1,10 9,3,7 13,3,8 | 0,4,5! 5,2,3 8,1,5 10,2,8 13,3,10 | 0,3,8! 4,1,7 6,2,5 9,1,3 11,2,0 14,2,3 | 0,3,7! 4,2,11 7,1,2 9,7,7",
             "0,3,7! 4,3,3 8,2,5 12,4,7 | 0,3,10! 4,2,7 7,2,5 10,2,3 12,4,2 | 0,2,2! 2,2,5 5,2,7 8,3,10 12,4,7 | 0,4,8! 6,2,7 8,8,5",
             "0,4,3! 4,3,2 8,4,0 13,3,7 | 0,4,2! 4,2,11 6,2,7 8,4,2 12,4,11 | 0,3,0! 3,3,8 8,2,5 10,2,3 12,4,5 | 0,4,2! 4,2,3 6,2,2 8,8,0" } },
         { "ACID", {
@@ -544,22 +547,22 @@ const DrumArchetype& drumArchetypeFor(const std::string& family) {
                      { CH, { 2, 6, 10, 14 }, {} }, { OH, { 2, 6, 10, 14 }, { 6, 14 } }, {} } },
         { "LO-FI", { { KICK, { 0, 7, 10 }, { 0 } }, { SNARE, { 4, 12 }, {} },
                      { CH, { 0, 3, 6, 8, 11, 14 }, {} }, { OH, { 14 }, {} },
-                     { { PERC_B, { 6 }, {} } } } },
+                     { { TOM_LO, { 6 }, {} } } } },
         { "CINEMATIC", { { KICK, { 0, 10 }, { 0 } }, { SNARE, { 8 }, { 8 } },
                          { CH, {}, {} }, { OH, {}, {} },
                          { { TOM_LO, { 13 }, {} } } } },
         { "MINIMAL", { { KICK, { 0, 4, 8, 12 }, { 0 } }, { RIM, { 4, 12 }, {} },
                        { CH, { 2, 6, 10, 14 }, { 2, 10 } }, { OH, { 10 }, {} },
-                       { { PERC_A, { 7 }, {} } } } },
+                       { { TOM_LO, { 7 }, {} } } } },
         { "FUTURE BASS", { { KICK, { 0, 6, 10 }, { 0 } }, { SNARE, { 8 }, { 8 } },
                            { CH, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 4, 12 } },
                            { OH, { 6 }, {} }, {} } },
         { "TRIP HOP", { { KICK, { 0, 3, 10 }, { 0 } }, { SNARE, { 4, 12 }, { 12 } },
                         { CH, { 0, 4, 6, 10, 14 }, { 6, 14 } }, { OH, { 7 }, {} },
-                        { { PERC_B, { 11 }, {} } } } },
+                        { { TOM_LO, { 11 }, {} } } } },
         { "DUB", { { KICK, { 8 }, { 8 } }, { SNARE, { 8 }, {} },
                    { CH, { 2, 6, 10, 14 }, { 6, 14 } }, { OH, { 12 }, {} },
-                   { { PERC_B, { 3, 11 }, {} } } } },
+                   { { TOM_MID, { 3, 11 }, {} } } } },
     };
     const auto it = archetypes.find(family);
     return it != archetypes.end() ? it->second : archetypes.at("NEON");
@@ -572,9 +575,9 @@ const std::vector<DrumFillHit>& drumFillFor(const std::string& family) {
         { "ACID", { { SNARE, 13, false }, { SNARE, 14, false }, { SNARE, 15, true } } },
         { "AMBIENT", { { OH, 12, false } } },
         { "HOUSE", { { CLAP, 13, false }, { CLAP, 15, true } } },
-        { "LO-FI", { { PERC_B, 13, false }, { PERC_B, 15, false } } },
+        { "LO-FI", { { TOM_MID, 13, false }, { TOM_LO, 15, false } } },
         { "CINEMATIC", { { TOM_HI, 8, false }, { TOM_MID, 10, false }, { TOM_LO, 12, true }, { TOM_LO, 14, true } } },
-        { "MINIMAL", { { PERC_A, 12, false }, { PERC_A, 14, true } } },
+        { "MINIMAL", { { TOM_LO, 12, false }, { TOM_LO, 14, true } } },
         { "FUTURE BASS", { { SNARE, 10, false }, { SNARE, 12, false }, { SNARE, 14, true } } },
         { "TRIP HOP", { { SNARE, 10, false }, { RIM, 13, false }, { SNARE, 15, true } } },
         { "DUB", { { TOM_MID, 11, false }, { TOM_LO, 13, false }, { SNARE, 15, true } } },
@@ -606,11 +609,11 @@ ClipData drumProgression(const PresetSpec& spec, int scene) {
     std::vector<int> hatAccents;
     for (size_t k = 0; k < family.hat.accents.size(); ++k)
         hatAccents.push_back(hatSteps.empty() ? -1 : hatSteps[((size_t)((int)k * 2 + shift)) % hatSteps.size()]);
-    static const std::array<std::pair<int, int>, 4> ghosts { { { -1, -1 }, { KICK, 14 }, { SNARE, 11 }, { PERC_B, 3 } } };
+    static const std::array<std::pair<int, int>, 4> ghosts { { { -1, -1 }, { KICK, 14 }, { SNARE, 11 }, { TOM_LO, 3 } } };
     // AMBIENT keeps its ghosts on the eighth grid with soft voices — off-grid
     // kick/snare pokes read as glitches in so sparse a field. Each variation
     // still gets a distinct hit so sibling songs stay unique.
-    static const std::array<std::pair<int, int>, 4> ambientGhosts { { { -1, -1 }, { CH, 10 }, { RIM, 12 }, { PERC_B, 6 } } };
+    static const std::array<std::pair<int, int>, 4> ambientGhosts { { { -1, -1 }, { CH, 10 }, { RIM, 12 }, { TOM_MID, 6 } } };
     const auto ghost = (spec.family == std::string("AMBIENT") ? ambientGhosts : ghosts)[(size_t)spec.variationIndex];
 
     for (int bar = 0; bar < 4; ++bar) {
@@ -725,12 +728,12 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             const auto calibratedGain = [](size_t track, int program) {
                 if (track == 0) { // DR-1 kits, leveled to the drum-bus mean
                     switch (program) {
-                        case 0: return 1.00f; case 2: return 0.71f;
-                        case 3: return 0.74f; case 4: return 1.00f;
-                        case 6: return 0.48f; case 8: return 0.80f;
-                        case 9: return 1.00f; case 12: return 0.74f;
-                        case 13: return 0.80f; case 15: return 0.58f;
-                        case 16: return 0.87f;
+                        case 0: return 1.00f; case 2: return 0.67f;
+                        case 3: return 0.70f; case 4: return 1.00f;
+                        case 6: return 0.46f; case 8: return 0.77f;
+                        case 9: return 1.00f; case 12: return 0.70f;
+                        case 13: return 0.77f; case 15: return 0.56f;
+                        case 16: return 0.82f;
                         default: return 0.78f;
                     }
                 }
@@ -740,11 +743,11 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
                         case 3: return 0.44f; case 4: return 0.44f;
                         case 5: return 0.42f; case 7: return 0.43f;
                         case 8: return 0.41f; case 9: return 0.74f;
-                        case 10: return 0.45f; case 11: return 0.50f;
-                        case 12: return 0.42f; case 13: return 0.41f;
-                        case 14: return 0.41f; case 15: return 0.41f;
-                        case 16: return 0.71f; case 17: return 0.38f;
-                        case 18: return 0.40f; case 19: return 0.42f;
+                        case 10: return 0.45f; case 11: return 0.51f;
+                        case 12: return 0.43f; case 13: return 0.41f;
+                        case 14: return 0.42f; case 15: return 0.42f;
+                        case 16: return 0.72f; case 17: return 0.38f;
+                        case 18: return 0.40f; case 19: return 0.43f;
                         case 20: return 0.41f; case 21: return 0.50f;
                         default: return 0.45f;
                     }
@@ -752,27 +755,26 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
                 if (track == 2) { // WT-1 lead (at drum target)
                     switch (program) {
                         case 3: return 0.59f; case 4: return 0.45f;
-                        case 6: return 0.43f; case 15: return 0.56f;
+                        case 6: return 0.43f; case 15: return 0.57f;
                         case 20: return 0.64f; case 21: return 0.48f;
-                        case 22: return 0.51f; case 28: return 0.79f;
-                        case 29: return 0.89f; case 33: return 0.45f;
+                        case 22: return 0.53f; case 28: return 0.80f;
+                        case 29: return 0.90f; case 33: return 0.45f;
                         case 35: return 0.47f; case 36: return 0.68f;
                         case 44: return 0.43f; case 45: return 0.70f;
                         case 46: return 0.31f; case 49: return 0.48f;
                         case 51: return 0.43f; case 52: return 0.46f;
-                        case 53: return 0.43f; case 54: return 0.43f;
-                        case 55: return 0.71f; case 58: return 0.44f;
-                        case 59: return 0.80f; case 60: return 0.78f;
-                        case 61: return 0.87f;
+                        case 53: return 0.43f; case 54: return 0.44f;
+                        case 58: return 0.44f; case 59: return 0.89f;
+                        case 60: return 0.79f; case 61: return 0.88f;
                         default: return 0.65f;
                     }
                 }
                 switch (program) { // WT-1 pad (+2 dB role offset)
                     case 1: return 0.59f; case 11: return 0.47f;
-                    case 17: return 0.76f; case 22: return 0.47f;
+                    case 17: return 0.76f; case 22: return 0.48f;
                     case 24: return 0.56f; case 25: return 0.55f;
-                    case 27: return 0.55f; case 32: return 1.00f;
-                    case 34: return 0.52f; case 35: return 0.53f;
+                    case 27: return 0.56f; case 32: return 1.00f;
+                    case 34: return 0.53f; case 35: return 0.53f;
                     case 38: return 0.73f; case 40: return 0.53f;
                     case 42: return 0.72f; case 56: return 1.00f;
                     default: return 0.59f;
@@ -867,10 +869,10 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("STONE GARDEN", "TRIP HOP", "STONE", 3, { "organic", "moody", "deep" }, { 16, 14, 28, 1 }, 3),    // DUSTY FELT · NYLON PLUCK / VELVET PAD
 
             // DUB
-            make("ECHO CHAMBER", "DUB", "ECHO",    2, { "spacious", "deep", "smoky" }, { 4, 20, 55, 56 }, 0),      // STEPPER ROOT · MELODICA / DUB SKANK
-            make("KING STEPPER", "DUB", "STEPPER", 3, { "rootsy", "driving", "warm" }, { 4, 3, 55, 22 }, 1),       // DEEP DUB · MELODICA / DRAWBAR ORGAN
-            make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 20, 22, 56 }, 2),          // STEPPER ROOT · DRAWBAR ORGAN / DUB SKANK
-            make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 20, 55, 1 }, 3),     // STEPPER ROOT · MELODICA / VELVET PAD
+            make("ECHO CHAMBER", "DUB", "ECHO",    2, { "spacious", "deep", "smoky" }, { 4, 20, 59, 56 }, 0),      // STEPPER ROOT · DEEP TICK / DUB SKANK
+            make("KING STEPPER", "DUB", "STEPPER", 3, { "rootsy", "driving", "warm" }, { 4, 3, 59, 22 }, 1),       // DEEP DUB · DEEP TICK / DRAWBAR ORGAN
+            make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 20, 59, 56 }, 2),          // STEPPER ROOT · DEEP TICK / DUB SKANK
+            make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 20, 59, 1 }, 3),     // STEPPER ROOT · DEEP TICK / VELVET PAD
         };
         return library;
     }();

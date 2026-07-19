@@ -61,10 +61,10 @@ const specs: Spec[] = [
   ['NIGHT BUS', 'TRIP HOP', 'BUS', 2, ['nocturnal', 'warm', 'tape'], [16, 19, 36, 32], 1], // UPRIGHT FELT · TAPE KEYS / GHOST CHOIR
   ['CRACKED LENS', 'TRIP HOP', 'LENS', 3, ['broken', 'eerie', 'dusty'], [8, 10, 29, 17], 2], // DARK CURRENT · KALIMBA PLUCK / DARK DRONE
   ['STONE GARDEN', 'TRIP HOP', 'STONE', 3, ['organic', 'moody', 'deep'], [16, 14, 28, 1], 3], // DUSTY FELT · NYLON PLUCK / VELVET PAD
-  ['ECHO CHAMBER', 'DUB', 'ECHO', 2, ['spacious', 'deep', 'smoky'], [4, 20, 55, 56], 0], // STEPPER ROOT · MELODICA / DUB SKANK
-  ['KING STEPPER', 'DUB', 'STEPPER', 3, ['rootsy', 'driving', 'warm'], [4, 3, 55, 22], 1], // DEEP DUB · MELODICA / DRAWBAR ORGAN
-  ['ROOTS RADAR', 'DUB', 'RADAR', 2, ['heavy', 'hazy', 'wide'], [4, 20, 22, 56], 2], // STEPPER ROOT · DRAWBAR ORGAN / DUB SKANK
-  ['ZION GATE', 'DUB', 'GATE', 3, ['uplifting', 'rootsy', 'wide'], [4, 20, 55, 1], 3], // STEPPER ROOT · MELODICA / VELVET PAD
+  ['ECHO CHAMBER', 'DUB', 'ECHO', 2, ['spacious', 'deep', 'smoky'], [4, 20, 59, 56], 0], // STEPPER ROOT · DEEP TICK / DUB SKANK
+  ['KING STEPPER', 'DUB', 'STEPPER', 3, ['rootsy', 'driving', 'warm'], [4, 3, 59, 22], 1], // DEEP DUB · DEEP TICK / DRAWBAR ORGAN
+  ['ROOTS RADAR', 'DUB', 'RADAR', 2, ['heavy', 'hazy', 'wide'], [4, 20, 59, 56], 2], // STEPPER ROOT · DEEP TICK / DUB SKANK
+  ['ZION GATE', 'DUB', 'GATE', 3, ['uplifting', 'rootsy', 'wide'], [4, 20, 59, 1], 3], // STEPPER ROOT · DEEP TICK / VELVET PAD
 ].map(([name, family, variation, energy, tags, programs, variationIndex]) => spec(
   name as string, family as string, variation as string, energy as number, tags as string[], programs as [number, number, number, number], variationIndex as number,
 ));
@@ -82,19 +82,19 @@ interface Harmony {
 // fader value. Tables carry only currently-used programs; the ?? fallbacks
 // cover future picks until the next measure_track_levels run.
 const DRUM_FADERS: Record<number, number> = {
-  0: 1.00, 2: 0.71, 3: 0.74, 4: 1.00, 6: 0.48, 8: 0.80, 9: 1.00, 12: 0.74, 13: 0.80, 15: 0.58, 16: 0.87,
+  0: 1.00, 2: 0.67, 3: 0.70, 4: 1.00, 6: 0.46, 8: 0.77, 9: 1.00, 12: 0.70, 13: 0.77, 15: 0.56, 16: 0.82,
 };
 const BASS_FADERS: Record<number, number> = {
-  0: 0.43, 2: 0.46, 3: 0.44, 4: 0.44, 5: 0.42, 7: 0.43, 8: 0.41, 9: 0.74, 10: 0.45, 11: 0.50,
-  12: 0.42, 13: 0.41, 14: 0.41, 15: 0.41, 16: 0.71, 17: 0.38, 18: 0.40, 19: 0.42, 20: 0.41, 21: 0.50,
+  0: 0.43, 2: 0.46, 3: 0.44, 4: 0.44, 5: 0.42, 7: 0.43, 8: 0.41, 9: 0.74, 10: 0.45, 11: 0.51,
+  12: 0.43, 13: 0.41, 14: 0.42, 15: 0.42, 16: 0.72, 17: 0.38, 18: 0.40, 19: 0.43, 20: 0.41, 21: 0.50,
 };
 const LEAD_FADERS: Record<number, number> = {
-  3: 0.59, 4: 0.45, 6: 0.43, 15: 0.56, 20: 0.64, 21: 0.48, 22: 0.51, 28: 0.79, 29: 0.89,
+  3: 0.59, 4: 0.45, 6: 0.43, 15: 0.57, 20: 0.64, 21: 0.48, 22: 0.53, 28: 0.80, 29: 0.90,
   33: 0.45, 35: 0.47, 36: 0.68, 44: 0.43, 45: 0.70, 46: 0.31, 49: 0.48, 51: 0.43,
-  52: 0.46, 53: 0.43, 54: 0.43, 55: 0.71, 58: 0.44, 59: 0.80, 60: 0.78, 61: 0.87,
+  52: 0.46, 53: 0.43, 54: 0.44, 58: 0.44, 59: 0.89, 60: 0.79, 61: 0.88,
 };
 const PAD_FADERS: Record<number, number> = {
-  1: 0.59, 11: 0.47, 17: 0.76, 22: 0.47, 24: 0.56, 25: 0.55, 27: 0.55, 32: 1.00, 34: 0.52, 35: 0.53,
+  1: 0.59, 11: 0.47, 17: 0.76, 22: 0.48, 24: 0.56, 25: 0.55, 27: 0.56, 32: 1.00, 34: 0.53, 35: 0.53,
   38: 0.73, 40: 0.53, 42: 0.72, 56: 1.00,
 };
 
@@ -237,9 +237,13 @@ function padProgression(harmony: Harmony, spec: Spec): ClipDoc {
 // answered by sparser ones, rests before entrances, and a long held tone to
 // close bar 4. The same strings are transcribed verbatim in SeqFactory.cpp.
 const LEAD_PHRASES: Record<string, [string, string, string, string]> = {
-  NEON: [ // gliding synthwave lines that bloom upward, then settle
-    '0,2,0! 2,2,3 4,2,7 8,3,10 12,2,7 14,2,3 | 0,3,8! 4,2,0 8,4,10 14,2,7 | 0,2,7! 2,2,10 4,2,0 6,2,2 8,2,3 10,2,7 12,4,10 | 0,4,5! 4,2,2 8,8,0',
-    '0,1,0! 2,1,0 4,2,3 6,2,7 8,2,10 11,2,7 14,2,8 | 0,2,5! 3,2,8 6,2,5 8,3,3 12,4,0 | 0,2,8! 2,2,10 4,2,0 8,2,3 10,2,0 12,2,10 14,2,8 | 0,3,7! 4,3,11 8,2,7 10,6,2',
+  NEON: [ // gliding synthwave lines that bloom upward, then settle. Variations
+    // 0 and 1 deliberately avoid running the chord straight up and back down in
+    // even eighths — that symmetry is what makes a synth line read as a nursery
+    // tune. They open on a held colour tone instead of the root, break the note
+    // lengths up, and land their turns off the beat.
+    '0,3,7! 3,1,8 5,3,10 10,2,7 13,3,3 | 0,5,0! 6,2,3 9,1,2 11,3,8 15,1,10 | 0,6,10! 7,2,7 10,3,5 14,2,3 | 0,3,10! 4,2,8 7,2,5 10,6,2',
+    '0,2,3! 2,1,3 4,2,7 7,1,10 9,3,7 13,3,8 | 0,4,5! 5,2,3 8,1,5 10,2,8 13,3,10 | 0,3,8! 4,1,7 6,2,5 9,1,3 11,2,0 14,2,3 | 0,3,7! 4,2,11 7,1,2 9,7,7',
     '0,3,7! 4,3,3 8,2,5 12,4,7 | 0,3,10! 4,2,7 7,2,5 10,2,3 12,4,2 | 0,2,2! 2,2,5 5,2,7 8,3,10 12,4,7 | 0,4,8! 6,2,7 8,8,5',
     '0,4,3! 4,3,2 8,4,0 13,3,7 | 0,4,2! 4,2,11 6,2,7 8,4,2 12,4,11 | 0,3,0! 3,3,8 8,2,5 10,2,3 12,4,5 | 0,4,2! 4,2,3 6,2,2 8,8,0',
   ],
@@ -372,7 +376,7 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
     back: { pad: DRUM.SNARE, steps: [4, 12], accents: [] },
     hat: { pad: DRUM.CH, steps: [0, 3, 6, 8, 11, 14], accents: [] },
     open: { pad: DRUM.OH, steps: [14], accents: [] },
-    perc: [{ pad: DRUM.PERC_B, steps: [6], accents: [] }],
+    perc: [{ pad: DRUM.TOM_LO, steps: [6], accents: [] }],
   },
   CINEMATIC: { // epic half-time: sparse kick, big snare on 3, tom colour
     kick: { pad: DRUM.KICK, steps: [0, 10], accents: [0] },
@@ -386,7 +390,7 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
     back: { pad: DRUM.RIM, steps: [4, 12], accents: [] },
     hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [2, 10] },
     open: { pad: DRUM.OH, steps: [10], accents: [] },
-    perc: [{ pad: DRUM.PERC_A, steps: [7], accents: [] }],
+    perc: [{ pad: DRUM.TOM_LO, steps: [7], accents: [] }],
   },
   'FUTURE BASS': { // half-time bounce: tumbling kick, snare on 3, hat rolls
     kick: { pad: DRUM.KICK, steps: [0, 6, 10], accents: [0] },
@@ -400,14 +404,14 @@ const DRUM_ARCHETYPES: Record<string, DrumArchetype> = {
     back: { pad: DRUM.SNARE, steps: [4, 12], accents: [12] },
     hat: { pad: DRUM.CH, steps: [0, 4, 6, 10, 14], accents: [6, 14] },
     open: { pad: DRUM.OH, steps: [7], accents: [] },
-    perc: [{ pad: DRUM.PERC_B, steps: [11], accents: [] }],
+    perc: [{ pad: DRUM.TOM_LO, steps: [11], accents: [] }],
   },
   DUB: { // one drop: kick and snare share beat 3, offbeat skank hats
     kick: { pad: DRUM.KICK, steps: [8], accents: [8] },
     back: { pad: DRUM.SNARE, steps: [8], accents: [] },
     hat: { pad: DRUM.CH, steps: [2, 6, 10, 14], accents: [6, 14] },
     open: { pad: DRUM.OH, steps: [12], accents: [] },
-    perc: [{ pad: DRUM.PERC_B, steps: [3, 11], accents: [] }],
+    perc: [{ pad: DRUM.TOM_MID, steps: [3, 11], accents: [] }],
   },
 };
 
@@ -417,20 +421,20 @@ const DRUM_FILLS: Record<string, Array<[number, number, boolean]>> = {
   ACID: [[DRUM.SNARE, 13, false], [DRUM.SNARE, 14, false], [DRUM.SNARE, 15, true]],
   AMBIENT: [[DRUM.OH, 12, false]],
   HOUSE: [[DRUM.CLAP, 13, false], [DRUM.CLAP, 15, true]],
-  'LO-FI': [[DRUM.PERC_B, 13, false], [DRUM.PERC_B, 15, false]],
+  'LO-FI': [[DRUM.TOM_MID, 13, false], [DRUM.TOM_LO, 15, false]],
   CINEMATIC: [[DRUM.TOM_HI, 8, false], [DRUM.TOM_MID, 10, false], [DRUM.TOM_LO, 12, true], [DRUM.TOM_LO, 14, true]],
-  MINIMAL: [[DRUM.PERC_A, 12, false], [DRUM.PERC_A, 14, true]],
+  MINIMAL: [[DRUM.TOM_LO, 12, false], [DRUM.TOM_LO, 14, true]],
   'FUTURE BASS': [[DRUM.SNARE, 10, false], [DRUM.SNARE, 12, false], [DRUM.SNARE, 14, true]],
   'TRIP HOP': [[DRUM.SNARE, 10, false], [DRUM.RIM, 13, false], [DRUM.SNARE, 15, true]],
   DUB: [[DRUM.TOM_MID, 11, false], [DRUM.TOM_LO, 13, false], [DRUM.SNARE, 15, true]],
 };
 
 // One ghost hit per variation (index 0 adds none): [pad, step].
-const DRUM_GHOSTS: Array<[number, number] | null> = [null, [DRUM.KICK, 14], [DRUM.SNARE, 11], [DRUM.PERC_B, 3]];
+const DRUM_GHOSTS: Array<[number, number] | null> = [null, [DRUM.KICK, 14], [DRUM.SNARE, 11], [DRUM.TOM_LO, 3]];
 // AMBIENT keeps its ghosts on the eighth grid with soft voices — off-grid
 // kick/snare pokes read as glitches in so sparse a field. Each variation still
 // gets a distinct hit so sibling songs stay unique.
-const AMBIENT_GHOSTS: Array<[number, number] | null> = [null, [DRUM.CH, 10], [DRUM.RIM, 12], [DRUM.PERC_B, 6]];
+const AMBIENT_GHOSTS: Array<[number, number] | null> = [null, [DRUM.CH, 10], [DRUM.RIM, 12], [DRUM.TOM_MID, 6]];
 
 function drumProgression(spec: Spec, scene: number): ClipDoc {
   const family = DRUM_ARCHETYPES[spec.family] ?? DRUM_ARCHETYPES.NEON!;
