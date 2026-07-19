@@ -31,7 +31,9 @@ function trVoidPatterns(): number[] {
   set(4, [7]);
   set(5, [0, 2, 4, 6, 8, 10, 12], [4, 12]);
   set(6, [14], [14]);
-  set(12, [3, 11]);
+  // The off-beat 3/11 pokes sit on TOM LO rather than PERC 1 — the tuned tom
+  // reads as part of the kit's low end where the perc hit sat on top of it.
+  set(8, [3, 11]);
   set(14, [10]);
   return Array.from(patterns);
 }
@@ -278,6 +280,9 @@ function tapeKitParams(): Partial<ParamValues> {
   return params;
 }
 
+// KICK, KICK 2, TOM LO, TOM MD, TOM HI.
+const MINIMAL_DRIVEN_PADS = [0, 1, 8, 9, 10];
+
 function minimalParams(): Partial<ParamValues> {
   const params = { ...trVoidParams() };
   params['seq.bpm'] = 128;
@@ -287,6 +292,13 @@ function minimalParams(): Partial<ParamValues> {
   for (let i = 0; i < PAD_COUNT; i++) {
     params[pad(i, 'aenv.dec')] = Math.max(0.025, Math.min(0.22, (params[pad(i, 'aenv.dec')] ?? 0.24) * 0.52));
     params[pad(i, 'lvl')] = [0, 2, 5, 6].includes(i) ? 0.82 : 0.5;
+  }
+  // Kicks and toms drive at 50% wet: the clipped harmonics give the short,
+  // heavily-damped bodies enough edge to cut, while the dry half keeps the
+  // fundamental intact so the low end stays as clean as the kit's name asks.
+  for (const i of MINIMAL_DRIVEN_PADS) {
+    params[pad(i, 'fx.drive.on')] = 1;
+    params[pad(i, 'fx.drive.mix')] = 0.5;
   }
   return params;
 }

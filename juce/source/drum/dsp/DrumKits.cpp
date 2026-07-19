@@ -77,7 +77,9 @@ std::vector<uint8_t> trVoidPatterns() {
     setSteps(4, { 7 });
     setSteps(5, { 0, 2, 4, 6, 8, 10, 12 }, { 4, 12 });
     setSteps(6, { 14 }, { 14 });
-    setSteps(12, { 3, 11 });
+    // The off-beat 3/11 pokes sit on TOM LO rather than PERC 1 — the tuned tom
+    // reads as part of the kit's low end where the perc hit sat on top of it.
+    setSteps(8, { 3, 11 });
     setSteps(14, { 10 });
     return patterns;
 }
@@ -299,6 +301,9 @@ Overrides tapeKitParams() {
     return p;
 }
 
+// KICK, KICK 2, TOM LO, TOM MD, TOM HI.
+constexpr int kMinimalDrivenPads[] = { 0, 1, 8, 9, 10 };
+
 Overrides minimalParams() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 128); set(p, "master.swing", 0.12f);
@@ -308,6 +313,13 @@ Overrides minimalParams() {
             std::max(0.025f, std::min(0.22f, get(p, padPid(i, "aenv.dec"), 0.24f) * 0.52f)));
         const bool main = i == 0 || i == 2 || i == 5 || i == 6;
         set(p, padPid(i, "lvl"), main ? 0.82f : 0.5f);
+    }
+    // Kicks and toms drive at 50% wet: the clipped harmonics give the short,
+    // heavily-damped bodies enough edge to cut, while the dry half keeps the
+    // fundamental intact so the low end stays as clean as the kit's name asks.
+    for (int i : kMinimalDrivenPads) {
+        set(p, padPid(i, "fx.drive.on"), 1.0f);
+        set(p, padPid(i, "fx.drive.mix"), 0.5f);
     }
     return p;
 }

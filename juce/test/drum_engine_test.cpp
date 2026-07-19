@@ -775,6 +775,39 @@ int main() {
               && hybrid[dpid(0, DP_OSCB_LEVEL)] > 0,
               "hybrid kit keeps oscillator and sample layers active");
 
+        // MINIMAL drives only its kicks and toms, at 50% wet (kits.ts
+        // minimalParams()). The untouched pads must stay dry, or the whole kit
+        // clips instead of just its low end.
+        auto minimal = applyKit(kits[9]);
+        bool drivenPads = true, dryPads = true;
+        for (int i = 0; i < DR_NPADS; ++i) {
+            const bool wantDriven = i == 0 || i == 1 || i == 8 || i == 9 || i == 10;
+            const bool on = minimal[dpid(i, DP_FXDRIVE_ON)] > 0.5f;
+            if (on != wantDriven) { (wantDriven ? drivenPads : dryPads) = false; continue; }
+            if (wantDriven && std::abs(minimal[dpid(i, DP_FXDRIVE_MIX)] - 0.5f) > 1.0e-6f)
+                drivenPads = false;
+        }
+        check(kits[9].name == "MINIMAL", "kit 9 is MINIMAL");
+        check(drivenPads, "MINIMAL drives kicks and toms at 50% mix");
+        check(dryPads, "MINIMAL leaves every other pad undriven");
+
+        // The off-beat 3/11 pokes live on TOM LO, not PERC 1, across every kit
+        // sharing the TR-VOID grid (kits 0..13; 14+ author their own patterns).
+        // Mirrors DrumKits.cpp patIdx(), which is file-local to that TU.
+        const auto stepsFor = [](const DrumKit& k, int padI) {
+            std::vector<int> steps;
+            for (int s = 0; s < DR_STEPS; ++s)
+                if (k.patterns[(size_t)(padI * DR_STEPS + s)] != 0) steps.push_back(s);
+            return steps;
+        };
+        bool tomPokes = true, percClear = true;
+        for (size_t i = 0; i < 14; ++i) {
+            if (stepsFor(kits[i], 8) != std::vector<int>({ 3, 11 })) tomPokes = false;
+            if (!stepsFor(kits[i], 12).empty()) percClear = false;
+        }
+        check(tomPokes, "shared-grid kits voice the 3/11 pokes on TOM LO");
+        check(percClear, "shared-grid kits leave PERC 1 empty");
+
         // Every override pid resolves and its value is within [min,max].
         bool allResolve = true, allInRange = true;
         std::string badPid;
