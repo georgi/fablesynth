@@ -261,6 +261,15 @@ public:
     // Live visualization feedback (modulated wt positions + active voice count).
     double vizA = -1, vizB = -1; int vizActive = 0;
 
+    // Live per-destination modulation feedback for the editor's knob dots
+    // (web {t:'mod'} telemetry parity). vizMod[dst] = the SAME voice vizA/vizB
+    // describe: its summed route value x = Σ src·amt for MOD_DESTS index dst —
+    // the raw value the curve rules fold into that param. vizModAny is true
+    // only while that voice carries at least one per-param route; false when
+    // idle so the UI hides its indicators instead of freezing them.
+    double vizMod[NUM_MOD_DESTS] = {0};
+    bool   vizModAny = false;
+
 private:
     bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n);
     void renderOsc(OscState& o, float* tmpL, float* tmpR, int n);
@@ -269,6 +278,7 @@ private:
                    float* outL, float* outR, double drive, int n);
     void renderVoice(Voice& v, float* L, float* R, int n);
     void renderBlock(float* L, float* R, int n, double ppqChunk); // n <= 128
+    void snapshotVizMod();             // copy the just-rendered voice's route sums
     double lfoHz(int base) const;
     void updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n);
 
@@ -349,6 +359,11 @@ private:
     // (Lin/Log curve rules from the design contract). Reused per voice — no per-call
     // allocation. Reading pm_ for non-modulated fields is safe (pm_ == p_ there).
     double pm_[NUM_PARAMS];
+    // Per-voice route-sum scratch (member, not stack, so renderBlock can snapshot
+    // the viz voice's sums into vizMod right after its renderVoice — same lifetime
+    // trick as pm_). modAnyRoute_ = that voice saw >= 1 active per-param route.
+    double modAccum_[NUM_PARAMS] = {0};
+    bool   modAnyRoute_ = false;
 
     // per-block scratch (128)
     float tmpL_[128], tmpR_[128];

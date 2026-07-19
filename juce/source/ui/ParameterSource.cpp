@@ -1,5 +1,7 @@
 #include "ParameterSource.h"
 
+#include <limits>
+
 namespace fui {
 
 ParameterSource::ParameterSource(ParameterLookup parameterLookup, InfoLookup infoLookup)
@@ -11,6 +13,10 @@ juce::RangedAudioParameter* ParameterSource::parameter(const juce::String& id) c
 
 const fable::ParamInfo* ParameterSource::info(const juce::String& id) const {
     return infoLookup_ ? infoLookup_(id) : nullptr;
+}
+
+float ParameterSource::liveMod(int dest) const {
+    return liveModLookup_ ? liveModLookup_(dest) : std::numeric_limits<float>::quiet_NaN();
 }
 
 ParameterSource ParameterSource::fromApvts(juce::AudioProcessorValueTreeState& apvts,

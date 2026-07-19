@@ -314,6 +314,11 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     vizPosA.store((float)engine.vizA, std::memory_order_relaxed);
     vizPosB.store((float)engine.vizB, std::memory_order_relaxed);
 
+    // Publish the viz voice's per-destination route sums for the knob live dots.
+    for (int d = 1; d < fable::NUM_MOD_DESTS; ++d)
+        liveMod_[(size_t)d].store((float)engine.vizMod[d], std::memory_order_relaxed);
+    liveModAny_.store(engine.vizModAny, std::memory_order_relaxed);
+
     // Publish sequencer transport feedback for the editor.
     curStep_.store(engine.seqCurrentStep(), std::memory_order_relaxed);
     curPattern_.store(engine.seqCurrentPattern(), std::memory_order_relaxed);
@@ -358,7 +363,10 @@ const juce::String FableAudioProcessor::getProgramName(int index) {
 // ---- standalone WT UI model ----------------------------------------------
 fui::ParameterSource StandaloneWtUiModel::parameters() {
     const auto& info = fable::paramInfo();
-    return fui::ParameterSource::fromApvts(proc.apvts, info.data(), info.size());
+    auto source = fui::ParameterSource::fromApvts(proc.apvts, info.data(), info.size());
+    // Feed the knob live-mod dots from the processor's per-destination atomics.
+    source.setLiveModLookup([&p = proc](int dest) { return p.getLiveMod(dest); });
+    return source;
 }
 bool StandaloneWtUiModel::programDirty() const { return proc.isProgramDirty(); }
 int StandaloneWtUiModel::currentProgram() const { return proc.getCurrentProgram(); }

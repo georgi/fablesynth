@@ -629,6 +629,51 @@ int main() {
               "move=" + std::to_string(cutMove));
     }
 
+    printf("\n== 11b. Live-mod viz feed (vizMod / vizModAny) ==\n");
+    {
+        check((int)MOD_DESTS.size() == NUM_MOD_DESTS,
+              "NUM_MOD_DESTS matches MOD_DESTS.size()");
+
+        // A routed sounding voice publishes moving per-destination route sums;
+        // after release the feed goes idle (vizModAny false) so the UI can hide
+        // its indicators rather than freeze them. LFO1 -> F1 CUT (dst 3) at a
+        // slow rate: consecutive blocks must show different sums.
+        Engine e; e.prepare(sr); e.setTables(tables);
+        auto& q = e.params(); q = defaultParams();
+        q[LFO1_BASE + LFO_SHAPE] = 2;      // SAW — monotonic within a cycle
+        q[LFO1_BASE + LFO_RATE]  = 2.0f;
+        q[LFO1_BASE + LFO_RETRIG] = 1;
+        q[MAT5_BASE + MAT_SRC] = 1;        // LFO 1
+        q[MAT5_BASE + MAT_DST] = 3;        // F1 CUT
+        q[MAT5_BASE + MAT_AMT] = 0.8f;
+        std::vector<float> a(2048), b(2048);
+        check(!e.vizModAny, "viz feed idle before any note");
+        e.noteOn(60, 1.0);
+        e.render(a.data(), b.data(), (int)a.size());
+        const double x1 = e.vizMod[3];
+        check(e.vizModAny, "viz feed active while a routed voice sounds");
+        check(std::isfinite(x1) && std::abs(x1) <= 0.8 + 1e-9,
+              "F1 CUT route sum bounded by amt", "x=" + std::to_string(x1));
+        e.render(a.data(), b.data(), (int)a.size());
+        const double x2 = e.vizMod[3];
+        check(std::abs(x2 - x1) > 1e-4, "route sum moves with the LFO across blocks",
+              "x1=" + std::to_string(x1) + " x2=" + std::to_string(x2));
+        check(e.vizMod[1] == 0.0 && e.vizMod[17] == 0.0,
+              "unrouted destinations stay zero");
+        e.noteOff(60);
+        for (int i = 0; i < 64 && e.vizActive > 0; ++i)   // ride out the release tail
+            e.render(a.data(), b.data(), (int)a.size());
+        check(!e.vizModAny, "viz feed idle after release (no stale frozen values)");
+
+        // Global-only routes (PITCH) have no owning knob: the feed stays inactive.
+        Engine g2; g2.prepare(sr); g2.setTables(tables);
+        auto& qg = g2.params(); qg = defaultParams();
+        qg[MAT5_BASE + MAT_SRC] = 1; qg[MAT5_BASE + MAT_DST] = 4; qg[MAT5_BASE + MAT_AMT] = 0.5f; // LFO1 -> PITCH
+        g2.noteOn(60, 1.0);
+        g2.render(a.data(), b.data(), (int)a.size());
+        check(!g2.vizModAny, "global-only route (PITCH) does not activate the per-knob feed");
+    }
+
     printf("\n== 12. Unison BLEND & 16-voice ==\n");
     {
         check(defaultParams()[OSCA_BASE + OSC_BLEND] == 1.0f,

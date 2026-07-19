@@ -550,6 +550,65 @@ int main(int argc, char** argv) {
     check(selectEditorFilter2(proc), "F2 filter tab selects the second filter controls", 0);
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
 
+    // ---- Live modulation dots: knob indicators follow the modulated value ----
+    // Route a slow LFO onto F1 CUT, hold a note, and snapshot the editor at two
+    // transport instants: the published live-mod value must move between them
+    // (the dot paints from proc.getLiveMod via the knob's ParameterSource), and
+    // must go NaN (dot hidden) once the release tail frees every voice.
+    printf("\n== Live-mod knob dots ==\n");
+    {
+        auto setParamReal = [&](const char* id, float real) {
+            if (auto* pr = proc.apvts.getParameter(id))
+                pr->setValueNotifyingHost(pr->convertTo0to1(real));
+        };
+        setParamReal("lfo1.sync", 0.0f);
+        setParamReal("lfo1.rate", 0.5f);   // slow sweep -> visibly different captures
+        setParamReal("lfo1.shape", 0.0f);  // sine
+        setParamReal("lfo1.retrig", 1.0f); // deterministic per-note phase
+        setParamReal("mat8.src", 1.0f);    // LFO 1
+        setParamReal("mat8.dst", 3.0f);    // F1 CUT
+        setParamReal("mat8.amt", 0.8f);
+        auto renderBlocks = [&](int count) {
+            for (int b = 0; b < count; ++b) {
+                buf.clear();
+                juce::MidiBuffer empty;
+                proc.processBlock(buf, empty);
+            }
+        };
+        // Snapshot with the message loop pumped first so the knob timers tick
+        // (rings_ rebuild there); the dot itself paints from the live atomics.
+        auto snapshotLive = [&](const juce::File& out) {
+            std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+            ed->setSize(Rack::LW, Rack::LH);
+            juce::Thread::sleep(60); // let the 30 Hz control timers become due...
+            juce::Timer::callPendingTimersSynchronously(); // ...then run them headlessly
+            writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
+        };
+        {
+            juce::MidiBuffer on;
+            on.addEvent(juce::MidiMessage::noteOn(1, 57, 0.9f), 0);
+            buf.clear();
+            proc.processBlock(buf, on);
+        }
+        renderBlocks(10);
+        const float m1 = proc.getLiveMod(3);
+        check(std::isfinite(m1), "live-mod feed publishes a finite F1 CUT sum while sounding", m1);
+        snapshotLive(dir.getChildFile("plugin_editor_livemod_1.png"));
+        renderBlocks((int)(0.6 * sr / block)); // ~0.6 s later on a 0.5 Hz LFO
+        const float m2 = proc.getLiveMod(3);
+        check(std::isfinite(m2) && std::abs(m2 - m1) > 0.02f,
+              "live-mod value moves with the LFO between captures", std::abs(m2 - m1));
+        snapshotLive(dir.getChildFile("plugin_editor_livemod_2.png"));
+        {
+            juce::MidiBuffer off;
+            off.addEvent(juce::MidiMessage::allNotesOff(1), 0);
+            buf.clear();
+            proc.processBlock(buf, off);
+        }
+        renderBlocks((int)(3.0 * sr / block)); // flush the release tail
+        check(std::isnan(proc.getLiveMod(3)), "live-mod feed idles (NaN) after release", 0);
+    }
+
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     return fail == 0 ? 0 : 1;
 }

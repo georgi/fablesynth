@@ -56,6 +56,9 @@ inline const std::vector<std::string> MOD_DESTS     = {
     "A DETUNE", "A SPREAD", "A PAN", "B DETUNE", "B SPREAD", "B PAN",
     "F1 RES", "F1 DRIVE", "F1 ENV", "F1 KEY", "F2 DRIVE", "F2 ENV", "F2 KEY",
     "SUB LVL", "NOISE LVL", "A BLEND", "B BLEND"};
+// MOD_DESTS.size() as a compile-time constant (array sizing for the live-mod
+// viz snapshot). engine_test asserts the two stay in sync.
+constexpr int NUM_MOD_DESTS = 28;
 
 // ---- field offsets within a repeated block ----
 enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,

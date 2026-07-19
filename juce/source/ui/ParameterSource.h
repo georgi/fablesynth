@@ -17,6 +17,8 @@ class ParameterSource {
 public:
     using ParameterLookup = std::function<juce::RangedAudioParameter*(const juce::String&)>;
     using InfoLookup = std::function<const fable::ParamInfo*(const juce::String&)>;
+    // Live route sum for a MOD_DESTS index, NaN while idle (processor atomics).
+    using LiveModLookup = std::function<float(int dest)>;
 
     ParameterSource() = default;
     ParameterSource(ParameterLookup parameterLookup, InfoLookup infoLookup = {});
@@ -24,6 +26,12 @@ public:
     juce::RangedAudioParameter* parameter(const juce::String& id) const;
     const fable::ParamInfo* info(const juce::String& id) const;
     explicit operator bool() const { return (bool)parameterLookup_; }
+
+    // Optional live-modulation feed for controls that are mod targets (the knob
+    // dots). Unset (sources without an engine feed, e.g. DR-1) reads as NaN =
+    // no data, so those controls simply never show a dot.
+    void setLiveModLookup(LiveModLookup lookup) { liveModLookup_ = std::move(lookup); }
+    float liveMod(int dest) const;
 
     // Convenience adapter for existing standalone processors. The catalog
     // points at one of the canonical, process-lifetime parameter tables.
@@ -34,6 +42,7 @@ public:
 private:
     ParameterLookup parameterLookup_;
     InfoLookup infoLookup_;
+    LiveModLookup liveModLookup_;
 };
 
 } // namespace fui

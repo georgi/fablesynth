@@ -389,6 +389,13 @@ float SeqAudioProcessor::wtVizPosition(int track, int oscillator) const {
 int SeqAudioProcessor::wtVoiceCount(int track) const {
     return wtVoices_[juce::jlimit(0, 1, track - 2)].load();
 }
+float SeqAudioProcessor::wtLiveMod(int track, int dest) const {
+    const int i = juce::jlimit(0, 1, track - 2);
+    if (dest <= 0 || dest >= fable::NUM_MOD_DESTS
+        || !wtLiveModAny_[i].load(std::memory_order_relaxed))
+        return std::numeric_limits<float>::quiet_NaN();
+    return wtLiveMod_[(size_t)i][(size_t)dest].load(std::memory_order_relaxed);
+}
 
 std::vector<float> SeqAudioProcessor::debugTrackParams(int t) {
     if (t == 0) { auto& p = drum_.params(); return std::vector<float>(p.begin(), p.end()); }
@@ -647,6 +654,10 @@ void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
     wtVizA_[i].store((float)wt_[i].vizA, std::memory_order_relaxed);
     wtVizB_[i].store((float)wt_[i].vizB, std::memory_order_relaxed);
     wtVoices_[i].store(wt_[i].vizActive, std::memory_order_relaxed);
+    // Live per-destination route sums for the hosted WT-1 knob dots.
+    for (int d = 1; d < fable::NUM_MOD_DESTS; ++d)
+        wtLiveMod_[(size_t)i][(size_t)d].store((float)wt_[i].vizMod[d], std::memory_order_relaxed);
+    wtLiveModAny_[i].store(wt_[i].vizModAny, std::memory_order_relaxed);
     wtFx_[i].process(L, R, n);
 }
 
