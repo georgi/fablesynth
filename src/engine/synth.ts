@@ -16,6 +16,14 @@ export interface VizMessage {
   n: number;
 }
 
+// Live per-destination modulation sums for the UI's knob indicators:
+// d[MOD_DESTS index] = the viz voice's summed route value x. null closes the
+// stream (last voice died) so listeners settle back to base values.
+export interface ModMessage {
+  t: 'mod';
+  d: Float32Array | null;
+}
+
 export interface StepMessage {
   t: 'step';
   s: number; // step index 0..15
@@ -53,6 +61,7 @@ export class SynthEngine {
   procTables: GeneratedTable[]; // procedural tables (full mip data)
   userTables: GeneratedTable[]; // imported / drawn tables (full mip data)
   onviz: ((d: VizMessage) => void) | null;
+  onmod: ((d: Float32Array | null) => void) | null;
   onstep: ((d: StepMessage) => void) | null;
   onclipstart: ((frame: number) => void) | null;
   onclipstop: ((frame: number) => void) | null;
@@ -99,6 +108,7 @@ export class SynthEngine {
     this.procTables = [];
     this.userTables = [];
     this.onviz = null;
+    this.onmod = null;
     this.onstep = null;
     this.onclipstart = null;
     this.onclipstop = null;
@@ -124,6 +134,7 @@ export class SynthEngine {
     });
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
+      else if (e.data.t === 'mod' && this.onmod) this.onmod((e.data as ModMessage).d);
       else if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
       else if (e.data.t === 'pos' && this.onpos) this.onpos(e.data as PosMessage);
       else if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);

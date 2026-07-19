@@ -14,6 +14,10 @@
 // straight from `this.p` — no separate routing message. The per-destination
 // scaling matches the VST exactly, so the two engines sound identical.
 // Out: {t:'viz', a, b, n}            modulated wt positions + active voice count
+//      {t:'mod', d}                  live per-destination route sums for the UI's
+//                                    knob indicators: d[MOD_DESTS index] = sum x
+//                                    (Float32Array, viz cadence, only while a
+//                                    routed voice sounds; d=null once when idle)
 //      {t:'step', s, pat}            per step while the sequencer plays
 //      {t:'clipstart', frame} {t:'clipstop', frame} {t:'pos', step, bar}   hosted
 
@@ -107,6 +111,14 @@ const MOD_PARAM_INFO = {
   'sub.level':      { curve: 'lin', lo: 0, hi: 1 },
   'noise.level':    { curve: 'lin', lo: 0, hi: 1 },
 };
+// paramId -> MOD_DESTS index, inverted from DST_TARGET (globals and index 0
+// excluded — they have no owning knob). Feeds the live-mod telemetry snapshot.
+const DST_INDEX = Object.create(null);
+for (let i = 1; i < DST_TARGET.length; i++) {
+  const t = DST_TARGET[i];
+  if (typeof t === 'string' && t.charCodeAt(0) !== 0) DST_INDEX[t] = i;
+}
+
 // Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
 // so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
 const COMB_MAX = 4096;
@@ -339,6 +351,12 @@ class FableProcessor extends AudioWorkletProcessor {
     // holding only overridden paramIds; read via pmv(pre+'.field') with `p` fallback.
     this._modAccum = Object.create(null);
     this._pm = Object.create(null);
+    // Live-mod telemetry: the viz voice's route sums per MOD_DESTS index,
+    // re-snapshotted every block, sent at the viz cadence. modIdleSent starts
+    // true — the UI's default state is already "idle", no terminator needed.
+    this.modViz = new Float32Array(DST_TARGET.length);
+    this.modVizAny = false;
+    this.modIdleSent = true;
     this.port.onmessage = (e) => this.onMsg(e.data);
   }
 
@@ -1199,6 +1217,22 @@ class FableProcessor extends AudioWorkletProcessor {
     return { posA: v.oA.posSm, posB: v.oB.posSm };
   }
 
+  // Copy the just-rendered voice's per-destination route sums (this._modAccum,
+  // valid right after renderVoice) into the telemetry snapshot. A key PRESENT
+  // in accum means an active route targets it (even at a zero crossing), so key
+  // presence — not value — decides whether telemetry is flowing.
+  snapshotModViz() {
+    const mv = this.modViz;
+    mv.fill(0);
+    let any = false;
+    const accum = this._modAccum;
+    for (const id in accum) {
+      const di = DST_INDEX[id];
+      if (di) { mv[di] = accum[id]; any = true; }
+    }
+    this.modVizAny = any;
+  }
+
   process(_inputs, outputs) {
     const out = outputs[0];
     const L = out[0];
@@ -1244,6 +1278,7 @@ class FableProcessor extends AudioWorkletProcessor {
 
     let act = 0;
     let viz = null;
+    this.modVizAny = false;
     for (const v of this.voices) {
       if (!v.active && v.pending) {
         const pd = v.pending;
@@ -1252,7 +1287,10 @@ class FableProcessor extends AudioWorkletProcessor {
       }
       if (!v.active) continue;
       const r = this.renderVoice(v, L, R, n);
-      if (v.gate || !viz) viz = r;
+      // Voice to visualize: the same one the wavetable viz follows — the last
+      // gated (still-held) voice in pool order, falling back to any releasing
+      // voice. _modAccum still holds exactly this voice's route sums here.
+      if (v.gate || !viz) { viz = r; this.snapshotModViz(); }
       act++;
     }
 
@@ -1265,6 +1303,16 @@ class FableProcessor extends AudioWorkletProcessor {
         b: viz ? viz.posB : -1,
         n: act,
       });
+      // Live-mod telemetry rides the same throttle. slice(): a fresh buffer per
+      // send (tiny, ~23 Hz) — postMessage would clone anyway, and the in-process
+      // test harness must not see later mutations of the reused snapshot.
+      if (this.modVizAny) {
+        this.port.postMessage({ t: 'mod', d: this.modViz.slice() });
+        this.modIdleSent = false;
+      } else if (!this.modIdleSent) {
+        this.modIdleSent = true;
+        this.port.postMessage({ t: 'mod', d: null });
+      }
     }
     return true;
   }

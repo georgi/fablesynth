@@ -779,6 +779,17 @@ body::before {
   filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 55%, transparent));
   opacity: 0.92;
 }
+/* live modulated-position dot on the value arc; position/opacity driven
+   imperatively from the modLive rAF pump (hidden while audio is idle) */
+.k-live {
+  fill: currentColor;
+  stroke: #0b0f17;
+  stroke-width: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
 .knob.mod-target svg .k-body { fill: #20283a; }
 .knob.mod-target svg { outline: 1px dashed var(--ac); outline-offset: 3px; border-radius: 50%; }
 

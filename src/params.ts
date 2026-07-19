@@ -29,6 +29,9 @@ export const SYNC_BPM = 120;
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
 export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
+// Log-curve modulation depth: a full route swings a Log param ×2^(x·D), i.e.
+// ±D octaves. Mirrors MOD_LOG_D in engine/worklet.js — keep the two in sync.
+export const MOD_LOG_D = 5;
 // Modulation destinations (append-only; indices 0..10 keep their exact meaning so
 // factory presets sound unchanged). dstTarget() below is the canonical map from a
 // dst index to either a paramId (per-param dest) or a global token. Must match the

@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '../params';
 import { useStore } from '../store';
 import { useModsByDest } from '../hooks/useModsByDest';
+import { modLive, modNormOffset, subscribeModLive } from '../engine/modLive';
 
 const A0 = -135, A1 = 135;
 
@@ -94,6 +95,27 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   const elRef = useRef<HTMLDivElement>(null);
   const normRef = useRef(norm);
   const draggingRef = useRef(false);
+
+  // Live modulation dot: rides the shared modLive rAF pump and writes SVG
+  // attributes directly — telemetry never touches React state (16 modulated
+  // knobs at ~23 Hz would otherwise re-render the whole panel tree).
+  const liveRef = useRef<SVGCircleElement>(null);
+  const liveNormRef = useRef(norm);
+  liveNormRef.current = norm;
+  const hasMods = myMods.length > 0;
+  useEffect(() => {
+    if (!hasMods || !dest) return;
+    return subscribeModLive(() => {
+      const el = liveRef.current;
+      if (!el) return;
+      if (!modLive.active) { el.style.opacity = '0'; return; }
+      const mn = clamp01(liveNormRef.current + modNormOffset(def, modLive.sums[dest]));
+      const [x, y] = polar(40, 40, 33, degOf(mn));
+      el.setAttribute('cx', x.toFixed(2));
+      el.setAttribute('cy', y.toFixed(2));
+      el.style.opacity = '1';
+    });
+  }, [hasMods, dest, def]);
 
   // Keep the working norm in sync with external changes (presets, etc.)
   useEffect(() => {
@@ -190,6 +212,9 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
           <ModRing key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} r={38 + k * 3.4} />
         ))}
         <line className="k-ptr" x1="40" y1="40" x2="40" y2="17" transform={`rotate(${deg} 40 40)`} />
+        {myMods.length > 0 && (
+          <circle ref={liveRef} className="k-live" r="3.4" style={{ color: SOURCE_COLORS[myMods[0].src] }} />
+        )}
       </svg>
       <div className="k-label">{labelText}</div>
       <div className="k-value">{text}</div>

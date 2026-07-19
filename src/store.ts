@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { SynthEngine } from './engine/synth';
+import { feedModLive } from './engine/modLive';
 import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
 import { FACTORY_PRESETS, loadUserPresets, resolvePresetMods, saveUserPreset, type Preset } from './presets';
 import { findFreeSlot, setMatSlot, clearSlot as clearSlotIn, MOD_DEFAULT_AMT } from './store/slotHelpers';
@@ -151,6 +152,18 @@ const seqHistory = makeHistory<SeqSnapshot>(50);
 
 export const useStore = create<SynthStore>((set, get) => {
   const pushSeqHistory = () => seqHistory.push({ patterns: get().patterns, chain: get().chain });
+
+  // Worklet->UI telemetry, shared by standalone (powerOn) and hosted
+  // (attachHosted, SQ-4 focus mode) engines: modulated wavetable positions for
+  // the displays, and the live per-destination sums the knob dots animate from.
+  const wireTelemetry = (e: SynthEngine) => {
+    e.onviz = (d) => set({
+      voiceCount: d.n,
+      modPosA: d.a >= 0 ? d.a : -1,
+      modPosB: d.b >= 0 ? d.b : -1,
+    });
+    e.onmod = feedModLive;
+  };
 
   return {
   params: defaultParams(),
@@ -503,6 +516,7 @@ export const useStore = create<SynthStore>((set, get) => {
 
   attachHosted: (e) => {
     engine = e;
+    wireTelemetry(e);
     set({
       hosted: true,
       powered: true,
@@ -515,11 +529,7 @@ export const useStore = create<SynthStore>((set, get) => {
   powerOn: async () => {
     await engine.init();
     engine.setUserTables(get().userTables.map((t) => t.table));
-    engine.onviz = (d) => set({
-      voiceCount: d.n,
-      modPosA: d.a >= 0 ? d.a : -1,
-      modPosB: d.b >= 0 ? d.b : -1,
-    });
+    wireTelemetry(engine);
     engine.onstep = (d) => set({ curStep: d.s, curPat: d.pat });
     engine.setSeqPatterns(get().patterns);
     engine.setSeqChain(get().chain);
