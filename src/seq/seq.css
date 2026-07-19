@@ -791,8 +791,8 @@
 #rack[data-mode='edit'] .panels {
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
-    'filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos lfos'
-    'matrix matrix matrix fx fx fx fx fx fx fx fx fx';
+    'filter filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos'
+    'matrix matrix matrix matrix fx fx fx fx fx fx fx fx';
 }
 
 .sq-clipbar {
