@@ -35,11 +35,19 @@ dragging cancels without committing. Selection is standalone-only — hosted
 A floating **CUT · COPY · DUP · DEL · ✕** menu appears centered over the
 selected columns once a rectangle exists:
 
-- **CUT / COPY** capture only the *lit* cells whose note lane falls inside
-  the rect's pitch band — a lit cell in the step range but outside the pitch
-  band is left untouched. The clipboard stores the rect's width, its
-  normalized pitch band, and each captured cell's byte-offset from the rect's
-  left edge.
+- **CUT / COPY** pick the selection up: the menu closes and the captured
+  cells trail the pointer as dashed **ghost notes** — over any bar, not just
+  the current edit bar — until the next click drops them at the hovered
+  position (top-left anchored, transposed to the hovered lane; dropping on
+  another bar pastes into that bar's pattern and makes it the edit bar).
+  Escape or clicking outside the grid cancels; a cancelled CUT changes
+  nothing, because the source cells (shown dimmed while carrying) are only
+  cleared at drop time, in the same undo entry as the paste. Both verbs
+  capture only the *lit* cells whose note lane falls inside the rect's pitch
+  band — a lit cell in the step range but outside the pitch band is left
+  untouched — and also refresh the Cmd-V clipboard with the same cells. The
+  clipboard stores the rect's width, its normalized pitch band, and each
+  captured cell's byte-offset from the rect's left edge.
 - **DUP** copies the rect immediately to its right (same pitch band).
 - **DEL** clears the same in-band-only cells CUT would have captured.
 - **✕** dismisses the selection without touching the pattern.
@@ -49,7 +57,8 @@ Cmd-Shift-Z** drive the same verbs from the keyboard (copy / cut / paste /
 duplicate / delete / select-all / clear-selection / undo / redo). Plain click
 on a lit or empty cell still just toggles that one note — the step-number
 row underneath the grid is a plain label now, not a click target, and no
-longer starts a range selection.
+longer starts a range selection. Shift-drag works on any bar: starting the
+drag on a bar that isn't the edit bar switches editing to that bar first.
 
 **Paste anchor**: pasting re-anchors the clipboard rect's top-left corner at
 whichever of these is available, in order — the *current* rectangle

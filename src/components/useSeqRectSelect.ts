@@ -18,10 +18,14 @@ export function useSeqRectSelect({ editPattern, onSelect, onMove }: HookOpts) {
   const [pending, setPending] = useState<RectSel | null>(null);
   const suppressClick = useRef(false);
 
-  const findCell = (ev: PointerEvent): { step: number; note: number } | null => {
+  // `pattern` is the gesture's own bar: a shift-drag may start on a bar that
+  // was not the edit pattern when the handlers were registered (the panel
+  // switches editPattern at gesture start, but this closure would still see
+  // the stale value — so the anchor's pattern is threaded through instead).
+  const findCell = (ev: PointerEvent, pattern: number): { step: number; note: number } | null => {
     const el = document.elementFromPoint(ev.clientX, ev.clientY);
     const cell = el instanceof Element ? el.closest<HTMLElement>('[data-seq-cell]') : null;
-    if (!cell || Number(cell.dataset.pattern) !== editPattern) return null;
+    if (!cell || Number(cell.dataset.pattern) !== pattern) return null;
     return { step: Number(cell.dataset.step), note: Number(cell.dataset.note) };
   };
 
@@ -51,13 +55,14 @@ export function useSeqRectSelect({ editPattern, onSelect, onMove }: HookOpts) {
     window.addEventListener('keydown', keydown, { capture: true });
   };
 
-  const startRectSelect = (ev: React.PointerEvent, step: number, note: number) => {
+  const startRectSelect = (ev: React.PointerEvent, step: number, note: number, pattern?: number) => {
     ev.preventDefault();
+    const pat = pattern ?? editPattern;
     let rect: RectSel = { stepFrom: step, stepTo: step, noteFrom: note, noteTo: note };
     setPending(rect);
     track(
       (e) => {
-        const c = findCell(e);
+        const c = findCell(e, pat);
         if (!c) return;
         rect = { stepFrom: step, stepTo: c.step, noteFrom: note, noteTo: c.note };
         setPending(rect);
@@ -80,7 +85,7 @@ export function useSeqRectSelect({ editPattern, onSelect, onMove }: HookOpts) {
     ev.preventDefault();
     let dest = { step, note };
     track(
-      (e) => { const c = findCell(e); if (c) dest = c; },
+      (e) => { const c = findCell(e, editPattern); if (c) dest = c; },
       (e) => {
         if (dest.step === step && dest.note === note) return; // plain tap inside rect: fall through to click
         // Same seam as above: the drag may end off the common ancestor, so

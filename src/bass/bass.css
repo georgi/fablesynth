@@ -490,6 +490,12 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 75%, transparent);
   background: color-mix(in srgb, var(--ac-a) 14%, transparent);
 }
+
+.bl-cell.ghost {
+  outline: 1px dashed color-mix(in srgb, var(--ac-a) 85%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--ac-a) 38%, transparent);
+}
 .bl-cell.on.sel { box-shadow: inset 0 0 0 2px var(--ac-a); }
 /* Grid note drag (shared gesture with WT-1 — see .ns-cell.drag-* in index.css). */
 .bl-cell.drag-src { opacity: 0.35; }

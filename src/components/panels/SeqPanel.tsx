@@ -2,13 +2,14 @@
 // = rest), draggable note lengths, octave / accent rows, bars 1–4 + sequence
 // length, RAND, transport and ROOT controls.
 
-import { getStep, NOTE_LANES, STEPS, type SeqStep } from '../../noteseq';
-import { rectNorm } from '../../shared/seqEdit';
+import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
+import { copyRect, rectNorm } from '../../shared/seqEdit';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
 import { SeqSelectionMenu } from '../SeqSelectionMenu';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
+import { useSeqGhostPaste } from '../useSeqGhostPaste';
 import { useSeqNoteDrag } from '../useSeqNoteDrag';
 import { useSeqRectSelect } from '../useSeqRectSelect';
 
@@ -47,7 +48,6 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const moveRectSel = useStore((s) => s.moveRectSel);
   const movePattern = useStore((s) => s.movePattern);
   const moveStepNote = useStore((s) => s.moveStepNote);
-  const cutSteps = useStore((s) => s.cutSteps);
   const copySteps = useStore((s) => s.copySteps);
   const duplicateSteps = useStore((s) => s.duplicateSteps);
   const deleteSteps = useStore((s) => s.deleteSteps);
@@ -76,6 +76,21 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
     if (!rect) return false;
     const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
     return step >= stepLo && step <= stepHi && note >= noteLo && note <= noteHi;
+  };
+
+  // Ghost paste: menu CUT/COPY picks the selection up — the menu closes, the
+  // cells trail the cursor as ghosts, and the next click drops them (Escape
+  // or clicking outside the grid cancels; a cancelled CUT changes nothing).
+  const dropRect = useStore((s) => s.dropRect);
+  const { ghost, beginGhost, ghostAt, isCutSrc } = useSeqGhostPaste({
+    onDrop: (data, atStep, dNote, clearSrc, srcPattern, dstPattern) =>
+      dropRect(data, atStep, dNote, clearSrc, { src: srcPattern, dst: dstPattern }),
+  });
+  const pickUpSelection = (cut: boolean) => {
+    if (!rectSel) return;
+    copySteps(); // keep the clipboard in sync so Cmd-V still pastes the same cells
+    beginGhost(copyRect(patterns, WT1_LAYOUT, editPattern, rectSel), { cut, src: rectSel, srcPattern: editPattern });
+    clearStepSel();
   };
 
   const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
@@ -149,7 +164,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                             data-step={step}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (editable && inRect(step, note) ? ' sel' : '')}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (editable && inRect(step, note) ? ' sel' : '') + (ghost ? (ghostAt(step, note, pattern) ? ' ghost' : isCutSrc(step, note, pattern) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
@@ -157,7 +172,13 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                               // note covering this cell — to move it; standalone
                               // mono grid only (hosted poly keeps chord callbacks).
                               if (hosted || onToggleChordNote) return;
-                              if (editable && event.shiftKey) { startRectSelect(event, step, note); return; }
+                              if (event.shiftKey) {
+                                // Shift-drag works on any bar: starting on a
+                                // non-edit bar makes it the edit bar first.
+                                if (!editable) setEditPattern(pattern);
+                                startRectSelect(event, step, note, pattern);
+                                return;
+                              }
                               if (editable && rectSel && inRect(step, note) && !pending) { startRectMove(event, step, note); return; }
                               let srcStep = step;
                               if (!active) {
@@ -224,8 +245,8 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                 visibleLo={barOffset + stepLo}
                 visibleHi={barOffset + stepHi}
                 totalSteps={totalSteps}
-                onCut={cutSteps}
-                onCopy={copySteps}
+                onCut={() => pickUpSelection(true)}
+                onCopy={() => pickUpSelection(false)}
                 onDuplicate={duplicateSteps}
                 onDelete={deleteSteps}
                 onDismiss={clearStepSel}

@@ -3,7 +3,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useStore } from './store';
 import { defaultParams } from './params';
-import { getStep, makeEmptyPatterns, NOTE_LANES, STEPS } from './noteseq';
+import { getStep, makeEmptyPatterns, NOTE_LANES, STEPS, WT1_LAYOUT } from './noteseq';
+import { copyRect } from './shared/seqEdit';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -325,5 +326,41 @@ describe('rect selection verbs', () => {
   it('selectAllSteps selects the full grid rect', () => {
     useStore.getState().selectAllSteps();
     expect(useStore.getState().rectSel).toEqual({ stepFrom: 0, stepTo: 15, noteFrom: 0, noteTo: 11 });
+  });
+
+  it('dropRect stamps picked-up cells at the drop anchor, transposed', () => {
+    light(0, 5); light(1, 7);
+    const data = copyRect(useStore.getState().patterns, WT1_LAYOUT, 0, { stepFrom: 0, stepTo: 1, noteFrom: 4, noteTo: 8 });
+    useStore.getState().dropRect(data, 8, -3); // COPY drop: source untouched
+    const p = useStore.getState().patterns;
+    expect(getStep(p, 0, 0).note).toBe(5);
+    expect(getStep(p, 0, 8).note).toBe(2);
+    expect(getStep(p, 0, 9).note).toBe(4);
+    expect(useStore.getState().rectSel).toEqual({ stepFrom: 8, stepTo: 9, noteFrom: 1, noteTo: 5 });
+  });
+
+  it('dropRect across bars cuts from the source pattern, pastes into the target and switches the edit bar', () => {
+    light(2, 5); // pattern 0
+    const src = { stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 };
+    const data = copyRect(useStore.getState().patterns, WT1_LAYOUT, 0, src);
+    useStore.getState().dropRect(data, 6, 0, src, { src: 0, dst: 1 });
+    const p = useStore.getState().patterns;
+    expect(getStep(p, 0, 2).on).toBe(false); // cleared in pattern 0
+    expect(getStep(p, 1, 6).note).toBe(5); // landed in pattern 1
+    expect(useStore.getState().editPattern).toBe(1);
+  });
+
+  it('dropRect with clearSrc (CUT) clears the source in the same undo entry', () => {
+    light(2, 5);
+    const src = { stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 };
+    const data = copyRect(useStore.getState().patterns, WT1_LAYOUT, 0, src);
+    useStore.getState().dropRect(data, 10, 1, src);
+    let p = useStore.getState().patterns;
+    expect(getStep(p, 0, 2).on).toBe(false);
+    expect(getStep(p, 0, 10).note).toBe(6);
+    useStore.getState().undoSeq(); // one entry restores source AND removes the drop
+    p = useStore.getState().patterns;
+    expect(getStep(p, 0, 2).note).toBe(5);
+    expect(getStep(p, 0, 10).on).toBe(false);
   });
 });

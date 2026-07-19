@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useBassStore } from './store';
-import { getStep, makeEmptyPatterns, NOTE_LANES, STEPS } from './seq';
+import { getStep, LAYOUT, makeEmptyPatterns, NOTE_LANES, STEPS } from './seq';
+import { copyRect } from '../shared/seqEdit';
 import { defaultBassParams } from './params';
 import { FACTORY_PATCHES } from './patches';
 
@@ -300,6 +301,45 @@ describe('bass store', () => {
       expect(s.on).toBe(true);
       expect(s.note).toBe(6);
       expect(s.slide).toBe(true);
+    });
+
+    it('dropRect stamps picked-up cells at the drop anchor, transposed', () => {
+      light(0, 5); light(1, 7);
+      const data = copyRect(useBassStore.getState().patterns, LAYOUT, 0, { stepFrom: 0, stepTo: 1, noteFrom: 4, noteTo: 8 });
+      useBassStore.getState().dropRect(data, 8, -3); // COPY drop: source untouched
+      const p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 0).note).toBe(5);
+      expect(getStep(p, 0, 8).note).toBe(2);
+      expect(getStep(p, 0, 9).note).toBe(4);
+      expect(useBassStore.getState().rectSel).toEqual({ stepFrom: 8, stepTo: 9, noteFrom: 1, noteTo: 5 });
+    });
+
+    it('dropRect across bars cuts from the source pattern, pastes into the target and switches the edit bar', () => {
+      light(2, 5); // pattern 0
+      const src = { stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 };
+      const data = copyRect(useBassStore.getState().patterns, LAYOUT, 0, src);
+      useBassStore.getState().dropRect(data, 6, 0, src, { src: 0, dst: 1 });
+      const p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 2).on).toBe(false); // cleared in pattern 0
+      expect(getStep(p, 1, 6).note).toBe(5); // landed in pattern 1
+      expect(useBassStore.getState().editPattern).toBe(1);
+    });
+
+    it('dropRect with clearSrc (CUT) clears the source in the same undo entry', () => {
+      light(2, 5);
+      useBassStore.getState().toggleStepSlide(2, 0);
+      const src = { stepFrom: 2, stepTo: 2, noteFrom: 5, noteTo: 5 };
+      const data = copyRect(useBassStore.getState().patterns, LAYOUT, 0, src);
+      useBassStore.getState().dropRect(data, 10, 1, src);
+      let p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 2).on).toBe(false);
+      const dropped = getStep(p, 0, 10);
+      expect(dropped.note).toBe(6);
+      expect(dropped.slide).toBe(true); // bit7 rides along through the drop
+      useBassStore.getState().undo(); // one entry restores source AND removes the drop
+      p = useBassStore.getState().patterns;
+      expect(getStep(p, 0, 2).note).toBe(5);
+      expect(getStep(p, 0, 10).on).toBe(false);
     });
   });
 

@@ -8,10 +8,11 @@
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
+import { useSeqGhostPaste } from '../../components/useSeqGhostPaste';
 import { useSeqNoteDrag } from '../../components/useSeqNoteDrag';
 import { useSeqRectSelect } from '../../components/useSeqRectSelect';
-import { rectNorm } from '../../shared/seqEdit';
-import { getStep, NOTE_LANES, STEPS } from '../seq';
+import { copyRect, rectNorm } from '../../shared/seqEdit';
+import { getStep, LAYOUT, NOTE_LANES, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
 export function PitchSeq({ bars }: { bars?: number } = {}) {
@@ -37,7 +38,6 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
   const moveRectSel = useBassStore((s) => s.moveRectSel);
   const movePattern = useBassStore((s) => s.movePattern);
   const moveStepNote = useBassStore((s) => s.moveStepNote);
-  const cutSelection = useBassStore((s) => s.cutSelection);
   const copySelection = useBassStore((s) => s.copySelection);
   const duplicateSelection = useBassStore((s) => s.duplicateSelection);
   const deleteSelection = useBassStore((s) => s.deleteSelection);
@@ -65,6 +65,21 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
     if (!rect) return false;
     const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
     return step >= stepLo && step <= stepHi && note >= noteLo && note <= noteHi;
+  };
+
+  // Ghost paste: menu CUT/COPY picks the selection up — the menu closes, the
+  // cells trail the cursor as ghosts, and the next click drops them (Escape
+  // or clicking outside the grid cancels; a cancelled CUT changes nothing).
+  const dropRect = useBassStore((s) => s.dropRect);
+  const { ghost, beginGhost, ghostAt, isCutSrc } = useSeqGhostPaste({
+    onDrop: (data, atStep, dNote, clearSrc, srcPattern, dstPattern) =>
+      dropRect(data, atStep, dNote, clearSrc, { src: srcPattern, dst: dstPattern }),
+  });
+  const pickUpSelection = (cut: boolean) => {
+    if (!rectSel) return;
+    copySelection(); // keep the clipboard in sync so Cmd-V still pastes the same cells
+    beginGhost(copyRect(patterns, LAYOUT, editPattern, rectSel), { cut, src: rectSel, srcPattern: editPattern });
+    clearStepSelection();
   };
 
   const barCount = Math.max(1, Math.min(4, bars ?? chain.length));
@@ -140,7 +155,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                             data-step={step}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (editable && inRect(step, note) ? ' sel' : '')}
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (editable && inRect(step, note) ? ' sel' : '') + (ghost ? (ghostAt(step, note, pattern) ? ' ghost' : isCutSrc(step, note, pattern) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
@@ -149,7 +164,13 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                               // Esc cancels). Shift-drag sweeps a selection rect;
                               // a plain drag inside the current rect moves it.
                               if (hosted) return;
-                              if (editable && event.shiftKey) { startRectSelect(event, step, note); return; }
+                              if (event.shiftKey) {
+                                // Shift-drag works on any bar: starting on a
+                                // non-edit bar makes it the edit bar first.
+                                if (!editable) setEditPattern(pattern);
+                                startRectSelect(event, step, note, pattern);
+                                return;
+                              }
                               if (editable && rectSel && inRect(step, note) && !pending) { startRectMove(event, step, note); return; }
                               let srcStep = step;
                               if (!active) {
@@ -220,8 +241,8 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
                 visibleLo={barOffset + stepLo}
                 visibleHi={barOffset + stepHi}
                 totalSteps={totalSteps}
-                onCut={cutSelection}
-                onCopy={copySelection}
+                onCut={() => pickUpSelection(true)}
+                onCopy={() => pickUpSelection(false)}
                 onDuplicate={duplicateSelection}
                 onDelete={deleteSelection}
                 onDismiss={clearStepSelection}

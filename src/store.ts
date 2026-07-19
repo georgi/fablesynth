@@ -118,6 +118,7 @@ interface SynthStore {
   duplicateSteps: () => void;
   deleteSteps: () => void;
   moveRectSel: (dStep: number, dNote: number, opts?: { copy?: boolean }) => void;
+  dropRect: (data: RectCells, atStep: number, dNote: number, clearSrc?: RectSel | null, pats?: { src?: number; dst?: number }) => void;
   moveStepNote: (from: number, to: number, note: number, opts?: { copy?: boolean }, pattern?: number) => void;
   movePattern: (from: number, to: number, opts?: { copy?: boolean }) => void;
   undoSeq: () => void;
@@ -484,6 +485,27 @@ export const useStore = create<SynthStore>((set, get) => {
     pushSeqHistory();
     get()._setPatterns(moveRect(patterns, WT1_LAYOUT, editPattern, rectSel, ds, dn, { copy: opts.copy, emptyStep: EMPTY_STEP, maxNote: NOTE_LANES - 1 }));
     set({ rectSel: { stepFrom: stepLo + ds, stepTo: stepHi + ds, noteFrom: noteLo + dn, noteTo: noteHi + dn } });
+  },
+
+  // Ghost-paste drop (menu CUT/COPY → cells follow the cursor → click): stamp
+  // the picked-up cells at the drop anchor, clearing the CUT source in the
+  // same undo entry. Out-of-range cells are dropped, like any paste. A drop
+  // on another bar pastes into that bar's pattern and makes it the edit bar.
+  dropRect: (data, atStep, dNote, clearSrc, pats) => {
+    const { patterns, editPattern } = get();
+    if (!data.cells.length) return;
+    const srcPat = pats?.src ?? editPattern;
+    const dstPat = pats?.dst ?? editPattern;
+    pushSeqHistory();
+    const base = clearSrc ? clearRect(patterns, WT1_LAYOUT, srcPat, clearSrc, EMPTY_STEP) : patterns;
+    get()._setPatterns(pasteRect(base, WT1_LAYOUT, dstPat, atStep, dNote, data, NOTE_LANES - 1));
+    if (dstPat !== editPattern) set({ editPattern: dstPat });
+    get().setRectSel({
+      stepFrom: atStep,
+      stepTo: atStep + data.wSteps - 1,
+      noteFrom: data.noteLo + dNote,
+      noteTo: data.noteHi + dNote,
+    });
   },
 
   // Grid note drag: move (or Alt-copy) one lit step to another step/lane,
