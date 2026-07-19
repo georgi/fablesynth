@@ -909,11 +909,6 @@
 .sq-focus {
   display: flex; flex-direction: column; gap: 8px;
   flex: 1; min-height: 0;
-  animation: sq-focus-in 0.2s ease-out;
-}
-@keyframes sq-focus-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: none; }
 }
 /* Focus mode collapses track heads and the mini clip row down to one strip:
    a back-to-session button followed by the 6 scene chips, filling the width
@@ -975,8 +970,7 @@
   .sq-cell-progress div,
   .sq-rail-dot.queued,
   .sq-rail-launch.queued,
-  .sq-cell.live,
-  .sq-focus {
+  .sq-cell.live {
     animation: none;
   }
   .sq-cell-queued { opacity: 0.8; }

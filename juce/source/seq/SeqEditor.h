@@ -46,10 +46,10 @@ private:
 // heads row and the full grid entirely, replacing them with one horizontal
 // strip (a "< SESSION" back chip + the 6 scene chips, reusing SceneGridView
 // in its singleRow_ mode) directly under the header, with the native device
-// surface filling the rest (the footer hides too). The collapse between the
-// two is eased over ~180ms — see applyLayout() — the JUCE analogue of the
-// web's animated FLIP collapse.
-class SeqRack : public juce::Component, private juce::Timer {
+// surface filling the rest (the footer hides too). The switch between the
+// two is instant — see applyLayout() — matching the web, which has no
+// focus enter/exit animation either.
+class SeqRack : public juce::Component {
 public:
     static constexpr int LW = 1460, LH = 722;
     // Focus-mode logical height. The web rack auto-grows to viewport height
@@ -93,9 +93,7 @@ private:
     fui::DeviceFocusView deviceFocus;
     HintBar hint;
 
-    void timerCallback() override;
     void applyLayout();
-    float focusT_ = 0.0f, focusTarget_ = 0.0f; // 0 = session, 1 = focus
 
     bool focusMode_ = false;
     int focusTrack_ = -1;

@@ -20,8 +20,8 @@
 // (y=67): a "< SESSION" back chip + the 6 scene chips (SceneGridView's
 // singleRow_ mode -- see SceneGridView::paintFocusStrip). The native device
 // body fills the freed space below down to the footer slot, which hides.
-// Both the grid's y and height animate over ~180ms between the session and
-// focus geometries — see SeqRack::applyLayout().
+// The switch between the session and focus geometries is instant (no
+// animation, per the web) — see SeqRack::applyLayout().
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
@@ -37,10 +37,9 @@ SeqRack::SeqRack(SeqAudioProcessor& p)
 void SeqRack::enterFocus(int track, int scene) {
     focusMode_ = true;
     // The rack's own logical extent (its coordinate space for applyLayout(),
-    // and the size the editor scales via its transform) snaps to the focus
-    // height immediately -- only the internal collapse animates, not this
-    // outer canvas size, else the taller focus content would clip against
-    // the still-session-sized parent bounds.
+    // and the size the editor scales via its transform) switches to the
+    // focus height along with everything else — the whole mode change is
+    // one synchronous relayout.
     setBounds(0, 0, LW, LHF);
     focusTrack_ = track;
     trackHeads.setVisible(false); // heads + mini clip row disappear entirely in focus
@@ -48,9 +47,7 @@ void SeqRack::enterFocus(int track, int scene) {
     deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
     deviceFocus.setVisible(true);
-    focusTarget_ = 1.0f;
-    if (!isShowing()) { focusT_ = 1.0f; applyLayout(); }
-    else startTimerHz(30);
+    applyLayout();
 }
 
 void SeqRack::exitFocus() {
@@ -63,9 +60,7 @@ void SeqRack::exitFocus() {
     footer.setVisible(true);
     hint.setVisible(true);
     deviceFocus.setVisible(false);
-    focusTarget_ = 0.0f;
-    if (!isShowing()) { focusT_ = 0.0f; applyLayout(); }
-    else startTimerHz(30);
+    applyLayout();
 }
 
 void SeqRack::setFocusScene(int scene) {
@@ -76,43 +71,27 @@ void SeqRack::setFocusScene(int scene) {
 
 void SeqRack::resized() { applyLayout(); }
 
-// Eased focus collapse — the JUCE analogue of the web's FLIP animation
-// (seq.css sq-focus-in): the scene grid slides from the full session table
-// up to the 30px focus strip (where the heads row used to sit) while the
-// device surface grows into the freed space. ~180ms at 30Hz; headless (never
-// showing) snaps instantly so the host tests see final geometry
-// synchronously.
+// Instant mode switch, no animation — matching the web, which switches
+// focus mode without a transition. Session lays out the full table; focus
+// puts the 30px scene strip where the heads row sat and hands everything
+// down to 8px above the hint to the device surface.
 void SeqRack::applyLayout() {
-    const float t = focusT_ * focusT_ * (3.0f - 2.0f * focusT_); // smoothstep
+    constexpr int hintH = 14;
     header.setBounds(18, 14, 1424, 44);
     trackHeads.setBounds(18, 67, 1424, 60); // hidden (setVisible(false)) in focus
-    constexpr int sessionGridY = 136, sessionGridH = 491; // 491 = footerY(627) - sessionGridY
-    constexpr int focusStripY = 67, focusStripH = 30;
-    const int gridY = juce::roundToInt(sessionGridY + (focusStripY - sessionGridY) * t);
-    const int gridH = juce::roundToInt(sessionGridH + (focusStripH - sessionGridH) * t);
-    sceneGrid.setBounds(18, gridY, 1424, gridH);
-    const int devY = gridY + gridH + 8;
-    // The hint line eases from its session y down to near the bottom of the
-    // (now taller) focus rack, same smoothstep t as the grid -- so the device
-    // surface grows into the freed space as the grid collapses, filling down
-    // to 8px above the hint at every point in the collapse, not just t=1.
-    constexpr int sessionHintY = 700, hintH = 14;
-    constexpr int focusHintY = LHF - 14 /* bottom margin */ - hintH; // 941-14-14=913
-    const int hintY = juce::roundToInt(sessionHintY + (focusHintY - sessionHintY) * t);
-    deviceFocus.setBounds(18, devY, 1424, (hintY - 8) - devY);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
-    // simple rather than branching on focusMode_.
+    // simple rather than branching twice.
     footer.setBounds(18, 627, 1424, 65);
-    hint.setBounds(18, hintY, 1424, hintH);
-}
-
-void SeqRack::timerCallback() {
-    const float step = 1.0f / (0.18f * 30.0f); // full sweep in ~180ms
-    focusT_ = focusTarget_ > focusT_ ? juce::jmin(focusTarget_, focusT_ + step)
-                                     : juce::jmax(focusTarget_, focusT_ - step);
-    applyLayout();
-    if (juce::approximatelyEqual(focusT_, focusTarget_)) stopTimer();
+    if (focusMode_) {
+        sceneGrid.setBounds(18, 67, 1424, 30); // scene strip in the heads slot
+        constexpr int hintY = LHF - 14 /* bottom margin */ - hintH; // 941-14-14=913
+        deviceFocus.setBounds(18, 105, 1424, (hintY - 8) - 105);
+        hint.setBounds(18, hintY, 1424, hintH);
+    } else {
+        sceneGrid.setBounds(18, 136, 1424, 491); // 491 = footerY(627) - 136
+        hint.setBounds(18, 700, 1424, hintH);
+    }
 }
 
 // ---- SeqEditor ----
