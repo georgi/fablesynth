@@ -17,7 +17,7 @@ export interface SeqNoteDrag {
 }
 
 export function useSeqNoteDrag(
-  onCommit: (from: number, to: number, note: number, copy: boolean, pattern: number) => void,
+  onCommit: (from: number, to: number, note: number, copy: boolean, pattern: number, srcNote: number) => void,
 ) {
   const [drag, setDrag] = useState<SeqNoteDrag | null>(null);
   const suppressClick = useRef(false);
@@ -59,7 +59,7 @@ export function useSeqNoteDrag(
         // so release the flag on the next tick lest it eat a later real tap.
         suppressClick.current = true;
         setTimeout(() => { suppressClick.current = false; }, 0);
-        onCommit(cur.srcStep, Math.max(0, cur.overStep - offset), cur.overNote, ev.altKey, cur.pattern);
+        onCommit(cur.srcStep, Math.max(0, cur.overStep - offset), cur.overNote, ev.altKey, cur.pattern, cur.srcNote);
       }
       finish();
     };

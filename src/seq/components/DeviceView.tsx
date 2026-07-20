@@ -35,7 +35,9 @@ import { KeyboardBar } from '../../components/panels/KeyboardBar';
 import { LfoPanel } from '../../components/panels/LfoPanel';
 import { MatrixPanel } from '../../components/panels/MatrixPanel';
 import { OscPanel } from '../../components/panels/OscPanel';
-import { SeqPanel } from '../../components/panels/SeqPanel';
+import { SeqPanel, type SeqRectOps } from '../../components/panels/SeqPanel';
+import { rectNorm, type RectSel } from '../../shared/seqEdit';
+import { clearRectWt, copyRectWt, moveRectWt, pasteRectWt } from '../wtClipRect';
 import type { SeqStep } from '../../noteseq';
 import { UtilPanel } from '../../components/panels/UtilPanel';
 import { useStore as useWtStore } from '../../store';
@@ -48,7 +50,7 @@ import { HostedClipBar } from './HostedClipBar';
 interface HostedStore {
   attach: (engine: unknown) => void;
   getPatterns: () => Uint8Array;
-  setPatterns: (p: Uint8Array) => void;
+  setPatterns: (p: Uint8Array, bars: number) => void;
   getParams: () => Record<string, number>;
   setPos: (step: number, bar: number, playing: boolean) => void;
   subscribe: (fn: () => void) => () => void;
@@ -75,9 +77,12 @@ const HOSTS: Record<MachineId, HostedStore> = {
   BL1: {
     attach: (e) => useBassStore.getState().attachHosted(e as never),
     getPatterns: () => useBassStore.getState().patterns,
-    setPatterns: (p) => {
+    // chain mirrors the clip's bars as the identity [0..bars-1] so the
+    // absolute-timeline rect verbs map bar b onto pattern b (hosted stores
+    // are bar-major; _setPatterns skips persistence while hosted).
+    setPatterns: (p, bars) => {
       useBassStore.getState()._clearHistory();
-      useBassStore.setState({ patterns: p, editPattern: 0, stepSel: null });
+      useBassStore.setState({ patterns: p, editPattern: 0, rectSel: null, chain: Array.from({ length: bars }, (_, i) => i) });
     },
     getParams: () => useBassStore.getState().params,
     setPos: (step, bar, playing) => useBassStore.setState({ curStep: step, curPat: bar, playing }),
@@ -87,9 +92,9 @@ const HOSTS: Record<MachineId, HostedStore> = {
   WT1: {
     attach: (e) => useWtStore.getState().attachHosted(e as never),
     getPatterns: () => useWtStore.getState().patterns,
-    setPatterns: (p) => {
+    setPatterns: (p, bars) => {
       useWtStore.getState()._clearSeqHistory();
-      useWtStore.setState({ patterns: p, editPattern: 0, stepSel: null });
+      useWtStore.setState({ patterns: p, editPattern: 0, rectSel: null, chain: Array.from({ length: bars }, (_, i) => i) });
     },
     getParams: () => useWtStore.getState().params,
     setPos: (step, bar, playing) => useWtStore.setState({ curStep: step, curPat: bar, seqPlaying: playing }),
@@ -130,7 +135,8 @@ export function DeviceView() {
     if (!focus || !host || !machine) return;
     syncing.current = true;
     const bytes = clipPattern(session, focus.scene, focus.track);
-    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty());
+    const bars = Math.max(1, Math.min(HOSTED_MAX_BARS, clip?.bars ?? 1));
+    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty(), bars);
     syncing.current = false;
     // Intentionally NOT keyed on the pattern string: our own write-backs must
     // not reload (they'd reset editPattern); createClip flips `!!clip`.
@@ -309,6 +315,90 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
     }
     useSeqStore.getState().updateClipBytes(focus.scene, focus.track, bytes, clip.bars);
   };
+  // Poly-aware rect verbs over the clip bytes (all 8 voice lanes), so the
+  // hosted grid gets the same selection UX as standalone and chords survive
+  // cut/copy/move. Selection state lives in the hosted WT store (rectSel);
+  // every write goes through updateClipBytes like the chord callbacks.
+  const rectOps = useMemo<SeqRectOps | undefined>(() => {
+    if (!focus || !clip || clip.bars > HOSTED_MAX_BARS) return undefined;
+    const { scene, track } = focus;
+    const bars = clip.bars;
+    const write = (bytes: Uint8Array) => useSeqStore.getState().updateClipBytes(scene, track, bytes, bars);
+    const readRect = () => useWtStore.getState().rectSel;
+    const setSel = (sel: RectSel | null) => useWtStore.getState().setRectSel(sel);
+    return {
+      copyData: (rect) => copyRectWt(b64ToBytes(clip.pattern), rect),
+      drop: (data, atStep, dNote, clearSrc) => {
+        if (!data.cells.length) return;
+        let bytes = b64ToBytes(clip.pattern);
+        if (clearSrc) bytes = clearRectWt(bytes, clearSrc);
+        write(pasteRectWt(bytes, bars, atStep, dNote, data));
+        setSel({ stepFrom: atStep, stepTo: atStep + data.wSteps - 1, noteFrom: data.noteLo + dNote, noteTo: data.noteHi + dNote });
+      },
+      move: (dStep, dNote, copy) => {
+        const rect = readRect();
+        if (!rect) return;
+        const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
+        const ds = Math.min(bars * 16 - 1 - stepHi, Math.max(-stepLo, dStep | 0));
+        const dn = Math.min(11 - noteHi, Math.max(-noteLo, dNote | 0));
+        if (ds === 0 && dn === 0) return;
+        write(moveRectWt(b64ToBytes(clip.pattern), bars, rect, ds, dn, { copy }));
+        setSel({ stepFrom: stepLo + ds, stepTo: stepHi + ds, noteFrom: noteLo + dn, noteTo: noteHi + dn });
+      },
+      dup: () => {
+        const rect = readRect();
+        if (!rect) return;
+        const { stepLo, stepHi, noteLo, noteHi } = rectNorm(rect);
+        const at = stepHi + 1;
+        if (at >= bars * 16) return; // nothing past the clip end — no-op
+        const bytes = b64ToBytes(clip.pattern);
+        write(pasteRectWt(bytes, bars, at, 0, copyRectWt(bytes, rect)));
+        setSel({ stepFrom: at, stepTo: at + (stepHi - stepLo), noteFrom: noteLo, noteTo: noteHi });
+      },
+      del: () => {
+        const rect = readRect();
+        if (!rect) return;
+        write(clearRectWt(b64ToBytes(clip.pattern), rect));
+      },
+    };
+  }, [focus?.scene, focus?.track, clip?.pattern, clip?.bars]);
+
+  // Grid note drag, poly-aware: move (Alt = copy) one chord voice to another
+  // step/lane of the same bar, carrying its flags/duration/octave. Steps here
+  // are bar-local (the drag gesture is same-bar only); `pattern` is the bar.
+  const moveChordNote = (from: number, to: number, note: number, srcNote: number, copy: boolean, pattern: number) => {
+    if (!focus || !clip) return;
+    if (from === to && note === srcNote) return;
+    const bytes = b64ToBytes(clip.pattern);
+    const lanes = Array.from({ length: 8 }, (_, lane) => lane);
+    const src = lanes.find((lane) => {
+      const o = wtNoteIdx(pattern, from, lane);
+      return !!(bytes[o] & 1) && (bytes[o + 1] & 0x7f) === srcNote;
+    });
+    if (src === undefined) return;
+    const so = wtNoteIdx(pattern, from, src);
+    const voice = bytes.slice(so, so + 3);
+    // Target already sounds this note: a move just clears the source (merge);
+    // a copy is a no-op. Otherwise the voice needs a free slot to land in.
+    const dup = lanes.some((lane) => {
+      const o = wtNoteIdx(pattern, to, lane);
+      return !!(bytes[o] & 1) && (bytes[o + 1] & 0x7f) === note && !(to === from && lane === src);
+    });
+    let free: number | undefined;
+    if (!dup) {
+      const isSrc = (lane: number) => to === from && lane === src;
+      free = lanes.find((lane) => isSrc(lane) || !(bytes[wtNoteIdx(pattern, to, lane)] & 1));
+      if (free === undefined) return; // chord full at the target — drop the gesture
+    }
+    if (!copy) { bytes[so] = 0; bytes[so + 1] = 0; bytes[so + 2] = 1; }
+    if (!dup && free !== undefined) {
+      const o = wtNoteIdx(pattern, to, free);
+      bytes.set(voice, o);
+      bytes[o + 1] = note;
+    }
+    useSeqStore.getState().updateClipBytes(focus.scene, focus.track, bytes, clip.bars);
+  };
+
   const setChordDuration = (absoluteStep: number, note: number, duration: number) => {
     if (!focus || !clip) return;
     const bytes = b64ToBytes(clip.pattern);
@@ -339,7 +429,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           </>
         )}
         {mode === 'seq' && (
-          <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} />
+          <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} />
         )}
       </div>
       {mode === 'seq' && <KeyboardBar />}
