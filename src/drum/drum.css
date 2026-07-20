@@ -585,14 +585,20 @@
   border-color: var(--ac-b);
   box-shadow: 0 0 0 1px rgba(255, 161, 77, 0.3), 0 0 8px rgba(255, 161, 77, 0.18);
 }
-/* Step-range selection: shift-click a step or shift-drag across the row
-   (see StepSeq's onStepPointerDown/setStepSelHead). Distinct from the
-   playhead cursor (.cur) and the on/accent fill. */
+/* Rectangle selection: shift-drag a step × pad rectangle (see StepSeq's
+   onStepPointerDown / useSeqRectSelect). Distinct from the playhead cursor
+   (.cur) and the on/accent fill. */
 .step.selected {
   background: color-mix(in srgb, var(--ac-a) 12%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 45%, transparent);
 }
 .step.selected .step-num { color: var(--ac-a); }
+.step.ghost {
+  outline: 1px dashed color-mix(in srgb, var(--ac-a) 85%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--ac-a) 30%, transparent);
+}
+.step.cut-src { opacity: 0.35; }
 
 /* STEP mode: all 16 pad lanes stacked at once, compact enough that the whole
    kit's pattern reads in one glance (the pad grid is hidden in this mode). */
@@ -638,6 +644,17 @@
 .dr-lanes .step.selected:not(.on) { background: color-mix(in srgb, var(--ac-a) 12%, #0a0d13); }
 /* .dr-lanes .step re-declares border-color, so restate the playhead's. */
 .dr-lanes .step.cur { border-color: var(--ac-b); }
+/* Ghost paste: carried cells trail the cursor (dashed wash); a CUT dims its
+   picked-up source until the drop commits (mirrors WT-1's .ns-cell.ghost /
+   .drag-src). */
+.dr-lanes .step.ghost {
+  outline: 1px dashed color-mix(in srgb, var(--ac-a) 85%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--ac-a) 34%, #0a0d13);
+}
+.dr-lanes .step.cut-src { opacity: 0.35; }
+/* Positioning context for the floating selection menu (SeqSelectionMenu). */
+.dr-lanes-wrap { position: relative; }
 .dr-lane-name {
   display: flex;
   gap: 5px;

@@ -221,6 +221,88 @@ export function moveRectChain(
   return pasteRectChain(base, l, chain, stepLo + dStep, dNote, data, opts.maxNote ?? 11);
 }
 
+// ---------- pad-grid rectangle (step × pad-lane) selection ----------
+// DR-1 only. Unlike the note-lane rect above, the *row* axis is the pad lane
+// itself (offset = pat*patternSize + pad*stepsPerPattern*stride + step*stride),
+// so a rectangle spans a step band × a pad band and the row shift is
+// positional — moving up/down changes which pad plays, it does not transpose a
+// stored value. Cells are the raw stride bytes; only lit cells (byte0 != 0,
+// i.e. on/accent) are captured. Paste/move DROP cells landing outside the step
+// range [0, stepsPerPattern) or the pad range [0, padCount) — never wrap.
+
+export interface PadRectSel { stepFrom: number; stepTo: number; padFrom: number; padTo: number }
+
+export interface PadRectCells {
+  wSteps: number; // width of the source rect in steps
+  wPads: number; // height of the source rect in pad lanes
+  // stride bytes, dStep/dPad measured from the rect's top-left (stepLo, padLo)
+  cells: Array<{ dStep: number; dPad: number; bytes: Uint8Array }>;
+}
+
+export const padRectNorm = (r: PadRectSel): { stepLo: number; stepHi: number; padLo: number; padHi: number } => ({
+  stepLo: Math.min(r.stepFrom, r.stepTo),
+  stepHi: Math.max(r.stepFrom, r.stepTo),
+  padLo: Math.min(r.padFrom, r.padTo),
+  padHi: Math.max(r.padFrom, r.padTo),
+});
+
+const padOffset = (l: SeqLayout, pat: number, pad: number, step: number): number =>
+  pat * l.patternSize + pad * l.stepsPerPattern * l.stride + step * l.stride;
+
+export function copyPadRect(p: Patterns, l: SeqLayout, pat: number, rect: PadRectSel): PadRectCells {
+  const { stepLo, stepHi, padLo, padHi } = padRectNorm(rect);
+  const cells: PadRectCells['cells'] = [];
+  for (let pad = padLo; pad <= padHi; pad++) {
+    for (let s = stepLo; s <= stepHi; s++) {
+      if (s < 0 || s >= l.stepsPerPattern) continue; // a re-anchored rect may overhang
+      const o = padOffset(l, pat, pad, s);
+      if (p[o] !== 0) cells.push({ dStep: s - stepLo, dPad: pad - padLo, bytes: p.slice(o, o + l.stride) });
+    }
+  }
+  return { wSteps: stepHi - stepLo + 1, wPads: padHi - padLo + 1, cells };
+}
+
+export function clearPadRect(p: Patterns, l: SeqLayout, pat: number, rect: PadRectSel): Patterns {
+  const { stepLo, stepHi, padLo, padHi } = padRectNorm(rect);
+  const next = p.slice();
+  for (let pad = padLo; pad <= padHi; pad++) {
+    for (let s = stepLo; s <= stepHi; s++) {
+      if (s < 0 || s >= l.stepsPerPattern) continue;
+      const o = padOffset(l, pat, pad, s);
+      for (let b = 0; b < l.stride; b++) next[o + b] = 0;
+    }
+  }
+  return next;
+}
+
+// Stamp captured cells with the rect's top-left at (atStep, atPad). Cells past
+// the step or pad range are dropped, never wrapped/clamped.
+export function pastePadRect(
+  p: Patterns, l: SeqLayout, pat: number, atStep: number, atPad: number, data: PadRectCells, padCount: number,
+): Patterns {
+  const next = p.slice();
+  for (const c of data.cells) {
+    const s = atStep + c.dStep;
+    const pad = atPad + c.dPad;
+    if (s < 0 || s >= l.stepsPerPattern || pad < 0 || pad >= padCount) continue;
+    next.set(c.bytes, padOffset(l, pat, pad, s));
+  }
+  return next;
+}
+
+// Drag-move (or Alt-drag copy) of the rect by (dStep, dPad). Source bytes are
+// captured first so overlapping moves are safe; a plain move clears the rect
+// before pasting.
+export function movePadRect(
+  p: Patterns, l: SeqLayout, pat: number, rect: PadRectSel, dStep: number, dPad: number, padCount: number,
+  opts: { copy?: boolean } = {},
+): Patterns {
+  const { stepLo, padLo } = padRectNorm(rect);
+  const data = copyPadRect(p, l, pat, rect);
+  const base = opts.copy ? p.slice() : clearPadRect(p, l, pat, rect);
+  return pastePadRect(base, l, pat, stepLo + dStep, padLo + dPad, data, padCount);
+}
+
 // Whole-pattern block ops — the full patternSize bytes (all pads for DR-1).
 export function copyPattern(p: Patterns, l: SeqLayout, pat: number): Uint8Array {
   return p.slice(pat * l.patternSize, (pat + 1) * l.patternSize);

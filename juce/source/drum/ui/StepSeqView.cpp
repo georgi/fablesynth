@@ -1,6 +1,7 @@
 #include "StepSeqView.h"
 #include "../dsp/DrumPatches.h"
 #include <cmath>
+#include <limits>
 
 namespace fui {
 
@@ -138,7 +139,7 @@ static constexpr float kStepGap = 2.0f;
 
 StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
     setInterceptsMouseClicks(true, false);
-    setWantsKeyboardFocus(true);   // decision 6/7: verbs on keyPressed, modifier combos only
+    setWantsKeyboardFocus(true);   // verbs on keyPressed, modifier combos only
     startTimerHz(30);
 }
 
@@ -207,14 +208,77 @@ juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
     return stepBounds(proc.selectedPad(), step);
 }
 
+// The union of every lane × step cell (excludes the lane-name selectors).
+juce::Rectangle<int> StepSeqView::gridBounds() const {
+    const auto tl = stepBounds(padOfLane(0), 0);                       // top lane, first step
+    const auto br = stepBounds(padOfLane(fable::DR_NPADS - 1), fable::DR_STEPS - 1); // bottom, last
+    return { tl.getX(), tl.getY(), br.getRight() - tl.getX(), br.getBottom() - tl.getY() };
+}
+
+// Floating CUT · COPY · DUP · DEL · ✕ toolbar centered over the selected step
+// columns (SeqSelectionMenu.tsx), drawn over the top lanes while a rect exists.
+juce::Rectangle<int> StepSeqView::selMenuBounds() const {
+    constexpr int bw = 34, gap = 2, n = 5, h = 16;
+    constexpr int w = n * bw + (n - 1) * gap;
+    const auto nrm = fable::padRectNorm(rect_);
+    const int topPad = padOfLane(0);
+    const auto lo = stepBounds(topPad, juce::jlimit(0, fable::DR_STEPS - 1, nrm.stepLo));
+    const auto hi = stepBounds(topPad, juce::jlimit(0, fable::DR_STEPS - 1, nrm.stepHi));
+    const int cx = (lo.getX() + hi.getRight()) / 2;
+    const auto grid = gridBounds();
+    const int x = juce::jlimit(grid.getX(), juce::jmax(grid.getX(), grid.getRight() - w), cx - w / 2);
+    return { x, grid.getY() + 1, w, h };
+}
+
+juce::Rectangle<int> StepSeqView::selMenuButton(int i) const {
+    constexpr int bw = 34, gap = 2;
+    const auto m = selMenuBounds();
+    return { m.getX() + i * (bw + gap), m.getY(), bw, m.getHeight() };
+}
+
+bool StepSeqView::inRect(int step, int pad) const {
+    if (sweeping_) {
+        const auto n = fable::padRectNorm(pending_);
+        return step >= n.stepLo && step <= n.stepHi && pad >= n.padLo && pad <= n.padHi;
+    }
+    if (!hasRect_) return false;
+    const auto n = fable::padRectNorm(rect_);
+    return step >= n.stepLo && step <= n.stepHi && pad >= n.padLo && pad <= n.padHi;
+}
+
+bool StepSeqView::cellAt(juce::Point<int> pos, int& pad, int& step) const {
+    for (int p = 0; p < fable::DR_NPADS; ++p)
+        for (int s = 0; s < fable::DR_STEPS; ++s)
+            if (stepBounds(p, s).contains(pos)) { pad = p; step = s; return true; }
+    return false;
+}
+
+// Snap a point to the nearest lane / column (drag tracking may run between the
+// exact cells, past the group gaps, or off the panel edge).
+void StepSeqView::cellClamp(juce::Point<int> pos, int& pad, int& step) const {
+    pad = 0; int bestDy = std::numeric_limits<int>::max();
+    for (int p = 0; p < fable::DR_NPADS; ++p) {
+        const int dy = std::abs(pos.y - laneBounds(p).getCentreY());
+        if (dy < bestDy) { bestDy = dy; pad = p; }
+    }
+    step = 0; int bestDx = std::numeric_limits<int>::max();
+    for (int s = 0; s < fable::DR_STEPS; ++s) {
+        const int dx = std::abs(pos.x - stepBounds(pad, s).getCentreX());
+        if (dx < bestDx) { bestDx = dx; step = s; }
+    }
+}
+
 // ---- store handlers ----------------------------------------------------------
 
-void StepSeqView::toggleStep(int step) {
-    const int pat = proc.editPattern(), pad = proc.selectedPad();
+void StepSeqView::toggleStep(int pad, int step) {
+    const int pat = proc.editPattern();
     const auto v = (uint8_t)((proc.step(pat, pad, step) + 1) % 3);
     proc.setStep(pat, pad, step, v);             // seq.ts cycleStep
+    hasLastCell_ = true; lastCellStep_ = step; lastCellPad_ = pad;
     repaint();
 }
+
+void StepSeqView::toggleStep(int step) { toggleStep(proc.selectedPad(), step); }
 
 void StepSeqView::patternClick(int i) {
     proc.setEditPattern(i);
@@ -235,22 +299,25 @@ void StepSeqView::randomizePad(std::function<float()> rng) {
     pushHistoryEntry();
     const int pad = proc.selectedPad(), pat = proc.editPattern();
     if (!rng) rng = [] { return juce::Random::getSystemRandom().nextFloat(); };
-    applyPatternBuffer(pat, fable::randomizeLane(buildPatternBuffer(pat), padLayout(pad), 0, rng));
+    // randomizeLane rewrites the lane at laneOffset; give it a per-pad layout.
+    fable::StepLayout lane = gridLayout();
+    lane.laneOffset = pad * fable::DR_STEPS;
+    applyPatternBuffer(pat, fable::randomizeLane(buildPatternBuffer(pat), lane, 0, rng));
     repaint();
 }
 
-// ---- decision 6: layout / buffer helpers ------------------------------------
-// Every verb below works over a flat pattern-major buffer (DR_NPADS*DR_STEPS
-// bytes for one edit pattern) built/flushed through proc.step()/setStep(), so
-// no assumption is made about how the host (standalone engine vs. SQ-4 hosted
-// clip bytes) actually stores the data — mirrors StepEditOps.h's own
-// JUCE-free, storage-agnostic contract.
-fable::StepLayout StepSeqView::padLayout(int pad) const {
+// ---- buffer / snapshot helpers ----------------------------------------------
+// Every verb works over a flat single-pattern buffer (DR_NPADS*DR_STEPS bytes)
+// built/flushed through proc.step()/setStep(), so nothing assumes how the host
+// (standalone engine vs. SQ-4 hosted clip) stores the data — mirrors
+// StepEditOps.h's JUCE-free, storage-agnostic contract. The pad-rect verbs use
+// this grid layout (no laneOffset; they compute the per-pad offset themselves).
+fable::StepLayout StepSeqView::gridLayout() const {
     fable::StepLayout l;
     l.stride = 1;
     l.stepsPerPattern = fable::DR_STEPS;
     l.patternSize = fable::DR_NPADS * fable::DR_STEPS;
-    l.laneOffset = pad * fable::DR_STEPS;
+    l.laneOffset = 0;
     return l;
 }
 
@@ -270,13 +337,6 @@ void StepSeqView::applyPatternBuffer(int pat, const fable::StepBytes& buf) {
         }
 }
 
-fable::StepBytes StepSeqView::shiftPatternBuffer(const fable::StepBytes& basePattern, int pad,
-                                                  int from, int to, int dest, bool copy) const {
-    fable::ShiftOpts opts;
-    opts.copy = copy;
-    return fable::shiftRange(basePattern, padLayout(pad), 0, from, to, dest, opts);
-}
-
 DrStepSnapshot StepSeqView::captureSnapshot() const {
     DrStepSnapshot s;
     s.steps.resize((size_t)(fable::DR_NPATTERNS * fable::DR_NPADS * fable::DR_STEPS));
@@ -292,8 +352,7 @@ DrStepSnapshot StepSeqView::captureSnapshot() const {
 void StepSeqView::restoreSnapshot(const DrStepSnapshot& s) {
     // Chain first: hosted DR-1's setStep drops writes for patterns beyond the
     // current clip bar count, so restoring across a sequence-length shrink
-    // must grow the clip before the bar's steps are written back (matches
-    // NoteSeqView::restore's chain-then-steps order).
+    // must grow the clip before the bar's steps are written back.
     if (proc.chain() != s.chain) proc.setChain(s.chain);
     for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)
         for (int pad = 0; pad < fable::DR_NPADS; ++pad)
@@ -306,95 +365,76 @@ void StepSeqView::restoreSnapshot(const DrStepSnapshot& s) {
 
 void StepSeqView::pushHistoryEntry() { history_.push(captureSnapshot()); }
 
-bool StepSeqView::stepInSelection(int step) const {
-    if (!sel_.active) return false;
-    if (sel_.selectAll) return true;         // whole visible row (Cmd-A)
-    return step >= sel_.from && step <= sel_.to;
-}
+// ---- selection ---------------------------------------------------------------
 
-// ---- decision 6: selection -------------------------------------------------
-
-void StepSeqView::extendSelection(int step) {
-    step = juce::jlimit(0, fable::DR_STEPS - 1, step);
-    if (!sel_.active || sel_.selectAll) {
-        sel_.active = true;
-        sel_.selectAll = false;
-        selAnchor_ = step;
-        sel_.from = sel_.to = step;
-    } else {
-        sel_.from = juce::jmin(selAnchor_, step);
-        sel_.to = juce::jmax(selAnchor_, step);
-    }
+void StepSeqView::setSelection(const fable::PadRectSel& r) {
+    rect_ = r;
+    hasRect_ = true;
+    const auto n = fable::padRectNorm(r);
+    hasLastCell_ = true; lastCellStep_ = n.stepLo; lastCellPad_ = n.padLo;
     repaint();
 }
 
 void StepSeqView::selectAllPattern() {
-    sel_.active = true;
-    sel_.selectAll = true;
-    sel_.from = 0;
-    sel_.to = fable::DR_STEPS - 1;
-    repaint();
+    setSelection({ 0, fable::DR_STEPS - 1, 0, fable::DR_NPADS - 1 });
 }
 
-void StepSeqView::clearSelection() {
-    sel_ = {};
-    repaint();
-}
+void StepSeqView::clearSelection() { hasRect_ = false; repaint(); }
 
-// ---- decision 6: verbs ------------------------------------------------------
-// Copy/cut default to the whole edit pattern (all pads) when nothing is
-// selected; a range selection scopes to the selected pad's row; Cmd-A scopes
-// to the whole edit pattern too (selectAll), matching the web contract.
+// ---- verbs -------------------------------------------------------------------
+// Copy/cut/paste default to the whole edit pattern (all pads) when nothing is
+// selected; a rectangle scopes to its step × pad band (web store parity).
 
 void StepSeqView::copySelection() {
-    const int pad = proc.selectedPad(), pat = proc.editPattern();
+    const int pat = proc.editPattern();
     auto buf = buildPatternBuffer(pat);
-    if (sel_.active && !sel_.selectAll) {
-        clipboard_ = { true, false, fable::copyRange(buf, padLayout(pad), 0, sel_.from, sel_.to) };
+    clipboard_.valid = true;
+    if (hasRect_) {
+        clipboard_.wholePattern = false;
+        clipboard_.rect = fable::copyPadRect(buf, gridLayout(), 0, rect_);
     } else {
-        clipboard_ = { true, true, fable::copyPattern(buf, padLayout(pad), 0) };
+        clipboard_.wholePattern = true;
+        clipboard_.pattern = fable::copyPattern(buf, gridLayout(), 0);
     }
 }
 
 void StepSeqView::cutSelection() {
     copySelection();
     pushHistoryEntry();
-    const int pad = proc.selectedPad(), pat = proc.editPattern();
+    const int pat = proc.editPattern();
     auto buf = buildPatternBuffer(pat);
-    if (sel_.active && !sel_.selectAll) {
-        buf = fable::clearRange(buf, padLayout(pad), 0, sel_.from, sel_.to);
-    } else {
-        std::fill(buf.begin(), buf.end(), (uint8_t)0);
-    }
+    if (hasRect_) buf = fable::clearPadRect(buf, gridLayout(), 0, rect_);
+    else std::fill(buf.begin(), buf.end(), (uint8_t)0);
     applyPatternBuffer(pat, buf);
     repaint();
 }
 
 void StepSeqView::deleteSelection() {
-    if (!sel_.active) return;                // Delete only acts on an explicit selection
+    if (!hasRect_) return;                       // Delete only acts on an explicit selection
     pushHistoryEntry();
-    const int pad = proc.selectedPad(), pat = proc.editPattern();
-    auto buf = buildPatternBuffer(pat);
-    if (sel_.selectAll) std::fill(buf.begin(), buf.end(), (uint8_t)0);
-    else buf = fable::clearRange(buf, padLayout(pad), 0, sel_.from, sel_.to);
-    applyPatternBuffer(pat, buf);
+    const int pat = proc.editPattern();
+    applyPatternBuffer(pat, fable::clearPadRect(buildPatternBuffer(pat), gridLayout(), 0, rect_));
     repaint();
 }
 
 void StepSeqView::pasteSelection() {
     if (!clipboard_.valid) return;
     pushHistoryEntry();
-    const int pad = proc.selectedPad(), pat = proc.editPattern();
+    const int pat = proc.editPattern();
     auto buf = buildPatternBuffer(pat);
-    const auto layout = padLayout(pad);
     if (clipboard_.wholePattern) {
-        buf = fable::pastePattern(buf, layout, 0, clipboard_.data);
-    } else {
-        // "at selection start if a selection exists, else step 0" (web contract).
-        const int at = (sel_.active && !sel_.selectAll) ? sel_.from : 0;
-        buf = fable::pasteRange(buf, layout, 0, at, clipboard_.data);
+        applyPatternBuffer(pat, fable::pastePattern(buf, gridLayout(), 0, clipboard_.pattern));
+        repaint();
+        return;
     }
+    int atStep, atPad;
+    if (hasRect_)          { const auto n = fable::padRectNorm(rect_); atStep = n.stepLo; atPad = n.padLo; }
+    else if (hasLastCell_) { atStep = lastCellStep_; atPad = lastCellPad_; }
+    else                   { atStep = 0; atPad = 0; }
+    buf = fable::pastePadRect(buf, gridLayout(), 0, atStep, atPad, clipboard_.rect, fable::DR_NPADS);
     applyPatternBuffer(pat, buf);
+    rect_ = { atStep, atStep + clipboard_.rect.wSteps - 1, atPad, atPad + clipboard_.rect.wPads - 1 };
+    hasRect_ = true;
     repaint();
 }
 
@@ -410,39 +450,65 @@ void StepSeqView::duplicatePattern() {
 }
 
 void StepSeqView::duplicateSelection() {
-    if (!sel_.active || sel_.selectAll) { duplicatePattern(); return; }
+    if (!hasRect_) { duplicatePattern(); return; }
+    const auto n = fable::padRectNorm(rect_);
+    const int at = n.stepHi + 1;
+    if (at >= fable::DR_STEPS) return;           // nothing past the last step — no-op
     pushHistoryEntry();
-    const int pad = proc.selectedPad(), pat = proc.editPattern();
+    const int pat = proc.editPattern();
     auto buf = buildPatternBuffer(pat);
-    const auto layout = padLayout(pad);
-    const auto data = fable::copyRange(buf, layout, 0, sel_.from, sel_.to);
-    const int span = sel_.to - sel_.from;
-    const int dest = sel_.to + 1;                // immediately after the range (clamped by pasteRange)
-    buf = fable::pasteRange(buf, layout, 0, dest, data);
+    const auto data = fable::copyPadRect(buf, gridLayout(), 0, rect_);
+    buf = fable::pastePadRect(buf, gridLayout(), 0, at, n.padLo, data, fable::DR_NPADS);
     applyPatternBuffer(pat, buf);
-    if (dest < fable::DR_STEPS) {
-        sel_.from = dest;
-        sel_.to = juce::jmin(fable::DR_STEPS - 1, dest + span);
-    }
+    rect_ = { at, at + (n.stepHi - n.stepLo), n.padLo, n.padHi };
+    hasRect_ = true;
     repaint();
 }
 
-void StepSeqView::shiftSelection(int destStep, bool copy) {
-    if (!sel_.active) return;
+// Block move release (drag from inside the rect): shift the whole rectangle in
+// step and pad. The delta is clamped so the block stays on the grid. Alt copies.
+void StepSeqView::commitBlockMove(int dStep, int dPad, bool copy) {
+    if (!hasRect_) return;
+    const auto n = fable::padRectNorm(rect_);
+    dStep = juce::jlimit(-n.stepLo, (fable::DR_STEPS - 1) - n.stepHi, dStep);
+    dPad = juce::jlimit(-n.padLo, (fable::DR_NPADS - 1) - n.padHi, dPad);
+    if (dStep == 0 && dPad == 0) return;         // no movement: full no-op, no history
     pushHistoryEntry();
-    const int pad = proc.selectedPad(), pat = proc.editPattern();
-    const int from = sel_.selectAll ? 0 : sel_.from;
-    const int to = sel_.selectAll ? fable::DR_STEPS - 1 : sel_.to;
-    // Clamp dest so the whole range fits (STEPS - len): shiftRange truncates
-    // the overshooting tail on a move — the web review's overshoot-drag fix,
-    // mirrored from NoteSeqView::shiftStepSel.
-    const int dest = juce::jlimit(0, fable::DR_STEPS - (to - from + 1), destStep);
-    auto next = shiftPatternBuffer(buildPatternBuffer(pat), pad, from, to, dest, copy);
-    applyPatternBuffer(pat, next);
-    sel_.active = true;
-    sel_.selectAll = false;
-    sel_.from = dest;
-    sel_.to = dest + (to - from);
+    const int pat = proc.editPattern();
+    fable::PadRectMoveOpts opts; opts.copy = copy;
+    applyPatternBuffer(pat, fable::movePadRect(buildPatternBuffer(pat), gridLayout(), 0, rect_,
+                                               dStep, dPad, fable::DR_NPADS, opts));
+    rect_ = { n.stepLo + dStep, n.stepHi + dStep, n.padLo + dPad, n.padHi + dPad };
+    hasRect_ = true;
+    repaint();
+}
+
+// Menu CUT / COPY: pick the selection up. The captured cells trail the cursor
+// as ghosts until the next click drops them (useDrumGhostPaste). A cancelled CUT
+// mutates nothing — the source is only cleared at drop time.
+void StepSeqView::beginGhostPaste(bool cut) {
+    if (!hasRect_) return;
+    ghostData_ = fable::copyPadRect(buildPatternBuffer(proc.editPattern()), gridLayout(), 0, rect_);
+    if (ghostData_.cells.empty()) return;
+    clipboard_.valid = true; clipboard_.wholePattern = false; clipboard_.rect = ghostData_; // keep Cmd-V in sync
+    ghost_ = true; ghostCut_ = cut; ghostSrc_ = rect_; ghostHasHover_ = false;
+    hasRect_ = false;                            // the menu closes
+    repaint();
+}
+
+// Drop the carried ghost at (atStep, atPad): top-left anchored. A CUT clears its
+// source in the same undo entry as the paste.
+void StepSeqView::dropGhost(int atStep, int atPad) {
+    if (!ghost_) return;
+    pushHistoryEntry();
+    const int pat = proc.editPattern();
+    auto buf = buildPatternBuffer(pat);
+    if (ghostCut_) buf = fable::clearPadRect(buf, gridLayout(), 0, ghostSrc_);
+    buf = fable::pastePadRect(buf, gridLayout(), 0, atStep, atPad, ghostData_, fable::DR_NPADS);
+    applyPatternBuffer(pat, buf);
+    rect_ = { atStep, atStep + ghostData_.wSteps - 1, atPad, atPad + ghostData_.wPads - 1 };
+    hasRect_ = true;
+    ghost_ = false; ghostHasHover_ = false;
     repaint();
 }
 
@@ -450,13 +516,13 @@ void StepSeqView::movePattern(int fromBar, int toBar, bool copy) {
     if (fromBar == toBar || fromBar < 0 || toBar < 0
         || fromBar >= fable::DR_NPATTERNS || toBar >= fable::DR_NPATTERNS) return;
     pushHistoryEntry();
-    const auto layout = padLayout(0);          // patternSize is all copyPattern/pastePattern need
+    const auto layout = gridLayout();
     const auto a = fable::copyPattern(buildPatternBuffer(fromBar), layout, 0);
     if (copy) {
-        applyPatternBuffer(toBar, a);           // Alt-drag: copy A over B, A unchanged
+        applyPatternBuffer(toBar, a);            // Alt-drag: copy A over B, A unchanged
     } else {
         const auto b = fable::copyPattern(buildPatternBuffer(toBar), layout, 0);
-        applyPatternBuffer(toBar, a);           // plain drag: swap A <-> B
+        applyPatternBuffer(toBar, a);            // plain drag: swap A <-> B
         applyPatternBuffer(fromBar, b);
     }
     repaint();
@@ -472,7 +538,7 @@ void StepSeqView::redo() {
     if (history_.redo(current, restored)) restoreSnapshot(restored);
 }
 
-// ---- mouse: selection, step-range drag-shift, bar-chip drag ---------------
+// ---- mouse: selection, block-move, ghost drop, bar-chip drag ---------------
 
 void StepSeqView::mouseDown(const juce::MouseEvent& e) {
     // Real clicks already auto-grab focus via JUCE's mouse dispatch; headless
@@ -480,6 +546,29 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
     // here, guarded exactly like SeqEditor::enterFocus (no peer => no-op assert).
     if (isShowing() || isOnDesktop()) grabKeyboardFocus();
     const auto pos = e.getPosition();
+
+    // Carrying a ghost: the next click drops it (or, outside the grid, cancels).
+    if (ghost_) {
+        if (gridBounds().contains(pos)) { int p, s; cellClamp(pos, p, s); dropGhost(s, p); }
+        else cancelGesture();
+        return;
+    }
+
+    // Floating selection menu (drawn over the top lanes while a rect exists).
+    if (hasRect_) {
+        for (int i = 0; i < 5; ++i) if (selMenuButton(i).contains(pos)) {
+            switch (i) {
+                case 0: beginGhostPaste(true);  break;  // CUT
+                case 1: beginGhostPaste(false); break;  // COPY
+                case 2: duplicateSelection();   break;  // DUP
+                case 3: deleteSelection();      break;  // DEL
+                default: clearSelection();      break;  // ✕
+            }
+            repaint();
+            return;
+        }
+    }
+
     if (transportBounds().contains(pos)) {       // play/stop
         proc.setSequencerPlaying(!proc.sequencerPlaying());
         repaint();
@@ -510,82 +599,76 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
             repaint();
             return;
         }
-    for (int pad = 0; pad < fable::DR_NPADS; ++pad)
-    for (int s = 0; s < fable::DR_STEPS; ++s) {
-        if (!stepBounds(pad, s).contains(pos)) continue;
-        // A press retargets editing to that lane's pad, so the selection and
-        // shift verbs below always act on the row under the pointer.
-        if (pad != proc.selectedPad()) {
-            proc.selectPad(pad);
-            clearSelection();
-        }
-        if (e.mods.isShiftDown()) {              // Shift-click set/extend; never toggles
-            selecting_ = true;
-            extendSelection(s);
+
+    // ---- step cells: Shift-sweep / block-move / deferred toggle ----
+    if (gridBounds().contains(pos)) {
+        int pad, step;
+        if (!cellAt(pos, pad, step)) return;     // between cells (group gap): ignore
+        downStep_ = step; downPad_ = pad;
+        if (e.mods.isShiftDown()) {              // 1) rectangle sweep
+            sweeping_ = true;
+            pending_ = { step, step, pad, pad };
+            repaint();
             return;
         }
-        if (sel_.active && stepInSelection(s)) {
-            // Arm a potential drag-shift; a stationary release still toggles
-            // (mouseUp), matching the plain-click semantics this replaces.
-            drag_ = DragState{};
-            drag_.kind = DragState::Kind::stepShift;
-            drag_.startPos = pos;
-            drag_.originStep = s;
-            drag_.pad = proc.selectedPad();
-            drag_.pat = proc.editPattern();
-            drag_.selFrom = sel_.selectAll ? 0 : sel_.from;
-            drag_.selTo = sel_.selectAll ? fable::DR_STEPS - 1 : sel_.to;
+        if (hasRect_ && inRect(step, pad)) {     // 2) block move (stationary release toggles)
+            moveArmed_ = true; moving_ = false;
+            moveOriginStep_ = step; moveOriginPad_ = pad;
+            moveHoverStep_ = step; moveHoverPad_ = pad;
             return;
         }
-        toggleStep(s);
+        // 3) plain press: retarget editing to this lane's pad; toggle on up.
+        if (pad != proc.selectedPad()) proc.selectPad(pad);
         return;
     }
 }
 
 void StepSeqView::mouseDrag(const juce::MouseEvent& e) {
-    const auto pos = e.getPosition();
-    if (selecting_) {
-        for (int s = 0; s < fable::DR_STEPS; ++s)
-            if (stepBounds(s).contains(pos)) { extendSelection(s); break; }
+    const auto pos = e.position.roundToInt();
+    if (sweeping_) {
+        int pad, step; cellClamp(pos, pad, step);
+        pending_.stepTo = step; pending_.padTo = pad;
+        repaint();
         return;
     }
-    if (drag_.kind == DragState::Kind::none) return;
-    if (!drag_.crossed) {
-        const int dx = pos.x - drag_.startPos.x, dy = pos.y - drag_.startPos.y;
-        if (dx * dx + dy * dy < 16) return;      // ~4px movement threshold
-        drag_.crossed = true;
-        if (drag_.kind == DragState::Kind::stepShift) {
-            drag_.preDrag = captureSnapshot();
-            drag_.basePattern = buildPatternBuffer(drag_.pat);
-        }
+    if (moveArmed_) {
+        int pad, step; cellClamp(pos, pad, step);
+        moveHoverStep_ = step; moveHoverPad_ = pad;
+        if (step != moveOriginStep_ || pad != moveOriginPad_) moving_ = true;
+        repaint();
+        return;
     }
     if (drag_.kind == DragState::Kind::barChip) {
+        if (!drag_.crossed) {
+            if (e.getDistanceFromDragStart() < 4) return; // ~4px movement threshold
+            drag_.crossed = true;
+        }
         int hover = -1;
         for (int i = 0; i < fable::DR_NPATTERNS; ++i)
             if (patternBounds(i).contains(pos)) { hover = i; break; }
         if (hover != drag_.hoverBar) { drag_.hoverBar = hover; repaint(); }
         return;
     }
-    // stepShift: live preview recomputed from the captured pre-drag baseline
-    // (never compounded), imitating NoteSeqView's duration-resize idiom.
-    int destStep = -1;
-    for (int s = 0; s < fable::DR_STEPS; ++s) if (stepBounds(s).contains(pos)) { destStep = s; break; }
-    if (destStep < 0) return;
-    const int delta = destStep - drag_.originStep;
-    const int dest = juce::jlimit(0, fable::DR_STEPS - (drag_.selTo - drag_.selFrom + 1),
-                                  drag_.selFrom + delta);
-    auto next = shiftPatternBuffer(drag_.basePattern, drag_.pad, drag_.selFrom, drag_.selTo,
-                                   dest, e.mods.isAltDown());
-    applyPatternBuffer(drag_.pat, next);
-    sel_.active = true;
-    sel_.selectAll = false;
-    sel_.from = dest;
-    sel_.to = dest + (drag_.selTo - drag_.selFrom);
-    repaint();
 }
 
 void StepSeqView::mouseUp(const juce::MouseEvent& e) {
-    if (selecting_) { selecting_ = false; return; }
+    if (sweeping_) {                             // commit the swept rectangle
+        sweeping_ = false;
+        setSelection(pending_);
+        return;
+    }
+    if (moveArmed_) {
+        moveArmed_ = false;
+        if (moving_) {
+            moving_ = false;
+            commitBlockMove(moveHoverStep_ - moveOriginStep_, moveHoverPad_ - moveOriginPad_,
+                            e.mods.isAltDown());
+        } else if (downStep_ >= 0) {             // plain click inside the rect: toggle
+            toggleStep(downPad_, downStep_);
+        }
+        downStep_ = downPad_ = -1;
+        return;
+    }
     if (drag_.kind == DragState::Kind::barChip) {
         if (drag_.crossed && drag_.hoverBar >= 0 && drag_.hoverBar != drag_.fromBar)
             movePattern(drag_.fromBar, drag_.hoverBar, e.mods.isAltDown());
@@ -595,31 +678,44 @@ void StepSeqView::mouseUp(const juce::MouseEvent& e) {
         repaint();
         return;
     }
-    if (drag_.kind == DragState::Kind::stepShift) {
-        if (drag_.crossed) history_.push(std::move(drag_.preDrag)); // one entry per gesture
-        else toggleStep(drag_.originStep);
-        drag_ = DragState{};
-        return;
+    if (downStep_ >= 0) {                         // plain click on a cell: toggle
+        toggleStep(downPad_, downStep_);
+        downStep_ = downPad_ = -1;
     }
+}
+
+// Ghost paste follows the pointer even with no button down (useDrumGhostPaste's
+// pointermove). Any grid cell is a drop target.
+void StepSeqView::mouseMove(const juce::MouseEvent& e) {
+    if (!ghost_) return;
+    const auto pos = e.getPosition();
+    ghostHasHover_ = gridBounds().contains(pos);
+    if (ghostHasHover_) cellClamp(pos, ghostHoverPad_, ghostHoverStep_);
+    repaint();
 }
 
 bool StepSeqView::keyPressed(const juce::KeyPress& k) {
     if (k == juce::KeyPress::escapeKey) {
-        if (drag_.kind == DragState::Kind::stepShift && drag_.crossed) {
-            restoreSnapshot(drag_.preDrag);      // undo the live preview
+        // Drop any in-flight gesture first, then a committed selection; only
+        // fall through (to PadGrid's stop-sequencer Escape) when fully idle.
+        if (ghost_ || sweeping_ || moveArmed_ || drag_.kind != DragState::Kind::none) {
+            sweeping_ = false;
+            moveArmed_ = moving_ = false;
+            ghost_ = false; ghostHasHover_ = false;
             drag_ = DragState{};
+            downStep_ = downPad_ = -1;
+            repaint();
             return true;
         }
-        if (drag_.kind != DragState::Kind::none) { drag_ = DragState{}; repaint(); return true; }
-        if (sel_.active) { clearSelection(); return true; }
-        return false;                            // fall through to PadGrid's stop-sequencer Escape
+        if (hasRect_) { clearSelection(); return true; }
+        return false;
     }
-    if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && sel_.active) {
+    if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && hasRect_) {
         deleteSelection();
         return true;
     }
     const auto mods = k.getModifiers();
-    if (!mods.isCommandDown()) return false;      // only modifier combos claimed (decision 7)
+    if (!mods.isCommandDown()) return false;      // only modifier combos claimed
     switch (juce::CharacterFunctions::toLowerCase(k.getTextCharacter())) {
         case 'c': copySelection(); return true;
         case 'x': cutSelection(); return true;
@@ -632,22 +728,29 @@ bool StepSeqView::keyPressed(const juce::KeyPress& k) {
     return false;
 }
 
+void StepSeqView::cancelGesture() {
+    sweeping_ = false;
+    moveArmed_ = moving_ = false;
+    ghost_ = false; ghostHasHover_ = false;
+    drag_ = DragState{};
+    downStep_ = downPad_ = -1;
+    repaint();
+}
+
 // ---- animation ----------------------------------------------------------------
 
-// Repaint only when something visible changed: transport/playhead, edit
-// pattern, chain, selected pad (the step row shows its lane) or its name,
-// or the pattern cells themselves (kit program loads rewrite them).
 void StepSeqView::timerCallback() {
-    // Decision 6: the hosted clip/pattern source can swap under us (SQ-4
-    // focus switching a HostedDrumModel to another scene) — clear the undo
-    // history and any selection so a later undo can never reach back into a
-    // different clip's content (the web's cross-clip corruption hazard).
+    // The hosted clip/pattern source can swap under us (SQ-4 focus switching a
+    // HostedDrumModel to another scene) — clear the undo history and any
+    // selection so a later undo can never reach back into a different clip.
     const int identity = proc.clipIdentity();
     if (!haveClipIdentity_) { lastClipIdentity_ = identity; haveClipIdentity_ = true; }
     else if (identity != lastClipIdentity_) {
         lastClipIdentity_ = identity;
         history_.clear();
-        clearSelection();
+        hasRect_ = false; sweeping_ = false;
+        moveArmed_ = moving_ = false;
+        ghost_ = false; ghostHasHover_ = false;
     }
 
     juce::uint32 sig = 17;
@@ -661,9 +764,15 @@ void StepSeqView::timerCallback() {
     const auto& chain = proc.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
-    for (int s = 0; s < fable::DR_STEPS; ++s) mix(proc.step(edit, sel, s));
+    // The lane view shows every pad, so the whole edit pattern feeds the sig.
+    for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+        for (int s = 0; s < fable::DR_STEPS; ++s) mix(proc.step(edit, pad, s));
     mix(proc.padName(sel).hashCode());
-    mix(sel_.active ? (sel_.selectAll ? 1000 : 100 + sel_.from * 20 + sel_.to) : 0);
+    const auto n = fable::padRectNorm(rect_);
+    mix(hasRect_ ? (1 + n.stepLo * 40 + n.stepHi * 4 + n.padLo * 400 + n.padHi) : 0);
+    mix(sweeping_ ? 7777 : 0);
+    mix(moving_ ? (moveHoverStep_ * 20 + moveHoverPad_) : 0);
+    mix(ghost_ ? (ghostHasHover_ ? ghostHoverStep_ * 20 + ghostHoverPad_ + 1 : 1) : 0);
     mix(drag_.kind == DragState::Kind::barChip ? drag_.hoverBar + 1 : 0);
     if (sig != lastSig_) { lastSig_ = sig; repaint(); }
 }
@@ -728,9 +837,7 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "STEP SEQ",
                { transportBounds().getRight() + 8, kHeadY, kTitleW, kHeadH }, 2.2f);
 
-    // ---- head: editing-pad name (.dr-stepseq-target) — tied directly to the
-    // STEP SEQ nameplate in the accent color instead of sitting disconnected
-    // on the far right.
+    // ---- head: editing-pad name (.dr-stepseq-target) ----
     g.setColour(col::acA);
     g.setFont(monoFont(9.0f, true));
     drawSpaced(g, proc.padName(sel),
@@ -743,8 +850,7 @@ void StepSeqView::paint(juce::Graphics& g) {
     for (int i = 0; i < fable::DR_NPATTERNS; ++i)
         drawSeqBtn(g, patternBounds(i), kPatNames[i], edit == i, 0.0f,
                    bars > 1 && currentBar == i);
-    // Bar-chip drag target: highlight the pattern button under the pointer
-    // while a move/copy drag is in flight (decision 6 DnD).
+    // Bar-chip drag target highlight while a move/copy drag is in flight.
     if (drag_.kind == DragState::Kind::barChip && drag_.crossed
         && drag_.hoverBar >= 0 && drag_.hoverBar != drag_.fromBar) {
         g.setColour(col::acF.withAlpha(0.7f));
@@ -761,14 +867,11 @@ void StepSeqView::paint(juce::Graphics& g) {
     if (!proc.capabilities().hosted)
         drawSeqBtn(g, randButtonBounds(), "RAND", false, 0.9f);
 
-    // ---- head: tap hint, right-aligned (the pad name moved next to the
-    // title; the web dropped the standalone EDITING label with it) ----
+    // ---- head: tap hint, right-aligned ----
     auto right = getLocalBounds().withY(kHeadY).withHeight(kHeadH)
                      .withTrimmedRight(kPadX).withTrimmedLeft(660);
     g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
-    // web "TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT" — ASCII
-    // substitutes (mono font glyphs)
     drawSpaced(g, "TAP STEP - ON -> ACCENT -> OFF - SHIFT-DRAG TO SELECT",
                right.removeFromRight(320), 0.9f, juce::Justification::right);
 
@@ -798,8 +901,14 @@ void StepSeqView::paint(juce::Graphics& g) {
             const bool cur = playing && curStep == s && curPat == edit;
             const bool accented = v == 2;
 
-            // The cell background carries the note — no inset pill, so every
-            // pixel of a lane is a hit target (.dr-lanes .step).
+            // Ghost source cells dim while carried (CUT only).
+            bool cutSrc = false;
+            if (ghost_ && ghostCut_) {
+                const auto sn = fable::padRectNorm(ghostSrc_);
+                for (const auto& c : ghostData_.cells)
+                    if (sn.stepLo + c.dStep == s && sn.padLo + c.dPad == pad) { cutSrc = true; break; }
+            }
+
             if (accented) {
                 g.setGradientFill(juce::ColourGradient(
                     juce::Colour(0xfffff6ea), b.getX(), b.getY(),
@@ -812,6 +921,10 @@ void StepSeqView::paint(juce::Graphics& g) {
                 g.setColour(juce::Colour(0xff0a0d13));
             }
             g.fillRoundedRectangle(b, 2.0f);
+            if (cutSrc) {
+                g.setColour(juce::Colours::black.withAlpha(0.45f));
+                g.fillRoundedRectangle(b, 2.0f);
+            }
 
             if (cur) {                           // .step.cur amber playhead ring
                 g.setColour(col::acB);
@@ -820,9 +933,8 @@ void StepSeqView::paint(juce::Graphics& g) {
             }
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
 
-            // Selection is a ring only, and only on the lane it applies to —
-            // it must not paint over an on/accent step.
-            if (isSel && stepInSelection(s)) {
+            // Selection ring (pending sweep or committed rect), lit cells kept.
+            if (inRect(s, pad)) {
                 if (v == 0) {
                     g.setColour(col::acF.withAlpha(0.14f));
                     g.fillRoundedRectangle(b, 2.0f);
@@ -831,6 +943,40 @@ void StepSeqView::paint(juce::Graphics& g) {
                 g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
             }
         }
+    }
+
+    // ---- block-move preview: the rect outlined at its dragged destination ----
+    if (moving_) {
+        const auto n = fable::padRectNorm(rect_);
+        const int dStep = juce::jlimit(-n.stepLo, (fable::DR_STEPS - 1) - n.stepHi, moveHoverStep_ - moveOriginStep_);
+        const int dPad = juce::jlimit(-n.padLo, (fable::DR_NPADS - 1) - n.padHi, moveHoverPad_ - moveOriginPad_);
+        for (int pad = n.padLo; pad <= n.padHi; ++pad)
+            for (int s = n.stepLo; s <= n.stepHi; ++s) {
+                const auto b = stepBounds(pad + dPad, s + dStep).toFloat();
+                g.setColour(col::acF.withAlpha(0.9f));
+                g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.2f);
+            }
+    }
+
+    // ---- ghost cells trailing the cursor (dashed accent blocks) ----
+    if (ghost_ && ghostHasHover_) {
+        for (const auto& c : ghostData_.cells) {
+            const int s = ghostHoverStep_ + c.dStep;
+            const int pad = ghostHoverPad_ + c.dPad;
+            if (s < 0 || s >= fable::DR_STEPS || pad < 0 || pad >= fable::DR_NPADS) continue;
+            const auto b = stepBounds(pad, s).toFloat();
+            g.setColour(col::acA.withAlpha(0.34f));
+            g.fillRoundedRectangle(b, 2.0f);
+            g.setColour(col::acA);
+            g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
+        }
+    }
+
+    // ---- floating CUT · COPY · DUP · DEL · ✕ toolbar over the selection ----
+    if (hasRect_ && !ghost_) {
+        static const char* const kMenu[5] = { "CUT", "COPY", "DUP", "DEL", "X" };
+        for (int i = 0; i < 5; ++i)
+            drawSeqBtn(g, selMenuButton(i), kMenu[i], false, 0.4f, false, 7.0f);
     }
 }
 

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { drumEngine, useDrumStore } from './store';
 import { DrumEngine } from './engine/drum-synth';
 import { patIdx, STEPS } from './seq';
-import { defaultDrumParams } from './params';
+import { defaultDrumParams, PAD_COUNT } from './params';
 import { FACTORY_PATCHES, patchOptions } from './patches';
 
 if (typeof localStorage === 'undefined') {
@@ -26,7 +26,7 @@ describe('drum store', () => {
     useDrumStore.setState({
       params: defaultDrumParams(), sel: 0, editPattern: 0, chain: [0],
       patterns: new Uint8Array(4 * 16 * 16), hosted: false,
-      stepSel: null, selAllPads: false, clipboard: null,
+      rectSel: null, lastCell: null, clipboard: null,
     });
     useDrumStore.getState()._clearHistory();
   });
@@ -131,29 +131,21 @@ describe('step selection', () => {
   beforeEach(() => {
     useDrumStore.setState({
       sel: 0, editPattern: 0, chain: [0], patterns: new Uint8Array(4 * 16 * 16),
-      stepSel: null, selAllPads: false, clipboard: null,
+      rectSel: null, lastCell: null, clipboard: null,
     });
     useDrumStore.getState()._clearHistory();
   });
 
-  it('setStepSelHead starts a single-step range, then extends the head from the fixed anchor', () => {
-    const s = useDrumStore.getState();
-    s.setStepSelHead(4);
-    expect(useDrumStore.getState().stepSel).toEqual({ anchor: 4, head: 4 });
-    useDrumStore.getState().setStepSelHead(9);
-    expect(useDrumStore.getState().stepSel).toEqual({ anchor: 4, head: 9 });
-    // extending back past the anchor keeps the anchor fixed (reversed range)
-    useDrumStore.getState().setStepSelHead(1);
-    expect(useDrumStore.getState().stepSel).toEqual({ anchor: 4, head: 1 });
+  it('setRectSel clamps the rectangle into the step × pad grid', () => {
+    useDrumStore.getState().setRectSel({ stepFrom: -3, stepTo: 99, padFrom: 2, padTo: 40 });
+    expect(useDrumStore.getState().rectSel).toEqual({ stepFrom: 0, stepTo: STEPS - 1, padFrom: 2, padTo: PAD_COUNT - 1 });
   });
 
-  it('selectAllSteps spans the whole row and flags selAllPads; clearStepSel resets both', () => {
+  it('selectAllSteps spans the whole grid; clearStepSel empties it', () => {
     useDrumStore.getState().selectAllSteps();
-    expect(useDrumStore.getState().stepSel).toEqual({ anchor: 0, head: STEPS - 1 });
-    expect(useDrumStore.getState().selAllPads).toBe(true);
+    expect(useDrumStore.getState().rectSel).toEqual({ stepFrom: 0, stepTo: STEPS - 1, padFrom: 0, padTo: PAD_COUNT - 1 });
     useDrumStore.getState().clearStepSel();
-    expect(useDrumStore.getState().stepSel).toBeNull();
-    expect(useDrumStore.getState().selAllPads).toBe(false);
+    expect(useDrumStore.getState().rectSel).toBeNull();
   });
 });
 
@@ -161,20 +153,23 @@ describe('step editing verbs', () => {
   beforeEach(() => {
     useDrumStore.setState({
       sel: 2, editPattern: 0, chain: [0], patterns: new Uint8Array(4 * 16 * 16),
-      stepSel: null, selAllPads: false, clipboard: null,
+      rectSel: null, lastCell: null, clipboard: null,
     });
     useDrumStore.getState()._clearHistory();
   });
 
-  it('copySelection captures a range on the selected pad row', () => {
+  // A rectangle spans steps × pads; note the reset sets sel: 2 but rect verbs
+  // act on the rectangle's pad band, not the selected pad.
+  it('copySelection captures a step × pad rectangle (only lit cells, positionally)', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(3); // on
-    s.toggleStep(4); s.toggleStep(4); // accent
-    s.setStepSelHead(3);
-    s.setStepSelHead(4);
+    s.toggleStep(3, 2); // pad 2, step 3 → on
+    s.toggleStep(4, 3); s.toggleStep(4, 3); // pad 3, step 4 → accent
+    s.setRectSel({ stepFrom: 3, stepTo: 4, padFrom: 2, padTo: 3 });
     s.copySelection();
     const clip = useDrumStore.getState().clipboard;
-    expect(clip).toEqual({ kind: 'range', data: Uint8Array.of(1, 2) });
+    expect(clip?.kind).toBe('rect');
+    expect(clip?.kind === 'rect' && clip.data.cells.map((c) => [c.dPad, c.dStep, c.bytes[0]]))
+      .toEqual([[0, 0, 1], [1, 1, 2]]);
   });
 
   it('copySelection with no selection falls back to the whole edit pattern (all pads)', () => {
@@ -184,39 +179,52 @@ describe('step editing verbs', () => {
     s.copySelection();
     const clip = useDrumStore.getState().clipboard;
     expect(clip?.kind).toBe('pattern');
-    expect(clip?.data.length).toBe(16 * 16);
+    expect(clip?.kind === 'pattern' && clip.data.length).toBe(16 * 16);
   });
 
-  it('cutSelection copies then clears the selected range only', () => {
+  it('cutSelection copies then clears only the rectangle', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(5); s.toggleStep(5); // accent at step 5
-    s.setStepSelHead(5);
+    s.toggleStep(5, 2); s.toggleStep(5, 2); // accent at pad 2, step 5
+    s.toggleStep(5, 3); // on at pad 3, step 5 (out of the rect's pad band)
+    s.setRectSel({ stepFrom: 5, stepTo: 5, padFrom: 2, padTo: 2 });
     s.cutSelection();
-    expect(useDrumStore.getState().clipboard).toEqual({ kind: 'range', data: Uint8Array.of(2) });
+    expect(useDrumStore.getState().clipboard?.kind).toBe('rect');
     expect(useDrumStore.getState().patterns[patIdx(0, 2, 5)]).toBe(0);
+    expect(useDrumStore.getState().patterns[patIdx(0, 3, 5)]).toBe(1); // untouched
   });
 
-  it('deleteSelection is a no-op with nothing selected, clears when a range is active', () => {
+  it('deleteSelection is a no-op with nothing selected, clears the rectangle when active', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(6);
+    s.toggleStep(6, 2);
     const before = useDrumStore.getState().patterns;
     s.deleteSelection(); // no selection
     expect(useDrumStore.getState().patterns).toBe(before);
-    s.setStepSelHead(6);
+    s.setRectSel({ stepFrom: 6, stepTo: 6, padFrom: 2, padTo: 2 });
     useDrumStore.getState().deleteSelection();
     expect(useDrumStore.getState().patterns[patIdx(0, 2, 6)]).toBe(0);
   });
 
-  it('pasteSelection (range) lands at the selection start on the selected pad row', () => {
+  it('pasteSelection (rect) anchors at the rectangle top-left, positionally in both axes', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(0); s.toggleStep(0); // accent at step 0
-    s.setStepSelHead(0);
+    s.toggleStep(0, 2); s.toggleStep(0, 2); // accent at pad 2, step 0
+    s.setRectSel({ stepFrom: 0, stepTo: 0, padFrom: 2, padTo: 2 });
     s.copySelection();
-    s.clearStepSel();
-    s.selectPad(7);
-    s.setStepSelHead(10);
+    s.setRectSel({ stepFrom: 10, stepTo: 10, padFrom: 7, padTo: 7 });
     useDrumStore.getState().pasteSelection();
     expect(useDrumStore.getState().patterns[patIdx(0, 7, 10)]).toBe(2);
+    // selection follows the paste
+    expect(useDrumStore.getState().rectSel).toEqual({ stepFrom: 10, stepTo: 10, padFrom: 7, padTo: 7 });
+  });
+
+  it('pasteSelection (rect) with no selection anchors at the last touched cell', () => {
+    const s = useDrumStore.getState();
+    s.toggleStep(0, 2);
+    s.setRectSel({ stepFrom: 0, stepTo: 0, padFrom: 2, padTo: 2 });
+    s.copySelection();
+    s.clearStepSel();
+    s.toggleStep(9, 5); // lastCell = { step: 9, pad: 5 }
+    useDrumStore.getState().pasteSelection();
+    expect(useDrumStore.getState().patterns[patIdx(0, 5, 9)]).toBe(1);
   });
 
   it('pasteSelection (whole pattern) with no selection lands on the current edit pattern', () => {
@@ -229,39 +237,23 @@ describe('step editing verbs', () => {
     expect(useDrumStore.getState().patterns[patIdx(1, 1, 0)]).toBe(1);
   });
 
-  it('duplicateSelection with a range copies it immediately after and moves the selection there', () => {
+  it('duplicateSelection with a rect copies it immediately to the right and reselects', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(0); s.toggleStep(1);
-    s.setStepSelHead(0);
-    s.setStepSelHead(1);
+    s.toggleStep(0, 2); s.toggleStep(1, 3);
+    s.setRectSel({ stepFrom: 0, stepTo: 1, padFrom: 2, padTo: 3 });
     s.duplicateSelection();
     expect(useDrumStore.getState().patterns[patIdx(0, 2, 2)]).toBe(1);
-    expect(useDrumStore.getState().patterns[patIdx(0, 2, 3)]).toBe(1);
-    expect(useDrumStore.getState().stepSel).toEqual({ anchor: 2, head: 3 });
+    expect(useDrumStore.getState().patterns[patIdx(0, 3, 3)]).toBe(1);
+    expect(useDrumStore.getState().rectSel).toEqual({ stepFrom: 2, stepTo: 3, padFrom: 2, padTo: 3 });
   });
 
-  it('duplicateSelection with a range ending on the last step is a full no-op', () => {
+  it('duplicateSelection with a rect ending on the last step is a full no-op', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(15);
-    s.setStepSelHead(14);
-    s.setStepSelHead(15); // range {14..15}
+    s.toggleStep(15, 2);
+    s.setRectSel({ stepFrom: 14, stepTo: 15, padFrom: 2, padTo: 2 });
     const before = useDrumStore.getState().patterns;
     useDrumStore.getState().duplicateSelection();
     expect(useDrumStore.getState().patterns).toBe(before); // step 15 not corrupted
-  });
-
-  it('narrowing the selection after Cmd-A drops the whole-pattern flag', () => {
-    useDrumStore.setState({ sel: 0 });
-    const s = useDrumStore.getState();
-    s.toggleStep(0); // pad 0, step 0
-    useDrumStore.setState({ sel: 1 });
-    useDrumStore.getState().toggleStep(4); // pad 1, step 4
-    useDrumStore.getState().selectAllSteps();
-    useDrumStore.getState().setStepSelHead(4); // shift-click narrows to {0..4} on pad 1
-    expect(useDrumStore.getState().selAllPads).toBe(false);
-    useDrumStore.getState().deleteSelection();
-    expect(useDrumStore.getState().patterns[patIdx(0, 1, 4)]).toBe(0); // narrowed range cleared
-    expect(useDrumStore.getState().patterns[patIdx(0, 0, 0)]).toBe(1); // other pads untouched
   });
 
   it('duplicateSelection with no selection copies the current bar to the next, extending sequence length', () => {
@@ -281,23 +273,40 @@ describe('step editing verbs', () => {
     expect(useDrumStore.getState().editPattern).toBe(3);
   });
 
-  it('shiftSelection moves a range to a new column and relocates the selection', () => {
+  it('moveRectSel moves the block in both axes and relocates the selection (one undo)', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(0); s.toggleStep(0); // accent
-    s.setStepSelHead(0);
-    s.shiftSelection(8);
+    s.toggleStep(0, 2); s.toggleStep(0, 2); // accent at pad 2, step 0
+    s.setRectSel({ stepFrom: 0, stepTo: 0, padFrom: 2, padTo: 2 });
+    s.moveRectSel(8, 1);
     expect(useDrumStore.getState().patterns[patIdx(0, 2, 0)]).toBe(0);
-    expect(useDrumStore.getState().patterns[patIdx(0, 2, 8)]).toBe(2);
-    expect(useDrumStore.getState().stepSel).toEqual({ anchor: 8, head: 8 });
+    expect(useDrumStore.getState().patterns[patIdx(0, 3, 8)]).toBe(2); // pad 2+1, step 0+8
+    expect(useDrumStore.getState().rectSel).toEqual({ stepFrom: 8, stepTo: 8, padFrom: 3, padTo: 3 });
+    useDrumStore.getState().undo();
+    expect(useDrumStore.getState().patterns[patIdx(0, 2, 0)]).toBe(2);
+    expect(useDrumStore.getState().patterns[patIdx(0, 3, 8)]).toBe(0);
   });
 
-  it('shiftSelection with copy leaves the source hit in place', () => {
+  it('moveRectSel with copy leaves the source in place', () => {
     const s = useDrumStore.getState();
-    s.toggleStep(0);
-    s.setStepSelHead(0);
-    s.shiftSelection(8, { copy: true });
+    s.toggleStep(0, 2);
+    s.setRectSel({ stepFrom: 0, stepTo: 0, padFrom: 2, padTo: 2 });
+    s.moveRectSel(8, 0, { copy: true });
     expect(useDrumStore.getState().patterns[patIdx(0, 2, 0)]).toBe(1);
     expect(useDrumStore.getState().patterns[patIdx(0, 2, 8)]).toBe(1);
+  });
+
+  it('dropRect (ghost paste) stamps at the drop cell and clears a CUT source', () => {
+    const s = useDrumStore.getState();
+    s.toggleStep(0, 2); // pad 2, step 0
+    const src = { stepFrom: 0, stepTo: 0, padFrom: 2, padTo: 2 };
+    s.setRectSel(src);
+    s.copySelection();
+    const data = useDrumStore.getState().clipboard;
+    if (data?.kind !== 'rect') throw new Error('expected rect clipboard');
+    useDrumStore.getState().dropRect(data.data, 5, 4, src);
+    expect(useDrumStore.getState().patterns[patIdx(0, 2, 0)]).toBe(0); // CUT source cleared
+    expect(useDrumStore.getState().patterns[patIdx(0, 4, 5)]).toBe(1); // dropped at (pad 4, step 5)
+    expect(useDrumStore.getState().rectSel).toEqual({ stepFrom: 5, stepTo: 5, padFrom: 4, padTo: 4 });
   });
 
   it('movePattern swaps two patterns across every pad', () => {

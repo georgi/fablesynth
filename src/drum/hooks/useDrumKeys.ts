@@ -58,8 +58,7 @@ export function useDrumKeys() {
       if (e.code === 'Escape') {
         // Esc clears an active selection first; with nothing selected it
         // falls back to the original panic/stop behavior.
-        const { stepSel, selAllPads } = useDrumStore.getState();
-        if (stepSel || selAllPads) { clearStepSel(); return; }
+        if (useDrumStore.getState().rectSel) { clearStepSel(); return; }
         stop();
         return;
       }

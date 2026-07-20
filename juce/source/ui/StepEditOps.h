@@ -280,6 +280,91 @@ inline StepBytes moveRectChain(const StepBytes& p, const StepLayout& l, const st
     return pasteRectChain(base, l, chain, n.stepLo + dStep, dNote, data, opts.maxNote);
 }
 
+// ---------- pad-grid rectangle (step × pad-lane) selection ----------
+// C++ port of src/shared/seqEdit.ts's pad-rect verbs. DR-1 only. Unlike the
+// note-lane rect above, the *row* axis is the pad lane itself
+// (offset = pat*patternSize + pad*stepsPerPattern*stride + step*stride), so a
+// rectangle spans a step band × a pad band and the row shift is positional —
+// moving up/down changes which pad plays, it does not transpose a value. Only
+// lit cells (byte0 != 0) are captured. Paste/move DROP cells landing outside
+// the step range [0, stepsPerPattern) or the pad range [0, padCount).
+
+struct PadRectSel {
+    int stepFrom = 0, stepTo = 0, padFrom = 0, padTo = 0;
+};
+
+struct PadRectNorm { int stepLo, stepHi, padLo, padHi; };
+
+inline PadRectNorm padRectNorm(const PadRectSel& r) {
+    return { std::min(r.stepFrom, r.stepTo), std::max(r.stepFrom, r.stepTo),
+             std::min(r.padFrom, r.padTo), std::max(r.padFrom, r.padTo) };
+}
+
+// One captured cell: its stride bytes plus its step/pad offset from the rect's
+// top-left (stepLo, padLo), so paste can re-anchor the block anywhere.
+struct PadRectCell { int dStep = 0; int dPad = 0; StepBytes bytes; };
+
+struct PadRectCells {
+    int wSteps = 0;
+    int wPads = 0;
+    std::vector<PadRectCell> cells;
+};
+
+inline int padOffset(const StepLayout& l, int pat, int pad, int step) {
+    return pat * l.patternSize + pad * l.stepsPerPattern * l.stride + step * l.stride;
+}
+
+inline PadRectCells copyPadRect(const StepBytes& p, const StepLayout& l, int pat, const PadRectSel& rect) {
+    const auto n = padRectNorm(rect);
+    PadRectCells out; out.wSteps = n.stepHi - n.stepLo + 1; out.wPads = n.padHi - n.padLo + 1;
+    for (int pad = n.padLo; pad <= n.padHi; ++pad)
+        for (int s = n.stepLo; s <= n.stepHi; ++s) {
+            if (s < 0 || s >= l.stepsPerPattern) continue; // a re-anchored rect may overhang
+            const int o = padOffset(l, pat, pad, s);
+            if (p[(size_t)o] != 0)
+                out.cells.push_back({ s - n.stepLo, pad - n.padLo,
+                                      StepBytes(p.begin() + o, p.begin() + o + l.stride) });
+        }
+    return out;
+}
+
+inline StepBytes clearPadRect(const StepBytes& p, const StepLayout& l, int pat, const PadRectSel& rect) {
+    StepBytes next = p;
+    const auto n = padRectNorm(rect);
+    for (int pad = n.padLo; pad <= n.padHi; ++pad)
+        for (int s = n.stepLo; s <= n.stepHi; ++s) {
+            if (s < 0 || s >= l.stepsPerPattern) continue;
+            const int o = padOffset(l, pat, pad, s);
+            for (int b = 0; b < l.stride; ++b) next[(size_t)(o + b)] = 0;
+        }
+    return next;
+}
+
+// Stamp captured cells with the rect's top-left at (atStep, atPad). Cells past
+// the step or pad range are dropped, never wrapped/clamped.
+inline StepBytes pastePadRect(const StepBytes& p, const StepLayout& l, int pat, int atStep, int atPad,
+                              const PadRectCells& data, int padCount) {
+    StepBytes next = p;
+    for (const auto& c : data.cells) {
+        const int s = atStep + c.dStep;
+        const int pad = atPad + c.dPad;
+        if (s < 0 || s >= l.stepsPerPattern || pad < 0 || pad >= padCount) continue;
+        const int o = padOffset(l, pat, pad, s);
+        for (int b = 0; b < l.stride; ++b) next[(size_t)(o + b)] = c.bytes[(size_t)b];
+    }
+    return next;
+}
+
+struct PadRectMoveOpts { bool copy = false; };
+
+inline StepBytes movePadRect(const StepBytes& p, const StepLayout& l, int pat, const PadRectSel& rect,
+                             int dStep, int dPad, int padCount, const PadRectMoveOpts& opts = {}) {
+    const auto n = padRectNorm(rect);
+    const PadRectCells data = copyPadRect(p, l, pat, rect);
+    StepBytes base = opts.copy ? p : clearPadRect(p, l, pat, rect);
+    return pastePadRect(base, l, pat, n.stepLo + dStep, n.padLo + dPad, data, padCount);
+}
+
 // Whole-pattern block ops — the full patternSize bytes (all pads for DR-1).
 inline StepBytes copyPattern(const StepBytes& p, const StepLayout& l, int pat) {
     const int begin = pat * l.patternSize;

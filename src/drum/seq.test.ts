@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   STEPS, NPATTERNS, makeEmptyPatterns, patIdx, cycleStep,
   stepDurSamples, swingDelaySamples, nextChainPos, ACCENT_VEL, PLAIN_VEL,
-  stepSelRange, inStepSel, randomizePadPattern,
+  randomizePadPattern,
 } from './seq';
 
 describe('sequencer model', () => {
@@ -37,25 +37,6 @@ describe('sequencer model', () => {
     expect(nextChainPos(3, 0)).toBe(1);
     expect(nextChainPos(3, 2)).toBe(0);
     expect(nextChainPos(1, 0)).toBe(0);
-  });
-});
-
-describe('step selection (anchor/head)', () => {
-  it('normalizes anchor/head into a low-to-high range', () => {
-    expect(stepSelRange(null)).toBeNull();
-    expect(stepSelRange({ anchor: 3, head: 7 })).toEqual([3, 7]);
-    expect(stepSelRange({ anchor: 7, head: 3 })).toEqual([3, 7]);
-    expect(stepSelRange({ anchor: 5, head: 5 })).toEqual([5, 5]);
-  });
-
-  it('inStepSel reports membership inclusively and is false with no selection', () => {
-    const sel = { anchor: 4, head: 8 };
-    expect(inStepSel(sel, 4)).toBe(true);
-    expect(inStepSel(sel, 8)).toBe(true);
-    expect(inStepSel(sel, 6)).toBe(true);
-    expect(inStepSel(sel, 3)).toBe(false);
-    expect(inStepSel(sel, 9)).toBe(false);
-    expect(inStepSel(null, 0)).toBe(false);
   });
 });
 
