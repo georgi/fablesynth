@@ -263,6 +263,60 @@ int main() {
         check((int)next.size() == DR_NPATTERNS * DR_NPADS * DR_STEPS, "DR-1 pastePattern preserves total buffer size");
     }
 
+    // ============ pad-grid rectangle (step × pad-lane) selection ============
+    // Mirrors src/shared/seqEdit.padrect.test.ts. DR-1 grid: stride 1, the row
+    // axis is the pad lane, moves are positional in both axes.
+    {
+        StepLayout gl; gl.stride = 1; gl.stepsPerPattern = DR_STEPS;
+        gl.patternSize = DR_NPADS * DR_STEPS;
+
+        // -- copyPadRect captures only lit cells in the pad band, positionally --
+        StepBytes p(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        p[(size_t)drumIdx(0, 1, 2)] = 1;
+        p[(size_t)drumIdx(0, 2, 3)] = 2;
+        p[(size_t)drumIdx(0, 3, 3)] = 1;      // out of the pad band
+        PadRectSel rect { 2, 4, 1, 2 };       // steps 2..4, pads 1..2
+        PadRectCells cap = copyPadRect(p, gl, 0, rect);
+        check(cap.wSteps == 3 && cap.wPads == 2, "copyPadRect records width and pad band");
+        check(cap.cells.size() == 2, "copyPadRect keeps only the two in-band lit cells");
+        check(cap.cells[0].dPad == 0 && cap.cells[0].dStep == 0 && cap.cells[0].bytes[0] == 1,
+              "copyPadRect cell 0 offset from top-left");
+        check(cap.cells[1].dPad == 1 && cap.cells[1].dStep == 1 && cap.cells[1].bytes[0] == 2,
+              "copyPadRect cell 1 offset from top-left");
+
+        StepBytes cleared = clearPadRect(p, gl, 0, rect);
+        check(cleared[(size_t)drumIdx(0, 1, 2)] == 0 && cleared[(size_t)drumIdx(0, 2, 3)] == 0,
+              "clearPadRect blanks the in-band cells");
+        check(cleared[(size_t)drumIdx(0, 3, 3)] == 1, "clearPadRect leaves the out-of-band pad untouched");
+        check(p[(size_t)drumIdx(0, 1, 2)] == 1, "clearPadRect never mutates its input");
+
+        // -- pastePadRect stamps at the top-left, dropping out-of-range cells --
+        StepBytes edge = pastePadRect(StepBytes(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0),
+                                      gl, 0, 15, DR_NPADS - 1, cap, DR_NPADS);
+        check(edge[(size_t)drumIdx(0, DR_NPADS - 1, 15)] == 1, "pastePadRect lands the top-left cell at the corner");
+        check(edge[(size_t)drumIdx(0, 0, 0)] == 0, "pastePadRect drops overhanging cells (no wrap)");
+
+        // -- movePadRect moves positionally in both axes and clears the source --
+        StepBytes q(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        q[(size_t)drumIdx(0, 1, 2)] = 1;
+        StepBytes moved = movePadRect(q, gl, 0, PadRectSel{ 2, 2, 1, 1 }, 3, 1, DR_NPADS);
+        check(moved[(size_t)drumIdx(0, 1, 2)] == 0, "movePadRect vacates the source");
+        check(moved[(size_t)drumIdx(0, 2, 5)] == 1, "movePadRect lands at pad+1, step+3");
+
+        // -- Alt-copy keeps the source; overlapping move is safe --
+        StepBytes r(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        r[(size_t)drumIdx(0, 0, 2)] = 1;
+        r[(size_t)drumIdx(0, 0, 3)] = 2;
+        PadRectSel rrect { 2, 3, 0, 0 };
+        PadRectMoveOpts copyOpt; copyOpt.copy = true;
+        StepBytes copied = movePadRect(r, gl, 0, rrect, 4, 0, DR_NPADS, copyOpt);
+        check(copied[(size_t)drumIdx(0, 0, 2)] == 1 && copied[(size_t)drumIdx(0, 0, 6)] == 1,
+              "movePadRect copy keeps the source and writes the dest");
+        StepBytes overlap = movePadRect(r, gl, 0, rrect, 1, 0, DR_NPADS);
+        check(overlap[(size_t)drumIdx(0, 0, 2)] == 0 && overlap[(size_t)drumIdx(0, 0, 3)] == 1
+              && overlap[(size_t)drumIdx(0, 0, 4)] == 2, "overlapping movePadRect keeps captured bytes");
+    }
+
     // ============ rectangle (step × note-lane) selection ============
     // Mirrors src/shared/seqEdit.test.ts's rect cases. maxNote = SEQ_NOTE_LANES-1.
     const int kMaxNote = SEQ_NOTE_LANES - 1;
