@@ -24,6 +24,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress&) override;
 
     // Web store handlers — public so the host test drives the exact code
@@ -37,26 +38,36 @@ public:
     void patternClick(int i);               // choose bar to edit
     void setSequenceLength(int bars);        // play bars 1 through N
 
-    // Step-range edit verbs (editing-concept.md decision 6) — public so the
-    // host test drives the exact code paths a keypress/drag takes. All
-    // operate on the edit pattern via StepEditOps over a full 4-pattern byte
-    // snapshot, funnelled back through model.setSequenceStep (the model's own
-    // mutation chokepoint).
-    void copySteps();                       // store.copySteps
-    void cutSteps();                        // store.cutSteps
-    void pasteSteps();                      // store.pasteSteps
-    void duplicateSteps();                  // store.duplicateSteps
-    void deleteSteps();                     // store.deleteSteps
-    void selectAllSteps();                  // store.selectAllSteps (Cmd-A)
-    void clearStepSel();                    // store.clearStepSel (Esc)
-    void undoSteps();                       // store.undoSeq
-    void redoSteps();                       // store.redoSeq
-    void shiftStepSel(int dest, bool copy); // store.shiftStepSel (drag-move release)
-    void movePattern(int from, int to, bool copy); // store.movePattern (bar-chip drag release)
+    // 2-D rectangle (step × note-lane) edit verbs — port of the web note grid
+    // (src/shared/seqEdit.ts + useSeqRectSelect / useSeqNoteDrag /
+    // useSeqGhostPaste). Public so the host test drives the exact code paths a
+    // keypress / drag / menu click takes. All operate on the edit pattern via
+    // StepEditOps' rect verbs over a full 4-pattern byte snapshot, funnelled
+    // back through model.setSequenceStep (the model's own mutation chokepoint).
+    void copySel();                         // Cmd-C: capture the rect (also refreshes the clipboard)
+    void cutSel();                          // Cmd-X: capture + clear in one undo entry
+    void pasteSel();                        // Cmd-V: paste the clipboard at the paste anchor
+    void duplicateSel();                    // Cmd-D: copy the rect immediately to its right
+    void deleteSel();                       // Delete/Backspace: clear the in-band lit cells
+    void selectAllCells();                  // Cmd-A: whole grid (all steps × all lanes)
+    void clearSelection();                  // Esc / menu ✕
+    void undoEdit();                        // Cmd-Z
+    void redoEdit();                        // Shift-Cmd-Z
+    void movePattern(int from, int to, bool copy); // bar-chip drag release
 
-    bool hasStepSelection() const { return hasSel_; }
-    int stepSelFrom() const { return hasSel_ ? std::min(selFrom_, selTo_) : -1; }
-    int stepSelTo() const { return hasSel_ ? std::max(selFrom_, selTo_) : -1; }
+    // Gesture commits (mouseUp / drop) — exposed so the host test can drive
+    // them without synthesising raw drags.
+    void commitNoteMove(int srcStep, int srcNote, int destStep, int destNote, bool copy);
+    void commitBlockMove(int dStep, int dNote, bool copy);   // move the whole rect
+    void beginGhostPaste(bool cut);         // menu CUT/COPY: pick the rect up, ghost follows the cursor
+    void dropGhost(int atStep, int atNote); // drop the carried ghost at (step, note)
+
+    // Selection / clipboard queries (host test + menu placement).
+    bool hasSelection() const { return hasRect_; }
+    fable::RectNorm selection() const { return fable::rectNorm(rect_); }
+    void setSelection(const fable::RectSel& r);   // commit a rectangle (sweep release / Cmd-A)
+    bool hasClipboard() const { return clip_.valid; }
+    bool ghostActive() const { return ghost_; }
 
     // Hit-test geometry (public for the host test).
     juce::Rectangle<int> transportBounds() const;
@@ -68,7 +79,10 @@ public:
     juce::Rectangle<int> octBounds(int step) const;
     juce::Rectangle<int> accBounds(int step) const;
     juce::Rectangle<int> resizeBounds(int step) const;
-    juce::Rectangle<int> stepNumBounds(int step) const;  // the .ns-step-num selection strip
+    juce::Rectangle<int> stepNumBounds(int step) const;  // the .ns-step-num label strip
+    juce::Rectangle<int> gridBounds() const;             // the whole 16×12 lane area
+    juce::Rectangle<int> selMenuBounds() const;          // floating CUT/COPY/DUP/DEL/✕ toolbar
+    juce::Rectangle<int> selMenuButton(int i) const;     // one of the 5 menu buttons
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
@@ -83,8 +97,11 @@ private:
     void restore(const SeqSnapshot&);
 
     int stepAtX(int x) const;               // inverse of colBounds, for drag hit-testing
-    void handleStepNumDown(int step, const juce::MouseEvent&);
-    void cancelStepDrag();                  // Esc: drop an in-flight sweep/move/bar-drag uncommitted
+    int noteAtY(int y) const;               // inverse of cellBounds' lane math (clamped 0..11)
+    bool inRect(int step, int note) const;  // is (step,note) inside the pending/committed rect?
+    int grabNoteAt(int step, int note) const; // origin step of a note grabbable at (step,note), or -1
+    void toggleAt(int step, int note);      // deferred single-cell toggle + paste-anchor update
+    void cancelGesture();                   // Esc: drop any in-flight sweep/drag/ghost uncommitted
 
     WtUiModel& model;
     Stepper root_;
@@ -92,28 +109,56 @@ private:
     juce::uint32 lastSig_ = 0xffffffffu;
     int resizeStep_ = -1, resizeStartDuration_ = 1;
 
-    // Step-range selection (contiguous, in the edit pattern). selFrom_ is the
-    // sweep/shift-click anchor and may be > selTo_; use stepSelFrom/To (or
-    // std::min/max) for the normalized range.
-    bool hasSel_ = false;
-    int selFrom_ = 0, selTo_ = 0;
-    bool sweeping_ = false;                 // Shift-drag extending the selection
+    // 2-D rectangle selection (step × note lane) over the edit pattern. rect_
+    // may be stored un-normalized (anchor/head); read it via rectNorm().
+    bool hasRect_ = false;
+    fable::RectSel rect_;
 
-    // Content drag-move of the current selection (mouseDown inside it,
-    // without Shift); committed once via shiftStepSel on mouseUp.
-    bool moving_ = false;
-    int moveSelFrom_ = 0, moveOrigin_ = 0, moveHover_ = 0;
-    bool moveAlt_ = false;
+    // Shift-drag sweep in progress (hook-local until mouseUp; never touches the
+    // model mid-gesture). pending_ is the live anchor/head rectangle.
+    bool sweeping_ = false;
+    fable::RectSel pending_;
+
+    // Note drag of a single lit cell: armed on mouseDown, becomes active once
+    // the pointer reaches a different cell (so a plain tap still toggles).
+    bool noteDragArmed_ = false, noteDragActive_ = false;
+    int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
+
+    // Block-move of the whole rectangle (mouseDown inside it, without Shift).
+    bool moveArmed_ = false, moving_ = false;
+    int moveOriginStep_ = 0, moveOriginNote_ = 0, moveHoverStep_ = 0, moveHoverNote_ = 0;
+
+    // The deferred single-cell toggle target: a lane press that neither swept
+    // nor dragged falls through to a note toggle on mouseUp.
+    int downStep_ = -1, downNote_ = -1;
+
+    // Ghost paste: the menu's CUT/COPY picks the rect up; the captured cells
+    // trail the cursor (any lane/step) until the next click drops them.
+    bool ghost_ = false, ghostCut_ = false, ghostHasHover_ = false;
+    fable::RectCells ghostData_;
+    fable::RectSel ghostSrc_;               // source rect to clear on drop (CUT only)
+    int ghostHoverStep_ = 0, ghostHoverNote_ = 0;
 
     // Bar-chip (pattern selector) drag: move/Alt-copy a pattern onto another,
-    // like SequenceLengthControl.tsx's chip drag. Plain click still selects
-    // the edit pattern (patternClick) when no drag crossed the threshold.
+    // like SequenceLengthControl.tsx's chip drag.
     int barDragFrom_ = -1;
     bool barDragging_ = false;
     int barDropTarget_ = -1;
 
-    struct StepClipboard { bool isPattern = false; std::vector<uint8_t> data; };
-    StepClipboard clipboard_;
+    // Cmd-V clipboard: a captured rectangle, or the whole edit pattern when
+    // there is no selection.
+    struct RectClipboard {
+        bool valid = false;
+        bool isPattern = false;
+        fable::RectCells rect;
+        std::vector<uint8_t> pattern;
+    };
+    RectClipboard clip_;
+
+    // Paste anchor fallback (useSeqEditKeys: last cell clicked/dragged).
+    bool hasLastCell_ = false;
+    int lastCellStep_ = 0, lastCellNote_ = 0;
+
     fable::StepEditHistory<SeqSnapshot> history_;
     int lastClipIdentity_ = 0;              // detects SQ-4 focus retargeting this view
 

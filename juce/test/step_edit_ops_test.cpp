@@ -263,6 +263,136 @@ int main() {
         check((int)next.size() == DR_NPATTERNS * DR_NPADS * DR_STEPS, "DR-1 pastePattern preserves total buffer size");
     }
 
+    // ============ rectangle (step × note-lane) selection ============
+    // Mirrors src/shared/seqEdit.test.ts's rect cases. maxNote = SEQ_NOTE_LANES-1.
+    const int kMaxNote = SEQ_NOTE_LANES - 1;
+    const StepBytes kEmpty = emptyStepBytes();
+
+    // -- copyRect captures only lit cells inside the pitch band --
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        NoteSeqStep a; a.on = true; a.note = 5; a.acc = true; a.duration = 2; setNoteSeqStep(p.data(), 0, 2, a);
+        NoteSeqStep b; b.on = true; b.note = 8;                              setNoteSeqStep(p.data(), 0, 3, b);
+        NoteSeqStep c; c.on = true; c.note = 1;                              setNoteSeqStep(p.data(), 0, 4, c); // below band
+        RectSel rect { 2, 4, 4, 9 }; // steps 2..4, notes 4..9
+        RectCells cap = copyRect(p, kNoteLayout, 0, rect);
+        check(cap.wSteps == 3 && cap.noteLo == 4 && cap.noteHi == 9, "copyRect records width and pitch band");
+        check(cap.cells.size() == 2, "copyRect keeps only the two in-band lit cells");
+        check(cap.cells[0].dStep == 0 && (cap.cells[0].bytes[1] & 0x7f) == 5, "captured cell 0 = step2/note5");
+        check(cap.cells[1].dStep == 1 && (cap.cells[1].bytes[1] & 0x7f) == 8, "captured cell 1 = step3/note8");
+    }
+
+    // -- clearRect blanks in-band lit cells only, leaves out-of-band alone --
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        NoteSeqStep a; a.on = true; a.note = 5; setNoteSeqStep(p.data(), 0, 2, a);
+        NoteSeqStep c; c.on = true; c.note = 1; setNoteSeqStep(p.data(), 0, 2, c); // overwrite: step2 note1 (below band)
+        NoteSeqStep d; d.on = true; d.note = 7; setNoteSeqStep(p.data(), 0, 3, d);
+        RectSel rect { 2, 3, 4, 9 };
+        StepBytes next = clearRect(p, kNoteLayout, 0, rect, kEmpty);
+        check(!getNoteSeqStep(next.data(), 0, 3).on, "clearRect blanks the in-band cell");
+        check(getNoteSeqStep(next.data(), 0, 2).on && getNoteSeqStep(next.data(), 0, 2).note == 1,
+              "clearRect leaves the out-of-band cell (note 1) untouched");
+        check(getNoteSeqStep(p.data(), 0, 3).on, "clearRect never mutates its input");
+    }
+
+    // -- pasteRect transposes by dNote and drops cells outside pattern / lane range --
+    {
+        StepBytes src = makeEmptySeqPatterns();
+        NoteSeqStep a; a.on = true; a.note = 3; a.duration = 2; setNoteSeqStep(src.data(), 0, 0, a);
+        NoteSeqStep b; b.on = true; b.note = 6;                 setNoteSeqStep(src.data(), 0, 1, b);
+        RectCells cap = copyRect(src, kNoteLayout, 0, RectSel{ 0, 1, 0, kMaxNote });
+        StepBytes p = makeEmptySeqPatterns();
+        StepBytes next = pasteRect(p, kNoteLayout, 0, 10, +2, cap, kMaxNote); // atStep 10, +2 semitones
+        check(getNoteSeqStep(next.data(), 0, 10).note == 5 && getNoteSeqStep(next.data(), 0, 10).duration == 2,
+              "pasteRect lands transposed cell and preserves duration");
+        check(getNoteSeqStep(next.data(), 0, 11).note == 8, "pasteRect lands the second transposed cell");
+        // dStep 1 from atStep 15 would land on step 16 (past end) -> dropped
+        StepBytes edge = pasteRect(p, kNoteLayout, 0, 15, 0, cap, kMaxNote);
+        check(getNoteSeqStep(edge.data(), 0, 15).on && !getNoteSeqStep(edge.data(), 0, 0).on,
+              "pasteRect drops the cell that would fall past the pattern end (no wrap)");
+        // transpose that pushes a note above maxNote drops just that cell
+        StepBytes hi = pasteRect(p, kNoteLayout, 0, 0, +kMaxNote, cap, kMaxNote);
+        check(!getNoteSeqStep(hi.data(), 0, 1).on, "pasteRect drops the cell whose transposed note exceeds maxNote");
+    }
+
+    // -- pasteRect preserves the BL-1 slide flag (byte1 bit7) --
+    {
+        StepBytes src = makeEmptySeqPatterns();
+        // hand-set a lit cell with slide flag + note 4
+        int o = seqStepOff(0, 0);
+        src[(size_t)o] = 1; src[(size_t)(o + 1)] = (uint8_t)(0x80 | 4); src[(size_t)(o + 2)] = 1;
+        RectCells cap = copyRect(src, kNoteLayout, 0, RectSel{ 0, 0, 0, kMaxNote });
+        StepBytes p = makeEmptySeqPatterns();
+        StepBytes next = pasteRect(p, kNoteLayout, 0, 5, +1, cap, kMaxNote);
+        int no = seqStepOff(0, 5);
+        check((next[(size_t)(no + 1)] & 0x80) != 0, "pasteRect keeps the slide flag through a transpose");
+        check((next[(size_t)(no + 1)] & 0x7f) == 5, "pasteRect transposes the note under the slide flag");
+    }
+
+    // -- moveRect: move transposes and clears the source in one pass --
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        NoteSeqStep a; a.on = true; a.note = 4; setNoteSeqStep(p.data(), 0, 2, a);
+        NoteSeqStep b; b.on = true; b.note = 7; setNoteSeqStep(p.data(), 0, 3, b);
+        RectSel rect { 2, 3, 0, kMaxNote };
+        StepBytes moved = moveRect(p, kNoteLayout, 0, rect, +5, +1, RectMoveOpts{ false, kEmpty, kMaxNote });
+        check(!getNoteSeqStep(moved.data(), 0, 2).on && !getNoteSeqStep(moved.data(), 0, 3).on,
+              "moveRect clears the source cells");
+        check(getNoteSeqStep(moved.data(), 0, 7).note == 5 && getNoteSeqStep(moved.data(), 0, 8).note == 8,
+              "moveRect lands the block shifted +5 steps / +1 semitone");
+        // copy variant keeps the source
+        StepBytes copied = moveRect(p, kNoteLayout, 0, rect, +5, 0, RectMoveOpts{ true, kEmpty, kMaxNote });
+        check(getNoteSeqStep(copied.data(), 0, 2).on && getNoteSeqStep(copied.data(), 0, 7).on,
+              "moveRect copy=true keeps the source and writes the destination");
+    }
+
+    // -- copyRect / clearRect tolerate a selection that overhangs the pattern --
+    // (paste/duplicate can re-anchor a rect so stepHi exceeds the last step).
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        NoteSeqStep a; a.on = true; a.note = 4; setNoteSeqStep(p.data(), 0, 14, a);
+        RectSel over { 14, 20, 0, kMaxNote }; // stepHi 20 is past the 16-step pattern
+        RectCells cap = copyRect(p, kNoteLayout, 0, over);
+        check(cap.cells.size() == 1 && cap.cells[0].dStep == 0,
+              "copyRect skips out-of-range steps instead of reading past the buffer");
+        StepBytes cleared = clearRect(p, kNoteLayout, 0, over, kEmpty);
+        check(!getNoteSeqStep(cleared.data(), 0, 14).on, "clearRect handles an overhanging rect safely");
+    }
+
+    // -- chain-aware rect spans bar boundaries (absolute steps into chain[bar]) --
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        std::vector<int> chain { 0, 1 }; // two bars: abs 0..31
+        NoteSeqStep a; a.on = true; a.note = 4; setNoteSeqStep(p.data(), 0, 15, a); // last step of bar 0
+        NoteSeqStep b; b.on = true; b.note = 6; setNoteSeqStep(p.data(), 1, 0, b);  // first step of bar 1
+        RectSel rect { 15, 16, 0, kMaxNote }; // abs steps 15 (bar0/15) .. 16 (bar1/0)
+        RectCells cap = copyRectChain(p, kNoteLayout, chain, rect);
+        check(cap.cells.size() == 2 && cap.cells[0].dStep == 0 && cap.cells[1].dStep == 1,
+              "copyRectChain captures cells across the bar boundary");
+        // paste onto abs 0 (bar0/0) and abs 1 (bar0/1)
+        StepBytes next = pasteRectChain(p, kNoteLayout, chain, 0, 0, cap, kMaxNote);
+        check(getNoteSeqStep(next.data(), 0, 0).note == 4 && getNoteSeqStep(next.data(), 0, 1).note == 6,
+              "pasteRectChain drops the captured cells at the new absolute anchor");
+        // chainOffset rejects steps past the timeline
+        check(chainOffset(kNoteLayout, chain, 32) < 0 && chainOffset(kNoteLayout, chain, -1) < 0,
+              "chainOffset returns -1 outside the timeline");
+    }
+
+    // -- moveRectChain across bars clears source and lands destination --
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        std::vector<int> chain { 0, 1 };
+        NoteSeqStep a; a.on = true; a.note = 3; setNoteSeqStep(p.data(), 0, 14, a);
+        NoteSeqStep b; b.on = true; b.note = 5; setNoteSeqStep(p.data(), 1, 2, b); // abs 18
+        RectSel rect { 14, 18, 0, kMaxNote };
+        StepBytes moved = moveRectChain(p, kNoteLayout, chain, rect, +1, 0, RectMoveOpts{ false, kEmpty, kMaxNote });
+        check(!getNoteSeqStep(moved.data(), 0, 14).on && !getNoteSeqStep(moved.data(), 1, 2).on,
+              "moveRectChain clears both source cells across bars");
+        check(getNoteSeqStep(moved.data(), 0, 15).note == 3 && getNoteSeqStep(moved.data(), 1, 3).note == 5,
+              "moveRectChain lands the block one step later across the bar boundary");
+    }
+
     // -- StepEditHistory: undo/redo shuffle snapshots and report availability --
     {
         StepEditHistory<int> h;

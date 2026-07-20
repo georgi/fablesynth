@@ -534,7 +534,112 @@ int main(int argc, char** argv) {
                 if (proc.getSeqStep(1, i).on) changed = true; }
         check(changed, "RAND writes a pattern", 1);
 
+        // ---- 2-D rectangle editing (rect select, note drag, ghost paste) ----
+        proc.setEditPattern(0);
+        proc.setChain({ 0 });
+        auto clearPat0 = [&] { for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {}); };
+        auto setNote = [&](int step, int note) {
+            fable::NoteSeqStep n; n.on = true; n.note = note; proc.setSeqStep(0, step, n);
+        };
+
+        // rectangle selection state
+        clearPat0();
+        setNote(2, 5); setNote(3, 8);
+        seq.clearSelection();
+        check(!seq.hasSelection(), "no selection by default", 0);
+        seq.setSelection({ 2, 3, 4, 9 });
+        {
+            const auto r = seq.selection();
+            check(seq.hasSelection() && r.stepLo == 2 && r.stepHi == 3 && r.noteLo == 4 && r.noteHi == 9,
+                  "setSelection stores a normalized step-by-note rectangle", 0);
+        }
+        seq.selectAllCells();
+        {
+            const auto r = seq.selection();
+            check(r.stepLo == 0 && r.stepHi == fable::SEQ_STEPS - 1 && r.noteLo == 0
+                  && r.noteHi == fable::SEQ_NOTE_LANES - 1, "Cmd-A selects the whole grid", 0);
+        }
+
+        // copy a rect, wipe the grid, paste it back at the selection anchor
+        seq.setSelection({ 2, 3, 4, 9 });
+        seq.copySel();
+        check(seq.hasClipboard(), "copySel fills the clipboard", 0);
+        clearPat0(); // selection stays active; the anchor is its top-left (dNote 0)
+        seq.pasteSel();
+        check(proc.getSeqStep(0, 2).on && proc.getSeqStep(0, 2).note == 5
+              && proc.getSeqStep(0, 3).on && proc.getSeqStep(0, 3).note == 8,
+              "pasteSel drops the captured cells at the selection anchor", 0);
+
+        // delete clears the in-band lit cells; undo/redo round-trips
+        clearPat0();
+        setNote(6, 7);
+        seq.setSelection({ 6, 6, 0, fable::SEQ_NOTE_LANES - 1 });
+        seq.deleteSel();
+        check(!proc.getSeqStep(0, 6).on, "deleteSel clears the selected cell", 0);
+        seq.undoEdit();
+        check(proc.getSeqStep(0, 6).on && proc.getSeqStep(0, 6).note == 7, "undo restores the deleted cell", 0);
+        seq.redoEdit();
+        check(!proc.getSeqStep(0, 6).on, "redo re-applies the delete", 0);
+
+        // duplicate a rect immediately to its right
+        clearPat0();
+        setNote(2, 4); setNote(3, 6);
+        seq.setSelection({ 2, 3, 0, fable::SEQ_NOTE_LANES - 1 });
+        seq.duplicateSel();
+        check(proc.getSeqStep(0, 4).note == 4 && proc.getSeqStep(0, 5).note == 6,
+              "duplicateSel copies the rect one width to the right", 0);
+        check(seq.selection().stepLo == 4 && seq.selection().stepHi == 5,
+              "duplicateSel moves the selection onto the copy", 0);
+
+        // note drag: transpose + time-shift one note, clearing the source
+        clearPat0();
+        { fable::NoteSeqStep n; n.on = true; n.note = 6; n.acc = true; n.duration = 2; proc.setSeqStep(0, 5, n); }
+        seq.commitNoteMove(5, 6, 8, 9, false);
+        check(!proc.getSeqStep(0, 5).on, "note drag clears the source step", 0);
+        {
+            const auto d = proc.getSeqStep(0, 8);
+            check(d.on && d.note == 9 && d.acc && d.duration == 2,
+                  "note drag lands the transposed note keeping accent + duration", d.duration);
+        }
+        seq.commitNoteMove(8, 9, 8, 9, false);
+        check(proc.getSeqStep(0, 8).on, "a zero-delta note drag is a no-op", 0);
+
+        // block move: shift the whole rectangle in step and pitch
+        clearPat0();
+        setNote(2, 4); setNote(3, 7);
+        seq.setSelection({ 2, 3, 4, 7 });
+        seq.commitBlockMove(+5, +1, false);
+        check(!proc.getSeqStep(0, 2).on && !proc.getSeqStep(0, 3).on, "block move clears the source cells", 0);
+        check(proc.getSeqStep(0, 7).note == 5 && proc.getSeqStep(0, 8).note == 8,
+              "block move lands the block shifted +5 steps / +1 semitone", 0);
+
+        // ghost paste (COPY): pick the rect up, drop it elsewhere transposed
+        clearPat0();
+        setNote(4, 3);
+        seq.setSelection({ 4, 4, 3, 3 });
+        seq.beginGhostPaste(false);
+        check(seq.ghostActive() && !seq.hasSelection(), "COPY begins a ghost and closes the selection", 0);
+        seq.dropGhost(10, 7);
+        check(!seq.ghostActive(), "dropping the ghost ends ghost mode", 0);
+        check(proc.getSeqStep(0, 4).on && proc.getSeqStep(0, 10).note == 7,
+              "COPY ghost keeps the source and lands the transposed copy", 0);
+
+        // ghost paste (CUT): source only clears at drop, in one undo entry
+        clearPat0();
+        setNote(4, 5);
+        seq.setSelection({ 4, 4, 5, 5 });
+        seq.beginGhostPaste(true);
+        check(proc.getSeqStep(0, 4).on, "CUT ghost leaves the source lit until drop", 0);
+        seq.dropGhost(9, 5);
+        check(!proc.getSeqStep(0, 4).on && proc.getSeqStep(0, 9).note == 5,
+              "CUT ghost clears the source and lands the moved cell on drop", 0);
+        seq.undoEdit();
+        check(proc.getSeqStep(0, 4).on && !proc.getSeqStep(0, 9).on,
+              "one undo reverts the whole CUT-ghost drop", 0);
+
         // back to the snapshot-friendly state
+        clearPat0();
+        seq.clearSelection();
         proc.setEditPattern(0);
         proc.setChain({ 0 });
     }
@@ -549,6 +654,22 @@ int main(int argc, char** argv) {
     snapshotEditor(proc, dir.getChildFile("plugin_editor_matrixfull.png")); // 12 routes -> scrollable matrix
     check(selectEditorFilter2(proc), "F2 filter tab selects the second filter controls", 0);
     snapshotWavetableEditor(proc, dir.getChildFile("wavetable_editor.png"));
+
+    // NOTE SEQ rectangle selection + floating CUT/COPY/DUP/DEL/X menu overlay.
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        ed->setSize(Rack::LW, Rack::LH);
+        auto* fed = dynamic_cast<FableAudioProcessorEditor*>(ed.get());
+        proc.setEditPattern(0); proc.setChain({ 0 });
+        for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
+        fable::NoteSeqStep a; a.on = true; a.note = 4;              proc.setSeqStep(0, 2, a);
+        fable::NoteSeqStep b; b.on = true; b.note = 7; b.acc = true; proc.setSeqStep(0, 4, b);
+        fable::NoteSeqStep c; c.on = true; c.note = 5;              proc.setSeqStep(0, 6, c);
+        if (fed) fed->getRack().noteSeq().setSelection({ 2, 6, 3, 8 });
+        writePng(ed->createComponentSnapshot(ed->getLocalBounds()),
+                 dir.getChildFile("plugin_editor_seqsel.png"));
+        for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
+    }
 
     // ---- Live modulation dots: knob indicators follow the modulated value ----
     // Route a slow LFO onto F1 CUT, hold a note, and snapshot the editor at two
