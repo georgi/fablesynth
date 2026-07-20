@@ -17,6 +17,7 @@ static fable::StepLayout seqLayout() {
     return { fable::BL_STEP_STRIDE, fable::BL_STEPS, fable::BL_STEPS * fable::BL_STEP_STRIDE, 0 };
 }
 static const fable::StepBytes kEmptyStep{ (uint8_t)(1 << 2), 0, 1 };
+static constexpr int kMaxNote = fable::BL_NOTE_LANES - 1; // top lane (paste clamp)
 
 // ---- geometry (bass.css .bl-seq-*, rack-relative px) --------------------------
 // panel padding 9px 12px 11px; head 28px + 10px margin; body: legend 36px +
@@ -204,110 +205,221 @@ int PitchSeqView::patternIndexAt(juce::Point<int> p) const {
     return -1;
 }
 
-// ---- Decision-6: selection + verbs (seqEdit.ts port via StepEditOps.h) ------
+// Inverse of cellBounds' lane math: note 11 sits on top, C at the bottom.
+int PitchSeqView::noteAt(int y) const {
+    const float ch = (kLanesH - 11.0f) / 12.0f;
+    const float rel = (float)(y - kBodyY) / (ch + 1.0f);
+    const int row = juce::jlimit(0, fable::BL_NOTE_LANES - 1, (int)std::floor(rel));
+    return fable::BL_NOTE_LANES - 1 - row;
+}
 
-void PitchSeqView::shiftClickStep(int step) {
-    step = juce::jlimit(0, fable::BL_STEPS - 1, step);
-    if (!hasSelection()) selAnchor_ = step;  // first shift-click: start the range here
-    selHead_ = step;                          // subsequent shift-clicks: extend from the anchor
+// The 16×12 note-lane area (excludes the oct / acc / slide / step rows).
+juce::Rectangle<int> PitchSeqView::gridBounds() const {
+    const auto a = colBounds(0), b = colBounds(fable::BL_STEPS - 1);
+    return { a.getX(), kBodyY, b.getRight() - a.getX(), kLanesH };
+}
+
+// Floating CUT · COPY · DUP · DEL · ✕ toolbar over the selected columns.
+juce::Rectangle<int> PitchSeqView::selMenuBounds() const {
+    constexpr int bw = 34, gap = 2, n = 5, h = 16;
+    constexpr int w = n * bw + (n - 1) * gap;
+    const auto nrm = fable::rectNorm(rect_);
+    const auto lo = colBounds(juce::jlimit(0, fable::BL_STEPS - 1, nrm.stepLo));
+    const auto hi = colBounds(juce::jlimit(0, fable::BL_STEPS - 1, nrm.stepHi));
+    const int cx = (lo.getX() + hi.getRight()) / 2;
+    const auto grid = gridBounds();
+    const int x = juce::jlimit(grid.getX(), juce::jmax(grid.getX(), grid.getRight() - w), cx - w / 2);
+    return { x, kBodyY + 1, w, h };
+}
+
+juce::Rectangle<int> PitchSeqView::selMenuButton(int i) const {
+    constexpr int bw = 34, gap = 2;
+    const auto m = selMenuBounds();
+    return { m.getX() + i * (bw + gap), m.getY(), bw, m.getHeight() };
+}
+
+bool PitchSeqView::inRect(int step, int note) const {
+    if (sweeping_) {
+        const auto n = fable::rectNorm(pending_);
+        return step >= n.stepLo && step <= n.stepHi && note >= n.noteLo && note <= n.noteHi;
+    }
+    if (!hasRect_) return false;
+    const auto n = fable::rectNorm(rect_);
+    return step >= n.stepLo && step <= n.stepHi && note >= n.noteLo && note <= n.noteHi;
+}
+
+// Origin step of a note grabbable at (step, note): the lit cell itself, else a
+// longer note whose painted body covers this column.
+int PitchSeqView::grabNoteAt(int step, int note) const {
+    const int pat = proc.editPattern();
+    const auto here = proc.sequenceStep(pat, step);
+    if (here.on && here.note == note) return step;
+    for (int c = step - 1; c >= 0; --c) {
+        const auto v = proc.sequenceStep(pat, c);
+        if (v.on && v.note == note && c + v.duration > step) return c;
+    }
+    return -1;
+}
+
+// ---- 2-D rectangle editing (seqEdit.ts port via StepEditOps.h) --------------
+
+void PitchSeqView::setSelection(const fable::RectSel& r) {
+    rect_ = r;
+    hasRect_ = true;
+    const auto n = fable::rectNorm(r);
+    hasLastCell_ = true; lastCellStep_ = n.stepLo; lastCellNote_ = n.noteHi;
     repaint();
 }
 
-void PitchSeqView::selectAll() { selAnchor_ = 0; selHead_ = fable::BL_STEPS - 1; repaint(); }
-void PitchSeqView::clearSelection() { selAnchor_ = selHead_ = -1; repaint(); }
-
-void PitchSeqView::copySelection() {
-    const int pat = proc.editPattern();
-    const int lo = hasSelection() ? selectionLo() : 0;
-    const int hi = hasSelection() ? selectionHi() : fable::BL_STEPS - 1;
-    clipboard_ = fable::copyRange(proc.patternBytes(), seqLayout(), pat, lo, hi);
+void PitchSeqView::selectAllCells() {
+    setSelection({ 0, fable::BL_STEPS - 1, 0, fable::BL_NOTE_LANES - 1 });
 }
 
-void PitchSeqView::cutSelection() {
-    copySelection();
+void PitchSeqView::clearSelection() { hasRect_ = false; repaint(); }
+
+void PitchSeqView::toggleAt(int step, int note) {
+    toggleCell(step, note);
+    hasLastCell_ = true; lastCellStep_ = step; lastCellNote_ = note;
+}
+
+void PitchSeqView::copySel() {
     const int pat = proc.editPattern();
-    const int lo = hasSelection() ? selectionLo() : 0;
-    const int hi = hasSelection() ? selectionHi() : fable::BL_STEPS - 1;
+    clip_.valid = true;
+    if (hasRect_) {
+        clip_.isPattern = false;
+        clip_.rect = fable::copyRect(proc.patternBytes(), seqLayout(), pat, rect_);
+    } else {
+        clip_.isPattern = true;
+        clip_.pattern = fable::copyPattern(proc.patternBytes(), seqLayout(), pat);
+    }
+}
+
+void PitchSeqView::cutSel() {
+    copySel();
+    if (!hasRect_) return;
     pushHistory();
-    proc.setPatternBytes(fable::clearRange(proc.patternBytes(), seqLayout(), pat, lo, hi, kEmptyStep));
+    proc.setPatternBytes(fable::clearRect(proc.patternBytes(), seqLayout(), proc.editPattern(), rect_, kEmptyStep));
     repaint();
 }
 
-void PitchSeqView::pasteAtSelection() {
-    if (clipboard_.empty()) return;
+void PitchSeqView::pasteSel() {
+    if (!clip_.valid) return;
     const int pat = proc.editPattern();
-    const int at = hasSelection() ? selectionLo() : 0;
-    pushHistory();
-    proc.setPatternBytes(fable::pasteRange(proc.patternBytes(), seqLayout(), pat, at, clipboard_));
-    repaint();
-}
-
-void PitchSeqView::deleteSelection() {
-    if (!hasSelection()) return;              // distinct from toggling: only clears a real range
-    const int pat = proc.editPattern();
-    pushHistory();
-    proc.setPatternBytes(fable::clearRange(proc.patternBytes(), seqLayout(), pat,
-                                            selectionLo(), selectionHi(), kEmptyStep));
-    repaint();
-}
-
-void PitchSeqView::duplicateSelection() {
-    const int pat = proc.editPattern();
-    if (hasSelection()) {
-        const int lo = selectionLo(), hi = selectionHi();
-        const int len = hi - lo + 1;
-        const auto data = fable::copyRange(proc.patternBytes(), seqLayout(), pat, lo, hi);
+    if (clip_.isPattern) {
         pushHistory();
-        proc.setPatternBytes(fable::pasteRange(proc.patternBytes(), seqLayout(), pat, hi + 1, data));
-        selAnchor_ = juce::jmin(fable::BL_STEPS - 1, hi + 1);
-        selHead_   = juce::jmin(fable::BL_STEPS - 1, hi + len);
+        proc.setPatternBytes(fable::pastePattern(proc.patternBytes(), seqLayout(), pat, clip_.pattern));
         repaint();
         return;
     }
-    // No selection: the classic "duplicate bar" gesture — copy the whole
-    // edit pattern to editPattern+1, extending sequence length up to 4 bars
-    // if that bar isn't played yet.
+    int atStep, atNote;
+    if (hasRect_)          { const auto n = fable::rectNorm(rect_); atStep = n.stepLo; atNote = n.noteHi; }
+    else if (hasLastCell_) { atStep = lastCellStep_; atNote = lastCellNote_; }
+    else                   { atStep = 0; atNote = clip_.rect.noteHi; }
+    const int dNote = atNote - clip_.rect.noteHi;
+    pushHistory();
+    proc.setPatternBytes(fable::pasteRect(proc.patternBytes(), seqLayout(), pat, atStep, dNote, clip_.rect, kMaxNote));
+    rect_ = { atStep, atStep + clip_.rect.wSteps - 1, clip_.rect.noteLo + dNote, clip_.rect.noteHi + dNote };
+    hasRect_ = true;
+    repaint();
+}
+
+void PitchSeqView::duplicateSel() {
+    const int pat = proc.editPattern();
+    if (hasRect_) {
+        const auto n = fable::rectNorm(rect_);
+        if (n.stepHi + 1 >= fable::BL_STEPS) return;
+        const auto data = fable::copyRect(proc.patternBytes(), seqLayout(), pat, rect_);
+        pushHistory();
+        proc.setPatternBytes(fable::pasteRect(proc.patternBytes(), seqLayout(), pat, n.stepHi + 1, 0, data, kMaxNote));
+        const int w = n.stepHi - n.stepLo + 1;
+        rect_ = { n.stepHi + 1, n.stepHi + w, n.noteLo, n.noteHi }; hasRect_ = true;
+        repaint();
+        return;
+    }
+    // No selection: the classic "duplicate bar" gesture — copy the whole edit
+    // pattern to editPattern+1, extending sequence length if that bar isn't
+    // played yet.
     const int target = pat + 1;
-    if (target >= fable::BL_NPATTERNS) return; // already at the last pattern slot
+    if (target >= fable::BL_NPATTERNS) return;
     const int bars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
     if (target >= bars) {
         std::vector<int> next;
         for (int i = 0; i <= target; ++i) next.push_back(i);
-        proc.setChain(std::move(next)); // may grow the hosted clip's byte buffer
+        proc.setChain(std::move(next));
     }
     pushHistory();
-    const auto data = fable::copyRange(proc.patternBytes(), seqLayout(), pat, 0, fable::BL_STEPS - 1);
-    proc.setPatternBytes(fable::pasteRange(proc.patternBytes(), seqLayout(), target, 0, data));
+    const auto data = fable::copyPattern(proc.patternBytes(), seqLayout(), pat);
+    proc.setPatternBytes(fable::pastePattern(proc.patternBytes(), seqLayout(), target, data));
     proc.setEditPattern(target);
     repaint();
 }
 
-void PitchSeqView::undo() {
+void PitchSeqView::deleteSel() {
+    if (!hasRect_) return;
+    pushHistory();
+    proc.setPatternBytes(fable::clearRect(proc.patternBytes(), seqLayout(), proc.editPattern(), rect_, kEmptyStep));
+    repaint();
+}
+
+void PitchSeqView::undoEdit() {
     fable::StepBytes restored;
     if (history_.undo(proc.patternBytes(), restored)) { proc.setPatternBytes(restored); repaint(); }
 }
 
-void PitchSeqView::redo() {
+void PitchSeqView::redoEdit() {
     fable::StepBytes restored;
     if (history_.redo(proc.patternBytes(), restored)) { proc.setPatternBytes(restored); repaint(); }
 }
 
-void PitchSeqView::shiftRangeTo(int destStep, bool copy) {
-    if (!hasSelection()) return;
-    const int pat = proc.editPattern();
-    const int lo = selectionLo(), hi = selectionHi();
-    const int len = hi - lo + 1;
-    // Clamp dest so the whole range fits: shiftRange does NOT clamp internally
-    // (pasteRange silently drops the overshooting tail), so an edge-overshoot
-    // drag-move would truncate the moved steps and desync the selection — the
-    // web review's overshoot-drag fix, mirrored from NoteSeqView::shiftStepSel.
-    const int dest = juce::jlimit(0, fable::BL_STEPS - len, destStep);
-    if (dest == lo && !copy) return; // dropped back on itself: no-op, skip a spurious history entry
+void PitchSeqView::commitNoteMove(int srcStep, int srcNote, int destStep, int destNote, bool copy) {
+    destStep = juce::jlimit(0, fable::BL_STEPS - 1, destStep);
+    destNote = juce::jlimit(0, fable::BL_NOTE_LANES - 1, destNote);
+    if (srcStep == destStep && srcNote == destNote) return;
+    const fable::RectSel one { srcStep, srcStep, srcNote, srcNote };
+    fable::RectMoveOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep; opts.maxNote = kMaxNote;
     pushHistory();
-    fable::ShiftOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep;
-    proc.setPatternBytes(fable::shiftRange(proc.patternBytes(), seqLayout(), pat, lo, hi, dest, opts));
-    selAnchor_ = dest;
-    selHead_   = dest + len - 1;
+    proc.setPatternBytes(fable::moveRect(proc.patternBytes(), seqLayout(), proc.editPattern(), one,
+                                         destStep - srcStep, destNote - srcNote, opts));
+    rect_ = { destStep, destStep, destNote, destNote }; hasRect_ = true;
+    hasLastCell_ = true; lastCellStep_ = destStep; lastCellNote_ = destNote;
+    repaint();
+}
+
+void PitchSeqView::commitBlockMove(int dStep, int dNote, bool copy) {
+    if (!hasRect_) return;
+    const auto n = fable::rectNorm(rect_);
+    dStep = juce::jlimit(-n.stepLo, (fable::BL_STEPS - 1) - n.stepHi, dStep);
+    dNote = juce::jlimit(-n.noteLo, (fable::BL_NOTE_LANES - 1) - n.noteHi, dNote);
+    if (dStep == 0 && dNote == 0) return;
+    fable::RectMoveOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep; opts.maxNote = kMaxNote;
+    pushHistory();
+    proc.setPatternBytes(fable::moveRect(proc.patternBytes(), seqLayout(), proc.editPattern(), rect_, dStep, dNote, opts));
+    rect_ = { n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote }; hasRect_ = true;
+    repaint();
+}
+
+void PitchSeqView::beginGhostPaste(bool cut) {
+    if (!hasRect_) return;
+    ghostData_ = fable::copyRect(proc.patternBytes(), seqLayout(), proc.editPattern(), rect_);
+    if (ghostData_.cells.empty()) return;
+    clip_.valid = true; clip_.isPattern = false; clip_.rect = ghostData_;
+    ghost_ = true; ghostCut_ = cut; ghostSrc_ = rect_; ghostHasHover_ = false;
+    hasRect_ = false;
+    repaint();
+}
+
+void PitchSeqView::dropGhost(int atStep, int atNote) {
+    if (!ghost_) return;
+    const int pat = proc.editPattern();
+    const int dNote = atNote - ghostData_.noteHi;
+    pushHistory();
+    std::vector<uint8_t> base = ghostCut_
+        ? fable::clearRect(proc.patternBytes(), seqLayout(), pat, ghostSrc_, kEmptyStep)
+        : proc.patternBytes();
+    proc.setPatternBytes(fable::pasteRect(base, seqLayout(), pat, atStep, dNote, ghostData_, kMaxNote));
+    rect_ = { atStep, atStep + ghostData_.wSteps - 1, ghostData_.noteLo + dNote, ghostData_.noteHi + dNote };
+    hasRect_ = true;
+    ghost_ = false; ghostHasHover_ = false;
     repaint();
 }
 
@@ -329,14 +441,33 @@ void PitchSeqView::moveBar(int fromPattern, int toPattern, bool copy) {
 
 void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
-    if (transportBounds().contains(pos)) {       // play/stop
+
+    if (ghost_) {                                 // carrying a ghost: drop or cancel
+        if (gridBounds().contains(pos)) dropGhost(stepAt(pos.x), noteAt(pos.y));
+        else cancelGesture();
+        return;
+    }
+    if (hasRect_) {                               // floating selection menu
+        for (int i = 0; i < 5; ++i) if (selMenuButton(i).contains(pos)) {
+            switch (i) {
+                case 0: beginGhostPaste(true);  break;
+                case 1: beginGhostPaste(false); break;
+                case 2: duplicateSel();         break;
+                case 3: deleteSel();            break;
+                default: clearSelection();      break;
+            }
+            repaint();
+            return;
+        }
+    }
+
+    if (transportBounds().contains(pos)) {        // play/stop
         proc.setSequencerPlaying(!proc.sequencerPlaying());
         repaint();
         return;
     }
-    // Bar chip: plain click still selects the edit pattern (mouseUp fires it
-    // if the click never crosses the drag threshold); past the threshold it
-    // becomes a bar-chip drag (move, Alt = copy) resolved in mouseUp.
+    // Bar chip: plain click selects the edit pattern (mouseUp); past the drag
+    // threshold it becomes a bar-chip drag (move, Alt = copy).
     for (int i = 0; i < fable::BL_NPATTERNS; ++i)
         if (patternBounds(i).contains(pos)) {
             barDragFrom_ = i; barDragStarted_ = false; barDragHover_ = -1;
@@ -353,31 +484,35 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
     for (int s = 0; s < fable::BL_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
         resizeStep_ = s; resizeStartDuration_ = proc.sequenceStep(proc.editPattern(), s).duration; return;
     }
-    // A plain (non-Shift) click landing inside the current selection grabs
-    // it for a step-range drag-shift instead of toggling the cell under it.
-    if (hasSelection() && !e.mods.isShiftDown()) {
-        for (int s = 0; s < fable::BL_STEPS; ++s) {
-            if (!colBounds(s).contains(pos)) continue;
-            if (s >= selectionLo() && s <= selectionHi()) {
-                stepDragActive_ = true;
-                stepDragAnchorCol_ = s;
-                stepDragHoverDest_ = selectionLo();
-            }
-            break;
+
+    // ---- note lanes: Shift-sweep / block-move / note-drag / deferred toggle ----
+    if (gridBounds().contains(pos)) {
+        const int step = stepAt(pos.x), note = noteAt(pos.y);
+        downStep_ = step; downNote_ = note;
+        if (e.mods.isShiftDown()) {
+            sweeping_ = true; pending_ = { step, step, note, note };
+            repaint();
+            return;
         }
-        if (stepDragActive_) return;
-    }
-    // Shift-click/-sweep sets or extends the range; a stationary shift-click
-    // must never also toggle the step underneath it.
-    if (e.mods.isShiftDown()) {
-        for (int s = 0; s < fable::BL_STEPS; ++s)
-            if (colBounds(s).contains(pos)) { shiftClickStep(s); return; }
+        if (hasRect_ && inRect(step, note)) {
+            moveArmed_ = true; moving_ = false;
+            moveOriginStep_ = step; moveOriginNote_ = note;
+            moveHoverStep_ = step; moveHoverNote_ = note;
+            return;
+        }
+        const int origin = grabNoteAt(step, note);
+        if (origin >= 0) {
+            noteDragArmed_ = true; noteDragActive_ = false;
+            ndSrcStep_ = origin; ndSrcNote_ = note; ndGrabStep_ = step;
+            ndOverStep_ = step; ndOverNote_ = note;
+            return;
+        }
         return;
     }
+
+    // oct / accent / slide rows (the step-number strip below is a plain label).
     for (int s = 0; s < fable::BL_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
-        for (int note = 0; note < fable::BL_NOTE_LANES; ++note)
-            if (cellBounds(s, note).contains(pos)) { toggleCell(s, note); return; }
         if (octBounds(s).contains(pos))   { cycleStepOct(s); return; }
         if (accBounds(s).contains(pos))   { toggleStepAcc(s); return; }
         if (slideBounds(s).contains(pos)) { toggleStepSlide(s); return; }
@@ -391,6 +526,24 @@ void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
         resizeStep(resizeStep_, resizeStartDuration_ + delta);
         return;
     }
+    const auto p = e.getPosition();
+    if (sweeping_) {
+        pending_.stepTo = stepAt(p.x); pending_.noteTo = noteAt(p.y);
+        repaint();
+        return;
+    }
+    if (moveArmed_) {
+        moveHoverStep_ = stepAt(p.x); moveHoverNote_ = noteAt(p.y);
+        if (moveHoverStep_ != moveOriginStep_ || moveHoverNote_ != moveOriginNote_) moving_ = true;
+        repaint();
+        return;
+    }
+    if (noteDragArmed_) {
+        ndOverStep_ = stepAt(p.x); ndOverNote_ = noteAt(p.y);
+        if (ndOverStep_ != ndGrabStep_ || ndOverNote_ != ndSrcNote_) noteDragActive_ = true;
+        repaint();
+        return;
+    }
     if (barDragFrom_ >= 0) {
         if (!barDragStarted_ && e.getDistanceFromDragStart() > 4) barDragStarted_ = true;
         if (barDragStarted_) {
@@ -399,62 +552,97 @@ void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
         }
         return;
     }
-    if (stepDragActive_) {
-        const int col = stepAt(e.getPosition().x);
-        const int len = selectionHi() - selectionLo() + 1;
-        const int dest = juce::jlimit(0, fable::BL_STEPS - len,
-                                       selectionLo() + (col - stepDragAnchorCol_));
-        if (dest != stepDragHoverDest_) { stepDragHoverDest_ = dest; repaint(); }
-        return;
-    }
 }
 
 void PitchSeqView::mouseUp(const juce::MouseEvent& e) {
     if (resizeStep_ >= 0) { resizeStep_ = -1; return; }
+    if (sweeping_) {
+        sweeping_ = false;
+        setSelection(pending_);
+        return;
+    }
+    if (moveArmed_) {
+        moveArmed_ = false;
+        if (moving_) {
+            moving_ = false;
+            commitBlockMove(moveHoverStep_ - moveOriginStep_, moveHoverNote_ - moveOriginNote_, e.mods.isAltDown());
+        } else if (downStep_ >= 0) {
+            toggleAt(downStep_, downNote_);
+        }
+        downStep_ = downNote_ = -1;
+        return;
+    }
+    if (noteDragArmed_) {
+        noteDragArmed_ = false;
+        if (noteDragActive_) {
+            noteDragActive_ = false;
+            const int offset = ndGrabStep_ - ndSrcStep_;
+            const int dest = juce::jmax(0, ndOverStep_ - offset);
+            commitNoteMove(ndSrcStep_, ndSrcNote_, dest, ndOverNote_, e.mods.isAltDown());
+        } else if (downStep_ >= 0) {
+            toggleAt(downStep_, downNote_);
+        }
+        downStep_ = downNote_ = -1;
+        return;
+    }
     if (barDragFrom_ >= 0) {
         if (barDragStarted_) {
             const int target = patternIndexAt(e.getPosition());
             if (target >= 0 && target != barDragFrom_) moveBar(barDragFrom_, target, e.mods.isAltDown());
         } else {
-            patternClick(barDragFrom_);      // plain click: unchanged bar-select behavior
+            patternClick(barDragFrom_);
         }
         barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1;
         repaint();
         return;
     }
-    if (stepDragActive_) {
-        stepDragActive_ = false;
-        if (stepDragHoverDest_ != selectionLo()) shiftRangeTo(stepDragHoverDest_, e.mods.isAltDown());
-        stepDragHoverDest_ = -1;
-        repaint();
-        return;
+    if (downStep_ >= 0) {                          // plain click on an empty cell
+        toggleAt(downStep_, downNote_);
+        downStep_ = downNote_ = -1;
     }
+}
+
+void PitchSeqView::mouseMove(const juce::MouseEvent& e) {
+    if (!ghost_) return;
+    const auto pos = e.getPosition();
+    ghostHasHover_ = gridBounds().contains(pos);
+    if (ghostHasHover_) { ghostHoverStep_ = stepAt(pos.x); ghostHoverNote_ = noteAt(pos.y); }
+    repaint();
 }
 
 void PitchSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
 
+void PitchSeqView::cancelGesture() {
+    sweeping_ = false;
+    moveArmed_ = moving_ = false;
+    noteDragArmed_ = noteDragActive_ = false;
+    ghost_ = false; ghostHasHover_ = false;
+    barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1;
+    downStep_ = downNote_ = -1;
+    repaint();
+}
+
 bool PitchSeqView::keyPressed(const juce::KeyPress& k) {
     if (k == juce::KeyPress::escapeKey) {
-        if (stepDragActive_) { stepDragActive_ = false; stepDragHoverDest_ = -1; repaint(); return true; }
-        if (barDragFrom_ >= 0) { barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1; repaint(); return true; }
-        if (hasSelection()) { clearSelection(); return true; }
         cancelResize();
+        cancelGesture();
+        clearSelection();
         return true;
     }
     const auto mods = k.getModifiers();
     if (mods.isCommandDown()) {
         switch (k.getKeyCode()) {
-            case 'A': selectAll();        return true;
-            case 'C': copySelection();    return true;
-            case 'X': cutSelection();     return true;
-            case 'V': pasteAtSelection(); return true;
-            case 'D': duplicateSelection(); return true;
-            case 'Z': mods.isShiftDown() ? redo() : undo(); return true;
+            case 'A': selectAllCells(); return true;
+            case 'C': copySel();        return true;
+            case 'X': cutSel();         return true;
+            case 'V': pasteSel();       return true;
+            case 'D': duplicateSel();   return true;
+            case 'Z': mods.isShiftDown() ? redoEdit() : undoEdit(); return true;
             default: break;
         }
     }
     if (k.getKeyCode() == juce::KeyPress::deleteKey || k.getKeyCode() == juce::KeyPress::backspaceKey) {
-        deleteSelection();
+        deleteSel();
         return true;
     }
     return false;
@@ -473,7 +661,13 @@ void PitchSeqView::timerCallback() {
     if (srcId != lastPatternSrc_) {
         lastPatternSrc_ = srcId;
         history_.clear();
-        selAnchor_ = selHead_ = -1;
+        hasRect_ = false; sweeping_ = false;
+        moveArmed_ = moving_ = false; noteDragArmed_ = noteDragActive_ = false;
+        ghost_ = false; ghostHasHover_ = false;
+        barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1;
+        downStep_ = downNote_ = -1;
+        hasLastCell_ = false;
+        clip_ = {};
     }
 
     juce::uint32 sig = 17;
@@ -701,31 +895,89 @@ void PitchSeqView::paint(juce::Graphics& g) {
                    (float)c1.getCentreX(), yOf(steps[i]), 1.4f);
     }
 
-    // ---- Decision-6: selection outline + drag-preview highlights ----
-    // A neutral tint (col::acN) so the selection reads distinctly from the
-    // green active/slide affordances above.
-    if (hasSelection()) {
-        for (int s = selectionLo(); s <= selectionHi(); ++s) {
-            g.setColour(col::acN.withAlpha(0.10f));
-            g.fillRoundedRectangle(colBounds(s).toFloat().reduced(1.0f), 4.0f);
+    // ---- 2-D selection / drag / ghost overlays (PitchSeq.tsx .bl-sel-rect) ----
+    auto rectPixels = [&](const fable::RectNorm& n) {
+        const int sLo = juce::jlimit(0, fable::BL_STEPS - 1, n.stepLo);
+        const int sHi = juce::jlimit(0, fable::BL_STEPS - 1, n.stepHi);
+        const int nLo = juce::jlimit(0, fable::BL_NOTE_LANES - 1, n.noteLo);
+        const int nHi = juce::jlimit(0, fable::BL_NOTE_LANES - 1, n.noteHi);
+        const auto tl = cellBounds(sLo, nHi);
+        const auto br = cellBounds(sHi, nLo);
+        return juce::Rectangle<float>((float)tl.getX(), (float)tl.getY(),
+                                      (float)(br.getRight() - tl.getX()),
+                                      (float)(br.getBottom() - tl.getY()));
+    };
+
+    if (sweeping_ || hasRect_) {
+        const auto r = rectPixels(fable::rectNorm(sweeping_ ? pending_ : rect_));
+        g.setColour(green.withAlpha(0.14f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(green.withAlpha(0.85f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
+    }
+
+    if (noteDragActive_) {
+        const auto src = cellBounds(ndSrcStep_, ndSrcNote_).toFloat();
+        g.setColour(juce::Colours::black.withAlpha(0.4f));
+        g.fillRoundedRectangle(src, 2.0f);
+        const int offset = ndGrabStep_ - ndSrcStep_;
+        const auto over = cellBounds(juce::jmax(0, ndOverStep_ - offset), ndOverNote_).toFloat();
+        g.setColour(green);
+        if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
+            const float dashes[] = { 3.0f, 2.0f };
+            juce::Path pth; pth.addRoundedRectangle(over.reduced(0.5f), 2.0f);
+            juce::Path dashed; juce::PathStrokeType(1.2f).createDashedStroke(dashed, pth, dashes, 2);
+            g.strokePath(dashed, juce::PathStrokeType(1.2f));
+        } else {
+            g.drawRoundedRectangle(over.reduced(0.5f), 2.0f, 1.4f);
         }
-        const auto lo = colBounds(selectionLo()), hi = colBounds(selectionHi());
-        const juce::Rectangle<float> outline((float)lo.getX() - 2.0f, (float)lo.getY() - 2.0f,
-                                              (float)(hi.getRight() - lo.getX()) + 4.0f,
-                                              (float)lo.getHeight() + 4.0f);
-        g.setColour(col::acN.withAlpha(0.85f));
-        g.drawRoundedRectangle(outline, 6.0f, 1.5f);
     }
-    if (stepDragActive_ && stepDragHoverDest_ >= 0) {
-        const int len = selectionHi() - selectionLo() + 1;
-        const int hiCol = juce::jmin(fable::BL_STEPS - 1, stepDragHoverDest_ + len - 1);
-        const auto lo = colBounds(stepDragHoverDest_), hi = colBounds(hiCol);
-        const juce::Rectangle<float> preview((float)lo.getX() - 2.0f, (float)lo.getY() - 2.0f,
-                                              (float)(hi.getRight() - lo.getX()) + 4.0f,
-                                              (float)lo.getHeight() + 4.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(preview, 6.0f, 1.2f);
+
+    if (moving_) {
+        const auto n = fable::rectNorm(rect_);
+        const int dStep = juce::jlimit(-n.stepLo, (fable::BL_STEPS - 1) - n.stepHi, moveHoverStep_ - moveOriginStep_);
+        const int dNote = juce::jlimit(-n.noteLo, (fable::BL_NOTE_LANES - 1) - n.noteHi, moveHoverNote_ - moveOriginNote_);
+        const auto r = rectPixels({ n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote });
+        g.setColour(green.withAlpha(0.10f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(green.withAlpha(0.9f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.4f);
     }
+
+    if (ghost_) {
+        if (ghostCut_) {
+            const auto sn = fable::rectNorm(ghostSrc_);
+            for (const auto& cCell : ghostData_.cells) {
+                const int s = sn.stepLo + cCell.dStep, note = cCell.bytes[1] & 0x7f;
+                if (s < 0 || s >= fable::BL_STEPS) continue;
+                g.setColour(juce::Colours::black.withAlpha(0.45f));
+                g.fillRoundedRectangle(cellBounds(s, note).toFloat(), 2.0f);
+            }
+        }
+        if (ghostHasHover_) {
+            const int dNote = ghostHoverNote_ - ghostData_.noteHi;
+            for (const auto& cCell : ghostData_.cells) {
+                const int s = ghostHoverStep_ + cCell.dStep;
+                const int note = (cCell.bytes[1] & 0x7f) + dNote;
+                if (s < 0 || s >= fable::BL_STEPS || note < 0 || note > kMaxNote) continue;
+                const auto b = cellBounds(s, note).toFloat();
+                g.setColour(green.withAlpha(0.38f));
+                g.fillRoundedRectangle(b, 2.0f);
+                const float dashes[] = { 3.0f, 2.0f };
+                juce::Path pth; pth.addRoundedRectangle(b.reduced(0.5f), 2.0f);
+                juce::Path dashed; juce::PathStrokeType(1.0f).createDashedStroke(dashed, pth, dashes, 2);
+                g.setColour(green);
+                g.strokePath(dashed, juce::PathStrokeType(1.0f));
+            }
+        }
+    }
+
+    if (hasRect_ && !ghost_) {
+        static const char* const kMenu[5] = { "CUT", "COPY", "DUP", "DEL", "X" };
+        for (int i = 0; i < 5; ++i)
+            drawSeqBtn(g, selMenuButton(i), kMenu[i], false, 0.4f, false, 7.0f);
+    }
+
     if (barDragFrom_ >= 0 && barDragStarted_ && barDragHover_ >= 0) {
         g.setColour(juce::Colours::white.withAlpha(0.5f));
         g.drawRoundedRectangle(patternBounds(barDragHover_).toFloat().expanded(2.0f), 6.0f, 2.0f);

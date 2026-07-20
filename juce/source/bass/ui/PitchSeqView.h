@@ -20,6 +20,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress&) override;
 
     // Web store handlers — public so the host test drives the exact code
@@ -34,28 +35,32 @@ public:
     void patternClick(int i);               // choose bar to edit
     void setSequenceLength(int bars);        // play bars 1 through N
 
-    // ---- Decision-6: step-range selection + verbs (StepEditOps.h) ----
-    // Public so the host test drives the exact code paths mouse/keyboard
-    // input takes (same convention as the handlers above).
-    bool hasSelection() const { return selAnchor_ >= 0; }
-    int selectionLo() const { return juce::jmin(selAnchor_, selHead_); }
-    int selectionHi() const { return juce::jmax(selAnchor_, selHead_); }
-    void shiftClickStep(int step);          // Shift-click: set/extend the range
-    void selectAll();                       // Cmd-A: whole pattern
-    void clearSelection();                  // Esc
-    void copySelection();                   // Cmd-C
-    void cutSelection();                    // Cmd-X
-    void pasteAtSelection();                // Cmd-V
-    void duplicateSelection();              // Cmd-D
-    void deleteSelection();                 // Delete / Backspace
-    void undo();                            // Cmd-Z
-    void redo();                            // Shift-Cmd-Z
-    // Step-range drag-shift commit (mouseUp): move the selection to start at
-    // destStep (Alt = copy); dest is clamped so content and selection agree.
-    void shiftRangeTo(int destStep, bool copy);
-    // Bar-chip drag commit (mouseUp): move fromPattern's content to
-    // toPattern, swapping unless copy is set (Alt).
-    void moveBar(int fromPattern, int toPattern, bool copy);
+    // ---- 2-D rectangle (step × note-lane) editing (port of the web note grid:
+    // src/shared/seqEdit.ts + useSeqRectSelect / useSeqNoteDrag /
+    // useSeqGhostPaste). Public so the host test drives the exact code paths a
+    // keypress / drag / menu click takes. The slide flag (byte1 bit7) rides
+    // along untouched through every rect verb. ----
+    void copySel();                         // Cmd-C / menu COPY
+    void cutSel();                          // Cmd-X
+    void pasteSel();                        // Cmd-V
+    void duplicateSel();                    // Cmd-D / menu DUP
+    void deleteSel();                       // Delete / menu DEL
+    void selectAllCells();                  // Cmd-A
+    void clearSelection();                  // Esc / menu ✕
+    void undoEdit();                        // Cmd-Z
+    void redoEdit();                        // Shift-Cmd-Z
+    void moveBar(int fromPattern, int toPattern, bool copy); // bar-chip drag
+
+    void commitNoteMove(int srcStep, int srcNote, int destStep, int destNote, bool copy);
+    void commitBlockMove(int dStep, int dNote, bool copy);
+    void beginGhostPaste(bool cut);
+    void dropGhost(int atStep, int atNote);
+
+    bool hasSelection() const { return hasRect_; }
+    fable::RectNorm selection() const { return fable::rectNorm(rect_); }
+    void setSelection(const fable::RectSel&);
+    bool hasClipboard() const { return clip_.valid; }
+    bool ghostActive() const { return ghost_; }
 
     // Hit-test geometry (public for the host test).
     juce::Rectangle<int> transportBounds() const;
@@ -68,26 +73,58 @@ public:
     juce::Rectangle<int> accBounds(int step) const;
     juce::Rectangle<int> slideBounds(int step) const;
     juce::Rectangle<int> resizeBounds(int step) const;
+    juce::Rectangle<int> gridBounds() const;
+    juce::Rectangle<int> selMenuBounds() const;
+    juce::Rectangle<int> selMenuButton(int i) const;
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher
     void pushHistory() { history_.push(proc.patternBytes()); }
     int stepAt(int x) const;                // inverse of colBounds (clamped 0..STEPS-1)
+    int noteAt(int y) const;                // inverse of cellBounds' lane math
     int patternIndexAt(juce::Point<int>) const; // which bar chip, or -1
+    bool inRect(int step, int note) const;
+    int grabNoteAt(int step, int note) const;
+    void toggleAt(int step, int note);
+    void cancelGesture();
 
     BassUiModel& proc;
     juce::Random rng_;
     juce::uint32 lastSig_ = 0xffffffffu;
     int resizeStep_ = -1, resizeStartDuration_ = 1;
 
-    // Decision-6 state.
-    int selAnchor_ = -1, selHead_ = -1;               // contiguous step-range selection
-    std::vector<uint8_t> clipboard_;
+    // 2-D rectangle selection over the edit pattern (anchor/head; normalize
+    // via rectNorm).
+    bool hasRect_ = false;
+    fable::RectSel rect_;
+    bool sweeping_ = false;
+    fable::RectSel pending_;
+
+    bool noteDragArmed_ = false, noteDragActive_ = false;
+    int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
+
+    bool moveArmed_ = false, moving_ = false;
+    int moveOriginStep_ = 0, moveOriginNote_ = 0, moveHoverStep_ = 0, moveHoverNote_ = 0;
+
+    int downStep_ = -1, downNote_ = -1;
+
+    bool ghost_ = false, ghostCut_ = false, ghostHasHover_ = false;
+    fable::RectCells ghostData_;
+    fable::RectSel ghostSrc_;
+    int ghostHoverStep_ = 0, ghostHoverNote_ = 0;
+
+    struct RectClipboard {
+        bool valid = false;
+        bool isPattern = false;
+        fable::RectCells rect;
+        std::vector<uint8_t> pattern;
+    };
+    RectClipboard clip_;
+    bool hasLastCell_ = false;
+    int lastCellStep_ = 0, lastCellNote_ = 0;
+
     fable::StepEditHistory<std::vector<uint8_t>> history_;
     int lastPatternSrc_ = std::numeric_limits<int>::min(); // sentinel: never matches a real id
-
-    bool stepDragActive_ = false;                     // step-range drag-shift in progress
-    int stepDragAnchorCol_ = 0, stepDragHoverDest_ = -1;
 
     int barDragFrom_ = -1;                            // bar-chip drag in progress
     bool barDragStarted_ = false;
