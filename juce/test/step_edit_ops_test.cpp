@@ -347,6 +347,19 @@ int main() {
               "moveRect copy=true keeps the source and writes the destination");
     }
 
+    // -- copyRect / clearRect tolerate a selection that overhangs the pattern --
+    // (paste/duplicate can re-anchor a rect so stepHi exceeds the last step).
+    {
+        StepBytes p = makeEmptySeqPatterns();
+        NoteSeqStep a; a.on = true; a.note = 4; setNoteSeqStep(p.data(), 0, 14, a);
+        RectSel over { 14, 20, 0, kMaxNote }; // stepHi 20 is past the 16-step pattern
+        RectCells cap = copyRect(p, kNoteLayout, 0, over);
+        check(cap.cells.size() == 1 && cap.cells[0].dStep == 0,
+              "copyRect skips out-of-range steps instead of reading past the buffer");
+        StepBytes cleared = clearRect(p, kNoteLayout, 0, over, kEmpty);
+        check(!getNoteSeqStep(cleared.data(), 0, 14).on, "clearRect handles an overhanging rect safely");
+    }
+
     // -- chain-aware rect spans bar boundaries (absolute steps into chain[bar]) --
     {
         StepBytes p = makeEmptySeqPatterns();

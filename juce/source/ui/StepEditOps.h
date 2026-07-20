@@ -164,6 +164,7 @@ inline RectCells copyRect(const StepBytes& p, const StepLayout& l, int pat, cons
     const auto n = rectNorm(rect);
     RectCells out; out.wSteps = n.stepHi - n.stepLo + 1; out.noteLo = n.noteLo; out.noteHi = n.noteHi;
     for (int s = n.stepLo; s <= n.stepHi; ++s) {
+        if (s < 0 || s >= l.stepsPerPattern) continue; // a re-anchored selection may overhang the pattern
         const int o = stepOffset(l, pat, s);
         const int note = rectCellNote(p, o);
         if (rectCellOn(p, o) && note >= n.noteLo && note <= n.noteHi)
@@ -177,6 +178,7 @@ inline StepBytes clearRect(const StepBytes& p, const StepLayout& l, int pat, con
     StepBytes next = p;
     const auto n = rectNorm(rect);
     for (int s = n.stepLo; s <= n.stepHi; ++s) {
+        if (s < 0 || s >= l.stepsPerPattern) continue;
         const int o = stepOffset(l, pat, s);
         const int note = rectCellNote(next, o);
         if (rectCellOn(next, o) && note >= n.noteLo && note <= n.noteHi)
