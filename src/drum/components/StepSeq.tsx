@@ -1,23 +1,12 @@
-import { useEffect, useRef, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
-import { inStepSel, STEPS, patIdx } from '../seq';
+import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
+import { useSeqRectSelect } from '../../components/useSeqRectSelect';
+import { padRectNorm, type RectSel } from '../../shared/seqEdit';
+import { STEPS, patIdx } from '../seq';
 import { PAD_COUNT } from '../params';
 import { useDrumStore } from '../store';
-
-// Movement past this many pixels turns a pointerdown into a drag gesture
-// instead of a click — mirrors NoteLengthHandle.tsx's threshold.
-const DRAG_THRESHOLD = 4;
-
-type DragMode = 'sweep' | 'shift';
-
-interface DragState {
-  mode: DragMode;
-  startX: number;
-  moved: boolean;
-  el: HTMLButtonElement;
-  row: HTMLElement;
-  pointerId: number;
-}
+import { useDrumGhostPaste } from './useDrumGhostPaste';
 
 export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const hosted = useDrumStore((s) => s.hosted);
@@ -31,83 +20,64 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const sel = useDrumStore((s) => s.sel);
   const padNames = useDrumStore((s) => s.padNames);
   const padName = padNames[sel];
-  const stepSel = useDrumStore((s) => s.stepSel);
+  const rectSel = useDrumStore((s) => s.rectSel);
   const play = useDrumStore((s) => s.play);
   const stop = useDrumStore((s) => s.stop);
   const toggleStep = useDrumStore((s) => s.toggleStep);
   const setEditPattern = useDrumStore((s) => s.setEditPattern);
   const setSequenceLength = useDrumStore((s) => s.setSequenceLength);
-  const setStepSelHead = useDrumStore((s) => s.setStepSelHead);
-  const shiftSelection = useDrumStore((s) => s.shiftSelection);
+  const setRectSel = useDrumStore((s) => s.setRectSel);
+  const moveRectSel = useDrumStore((s) => s.moveRectSel);
+  const dropRect = useDrumStore((s) => s.dropRect);
+  const copySelection = useDrumStore((s) => s.copySelection);
+  const duplicateSelection = useDrumStore((s) => s.duplicateSelection);
+  const deleteSelection = useDrumStore((s) => s.deleteSelection);
+  const clearStepSel = useDrumStore((s) => s.clearStepSel);
   const movePattern = useDrumStore((s) => s.movePattern);
   const randomizePad = useDrumStore((s) => s.randomizePad);
   const selectPad = useDrumStore((s) => s.selectPad);
 
-  const drag = useRef<DragState | null>(null);
-  const suppressClick = useRef(false);
+  // Shift-drag rectangle selection + in-rect block move over the step × pad
+  // grid — the shared WT-1/BL-1 pointer hook, with the note axis reused as the
+  // pad-lane index (data-note = pad). Both gestures commit once on release, so
+  // each costs one undo entry; Escape cancels mid-gesture. Standalone-only.
+  const { pending, startRectSelect, startRectMove, consumeRectClick } = useSeqRectSelect({
+    onSelect: (r: RectSel) => setRectSel({ stepFrom: r.stepFrom, stepTo: r.stepTo, padFrom: r.noteFrom, padTo: r.noteTo }),
+    onMove: (dStep, dPad, copy) => moveRectSel(dStep, dPad, { copy }),
+  });
+  // While sweeping, `pending` (a note-axis RectSel) mirrors the live rect; fall
+  // back to the committed pad rect otherwise.
+  const rect = pending
+    ? { stepLo: Math.min(pending.stepFrom, pending.stepTo), stepHi: Math.max(pending.stepFrom, pending.stepTo),
+        padLo: Math.min(pending.noteFrom, pending.noteTo), padHi: Math.max(pending.noteFrom, pending.noteTo) }
+    : rectSel ? padRectNorm(rectSel) : null;
+  const inRect = (step: number, padI: number): boolean =>
+    !!rect && step >= rect.stepLo && step <= rect.stepHi && padI >= rect.padLo && padI <= rect.padHi;
 
-  const stepAt = (clientX: number, row: HTMLElement) => {
-    const rect = row.getBoundingClientRect();
-    const pitch = rect.width / STEPS;
-    return Math.min(STEPS - 1, Math.max(0, Math.floor((clientX - rect.left) / pitch)));
+  // Ghost paste: menu CUT/COPY picks the selection up — the menu closes, the
+  // cells trail the cursor, and the next click drops them (Escape or an
+  // outside-grid click cancels; a cancelled CUT changes nothing).
+  const { ghost, beginGhost, ghostAt, isCutSrc } = useDrumGhostPaste({ onDrop: dropRect });
+  const pickUpSelection = (cut: boolean) => {
+    if (!rectSel) return;
+    copySelection(); // keep the Cmd-V clipboard in sync
+    const clip = useDrumStore.getState().clipboard;
+    if (clip?.kind !== 'rect') return;
+    beginGhost(clip.data, { cut, src: rectSel });
+    clearStepSel();
   };
-
-  // Escape cancels an in-progress drag without committing anything (the
-  // pattern buffer is only touched at pointerup).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !drag.current) return;
-      try { drag.current.el.releasePointerCapture(drag.current.pointerId); } catch { /* already released */ }
-      drag.current = null;
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   const onStepPointerDown = (e: ReactPointerEvent<HTMLButtonElement>, padI: number, step: number) => {
     if (hosted) return;
-    // In lane mode a press anywhere retargets editing to that lane's pad, so
-    // the selection/shift verbs below always act on the row under the pointer.
+    if (e.shiftKey) { startRectSelect(e, step, padI); return; }
+    if (rectSel && inRect(step, padI) && !pending) { startRectMove(e, step, padI); return; }
+    // Plain press retargets editing to that lane's pad so the click toggles the
+    // row under the pointer regardless of selection order.
     if (padI !== sel) selectPad(padI);
-    const row = e.currentTarget.parentElement as HTMLElement;
-    if (e.shiftKey) {
-      setStepSelHead(step);
-      drag.current = { mode: 'sweep', startX: e.clientX, moved: false, el: e.currentTarget, row, pointerId: e.pointerId };
-      e.currentTarget.setPointerCapture(e.pointerId);
-      return;
-    }
-    if (inStepSel(stepSel, step)) {
-      drag.current = { mode: 'shift', startX: e.clientX, moved: false, el: e.currentTarget, row, pointerId: e.pointerId };
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-  };
-
-  const onStepPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
-    const d = drag.current;
-    if (!d || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
-    if (!d.moved && Math.abs(e.clientX - d.startX) < DRAG_THRESHOLD) return;
-    d.moved = true;
-    if (d.mode === 'sweep') setStepSelHead(stepAt(e.clientX, d.row));
-  };
-
-  const onStepPointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!d.moved) {
-      // Stationary shift-click: the selection was already set on pointerdown;
-      // swallow the trailing click so it doesn't ALSO toggle the step. A
-      // stationary press inside the selection ('shift' mode) stays a click.
-      if (d.mode === 'sweep') suppressClick.current = true;
-      return;
-    }
-    suppressClick.current = true;
-    if (d.mode === 'shift') shiftSelection(stepAt(e.clientX, d.row), { copy: e.altKey });
   };
 
   const onStepClick = (padI: number, step: number) => {
-    if (suppressClick.current) { suppressClick.current = false; return; }
+    if (consumeRectClick()) return;
     toggleStep(step, padI);
   };
 
@@ -115,8 +85,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   // keeps the single tall row for the pad being played. Lanes run high pad to
   // low, top to bottom, so the stack reads like the pad grid's bottom-left
   // origin rather than inverted from it.
-  // Hosted in SQ-4 the panel only mounts in the rig's SEQ mode, which hides
-  // the pad grid the same way — always lanes there.
   const laneView = hosted || mode === 'step';
   const lanes = laneView
     ? Array.from({ length: PAD_COUNT }, (_, i) => PAD_COUNT - 1 - i)
@@ -125,18 +93,21 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const renderStep = (padI: number, step: number) => {
     const value = patterns[patIdx(editPattern, padI, step)];
     const current = playing && curStep === step && curPat === editPattern;
-    const selected = padI === sel && inStepSel(stepSel, step);
+    const selected = !hosted && inRect(step, padI);
+    const isGhost = ghost ? ghostAt(step, padI) : false;
+    const cutSrc = ghost ? isCutSrc(step, padI) : false;
     return (
       <button
-        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${current ? ' cur' : ''}${selected ? ' selected' : ''}`}
+        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${current ? ' cur' : ''}${selected ? ' selected' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
         type="button"
+        data-seq-cell
+        data-abs-step={step}
+        data-note={padI}
         aria-label={`${padNames[padI]} step ${step + 1}: ${value === 2 ? 'accent' : value === 1 ? 'on' : 'off'}`}
         aria-pressed={value >= 1}
         key={step}
         onClick={() => onStepClick(padI, step)}
         onPointerDown={(e) => onStepPointerDown(e, padI, step)}
-        onPointerMove={onStepPointerMove}
-        onPointerUp={onStepPointerUp}
       >
         <span className="step-accent" aria-hidden="true" />
         <span className="step-fill" aria-hidden="true" />
@@ -179,24 +150,41 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
           <span>TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT</span>
         </div>
       </div>
-      <div className={laneView ? 'dr-lanes' : undefined}>
-        {lanes.map((padI) => (
-          <div className="dr-lane" key={padI}>
-            {laneView && (
-              <button
-                className={`dr-lane-name${padI === sel ? ' sel' : ''}`}
-                type="button"
-                onClick={() => selectPad(padI)}
-              >
-                <span className="dr-lane-num">{String(padI + 1).padStart(2, '0')}</span>
-                {padNames[padI]}
-              </button>
-            )}
-            <div className="step-row">
-              {Array.from({ length: STEPS }, (_, step) => renderStep(padI, step))}
+      <div className={`dr-lanes-wrap${laneView ? '' : ' single'}`}>
+        <div className={laneView ? 'dr-lanes' : undefined}>
+          {lanes.map((padI) => (
+            <div className="dr-lane" key={padI}>
+              {laneView && (
+                <button
+                  className={`dr-lane-name${padI === sel ? ' sel' : ''}`}
+                  type="button"
+                  onClick={() => selectPad(padI)}
+                >
+                  <span className="dr-lane-num">{String(padI + 1).padStart(2, '0')}</span>
+                  {padNames[padI]}
+                </button>
+              )}
+              <div className="step-row">
+                {Array.from({ length: STEPS }, (_, step) => renderStep(padI, step))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        {!hosted && rectSel && !ghost && (() => {
+          const { stepLo, stepHi } = padRectNorm(rectSel);
+          return (
+            <SeqSelectionMenu
+              visibleLo={stepLo}
+              visibleHi={stepHi}
+              totalSteps={STEPS}
+              onCut={() => pickUpSelection(true)}
+              onCopy={() => pickUpSelection(false)}
+              onDuplicate={duplicateSelection}
+              onDelete={deleteSelection}
+              onDismiss={clearStepSel}
+            />
+          );
+        })()}
       </div>
     </section>
   );

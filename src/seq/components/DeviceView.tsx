@@ -67,7 +67,7 @@ const HOSTS: Record<MachineId, HostedStore> = {
     // patterns into a different clip.
     setPatterns: (p) => {
       useDrumStore.getState()._clearHistory();
-      useDrumStore.setState({ patterns: p, editPattern: 0, stepSel: null, selAllPads: false });
+      useDrumStore.setState({ patterns: p, editPattern: 0, rectSel: null });
     },
     getParams: () => useDrumStore.getState().params,
     setPos: (step, bar, playing) => useDrumStore.setState({ curStep: step, curPat: bar, playing }),
