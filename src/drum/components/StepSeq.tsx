@@ -1,4 +1,4 @@
-import { type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
 import { useSeqRectSelect } from '../../components/useSeqRectSelect';
@@ -40,7 +40,8 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   // Shift-drag rectangle selection + in-rect block move over the step × pad
   // grid — the shared WT-1/BL-1 pointer hook, with the note axis reused as the
   // pad-lane index (data-note = pad). Both gestures commit once on release, so
-  // each costs one undo entry; Escape cancels mid-gesture. Standalone-only.
+  // each costs one undo entry; Escape cancels mid-gesture. Works hosted too:
+  // SQ-4 picks the edits up through the DR1 host bridge, exactly as BL-1 does.
   const { pending, startRectSelect, startRectMove, consumeRectClick } = useSeqRectSelect({
     onSelect: (r: RectSel) => setRectSel({ stepFrom: r.stepFrom, stepTo: r.stepTo, padFrom: r.noteFrom, padTo: r.noteTo }),
     onMove: (dStep, dPad, copy) => moveRectSel(dStep, dPad, { copy }),
@@ -68,7 +69,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   };
 
   const onStepPointerDown = (e: ReactPointerEvent<HTMLButtonElement>, padI: number, step: number) => {
-    if (hosted) return;
     if (e.shiftKey) { startRectSelect(e, step, padI); return; }
     if (rectSel && inRect(step, padI) && !pending) { startRectMove(e, step, padI); return; }
     // Plain press retargets editing to that lane's pad so the click toggles the
@@ -90,15 +90,42 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
     ? Array.from({ length: PAD_COUNT }, (_, i) => PAD_COUNT - 1 - i)
     : [sel];
 
+  // Geometry for the single selection rectangle. WT-1 and BL-1 derive theirs
+  // from calc() over fixed column widths, but DR-1's lanes sit behind a name
+  // column and don't span the full wrap, so the cell pitch isn't recoverable
+  // from CSS constants — measure the corner cells instead and follow resizes.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [selBox, setSelBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const stepLo = rect?.stepLo, stepHi = rect?.stepHi, padLo = rect?.padLo, padHi = rect?.padHi;
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap || stepLo === undefined || ghost) { setSelBox(null); return; }
+    const measure = () => {
+      const w = wrapRef.current;
+      if (!w) return;
+      const cell = (step: number, padI: number) =>
+        w.querySelector(`.step[data-abs-step="${step}"][data-note="${padI}"]`);
+      // Top-left is the highest pad (lanes run high to low); bottom-right the lowest.
+      const tl = cell(stepLo, padHi!), br = cell(stepHi!, padLo!);
+      if (!tl || !br) { setSelBox(null); return; } // pad not rendered in the single-lane view
+      const wr = w.getBoundingClientRect();
+      const a = tl.getBoundingClientRect(), b = br.getBoundingClientRect();
+      setSelBox({ left: a.left - wr.left, top: a.top - wr.top, width: b.right - a.left, height: b.bottom - a.top });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [stepLo, stepHi, padLo, padHi, ghost, laneView]);
+
   const renderStep = (padI: number, step: number) => {
     const value = patterns[patIdx(editPattern, padI, step)];
     const current = playing && curStep === step && curPat === editPattern;
-    const selected = !hosted && inRect(step, padI);
     const isGhost = ghost ? ghostAt(step, padI) : false;
     const cutSrc = ghost ? isCutSrc(step, padI) : false;
     return (
       <button
-        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${current ? ' cur' : ''}${selected ? ' selected' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
+        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${current ? ' cur' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
         type="button"
         data-seq-cell
         data-abs-step={step}
@@ -150,7 +177,7 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
           <span>TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT</span>
         </div>
       </div>
-      <div className={`dr-lanes-wrap${laneView ? '' : ' single'}`}>
+      <div className={`dr-lanes-wrap${laneView ? '' : ' single'}`} ref={wrapRef}>
         <div className={laneView ? 'dr-lanes' : undefined}>
           {lanes.map((padI) => (
             <div className="dr-lane" key={padI}>
@@ -170,7 +197,10 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
             </div>
           ))}
         </div>
-        {!hosted && rectSel && !ghost && (() => {
+        {/* One rectangle over the whole selection rather than a tint per cell
+            (mirrors WT-1's .ns-sel-rect and BL-1's .bl-sel-rect). */}
+        {selBox && <div className="dr-sel-rect" aria-hidden="true" style={selBox} />}
+        {rectSel && !ghost && (() => {
           const { stepLo, stepHi } = padRectNorm(rectSel);
           return (
             <SeqSelectionMenu
