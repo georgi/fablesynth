@@ -2,13 +2,16 @@
 // bar/BPM readout from the shared
 // timebase, master scope and the swing/volume master knobs.
 
+import { useState } from 'react';
 import { pad2 } from '../model';
 import { useSeqStore } from '../store';
 import { Scope } from './Scope';
 import { SeqKnob } from './SeqKnob';
 import { FACTORY_SESSION_PRESETS } from '../sessionPresets';
+import { SessionLibraryBrowser } from './SessionLibraryBrowser';
 
 export function Header() {
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const playing = useSeqStore((s) => s.playing);
   const powered = useSeqStore((s) => s.powered);
   const beat = useSeqStore((s) => s.beat);
@@ -46,6 +49,9 @@ export function Header() {
           {FACTORY_SESSION_PRESETS.map((preset, i) => <option key={preset.name} value={i}>{preset.family} · {preset.name}</option>)}
         </select>
       </label>
+
+      <button className="sq-sessions-open" onClick={() => setSessionsOpen(true)} title="Saved sessions">▦ SESSIONS</button>
+      {sessionsOpen && <SessionLibraryBrowser onClose={() => setSessionsOpen(false)} />}
 
       <div className="sq-quant">
         <span className="sq-quant-tag">QUANT</span>

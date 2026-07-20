@@ -703,6 +703,29 @@ int main(int argc, char** argv) {
     }
     check(railTriggersNonEmpty, "every railTrigger(s) has non-empty geometry");
     check(railTriggersAheadOfChips, "every railTrigger(s) sits ahead of its retarget chip");
+    // Rail clip progress (.sq-rail-progress): the focused track's playhead,
+    // drawn only on the chip that owns it, and only while it is playing.
+    {
+        // focus() is (track, scene).
+        const int focusTrackIdx = ed2->focus().first, focusScene = ed2->focus().second;
+        check(grid.railProgress(focusScene) < 0.0f,
+              "no rail progress before the focused track is playing", grid.railProgress(focusScene));
+        grid.railTriggerClick(focusScene);
+        renderRms(p, buf, 96000); p.drainAcks();    // ~2s: past the launch boundary
+        check(p.conductor().ownerOf(focusTrackIdx) == focusScene,
+              "the focused track's clip is playing", p.conductor().ownerOf(focusTrackIdx));
+        const float prog = grid.railProgress(focusScene);
+        check(prog >= 0.0f && prog <= 1.0f, "rail progress is a 0..1 fraction while playing", prog);
+        bool otherChipsClear = true;
+        for (int s = 0; s < 6; ++s)
+            if (s != focusScene && grid.railProgress(s) >= 0.0f) otherChipsClear = false;
+        check(otherChipsClear, "only the owning chip draws the playhead");
+        footer.stopAllClick();
+        renderRms(p, buf, 4800); p.drainAcks();
+        check(grid.railProgress(focusScene) < 0.0f, "rail progress clears when the track stops",
+              grid.railProgress(focusScene));
+    }
+
     grid.railTriggerClick(3);                      // DROP B, does not retarget focus
     check(p.conductor().queueOf(0) == 3 && p.conductor().queueOf(3) == 3,
           "railTriggerClick(3) queues every track of scene 3 (sceneLaunch semantics)");
@@ -937,6 +960,30 @@ int main(int argc, char** argv) {
                      webSession.scenes[sc].clips[t].bytes != s.scenes[sc].clips[t].bytes))
                     scenesMatch = false;
         check(scenesMatch, "web fixture clip bytes match fable::factorySession() scene-by-scene, track-by-track");
+
+        // The browser's SESSIONS → download payload (patches embedded,
+        // pretty-printed) is what a user hands to this plugin's SESSION → LOAD
+        // chooser, so parse the real bytes, not just the persisted form.
+        // Regenerate with `npx tsx scripts/dump-session-file.ts`.
+        juce::File download = fixture.getSiblingFile("web-session-download.json");
+        check(download.existsAsFile(), "web-session-download.json fixture is present");
+        fable::SessionData webDownload;
+        check(fable::sessionFromJson(download.loadFileAsString(), webDownload),
+              "sessionFromJson parses a session downloaded from the browser");
+        bool downloadMatches = webDownload.scenes.size() == s.scenes.size()
+                            && webDownload.tracks.size() == s.tracks.size();
+        for (size_t sc = 0; downloadMatches && sc < webDownload.scenes.size(); ++sc)
+            for (size_t t = 0; t < webDownload.scenes[sc].clips.size(); ++t)
+                if (webDownload.scenes[sc].hasClip[t] != s.scenes[sc].hasClip[t] ||
+                    (s.scenes[sc].hasClip[t] &&
+                     webDownload.scenes[sc].clips[t].bytes != s.scenes[sc].clips[t].bytes))
+                    downloadMatches = false;
+        check(downloadMatches, "browser-downloaded session clip bytes match fable::factorySession()");
+        bool patchesEmbedded = true;
+        for (const auto& track : webDownload.tracks)
+            if (track.patch.factory || track.patch.params.empty())
+                patchesEmbedded = false;
+        check(patchesEmbedded, "browser-downloaded session carries inline patches, not factory indices");
     }
 
     {

@@ -43,7 +43,7 @@ void SeqRack::enterFocus(int track, int scene) {
     setBounds(0, 0, LW, LHF);
     focusTrack_ = track;
     trackHeads.setVisible(false); // heads + mini clip row disappear entirely in focus
-    sceneGrid.setSingleRow(scene);
+    sceneGrid.setSingleRow(scene, track);
     deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
     deviceFocus.setVisible(true);
@@ -65,7 +65,7 @@ void SeqRack::exitFocus() {
 
 void SeqRack::setFocusScene(int scene) {
     if (!focusMode_) return;
-    sceneGrid.setSingleRow(scene);
+    sceneGrid.setSingleRow(scene, focusTrack_);
     deviceFocus.setTarget(scene, focusTrack_);
 }
 

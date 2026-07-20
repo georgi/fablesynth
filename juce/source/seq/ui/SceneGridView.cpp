@@ -821,6 +821,23 @@ void SceneGridView::paintFocusStrip(juce::Graphics& g) {
     paintRail(g);
 }
 
+// Playhead through the focused track's clip, from the device's own step/bar
+// acks (proc.trackStep/trackBar — the web's pos[track]) rather than a
+// free-running animation, so the fill cannot drift from what is sounding.
+float SceneGridView::railProgress(int scene) const {
+    if (focusTrack_ < 0 || focusTrack_ >= kTracks) return -1.0f;
+    if (proc.conductor().ownerOf(focusTrack_) != scene) return -1.0f;
+    const int step = proc.trackStep[focusTrack_].load();
+    const int bar = proc.trackBar[focusTrack_].load();
+    if (step < 0) return -1.0f;
+    const auto& scenes = proc.conductor().session().scenes;
+    if (scene < 0 || scene >= (int)scenes.size() || !scenes[(size_t)scene].hasClip[(size_t)focusTrack_])
+        return -1.0f;
+    const int bars = juce::jmax(1, scenes[(size_t)scene].clips[(size_t)focusTrack_].bars);
+    const float done = (float)(juce::jmax(0, bar) * fable::SQ_STEPS_PER_BAR + step + 1);
+    return juce::jlimit(0.0f, 1.0f, done / (float)(bars * fable::SQ_STEPS_PER_BAR));
+}
+
 void SceneGridView::paintRail(juce::Graphics& g) {
     const auto& cond = proc.conductor();
     for (int s = 0; s < kScenes; ++s) {
@@ -853,6 +870,15 @@ void SceneGridView::paintRail(juce::Graphics& g) {
         g.drawRoundedRectangle(tr.reduced(0.5f), 5.0f, 1.0f);
         g.setColour(queued ? col::text.withAlpha(qpulse()) : live ? juce::Colour(0xff4dff9e) : col::acN);
         g.fillPath(iconPlay(tr.withSizeKeepingCentre(6.0f, 8.0f)));
+
+        // .sq-rail-progress: the focused track's clip playhead, along the
+        // bottom edge of the chip that owns it.
+        const float progress = railProgress(s);
+        if (progress >= 0.0f) {
+            g.setColour(juce::Colour(0xff4dff9e));
+            g.fillRect(juce::Rectangle<float>(r.getX(), r.getBottom() - 2.0f,
+                                              r.getWidth() * progress, 2.0f));
+        }
     }
 }
 

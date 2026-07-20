@@ -60,7 +60,15 @@ public:
     // row is hidden too -- SeqRack::enterFocus); this component instead
     // renders one horizontal strip: a "< SESSION" back chip followed by the
     // 6 scene chips, spanning the full rack width.
-    void setSingleRow(int s) { singleRow_ = true; singleRowScene_ = s; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
+    // `track` is the focused track (-1 when unknown): the rail draws its clip
+    // playhead on whichever chip currently owns it.
+    void setSingleRow(int s, int track = -1) {
+        singleRow_ = true; singleRowScene_ = s; focusTrack_ = track;
+        hoverCellS_ = hoverCellT_ = -1; resized(); repaint();
+    }
+    // Progress (0..1) of the focused track through its playing clip, or -1 when
+    // nothing is playing there. Public so the host test can assert it.
+    float railProgress(int scene) const;
     void clearSingleRow() { singleRow_ = false; hoverCellS_ = hoverCellT_ = -1; resized(); repaint(); }
     std::function<void(int)> onRailScene;
     // Back chip's click target -- relocated from TrackHeadsView's SCENES
@@ -140,6 +148,7 @@ private:
 
     bool singleRow_ = false;
     int singleRowScene_ = 0;
+    int focusTrack_ = -1;
 
     // selection (anchor/head; -1 = none)
     int selAnchorS_ = -1, selAnchorT_ = -1, selHeadS_ = -1, selHeadT_ = -1;

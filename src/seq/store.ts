@@ -75,6 +75,7 @@ export interface SeqStore {
   setMasterVol: (v: number) => void;
   setSwing: (v: number) => void;
   loadSessionPreset: (index: number) => void;
+  applySessionDoc: (doc: SessionDoc) => void;
   tick: () => void; // UI clock — called from a rAF loop while powered
   enterFocus: (t: number, s?: number) => void;
   exitFocus: () => void;
@@ -564,7 +565,14 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const preset = FACTORY_SESSION_PRESETS[index];
       if (!preset) return;
       advanceTourStep('songs');
-      const session = copySession(preset.session);
+      get().applySessionDoc(preset.session);
+    },
+
+    // Replaces the whole document and reprograms the rig (patches, tempo).
+    // Shared by factory presets, the user session library and file import —
+    // any of those leaves pre-load history meaningless, so it resets.
+    applySessionDoc: (doc) => {
+      const session = copySession(doc);
       const st = get();
       st.rig?.devices.forEach((device, t) => {
         device.panic();
@@ -573,9 +581,8 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const anchor = st.rig ? st.rig.now() + 256 : 0;
       st.rig?.sendTempo(session.bpm, session.swing, anchor);
       clipBytes.clear();
-      // A preset load replaces the whole document AND reprograms the rig
-      // (patches, tempo); pre-load snapshots would undo the doc but not the
-      // rig, desyncing audible vs persisted state — so history resets here.
+      // Pre-load snapshots would undo the doc but not the rig, desyncing
+      // audible vs persisted state — so history resets here.
       undoStack.length = 0;
       redoStack.length = 0;
       set({

@@ -871,6 +871,32 @@
 .sq-lib button { cursor: pointer; }
 .sq-lib button:disabled { opacity: .35; cursor: default; }
 .sq-lib button.active, .sq-lib button.primary { border-color: var(--tc); color: var(--tc); }
+/* Session library: a narrower, single-column variant of .sq-lib. */
+.sq-sessions { inset: 45px auto auto 12px; width: min(520px, calc(100% - 24px)); display: flex; flex-direction: column; }
+.sq-sessions-bar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid #20283a; }
+.sq-sessions-bar > button, .sq-sessions-bar > input { flex: 1; }
+.sq-sessions-list { overflow-y: auto; padding: 6px; }
+.sq-sessions-row { display: flex; align-items: stretch; gap: 5px; padding: 2px 0; }
+.sq-sessions-row > button:not(.sq-sessions-name) { flex: none; width: 28px; padding: 0; }
+.sq-sessions-name {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px;
+  text-align: left; overflow: hidden; white-space: nowrap;
+}
+.sq-sessions-name b { color: #cfd6e4; letter-spacing: .08em; }
+.sq-sessions-name small { color: #6b768c; font-size: 9px; }
+.sq-sessions-name:hover { border-color: var(--tc); }
+.sq-sessions-list > p, .sq-sessions-hint {
+  margin: 0; padding: 10px 12px; color: #6b768c; font-size: 9px; letter-spacing: .12em;
+}
+.sq-sessions-hint { border-top: 1px solid #20283a; }
+.sq-sessions-error { margin: 0; padding: 8px 12px; color: #e8a068; font-size: 9px; letter-spacing: .08em; }
+.sq-sessions-open {
+  flex: none; padding: 6px 9px; border: 1px solid #283147; border-radius: 5px;
+  background: #111725; color: #aeb8cc; font: inherit; font-size: 9px;
+  letter-spacing: .12em; cursor: pointer;
+}
+.sq-sessions-open:hover { border-color: var(--tc); color: var(--tc); }
+
 .sq-lib-namefield {
   border: 1px solid var(--tc);
   background: #0a0d13;
@@ -949,6 +975,7 @@
 }
 .sq-rail-launch.queued { animation: sq-qpulse 0.8s ease-in-out infinite; }
 .sq-rail-target {
+  position: relative; overflow: hidden;
   flex: 1; min-width: 0;
   display: flex; align-items: center; justify-content: center; gap: 5px;
   padding: 4px 0; border-radius: 5px; font-size: 10px;
@@ -960,6 +987,19 @@
 .sq-rail-dot { width: 5px; height: 5px; border-radius: 50%; background: #1a1f2a; }
 .sq-rail-dot.live { background: #63e6a5; box-shadow: 0 0 6px #63e6a5; }
 .sq-rail-dot.queued { background: #e8c268; animation: sq-qpulse 0.8s ease-in-out infinite; }
+/* Playhead through the focused track's clip. Stepped values arrive ~8×/s, so
+   the transition carries the fill between them; it is a hair shorter than a
+   step so a launch snapping back to 0 reads as a reset, not a rewind. */
+.sq-rail-progress {
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 100%; height: 2px;
+  background: #4dff9e;
+  box-shadow: 0 0 6px rgba(77, 255, 158, 0.5);
+  transform-origin: left center;
+  transition: transform 0.1s linear;
+  pointer-events: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .sq-scene-launch.queued,
@@ -973,6 +1013,7 @@
   .sq-cell.live {
     animation: none;
   }
+  .sq-rail-progress { transition: none; }
   .sq-cell-queued { opacity: 0.8; }
   .sq-cell-stopping::before,
   .sq-cell-stopping::after { transform: scaleX(1); opacity: 0.75; }
