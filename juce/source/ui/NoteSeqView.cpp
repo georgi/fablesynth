@@ -16,6 +16,7 @@ static const fable::StepLayout kNoteLayout {
 // noteseq.ts EMPTY_STEP: duration 1 (flags 1<<2), note 0, oct 0 (byte 1).
 static const std::vector<uint8_t> kEmptyStep { (uint8_t)(1 << 2), 0, 1 };
 static constexpr int kDragThreshold = 4; // px, matches SequenceLengthControl.tsx
+static constexpr int kMaxNote = fable::SEQ_NOTE_LANES - 1; // top lane (paste clamp)
 
 // ---- geometry (index.css .ns-*, rack-relative px) -----------------------------
 // panel padding 8px 12px 10px; head 24px + 10px margin; body: legend 36px +
@@ -115,6 +116,67 @@ int NoteSeqView::stepAtX(int x) const {
     if (w <= 0.0f) return 0;
     const float rel = (float)(x - gx) / (w + kColGap);
     return juce::jlimit(0, fable::SEQ_STEPS - 1, (int)std::floor(rel));
+}
+
+// Inverse of cellBounds' lane math: note 11 sits on top, C at the bottom.
+// Clamped to the lane range since drags wander past the grid edges.
+int NoteSeqView::noteAtY(int y) const {
+    const float ch = (kLanesH - 11.0f) / 12.0f;
+    const float rel = (float)(y - kBodyY) / (ch + 1.0f);
+    const int row = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, (int)std::floor(rel));
+    return fable::SEQ_NOTE_LANES - 1 - row;
+}
+
+// The whole 16×12 note-lane area (excludes the oct / acc / step-number rows).
+juce::Rectangle<int> NoteSeqView::gridBounds() const {
+    const auto a = colBounds(0), b = colBounds(fable::SEQ_STEPS - 1);
+    return { a.getX(), kBodyY, b.getRight() - a.getX(), kLanesH };
+}
+
+// Floating CUT · COPY · DUP · DEL · ✕ toolbar centered over the selected
+// columns (SeqSelectionMenu.tsx), drawn over the top lanes while a rect exists.
+juce::Rectangle<int> NoteSeqView::selMenuBounds() const {
+    constexpr int bw = 34, gap = 2, n = 5, h = 16;
+    constexpr int w = n * bw + (n - 1) * gap;
+    const auto nrm = fable::rectNorm(rect_);
+    const auto lo = colBounds(juce::jlimit(0, fable::SEQ_STEPS - 1, nrm.stepLo));
+    const auto hi = colBounds(juce::jlimit(0, fable::SEQ_STEPS - 1, nrm.stepHi));
+    const int cx = (lo.getX() + hi.getRight()) / 2;
+    const auto grid = gridBounds();
+    const int x = juce::jlimit(grid.getX(), juce::jmax(grid.getX(), grid.getRight() - w), cx - w / 2);
+    return { x, kBodyY + 1, w, h };
+}
+
+juce::Rectangle<int> NoteSeqView::selMenuButton(int i) const {
+    constexpr int bw = 34, gap = 2;
+    const auto m = selMenuBounds();
+    return { m.getX() + i * (bw + gap), m.getY(), bw, m.getHeight() };
+}
+
+// Is (step, note) inside the live sweep rect (while dragging) or the committed
+// selection? Mirrors SeqPanel.tsx's inRect over rectNorm(pending ?? rectSel).
+bool NoteSeqView::inRect(int step, int note) const {
+    if (sweeping_) {
+        const auto n = fable::rectNorm(pending_);
+        return step >= n.stepLo && step <= n.stepHi && note >= n.noteLo && note <= n.noteHi;
+    }
+    if (!hasRect_) return false;
+    const auto n = fable::rectNorm(rect_);
+    return step >= n.stepLo && step <= n.stepHi && note >= n.noteLo && note <= n.noteHi;
+}
+
+// The origin step of a note grabbable at (step, note): the cell itself if lit,
+// else a longer note whose painted body covers this column (useSeqNoteDrag's
+// long-note-body grab). Returns -1 if no note is grabbable here.
+int NoteSeqView::grabNoteAt(int step, int note) const {
+    const int pat = model.editPattern();
+    const auto here = model.sequenceStep(pat, step);
+    if (here.on && here.note == note) return step;
+    for (int c = step - 1; c >= 0; --c) {
+        const auto v = model.sequenceStep(pat, c);
+        if (v.on && v.note == note && c + v.duration > step) return c;
+    }
+    return -1;
 }
 
 juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
@@ -233,60 +295,93 @@ void NoteSeqView::restore(const SeqSnapshot& snap) {
     applyAllPatterns(snap.patterns);
 }
 
-void NoteSeqView::copySteps() {
+void NoteSeqView::setSelection(const fable::RectSel& r) {
+    rect_ = r;
+    hasRect_ = true;
+    const auto n = fable::rectNorm(r);
+    hasLastCell_ = true; lastCellStep_ = n.stepLo; lastCellNote_ = n.noteHi;
+    repaint();
+}
+
+void NoteSeqView::selectAllCells() {
+    setSelection({ 0, fable::SEQ_STEPS - 1, 0, fable::SEQ_NOTE_LANES - 1 });
+}
+
+void NoteSeqView::clearSelection() { hasRect_ = false; repaint(); }
+
+void NoteSeqView::toggleAt(int step, int note) {
+    toggleCell(step, note);
+    hasLastCell_ = true; lastCellStep_ = step; lastCellNote_ = note;
+}
+
+// Cmd-C / menu COPY: capture the rect (only lit, in-band cells) or — with no
+// selection — the whole edit pattern. Refreshes the Cmd-V clipboard.
+void NoteSeqView::copySel() {
     const auto buf = snapshotAllPatterns();
     const int pat = model.editPattern();
-    if (hasSel_) {
-        clipboard_.isPattern = false;
-        clipboard_.data = fable::copyRange(buf, kNoteLayout, pat, stepSelFrom(), stepSelTo());
+    clip_.valid = true;
+    if (hasRect_) {
+        clip_.isPattern = false;
+        clip_.rect = fable::copyRect(buf, kNoteLayout, pat, rect_);
     } else {
-        clipboard_.isPattern = true;
-        clipboard_.data = fable::copyPattern(buf, kNoteLayout, pat);
+        clip_.isPattern = true;
+        clip_.pattern = fable::copyPattern(buf, kNoteLayout, pat);
     }
 }
 
-void NoteSeqView::cutSteps() {
-    copySteps();
+// Cmd-X: copy, then clear the rect's in-band lit cells in the same undo entry.
+// With no rect it behaves like copy (nothing to clear).
+void NoteSeqView::cutSel() {
+    copySel();
+    if (!hasRect_) return;
     const auto before = snapshot();
-    const int pat = model.editPattern();
-    const int from = hasSel_ ? stepSelFrom() : 0;
-    const int to   = hasSel_ ? stepSelTo()   : fable::SEQ_STEPS - 1;
-    auto next = fable::clearRange(before.patterns, kNoteLayout, pat, from, to, kEmptyStep);
+    auto next = fable::clearRect(before.patterns, kNoteLayout, model.editPattern(), rect_, kEmptyStep);
     history_.push(before);
     applyAllPatterns(next);
 }
 
-void NoteSeqView::pasteSteps() {
-    if (clipboard_.data.empty()) return;
+// Cmd-V: paste the clipboard at the paste anchor — the current rect's top-left,
+// else the last cell touched, else the timeline start (useSeqEditKeys.ts).
+void NoteSeqView::pasteSel() {
+    if (!clip_.valid) return;
     const auto before = snapshot();
     const int pat = model.editPattern();
     std::vector<uint8_t> next;
-    if (clipboard_.isPattern) {
-        next = fable::pastePattern(before.patterns, kNoteLayout, pat, clipboard_.data);
-    } else {
-        const int at = hasSel_ ? stepSelFrom() : 0;
-        next = fable::pasteRange(before.patterns, kNoteLayout, pat, at, clipboard_.data);
+    if (clip_.isPattern) {
+        next = fable::pastePattern(before.patterns, kNoteLayout, pat, clip_.pattern);
+        history_.push(before);
+        applyAllPatterns(next);
+        return;
     }
+    int atStep, atNote;
+    if (hasRect_)            { const auto n = fable::rectNorm(rect_); atStep = n.stepLo; atNote = n.noteHi; }
+    else if (hasLastCell_)   { atStep = lastCellStep_; atNote = lastCellNote_; }
+    else                     { atStep = 0; atNote = clip_.rect.noteHi; }
+    const int dNote = atNote - clip_.rect.noteHi;
+    next = fable::pasteRect(before.patterns, kNoteLayout, pat, atStep, dNote, clip_.rect, kMaxNote);
     history_.push(before);
     applyAllPatterns(next);
+    // Re-select the pasted rectangle (SeqPanel re-anchors rectSel post-paste).
+    rect_ = { atStep, atStep + clip_.rect.wSteps - 1,
+              clip_.rect.noteLo + dNote, clip_.rect.noteHi + dNote };
+    hasRect_ = true;
 }
 
-// noteseq.ts/store.ts duplicateSteps: with a selection, paste a copy right
-// after it (a full no-op, no history, if that would land past the pattern
-// end); with none, copy the edit pattern onto the next bar — the classic
-// "duplicate bar" gesture — extending the sequence length if needed.
-void NoteSeqView::duplicateSteps() {
+// Cmd-D / menu DUP: with a rect, copy it immediately to its right (same pitch
+// band; a full no-op if that lands past the pattern end). With none, duplicate
+// the edit bar onto the next — the classic "duplicate bar" gesture.
+void NoteSeqView::duplicateSel() {
     const int pat = model.editPattern();
-    if (hasSel_) {
-        const int lo = stepSelFrom(), hi = stepSelTo();
-        const int at = hi + 1;
-        if (at >= fable::SEQ_STEPS) return;
+    if (hasRect_) {
+        const auto n = fable::rectNorm(rect_);
+        if (n.stepHi + 1 >= fable::SEQ_STEPS) return;
         const auto before = snapshot();
-        const auto data = fable::copyRange(before.patterns, kNoteLayout, pat, lo, hi);
+        const auto data = fable::copyRect(before.patterns, kNoteLayout, pat, rect_);
+        auto next = fable::pasteRect(before.patterns, kNoteLayout, pat, n.stepHi + 1, 0, data, kMaxNote);
         history_.push(before);
-        applyAllPatterns(fable::pasteRange(before.patterns, kNoteLayout, pat, at, data));
-        const int len = hi - lo + 1;
-        selFrom_ = at; selTo_ = juce::jmin(fable::SEQ_STEPS - 1, at + len - 1); hasSel_ = true;
+        applyAllPatterns(next);
+        const int w = n.stepHi - n.stepLo + 1;
+        rect_ = { n.stepHi + 1, n.stepHi + w, n.noteLo, n.noteHi }; hasRect_ = true;
     } else {
         const auto before = snapshot();
         const int nextPat = juce::jmin(fable::SEQ_NPATTERNS - 1, pat + 1);
@@ -299,46 +394,94 @@ void NoteSeqView::duplicateSteps() {
     repaint();
 }
 
-void NoteSeqView::deleteSteps() {
-    if (!hasSel_) return;
+// Delete / menu DEL: clear the same in-band lit cells CUT would have captured.
+void NoteSeqView::deleteSel() {
+    if (!hasRect_) return;
     const auto before = snapshot();
-    auto next = fable::clearRange(before.patterns, kNoteLayout, model.editPattern(),
-                                    stepSelFrom(), stepSelTo(), kEmptyStep);
+    auto next = fable::clearRect(before.patterns, kNoteLayout, model.editPattern(), rect_, kEmptyStep);
     history_.push(before);
     applyAllPatterns(next);
 }
 
-void NoteSeqView::selectAllSteps() { hasSel_ = true; selFrom_ = 0; selTo_ = fable::SEQ_STEPS - 1; repaint(); }
-void NoteSeqView::clearStepSel()   { hasSel_ = false; repaint(); }
-
-void NoteSeqView::undoSteps() {
+void NoteSeqView::undoEdit() {
     const auto current = snapshot();
     SeqSnapshot restored;
     if (history_.undo(current, restored)) restore(restored);
 }
 
-void NoteSeqView::redoSteps() {
+void NoteSeqView::redoEdit() {
     const auto current = snapshot();
     SeqSnapshot restored;
     if (history_.redo(current, restored)) restore(restored);
 }
 
-// Drag-move (or Alt-drag copy) of the selection, committed once on mouseUp —
-// store.shiftStepSel. Clamping the destination so the whole range stays
-// in-pattern keeps the paste target and the stored selection in agreement
-// (the web review's overshoot-drag desync fix).
-void NoteSeqView::shiftStepSel(int dest, bool copy) {
-    if (!hasSel_) return;
-    const int lo = stepSelFrom(), hi = stepSelTo();
-    const int len = hi - lo + 1;
-    const int clampedDest = juce::jlimit(0, fable::SEQ_STEPS - len, dest);
-    if (clampedDest == lo) return; // no movement: full no-op, no history
+// Note drag release (useSeqNoteDrag): move one note, transposing pitch and
+// shifting time, committed once. Alt copies. Selects the dropped cell.
+void NoteSeqView::commitNoteMove(int srcStep, int srcNote, int destStep, int destNote, bool copy) {
+    destStep = juce::jlimit(0, fable::SEQ_STEPS - 1, destStep);
+    destNote = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, destNote);
+    if (srcStep == destStep && srcNote == destNote) return;
     const auto before = snapshot();
-    fable::ShiftOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep;
-    auto next = fable::shiftRange(before.patterns, kNoteLayout, model.editPattern(), lo, hi, clampedDest, opts);
+    const fable::RectSel one { srcStep, srcStep, srcNote, srcNote };
+    fable::RectMoveOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep; opts.maxNote = kMaxNote;
+    auto next = fable::moveRect(before.patterns, kNoteLayout, model.editPattern(), one,
+                                destStep - srcStep, destNote - srcNote, opts);
     history_.push(before);
     applyAllPatterns(next);
-    selFrom_ = clampedDest; selTo_ = clampedDest + len - 1;
+    rect_ = { destStep, destStep, destNote, destNote }; hasRect_ = true;
+    hasLastCell_ = true; lastCellStep_ = destStep; lastCellNote_ = destNote;
+}
+
+// Block move release (drag from inside the rect): shift the whole selection in
+// step and note. The delta is clamped so the block stays on the grid (the web
+// review's overshoot-drag desync fix). Alt copies.
+void NoteSeqView::commitBlockMove(int dStep, int dNote, bool copy) {
+    if (!hasRect_) return;
+    const auto n = fable::rectNorm(rect_);
+    dStep = juce::jlimit(-n.stepLo, (fable::SEQ_STEPS - 1) - n.stepHi, dStep);
+    dNote = juce::jlimit(-n.noteLo, (fable::SEQ_NOTE_LANES - 1) - n.noteHi, dNote);
+    if (dStep == 0 && dNote == 0) return; // no movement: full no-op, no history
+    const auto before = snapshot();
+    fable::RectMoveOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep; opts.maxNote = kMaxNote;
+    auto next = fable::moveRect(before.patterns, kNoteLayout, model.editPattern(), rect_, dStep, dNote, opts);
+    history_.push(before);
+    applyAllPatterns(next);
+    rect_ = { n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote }; hasRect_ = true;
+}
+
+// Menu CUT / COPY: pick the selection up. The captured cells trail the cursor
+// as ghost notes until the next click drops them (useSeqGhostPaste). A cancelled
+// CUT mutates nothing — the source is only cleared at drop time.
+void NoteSeqView::beginGhostPaste(bool cut) {
+    if (!hasRect_) return;
+    const auto buf = snapshotAllPatterns();
+    ghostData_ = fable::copyRect(buf, kNoteLayout, model.editPattern(), rect_);
+    if (ghostData_.cells.empty()) return;
+    clip_.valid = true; clip_.isPattern = false; clip_.rect = ghostData_; // keep Cmd-V in sync
+    ghost_ = true; ghostCut_ = cut; ghostSrc_ = rect_; ghostHasHover_ = false;
+    hasRect_ = false; // the menu closes
+    repaint();
+}
+
+// Drop the carried ghost at (atStep, atNote): top-left anchored, transposed so
+// the rect's top note lands on the hovered lane. A CUT clears its source in the
+// same undo entry as the paste.
+void NoteSeqView::dropGhost(int atStep, int atNote) {
+    if (!ghost_) return;
+    const auto before = snapshot();
+    const int pat = model.editPattern();
+    const int dNote = atNote - ghostData_.noteHi;
+    std::vector<uint8_t> base = ghostCut_
+        ? fable::clearRect(before.patterns, kNoteLayout, pat, ghostSrc_, kEmptyStep)
+        : before.patterns;
+    auto next = fable::pasteRect(base, kNoteLayout, pat, atStep, dNote, ghostData_, kMaxNote);
+    history_.push(before);
+    applyAllPatterns(next);
+    rect_ = { atStep, atStep + ghostData_.wSteps - 1,
+              ghostData_.noteLo + dNote, ghostData_.noteHi + dNote };
+    hasRect_ = true;
+    ghost_ = false; ghostHasHover_ = false;
+    repaint();
 }
 
 // Bar-chip drag release — store.movePattern: swap two patterns wholesale, or
@@ -368,6 +511,29 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
         if (randBounds().contains(pos)) model.createTargetClip();
         return;
     }
+
+    // Carrying a ghost: the next click drops it (or, outside the grid, cancels).
+    if (ghost_) {
+        if (gridBounds().contains(pos)) dropGhost(stepAtX(pos.x), noteAtY(pos.y));
+        else cancelGesture();
+        return;
+    }
+
+    // Floating selection menu (drawn over the top lanes while a rect exists).
+    if (hasRect_) {
+        for (int i = 0; i < 5; ++i) if (selMenuButton(i).contains(pos)) {
+            switch (i) {
+                case 0: beginGhostPaste(true);  break;  // CUT
+                case 1: beginGhostPaste(false); break;  // COPY
+                case 2: duplicateSel();         break;  // DUP
+                case 3: deleteSel();            break;  // DEL
+                default: clearSelection();      break;  // ✕
+            }
+            repaint();
+            return;
+        }
+    }
+
     if (caps.ownsTransport && transportBounds().contains(pos)) {       // play/stop
         model.setSequencerPlaying(!model.sequencerPlaying());
         repaint();
@@ -393,41 +559,41 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
     for (int s = 0; s < fable::SEQ_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
         resizeStep_ = s; resizeStartDuration_ = model.sequenceStep(model.editPattern(), s).duration; return;
     }
+
+    // ---- note lanes: Shift-sweep / block-move / note-drag / deferred toggle ----
+    // Priority mirrors SeqPanel.tsx's onPointerDown ladder. The toggle is
+    // deferred to mouseUp so a gesture that never moves still toggles the cell.
+    if (gridBounds().contains(pos)) {
+        const int step = stepAtX(pos.x), note = noteAtY(pos.y);
+        downStep_ = step; downNote_ = note;
+        if (e.mods.isShiftDown()) {                              // 1) rectangle sweep
+            sweeping_ = true; pending_ = { step, step, note, note };
+            repaint();
+            return;
+        }
+        if (hasRect_ && inRect(step, note)) {                    // 2) block move
+            moveArmed_ = true; moving_ = false;
+            moveOriginStep_ = step; moveOriginNote_ = note;
+            moveHoverStep_ = step; moveHoverNote_ = note;
+            return;
+        }
+        const int origin = grabNoteAt(step, note);              // 3) note drag
+        if (origin >= 0) {
+            noteDragArmed_ = true; noteDragActive_ = false;
+            ndSrcStep_ = origin; ndSrcNote_ = note; ndGrabStep_ = step;
+            ndOverStep_ = step; ndOverNote_ = note;
+            return;
+        }
+        return;                                                 // 4) empty cell: toggle on up
+    }
+
+    // oct / accent rows (the step-number strip below is a plain label now).
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         if (!colBounds(s).contains(pos)) continue;
-        if (stepNumBounds(s).contains(pos)) { handleStepNumDown(s, e); return; }
-        for (int note = 0; note < fable::SEQ_NOTE_LANES; ++note)
-            if (cellBounds(s, note).contains(pos)) { toggleCell(s, note); return; }
         if (octBounds(s).contains(pos)) { cycleStepOct(s); return; }
         if (accBounds(s).contains(pos)) { toggleStepAcc(s); return; }
         return;
     }
-}
-
-// SeqPanel.tsx's onPointerDown on .ns-step-num: Shift sets/extends the
-// selection and starts a sweep; a press inside the current selection starts
-// a content drag-move instead; otherwise it starts a fresh 1-step selection.
-// Either way the step itself is never toggled — a stationary Shift-click (or
-// any step-num click) must not also flip a note lane.
-void NoteSeqView::handleStepNumDown(int step, const juce::MouseEvent& e) {
-    if (e.mods.isShiftDown()) {
-        selFrom_ = hasSel_ ? selFrom_ : step;
-        selTo_ = step;
-        hasSel_ = true;
-        sweeping_ = true;
-        repaint();
-        return;
-    }
-    if (hasSel_ && step >= stepSelFrom() && step <= stepSelTo()) {
-        moving_ = true;
-        moveSelFrom_ = stepSelFrom();
-        moveOrigin_ = step;
-        moveHover_ = step;
-        moveAlt_ = e.mods.isAltDown();
-        return;
-    }
-    selFrom_ = step; selTo_ = step; hasSel_ = true; sweeping_ = true;
-    repaint();
 }
 
 void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
@@ -436,13 +602,21 @@ void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
         resizeStep(resizeStep_, resizeStartDuration_ + delta);
         return;
     }
-    if (moving_) {
-        moveHover_ = stepAtX(e.position.roundToInt().x);
-        moveAlt_ = e.mods.isAltDown();
+    const auto p = e.position.roundToInt();
+    if (sweeping_) {
+        pending_.stepTo = stepAtX(p.x); pending_.noteTo = noteAtY(p.y);
+        repaint();
         return;
     }
-    if (sweeping_) {
-        selTo_ = stepAtX(e.position.roundToInt().x);
+    if (moveArmed_) {
+        moveHoverStep_ = stepAtX(p.x); moveHoverNote_ = noteAtY(p.y);
+        if (moveHoverStep_ != moveOriginStep_ || moveHoverNote_ != moveOriginNote_) moving_ = true;
+        repaint();
+        return;
+    }
+    if (noteDragArmed_) {
+        ndOverStep_ = stepAtX(p.x); ndOverNote_ = noteAtY(p.y);
+        if (ndOverStep_ != ndGrabStep_ || ndOverNote_ != ndSrcNote_) noteDragActive_ = true;
         repaint();
         return;
     }
@@ -462,12 +636,35 @@ void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
 
 void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
     if (resizeStep_ >= 0) { resizeStep_ = -1; return; }
-    if (moving_) {
-        moving_ = false;
-        shiftStepSel(moveSelFrom_ + (moveHover_ - moveOrigin_), moveAlt_);
+    if (sweeping_) {                       // commit the swept rectangle
+        sweeping_ = false;
+        setSelection(pending_);
         return;
     }
-    if (sweeping_) { sweeping_ = false; return; }
+    if (moveArmed_) {
+        moveArmed_ = false;
+        if (moving_) {
+            moving_ = false;
+            commitBlockMove(moveHoverStep_ - moveOriginStep_, moveHoverNote_ - moveOriginNote_, e.mods.isAltDown());
+        } else if (downStep_ >= 0) {       // plain click inside the rect: toggle
+            toggleAt(downStep_, downNote_);
+        }
+        downStep_ = downNote_ = -1;
+        return;
+    }
+    if (noteDragArmed_) {
+        noteDragArmed_ = false;
+        if (noteDragActive_) {
+            noteDragActive_ = false;
+            const int offset = ndGrabStep_ - ndSrcStep_;                 // long-note body grab
+            const int dest = juce::jmax(0, ndOverStep_ - offset);
+            commitNoteMove(ndSrcStep_, ndSrcNote_, dest, ndOverNote_, e.mods.isAltDown());
+        } else if (downStep_ >= 0) {       // plain tap on a lit cell: toggle it off
+            toggleAt(downStep_, downNote_);
+        }
+        downStep_ = downNote_ = -1;
+        return;
+    }
     if (barDragFrom_ >= 0) {
         if (barDragging_) {
             if (barDropTarget_ >= 0) movePattern(barDragFrom_, barDropTarget_, e.mods.isAltDown());
@@ -478,39 +675,58 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
         repaint();
         return;
     }
+    if (downStep_ >= 0) {                   // plain click on an empty cell: toggle on
+        toggleAt(downStep_, downNote_);
+        downStep_ = downNote_ = -1;
+    }
+}
+
+// Ghost paste follows the pointer even with no button down (useSeqGhostPaste's
+// pointermove). Any grid cell is a drop target.
+void NoteSeqView::mouseMove(const juce::MouseEvent& e) {
+    if (!ghost_) return;
+    const auto pos = e.getPosition();
+    ghostHasHover_ = gridBounds().contains(pos);
+    if (ghostHasHover_) { ghostHoverStep_ = stepAtX(pos.x); ghostHoverNote_ = noteAtY(pos.y); }
+    repaint();
 }
 
 void NoteSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_, resizeStartDuration_); resizeStep_ = -1; }
 
-// Esc: drop any in-flight drag uncommitted (SeqPanel.tsx's/
-// SequenceLengthControl.tsx's Escape handlers), then clear the selection
-// (useSeqEditKeys.ts). Order matches the web: cancel before clear.
-void NoteSeqView::cancelStepDrag() {
-    moving_ = false; sweeping_ = false;
+// Esc: drop any in-flight sweep / drag / ghost uncommitted (SeqPanel.tsx's
+// Escape handlers). A cancelled CUT ghost mutates nothing, since its source is
+// only cleared at drop time. Selection itself is cleared separately by Esc.
+void NoteSeqView::cancelGesture() {
+    sweeping_ = false;
+    moveArmed_ = moving_ = false;
+    noteDragArmed_ = noteDragActive_ = false;
+    ghost_ = false; ghostHasHover_ = false;
     barDragFrom_ = -1; barDragging_ = false; barDropTarget_ = -1;
+    downStep_ = downNote_ = -1;
+    repaint();
 }
 
 bool NoteSeqView::keyPressed(const juce::KeyPress& k) {
     if (k == juce::KeyPress::escapeKey) {
         cancelResize();
-        cancelStepDrag();
-        clearStepSel();
+        cancelGesture();
+        clearSelection();
         return true;
     }
     if (!model.hasTargetClip()) return false;
     const auto mods = k.getModifiers();
     if (mods.isCommandDown()) {
         switch (k.getKeyCode()) {
-            case (int) 'C': copySteps(); return true;
-            case (int) 'X': cutSteps(); return true;
-            case (int) 'V': pasteSteps(); return true;
-            case (int) 'D': duplicateSteps(); return true;
-            case (int) 'A': selectAllSteps(); return true;
-            case (int) 'Z': if (mods.isShiftDown()) redoSteps(); else undoSteps(); return true;
+            case (int) 'C': copySel(); return true;
+            case (int) 'X': cutSel(); return true;
+            case (int) 'V': pasteSel(); return true;
+            case (int) 'D': duplicateSel(); return true;
+            case (int) 'A': selectAllCells(); return true;
+            case (int) 'Z': if (mods.isShiftDown()) redoEdit(); else undoEdit(); return true;
             default: return false;
         }
     }
-    if (k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) { deleteSteps(); return true; }
+    if (k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) { deleteSel(); return true; }
     return false;
 }
 
@@ -525,9 +741,13 @@ void NoteSeqView::timerCallback() {
     const int identity = model.clipIdentity();
     if (identity != lastClipIdentity_) {
         lastClipIdentity_ = identity;
-        hasSel_ = false; sweeping_ = false; moving_ = false;
+        hasRect_ = false; sweeping_ = false;
+        moveArmed_ = moving_ = false; noteDragArmed_ = noteDragActive_ = false;
+        ghost_ = false; ghostHasHover_ = false;
         barDragFrom_ = -1; barDragging_ = false; barDropTarget_ = -1;
-        clipboard_ = {};
+        downStep_ = downNote_ = -1;
+        hasLastCell_ = false;
+        clip_ = {};
         history_.clear();
     }
 
@@ -759,21 +979,10 @@ void NoteSeqView::paint(juce::Graphics& g) {
         drawToggle(accBounds(s), st.on && st.acc,
                    juce::Colour(0xffffc98d), juce::Colour(0xffcc7a2e));
 
-        // step-range selection (.ns-step-sel.on): a faint column wash plus a
-        // highlighted step-number chip, distinct from the playhead cursor.
+        // step number (.ns-step-num) — a plain label now; rectangle selection
+        // lives on the note lanes, not this strip.
         const auto c = colBounds(s);
-        const bool selected = hasSel_ && s >= stepSelFrom() && s <= stepSelTo();
-        if (selected) {
-            g.setColour(cyan.withAlpha(0.10f));
-            g.fillRoundedRectangle(c.toFloat(), 3.0f);
-        }
-
-        // step number (.ns-step-num)
-        if (selected) {
-            g.setColour(cyan.withAlpha(0.5f));
-            g.fillRoundedRectangle(stepNumBounds(s).toFloat().expanded(2.0f, 0.0f), 3.0f);
-        }
-        g.setColour(selected ? juce::Colours::black : col::textDim);
+        g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
         g.drawText(juce::String(s + 1), c.withY(c.getY() + kNumY).withHeight(10),
                    juce::Justification::centredTop, false);
@@ -805,6 +1014,99 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.setColour(cyan.withAlpha(0.95f));
         g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
         g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
+    }
+
+    // ---- selection / drag / ghost overlays (SeqPanel.tsx .ns-sel-rect etc.) ----
+    // Given a normalized rect, the covering pixel box: note lanes run top-down
+    // with the highest note on top, so noteHi maps to the top-left cell.
+    auto rectPixels = [&](const fable::RectNorm& n) {
+        const int sLo = juce::jlimit(0, fable::SEQ_STEPS - 1, n.stepLo);
+        const int sHi = juce::jlimit(0, fable::SEQ_STEPS - 1, n.stepHi);
+        const int nLo = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, n.noteLo);
+        const int nHi = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, n.noteHi);
+        const auto tl = cellBounds(sLo, nHi);
+        const auto br = cellBounds(sHi, nLo);
+        return juce::Rectangle<float>((float)tl.getX(), (float)tl.getY(),
+                                      (float)(br.getRight() - tl.getX()),
+                                      (float)(br.getBottom() - tl.getY()));
+    };
+
+    // Live sweep (while dragging) or committed selection: one translucent
+    // bordered rectangle (.ns-sel-rect).
+    if (sweeping_ || hasRect_) {
+        const auto r = rectPixels(fable::rectNorm(sweeping_ ? pending_ : rect_));
+        g.setColour(cyan.withAlpha(0.14f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(cyan.withAlpha(0.85f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
+    }
+
+    // Note-drag feedback: dim the source cell, outline the hovered target
+    // (.drag-src / .drag-over[.copy]).
+    if (noteDragActive_) {
+        const auto src = cellBounds(ndSrcStep_, ndSrcNote_).toFloat();
+        g.setColour(juce::Colours::black.withAlpha(0.4f));
+        g.fillRoundedRectangle(src, 2.0f);
+        const int offset = ndGrabStep_ - ndSrcStep_;
+        const auto over = cellBounds(juce::jmax(0, ndOverStep_ - offset), ndOverNote_).toFloat();
+        g.setColour(cyan);
+        if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
+            const float dashes[] = { 3.0f, 2.0f };
+            juce::Path pth; pth.addRoundedRectangle(over.reduced(0.5f), 2.0f);
+            juce::Path dashed; juce::PathStrokeType(1.2f).createDashedStroke(dashed, pth, dashes, 2);
+            g.strokePath(dashed, juce::PathStrokeType(1.2f));
+        } else {
+            g.drawRoundedRectangle(over.reduced(0.5f), 2.0f, 1.4f);
+        }
+    }
+
+    // Block-move preview: the rectangle outlined at its dragged destination.
+    if (moving_) {
+        const auto n = fable::rectNorm(rect_);
+        const int dStep = juce::jlimit(-n.stepLo, (fable::SEQ_STEPS - 1) - n.stepHi, moveHoverStep_ - moveOriginStep_);
+        const int dNote = juce::jlimit(-n.noteLo, (fable::SEQ_NOTE_LANES - 1) - n.noteHi, moveHoverNote_ - moveOriginNote_);
+        const auto r = rectPixels({ n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote });
+        g.setColour(cyan.withAlpha(0.10f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(cyan.withAlpha(0.9f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.4f);
+    }
+
+    // Ghost cells trailing the cursor (.ns-cell.ghost): dashed accent blocks at
+    // the carried rect's landing position; the picked-up CUT source dims.
+    if (ghost_) {
+        if (ghostCut_) {
+            const auto sn = fable::rectNorm(ghostSrc_);
+            for (const auto& cCell : ghostData_.cells) {
+                const int s = sn.stepLo + cCell.dStep, note = cCell.bytes[1] & 0x7f;
+                if (s < 0 || s >= fable::SEQ_STEPS) continue;
+                g.setColour(juce::Colours::black.withAlpha(0.45f));
+                g.fillRoundedRectangle(cellBounds(s, note).toFloat(), 2.0f);
+            }
+        }
+        if (ghostHasHover_) {
+            const int dNote = ghostHoverNote_ - ghostData_.noteHi;
+            for (const auto& cCell : ghostData_.cells) {
+                const int s = ghostHoverStep_ + cCell.dStep;
+                const int note = (cCell.bytes[1] & 0x7f) + dNote;
+                if (s < 0 || s >= fable::SEQ_STEPS || note < 0 || note > kMaxNote) continue;
+                const auto b = cellBounds(s, note).toFloat();
+                g.setColour(cyan.withAlpha(0.38f));
+                g.fillRoundedRectangle(b, 2.0f);
+                const float dashes[] = { 3.0f, 2.0f };
+                juce::Path pth; pth.addRoundedRectangle(b.reduced(0.5f), 2.0f);
+                juce::Path dashed; juce::PathStrokeType(1.0f).createDashedStroke(dashed, pth, dashes, 2);
+                g.setColour(cyan);
+                g.strokePath(dashed, juce::PathStrokeType(1.0f));
+            }
+        }
+    }
+
+    // Floating CUT · COPY · DUP · DEL · ✕ toolbar over the selection.
+    if (hasRect_ && !ghost_) {
+        static const char* const kMenu[5] = { "CUT", "COPY", "DUP", "DEL", "X" };
+        for (int i = 0; i < 5; ++i)
+            drawSeqBtn(g, selMenuButton(i), kMenu[i], false, 0.4f, false, 7.0f);
     }
 }
 
