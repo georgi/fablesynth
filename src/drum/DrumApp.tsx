@@ -20,6 +20,9 @@ import { drumEngine, useDrumStore } from './store';
 export function DrumApp() {
   useDrumKeys();
   useDrumMidi();
+  // STEP mode drops the pad strip — its per-pad knobs belong to the pad being
+  // performed, and the 16-lane sequencer below edits every pad at once.
+  const mode = useDrumStore((s) => s.mode);
 
   // exposed for debugging / automated verification
   useEffect(() => {
@@ -34,10 +37,10 @@ export function DrumApp() {
       <DrumPowerOverlay />
       <main id="drum-rack">
         <Header />
-        <div className="dr-main">
+        <div className={`dr-main${mode === 'step' ? ' fit-pads' : ''}`}>
           <div className="dr-left">
             <div id="dr-pads"><PadGrid /></div>
-            <div id="dr-padstrip"><PadStrip /></div>
+            {mode !== 'step' && <div id="dr-padstrip"><PadStrip /></div>}
           </div>
           <div className="dr-right">
             <div id="dr-selbar"><SelBar /></div>

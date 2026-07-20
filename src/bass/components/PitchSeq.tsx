@@ -5,6 +5,7 @@
 // (Alt = copy). Cmd-A/Esc/Cmd-C/X/V/D/Delete work the clipboard verbs
 // from useBassKeys.
 
+import type { ReactNode } from 'react';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
@@ -15,7 +16,7 @@ import { copyRectChain, rectNorm } from '../../shared/seqEdit';
 import { getStep, LAYOUT, NOTE_LANES, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
-export function PitchSeq({ bars }: { bars?: number } = {}) {
+export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: ReactNode } = {}) {
   const hosted = useBassStore((s) => s.hosted);
   const playing = useBassStore((s) => s.playing);
   const curStep = useBassStore((s) => s.curStep);
@@ -115,6 +116,7 @@ export function PitchSeq({ bars }: { bars?: number } = {}) {
             />
           </>
         )}
+        {headerExtra}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
         <span className="bl-seq-hint">DRAG = MOVE · EDGE = LENGTH · SLD = LEGATO</span>
       </div>

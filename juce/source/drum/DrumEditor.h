@@ -11,7 +11,9 @@
 // layout stays pixel-faithful — same scheme as the WT-1 Rack (PluginEditor.h).
 class DrumRack : public juce::Component {
 public:
-    static constexpr int LW = 1460, LH = 880;
+    // LH grew from 880 when the step sequencer went from one lane to all 16
+    // (drum.css .dr-lanes); every panel above keeps its original geometry.
+    static constexpr int LW = 1460, LH = 1174;
     explicit DrumRack(fui::DrumUiModel&);
     void resized() override;
 

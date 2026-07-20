@@ -323,7 +323,7 @@ int main(int argc, char** argv) {
         ed->setSize(DrumRack::LW, DrumRack::LH); // logical rack size — 1:1 render
         juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
         check(img.isValid() && img.getWidth() == DrumRack::LW && img.getHeight() == DrumRack::LH,
-              "snapshot rendered at 1460x880", img.getWidth());
+              "snapshot rendered at the rack's logical size", img.getWidth());
         // The full-rack device body also occupies the header's coordinates.
         // The header must remain above it or the kit stepper cannot be clicked.
         // (The "next kit" button sits right of the KIT label + prev + name well;
@@ -430,7 +430,7 @@ int main(int argc, char** argv) {
     printf("\n== step seq view ==\n");
     {
         fui::StepSeqView seq(proc);
-        seq.setBounds(0, 0, 1424, 105);
+        seq.setBounds(0, 0, 1424, 399);
         proc.setSelectedPad(0);
         proc.selectionBroadcaster.dispatchPendingMessages();
         proc.setEditPattern(0);
@@ -447,6 +447,52 @@ int main(int argc, char** argv) {
         check(proc.getStep(0, 1, 3) == 0, "other pads untouched");
         check(seq.stepBounds(3).getCentre().y > 47, "step tiles sit in the row band",
               seq.stepBounds(3).getCentre().y);
+
+        // ---- 16 lanes at once (drum.css .dr-lanes) ----
+        // Lanes run high pad to low, top to bottom, so the stack reads like the
+        // pad grid's bottom-left origin.
+        check(fui::StepSeqView::laneOfPad(fable::DR_NPADS - 1) == 0, "highest pad is the top lane");
+        check(fui::StepSeqView::laneOfPad(0) == fable::DR_NPADS - 1, "pad 1 is the bottom lane");
+        check(fui::StepSeqView::padOfLane(fui::StepSeqView::laneOfPad(6)) == 6, "lane/pad mapping inverts");
+        check(seq.laneBounds(fable::DR_NPADS - 1).getY() < seq.laneBounds(0).getY(),
+              "pad 16's lane is drawn above pad 1's");
+        bool lanesDisjoint = true, lanesInPanel = true;
+        for (int pad = 0; pad < fable::DR_NPADS; ++pad) {
+            if (!seq.getLocalBounds().contains(seq.laneBounds(pad))) lanesInPanel = false;
+            for (int other = pad + 1; other < fable::DR_NPADS; ++other)
+                if (seq.laneBounds(pad).intersects(seq.laneBounds(other))) lanesDisjoint = false;
+        }
+        check(lanesDisjoint, "no two lanes overlap");
+        check(lanesInPanel, "every lane fits inside the panel");
+        check(!seq.stepBounds(0, 0).intersects(seq.laneNameBounds(0)),
+              "step cells clear the lane-name column");
+
+        // A click in another lane retargets the selected pad and toggles that
+        // lane's step — not the previously selected pad's.
+        proc.setEditPattern(0);
+        proc.setSelectedPad(0);
+        proc.selectionBroadcaster.dispatchPendingMessages();
+        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+            for (int s = 0; s < fable::DR_STEPS; ++s) proc.setStep(0, pad, s, 0);
+        const auto laneCell = seq.stepBounds(9, 5).getCentre();
+        seq.mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),
+                                       laneCell.toFloat(), juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                       &seq, &seq, juce::Time::getCurrentTime(), laneCell.toFloat(),
+                                       juce::Time::getCurrentTime(), 1, false));
+        proc.selectionBroadcaster.dispatchPendingMessages();
+        check(proc.getSelectedPad() == 9, "clicking a lane selects its pad", proc.getSelectedPad());
+        check(proc.getStep(0, 9, 5) == 1, "clicking a lane toggles that lane's step", proc.getStep(0, 9, 5));
+        check(proc.getStep(0, 0, 5) == 0, "the previously selected pad is untouched");
+
+        // The lane name is a pad selector on its own.
+        const auto nameCell = seq.laneNameBounds(3).getCentre();
+        seq.mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),
+                                       nameCell.toFloat(), juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                       &seq, &seq, juce::Time::getCurrentTime(), nameCell.toFloat(),
+                                       juce::Time::getCurrentTime(), 1, false));
+        proc.selectionBroadcaster.dispatchPendingMessages();
+        check(proc.getSelectedPad() == 3, "lane name selects its pad", proc.getSelectedPad());
+        check(proc.getStep(0, 3, 0) == 0, "lane name does not toggle a step");
 
         // Bar selection edits independently from the playback length.
         seq.patternClick(1);
@@ -497,7 +543,7 @@ int main(int argc, char** argv) {
     printf("\n== step seq editing (decision 6) ==\n");
     {
         fui::StepSeqView seq(proc);
-        seq.setBounds(0, 0, 1424, 105);
+        seq.setBounds(0, 0, 1424, 399);
         proc.setEditPattern(0);
         proc.setChain({ 0 });
         for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)

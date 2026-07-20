@@ -22,5 +22,5 @@ void DrumDeviceBody::resized() {
     filter.setBounds(881, 395, 259, 209);
     mod.setBounds(1149, 395, 293, 209);
     fxRack.setBounds(18, 613, 1424, 131);
-    stepSeq.setBounds(18, 753, 1424, 105);
+    stepSeq.setBounds(18, 753, 1424, 399);   // 16 lanes x 21px + head + padding
 }

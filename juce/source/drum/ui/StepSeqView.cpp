@@ -126,8 +126,15 @@ void SelBarView::paint(juce::Graphics& g) {
 
 static constexpr int kPadX = 12, kHeadY = 9, kHeadH = 28, kTitleW = 88;
 static constexpr int kNameW = 100;               // .dr-stepseq-target slot after the title
-static constexpr int kRowY = 47, kStepH = 45;
-static constexpr float kStepGap = 5.0f, kGroupGap = 8.0f;
+static constexpr int kRowY = 47;
+static constexpr float kGroupGap = 8.0f;
+
+// All 16 pad lanes at once (drum.css .dr-lanes), lane 0 = pad 15 at the top so
+// the stack reads like the pad grid's bottom-left origin. Flat BL-1-style cells
+// — the whole cell is the hit target, no inset pill leaving dead space.
+static constexpr int kLaneMaxH = 20, kLaneGap = 1, kLaneNameW = 92, kLaneNameGap = 7;
+static constexpr int kRowBottomPad = 11;
+static constexpr float kStepGap = 2.0f;
 
 StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
     setInterceptsMouseClicks(true, false);
@@ -162,15 +169,42 @@ juce::Rectangle<int> StepSeqView::randButtonBounds() const {
     return { sequenceLengthBounds().getRight() + 8, kHeadY + 2, 44, 24 };
 }
 
-juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
-    const auto row = getLocalBounds().reduced(kPadX, 0).withY(kRowY).withHeight(kStepH);
-    const float w = ((float)row.getWidth() - 15.0f * kStepGap - 3.0f * kGroupGap) / 16.0f;
-    float x = (float)row.getX();
+// Lane 0 is the topmost row and holds the highest pad.
+int StepSeqView::laneOfPad(int pad) { return fable::DR_NPADS - 1 - pad; }
+int StepSeqView::padOfLane(int lane) { return fable::DR_NPADS - 1 - lane; }
+
+// Lanes divide whatever height the panel was given, so the view still reads
+// correctly when a host scales the rack down — capped at the web's 20px.
+int StepSeqView::laneHeight() const {
+    const int usable = getHeight() - kRowY - kRowBottomPad - (fable::DR_NPADS - 1) * kLaneGap;
+    return juce::jlimit(8, kLaneMaxH, usable / fable::DR_NPADS);
+}
+
+juce::Rectangle<int> StepSeqView::laneBounds(int pad) const {
+    const int h = laneHeight();
+    return { kPadX, kRowY + laneOfPad(pad) * (h + kLaneGap),
+             juce::jmax(0, getWidth() - 2 * kPadX), h };
+}
+
+juce::Rectangle<int> StepSeqView::laneNameBounds(int pad) const {
+    return laneBounds(pad).withWidth(kLaneNameW);
+}
+
+juce::Rectangle<int> StepSeqView::stepBounds(int pad, int step) const {
+    const auto lane = laneBounds(pad).withTrimmedLeft(kLaneNameW + kLaneNameGap);
+    const float w = ((float)lane.getWidth() - 15.0f * kStepGap - 3.0f * kGroupGap) / 16.0f;
+    float x = (float)lane.getX();
     for (int i = 0; i < step; ++i) {
         x += w + kStepGap;
         if (i % 4 == 3) x += kGroupGap;          // bar-group breathing room
     }
-    return juce::Rectangle<float>(x, (float)row.getY(), w, (float)kStepH).toNearestInt();
+    return juce::Rectangle<float>(x, (float)lane.getY(), w, (float)lane.getHeight()).toNearestInt();
+}
+
+// The single-argument form addresses the selected pad's lane, so every verb,
+// drag and test written against it keeps working unchanged.
+juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
+    return stepBounds(proc.selectedPad(), step);
 }
 
 // ---- store handlers ----------------------------------------------------------
@@ -470,8 +504,21 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
         randomizePad();
         return;
     }
+    for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+        if (laneNameBounds(pad).contains(pos)) { // lane name = pad selector
+            proc.selectPad(pad);
+            repaint();
+            return;
+        }
+    for (int pad = 0; pad < fable::DR_NPADS; ++pad)
     for (int s = 0; s < fable::DR_STEPS; ++s) {
-        if (!stepBounds(s).contains(pos)) continue;
+        if (!stepBounds(pad, s).contains(pos)) continue;
+        // A press retargets editing to that lane's pad, so the selection and
+        // shift verbs below always act on the row under the pointer.
+        if (pad != proc.selectedPad()) {
+            proc.selectPad(pad);
+            clearSelection();
+        }
         if (e.mods.isShiftDown()) {              // Shift-click set/extend; never toggles
             selecting_ = true;
             extendSelection(s);
@@ -725,83 +772,64 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "TAP STEP - ON -> ACCENT -> OFF - SHIFT-DRAG TO SELECT",
                right.removeFromRight(320), 0.9f, juce::Justification::right);
 
-    // ---- step row ----
+    // ---- lanes: every pad at once, flat cells (drum.css .dr-lanes) ----
     const int curStep = proc.currentStep(), curPat = proc.currentPattern();
-    for (int s = 0; s < fable::DR_STEPS; ++s) {
-        const auto b = stepBounds(s).toFloat();
-        const int v = proc.step(edit, sel, s);
-        const bool cur = playing && curStep == s && curPat == edit;
+    for (int pad = 0; pad < fable::DR_NPADS; ++pad) {
+        const bool isSel = pad == sel;
 
-        // .step body: #171b25 -> #0d1017 gradient, 6px radius
-        g.setGradientFill(juce::ColourGradient(juce::Colour(0xff171b25), b.getX(), b.getY(),
-                                               juce::Colour(0xff0d1017), b.getX(), b.getBottom(),
-                                               false));
-        g.fillRoundedRectangle(b, 6.0f);
-        if (cur) {                               // .step.cur amber playhead ring
-            g.setColour(col::acB.withAlpha(0.3f));
-            g.drawRoundedRectangle(b.expanded(1.0f), 7.0f, 2.0f);
-            g.setColour(col::acB);
-        } else {
-            g.setColour(col::line);
+        // Lane name doubles as the pad selector (.dr-lane-name).
+        const auto nb = laneNameBounds(pad).toFloat();
+        if (isSel) {
+            g.setColour(col::acA.withAlpha(0.1f));
+            g.fillRoundedRectangle(nb, 4.0f);
+            g.setColour(col::acA.withAlpha(0.35f));
+            g.drawRoundedRectangle(nb.reduced(0.5f), 4.0f, 1.0f);
         }
-        g.drawRoundedRectangle(b.reduced(0.5f), 6.0f, 1.0f);
+        auto text = nb.toNearestInt().reduced(5, 0);
+        g.setColour(isSel ? col::acA : col::textDim);
+        g.setFont(monoFont(8.0f));
+        g.drawText(juce::String(pad + 1).paddedLeft('0', 2),
+                   text.removeFromLeft(16), juce::Justification::centredLeft, false);
+        g.drawText(proc.padName(pad), text, juce::Justification::centredLeft, true);
 
-        // .step-accent: an accent must read at a glance, not just on close
-        // inspection — a taller, brighter, near-white cap plus a wider glow set
-        // it clearly apart from a plain on-step (web parity: .step.accented
-        // .step-accent — top 3, height 4, #fff2e0).
-        const bool accented = v == 2;
-        const juce::Rectangle<float> ab = accented
-            ? juce::Rectangle<float>(b.getX() + 5.0f, b.getY() + 3.0f, b.getWidth() - 10.0f, 4.0f)
-            : juce::Rectangle<float>(b.getX() + 5.0f, b.getY() + 5.0f, b.getWidth() - 10.0f, 2.0f);
-        if (accented) {
-            g.setColour(col::acB.withAlpha(0.9f));          // wider glow
-            g.fillRoundedRectangle(ab.expanded(2.0f), 3.0f);
-            g.setColour(juce::Colour(0xfffff2e0));          // near-white cap
-        } else {
-            g.setColour(col::acB.withAlpha(0.12f));
-        }
-        g.fillRoundedRectangle(ab, 2.0f);
+        for (int s = 0; s < fable::DR_STEPS; ++s) {
+            const auto b = stepBounds(pad, s).toFloat();
+            const int v = proc.step(edit, pad, s);
+            const bool cur = playing && curStep == s && curPat == edit;
+            const bool accented = v == 2;
 
-        // .step-fill: inset 5, top 10, bottom 12 (cyan when on; a brighter,
-        // fully-opaque amber wash when accented so the whole cell — not just the
-        // cap — reads as accented, matching .step.accented .step-fill).
-        const juce::Rectangle<float> fb(b.getX() + 5.0f, b.getY() + 10.0f,
-                                        b.getWidth() - 10.0f, b.getHeight() - 22.0f);
-        if (accented) {
-            g.setGradientFill(juce::ColourGradient(
-                juce::Colour(0xfffff6ea), fb.getX(), fb.getY(),
-                col::acB.withAlpha(0.55f), fb.getX(), fb.getBottom(), false));
-            g.fillRoundedRectangle(fb, 3.0f);
-            g.setColour(juce::Colour(0xfffff2e0).withAlpha(0.55f));
-            g.fillRect(fb.withHeight(1.0f));                // brighter inner top highlight
-        } else if (v == 1) {
-            g.setGradientFill(juce::ColourGradient(
-                juce::Colour(0xff77f2ff).withAlpha(0.76f), fb.getX(), fb.getY(),
-                col::acA.withAlpha(0.28f), fb.getX(), fb.getBottom(), false));
-            g.fillRoundedRectangle(fb, 3.0f);
-            g.setColour(juce::Colour(0xffe8fcff).withAlpha(0.34f));
-            g.fillRect(fb.withHeight(1.0f));                // inner top highlight
-        } else {
-            g.setColour(juce::Colour(0xff0a0d13));
-            g.fillRoundedRectangle(fb, 3.0f);
-        }
+            // The cell background carries the note — no inset pill, so every
+            // pixel of a lane is a hit target (.dr-lanes .step).
+            if (accented) {
+                g.setGradientFill(juce::ColourGradient(
+                    juce::Colour(0xfffff6ea), b.getX(), b.getY(),
+                    col::acB.withAlpha(0.6f), b.getX(), b.getBottom(), false));
+            } else if (v == 1) {
+                g.setGradientFill(juce::ColourGradient(
+                    juce::Colour(0xff77f2ff).withAlpha(0.72f), b.getX(), b.getY(),
+                    col::acA.withAlpha(0.3f), b.getX(), b.getBottom(), false));
+            } else {
+                g.setColour(juce::Colour(0xff0a0d13));
+            }
+            g.fillRoundedRectangle(b, 2.0f);
 
-        // .step-num centred at the bottom
-        g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
-        g.drawText(juce::String(s + 1),
-                   b.toNearestInt().withTop(b.toNearestInt().getBottom() - 10),
-                   juce::Justification::centredTop, false);
+            if (cur) {                           // .step.cur amber playhead ring
+                g.setColour(col::acB);
+            } else {
+                g.setColour(juce::Colours::white.withAlpha(0.045f));
+            }
+            g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
 
-        // Decision 6 selection paint: a violet wash + ring distinct from the
-        // cyan on-state, the amber accent/playhead, and the bar-chip drag
-        // highlight above (col::acF, the theme's third accent).
-        if (stepInSelection(s)) {
-            g.setColour(col::acF.withAlpha(0.14f));
-            g.fillRoundedRectangle(b, 6.0f);
-            g.setColour(col::acF.withAlpha(0.85f));
-            g.drawRoundedRectangle(b.reduced(0.5f), 6.0f, 1.5f);
+            // Selection is a ring only, and only on the lane it applies to —
+            // it must not paint over an on/accent step.
+            if (isSel && stepInSelection(s)) {
+                if (v == 0) {
+                    g.setColour(col::acF.withAlpha(0.14f));
+                    g.fillRoundedRectangle(b, 2.0f);
+                }
+                g.setColour(col::acF.withAlpha(0.85f));
+                g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
+            }
         }
     }
 }

@@ -44,7 +44,7 @@ import { useStore as useWtStore } from '../../store';
 import { clipToPatterns, patternsToClip } from '../hostBridge';
 import { b64ToBytes, HOSTED_MAX_BARS, type MachineId, wtNoteIdx } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
-import { HostedClipBar } from './HostedClipBar';
+import { HostedClipBar, HostedLengthControl } from './HostedClipBar';
 
 // One uniform handle per machine over the three (differently-typed) stores.
 interface HostedStore {
@@ -229,10 +229,11 @@ function DrumPanels() {
   const mode = useSeqStore((s) => s.deviceMode);
   return (
     <div id="drum-rack" className="sq-hosted-rack" data-mode={mode}>
-      <div className="dr-main">
+      <div className={`dr-main${mode === 'seq' ? ' fit-pads' : ''}`}>
         <div className="dr-left">
           <div id="dr-pads"><PadGrid /></div>
-          <div id="dr-padstrip"><PadStrip /></div>
+          {/* SEQ mode drops the pad strip only — the pads stay for playing. */}
+          {mode !== 'seq' && <div id="dr-padstrip"><PadStrip /></div>}
         </div>
         <div className="dr-right">
           <div id="dr-selbar"><SelBar /></div>
@@ -252,7 +253,7 @@ function DrumPanels() {
         </div>
       </div>
       {mode === 'edit' && <div id="dr-fxrack"><FxRack /></div>}
-      {mode === 'seq' && <div id="dr-stepseq"><StepSeq /></div>}
+      {mode === 'seq' && <div id="dr-stepseq"><StepSeq headerExtra={<HostedLengthControl machine="DR1" />} /></div>}
     </div>
   );
 }
@@ -277,7 +278,7 @@ function BassPanels({ bars }: { bars?: number }) {
           <KeysPanel />
         )}
       </div>
-      {mode === 'seq' && <div id="bl-seq"><PitchSeq bars={bars} /></div>}
+      {mode === 'seq' && <div id="bl-seq"><PitchSeq bars={bars} headerExtra={<HostedLengthControl machine="BL1" />} /></div>}
       {mode === 'edit' && <div id="bl-fxrack"><BassFxRack /></div>}
     </div>
   );
@@ -429,7 +430,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           </>
         )}
         {mode === 'seq' && (
-          <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} />
+          <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<HostedLengthControl machine="WT1" />} />
         )}
       </div>
       {mode === 'seq' && <KeyboardBar />}

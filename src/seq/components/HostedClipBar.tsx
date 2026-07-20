@@ -34,12 +34,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const focus = useSeqStore((s) => s.focus)!;
   const clip = useSeqStore((s) => s.session.scenes[focus.scene]?.clips[focus.track]);
-  const currentBar = useSeqStore((s) => (
-    s.playing && s.owner[focus.track] === focus.scene ? s.pos[focus.track]?.bar ?? null : null
-  ));
-  const { createClip, updateClipBytes } = useSeqStore.getState();
-  const bars = BAR_STORE[machine];
-  const editBar = bars.use();
+  const { createClip } = useSeqStore.getState();
   const patchSelect = <HostedPatchSelect machine={machine} />;
   const modeToggle = <DeviceModeToggle />;
 
@@ -73,14 +68,6 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
     );
   }
 
-  const setBars = (n: number) => {
-    const next = Math.max(1, Math.min(HOSTED_MAX_BARS, n));
-    if (next === clip.bars) return;
-    const base = clipPattern(useSeqStore.getState().session, focus.scene, focus.track) ?? undefined;
-    updateClipBytes(focus.scene, focus.track, patternsToClip(machine, bars.patterns(), next, base), next);
-    if (editBar >= next) bars.set(next - 1);
-  };
-
   return (
     <>
       <div className="sq-clipbar">
@@ -88,16 +75,43 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
         {modeToggle}
         <span className="sq-clipbar-name">{clip.name}</span>
         <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
-        <SequenceLengthControl
-          editBar={editBar}
-          length={clip.bars}
-          playingBar={currentBar}
-          onEditBar={bars.set}
-          onLengthChange={setBars}
-        />
       </div>
       {libraryOpen && <ClipLibraryBrowser machine={machine} onClose={() => setLibraryOpen(false)} />}
     </>
+  );
+}
+
+// Bar selector + clip length. Lives in the hosted device's own sequencer
+// panel head (passed down as `headerExtra`), where the standalone devices put
+// the same control — not in the clip toolbar above it.
+export function HostedLengthControl({ machine }: { machine: MachineId }) {
+  const focus = useSeqStore((s) => s.focus)!;
+  const clip = useSeqStore((s) => s.session.scenes[focus.scene]?.clips[focus.track]);
+  const currentBar = useSeqStore((s) => (
+    s.playing && s.owner[focus.track] === focus.scene ? s.pos[focus.track]?.bar ?? null : null
+  ));
+  const bars = BAR_STORE[machine];
+  const editBar = bars.use();
+  if (!clip || clip.bars > HOSTED_MAX_BARS) return null;
+
+  const setBars = (n: number) => {
+    const next = Math.max(1, Math.min(HOSTED_MAX_BARS, n));
+    if (next === clip.bars) return;
+    const base = clipPattern(useSeqStore.getState().session, focus.scene, focus.track) ?? undefined;
+    useSeqStore.getState().updateClipBytes(
+      focus.scene, focus.track, patternsToClip(machine, bars.patterns(), next, base), next,
+    );
+    if (editBar >= next) bars.set(next - 1);
+  };
+
+  return (
+    <SequenceLengthControl
+      editBar={editBar}
+      length={clip.bars}
+      playingBar={currentBar}
+      onEditBar={bars.set}
+      onLengthChange={setBars}
+    />
   );
 }
 

@@ -52,7 +52,7 @@ public:
     void resized() override;
 
 private:
-    static constexpr int kDrumWidth = 1460, kDrumHeight = 880;
+    static constexpr int kDrumWidth = 1460, kDrumHeight = 1174;
     static constexpr int kBassWidth = 1460, kBassHeight = 931;
 
     void timerCallback() override;

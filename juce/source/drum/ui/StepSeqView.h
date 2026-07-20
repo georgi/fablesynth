@@ -115,7 +115,15 @@ public:
     juce::Rectangle<int> patternBounds(int i) const;
     juce::Rectangle<int> sequenceLengthBounds() const;
     juce::Rectangle<int> randButtonBounds() const;
+    // stepBounds(step) addresses the selected pad's lane; the two-argument form
+    // any lane. Lanes run high pad to low, top to bottom (see laneOfPad).
     juce::Rectangle<int> stepBounds(int step) const;
+    juce::Rectangle<int> stepBounds(int pad, int step) const;
+    juce::Rectangle<int> laneBounds(int pad) const;
+    juce::Rectangle<int> laneNameBounds(int pad) const;
+    static int laneOfPad(int pad);
+    int laneHeight() const;
+    static int padOfLane(int lane);
 
 private:
     void timerCallback() override;          // 30 Hz playhead / state watcher

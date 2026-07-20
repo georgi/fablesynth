@@ -2,6 +2,7 @@
 // = rest), draggable note lengths, octave / accent rows, bars 1–4 + sequence
 // length, RAND, transport and ROOT controls.
 
+import type { ReactNode } from 'react';
 import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
 import { copyRectChain, rectNorm, type RectCells, type RectSel } from '../../shared/seqEdit';
 import { useStore } from '../../store';
@@ -39,9 +40,11 @@ interface SeqPanelProps {
   rectOps?: SeqRectOps;
   /** Hosted-only: move (Alt-copy) one chord voice; enables grid note drag. */
   onMoveChordNote?: (from: number, to: number, note: number, srcNote: number, copy: boolean, pattern: number) => void;
+  /** Hosted-only: extra control rendered in the panel head (bar/length). */
+  headerExtra?: ReactNode;
 }
 
-export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote }: SeqPanelProps = {}) {
+export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
   const seqPlaying = useStore((s) => s.seqPlaying);
   const curStep = useStore((s) => s.curStep);
@@ -151,6 +154,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
             />
           </>
         )}
+        {headerExtra}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
         <span className="ns-hint">TAP = NOTE · DRAG = MOVE · SHIFT-DRAG = SELECT</span>
       </div>

@@ -400,6 +400,12 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
+/* Sequencer modes drop the pad strip, leaving the pads panel alone in the left
+   column. Pads keep their square aspect, so the panel's height follows its
+   width — narrow the column until it ends level with the osc panel row beside
+   it, and pin it to the top so it never stretches past. */
+.dr-main.fit-pads { grid-template-columns: 277px 1fr; }
+.dr-main.fit-pads .dr-left { align-self: start; }
 .pad {
   position: relative;
   aspect-ratio: 1 / 1;
@@ -587,6 +593,76 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 45%, transparent);
 }
 .step.selected .step-num { color: var(--ac-a); }
+
+/* STEP mode: all 16 pad lanes stacked at once, compact enough that the whole
+   kit's pattern reads in one glance (the pad grid is hidden in this mode). */
+.dr-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dr-lane {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.dr-lane > .step-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Flat cells in BL-1's grid idiom (.bl-cell): the whole button IS the cell,
+   so every pixel of a lane is a hit target — no inset pill leaving dead
+   space above and below the graphic. */
+.dr-lanes .step-row { gap: 2px; }
+.dr-lanes .step {
+  height: 20px;
+  border-color: rgba(255, 255, 255, 0.045);
+  border-radius: 2px;
+  background: #0a0d13;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.dr-lanes .step-accent,
+.dr-lanes .step-fill,
+.dr-lanes .step-num { display: none; }
+.dr-lanes .step.on {
+  background: linear-gradient(180deg, rgba(119, 242, 255, 0.72), rgba(77, 232, 255, 0.3));
+  box-shadow: none;
+}
+.dr-lanes .step.accented {
+  background: linear-gradient(180deg, #fff6ea, var(--ac-b) 55%, rgba(255, 161, 77, 0.6));
+  box-shadow: none;
+}
+/* The cell background now carries the note, so selection is a ring only —
+   it must not paint over an on/accent step. */
+.dr-lanes .step.selected { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-a) 45%, transparent); }
+.dr-lanes .step.selected:not(.on) { background: color-mix(in srgb, var(--ac-a) 12%, #0a0d13); }
+/* .dr-lanes .step re-declares border-color, so restate the playhead's. */
+.dr-lanes .step.cur { border-color: var(--ac-b); }
+.dr-lane-name {
+  display: flex;
+  gap: 5px;
+  width: 92px;
+  min-width: 92px;
+  padding: 0 5px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  line-height: 18px; /* + 1px borders = the 20px step height, so rows align */
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+}
+.dr-lane-name:hover { color: var(--text); }
+.dr-lane-name.sel {
+  border-color: rgba(77, 232, 255, 0.35);
+  background: color-mix(in srgb, var(--ac-a) 10%, transparent);
+  color: var(--ac-a);
+}
+.dr-lane-num { opacity: 0.5; }
 
 .dr-stepseq { padding: 9px 12px 11px; }
 .dr-stepseq-head {

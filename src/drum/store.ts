@@ -103,7 +103,9 @@ export interface DrumStore {
   _setPatterns: (next: Patterns) => void;
   _pushHistory: () => void;
   _clearHistory: () => void;
-  toggleStep: (step: number) => void;
+  // padI defaults to the selected pad; STEP mode's 16-lane view passes the
+  // lane's own pad so a click never depends on selection order.
+  toggleStep: (step: number, padI?: number) => void;
   randomizePad: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
@@ -193,11 +195,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   _pushHistory: () => patternHistory.push(get().patterns),
   _clearHistory: () => patternHistory.clear(),
 
-  toggleStep: (step) => {
+  toggleStep: (step, padI) => {
     const { patterns, editPattern, sel } = get();
     get()._pushHistory();
     const next = patterns.slice();
-    const index = patIdx(editPattern, sel, step);
+    const index = patIdx(editPattern, padI ?? sel, step);
     next[index] = cycleStep(next[index]);
     get()._setPatterns(next);
   },
