@@ -2,7 +2,7 @@
 // live LED, machine chip, mute/solo and a volume (fader) knob.
 
 import type * as React from 'react';
-import { patchBaseIndex, patchName, stepFactoryPatchIndex } from '../devices';
+import { patchName } from '../devices';
 import { isTrackAudible } from '../model';
 import { useSeqStore } from '../store';
 import { SeqKnob } from './SeqKnob';
@@ -15,7 +15,8 @@ export function TrackHeads() {
   const sceneMute = useSeqStore((s) => s.sceneMute);
   const solo = useSeqStore((s) => s.solo);
   const trackVol = useSeqStore((s) => s.trackVol);
-  const { toggleTrackMute, toggleSolo, setTrackVol, enterFocus, loadTrackFactoryPatch } = useSeqStore.getState();
+  const focusTrack = useSeqStore((s) => s.focus?.track ?? null);
+  const { toggleTrackMute, toggleSolo, setTrackVol, enterFocus } = useSeqStore.getState();
 
   return (
     <div className="sq-grid sq-heads">
@@ -27,12 +28,10 @@ export function TrackHeads() {
         const audible = playing && isTrackAudible(t, owner, trackMute, sceneMute, solo);
         const machineLabel = tr.machine === 'DR1' ? 'DR-1' : tr.machine === 'BL1' ? 'BL-1' : 'WT-1';
         const patchLabel = patchName(tr.machine, tr.patch);
-        const patchIndex = patchBaseIndex(tr.patch);
-        const stepPatch = (delta: number) => loadTrackFactoryPatch(t, stepFactoryPatchIndex(tr.machine, patchIndex, delta));
         return (
           <div
             key={t}
-            className="sq-track-head"
+            className={`sq-track-head${t === focusTrack ? ' active' : ''}`}
             style={{ '--tc': tr.color } as React.CSSProperties}
           >
             <span className={`sq-led${audible ? ' on' : ''}`} />
@@ -55,10 +54,6 @@ export function TrackHeads() {
                 <span className="sq-machine-chip">{machineLabel}</span>
               </div>
               <div className="sq-track-patch">{patchLabel}</div>
-            </div>
-            <div className="sq-track-patch-stepper" aria-label={`${machineLabel} patch selection`}>
-              <button className="sq-mini" onClick={() => stepPatch(-1)} title="Previous factory patch">◂</button>
-              <button className="sq-mini" onClick={() => stepPatch(1)} title="Next factory patch">▸</button>
             </div>
             <button
               className={`sq-mini sq-mute${trackMute[t] ? ' on' : ''}`}

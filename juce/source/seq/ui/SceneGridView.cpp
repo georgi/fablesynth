@@ -338,13 +338,16 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
     const bool right = e.mods.isPopupMenu();
 
     if (singleRow_) {
-        // Focus strip: only the back chip and the 6 scene chips are live --
-        // no scene card, no clip cells.
+        // Launcher column: the back chip plus the scene cards' own controls
+        // (launch / mute / stop, same as session), with the card body
+        // retargeting the editor. No clip cells here.
         if (!right) {
             if (backChipR.contains(pos)) { if (onExitFocus) onExitFocus(); return; }
             for (int s = 0; s < kScenes; ++s) {
                 if (railTrigger[s].contains(pos)) { railTriggerClick(s); return; }
-                if (railChip[s].contains(pos)) { if (onRailScene) onRailScene(s); return; }
+                if (muteBtnR[s].contains(pos))    { sceneMute(s); return; }
+                if (stopBtnR[s].contains(pos))    { sceneStop(s); return; }
+                if (railChip[s].contains(pos))    { if (onRailScene) onRailScene(s); return; }
             }
         }
         return;
@@ -467,21 +470,30 @@ void SceneGridView::layoutRow(int s) {
     }
 }
 
-// Focus strip: a "< SESSION" back chip (fixed width) followed by the 6 scene
-// chips sharing whatever width remains, laid out horizontally across the
-// full rack width (web parity: .sq-strip / .sq-strip-back / .sq-rail).
+// Launcher column: the session grid's lead column, stacked — a "< SESSION"
+// back chip on top, then the same 218-wide scene cards at the same 73/82
+// pitch, so focus mode reads as the session layout with the clip grid
+// swapped for a device (web parity: .sq-launcher stacking SceneCard).
+// railTrigger/railChip stay the rail's contract: the trigger is the card's
+// launch button, the chip is the card body that retargets the editor.
 void SceneGridView::layoutFocusStrip() {
-    constexpr int h = 30, backW = 110, gap = 8, chipGap = 6;
-    constexpr int triggerW = 22, triggerGap = 4;
-    backChipR = { 0, 0, backW, h };
-    const int railX = backW + gap;
-    const int railW = juce::jmax(1, getWidth() - railX);
-    const int chipW = juce::jmax(1, (railW - (kScenes - 1) * chipGap) / kScenes);
+    constexpr int cardW = 218, cardH = 73, pitch = 82, backH = 26, gap = 8;
+    backChipR = { 0, 0, cardW, backH };
+    const int top = backH + gap;
     for (int s = 0; s < kScenes; ++s) {
-        const int chipX = railX + s * (chipW + chipGap);
-        railTrigger[s] = { chipX, 0, triggerW, h };
-        railChip[s] = { chipX + triggerW + triggerGap, 0,
-                         juce::jmax(1, chipW - triggerW - triggerGap), h };
+        sceneCardR[s] = { 0, top + s * pitch, cardW, cardH };
+        const auto& card = sceneCardR[s];
+        // Card internals: identical offsets to layoutRow, so the two views
+        // paint the same card.
+        launchBtn[s] = { card.getX() + 11, card.getY() + 9, 32, 32 };
+        idArea[s] = { card.getX() + 51, card.getY() + 12, 99, 27 };
+        muteBtnR[s] = { card.getX() + 155, card.getY() + 14, 22, 22 };
+        stopBtnR[s] = { card.getX() + 180, card.getY() + 14, 22, 22 };
+        dotsArea[s] = { card.getX() + 10, card.getBottom() - 24, cardW - 20, 16 };
+
+        railTrigger[s] = launchBtn[s];
+        railChip[s] = { launchBtn[s].getRight() + 4, card.getY(),
+                        juce::jmax(1, muteBtnR[s].getX() - launchBtn[s].getRight() - 8), cardH };
     }
 }
 
@@ -806,17 +818,17 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 }
 
 void SceneGridView::paintFocusStrip(juce::Graphics& g) {
-    // Back chip: relocated from TrackHeadsView's SCENES card now that the
-    // heads row is hidden entirely in focus (web parity: .sq-strip-back).
+    // Back chip (web: .sq-launcher-back). The cards below sit straight on the
+    // chassis, exactly as they do in session mode — no panel wrapper.
     auto rf = backChipR.toFloat();
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff141824), rf.getX(), rf.getY(),
                                            juce::Colour(0xff0c0f16), rf.getX(), rf.getBottom(), false));
-    g.fillRoundedRectangle(rf, 8.0f);
+    g.fillRoundedRectangle(rf, 10.0f);
     g.setColour(col::line);
-    g.drawRoundedRectangle(rf.reduced(0.5f), 8.0f, 1.0f);
+    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, 1.0f);
     g.setColour(juce::Colour(0xffcfd6e4));
     g.setFont(dispFont(9.0f));
-    drawSpaced(g, "< SESSION", backChipR, 1.8f, juce::Justification::centred);
+    drawSpaced(g, "< SESSION", backChipR.reduced(12, 0), 1.8f);
 
     paintRail(g);
 }
@@ -839,45 +851,25 @@ float SceneGridView::railProgress(int scene) const {
 }
 
 void SceneGridView::paintRail(juce::Graphics& g) {
-    const auto& cond = proc.conductor();
     for (int s = 0; s < kScenes; ++s) {
-        auto r = railChip[s].toFloat();
-        const bool current = s == singleRowScene_;
-        bool live = false, queued = false;
-        for (int t = 0; t < kTracks; ++t) {
-            if (cond.ownerOf(t) == s) live = true;
-            if (cond.queueOf(t) == s) queued = true;
+        // The same card the session grid draws — one painter, so the two
+        // views cannot drift.
+        paintSceneCard(g, s);
+
+        auto r = sceneCardR[s].toFloat();
+        // The retargeted scene is ringed (web: .sq-scene-card.active).
+        if (s == singleRowScene_) {
+            g.setColour(juce::Colour(0xffcfd6e4));
+            g.drawRoundedRectangle(r.reduced(0.5f), 10.0f, 1.4f);
         }
 
-        g.setColour(current ? juce::Colour(0xff11141c) : juce::Colour(0xff0a0d13));
-        g.fillRoundedRectangle(r, 4.0f);
-        g.setColour(current ? col::text.withAlpha(0.4f) : col::line);
-        g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.0f);
-        g.setColour(col::textDim);
-        g.setFont(monoFont(8.0f));
-        g.drawText(juce::String(s + 1).paddedLeft('0', 2), railChip[s], juce::Justification::centred);
-        if (live) {
-            g.setColour(juce::Colour(0xff4dff9e));
-            g.fillEllipse(juce::Rectangle<float>(4, 4).withCentre({ r.getRight() - 5.0f, r.getY() + 5.0f }));
-        }
-
-        // Trigger zone: a small filled play glyph, same colour logic as
-        // paintSceneCard's launch button (web parity: .sq-rail-launch).
-        auto tr = railTrigger[s].toFloat();
-        g.setColour(live ? juce::Colour(0xff0e3120) : juce::Colour(0xff121826));
-        g.fillRoundedRectangle(tr, 5.0f);
-        g.setColour(live ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colour(0xff232b3d));
-        g.drawRoundedRectangle(tr.reduced(0.5f), 5.0f, 1.0f);
-        g.setColour(queued ? col::text.withAlpha(qpulse()) : live ? juce::Colour(0xff4dff9e) : col::acN);
-        g.fillPath(iconPlay(tr.withSizeKeepingCentre(6.0f, 8.0f)));
-
-        // .sq-rail-progress: the focused track's clip playhead, along the
-        // bottom edge of the chip that owns it.
+        // .sq-scene-progress: the focused track's clip playhead, along the
+        // bottom edge of the card that owns it.
         const float progress = railProgress(s);
         if (progress >= 0.0f) {
             g.setColour(juce::Colour(0xff4dff9e));
-            g.fillRect(juce::Rectangle<float>(r.getX(), r.getBottom() - 2.0f,
-                                              r.getWidth() * progress, 2.0f));
+            g.fillRect(juce::Rectangle<float>(r.getX() + 1.0f, r.getBottom() - 3.0f,
+                                              (r.getWidth() - 2.0f) * progress, 2.0f));
         }
     }
 }

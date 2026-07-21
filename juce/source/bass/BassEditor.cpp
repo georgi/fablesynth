@@ -43,14 +43,15 @@ private:
 
 // Web layout, measured from the running BL-1 app (src/bass/bass.css,
 // #bass-rack at its 1460px max-width; rack-relative px):
-//   rack              1460 x 931   (padding 14px 18px 22px)
+//   rack              1460 x 1080  (padding 14px 18px 22px)
 //   header            (18,  14) 1424 x 80
 //   #bl-editrow       (18, 103) 1424 x 243  cols 1.5fr 0.62fr 1.15fr 1.25fr, 9px gaps
 //     OSC (18,464) SUB (491,192) FILTER (692,355) ENV (1056,386)
-//   #bl-modrow        (18, 355) 1424 x 140  cols 290px 250px 1fr, 9px gaps
-//     LFO (18,290) ACCENT (317,250) KEYS (576,866)
+//   #bl-modrow        (18, 355) 1424 x 140  cols 1.16fr 1fr, 9px gap
+//     LFO (18,760) ACCENT (787,673)
 //   #bl-seq           (18, 504) 1424 x 276
 //   #bl-fxrack        (18, 789) 1424 x 120
+//   #bl-keysrow       (18, 918) 1424 x 140  (keyboard last, as on hardware)
 
 // ---- BassRack ----
 BassRack::BassRack(fui::BassUiModel& p) : header(p), body(p) {

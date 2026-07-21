@@ -41,12 +41,12 @@ private:
 // scheme as the WT-1/DR-1/BL-1 racks.
 //
 // Two layouts share one anatomy (docs/.../sq4-device-focus-design.md §2,
-// re-pitched 2026-07-18 to match the web's single-strip focus mode): session
-// mode is header + heads + full scene grid + footer; focus mode hides the
-// heads row and the full grid entirely, replacing them with one horizontal
-// strip (a "< SESSION" back chip + the 6 scene chips, reusing SceneGridView
-// in its singleRow_ mode) directly under the header, with the native device
-// surface filling the rest (the footer hides too). The switch between the
+// re-pitched 2026-07-21 to match the web's left-rail focus mode): session
+// mode is header + heads + full scene grid + footer; focus mode keeps the
+// header and the heads row (the heads double as the instrument switcher, the
+// open one ringed) and replaces the grid + footer with a narrow vertical
+// launcher rail (SceneGridView in its singleRow_ mode) alongside the native
+// device surface, which takes all remaining width. The switch between the
 // two is instant — see applyLayout() — matching the web, which has no
 // focus enter/exit animation either.
 class SeqRack : public juce::Component {
@@ -57,8 +57,10 @@ public:
     // instead (see SeqEditor::enterFocus/exitFocus). Derivation, top to
     // bottom of the focus rack (see SeqRack::applyLayout()'s focus geometry):
     //   header            14 + 44           = 58  (bottom)
-    //   focus strip       67 + 30           = 97  (bottom)
-    //   gap                                 + 8
+    //   heads row         67 + 60           = 127 (bottom; kept in focus so
+    //                                                the row can switch
+    //                                                instruments)
+    //   content top                         = 136
     //   DeviceFocusView                     + 800 (38 toolbar + content, sized
     //                                                so BASS -- 1460x931
     //                                                logical, the tallest
@@ -68,8 +70,8 @@ public:
     //   hint line                           + 14
     //   bottom margin                       + 14
     //   ----------------------------------------------
-    //   97 + 8 + 800 + 8 + 14 + 14          = 941
-    static constexpr int LHF = 941;
+    //   136 + 800 + 8 + 14 + 14             = 972
+    static constexpr int LHF = 972;
     explicit SeqRack(SeqAudioProcessor&);
     void resized() override;
     int logicalHeight() const { return focusMode_ ? LHF : LH; }

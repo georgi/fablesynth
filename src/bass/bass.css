@@ -93,14 +93,17 @@
   gap: 9px;
   margin-top: 9px;
 }
+/* KEYS moved out to its own bottom row, so LFO and ACCENT spread across the
+   width it used to hold (same 290:250 ratio the fixed columns had). */
 #bl-modrow {
   display: grid;
-  grid-template-columns: 290px 250px 1fr;
+  grid-template-columns: 1.16fr 1fr;
   gap: 9px;
   margin-top: 9px;
 }
 #bl-seq,
-#bl-fxrack { margin-top: 9px; min-width: 0; }
+#bl-fxrack,
+#bl-keysrow { margin-top: 9px; min-width: 0; }
 
 .bl-led {
   flex: none;

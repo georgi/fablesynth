@@ -195,6 +195,18 @@
   gap: 8px;
   min-width: 0;
 }
+/* Single row: LED + the wide clickable name/patch block (opens the device),
+   then mute/solo + volume on the right. The stacked name/patch sets the card
+   height; the VOL knob is shrunk to the mini-button height so the controls
+   never make the card taller than the two text lines. */
+.sq-track-head .knob svg { width: 22px; height: 22px; }
+.sq-track-head .k-value { display: none; }
+/* Focus mode keeps the header row visible as an instrument switcher; the
+   open device gets a colored ring so it reads as the active selection. */
+.sq-track-head.active {
+  border-color: var(--tc);
+  box-shadow: inset 0 0 0 1px var(--tc), 0 0 16px color-mix(in srgb, var(--tc) 35%, transparent);
+}
 
 .sq-led {
   width: 9px;
@@ -275,8 +287,6 @@
 @media (max-width: 1400px) {
   .sq-machine-chip { display: none; }
 }
-.sq-track-patch-stepper { display: flex; gap: 3px; }
-
 /* ============ scene card ============ */
 .sq-scene-card {
   position: relative;
@@ -771,6 +781,7 @@
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  min-width: 0;
 }
 .sq-device-body { overflow-y: auto; min-height: 0; }
 /* Device stylesheets style their own root ids; neutralize page-level sizing
@@ -781,7 +792,7 @@
    is re-declared per mode to let the visible group fill the vacated space.
    ID-scoped selectors deliberately outrank index.css's responsive overrides. */
 #bass-rack[data-mode='seq'] #bl-editrow { grid-template-columns: 1.7fr 0.7fr; }
-#bass-rack[data-mode='seq'] #bl-modrow { grid-template-columns: 1fr; }
+/* Mod row is edit-only now — SEQ mode's KEYS moved to its own bottom row. */
 #bass-rack[data-mode='edit'] #bl-modrow { grid-template-columns: 290px 1fr; }
 #rack[data-mode='seq'] .panels {
   grid-template-areas:
@@ -933,64 +944,42 @@
 #sq-rack.focused { height: 100vh; display: flex; flex-direction: column; padding-bottom: 12px; }
 #sq-rack.focused .sq-hint { margin-top: 8px; }
 .sq-focus {
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: row; gap: 9px;
   flex: 1; min-height: 0;
 }
-/* Focus mode collapses track heads and the mini clip row down to one strip:
-   a back-to-session button followed by the 6 scene chips, filling the width
-   that used to be split between the track-head grid and the mini row. */
-.sq-strip { display: flex; flex-direction: row; align-items: stretch; gap: 8px; min-height: 0; }
-.sq-strip-back {
+/* The focus launcher is the session grid's lead column, stacked: the same
+   scene cards, same width, so the two views read as one layout with the clip
+   grid swapped for a device. No panel wrapper — the cards sit on the chassis
+   exactly as they do in session mode. */
+.sq-launcher {
   flex: none;
-  display: flex; flex-direction: column; justify-content: center;
+  width: 218px;
+  display: flex; flex-direction: column; gap: 9px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.sq-launcher-back {
+  flex: none;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: linear-gradient(180deg, #141824, #0c0f16);
-  padding: 8px 14px;
+  padding: 8px 12px;
+  text-align: left;
   font-family: var(--font-disp);
   font-size: 10px;
   letter-spacing: 0.24em;
   color: #cfd6e4;
   cursor: pointer;
+  transition: border-color 0.15s ease-out, color 0.15s ease-out;
 }
-.sq-strip-back:hover { border-color: #333d54; }
-.sq-rail { display: flex; flex-direction: row; gap: 5px; flex: 1; min-width: 0; }
-.sq-rail-chip {
-  flex: 1; min-width: 0;
-  display: flex; align-items: stretch; gap: 4px;
-}
-.sq-rail-launch {
-  flex: none; width: 22px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 5px; font-size: 9px;
-  border: 1px solid #232b3d; background: #121826; color: #8b94a7;
-  cursor: pointer; font-family: inherit;
-}
-.sq-rail-launch:hover { border-color: #333d54; color: #b6c0d3; }
-.sq-rail-launch.live {
-  border-color: rgba(77, 255, 158, 0.6);
-  background: #0e3120;
-  color: #4dff9e;
-  box-shadow: 0 0 8px rgba(77, 255, 158, 0.3);
-}
-.sq-rail-launch.queued { animation: sq-qpulse 0.8s ease-in-out infinite; }
-.sq-rail-target {
-  position: relative; overflow: hidden;
-  flex: 1; min-width: 0;
-  display: flex; align-items: center; justify-content: center; gap: 5px;
-  padding: 4px 0; border-radius: 5px; font-size: 10px;
-  border: 1px solid #232b3d; background: #121826; color: #8b94a7;
-  cursor: pointer; font-family: inherit;
-}
-.sq-rail-target:hover { border-color: #333d54; color: #b6c0d3; }
-.sq-rail-chip.active .sq-rail-target { border-color: #cfd6e4; color: #cfd6e4; }
-.sq-rail-dot { width: 5px; height: 5px; border-radius: 50%; background: #1a1f2a; }
-.sq-rail-dot.live { background: #63e6a5; box-shadow: 0 0 6px #63e6a5; }
-.sq-rail-dot.queued { background: #e8c268; animation: sq-qpulse 0.8s ease-in-out infinite; }
-/* Playhead through the focused track's clip. Stepped values arrive ~8×/s, so
-   the transition carries the fill between them; it is a hair shorter than a
-   step so a launch snapping back to 0 reads as a reset, not a rewind. */
-.sq-rail-progress {
+.sq-launcher-back:hover { border-color: #333d54; color: var(--ac); }
+/* Focus-mode scene cards: the body retargets the editor, so it takes a
+   pointer and the focused one is ringed. */
+.sq-launcher .sq-scene-card { flex: none; cursor: pointer; position: relative; overflow: hidden; }
+.sq-launcher .sq-scene-card.active { border-color: #cfd6e4; }
+/* Playhead of the focused track through the clip this scene owns. Stepped
+   values arrive ~8x/s, so the transition carries the fill between them. */
+.sq-scene-progress {
   position: absolute;
   bottom: 0; left: 0;
   width: 100%; height: 2px;
@@ -1000,7 +989,6 @@
   transition: transform 0.1s linear;
   pointer-events: none;
 }
-
 @media (prefers-reduced-motion: reduce) {
   .sq-scene-launch.queued,
   .sq-cell-queued,
@@ -1008,12 +996,10 @@
   .sq-cell-stopping::after,
   .sq-eq i,
   .sq-cell-progress div,
-  .sq-rail-dot.queued,
-  .sq-rail-launch.queued,
   .sq-cell.live {
     animation: none;
   }
-  .sq-rail-progress { transition: none; }
+  .sq-scene-progress { transition: none; }
   .sq-cell-queued { opacity: 0.8; }
   .sq-cell-stopping::before,
   .sq-cell-stopping::after { transform: scaleX(1); opacity: 0.75; }

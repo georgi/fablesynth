@@ -268,18 +268,16 @@ function BassPanels({ bars }: { bars?: number }) {
         {mode === 'edit' && <BassFilterSection />}
         {mode === 'edit' && <BassEnvPanel />}
       </div>
-      <div id="bl-modrow">
-        {mode === 'edit' ? (
-          <>
-            <BassLfoPanel />
-            <AccentPanel />
-          </>
-        ) : (
-          <KeysPanel />
-        )}
-      </div>
+      {mode === 'edit' && (
+        <div id="bl-modrow">
+          <BassLfoPanel />
+          <AccentPanel />
+        </div>
+      )}
       {mode === 'seq' && <div id="bl-seq"><PitchSeq bars={bars} headerExtra={<HostedLengthControl machine="BL1" />} /></div>}
       {mode === 'edit' && <div id="bl-fxrack"><BassFxRack /></div>}
+      {/* Keyboard last, where a synth's keys belong. */}
+      {mode === 'seq' && <div id="bl-keysrow"><KeysPanel /></div>}
     </div>
   );
 }

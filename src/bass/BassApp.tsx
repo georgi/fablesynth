@@ -38,10 +38,11 @@ export function BassApp() {
         <div id="bl-modrow">
           <LfoPanel />
           <AccentPanel />
-          <KeysPanel />
         </div>
         <div id="bl-seq"><PitchSeq /></div>
         <div id="bl-fxrack"><BassFxRack /></div>
+        {/* Keyboard last, where a synth's keys belong. */}
+        <div id="bl-keysrow"><KeysPanel /></div>
       </main>
     </>
   );

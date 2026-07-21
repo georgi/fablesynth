@@ -11,7 +11,9 @@
 // layout stays pixel-faithful — same scheme as the WT-1/DR-1 racks.
 class BassRack : public juce::Component {
 public:
-    static constexpr int LW = 1460, LH = 931;
+    // 1080 (was 931) since KEYS became a full-width bottom row rather than a
+    // third column of the mod row — see BassDeviceBody::resized().
+    static constexpr int LW = 1460, LH = 1080;
     explicit BassRack(fui::BassUiModel&);
     void resized() override;
 

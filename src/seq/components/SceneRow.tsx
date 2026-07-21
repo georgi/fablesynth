@@ -1,13 +1,14 @@
-// One scene row: the scene card (launch / mute / stop, per-track dots and a
-// live status line) followed by one clip cell per track. Cells preview the
-// clip's real pattern bytes; live cells sweep at the clip's actual length.
+// One scene row: the shared SceneCard followed by one clip cell per track.
+// Cells preview the clip's real pattern bytes; live cells sweep at the clip's
+// actual length.
 
 import { useRef } from 'react';
 import type * as React from 'react';
 import { inRect, isDropTarget, selRect } from '../gridEdit';
-import { isTrackAudible, pad2, previewSteps, STOP } from '../model';
+import { isTrackAudible, previewSteps, STOP } from '../model';
 import { barSeconds } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
+import { SceneCard } from './SceneCard';
 
 const DRAG_THRESHOLD = 4; // px of pointer travel before a click becomes a drag
 
@@ -230,78 +231,9 @@ function ClipCell({ s, t }: { s: number; t: number }) {
 
 export function SceneRow({ s }: { s: number }) {
   const session = useSeqStore((st) => st.session);
-  const owner = useSeqStore((st) => st.owner);
-  const trackMute = useSeqStore((st) => st.trackMute);
-  const sceneMute = useSeqStore((st) => st.sceneMute);
-  const solo = useSeqStore((st) => st.solo);
-  const queued = useSeqStore((st) => Object.values(st.queue).includes(s));
-  const { launchScene, stopScene, toggleSceneMute } = useSeqStore.getState();
-
-  const sc = session.scenes[s];
-  const clipTracks = sc.clips.map((c, t) => (c ? t : -1)).filter((t) => t >= 0);
-  const owned = clipTracks.filter((t) => owner[t] === s);
-  const muted = !!sceneMute[s];
-  const liveAny = owned.length > 0;
-  const full = liveAny && owned.length === clipTracks.length;
-
-  let status: string, statusCls: string;
-  if (muted && liveAny) { status = 'LIVE · MUTED'; statusCls = 'warn'; }
-  else if (muted) { status = 'MUTED'; statusCls = 'warn'; }
-  else if (queued) { status = 'QUEUED'; statusCls = 'lit'; }
-  else if (full) { status = 'LIVE'; statusCls = 'live'; }
-  else if (liveAny) { status = `LIVE ${owned.length}/${clipTracks.length}`; statusCls = 'live'; }
-  else { status = 'READY'; statusCls = ''; }
-
-  const hot = liveAny && !muted;
-
   return (
     <div className="sq-grid">
-      <div className={`sq-scene-card${hot ? ' live' : ''}`}>
-        <div className="sq-scene-top">
-          <button
-            className={`sq-scene-launch${hot ? ' live' : ''}${queued ? ' queued' : ''}`}
-            onClick={() => launchScene(s)}
-            title="Launch scene"
-          >
-            ▶
-          </button>
-          <div className="sq-scene-id">
-            <div className="sq-scene-name-row">
-              <span className="sq-scene-num">{pad2(s + 1)}</span>
-              <span className="sq-scene-name">{sc.name}</span>
-            </div>
-            <div className={`sq-scene-status ${statusCls}`}>{status}</div>
-          </div>
-          <button
-            className={`sq-mini sq-mute${muted ? ' on' : ''}`}
-            onClick={() => toggleSceneMute(s)}
-            title="Mute scene"
-          >
-            M
-          </button>
-          <button className="sq-mini" onClick={() => stopScene(s)} title="Stop scene">■</button>
-        </div>
-        <div className="sq-scene-dots">
-          {session.tracks.map((tr, t) => {
-            const has = !!sc.clips[t];
-            const on = has && owner[t] === s
-              && isTrackAudible(t, owner, trackMute, sceneMute, solo);
-            return (
-              <span
-                key={t}
-                className={`sq-dot${on ? ' on' : ''}`}
-                style={{
-                  background: !has ? '#1a1f2a' : on ? tr.color : `${tr.color}44`,
-                  boxShadow: on ? `0 0 8px ${tr.color}` : 'none',
-                }}
-              />
-            );
-          })}
-          <span className="sq-clip-count">
-            {clipTracks.length} {clipTracks.length === 1 ? 'CLIP' : 'CLIPS'}
-          </span>
-        </div>
-      </div>
+      <SceneCard s={s} />
       {session.tracks.map((_, t) => (
         <ClipCell key={t} s={s} t={t} />
       ))}

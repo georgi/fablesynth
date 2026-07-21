@@ -15,13 +15,18 @@
 // Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
 //
-// Focus mode hides the heads row entirely and collapses the scene grid down
-// to a single horizontal strip (30 tall) sitting where the heads used to be
-// (y=67): a "< SESSION" back chip + the 6 scene chips (SceneGridView's
-// singleRow_ mode -- see SceneGridView::paintFocusStrip). The native device
-// body fills the freed space below down to the footer slot, which hides.
-// The switch between the session and focus geometries is instant (no
-// animation, per the web) — see SeqRack::applyLayout().
+// Focus mode (re-pitched 2026-07-21 to follow the web) keeps the header and
+// the heads row -- the heads double as the instrument switcher there, the
+// open device ringed -- and splits everything below y=136 into two columns:
+//   launcher column   (18, 136)  218 x 800   (SceneGridView's singleRow_ mode:
+//                                             "< SESSION" + the same 6 scene
+//                                             cards the grid draws, stacked --
+//                                             see paintFocusStrip)
+//   device body      (245, 136) 1197 x 800
+// The footer hides. The launcher keeps the grid's 218 lead-column width, so
+// both views share one left edge and the scene cards are literally the same
+// painter. The switch between the session and focus geometries is instant
+// (no animation, per the web) — see SeqRack::applyLayout().
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
@@ -42,7 +47,9 @@ void SeqRack::enterFocus(int track, int scene) {
     // one synchronous relayout.
     setBounds(0, 0, LW, LHF);
     focusTrack_ = track;
-    trackHeads.setVisible(false); // heads + mini clip row disappear entirely in focus
+    // The heads row stays up in focus and becomes the instrument switcher —
+    // clicking another head opens that device, and the open one is ringed.
+    trackHeads.setFocusTrack(track);
     sceneGrid.setSingleRow(scene, track);
     deviceFocus.setTarget(scene, track);
     footer.setVisible(false);
@@ -54,7 +61,7 @@ void SeqRack::exitFocus() {
     focusMode_ = false;
     setBounds(0, 0, LW, LH); // snap the outer canvas back to the session extent
     focusTrack_ = -1;
-    trackHeads.setVisible(true);
+    trackHeads.setFocusTrack(-1);
     sceneGrid.clearSingleRow();
     deviceFocus.setTarget(-1, -1);
     footer.setVisible(true);
@@ -73,20 +80,25 @@ void SeqRack::resized() { applyLayout(); }
 
 // Instant mode switch, no animation — matching the web, which switches
 // focus mode without a transition. Session lays out the full table; focus
-// puts the 30px scene strip where the heads row sat and hands everything
-// down to 8px above the hint to the device surface.
+// keeps header + heads and splits everything below them into a narrow
+// launcher rail and the device surface beside it.
 void SeqRack::applyLayout() {
     constexpr int hintH = 14;
     header.setBounds(18, 14, 1424, 44);
-    trackHeads.setBounds(18, 67, 1424, 60); // hidden (setVisible(false)) in focus
+    trackHeads.setBounds(18, 67, 1424, 60); // stays visible in focus
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching twice.
     footer.setBounds(18, 627, 1424, 65);
     if (focusMode_) {
-        sceneGrid.setBounds(18, 67, 1424, 30); // scene strip in the heads slot
-        constexpr int hintY = LHF - 14 /* bottom margin */ - hintH; // 941-14-14=913
-        deviceFocus.setBounds(18, 105, 1424, (hintY - 8) - 105);
+        // The launcher keeps the session grid's lead-column width so the two
+        // views share one left edge (web: .sq-launcher width 218px, 9px gap).
+        constexpr int railW = 218, railGap = 9, contentY = 136;
+        constexpr int hintY = LHF - 14 /* bottom margin */ - hintH; // 972-14-14=944
+        const int contentH = (hintY - 8) - contentY;                // 936-136 = 800
+        sceneGrid.setBounds(18, contentY, railW, contentH);
+        deviceFocus.setBounds(18 + railW + railGap, contentY,
+                              1424 - railW - railGap, contentH);
         hint.setBounds(18, hintY, 1424, hintH);
     } else {
         sceneGrid.setBounds(18, 136, 1424, 491); // 491 = footerY(627) - 136

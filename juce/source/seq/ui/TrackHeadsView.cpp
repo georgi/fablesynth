@@ -58,6 +58,12 @@ void TrackHeadsView::headClick(int t) {
     if (onFocusTrack) onFocusTrack(t);
 }
 
+void TrackHeadsView::setFocusTrack(int t) {
+    if (focusTrack_ == t) return;
+    focusTrack_ = t;
+    repaint();
+}
+
 void TrackHeadsView::patchStep(int t, int d) {
     const auto& tracks = proc.conductor().session().tracks;
     if (t < 0 || t >= (int)tracks.size()) return;
@@ -89,8 +95,6 @@ void TrackHeadsView::mouseDown(const juce::MouseEvent& e) {
     for (int t = 0; t < 4; ++t) {
         if (muteBtn[t].contains(pos))       { muteClick(t); return; }
         if (soloBtn[t].contains(pos))       { soloClick(t); return; }
-        if (patchPrev[t].contains(pos))     { patchStep(t, -1); return; }
-        if (patchNext[t].contains(pos))     { patchStep(t, +1); return; }
         if (volKnob[t].contains(pos)) {
             dragging_ = Drag::Vol;
             dragTrack_ = t;
@@ -98,7 +102,7 @@ void TrackHeadsView::mouseDown(const juce::MouseEvent& e) {
             if (auto* p = volParam(t)) p->beginChangeGesture();
             return;
         }
-        if (nameRow[t].contains(pos))       { headClick(t); return; }
+        if (idCol[t].contains(pos))         { headClick(t); return; }
     }
 }
 
@@ -121,14 +125,14 @@ void TrackHeadsView::mouseUp(const juce::MouseEvent&) {
 }
 
 void TrackHeadsView::mouseMove(const juce::MouseEvent& e) {
-    // Track which head's name row the pointer is over so paintTrack can light
-    // the edit (✎) affordance — the whole head is clickable to focus the
+    // Track which head's id column the pointer is over so paintTrack can light
+    // the edit (✎) affordance — the whole column is clickable to focus the
     // device, but nothing signalled that until now (web parity:
     // .sq-track-editglyph, hover-revealed).
     const auto pos = e.getPosition();
     int hit = -1;
     for (int t = 0; t < 4; ++t)
-        if (nameRow[t].contains(pos)) { hit = t; break; }
+        if (idCol[t].contains(pos)) { hit = t; break; }
     if (hit != hoverTrack_) { hoverTrack_ = hit; repaint(); }
 }
 
@@ -179,12 +183,13 @@ void TrackHeadsView::resized() {
         muteBtn[t] = content.removeFromRight(22).withSizeKeepingCentre(22, 22);
         content.removeFromRight(8);
 
-        // remaining `content` is the track-id column: name row on top, patch
-        // stepper row below (css sq-track-name-row / sq-track-patch).
+        // remaining `content` is the clickable track-id column: name row on
+        // top, patch label below (css .sq-track-id-btn wrapping
+        // .sq-track-name-row + .sq-track-patch). The whole column opens the
+        // device, so it is one hit target.
+        idCol[t] = content;
         nameRow[t] = content.removeFromTop(content.getHeight() / 2);
-        auto patchRow = content;
-        patchPrev[t] = patchRow.removeFromLeft(22).withSizeKeepingCentre(22, 22);
-        patchNext[t] = patchRow.removeFromRight(22).withSizeKeepingCentre(22, 22);
+        patchRow[t] = content;
     }
 }
 
@@ -221,8 +226,15 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
                                            col::panelLo, rf.getX(), rf.getBottom(), false));
     g.fillRoundedRectangle(rf, 10.0f);
-    g.setColour(col::line);
-    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, 1.0f);
+    // The open device carries a track-tinted ring so the row reads as an
+    // instrument switcher in focus mode (web: .sq-track-head.active).
+    const bool active = focusTrack_ == t;
+    g.setColour(active ? tc : col::line);
+    g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, active ? 1.6f : 1.0f);
+    if (active) {
+        g.setColour(tc.withAlpha(0.22f));
+        g.drawRoundedRectangle(rf.reduced(1.8f), 9.0f, 1.4f);
+    }
 
     // LED
     const bool audible = proc.conductor().ownerOf(t) != -2;
@@ -237,7 +249,7 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     const bool hovered = hoverTrack_ == t;
     if (hovered) {
         g.setColour(tc.withAlpha(0.10f));
-        g.fillRoundedRectangle(nameRow[t].toFloat().expanded(3.0f, 2.0f), 6.0f);
+        g.fillRoundedRectangle(idCol[t].toFloat().expanded(3.0f, 2.0f), 6.0f);
     }
     auto nameArea = nr.removeFromLeft(nr.getWidth() * 3 / 5);
     auto editSlot = nameArea.removeFromRight(12);
@@ -256,20 +268,11 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
     g.setFont(monoFont(7.0f));
     g.drawText(machineChip(tr.machine), chip, juce::Justification::centred);
 
-    // patch stepper: <  name  >
-    auto drawArrow = [&](juce::Rectangle<int> r, bool pointsRight) {
-        g.setColour(col::textDim);
-        g.strokePath(iconChevron(r.toFloat().withSizeKeepingCentre(5.0f, 9.0f), pointsRight),
-                     juce::PathStrokeType(1.6f));
-    };
-    drawArrow(patchPrev[t], false);
-    drawArrow(patchNext[t], true);
-    auto patchTextArea = juce::Rectangle<int>(patchPrev[t].getRight(), patchPrev[t].getY(),
-                                               patchNext[t].getX() - patchPrev[t].getRight(),
-                                               patchPrev[t].getHeight());
+    // patch label — a plain subtitle under the name now that the per-head
+    // stepper is gone (web: .sq-track-patch).
     g.setColour(col::textDim);
     g.setFont(monoFont(7.5f));
-    g.drawText(patchName(tr.machine, tr.patch), patchTextArea, juce::Justification::centred);
+    g.drawText(patchName(tr.machine, tr.patch), patchRow[t], juce::Justification::centredLeft);
 
     // M / S
     auto drawToggle = [&](juce::Rectangle<int> r, const char* txt, bool on, juce::Colour onColour) {

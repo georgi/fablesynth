@@ -3,7 +3,7 @@ import { DeviceView } from './components/DeviceView';
 import { FooterRow } from './components/FooterRow';
 import { Header } from './components/Header';
 import { Onboarding } from './components/Onboarding';
-import { SceneRail } from './components/SceneRail';
+import { SceneCard } from './components/SceneCard';
 import { SceneRow } from './components/SceneRow';
 import { SqPowerOverlay } from './components/SqPowerOverlay';
 import { TrackHeads } from './components/TrackHeads';
@@ -94,15 +94,19 @@ export function SeqApp() {
       <Onboarding />
       <main id="sq-rack" className={focus ? 'focused' : ''}>
         <Header />
-        {!focus && <TrackHeads />}
+        <TrackHeads />
         {focus ? (
           <div className="sq-focus" key={`f${focus.track}`}>
-            <div className="sq-strip">
-              <button className="sq-strip-back" onClick={() => useSeqStore.getState().exitFocus()}>
+            <aside className="sq-launcher">
+              <button
+                className="sq-launcher-back"
+                onClick={() => useSeqStore.getState().exitFocus()}
+                title="Back to session (Esc)"
+              >
                 ◂ SESSION
               </button>
-              <SceneRail />
-            </div>
+              {session.scenes.map((_, s) => <SceneCard key={s} s={s} focus />)}
+            </aside>
             <DeviceView />
           </div>
         ) : (
