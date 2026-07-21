@@ -10,6 +10,7 @@ import type { SeqRig } from './rig';
 import { clipPattern, resetSeqStore, useSeqStore } from './store';
 import { decodeClipLibrary } from './clipLibrary';
 import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
+import { factorySession } from './factory';
 
 const library = decodeClipLibrary({ v: 1, clips: FACTORY_CLIP_LIBRARY }).clips;
 
@@ -62,8 +63,12 @@ class FakeRig implements SeqRig {
 let rig: FakeRig;
 const st = () => useSeqStore.getState();
 
+// These cases assert against a known arrangement (122 bpm, the NEON TALE base
+// clip layout), so they pin factorySession() explicitly rather than riding on
+// whichever preset SQ-4 currently boots into. Note the NEON TALE *preset* is
+// not the same doc -- the preset builder re-derives tempo per family.
 beforeEach(async () => {
-  resetSeqStore();
+  resetSeqStore(factorySession());
   rig = new FakeRig();
   rig.frame = 1000;
   await st().powerOn(rig);

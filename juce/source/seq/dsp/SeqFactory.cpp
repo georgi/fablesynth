@@ -879,4 +879,14 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
     return presets;
 }
 
+// The session SQ-4 opens with. factorySession() stays the NEON TALE base every
+// preset is built from; this is only which preset the instrument boots into.
+// Keep in step with sessionPresets.ts's DEFAULT_SESSION_NAME.
+SessionData defaultSession() {
+    const auto& library = factorySessionLibrary();
+    for (const auto& preset : library)
+        if (preset.name == kDefaultSessionName) return preset.session;
+    return factorySession();
+}
+
 } // namespace fable

@@ -10,8 +10,7 @@ import {
   b64ToBytes, boundaryFrame, bytesToB64, emptyClipBytes, loadSession,
   type PatchDoc, saveSession, type SessionDoc, songPosition,
 } from './protocol';
-import { factorySession } from './factory';
-import { copySession, FACTORY_SESSION_PRESETS } from './sessionPresets';
+import { copySession, defaultSession, FACTORY_SESSION_PRESETS } from './sessionPresets';
 import { embedSessionPatches } from './sessionExport';
 import type { SeqRig } from './rig';
 import type { RuntimeClipLibraryEntry } from './clipLibrary';
@@ -97,7 +96,7 @@ export interface SeqStore {
   redo: () => void;
 }
 
-const initialSession = loadSession(factorySession());
+const initialSession = loadSession(defaultSession());
 
 // Decoded clip pattern bytes, keyed `${scene}:${track}`. Session docs are
 // edited in place (clip editing actions below); the cache is refreshed on
@@ -740,14 +739,17 @@ export const useSeqStore = create<SeqStore>((set, get) => {
   };
 });
 
-/** Reset launcher state (used by tests). */
-export function resetSeqStore(): void {
+/**
+ * Reset launcher state (used by tests). Pass a session to start from a known
+ * arrangement instead of whichever preset SQ-4 boots into.
+ */
+export function resetSeqStore(session: SessionDoc = defaultSession()): void {
   lastFocusScene = 0;
   clipBytes.clear();
   undoStack.length = 0;
   redoStack.length = 0;
   useSeqStore.setState({
-    session: factorySession(),
+    session: loadSession(session),
     powered: false,
     playing: false,
     beat: 0,

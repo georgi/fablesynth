@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FACTORY_PRESETS } from '../presets';
-import { FACTORY_SESSION_PRESETS } from './sessionPresets';
+import { DEFAULT_SESSION_NAME, defaultSession, FACTORY_SESSION_PRESETS } from './sessionPresets';
 import { b64ToBytes, wtNoteIdx } from './protocol';
 import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 
@@ -182,5 +182,13 @@ describe('SQ-4 factory session patch contract', () => {
         if (drums) expect(library.has(drums.pattern), `${preset.name} ${scene.name}`).toBe(false);
       }
     }
+  });
+
+  it('boots into GLASS BLOOM, matching SeqFactory.cpp kDefaultSessionName', () => {
+    expect(DEFAULT_SESSION_NAME).toBe('GLASS BLOOM');
+    const boot = defaultSession();
+    expect(boot.name).toBe(DEFAULT_SESSION_NAME);
+    // A fresh copy each call — the store edits the session in place.
+    expect(defaultSession()).not.toBe(boot);
   });
 });

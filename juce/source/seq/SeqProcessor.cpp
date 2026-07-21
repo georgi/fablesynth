@@ -175,7 +175,7 @@ SeqAudioProcessor::SeqAudioProcessor()
     for (auto& g : generateSampledDrumTables())
         drumTables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
 
-    initialSession_ = factorySession();
+    initialSession_ = defaultSession();
     jassert(initialSession_.tracks.size() == (size_t)kTracks
             && initialSession_.tracks[0].machine == Machine::DR1
             && initialSession_.tracks[1].machine == Machine::BL1

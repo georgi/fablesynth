@@ -515,6 +515,19 @@ export const FACTORY_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
   session: buildSession(spec),
 }));
 
+/**
+ * The session SQ-4 opens with. `factorySession()` stays the NEON TALE base
+ * every preset is built from; this is only which preset the instrument boots
+ * into. Keep it in step with SeqFactory.cpp's defaultSession().
+ */
+export const DEFAULT_SESSION_NAME = 'GLASS BLOOM';
+
+/** A fresh copy of the boot session, ready to hand to the store. */
+export function defaultSession(): SessionDoc {
+  const preset = FACTORY_SESSION_PRESETS.find((p) => p.name === DEFAULT_SESSION_NAME);
+  return copySession((preset ?? FACTORY_SESSION_PRESETS[0]).session);
+}
+
 /** Session data is edited in the store, so preset recall always needs a copy. */
 export function copySession(session: SessionDoc): SessionDoc {
   return {

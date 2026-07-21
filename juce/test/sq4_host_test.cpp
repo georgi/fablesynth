@@ -145,6 +145,12 @@ int main(int argc, char** argv) {
 
     SeqAudioProcessor p;
     p.prepareToPlay(48000.0, 128);
+    check(p.conductor().session().name == fable::kDefaultSessionName,
+          "SQ-4 boots into the default library session (GLASS BLOOM)");
+    // The assertions below are written against the NEON TALE base -- its tempo,
+    // clip layout and decay tails -- so pin that explicitly rather than
+    // tracking whichever preset is currently the default.
+    p.applySessionJson(fable::sessionToJson(fable::factorySession()));
     juce::AudioBuffer<float> buf(2, 128);
 
     // ---- native hosted device models ------------------------------------
@@ -1051,6 +1057,7 @@ int main(int argc, char** argv) {
     {
         SeqAudioProcessor p2;
         p2.prepareToPlay(48000.0, 128);
+        p2.applySessionJson(fable::sessionToJson(fable::factorySession()));
         juce::String json = p2.currentSessionJson();
         check(json.isNotEmpty(), "currentSessionJson returns the live session as JSON");
 
@@ -1071,6 +1078,7 @@ int main(int argc, char** argv) {
         std::printf("\n== editing undo substrate ==\n");
         SeqAudioProcessor p2;
         p2.prepareToPlay(48000.0, 128);
+        p2.applySessionJson(fable::sessionToJson(fable::factorySession()));
         check(!p2.canUndo() && !p2.canRedo(), "fresh processor has no edit history");
         check(!p2.undo() && !p2.redo(), "undo/redo on an empty history are no-ops");
 
@@ -1329,6 +1337,9 @@ int main(int argc, char** argv) {
         std::printf("\n== stale-ack invalidation across a session swap ==\n");
         SeqAudioProcessor p4;
         p4.prepareToPlay(48000.0, 128);
+        // Same pin as the main processor: the silence window below is sized for
+        // the NEON TALE base's decay tails, not the ambient boot preset's.
+        p4.applySessionJson(fable::sessionToJson(fable::factorySession()));
         juce::AudioBuffer<float> b4(2, 128);
 
         p4.conductor().launchScene(2);   // DROP A: all four tracks

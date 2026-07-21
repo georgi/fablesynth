@@ -26,4 +26,10 @@ struct SessionPreset {
 
 const std::vector<SessionPreset>& factorySessionLibrary();
 
+// Which library preset SQ-4 boots into. factorySession() above is the NEON
+// TALE base every preset is built from and is unaffected by this; mirrors
+// sessionPresets.ts's DEFAULT_SESSION_NAME / defaultSession().
+inline constexpr const char* kDefaultSessionName = "GLASS BLOOM";
+SessionData defaultSession();
+
 } // namespace fable
