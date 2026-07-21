@@ -16,10 +16,16 @@ bool exactlyDifferent(double a, double b) {
 }
 }
 
+// Keep the DSP portable across compilers: MSVC does not provide the
+// non-standard M_PI/M_LN2 macros unless an opt-in compatibility define is set
+// (same reason as DrumEngine.cpp).
+constexpr double kPi = 3.141592653589793238462643383279502884;
+constexpr double kLn2 = 0.693147180559945309417232121458176568;
+
 // js:33-36 — log-cosh for the ADAA drive antiderivative
 static inline double lcosh(double z) {
     double a = std::fabs(z);
-    return a + std::log1p(std::exp(-2.0 * a)) - M_LN2;
+    return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
 static inline double clampd(double v, double lo, double hi) {
@@ -30,7 +36,7 @@ static inline double clampd(double v, double lo, double hi) {
 // BL-1's pos smoothing legacy cadence was 0.35 per 16-sample sub-block; cutoff
 // was 0.5 per 128-sample chunk, both at 48 kHz.
 static const double BL_POS_TAU = 16.0 / (48000.0 * 0.4307829160924542);
-static const double BL_CUT_TAU = 128.0 / (48000.0 * M_LN2);
+static const double BL_CUT_TAU = 128.0 / (48000.0 * kLn2);
 static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
 
 // Finding 10: cubic Hermite (Catmull-Rom) table read, indices pre-wrapped.
@@ -339,7 +345,7 @@ bool BassEngine::setupOsc(double noteAbs, int n) {
         const double ratio = std::pow(2.0, cents / 1200.0);
         incs_[u] = cps * ratio * table->size;
         const double pan = clampd(sprd * spr, -1.0, 1.0);
-        const double a = ((pan + 1) * M_PI) / 4;
+        const double a = ((pan + 1) * kPi) / 4;
         gl_[u] = (float)std::cos(a);
         gr_[u] = (float)std::sin(a);
     }
@@ -443,7 +449,7 @@ void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double note
         }
     } else {
         for (int i = 0; i < n; i++) {
-            const float v = (float)(std::sin(ph * 2 * M_PI) * gain * 1.2);
+            const float v = (float)(std::sin(ph * 2 * kPi) * gain * 1.2);
             tmpL[off + i] += v; tmpR[off + i] += v;
             ph += inc0 + dInc * i; if (ph >= 1) ph -= 1;
         }
@@ -467,7 +473,7 @@ double BassEngine::lfoValue(double beats) {
             if (step != shPhase_) { shPhase_ = step; shVal_ = rng_.next() * 2.0 - 1.0; }
             return shVal_;
         }
-        default: return std::sin(phase * 2 * M_PI);
+        default: return std::sin(phase * 2 * kPi);
     }
 }
 
@@ -543,7 +549,7 @@ void BassEngine::runFilter(const float* inL, const float* inR,
     for (int at = 0; at < n; at += 32) {
         const int m = std::min(32, n - at);
         const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
-        const double gC = std::tan((M_PI * cut) / sr_);
+        const double gC = std::tan((kPi * cut) / sr_);
         const double a1 = 1 / (1 + gC * (gC + k1));
         const double a2 = gC * a1, a3 = gC * a2;
         for (int ch = 0; ch < 2; ch++) {

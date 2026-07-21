@@ -11,10 +11,17 @@
 
 namespace fable {
 
+// Keep the DSP portable across compilers: MSVC does not provide the
+// non-standard M_PI/M_LN2 macros unless an opt-in compatibility define is set.
+// (Re-applying 703ac99, which a later rewrite of this file dropped — it broke
+// the v0.6 Windows release build.)
+constexpr double kPi = 3.141592653589793238462643383279502884;
+constexpr double kLn2 = 0.693147180559945309417232121458176568;
+
 // js:23-26 — log-cosh for the ADAA drive antiderivative
 static inline double lcosh(double z) {
     double a = std::fabs(z);
-    return a + std::log1p(std::exp(-2.0 * a)) - M_LN2;
+    return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
 static inline double clampd(double v, double lo, double hi) {
@@ -25,7 +32,7 @@ static inline double clampd(double v, double lo, double hi) {
 // DR-1's pos smoothing legacy cadence was 0.35 per 16-sample sub-block; cutoff
 // was 0.5 per 128-sample chunk, both at 48 kHz.
 static const double DR_POS_TAU = 16.0 / (48000.0 * 0.4307829160924542);
-static const double DR_CUT_TAU = 128.0 / (48000.0 * M_LN2);
+static const double DR_CUT_TAU = 128.0 / (48000.0 * kLn2);
 static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
 
 // Finding 10: cubic Hermite (Catmull-Rom) table read, indices pre-wrapped.
@@ -306,7 +313,7 @@ bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
         double ratio = std::pow(2.0, cents / 1200.0);
         o.incs[u] = cps * ratio * table->size;
         double pan = clampd(sprd * spr, -1.0, 1.0);
-        double a = ((pan + 1) * M_PI) / 4;
+        double a = ((pan + 1) * kPi) / 4;
         o.gl[u] = (float)std::cos(a);
         o.gr[u] = (float)std::sin(a);
     }
@@ -480,7 +487,7 @@ void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
     for (int at = 0; at < n; at += 32) {
         const int m = std::min(32, n - at);
         const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
-        const double gC = std::tan((M_PI * cut) / sr_);
+        const double gC = std::tan((kPi * cut) / sr_);
         const double a1 = 1 / (1 + gC * (gC + k1));
         const double a2 = gC * a1, a3 = gC * a2;
         for (int ch = 0; ch < 2; ch++) {
@@ -588,7 +595,7 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
         const double ringInc = ringFreq / sr_;
         double phase = v.ringPhase;
         for (int i = 0; i < n; ++i) {
-            const double carrier = std::sin(phase * 2.0 * M_PI) * std::sqrt(2.0);
+            const double carrier = std::sin(phase * 2.0 * kPi) * std::sqrt(2.0);
             const float gain = (float)(1.0 + ringMix * (carrier - 1.0));
             tmpL[i] *= gain;
             tmpR[i] *= gain;
@@ -614,7 +621,7 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     double lg0 = v.lgPrev >= 0 ? v.lgPrev : lg1;
     double dLg = (lg1 - lg0) / n;
     double pan = clampd(param(dpid(padI, DP_PAN)), -1.0, 1.0);
-    double panA = ((pan + 1) * M_PI) / 4;
+    double panA = ((pan + 1) * kPi) / 4;
     double panL = std::cos(panA), panR = std::sin(panA);
     for (int i = 0; i < n; i++) {
         const double xl = srcL[i], xr = srcR[i];
