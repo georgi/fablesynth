@@ -1,4 +1,4 @@
-# FABLESYNTH WT‑1, DR-1 and BL-1
+# FABLESYNTH WT‑1, DR-1, BL-1 and SQ-4
 
 A Serum-style wavetable synthesizer plugin — **VST3 · AU · Standalone** for
 macOS, Windows and Linux. Two morphing wavetable oscillators, a dual
@@ -20,8 +20,8 @@ drop the plugin in the right folder:
 | **Linux** | `~/.vst3/` | — | run the binary |
 
 The plugins ship as **FableSynth WT-1** (wavetable synth), **FableSynth
-DR-1** (drum machine) and **FableSynth BL-1** (acid bassline) — separate zips
-per platform.
+DR-1** (drum machine), **FableSynth BL-1** (acid bassline) and **FableSynth
+SQ-4** (session launcher) — separate zips per platform.
 
 Then rescan plugins in your DAW. macOS builds are **universal** (Apple Silicon +
 Intel) and ad-hoc signed; on first launch you may need to right-click → Open, or
