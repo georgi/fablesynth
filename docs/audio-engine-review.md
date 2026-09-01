@@ -446,30 +446,90 @@ regressions this review is about:
 
 ---
 
-## 7. Recommended order
+## 7. Status — all findings closed
 
-1. **DR-1 bus limiter** (D1) — a correctness bug with a real clipping risk. Half a day.
-2. **Retrigger/decay clicks** on DR-1 (D2, D3) — audible on every default kit. One day.
-3. **Web parity port for all three worklets** (W1, B1, and the DR-1 side of W1): Hermite
-   reads, ramps, sr-invariant smoothers, `Rng`. Three to four days, then the parity test
-   becomes possible. B1 alone is worth doing first if time is short.
-3b. **BL-1 accent latch and LP24 resonance retaper** (B2, B3 cheap fix), plus the JUCE
-   real-time-safety fixes (B6). One day.
-4. **Flat typed-array parameter store in both worklets** (W2, D7). One to two days;
-   measured −37 % on light patches, and the drum envelope path will gain far more.
-5. **Host-automation smoothing layer** in the JUCE processors (J1) and switch crossfades
-   (J2). Two days. This is the last fidelity item from the first review.
-6. **Table publication without locks or audio-thread frees** (J3), shared across
-   engines. Half a day.
-7. **Sample layer** (D4) and **full trilinear mip blend** (D5). One and a half days.
-8. **User-table import resampling** (J8) — both platforms, half a day; makes imported
-   tables behave like the factory ones.
-9. **FX**: polyphase half-band (J4), DR-1 chain gating (D8), web reverb IR shaping and
-   crossfaded IR swaps or the worklet FX port (W6). Two to four days depending on the
-   route chosen for the web.
-10. **Tests** from §6 alongside each item above, not after.
+Every finding in this review is implemented on both platforms, verified by tests that
+were each checked to fail with their fix disabled. What follows is what is left, and
+what was learned that the review itself got wrong.
 
-Items 1, 2, 5 and 6 are plugin-only; 3, 4 and 8 are where the web app has the most to
-gain. Everything here keeps the current sound where it is already right; nothing changes
-the wavetable pipeline, the SVF topology or the ADAA drive, which are the parts worth
-protecting.
+### Deferred, with reasons
+
+**The RES knob's lower half still does little** — the open half of B3. The review asked
+for two changes: resonance in one stage (done) and an exponential retaper of `res` so the
+knob's travel is useful (not done). They are in tension: reproducing the old magnitude
+curve is exactly what preserves preset timbre, and retapering is the half that moves
+existing patches. Measured, the new mapping is very slightly *worse* on this axis — under
+`max_f|H|` the old cascade is flat to res ≈0.3 and the new one to res ≈0.5.
+
+Shipping without the retaper was a deliberate decision: preset safety won, on the
+strength of 0.088 dB worst-case magnitude change across all 21 lowpass factory patches.
+A retaper needs all four ports in one commit and the factory bank re-auditioned by ear.
+There is **no safety debt** attached — see the headroom note below.
+
+**The MIX-0 drive skip is in `Fx.cpp` and the WT-1 worklet only.** `BassFx`, `DrumFx` and
+the bass and drum worklets still run the 4x path into a zero wet gain. The difference is
+CPU, not sound: while silent the output is identical by construction, and leaving silence
+is unmeasurable. Worth applying uniformly in one pass.
+
+**DR-1's drive coefficients are block-rate**, so its block-at-a-time FIR is exact. Adding
+a J1-style smoother to the FX amounts would require calling `driveBlock` once per
+coefficient chunk — a whole block under one set of gains diverges by 0.313 full scale,
+not an epsilon. The constraint is commented at the call site with that number attached.
+
+### Three things this review got wrong
+
+**The suggested `SmoothedValue` one-pole for J1 does not work.** A one-pole at 13 Hz
+merely rounds the corner of a 46.9 Hz staircase. Measured on WT-1: one-pole −56.3 dB,
+two-pole cascade −67.4 dB, ramp across the render call −101.5 dB against a −111.7 dB
+floor. DR-1 reached the same result independently (one-pole 59.8 dB, ramp 1.9 dB).
+Ramping across the block is what a block-rate value *means*.
+
+**The alias metric in §1 was still leakage-limited at low notes.** A ±12-bin mask is
+narrower than the Blackman-Harris skirt when 366 harmonics sit 89 bins apart. Note 36
+read −77.5 dB with a ±12 mask and −98.3 dB with ±40; notes 48 and 60 barely moved. The
+mask now scales with harmonic spacing and every check holds a uniform −85 dB bound. The
+same leakage-limited metric was still in `drum_engine_test.cpp` and is fixed there too.
+
+**B3 improves headroom rather than threatening it.** The natural worry — BL-1's drive
+sits before the filter, so nothing bounds a Q 470 resonance — is backwards. Gain
+reduction into the limiter at res 1 went from −36.1 dB to −20.2 dB on BL-1, and WT-1's
+pre-FX peak from 38.97 to 4.03. **Peak width governs headroom; peak height governs the
+ring.** Two stacked Q 14 resonances are ~70 Hz wide, so a sweep over a rich source
+excites them across a band; a 2 Hz needle catches only what sits on fc. Tellingly, the
+post-change figures converge across the two engines while the pre-change ones diverge —
+the change removed a patch-*dependent* gain stage, not merely a loud one.
+
+### How to write the tests these findings need
+
+Four traps cost real debugging time, and every one produced a test that passed while
+guarding nothing:
+
+- **A click test with a fixed switch instant measures nothing.** At some phases the two
+  waveforms are nearly continuous. Three separate engines hit this. Sweeping the switch
+  point across a period took WT-1's failures-with-fix-disabled from 7 to 11 of 16.
+- **A peak-height assertion cannot tell the two B3 formulas apart** — preserving height
+  is the whole point of the mapping. Ring-down separates them 21x (1.011 s vs 0.048 s);
+  peak width does too. Assert `|H(fc)|` for preset fidelity and ring-down or width for
+  topology, and label which question each answers.
+- **Insist on bit-identity, not "small".** A 3e-16 residue is indistinguishable from a
+  real drift until the benign cause is removed. Demanding exactly 0.0 surfaced a
+  summation reassociation in DR-1's decimator and a `Float32Array` mid-chain
+  quantisation in WT-1's.
+- **Let a high-Q filter settle.** At Q 470 and fc 130.8 Hz, τ = 1.145 s, so a 4 s settle
+  reads 0.26 dB low — enough to enshrine a wrong number as a golden.
+
+The measurement to prefer for filter magnitude: render the same seeded noise with the
+filter in and out of circuit and take the per-bin power ratio. The source cancels
+exactly, so there is no curve fitting and no bin-width penalty. Average the ratio over
+±4 bins, or finite-segment truncation error reports its worst positive outlier instead
+of the resonance.
+
+### Still worth doing
+
+- A **cross-engine parity test**. Both sides are now deterministic (seeded `Rng` in all
+  three worklets and their C++ twins) and run the same FX algorithm, so a fixed patch can
+  be rendered on both and compared per band. This is the test that would make "sounds
+  identical" a property rather than a comment, and it is now possible for the first time.
+- **`Fx.cpp`'s remaining `mixGate` stages** could gate like the drive where they have no
+  tail to keep warm.
+- The **RES retaper**, if the knob's travel matters more than preset stability.
