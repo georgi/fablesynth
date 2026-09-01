@@ -1,6 +1,6 @@
-// The WT-1 note sequencer: 12 note lanes per step (tap = set note, tap again
-// = rest), draggable note lengths, octave / accent rows, bars 1–4 + sequence
-// length, RAND, transport and ROOT controls.
+// The WT-1 note sequencer: 12 note lanes per step (tap an empty cell = set
+// note, click a note = select it), draggable note lengths, octave / accent
+// rows, bars 1–4 + sequence length, RAND, transport and ROOT controls.
 
 import type { ReactNode } from 'react';
 import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
@@ -156,7 +156,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
         )}
         {headerExtra}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
-        <span className="ns-hint">TAP = NOTE · DRAG = MOVE · SHIFT-DRAG = SELECT</span>
+        <span className="ns-hint">TAP = NOTE · CLICK NOTE = SELECT · SHIFT-DRAG = RECT</span>
       </div>
 
       <div className="ns-body">
@@ -181,6 +181,20 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                       const active = !!voice;
                       const dragSrc = !!drag?.active && drag.pattern === pattern && drag.srcStep === step && drag.srcNote === note;
                       const dragOver = !!drag?.active && drag.pattern === pattern && drag.overStep === step && drag.overNote === note;
+                      // Step of the note that owns this cell: the cell itself
+                      // when lit, else the origin of a longer note whose
+                      // painted body covers it (poly clip hosted, mono store
+                      // patterns standalone). -1 = empty cell.
+                      const noteHead = (): number => {
+                        if (active) return step;
+                        for (let c = step - 1; c >= 0; c--) {
+                          const cand = hosted
+                            ? polySteps?.[bar * STEPS + c]?.find((v) => v.on && v.note === note && c + v.duration > step)
+                            : (() => { const g = getStep(patterns, pattern, c); return g.on && g.note === note && c + g.duration > step ? g : undefined; })();
+                          if (cand) return c;
+                        }
+                        return -1;
+                      };
                       return (
                         <div className="ns-cell-wrap" key={r}>
                           <button
@@ -202,25 +216,24 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                               if (selectable && event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
                               if (selectable && rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
                               if (hosted && !onMoveChordNote) return;
-                              let srcStep = step;
-                              if (!active) {
-                                // Grab the painted body of a longer note: find
-                                // the covering voice (poly clip hosted, mono
-                                // store patterns standalone).
-                                srcStep = -1;
-                                for (let c = step - 1; c >= 0; c--) {
-                                  const cand = hosted
-                                    ? polySteps?.[bar * STEPS + c]?.find((v) => v.on && v.note === note && c + v.duration > step)
-                                    : (() => { const g = getStep(patterns, pattern, c); return g.on && g.note === note && c + g.duration > step ? g : undefined; })();
-                                  if (cand) { srcStep = c; break; }
-                                }
-                                if (srcStep < 0) return;
-                              }
+                              const srcStep = noteHead();
+                              if (srcStep < 0) return;
                               event.preventDefault();
                               startNoteDrag(event, srcStep, note, pattern, step);
                             }}
                             onClick={() => {
                               if (consumeRectClick() || consumeDragClick()) return;
+                              // A click on a note selects it — head cell or
+                              // painted body alike. Only an empty cell makes a
+                              // new note. DELETE in the selection menu (or the
+                              // Delete key) removes the selected note.
+                              const head = noteHead();
+                              if (selectable && head >= 0) {
+                                const absHead = bar * STEPS + head;
+                                setRectSel({ stepFrom: absHead, stepTo: absHead, noteFrom: note, noteTo: note });
+                                return;
+                              }
+                              if (head >= 0 && head !== step) return; // body of a note: never paint over it
                               if (onToggleChordNote) { onToggleChordNote(absoluteStep, note); return; }
                               toggleCell(step, note, pattern);
                             }}

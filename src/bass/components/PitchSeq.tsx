@@ -1,5 +1,5 @@
-// The 16-step pitch sequencer: 12 note lanes per step (tap = set note,
-// tap again = rest), draggable note lengths, octave / accent / slide rows,
+// The 16-step pitch sequencer: 12 note lanes per step (tap an empty cell = set note,
+// click a note = select it), draggable note lengths, octave / accent / slide rows,
 // bars 1–4 and sequence length. Shift-drag a cell to sweep a step ×
 // note-lane rectangle (highlighted); drag inside the rect to move it
 // (Alt = copy). Cmd-A/Esc/Cmd-C/X/V/D/Delete work the clipboard verbs
@@ -145,6 +145,17 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                       const active = s.on && s.note === note;
                       const dragSrc = !!drag?.active && drag.pattern === pattern && drag.srcStep === step && drag.srcNote === note;
                       const dragOver = !!drag?.active && drag.pattern === pattern && drag.overStep === step && drag.overNote === note;
+                      // Step of the note that owns this cell: the cell itself
+                      // when lit, else the origin of a longer note whose
+                      // painted body covers it. -1 = empty cell.
+                      const noteHead = (): number => {
+                        if (active) return step;
+                        for (let c = step - 1; c >= 0; c--) {
+                          const cand = getStep(patterns, pattern, c);
+                          if (cand.on && cand.note === note && c + cand.duration > step) return c;
+                        }
+                        return -1;
+                      };
                       return (
                         <div className="bl-cell-wrap" key={r}>
                           <button
@@ -168,20 +179,23 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                               // focus) — verbs flow back via _setPatterns.
                               if (event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
                               if (rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
-                              let srcStep = step;
-                              if (!active) {
-                                srcStep = -1;
-                                for (let c = step - 1; c >= 0; c--) {
-                                  const cand = getStep(patterns, pattern, c);
-                                  if (cand.on && cand.note === note && c + cand.duration > step) { srcStep = c; break; }
-                                }
-                                if (srcStep < 0) return;
-                              }
+                              const srcStep = noteHead();
+                              if (srcStep < 0) return;
                               event.preventDefault();
                               startNoteDrag(event, srcStep, note, pattern, step);
                             }}
                             onClick={() => {
                               if (consumeRectClick() || consumeDragClick()) return;
+                              // A click on a note selects it — head cell or
+                              // painted body alike. Only an empty cell makes a
+                              // new note. DELETE in the selection menu (or the
+                              // Delete key) removes the selected note.
+                              const head = noteHead();
+                              if (head >= 0) {
+                                const absHead = bar * STEPS + head;
+                                setRectSel({ stepFrom: absHead, stepTo: absHead, noteFrom: note, noteTo: note });
+                                return;
+                              }
                               toggleCell(step, note, pattern);
                             }}
                           />
