@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -71,20 +72,34 @@ public:
     void   advance(double rate, int n, double sr);
 };
 
-struct FilterState {
+// Everything one filter run needs EXCEPT the comb delay lines. Split out for
+// finding J2: a discrete switch (filter type, route, on/off) freezes a copy of
+// this and renders the old configuration alongside the new one for one short
+// crossfade, and the delay lines are far too large to copy on the audio thread.
+struct FilterCore {
+    int    ftype = 0; bool twoPole = false;
     double svf[8]  = {0};   // 2 stages x 2 ch x (ic1, ic2)
     double fmt[12] = {0};   // formant: 2 ch x 3 bands x (s1, s2)
-    std::array<float, COMB_MAX> combL{};
-    std::array<float, COMB_MAX> combR{};
-    int    combW = 0;
-    double cutSm = 0;
     double satXL = 0, satXR = 0;       // ADAA drive: previous input per channel
-    int    ftype = 0; bool twoPole = false;
-    double a1 = 0, a2 = 0, a3 = 0, k1 = 0;
+    double drive = 0;                  // ADAA drive amount for this run
+    double cutSm = 0;
+    // k1 damps SVF stage 1, k2 stage 2. They differ only for LP24, where the
+    // resonance now lives in ONE stage (finding B3); every other type sets
+    // k2 == k1 and uses stage 1 alone.
+    double k1 = 0, k2 = 0;
     double cutTarget = 0, cutPrev = -1;    // chunk cutoff ramp (Finding 7)
     double combLen = 1, combFb = 0, combLenPrev = -1;
+    int    combW = 0;                  // write index into FilterState's lines
     double fc[9]  = {0};               // formant biquad coefs: 3 bands x (b0,a1,a2)
     double famp[3] = {0};
+    void   reset();
+};
+
+struct FilterState {
+    FilterCore c;                      // live configuration
+    FilterCore old;                    // frozen pre-switch copy (J2 crossfade)
+    std::array<float, COMB_MAX> combL{};
+    std::array<float, COMB_MAX> combR{};
     void   reset();
 };
 
@@ -103,6 +118,11 @@ struct OscState {
     int    mask = 0, size = 0;
     const float* data = nullptr;
     double posSm = -1;
+    // Which table slot / on-state this state was last configured for. A change
+    // in either freezes a copy of the whole OscState and crossfades it out
+    // against the new one (finding J2), so table switches do not click.
+    int    tableIdx = -1;
+    bool   wasOn = false;
     // Previous chunk's targets for the intra-chunk ramps (Finding 7): phase
     // increments, morph fraction and pan/level gain products are interpolated
     // from these to the current values across each render chunk.
@@ -131,6 +151,21 @@ public:
     double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
     double ampFacPrev = -1;            // AMP-mod factor ramp start (Finding 7)
 
+    // ---- discrete-switch crossfades (finding J2) ----
+    // Filter section: the topology actually rendered last chunk, the frozen
+    // pre-switch topology, and the samples left in the fade. While fading, the
+    // whole section runs twice (old cores + old topology, new cores + new
+    // topology) and the two are equal-power mixed.
+    bool   fHave = false;
+    int    fRoute = -1;  bool fOn1 = false, fOn2 = false;   // last rendered
+    int    oRoute = -1;  bool oOn1 = false, oOn2 = false;   // frozen
+    int    fXfRemain = 0, fXfLen = 0;
+    // Oscillators: a frozen copy keeps playing the old table for one fade.
+    OscState oldA, oldB;
+    int    aXfRemain = 0, aXfLen = 0, bXfRemain = 0, bXfLen = 0;
+    // Sub oscillator shape (sine <-> square).
+    int    subShapePrev = -1, subShapeOld = -1, subXfRemain = 0, subXfLen = 0;
+
     bool   active() const { return ampEnv.state != 0; }
     void   noteOn(int n, double v, double startPitch, long a, Rng& rng);
     void   noteOff() { gate = false; ampEnv.release(); modEnv.release(); }
@@ -150,9 +185,38 @@ class Engine {
 public:
     void prepare(double sampleRate);
     void setTables(std::vector<TablePtr> tables);
-    void setParam(int id, float v) { p_[(size_t)id] = v; }
-    void setParams(const ParamArray& p) { p_ = p; }
+    // Free every retired table set the audio thread has provably finished with.
+    // Message thread only; setTables() calls it, and a host may call it from a
+    // timer so retired sets do not linger while the UI is idle (finding J3).
+    void collectRetiredTables();
+    size_t retiredTableSetCount() const { return retired_.size(); }
+    // Direct (snapped) parameter access — preset loads, state restore and the
+    // offline harness. Both arrays move together so the smoothers below have
+    // nothing to chase.
+    void setParam(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = v; }
+    void setParams(const ParamArray& p) { p_ = ps_ = pt_ = p; }
+    // NOTE: an engine driven by paramTargets() must not also be written through
+    // params() — the ramp would pull the direct write back to the last target.
+    // Nothing does today: the plugin uses paramTargets() exclusively and SQ-4
+    // (which loads whole patches) uses params() exclusively.
     ParamArray& params() { return p_; }
+
+    // ---- host-automation smoothing (finding J1) ----
+    // The processor writes the APVTS snapshot HERE once per host block; the
+    // engine then pulls every continuous parameter toward its target once per
+    // <=128-sample render chunk, so an automated cutoff no longer steps once
+    // per host block. Touching this accessor switches the engine into the
+    // smoothed path (params()/setParams() stay snapped, so no test or preset
+    // load ramps). Discrete parameters (Int/Enum/Bool and the sequencer clock)
+    // always snap; every continuous one ramps to its target across the render
+    // call — linearly for gains/pan/pos, geometrically (constant octaves per
+    // second) for cutoff/rate/time — capped at PARAM_RAMP_MAX_SEC so an
+    // oversized offline block does not stretch the move across the whole
+    // buffer. Interpolating across the block IS what a block-rate value means,
+    // so at any normal block size the parameter is continuous per sample and
+    // leaves no line at the block rate.
+    ParamArray& paramTargets() { smoothParams_ = true; return pt_; }
+    static constexpr double PARAM_RAMP_MAX_SEC = 0.050;
 
     void noteOn(int note, double vel);
     void noteOff(int note);
@@ -276,11 +340,26 @@ public:
     bool   vizModAny = false;
 
 private:
+    void beginParamRamp(int n);        // finding J1, once per render() call
+    void smoothParams(int n);          // finding J1, per render chunk
+    // Crossfade length for a discrete switch (finding J2): 3 ms, sample-rate
+    // derived, matching the DR-1 engine's filter-type fade.
+    int  xfSamples() const { return std::max(8, (int)(0.003 * sr_)); }
     bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n);
     void renderOsc(OscState& o, float* tmpL, float* tmpR, int n);
-    void setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n);
-    void runFilter(FilterState& fs, const float* inL, const float* inR,
-                   float* outL, float* outR, double drive, int n);
+    void setupFilter(FilterCore& fc, int base, Voice& v, double e2, double mCut, const double* pm, int n);
+    void runFilter(FilterState& fs, FilterCore& c, bool writeComb,
+                   const float* inL, const float* inR, float* outL, float* outR, int n);
+    // One pass of the voice's filter section (route + on/off topology) using
+    // the supplied cores. Writes into the two scratch pairs and hands back the
+    // pair holding the result. Never writes tmpL_/tmpR_/bL_/bR_, so the frozen
+    // pre-switch pass can read the same oscillator mix.
+    void runFilterSection(Voice& v, FilterCore& c1, FilterCore& c2,
+                          int route, bool f1on, bool f2on, bool writeComb,
+                          float* s1L, float* s1R, float* s2L, float* s2R,
+                          float*& oL, float*& oR, int n);
+    // LFO value with a shape-switch crossfade folded in (finding J2).
+    double lfoShapeValue(int idx, const Lfo& l, int base) const;
     void renderVoice(Voice& v, float* L, float* R, int n);
     void renderBlock(float* L, float* R, int n, double ppqChunk); // n <= 128
     void snapshotVizMod();             // copy the just-rendered voice's route sums
@@ -300,18 +379,37 @@ private:
     void   seqHostResync();
     void   seqFireHostStep(long k);
 
-    ParamArray p_ = defaultParams();
-    // Lock-free table publication (Finding 2): the message thread builds a
-    // complete immutable set in setTables and publishes it with an atomic
-    // shared_ptr swap; render() atomic_loads one snapshot per call and keeps it
-    // alive for the whole block, so the audio thread never blocks on a UI swap
-    // and never substitutes silence. retired_ pins the previously published set
-    // so its deallocation normally happens on the message thread (the next
-    // setTables), not on audio.
+    ParamArray p_ = defaultParams();   // smoothed values the DSP reads
+    ParamArray pt_ = defaultParams();  // automation targets (finding J1)
+    ParamArray ps_ = defaultParams();  // ramp start: p_ as of this render() entry
+    int rampLen_ = 0, rampPos_ = 0;    // automation ramp, in samples
+    bool smoothParams_ = false;        // set by paramTargets()
+
+    // Lock-free table publication (findings 2 + J3). The message thread builds
+    // a complete immutable set and publishes a RAW pointer to it; the audio
+    // thread loads that pointer once per render() and uses it for the whole
+    // block. The previous free-function std::atomic_load on a shared_ptr was a
+    // hashed spinlock in both libstdc++ and libc++, so the audio thread could
+    // block behind a UI table swap, and the last reference could be dropped on
+    // audio (a free in the render callback). Now the message thread owns every
+    // set: a replaced set moves to retired_ tagged with the render epoch, and
+    // collectRetiredTables() frees it only once a LATER render has started, or
+    // once no render is in flight at all (a bypassed or stopped plugin stops
+    // advancing the epoch, and retired sets must not pile up). Renders are
+    // strictly sequential on one thread, so a higher epoch proves the render
+    // that could still hold the pointer has returned.
     using TableSet = std::vector<EngineTable>;
-    std::shared_ptr<const TableSet> tables_ = std::make_shared<TableSet>();
-    std::shared_ptr<const TableSet> retired_;
+    std::unique_ptr<const TableSet> live_ = std::make_unique<const TableSet>();
+    std::atomic<const TableSet*> tablesPub_{live_.get()};
+    std::atomic<uint64_t> renderEpoch_{0};
+    std::atomic<bool> rendering_{false};   // a render call is in flight
+    struct RetiredSet { std::unique_ptr<const TableSet> set; uint64_t epoch = 0; };
+    std::vector<RetiredSet> retired_;      // message thread only
     const TableSet* curTables_ = nullptr;  // render-call snapshot (audio thread only)
+
+    // LFO shape-switch crossfade state (finding J2), one entry per global LFO.
+    int lfoShapePrev_[2] = {-1, -1};
+    int lfoXfRemain_[2] = {0, 0}, lfoXfLen_[2] = {0, 0};
     std::array<Voice, NVOICES> voices_;
     double sr_ = 48000;
     // Sample-rate-derived per-sample coefficients (Finding 9), set in prepare():
@@ -374,6 +472,12 @@ private:
     float tmpL_[128], tmpR_[128];
     float bL_[128], bR_[128];
     float f1L_[128], f1R_[128], f2L_[128], f2R_[128];
+    // Second scratch pair set: the frozen pre-switch filter section runs into
+    // these while the live one runs into f1_/f2_ (finding J2).
+    float g1L_[128], g1R_[128], g2L_[128], g2R_[128];
+    // Oscillator crossfade scratch: each side renders here and is added to the
+    // voice mix under its own fade ramp (finding J2).
+    float xL_[128], xR_[128];
 };
 
 } // namespace fable

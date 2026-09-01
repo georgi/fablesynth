@@ -141,7 +141,7 @@ void FableAudioProcessor::rebuildEngineTables() {
     all.reserve(tables.size() + userTables.size());
     for (const auto& t : tables) all.push_back(t);
     for (const auto& u : userTables) all.push_back(u.table);
-    engine.setTables(std::move(all)); // thread-safe swap; shares data, copies nothing
+    engine.setTables(std::move(all)); // lock-free publish; shares data, copies nothing
 }
 
 int FableAudioProcessor::addUserTable(fable::UserTable table) {
@@ -216,8 +216,12 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
 
-    // Pull current parameter values into the engine's flat array (audio-thread safe).
-    auto& p = engine.params();
+    // Pull current parameter values into the engine's automation TARGETS
+    // (audio-thread safe). Finding J1: the engine smooths each continuous
+    // parameter toward its target once per 128-sample render chunk, so an
+    // automated cutoff no longer steps once per host block; the FX chain does
+    // the same for its own coefficients, so it still takes the raw targets.
+    auto& p = engine.paramTargets();
     for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
         if (rawParams[i]) p[i] = rawParams[i]->load();
     fx.setParams(p);

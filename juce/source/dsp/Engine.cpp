@@ -123,13 +123,17 @@ void Lfo::advance(double rate, int n, double sr) {
     if (phase >= 1) { phase -= std::floor(phase); hold = rng->next() * 2 - 1; }
 }
 
-// ---------------- FilterState ----------------
-void FilterState::reset() {
+// ---------------- FilterCore / FilterState ----------------
+void FilterCore::reset() {
     for (auto& x : svf) x = 0;
     for (auto& x : fmt) x = 0;
-    combL.fill(0); combR.fill(0); combW = 0;
+    combW = 0;
     cutSm = 0; satXL = 0; satXR = 0;
     cutPrev = -1; combLenPrev = -1;
+}
+void FilterState::reset() {
+    c.reset(); old.reset();
+    combL.fill(0); combR.fill(0);
 }
 
 // ---------------- Voice ----------------
@@ -147,6 +151,10 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
     subPhase = 0; subIncPrev = -1; ampFacPrev = -1;
     f1.reset(); f2.reset();
     dcxL = dcxR = dcyL = dcyR = 0;
+    // A fresh note has nothing to crossfade from (finding J2).
+    fHave = false; fXfRemain = 0; aXfRemain = 0; bXfRemain = 0; subXfRemain = 0;
+    subShapePrev = -1; subShapeOld = -1;
+    oA.tableIdx = -1; oB.tableIdx = -1; oA.wasOn = false; oB.wasOn = false;
 }
 
 // ---------------- Engine ----------------
@@ -180,6 +188,14 @@ void Engine::prepare(double sampleRate) {
     }
     gLfo1_.rng = &rng_; gLfo2_.rng = &rng_;
     gLfo1_.reset(); gLfo2_.reset();
+    for (int i = 0; i < 2; i++) { lfoShapePrev_[i] = -1; lfoXfRemain_[i] = 0; lfoXfLen_[i] = 0; }
+    // No automation ramp across a re-prepare. Which array is the source of
+    // truth depends on the path in use: paramTargets() for a host-automated
+    // plugin, params()/setParams() for a preset load or the offline harness.
+    if (smoothParams_) p_ = ps_ = pt_;
+    else               pt_ = ps_ = p_;
+    rampLen_ = rampPos_ = 0;
+    collectRetiredTables();         // message thread: reclaim anything pending
 }
 
 double Engine::lfoHz(int base) const {
@@ -204,15 +220,13 @@ void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
     }
 }
 
+// Message thread. Findings 2 + J3: build a complete immutable set, publish a
+// raw pointer to it (a plain atomic store — genuinely lock-free, unlike the
+// hashed spinlock behind std::atomic_load on a shared_ptr), then retire the
+// previous set for reclamation HERE rather than letting the audio thread drop
+// the last reference and free inside the render callback.
 void Engine::setTables(std::vector<TablePtr> tables) {
-    // Finding 2: build a complete immutable set, then publish it with an atomic
-    // shared_ptr swap — the audio thread never waits and never goes silent.
-    // The previously published set is parked in retired_ so it is normally
-    // freed here (message thread) on the NEXT publish; if the audio thread
-    // happens to drop the last reference at a block end instead, the freed
-    // payload is only a small vector of views (sample data is shared TablePtrs
-    // typically also owned by the processor's pool).
-    auto next = std::make_shared<TableSet>();
+    auto next = std::make_unique<TableSet>();
     next->reserve(tables.size());
     for (auto& t : tables) {
         EngineTable e;
@@ -223,7 +237,85 @@ void Engine::setTables(std::vector<TablePtr> tables) {
         }
         next->push_back(std::move(e));
     }
-    retired_ = std::atomic_exchange(&tables_, std::shared_ptr<const TableSet>(std::move(next)));
+    auto prev = std::move(live_);
+    live_ = std::unique_ptr<const TableSet>(next.release());
+    // Sequentially consistent: the epoch must be sampled AFTER the publish is
+    // globally visible, or a render that starts in between could load the old
+    // pointer and still be tagged with an already-passed epoch.
+    tablesPub_.store(live_.get(), std::memory_order_seq_cst);
+    if (prev)
+        retired_.push_back({std::move(prev), renderEpoch_.load(std::memory_order_seq_cst)});
+    collectRetiredTables();
+}
+
+// Message thread. A retired set is safe to free once the render epoch has moved
+// PAST the value sampled at retirement: renders are strictly sequential on the
+// audio thread, so a higher epoch proves the render that could still hold the
+// pointer has returned. Nothing here ever runs on the audio thread.
+void Engine::collectRetiredTables() {
+    const uint64_t e = renderEpoch_.load(std::memory_order_seq_cst);
+    // rendering_ is raised BEFORE the audio thread loads the published pointer,
+    // so observing it low means any render that could hold an old pointer has
+    // already returned — the reclamation path for a stopped or bypassed plugin,
+    // where the epoch never advances again.
+    const bool idle = !rendering_.load(std::memory_order_seq_cst);
+    retired_.erase(std::remove_if(retired_.begin(), retired_.end(),
+                                  [e, idle](const RetiredSet& r) { return idle || e > r.epoch; }),
+                   retired_.end());
+}
+
+// Finding J1: host automation arrives once per host block. Interpolating it
+// across the block is what the block-rate value actually means, so each
+// continuous parameter ramps from its value at render() entry to the target
+// over the call (capped at PARAM_RAMP_MAX_SEC). The ramp is evaluated per render
+// chunk, and the engine's existing intra-chunk ramps interpolate between those
+// chunk values, so the parameter really is continuous per sample: no step at
+// the block boundary, hence no block-rate line in the output. Discrete
+// parameters and the sequencer clock snap.
+//
+// 0 = snap, 1 = linear, 2 = geometric (equal ratio per sample).
+static const std::array<uint8_t, NUM_PARAMS>& paramRampKind() {
+    static const std::array<uint8_t, NUM_PARAMS> kind = [] {
+        std::array<uint8_t, NUM_PARAMS> a{};
+        const auto& info = paramInfo();
+        for (int i = 0; i < NUM_PARAMS; i++) {
+            const ParamInfo& d = info[(size_t)i];
+            // The sequencer clock is timing, not tone: gliding BPM or swing
+            // would drag the grid instead of removing a zipper.
+            const bool clock = i == SEQ_BPM || i == SEQ_SWING || i == SEQ_GATE || i == SEQ_ROOT;
+            if (d.kind != Kind::Float || d.curve == Curve::Int || clock) a[(size_t)i] = 0;
+            else a[(size_t)i] = d.curve == Curve::Log ? 2 : 1;
+        }
+        return a;
+    }();
+    return kind;
+}
+
+void Engine::beginParamRamp(int n) {
+    if (!smoothParams_) return;
+    ps_ = p_;                                  // where this call's ramp starts
+    rampPos_ = 0;
+    rampLen_ = std::min(n, std::max(1, (int)(PARAM_RAMP_MAX_SEC * sr_)));
+}
+
+void Engine::smoothParams(int n) {
+    if (!smoothParams_) return;
+    const auto& kind = paramRampKind();
+    rampPos_ += n;
+    const double f = rampLen_ <= 0 ? 1.0 : std::min(1.0, (double)rampPos_ / (double)rampLen_);
+    for (int i = 0; i < NUM_PARAMS; i++) {
+        const float t = pt_[(size_t)i];
+        const float s0 = ps_[(size_t)i];
+        if (exactlyEqual(s0, t)) { p_[(size_t)i] = t; continue; }   // nothing moving
+        const uint8_t k = kind[(size_t)i];
+        if (k == 0 || f >= 1.0 || !std::isfinite((double)t) || !std::isfinite((double)s0)) {
+            p_[(size_t)i] = t;
+            continue;
+        }
+        p_[(size_t)i] = (k == 2 && s0 > 0.0f && t > 0.0f)
+                          ? (float)((double)s0 * std::pow((double)t / (double)s0, f))
+                          : (float)((double)s0 + ((double)t - (double)s0) * f);
+    }
 }
 
 void Engine::noteOn(int n, double vel) {
@@ -630,9 +722,10 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
     o.havePrev = true;
 }
 
-void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n) {
+void Engine::setupFilter(FilterCore& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n) {
     int ftype = (int)p_[slot(base + FLT_TYPE)];
     fs.ftype = ftype;
+    fs.drive = pm[base + FLT_DRIVE];
 
     // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
     // exponent stays in a single std::pow — bit-identical to the legacy
@@ -651,7 +744,27 @@ void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double 
         // SVF coefficients are recomputed per <=32-sample sub-block in
         // runFilter from the ramped cutoff (Finding 7); only k is fixed here.
         fs.twoPole = ftype == 1;
-        fs.k1 = 2 - 1.93 * res;
+        if (fs.twoPole) {
+            // Finding B3. LP24 used to cascade two stages with the SAME k, so
+            // the peak at fc was (1/k)^2 — two coincident resonances, and with
+            // k = 2 - 1.93*res bottoming out at 0.071 the filter reached only
+            // Q ~= 14 and never rang. Now the resonance lives in stage 1 alone
+            // and stage 2 stays critically damped:
+            //   resT = res + 0.0035*res^4
+            //   k1   = max(0.002, 0.5*(2 - 1.93*resT)^2),  k2 = 2
+            // 1/(k1*k2) reproduces the old (1/k)^2 magnitude at fc to within
+            // 0.03 dB up to res = 0.9 (so presets keep their timbre), while the
+            // single resonant stage's Q climbs from 14 to ~470 at the top of
+            // the knob — a filter that now sings instead of merely peaking.
+            const double r2 = res * res;
+            const double resT = res + 0.0035 * r2 * r2;
+            const double kk = 2 - 1.93 * resT;
+            fs.k1 = std::max(0.002, 0.5 * kk * kk);
+            fs.k2 = 2.0;
+        } else {
+            fs.k1 = 2 - 1.93 * res;
+            fs.k2 = fs.k1;
+        }
     } else if (ftype == 5) {
         double len = sr_ / cut;
         len = std::min((double)COMB_MAX - 2, std::max(1.0, len));
@@ -676,13 +789,19 @@ void Engine::setupFilter(FilterState& fs, int base, Voice& v, double e2, double 
     }
 }
 
-void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
-                       float* outL, float* outR, double drive, int n) {
+// One filter run. `c` carries the whole configuration (live core, or the frozen
+// pre-switch copy during a J2 crossfade); the comb delay lines live in `fs` and
+// are shared, so the frozen pass reads them with writeComb == false and only the
+// live pass writes. Over a 3 ms fade that is inaudible and it keeps the 32 kB
+// lines off the audio thread's copy path.
+void Engine::runFilter(FilterState& fs, FilterCore& c, bool writeComb,
+                       const float* inL, const float* inR, float* outL, float* outR, int n) {
+    const double drive = c.drive;
     if (drive > 0.005) {
         double dg = 1 + drive * 7;
         double dcomp = 1 / std::pow(dg, 0.55);
         double kF = dcomp / dg;
-        double xpL = fs.satXL, xpR = fs.satXR;
+        double xpL = c.satXL, xpR = c.satXR;
         double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
         for (int i = 0; i < n; i++) {
             double aL = inL[i], aR = inR[i];
@@ -695,26 +814,30 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
             outR[i] = (float)((dxR > 1e-5 || dxR < -1e-5) ? (FR - FpR) / dxR : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
             xpR = aR; FpR = FR;
         }
-        fs.satXL = xpL; fs.satXR = xpR;
+        c.satXL = xpL; c.satXR = xpR;
     } else {
         for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }
+        if (n > 0) { c.satXL = inL[n - 1]; c.satXR = inR[n - 1]; }
     }
 
-    int ftype = fs.ftype;
+    int ftype = c.ftype;
     if (ftype <= 4) {
         // Finding 7: cutoff ramps from the previous chunk's value across the
         // chunk; SVF coefficients are recomputed per <=32-sample sub-block.
-        const double k1 = fs.k1;
-        const double c1c = fs.cutTarget;
-        const double c0c = fs.cutPrev > 0 ? fs.cutPrev : c1c;
-        double* F = fs.svf;
+        const double k1 = c.k1, k2 = c.k2;
+        const double c1c = c.cutTarget;
+        const double c0c = c.cutPrev > 0 ? c.cutPrev : c1c;
+        double* F = c.svf;
         for (int at = 0; at < n; at += 32) {
             const int m = std::min(32, n - at);
             const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
             const double gC = std::tan((PI * cut) / sr_);
             const double a1 = 1 / (1 + gC * (gC + k1));
             const double a2 = gC * a1, a3 = gC * a2;
+            // Finding B3: LP24's second stage is critically damped, so it needs
+            // its own coefficient set (k2 != k1); every other type has k2 == k1.
+            const double b1 = 1 / (1 + gC * (gC + k2));
+            const double b2 = gC * b1, b3 = gC * b2;
             auto runSvf = [&](float* buf, int o1, auto out) {
                 double ic1 = F[o1], ic2 = F[o1 + 1];
                 for (int i = at; i < at + m; i++) {
@@ -747,20 +870,33 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
                         runSvf(ch == 0 ? outL : outR, ch * 2, [&](double x, double v1, double) { return x - k1 * v1; });
                     break;
             }
-            if (fs.twoPole) {
-                for (int ch = 0; ch < 2; ch++) runSvf(ch == 0 ? outL : outR, 4 + ch * 2, outV2);
+            if (c.twoPole) {
+                auto runSvf2 = [&](float* buf, int o1) {
+                    double ic1 = F[o1], ic2 = F[o1 + 1];
+                    for (int i = at; i < at + m; i++) {
+                        double x = buf[i];
+                        double v3 = x - ic2;
+                        double v1 = b1 * ic1 + b2 * v3;
+                        double v2 = ic2 + b2 * ic1 + b3 * v3;
+                        ic1 = 2 * v1 - ic1;
+                        ic2 = 2 * v2 - ic2;
+                        buf[i] = (float)v2;
+                    }
+                    F[o1] = ic1; F[o1 + 1] = ic2;
+                };
+                for (int ch = 0; ch < 2; ch++) runSvf2(ch == 0 ? outL : outR, 4 + ch * 2);
             }
         }
-        fs.cutPrev = c1c;
+        c.cutPrev = c1c;
     } else if (ftype == 5) {
         // Comb delay length ramps across the chunk (Finding 7); the fractional
         // read below already supports a per-sample length.
-        const double len1 = fs.combLen;
-        const double len0 = fs.combLenPrev > 0 ? fs.combLenPrev : len1;
+        const double len1 = c.combLen;
+        const double len0 = c.combLenPrev > 0 ? c.combLenPrev : len1;
         const double dLen = (len1 - len0) / n;
-        double fb = fs.combFb, g0 = 1 - fb;
+        double fb = c.combFb, g0 = 1 - fb;
         float* cl = fs.combL.data(); float* cr = fs.combR.data();
-        int w = fs.combW;
+        int w = c.combW;
         for (int i = 0; i < n; i++) {
             double len = len0 + dLen * (i + 1);
             double rd = w - len;
@@ -771,14 +907,14 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
             int i1 = i0 + 1 < COMB_MAX ? i0 + 1 : 0;
             double yL = g0 * outL[i] + fb * (cl[i0] + frac * (cl[i1] - cl[i0]));
             double yR = g0 * outR[i] + fb * (cr[i0] + frac * (cr[i1] - cr[i0]));
-            cl[w] = (float)yL; cr[w] = (float)yR;
+            if (writeComb) { cl[w] = (float)yL; cr[w] = (float)yR; }
             outL[i] = (float)yL; outR[i] = (float)yR;
             w = w + 1 < COMB_MAX ? w + 1 : 0;
         }
-        fs.combW = w;
-        fs.combLenPrev = len1;
+        c.combW = w;
+        c.combLenPrev = len1;
     } else {
-        const double* fc = fs.fc; const double* fa = fs.famp; double* z = fs.fmt;
+        const double* fc = c.fc; const double* fa = c.famp; double* z = c.fmt;
         for (int ch = 0; ch < 2; ch++) {
             float* buf = ch == 0 ? outL : outR;
             int zb = ch * 6;
@@ -799,6 +935,52 @@ void Engine::runFilter(FilterState& fs, const float* inL, const float* inR,
     }
 }
 
+// One pass of the voice filter section. Reads the oscillator mix (tmpL_/tmpR_,
+// plus bL_/bR_ for SPLIT) and never writes it, so the frozen pre-switch pass of
+// a J2 crossfade can run over the same input. Hands back the scratch pair that
+// holds the result (which may be the oscillator mix itself when both filters
+// are off — the caller must not write it before the second pass has run).
+void Engine::runFilterSection(Voice& v, FilterCore& c1, FilterCore& c2,
+                              int route, bool f1on, bool f2on, bool writeComb,
+                              float* s1L, float* s1R, float* s2L, float* s2R,
+                              float*& oL, float*& oR, int n) {
+    if (route == 2) {                                   // SPLIT: oscA -> F1, oscB -> F2
+        if (f1on) runFilter(v.f1, c1, writeComb, tmpL_, tmpR_, s1L, s1R, n);
+        if (f2on) runFilter(v.f2, c2, writeComb, bL_,   bR_,   s2L, s2R, n);
+        const float* aL = f1on ? s1L : tmpL_; const float* aR = f1on ? s1R : tmpR_;
+        const float* bLs = f2on ? s2L : bL_;  const float* bRs = f2on ? s2R : bR_;
+        for (int i = 0; i < n; i++) { s1L[i] = aL[i] + bLs[i]; s1R[i] = aR[i] + bRs[i]; }
+        oL = s1L; oR = s1R;
+    } else if (route == 1) {                            // PARALLEL
+        if (f1on) runFilter(v.f1, c1, writeComb, tmpL_, tmpR_, s1L, s1R, n);
+        if (f2on) runFilter(v.f2, c2, writeComb, tmpL_, tmpR_, s2L, s2R, n);
+        if (f1on && f2on) {
+            for (int i = 0; i < n; i++) { s1L[i] += s2L[i]; s1R[i] += s2R[i]; }
+            oL = s1L; oR = s1R;
+        } else if (f1on) { oL = s1L; oR = s1R; }
+        else if (f2on)   { oL = s2L; oR = s2R; }
+        else             { oL = tmpL_; oR = tmpR_; }
+    } else {                                            // SERIAL
+        float* cL = tmpL_; float* cR = tmpR_;
+        if (f1on) { runFilter(v.f1, c1, writeComb, cL, cR, s1L, s1R, n); cL = s1L; cR = s1R; }
+        if (f2on) { runFilter(v.f2, c2, writeComb, cL, cR, s2L, s2R, n); cL = s2L; cR = s2R; }
+        oL = cL; oR = cR;
+    }
+}
+
+// LFO value with the shape-switch crossfade folded in (finding J2). The LFO is
+// read once per chunk, so mixing the old and new shape by the fade position at
+// the chunk end turns a shape change into a short glide rather than a jump.
+double Engine::lfoShapeValue(int idx, const Lfo& l, int base) const {
+    const int shape = (int)p_[slot(base + LFO_SHAPE)];
+    const double off = p_[slot(base + LFO_PHASE)];
+    const double vNew = l.valueOff(shape, off);
+    if (lfoXfRemain_[idx] <= 0 || lfoShapePrev_[idx] < 0) return vNew;
+    const double vOld = l.valueOff(lfoShapePrev_[idx], off);
+    const double t = 1.0 - (double)lfoXfRemain_[idx] / (double)lfoXfLen_[idx];
+    return vOld + (vNew - vOld) * t;
+}
+
 void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     v.ampEnv.set(p_[ENV1_BASE + 0], p_[ENV1_BASE + 1], p_[ENV1_BASE + 2], p_[ENV1_BASE + 3], sr_);
     v.modEnv.set(p_[ENV2_BASE + 0], p_[ENV2_BASE + 1], p_[ENV2_BASE + 2], p_[ENV2_BASE + 3], sr_);
@@ -811,13 +993,9 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
 
     bool   rt1 = !exactlyZero(p_[(size_t)paramIndex(LFO1_BASE, LFO_RETRIG)]),
            rt2 = !exactlyZero(p_[(size_t)paramIndex(LFO2_BASE, LFO_RETRIG)]);
-    double l1 = (rt1 ? v.lfo1 : gLfo1_).valueOff(
-                    (int)p_[(size_t)paramIndex(LFO1_BASE, LFO_SHAPE)],
-                    p_[(size_t)paramIndex(LFO1_BASE, LFO_PHASE)])
+    double l1 = lfoShapeValue(0, rt1 ? v.lfo1 : gLfo1_, LFO1_BASE)
                 * v.lfo1.riseGain(p_[(size_t)paramIndex(LFO1_BASE, LFO_RISE)], sr_);
-    double l2 = (rt2 ? v.lfo2 : gLfo2_).valueOff(
-                    (int)p_[(size_t)paramIndex(LFO2_BASE, LFO_SHAPE)],
-                    p_[(size_t)paramIndex(LFO2_BASE, LFO_PHASE)])
+    double l2 = lfoShapeValue(1, rt2 ? v.lfo2 : gLfo2_, LFO2_BASE)
                 * v.lfo2.riseGain(p_[(size_t)paramIndex(LFO2_BASE, LFO_RISE)], sr_);
     double e2 = v.modEnv.level;
     double srcs[6] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0};
@@ -871,10 +1049,63 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     std::fill(tmpR_, tmpR_ + n, 0.0f);
     if (split) { std::fill(bL_, bL_ + n, 0.0f); std::fill(bR_, bR_ + n, 0.0f); }
 
+    // Finding J2: a TABLE or ON change would swap the wavetable under a running
+    // phase and jump the level. Freeze the whole OscState instead — it keeps
+    // the old table's pointers, offsets and phases — and let it keep playing
+    // for one short fade while the new one fades in.
+    auto oscSwitch = [&](OscState& o, OscState& frozen, int& rem, int& len, int base) {
+        const int ti = (int)p_[slot(base + OSC_TABLE)];
+        const bool on = p_[slot(base + OSC_ON)] >= 0.5;
+        if (o.tableIdx >= 0 && (ti != o.tableIdx || on != o.wasOn)) {
+            frozen = o;                           // keeps the old table pointers
+            // A silent old side (the oscillator was off) still starts a fade:
+            // the new one has to come UP from zero rather than switch on.
+            if (!o.wasOn || !o.havePrev || !o.data) frozen.data = nullptr;
+            rem = len = xfSamples();
+        }
+        o.tableIdx = ti; o.wasOn = on;
+    };
+    oscSwitch(v.oA, v.oldA, v.aXfRemain, v.aXfLen, OSCA_BASE);
+    oscSwitch(v.oB, v.oldB, v.bXfRemain, v.bXfLen, OSCB_BASE);
+
     bool aOn = setupOsc(v.oA, OSCA_BASE, v, pm_, mPitch, mPan, n);
     bool bOn = setupOsc(v.oB, OSCB_BASE, v, pm_, mPitch, mPan, n);
-    if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n); else v.oA.havePrev = false;
-    if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n); else v.oB.havePrev = false;
+
+    // Both sides of an oscillator fade render into a scratch pair and are added
+    // to the voice mix under their own equal-power ramp, so each keeps its own
+    // continuous pan/level ramp (renderOsc interpolates from pGl/pGr) and the
+    // fade only scales the result.
+    auto fadeMix = [&](OscState& o, OscState& frozen, bool on, int& rem, int len,
+                       float* dstL, float* dstR) {
+        const double t0 = 1.0 - (double)rem / (double)len;
+        const double t1 = std::min(1.0, 1.0 - (double)std::max(0, rem - n) / (double)len);
+        auto addRamp = [&](double a0, double a1) {
+            const double d = (a1 - a0) / n;
+            for (int i = 0; i < n; i++) {
+                const double g = a0 + d * i;
+                dstL[i] += (float)(xL_[i] * g);
+                dstR[i] += (float)(xR_[i] * g);
+            }
+        };
+        if (on) {
+            std::fill(xL_, xL_ + n, 0.0f); std::fill(xR_, xR_ + n, 0.0f);
+            renderOsc(o, xL_, xR_, n);
+            addRamp(std::sin(t0 * PI * 0.5), std::sin(t1 * PI * 0.5));
+        } else o.havePrev = false;
+        if (frozen.data) {
+            std::fill(xL_, xL_ + n, 0.0f); std::fill(xR_, xR_ + n, 0.0f);
+            renderOsc(frozen, xL_, xR_, n);
+            addRamp(std::cos(t0 * PI * 0.5), std::cos(t1 * PI * 0.5));
+        }
+        rem = std::max(0, rem - n);
+    };
+
+    if (v.aXfRemain > 0) fadeMix(v.oA, v.oldA, aOn, v.aXfRemain, v.aXfLen, tmpL_, tmpR_);
+    else if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n); else v.oA.havePrev = false;
+    if (v.bXfRemain > 0)
+        fadeMix(v.oB, v.oldB, bOn, v.bXfRemain, v.bXfLen, split ? bL_ : tmpL_, split ? bR_ : tmpR_);
+    else if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n);
+    else v.oB.havePrev = false;
 
     // sub oscillator
     if (p_[SUB_ON] > 0.5) {
@@ -888,25 +1119,47 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
                 double inc0 = (v.subIncPrev > 0 && v.subIncPrev < 0.45) ? v.subIncPrev : inc1;
                 double dInc = (inc1 - inc0) / n;
                 double ph = v.subPhase;
-                bool square = (int)p_[SUB_SHAPE] == 1;
+                const int shape = (int)p_[SUB_SHAPE];
+                // Finding J2: SHAPE used to swap waveform mid-cycle. Render
+                // both shapes for one fade and mix them equal-power instead.
+                if (v.subShapePrev >= 0 && shape != v.subShapePrev) {
+                    v.subShapeOld = v.subShapePrev;
+                    v.subXfRemain = v.subXfLen = xfSamples();
+                }
+                v.subShapePrev = shape;
+                const int shapeOld = v.subShapeOld;
+                const bool fade = v.subXfRemain > 0 && shapeOld >= 0;
+                double gN = 1, gO = 0, dGN = 0, dGO = 0;
+                if (fade) {
+                    const double t0 = 1.0 - (double)v.subXfRemain / (double)v.subXfLen;
+                    const double t1 = std::min(1.0, 1.0 - (double)std::max(0, v.subXfRemain - n) / (double)v.subXfLen);
+                    gN = std::sin(t0 * PI * 0.5); gO = std::cos(t0 * PI * 0.5);
+                    dGN = (std::sin(t1 * PI * 0.5) - gN) / n;
+                    dGO = (std::cos(t1 * PI * 0.5) - gO) / n;
+                }
+                // polyBLEP square (both edges) — hoisted so the fade can mix it
+                // with the sine without duplicating the residual maths.
+                auto sqr = [](double ph_, double inc_) {
+                    double s = ph_ < 0.5 ? 1 : -1;
+                    if (ph_ < inc_) { double t = ph_ / inc_; s += -(t * t) + 2 * t - 1; }
+                    else if (ph_ > 1 - inc_) { double t = (ph_ - 1) / inc_; s += t * t + 2 * t + 1; }
+                    double h = ph_ - 0.5;
+                    if (h >= 0 && h < inc_) { double t = h / inc_; s -= -(t * t) + 2 * t - 1; }
+                    else if (h < 0 && h > -inc_) { double t = h / inc_; s -= t * t + 2 * t + 1; }
+                    return s * 0.7;
+                };
                 for (int i = 0; i < n; i++) {
                     double inc = inc0 + dInc * i;
-                    double s;
-                    if (square) {
-                        s = ph < 0.5 ? 1 : -1;
-                        if (ph < inc) { double t = ph / inc; s += -(t * t) + 2 * t - 1; }
-                        else if (ph > 1 - inc) { double t = (ph - 1) / inc; s += t * t + 2 * t + 1; }
-                        double h = ph - 0.5;
-                        if (h >= 0 && h < inc) { double t = h / inc; s -= -(t * t) + 2 * t - 1; }
-                        else if (h < 0 && h > -inc) { double t = h / inc; s -= t * t + 2 * t + 1; }
-                        s *= 0.7;
-                    } else {
-                        s = std::sin(2 * PI * ph);
+                    double s = shape == 1 ? sqr(ph, inc) : std::sin(2 * PI * ph);
+                    if (fade) {
+                        const double sOld = shapeOld == 1 ? sqr(ph, inc) : std::sin(2 * PI * ph);
+                        s = s * (gN + dGN * i) + sOld * (gO + dGO * i);
                     }
                     float o = (float)(s * lvl);
                     tmpL_[i] += o; tmpR_[i] += o;
                     ph += inc; if (ph >= 1) ph -= 1;
                 }
+                if (fade) v.subXfRemain = std::max(0, v.subXfRemain - n);
                 v.subPhase = ph;
                 v.subIncPrev = inc1;
             } else v.subIncPrev = -1;
@@ -946,36 +1199,52 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     // ---- per-voice filters with routing ----
     bool f1on = p_[(size_t)paramIndex(FILTER1_BASE, FLT_ON)] > 0.5;
     bool f2on = p_[(size_t)paramIndex(FILTER2_BASE, FLT_ON)] > 0.5;
-    if (f1on) setupFilter(v.f1, FILTER1_BASE, v, e2,
+    const int ft1 = (int)p_[(size_t)paramIndex(FILTER1_BASE, FLT_TYPE)];
+    const int ft2 = (int)p_[(size_t)paramIndex(FILTER2_BASE, FLT_TYPE)];
+    // Finding J2: a filter TYPE, ROUTE or ON change re-plumbs the whole section
+    // (a route change even swaps which scratch buffer is the output) and used to
+    // land in one sample. Freeze both cores and the old topology, then render
+    // the section twice for one 3 ms fade and mix the two equal-power. The
+    // frozen pass runs with writeComb == false so it shares the comb lines.
+    if (v.fHave && (route != v.fRoute || f1on != v.fOn1 || f2on != v.fOn2
+                    || ft1 != v.f1.c.ftype || ft2 != v.f2.c.ftype)) {
+        v.f1.old = v.f1.c; v.f2.old = v.f2.c;
+        v.oRoute = v.fRoute; v.oOn1 = v.fOn1; v.oOn2 = v.fOn2;
+        v.fXfRemain = v.fXfLen = xfSamples();
+    }
+    v.fRoute = route; v.fOn1 = f1on; v.fOn2 = f2on; v.fHave = true;
+
+    if (f1on) setupFilter(v.f1.c, FILTER1_BASE, v, e2,
                           modAccum[(size_t)paramIndex(FILTER1_BASE, FLT_CUTOFF)], pm_, n);
-    if (f2on) setupFilter(v.f2, FILTER2_BASE, v, e2,
+    if (f2on) setupFilter(v.f2.c, FILTER2_BASE, v, e2,
                           modAccum[(size_t)paramIndex(FILTER2_BASE, FLT_CUTOFF)], pm_, n);
 
-    double dr1 = pm_[(size_t)paramIndex(FILTER1_BASE, FLT_DRIVE)];
-    double dr2 = pm_[(size_t)paramIndex(FILTER2_BASE, FLT_DRIVE)];
     float* oL; float* oR;
-
-    if (split) {
-        if (f1on) runFilter(v.f1, tmpL_, tmpR_, f1L_, f1R_, dr1, n);
-        if (f2on) runFilter(v.f2, bL_, bR_, f2L_, f2R_, dr2, n);
-        float* aL = f1on ? f1L_ : tmpL_; float* aR = f1on ? f1R_ : tmpR_;
-        float* sL = f2on ? f2L_ : bL_;   float* sR = f2on ? f2R_ : bR_;
-        for (int i = 0; i < n; i++) { f1L_[i] = aL[i] + sL[i]; f1R_[i] = aR[i] + sR[i]; }
-        oL = f1L_; oR = f1R_;
-    } else if (route == 1) {
-        if (f1on) runFilter(v.f1, tmpL_, tmpR_, f1L_, f1R_, dr1, n);
-        if (f2on) runFilter(v.f2, tmpL_, tmpR_, f2L_, f2R_, dr2, n);
-        if (f1on && f2on) {
-            for (int i = 0; i < n; i++) { f1L_[i] += f2L_[i]; f1R_[i] += f2R_[i]; }
-            oL = f1L_; oR = f1R_;
-        } else if (f1on) { oL = f1L_; oR = f1R_; }
-        else if (f2on) { oL = f2L_; oR = f2R_; }
-        else { oL = tmpL_; oR = tmpR_; }
+    if (v.fXfRemain > 0) {
+        // Old first: it reads tmpL_/bL_, which the mix below may overwrite.
+        float* pL; float* pR;
+        runFilterSection(v, v.f1.old, v.f2.old, v.oRoute, v.oOn1, v.oOn2, false,
+                         g1L_, g1R_, g2L_, g2R_, pL, pR, n);
+        runFilterSection(v, v.f1.c, v.f2.c, route, f1on, f2on, true,
+                         f1L_, f1R_, f2L_, f2R_, oL, oR, n);
+        const double t0 = 1.0 - (double)v.fXfRemain / (double)v.fXfLen;
+        const double t1 = std::min(1.0, 1.0 - (double)std::max(0, v.fXfRemain - n) / (double)v.fXfLen);
+        const double gN0 = std::sin(t0 * PI * 0.5), gO0 = std::cos(t0 * PI * 0.5);
+        const double dN = (std::sin(t1 * PI * 0.5) - gN0) / n;
+        const double dO = (std::cos(t1 * PI * 0.5) - gO0) / n;
+        // Both topologies silent (all filters off on each side): the two passes
+        // alias the same buffer and mixing would just scale it by gN + gO.
+        if (pL != oL) {
+            for (int i = 0; i < n; i++) {
+                const double gN = gN0 + dN * i, gO = gO0 + dO * i;
+                oL[i] = (float)(oL[i] * gN + pL[i] * gO);
+                oR[i] = (float)(oR[i] * gN + pR[i] * gO);
+            }
+        }
+        v.fXfRemain = std::max(0, v.fXfRemain - n);
     } else {
-        float* cL = tmpL_; float* cR = tmpR_;
-        if (f1on) { runFilter(v.f1, cL, cR, f1L_, f1R_, dr1, n); cL = f1L_; cR = f1R_; }
-        if (f2on) { runFilter(v.f2, cL, cR, f2L_, f2R_, dr2, n); cL = f2L_; cR = f2R_; }
-        oL = cL; oR = cR;
+        runFilterSection(v, v.f1.c, v.f2.c, route, f1on, f2on, true,
+                         f1L_, f1R_, f2L_, f2R_, oL, oR, n);
     }
 
     // AMP-mod factor ramps from the previous chunk's value (Finding 7); the DC
@@ -1008,6 +1277,18 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     updateGlobalLfo(gLfo1_, LFO1_BASE, ppqChunk, n);
     updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n);
 
+    // Finding J2: an LFO SHAPE change jumps the modulation value. Start a fade
+    // so lfoShapeValue() glides from the old shape to the new one instead.
+    static const int lfoBase[2] = {LFO1_BASE, LFO2_BASE};
+    for (int i = 0; i < 2; i++) {
+        if (lfoXfRemain_[i] > 0) continue;          // a fade owns lfoShapePrev_
+        const int shape = (int)p_[slot(lfoBase[i] + LFO_SHAPE)];
+        if (lfoShapePrev_[i] >= 0 && shape != lfoShapePrev_[i])
+            lfoXfRemain_[i] = lfoXfLen_[i] = xfSamples();   // prev = the old shape
+        else
+            lfoShapePrev_[i] = shape;
+    }
+
     int act = 0;
     bool vizSet = false;
     for (auto& v : voices_) {
@@ -1026,6 +1307,12 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     }
     vizActive = act;
     if (act == 0) { vizA = -1; vizB = -1; vizModAny = false; } // idle -> hide indicators
+    for (int i = 0; i < 2; i++) {
+        if (lfoXfRemain_[i] <= 0) continue;
+        lfoXfRemain_[i] = std::max(0, lfoXfRemain_[i] - n);
+        if (lfoXfRemain_[i] == 0)                   // fade done: adopt the new shape
+            lfoShapePrev_[i] = (int)p_[slot(lfoBase[i] + LFO_SHAPE)];
+    }
 }
 
 // Copy the just-rendered voice's per-destination route sums (modAccum_, still
@@ -1041,11 +1328,16 @@ void Engine::snapshotVizMod() {
 
 void Engine::render(float* L, float* R, int n) {
     // Snapshot the published table set once for the whole call (Finding 2):
-    // the shared_ptr keeps every raw pointer setupOsc caches valid even if the
-    // message thread publishes a new set mid-block. Wait-free — the audio
-    // thread never blocks on a UI table swap and never substitutes silence.
-    const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
-    curTables_ = snap.get();
+    // every raw pointer setupOsc caches stays valid for the block even if the
+    // message thread publishes a new set mid-render, because that thread only
+    // frees a retired set once this render has returned (finding J3).
+    // Finding J3: bump the epoch BEFORE loading the published pointer so a
+    // concurrent setTables either sees this render in flight (and defers the
+    // free) or publishes before this load (and we take the new set).
+    rendering_.store(true, std::memory_order_seq_cst);
+    beginParamRamp(n);              // finding J1: automation ramp for this call
+    renderEpoch_.fetch_add(1, std::memory_order_seq_cst);
+    curTables_ = tablesPub_.load(std::memory_order_seq_cst);
     // Sequencer clocking. The host-locked path derives absolute 16ths from the
     // playhead ppq (sample-accurate splits at each due step); the internal path
     // counts real samples so the clock never drifts (worklet parity). Chunks
@@ -1114,6 +1406,7 @@ void Engine::render(float* L, float* R, int n) {
                               : internalRun ? seqSongPos_ * seqBeatsPerSample
                               : hostClipMode_ ? std::max(0.0, hostFrame_ - hostAnchor_) * beatsPerSample
                                             : ppq_ + off * beatsPerSample;
+        smoothParams(run);              // finding J1: automation, per chunk
         renderBlock(L + off, R + off, run, chunkPpq);
 
         if (internalRun) {
@@ -1137,6 +1430,7 @@ void Engine::render(float* L, float* R, int n) {
     }
     playing_ = hostPlayingFlag;
     if (hostRun) seqHostEndPpq_ = seqHostPpq_ + n * ppqPerSample;
+    rendering_.store(false, std::memory_order_seq_cst);
 }
 
 } // namespace fable

@@ -16,6 +16,8 @@
 #include <cstdio>
 #include <vector>
 #include <string>
+#include <atomic>
+#include <thread>
 
 using namespace fable;
 
@@ -115,6 +117,62 @@ static std::vector<double> bandProfileDb(const std::vector<float>& x, int N, dou
     return band;
 }
 
+// ---- block-rate automation artefact metric (finding J1) ----
+// A parameter held for a whole host block and stepped at its boundary amplitude-
+// modulates the tone at the block rate, which shows up as sidebands at
+// k*f0 +/- m*blockHz around every harmonic. Returns their total energy relative
+// to the harmonics, in dB. A per-chunk smoother pushes them into the noise.
+static double blockRateSidebandDb(const float* x, int N, double sr, double f0, double blockHz) {
+    std::vector<double> re(N), im(N, 0.0);
+    static const double a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
+    for (int i = 0; i < N; i++) {
+        const double t = 2 * M_PI * i / (N - 1);
+        re[i] = x[i] * (a0 - a1 * std::cos(t) + a2 * std::cos(2 * t) - a3 * std::cos(3 * t));
+    }
+    fft(re.data(), im.data(), N, false);
+    const double binHz = sr / N;
+    auto band = [&](double f) {                  // +/-2 bins around f
+        const int b = (int)std::round(f / binHz);
+        double e = 0;
+        for (int j = b - 2; j <= b + 2; j++)
+            if (j > 0 && j < N / 2) e += re[j] * re[j] + im[j] * im[j];
+        return e;
+    };
+    double harm = 0, side = 0;
+    for (int k = 1; k * f0 < sr * 0.4; k++) {
+        harm += band(k * f0);
+        for (int m = 1; m <= 4; m++) {           // stop before the next harmonic
+            if (m * blockHz > f0 * 0.45) break;
+            side += band(k * f0 - m * blockHz) + band(k * f0 + m * blockHz);
+        }
+    }
+    if (harm <= 0) return 0;
+    return 10 * std::log10(std::max(side, 1e-30) / harm);
+}
+
+// ---- click detector: a discontinuity is broadband ----
+// max |dx| cannot tell a click from a bright filter: switching to HP12 or to a
+// square sub legitimately raises the slew. A step, though, injects energy far
+// above whatever the signal itself carries. Returns the fraction of an
+// N-sample window's energy that sits above fHi.
+static double hfFraction(const std::vector<float>& x, int at, int N, double sr, double fHi) {
+    std::vector<double> re(N), im(N, 0.0);
+    for (int i = 0; i < N; i++) {
+        const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1));   // Hann
+        const int j = at + i;
+        re[i] = (j >= 0 && j < (int)x.size() ? x[(size_t)j] : 0.0f) * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    const double binHz = sr / N;
+    double hi = 0, total = 1e-30;
+    for (int k = 1; k < N / 2; k++) {
+        const double e = re[k] * re[k] + im[k] * im[k];
+        total += e;
+        if (k * binHz >= fHi) hi += e;
+    }
+    return hi / total;
+}
+
 // Largest sample-to-sample step in [from, to) — the click detector.
 static double maxDelta(const std::vector<float>& x, int from, int to) {
     double m = 0;
@@ -204,6 +262,124 @@ int main() {
             auto buf = renderNote(eng, 60, 0.4, sr);
             check(finite(buf) && peak(buf) < 8.0f, std::string("filter ") + names[ft] + " stable",
                   "peak=" + std::to_string(peak(buf)));
+        }
+    }
+
+    printf("\n== 4b. LP24 resonance mapping (finding B3) ==\n");
+    {
+        // B3 moved LP24's resonance into stage 1 alone (stage 2 fixed at k = 2)
+        // and retapered res, keeping the magnitude at fc where it was. Nothing
+        // tested the taper before, which is exactly why the four ports drifted.
+        //
+        // |H(f)| is measured through the real engine with no curve fitting:
+        // render white noise with the filter ON and with it OFF. The RNG is
+        // deterministic and the noise generator is its only consumer here, so
+        // both renders see the SAME noise sequence and the per-bin ratio of the
+        // two spectra is |H(f)| exactly.
+        auto noisePatch = [&](float res, bool filterOn) {
+            auto p = defaultParams();
+            p[OSCA_BASE + OSC_ON] = 0; p[OSCB_BASE + OSC_ON] = 0;   // noise only
+            p[NOISE_ON] = 1; p[NOISE_TYPE] = 0; p[NOISE_LEVEL] = 1.0f;
+            p[FILTER1_BASE + FLT_ON] = filterOn ? 1.0f : 0.0f;
+            p[FILTER1_BASE + FLT_TYPE] = 1;                          // LP24
+            p[FILTER1_BASE + FLT_CUTOFF] = 1000.0f;
+            p[FILTER1_BASE + FLT_RES] = res;
+            p[FILTER1_BASE + FLT_DRIVE] = 0;                         // linear path
+            p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f;      // open and hold
+            return p;
+        };
+        const int settle = (int)(0.5 * sr), N = 32768;
+        auto renderNoise = [&](float res, bool filterOn) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(noisePatch(res, filterOn));
+            std::vector<float> L((size_t)(settle + N), 0.0f), R(L.size(), 0.0f);
+            e.noteOn(60, 1.0);
+            e.render(L.data(), R.data(), (int)L.size());
+            return std::vector<float>(L.end() - N, L.end());
+        };
+        auto spectrum = [&](const std::vector<float>& x) {
+            std::vector<double> re(N), im(N, 0.0);
+            for (int i = 0; i < N; i++) re[(size_t)i] = x[(size_t)i];
+            fft(re.data(), im.data(), N, false);
+            std::vector<double> m((size_t)(N / 2));
+            for (int k = 0; k < N / 2; k++)
+                m[(size_t)k] = std::sqrt(re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k]);
+            return m;
+        };
+        const auto flat = spectrum(renderNoise(0.0f, false));
+        const double binHz = sr / N;
+        // Analytic values for the landed mapping (resT = res + 0.0035*res^4,
+        // k1 = max(0.002, 0.5*(2-1.93*resT)^2), k2 = 2), and for the OLD
+        // cascade, at fc = 1 kHz. The old column is what presets were voiced
+        // against, so |H(fc)| is the fidelity check; max_f |H(f)| is the
+        // "does the knob resonate" check and reads 0 dB when there is no peak.
+        struct Case { float res; double atFc; double peak; double oldAtFc; double oldPeak; };
+        const Case cases[] = {
+            {0.00f, -12.04,  -0.01, -12.04,  -0.01},
+            {0.18f,  -8.73,  -0.00,  -8.73,  -0.00},
+            {0.50f,  -0.59,  +0.76,  -0.60,  +2.11},
+            {0.90f, +23.50, +23.50, +23.20, +23.35},
+        };
+        // The per-bin ratio is |H| only up to the truncation error of a finite
+        // segment, and a max over 13600 bins would report the worst positive
+        // outlier of that error (about +2 dB). Averaging the power ratio over
+        // 9 bins (13 Hz) removes it and is far narrower than the resonance
+        // being measured (fc/Q = 33 Hz even at res 0.9).
+        const int SM = 4;                       // +/- SM bins
+        for (const auto& c : cases) {
+            const auto got = spectrum(renderNoise(c.res, true));
+            auto ratioDb = [&](int k) {
+                double num = 0, den = 0;
+                for (int j = k - SM; j <= k + SM; j++) {
+                    if (j < 1 || j >= N / 2) continue;
+                    num += got[(size_t)j] * got[(size_t)j];
+                    den += flat[(size_t)j] * flat[(size_t)j];
+                }
+                return den > 0 ? 10 * std::log10(num / den) : -300.0;
+            };
+            double atFc = 0, peak = -300;
+            for (int k = 1; k < N / 2; k++) {
+                const double f = k * binHz;
+                if (f < 20 || f > 20000) continue;
+                const double db = ratioDb(k);
+                peak = std::max(peak, db);
+                if (std::abs(f - 1000.0) < binHz * 0.5) atFc = db;
+            }
+            check(std::abs(atFc - c.atFc) < 0.6,
+                  "LP24 |H(fc)| at res " + std::to_string(c.res).substr(0, 4)
+                      + " matches the mapping",
+                  std::to_string(atFc) + " dB, expected " + std::to_string(c.atFc)
+                      + " (old cascade " + std::to_string(c.oldAtFc) + ")");
+            check(std::abs(peak - c.peak) < 0.6,
+                  "LP24 max|H| at res " + std::to_string(c.res).substr(0, 4)
+                      + " matches the mapping",
+                  std::to_string(peak) + " dB, expected " + std::to_string(c.peak)
+                      + " (old cascade " + std::to_string(c.oldPeak) + ")");
+        }
+
+        // The other half of B3: the top of the knob must actually ring. The old
+        // cascade bottomed out at Q ~= 14 (45 ms to -60 dB); one resonant stage
+        // at k1 = 0.002 is Q ~= 470 (about a second). Cut the noise and time the
+        // tail — the amp envelope is held open, so what decays is the filter.
+        {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(noisePatch(0.999f, true));
+            std::vector<float> L((size_t)(0.5 * sr)), R(L.size());
+            e.noteOn(60, 1.0);
+            e.render(L.data(), R.data(), (int)L.size());
+            e.params()[NOISE_LEVEL] = 0.0f;                 // silence the source
+            const int tailN = (int)(2.0 * sr);
+            std::vector<float> T((size_t)tailN, 0.0f), TR((size_t)tailN, 0.0f);
+            e.render(T.data(), TR.data(), tailN);
+            double pk = 0;
+            for (int i = 0; i < (int)(0.02 * sr); i++) pk = std::max(pk, (double)std::abs(T[(size_t)i]));
+            int last = 0;
+            for (int i = 0; i < tailN; i++)
+                if (std::abs(T[(size_t)i]) > pk * 1e-3) last = i;   // -60 dB
+            const double ring = (double)last / sr;
+            check(finite(T) && ring > 0.3,
+                  "LP24 at res 1 rings near self-oscillation (was 45 ms)",
+                  std::to_string(ring) + " s to -60 dB");
         }
     }
 
@@ -1231,24 +1407,123 @@ int main() {
         check(stealDelta < stNatural * 2.0, "no click on voice steal",
               std::to_string(stealDelta) + " vs " + std::to_string(stNatural));
 
-        // Filter-type switch. Not crossfaded yet (finding J2), so the bound is
-        // "bounded transient", not "inaudible" — this guards a regression to a
-        // full-scale thump from stale state.
-        for (int ft : {0, 2, 3, 4}) {
-            Engine fe; fe.prepare(sr); fe.setTables(tables);
-            auto p = invariancePatch();
-            fe.setParams(p);
-            std::vector<float> FL((size_t)seg * 3, 0.0f), FR(FL.size(), 0.0f);
-            fe.noteOn(57, 1.0);
-            fe.render(FL.data(), FR.data(), seg * 2);
-            const double base = maxDelta(FL, seg, seg * 2);
-            fe.params()[FILTER1_BASE + FLT_TYPE] = (float)ft;
-            fe.render(FL.data() + seg * 2, FR.data() + seg * 2, seg);
-            const double sw = maxDelta(FL, seg * 2, seg * 3);
-            check(finite(FL) && sw < std::max(0.5, base * 8.0),
-                  "filter switch to type " + std::to_string(ft) + " stays bounded",
-                  std::to_string(sw) + " vs " + std::to_string(base));
-        }
+    }
+
+    printf("\n== 16b. Discrete switches are crossfaded (finding J2) ==\n");
+    {
+        // Every discrete switch used to land in one sample: the filter type and
+        // route re-plumb the section (a route change even swaps which scratch
+        // buffer is the output), a TABLE change swaps the wavetable under a
+        // running phase, and SUB SHAPE jumps between sine and square. Each is
+        // now rendered twice for 3 ms and equal-power crossfaded, so the step
+        // at the switch must stay inside the signal's own slew.
+        const int seg = 4096;
+        // The reference is the signal's own slew on BOTH sides of the switch: a
+        // switch to HP12 or to a square sub legitimately raises the slew, and
+        // that is the new tone, not a click. A real click is a step far larger
+        // than either steady state produces.
+        // A window straddling the switch must not carry more high-frequency
+        // energy than the steady state on either side of it. Both slew and
+        // brightness change legitimately at a switch; a step does not.
+        const int W = 1024;
+        const double fHi = 9000.0;
+        // The switch instant is SWEPT across one period of the note. At a fixed
+        // instant the two waveforms are often near-continuous by luck, and the
+        // test then measures nothing: with the crossfade disabled, a fixed
+        // switch point reported table and sub-shape changes as clean. Sixteen
+        // phases over one period of A3 (218 samples) and the WORST case is what
+        // gets asserted.
+        const double period = sr / (440.0 * std::pow(2.0, (57 - 69) / 12.0));  // A3, 218.2
+        const int kPhases = 16;
+        auto expect = [&](const std::string& what, const ParamArray& patch, int pid, float to) {
+            double worstHf = 0, refAtWorst = 0, worstDx = 0, slewAtWorst = 1e-30;
+            bool allFinite = true;
+            int worstPhase = 0;
+            for (int ph = 0; ph < kPhases; ph++) {
+                Engine e; e.prepare(sr); e.setTables(tables);
+                e.setParams(patch);
+                const int at = seg * 2 + (int)(period * ph / kPhases);
+                std::vector<float> L((size_t)seg * 5, 0.0f), R(L.size(), 0.0f);
+                e.noteOn(57, 1.0);
+                e.render(L.data(), R.data(), at);
+                e.params()[(size_t)pid] = to;
+                e.render(L.data() + at, R.data() + at, seg * 5 - at);
+                if (!finite(L)) allFinite = false;
+                const double hAt   = hfFraction(L, at - W / 8, W, sr, fHi);
+                const double ref   = std::max(hfFraction(L, at - W - W / 2, W, sr, fHi),
+                                              hfFraction(L, at + seg, W, sr, fHi));
+                const double sw    = maxDelta(L, at, at + W);
+                const double slew  = std::max(maxDelta(L, at - seg, at),
+                                              maxDelta(L, at + seg, at + 2 * seg));
+                // Rank phases by how far each metric exceeds its own bound, so
+                // the reported case is the worst one and not just the loudest.
+                if (hAt / std::max(ref, 1e-12) > worstHf / std::max(refAtWorst, 1e-12)) {
+                    worstHf = hAt; refAtWorst = ref; worstPhase = ph;
+                }
+                if (sw / slew > worstDx / slewAtWorst) { worstDx = sw; slewAtWorst = slew; }
+            }
+            // A fade to silence has no post-switch steady state, so the ratio
+            // reference collapses to the pre-switch window (or to zero). The
+            // absolute floor keeps that case meaningful: a 3 ms fade-out has a
+            // little bandwidth of its own, while the uncrossfaded step measures
+            // 1899e-6 here -- 1900x the floor.
+            check(allFinite && worstHf < refAtWorst * 3.0 + 1e-6 && worstDx < slewAtWorst * 1.3,
+                  "no click on " + what,
+                  "worst of " + std::to_string(kPhases) + " phases (#" + std::to_string(worstPhase)
+                  + "): hf " + std::to_string(worstHf * 1e6) + "e-6 vs "
+                  + std::to_string(refAtWorst * 1e6) + "e-6, |dx| " + std::to_string(worstDx)
+                  + " vs " + std::to_string(slewAtWorst));
+        };
+
+        auto base = invariancePatch();
+        base[SUB_ON] = 1;                              // sub audible for the SHAPE case
+        base[FILTER1_BASE + FLT_RES] = 0.85f;          // a loaded filter: switching
+        base[FILTER1_BASE + FLT_CUTOFF] = 700;         // types with the state hot is
+        base[FILTER1_BASE + FLT_DRIVE] = 0;            // the worst case for a click
+        for (int ft : {0, 2, 3, 4, 5, 6})
+            expect("filter type switch to " + std::to_string(ft), base,
+                   FILTER1_BASE + FLT_TYPE, (float)ft);
+
+        // Route: both filters on so all three topologies actually differ.
+        auto twoFilters = base;
+        twoFilters[FILTER2_BASE + FLT_ON] = 1;
+        twoFilters[FILTER2_BASE + FLT_TYPE] = 0;       // LP12
+        twoFilters[FILTER2_BASE + FLT_CUTOFF] = 1400;
+        twoFilters[OSCB_BASE + OSC_ON] = 1;            // SPLIT needs oscB
+        twoFilters[OSCB_BASE + OSC_LEVEL] = 0.7f;
+        for (int rt : {1, 2})
+            expect("filter route switch to " + std::to_string(rt), twoFilters, FILTER_ROUTE, (float)rt);
+
+        // Oscillator-side switches are measured with the filter OFF: a click
+        // born in the oscillator would otherwise be low-passed away before it
+        // reaches the output, and the test would be measuring the filter.
+        auto bare = base;
+        bare[FILTER1_BASE + FLT_ON] = 0;
+        bare[OSCA_BASE + OSC_UNISON] = 1;
+        bare[OSCA_BASE + OSC_DETUNE] = 0;
+        bare[OSCA_BASE + OSC_POS] = 0.0f;   // the smooth end of each table:
+                                            // a step there is not hidden by the
+                                            // waveform's own edges
+        bare[SUB_ON] = 0;
+        for (int ti = 1; ti < 6; ti++)
+            expect("table switch to slot " + std::to_string(ti), bare, OSCA_BASE + OSC_TABLE, (float)ti);
+        expect("oscillator ON -> OFF", bare, OSCA_BASE + OSC_ON, 0.0f);
+
+        // Sub shape: sine -> square, on a bare patch where the sub dominates.
+        auto subPatch = bare;
+        subPatch[SUB_ON] = 1;
+        subPatch[SUB_LEVEL] = 0.9f;
+        subPatch[OSCA_BASE + OSC_LEVEL] = 0.15f;
+        expect("sub shape switch (sine -> square)", subPatch, SUB_SHAPE, 1.0f);
+
+        // LFO shape, routed to POS so the value change reaches the audio.
+        auto lfoPatch = bare;
+        lfoPatch[LFO1_BASE + LFO_SHAPE] = 0;           // SINE
+        lfoPatch[LFO1_BASE + LFO_RATE] = 3.0f;
+        lfoPatch[LFO1_BASE + LFO_RETRIG] = 1;
+        lfoPatch[MAT1_BASE + MAT_SRC] = 1; lfoPatch[MAT1_BASE + MAT_DST] = 1;
+        lfoPatch[MAT1_BASE + MAT_AMT] = 0.9f;
+        expect("LFO shape switch (sine -> square)", lfoPatch, LFO1_BASE + LFO_SHAPE, 3.0f);
     }
 
     printf("\n== 17. User-table import is band-limited (finding J8) ==\n");
@@ -1286,6 +1561,139 @@ int main() {
         const double det = detectCycleLength(tone, sr);
         check(std::abs(det - period) < 0.25, "detectCycleLength is sub-sample accurate",
               std::to_string(det) + " vs " + std::to_string(period));
+    }
+
+    printf("\n== 17b. Table publication is lock-free and frees off the audio thread (J3) ==\n");
+    {
+        // render() used to take a shared_ptr snapshot with the free-function
+        // std::atomic_load, which is a hashed spinlock in both libstdc++ and
+        // libc++ — the audio thread could block behind a UI table swap — and
+        // the audio thread could drop the last reference at the end of a block,
+        // i.e. free inside the render callback. Now the message thread owns
+        // every set and reclaims it only after the render that could still hold
+        // it has returned.
+        //
+        // Each published set carries a sentinel table whose deleter records the
+        // thread that freed it. A real second thread renders continuously while
+        // this one republishes, so the check exercises the actual race.
+        static std::atomic<int> freeCount{0}, audioFrees{0};
+        static std::atomic<bool> audioRunning{false};
+        static std::thread::id audioThread;
+        auto sentinel = [&](int seed) {
+            auto* g = new GeneratedTable();
+            g->name = "SENTINEL"; g->frames = 1; g->mips = 1; g->size = SIZE;
+            g->data.resize((size_t)SIZE);
+            for (int i = 0; i < SIZE; i++)
+                g->data[(size_t)i] = (float)std::sin(2 * M_PI * (seed + 1) * i / SIZE);
+            return TablePtr(g, [](const GeneratedTable* q) {
+                freeCount.fetch_add(1, std::memory_order_relaxed);
+                if (audioRunning.load(std::memory_order_acquire)
+                    && std::this_thread::get_id() == audioThread)
+                    audioFrees.fetch_add(1, std::memory_order_relaxed);
+                delete q;
+            });
+        };
+
+        Engine e; e.prepare(sr);
+        e.setTables({sentinel(0)});
+        auto p = defaultParams();
+        p[OSCA_BASE + OSC_TABLE] = 0;
+        p[ENV1_BASE + 2] = 1.0f;
+        e.setParams(p);
+        e.noteOn(60, 1.0);
+
+        const int blocks = 3000, bs = 256;
+        std::atomic<bool> stop{false};
+        std::atomic<bool> clean{true};
+        std::thread audio([&] {
+            audioThread = std::this_thread::get_id();
+            audioRunning.store(true, std::memory_order_release);
+            std::vector<float> L((size_t)bs), R((size_t)bs);
+            for (int b = 0; b < blocks && !stop.load(std::memory_order_relaxed); b++) {
+                e.render(L.data(), R.data(), bs);
+                for (int i = 0; i < bs; i++)
+                    if (!std::isfinite(L[i]) || !std::isfinite(R[i]) || std::abs(L[i]) > 8.0f)
+                        clean.store(false, std::memory_order_relaxed);
+            }
+            audioRunning.store(false, std::memory_order_release);
+        });
+        // Republish from this (message) thread while that renders.
+        int publishes = 0;
+        for (int k = 0; k < 400; k++) {
+            e.setTables({sentinel(k % 7)});
+            publishes++;
+            std::this_thread::yield();
+        }
+        stop.store(true);
+        audio.join();
+
+        // Everything still pending is reclaimed here, on the message thread.
+        e.collectRetiredTables();
+        check(clean.load(), "rendered output stays finite and bounded across table swaps");
+        check(audioFrees.load() == 0, "no table freed on the audio thread",
+              std::to_string(audioFrees.load()) + " audio-thread frees");
+        check(freeCount.load() >= publishes - 2,
+              "retired sets are reclaimed on the message thread",
+              std::to_string(freeCount.load()) + " of " + std::to_string(publishes + 1) + " freed");
+        check(e.retiredTableSetCount() <= 1, "retire list drains",
+              std::to_string(e.retiredTableSetCount()) + " pending");
+    }
+
+    printf("\n== 18. Host automation is not block-rate (finding J1) ==\n");
+    {
+        // Sweep the cutoff over one second while feeding the engine parameter
+        // updates ONCE PER HOST BLOCK, the way a DAW does. At a 1024-sample
+        // block that is one step every 21.3 ms; without a smoother the steps
+        // modulate the tone at 46.875 Hz and put sidebands on every harmonic.
+        // paramTargets() takes the smoothed path (what the plugin uses),
+        // params() the old snapped one — so the two runs below are the A/B for
+        // the fix itself, no rebuild needed.
+        const int hostBlock = 1024;
+        const double blockHz = sr / hostBlock;         // 46.875 Hz
+        auto sweep = [&](bool smoothed, bool automate = true) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            auto p = defaultParams();
+            p[OSCA_BASE + OSC_UNISON] = 1;
+            p[OSCA_BASE + OSC_POS] = 0.66f;            // harmonically rich
+            p[OSCA_BASE + OSC_PAN] = 0;
+            p[FILTER1_BASE + FLT_ON] = 1;
+            p[FILTER1_BASE + FLT_TYPE] = 1;            // LP24
+            p[FILTER1_BASE + FLT_RES] = 0.5f;
+            p[ENV1_BASE + 0] = 0.002f; p[ENV1_BASE + 2] = 1.0f;
+            e.setParams(p);
+            e.noteOn(60, 1.0);                          // 261.63 Hz
+            const int n = (int)(1.4 * sr);
+            std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+            for (int off = 0; off < n; off += hostBlock) {
+                const int m = std::min(hostBlock, n - off);
+                const double t = (double)off / n;
+                const float cut = automate ? (float)(400.0 * std::pow(6000.0 / 400.0, t))
+                                           : (float)(400.0 * std::pow(6000.0 / 400.0, 0.75));
+                (smoothed ? e.paramTargets() : e.params())[FILTER1_BASE + FLT_CUTOFF] = cut;
+                e.render(L.data() + off, R.data() + off, m);
+            }
+            return L;
+        };
+        const int N = 32768;
+        const double f0 = 440.0 * std::pow(2.0, (60 - 69) / 12.0);
+        auto sm = sweep(true), raw = sweep(false), flat = sweep(true, false);
+        std::vector<float> flatTail(flat.end() - N, flat.end());
+        std::vector<float> smTail(sm.end() - N, sm.end()), rawTail(raw.end() - N, raw.end());
+        const double dbRaw = blockRateSidebandDb(rawTail.data(), N, sr, f0, blockHz);
+        const double dbSm  = blockRateSidebandDb(smTail.data(), N, sr, f0, blockHz);
+        const double dbFlat = blockRateSidebandDb(flatTail.data(), N, sr, f0, blockHz);
+        printf("    block-rate sidebands: snapped %.1f dB, smoothed %.1f dB, static cutoff %.1f dB\n", dbRaw, dbSm, dbFlat);
+        check(finite(sm), "smoothed automation output finite");
+        // Measured: -45.0 dB snapped, -101.5 dB smoothed, and -111.7 dB with a
+        // static cutoff (the window/float floor for this patch). The smoothed
+        // run also matches a 128-sample-block render of the same sweep to
+        // 0.3 dB, i.e. the block boundary leaves no trace at all.
+        check(dbSm < -90.0, "no block-rate line under smoothed automation",
+              std::to_string(dbSm) + " dB");
+        check(dbSm < dbRaw - 40.0, "smoothing removes >= 40 dB of block-rate sidebands",
+              std::to_string(dbRaw) + " -> " + std::to_string(dbSm) + " dB");
+        check(dbFlat < -100.0, "static-cutoff reference sits at the measurement floor",
+              std::to_string(dbFlat) + " dB");
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
