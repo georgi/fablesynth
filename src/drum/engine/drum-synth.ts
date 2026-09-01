@@ -3,7 +3,7 @@
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { makeDriveCurve } from '../../engine/drive';
 import { type ParamValues } from '../../params';
-import { defaultDrumParams, PAD_COUNT, pad } from '../params';
+import { defaultDrumParams, OUT_NAMES, PAD_COUNT, pad } from '../params';
 import { generateDrumTables } from './drumtables';
 import { generateSampledDrumTables } from './sampledtables.gen';
 import { loadDrumOneShots, type DrumOneShot } from './oneshots.gen';
@@ -53,10 +53,26 @@ interface PadFxChain {
   dlFb: GainNode;
   dlFb2: GainNode;
   delayMix: WetDry;
-  convolver: ConvolverNode;
-  verbMix: WetDry;
-  verbTimer: ReturnType<typeof setTimeout> | 0;
+  // Reverb is a send: `verbDry` is the pad's own output (it feeds the bus the
+  // pad is routed to) and `verbSend` feeds a convolver shared with every other
+  // pad on the same bus and reverb-size bucket.
+  verbDry: GainNode;
+  verbSend: GainNode;
+  verbKey: string;
 }
+
+// One output bus per OUT_NAMES entry, each with its own gain, DC block and
+// limiter — the JUCE port routes pads to five buses the same way.
+interface BusStrip {
+  gain: GainNode;
+  dc: BiquadFilterNode;
+  limiter: DynamicsCompressorNode;
+}
+
+const BUS_COUNT = OUT_NAMES.length;
+// Per-pad convolvers (16 IRs of 0.5-5 s) were the dominant CPU and memory cost
+// of the web drum machine. Quantising SIZE into buckets lets pads share one.
+const VERB_BUCKETS = 6;
 
 // Hosted-mode options (SQ-4): share an AudioContext and route the engine's
 // output into a provided node instead of ctx.destination. Defaults keep the
@@ -95,9 +111,9 @@ export class DrumEngine {
   node!: AudioWorkletNode;
 
   fxChains: PadFxChain[];
-  masterGain!: GainNode;
-  dcBlock!: BiquadFilterNode;
-  limiter!: DynamicsCompressorNode;
+  buses: BusStrip[];
+  verbPool: Map<string, ConvolverNode>;
+  verbIrs: (AudioBuffer | null)[];
   scopeAnalyser!: AnalyserNode;
 
   constructor() {
@@ -115,6 +131,9 @@ export class DrumEngine {
     this.onhit = null;
     this.output = null;
     this.fxChains = [];
+    this.buses = [];
+    this.verbPool = new Map();
+    this.verbIrs = Array(VERB_BUCKETS).fill(null);
   }
 
   async init(opts: EngineInitOpts = {}): Promise<void> {
@@ -201,24 +220,28 @@ export class DrumEngine {
     if (!this.ready) return;
     const ctx = this.ctx;
 
-    // -- shared master (the only stage after the per-pad chains) --
-    this.masterGain = ctx.createGain();
-    this.dcBlock = ctx.createBiquadFilter();
-    this.dcBlock.type = 'highpass';
-    this.dcBlock.frequency.value = 8;
-    this.limiter = ctx.createDynamicsCompressor();
-    this.limiter.threshold.value = -8;
-    this.limiter.knee.value = 4;
-    this.limiter.ratio.value = 14;
-    this.limiter.attack.value = 0.002;
-    this.limiter.release.value = 0.22;
+    // -- one strip per output bus, after the per-pad chains --
     this.scopeAnalyser = ctx.createAnalyser();
     this.scopeAnalyser.fftSize = 2048;
-    this.masterGain.connect(this.dcBlock).connect(this.limiter).connect(this.output ?? ctx.destination);
-    this.masterGain.connect(this.scopeAnalyser);
+    const dest = this.output ?? ctx.destination;
+    this.buses = Array.from({ length: BUS_COUNT }, () => {
+      const gain = ctx.createGain();
+      const dc = ctx.createBiquadFilter();
+      dc.type = 'highpass';
+      dc.frequency.value = 8;
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -8;
+      limiter.knee.value = 4;
+      limiter.ratio.value = 14;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.22;
+      gain.connect(dc).connect(limiter).connect(dest);
+      gain.connect(this.scopeAnalyser);
+      return { gain, dc, limiter };
+    });
 
     this.fxChains = Array.from({ length: PAD_COUNT }, () => this.buildPadFx());
-    for (let i = 0; i < PAD_COUNT; i++) this.renderImpulse(i);
+    for (let i = 0; i < PAD_COUNT; i++) this.routePad(i);
   }
 
   buildPadFx(): PadFxChain {
@@ -287,26 +310,63 @@ export class DrumEngine {
     const delayMix = this.mkWetDry(chorusOut, delayOut);
     dlMerge.connect(delayMix.wet);
 
-    // -- reverb --
-    const verbOut = ctx.createGain();
-    const convolver = ctx.createConvolver();
-    delayOut.connect(convolver);
-    const verbMix = this.mkWetDry(delayOut, verbOut);
-    convolver.connect(verbMix.wet);
-    verbOut.connect(this.masterGain);
+    // -- reverb send (the convolver itself is shared; see routePad) --
+    const verbDry = ctx.createGain();
+    const verbSend = ctx.createGain();
+    verbSend.gain.value = 0;
+    delayOut.connect(verbDry);
+    delayOut.connect(verbSend);
 
     return {
       input, driveShaper, drivePre, driveMix, compressor, compMakeup, compMix,
       chDelay1, chDelay2, chLfo, chDepth1, chDepth2, chorusMix,
-      dlL, dlR, dlFb, dlFb2, delayMix, convolver, verbMix, verbTimer: 0,
+      dlL, dlR, dlFb, dlFb2, delayMix, verbDry, verbSend, verbKey: '',
     };
   }
 
-  renderImpulse(padI: number): void {
+  busOf(padI: number): number {
+    const out = this.params[pad(padI, 'out')] | 0;
+    return Math.max(0, Math.min(BUS_COUNT - 1, out));
+  }
+
+  verbBucket(padI: number): number {
+    const size = this.params[pad(padI, 'fx.reverb.size')];
+    return Math.max(0, Math.min(VERB_BUCKETS - 1, Math.floor(size * VERB_BUCKETS)));
+  }
+
+  // A pad's dry output goes to its bus; its reverb send goes to the convolver
+  // for (bus, size bucket), created on first use. A kit that leaves every pad
+  // on MAIN with one SIZE therefore runs one convolver, not sixteen.
+  routePad(padI: number): void {
     if (!this.ready) return;
     const chain = this.fxChains[padI];
     if (!chain) return;
-    const size = this.params[pad(padI, 'fx.reverb.size')];
+    const bus = this.busOf(padI);
+    chain.verbDry.disconnect();
+    chain.verbDry.connect(this.buses[bus].gain);
+    const key = bus + ':' + this.verbBucket(padI);
+    if (key !== chain.verbKey) {
+      if (chain.verbKey) chain.verbSend.disconnect();
+      chain.verbSend.connect(this.getVerb(key));
+      chain.verbKey = key;
+    }
+  }
+
+  getVerb(key: string): ConvolverNode {
+    const cached = this.verbPool.get(key);
+    if (cached) return cached;
+    const [bus, bucket] = key.split(':').map(Number);
+    const conv = this.ctx.createConvolver();
+    conv.buffer = this.impulse(bucket);
+    conv.connect(this.buses[bus].gain);
+    this.verbPool.set(key, conv);
+    return conv;
+  }
+
+  impulse(bucket: number): AudioBuffer {
+    const cached = this.verbIrs[bucket];
+    if (cached) return cached;
+    const size = (bucket + 0.5) / VERB_BUCKETS;
     const dur = 0.5 + size * 4.5;
     const sr = this.ctx.sampleRate;
     const len = Math.floor(dur * sr);
@@ -319,7 +379,8 @@ export class DrumEngine {
         d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * (i < 80 ? i / 80 : 1);
       }
     }
-    chain.convolver.buffer = buf;
+    this.verbIrs[bucket] = buf;
+    return buf;
   }
 
   setMix(mix: WetDry, on: number, amount: number): void {
@@ -361,7 +422,12 @@ export class DrumEngine {
     chain.dlFb2.gain.setTargetAtTime(p[id('fx.delay.fb')], t, 0.02);
     this.setMix(chain.delayMix, p[id('fx.delay.on')], p[id('fx.delay.mix')] * 0.85);
 
-    this.setMix(chain.verbMix, p[id('fx.reverb.on')], p[id('fx.reverb.mix')] * 0.9);
+    // Equal-power send/return, same law as the other wet/dry stages.
+    const amount = p[id('fx.reverb.mix')] * 0.9;
+    const on = p[id('fx.reverb.on')];
+    chain.verbSend.gain.setTargetAtTime(on ? Math.sin((amount * Math.PI) / 2) : 0, t, 0.02);
+    chain.verbDry.gain.setTargetAtTime(on ? Math.cos((amount * Math.PI) / 2) : 1, t, 0.02);
+    this.routePad(padI);
   }
 
   applyAllFx(): void {
@@ -369,7 +435,7 @@ export class DrumEngine {
     for (let i = 0; i < PAD_COUNT; i++) this.applyPadFx(i);
 
     const vol = this.params['master.volume'];
-    this.masterGain.gain.setTargetAtTime(vol * vol * 1.6, this.ctx.currentTime, 0.02);
+    for (const bus of this.buses) bus.gain.gain.setTargetAtTime(vol * vol * 1.6, this.ctx.currentTime, 0.02);
   }
 
   // ---------- parameter + transport API ----------
@@ -387,17 +453,12 @@ export class DrumEngine {
       const targets = id.startsWith('fx.')
         ? Array.from({ length: PAD_COUNT }, (_, i) => i)
         : [fxPadFromParam(id)].filter((i): i is number => i !== null);
-      for (const padI of targets) {
-        const chain = this.fxChains[padI];
-        if (id.endsWith('fx.reverb.size')) {
-          clearTimeout(chain.verbTimer);
-          chain.verbTimer = setTimeout(() => this.renderImpulse(padI), 180);
-        }
-        this.applyPadFx(padI);
-      }
+      for (const padI of targets) this.applyPadFx(padI);
       if (id === 'master.volume') this.applyAllFx();
     } else {
       this.node.port.postMessage({ t: 'p', k: id, v });
+      const outPad = /^pad([0-9]|1[0-5])\.out$/.exec(id);
+      if (outPad) this.routePad(Number(outPad[1]));
     }
   }
 
@@ -405,7 +466,6 @@ export class DrumEngine {
     if (!this.ready) return;
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.applyAllFx();
-    for (let i = 0; i < PAD_COUNT; i++) this.renderImpulse(i);
   }
 
   trigger(pad: number, vel: number): void {
