@@ -15,6 +15,7 @@
 #include "../../dsp/ClipHost.h"
 #include "../../dsp/Engine.h"       // fable::Rng + TablePtr (via Wavetables.h)
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -32,6 +33,11 @@ constexpr double DR_CHOKE_TAU  = 1.6295076e-4;
 constexpr double DR_DC_R       = 0.9998;
 constexpr int    DR_MOD_LOG_D  = 5;      // CUTOFF mod: +/-5 octaves
 constexpr int    DR_BASE_NOTE  = 60;
+// Finding J1: how many per-pad fields carry an automation smoother, and the
+// total smoother count (all pads plus master volume). The field list itself
+// lives in DrumEngine.cpp's drumSmoothPlan().
+constexpr int    DR_NSMOOTH_FIELDS = 44;
+constexpr int    DR_NSMOOTH        = DR_NSMOOTH_FIELDS * DR_NPADS + 1;
 
 // Engine table view — mirrors the worklet's {frames,mips,size,mask,data}.
 // Identical shape to Engine.h's EngineTable: shares the source table's
@@ -50,10 +56,18 @@ public:
     int latencySamples() const {
         return padFxEnabled_ ? padFx_[0].latencySamples() + busOut_[0].latencySamples() : 0;
     }
-    void setTables(std::vector<TablePtr> tables);   // same mutex swap scheme as Engine::setTables
-    void setParam(int id, float v) { p_[(size_t)id] = v; }
-    void setParams(const DrumParamArray& p) { p_ = p; }
-    DrumParamArray& params() { return p_; }
+    void setTables(std::vector<TablePtr> tables);   // lock-free publish + retire (Finding J3)
+    // ---- parameters (Finding J1) ------------------------------------------
+    // p_ is the TARGET array; ps_ is the array the DSP actually reads, advanced
+    // toward p_ once per <=128-sample render chunk. The plugin writes automation
+    // into params() once per host block, so an automated knob used to step once
+    // per block (21 ms at a 1024-sample buffer) — a staircase the engine's own
+    // intra-chunk ramps only softened the edges of. setParam/setParams SNAP the
+    // smoothers instead: the direct API is a "set" (kit load, preset, patch,
+    // headless test), not an automation move, and must land immediately.
+    void setParam(int id, float v) { p_[(size_t)id] = v; snapSmoother(id); }
+    void setParams(const DrumParamArray& p) { p_ = p; ps_ = p; snapSmoothers(); }
+    DrumParamArray& params() { return p_; }             // automation target
 
     void trigger(int pad, float vel);               // worklet trigger() incl. choke + phase reset
     void panic();
@@ -135,6 +149,14 @@ public:
     // the bus selected by their OUT param.
     void render(float* outs[DR_NBUSES][2], int n);
 
+    // Finding D8: how many of the sixteen pad FX chains are still running
+    // (input or output above -100 dBFS). A gated chain costs nothing.
+    int activeFxChains() const {
+        int n = 0;
+        for (const auto& fx : padFx_) if (!fx.isIdle()) n++;
+        return n;
+    }
+
     // viz (read by the processor after render, published as atomics)
     float vizA = -1, vizB = -1, vizEnv = 0;
     // pads triggered since last consume (bit i = pad i) — UI LED flashes
@@ -193,6 +215,14 @@ private:
         // oscillator increments, instead of being held for 16 samples.
         double pStep = 0;
         bool   havePrev = false;
+        // Finding J2: changing the sample slot used to restart the player at
+        // START in one sample. The outgoing slot keeps playing from where it
+        // was, on its own position, and the two are crossfaded equal-power over
+        // DR_SWITCH_FADE — the same shape as the filter-type crossfade.
+        int    xfIndex = -1;
+        double xfPos = 0;
+        bool   xfDone = true;
+        int    xfLeft = 0, xfLen = 1;
     };
     struct PadVoice {
         bool   active = false;
@@ -200,6 +230,12 @@ private:
         long   t = 0;              // samples since trigger
         double ampLevel = 0; bool choking = false;
         OscState oA;
+        // Finding J2: the outgoing oscillator configuration after a table or
+        // unison change. It keeps reading its old table for DR_SWITCH_FADE
+        // while the new one fades in; the old DrumTable stays alive because the
+        // published TableSet does (Finding J3).
+        OscState oAx;
+        int      oAxLeft = 0, oAxLen = 1;
         SampleState sample;
         FilterState f;
         double noiseY = 0;
@@ -220,6 +256,10 @@ private:
     bool setupOsc(OscState& o, int base, double pitchEnv,
                   double mPos, double mFine, double mPitch, int n);
     static void renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n);
+    // J2: render one 16-sample sub-block of the oscillator layer, crossfading
+    // the outgoing configuration into the incoming one when a switch is live.
+    void renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mod& m,
+                        float* tmpL, float* tmpR, int at, int count);
     void renderSample(SampleState& state, int padI, double pitchEnv,
                       double modStart, double modFine, double modPitch,
                       float* tmpL, float* tmpR, int off, int n) const;
@@ -241,7 +281,40 @@ private:
     // (each pad's val is independent, unlike BL-1/WT-1's slide chains).
     void clipFireAt(int abs);
 
-    float param(int id) const { return p_[(size_t)id]; }
+    // Finding J1: the DSP reads the SMOOTHED array, never the raw target.
+    float param(int id) const { return ps_[(size_t)id]; }
+
+    // ---- J1 parameter smoothing ------------------------------------------
+    // WHICH: only continuous, audibly sensitive fields. Selectors (table,
+    // filter type, mod src/dst, unison, out, choke, reverse) and the sequencer
+    // fields pass straight through — a smoothed selector index would sweep
+    // through every option in between; J2 crossfades the ones that click.
+    //
+    // HOW: each render() call ramps every moving field LINEARLY from where it
+    // was to the value the host last wrote, across the whole call, and the
+    // chunk loop samples that ramp. A one-pole was tried first: with a time
+    // constant anywhere in the 10-20 ms range it only attenuates a 46.9 Hz
+    // block rate by ~13 dB, because the pole sits right next to the block rate
+    // itself. The ramp is exact instead — linear interpolation of a linearly
+    // automated parameter leaves no block-rate residual at all — at the cost of
+    // the one block of lag any block-rate ramp scheme carries (this is what
+    // juce::SmoothedValue does with its ramp length set to the block size).
+    // Fields already in a logarithmic unit (semitones, cents, dB) ramp
+    // linearly; the three in Hz or seconds ramp geometrically.
+    void snapSmoothers();            // ps_ = p_ and every ramp with it
+    void snapSmoother(int id);       // one id (setParam)
+    void beginBlockParams(int n);    // arm a ramp of n samples toward p_
+    void advanceSmoothers(int n);    // advance the ramp by one <=128-sample chunk
+
+    DrumParamArray ps_ = defaultDrumParams();   // what the DSP reads
+    float smCur_[DR_NSMOOTH] = {0};             // where each ramp is now
+    float smFrom_[DR_NSMOOTH] = {0};            // where this call's ramp started
+    int   rampLen_ = 1, rampPos_ = 0;
+    // The pad FX fields are contiguous (DP_FXDRIVE_ON .. DP_FXREVERB_MIX), so
+    // one memcmp per pad per chunk decides whether DrumFx::setParams — which
+    // costs a tanh, two pows and ten sin/cos — has to run at all.
+    static constexpr int kNFxFields = DPAD_NFIELDS - DP_FXDRIVE_ON;
+    float fxSeen_[DR_NPADS][kNFxFields]{};
 
     // sequencer state (js:82-89)
     std::vector<uint8_t> pats_ =
@@ -269,13 +342,36 @@ private:
 
     DrumParamArray p_ = defaultDrumParams();
     uint32_t hits_ = 0;
-    // Lock-free table publication (Finding 2) — same scheme as Engine::tables_:
-    // setTables atomically publishes an immutable set; render() atomic_loads
-    // one snapshot per call and keeps it alive for the whole block.
+    // ---- Lock-free table publication (Findings 2 and J3) ------------------
+    // The first fix used std::atomic_load on a shared_ptr. That is a hashed
+    // spinlock pool in both libstdc++ and libc++, so the audio thread could
+    // spin behind the message thread's atomic_exchange, and the last reference
+    // to a retired set could die on the audio thread when the snapshot went out
+    // of scope — a free inside render().
+    //
+    // Now the published value is a plain raw pointer. render() reads it with
+    // one relaxed-cost acquire load and never touches a reference count.
+    // Lifetime is handled by quiescent-state reclamation: render() bumps
+    // renderEpoch_ on entry and on exit, so an odd value means "inside
+    // render". setTables parks the outgoing set in retired_ with the epoch at
+    // retire time and frees it only once the counter has advanced far enough
+    // that no render call can still hold the pointer. Every free therefore
+    // happens on the message thread, inside setTables.
     using TableSet = std::vector<DrumTable>;
-    std::shared_ptr<const TableSet> tables_ = std::make_shared<TableSet>();
-    std::shared_ptr<const TableSet> retired_;
-    const TableSet* curTables_ = nullptr;
+    struct RetiredTables { std::shared_ptr<const TableSet> set; uint32_t epoch = 0; };
+    // A retired set is freed once the epoch has advanced by this much: each
+    // render() contributes 2, so 4 means two complete render calls have begun
+    // and ended after the publish. Two is provably enough; four is free. An
+    // even epoch short-circuits the whole rule (see drainRetiredTables) so an
+    // instance that is loaded but never rendering still reclaims.
+    static constexpr uint32_t kRetireEpochs = 4;
+    void drainRetiredTables();                       // message thread only
+
+    std::shared_ptr<const TableSet> live_ = std::make_shared<const TableSet>();
+    std::atomic<const TableSet*> tablesPtr_{live_.get()};
+    std::atomic<uint32_t> renderEpoch_{0};
+    std::vector<RetiredTables> retired_;             // message thread only
+    const TableSet* curTables_ = nullptr;            // render-call snapshot
     PadVoice voices_[DR_NPADS];
     // Finding D2: retriggering a sounding pad moves the old voice here and
     // fades it out over DR_CHOKE_TAU while the new hit starts clean on the
@@ -290,6 +386,10 @@ private:
     // per-block scratch (worklet process quantum)
     float tmpL_[128] = {0}, tmpR_[128] = {0};
     float fL_[128] = {0}, fR_[128] = {0};
+    // J2 crossfade scratch: the outgoing and incoming oscillator renders for
+    // one sub-block, mixed equal-power into tmpL_/tmpR_.
+    float xL_[128] = {0}, xR_[128] = {0};
+    float yL_[128] = {0}, yR_[128] = {0};
     float padL_[128] = {0}, padR_[128] = {0};
     std::array<DrumFx, DR_NPADS> padFx_;
     std::array<DrumBusOut, DR_NBUSES> busOut_;   // per-bus gain/DC/limiter (D1)

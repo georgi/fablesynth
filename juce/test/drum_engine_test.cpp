@@ -14,7 +14,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 #include <string>
 
@@ -902,6 +904,353 @@ int main() {
               "peak=" + std::to_string(pk) + " ceiling=" + std::to_string(ceiling));
         check(pk > ceiling * 0.5f, "the D1 ceiling test actually drives the bus",
               "peak=" + std::to_string(pk));
+    }
+
+    printf("\n== 5c. Automation, discrete switches, table safety, FX gate (J1-J3, D8) ==\n");
+    // Click ratio for a discrete switch: the largest sample-to-sample step
+    // inside the crossfade window, divided by the largest step the signal takes
+    // on its own on either side of it. A hard switch scores far above 1; a
+    // crossfade keeps the change inside the signal's own slew rate. Both sides
+    // count, because the incoming sound can be louder or brighter than the
+    // outgoing one and would otherwise set the baseline on its own.
+    const int kFadeSamples = (int)(0.003 * 48000);   // DR_SWITCH_FADE
+    auto switchRatio = [&](const std::vector<float>& before,
+                           const std::vector<float>& after) {
+        std::vector<float> join(before.end() - 4, before.end());
+        join.insert(join.end(), after.begin(), after.begin() + kFadeSamples + 16);
+        const double base =
+            std::max(maxStep(before, (int)before.size() / 2, (int)before.size()),
+                     maxStep(after, kFadeSamples + 32, (int)after.size()));
+        const double step = maxStep(join, 1, (int)join.size());
+        return base > 1e-9 ? step / base : 0.0;
+    };
+    {
+        // J1: the plugin copies every APVTS atomic into params() once per host
+        // block, so an automated knob used to step once per block. At a 1024
+        // sample buffer that is a 46.875 Hz staircase, and it shows up as a
+        // line at that rate (and its harmonics) in the output's power envelope.
+        // The engine now smooths between params() and the DSP, so the only
+        // remaining update cadence is the <=128-sample render chunk (375 Hz).
+        const int hostBlock = 1024;
+        const double blockRate = 48000.0 / hostBlock;      // 46.875 Hz
+        auto sweepEnvelope = [&](int blocks) {
+            auto p = defaultDrumParams();
+            p[(size_t)dpid(0, DP_OSCA_TABLE)] = 3.0f;       // GRIT: plenty of harmonics
+            p[(size_t)dpid(0, DP_OSCA_LEVEL)] = 0.9f;
+            p[(size_t)dpid(0, DP_AENV_ATT)] = 0.0f;
+            p[(size_t)dpid(0, DP_AENV_HOLD)] = 20.0f;       // flat amp: cutoff is the only mover
+            p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+            p[(size_t)dpid(0, DP_NOISE_LEVEL)] = 0.0f;
+            p[(size_t)dpid(0, DP_FLT_ON)] = 1.0f;
+            p[(size_t)dpid(0, DP_FLT_TYPE)] = 0.0f;         // LP12
+            p[(size_t)dpid(0, DP_FLT_RES)] = 0.9f;          // a resonant peak makes a step loud
+            p[(size_t)dpid(0, DP_FLT_CUT)] = 400.0f;
+            DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+            e.trigger(0, 1.0f);
+            std::vector<float> out;
+            for (int b = 0; b < blocks; b++) {
+                // Exactly what DrumProcessor::processBlock does: one write into
+                // params() per host block, then render the whole block.
+                const double u = (double)b / (blocks - 1);
+                e.params()[(size_t)dpid(0, DP_FLT_CUT)] =
+                    (float)(400.0 * std::pow(4000.0 / 400.0, u));
+                auto blk = renderMain(e, hostBlock);
+                out.insert(out.end(), blk.begin(), blk.end());
+            }
+            // Power envelope: a cutoff step moves the output level, so the
+            // staircase lands as a tone in |x|^2.
+            std::vector<float> env(out.size());
+            for (size_t i = 0; i < out.size(); i++) env[i] = out[i] * out[i];
+            return env;
+        };
+        // 47 blocks ~ 1 s of sweep; analyse a 32768-sample window inside it.
+        auto env = sweepEnvelope(47);
+        const int N = 32768;
+        const int at = 4096;
+        // Line strength at f relative to the median of the bins around it.
+        auto lineDb = [&](double f) {
+            std::vector<double> re(N), im(N, 0.0);
+            for (int i = 0; i < N; i++) {
+                const double t = 2 * M_PI * i / (N - 1);
+                const double w = 0.35875 - 0.48829 * std::cos(t)
+                               + 0.14128 * std::cos(2 * t) - 0.01168 * std::cos(3 * t);
+                re[i] = env[(size_t)(at + i)] * w;
+            }
+            fft(re.data(), im.data(), N, false);
+            auto mag = [&](int k) { return std::sqrt(re[k] * re[k] + im[k] * im[k]); };
+            const double binHz = 48000.0 / N;
+            const int b = (int)std::round(f / binHz);
+            double pk = 0;
+            for (int k = b - 2; k <= b + 2; k++) pk = std::max(pk, mag(k));
+            std::vector<double> around;
+            for (int k = b - 60; k <= b + 60; k++)
+                if (std::abs(k - b) > 6) around.push_back(mag(k));
+            std::sort(around.begin(), around.end());
+            const double med = around[around.size() / 2];
+            return 20 * std::log10((pk + 1e-30) / (med + 1e-30));
+        };
+        double worst = -200;
+        std::string which;
+        for (int h = 1; h <= 4; h++) {
+            const double db = lineDb(h * blockRate);
+            if (db > worst) { worst = db; which = std::to_string(h) + "x"; }
+        }
+        // With the block-rate hold this reads +69 dB over the local floor. With
+        // the ramp it reads +2 to +4 dB — the envelope's own numerical noise,
+        // which moves by a dB or two between runs because the render buffers
+        // land at different alignments. 15 dB separates the two beyond doubt.
+        check(worst < 15.0,
+              "J1: no block-rate line in an automated cutoff sweep",
+              "worst=" + std::to_string(worst) + " dB at " + which + " " +
+              std::to_string(blockRate) + " Hz");
+    }
+    {
+        // J2: selecting another OSC A table mid-note used to swap the read in
+        // one sample, exactly the class of click the filter-type crossfade
+        // already removed. How big that step is depends on where in the cycle
+        // the switch lands, so sweep the switch instant across a full period
+        // and take the worst case. Same click detector as the filter test.
+        auto tableSwitchWorst = [&](int fromTable, int toTable) {
+            auto p = defaultDrumParams();
+            p[(size_t)dpid(0, DP_AENV_ATT)] = 0.01f;
+            p[(size_t)dpid(0, DP_AENV_HOLD)] = 1.0f;
+            p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+            p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+            p[(size_t)dpid(0, DP_NOISE_LEVEL)] = 0.0f;
+            p[(size_t)dpid(0, DP_OSCB_LEVEL)] = 0.0f;
+            p[(size_t)dpid(0, DP_OSCA_LEVEL)] = 1.0f;
+            p[(size_t)dpid(0, DP_OSCA_UNISON)] = 1.0f;
+            p[(size_t)dpid(0, DP_PENV_AMT)] = 0.0f;
+            p[(size_t)dpid(0, DP_OSCA_TUNE)] = -12.0f;   // 130 Hz: a 369-sample period
+            p[(size_t)dpid(0, DP_OSCA_TABLE)] = (float)fromTable;
+            double worst = 0, baseAt = 1;
+            for (int k = 0; k < 24; k++) {
+                DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+                e.trigger(0, 1.0f);
+                auto before = renderMain(e, 12000 + k * 16);   // one sub-block apart
+                e.setParam(dpid(0, DP_OSCA_TABLE), (float)toTable);
+                auto after = renderMain(e, 1200);
+                worst = std::max(worst, switchRatio(before, after));
+            }
+            (void)baseAt;
+            return worst;
+        };
+        const double thudToTine = tableSwitchWorst(0, 2);
+        check(thudToTine < 2.0, "J2: OSC A table switch does not click",
+              "worst step/slew = " + std::to_string(thudToTine));
+    }
+    {
+        // J2: the same for the sample slot. Selecting another one-shot used to
+        // restart the player at START in one sample, jumping from wherever the
+        // outgoing sample was to wherever the incoming one begins.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_OSCA_LEVEL)] = 0.0f;
+        p[(size_t)dpid(0, DP_NOISE_LEVEL)] = 0.0f;
+        p[(size_t)dpid(0, DP_OSCB_TABLE)] = 5.0f;      // 808BD: low and tonal
+        p[(size_t)dpid(0, DP_OSCB_LEVEL)] = 1.0f;
+        p[(size_t)dpid(0, DP_OSCB_TUNE)] = -12.0f;     // half rate: a small slew
+        p[(size_t)dpid(0, DP_OSCB_POS)] = 0.05f;
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.01f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 2.0f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+        p[(size_t)dpid(0, DP_PENV_AMT)] = 0.0f;
+        double worst = 0;
+        for (int k = 0; k < 24; k++) {
+            DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+            e.trigger(0, 1.0f);
+            auto before = renderMain(e, 6000 + k * 16);
+            e.setParam(dpid(0, DP_OSCB_TABLE), 0.0f);   // -> 808BD alt
+            auto after = renderMain(e, 1200);
+            worst = std::max(worst, switchRatio(before, after));
+        }
+        check(worst < 2.0, "J2: sample-slot switch does not click",
+              "worst step/slew = " + std::to_string(worst));
+    }
+    {
+        // J3: publish new table sets from the message thread while the audio
+        // thread renders. Two invariants: the audio thread never sees a torn or
+        // freed set (the render stays finite and keeps sounding), and no table
+        // is ever DESTROYED on the audio thread. The custom deleter below
+        // records which thread each destruction ran on.
+        //
+        // Under the old scheme (atomic_load on a shared_ptr, a single retired_
+        // slot) the audio thread's snapshot holds a reference for the whole
+        // render call, so two publishes inside one render drop the last
+        // message-thread reference and the free lands on the audio thread when
+        // the snapshot dies. Long render calls plus cheap synthetic tables make
+        // that window wide enough to hit within a second.
+        auto makeTinyTable = [](int seedIdx) {
+            auto* g = new GeneratedTable();
+            g->name = "J3";
+            g->frames = 1;
+            g->mips = 4;
+            g->size = SIZE;
+            g->data.assign((size_t)(g->frames * g->mips * g->size), 0.0f);
+            for (int m = 0; m < g->mips; m++)
+                for (int i = 0; i < g->size; i++)
+                    g->data[(size_t)(m * g->size + i)] =
+                        0.5f * (float)std::sin(2 * M_PI * (i + seedIdx) / g->size);
+            return g;
+        };
+        std::atomic<bool> stop{false};
+        std::atomic<int> freedOnAudio{0}, freedTotal{0}, publishes{0};
+        std::atomic<bool> allFinite{true}, everSounded{false};
+        std::atomic<bool> audioIdSet{false};
+        std::thread::id audioId;
+
+        DrumEngine e; e.prepare(48000);
+        e.setTables({TablePtr(makeTinyTable(0))});
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_OSCA_TABLE)] = 0.0f;
+        p[(size_t)dpid(0, DP_OSCB_LEVEL)] = 0.0f;
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.0f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 10.0f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+        e.setParams(p);
+
+        std::thread audio([&] {
+            audioId = std::this_thread::get_id();
+            audioIdSet.store(true);
+            while (!stop.load()) {
+                e.trigger(0, 1.0f);
+                for (int k = 0; k < 8; k++) {
+                    auto b = renderMain(e, 8192);   // long calls: a wide window
+                    if (!finite(b)) allFinite.store(false);
+                    if (rms(b) > 1e-5) everSounded.store(true);
+                }
+            }
+        });
+        while (!audioIdSet.load()) { /* spin until the worker publishes its id */ }
+        // Publish in pairs: the second publish is what used to drop the last
+        // message-thread reference to a set the audio thread may still hold.
+        for (int iter = 0; iter < 3000; iter++) {
+            e.setTables({TablePtr(makeTinyTable(iter), [&](const GeneratedTable* g) {
+                freedTotal.fetch_add(1);
+                if (std::this_thread::get_id() == audioId) freedOnAudio.fetch_add(1);
+                delete g;
+            })});
+            e.setTables({TablePtr(makeTinyTable(iter), [&](const GeneratedTable* g) {
+                freedTotal.fetch_add(1);
+                if (std::this_thread::get_id() == audioId) freedOnAudio.fetch_add(1);
+                delete g;
+            })});
+            publishes.fetch_add(2);
+        }
+        stop.store(true);
+        audio.join();
+        e.setTables(allTables());   // drop the last instrumented set
+        check(allFinite.load() && everSounded.load(),
+              "J3: concurrent setTables keeps the render finite and sounding");
+        check(freedTotal.load() > 0 && freedOnAudio.load() == 0,
+              "J3: no table set is ever freed on the audio thread",
+              "publishes=" + std::to_string(publishes.load()) +
+              " freed=" + std::to_string(freedTotal.load()) +
+              " onAudio=" + std::to_string(freedOnAudio.load()));
+    }
+    {
+        // J3: an instance that is loaded but never renders — a bypassed plugin,
+        // or a stopped transport in a host that skips processBlock — must still
+        // reclaim. Its epoch never advances, so the distance rule alone would
+        // hold every retired set forever and repeated table imports would pile
+        // up. drainRetiredTables short-circuits on an even (quiescent) epoch.
+        std::atomic<int> alive{0};
+        {
+            DrumEngine e; e.prepare(48000);
+            for (int iter = 0; iter < 200; iter++) {
+                auto* g = new GeneratedTable();
+                g->name = "J3idle"; g->frames = 1; g->mips = 1; g->size = SIZE;
+                g->data.assign((size_t)SIZE, 0.0f);
+                alive.fetch_add(1);
+                e.setTables({TablePtr(g, [&](const GeneratedTable* t) {
+                    alive.fetch_add(-1); delete t;
+                })});
+            }
+            // 200 publishes with no render at all: at most the live set may
+            // still be held. Anything more means retired sets are accumulating.
+            check(alive.load() <= 1,
+                  "J3: a never-rendered instance still reclaims retired tables",
+                  "still alive after 200 publishes: " + std::to_string(alive.load()));
+        }
+        check(alive.load() == 0, "J3: destroying the engine frees the live set",
+              "alive=" + std::to_string(alive.load()));
+    }
+    {
+        // D8: the FX gate must never truncate a tail. A 6 s reverb tail is the
+        // hardest case: the chain is fed for 20 ms and then rings for seconds
+        // with the pad voice long dead. Walk 100 ms windows and require the
+        // decay to stay smooth until it passes below the gate threshold — a
+        // gate that fired early shows up as a window collapsing to nothing.
+        auto p = defaultDrumParams();
+        for (int i = 0; i < DR_NPADS; i++) {
+            p[(size_t)dpid(i, DP_FXDRIVE_ON)] = 0;
+            p[(size_t)dpid(i, DP_FXCOMP_ON)] = 0;
+            p[(size_t)dpid(i, DP_FXCHORUS_ON)] = 0;
+            p[(size_t)dpid(i, DP_FXDELAY_ON)] = 0;
+            p[(size_t)dpid(i, DP_FXREVERB_ON)] = 0;
+        }
+        p[(size_t)dpid(0, DP_FXREVERB_ON)] = 1;
+        p[(size_t)dpid(0, DP_FXREVERB_SIZE)] = 1.0f;   // longest tail
+        p[(size_t)dpid(0, DP_FXREVERB_MIX)] = 1.0f;
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.001f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.01f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 0.01f;       // 20 ms of input, then silence
+        DrumEngine e; e.prepare(48000); e.enablePadFx(true);
+        e.setTables(allTables()); e.setParams(p);
+        e.trigger(0, 1.0f);
+        std::vector<double> win;
+        std::vector<int> active;
+        for (int k = 0; k < 120; k++) {                // 12 s in 100 ms windows
+            auto b = renderMain(e, 4800);
+            win.push_back(rms(b));
+            active.push_back(e.activeFxChains());
+        }
+        // Windows 1.. are pure tail. Require a smooth decay while the tail is
+        // still above the gate's own -100 dBFS threshold.
+        bool smooth = true; int badAt = -1; double badRatio = 1;
+        for (size_t k = 2; k < win.size(); k++) {
+            if (win[k - 1] < 1e-5) break;              // below the gate threshold
+            const double ratio = win[k] / win[k - 1];
+            if (ratio < 0.4) { smooth = false; badAt = (int)k; badRatio = ratio; break; }
+        }
+        check(win[1] > 1e-4, "D8: the gate test actually produces a long tail",
+              "w1=" + std::to_string(win[1]));
+        check(smooth, "D8: the FX gate does not truncate a reverb tail",
+              badAt < 0 ? "smooth to the floor"
+                        : ("window " + std::to_string(badAt) + " ratio "
+                           + std::to_string(badRatio)));
+        // The fifteen silent chains gate off within the 250 ms hold, leaving
+        // only the one that is actually ringing.
+        check(active[5] == 1, "D8: only the sounding pad's chain keeps running",
+              "active=" + std::to_string(active[5]));
+        // Safety invariant: a chain is never gated while it is still audible.
+        bool neverCutAudible = true; int cutAt = -1;
+        for (size_t k = 0; k < win.size(); k++)
+            if (win[k] > 1e-4 && active[k] < 1) { neverCutAudible = false; cutAt = (int)k; }
+        check(neverCutAudible, "D8: no chain is gated while its tail is audible",
+              cutAt < 0 ? "" : ("window " + std::to_string(cutAt)));
+    }
+    {
+        // D8: un-gating must not click. Let every chain gate off, then hit the
+        // pad again and check the attack has no step beyond its own slew rate.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.05f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.2f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 0.2f;
+        DrumEngine e; e.prepare(48000); e.enablePadFx(true);
+        e.setTables(allTables()); e.setParams(p);
+        e.trigger(0, 1.0f);
+        auto first = renderMain(e, 48000);            // hit, then 1 s to settle
+        for (int k = 0; k < 4; k++) renderMain(e, 48000);   // 4 s of silence: all gated
+        check(e.activeFxChains() == 0, "D8: all chains gated after 5 s of silence",
+              "active=" + std::to_string(e.activeFxChains()));
+        e.trigger(0, 1.0f);
+        auto again = renderMain(e, 12000);
+        const double base = maxStep(first, 2400, 12000);
+        const double atWake = maxStep(again, 1, 4800);
+        check(finite(again) && atWake < base * 2.0,
+              "D8: re-engaging a gated chain does not click",
+              "step=" + std::to_string(atWake) + " baseline=" + std::to_string(base));
     }
 
     printf("\n== 6. DrumKits ==\n");

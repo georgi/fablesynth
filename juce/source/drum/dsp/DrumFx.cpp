@@ -90,6 +90,8 @@ void DrumFx::reset() {
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     compEnv_ = 0;
+    compG_ = 1; compGStep_ = 0; compGCount_ = 0;
+    idle_ = false; idleSilent_ = 0;
     chPhase_ = 0;
     driveGated_ = compGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
     // settle smoothers at their targets so no stale ramp survives a re-prepare
@@ -166,23 +168,39 @@ float DrumFx::shape(float x) const {
     return std::tanh(x * driveK_) * driveNorm_;
 }
 
-// One channel through the 4x oversampled shaper (see Fx.cpp for the phase
-// bookkeeping); zero-stuff gain x2 per stage, decimation keeps the base phase.
+// One channel through the 4x oversampled shaper. Finding J4: the four
+// half-bands run through the polyphase entry points instead of the direct
+// form. interpolate() produces both upsampled samples from one base sample
+// without the multiplies the zero-stuffed input wastes, and decimate() takes
+// the two high-rate samples of an output period and returns the kept phase
+// without computing the discarded one — 86 MACs per base sample instead of
+// 324, for a bit-identical result (Fx.h documents the verification). Each
+// filter here is driven in exactly one mode, which the API requires.
 float DrumFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x) {
-    double a[2] = { u1.process(2.0 * x), u1.process(0.0) };
-    double y = 0;
-    for (int k = 0; k < 2; k++) {
-        double b0 = u2.process(2.0 * a[k]);
-        double b1 = u2.process(0.0);
-        double c = d2.process((double)shape((float)b0));
-        d2.process((double)shape((float)b1)); // discarded decimation phase
-        double d = d1.process(c);
-        if (k == 0) y = d;                    // keep the base-rate phase
-    }
-    return (float)y;
+    double a0, a1;
+    u1.interpolate(x, a0, a1);
+    double b0, b1;
+    u2.interpolate(a0, b0, b1);
+    const double c0 = d2.decimate((double)shape((float)b0), (double)shape((float)b1));
+    u2.interpolate(a1, b0, b1);
+    const double c1 = d2.decimate((double)shape((float)b0), (double)shape((float)b1));
+    return (float)d1.decimate(c0, c1);        // keeps the base-rate phase
 }
 
 void DrumFx::process(float* L, float* R, int n) {
+    // Finding D8: chain-level activity gate. Peak the block's input first; while
+    // the chain is idle a silent input means there is nothing for it to do, so
+    // the entire chain (drive oversampler, compressor, chorus, delay, Freeverb)
+    // is skipped and its state stays frozen. The output is already the input.
+    float inPk = 0;
+    for (int i = 0; i < n; i++)
+        inPk = std::max(inPk, std::max(std::abs(L[i]), std::abs(R[i])));
+    if (idle_) {
+        if (inPk <= kIdleLevel) return;
+        idle_ = false;
+        idleSilent_ = 0;
+    }
+
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive.
     bool driveGate = driveOff_ && driveWet_.target == 0.0f && std::abs(driveWet_.cur) < 1.0e-6f;
     bool compGate = compOff_ && compWet_.target == 0.0f && std::abs(compWet_.cur) < 1.0e-6f;
@@ -198,6 +216,7 @@ void DrumFx::process(float* L, float* R, int n) {
     if (compGate && !compGated_) {
         compWet_.snap(0); compDry_.snap(1);
         compEnv_ = 0;
+        compG_ = 1; compGStep_ = 0; compGCount_ = 0;
     }
     if (chorusGate && !chorusGated_) {
         chWet_.snap(0); chDry_.snap(1);
@@ -221,6 +240,7 @@ void DrumFx::process(float* L, float* R, int n) {
     delayGated_ = delayGate;
     verbGated_ = verbGate;
 
+    float outPk = 0;
     for (int i = 0; i < n; i++) {
         float l = L[i], r = R[i];
 
@@ -247,9 +267,19 @@ void DrumFx::process(float* L, float* R, int n) {
             double coef = pk > compEnv_ ? compAtk_ : compRel_;
             compEnv_ += (pk - compEnv_) * coef;
             float thrDb = compThrDb_.next();
-            double g = 1.0;
-            if (compEnv_ > 1.0e-6)
-                g = std::pow(10.0, compGainDb(20.0 * std::log10(compEnv_), thrDb) / 20.0);
+            // Finding D8: pow + log10 once per kCompUpdate samples, then a
+            // linear ramp to the new gain. The envelope above is still per
+            // sample, so nothing is missed; only the curve lookup is decimated.
+            if (compGCount_ <= 0) {
+                double gT = 1.0;
+                if (compEnv_ > 1.0e-6)
+                    gT = std::pow(10.0, compGainDb(20.0 * std::log10(compEnv_), thrDb) / 20.0);
+                compGStep_ = (gT - compG_) / kCompUpdate;
+                compGCount_ = kCompUpdate;
+            }
+            compG_ += compGStep_;
+            compGCount_--;
+            double g = compG_;
             g *= compMakeup_.next();
             float wet = compWet_.next(), dry = compDry_.next();
             l = dry * l + wet * (float)(g * l);
@@ -300,7 +330,15 @@ void DrumFx::process(float* L, float* R, int n) {
         }
 
         L[i] = l; R[i] = r;
+        outPk = std::max(outPk, std::max(std::abs(l), std::abs(r)));
     }
+
+    // Finding D8: the chain may only be gated once its own OUTPUT has gone
+    // quiet as well — that is what makes a seconds-long reverb tail safe. The
+    // hold just stops the gate from chattering around the threshold.
+    if (inPk <= kIdleLevel && outPk <= kIdleLevel) idleSilent_ += n;
+    else idleSilent_ = 0;
+    if (idleSilent_ >= kIdleHold * sr_) idle_ = true;
 }
 
 // ---------------- DrumBusOut (Finding D1) ----------------

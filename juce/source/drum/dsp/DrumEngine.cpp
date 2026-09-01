@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace fable {
 
@@ -44,8 +45,136 @@ static const double kExpNorm = 1.0 / (1.0 - kExpEnd);
 // enough to leave a transient attack intact.
 static const double DR_SAMPLE_FADE = 0.0015;
 
-// Crossfade time for a filter-type change (see FilterState::svfOld).
+// Crossfade time for a discrete switch — the filter type (FilterState::svfOld),
+// the oscillator table/unison and the sample slot (Finding J2) all use it.
 static const double DR_SWITCH_FADE = 0.003;
+
+// Equal-power weight for a switch crossfade `i` samples into a run with `left`
+// samples of fade still to go out of `len`. Returns cos for the outgoing side
+// and sin for the incoming one, so the two always sum to unit power.
+static inline void switchWeights(int left, int i, int len, double& wOut, double& wIn) {
+    const double prog = clampd(1.0 - (double)(left - i) / (double)len, 0.0, 1.0);
+    const double a = prog * kPi * 0.5;
+    wOut = std::cos(a);
+    wIn = std::sin(a);
+}
+
+// ---------------- Finding J1: host-automation smoothing ----------------
+// The plan: which per-pad fields get a smoother, and which of those live in a
+// genuinely logarithmic unit. TUNE/FINE/PENV AMT are semitones/cents and the
+// compressor's THR/GAIN are dB, so a linear ramp there IS a log-domain ramp;
+// only CUTOFF (Hz), RING FREQ (Hz) and DELAY TIME (s) need the geometric path.
+// Everything absent from this list is a selector, a routing field or a
+// sequencer field and passes straight through.
+struct DrumSmoothPlan {
+    int  n = 0;
+    int  id[DR_NSMOOTH]{};
+    bool logDomain[DR_NSMOOTH]{};
+    int  slotOfField[DPAD_NFIELDS];   // -1 when the field is not smoothed
+};
+
+static const DrumSmoothPlan& drumSmoothPlan() {
+    static const DrumSmoothPlan plan = [] {
+        struct Entry { int field; bool log; };
+        static const Entry fields[DR_NSMOOTH_FIELDS] = {
+            {DP_OSCA_POS, false}, {DP_OSCA_TUNE, false}, {DP_OSCA_FINE, false},
+            {DP_OSCA_DETUNE, false}, {DP_OSCA_LEVEL, false},
+            {DP_OSCB_POS, false}, {DP_OSCB_TUNE, false}, {DP_OSCB_FINE, false},
+            {DP_OSCB_DETUNE, false}, {DP_OSCB_LEVEL, false},
+            {DP_NOISE_COLOR, false}, {DP_NOISE_LEVEL, false},
+            {DP_RING_FREQ, true}, {DP_RING_MIX, false},
+            {DP_PENV_AMT, false}, {DP_PENV_DEC, false},
+            {DP_AENV_ATT, false}, {DP_AENV_HOLD, false}, {DP_AENV_DEC, false},
+            {DP_AENV_CURVE, false},
+            {DP_FLT_CUT, true}, {DP_FLT_RES, false}, {DP_FLT_DRIVE, false},
+            {DP_MOD1_AMT, false}, {DP_MOD2_AMT, false},
+            {DP_MOD3_AMT, false}, {DP_MOD4_AMT, false},
+            {DP_MODENV_DEC, false},
+            {DP_LVL, false}, {DP_PAN, false}, {DP_V2L, false}, {DP_V2M, false},
+            {DP_FXDRIVE_AMT, false}, {DP_FXDRIVE_MIX, false},
+            {DP_FXCOMP_THR, false}, {DP_FXCOMP_GAIN, false},
+            {DP_FXCHORUS_RATE, false}, {DP_FXCHORUS_DEPTH, false}, {DP_FXCHORUS_MIX, false},
+            {DP_FXDELAY_TIME, true}, {DP_FXDELAY_FB, false}, {DP_FXDELAY_MIX, false},
+            {DP_FXREVERB_SIZE, false}, {DP_FXREVERB_MIX, false},
+        };
+        DrumSmoothPlan pl;
+        for (int f = 0; f < DPAD_NFIELDS; f++) pl.slotOfField[f] = -1;
+        for (int k = 0; k < DR_NSMOOTH_FIELDS; k++) pl.slotOfField[fields[k].field] = k;
+        // Pad-major order keeps a pad's smoothers adjacent in cache.
+        for (int pad = 0; pad < DR_NPADS; pad++)
+            for (int k = 0; k < DR_NSMOOTH_FIELDS; k++) {
+                pl.id[pl.n] = dpid(pad, fields[k].field);
+                pl.logDomain[pl.n] = fields[k].log;
+                pl.n++;
+            }
+        pl.id[pl.n] = DG_MASTER_VOLUME;                 // the one smoothed global
+        pl.logDomain[pl.n] = false;
+        pl.n++;
+        return pl;
+    }();
+    return plan;
+}
+
+void DrumEngine::snapSmoothers() {
+    const auto& pl = drumSmoothPlan();
+    ps_ = p_;
+    for (int k = 0; k < pl.n; k++) smCur_[k] = p_[(size_t)pl.id[k]];
+}
+
+void DrumEngine::snapSmoother(int id) {
+    if (id < 0 || id >= DR_NUM_PARAMS) return;
+    const auto& pl = drumSmoothPlan();
+    ps_[(size_t)id] = p_[(size_t)id];
+    int k = -1;
+    if (id == DG_MASTER_VOLUME) {
+        k = pl.n - 1;
+    } else if (id < DR_NPADS * DPAD_NFIELDS) {
+        const int slot = pl.slotOfField[id % DPAD_NFIELDS];
+        if (slot >= 0) k = (id / DPAD_NFIELDS) * DR_NSMOOTH_FIELDS + slot;
+    }
+    if (k >= 0) smCur_[k] = p_[(size_t)id];
+}
+
+// Once per render() call: everything unsmoothed passes through as-is, the
+// smoothed ids resume where their ramps left off, and a new ramp of n samples
+// toward the host's latest targets is armed.
+void DrumEngine::beginBlockParams(int n) {
+    const auto& pl = drumSmoothPlan();
+    ps_ = p_;
+    for (int k = 0; k < pl.n; k++) {
+        smFrom_[k] = smCur_[k];
+        ps_[(size_t)pl.id[k]] = smCur_[k];
+    }
+    rampLen_ = std::max(1, n);
+    rampPos_ = 0;
+}
+
+// One <=128-sample chunk of the ramp. The value depends only on how far into
+// the call the chunk ends, so it does not matter how the host splits the block.
+void DrumEngine::advanceSmoothers(int n) {
+    const auto& pl = drumSmoothPlan();
+    rampPos_ = std::min(rampPos_ + n, rampLen_);
+    const bool atEnd = rampPos_ >= rampLen_;
+    const double u = (double)rampPos_ / (double)rampLen_;
+    for (int k = 0; k < pl.n; k++) {
+        const int id = pl.id[k];
+        const float t = p_[(size_t)id];
+        const float f = smFrom_[k];
+        if (t == f) continue;                       // idle: one compare, no work
+        float c;
+        if (atEnd) {
+            c = t;
+        } else if (pl.logDomain[k]) {
+            const double lf = std::log((double)std::max(1.0e-6f, f));
+            const double lt = std::log((double)std::max(1.0e-6f, t));
+            c = (float)std::exp(lf + (lt - lf) * u);
+        } else {
+            c = (float)((double)f + ((double)t - (double)f) * u);
+        }
+        smCur_[k] = c;
+        ps_[(size_t)id] = c;
+    }
+}
 
 // Finding 10: cubic Hermite (Catmull-Rom) table read, indices pre-wrapped.
 static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i2, double f) {
@@ -62,8 +191,10 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
     vel = v; rand = rnd;
     t = 0; ampLevel = 0;
     oA.posSm = -1; oA.havePrev = false; oA.pData = nullptr;
+    oAxLeft = 0;                                   // Finding J2
     sample.pos = -1; sample.index = -1; sample.done = false;
     sample.pStep = 0; sample.havePrev = false;
+    sample.xfIndex = -1; sample.xfLeft = 0; sample.xfDone = true;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
     f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0;
     std::fill(std::begin(f.svfOld), std::end(f.svfOld), 0.0);
@@ -80,6 +211,8 @@ void DrumEngine::prepare(double sampleRate) {
     sr_ = sampleRate;
     dcR_ = std::pow(DR_DC_R, 48000.0 / sr_);
     chokeCoef_ = 1.0 - std::exp(-1.0 / (DR_CHOKE_TAU * sr_));   // Finding D9
+    snapSmoothers();                 // Finding J1: no stale ramp survives a re-prepare
+    for (auto& row : fxSeen_) std::fill(std::begin(row), std::end(row), -1.0e30f);
     for (auto& fx : padFx_) fx.prepare(sampleRate);
     for (auto& b : busOut_) b.prepare(sampleRate);
     // Finding D9: the one-shot bank is a function-local static that render()
@@ -106,9 +239,10 @@ void DrumEngine::selectPad(int i) {
     sel_ = std::max(0, std::min(DR_NPADS - 1, i));
 }
 
-// Finding 2: lock-free publication — same scheme as Engine::setTables. The
-// audio thread never blocks on a table swap and never substitutes silence;
-// retired_ keeps the previous set so its free lands on the message thread.
+// Findings 2 + J3: lock-free publication with no audio-thread free. Build the
+// complete immutable set, publish its raw address with one release store, park
+// the outgoing set with the epoch at retire time, then reclaim whatever is old
+// enough. The audio thread never blocks and never substitutes silence.
 void DrumEngine::setTables(std::vector<TablePtr> tables) {
     auto next = std::make_shared<TableSet>();
     next->reserve(tables.size());
@@ -121,7 +255,46 @@ void DrumEngine::setTables(std::vector<TablePtr> tables) {
         }
         next->push_back(std::move(e));
     }
-    retired_ = std::atomic_exchange(&tables_, std::shared_ptr<const TableSet>(std::move(next)));
+    std::shared_ptr<const TableSet> pub = std::move(next);
+    const TableSet* raw = pub.get();
+    auto prev = std::move(live_);
+    live_ = std::move(pub);
+    tablesPtr_.store(raw, std::memory_order_release);
+    // Two setTables calls inside one render used to overwrite each other's
+    // retired_ slot and drop the older set on the audio thread. The list holds
+    // every one of them until the epoch says nobody can be reading it.
+    if (prev)
+        retired_.push_back({std::move(prev),
+                            renderEpoch_.load(std::memory_order_acquire)});
+    drainRetiredTables();
+}
+
+// Message thread. Two ways a retired set becomes unreachable.
+//
+// An EVEN epoch means no render call is in flight at this instant: a render
+// that had loaded the old pointer would still be inside its odd window, and one
+// that starts after this load necessarily sees the pointer published before it.
+// So an even reading retires everything outstanding at once. This is the case
+// that matters for a loaded-but-silent instance — a bypassed plugin, or a
+// stopped transport in a host that skips processBlock — where the counter never
+// advances and the distance rule below would never fire, so importing table
+// after table would pile up retired sets forever.
+//
+// Otherwise a set retired at epoch e is unreachable once the counter has moved
+// on by kRetireEpochs: every render() that could have loaded the old pointer has
+// passed its closing increment. Unsigned wrap is well defined and the difference
+// is always small, so the arithmetic stays correct forever.
+void DrumEngine::drainRetiredTables() {
+    const uint32_t now = renderEpoch_.load(std::memory_order_acquire);
+    if ((now & 1u) == 0u) {                 // quiescent: nothing can be reading
+        retired_.clear();
+        return;
+    }
+    retired_.erase(std::remove_if(retired_.begin(), retired_.end(),
+                                  [now](const RetiredTables& r) {
+                                      return (uint32_t)(now - r.epoch) >= kRetireEpochs;
+                                  }),
+                   retired_.end());
 }
 
 // ---- trigger (js:126-143): choke group scan, velocity clamp, phase preset ----
@@ -444,50 +617,71 @@ void DrumEngine::renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n
     o.havePrev = true;
 }
 
-// Raw PCM16 one-shot player. The legacy oscB parameter slots now select and
-// shape this layer, preserving saved automation and all later flat ids.
-//
-// Finding D4: cubic Hermite reads instead of linear, a Hann-weighted decimation
-// average as the anti-alias pre-filter whenever the read rate exceeds 1
-// source sample per output sample, DR_SAMPLE_FADE edge fades on an interior
-// START/END and on the reverse stop, and the read rate ramped per sample the
-// way renderOsc ramps its increments (it used to be held for 16 samples, so the
-// pitch envelope staircased on this layer only).
-void DrumEngine::renderSample(SampleState& state, int padI, double pitchEnv,
-                              double modStart, double modFine, double modPitch,
-                              float* tmpL, float* tmpR, int off, int n) const {
-    if (state.done) return;
-    const auto& bank = drumOneShots();
-    if (bank.empty()) return;
-    const int index = std::max(0, std::min((int)bank.size() - 1,
-        (int)param(dpid(padI, DP_OSCB_TABLE))));
-    const auto& sample = bank[(size_t)index];
-    if (sample.data == nullptr || sample.length < 2) return;
-
-    const double start = clampd(param(dpid(padI, DP_OSCB_POS)) + modStart, 0.0, 0.999);
-    const double end = std::max(start + 1.0 / sample.length,
-        clampd(param(dpid(padI, DP_OSCB_DETUNE)), 0.0, 1.0));
-    const bool reverse = param(dpid(padI, DP_OSCB_PHASE)) >= 0.5f;
-    if (state.pos < 0 || state.index != index) {
-        state.index = index;
-        state.pos = (reverse ? end : start) * (sample.length - 1);
-        state.havePrev = false;
+// Finding J2: one sub-block of the OSC A layer. Selecting another table (or
+// another unison count) swapped the read out from under the oscillator in a
+// single sample — a step that can be as large as the waveform's own peak, the
+// same class of click the filter-type crossfade already removed. On a switch
+// the voice forks: `oAx` keeps running the OUTGOING configuration, including
+// its table pointer and phases, and the two renders are mixed equal-power over
+// DR_SWITCH_FADE. A second switch inside the fade simply restarts it from the
+// current mix, exactly like the filter-type case.
+void DrumEngine::renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mod& m,
+                                float* tmpL, float* tmpR, int at, int count) {
+    const OscState before = v.oA;                 // pre-setup: the outgoing config
+    const bool aOn = setupOsc(v.oA, dpid(padI, DP_OSCA_TABLE), pitchEnv,
+                              m.posA, m.fineA, m.pitch, count);
+    if (aOn && before.havePrev && before.data != nullptr
+        && (v.oA.data != before.data || v.oA.uni != before.uni)) {
+        v.oAx = before;
+        v.oAx.havePrev = false;      // frozen configuration: nothing to ramp from
+        v.oAxLen = std::max(1, (int)(DR_SWITCH_FADE * sr_));
+        v.oAxLeft = v.oAxLen;
+        v.oA.havePrev = false;       // and the incoming one has no valid previous target
     }
-    const double semis = param(dpid(padI, DP_OSCB_TUNE))
-        + (param(dpid(padI, DP_OSCB_FINE)) + modFine) / 100.0
-        + pitchEnv + modPitch;
-    const double step1 = ((double)sample.sampleRate / sr_) * std::pow(2.0, semis / 12.0)
-        * (reverse ? -1.0 : 1.0);
-    const double step0 = state.havePrev ? state.pStep : step1;
-    const double dStep = n > 0 ? (step1 - step0) / n : 0.0;
-    const double level = clampd(param(dpid(padI, DP_OSCB_LEVEL)), 0.0, 1.2);
-    const double gain = level * level * 0.75 / 32768.0;
-    const int last = sample.length - 1;
-    const double lo = start * last;
-    const double hi = end * last;
 
+    if (v.oAxLeft <= 0) {
+        if (aOn) renderOsc(v.oA, tmpL, tmpR, at, count);
+        else v.oA.havePrev = false;
+        return;
+    }
+
+    std::fill(xL_, xL_ + count, 0.0f); std::fill(xR_, xR_ + count, 0.0f);
+    std::fill(yL_, yL_ + count, 0.0f); std::fill(yR_, yR_ + count, 0.0f);
+    renderOsc(v.oAx, xL_, xR_, 0, count);
+    if (aOn) renderOsc(v.oA, yL_, yR_, 0, count);
+    else v.oA.havePrev = false;
+    for (int i = 0; i < count; i++) {
+        double wOut, wIn;
+        switchWeights(v.oAxLeft, i, v.oAxLen, wOut, wIn);
+        tmpL[at + i] += (float)(wOut * xL_[i] + wIn * yL_[i]);
+        tmpR[at + i] += (float)(wOut * xR_[i] + wIn * yR_[i]);
+    }
+    v.oAxLeft = std::max(0, v.oAxLeft - count);
+}
+
+// One instance of the sample layer: a slot and region frozen at call time, so
+// the same read path serves both sides of the Finding J2 crossfade.
+struct DrumSampleRun {
+    const int16_t* d = nullptr;
+    int    last = 0;
+    double lo = 0, hi = 0;
+    bool   reverse = false;
+    double gain = 0;
+    double step0 = 0, dStep = 0;
+    bool   fadeInEdge = false;
+    double half = 0;
+    double sr = 48000;
+};
+
+// Render `n` samples of one instance. `xfLen > 0` applies the equal-power
+// switch weight: `fadeOut` for the outgoing slot, its complement for the
+// incoming one. Advances `pos` and sets `done` when the region runs out.
+static void runSampleLayer(const DrumSampleRun& c, double& pos, bool& done,
+                           float* tmpL, float* tmpR, int off, int n,
+                           int xfLeft, int xfLen, bool fadeOut) {
+    const int16_t* d = c.d;
+    const int last = c.last;
     // Hermite read with clamped edges (the source is a one-shot, not a loop).
-    const int16_t* d = sample.data;
     auto rd = [d, last](double p) -> double {
         const int i1c = (int)std::floor(p);
         const double f = p - i1c;
@@ -502,25 +696,24 @@ void DrumEngine::renderSample(SampleState& state, int padI, double pitchEnv,
         return ((c3 * f + c2) * f + c1) * f + y0;
     };
 
-    // Edge fades, expressed in source samples so the fade lasts the same
-    // output time at any transposition. A region that starts at the sample's
-    // own beginning keeps its transient: only an interior edge is faded in.
-    const double half = 0.5 * (hi - lo);
-    const bool fadeInEdge = reverse ? (hi < last - 1e-9) : (lo > 1e-9);
-    double pos = state.pos;
     for (int i = 0; i < n; ++i) {
-        if ((!reverse && pos >= hi) || (reverse && pos <= lo)) {
-            state.done = true;
+        if ((!c.reverse && pos >= c.hi) || (c.reverse && pos <= c.lo)) {
+            done = true;
             break;
         }
-        const double st = step0 + dStep * i;
+        const double st = c.step0 + c.dStep * i;
         const double ast = std::fabs(st);
-        const double fadeSrc = std::min(std::max(ast, 1.0) * DR_SAMPLE_FADE * sr_,
-                                        std::max(half, 1.0));
-        const double dIn  = reverse ? hi - pos : pos - lo;
-        const double dOut = reverse ? pos - lo : hi - pos;
+        const double fadeSrc = std::min(std::max(ast, 1.0) * DR_SAMPLE_FADE * c.sr,
+                                        std::max(c.half, 1.0));
+        const double dIn  = c.reverse ? c.hi - pos : pos - c.lo;
+        const double dOut = c.reverse ? pos - c.lo : c.hi - pos;
         double fade = clampd(dOut / fadeSrc, 0.0, 1.0);
-        if (fadeInEdge) fade = std::min(fade, clampd(dIn / fadeSrc, 0.0, 1.0));
+        if (c.fadeInEdge) fade = std::min(fade, clampd(dIn / fadeSrc, 0.0, 1.0));
+        if (xfLen > 0) {
+            double wOut, wIn;
+            switchWeights(xfLeft, i, xfLen, wOut, wIn);
+            fade *= fadeOut ? wOut : wIn;
+        }
 
         double value = rd(pos);
         if (ast > 1.0) {
@@ -540,12 +733,106 @@ void DrumEngine::renderSample(SampleState& state, int padI, double pitchEnv,
             }
             value += (acc / wsum - value) * clampd(ast - 1.0, 0.0, 1.0);
         }
-        const float out = (float)(value * gain * fade);
+        const float out = (float)(value * c.gain * fade);
         tmpL[off + i] += out;
         tmpR[off + i] += out;
         pos += st;
     }
-    state.pos = pos;
+}
+
+// Raw PCM16 one-shot player. The legacy oscB parameter slots now select and
+// shape this layer, preserving saved automation and all later flat ids.
+//
+// Finding D4: cubic Hermite reads instead of linear, a Hann-weighted decimation
+// average as the anti-alias pre-filter whenever the read rate exceeds 1
+// source sample per output sample, DR_SAMPLE_FADE edge fades on an interior
+// START/END and on the reverse stop, and the read rate ramped per sample the
+// way renderOsc ramps its increments (it used to be held for 16 samples, so the
+// pitch envelope staircased on this layer only).
+//
+// Finding J2 splits the read loop into runSampleLayer above so the same path
+// can serve both sides of a sample-slot crossfade.
+void DrumEngine::renderSample(SampleState& state, int padI, double pitchEnv,
+                              double modStart, double modFine, double modPitch,
+                              float* tmpL, float* tmpR, int off, int n) const {
+    const auto& bank = drumOneShots();
+    if (bank.empty()) return;
+    if (state.done && state.xfLeft <= 0) return;
+    const int index = std::max(0, std::min((int)bank.size() - 1,
+        (int)param(dpid(padI, DP_OSCB_TABLE))));
+
+    const double start = clampd(param(dpid(padI, DP_OSCB_POS)) + modStart, 0.0, 0.999);
+    const double end = std::max(start + 1.0 / bank[(size_t)index].length,
+        clampd(param(dpid(padI, DP_OSCB_DETUNE)), 0.0, 1.0));
+    const bool reverse = param(dpid(padI, DP_OSCB_PHASE)) >= 0.5f;
+
+    // Finding J2: the slot changed under a playing one-shot. Fork before the
+    // reset below moves `pos` back to START: the old slot keeps reading from
+    // where it is and fades out while the new one fades in.
+    if (state.index >= 0 && state.index != index && state.pos >= 0 && !state.done) {
+        state.xfIndex = state.index;
+        state.xfPos = state.pos;
+        state.xfDone = false;
+        state.xfLen = std::max(1, (int)(DR_SWITCH_FADE * sr_));
+        state.xfLeft = state.xfLen;
+    }
+    if (state.pos < 0 || state.index != index) {
+        state.index = index;
+        state.pos = (reverse ? end : start) * (bank[(size_t)index].length - 1);
+        state.havePrev = false;
+    }
+
+    const double semis = param(dpid(padI, DP_OSCB_TUNE))
+        + (param(dpid(padI, DP_OSCB_FINE)) + modFine) / 100.0
+        + pitchEnv + modPitch;
+    const double level = clampd(param(dpid(padI, DP_OSCB_LEVEL)), 0.0, 1.2);
+    const double pitchRatio = std::pow(2.0, semis / 12.0) * (reverse ? -1.0 : 1.0);
+
+    // Build one frozen instance for a slot at the current region/tune settings.
+    auto makeRun = [&](int slot, double step0, double dStep) {
+        const auto& sample = bank[(size_t)slot];
+        DrumSampleRun c;
+        c.d = sample.data;
+        c.last = sample.length - 1;
+        c.lo = start * c.last;
+        c.hi = end * c.last;
+        c.reverse = reverse;
+        c.gain = level * level * 0.75 / 32768.0;
+        c.step0 = step0;
+        c.dStep = dStep;
+        // Edge fades, expressed in source samples so the fade lasts the same
+        // output time at any transposition. A region that starts at the
+        // sample's own beginning keeps its transient: only an interior edge is
+        // faded in.
+        c.half = 0.5 * (c.hi - c.lo);
+        c.fadeInEdge = reverse ? (c.hi < c.last - 1e-9) : (c.lo > 1e-9);
+        c.sr = sr_;
+        return c;
+    };
+
+    // The outgoing slot first: it must run even after the incoming one is done.
+    // xfLen == 0 means "no weighting": the common path skips the sin/cos.
+    const int xfLeft = state.xfLeft, xfLen = state.xfLeft > 0 ? state.xfLen : 0;
+    if (xfLeft > 0 && state.xfIndex >= 0 && !state.xfDone) {
+        const auto& old = bank[(size_t)state.xfIndex];
+        if (old.data != nullptr && old.length >= 2) {
+            const double st = ((double)old.sampleRate / sr_) * pitchRatio;
+            runSampleLayer(makeRun(state.xfIndex, st, 0.0), state.xfPos, state.xfDone,
+                           tmpL, tmpR, off, n, xfLeft, xfLen, true);
+        } else {
+            state.xfDone = true;
+        }
+    }
+    if (xfLeft > 0) state.xfLeft = std::max(0, xfLeft - n);
+
+    if (state.done) return;
+    const auto& sample = bank[(size_t)index];
+    if (sample.data == nullptr || sample.length < 2) return;
+    const double step1 = ((double)sample.sampleRate / sr_) * pitchRatio;
+    const double step0 = state.havePrev ? state.pStep : step1;
+    const double dStep = n > 0 ? (step1 - step0) / n : 0.0;
+    runSampleLayer(makeRun(index, step0, dStep), state.pos, state.done,
+                   tmpL, tmpR, off, n, xfLeft, xfLen, false);
     state.pStep = step1;
     state.havePrev = true;
 }
@@ -718,8 +1005,7 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     for (int at = 0; at < n; at += 16) {
         int count = std::min(16, n - at);
         double pe = pAmt * std::exp(-4.5 * (double)(v.t + at) / (pDec * sr_));
-        bool aOn = setupOsc(v.oA, dpid(padI, DP_OSCA_TABLE), pe, m.posA, m.fineA, m.pitch, count);
-        if (aOn) renderOsc(v.oA, tmpL, tmpR, at, count); else v.oA.havePrev = false;
+        renderOscLayer(v, padI, pe, m, tmpL, tmpR, at, count);
         renderSample(v.sample, padI, pe, m.posB, m.fineB, m.pitch,
                      tmpL, tmpR, at, count);
     }
@@ -817,15 +1103,20 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         for (int c = 0; c < 2; c++)
             std::fill(outs[b][c], outs[b][c] + n, 0.0f);
 
-    // Finding 2: snapshot the published table set once for the whole call —
-    // the shared_ptr keeps setupOsc's cached raw pointers valid even if the
-    // message thread publishes a new set mid-block. Never blocks, never silent.
-    const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
-    curTables_ = snap.get();
-    if (padFxEnabled_) {
-        for (int i = 0; i < DR_NPADS; ++i) padFx_[(size_t)i].setParams(p_, i);
-        for (auto& b : busOut_) b.setParams(p_);   // Finding D1
-    }
+    // Findings 2 + J3: one acquire load of a raw pointer, held for the whole
+    // call so setupOsc's cached data pointers stay valid even if the message
+    // thread publishes a new set mid-block. The odd epoch published here is
+    // what stops setTables from freeing the set under us. No lock, no refcount,
+    // no free on this thread.
+    renderEpoch_.fetch_add(1, std::memory_order_acq_rel);      // odd: in render
+    curTables_ = tablesPtr_.load(std::memory_order_acquire);
+
+    // Finding J1: start from the raw targets for everything that is not
+    // smoothed, then hand the DSP the smoothed view; advanceSmoothers moves it
+    // once per chunk below. The FX chains are re-parameterised per chunk too
+    // (they used to see one value for the whole host block), which is what
+    // makes an automated FX amount a ramp instead of a step.
+    beginBlockParams(n);
 
     // Host-locked mode: step times come from song position, not samplesToNext_.
     // Hosted clip mode owns the transport exclusively: it suppresses both
@@ -862,6 +1153,24 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             // pad) — 2-arg tick, no onSwap hook needed.
             clipHost_.tick(hostFrame_, run, [&](int abs) { clipFireAt(abs); });
         }
+        // Finding J1: the chunk length is now known, so move every smoother by
+        // exactly this many samples and re-derive the FX coefficients from the
+        // result. setParams is skipped for a pad whose values did not move, so
+        // a static patch costs one memcmp per pad per chunk.
+        advanceSmoothers(run);
+        if (padFxEnabled_) {
+            for (int i = 0; i < DR_NPADS; ++i) {
+                const int b = dpid(i, DP_FXDRIVE_ON);
+                if (std::memcmp(&fxSeen_[(size_t)i][0], &ps_[(size_t)b],
+                                kNFxFields * sizeof(float)) != 0) {
+                    std::memcpy(&fxSeen_[(size_t)i][0], &ps_[(size_t)b],
+                                kNFxFields * sizeof(float));
+                    padFx_[(size_t)i].setParams(ps_, i);
+                }
+            }
+            for (auto& bo : busOut_) bo.setParams(ps_);   // Finding D1
+        }
+
         for (int i = 0; i < DR_NPADS; i++) {
             PadVoice& v = voices_[(size_t)i];
             PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
@@ -898,6 +1207,9 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         pos += run;
     }
     if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
+
+    curTables_ = nullptr;
+    renderEpoch_.fetch_add(1, std::memory_order_release);      // even: out of render
 
     const PadVoice& v = voices_[(size_t)sel_];
     vizA = v.active ? (float)v.oA.posSm : -1.0f;

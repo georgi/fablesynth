@@ -30,9 +30,26 @@ public:
     void process(float* L, float* R, int n); // in-place, before pad output routing
     void reset();
     int  latencySamples() const { return kDriveLatency; }
+    // Finding D8: true while the whole chain is bypassed because its input AND
+    // its own output have been below kIdleLevel for kIdleHold. Read by the
+    // tests (and DrumEngine::activeFxChains) to prove the gate engages.
+    bool isIdle() const { return idle_; }
 
 private:
     double sr_ = 48000;
+
+    // Finding D8: sixteen chains used to run every sample whether or not there
+    // was anything to process — 16 x (Freeverb's 24 delays + a compressor doing
+    // pow+log10 per sample + two Hermite delays + the 4x oversampled drive).
+    // The chain is gated only once BOTH its input and its own output have sat
+    // below kIdleLevel (-100 dBFS) for kIdleHold, so a multi-second reverb tail
+    // is never truncated: the criterion is the measured output level, not
+    // whether the pad was triggered. Gating freezes the recursive state instead
+    // of clearing it, so re-engaging cannot step by more than kIdleLevel.
+    static constexpr float  kIdleLevel = 1.0e-5f;
+    static constexpr double kIdleHold  = 0.25;
+    bool   idle_ = false;
+    double idleSilent_ = 0;      // samples since input+output were last audible
 
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;
@@ -48,6 +65,14 @@ private:
     double compEnv_ = 0;
     double compAtk_ = 0, compRel_ = 0;
     bool compOff_ = false, compGated_ = false;
+    // Finding D8: the static curve (pow + log10) is evaluated once per
+    // kCompUpdate samples and the resulting gain is ramped linearly across that
+    // window. The envelope follower still runs per sample, so peak detection is
+    // unchanged; only the curve lookup is decimated, which the 3 ms attack
+    // already smooths over.
+    static constexpr int kCompUpdate = 32;
+    double compG_ = 1, compGStep_ = 0;
+    int    compGCount_ = 0;
 
     // chorus
     double chPhase_ = 0;
