@@ -10,8 +10,17 @@ export interface DrumHarness {
   };
   sent: { t: string; [k: string]: unknown }[];
   send(msg: unknown): void;
+  // Sum of every output bus, the mix a listener hears.
   render(blocks: number): { L: Float32Array; R: Float32Array };
+  // One named bus, for routing and per-bus ceiling checks.
+  renderBus(blocks: number, bus: number): { L: Float32Array; R: Float32Array };
+  // Chain latency the worklet reports at construction (99 samples at 48 kHz).
+  latency: number;
 }
+
+// One stereo output per OUT_NAMES entry, since the FX rack moved into the
+// worklet (review W6): the pads sum onto these five buses inside it.
+export const BUS_COUNT = 5;
 
 export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
   const sent: DrumHarness['sent'] = [];
@@ -30,13 +39,15 @@ export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
   );
   const proc = new Proc!();
   const send = (msg: unknown) => proc.port.onmessage!({ data: msg });
-  const render = (blocks: number) => {
+  const renderBus = (blocks: number, bus: number) => {
     const L = new Float32Array(blocks * 128);
     const R = new Float32Array(blocks * 128);
     for (let b = 0; b < blocks; b++) {
-      const outputs = Array.from({ length: 16 }, () => [new Float32Array(128), new Float32Array(128)]);
+      const outputs = Array.from({ length: BUS_COUNT }, () => [new Float32Array(128), new Float32Array(128)]);
       proc.process([], outputs);
-      for (const [l, r] of outputs) {
+      for (let o = 0; o < BUS_COUNT; o++) {
+        if (bus >= 0 && o !== bus) continue;
+        const [l, r] = outputs[o];
         for (let i = 0; i < 128; i++) {
           L[b * 128 + i] += l[i];
           R[b * 128 + i] += r[i];
@@ -45,5 +56,7 @@ export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
     }
     return { L, R };
   };
-  return { proc, sent, send, render };
+  const render = (blocks: number) => renderBus(blocks, -1);
+  const latency = (sent.find((m) => m.t === 'latency')?.n as number) ?? 0;
+  return { proc, sent, send, render, renderBus, latency };
 }

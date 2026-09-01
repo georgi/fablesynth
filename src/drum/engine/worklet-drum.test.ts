@@ -40,14 +40,22 @@ describe('drum voice', () => {
     expect(finite(L) && finite(R)).toBe(true);
   });
 
-  it('routes each voice only to its matching stereo pad bus', () => {
+  it('routes a pad to the output bus its out param selects', () => {
+    // Every pad defaults to MAIN; pad 3 is moved to AUX 2.
+    h.send({ t: 'p', k: pad(3, 'out'), v: 2 });
     h.send({ t: 'trig', pad: 3, v: 1 });
-    const outputs = Array.from({ length: 16 }, () => [new Float32Array(128), new Float32Array(128)]);
+    const outputs = Array.from({ length: 5 }, () => [new Float32Array(128), new Float32Array(128)]);
     h.proc.process([], outputs);
-    expect(peak(outputs[3][0])).toBeGreaterThan(0);
+    expect(peak(outputs[2][0])).toBeGreaterThan(0);
     for (let i = 0; i < outputs.length; i++) {
-      if (i !== 3) expect(peak(outputs[i][0]), `pad bus ${i}`).toBe(0);
+      if (i !== 2) expect(peak(outputs[i][0]), `bus ${i}`).toBe(0);
     }
+  });
+
+  it('clamps an out-of-range out param onto a real bus', () => {
+    h.send({ t: 'p', k: pad(0, 'out'), v: 99 });
+    h.send({ t: 'trig', pad: 0, v: 1 });
+    expect(peak(h.renderBus(2, 4).L)).toBeGreaterThan(0);
   });
 
   it('one-shot: decays to silence without a note-off', () => {

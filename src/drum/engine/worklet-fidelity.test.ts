@@ -66,10 +66,13 @@ describe('drum click detector', () => {
     const p = defaultDrumParams();
     p[pad(0, 'aenv.dec')] = 0.2;
     p[pad(0, 'penv.amt')] = 0;
+    p[pad(0, 'fx.reverb.on')] = 0; // the envelope's own tail, not the room's
     const h = boot(p);
     h.send({ t: 'trig', pad: 0, v: 1 });
     const x = h.render(160).L;
-    const end = Math.round((p[pad(0, 'aenv.att')] + p[pad(0, 'aenv.hold')] + 0.2) * 48000);
+    // The FX chain reports a constant latency (drive FIR + limiter lookahead),
+    // so every event in the output sits that many samples later.
+    const end = Math.round((p[pad(0, 'aenv.att')] + p[pad(0, 'aenv.hold')] + 0.2) * 48000) + h.latency;
     const atEnd = maxDelta(x, end - 60, end + 60);
     const before = maxDelta(x, end - 2000, end - 500);
     expect(Math.abs(x[end - 1])).toBeLessThan(1e-4);
@@ -147,6 +150,11 @@ describe('drum sample-rate invariance', () => {
     p[pad(0, 'mod1.src')] = 1; p[pad(0, 'mod1.dst')] = 1; p[pad(0, 'mod1.amt')] = 1;
     p[pad(0, 'mod2.src')] = 1; p[pad(0, 'mod2.dst')] = 4; p[pad(0, 'mod2.amt')] = 0.8;
     p[pad(0, 'modenv.dec')] = 0.15;
+    // This measures the voice. The reverb is sample-rate scaled but its comb
+    // lengths are integers, so its modal structure differs by a few tenths of
+    // a percent between rates — a per-bin dB test would read that, not the
+    // engine. drum-fx.test.ts covers the FX chain at several rates instead.
+    p[pad(0, 'fx.reverb.on')] = 0;
     return p;
   };
 
@@ -154,7 +162,8 @@ describe('drum sample-rate invariance', () => {
     const h = boot(patch(), sr);
     h.send({ t: 'trig', pad: 0, v: 1 });
     const n = Math.round(0.3 * sr);
-    const x = h.render(Math.ceil(n / 128) + 1).L;
+    // Skip the chain latency so the same 0.3 s of audio is analysed at each rate.
+    const x = h.render(Math.ceil((n + h.latency) / 128) + 1).L.subarray(h.latency);
     return FREQS.map((f) => bandDb(x, n, f, sr));
   };
 
