@@ -136,7 +136,7 @@ juce::Rectangle<int> NoteSeqView::gridBounds() const {
 // Floating CUT · COPY · DUP · DEL · ✕ toolbar centered over the selected
 // columns (SeqSelectionMenu.tsx), drawn over the top lanes while a rect exists.
 juce::Rectangle<int> NoteSeqView::selMenuBounds() const {
-    constexpr int bw = 34, gap = 2, n = 5, h = 16;
+    constexpr int bw = 46, gap = 3, n = 5, h = 22;
     constexpr int w = n * bw + (n - 1) * gap;
     const auto nrm = fable::rectNorm(rect_);
     const auto lo = colBounds(juce::jlimit(0, fable::SEQ_STEPS - 1, nrm.stepLo));
@@ -148,7 +148,7 @@ juce::Rectangle<int> NoteSeqView::selMenuBounds() const {
 }
 
 juce::Rectangle<int> NoteSeqView::selMenuButton(int i) const {
-    constexpr int bw = 34, gap = 2;
+    constexpr int bw = 46, gap = 3;
     const auto m = selMenuBounds();
     return { m.getX() + i * (bw + gap), m.getY(), bw, m.getHeight() };
 }
@@ -575,6 +575,7 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
             moveArmed_ = true; moving_ = false;
             moveOriginStep_ = step; moveOriginNote_ = note;
             moveHoverStep_ = step; moveHoverNote_ = note;
+            dragStartPos_ = dragCurPos_ = e.position;
             return;
         }
         const int origin = grabNoteAt(step, note);              // 3) note drag
@@ -582,6 +583,7 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
             noteDragArmed_ = true; noteDragActive_ = false;
             ndSrcStep_ = origin; ndSrcNote_ = note; ndGrabStep_ = step;
             ndOverStep_ = step; ndOverNote_ = note;
+            dragStartPos_ = dragCurPos_ = e.position;
             return;
         }
         return;                                                 // 4) empty cell: toggle on up
@@ -609,12 +611,14 @@ void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
     if (moveArmed_) {
+        dragCurPos_ = e.position;
         moveHoverStep_ = stepAtX(p.x); moveHoverNote_ = noteAtY(p.y);
         if (moveHoverStep_ != moveOriginStep_ || moveHoverNote_ != moveOriginNote_) moving_ = true;
         repaint();
         return;
     }
     if (noteDragArmed_) {
+        dragCurPos_ = e.position;
         ndOverStep_ = stepAtX(p.x); ndOverNote_ = noteAtY(p.y);
         if (ndOverStep_ != ndGrabStep_ || ndOverNote_ != ndSrcNote_) noteDragActive_ = true;
         repaint();
@@ -646,8 +650,10 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
         if (moving_) {
             moving_ = false;
             commitBlockMove(moveHoverStep_ - moveOriginStep_, moveHoverNote_ - moveOriginNote_, e.mods.isAltDown());
-        } else if (downStep_ >= 0) {       // plain click inside the rect: toggle
-            toggleAt(downStep_, downNote_);
+        } else if (downStep_ >= 0) {       // plain click inside the rect
+            const int head = grabNoteAt(downStep_, downNote_);
+            if (head >= 0) setSelection({ head, head, downNote_, downNote_ }); // click a note = select it
+            else toggleAt(downStep_, downNote_);                               // empty cell: make a note
         }
         downStep_ = downNote_ = -1;
         return;
@@ -659,8 +665,8 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
             const int offset = ndGrabStep_ - ndSrcStep_;                 // long-note body grab
             const int dest = juce::jmax(0, ndOverStep_ - offset);
             commitNoteMove(ndSrcStep_, ndSrcNote_, dest, ndOverNote_, e.mods.isAltDown());
-        } else if (downStep_ >= 0) {       // plain tap on a lit cell: toggle it off
-            toggleAt(downStep_, downNote_);
+        } else if (downStep_ >= 0) {       // plain tap on a note: select it (head or body)
+            setSelection({ ndSrcStep_, ndSrcStep_, ndSrcNote_, ndSrcNote_ });
         }
         downStep_ = downNote_ = -1;
         return;
@@ -756,8 +762,6 @@ void NoteSeqView::timerCallback() {
     const bool playing = model.sequencerPlaying();
     const int edit = model.editPattern();
     mix(playing ? 1 : 0);
-    mix(playing ? model.currentStep() : -1);
-    mix(model.currentPattern());
     mix(edit);
     mix(model.hostSynced() ? 1 : 0);
     mix((int)std::lround(model.hostBpm()));
@@ -770,7 +774,33 @@ void NoteSeqView::timerCallback() {
         mix(st.duration);
         mix(st.note); mix(st.oct);
     }
-    if (sig != lastSig_) { lastSig_ = sig; repaint(); }
+    // The cursor only exists while the transport plays the pattern on screen.
+    const int curPat = playing ? model.currentPattern() : -1;   // matches the painted bar chip
+    const int curStep = curPat == edit ? model.currentStep() : -1;
+
+    if (sig != lastSig_) {
+        lastSig_ = sig;
+        lastCursorStep_ = curStep;
+        lastCursorPattern_ = curPat;
+        repaint();
+        return;
+    }
+    if (curStep == lastCursorStep_ && curPat == lastCursorPattern_) return;
+
+    // Only the playhead moved: repaint the old and the new cursor column. The
+    // cursor is a 3px glow ring outside colBounds, so pad generously.
+    static constexpr int kCursorPad = 8;
+    juce::Rectangle<int> dirty;
+    if (lastCursorStep_ >= 0) dirty = dirty.getUnion(colBounds(lastCursorStep_).expanded(kCursorPad));
+    if (curStep >= 0) dirty = dirty.getUnion(colBounds(curStep).expanded(kCursorPad));
+    // The playing bar also lights its chip in the header row.
+    if (curPat != lastCursorPattern_)
+        dirty = dirty.getUnion(patternBounds(0)
+                                   .getUnion(patternBounds(fable::SEQ_NPATTERNS - 1))
+                                   .expanded(kCursorPad));
+    lastCursorStep_ = curStep;
+    lastCursorPattern_ = curPat;
+    if (!dirty.isEmpty()) repaint(dirty);
 }
 
 // ---- paint ----------------------------------------------------------------------
@@ -1044,19 +1074,35 @@ void NoteSeqView::paint(juce::Graphics& g) {
     // Note-drag feedback: dim the source cell, outline the hovered target
     // (.drag-src / .drag-over[.copy]).
     if (noteDragActive_) {
-        const auto src = cellBounds(ndSrcStep_, ndSrcNote_).toFloat();
+        // The dragged note previews at its landing spot with its real length,
+        // and the note it left behind is dimmed (.ns-note-preview / .drag-src).
+        const int dur = juce::jmax(1, (int)model.sequenceStep(model.editPattern(), ndSrcStep_).duration);
+        const auto noteRect = [this](int step, int note, int len) {
+            auto r = cellBounds(step, note).toFloat();
+            r.setRight(cellBounds(juce::jmin(fable::SEQ_STEPS - 1, step + len - 1), note).toFloat().getRight());
+            return r;
+        };
         g.setColour(juce::Colours::black.withAlpha(0.4f));
-        g.fillRoundedRectangle(src, 2.0f);
+        g.fillRoundedRectangle(noteRect(ndSrcStep_, ndSrcNote_, dur), 2.0f);
         const int offset = ndGrabStep_ - ndSrcStep_;
-        const auto over = cellBounds(juce::jmax(0, ndOverStep_ - offset), ndOverNote_).toFloat();
-        g.setColour(cyan);
+        const int dest = juce::jmax(0, ndOverStep_ - offset);
+        // Snap target: a faint outline where the note lands on release.
+        const auto snap = noteRect(dest, ndOverNote_, juce::jmin(dur, fable::SEQ_STEPS - dest));
+        g.setColour(cyan.withAlpha(0.35f));
+        g.drawRoundedRectangle(snap.reduced(0.5f), 3.0f, 1.0f);
+        // The note body itself rides the pointer at pixel resolution.
+        const auto over = noteRect(ndSrcStep_, ndSrcNote_, dur)
+                              .translated(dragCurPos_.x - dragStartPos_.x, dragCurPos_.y - dragStartPos_.y);
+        g.setColour(cyan.withAlpha(0.45f));
+        g.fillRoundedRectangle(over, 3.0f);
+        g.setColour(cyan.withAlpha(0.9f));
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
             const float dashes[] = { 3.0f, 2.0f };
-            juce::Path pth; pth.addRoundedRectangle(over.reduced(0.5f), 2.0f);
+            juce::Path pth; pth.addRoundedRectangle(over.reduced(0.5f), 3.0f);
             juce::Path dashed; juce::PathStrokeType(1.2f).createDashedStroke(dashed, pth, dashes, 2);
             g.strokePath(dashed, juce::PathStrokeType(1.2f));
         } else {
-            g.drawRoundedRectangle(over.reduced(0.5f), 2.0f, 1.4f);
+            g.drawRoundedRectangle(over.reduced(0.5f), 3.0f, 1.2f);
         }
     }
 
@@ -1065,11 +1111,17 @@ void NoteSeqView::paint(juce::Graphics& g) {
         const auto n = fable::rectNorm(rect_);
         const int dStep = juce::jlimit(-n.stepLo, (fable::SEQ_STEPS - 1) - n.stepHi, moveHoverStep_ - moveOriginStep_);
         const int dNote = juce::jlimit(-n.noteLo, (fable::SEQ_NOTE_LANES - 1) - n.noteHi, moveHoverNote_ - moveOriginNote_);
+        // Snap target: a faint outline where the block lands on release.
         const auto r = rectPixels({ n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote });
+        g.setColour(cyan.withAlpha(0.35f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
+        // The block itself rides the pointer at pixel resolution.
+        const auto free = rectPixels({ n.stepLo, n.stepHi, n.noteLo, n.noteHi })
+                              .translated(dragCurPos_.x - dragStartPos_.x, dragCurPos_.y - dragStartPos_.y);
         g.setColour(cyan.withAlpha(0.10f));
-        g.fillRoundedRectangle(r, 3.0f);
+        g.fillRoundedRectangle(free, 3.0f);
         g.setColour(cyan.withAlpha(0.9f));
-        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.4f);
+        g.drawRoundedRectangle(free.reduced(0.5f), 3.0f, 1.4f);
     }
 
     // Ghost cells trailing the cursor (.ns-cell.ghost): dashed accent blocks at
@@ -1105,8 +1157,14 @@ void NoteSeqView::paint(juce::Graphics& g) {
     // Floating CUT · COPY · DUP · DEL · ✕ toolbar over the selection.
     if (hasRect_ && !ghost_) {
         static const char* const kMenu[5] = { "CUT", "COPY", "DUP", "DEL", "X" };
+        // .seq-selmenu backdrop: dark rounded panel with a faint accent border
+        const auto mb = selMenuBounds().expanded(4, 3).toFloat();
+        g.setColour(juce::Colour(0xea0a0d13));
+        g.fillRoundedRectangle(mb, 6.0f);
+        g.setColour(accentA().withAlpha(0.45f));
+        g.drawRoundedRectangle(mb.reduced(0.5f), 6.0f, 1.0f);
         for (int i = 0; i < 5; ++i)
-            drawSeqBtn(g, selMenuButton(i), kMenu[i], false, 0.4f, false, 7.0f);
+            drawSeqBtn(g, selMenuButton(i), kMenu[i], false, 0.4f, false, 10.0f);
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <vector>
 #include "../dsp/Params.h"
 
 // Shared palette + drawing helpers — a 1:1 transcription of the web app's CSS
@@ -55,10 +56,43 @@ inline juce::Colour modSourceColour(int srcIndex) {
     }
 }
 
+namespace detail {
+// Cached panel drop shadow. juce::DropShadow re-renders and Gaussian-blurs a
+// fresh image on every call, and panels repaint at up to 30 Hz with unchanged
+// geometry. The shadow is a plain rectangle at a fixed colour/blur/offset, so it
+// depends only on the integer size — drawPanel's corner radius never reaches
+// DropShadow. UI paints on the message thread only, so the static cache needs no
+// lock.
+constexpr int    shadowBlur     = 18;
+constexpr int    shadowOffsetY  = 8;
+constexpr int    shadowMargin   = shadowBlur + shadowOffsetY + 4; // covers blur + offset
+constexpr size_t shadowCacheMax = 32;
+
+struct ShadowEntry { int w, h; juce::Image img; };
+
+// The returned reference stays valid until the next call — blit it immediately.
+inline const juce::Image& panelShadow(int w, int h) {
+    static std::vector<ShadowEntry> cache;
+    for (auto& e : cache)
+        if (e.w == w && e.h == h) return e.img;
+    if (cache.size() >= shadowCacheMax) cache.clear(); // panels come in a few sizes
+    juce::Image img(juce::Image::ARGB, w + shadowMargin * 2, h + shadowMargin * 2, true);
+    {
+        juce::Graphics ig(img);
+        juce::DropShadow(juce::Colours::black.withAlpha(0.4f), shadowBlur, {0, shadowOffsetY})
+            .drawForRectangle(ig, juce::Rectangle<int>(shadowMargin, shadowMargin, w, h));
+    }
+    cache.push_back({ w, h, std::move(img) });
+    return cache.back().img;
+}
+} // namespace detail
+
 // Panel: rounded rect, vertical gradient + top inner highlight + drop shadow.
 inline void drawPanel(juce::Graphics& g, juce::Rectangle<float> r, float radius = 12.0f) {
-    juce::DropShadow(juce::Colours::black.withAlpha(0.4f), 18, {0, 8}).drawForRectangle(
-        g, r.toNearestInt());
+    const auto ri = r.toNearestInt(); // key and blit off one rect so the shadow lands as before
+    if (ri.getWidth() > 0 && ri.getHeight() > 0)
+        g.drawImageAt(detail::panelShadow(ri.getWidth(), ri.getHeight()),
+                      ri.getX() - detail::shadowMargin, ri.getY() - detail::shadowMargin);
     g.setGradientFill(juce::ColourGradient(col::panelHi, r.getX(), r.getY(),
                                            col::panelLo, r.getX(), r.getBottom(), false));
     g.fillRoundedRectangle(r, radius);

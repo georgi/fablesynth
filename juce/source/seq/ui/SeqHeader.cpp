@@ -1,5 +1,6 @@
 #include "SeqHeader.h"
 #include "../../ui/Controls.h"
+#include "../../ui/LookAndFeel.h"
 #include "../dsp/SeqFactory.h"
 
 #include <array>
@@ -20,6 +21,34 @@ const bool g_seqResolverInstalled = [] {
     setParamInfoResolver(&seqInfoLookup);
     return true;
 }();
+
+// Web .sq-session-preset select: 20px pill, 8px mono, amber text on #11141c.
+// The shared DarkLNF draws a 10px white combo; only the font/colours differ.
+struct SessionComboLNF : DarkLNF {
+    SessionComboLNF() { setColour(juce::ComboBox::textColourId, col::acB); }
+    juce::Font getComboBoxFont(juce::ComboBox&) override { return monoFont(8.5f); }
+    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override {
+        label.setBounds(9, 0, box.getWidth() - 22, box.getHeight());
+        label.setFont(monoFont(8.5f));
+    }
+    void drawComboBox(juce::Graphics& g, int w, int h, bool, int, int, int, int,
+                      juce::ComboBox& box) override {
+        auto r = juce::Rectangle<float>(0, 0, (float)w, (float)h);
+        g.setColour(juce::Colour(0xff11141c));
+        g.fillRoundedRectangle(r, 4.0f);
+        g.setColour(box.hasKeyboardFocus(false) ? col::acN : col::line);
+        g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.0f);
+        // stroked ∨, the web select's chevron (DarkLNF fills a solid triangle)
+        juce::Path p;
+        const float ax = (float)w - 15.0f, ay = (float)h * 0.5f - 1.5f;
+        p.startNewSubPath(ax, ay);
+        p.lineTo(ax + 3.5f, ay + 3.5f);
+        p.lineTo(ax + 7.0f, ay);
+        g.setColour(col::acB);
+        g.strokePath(p, juce::PathStrokeType(1.4f));
+    }
+};
+SessionComboLNF& sessionComboLNF() { static SessionComboLNF l; return l; }
 } // namespace
 
 SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
@@ -41,6 +70,7 @@ SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
         shownLibrarySession_ = -2;
         refreshLibrarySelection();
     };
+    library_.setLookAndFeel(&sessionComboLNF());
     addAndMakeVisible(library_);
     refreshLibrarySelection();
     startTimerHz(30);
@@ -114,9 +144,37 @@ void SeqHeader::refreshLibrarySelection() {
         onLibrarySessionChanged();
 }
 
+juce::uint32 SeqHeader::paintSignature(bool scopeLive) const {
+    const auto& cond = proc.conductor();
+    const auto pos = cond.songPos();
+
+    juce::uint32 sig = 17;
+    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
+    mix(cond.playing() ? 1 : 0);
+    mix((int)cond.quant());
+    mix(pos.bar);
+    mix(pos.beat);
+    mix((int)std::lround(cond.session().bpm));
+    mix((int)std::lround(swingValue() * 10000.0f));
+    mix((int)std::lround(volValue() * 10000.0f));
+    mix(scopeLive ? 1 : 0);   // the trace's last frame must land when it dies
+    return sig;
+}
+
 void SeqHeader::timerCallback() {
-    refreshLibrarySelection();
-    repaint();
+    refreshLibrarySelection();   // drives the library combo box, not the paint
+
+    // paintScope reads the newest 512 scope samples; a silent window means the
+    // trace is a flat line that does not need redrawing.
+    std::array<float, 512> buf;
+    proc.readScope(buf.data(), (int)buf.size());
+    float peak = 0.0f;
+    for (float v : buf) peak = juce::jmax(peak, std::abs(v));
+    const bool scopeLive = peak > 1.0e-4f;
+
+    const juce::uint32 sig = paintSignature(scopeLive);
+    if (sig != lastSig_) { lastSig_ = sig; repaint(); return; }
+    if (scopeLive) repaint(scopeArea);
 }
 
 void SeqHeader::quantStep(int d) {
@@ -174,6 +232,14 @@ void SeqHeader::mouseDrag(const juce::MouseEvent& e) {
     repaint();
 }
 
+void SeqHeader::mouseMove(const juce::MouseEvent& e) {
+    const auto pos = e.getPosition();
+    const bool clickable = playBtn.contains(pos) || quantPrevBtn.contains(pos)
+        || quantNextBtn.contains(pos) || loadBtn.contains(pos) || saveBtn.contains(pos);
+    setMouseCursor(clickable ? juce::MouseCursor::PointingHandCursor
+                             : juce::MouseCursor::NormalCursor);
+}
+
 void SeqHeader::mouseUp(const juce::MouseEvent&) {
     if (dragging_ == Drag::Vol) { if (auto* p = volParam()) p->endChangeGesture(); }
     dragging_ = Drag::None;
@@ -217,21 +283,20 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 void SeqHeader::resized() {
     logoArea = { 17, 12, 175, 20 };
 
-    playBtn = { 216, 8, 44, 28 };
+    playBtn = { 216, 9, 36, 26 };
 
-    auto libGroup = juce::Rectangle<int>(274, 9, 208, 26);
-    libraryLabelArea = libGroup.removeFromLeft(54);
-    libGroup.removeFromLeft(6);
-    library_.setBounds(libGroup);
+    // Web .sq-session-preset: a stacked micro-label over a 20px select pill.
+    libraryLabelArea = { 274, 5, 150, 8 };
+    library_.setBounds(274, 15, 208, 20);
 
     auto quantGroup = juce::Rectangle<int>(496, 11, 139, 21);
     quantTagArea = quantGroup.removeFromLeft(40).withSizeKeepingCentre(40, 16);
     quantGroup.removeFromLeft(4);
-    quantPrevBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
-    quantGroup.removeFromLeft(4);
+    quantPrevBtn = quantGroup.removeFromLeft(15).withSizeKeepingCentre(15, 15);
+    quantGroup.removeFromLeft(5);
     quantValArea = quantGroup.removeFromLeft(56).withSizeKeepingCentre(56, 20);
-    quantGroup.removeFromLeft(4);
-    quantNextBtn = quantGroup.removeFromLeft(18).withSizeKeepingCentre(18, 18);
+    quantGroup.removeFromLeft(5);
+    quantNextBtn = quantGroup.removeFromLeft(15).withSizeKeepingCentre(15, 15);
 
     auto clockArea = juce::Rectangle<int>(649, 10, 112, 23);
     beatsArea = clockArea.removeFromTop(8); // beat-dot row
@@ -291,8 +356,8 @@ void SeqHeader::paint(juce::Graphics& g) {
     paintScope(g);
 
     g.setColour(col::textDim);
-    g.setFont(monoFont(8.0f));
-    drawSpaced(g, "LIBRARY", libraryLabelArea, 1.2f, juce::Justification::centredRight);
+    g.setFont(monoFont(7.0f));
+    drawSpaced(g, "SESSION", libraryLabelArea, 1.4f);
 
     paintKnob(g, swingKnob, "SWING", swingValue());
     paintKnob(g, volKnob, "VOL", volValue());
@@ -331,9 +396,13 @@ void SeqHeader::paintQuant(juce::Graphics& g) {
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
         g.setColour(col::line);
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
+        // solid micro-triangle, the web's ◂ / ▸ glyphs
+        auto tr = r.toFloat().withSizeKeepingCentre(4.0f, 7.0f);
+        juce::Path p;
+        if (pointsRight) p.addTriangle(tr.getX(), tr.getY(), tr.getX(), tr.getBottom(), tr.getRight(), tr.getCentreY());
+        else             p.addTriangle(tr.getRight(), tr.getY(), tr.getRight(), tr.getBottom(), tr.getX(), tr.getCentreY());
         g.setColour(col::textDim);
-        g.strokePath(iconChevron(r.toFloat().withSizeKeepingCentre(5.0f, 9.0f), pointsRight),
-                     juce::PathStrokeType(1.6f));
+        g.fillPath(p);
     };
     drawStep(quantPrevBtn, false);
     drawStep(quantNextBtn, true);
@@ -358,7 +427,7 @@ void SeqHeader::paintClock(juce::Graphics& g) {
     const auto pos = proc.conductor().songPos();
 
     auto r = beatsArea;
-    const int dotSize = 8, gap = 5;
+    const int dotSize = 6, gap = 4;
     for (int i = 0; i < 4; ++i) {
         auto d = r.removeFromLeft(dotSize).withSizeKeepingCentre(dotSize, dotSize);
         r.removeFromLeft(gap);
@@ -368,11 +437,22 @@ void SeqHeader::paintClock(juce::Graphics& g) {
         if (on) { g.setColour(col::acB.withAlpha(0.5f)); g.fillEllipse(d.toFloat().expanded(2.0f)); }
     }
 
-    g.setColour(col::textDim);
+    // Web .sq-clock-line: the bar number bright (<b>), the BPM value amber
+    // (<em>), everything else dim.
     g.setFont(monoFont(9.0f));
-    juce::String bar = "BAR " + juce::String(pos.bar).paddedLeft('0', 2);
-    juce::String bpm = juce::String((int)std::lround(proc.conductor().session().bpm)) + " BPM";
-    g.drawText(bar + juce::String::fromUTF8(" \xc2\xb7 ") + bpm, clockLineArea, juce::Justification::centredLeft);
+    float x = (float)clockLineArea.getX();
+    auto seg = [&](const juce::String& txt, juce::Colour c) {
+        g.setColour(c);
+        auto r2 = juce::Rectangle<float>(x, (float)clockLineArea.getY(), 200.0f,
+                                         (float)clockLineArea.getHeight());
+        g.drawText(txt, r2.toNearestInt(), juce::Justification::centredLeft, false);
+        x += juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), txt);
+    };
+    seg("BAR ", col::textDim);
+    seg(juce::String(pos.bar).paddedLeft('0', 2), col::text);
+    seg(juce::String::fromUTF8(" \xc2\xb7 "), col::textDim);
+    seg(juce::String((int)std::lround(proc.conductor().session().bpm)), col::acB);
+    seg(" BPM", col::textDim);
 }
 
 void SeqHeader::paintScope(juce::Graphics& g) {
@@ -420,14 +500,17 @@ void SeqHeader::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, const juce:
     juce::Path track, arc;
     track.addCentredArc(c.x, c.y, rr, rr, 0.0f, toRad(a0), toRad(a1), true);
     arc.addCentredArc(c.x, c.y, rr, rr, 0.0f, toRad(a0), toRad(deg), true);
+    // SQ-4 knobs carry the neutral accent (web SeqKnob data-accent="n") at the
+    // SVG's scaled stroke (5/80 of the diameter), so they sit quiet next to
+    // the track-coloured grid instead of glowing cyan.
     g.setColour(juce::Colours::white.withAlpha(0.09f));
-    g.strokePath(track, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour(accentA());
-    g.strokePath(arc, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath(track, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour(col::acN);
+    g.strokePath(arc, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     juce::Point<float> tip = c.getPointOnCircumference(rr, toRad(deg));
     g.setColour(col::ptr);
-    g.drawLine({ c, tip }, 1.6f);
+    g.drawLine({ c, tip }, 1.2f);
 
     auto labelArea = r.withY(r.getY() + (int)d + 2).withHeight(8);
     g.setColour(col::textDim);

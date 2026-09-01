@@ -432,6 +432,14 @@ void SceneGridView::hoverCell(int s, int t) {
 void SceneGridView::mouseMove(const juce::MouseEvent& e) {
     int t = -1;
     const int s = cellAt(e.getPosition(), t);
+    // Web parity: cells and the scene-card controls show the pointing hand.
+    bool clickable = s >= 0;
+    if (!clickable)
+        for (int i = 0; i < kScenes; ++i)
+            if (launchBtn[i].contains(e.getPosition()) || muteBtnR[i].contains(e.getPosition())
+                || stopBtnR[i].contains(e.getPosition())) { clickable = true; break; }
+    setMouseCursor(clickable ? juce::MouseCursor::PointingHandCursor
+                             : juce::MouseCursor::NormalCursor);
     hoverCell(s, t);
 }
 
@@ -497,6 +505,86 @@ void SceneGridView::layoutFocusStrip() {
     }
 }
 
+// ---- animation ---------------------------------------------------------------
+
+// The grid owns most of the editor surface, so a 30 Hz full repaint is the
+// plugin's biggest idle cost. Everything paint() reads goes into a hash;
+// nothing repaints until that hash moves. The exception is the handful of
+// cells and cards that carry a time-driven pulse (qpulse/stopPulse) — those
+// keep repainting, but only over their own rectangles.
+juce::uint32 SceneGridView::paintSignature(juce::RectangleList<int>& animate) const {
+    const auto& cond = proc.conductor();
+    const auto& sess = cond.session();
+
+    juce::uint32 sig = 17;
+    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
+    auto mixStr = [&mix](const std::string& s) {
+        mix((int)s.size());
+        for (char c : s) mix((int)(unsigned char)c);
+    };
+
+    mix(singleRow_ ? 1 : 0); mix(singleRowScene_); mix(focusTrack_);
+    mix(hoverCellS_); mix(hoverCellT_);
+    mix(selAnchorS_); mix(selAnchorT_); mix(selHeadS_); mix(selHeadT_);
+    mix(dragActive_ ? 1 : 0); mix(dragCancelled_ ? 1 : 0);
+    mix(dragFromS_); mix(dragFromT_); mix(hoverS_); mix(hoverT_);
+
+    mix((int)sess.scenes.size());
+    mix((int)sess.tracks.size());
+    const int nScenes = juce::jmin(kScenes, (int)sess.scenes.size());
+    const int nTracks = juce::jmin(kTracks, (int)sess.tracks.size());
+
+    for (int t = 0; t < nTracks; ++t) {
+        const auto& tr = sess.tracks[(size_t)t];
+        mix((int)tr.machine);
+        mix((int)(tr.color & 0xffffu));
+        mix((int)(tr.color >> 16));
+        mix(cond.ownerOf(t));
+        mix(cond.queueOf(t));
+        mix(cond.trackAudible(t) ? 1 : 0);
+        mix(proc.trackStep[t].load());   // eq-icon phase + progress bar
+        mix(proc.trackBar[t].load());
+    }
+
+    for (int s = 0; s < nScenes; ++s) {
+        const auto& sc = sess.scenes[(size_t)s];
+        mixStr(sc.name);
+        mix(cond.sceneMuted(s) ? 1 : 0);
+        bool cardPulse = false;
+        for (int t = 0; t < nTracks; ++t) {
+            const bool has = t < (int)sc.hasClip.size() && sc.hasClip[(size_t)t];
+            mix(has ? 1 : 0);
+            mix(isPassThrough(s, t) ? 1 : 0);
+            if (has) {
+                const auto& clip = sc.clips[(size_t)t];
+                mixStr(clip.name);
+                mix(clip.bars);
+                // The step preview reads the clip's first bar only.
+                const int n = juce::jmin((int)clip.bytes.size(),
+                                         fable::sqBytesPerBar(sess.tracks[(size_t)t].machine));
+                mix(n);
+                for (int i = 0; i < n; ++i) mix((int)clip.bytes[(size_t)i]);
+            }
+            const bool live = cond.ownerOf(t) == s;
+            const bool queued = cond.queueOf(t) == s;
+            if (queued) cardPulse = true;             // the card's launch icon pulses
+            // Live glow rings, queued ring and stopping dashes are all
+            // time-driven; the glow is drawn 3px outside the cell.
+            if (has && (live || queued) && !singleRow_)
+                animate.add(cellR[s][t].expanded(4));
+        }
+        if (cardPulse) animate.add(sceneCardR[s]);
+    }
+    return sig;
+}
+
+void SceneGridView::timerCallback() {
+    juce::RectangleList<int> animate;
+    const juce::uint32 sig = paintSignature(animate);
+    if (sig != lastSig_) { lastSig_ = sig; repaint(); return; }
+    for (const auto& r : animate) repaint(r);
+}
+
 // ---- paint -------------------------------------------------------------------
 
 void SceneGridView::paint(juce::Graphics& g) {
@@ -551,8 +639,8 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
     g.setFont(monoFont(8.0f));
     g.drawText(juce::String(s + 1).paddedLeft('0', 2), nameRow.removeFromLeft(18), juce::Justification::centredLeft);
     g.setColour(col::text);
-    g.setFont(dispFont(9.0f));
-    g.drawText(juce::String(sc.name), nameRow, juce::Justification::centredLeft);
+    g.setFont(dispFont(10.0f));
+    drawSpaced(g, juce::String(sc.name), nameRow, 1.4f);
 
     juce::String status;
     juce::Colour statusColour = col::textDim;
@@ -739,12 +827,20 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     }
     head.removeFromLeft(6);
 
-    // "{bars}B" chip on the right
-    auto chip = head.removeFromRight(24);
-    g.setColour(col::textDim.withAlpha(bodyAlpha));
-    g.setFont(monoFont(7.0f));
-    g.drawText(juce::String(clip.bars) + "B", chip, juce::Justification::centredRight);
-    head.removeFromRight(4);
+    // "{bars}B" chip on the right — a bordered pill like the web .sq-cell-len,
+    // not bare text.
+    {
+        const juce::String chipTxt = juce::String(clip.bars) + "B";
+        const auto chipFont = monoFont(7.0f);
+        const int w = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 9;
+        auto chip = head.removeFromRight(w).withSizeKeepingCentre(w, 13);
+        g.setColour(juce::Colours::white.withAlpha(0.08f * bodyAlpha));
+        g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(col::textDim.withAlpha(bodyAlpha));
+        g.setFont(chipFont);
+        g.drawText(chipTxt, chip, juce::Justification::centred);
+    }
+    head.removeFromRight(6);
 
     g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
     g.setFont(monoFontMedium(9.5f));
@@ -756,7 +852,8 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
         for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
             const auto& sb = steps[(size_t)i];
-            const float bh = (float)juce::jlimit(2, 20, sb.h);
+            // Off steps read as thin flat slots (web .sq-steps span), not bars.
+            const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) : 2.5f;
             juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
                                         static_cast<float>(stepsArea.getBottom()) - bh,
                                         juce::jmax(1.0f, bw - 2.0f), bh);

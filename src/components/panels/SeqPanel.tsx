@@ -19,6 +19,42 @@ import { useSeqRectSelect } from '../useSeqRectSelect';
 // sit slightly lighter than sharp-degree lanes.
 const SHARP_LANE = [false, true, false, true, false, false, true, false, true, false, true, false];
 
+/** The playhead marker under one grid column.
+ *
+ * The engine reports a new step 8–12 times a second. With `curStep` read at
+ * the panel level, every one of those ticks reconciled all ~770 grid buttons.
+ * Each column owns its cursor instead: the selector returns a boolean, so
+ * zustand bails out when it does not change and a tick re-renders only the
+ * two columns whose highlight actually moves. */
+function StepCursor({ step, pattern }: { step: number; pattern: number }) {
+  const current = useStore((s) => s.seqPlaying && s.curStep === step && s.curPat === pattern);
+  return <div className={`ns-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />;
+}
+
+/** The bar / sequence-length control, with its own store subscriptions.
+ *
+ * `playingBar` follows the transport, so reading `curPat` here keeps the
+ * per-bar pattern change out of the panel and off the grid. */
+function SeqLength() {
+  const seqPlaying = useStore((s) => s.seqPlaying);
+  const curPat = useStore((s) => s.curPat);
+  const editPattern = useStore((s) => s.editPattern);
+  const chain = useStore((s) => s.chain);
+  const setEditPattern = useStore((s) => s.setEditPattern);
+  const setSequenceLength = useStore((s) => s.setSequenceLength);
+  const movePattern = useStore((s) => s.movePattern);
+  return (
+    <SequenceLengthControl
+      editBar={editPattern}
+      length={chain.length}
+      playingBar={seqPlaying ? curPat : null}
+      onEditBar={setEditPattern}
+      onLengthChange={setSequenceLength}
+      onMovePattern={movePattern}
+    />
+  );
+}
+
 /** Rect-selection verbs. Standalone defaults to the store's chain-aware
  * verbs; hosted SQ-4 passes poly-aware implementations over the clip bytes
  * (src/seq/wtClipRect.ts) so chords survive cut/copy/move. */
@@ -47,9 +83,8 @@ interface SeqPanelProps {
 export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
   const seqPlaying = useStore((s) => s.seqPlaying);
-  const curStep = useStore((s) => s.curStep);
-  const curPat = useStore((s) => s.curPat);
-  const editPattern = useStore((s) => s.editPattern);
+  // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
+  // them, so the engine tick never reconciles the whole grid.
   const chain = useStore((s) => s.chain);
   const patterns = useStore((s) => s.patterns);
   const seqPlay = useStore((s) => s.seqPlay);
@@ -58,13 +93,10 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const cycleStepOct = useStore((s) => s.cycleStepOct);
   const toggleStepAcc = useStore((s) => s.toggleStepAcc);
   const setStepDuration = useStore((s) => s.setStepDuration);
-  const setEditPattern = useStore((s) => s.setEditPattern);
-  const setSequenceLength = useStore((s) => s.setSequenceLength);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
   const rectSel = useStore((s) => s.rectSel);
   const setRectSel = useStore((s) => s.setRectSel);
   const moveRectSel = useStore((s) => s.moveRectSel);
-  const movePattern = useStore((s) => s.movePattern);
   const moveStepNote = useStore((s) => s.moveStepNote);
   const copySteps = useStore((s) => s.copySteps);
   const duplicateSteps = useStore((s) => s.duplicateSteps);
@@ -75,11 +107,11 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   // Grid note drag (docs/superpowers/specs/2026-07-19-seq-note-drag-selection-menu-design.md):
   // grab a lit cell and drop it on another step/lane of the same pattern.
   // Standalone-only, like the step-range selection below.
+  // A move leaves the selection alone: selecting the landing cell would pop
+  // the selection menu open over the grid right after every drop.
   const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern, srcNote) => {
     if (onMoveChordNote) onMoveChordNote(from, to, note, srcNote, copy, pattern);
     else moveStepNote(from, to, note, { copy }, pattern);
-    const bar = useStore.getState().chain.indexOf(pattern);
-    if (bar >= 0) setRectSel({ stepFrom: bar * STEPS + to, stepTo: bar * STEPS + to, noteFrom: note, noteTo: note });
   });
 
   // Rectangle selection + in-rect block-move
@@ -118,6 +150,17 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
     clearStepSel();
   };
 
+  // Drag preview: the dragged note is painted at its landing spot with its
+  // real length, and the note it left behind is dimmed. `grabStep - srcStep`
+  // is the grab offset, so a note grabbed by its tail lands under the pointer.
+  const dragBar = drag ? Math.max(0, chain.indexOf(drag.pattern)) : 0;
+  const dragDuration = drag
+    ? (hosted
+        ? polySteps?.[dragBar * STEPS + drag.srcStep]?.find((v) => v.on && v.note === drag.srcNote)?.duration
+        : getStep(patterns, drag.pattern, drag.srcStep).duration) ?? 1
+    : 1;
+  const dragDestStep = drag ? Math.max(0, drag.overStep - (drag.grabStep - drag.srcStep)) : -1;
+
   const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
   const totalSteps = barCount * STEPS;
   const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
@@ -142,18 +185,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
           </button>
         )}
         <h2>NOTE SEQ</h2>
-        {!hosted && (
-          <>
-            <SequenceLengthControl
-              editBar={editPattern}
-              length={chain.length}
-              playingBar={seqPlaying ? curPat : null}
-              onEditBar={setEditPattern}
-              onLengthChange={setSequenceLength}
-              onMovePattern={movePattern}
-            />
-          </>
-        )}
+        {!hosted && <SeqLength />}
         {headerExtra}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
         <span className="ns-hint">TAP = NOTE · CLICK NOTE = SELECT · SHIFT-DRAG = RECT</span>
@@ -170,7 +202,6 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
           <div className="ns-grid" style={{ minWidth: `${totalSteps * 32}px` }}>
           <div className="ns-cols">
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
-              const current = seqPlaying && curStep === step && curPat === pattern;
               const voices = polySteps?.[absoluteStep]?.length ? polySteps[absoluteStep] : [s];
               return (
                 <div className={`ns-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
@@ -180,7 +211,8 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                       const voice = voices.find((candidate) => candidate.on && candidate.note === note);
                       const active = !!voice;
                       const dragSrc = !!drag?.active && drag.pattern === pattern && drag.srcStep === step && drag.srcNote === note;
-                      const dragOver = !!drag?.active && drag.pattern === pattern && drag.overStep === step && drag.overNote === note;
+                      const dragPreview = !!drag?.active && drag.pattern === pattern && drag.overNote === note && dragDestStep === step;
+                      const previewLen = Math.max(1, Math.min(dragDuration, totalSteps - absoluteStep));
                       // Step of the note that owns this cell: the cell itself
                       // when lit, else the origin of a longer note whose
                       // painted body covers it (poly clip hosted, mono store
@@ -204,7 +236,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                             data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
@@ -244,9 +276,17 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                               absoluteStep={absoluteStep}
                               totalSteps={totalSteps}
                               duration={voice.duration}
+                              muted={dragSrc}
                               onChange={(duration) => onSetChordDuration
                                 ? onSetChordDuration(absoluteStep, note, duration)
                                 : setStepDuration(step, duration, pattern)}
+                            />
+                          )}
+                          {drag && dragPreview && (
+                            <span
+                              className={`ns-note-preview${drag.copy ? ' copy' : ''}`}
+                              aria-hidden="true"
+                              style={{ width: `calc(${previewLen * 100}% + ${(previewLen - 1) * 5}px)` }}
                             />
                           )}
                         </div>
@@ -271,7 +311,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                   <button type="button" className="ns-step-num" aria-label={`bar ${bar + 1}, step ${step + 1}`}>
                     {step === 0 ? `BAR ${bar + 1}` : step + 1}
                   </button>
-                  <div className={`ns-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
+                  <StepCursor step={step} pattern={pattern} />
                 </div>
               );
             })}

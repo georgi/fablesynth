@@ -18,6 +18,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
 
     // Test handles (also the real click targets, wired from mouseDown).
     void stopAllClick();
@@ -25,6 +26,8 @@ public:
 
 private:
     void timerCallback() override;
+    // Hash of the non-VU state paint() reads (now-playing labels, live chips).
+    juce::uint32 paintSignature() const;
 
     SeqAudioProcessor& proc;
 
@@ -33,6 +36,8 @@ private:
 
     // slow-fall VU state (message-thread copy, ticked at 30 Hz).
     float vuLevel_[4] {};
+
+    juce::uint32 lastSig_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SeqFooterView)
 };

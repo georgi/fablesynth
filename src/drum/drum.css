@@ -581,10 +581,22 @@
   text-align: center;
   pointer-events: none;
 }
-.step.cur {
-  border-color: var(--ac-b);
+/* Playhead marker. The highlight used to sit on the step button itself
+   (.step.cur), but the class made every engine tick re-render the whole grid.
+   It is its own element now (StepCursor), so a tick only re-renders the cells
+   the marker moves between. The overlay covers the button's border box
+   exactly, so its border paints over the button's own. */
+.step-cur {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--ac-b);
+  border-radius: 6px;
   box-shadow: 0 0 0 1px rgba(255, 161, 77, 0.3), 0 0 8px rgba(255, 161, 77, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
 }
+.step-cur.cur { opacity: 1; }
 .step.ghost {
   outline: 1px dashed color-mix(in srgb, var(--ac-a) 85%, transparent);
   outline-offset: -1px;
@@ -630,8 +642,12 @@
   background: linear-gradient(180deg, #fff6ea, var(--ac-b) 55%, rgba(255, 161, 77, 0.6));
   box-shadow: none;
 }
-/* .dr-lanes .step re-declares border-color, so restate the playhead's. */
-.dr-lanes .step.cur { border-color: var(--ac-b); }
+/* Flat lane cells: the playhead is a plain border there, with no glow, and it
+   follows the 2px lane radius. */
+.dr-lanes .step-cur {
+  border-radius: 2px;
+  box-shadow: none;
+}
 /* Ghost paste: carried cells trail the cursor (dashed wash); a CUT dims its
    picked-up source until the drop commits (mirrors WT-1's .ns-cell.ghost /
    .drag-src). */

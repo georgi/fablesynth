@@ -144,7 +144,12 @@ private:
 
     std::unique_ptr<DrumUiModel> ownedModel;
     DrumUiModel& proc;
+    // Content signature — everything visible EXCEPT the playhead position, so a
+    // plain step advance never triggers a full repaint.
     juce::uint32 lastSig_ = 0xffffffffu;
+    // Last painted playhead: the drawn cursor column (-1 = no cursor) and the
+    // pattern the transport plays (it also lights a bar chip in the header).
+    int lastCursorStep_ = -1, lastCursorPattern_ = -1;
     int lastClipIdentity_ = 0;
     bool haveClipIdentity_ = false;
 

@@ -59,6 +59,9 @@ export function useSeqRectSelect({ onSelect, onMove }: HookOpts) {
       (e) => {
         const c = findCell(e);
         if (!c) return;
+        // Only the far corner moves during the sweep — skip the moves that
+        // resolve to the cell the rect already ends on.
+        if (c.step === rect.stepTo && c.note === rect.noteTo) return;
         rect = { stepFrom: step, stepTo: c.step, noteFrom: note, noteTo: c.note };
         setPending(rect);
       },

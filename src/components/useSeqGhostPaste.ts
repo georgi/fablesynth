@@ -51,7 +51,14 @@ export function useSeqGhostPaste({ onDrop }: HookOpts) {
       live.current = null;
       setGhost(null);
     };
-    const move = (ev: PointerEvent) => update(findCell(ev));
+    const move = (ev: PointerEvent) => {
+      const at = findCell(ev);
+      // The ghost only redraws when it changes lane or column, so drop the
+      // moves that stay inside the cell already hovered.
+      const prev = live.current?.hover ?? null;
+      if (at === null ? prev === null : prev !== null && prev.step === at.step && prev.note === at.note) return;
+      update(at);
+    };
     // The drop (or an outside-the-grid cancel) commits on pointerdown; the
     // paired click is swallowed once in the capture phase so the cell
     // underneath never toggles.

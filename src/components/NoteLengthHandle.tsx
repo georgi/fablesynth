@@ -8,9 +8,11 @@ interface NoteLengthHandleProps {
   totalSteps: number;
   duration: number;
   onChange: (duration: number) => void;
+  /** Dim the painted body while the note is being dragged away. */
+  muted?: boolean;
 }
 
-export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, onChange }: NoteLengthHandleProps) {
+export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, onChange, muted }: NoteLengthHandleProps) {
   const last = useRef(duration);
   const max = Math.min(63, totalSteps - absoluteStep);
   const length = Math.min(max, Math.max(1, duration));
@@ -36,7 +38,7 @@ export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, o
   const style = { width: `calc(${length * 100}% + ${(length - 1) * COLUMN_GAP}px)` } as CSSProperties;
 
   return (
-    <span className={`${prefix}-note-paint`} style={style}>
+    <span className={`${prefix}-note-paint${muted ? ' muted' : ''}`} style={style}>
       <span
         className={`${prefix}-note-handle`}
         role="slider"

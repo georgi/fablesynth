@@ -62,7 +62,10 @@ public:
     void setFocusTrack(int t);
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
+    // Hash of everything paint() reads; nothing here animates, so the row
+    // repaints only when this moves.
+    juce::uint32 paintSignature() const;
 
     juce::RangedAudioParameter* volParam(int t) const;
     float volValue(int t) const;
@@ -86,6 +89,8 @@ private:
     Drag dragging_ = Drag::None;
     int dragTrack_ = -1;
     float lastY_ = 0;
+
+    juce::uint32 lastSig_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackHeadsView)
 };

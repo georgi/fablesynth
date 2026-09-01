@@ -200,16 +200,29 @@ export function DeviceView() {
   }, [focus?.track, host]);
 
   // 5. Mirror the conductor's per-track playhead into the device step LEDs —
-  //    only while the focused clip is the one actually sounding.
-  const owner = useSeqStore((s) => s.owner);
-  const pos = useSeqStore((s) => focus ? s.pos[focus.track] : null);
-  const playing = useSeqStore((s) => s.playing);
+  //    only while the focused clip is the one actually sounding. The playhead
+  //    is read through a transient subscription, never a render-time selector:
+  //    `pos[track]` is a fresh object on every 16th note, so a selector here
+  //    would re-render the whole hosted device UI on every tick.
   useEffect(() => {
     if (!focus || !host) return;
-    const live = owner[focus.track] === focus.scene && playing;
-    if (live && pos) host.setPos(pos.step, pos.bar, true);
-    else host.setPos(-1, 0, false);
-  }, [focus, host, owner, pos, playing]);
+    const { scene, track } = focus;
+    let last = '';
+    const apply = () => {
+      const s = useSeqStore.getState();
+      const pos = s.pos[track];
+      const live = s.owner[track] === scene && s.playing;
+      const on = live && !!pos;
+      const step = on ? pos!.step : -1;
+      const bar = on ? pos!.bar : 0;
+      const key = `${step}:${bar}:${on}`;
+      if (key === last) return;
+      last = key;
+      host.setPos(step, bar, on);
+    };
+    apply();
+    return useSeqStore.subscribe(apply);
+  }, [focus?.scene, focus?.track, host]);
 
   if (!focus || !track || !machine) return null;
 

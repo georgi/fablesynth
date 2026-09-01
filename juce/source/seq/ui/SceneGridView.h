@@ -118,7 +118,10 @@ public:
 private:
     static constexpr int kScenes = 6, kTracks = 4;
 
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
+    // Hash of every piece of model/gesture state paint() reads, and (out) the
+    // rectangles of the cells and scene cards that carry a running animation.
+    juce::uint32 paintSignature(juce::RectangleList<int>& animate) const;
 
     bool isPassThrough(int s, int t) const;
 
@@ -182,6 +185,8 @@ private:
     // a leading trigger zone (railTrigger[s]) ahead of the retarget chip body
     // (railChip[s]) -- web parity with .sq-rail-launch / .sq-rail-target.
     juce::Rectangle<int> backChipR, railChip[kScenes], railTrigger[kScenes];
+
+    juce::uint32 lastSig_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SceneGridView)
 };

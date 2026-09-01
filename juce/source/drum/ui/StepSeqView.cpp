@@ -758,8 +758,6 @@ void StepSeqView::timerCallback() {
     const bool playing = proc.sequencerPlaying();
     const int edit = proc.editPattern(), sel = proc.selectedPad();
     mix(playing ? 1 : 0);
-    mix(playing ? proc.currentStep() : -1);
-    mix(proc.currentPattern());
     mix(edit); mix(sel);
     const auto& chain = proc.chain();
     mix((int)chain.size());
@@ -774,7 +772,41 @@ void StepSeqView::timerCallback() {
     mix(moving_ ? (moveHoverStep_ * 20 + moveHoverPad_) : 0);
     mix(ghost_ ? (ghostHasHover_ ? ghostHoverStep_ * 20 + ghostHoverPad_ + 1 : 1) : 0);
     mix(drag_.kind == DragState::Kind::barChip ? drag_.hoverBar + 1 : 0);
-    if (sig != lastSig_) { lastSig_ = sig; repaint(); }
+
+    // The cursor only exists while the transport plays the pattern on screen.
+    const int curPat = playing ? proc.currentPattern() : -1;    // matches the painted bar chip
+    const int curStep = curPat == edit ? proc.currentStep() : -1;
+
+    if (sig != lastSig_) {
+        lastSig_ = sig;
+        lastCursorStep_ = curStep;
+        lastCursorPattern_ = curPat;
+        repaint();
+        return;
+    }
+    if (curStep == lastCursorStep_ && curPat == lastCursorPattern_) return;
+
+    // Only the playhead moved: repaint the old and the new cursor column. The
+    // playhead rings one cell in every pad lane, so a column spans the whole
+    // lane stack; pad generously to cover the 1px rings and rounding.
+    static constexpr int kCursorPad = 6;
+    auto columnBounds = [this](int step) {
+        const auto top = stepBounds(padOfLane(0), step);
+        const auto bot = stepBounds(padOfLane(fable::DR_NPADS - 1), step);
+        return juce::Rectangle<int>(top.getX(), top.getY(), top.getWidth(),
+                                    bot.getBottom() - top.getY()).expanded(kCursorPad);
+    };
+    juce::Rectangle<int> dirty;
+    if (lastCursorStep_ >= 0) dirty = dirty.getUnion(columnBounds(lastCursorStep_));
+    if (curStep >= 0) dirty = dirty.getUnion(columnBounds(curStep));
+    // The playing bar also lights its chip in the header row.
+    if (curPat != lastCursorPattern_)
+        dirty = dirty.getUnion(patternBounds(0)
+                                   .getUnion(patternBounds(fable::DR_NPATTERNS - 1))
+                                   .expanded(kCursorPad));
+    lastCursorStep_ = curStep;
+    lastCursorPattern_ = curPat;
+    if (!dirty.isEmpty()) repaint(dirty);
 }
 
 // ---- paint ----------------------------------------------------------------------

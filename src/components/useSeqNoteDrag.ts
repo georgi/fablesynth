@@ -9,6 +9,8 @@ export interface SeqNoteDrag {
   srcStep: number;
   srcNote: number;
   pattern: number;
+  /** Column the pointer grabbed: srcStep for a head grab, later for a body grab. */
+  grabStep: number;
   overStep: number;
   overNote: number;
   /** True once the pointer has visited a cell other than the source. */
@@ -29,7 +31,7 @@ export function useSeqNoteDrag(
     // relative to the grab point, and the drop keeps the grab offset so the
     // note lands where the grabbed part is released.
     const offset = grabStep - step;
-    let cur: SeqNoteDrag = { srcStep: step, srcNote: note, pattern, overStep: grabStep, overNote: note, active: false, copy: e.altKey };
+    let cur: SeqNoteDrag = { srcStep: step, srcNote: note, pattern, grabStep, overStep: grabStep, overNote: note, active: false, copy: e.altKey };
     setDrag(cur);
     const move = (ev: PointerEvent) => {
       const el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -37,6 +39,10 @@ export function useSeqNoteDrag(
       if (!cell || Number(cell.dataset.pattern) !== cur.pattern) return;
       const overStep = Number(cell.dataset.step);
       const overNote = Number(cell.dataset.note);
+      // Pointermove fires far faster than the cell grid changes. `active` is a
+      // latch over the same three inputs, so an unchanged cell (and unchanged
+      // Alt) can never flip it: skip the redundant re-render.
+      if (overStep === cur.overStep && overNote === cur.overNote && ev.altKey === cur.copy) return;
       cur = {
         ...cur,
         overStep,

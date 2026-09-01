@@ -90,7 +90,12 @@ private:
 
     BassUiModel& proc;
     juce::Random rng_;
+    // Content signature — everything visible EXCEPT the playhead position, so a
+    // plain step advance never triggers a full repaint.
     juce::uint32 lastSig_ = 0xffffffffu;
+    // Last painted playhead: the drawn cursor column (-1 = no cursor) and the
+    // pattern the transport plays (it also lights a bar chip in the header).
+    int lastCursorStep_ = -1, lastCursorPattern_ = -1;
     int resizeStep_ = -1, resizeStartDuration_ = 1;
 
     // 2-D rectangle selection over the edit pattern (anchor/head; normalize
@@ -102,6 +107,9 @@ private:
 
     bool noteDragArmed_ = false, noteDragActive_ = false;
     int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
+    // Pixel-space drag tracking: the preview follows the pointer continuously
+    // (dragCurPos_ - dragStartPos_) while the snap target is drawn separately.
+    juce::Point<float> dragStartPos_, dragCurPos_;
 
     bool moveArmed_ = false, moving_ = false;
     int moveOriginStep_ = 0, moveOriginNote_ = 0, moveHoverStep_ = 0, moveHoverNote_ = 0;

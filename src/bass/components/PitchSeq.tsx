@@ -16,12 +16,47 @@ import { copyRectChain, rectNorm } from '../../shared/seqEdit';
 import { getStep, LAYOUT, NOTE_LANES, STEPS } from '../seq';
 import { useBassStore } from '../store';
 
+/** The playhead marker under one grid column.
+ *
+ * The engine reports a new step 8–12 times a second. With `curStep` read at
+ * the panel level, every one of those ticks reconciled the whole grid. Each
+ * column owns its cursor instead: the selector returns a boolean, so zustand
+ * bails out when it does not change and a tick re-renders only the two
+ * columns whose highlight actually moves. */
+function StepCursor({ step, pattern }: { step: number; pattern: number }) {
+  const current = useBassStore((s) => s.playing && s.curStep === step && s.curPat === pattern);
+  return <div className={`bl-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />;
+}
+
+/** The bar / sequence-length control, with its own store subscriptions.
+ *
+ * `playingBar` follows the transport, so reading `curPat` here keeps the
+ * per-bar pattern change out of the panel and off the grid. */
+function SeqLength() {
+  const playing = useBassStore((s) => s.playing);
+  const curPat = useBassStore((s) => s.curPat);
+  const editPattern = useBassStore((s) => s.editPattern);
+  const chain = useBassStore((s) => s.chain);
+  const setEditPattern = useBassStore((s) => s.setEditPattern);
+  const setSequenceLength = useBassStore((s) => s.setSequenceLength);
+  const movePattern = useBassStore((s) => s.movePattern);
+  return (
+    <SequenceLengthControl
+      editBar={editPattern}
+      length={chain.length}
+      playingBar={playing ? curPat : null}
+      onEditBar={setEditPattern}
+      onLengthChange={setSequenceLength}
+      onMovePattern={movePattern}
+    />
+  );
+}
+
 export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: ReactNode } = {}) {
   const hosted = useBassStore((s) => s.hosted);
   const playing = useBassStore((s) => s.playing);
-  const curStep = useBassStore((s) => s.curStep);
-  const curPat = useBassStore((s) => s.curPat);
-  const editPattern = useBassStore((s) => s.editPattern);
+  // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
+  // them, so the engine tick never reconciles the whole grid.
   const chain = useBassStore((s) => s.chain);
   const patterns = useBassStore((s) => s.patterns);
   const rectSel = useBassStore((s) => s.rectSel);
@@ -32,12 +67,9 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
   const toggleStepAcc = useBassStore((s) => s.toggleStepAcc);
   const toggleStepSlide = useBassStore((s) => s.toggleStepSlide);
   const setStepDuration = useBassStore((s) => s.setStepDuration);
-  const setEditPattern = useBassStore((s) => s.setEditPattern);
-  const setSequenceLength = useBassStore((s) => s.setSequenceLength);
   const randomize = useBassStore((s) => s.randomize);
   const setRectSel = useBassStore((s) => s.setRectSel);
   const moveRectSel = useBassStore((s) => s.moveRectSel);
-  const movePattern = useBassStore((s) => s.movePattern);
   const moveStepNote = useBassStore((s) => s.moveStepNote);
   const copySelection = useBassStore((s) => s.copySelection);
   const duplicateSelection = useBassStore((s) => s.duplicateSelection);
@@ -46,10 +78,10 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
 
   // Grid note drag (docs/superpowers/specs/2026-07-19-seq-note-drag-selection-menu-design.md):
   // grab a lit cell and drop it on another step/lane of the same pattern.
+  // A move leaves the selection alone: selecting the landing cell would pop
+  // the selection menu open over the grid right after every drop.
   const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
     moveStepNote(from, to, note, { copy }, pattern);
-    const bar = useBassStore.getState().chain.indexOf(pattern);
-    if (bar >= 0) setRectSel({ stepFrom: bar * STEPS + to, stepTo: bar * STEPS + to, noteFrom: note, noteTo: note });
   });
 
   // Rectangle selection + in-rect block-move
@@ -80,6 +112,12 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
     clearStepSelection();
   };
 
+  // Drag preview: the dragged note is painted at its landing spot with its
+  // real length, and the note it left behind is dimmed. `grabStep - srcStep`
+  // is the grab offset, so a note grabbed by its tail lands under the pointer.
+  const dragDuration = drag ? getStep(patterns, drag.pattern, drag.srcStep).duration : 1;
+  const dragDestStep = drag ? Math.max(0, drag.overStep - (drag.grabStep - drag.srcStep)) : -1;
+
   const barCount = Math.max(1, Math.min(4, bars ?? chain.length));
   const totalSteps = barCount * STEPS;
   const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
@@ -104,18 +142,7 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
           </button>
         )}
         <h2>PITCH SEQ</h2>
-        {!hosted && (
-          <>
-            <SequenceLengthControl
-              editBar={editPattern}
-              length={chain.length}
-              playingBar={playing ? curPat : null}
-              onEditBar={setEditPattern}
-              onLengthChange={setSequenceLength}
-              onMovePattern={movePattern}
-            />
-          </>
-        )}
+        {!hosted && <SeqLength />}
         {headerExtra}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
         <span className="bl-seq-hint">DRAG = MOVE · EDGE = LENGTH · SLD = LEGATO</span>
@@ -133,7 +160,6 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
         <div className="bl-seq-grid" style={{ minWidth: `${totalSteps * 32}px` }}>
           <div className="bl-seq-cols">
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
-              const current = playing && curStep === step && curPat === pattern;
               return (
                 <div
                   className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}`}
@@ -144,7 +170,8 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                       const note = NOTE_LANES - 1 - r;
                       const active = s.on && s.note === note;
                       const dragSrc = !!drag?.active && drag.pattern === pattern && drag.srcStep === step && drag.srcNote === note;
-                      const dragOver = !!drag?.active && drag.pattern === pattern && drag.overStep === step && drag.overNote === note;
+                      const dragPreview = !!drag?.active && drag.pattern === pattern && drag.overNote === note && dragDestStep === step;
+                      const previewLen = Math.max(1, Math.min(dragDuration, totalSteps - absoluteStep));
                       // Step of the note that owns this cell: the cell itself
                       // when lit, else the origin of a longer note whose
                       // painted body covers it. -1 = empty cell.
@@ -165,7 +192,7 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                             data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (dragOver ? ` drag-over${drag.copy ? ' copy' : ''}` : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
@@ -205,7 +232,15 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                               absoluteStep={absoluteStep}
                               totalSteps={totalSteps}
                               duration={s.duration}
+                              muted={dragSrc}
                               onChange={(duration) => setStepDuration(step, duration, pattern)}
+                            />
+                          )}
+                          {drag && dragPreview && (
+                            <span
+                              className={`bl-note-preview${drag.copy ? ' copy' : ''}`}
+                              aria-hidden="true"
+                              style={{ width: `calc(${previewLen * 100}% + ${(previewLen - 1) * 5}px)` }}
                             />
                           )}
                         </div>
@@ -237,7 +272,7 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                   <span className="bl-step-num">
                     {step === 0 ? `BAR ${bar + 1}` : step + 1}
                   </span>
-                  <div className={`bl-step-cursor${current ? ' cur' : ''}`} aria-hidden="true" />
+                  <StepCursor step={step} pattern={pattern} />
                 </div>
               );
             })}

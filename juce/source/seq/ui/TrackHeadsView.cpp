@@ -4,6 +4,8 @@
 #include "../../bass/dsp/BassPatches.h"
 #include "../../dsp/Presets.h"
 
+#include <cmath>
+
 namespace fui {
 
 // ---- factory patch name/count tables, port of devices.ts:138-145 ----------
@@ -87,6 +89,47 @@ float TrackHeadsView::volValue(int t) const {
     return p ? p->getValue() : 0.75f;
 }
 
+// ---- animation ---------------------------------------------------------------
+
+juce::uint32 TrackHeadsView::paintSignature() const {
+    const auto& cond = proc.conductor();
+    const auto& sess = cond.session();
+
+    juce::uint32 sig = 17;
+    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
+    auto mixStr = [&mix](const std::string& s) {
+        mix((int)s.size());
+        for (char c : s) mix((int)(unsigned char)c);
+    };
+
+    mix(focusTrack_);
+    mix(hoverTrack_);
+    mix((int)sess.scenes.size());     // the SCENES card prints both counts
+    mix((int)sess.tracks.size());
+
+    for (int t = 0; t < 4 && t < (int)sess.tracks.size(); ++t) {
+        const auto& tr = sess.tracks[(size_t)t];
+        mixStr(tr.name);
+        mix((int)tr.machine);
+        mix((int)(tr.color & 0xffffu));
+        mix((int)(tr.color >> 16));
+        mix(tr.patch.factory ? 1 : 0);
+        mix(tr.patch.index);
+        mix(cond.ownerOf(t));         // LED
+        mix(cond.trackMuted(t) ? 1 : 0);
+        mix(cond.soloed(t) ? 1 : 0);
+        mix((int)std::lround(volValue(t) * 10000.0f));
+    }
+    return sig;
+}
+
+void TrackHeadsView::timerCallback() {
+    const juce::uint32 sig = paintSignature();
+    if (sig == lastSig_) return;
+    lastSig_ = sig;
+    repaint();
+}
+
 // ---- mouse -------------------------------------------------------------------
 
 void TrackHeadsView::mouseDown(const juce::MouseEvent& e) {
@@ -131,8 +174,14 @@ void TrackHeadsView::mouseMove(const juce::MouseEvent& e) {
     // .sq-track-editglyph, hover-revealed).
     const auto pos = e.getPosition();
     int hit = -1;
-    for (int t = 0; t < 4; ++t)
+    bool clickable = false;
+    for (int t = 0; t < 4; ++t) {
         if (idCol[t].contains(pos)) { hit = t; break; }
+        if (muteBtn[t].contains(pos) || soloBtn[t].contains(pos)) { clickable = true; break; }
+    }
+    // Web parity: every clickable target shows the pointing hand.
+    setMouseCursor(hit >= 0 || clickable ? juce::MouseCursor::PointingHandCursor
+                                         : juce::MouseCursor::NormalCursor);
     if (hit != hoverTrack_) { hoverTrack_ = hit; repaint(); }
 }
 
@@ -208,12 +257,13 @@ void TrackHeadsView::paintScenesCard(juce::Graphics& g) {
     g.setColour(col::text);
     g.setFont(dispFont(10.0f));
     drawSpaced(g, "SCENES", titleArea, 2.4f);
+    // Web .sq-scenes-sub: teach the two empty-cell states instead of counting
+    // the grid (wrapped onto two lines, same as the web card).
     g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
-    const int scenes = (int)proc.conductor().session().scenes.size();
-    const int tracks = (int)proc.conductor().session().tracks.size();
-    drawSpaced(g, juce::String(scenes) + " SCENES - " + juce::String(tracks) + " TRACKS",
-               r.removeFromTop(10), 1.6f);
+    drawSpaced(g, juce::String::fromUTF8("EMPTY CELLS STOP THEIR TRACK \xc2\xb7 \xe2\x89\x88"),
+               r.removeFromTop(10), 1.1f);
+    drawSpaced(g, "PASSES THROUGH", r.removeFromTop(10), 1.1f);
 }
 
 void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
@@ -251,22 +301,39 @@ void TrackHeadsView::paintTrack(juce::Graphics& g, int t) {
         g.setColour(tc.withAlpha(0.10f));
         g.fillRoundedRectangle(idCol[t].toFloat().expanded(3.0f, 2.0f), 6.0f);
     }
-    auto nameArea = nr.removeFromLeft(nr.getWidth() * 3 / 5);
-    auto editSlot = nameArea.removeFromRight(12);
+    // Name and chip are text-sized and flow left-to-right (web flex row):
+    // name, machine chip 6px after it, then the hover edit glyph.
+    const auto nameFont = dispFont(10.0f);
+    auto spacedW = [](const juce::Font& f, const juce::String& s, float tracking) {
+        float total = 0;
+        for (int i = 0; i < s.length(); ++i)
+            total += juce::GlyphArrangement::getStringWidth(f, s.substring(i, i + 1)) + tracking;
+        return total - tracking;
+    };
+    const juce::String name(tr.name);
+    const int nameW = juce::jmin(nr.getWidth() - 40,
+                                 (int)std::ceil(spacedW(nameFont, name, 1.6f)) + 2);
     g.setColour(col::text);
-    g.setFont(dispFont(10.0f));
-    drawSpaced(g, juce::String(tr.name), nameArea, 1.6f);
-    if (hovered) {
-        g.setColour(tc);
-        g.fillPath(iconPencil(editSlot.toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
-    }
+    g.setFont(nameFont);
+    drawSpaced(g, name, nr.removeFromLeft(nameW), 1.6f);
+    nr.removeFromLeft(6);
 
-    auto chip = nr.withSizeKeepingCentre(nr.getWidth(), 12);
-    g.setColour(tc.withAlpha(0.33f));
-    g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
-    g.setColour(tc);
-    g.setFont(monoFont(7.0f));
-    g.drawText(machineChip(tr.machine), chip, juce::Justification::centred);
+    const juce::String chipTxt(machineChip(tr.machine));
+    const auto chipFont = monoFont(7.0f);
+    const int chipW = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 10;
+    if (nr.getWidth() >= chipW) {
+        auto chip = nr.removeFromLeft(chipW).withSizeKeepingCentre(chipW, 12);
+        g.setColour(tc.withAlpha(0.33f));
+        g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(tc);
+        g.setFont(chipFont);
+        g.drawText(chipTxt, chip, juce::Justification::centred);
+        nr.removeFromLeft(6);
+    }
+    if (hovered && nr.getWidth() >= 12) {
+        g.setColour(tc);
+        g.fillPath(iconPencil(nr.removeFromLeft(12).toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
+    }
 
     // patch label — a plain subtitle under the name now that the per-head
     // stepper is gone (web: .sq-track-patch).
@@ -309,14 +376,15 @@ void TrackHeadsView::paintKnob(juce::Graphics& g, juce::Rectangle<int> r, float 
     juce::Path track, arc;
     track.addCentredArc(c.x, c.y, rr, rr, 0.0f, toRad(a0), toRad(a1), true);
     arc.addCentredArc(c.x, c.y, rr, rr, 0.0f, toRad(a0), toRad(deg), true);
+    // Neutral accent + the SVG's scaled stroke width — see SeqHeader::paintKnob.
     g.setColour(juce::Colours::white.withAlpha(0.09f));
-    g.strokePath(track, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour(accentA());
-    g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath(track, juce::PathStrokeType(1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour(col::acN);
+    g.strokePath(arc, juce::PathStrokeType(1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     juce::Point<float> tip = c.getPointOnCircumference(rr, toRad(deg));
     g.setColour(col::ptr);
-    g.drawLine({ c, tip }, 1.3f);
+    g.drawLine({ c, tip }, 1.1f);
 }
 
 } // namespace fui

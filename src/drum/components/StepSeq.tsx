@@ -8,14 +8,50 @@ import { PAD_COUNT } from '../params';
 import { useDrumStore } from '../store';
 import { useDrumGhostPaste } from './useDrumGhostPaste';
 
+/** The playhead marker over one step cell.
+ *
+ * The engine reports a new step 8–12 times a second. With `curStep` read at
+ * the panel level, every one of those ticks reconciled all 16 × 16 step
+ * buttons. Each cell owns its cursor instead: the selector returns a boolean,
+ * so zustand bails out when it does not change and a tick re-renders only the
+ * cells whose highlight actually moves. The overlay carries the highlight
+ * that used to live on `.step.cur` (see `.step-cur` in drum.css). */
+function StepCursor({ step, pattern }: { step: number; pattern: number }) {
+  const current = useDrumStore((s) => s.playing && s.curStep === step && s.curPat === pattern);
+  return <span className={`step-cur${current ? ' cur' : ''}`} aria-hidden="true" />;
+}
+
+/** The bar / sequence-length control, with its own store subscriptions.
+ *
+ * `playingBar` follows the transport, so reading `curPat` here keeps the
+ * per-bar pattern change out of the panel and off the grid. */
+function SeqLength() {
+  const playing = useDrumStore((s) => s.playing);
+  const curPat = useDrumStore((s) => s.curPat);
+  const editPattern = useDrumStore((s) => s.editPattern);
+  const chain = useDrumStore((s) => s.chain);
+  const setEditPattern = useDrumStore((s) => s.setEditPattern);
+  const setSequenceLength = useDrumStore((s) => s.setSequenceLength);
+  const movePattern = useDrumStore((s) => s.movePattern);
+  return (
+    <SequenceLengthControl
+      editBar={editPattern}
+      length={chain.length}
+      playingBar={playing ? curPat : null}
+      onEditBar={setEditPattern}
+      onLengthChange={setSequenceLength}
+      onMovePattern={movePattern}
+    />
+  );
+}
+
 export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const hosted = useDrumStore((s) => s.hosted);
   const mode = useDrumStore((s) => s.mode);
   const playing = useDrumStore((s) => s.playing);
-  const curStep = useDrumStore((s) => s.curStep);
-  const curPat = useDrumStore((s) => s.curPat);
+  // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
+  // them, so the engine tick never reconciles the whole grid.
   const editPattern = useDrumStore((s) => s.editPattern);
-  const chain = useDrumStore((s) => s.chain);
   const patterns = useDrumStore((s) => s.patterns);
   const sel = useDrumStore((s) => s.sel);
   const padNames = useDrumStore((s) => s.padNames);
@@ -24,8 +60,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const play = useDrumStore((s) => s.play);
   const stop = useDrumStore((s) => s.stop);
   const toggleStep = useDrumStore((s) => s.toggleStep);
-  const setEditPattern = useDrumStore((s) => s.setEditPattern);
-  const setSequenceLength = useDrumStore((s) => s.setSequenceLength);
   const setRectSel = useDrumStore((s) => s.setRectSel);
   const moveRectSel = useDrumStore((s) => s.moveRectSel);
   const dropRect = useDrumStore((s) => s.dropRect);
@@ -33,7 +67,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const duplicateSelection = useDrumStore((s) => s.duplicateSelection);
   const deleteSelection = useDrumStore((s) => s.deleteSelection);
   const clearStepSel = useDrumStore((s) => s.clearStepSel);
-  const movePattern = useDrumStore((s) => s.movePattern);
   const randomizePad = useDrumStore((s) => s.randomizePad);
   const selectPad = useDrumStore((s) => s.selectPad);
 
@@ -120,12 +153,11 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
 
   const renderStep = (padI: number, step: number) => {
     const value = patterns[patIdx(editPattern, padI, step)];
-    const current = playing && curStep === step && curPat === editPattern;
     const isGhost = ghost ? ghostAt(step, padI) : false;
     const cutSrc = ghost ? isCutSrc(step, padI) : false;
     return (
       <button
-        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${current ? ' cur' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
+        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
         type="button"
         data-seq-cell
         data-abs-step={step}
@@ -139,6 +171,7 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
         <span className="step-accent" aria-hidden="true" />
         <span className="step-fill" aria-hidden="true" />
         <span className="step-num" aria-hidden="true">{step + 1}</span>
+        <StepCursor step={step} pattern={editPattern} />
       </button>
     );
   };
@@ -161,14 +194,7 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
         <span className="dr-stepseq-target">{padName}</span>
         {!hosted && (
           <>
-            <SequenceLengthControl
-              editBar={editPattern}
-              length={chain.length}
-              playingBar={playing ? curPat : null}
-              onEditBar={setEditPattern}
-              onLengthChange={setSequenceLength}
-              onMovePattern={movePattern}
-            />
+            <SeqLength />
             <button className="dr-seq-btn" type="button" onClick={randomizePad}>RAND</button>
           </>
         )}

@@ -17,7 +17,7 @@ namespace fui {
 class SeqHeader : public juce::Component, private juce::Timer {
 public:
     explicit SeqHeader(SeqAudioProcessor&);
-    ~SeqHeader() override { stopTimer(); }
+    ~SeqHeader() override { stopTimer(); library_.setLookAndFeel(nullptr); }
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -25,6 +25,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
 
     // Test handles (also the real click targets, wired from mouseDown).
@@ -51,6 +52,9 @@ public:
 private:
     void timerCallback() override;
     void refreshLibrarySelection();
+    // Hash of everything paint() reads apart from the scope trace, which has
+    // its own repaint path (it is the only continuously moving element here).
+    juce::uint32 paintSignature(bool scopeLive) const;
 
     float swingValue() const;                  // 0..1, from the conductor
     float volValue() const;                    // 0..1, from the "master" APVTS param
@@ -76,6 +80,8 @@ private:
     enum class Drag { None, Swing, Vol };
     Drag dragging_ = Drag::None;
     float lastY_ = 0;
+
+    juce::uint32 lastSig_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SeqHeader)
 };

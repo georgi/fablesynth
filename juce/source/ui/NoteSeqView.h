@@ -106,7 +106,12 @@ private:
     WtUiModel& model;
     Stepper root_;
     juce::Random rng_;
+    // Content signature — everything visible EXCEPT the playhead position, so a
+    // plain step advance never triggers a full repaint.
     juce::uint32 lastSig_ = 0xffffffffu;
+    // Last painted playhead: the drawn cursor column (-1 = no cursor) and the
+    // pattern the transport plays (it also lights a bar chip in the header).
+    int lastCursorStep_ = -1, lastCursorPattern_ = -1;
     int resizeStep_ = -1, resizeStartDuration_ = 1;
 
     // 2-D rectangle selection (step × note lane) over the edit pattern. rect_
@@ -123,6 +128,9 @@ private:
     // the pointer reaches a different cell (so a plain tap still toggles).
     bool noteDragArmed_ = false, noteDragActive_ = false;
     int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
+    // Pixel-space drag tracking: the preview follows the pointer continuously
+    // (dragCurPos_ - dragStartPos_) while the snap target is drawn separately.
+    juce::Point<float> dragStartPos_, dragCurPos_;
 
     // Block-move of the whole rectangle (mouseDown inside it, without Shift).
     bool moveArmed_ = false, moving_ = false;
