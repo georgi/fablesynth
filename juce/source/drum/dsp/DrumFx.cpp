@@ -60,11 +60,8 @@ void DrumFx::prepare(double sampleRate) {
     dlTime_.setTime(0.08, sr_); dlFb_.setTime(0.02, sr_);
     dlWet_.setTime(0.02, sr_); dlDry_.setTime(0.02, sr_);
     verbWet_.setTime(0.02, sr_); verbDry_.setTime(0.02, sr_);
-    masterGain_.setTime(0.02, sr_);
     driveDry_.snap(1); compDry_.snap(1); chDry_.snap(1); dlDry_.snap(1); verbDry_.snap(1);
 
-    dcL_.highpass(8, 0.707, sr_);
-    dcR_.highpass(8, 0.707, sr_);
     // 4x drive oversampler: cascaded Kaiser half-band FIR pairs (>60 dB
     // rejection in the audible-alias region), designed once here.
     up1L_.design(kHB1Taps, 6.0); up2L_.design(kHB2Taps, 6.0);
@@ -79,13 +76,6 @@ void DrumFx::prepare(double sampleRate) {
     compAtk_ = 1 - std::exp(-1.0 / (0.003 * sr_));
     compRel_ = 1 - std::exp(-1.0 / (0.25 * sr_));
 
-    // WebAudio's DynamicsCompressor applies spec-defined makeup gain
-    // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
-    // node, so keep its ~4.5 dB makeup ahead of the lookahead limiter or the
-    // plugin sits under the web app's loudness.
-    double c1 = std::pow(1.0 / kLimThr, 1.0 / kLimRatio - 1.0);
-    lim_.prepare(sr_, std::pow(1.0 / c1, 0.6));
-
     reset(); // full state clear: re-prepare must never keep stale recursive state
 }
 
@@ -96,11 +86,10 @@ void DrumFx::reset() {
     for (auto& c : combR_) c.reset();
     for (auto& a : apL_) a.reset();
     for (auto& a : apR_) a.reset();
-    dcL_.reset(); dcR_.reset(); dlDamp_.reset();
+    dlDamp_.reset();
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     compEnv_ = 0;
-    lim_.reset();
     chPhase_ = 0;
     driveGated_ = compGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
     // settle smoothers at their targets so no stale ramp survives a re-prepare
@@ -111,7 +100,6 @@ void DrumFx::reset() {
     dlTime_.snap(dlTime_.target); dlFb_.snap(dlFb_.target);
     dlWet_.snap(dlWet_.target); dlDry_.snap(dlDry_.target);
     verbWet_.snap(verbWet_.target); verbDry_.snap(verbDry_.target);
-    masterGain_.snap(masterGain_.target);
 }
 
 static inline float mixGate(bool on, float amount, bool wet) {
@@ -171,9 +159,6 @@ void DrumFx::setParams(const DrumParamArray& p, int pad) {
     verbOff_ = !rOn;
     verbWet_.target = mixGate(rOn, p[(size_t)(b + DP_FXREVERB_MIX)] * 0.9f, true);
     verbDry_.target = mixGate(rOn, p[(size_t)(b + DP_FXREVERB_MIX)] * 0.9f, false);
-
-    float vol = p[DG_MASTER_VOLUME];
-    masterGain_.target = vol * vol * 1.6f;
 }
 
 float DrumFx::shape(float x) const {
@@ -314,17 +299,48 @@ void DrumFx::process(float* L, float* R, int n) {
             r = dry * r + wet * outR;
         }
 
-        // ---- master gain ----
-        float g = masterGain_.next();
-        l *= g; r *= g;
+        L[i] = l; R[i] = r;
+    }
+}
 
-        // ---- DC block ----
+// ---------------- DrumBusOut (Finding D1) ----------------
+// The tail of the web graph, applied to a summed bus: master gain -> DC block
+// -> lookahead safety limiter. Identical stage code and constants to the
+// per-pad version it replaced, so a single sounding pad keeps its old loudness.
+void DrumBusOut::prepare(double sampleRate) {
+    sr_ = sampleRate;
+    masterGain_.setTime(0.02, sr_);
+    dcL_.highpass(8, 0.707, sr_);
+    dcR_.highpass(8, 0.707, sr_);
+
+    // WebAudio's DynamicsCompressor applies spec-defined makeup gain
+    // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
+    // node, so keep its ~4.5 dB makeup ahead of the lookahead limiter or the
+    // plugin sits under the web app's loudness.
+    double c1 = std::pow(1.0 / kLimThr, 1.0 / kLimRatio - 1.0);
+    lim_.prepare(sr_, std::pow(1.0 / c1, 0.6));
+
+    reset();
+}
+
+void DrumBusOut::reset() {
+    dcL_.reset(); dcR_.reset();
+    lim_.reset();
+    masterGain_.snap(masterGain_.target);
+}
+
+void DrumBusOut::setParams(const DrumParamArray& p) {
+    const float vol = p[DG_MASTER_VOLUME];
+    masterGain_.target = vol * vol * 1.6f;
+}
+
+void DrumBusOut::process(float* L, float* R, int n) {
+    for (int i = 0; i < n; i++) {
+        const float g = masterGain_.next();
+        float l = L[i] * g, r = R[i] * g;
         l = (float)dcL_.process(l);
         r = (float)dcR_.process(r);
-
-        // ---- lookahead safety limiter (makeup inside, -1 dBFS ceiling) ----
         lim_.process(l, r);
-
         L[i] = l; R[i] = r;
     }
 }

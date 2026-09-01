@@ -157,7 +157,10 @@ int main(int argc, char** argv) {
     // Freeverb tail that would mask the routing assertion otherwise.
     if (auto* p = proc.apvts.getParameter("fx.reverb.on"))
         p->setValueNotifyingHost(0.0f);
-    render(60, -1, 0); // flush the wet tail (equal-power dry ramp ~0.02 s)
+    // Finding D1 moved the DC block + limiter onto the bus, so MAIN keeps the
+    // decaying tail of test 3's hit instead of carrying it to AUX 2 with the
+    // pad. Flush long enough for that tail to reach the 1e-6 floor below.
+    render(240, -1, 0); // flush the wet tail (equal-power dry ramp ~0.02 s)
     if (auto* p = proc.apvts.getParameter("pad0.out"))
         p->setValueNotifyingHost(p->convertTo0to1(2.0f)); // AUX 2
     auto r4 = render(20, 36, 1.0f);

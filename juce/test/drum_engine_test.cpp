@@ -609,15 +609,20 @@ int main() {
     {
         // passthrough-ish: stages off, volume 0.78 -> gain = 0.78^2*1.6 times the
         // WebAudio-spec limiter makeup ((1/c(1))^0.6 at thr -8 dB ratio 14),
-        // matching Fx.cpp / the web DynamicsCompressor limiter.
+        // matching Fx.cpp / the web DynamicsCompressor limiter. Finding D1
+        // moved that gain/DC/limiter tail out of DrumFx into DrumBusOut, so the
+        // level is the same but takes both stages.
         DrumFx fx; fx.prepare(fsr);
         fx.setParams(fxOff(), 0);
+        DrumBusOut bus; bus.prepare(fsr);
+        bus.setParams(fxOff());
         int n = (int)fsr;
         std::vector<float> L(n), R(n);
         for (int i = 0; i < n; i++)
             L[i] = R[i] = 0.1f * (float)std::sin(2 * M_PI * 1000.0 * i / fsr);
         double inRms = rms(L, n / 2);
         fx.process(L.data(), R.data(), n);
+        bus.process(L.data(), R.data(), n);
         double c1 = std::pow(1.0 / 0.398, 1.0 / 14.0 - 1.0);
         double expect = 0.78 * 0.78 * 1.6 * std::pow(1.0 / c1, 0.6);
         double got = rms(L, n / 2) / inRms;
@@ -742,6 +747,151 @@ int main() {
         check(finite(L) && finite(R) && peak(L) < 4.0f && peak(R) < 4.0f,
               "all stages on: 2 s noise finite + bounded",
               "peak=" + std::to_string(std::max(peak(L), peak(R))));
+    }
+
+    printf("\n== 5b. Clicks and the summed-bus ceiling (D1-D3) ==\n");
+    // Max sample-to-sample step in [a, b) — the click detector. A discontinuity
+    // shows up here as a delta far above the signal's own slew rate.
+    auto maxStep = [](const std::vector<float>& v, int a, int b) {
+        double m = 0;
+        a = std::max(1, a); b = std::min((int)v.size(), b);
+        for (int i = a; i < b; i++) m = std::max(m, std::abs((double)v[i] - v[i - 1]));
+        return m;
+    };
+    {
+        // D2: retriggering a sounding pad must not cut it in one sample. The
+        // new hit has a 50 ms attack, so at the retrigger instant it adds
+        // almost nothing and the only thing that can move is the old voice.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.05f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.5f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 2.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+        // Start a quarter cycle in: with the default phase 0 the table value at
+        // the trigger point is a zero crossing, which hides the very cut this
+        // test is looking for.
+        p[(size_t)dpid(0, DP_OSCA_PHASE)] = 0.25f;
+        DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+        e.trigger(0, 1.0f);
+        auto before = renderMain(e, 12000);          // 0.25 s: attack done, holding
+        e.trigger(0, 1.0f);                          // retrigger
+        auto after = renderMain(e, 4800);
+        std::vector<float> join(before.end() - 8, before.end());
+        join.insert(join.end(), after.begin(), after.begin() + 240);
+        const double base = maxStep(before, 6000, 12000);
+        const double atHit = maxStep(join, 1, (int)join.size()); // fade ~1.5 ms = 72
+        check(base > 1e-5 && atHit < base * 4.0,
+              "retrigger does not click (D2)",
+              "step=" + std::to_string(atHit) + " baseline=" + std::to_string(base));
+    }
+    {
+        // D3: the amp envelope has to reach 0, not stop at e^-4.5 (-40 dB).
+        // Fully exponential curve, no filter, so the decay end is the only
+        // candidate discontinuity in the buffer.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.005f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.0f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 0.2f;
+        p[(size_t)dpid(0, DP_AENV_CURVE)] = 1.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+        DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+        e.trigger(0, 1.0f);
+        auto v = renderMain(e, 24000);
+        const int endAt = (int)((0.005 + 0.2) * 48000);
+        const double atEnd = maxStep(v, endAt - 4, endAt + 6);
+        const double base = maxStep(v, endAt - 2000, endAt - 100);
+        check(atEnd < base * 1.5,
+              "amp envelope ends without a step (D3)",
+              "step=" + std::to_string(atEnd) + " baseline=" + std::to_string(base));
+    }
+    {
+        // Filter-type switch: with the 3 ms type crossfade in runFilter the
+        // change stays inside the signal's own slew rate. Without it the jump
+        // was 0.058 — larger than the waveform's peak — because the SVF output
+        // tap changed in one sample.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.01f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 1.0f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 1;
+        p[(size_t)dpid(0, DP_FLT_TYPE)] = 0;      // LP12
+        p[(size_t)dpid(0, DP_FLT_CUT)] = 800.0f;
+        DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+        e.trigger(0, 1.0f);
+        auto before = renderMain(e, 12000);
+        e.setParam(dpid(0, DP_FLT_TYPE), 2.0f);   // -> BP
+        auto after = renderMain(e, 2400);
+        std::vector<float> join(before.end() - 8, before.end());
+        join.insert(join.end(), after.begin(), after.begin() + 64);
+        const double base = maxStep(before, 6000, 12000);
+        const double atSwitch = maxStep(join, 1, (int)join.size());
+        check(base > 1e-6 && atSwitch < base * 2.0,
+              "filter-type switch does not click",
+              "step=" + std::to_string(atSwitch) + " baseline=" + std::to_string(base));
+    }
+    {
+        // D4: an interior START/END on the sample layer used to be a hard cut
+        // at both ends. The edges now fade over DR_SAMPLE_FADE, so the samples
+        // immediately inside each edge sit far below the body of the hit. The
+        // amp attack is 1 sample here, so the sample layer's own fade is the
+        // only thing shaping the first samples.
+        const auto& shot = drumOneShots()[3];        // 808OH
+        const double pStart = 0.30, pEnd = 0.55;
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_OSCA_LEVEL)] = 0.0f;
+        p[(size_t)dpid(0, DP_NOISE_LEVEL)] = 0.0f;
+        p[(size_t)dpid(0, DP_OSCB_TABLE)] = 3.0f;
+        p[(size_t)dpid(0, DP_OSCB_LEVEL)] = 1.0f;
+        p[(size_t)dpid(0, DP_OSCB_POS)] = (float)pStart;
+        p[(size_t)dpid(0, DP_OSCB_DETUNE)] = (float)pEnd;
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.0f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 2.0f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+        DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+        e.trigger(0, 1.0f);
+        auto v = renderMain(e, 48000);
+        // The layer stops after (end - start) source samples at this read rate.
+        const double step = (double)shot.sampleRate / 48000.0;
+        const int stop = (int)(((pEnd - pStart) * (shot.length - 1)) / step);
+        const double body = rms(slice(v, 1000, 2000));
+        const double atStart = rms(slice(v, 0, 8));
+        const double atStop = rms(slice(v, stop - 8, stop));
+        check(finite(v) && body > 1e-3 && atStart < body * 0.3 && atStop < body * 0.3,
+              "sample layer START/END edges are faded, not cut (D4)",
+              "start=" + std::to_string(atStart) + " stop=" + std::to_string(atStop)
+              + " body=" + std::to_string(body));
+    }
+    {
+        // D1: sixteen pads, pad FX on, master volume at 1 -> the summed MAIN bus
+        // must respect the limiter's -1 dBFS ceiling. Before the per-bus output
+        // stage each pad was limited on its own and the sum had no ceiling.
+        auto p = defaultDrumParams();
+        p[DG_MASTER_VOLUME] = 1.0f;
+        for (int i = 0; i < DR_NPADS; i++) {
+            p[(size_t)dpid(i, DP_LVL)] = 1.0f;
+            p[(size_t)dpid(i, DP_OUT)] = 0.0f;             // everything on MAIN
+            p[(size_t)dpid(i, DP_CHOKE)] = 0.0f;
+            p[(size_t)dpid(i, DP_FXCOMP_ON)] = 1.0f;
+            p[(size_t)dpid(i, DP_FXCOMP_GAIN)] = 12.0f;    // push the bus hard
+            p[(size_t)dpid(i, DP_FXREVERB_ON)] = 1.0f;
+        }
+        DrumEngine e; e.prepare(48000); e.enablePadFx(true);
+        e.setTables(allTables()); e.setParams(p);
+        std::vector<float> mainL, mainR;
+        for (int rep = 0; rep < 8; rep++) {
+            for (int i = 0; i < DR_NPADS; i++) e.trigger(i, 1.0f);
+            auto bufs = renderBuses(e, 6000);
+            mainL.insert(mainL.end(), bufs[0].begin(), bufs[0].end());
+            mainR.insert(mainR.end(), bufs[1].begin(), bufs[1].end());
+        }
+        const float ceiling = (float)LookaheadLimiter::kCeiling;
+        const float pk = std::max(peak(mainL), peak(mainR));
+        check(finite(mainL) && finite(mainR) && pk <= ceiling * 1.001f,
+              "16 pads with FX stay under the bus ceiling (D1)",
+              "peak=" + std::to_string(pk) + " ceiling=" + std::to_string(ceiling));
+        check(pk > ceiling * 0.5f, "the D1 ceiling test actually drives the bus",
+              "peak=" + std::to_string(pk));
     }
 
     printf("\n== 6. DrumKits ==\n");

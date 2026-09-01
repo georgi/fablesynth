@@ -1,13 +1,19 @@
 // One DR-1 pad FX chain — C++ port of the Web Audio graph in
 // src/drum/engine/drum-synth.ts buildFx()/applyAllFx():
-// drive -> comp -> chorus -> ping-pong delay -> reverb -> shared master gain ->
-// DC block -> safety limiter. Same topology as WT-1's Fx (source/dsp/Fx.h,
-// the template for every shared stage) plus the bus compressor, which follows
+// drive -> comp -> chorus -> ping-pong delay -> reverb. Same topology as WT-1's
+// Fx (source/dsp/Fx.h, the template for every shared stage) plus the bus
+// compressor, which follows
 // WebAudio DynamicsCompressorNode semantics (ratio 4, knee 9 dB, attack 3 ms,
 // release 250 ms, spec-defined implicit makeup) with THRESH/MAKEUP params.
 //
 // The convolution reverb (generated exponential-noise impulse) is approximated
 // by the same Freeverb network as WT-1, tuned by SIZE. JUCE-free.
+//
+// Finding D1: master gain, DC block and the safety limiter are NOT part of this
+// chain. They live in DrumBusOut (below) and run once on each summed output bus
+// — the web graph is `16 pads -> sum -> master gain -> DC -> limiter`
+// (drum-synth.ts:204-218, 296), so limiting sixteen pads independently left the
+// bus itself without a ceiling.
 #pragma once
 
 #include "DrumParams.h"
@@ -20,10 +26,10 @@ namespace fable {
 class DrumFx {
 public:
     void prepare(double sampleRate);
-    void setParams(const DrumParamArray& p, int pad); // reads pad<i>.fx.* + shared master.volume
+    void setParams(const DrumParamArray& p, int pad); // reads pad<i>.fx.*
     void process(float* L, float* R, int n); // in-place, before pad output routing
     void reset();
-    int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
+    int  latencySamples() const { return kDriveLatency; }
 
 private:
     double sr_ = 48000;
@@ -62,8 +68,21 @@ private:
     Smooth verbWet_, verbDry_;
     float roomSize_ = 0.84f;
     bool verbOff_ = false, verbGated_ = false;
+};
 
-    // master + limiter
+// Per-bus output stage (Finding D1): master gain -> DC block -> lookahead
+// safety limiter, run once on the summed bus instead of once per pad. One
+// instance per DR_NBUSES output, so MAIN has a real -1 dBFS ceiling.
+class DrumBusOut {
+public:
+    void prepare(double sampleRate);
+    void setParams(const DrumParamArray& p);   // shared master.volume only
+    void process(float* L, float* R, int n);   // in-place
+    void reset();
+    int  latencySamples() const { return lim_.latencySamples(); }
+
+private:
+    double sr_ = 48000;
     Smooth masterGain_;
     Biquad dcL_, dcR_;
     LookaheadLimiter lim_; // WebAudio-spec makeup applied inside, computed in prepare()

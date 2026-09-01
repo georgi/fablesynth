@@ -25,7 +25,10 @@ constexpr int    DR_MAXUNI     = 7;
 constexpr int    DR_NBUSES     = 5;      // 0 = MAIN, 1..4 = AUX
 constexpr float  DR_ACCENT_VEL = 1.0f, DR_PLAIN_VEL = 0.72f;
 constexpr double DR_SWING_MAX  = 0.667;
-constexpr double DR_CHOKE_FADE = 0.12;
+// Choke / retrigger fade time constant (Finding D9): 0.12 per sample at
+// 48 kHz expressed as a time, so the fade lasts the same milliseconds at any
+// rate. tau = -1 / (48000 * ln(0.88)) — the 48 kHz coefficient is unchanged.
+constexpr double DR_CHOKE_TAU  = 1.6295076e-4;
 constexpr double DR_DC_R       = 0.9998;
 constexpr int    DR_MOD_LOG_D  = 5;      // CUTOFF mod: +/-5 octaves
 constexpr int    DR_BASE_NOTE  = 60;
@@ -44,7 +47,9 @@ class DrumEngine {
 public:
     void prepare(double sampleRate);
     void enablePadFx(bool on) { padFxEnabled_ = on; }
-    int latencySamples() const { return padFxEnabled_ ? padFx_[0].latencySamples() : 0; }
+    int latencySamples() const {
+        return padFxEnabled_ ? padFx_[0].latencySamples() + busOut_[0].latencySamples() : 0;
+    }
     void setTables(std::vector<TablePtr> tables);   // same mutex swap scheme as Engine::setTables
     void setParam(int id, float v) { p_[(size_t)id] = v; }
     void setParams(const DrumParamArray& p) { p_ = p; }
@@ -94,6 +99,7 @@ public:
     void hostTempo(double bpm, double swing, double anchorFrame) {
         setBpmOverride(bpm);
         anchorFrame_ = anchorFrame;
+        hostSwing_ = swing;
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
     void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
@@ -144,15 +150,22 @@ private:
         float  gr[DR_MAXUNI]     = {0};
         int    uni = 1;
         int    off0 = 0, off1 = 0, off0b = 0, off1b = 0;
-        double mipBlend = 0, ft = 0, gain = 0;
+        double gain = 0;
         int    mask = 0, size = 0;
         const float* data = nullptr;
         double posSm = -1;
+        // Finding D5: full trilinear blending. posF is the absolute frame
+        // position (f0 + morph fraction) and mipF the fractional mip; both
+        // ramp per sample in renderOsc, so a fast pitch envelope crosses a
+        // frame or mip boundary continuously instead of switching.
+        double posF = 0, mipF = 0, mipBlend = 0;
+        int    f0 = 0, mip = 0;
         // Previous sub-block targets for the intra-block ramps (Finding 7).
         double pIncs[DR_MAXUNI] = {0};
         float  pGl[DR_MAXUNI] = {0}, pGr[DR_MAXUNI] = {0};
-        double pFt = 0;
-        int    pOff0 = -1, pUni = -1;
+        double pPosF = 0, pMipF = 0;
+        const float* pData = nullptr;
+        int    pUni = -1;
         bool   havePrev = false;
     };
     struct FilterState {
@@ -162,11 +175,24 @@ private:
         double satXL = 0, satXR = 0;   // ADAA drive: previous input per channel
         int    ftype = 0; bool twoPole = false;
         double k1 = 0;
+        // Discrete-switch crossfade (the click the D-side click detector
+        // measures on a filter-type change): the outgoing type keeps running on
+        // its own copy of the SVF state for DR_SWITCH_FADE and the two outputs
+        // are mixed. Changing the type used to jump the output tap in one
+        // sample, a step larger than the waveform's own peak.
+        double svfOld[8] = {0};
+        int    pFtype = -1; bool pTwoPole = false;
+        int    xfType = 0;  bool xfTwoPole = false;
+        int    xfLeft = 0, xfLen = 1;
     };
     struct SampleState {
         double pos = -1;
         int index = -1;
         bool done = false;
+        // Finding D4: the read rate ramps across the sub-block like the
+        // oscillator increments, instead of being held for 16 samples.
+        double pStep = 0;
+        bool   havePrev = false;
     };
     struct PadVoice {
         bool   active = false;
@@ -251,8 +277,13 @@ private:
     std::shared_ptr<const TableSet> retired_;
     const TableSet* curTables_ = nullptr;
     PadVoice voices_[DR_NPADS];
+    // Finding D2: retriggering a sounding pad moves the old voice here and
+    // fades it out over DR_CHOKE_TAU while the new hit starts clean on the
+    // main slot. Before, trigger() zeroed the running voice in one sample.
+    PadVoice tails_[DR_NPADS];
     double sr_ = 48000;
     double dcR_ = DR_DC_R;         // sr-derived DC pole (Finding 9)
+    double chokeCoef_ = 0.12;      // sr-derived choke/retrigger fade (D9)
     Rng    rng_;                   // trigger rand + noise (deterministic tests)
     int    sel_ = 0;
 
@@ -261,6 +292,8 @@ private:
     float fL_[128] = {0}, fR_[128] = {0};
     float padL_[128] = {0}, padR_[128] = {0};
     std::array<DrumFx, DR_NPADS> padFx_;
+    std::array<DrumBusOut, DR_NBUSES> busOut_;   // per-bus gain/DC/limiter (D1)
+    double hostSwing_ = 0;         // last hostTempo() swing, re-applied on prepare
     bool padFxEnabled_ = false; // pure engine tests/embedders opt in explicitly
 };
 

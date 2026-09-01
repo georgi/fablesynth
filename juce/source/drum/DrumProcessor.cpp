@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <numeric>
 #include <unordered_map>
 
 using namespace fable;
@@ -210,10 +209,15 @@ void DrumAudioProcessor::setStep(int pattern, int pad, int step, uint8_t v) {
     shareSeqState(true, false);
 }
 
+// Finding D6: this used to throw the caller's chain away and store
+// iota(0..bars-1), so a non-linear chain (a kit's, a saved session's, or the
+// web app's) silently became "play pattern N in bar N". The engine supports an
+// arbitrary chain (DrumEngine::setChain) — store what the caller asked for.
 void DrumAudioProcessor::setChain(std::vector<int> c) {
     const int bars = juce::jlimit(1, DR_NPATTERNS, (int)c.size());
-    chain_.resize((size_t)bars);
-    std::iota(chain_.begin(), chain_.end(), 0);
+    if (c.empty()) chain_.assign(1, 0);
+    else chain_.assign(c.begin(), c.begin() + bars);
+    for (int& v : chain_) v = juce::jlimit(0, DR_NPATTERNS - 1, v);
     programDirty_.markEdited();
     shareSeqState(false, true);
 }
@@ -260,8 +264,7 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
     if ((int)kit.patterns.size() == kPatternBytes)
         std::copy(kit.patterns.begin(), kit.patterns.end(), patterns_.begin());
     const int bars = juce::jlimit(1, DR_NPATTERNS, (int)kit.chain.size());
-    chain_.resize((size_t)bars);
-    std::iota(chain_.begin(), chain_.end(), 0);
+    chain_.assign(kit.chain.begin(), kit.chain.begin() + bars);   // Finding D6
     for (int& c : chain_) c = juce::jlimit(0, DR_NPATTERNS - 1, c);
     for (int i = 0; i < DR_NPADS; ++i)
         padNames_[(size_t)i] = juce::String(kit.padNames[(size_t)i]);
@@ -299,9 +302,12 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const int n = buffer.getNumSamples();
 
     // Pull current parameter values into the engine's flat array.
+    // Finding D9: 1075 relaxed loads instead of 1075 seq_cst loads. Nothing
+    // else is published through these atomics, so the ordering buys nothing.
     auto& p = engine.params();
     for (int i = 0; i < DR_NUM_PARAMS; ++i)
-        if (rawParams_[(size_t)i]) p[(size_t)i] = rawParams_[(size_t)i]->load();
+        if (rawParams_[(size_t)i])
+            p[(size_t)i] = rawParams_[(size_t)i]->load(std::memory_order_relaxed);
 
     // Host sync. A reported tempo overrides seq.bpm; a rolling transport that
     // also reports song position slaves the whole sequencer to the host
@@ -529,8 +535,8 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
             if (s.trim().isNotEmpty())
                 c.push_back(juce::jlimit(0, DR_NPATTERNS - 1, s.getIntValue()));
         const int bars = juce::jlimit(1, DR_NPATTERNS, (int)c.size());
-        chain_.resize((size_t)bars);
-        std::iota(chain_.begin(), chain_.end(), 0);
+        if (c.empty()) chain_.assign(1, 0);
+        else chain_.assign(c.begin(), c.begin() + bars);          // Finding D6
         juce::StringArray names;
         names.addLines(drum.getProperty("padNames", "").toString());
         for (int i = 0; i < DR_NPADS && i < names.size(); ++i)
