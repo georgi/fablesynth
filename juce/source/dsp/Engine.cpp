@@ -57,6 +57,10 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2 * a)) - LN2;
 }
 
+// Voice-steal fade length to -80 dB. Chosen so the coefficient at 48 kHz is
+// 0.12007 — the legacy fixed constant to five digits (finding J6).
+static constexpr double STEAL_FADE_SEC = 0.0015;
+
 // ---------------- Env ----------------
 void Env::set(double a, double d, double sus, double r, double sr) {
     s = sus;
@@ -66,6 +70,9 @@ void Env::set(double a, double d, double sus, double r, double sr) {
         || !exactlyEqual(r, r_) || !exactlyEqual(sr, sr_)) {
         a_ = a; d_ = d; r_ = r; sr_ = sr;
         ca = 1 - std::exp(-1 / (std::max(0.0008, a) * sr));
+        // Finding J6: steal fade as a time constant, not a fixed per-sample
+        // step. STEAL_FADE_SEC to -80 dB (ln(1e-4) = -9.2103) at any rate.
+        cs = 1 - std::exp(-9.210340371976184 / (STEAL_FADE_SEC * sr));
         cd = 1 - std::exp(-1 / (std::max(0.002, d / 4.5) * sr));
         cr = 1 - std::exp(-1 / (std::max(0.002, r / 4.5) * sr));
     }
@@ -86,8 +93,9 @@ double Env::process() {
             if (level < 1e-4) { level = 0; state = 0; }
             break;
         case 5:
-            // steal fade: ~2 ms to silence, then the voice is free for its pending note
-            level -= level * 0.12;
+            // steal fade: STEAL_FADE_SEC to silence, then the voice is free
+            // for its pending note (sample-rate invariant, finding J6)
+            level -= level * cs;
             if (level < 1e-4) { level = 0; state = 0; }
             break;
     }
@@ -409,7 +417,11 @@ void Engine::seqFire() {
     const double offNow = (s % 2 == 1) ? swing * SEQ_SWING_MAX * dur : 0.0;
     const int sNext = (s + 1) % SEQ_STEPS;
     const double offNext = (sNext % 2 == 1) ? swing * SEQ_SWING_MAX * dur : 0.0;
-    seqToNext_ = dur - offNow + offNext;
+    // Finding B7: accumulate, never reassign. renderBlock splits the run at
+    // ceil(seqToNext_), so what is left here is the negative fractional
+    // residue of the step just played; dropping it made every step
+    // ceil(dur) samples (~0.01 % slow, ~35 ms over five minutes).
+    seqToNext_ += dur - offNow + offNext;
 }
 
 // ---------------- host transport lock (BassEngine scheme) ----------------

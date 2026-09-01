@@ -165,15 +165,20 @@ SeqAudioProcessor::SeqAudioProcessor()
     }
 
     // Build each engine's table set (same order the standalone processors use).
-    for (auto& g : generateTables())
-        wtTables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    // Every set is immutable and sample-rate independent, so the whole process
+    // shares one build instead of one per instance (finding J5).
+    wtTables_ = sharedFactoryTables();
     bassTables_ = wtTables_; // BL-1 hosts the same 6 WT-1 procedurals
-    for (auto& g : generateDrumTables())
-        drumTables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
-    for (auto& g : generateTables())
-        drumTables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
-    for (auto& g : generateSampledDrumTables())
-        drumTables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    static const std::vector<TablePtr> sharedDrumTables = [] {
+        std::vector<TablePtr> out;
+        for (auto& g : generateDrumTables())
+            out.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+        for (auto& t : sharedFactoryTables()) out.push_back(t);
+        for (auto& g : generateSampledDrumTables())
+            out.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+        return out;
+    }();
+    drumTables_ = sharedDrumTables;
 
     initialSession_ = defaultSession();
     jassert(initialSession_.tracks.size() == (size_t)kTracks
@@ -435,6 +440,13 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     trackBuf_.setSize(2, samplesPerBlock);
     drumAux_.setSize(2 * (DR_NBUSES - 1), samplesPerBlock);
     limiter_.prepare(sampleRate);
+
+    // Finding J7: every device chain delays its track by its drive-FIR +
+    // lookahead-limiter latency, so report it and let the DAW compensate. The
+    // master Limiter is feed-forward (no lookahead) and adds nothing. Tracks
+    // are summed, so the reported figure is the longest chain.
+    setLatencySamples(std::max(std::max(drum_.latencySamples(), bassFx_.latencySamples()),
+                               std::max(wtFx_[0].latencySamples(), wtFx_[1].latencySamples())));
 
     for (int t = 0; t < kTracks; ++t) {
         trackGain_[t].reset(sampleRate, 0.015);

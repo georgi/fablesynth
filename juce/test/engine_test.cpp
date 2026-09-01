@@ -49,17 +49,24 @@ static std::vector<float> renderNote(Engine& eng, int note, double seconds, doub
 }
 
 // ---- anti-aliasing measurement: ratio of non-harmonic to harmonic energy ----
+// A Hann window with a +/-6-bin mask (the original form of this test) leaks
+// about -57 dB into the "alias" bins, so it reported -57 dB for a linear read
+// and for a cubic Hermite read alike — it measured the window, not the engine.
+// A 4-term Blackman-Harris window (-92 dB sidelobes) with a +/-12-bin mask
+// puts the measurement floor below -100 dB, where the reads actually differ.
 static double aliasFloorDb(const float* x, int N, double sr, double f0) {
     std::vector<double> re(N), im(N, 0.0);
+    static const double a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
     for (int i = 0; i < N; i++) {
-        double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1)); // Hann
+        const double t = 2 * M_PI * i / (N - 1);
+        const double w = a0 - a1 * std::cos(t) + a2 * std::cos(2 * t) - a3 * std::cos(3 * t);
         re[i] = x[i] * w;
     }
     fft(re.data(), im.data(), N, false);
     auto mag2 = [&](int k) { return re[k] * re[k] + im[k] * im[k]; };
 
     double binHz = sr / N;
-    int halfWin = 6;                 // bins around each harmonic counted as "signal"
+    int halfWin = 12;                // bins around each harmonic counted as "signal"
     int loBin = (int)(40 / binHz);   // ignore DC / sub-bass leakage
     std::vector<char> isHarm(N / 2, 0);
     for (int k = 1; k * f0 < sr * 0.5; k++) {
@@ -70,7 +77,43 @@ static double aliasFloorDb(const float* x, int N, double sr, double f0) {
     double harm = 0, alias = 0;
     for (int k = loBin; k < N / 2; k++) (isHarm[k] ? harm : alias) += mag2(k);
     if (harm <= 0) return 0;
+    if (alias <= 0) return -200;
     return 10 * std::log10(alias / harm);
+}
+
+// ---- octave-band energy profile, for the invariance checks ----
+// Returns per-band energy in dB relative to the total, for bands that are the
+// same absolute frequencies at every sample rate and block size.
+static std::vector<double> bandProfileDb(const std::vector<float>& x, int N, double sr) {
+    std::vector<double> re(N), im(N, 0.0);
+    for (int i = 0; i < N; i++) {
+        const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1)); // Hann
+        re[i] = (i < (int)x.size() ? x[i] : 0.0f) * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    const double binHz = sr / N;
+    static const double EDGES[] = {40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 18000};
+    const int nb = (int)(sizeof(EDGES) / sizeof(EDGES[0])) - 1;
+    std::vector<double> band((size_t)nb, 0.0);
+    double total = 1e-30;
+    for (int k = 1; k < N / 2; k++) {
+        const double f = k * binHz;
+        const double e = re[k] * re[k] + im[k] * im[k];
+        for (int b = 0; b < nb; b++)
+            if (f >= EDGES[b] && f < EDGES[b + 1]) { band[(size_t)b] += e; break; }
+        if (f >= EDGES[0] && f < EDGES[nb]) total += e;
+    }
+    for (auto& v : band) v = 10 * std::log10(std::max(v, 1e-30) / total);
+    return band;
+}
+
+// Largest sample-to-sample step in [from, to) — the click detector.
+static double maxDelta(const std::vector<float>& x, int from, int to) {
+    double m = 0;
+    from = std::max(1, from);
+    to = std::min(to, (int)x.size());
+    for (int i = from; i < to; i++) m = std::max(m, (double)std::abs(x[i] - x[i - 1]));
+    return m;
 }
 
 int main() {
@@ -118,12 +161,21 @@ int main() {
         p[FILTER1_BASE + FLT_ON] = 0;
         p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f; // fast attack, full sustain
         eng.setParams(p);
-        for (int note : {96, 103, 108}) {           // C7, G7, C8
+        // 65536-point transform: at note 36 (65.4 Hz) the harmonics are 89 bins
+        // apart, so a +/-12-bin mask still leaves real gaps to measure in.
+        const int N = 65536;
+        for (int note : {36, 48, 60, 72, 84, 96}) {
             double f0 = 440.0 * std::pow(2.0, (note - 69) / 12.0);
-            auto buf = renderNote(eng, note, 0.4, sr);
-            int N = 16384;
+            auto buf = renderNote(eng, note, (double)(N + 4096) / sr, sr);
             double db = aliasFloorDb(buf.data() + (buf.size() - N), N, sr, f0);
-            check(db < -55.0, "alias floor low @ note " + std::to_string(note),
+            // -85 dB is the real anti-aliasing bound. Note 36 is the exception:
+            // its harmonics are only 89 bins apart, so ~30000 unmasked bins are
+            // integrated, and each one sits on the float32 output floor at
+            // about -98 dB. That sums to about -78 dB of *broadband* floor with
+            // no discrete image anywhere near it — the metric is measuring the
+            // 24-bit floor there, not the engine.
+            const double limit = note <= 36 ? -75.0 : -85.0;
+            check(db < limit, "alias floor low @ note " + std::to_string(note),
                   std::to_string(db) + " dB");
             eng.panic();
             std::vector<float> flush(sr * 0.2, 0); eng.render(flush.data(), flush.data(), 0);
@@ -1035,6 +1087,193 @@ int main() {
             e.setSeqHostTransport(ppq, bpm, false);          // host stop
             check(!e.seqIsPlaying() && e.seqCurrentStep() == -1, "host stop stops the sequencer");
         }
+    }
+
+
+    // A patch that exercises the whole voice: two oscs, unison, sub, LP24 with
+    // resonance and drive, and an envelope that is fully open by the time the
+    // measurement window starts. Used by the invariance + click checks.
+    auto invariancePatch = [] {
+        auto p = defaultParams();
+        p[OSCA_BASE + OSC_POS] = 0.66f;
+        p[OSCA_BASE + OSC_UNISON] = 3;
+        p[OSCA_BASE + OSC_DETUNE] = 0.3f;
+        p[SUB_LEVEL] = 0.4f;
+        p[FILTER1_BASE + FLT_ON] = 1;
+        p[FILTER1_BASE + FLT_TYPE] = 1;              // LP24
+        p[FILTER1_BASE + FLT_CUTOFF] = 2400;
+        p[FILTER1_BASE + FLT_RES] = 0.5f;
+        p[FILTER1_BASE + FLT_DRIVE] = 0.4f;
+        p[ENV1_BASE + 0] = 0.002f;                   // fast attack
+        p[ENV1_BASE + 2] = 1.0f;                     // full sustain
+        p[ENV1_BASE + 3] = 0.05f;                    // short release
+        return p;
+    };
+
+    printf("\n== 14. Sample-rate invariance ==\n");
+    {
+        // Same patch, same note, three device rates. The engine's smoothers,
+        // envelopes and DC/noise poles are all derived from sr, so the octave
+        // band profile must be the same at every rate.
+        const double rates[3] = {44100.0, 48000.0, 96000.0};
+        std::vector<std::vector<double>> prof;
+        for (double r : rates) {
+            Engine e; e.prepare(r); e.setTables(tables);
+            auto p = invariancePatch();
+            // Drive off for this one: at 96 kHz the mip guard admits an octave
+            // more harmonics, and a saturator folds those extra partials into
+            // the mid band. That is correct behaviour, not a smoother bug, and
+            // it is not what this test is about.
+            p[FILTER1_BASE + FLT_DRIVE] = 0;
+            // Detune off too: detuned unison voices beat at a fixed rate in
+            // Hz, and a fixed 32768-SAMPLE window covers a different span of
+            // seconds at each rate, so the beat lands at a different phase.
+            // That is the measurement moving, not the engine.
+            p[OSCA_BASE + OSC_DETUNE] = 0;
+            e.setParams(p);
+            const int n = (int)(1.5 * r);
+            std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+            e.noteOn(57, 1.0);                        // A3
+            e.render(L.data(), R.data(), n);
+            std::vector<float> tail(L.end() - 32768, L.end());
+            prof.push_back(bandProfileDb(tail, 32768, r));
+        }
+        // Only bands the patch actually fills are comparable: a band 35 dB
+        // below the total holds nothing but the DC-blocker residue and the
+        // float32 floor, where a large relative difference means nothing.
+        for (int i = 0; i < 3; i += 2) {              // 44.1 and 96 vs the 48 k reference
+            double worst = 0; int worstBand = -1;
+            for (size_t b = 0; b < prof[1].size(); b++) {
+                if (prof[1][b] < -35.0 || prof[(size_t)i][b] < -35.0) continue;
+                const double d = std::abs(prof[(size_t)i][b] - prof[1][b]);
+                if (d > worst) { worst = d; worstBand = (int)b; }
+            }
+            check(worst < 0.5,
+                  "band profile matches 48 kHz @ " + std::to_string((int)rates[i]) + " Hz",
+                  "worst " + std::to_string(worst) + " dB in band " + std::to_string(worstBand));
+        }
+    }
+
+    printf("\n== 15. Host block-size invariance ==\n");
+    {
+        // The engine chunks internally to 128 samples, but a host block that is
+        // not a multiple of 128 splits those chunks differently, which changes
+        // every smoother's cadence. The spectrum must not notice.
+        auto renderBlocks = [&](int block) {
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(invariancePatch());
+            const int n = 1 << 16;
+            std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+            e.noteOn(57, 1.0);
+            for (int off = 0; off < n; off += block) {
+                const int m = std::min(block, n - off);
+                e.render(L.data() + off, R.data() + off, m);
+            }
+            std::vector<float> tail(L.end() - 32768, L.end());
+            return bandProfileDb(tail, 32768, sr);
+        };
+        const auto ref = renderBlocks(128);
+        for (int block : {480, 512, 4096}) {
+            const auto got = renderBlocks(block);
+            double worst = 0;
+            for (size_t b = 0; b < ref.size(); b++) {
+                if (ref[b] < -35.0 || got[b] < -35.0) continue;
+                worst = std::max(worst, std::abs(got[b] - ref[b]));
+            }
+            check(worst < 1.0, "band profile matches 128-sample blocks @ " + std::to_string(block),
+                  "worst " + std::to_string(worst) + " dB");
+        }
+    }
+
+    printf("\n== 16. Click detector (release / voice steal / filter switch) ==\n");
+    {
+        // A click is a sample-to-sample step far larger than the signal's own.
+        // Measure the waveform's natural max |dx| first, then check that each
+        // discontinuity event does not exceed a small multiple of it.
+        Engine e; e.prepare(sr); e.setTables(tables);
+        e.setParams(invariancePatch());
+        const int seg = 4096;
+        std::vector<float> L((size_t)seg * 6, 0.0f), R(L.size(), 0.0f);
+        e.noteOn(57, 1.0);
+        e.render(L.data(), R.data(), seg * 2);
+        const double natural = maxDelta(L, seg, seg * 2);
+        check(natural > 1e-4, "steady-state slew measurable", std::to_string(natural));
+
+        e.noteOff(57);
+        e.render(L.data() + seg * 2, R.data() + seg * 2, seg);
+        const double relDelta = maxDelta(L, seg * 2, seg * 3);
+        check(relDelta < natural * 1.5, "no click on note release",
+              std::to_string(relDelta) + " vs " + std::to_string(natural));
+
+        // Voice steal: fill every voice, then take one more note. The stolen
+        // voice fades over STEAL_FADE_SEC instead of cutting.
+        Engine st; st.prepare(sr); st.setTables(tables);
+        st.setParams(invariancePatch());
+        std::vector<float> SL((size_t)seg * 3, 0.0f), SR(SL.size(), 0.0f);
+        for (int i = 0; i < NVOICES; i++) st.noteOn(48 + i, 1.0);
+        st.render(SL.data(), SR.data(), seg * 2);
+        const double stNatural = maxDelta(SL, seg, seg * 2);
+        st.noteOn(72, 1.0);                            // one voice too many -> steal
+        st.render(SL.data() + seg * 2, SR.data() + seg * 2, seg);
+        const double stealDelta = maxDelta(SL, seg * 2, seg * 3);
+        check(stealDelta < stNatural * 2.0, "no click on voice steal",
+              std::to_string(stealDelta) + " vs " + std::to_string(stNatural));
+
+        // Filter-type switch. Not crossfaded yet (finding J2), so the bound is
+        // "bounded transient", not "inaudible" — this guards a regression to a
+        // full-scale thump from stale state.
+        for (int ft : {0, 2, 3, 4}) {
+            Engine fe; fe.prepare(sr); fe.setTables(tables);
+            auto p = invariancePatch();
+            fe.setParams(p);
+            std::vector<float> FL((size_t)seg * 3, 0.0f), FR(FL.size(), 0.0f);
+            fe.noteOn(57, 1.0);
+            fe.render(FL.data(), FR.data(), seg * 2);
+            const double base = maxDelta(FL, seg, seg * 2);
+            fe.params()[FILTER1_BASE + FLT_TYPE] = (float)ft;
+            fe.render(FL.data() + seg * 2, FR.data() + seg * 2, seg);
+            const double sw = maxDelta(FL, seg * 2, seg * 3);
+            check(finite(FL) && sw < std::max(0.5, base * 8.0),
+                  "filter switch to type " + std::to_string(ft) + " stays bounded",
+                  std::to_string(sw) + " vs " + std::to_string(base));
+        }
+    }
+
+    printf("\n== 17. User-table import is band-limited (finding J8) ==\n");
+    {
+        // A single sine at a NON-integer period. The old linear stretch-to-2048
+        // import baked its sinc^2 interpolation images into the table as real
+        // harmonics; exact spectral resampling leaves only the fundamental.
+        const double period = 183.37;                 // not a whole number of samples
+        std::vector<float> clip((size_t)(period * 8));
+        for (size_t i = 0; i < clip.size(); i++)
+            clip[i] = (float)std::sin(2 * M_PI * (double)i / period);
+        auto frames = sliceToFrames(clip, period);
+        check(frames.size() >= 4 && frames[0].size() == (size_t)SIZE,
+              "sliceToFrames yields SIZE-sample frames", std::to_string(frames.size()));
+
+        // One frame is a single cycle: its spectrum must be one line at k = 1.
+        std::vector<double> re(SIZE), im(SIZE, 0.0);
+        for (int i = 0; i < SIZE; i++) re[(size_t)i] = frames[1][(size_t)i];
+        fft(re.data(), im.data(), SIZE, false);
+        auto mag = [&](int k) { return std::sqrt(re[(size_t)k] * re[(size_t)k]
+                                               + im[(size_t)k] * im[(size_t)k]); };
+        const double fund = mag(1);
+        double worst = 0; int worstK = 0;
+        for (int k = 2; k < SIZE / 2; k++)
+            if (mag(k) > worst) { worst = mag(k); worstK = k; }
+        const double db = 20 * std::log10(std::max(worst, 1e-30) / std::max(fund, 1e-30));
+        check(fund > 0.1, "imported cycle keeps its fundamental", std::to_string(fund));
+        check(db < -60.0, "no resampling images in an imported cycle",
+              std::to_string(db) + " dB @ harmonic " + std::to_string(worstK));
+
+        // detectCycleLength resolves a fractional period to sub-sample accuracy.
+        std::vector<float> tone((size_t)(48000 * 0.4));
+        for (size_t i = 0; i < tone.size(); i++)
+            tone[i] = (float)std::sin(2 * M_PI * (double)i / period);
+        const double det = detectCycleLength(tone, sr);
+        check(std::abs(det - period) < 0.25, "detectCycleLength is sub-sample accurate",
+              std::to_string(det) + " vs " + std::to_string(period));
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());

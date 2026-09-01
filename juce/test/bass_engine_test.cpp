@@ -45,6 +45,41 @@ static int crossings(const std::vector<float>& v, int a, int b) {
     return c;
 }
 
+
+// Largest sample-to-sample step in [from, to) — the click detector.
+static double maxDelta(const std::vector<float>& x, int from, int to) {
+    double m = 0;
+    from = std::max(1, from);
+    to = std::min(to, (int)x.size());
+    for (int i = from; i < to; i++) m = std::max(m, (double)std::abs(x[i] - x[i - 1]));
+    return m;
+}
+
+// Octave-band energy in dB relative to the total, over bands that are the same
+// absolute frequencies at any sample rate or block size.
+static std::vector<double> bandProfileDb(const std::vector<float>& x, int N, double sr) {
+    std::vector<double> re((size_t)N), im((size_t)N, 0.0);
+    for (int i = 0; i < N; i++) {
+        const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1)); // Hann
+        re[(size_t)i] = (i < (int)x.size() ? x[(size_t)i] : 0.0f) * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    static const double EDGES[] = {30, 60, 120, 240, 480, 960, 1920, 3840, 7680, 16000};
+    const int nb = (int)(sizeof(EDGES) / sizeof(EDGES[0])) - 1;
+    std::vector<double> band((size_t)nb, 0.0);
+    double total = 1e-30;
+    const double binHz = sr / N;
+    for (int k = 1; k < N / 2; k++) {
+        const double f = k * binHz;
+        const double e = re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k];
+        for (int b = 0; b < nb; b++)
+            if (f >= EDGES[b] && f < EDGES[b + 1]) { band[(size_t)b] += e; break; }
+        if (f >= EDGES[0] && f < EDGES[nb]) total += e;
+    }
+    for (auto& v : band) v = 10 * std::log10(std::max(v, 1e-30) / total);
+    return band;
+}
+
 static const double SR = 48000.0;
 
 static std::vector<TablePtr> makeTables() {
@@ -364,6 +399,280 @@ int main() {
         std::vector<float> L2((size_t)n, 0.25f), R2((size_t)n, 0.25f);
         fx.process(L2.data(), R2.data(), n);
         check(rms(L2, 24000, 48000) < 1e-4, "volume 0 mutes", num(rms(L2, 24000, 48000)));
+    }
+
+
+    // A patch that exercises the whole voice, used by the checks below.
+    auto voicePatch = [] {
+        auto p = defaultBassParams();
+        p[BL_OSC_UNISON] = 1;
+        p[BL_OSC_SPREAD] = 0;
+        p[BL_OSC_LEVEL]  = 0.9f;
+        p[BL_SUB_LEVEL]  = 0.5f;
+        p[BL_SUB_SHAPE]  = 1;                 // square sub (finding B4)
+        p[BL_FLT_TYPE]   = 1;                 // LP24
+        p[BL_FLT_CUT]    = 1400;
+        p[BL_FLT_RES]    = 0.5f;
+        p[BL_FLT_DRIVE]  = 0.3f;
+        p[BL_AENV_ATT]   = 0.002f;
+        p[BL_AENV_SUS]   = 1.0f;
+        p[BL_AENV_DEC]   = 4.0f;
+        p[BL_AENV_REL]   = 0.05f;
+        p[BL_FENV_ATT]   = 0.002f;
+        p[BL_FENV_DEC]   = 4.0f;
+        return p;
+    };
+
+    printf("\n== mono fast path (finding B8) ==\n");
+    {
+        // uni = 1 / spread = 0 makes the two channels identical, so the filter
+        // runs once and mirrors. The mirror must be bit-exact, and the switch
+        // into the fast path (it starts on the SECOND chunk, because the pan
+        // ramps carry over from the first) must not step the output.
+        auto tables = makeTables();
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        auto p = voicePatch();
+        e.setParams(p);
+        const int n = 8192;
+        std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+        e.keyOn(12, 0.9f);
+        e.render(L.data(), R.data(), n);
+        bool same = true;
+        for (int i = 0; i < n; i++) if (L[(size_t)i] != R[(size_t)i]) { same = false; break; }
+        check(same, "mono fast path keeps L == R bit-exact");
+        check(finite(L) && peak(L) > 0.01f, "mono fast path still makes sound", num(peak(L)));
+        // Chunk 2 begins at 128; the transition must be no sharper than the
+        // waveform's own slew a few chunks later.
+        const double natural = maxDelta(L, 2048, 4096);
+        check(maxDelta(L, 120, 140) < natural * 2.0, "no step entering the mono fast path",
+              num(maxDelta(L, 120, 140)) + " vs " + num(natural));
+
+        // With spread the two channels must diverge again (fast path off).
+        BassEngine st; st.prepare(SR); st.setTables(tables);
+        auto ps = voicePatch();
+        ps[BL_OSC_UNISON] = 4; ps[BL_OSC_SPREAD] = 1.0f; ps[BL_OSC_DETUNE] = 0.4f;
+        st.setParams(ps);
+        std::vector<float> SL((size_t)n, 0.0f), SR2((size_t)n, 0.0f);
+        st.keyOn(12, 0.9f);
+        st.render(SL.data(), SR2.data(), n);
+        bool differs = false;
+        for (int i = 0; i < n; i++) if (SL[(size_t)i] != SR2[(size_t)i]) { differs = true; break; }
+        check(differs, "spread > 0 still renders two independent channels");
+    }
+
+    printf("\n== accent gain ramp (finding B2) ==\n");
+    {
+        // An accented slide flips acc_ on the RUNNING voice. The amp gain used
+        // to jump up to +3.5 dB at the next chunk boundary; it now ramps.
+        auto tables = makeTables();
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        auto p = voicePatch();
+        p[BL_ACC_AMT] = 1.0f;
+        p[BL_SLIDE_TIME] = 0.06f;
+        e.setParams(p);
+        const int n = 8192;
+        std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+        e.keyOn(0, 0.72f);                       // plain note, key held
+        e.render(L.data(), R.data(), 4096);
+        const double natural = maxDelta(L, 2048, 4096);
+        // A second key while the first is held is legato: it glides the RUNNING
+        // voice and flips acc_ on it, without retriggering the amp envelope.
+        e.keyOn(3, 1.0f, true);
+        e.render(L.data() + 4096, R.data() + 4096, 4096);
+        const double step = maxDelta(L, 4090, 4300);
+        check(finite(L), "accented slide output finite");
+        check(step < natural * 2.0, "accent gain ramps instead of stepping",
+              num(step) + " vs " + num(natural));
+        check(rms(L, 6000, 8000) > rms(L, 2000, 4000), "accent still gets louder",
+              num(rms(L, 2000, 4000)) + " -> " + num(rms(L, 6000, 8000)));
+    }
+
+    printf("\n== filter-type switch stays bounded (finding B8) ==\n");
+    {
+        auto tables = makeTables();
+        for (int ft : {0, 2, 3}) {
+            BassEngine e; e.prepare(SR); e.setTables(tables);
+            e.setParams(voicePatch());
+            const int n = 12288;
+            std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+            e.keyOn(12, 0.9f);
+            e.render(L.data(), R.data(), 4096);
+            const double natural = maxDelta(L, 2048, 4096);
+            e.params()[BL_FLT_TYPE] = (float)ft;      // leave LP24
+            e.render(L.data() + 4096, R.data() + 4096, 4096);
+            e.params()[BL_FLT_TYPE] = 1;              // and come back to it
+            e.render(L.data() + 8192, R.data() + 8192, 4096);
+            const double out = maxDelta(L, 4090, 4400);
+            const double back = maxDelta(L, 8186, 8500);
+            check(finite(L), "type " + std::to_string(ft) + " switch output finite");
+            check(out < std::max(0.25, natural * 8.0),
+                  "switch away from LP24 (type " + std::to_string(ft) + ") bounded",
+                  num(out) + " vs " + num(natural));
+            // The second LP24 stage is cleared as it re-engages, so it cannot
+            // inject whatever it froze on while a one-pole type was selected.
+            check(back < std::max(0.25, natural * 8.0),
+                  "switch back to LP24 from type " + std::to_string(ft) + " bounded",
+                  num(back) + " vs " + num(natural));
+        }
+    }
+
+    printf("\n== release click (finding: click detector) ==\n");
+    {
+        auto tables = makeTables();
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        e.setParams(voicePatch());
+        const int n = 12288;
+        std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+        e.keyOn(12, 0.9f);
+        e.render(L.data(), R.data(), 4096);
+        const double natural = maxDelta(L, 2048, 4096);
+        e.keyOff(12);
+        e.render(L.data() + 4096, R.data() + 4096, 8192);
+        check(maxDelta(L, 4090, 4400) < natural * 1.5, "no click on release",
+              num(maxDelta(L, 4090, 4400)) + " vs " + num(natural));
+        check(rms(L, 10000, 12288) < 1e-4, "release reaches silence",
+              num(rms(L, 10000, 12288)));
+    }
+
+    printf("\n== sample-rate and block-size invariance ==\n");
+    {
+        auto tables = makeTables();
+        auto profileAt = [&](double sr, int block) {
+            BassEngine e; e.prepare(sr); e.setTables(tables);
+            auto p = voicePatch();
+            // Three things are switched off because they would move the
+            // MEASUREMENT, not the engine: a saturator folds in the extra
+            // bandwidth a higher rate carries; detuned unison voices beat at a
+            // fixed rate in Hz; and the filter envelope is still sweeping. The
+            // window is a fixed number of SAMPLES, so it covers a different
+            // span of seconds at each rate and would catch all three mid-flight.
+            p[BL_FLT_DRIVE] = 0;
+            p[BL_OSC_DETUNE] = 0;
+            p[BL_FLT_ENV] = 0;
+            e.setParams(p);
+            const int n = (int)(1.2 * sr);
+            std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+            e.keyOn(12, 0.9f);
+            for (int at = 0; at < n; at += block)
+                e.render(L.data() + at, R.data() + at, std::min(block, n - at));
+            std::vector<float> tail(L.end() - 32768, L.end());
+            return bandProfileDb(tail, 32768, sr);
+        };
+        const auto ref = profileAt(SR, 128);
+        for (double sr : {44100.0, 96000.0}) {
+            const auto got = profileAt(sr, 128);
+            double worst = 0;
+            for (size_t b = 0; b < ref.size(); b++) {
+                if (ref[b] < -35.0 || got[b] < -35.0) continue;   // no real signal
+                worst = std::max(worst, std::abs(got[b] - ref[b]));
+            }
+            check(worst < 0.5, "band profile matches 48 kHz @ " + std::to_string((int)sr),
+                  num(worst) + " dB");
+        }
+        for (int block : {480, 512, 4096}) {
+            const auto got = profileAt(SR, block);
+            double worst = 0;
+            for (size_t b = 0; b < ref.size(); b++) {
+                if (ref[b] < -35.0 || got[b] < -35.0) continue;
+                worst = std::max(worst, std::abs(got[b] - ref[b]));
+            }
+            check(worst < 0.5, "band profile matches 128-sample blocks @ "
+                                 + std::to_string(block), num(worst) + " dB");
+        }
+    }
+
+
+    printf("\n== sub square polyBLEP is two-sided (finding B4) ==\n");
+    {
+        // Osc off, square sub only, filter wide open. Only the polyBLEP shapes
+        // the edges, so the non-harmonic floor measures it directly. With the
+        // pre-edge (t+1)^2 term missing, only half the correction was applied.
+        auto tables = makeTables();
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        auto p = defaultBassParams();
+        p[BL_OSC_LEVEL] = 0;
+        p[BL_SUB_LEVEL] = 1.0f;
+        p[BL_SUB_SHAPE] = 1;                 // square
+        p[BL_SUB_OCT]   = -1;
+        p[BL_FLT_TYPE]  = 0;
+        p[BL_FLT_CUT]   = 20000;
+        p[BL_FLT_RES]   = 0;
+        p[BL_FLT_DRIVE] = 0;
+        p[BL_FLT_ENV]   = 0;
+        p[BL_AENV_ATT]  = 0.002f;
+        p[BL_AENV_SUS]  = 1.0f;
+        p[BL_AENV_DEC]  = 8.0f;
+        e.setParams(p);
+        const int N = 32768, n = N + 8192;
+        std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+        e.keyOn(36, 1.0f);                   // root 36 + 36 = C6, sub one octave down
+        for (int at = 0; at < n; at += 128) e.render(L.data() + at, R.data() + at, std::min(128, n - at));
+
+        const double f0 = 440.0 * std::pow(2.0, (36 + 36 - 12 - 69) / 12.0);
+        std::vector<double> re((size_t)N), im((size_t)N, 0.0);
+        static const double a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
+        for (int i = 0; i < N; i++) {
+            const double t = 2 * M_PI * i / (N - 1);
+            const double w = a0 - a1 * std::cos(t) + a2 * std::cos(2 * t) - a3 * std::cos(3 * t);
+            re[(size_t)i] = L[(size_t)(n - N + i)] * w;
+        }
+        fft(re.data(), im.data(), N, false);
+        const double binHz = SR / N;
+        std::vector<char> harm((size_t)(N / 2), 0);
+        for (int k = 1; k * f0 < SR * 0.5; k++) {
+            const int b = (int)std::round(k * f0 / binHz);
+            for (int j = b - 12; j <= b + 12; j++)
+                if (j >= 0 && j < N / 2) harm[(size_t)j] = 1;
+        }
+        double h = 0, al = 0;
+        for (int k = (int)(40 / binHz); k < N / 2; k++)
+            (harm[(size_t)k] ? h : al) += re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k];
+        const double db = 10 * std::log10(std::max(al, 1e-30) / std::max(h, 1e-30));
+        // Isolated, the same square measures -28.8 dB with the one-sided
+        // residual and -39.7 dB with both sides; through the engine's DC
+        // blocker and envelope that lands near -44 dB.
+        check(db < -40.0, "square sub alias floor low", num(db) + " dB");
+    }
+
+    printf("\n== standalone clock keeps the fractional step residue (finding B7) ==\n");
+    {
+        // 137 BPM: a 16th is 5255.47 samples. Reassigning samplesToNext each
+        // fire (instead of accumulating) rounded every step up to 5256, so the
+        // sequencer ran ~0.5 samples slow per step - about 33 samples over four
+        // bars, and ~35 ms over five minutes against an external clock.
+        auto tables = makeTables();
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        auto p = defaultBassParams();
+        p[BL_SEQ_BPM] = 137.0f;
+        p[BL_MASTER_SWING] = 0;
+        e.setParams(p);
+        // Every step on, so a step change is observable at each boundary.
+        std::vector<uint8_t> pats((size_t)BL_PATTERN_BYTES, 0);
+        for (int st = 0; st < BL_STEPS; ++st) {
+            const size_t o = (size_t)(st * BL_STEP_STRIDE);
+            pats[o] = (uint8_t)(1 | (1 << 2));   // on, duration 1
+            pats[o + 1] = 0; pats[o + 2] = 1;    // note 0, oct 1
+        }
+        e.setPatterns(pats.data(), (int)pats.size());
+        const int chain[1] = { 0 };
+        e.setChain(chain, 1);
+        e.play();
+
+        const double dur = (60.0 / 137.0 / 4.0) * SR;
+        const int steps = 64;                       // four bars
+        const int n = (int)(dur * (steps + 0.5));
+        std::vector<std::pair<int, int>> stepAt;
+        auto buf = render(e, n, 8, &stepAt);
+        check(finite(buf), "sequencer output finite");
+        check((int)stepAt.size() >= steps, "all four bars of steps fired",
+              num((double)stepAt.size()));
+        // stepAt records the END of the block the change was seen in, so the
+        // reading is within one block (8 samples) of the true boundary.
+        const int lastIdx = std::min((int)stepAt.size(), steps) - 1;
+        const double seen = stepAt[(size_t)lastIdx].second;
+        const double ideal = dur * lastIdx;   // stepAt[k] is the k-th boundary
+        check(std::abs(seen - ideal) < 12.0, "no cumulative step drift over four bars",
+              num(seen) + " vs " + num(ideal));
     }
 
     printf("%s\n", g_fail == 0 ? "BASS ENGINE CHECKS PASSED" : "BASS ENGINE CHECKS FAILED");

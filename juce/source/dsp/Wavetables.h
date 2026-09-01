@@ -37,6 +37,12 @@ void fft(double* re, double* im, int n, bool inverse);
 // The six procedural tables (PRIME, BLOOM, PULSE, VOX, CHIME, GLITCH).
 std::vector<GeneratedTable> generateTables();
 
+// Process-wide shared build of generateTables(). The tables are immutable and
+// sample-rate independent, but a build costs 6 x 16 x 11 iFFTs and ~8.6 MB, so
+// every plugin instance must not pay it again (finding J5). Built on first use
+// and never freed; thread-safe (function-local static).
+const std::vector<TablePtr>& sharedFactoryTables();
+
 // Build a band-limited table from raw single-cycle time-domain frames (each
 // SIZE samples). Runs the identical band-limit / mip pipeline as the procedural
 // tables, so imported/drawn tables anti-alias identically. Mirrors buildUserTable.

@@ -205,6 +205,18 @@ std::vector<GeneratedTable> generateTables() {
     return out;
 }
 
+// Finding J5: one build for the whole process. The pointers are const and the
+// data never changes, so instances (and the SQ-4 tracks) can share them.
+const std::vector<TablePtr>& sharedFactoryTables() {
+    static const std::vector<TablePtr> shared = [] {
+        std::vector<TablePtr> out;
+        for (auto& g : generateTables())
+            out.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+        return out;
+    }();
+    return shared;
+}
+
 GeneratedTable buildUserTable(const std::string& name, const std::vector<std::vector<float>>& frames) {
     int nf = std::max(1, (int)frames.size());
     GeneratedTable g;

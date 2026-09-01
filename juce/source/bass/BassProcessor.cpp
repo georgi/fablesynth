@@ -19,8 +19,8 @@ BassAudioProcessor::BassAudioProcessor()
         rawParams_[(size_t)i] = apvts.getRawParameterValue(info[(size_t)i].pid);
 
     // The BL-1 table list: the 6 WT-1 procedurals, web order (TABLE_NAMES).
-    for (auto& g : generateTables())
-        tables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    // One process-wide build, shared by every instance (finding J5).
+    tables_ = sharedFactoryTables();
     engine.setTables(tables_);
 
     // Boot on ACID LINE like the web app (params + patterns + chain).
@@ -294,7 +294,11 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         renderTo(juce::jlimit(0, n, meta.samplePosition));
         const auto m = meta.getMessage();
         if (m.isNoteOn()) {
-            engine.keyOn(m.getNoteNumber() - BL_ROOT_MIDI, m.getFloatVelocity());
+            // Finding B8: hard MIDI velocity drives the accent path (louder +
+            // brighter, shorter filter env), the 303-clone mapping; softer
+            // notes stay on plain level. The UI keyboard keeps the plain path.
+            const float mv = m.getFloatVelocity();
+            engine.keyOn(m.getNoteNumber() - BL_ROOT_MIDI, mv, mv >= BL_MIDI_ACCENT_VEL);
             midiGlow_.store(20);
         } else if (m.isNoteOff()) {
             engine.keyOff(m.getNoteNumber() - BL_ROOT_MIDI);

@@ -36,6 +36,11 @@ public:
     int    state = 0;
     double level = 0, s = 0.8;
     double ca = 0.01, cd = 0.001, cr = 0.001;
+    // Finding J6: the voice-steal fade was a fixed 0.12 per sample, i.e. a
+    // 1.5 ms fade at 48 kHz that halved at 96 kHz. Derived from the time
+    // constant below it is sample-rate invariant (and 0.12007 at 48 kHz, so
+    // the 48 kHz behaviour is unchanged).
+    double cs = 0.12;
     void   set(double a, double d, double sus, double r, double sr);
     void   trigger() { state = 1; }
     void   release() { if (state != 0) state = 4; }

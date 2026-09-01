@@ -14,9 +14,9 @@ FableAudioProcessor::FableAudioProcessor()
     const auto& info = paramInfo();
     for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
         rawParams[i] = apvts.getRawParameterValue(info[i].pid);
-    // Procedural wavetables are sample-rate independent: build once.
-    for (auto& g : generateTables())
-        tables.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
+    // Procedural wavetables are sample-rate independent and immutable: share
+    // one process-wide build across every instance (finding J5).
+    tables = fable::sharedFactoryTables();
 }
 
 // Build the APVTS layout from the single canonical descriptor table, using the

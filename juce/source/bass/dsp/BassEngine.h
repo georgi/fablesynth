@@ -14,6 +14,7 @@
 #include "../../dsp/ClipHost.h"
 #include "../../dsp/Engine.h"      // fable::Rng + TablePtr (via Wavetables.h)
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -22,6 +23,10 @@ namespace fable {
 
 constexpr int    BL_MAXUNI      = 7;
 constexpr float  BL_ACCENT_VEL  = 1.0f, BL_PLAIN_VEL = 0.72f;
+// Finding B8: incoming MIDI at or above this velocity takes the accent path
+// (the louder gain + brighter, shorter filter env the sequencer already has) —
+// the mapping every 303 clone uses. Below it, velocity is plain level.
+constexpr float  BL_MIDI_ACCENT_VEL = 0.8f;
 constexpr double BL_GATE_FRAC   = 0.55;  // non-tied gates close at this step fraction
 constexpr double BL_SWING_MAX   = 0.667;
 constexpr double BL_DC_R        = 0.9998;
@@ -57,7 +62,7 @@ public:
     BassParamArray& params() { return p_; }
 
     // ---- voice control (worklet onMsg 'noteon'/'noteoff'/'panic') ----
-    void keyOn(int semi, float vel);   // audition when stopped; legato = slide
+    void keyOn(int semi, float vel, bool acc = false); // audition when stopped; legato = slide
     void keyOff(int semi);
     void panic();
 
@@ -75,6 +80,7 @@ public:
     void setBpmOverride(double bpm);               // host tempo; <= 0 clears the override
     int  currentStep() const { return step_; }     // -1 when stopped
     int  currentPattern() const { return chain_[(size_t)chainPos_]; }
+    int  chainLength() const { return chainLen_; }
 
     // ---- host transport lock (same contract as DrumEngine::setHostTransport):
     // while the host is rolling with a song position, absolute 16th k fires at
@@ -177,7 +183,11 @@ private:
 
     // sequencer state
     std::vector<uint8_t> pats_ = std::vector<uint8_t>(BL_PATTERN_BYTES, 0);
-    std::vector<int> chain_ { 0 };
+    // Finding B6: the chain is a fixed array + count, not a vector — setChain
+    // runs on the audio thread (BassProcessor::processBlock) and must never
+    // allocate. A chain is at most BL_NPATTERNS bars by construction.
+    std::array<int, BL_NPATTERNS> chain_ {{ 0 }};
+    int    chainLen_ = 1;
     int    chainPos_ = 0;
     bool   playing_ = false;
     int    step_ = -1;
@@ -209,6 +219,7 @@ private:
     double fenvT_ = 1e9;           // samples since (non-slid) trigger
     int    ampStage_ = 0;          // 0 idle · 1 att · 2 dec/sus · 3 rel
     double ampLevel_ = 0;
+    // Finding B6: reserved in prepare() so the MIDI path never allocates.
     std::vector<int> held_;        // keyboard stack, last = current
 
     // osc state
@@ -238,6 +249,8 @@ private:
     int    ftype_ = 1; bool twoPole_ = true;
     double k1_ = 0;
     double fenvVal_ = 0;
+    bool   mono_ = false, monoPrev_ = false;   // Finding B8: L == R fast path
+    double gainPrev_ = -1;                     // Finding B2: accent gain ramp
     double shVal_ = 0; long shPhase_ = -1;
     double dcxL_ = 0, dcxR_ = 0, dcyL_ = 0, dcyR_ = 0;
     double dcR_ = BL_DC_R;                  // sr-derived DC pole (Finding 9)

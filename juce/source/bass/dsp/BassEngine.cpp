@@ -56,6 +56,21 @@ void BassEngine::prepare(double sampleRate) {
     dcR_ = std::pow(BL_DC_R, 48000.0 / sr_);   // Finding 9
     panic();
     held_.clear();
+    held_.reserve(128);            // Finding B6: keyOn never allocates after this
+    // Finding B6: the transport state is in samples at the OLD rate (and the
+    // host lock caches an old ppq), so a re-prepare must clear it too.
+    playing_ = false;
+    step_ = -1;
+    chainPos_ = 0;
+    samplesToNext_ = 0;
+    samplesToGateOff_ = -1;
+    songPos_ = 0;
+    hostPlaying_ = false;
+    hostSynced_ = false;
+    hostPpq_ = 0;
+    hostEndPpq_ = 0;
+    hostNextK_ = 0;
+    hostFrame_ = 0;
     std::fill(std::begin(phases_), std::end(phases_), 0.0);
     subPhase_ = 0; subIncPrev_ = -1;
     dcxL_ = dcxR_ = dcyL_ = dcyR_ = 0;
@@ -91,6 +106,7 @@ void BassEngine::noteOn(int semi, bool acc, float vel) {
     semiTarget_ = semi;
     fenvT_ = 0;
     ampStage_ = 1;
+    gainPrev_ = -1;                // Finding B2: a fresh note starts at its own gain
 }
 
 void BassEngine::glideTo(int semi, bool acc) {
@@ -111,6 +127,7 @@ void BassEngine::kill() {
     satXL_ = 0; satXR_ = 0;
     posSm_ = -1; cutSm_ = 0; cutPrev_ = -1;
     havePrev_ = false; subIncPrev_ = -1;
+    monoPrev_ = false; gainPrev_ = -1;
 }
 
 void BassEngine::panic() {
@@ -118,13 +135,13 @@ void BassEngine::panic() {
     held_.clear();
 }
 
-void BassEngine::keyOn(int semi, float vel) {
+void BassEngine::keyOn(int semi, float vel, bool acc) {
     if (isPlaying()) return;       // audition when stopped · sequencer owns the voice
     held_.erase(std::remove(held_.begin(), held_.end(), semi), held_.end());
     const bool legato = !held_.empty() && gate_;
     held_.push_back(semi);
-    if (legato) glideTo(semi, false);
-    else        noteOn(semi, false, vel);
+    if (legato) glideTo(semi, acc);
+    else        noteOn(semi, acc, vel);
 }
 
 void BassEngine::keyOff(int semi) {
@@ -157,12 +174,15 @@ void BassEngine::setPatterns(const uint8_t* data, int n) {
         std::copy(data, data + n, pats_.begin());
 }
 
+// Finding B6: audio-thread safe — a fixed array and a count, no allocation.
+// Entries past BL_NPATTERNS are dropped (a chain can never be longer than the
+// pattern bank; BassProcessor already clamps the bar count the same way).
 void BassEngine::setChain(const int* list, int n) {
     if (!list || n <= 0) return;
-    chain_.assign(list, list + n);
-    for (int& c : chain_)
-        c = std::max(0, std::min(BL_NPATTERNS - 1, c));
-    chainPos_ = std::min(chainPos_, (int)chain_.size() - 1);
+    chainLen_ = std::min(n, BL_NPATTERNS);
+    for (int i = 0; i < chainLen_; ++i)
+        chain_[(size_t)i] = std::max(0, std::min(BL_NPATTERNS - 1, list[i]));
+    chainPos_ = std::min(chainPos_, chainLen_ - 1);
 }
 
 void BassEngine::setBpmOverride(double bpm) {
@@ -231,16 +251,20 @@ void BassEngine::fireStep() {
     const double swing = p_[BL_MASTER_SWING];
     if (step_ + 1 >= BL_STEPS) {                   // bar wrap advances the chain
         step_ = -1;
-        chainPos_ = (chainPos_ + 1) % (int)chain_.size();
+        chainPos_ = (chainPos_ + 1) % chainLen_;
     }
     const int s = (step_ + 1) % BL_STEPS;
     const int pat = chain_[(size_t)chainPos_];
-    const int patNext = chain_[(size_t)((chainPos_ + 1) % (int)chain_.size())];
+    const int patNext = chain_[(size_t)((chainPos_ + 1) % chainLen_)];
     fireStepAt(s, pat, patNext, dur);
     const double offNow = (s % 2 == 1) ? swing * BL_SWING_MAX * dur : 0.0;
     const int sNext = (s + 1) % BL_STEPS;
     const double offNext = (sNext % 2 == 1) ? swing * BL_SWING_MAX * dur : 0.0;
-    samplesToNext_ = dur - offNow + offNext;
+    // Finding B7: accumulate, never reassign. render() splits the run at
+    // ceil(samplesToNext_), so what is left here is the negative fractional
+    // residue of the step just played; dropping it made every step
+    // ceil(dur) samples (~0.01 % slow, ~35 ms over five minutes).
+    samplesToNext_ += dur - offNow + offNext;
 }
 
 // ---------- host transport lock (DrumEngine scheme) ----------
@@ -283,9 +307,9 @@ void BassEngine::hostResync() {
 void BassEngine::fireHostStep(long k) {
     const int  s   = (int)(k % BL_STEPS);
     const long bar = k / BL_STEPS;
-    chainPos_ = (int)(bar % (long)chain_.size());
+    chainPos_ = (int)(bar % (long)chainLen_);
     const int pat = chain_[(size_t)chainPos_];
-    const int patNext = chain_[(size_t)((bar + 1) % (long)chain_.size())];
+    const int patNext = chain_[(size_t)((bar + 1) % (long)chainLen_)];
     const double dur = (60.0 / hostBpm_ / 4.0) * sr_;
     fireStepAt(s, pat, patNext, dur);
 }
@@ -438,11 +462,14 @@ void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double note
         for (int i = 0; i < n; i++) {
             const double inc = inc0 + dInc * i;
             double s = ph < 0.5 ? 1.0 : -1.0;
-            // polyblep both edges
+            // Finding B4: polyBLEP on BOTH sides of each edge — the pre-edge
+            // (t+1)^2 term was missing, so only half the correction was
+            // applied. Identical form to WT-1's sub (Engine.cpp).
             if (ph < inc) { const double t = ph / inc; s += -(t * t) + 2 * t - 1; }
-            else if (ph > 0.5 && ph < 0.5 + inc) {
-                const double t = (ph - 0.5) / inc; s -= -(t * t) + 2 * t - 1;
-            }
+            else if (ph > 1 - inc) { const double t = (ph - 1) / inc; s += t * t + 2 * t + 1; }
+            const double h = ph - 0.5;
+            if (h >= 0 && h < inc) { const double t = h / inc; s -= -(t * t) + 2 * t - 1; }
+            else if (h < 0 && h > -inc) { const double t = h / inc; s -= t * t + 2 * t + 1; }
             const float v = (float)(s * gain * 0.8);
             tmpL[off + i] += v; tmpR[off + i] += v;
             ph += inc; if (ph >= 1) ph -= 1;
@@ -506,38 +533,107 @@ void BassEngine::setupFilter(double noteAbs, double beats, int n) {
     const double res = clampd(p_[BL_FLT_RES], 0.0, 0.999);
 
     const int ftype = (int)p_[BL_FLT_TYPE];
+    const bool twoPole = ftype == 1;
+    // Finding B8: the second LP24 stage is frozen while a one-pole type is
+    // selected, so it still holds whatever it last integrated. Clear it as it
+    // re-engages, otherwise the switch injects stale (possibly full-scale)
+    // energy. The FIRST stage keeps its state deliberately: it runs for every
+    // type, so clearing it would ADD a discontinuity rather than remove one.
+    if (twoPole && !twoPole_) { svf_[4] = svf_[5] = svf_[6] = svf_[7] = 0; }
     ftype_ = ftype;
-    twoPole_ = ftype == 1;
+    twoPole_ = twoPole;
     k1_ = 2 - 1.93 * res;             // SVF a1..a3 recomputed per sub-block in runFilter
+
+    // Finding B8: the mono fast path is valid only when every unison voice
+    // pans dead centre AND it was already valid last chunk — renderOsc ramps
+    // the pan gains from the previous chunk's targets, so the transition
+    // chunk still has L != R and must run both channels.
+    const int uniP = std::max(1, std::min(BL_MAXUNI, (int)p_[BL_OSC_UNISON]));
+    const double sprP = clampd(p_[BL_OSC_SPREAD], 0.0, 1.0);
+    const bool monoNow = uniP <= 1 || !(sprP > 0.0);
+    mono_ = monoNow && monoPrev_;
+    monoPrev_ = monoNow;
+}
+
+// Finding B8: the filter-type switch used to sit in the innermost sample loop.
+// The core is now templated on the type and selected once per <=32-sample
+// sub-block. FT: 0 LP (both LP12 and the LP24 stages), 2 BP, 3 notch, 4 HP.
+template <int FT>
+static inline void svfRun(float* buf, int from, int to,
+                          double a1, double a2, double a3, double k1,
+                          double& ic1r, double& ic2r) {
+    double ic1 = ic1r, ic2 = ic2r;
+    for (int i = from; i < to; i++) {
+        const double x = buf[i];
+        const double v3 = x - ic2;
+        const double v1 = a1 * ic1 + a2 * v3;
+        const double v2 = ic2 + a2 * ic1 + a3 * v3;
+        ic1 = 2 * v1 - ic1;
+        ic2 = 2 * v2 - ic2;
+        if constexpr (FT == 0)      buf[i] = (float)v2;
+        else if constexpr (FT == 2) buf[i] = (float)(k1 * v1);
+        else if constexpr (FT == 3) buf[i] = (float)(x - k1 * v1 - v2);
+        else                        buf[i] = (float)(x - k1 * v1);
+    }
+    ic1r = ic1; ic2r = ic2;
+}
+
+static inline void svfRunType(int ftype, float* buf, int from, int to,
+                              double a1, double a2, double a3, double k1,
+                              double& ic1, double& ic2) {
+    switch (ftype) {
+        case 0: case 1: svfRun<0>(buf, from, to, a1, a2, a3, k1, ic1, ic2); break;
+        case 2:         svfRun<2>(buf, from, to, a1, a2, a3, k1, ic1, ic2); break;
+        case 3:         svfRun<3>(buf, from, to, a1, a2, a3, k1, ic1, ic2); break;
+        default:        svfRun<4>(buf, from, to, a1, a2, a3, k1, ic1, ic2); break;
+    }
 }
 
 // js:415-479 — ADAA lcosh drive, Cytomic SVF, LP24 second pass
 void BassEngine::runFilter(const float* inL, const float* inR,
                            float* outL, float* outR, double drive, int n) {
+    // Finding B8: with uni = 1 or spread = 0 the two channels are sample-for-
+    // sample identical, so run one and mirror it — that halves the ADAA
+    // exp/log1p and SVF cost, which dominate this engine.
+    const bool mono = mono_;
     if (drive > 0.005) {
         const double dg = 1 + drive * 7;
         const double dcomp = 1 / std::pow(dg, 0.55);
         const double kF = dcomp / dg;
         double xpL = satXL_, xpR = satXR_;
         double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
-        for (int i = 0; i < n; i++) {
-            const double aL = inL[i], aR = inR[i];
-            const double dxL = aL - xpL;
-            const double FL = kF * lcosh(dg * aL);
-            outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
-                                                        : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
-            xpL = aL; FpL = FL;
-            const double dxR = aR - xpR;
-            const double FR = kF * lcosh(dg * aR);
-            outR[i] = (float)(dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
-                                                        : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
-            xpR = aR; FpR = FR;
+        if (mono) {
+            for (int i = 0; i < n; i++) {
+                const double aL = inL[i];
+                const double dxL = aL - xpL;
+                const double FL = kF * lcosh(dg * aL);
+                outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
+                                                            : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
+                xpL = aL; FpL = FL;
+            }
+            satXL_ = satXR_ = xpL;
+        } else {
+            for (int i = 0; i < n; i++) {
+                const double aL = inL[i], aR = inR[i];
+                const double dxL = aL - xpL;
+                const double FL = kF * lcosh(dg * aL);
+                outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
+                                                            : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
+                xpL = aL; FpL = FL;
+                const double dxR = aR - xpR;
+                const double FR = kF * lcosh(dg * aR);
+                outR[i] = (float)(dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
+                                                            : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
+                xpR = aR; FpR = FR;
+            }
+            satXL_ = xpL; satXR_ = xpR;
         }
-        satXL_ = xpL; satXR_ = xpR;
     } else {
-        for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) { satXL_ = inL[n - 1]; satXR_ = inR[n - 1]; }
+        for (int i = 0; i < n; i++) outL[i] = inL[i];
+        if (!mono) for (int i = 0; i < n; i++) outR[i] = inR[i];
+        if (n > 0) { satXL_ = inL[n - 1]; satXR_ = mono ? inL[n - 1] : inR[n - 1]; }
     }
+
 
     // Finding 7: cutoff ramps from the previous chunk's value; coefficients
     // recomputed per <=32-sample sub-block.
@@ -552,43 +648,25 @@ void BassEngine::runFilter(const float* inL, const float* inR,
         const double gC = std::tan((kPi * cut) / sr_);
         const double a1 = 1 / (1 + gC * (gC + k1));
         const double a2 = gC * a1, a3 = gC * a2;
-        for (int ch = 0; ch < 2; ch++) {
+        const int chans = mono ? 1 : 2;
+        for (int ch = 0; ch < chans; ch++) {
             float* buf = ch == 0 ? outL : outR;
             const int o1 = ch * 2;
-            double ic1 = F[o1], ic2 = F[o1 + 1];
-            for (int i = at; i < at + m; i++) {
-                const double x = buf[i];
-                const double v3 = x - ic2;
-                const double v1 = a1 * ic1 + a2 * v3;
-                const double v2 = ic2 + a2 * ic1 + a3 * v3;
-                ic1 = 2 * v1 - ic1;
-                ic2 = 2 * v2 - ic2;
-                switch (ftype) {
-                    case 0: case 1: buf[i] = (float)v2; break;
-                    case 2: buf[i] = (float)(k1 * v1); break;
-                    case 3: buf[i] = (float)(x - k1 * v1 - v2); break;
-                    default: buf[i] = (float)(x - k1 * v1); break;
-                }
-            }
-            F[o1] = ic1; F[o1 + 1] = ic2;
+            svfRunType(ftype, buf, at, at + m, a1, a2, a3, k1, F[o1], F[o1 + 1]);
         }
         if (twoPole_) {
-            for (int ch = 0; ch < 2; ch++) {
+            for (int ch = 0; ch < chans; ch++) {
                 float* buf = ch == 0 ? outL : outR;
                 const int o1 = 4 + ch * 2;
-                double ic1 = F[o1], ic2 = F[o1 + 1];
-                for (int i = at; i < at + m; i++) {
-                    const double x = buf[i];
-                    const double v3 = x - ic2;
-                    const double v1 = a1 * ic1 + a2 * v3;
-                    const double v2 = ic2 + a2 * ic1 + a3 * v3;
-                    ic1 = 2 * v1 - ic1;
-                    ic2 = 2 * v2 - ic2;
-                    buf[i] = (float)v2;
-                }
-                F[o1] = ic1; F[o1 + 1] = ic2;
+                svfRun<0>(buf, at, at + m, a1, a2, a3, k1, F[o1], F[o1 + 1]);
             }
         }
+    }
+    if (mono) {
+        // Keep the right channel's state in lockstep so a later spread > 0
+        // resumes without a discontinuity, and mirror the samples out.
+        F[2] = F[0]; F[3] = F[1]; F[6] = F[4]; F[7] = F[5];
+        for (int i = 0; i < n; i++) outR[i] = outL[i];
     }
     cutPrev_ = c1c;
 }
@@ -628,7 +706,14 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
     const double decK = 1 - std::exp(-4.5 / std::max(1.0, p_[BL_AENV_DEC] * sr_));
     const double relK = 1 - std::exp(-4.5 / std::max(1.0, p_[BL_AENV_REL] * sr_));
     const double accAmt = clampd(p_[BL_ACC_AMT], 0.0, 1.0);
-    const double gain = vel_ * (1 + (acc_ ? accAmt * BL_ACC_GAIN : 0)) * 0.9;
+    // Finding B2: an accented slide target flips acc_ on the RUNNING voice, so
+    // this gain jumped by up to +3.5 dB at a chunk boundary. Ramp it across the
+    // chunk instead. gainPrev_ < 0 means "new note": start at the target, so a
+    // note-on is not softened by the previous note's level.
+    const double gain1 = vel_ * (1 + (acc_ ? accAmt * BL_ACC_GAIN : 0)) * 0.9;
+    const double gain0 = gainPrev_ >= 0 ? gainPrev_ : gain1;
+    const double dGain = (gain1 - gain0) / n;
+    gainPrev_ = gain1;
 
     for (int i = 0; i < n; i++) {
         switch (ampStage_) {
@@ -645,7 +730,7 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
                 break;
             default: ampLevel_ = 0;
         }
-        const double amp = ampLevel_ * gain;
+        const double amp = ampLevel_ * (gain0 + dGain * (i + 1));
         const double sl = fL_[i] * amp, sr = fR_[i] * amp;
         const double yL = sl - dcxL_ + dcR_ * dcyL_;
         const double yR = sr - dcxR_ + dcR_ * dcyR_;
@@ -697,7 +782,7 @@ void BassEngine::render(float* L, float* R, int n) {
             }
         } else if (internalRun) {
             if (samplesToNext_ <= 0) fireStep();
-            run = std::min(run, (int)std::ceil(samplesToNext_));
+            run = std::min(run, std::max(1, (int)std::ceil(samplesToNext_)));
         } else if (hostClipMode_) {
             // At most one fire per quantum (ClipHost contract). onSwap ends
             // the OUTGOING clip's sounding note before the new clip's entry
