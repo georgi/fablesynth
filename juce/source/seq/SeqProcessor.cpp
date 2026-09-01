@@ -847,6 +847,19 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
     SessionData restored;
     if (!fable::sessionFromJson(json, restored)) return false;
     if (!sqLayoutMatches(restored)) return false; // reject: not the fixed {DR1,BL1,WT1,WT1} rig
+    // A load while the transport rolls keeps the sequence running: capture each
+    // track's live (or pending) scene before the swap, then relaunch those
+    // cells on the rebuilt conductor. Covers preset switches, LOAD and
+    // undo/redo alike — a session swap should never stop the music.
+    const bool wasPlaying = conductor_ && conductor_->playing();
+    int relaunch[kTracks];
+    for (int t = 0; t < kTracks; ++t) {
+        relaunch[t] = -1;
+        if (!wasPlaying) continue;
+        const int q = conductor_->queueOf(t);
+        const int target = q >= 0 ? q : conductor_->ownerOf(t);
+        if (target >= 0 && target < (int)restored.scenes.size()) relaunch[t] = target;
+    }
     initialSession_ = std::move(restored);
     if (preparedSampleRate_ > 0.0) {
         // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
@@ -874,6 +887,11 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
         conductor_ = std::make_unique<Conductor>(initialSession_, io_, preparedSampleRate_);
         conductor_->powerOn();
         for (int t = 0; t < kTracks; ++t) applyTrackPatch(t);
+        if (wasPlaying) {
+            conductor_->startTransport();   // clock keeps rolling even with no carryover
+            for (int t = 0; t < kTracks; ++t)
+                if (relaunch[t] >= 0) conductor_->launch(t, relaunch[t]);
+        }
         lastSwing_ = rawSwing_->load();
         lastBpm_   = rawBpm_->load();
         for (int t = 0; t < kTracks; ++t) lastVol_[t] = rawVol_[t]->load();

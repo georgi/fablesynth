@@ -573,6 +573,15 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     applySessionDoc: (doc) => {
       const session = copySession(doc);
       const st = get();
+      // A load while the transport rolls keeps the sequence running: remember
+      // each track's live (or pending) scene, relaunch those cells after the
+      // swap. A session swap should never stop the music.
+      const wasPlaying = st.playing;
+      const relaunch = st.session.tracks.map((_, t) => {
+        const q = st.queue[t];
+        const target = q != null && q !== STOP ? q : st.owner[t];
+        return target != null && target < session.scenes.length ? target : null;
+      });
       st.rig?.devices.forEach((device, t) => {
         device.panic();
         device.applyPatch(session.tracks[t].patch);
@@ -593,6 +602,10 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         gridSel: null, gridDrag: null,
       });
       persist();
+      if (wasPlaying) {
+        startTransport(); // clock keeps rolling even with no carryover
+        relaunch.forEach((s, t) => { if (s != null) get().launch(t, s); });
+      }
     },
 
     tick: () => {

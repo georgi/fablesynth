@@ -1332,7 +1332,9 @@ int main(int argc, char** argv) {
     // them. The generation now advances via an ordered K::Reset command (not a
     // raced cmdGen_.load on the audio thread — Finding 2), so an ack stamped by
     // the old session before the Reset drains keeps the old generation and is
-    // dropped. Output must be silent until a new launch. ----
+    // dropped. The swap itself keeps the transport rolling (the previously
+    // owned scene relaunches on the new conductor), so ownership returns — but
+    // only via a real launch + Start ack round-trip on the NEW generation. ----
     {
         std::printf("\n== stale-ack invalidation across a session swap ==\n");
         SeqAudioProcessor p4;
@@ -1361,15 +1363,17 @@ int main(int argc, char** argv) {
             if (p4.conductor().ownerOf(t) != -2) anyOwned = true;
         check(!anyOwned, "no false owner from a stale ack immediately after the swap + drain");
 
-        // Then let the swap's stops land and the engine tails decay: still
-        // unowned, and silent until a new launch.
+        // Then let the swap's stops land and its relaunch fire: a swap while
+        // the transport rolls keeps the sequence running, so every track comes
+        // back owned by scene 2 — legitimately this time, through a fresh
+        // launch whose Start ack carries the new generation.
         renderRms(p4, b4, 1200);
         p4.drainAcks();
-        bool anyOwned2 = false;
+        bool allReowned = true;
         for (int t = 0; t < 4; ++t)
-            if (p4.conductor().ownerOf(t) != -2) anyOwned2 = true;
-        check(!anyOwned2, "still unowned after the swap's stops settle");
-        check(renderRms(p4, b4, 400) < 1e-4, "silent until a new launch after the swap");
+            if (p4.conductor().ownerOf(t) != 2) allReowned = false;
+        check(allReowned, "relaunch re-owns scene 2 after the swap settles");
+        check(renderRms(p4, b4, 400) > 1e-4, "audio keeps playing across the swap");
     }
 
     // ---- Finding 4: an over-large host buffer is processed in prepared-size
