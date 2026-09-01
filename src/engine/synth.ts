@@ -60,6 +60,9 @@ export class SynthEngine {
   tables: VizTable[] | null; // combined [{name, frames, viz}] kept for visualization
   procTables: GeneratedTable[]; // procedural tables (full mip data)
   userTables: GeneratedTable[]; // imported / drawn tables (full mip data)
+  // What the worklet currently holds, slot for slot — pushTables diffs
+  // against it so an edit only re-sends the table that changed.
+  pushedTables: GeneratedTable[];
   onviz: ((d: VizMessage) => void) | null;
   onmod: ((d: Float32Array | null) => void) | null;
   onstep: ((d: StepMessage) => void) | null;
@@ -107,6 +110,7 @@ export class SynthEngine {
     this.tables = null;
     this.procTables = [];
     this.userTables = [];
+    this.pushedTables = [];
     this.onviz = null;
     this.onmod = null;
     this.onstep = null;
@@ -160,15 +164,25 @@ export class SynthEngine {
     this.tables = this.allTables().map((t) => ({ name: t.name, frames: t.frames, viz: t.viz }));
   }
 
-  // Send the full mip data of every table to the worklet. Buffers are copied
-  // (sliced) rather than transferred so the originals stay intact and can be
-  // re-sent whenever the user-table set changes.
+  // Publish the mip data to the worklet, one slot at a time (finding W4).
+  // The pool is 8.6 MB of factory tables plus up to MAX_USER_TABLES imports, so
+  // a structured clone of the whole thing on every add/delete/rename stalled
+  // the render thread and left the old buffers to a GC that runs there. Only
+  // slots whose table actually changed are sent, and each slot's buffer is
+  // TRANSFERRED — the one `slice()` is unavoidable because `t.data` is the
+  // canonical copy the UI keeps drawing from.
   pushTables(): void {
     if (!this.ready) return;
     const all = this.allTables();
-    this.node.port.postMessage(
-      { t: 'tables', list: all.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.slice().buffer })) }
-    );
+    const prev = this.pushedTables;
+    if (all.length !== prev.length) this.node.port.postMessage({ t: 'tablecount', n: all.length });
+    for (let i = 0; i < all.length; i++) {
+      const t = all[i];
+      if (prev[i] === t) continue;
+      const buf = t.data.slice().buffer;
+      this.node.port.postMessage({ t: 'table', i, frames: t.frames, mips: t.mips, size: t.size, buf }, [buf]);
+    }
+    this.pushedTables = all;
   }
 
   // Replace the user-table set and push it to the worklet + refresh viz.

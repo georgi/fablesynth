@@ -4,7 +4,8 @@ import { describe, it, expect } from 'vitest';
 // import-free (loaded into the AudioWorklet via ?url), so we verify its hand-copied
 // tables against params.ts by parsing this text.
 import WORKLET_SRC from './worklet.js?raw';
-import { MOD_DESTS, dstTarget, PARAMS } from '../params';
+import { MOD_DESTS, dstTarget, PARAM_DEFS, PARAMS } from '../params';
+import { makeWtProcessor } from './workletHarness';
 import {
   ACCENT_VEL, NPATTERNS, PLAIN_VEL, STEP_STRIDE, STEPS, SWING_MAX,
 } from '../noteseq';
@@ -120,5 +121,40 @@ describe('worklet SEQ_* parity', () => {
     expect(seqConst('SEQ_ACCENT_VEL')).toBe(ACCENT_VEL);
     expect(seqConst('SEQ_PLAIN_VEL')).toBe(PLAIN_VEL);
     expect(seqConst('SEQ_SWING_MAX')).toBe(SWING_MAX);
+  });
+});
+
+// --- (e) the flat parameter store's id order matches PARAM_DEFS ---
+// The worklet stores parameters in a Float64Array indexed by integer id
+// (finding W2, mirroring juce/source/dsp/Params.h). PARAM_IDS is the worklet's
+// hand-built copy of the PARAM_DEFS order; if the two drift, every read past
+// the first difference lands on the wrong parameter. The list is built at
+// runtime from group helpers, so evaluate the module and read it back.
+describe('worklet PARAM_IDS parity', () => {
+  function workletParamIds(): string[] {
+    // makeWtProcessor evaluates worklet.js; re-evaluate it here with a shim
+    // that hands the module's PARAM_IDS back out.
+    let ids: string[] = [];
+    const AWP = class { port = { onmessage: null, postMessage: () => {} }; };
+    new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', 'out',
+      WORKLET_SRC + '\nout.ids = PARAM_IDS;')(
+      48000, AWP, () => {}, { set ids(v: string[]) { ids = v; } } as { ids: string[] },
+    );
+    return ids;
+  }
+
+  const ids = workletParamIds();
+
+  it('lists every params.ts id, in the same order', () => {
+    expect(ids).toEqual(PARAM_DEFS.map((d) => d.id));
+  });
+
+  it('boots without touching an unknown parameter', () => {
+    // A `{t:'p'}` for an id the worklet does not know must be dropped, not
+    // written past the end of the store.
+    const h = makeWtProcessor();
+    h.send({ t: 'init', params: { 'oscA.on': 1 } });
+    h.send({ t: 'p', k: 'not.a.param', v: 1 });
+    expect(() => h.render(1)).not.toThrow();
   });
 });

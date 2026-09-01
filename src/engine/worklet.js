@@ -1,7 +1,9 @@
 // FableSynth DSP core — runs in the AudioWorklet thread. Self-contained (no imports).
 // Protocol (port messages in):
 //   {t:'init', params:{id:value,...}}
-//   {t:'tables', list:[{frames,mips,size,buf:ArrayBuffer}]}
+//   {t:'tables', list:[{frames,mips,size,buf:ArrayBuffer}]}   full pool
+//   {t:'table', i, frames, mips, size, buf}   one slot (buf transferred)
+//   {t:'tablecount', n}                       resize the slot list
 //   {t:'p', k, v}                    single param change (incl. mat{n}.src/.dst/.amt)
 //   {t:'on', n, v} {t:'off', n}      note events (n=midi note, v=0..1)
 //   {t:'bend', s}                    pitch bend in semitones
@@ -111,12 +113,81 @@ const MOD_PARAM_INFO = {
   'sub.level':      { curve: 'lin', lo: 0, hi: 1 },
   'noise.level':    { curve: 'lin', lo: 0, hi: 1 },
 };
-// paramId -> MOD_DESTS index, inverted from DST_TARGET (globals and index 0
-// excluded — they have no owning knob). Feeds the live-mod telemetry snapshot.
-const DST_INDEX = Object.create(null);
+// ---------- flat parameter store (mirrors juce/source/dsp/Params.h) ----------
+// The render thread must never build a string key (finding W2): every parameter
+// lives in a Float64Array indexed by an integer id, and `{t:'p'}` messages are
+// resolved to that index once, in onMsg. PARAM_IDS mirrors PARAM_DEFS in
+// params.ts index-for-index; the parity test asserts the two lists still match.
+const PARAM_IDS = [];
+const addOsc = (pre) => PARAM_IDS.push(
+  pre + '.on', pre + '.table', pre + '.pos', pre + '.oct', pre + '.semi', pre + '.fine',
+  pre + '.unison', pre + '.detune', pre + '.spread', pre + '.blend', pre + '.level', pre + '.pan');
+const addFilter = (pre) => PARAM_IDS.push(
+  pre + '.on', pre + '.type', pre + '.cutoff', pre + '.res', pre + '.drive', pre + '.env', pre + '.key');
+const addLfo = (pre) => PARAM_IDS.push(
+  pre + '.shape', pre + '.rate', pre + '.sync', pre + '.syncrate', pre + '.rise', pre + '.phase', pre + '.retrig');
+addOsc('oscA'); addOsc('oscB');
+PARAM_IDS.push('sub.on', 'sub.shape', 'sub.oct', 'sub.level');
+PARAM_IDS.push('noise.on', 'noise.type', 'noise.level');
+addFilter('filter');
+PARAM_IDS.push('filter.route');
+addFilter('filter2');
+PARAM_IDS.push('env1.a', 'env1.d', 'env1.s', 'env1.r');
+PARAM_IDS.push('env2.a', 'env2.d', 'env2.s', 'env2.r');
+addLfo('lfo1'); addLfo('lfo2');
+for (let i = 1; i <= MOD_MATRIX_SIZE; i++) PARAM_IDS.push('mat' + i + '.src', 'mat' + i + '.dst', 'mat' + i + '.amt');
+PARAM_IDS.push('fx.eq.on', 'fx.eq.low', 'fx.eq.mid', 'fx.eq.mfreq', 'fx.eq.high');
+PARAM_IDS.push('fx.drive.on', 'fx.drive.amt', 'fx.drive.mix');
+PARAM_IDS.push('fx.chorus.on', 'fx.chorus.rate', 'fx.chorus.depth', 'fx.chorus.mix');
+PARAM_IDS.push('fx.delay.on', 'fx.delay.time', 'fx.delay.fb', 'fx.delay.mix');
+PARAM_IDS.push('fx.reverb.on', 'fx.reverb.size', 'fx.reverb.mix');
+PARAM_IDS.push('fx.comp.on', 'fx.comp.thr', 'fx.comp.gain');
+PARAM_IDS.push('master.volume', 'master.glide', 'master.mono');
+PARAM_IDS.push('seq.bpm', 'seq.swing', 'seq.root');
+
+const NUM_PARAMS = PARAM_IDS.length;
+const PID = Object.create(null);
+for (let i = 0; i < NUM_PARAMS; i++) PID[PARAM_IDS[i]] = i;
+
+// Offsets inside the repeated osc / filter / LFO / mat groups above.
+const O_ON = 0, O_TABLE = 1, O_POS = 2, O_OCT = 3, O_SEMI = 4, O_FINE = 5,
+      O_UNI = 6, O_DET = 7, O_SPR = 8, O_BLEND = 9, O_LEVEL = 10, O_PAN = 11;
+const F_ON = 0, F_TYPE = 1, F_CUT = 2, F_RES = 3, F_DRIVE = 4, F_ENV = 5, F_KEY = 6;
+const L_SHAPE = 0, L_RATE = 1, L_SYNC = 2, L_SYNCRATE = 3, L_RISE = 4, L_PHASE = 5, L_RETRIG = 6;
+const M_SRC = 0, M_DST = 1, M_AMT = 2, M_STRIDE = 3;
+
+const OSCA = PID['oscA.on'], OSCB = PID['oscB.on'];
+const FLT1 = PID['filter.on'], FLT2 = PID['filter2.on'];
+const F1_CUT = FLT1 + F_CUT, F2_CUT = FLT2 + F_CUT;
+const FILTER_ROUTE = PID['filter.route'];
+const LFO1 = PID['lfo1.shape'], LFO2 = PID['lfo2.shape'];
+const MAT1 = PID['mat1.src'];
+const SUB_ON = PID['sub.on'], SUB_SHAPE = PID['sub.shape'], SUB_OCT = PID['sub.oct'], SUB_LEVEL = PID['sub.level'];
+const NOISE_ON = PID['noise.on'], NOISE_TYPE = PID['noise.type'], NOISE_LEVEL = PID['noise.level'];
+const ENV1_A = PID['env1.a'], ENV2_A = PID['env2.a'];
+const MASTER_GLIDE = PID['master.glide'], MASTER_MONO = PID['master.mono'];
+const SEQ_BPM = PID['seq.bpm'], SEQ_SWING = PID['seq.swing'], SEQ_ROOT = PID['seq.root'];
+
+// dst index -> param index, or one of these sentinels for the three globals.
+const D_NONE = -1, D_PITCH = -2, D_AMP = -3, D_PAN = -4;
+const DST_PIDX = new Int32Array(DST_TARGET.length).fill(D_NONE);
+// param index -> MOD_DESTS index (0 = not a destination). Feeds the live-mod
+// telemetry snapshot; globals and slot 0 have no owning knob and stay 0.
+const PIDX_DST = new Int32Array(NUM_PARAMS);
 for (let i = 1; i < DST_TARGET.length; i++) {
   const t = DST_TARGET[i];
-  if (typeof t === 'string' && t.charCodeAt(0) !== 0) DST_INDEX[t] = i;
+  if (t === DST_PITCH) DST_PIDX[i] = D_PITCH;
+  else if (t === DST_AMP) DST_PIDX[i] = D_AMP;
+  else if (t === DST_PAN) DST_PIDX[i] = D_PAN;
+  else if (typeof t === 'string' && PID[t] !== undefined) { DST_PIDX[i] = PID[t]; PIDX_DST[PID[t]] = i; }
+}
+// param index -> mod curve (0 none, 1 lin, 2 log) + Lin span (hi-lo).
+const MOD_CURVE = new Uint8Array(NUM_PARAMS);
+const MOD_SPAN = new Float64Array(NUM_PARAMS);
+for (const id in MOD_PARAM_INFO) {
+  const inf = MOD_PARAM_INFO[id], i = PID[id];
+  MOD_CURVE[i] = inf.curve === 'log' ? 2 : 1;
+  MOD_SPAN[i] = inf.hi - inf.lo;
 }
 
 // Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
@@ -138,18 +209,46 @@ const VOWELS = [
 ];
 const F_AMPS = [1, 0.55, 0.32];
 
+// Sample-rate-invariant smoothing (finding W1). A coefficient is derived from a
+// time constant instead of being a fixed per-block/per-sample number, so the
+// smoothing TIME is the same at 44.1, 48 and 96 kHz. The taus below are chosen
+// to reproduce the legacy constants exactly at the 48 kHz reference:
+//   POS   0.35 per 128 samples, CUT 0.5 per 128 samples, steal fade 0.12/sample.
+// Mirrors Engine.cpp's smoothCoef/POS_TAU/CUT_TAU.
+function smoothCoef(n, tauSr) { return 1 - Math.exp(-n / tauSr); }
+const POS_TAU = 128 / (48000 * 0.4307829160924542); // -ln(0.65)
+const CUT_TAU = 128 / (48000 * Math.LN2);
+const STEAL_TAU = 1 / (48000 * 0.1278333715098849); // -ln(0.88)
+const STEAL_C = smoothCoef(1, STEAL_TAU * sampleRate);
+
+// Fast deterministic RNG (xorshift32) — replaces Math.random() for noise, unison
+// start phases and S&H (finding W5). Mirrors `Rng` in Engine.h, so a seeded
+// render is reproducible and comparable across the two engines.
+class Rng {
+  constructor(seed) { this.s = (seed >>> 0) || 0x9e3779b9; }
+  next() {
+    let s = this.s;
+    s = (s ^ (s << 13)) >>> 0;
+    s = (s ^ (s >>> 17)) >>> 0;
+    s = (s ^ (s << 5)) >>> 0;
+    this.s = s;
+    return (s >>> 8) * (1 / 16777216);
+  }
+}
+
 class Env {
   constructor() {
     this.state = 0; this.level = 0; this.s = 0.8;
     this.ca = 0.01; this.cd = 0.001; this.cr = 0.001;
-    this._key = '';
+    // Numeric cache key (finding W2): building `a+'|'+d+'|'+r` allocated a
+    // cons-string per voice per block on the render thread.
+    this._a = NaN; this._d = NaN; this._r = NaN;
   }
   // decay/release use tau = t/4.5 so the audible tail roughly matches the label
   set(a, d, s, r) {
     this.s = s;
-    const key = a + '|' + d + '|' + r;
-    if (key !== this._key) {
-      this._key = key;
+    if (a !== this._a || d !== this._d || r !== this._r) {
+      this._a = a; this._d = d; this._r = r;
       this.ca = 1 - Math.exp(-1 / (Math.max(0.0008, a) * sampleRate));
       this.cd = 1 - Math.exp(-1 / (Math.max(0.002, d / 4.5) * sampleRate));
       this.cr = 1 - Math.exp(-1 / (Math.max(0.002, r / 4.5) * sampleRate));
@@ -177,8 +276,9 @@ class Env {
         break;
       }
       case 5: {
-        // steal fade: ~2 ms to silence, then the voice is free for its pending note
-        this.level -= this.level * 0.12;
+        // steal fade: ~2 ms to silence at any sample rate, then the voice is
+        // free for its pending note
+        this.level -= this.level * STEAL_C;
         if (this.level < 1e-4) { this.level = 0; this.state = 0; }
         break;
       }
@@ -190,7 +290,7 @@ class Env {
 
 class LFO {
   constructor() { this.phase = 0; this.hold = 0; this.elapsed = 0; }
-  reset() { this.phase = 0; this.hold = Math.random() * 2 - 1; this.elapsed = 0; }
+  reset(rng) { this.phase = 0; this.hold = rng.next() * 2 - 1; this.elapsed = 0; }
   // Read the shape at a wrapped phase offset (for the start-phase control).
   valueOff(shape, off) {
     let p = this.phase + off; p -= Math.floor(p);
@@ -204,18 +304,35 @@ class LFO {
   }
   // Fade-in gain, per-voice, keyed off note-on (samples since reset).
   riseGain(riseSec) { return riseSec <= 0 ? 1 : Math.min(1, this.elapsed / (riseSec * sampleRate)); }
-  advance(rate, n) {
+  advance(rate, n, rng) {
     this.elapsed += n;
     // NaN guard: a non-finite rate (e.g. params not yet initialised when the
     // free-running global LFO advances) would latch phase to a sticky NaN.
     const d = (rate * n) / sampleRate;
     if (Number.isFinite(d)) this.phase += d;
-    if (this.phase >= 1) { this.phase -= Math.floor(this.phase); this.hold = Math.random() * 2 - 1; }
+    if (this.phase >= 1) { this.phase -= Math.floor(this.phase); this.hold = rng.next() * 2 - 1; }
   }
 }
 
-// Per-oscillator runtime state inside a voice
+// Per-oscillator runtime state inside a voice.
+// DC_R and the Kellet pink-noise poles below are 48 kHz reference values; the
+// processor remaps them to the context rate in its constructor (finding W1), so
+// the DC corner and the pink tilt are the same filter at any sample rate.
 const DC_R = 0.9998; // ~3.5 Hz highpass — removes DC without touching bass
+const PINK_P = [0.99886, 0.99332, 0.969, 0.8665, 0.55, 0.7616];
+const PINK_G = [0.0555179, 0.0750759, 0.153852, 0.3104856, 0.5329522, 0.016898];
+
+// Oscillator phase normally advances by less than one table length per sample,
+// but defensive wrapping keeps a malformed/modulated increment from turning the
+// table index into an out-of-range read. Mirrors Engine.cpp's wrapOscPhase.
+function wrapOscPhase(phase, size) {
+  if (!Number.isFinite(phase)) return 0;
+  if (phase < 0 || phase >= size) {
+    phase = phase % size;
+    if (phase < 0) phase += size;
+  }
+  return phase;
+}
 
 // Numerically stable ln(cosh(z)) — the antiderivative of tanh, used by the
 // anti-aliased (ADAA) saturator below. cosh overflows for |z| > ~710, so we
@@ -224,6 +341,18 @@ const DC_R = 0.9998; // ~3.5 Hz highpass — removes DC without touching bass
 function lcosh(z) {
   const a = Math.abs(z);
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
+}
+
+// Finding W1: 4-point cubic Hermite (Catmull-Rom) table read, replacing the
+// linear read. Indices are pre-wrapped by the caller (branchless & mask), `off`
+// selects the frame/mip. Mirrors Engine.cpp's rdH — the interpolation images
+// this removes were 10-20 dB above the JUCE engine's below C6.
+function rdH(d, off, im1, i0, i1, i2, f) {
+  const ym1 = d[off + im1], y0 = d[off + i0], y1 = d[off + i1], y2 = d[off + i2];
+  const c1 = 0.5 * (y1 - ym1);
+  const c2 = ym1 - 2.5 * y0 + 2 * y1 - 0.5 * y2;
+  const c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+  return ((c3 * f + c2) * f + c1) * f + y0;
 }
 
 // Per-voice runtime state for one filter (both the persistent DSP state and the
@@ -238,8 +367,9 @@ function makeFilterState() {
     cutSm: 0,
     satXL: 0, satXR: 0,         // ADAA drive: previous input per channel
     ftype: 0, twoPole: false,
-    a1: 0, a2: 0, a3: 0, k1: 0, // SVF coefs
-    combLen: 1, combFb: 0,      // comb coefs
+    k1: 0,                      // SVF damping (a1..a3 ramp per sub-block)
+    cutTarget: 0, cutPrev: 0,   // runFilter ramps cutPrev -> cutTarget
+    combLen: 1, combLenPrev: 0, combFb: 0, // comb coefs
     fc: new Float64Array(9),    // formant biquad coefs: 3 bands x (b0, a1, a2)
     famp: new Float64Array(3),
   };
@@ -249,6 +379,7 @@ function resetFilterState(fs) {
   fs.svf.fill(0); fs.fmt.fill(0);
   fs.combL.fill(0); fs.combR.fill(0); fs.combW = 0;
   fs.cutSm = 0; fs.satXL = 0; fs.satXR = 0;
+  fs.cutPrev = 0; fs.combLenPrev = 0;
 }
 
 function makeOscState() {
@@ -259,6 +390,12 @@ function makeOscState() {
     gr: new Float32Array(MAXUNI),
     uni: 1, off0: 0, off1: 0, off0b: 0, off1b: 0, mipBlend: 0,
     ft: 0, gain: 0, mask: 0, size: 0, data: null, posSm: -1,
+    // Previous chunk's targets — renderOsc ramps to this chunk's across n
+    // samples so block-rate modulation has no staircase (finding W1).
+    pIncs: new Float64Array(MAXUNI),
+    pGl: new Float64Array(MAXUNI),
+    pGr: new Float64Array(MAXUNI),
+    pFt: 0, pOff0: -1, pUni: 0, havePrev: false,
   };
 }
 
@@ -270,27 +407,29 @@ class Voice {
     this.ampEnv = new Env(); this.modEnv = new Env();
     this.lfo1 = new LFO(); this.lfo2 = new LFO();
     this.oA = makeOscState(); this.oB = makeOscState();
-    this.subPhase = 0;
+    this.subPhase = 0; this.subIncPrev = -1; this.ampFacPrev = -1;
     this.pb = [0, 0, 0, 0, 0, 0, 0]; // pink noise filter state
     this.f1 = makeFilterState(); this.f2 = makeFilterState();
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
   }
   get active() { return this.ampEnv.state !== 0; }
 
-  noteOn(note, vel, startPitch, age, phaseRandA, phaseRandB) {
+  noteOn(note, vel, startPitch, age, rng, phaseRandA, phaseRandB) {
     this.note = note; this.vel = vel; this.gate = true; this.age = age;
     this.pitch = startPitch;
     this.velGain = 0.25 + 0.75 * vel * vel;
     this.ampEnv.trigger(); this.modEnv.trigger();
-    this.lfo1.reset(); this.lfo2.reset();
+    this.lfo1.reset(rng); this.lfo2.reset(rng);
     for (let i = 0; i < MAXUNI; i++) {
       // Start phase is in SAMPLES (all tables are 2048 wide): scale the random
       // draw to a full cycle so unison voices (and osc A vs B) decorrelate.
-      this.oA.phases[i] = phaseRandA ? Math.random() * 2048 : 0;
-      this.oB.phases[i] = phaseRandB ? Math.random() * 2048 : 0;
+      this.oA.phases[i] = phaseRandA ? rng.next() * 2048 : 0;
+      this.oB.phases[i] = phaseRandB ? rng.next() * 2048 : 0;
     }
     this.oA.posSm = -1; this.oB.posSm = -1;
-    this.subPhase = 0;
+    // A fresh note has no previous chunk to ramp from.
+    this.oA.havePrev = false; this.oB.havePrev = false;
+    this.subPhase = 0; this.subIncPrev = -1; this.ampFacPrev = -1;
     resetFilterState(this.f1); resetFilterState(this.f2);
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
   }
@@ -301,7 +440,23 @@ class Voice {
 class FableProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.p = Object.create(null);
+    // Flat parameter store (finding W2): p[index], never p['some.string'].
+    this.p = new Float64Array(NUM_PARAMS);
+    this.rng = new Rng(0x9e3779b9);
+    // Sample-rate-mapped one-pole coefficients (finding W1): the same analog
+    // pole at any rate is p' = p^(48k/sr); the pink filter's input gains are
+    // rescaled to hold each stage's low-frequency gain, so the pink spectrum
+    // matches the 48 kHz reference. Mirrors Engine::prepare.
+    const rr = 48000 / sampleRate;
+    this.dcR = Math.pow(DC_R, rr);
+    this.pinkP = new Float64Array(6);
+    this.pinkG = new Float64Array(6);
+    for (let i = 0; i < 6; i++) {
+      this.pinkP[i] = Math.pow(PINK_P[i], rr);
+      this.pinkG[i] = i === 5
+        ? PINK_G[5] * (1 + this.pinkP[5]) / (1 + PINK_P[5])
+        : PINK_G[i] * (1 - this.pinkP[i]) / (1 - PINK_P[i]);
+    }
     this.tables = [];
     this.voices = [];
     for (let i = 0; i < NVOICES; i++) this.voices.push(new Voice());
@@ -311,8 +466,8 @@ class FableProcessor extends AudioWorkletProcessor {
     // no host transport, so synced LFOs phase-lock to this clock (downbeat = t0).
     // Accumulated (not samples*bpm) so a tempo change doesn't rescale the past.
     this.transportBeats = 0;
-    this.gLfo1 = new LFO(); this.gLfo1.reset();
-    this.gLfo2 = new LFO(); this.gLfo2.reset();
+    this.gLfo1 = new LFO(); this.gLfo1.reset(this.rng);
+    this.gLfo2 = new LFO(); this.gLfo2.reset(this.rng);
     this.lastPitch = 60;
     this.held = []; // press-order stack of held note numbers, newest last, tracked mode-independently
     this.clock = 0;
@@ -336,6 +491,10 @@ class FableProcessor extends AudioWorkletProcessor {
     this.clipStopAt = -1;
     this.clipStep = -1; // absolute step within the clip (0 .. bars*16-1)
     this.clipToNext = 0;
+    // Absolute frame at the start of the chunk being rendered. `currentFrame`
+    // only advances per host block; the split loop (finding W3) needs the
+    // chunk's own position for clip scheduling.
+    this.frameNow = 0;
     this.vizCount = 0;
     this.tmpL = new Float32Array(128);
     this.tmpR = new Float32Array(128);
@@ -347,10 +506,11 @@ class FableProcessor extends AudioWorkletProcessor {
     this.f2L = new Float32Array(128);
     this.f2R = new Float32Array(128);
     // Per-voice modulation scratch (reused per render — no per-call allocation).
-    // _modAccum: route sum keyed by targeted paramId. _pm: the modulated snapshot,
-    // holding only overridden paramIds; read via pmv(pre+'.field') with `p` fallback.
-    this._modAccum = Object.create(null);
-    this._pm = Object.create(null);
+    // _modAccum[i]: route sum for param i. _pm: a full copy of `p` with the
+    // modulated params overwritten, so every read is a plain array index.
+    this._modAccum = new Float64Array(NUM_PARAMS);
+    this._pm = new Float64Array(NUM_PARAMS);
+    this._srcs = new Float64Array(6);
     // Live-mod telemetry: the viz voice's route sums per MOD_DESTS index,
     // re-snapshotted every block, sent at the viz cadence. modIdleSent starts
     // true — the UI's default state is already "idle", no terminator needed.
@@ -365,22 +525,37 @@ class FableProcessor extends AudioWorkletProcessor {
       // Non-finite param values are dropped at this single choke point: a NaN
       // that reached `p` would latch into phases / env levels and stick there.
       case 'init':
-        for (const k in d.params) { const v = d.params[k]; if (Number.isFinite(v)) this.p[k] = v; }
-        if (Number.isFinite(this.p['seq.bpm'])) this.bpm = Math.min(1000, Math.max(1, this.p['seq.bpm']));
+        for (const k in d.params) {
+          const i = PID[k], v = d.params[k];
+          if (i !== undefined && Number.isFinite(v)) this.p[i] = v;
+        }
+        this.bpm = Math.min(1000, Math.max(1, this.p[SEQ_BPM] || 120));
         break;
-      case 'p':
-        if (Number.isFinite(d.v)) {
-          this.p[d.k] = d.v;
+      case 'p': {
+        // The string id is resolved to its index here, once per message —
+        // never on the render thread (finding W2).
+        const i = PID[d.k];
+        if (i !== undefined && Number.isFinite(d.v)) {
+          this.p[i] = d.v;
           // The web build has no host transport: while the sequencer is the
           // tempo authority, synced LFOs follow it.
-          if (d.k === 'seq.bpm') this.bpm = Math.min(1000, Math.max(1, d.v));
+          if (i === SEQ_BPM) this.bpm = Math.min(1000, Math.max(1, d.v));
         }
         break;
+      }
       case 'tables':
-        this.tables = d.list.map((x) => ({
-          frames: x.frames, mips: x.mips, size: x.size, mask: x.size - 1,
-          data: new Float32Array(x.buf),
-        }));
+        this.tables = d.list.map((x) => this.makeTable(x));
+        break;
+      // Incremental table publication (finding W4): the pool is 8.6 MB+, so a
+      // user-table edit sends only the changed slot, with its buffer
+      // transferred rather than structured-clone-copied.
+      case 'table': {
+        const i = d.i | 0;
+        if (i >= 0 && i < 256) this.tables[i] = this.makeTable(d);
+        break;
+      }
+      case 'tablecount':
+        this.tables.length = Math.max(0, Math.min(256, d.n | 0));
         break;
       case 'on': this.noteOn(d.n, d.v); break;
       case 'off': this.noteOff(d.n); break;
@@ -451,6 +626,16 @@ class FableProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // Wrap a published table description. `buf` is either transferred (single
+  // slot) or structured-cloned (full list); either way the Float32Array is a
+  // view onto it, never a copy.
+  makeTable(x) {
+    return {
+      frames: x.frames, mips: x.mips, size: x.size, mask: x.size - 1,
+      data: new Float32Array(x.buf),
+    };
+  }
+
   // ---------- note sequencer ----------
   seqRead(pat, s) {
     const o = (pat * SEQ_STEPS + s) * SEQ_STRIDE;
@@ -503,7 +688,7 @@ class FableProcessor extends AudioWorkletProcessor {
   }
 
   hostTick(n) {
-    const end = currentFrame + n;
+    const end = this.frameNow + n;
     if (this.clipStopAt >= 0 && this.clipStopAt < end) {
       this.clipStopAt = -1;
       if (this.clip) {
@@ -513,7 +698,7 @@ class FableProcessor extends AudioWorkletProcessor {
       }
       // ack even when nothing was playing — the stop may have targeted a
       // pending-only launch and the conductor clears its STOP marker on this
-      this.port.postMessage({ t: 'clipstop', frame: currentFrame });
+      this.port.postMessage({ t: 'clipstop', frame: this.frameNow });
     }
     if (this.clipPend && this.clipPend.at < end) {
       this.clip = this.clipPend;
@@ -524,7 +709,7 @@ class FableProcessor extends AudioWorkletProcessor {
       this.clipStep = this.clipPhase(Math.round) - 1;
       this.clipToNext = 0;
       this.seqGateOff(); // the old clip's tail note ends where the new clip starts
-      this.port.postMessage({ t: 'clipstart', frame: currentFrame });
+      this.port.postMessage({ t: 'clipstart', frame: this.frameNow });
     }
     if (this.clip) {
       if (this.clipToNext <= 0) this.clipFire();
@@ -539,7 +724,7 @@ class FableProcessor extends AudioWorkletProcessor {
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm / 4) * sampleRate;
     const total = this.clip.bars * SEQ_STEPS;
-    const idx = quantize(Math.max(0, currentFrame - this.hostAnchor) / dur);
+    const idx = quantize(Math.max(0, this.frameNow - this.hostAnchor) / dur);
     return ((idx % total) + total) % total;
   }
 
@@ -553,10 +738,10 @@ class FableProcessor extends AudioWorkletProcessor {
     const chord = Array.from({ length: WT_POLY_LANES }, (_, lane) => this.clipRead(abs, lane)).filter((st) => st.on);
     // Mono: the melody lives in the first active lane; the rest of a chord
     // step would just steal the line note for note.
-    if (this.p['master.mono'] && chord.length > 1) chord.length = 1;
+    if (this.p[MASTER_MONO] && chord.length > 1) chord.length = 1;
 
     if (chord.length) {
-      const root = (this.p['seq.root'] | 0) || 48;
+      const root = (this.p[SEQ_ROOT] | 0) || 48;
       for (const st of chord) {
         const note = root + st.semi;
         this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
@@ -571,15 +756,15 @@ class FableProcessor extends AudioWorkletProcessor {
     // Schedule the next step at its absolute anchor-grid time. A free-running
     // countdown (dur - offNow + offNext) drops the block-quantization residue
     // each fire and drifts late without bound against the shared timebase.
-    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
-    this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - currentFrame;
+    const idx = Math.round((this.frameNow - this.hostAnchor - offNow) / dur);
+    this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - this.frameNow;
     this.port.postMessage({ t: 'pos', step: s, bar: (abs / SEQ_STEPS) | 0 });
   }
 
   seqFire() {
-    const bpm = Math.max(60, Math.min(200, this.p['seq.bpm'] || 120));
+    const bpm = Math.max(60, Math.min(200, this.p[SEQ_BPM] || 120));
     const dur = (60 / bpm / 4) * sampleRate;
-    const swing = Math.min(1, Math.max(0, this.p['seq.swing'] || 0));
+    const swing = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
     if (this.seqStep + 1 >= SEQ_STEPS) {
       this.seqStep = -1;
       this.seqChainPos = (this.seqChainPos + 1) % this.seqChain.length;
@@ -589,7 +774,7 @@ class FableProcessor extends AudioWorkletProcessor {
     const st = this.seqRead(pat, s);
 
     if (st.on) {
-      const root = (this.p['seq.root'] | 0) || 48;
+      const root = (this.p[SEQ_ROOT] | 0) || 48;
       const n = root + st.semi;
       const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
       this.noteOn(n, vel);
@@ -615,7 +800,7 @@ class FableProcessor extends AudioWorkletProcessor {
     this.held.length = w;
     this.held.push(n);
 
-    if (this.p['master.mono']) this.monoNoteOn(n, vel);
+    if (this.p[MASTER_MONO]) this.monoNoteOn(n, vel);
     else this.polyNoteOn(n, vel);
   }
 
@@ -662,7 +847,7 @@ class FableProcessor extends AudioWorkletProcessor {
       }
       voice = best;
     }
-    const glide = this.p['master.glide'] || 0;
+    const glide = this.p[MASTER_GLIDE] || 0;
     const start = glide > 0.001 ? this.lastPitch : n;
     this.lastPitch = n;
     if (voice.ampEnv.state !== 0 && voice.ampEnv.level > 1e-3) {
@@ -673,7 +858,7 @@ class FableProcessor extends AudioWorkletProcessor {
       voice.gate = false;
       voice.ampEnv.state = 5;
     } else {
-      voice.noteOn(n, vel, start, this.clock++, 1, 1);
+      voice.noteOn(n, vel, start, this.clock++, this.rng, 1, 1);
     }
   }
 
@@ -682,7 +867,7 @@ class FableProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < this.held.length; i++) if (this.held[i] !== n) this.held[w++] = this.held[i];
     this.held.length = w;
 
-    if (this.p['master.mono']) { this.monoNoteOff(n); return; }
+    if (this.p[MASTER_MONO]) { this.monoNoteOff(n); return; }
     for (const v of this.voices) {
       // A note released before its steal fade finished must not start at all.
       if (v.pending && v.pending.n === n) v.pending = null;
@@ -693,31 +878,30 @@ class FableProcessor extends AudioWorkletProcessor {
   // Configure one oscillator's per-block render state. Returns true if audible.
   // Reads the modulated snapshot `pm` for the per-param dests (pos/level/pan/detune/
   // spread); pitch and the pan global offset stay as direct additive terms.
-  setupOsc(o, pre, voice, pm, mPitch, mPan) {
+  setupOsc(o, base, voice, pm, mPitch, mPan, n) {
     const p = this.p;
-    if (!p[pre + '.on']) return false;
-    const table = this.tables[p[pre + '.table'] | 0];
+    if (!p[base + O_ON]) return false;
+    const table = this.tables[p[base + O_TABLE] | 0];
     if (!table) return false;
 
-    const basePitch = voice.pitch + this.bend + p[pre + '.oct'] * 12 + p[pre + '.semi'] + p[pre + '.fine'] / 100 + mPitch * 12;
+    const basePitch = voice.pitch + this.bend + p[base + O_OCT] * 12 + p[base + O_SEMI] + p[base + O_FINE] / 100 + mPitch * 12;
     const freq = 440 * Math.pow(2, (basePitch - 69) / 12);
     if (!(freq > 0 && freq <= sampleRate * 0.45)) return false; // inverted: NaN-safe
 
-    const k = pre + '.';
-    let level = Math.min(1.2, Math.max(0, pm[k + 'level'] ?? p[k + 'level']));
+    let level = Math.min(1.2, Math.max(0, pm[base + O_LEVEL]));
     level *= level;
     if (!(level >= 1e-5)) return false; // inverted: NaN-safe
 
-    const uni = Math.max(1, Math.min(MAXUNI, p[pre + '.unison'] | 0));
-    const det = pm[k + 'detune'] ?? p[k + 'detune'];
-    const spr = pm[k + 'spread'] ?? p[k + 'spread'];
-    const blend = Math.min(1, Math.max(0, pm[k + 'blend'] ?? p[k + 'blend'])); // clamp matches JUCE
-    const basePan = Math.max(-1, Math.min(1, (pm[k + 'pan'] ?? p[k + 'pan']) + mPan));
+    const uni = Math.max(1, Math.min(MAXUNI, p[base + O_UNI] | 0));
+    const det = pm[base + O_DET];
+    const spr = pm[base + O_SPR];
+    const blend = Math.min(1, Math.max(0, pm[base + O_BLEND])); // clamp matches JUCE
+    const basePan = Math.max(-1, Math.min(1, pm[base + O_PAN] + mPan));
 
     // position smoothing (avoids zipper on fast morph modulation)
-    let pos = Math.min(1, Math.max(0, pm[k + 'pos'] ?? p[k + 'pos']));
+    let pos = Math.min(1, Math.max(0, pm[base + O_POS]));
     if (o.posSm < 0) o.posSm = pos;
-    o.posSm += (pos - o.posSm) * 0.35;
+    o.posSm += (pos - o.posSm) * smoothCoef(n, POS_TAU * sampleRate);
     const posF = o.posSm * (table.frames - 1);
     const f0 = posF | 0;
     const f1 = Math.min(table.frames - 1, f0 + 1);
@@ -778,91 +962,105 @@ class FableProcessor extends AudioWorkletProcessor {
     return true;
   }
 
+  // Finding W1: phase increments, the morph fraction and the pan/level gain
+  // products ramp from the previous chunk's targets to this chunk's across n
+  // samples, so block-rate modulation (LFO->pitch, glide, POS, pan, level) has
+  // no staircase. The ramp is suppressed on the first chunk after note-on, on a
+  // unison-count change, and (for the morph fraction) when the frame pair
+  // switched — ft is a fraction WITHIN a pair. Table reads are cubic Hermite.
+  // Mirrors Engine::renderOsc.
   renderOsc(o, tmpL, tmpR, n) {
-    const data = o.data, mask = o.mask, size = o.size, ft = o.ft, g = o.gain;
+    const data = o.data, mask = o.mask, size = o.size, g = o.gain;
+    const invN = 1 / n;
+    const rp = o.havePrev && o.pUni === o.uni;
+    const ft1 = o.ft;
+    const ft0 = rp && o.pOff0 === o.off0 ? o.pFt : ft1;
+    const dFt = (ft1 - ft0) * invN;
     const off0 = o.off0, off1 = o.off1;
     const blend = o.mipBlend;
-    if (blend < 0.001) {
-      // fast path — single mip, no crossfade
-      for (let u = 0; u < o.uni; u++) {
-        let ph = o.phases[u];
-        const inc = o.incs[u];
-        const gl = o.gl[u] * g, gr = o.gr[u] * g;
+    for (let u = 0; u < o.uni; u++) {
+      let ph = wrapOscPhase(o.phases[u], size);
+      const inc1 = o.incs[u];
+      const inc0 = rp ? o.pIncs[u] : inc1;
+      const dInc = (inc1 - inc0) * invN;
+      const gl1 = o.gl[u] * g, gr1 = o.gr[u] * g;
+      const gl0 = rp ? o.pGl[u] : gl1, gr0 = rp ? o.pGr[u] : gr1;
+      const dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
+      if (blend < 0.001) {
+        // fast path — single mip, no crossfade
         for (let i = 0; i < n; i++) {
           const idx = ph | 0;
-          const frac = ph - idx;
-          const i2 = (idx + 1) & mask;
-          const s0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-          const s1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-          const s = s0 + ft * (s1 - s0);
-          tmpL[i] += s * gl;
-          tmpR[i] += s * gr;
-          ph += inc;
+          const f = ph - idx;
+          const im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+          const s0 = rdH(data, off0, im1, idx, i2, i3, f);
+          const s1 = rdH(data, off1, im1, idx, i2, i3, f);
+          const s = s0 + (ft0 + dFt * i) * (s1 - s0);
+          tmpL[i] += s * (gl0 + dGl * i);
+          tmpR[i] += s * (gr0 + dGr * i);
+          // |inc| < size is guaranteed by the 0.45*sr pitch guard, so one
+          // conditional subtract wraps; the loop exit re-wraps defensively.
+          ph += inc0 + dInc * i;
           if (ph >= size) ph -= size;
         }
-        o.phases[u] = ph;
-      }
-    } else {
-      // crossfade path — blend coarse mip with finer mip near mip boundary
-      const off0b = o.off0b, off1b = o.off1b;
-      for (let u = 0; u < o.uni; u++) {
-        let ph = o.phases[u];
-        const inc = o.incs[u];
-        const gl = o.gl[u] * g, gr = o.gr[u] * g;
+      } else {
+        // crossfade path — blend coarse mip with finer mip near mip boundary
+        const off0b = o.off0b, off1b = o.off1b;
         for (let i = 0; i < n; i++) {
           const idx = ph | 0;
-          const frac = ph - idx;
-          const i2 = (idx + 1) & mask;
+          const f = ph - idx;
+          const im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+          const ftN = ft0 + dFt * i;
           // coarse mip
-          const sc0 = data[off0 + idx] + frac * (data[off0 + i2] - data[off0 + idx]);
-          const sc1 = data[off1 + idx] + frac * (data[off1 + i2] - data[off1 + idx]);
-          const sc = sc0 + ft * (sc1 - sc0);
+          const sc0 = rdH(data, off0, im1, idx, i2, i3, f);
+          const sc1 = rdH(data, off1, im1, idx, i2, i3, f);
+          const sc = sc0 + ftN * (sc1 - sc0);
           // fine mip (richer, may alias slightly near the boundary)
-          const sf0 = data[off0b + idx] + frac * (data[off0b + i2] - data[off0b + idx]);
-          const sf1 = data[off1b + idx] + frac * (data[off1b + i2] - data[off1b + idx]);
-          const sf = sf0 + ft * (sf1 - sf0);
+          const sf0 = rdH(data, off0b, im1, idx, i2, i3, f);
+          const sf1 = rdH(data, off1b, im1, idx, i2, i3, f);
+          const sf = sf0 + ftN * (sf1 - sf0);
           const s = sc + blend * (sf - sc);
-          tmpL[i] += s * gl;
-          tmpR[i] += s * gr;
-          ph += inc;
+          tmpL[i] += s * (gl0 + dGl * i);
+          tmpR[i] += s * (gr0 + dGr * i);
+          ph += inc0 + dInc * i;
           if (ph >= size) ph -= size;
         }
-        o.phases[u] = ph;
       }
+      o.phases[u] = wrapOscPhase(ph, size);
+      o.pIncs[u] = inc1;
+      o.pGl[u] = gl1; o.pGr[u] = gr1;
     }
+    o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.havePrev = true;
   }
 
   // Compute one filter's block-rate coefficients. CUTOFF is shared across all
   // types: it sets corner frequency (SVF), comb pitch (COMB) or vowel morph
   // position (VOWEL). RES sets resonance / feedback / formant sharpness.
-  setupFilter(fs, pre, v, e2, mCut, pm) {
+  setupFilter(fs, base, v, e2, mCut, pm, n) {
     const p = this.p;
-    const k = pre + '.';
-    const ftype = p[pre + '.type'] | 0;
+    const ftype = p[base + F_TYPE] | 0;
     fs.ftype = ftype;
 
     // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
     // exponent stays in a single Math.pow — bit-identical to the legacy
     // p[cutoff] × 2^(env·4·e2 + key·(note-60)/12 + x·5). env/key are still read from
     // pm so THEY remain modulatable; the base cutoff is read straight from p.
-    let fc = p[k + 'cutoff'] *
-      Math.pow(2, (pm[k + 'env'] ?? p[k + 'env']) * 4 * e2 + ((pm[k + 'key'] ?? p[k + 'key']) * (v.note - 60)) / 12 + mCut * MOD_LOG_D);
+    let fc = p[base + F_CUT] *
+      Math.pow(2, pm[base + F_ENV] * 4 * e2 + (pm[base + F_KEY] * (v.note - 60)) / 12 + mCut * MOD_LOG_D);
     if (!Number.isFinite(fc)) fc = 20; // JUCE's std::max(20.0, NaN) also yields 20
     fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
     if (fs.cutSm <= 0) fs.cutSm = fc;
-    fs.cutSm += (fc - fs.cutSm) * 0.5;
+    fs.cutSm += (fc - fs.cutSm) * smoothCoef(n, CUT_TAU * sampleRate);
     const cut = fs.cutSm;
-    const res = Math.min(0.999, Math.max(0, pm[k + 'res'] ?? p[k + 'res']));
+    fs.cutTarget = cut;              // runFilter ramps cutPrev -> cutTarget
+    const res = Math.min(0.999, Math.max(0, pm[base + F_RES]));
 
     if (ftype <= 4) {
-      // Cytomic SVF
+      // Cytomic SVF. The g-dependent coefficients are recomputed per <=32-sample
+      // sub-block in runFilter from the ramped cutoff (finding W1); only the
+      // damping term is fixed for the chunk.
       fs.twoPole = ftype === 1; // LP24 = two cascaded stages
-      const g = Math.tan((Math.PI * cut) / sampleRate);
-      const k = 2 - 1.93 * res;
-      fs.k1 = k;
-      fs.a1 = 1 / (1 + g * (g + k));
-      fs.a2 = g * fs.a1;
-      fs.a3 = g * fs.a2;
+      fs.k1 = 2 - 1.93 * res;
     } else if (ftype === 5) {
       // tuned feedback comb: delay length tracks cutoff pitch, RES -> feedback
       let len = sampleRate / cut;
@@ -919,51 +1117,70 @@ class FableProcessor extends AudioWorkletProcessor {
 
     const ftype = fs.ftype;
     if (ftype <= 4) {
-      const a1 = fs.a1, a2 = fs.a2, a3 = fs.a3, k1 = fs.k1;
+      // Finding W1: the cutoff ramps from the previous chunk's value across the
+      // chunk and the SVF coefficients are recomputed per <=32-sample
+      // sub-block, so an automated or modulated cutoff never steps.
+      const k1 = fs.k1;
+      const c1c = fs.cutTarget;
+      const c0c = fs.cutPrev > 0 ? fs.cutPrev : c1c;
       const F = fs.svf;
-      for (let ch = 0; ch < 2; ch++) {
-        const buf = ch === 0 ? outL : outR;
-        const o1 = ch * 2;
-        let ic1 = F[o1], ic2 = F[o1 + 1];
-        for (let i = 0; i < n; i++) {
-          const x = buf[i];
-          const v3 = x - ic2;
-          const v1 = a1 * ic1 + a2 * v3;
-          const v2 = ic2 + a2 * ic1 + a3 * v3;
-          ic1 = 2 * v1 - ic1;
-          ic2 = 2 * v2 - ic2;
-          switch (ftype) {
-            case 0: case 1: buf[i] = v2; break;       // LP
-            case 2: buf[i] = k1 * v1; break;          // BP (unity peak-ish)
-            case 3: buf[i] = x - k1 * v1 - v2; break; // HP
-            default: buf[i] = x - k1 * v1; break;     // notch
-          }
-        }
-        F[o1] = ic1; F[o1 + 1] = ic2;
-      }
-      if (fs.twoPole) {
+      for (let at = 0; at < n; at += 32) {
+        const m = Math.min(32, n - at);
+        const cut = c0c + (c1c - c0c) * ((at + m) / n);
+        const gC = Math.tan((Math.PI * cut) / sampleRate);
+        const a1 = 1 / (1 + gC * (gC + k1));
+        const a2 = gC * a1, a3 = gC * a2;
         for (let ch = 0; ch < 2; ch++) {
           const buf = ch === 0 ? outL : outR;
-          const o1 = 4 + ch * 2;
+          const o1 = ch * 2;
           let ic1 = F[o1], ic2 = F[o1 + 1];
-          for (let i = 0; i < n; i++) {
+          for (let i = at; i < at + m; i++) {
             const x = buf[i];
             const v3 = x - ic2;
             const v1 = a1 * ic1 + a2 * v3;
             const v2 = ic2 + a2 * ic1 + a3 * v3;
             ic1 = 2 * v1 - ic1;
             ic2 = 2 * v2 - ic2;
-            buf[i] = v2;
+            switch (ftype) {
+              case 0: case 1: buf[i] = v2; break;       // LP
+              case 2: buf[i] = k1 * v1; break;          // BP (unity peak-ish)
+              case 3: buf[i] = x - k1 * v1 - v2; break; // HP
+              default: buf[i] = x - k1 * v1; break;     // notch
+            }
           }
           F[o1] = ic1; F[o1 + 1] = ic2;
         }
+        if (fs.twoPole) {
+          for (let ch = 0; ch < 2; ch++) {
+            const buf = ch === 0 ? outL : outR;
+            const o1 = 4 + ch * 2;
+            let ic1 = F[o1], ic2 = F[o1 + 1];
+            for (let i = at; i < at + m; i++) {
+              const x = buf[i];
+              const v3 = x - ic2;
+              const v1 = a1 * ic1 + a2 * v3;
+              const v2 = ic2 + a2 * ic1 + a3 * v3;
+              ic1 = 2 * v1 - ic1;
+              ic2 = 2 * v2 - ic2;
+              buf[i] = v2;
+            }
+            F[o1] = ic1; F[o1 + 1] = ic2;
+          }
+        }
       }
+      fs.cutPrev = c1c;
     } else if (ftype === 5) {
-      // resonant comb: y = (1-fb)·x + fb·y[n-len], fractional read for tuning
-      const len = fs.combLen, fb = fs.combFb, g0 = 1 - fb;
+      // resonant comb: y = (1-fb)·x + fb·y[n-len], fractional read for tuning.
+      // The delay length ramps across the chunk (finding W1); the fractional
+      // read already supports a per-sample length.
+      const len1 = fs.combLen;
+      const len0 = fs.combLenPrev > 0 ? fs.combLenPrev : len1;
+      const dLen = (len1 - len0) / n;
+      const fb = fs.combFb, g0 = 1 - fb;
       const cl = fs.combL, cr = fs.combR;
       let w = fs.combW;
       for (let i = 0; i < n; i++) {
+        const len = len0 + dLen * (i + 1);
         let rd = w - len;
         rd = ((rd % COMB_MAX) + COMB_MAX) % COMB_MAX;
         const i0 = rd | 0;
@@ -976,6 +1193,7 @@ class FableProcessor extends AudioWorkletProcessor {
         w = w + 1 < COMB_MAX ? w + 1 : 0;
       }
       fs.combW = w;
+      fs.combLenPrev = len1;
     } else {
       // VOWEL: parallel bank of 3 bandpass biquads (transposed direct form II)
       const fc = fs.fc, fa = fs.famp, z = fs.fmt;
@@ -999,92 +1217,99 @@ class FableProcessor extends AudioWorkletProcessor {
     }
   }
 
-  lfoHz(pre) {
-    if (this.p[pre + '.sync']) {
-      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[pre + '.syncrate'] | 0));
+  lfoHz(base) {
+    if (this.p[base + L_SYNC]) {
+      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[base + L_SYNCRATE] | 0));
       return (this.bpm / 60) * LFO_DIV_F[i];
     }
-    return this.p[pre + '.rate'];
+    return this.p[base + L_RATE];
   }
 
   // Free-running global LFO phase, updated once per block. When synced, the
   // phase is derived from the transport position (ppq, in quarter notes) so a
   // synced LFO cycle starts on the downbeat. Unsynced LFOs free-run at their Hz.
   // (Retrig LFOs are per-voice and note-aligned, so they bypass this.)
-  updateGlobalLfo(g, pre, ppq, n) {
-    if (this.p[pre + '.sync']) {
-      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[pre + '.syncrate'] | 0));
+  updateGlobalLfo(g, base, ppq, n) {
+    if (this.p[base + L_SYNC]) {
+      const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[base + L_SYNCRATE] | 0));
       let ph = ppq * LFO_DIV_F[i];
       ph -= Math.floor(ph);
-      if (ph < g.phase) g.hold = Math.random() * 2 - 1; // grid wrap -> new S&H value
+      if (ph < g.phase) g.hold = this.rng.next() * 2 - 1; // grid wrap -> new S&H value
       g.phase = ph;
     } else {
-      g.advance(this.p[pre + '.rate'], n);
+      g.advance(this.p[base + L_RATE], n, this.rng);
     }
   }
 
-  renderVoice(v, L, R, n) {
+  // Render one voice into L/R starting at sample `lo`, for `n` samples. `n` is
+  // at most one 128-sample chunk, so every block-rate quantity below ramps
+  // across a chunk rather than a whole host block (finding W1/W3).
+  renderVoice(v, L, R, lo, n) {
     const p = this.p;
 
-    v.ampEnv.set(p['env1.a'], p['env1.d'], p['env1.s'], p['env1.r']);
-    v.modEnv.set(p['env2.a'], p['env2.d'], p['env2.s'], p['env2.r']);
+    v.ampEnv.set(p[ENV1_A], p[ENV1_A + 1], p[ENV1_A + 2], p[ENV1_A + 3]);
+    v.modEnv.set(p[ENV2_A], p[ENV2_A + 1], p[ENV2_A + 2], p[ENV2_A + 3]);
 
     // glide
-    const gl = p['master.glide'] || 0;
+    const gl = p[MASTER_GLIDE] || 0;
     if (gl > 0.001) {
       const c = 1 - Math.exp(-n / (gl * 0.3 * sampleRate + 1));
       v.pitch += (v.note - v.pitch) * c;
     } else v.pitch = v.note;
 
-    // mod sources (block rate)
-    const rt1 = !!p['lfo1.retrig'], rt2 = !!p['lfo2.retrig'];
-    const l1 = (rt1 ? v.lfo1 : this.gLfo1).valueOff(p['lfo1.shape'], p['lfo1.phase']) * v.lfo1.riseGain(p['lfo1.rise']);
-    const l2 = (rt2 ? v.lfo2 : this.gLfo2).valueOff(p['lfo2.shape'], p['lfo2.phase']) * v.lfo2.riseGain(p['lfo2.rise']);
+    // mod sources (chunk rate)
+    const rt1 = !!p[LFO1 + L_RETRIG], rt2 = !!p[LFO2 + L_RETRIG];
+    const l1 = (rt1 ? v.lfo1 : this.gLfo1).valueOff(p[LFO1 + L_SHAPE], p[LFO1 + L_PHASE]) * v.lfo1.riseGain(p[LFO1 + L_RISE]);
+    const l2 = (rt2 ? v.lfo2 : this.gLfo2).valueOff(p[LFO2 + L_SHAPE], p[LFO2 + L_PHASE]) * v.lfo2.riseGain(p[LFO2 + L_RISE]);
     const e2 = v.modEnv.level;
-    const srcs = [0, l1, l2, e2, v.vel, (v.note - 60) / 24];
+    const srcs = this._srcs;
+    srcs[1] = l1; srcs[2] = l2; srcs[3] = e2; srcs[4] = v.vel; srcs[5] = (v.note - 60) / 24;
 
     // modulation destinations — sum every active slot assigned to each target.
-    // The 16 fixed slots are read straight from `this.p` (mat{n}.src/.dst/.amt).
+    // The 16 fixed slots live in the flat store at MAT1 + (s-1)*M_STRIDE.
     // Globals (pitch/amp/pan) keep their legacy additive math; per-param dests
-    // accumulate a route sum keyed by paramId, then fold into a per-voice modulated
-    // snapshot `pm` via the Lin/Log curve rule. This mirrors the VST engine exactly,
-    // so both engines sound identical (existing dests included).
+    // accumulate a route sum indexed by param id, then fold into a per-voice
+    // modulated snapshot `pm` via the Lin/Log curve rule. This mirrors the VST
+    // engine exactly, so both engines sound identical (existing dests included).
     let mPitch = 0, mAmp = 0, mPan = 0;
     const accum = this._modAccum;
-    for (const k in accum) delete accum[k];
-    for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
-      const src = p['mat' + s + '.src'] | 0;
-      const dst = p['mat' + s + '.dst'] | 0;
-      if (!src || !dst) continue;
-      const x = srcs[src] * (p['mat' + s + '.amt'] || 0);
-      const target = DST_TARGET[dst];
-      if (target === DST_PITCH) mPitch += x;
-      else if (target === DST_AMP) mAmp += x;
-      else if (target === DST_PAN) mPan += x;
-      else if (target) accum[target] = (accum[target] || 0) + x;
+    accum.fill(0);
+    let anyRoute = false;
+    for (let s = 0, b = MAT1; s < MOD_MATRIX_SIZE; s++, b += M_STRIDE) {
+      const src = p[b + M_SRC] | 0;
+      const dst = p[b + M_DST] | 0;
+      if (!src || !dst || dst >= DST_PIDX.length) continue;
+      const x = srcs[src] * (p[b + M_AMT] || 0);
+      const target = DST_PIDX[dst];
+      if (target === D_PITCH) mPitch += x;
+      else if (target === D_AMP) mAmp += x;
+      else if (target === D_PAN) mPan += x;
+      else if (target >= 0) { accum[target] += x; anyRoute = true; }
     }
 
-    // Build the per-voice modulated snapshot: pm overrides only the targeted
-    // paramIds (everything else reads through `p`). Lin: pm = p + x·(hi−lo);
-    // Log: pm = p · 2^(x·D), D=5. Matches the engine's pm_ build.
+    // Build the per-voice modulated snapshot: copy p then apply each targeted
+    // param's curve rule. Lin: pm = p + x·(hi−lo); Log: pm = p · 2^(x·D), D=5.
+    // Params that are never destinations pass through untouched, so every read
+    // below can go straight to pm. Matches the engine's pm_ build.
     const pm = this._pm;
-    for (const k in pm) delete pm[k];
-    for (const id in accum) {
-      const info = MOD_PARAM_INFO[id];
-      if (!info) continue; // non-modulatable target — ignore (matches engine)
-      // The filter cutoff routes are NOT folded into pm: they are applied as the
-      // single-exponent mCut term inside setupFilter so the result is bit-identical
-      // to the legacy single Math.pow. All other Log/Lin dests fold here.
-      if (id === 'filter.cutoff' || id === 'filter2.cutoff') continue;
-      const base = p[id];
-      pm[id] = info.curve === 'log'
-        ? base * Math.pow(2, accum[id] * MOD_LOG_D)
-        : base + accum[id] * (info.hi - info.lo);
+    pm.set(p);
+    if (anyRoute) {
+      for (let i = 0; i < NUM_PARAMS; i++) {
+        const x = accum[i];
+        if (x === 0) continue;
+        // The filter cutoff routes are NOT folded into pm: they are applied as
+        // the single-exponent mCut term inside setupFilter so the result is
+        // bit-identical to the legacy single Math.pow. All other dests fold here.
+        if (i === F1_CUT || i === F2_CUT) continue;
+        const c = MOD_CURVE[i];
+        if (c === 2) pm[i] = p[i] * Math.pow(2, x * MOD_LOG_D);
+        else if (c === 1) pm[i] = p[i] + x * MOD_SPAN[i];
+      }
     }
 
     // SPLIT routing sends osc A through filter 1 and osc B through filter 2, so
     // they need separate source buffers; every other routing sums into one path.
-    const route = p['filter.route'] | 0;
+    const route = p[FILTER_ROUTE] | 0;
     const split = route === 2;
 
     const tmpL = this.tmpL, tmpR = this.tmpR;
@@ -1092,22 +1317,27 @@ class FableProcessor extends AudioWorkletProcessor {
     const bL = this.bL, bR = this.bR;
     if (split) { bL.fill(0, 0, n); bR.fill(0, 0, n); }
 
-    const aOn = this.setupOsc(v.oA, 'oscA', v, pm, mPitch, mPan);
-    const bOn = this.setupOsc(v.oB, 'oscB', v, pm, mPitch, mPan);
-    if (aOn) this.renderOsc(v.oA, tmpL, tmpR, n);
-    if (bOn) this.renderOsc(v.oB, split ? bL : tmpL, split ? bR : tmpR, n);
+    const aOn = this.setupOsc(v.oA, OSCA, v, pm, mPitch, mPan, n);
+    const bOn = this.setupOsc(v.oB, OSCB, v, pm, mPitch, mPan, n);
+    if (aOn) this.renderOsc(v.oA, tmpL, tmpR, n); else v.oA.havePrev = false;
+    if (bOn) this.renderOsc(v.oB, split ? bL : tmpL, split ? bR : tmpR, n); else v.oB.havePrev = false;
 
     // sub oscillator (polyblep square or sine)
-    if (p['sub.on']) {
-      const subLvl = pm['sub.level'] ?? p['sub.level'];
+    if (p[SUB_ON]) {
+      const subLvl = pm[SUB_LEVEL];
       const lvl = subLvl * subLvl * 0.3;
       if (lvl > 1e-6) {
-        const sf = 440 * Math.pow(2, (v.pitch + this.bend + p['sub.oct'] * 12 + mPitch * 12 - 69) / 12);
-        const inc = sf / sampleRate;
-        if (inc > 0 && inc < 0.45) {
+        const sf = 440 * Math.pow(2, (v.pitch + this.bend + p[SUB_OCT] * 12 + mPitch * 12 - 69) / 12);
+        const inc1 = sf / sampleRate;
+        if (inc1 > 0 && inc1 < 0.45) {
+          // Finding W1: ramp the sub increment across the chunk so glide /
+          // pitch modulation is staircase-free on the sub too.
+          const inc0 = v.subIncPrev > 0 && v.subIncPrev < 0.45 ? v.subIncPrev : inc1;
+          const dInc = (inc1 - inc0) / n;
           let ph = v.subPhase;
-          const square = (p['sub.shape'] | 0) === 1;
+          const square = (p[SUB_SHAPE] | 0) === 1;
           for (let i = 0; i < n; i++) {
+            const inc = inc0 + dInc * i;
             let s;
             if (square) {
               s = ph < 0.5 ? 1 : -1;
@@ -1126,25 +1356,29 @@ class FableProcessor extends AudioWorkletProcessor {
             ph += inc; if (ph >= 1) ph -= 1;
           }
           v.subPhase = ph;
-        }
+          v.subIncPrev = inc1;
+        } else v.subIncPrev = -1;
       }
     }
 
     // noise
-    if (p['noise.on']) {
-      const noiseLvl = pm['noise.level'] ?? p['noise.level'];
+    if (p[NOISE_ON]) {
+      const noiseLvl = pm[NOISE_LEVEL];
       const lvl = noiseLvl * noiseLvl * 0.35;
       if (lvl > 1e-6) {
-        if ((p['noise.type'] | 0) === 1) {
-          const b = v.pb;
+        const rng = this.rng;
+        if ((p[NOISE_TYPE] | 0) === 1) {
+          // Kellet pink filter with sample-rate-mapped poles/gains (finding W1;
+          // identical to the fixed literals at the 48 kHz reference).
+          const b = v.pb, pp = this.pinkP, pg = this.pinkG;
           for (let i = 0; i < n; i++) {
-            const w = Math.random() * 2 - 1;
-            b[0] = 0.99886 * b[0] + w * 0.0555179;
-            b[1] = 0.99332 * b[1] + w * 0.0750759;
-            b[2] = 0.969 * b[2] + w * 0.153852;
-            b[3] = 0.8665 * b[3] + w * 0.3104856;
-            b[4] = 0.55 * b[4] + w * 0.5329522;
-            b[5] = -0.7616 * b[5] - w * 0.016898;
+            const w = rng.next() * 2 - 1;
+            b[0] = pp[0] * b[0] + w * pg[0];
+            b[1] = pp[1] * b[1] + w * pg[1];
+            b[2] = pp[2] * b[2] + w * pg[2];
+            b[3] = pp[3] * b[3] + w * pg[3];
+            b[4] = pp[4] * b[4] + w * pg[4];
+            b[5] = -pp[5] * b[5] - w * pg[5];
             const pink = (b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + w * 0.5362) * 0.11;
             b[6] = w * 0.115926;
             const o = pink * lvl;
@@ -1152,7 +1386,7 @@ class FableProcessor extends AudioWorkletProcessor {
           }
         } else {
           for (let i = 0; i < n; i++) {
-            const o = (Math.random() * 2 - 1) * lvl;
+            const o = (rng.next() * 2 - 1) * lvl;
             tmpL[i] += o; tmpR[i] += o;
           }
         }
@@ -1160,13 +1394,13 @@ class FableProcessor extends AudioWorkletProcessor {
     }
 
     // ---- per-voice filters with routing ----
-    const f1on = !!p['filter.on'];
-    const f2on = !!p['filter2.on'];
-    if (f1on) this.setupFilter(v.f1, 'filter', v, e2, accum['filter.cutoff'] || 0, pm);
-    if (f2on) this.setupFilter(v.f2, 'filter2', v, e2, accum['filter2.cutoff'] || 0, pm);
+    const f1on = !!p[FLT1 + F_ON];
+    const f2on = !!p[FLT2 + F_ON];
+    if (f1on) this.setupFilter(v.f1, FLT1, v, e2, accum[F1_CUT], pm, n);
+    if (f2on) this.setupFilter(v.f2, FLT2, v, e2, accum[F2_CUT], pm, n);
 
     const f1L = this.f1L, f1R = this.f1R, f2L = this.f2L, f2R = this.f2R;
-    const dr1 = pm['filter.drive'] ?? p['filter.drive'], dr2 = pm['filter2.drive'] ?? p['filter2.drive'];
+    const dr1 = pm[FLT1 + F_DRIVE], dr2 = pm[FLT2 + F_DRIVE];
     let oL, oR; // routed output buffers feeding the DC blocker + amp
 
     if (split) {
@@ -1195,44 +1429,56 @@ class FableProcessor extends AudioWorkletProcessor {
       oL = cL; oR = cR;
     }
 
+    // The AMP-mod factor ramps from the previous chunk's value (finding W1);
+    // the DC blocker pole is sample-rate-derived.
     const ampFactor = Math.min(2, Math.max(0, 1 + mAmp));
+    const af0 = v.ampFacPrev >= 0 ? v.ampFacPrev : ampFactor;
+    const dAf = (ampFactor - af0) / n;
+    const dcR = this.dcR;
     for (let i = 0; i < n; i++) {
       const sl = oL[i], sr = oR[i];
       // Per-voice DC blocker (1-pole highpass, ~3.5 Hz) — removes DC before
       // it reaches the FX chain's saturator where it would cause asymmetric clipping.
-      const yL = sl - v.dcxL + DC_R * v.dcyL;
-      const yR = sr - v.dcxR + DC_R * v.dcyR;
+      const yL = sl - v.dcxL + dcR * v.dcyL;
+      const yR = sr - v.dcxR + dcR * v.dcyR;
       v.dcxL = sl; v.dcyL = yL;
       v.dcxR = sr; v.dcyR = yR;
-      const amp = v.ampEnv.process() * v.velGain * ampFactor;
-      L[i] += yL * amp;
-      R[i] += yR * amp;
+      const amp = v.ampEnv.process() * v.velGain * (af0 + dAf * i);
+      L[lo + i] += yL * amp;
+      R[lo + i] += yR * amp;
     }
+    v.ampFacPrev = ampFactor;
 
-    // advance block-rate modulators
-    v.lfo1.advance(this.lfoHz('lfo1'), n);
-    v.lfo2.advance(this.lfoHz('lfo2'), n);
+    // advance chunk-rate modulators
+    v.lfo1.advance(this.lfoHz(LFO1), n, this.rng);
+    v.lfo2.advance(this.lfoHz(LFO2), n, this.rng);
     v.modEnv.processBlock(n);
 
+    this._modAny = anyRoute;
     return { posA: v.oA.posSm, posB: v.oB.posSm };
   }
 
   // Copy the just-rendered voice's per-destination route sums (this._modAccum,
-  // valid right after renderVoice) into the telemetry snapshot. A key PRESENT
-  // in accum means an active route targets it (even at a zero crossing), so key
-  // presence — not value — decides whether telemetry is flowing.
+  // valid right after renderVoice) into the telemetry snapshot. A NONZERO route
+  // is what makes telemetry flow; `_modAny` records whether this voice had one,
+  // so a route sitting exactly at a zero crossing still counts.
   snapshotModViz() {
     const mv = this.modViz;
     mv.fill(0);
-    let any = false;
     const accum = this._modAccum;
-    for (const id in accum) {
-      const di = DST_INDEX[id];
-      if (di) { mv[di] = accum[id]; any = true; }
+    for (let i = 0; i < NUM_PARAMS; i++) {
+      const di = PIDX_DST[i];
+      if (di) mv[di] = accum[i];
     }
-    this.modVizAny = any;
+    this.modVizAny = this._modAny;
   }
 
+  // Finding W3: split the host block at every sequencer event so a step, its
+  // gate-off and the render quantum land on their exact sample instead of the
+  // next block start (up to 2.9 ms of jitter at 44.1 kHz, and a whole 4096-
+  // sample host block on the extremes). Mirrors Engine::render's chunk loop:
+  // every chunk is at most 128 samples, so the engine also behaves identically
+  // at any host block size.
   process(_inputs, outputs) {
     const out = outputs[0];
     const L = out[0];
@@ -1240,41 +1486,72 @@ class FableProcessor extends AudioWorkletProcessor {
     L.fill(0);
     if (R !== L) R.fill(0);
     const n = L.length;
+    const hosted = this.hosted;
 
+    let off = 0;
+    while (off < n) {
+      let run = Math.min(128, n - off);
+      this.frameNow = currentFrame + off;
+
+      // Fire the step that is due at this sample, then shorten the chunk so the
+      // next one starts exactly where the following step does.
+      if (!hosted && this.seqPlaying) {
+        if (this.seqToNext <= 0) this.seqFire();
+        run = Math.min(run, Math.max(1, Math.ceil(this.seqToNext)));
+      }
+      // Cut the chunk at the earliest pending sequencer note-off, so each off
+      // lands on its own sample (gate-off before the next step's trigger).
+      const eo = this.earliestSeqOff();
+      if (eo >= 0) run = Math.min(run, Math.max(1, Math.ceil(eo)));
+      // The hosted clip transport resolves its commands per chunk; at the usual
+      // 128-sample quantum that is exactly the pre-split behaviour.
+      if (hosted) this.hostTick(run);
+
+      const ppq = hosted
+        ? Math.max(0, this.frameNow - this.hostAnchor) * (this.bpm / 60) / sampleRate
+        : this.transportBeats;
+      this.renderChunk(L, R, off, run, ppq);
+      this.transportBeats += (run / sampleRate) * (this.bpm / 60);
+      if (!hosted && this.seqPlaying) this.seqToNext -= run;
+
+      // Drain the per-note off queue: decrement every pending off, fire noteOff
+      // for those now due, compact the survivors (no allocation).
+      if (this.seqOffQueue.length) {
+        let w = 0;
+        for (let i = 0; i < this.seqOffQueue.length; i++) {
+          const e = this.seqOffQueue[i];
+          e.remaining -= run;
+          if (e.remaining <= 0) this.noteOff(e.note);
+          else this.seqOffQueue[w++] = e;
+        }
+        this.seqOffQueue.length = w;
+        this.seqLastNote = w ? this.seqOffQueue[w - 1].note : -1;
+      }
+      off += run;
+    }
+    return true;
+  }
+
+  // Samples until the soonest pending sequencer note-off, or -1 when none.
+  earliestSeqOff() {
+    const q = this.seqOffQueue;
+    let best = -1;
+    for (let i = 0; i < q.length; i++) {
+      const r = q[i].remaining;
+      if (best < 0 || r < best) best = r;
+    }
+    return best;
+  }
+
+  // Render one <=128-sample chunk of every sounding voice into L/R at `off`.
+  renderChunk(L, R, off, n, ppq) {
     // Update the global (free-run/transport-locked) LFOs before voices read
-    // them. ppq = beats since audio start (block-start position). Hosted
+    // them. ppq = beats since audio start (chunk-start position). Hosted
     // (SQ-4), the conductor's anchor is beat zero of the shared timebase, so
     // every device's synced LFO lands on the same downbeat regardless of when
     // it joined the song.
-    const ppq = this.hosted
-      ? Math.max(0, currentFrame - this.hostAnchor) * (this.bpm / 60) / sampleRate
-      : this.transportBeats;
-    this.updateGlobalLfo(this.gLfo1, 'lfo1', ppq, n);
-    this.updateGlobalLfo(this.gLfo2, 'lfo2', ppq, n);
-    this.transportBeats += (n / sampleRate) * (this.bpm / 60);
-
-    // Advance the note sequencer (standalone) or the hosted clip transport.
-    // Events fire at block boundaries (the same resolution live note messages
-    // arrive at); step *durations* are counted in real samples so the clock
-    // never drifts. Gate-off runs before the fire so a full-length gate
-    // releases just ahead of its retrigger.
-    if (this.seqOffQueue.length) {
-      let w = 0;
-      for (let i = 0; i < this.seqOffQueue.length; i++) {
-        const e = this.seqOffQueue[i];
-        e.remaining -= n;
-        if (e.remaining <= 0) this.noteOff(e.note);
-        else this.seqOffQueue[w++] = e;
-      }
-      this.seqOffQueue.length = w;
-      this.seqLastNote = w ? this.seqOffQueue[w - 1].note : -1;
-    }
-    if (this.hosted) {
-      this.hostTick(n);
-    } else if (this.seqPlaying) {
-      if (this.seqToNext <= 0) this.seqFire();
-      this.seqToNext -= n;
-    }
+    this.updateGlobalLfo(this.gLfo1, LFO1, ppq, n);
+    this.updateGlobalLfo(this.gLfo2, LFO2, ppq, n);
 
     let act = 0;
     let viz = null;
@@ -1283,10 +1560,10 @@ class FableProcessor extends AudioWorkletProcessor {
       if (!v.active && v.pending) {
         const pd = v.pending;
         v.pending = null;
-        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, 1, 1);
+        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, this.rng, 1, 1);
       }
       if (!v.active) continue;
-      const r = this.renderVoice(v, L, R, n);
+      const r = this.renderVoice(v, L, R, off, n);
       // Voice to visualize: the same one the wavetable viz follows — the last
       // gated (still-held) voice in pool order, falling back to any releasing
       // voice. _modAccum still holds exactly this voice's route sums here.
@@ -1314,7 +1591,6 @@ class FableProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ t: 'mod', d: null });
       }
     }
-    return true;
   }
 }
 

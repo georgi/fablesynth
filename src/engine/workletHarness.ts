@@ -12,7 +12,8 @@ export interface WtHarness {
   };
   sent: { t: string; [k: string]: unknown }[];
   send(msg: unknown): void;
-  render(blocks: number): { L: Float32Array; R: Float32Array };
+  /** Render `blocks` host blocks of `size` samples each (default 128). */
+  render(blocks: number, size?: number): { L: Float32Array; R: Float32Array };
   /** Position the emulated AudioWorklet `currentFrame` clock (hosted transport tests). */
   setFrame(frame: number): void;
 }
@@ -44,14 +45,18 @@ export function makeWtProcessor(sampleRate = 48000): WtHarness {
     get: () => frame,
     set: (f: number) => { frame = f; }, // tests may also position the clock directly
   });
-  const render = (blocks: number) => {
-    const L = new Float32Array(blocks * 128);
-    const R = new Float32Array(blocks * 128);
+  // The two block buffers are hoisted (finding W7): allocating them per block
+  // put GC pressure inside the measured region of the render benchmark.
+  let l = new Float32Array(128), r = new Float32Array(128);
+  const render = (blocks: number, size = 128) => {
+    if (l.length !== size) { l = new Float32Array(size); r = new Float32Array(size); }
+    const L = new Float32Array(blocks * size);
+    const R = new Float32Array(blocks * size);
+    const out = [[l, r]];
     for (let b = 0; b < blocks; b++) {
-      const l = new Float32Array(128), r = new Float32Array(128);
-      proc.process([], [[l, r]]);
-      frame += 128;
-      L.set(l, b * 128); R.set(r, b * 128);
+      proc.process([], out);
+      frame += size;
+      L.set(l, b * size); R.set(r, b * size);
     }
     return { L, R };
   };
@@ -64,8 +69,8 @@ const tableMsg = {
   list: TABLES.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.slice().buffer })),
 };
 
-export function bootWt(params: Partial<ParamValues> = {}): WtHarness {
-  const h = makeWtProcessor();
+export function bootWt(params: Partial<ParamValues> = {}, sampleRate = 48000): WtHarness {
+  const h = makeWtProcessor(sampleRate);
   h.send({ t: 'init', params: { ...defaultParams(), ...params } });
   h.send(tableMsg);
   return h;

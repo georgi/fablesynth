@@ -16,7 +16,7 @@
 // -> slice into `frames` chunks of SIZE -> buildUserTable. This same blob is
 // embedded in presets (Preset.tables) and in the localStorage table pool.
 
-import { SIZE, MIPS, buildUserTable, type GeneratedTable } from './wavetables';
+import { SIZE, MIPS, buildUserTable, fft, type GeneratedTable } from './wavetables';
 
 export const MAX_FRAMES = 64; // cap on imported frame count (memory + UI)
 
@@ -129,37 +129,88 @@ export function detectCycleLength(x: Float32Array, sampleRate: number): number {
   let energy = 1e-9;
   for (let i = 0; i < win; i++) energy += x[i] * x[i];
 
+  const score = new Float64Array(maxLag + 2);
   let bestLag = minLag;
   let bestScore = -Infinity;
   for (let lag = minLag; lag <= maxLag; lag++) {
     let corr = 0;
     for (let i = 0; i < win - lag; i++) corr += x[i] * x[i + lag];
     // Bias slightly toward longer periods to avoid octave-too-high errors.
-    const score = (corr / energy) * (1 + lag / maxLag * 0.02);
-    if (score > bestScore) { bestScore = score; bestLag = lag; }
+    score[lag] = (corr / energy) * (1 + lag / maxLag * 0.02);
+    if (score[lag] > bestScore) { bestScore = score[lag]; bestLag = lag; }
+  }
+  // Real periods are almost never a whole number of samples. Fit a parabola
+  // through the three correlation scores around the peak and return its vertex,
+  // so the frame slicer does not accumulate a fraction of a sample per frame.
+  if (bestLag > minLag && bestLag < maxLag) {
+    const y0 = score[bestLag - 1], y1 = score[bestLag], y2 = score[bestLag + 1];
+    const den = y0 - 2 * y1 + y2;
+    if (den !== 0) {
+      const d = (0.5 * (y0 - y2)) / den;
+      if (Number.isFinite(d) && Math.abs(d) <= 0.5) return bestLag + d;
+    }
   }
   return bestLag;
 }
 
 // Slice `x` into consecutive segments of `cycleLen` samples, resampling each to
-// SIZE via linear interpolation. Produces one wavetable frame per segment, up
-// to MAX_FRAMES. A non-integer cycleLen is honored so detected pitches that are
-// not a whole number of samples don't drift across frames.
+// SIZE. Produces one wavetable frame per segment, up to MAX_FRAMES. A
+// non-integer cycleLen is honored so detected pitches that are not a whole
+// number of samples don't drift across frames.
+//
+// The resampling is exact and band-limited (finding J8). Stretching a 100-500
+// sample cycle to 2048 with linear interpolation — what this used to do — leaves
+// the interpolation images (sinc² lobes at -20 to -40 dB) inside the band the
+// following FFT keeps, so they became permanent "harmonics" of the imported
+// table, and the real partials picked up the sinc² droop. Instead each cycle is
+// transformed at its own period directly: harmonic k is projected out of the
+// N ≈ cycleLen source samples at the exact fractional period, and those bins are
+// placed into the 2048-point spectrum with the rest zeroed. That IS ideal
+// band-limited resampling, and it costs one DFT of at most 1024 harmonics per
+// frame (the analysis range caps the period at sampleRate/40).
 export function sliceToFrames(x: Float32Array, cycleLen: number): Float32Array[] {
   const len = Math.max(1, cycleLen);
   const nf = Math.max(1, Math.min(MAX_FRAMES, Math.floor(x.length / len)));
+  const n = Math.max(2, Math.round(len));
+  // The projection costs n operations per harmonic. Keeping every harmonic is
+  // free at musical periods (n <= 1200 from the 40 Hz analysis floor); the
+  // budget only bites on a pathologically long "single cycle" import.
+  const kmax = Math.min(SIZE / 2 - 1, Math.floor(n / 2), Math.max(1, Math.floor(33554432 / n)));
+  const re = new Float64Array(SIZE);
+  const im = new Float64Array(SIZE);
   const frames: Float32Array[] = [];
+
   for (let f = 0; f < nf; f++) {
     const start = f * len;
-    const frame = new Float32Array(SIZE);
-    for (let i = 0; i < SIZE; i++) {
-      const src = start + (i / SIZE) * len;
-      const i0 = Math.floor(src);
-      const frac = src - i0;
-      const a = x[i0] || 0;
-      const b = x[i0 + 1] !== undefined ? x[i0 + 1] : a;
-      frame[i] = a + frac * (b - a);
+    const i0 = Math.round(start);
+    re.fill(0); im.fill(0);
+    // Project the cycle onto harmonics of period `len`. The samples are taken
+    // at their integer positions and their phase is measured against the
+    // fractional cycle start, so a non-integer period needs no time-domain
+    // interpolation at all.
+    for (let k = 1; k <= kmax; k++) {
+      const w = (2 * Math.PI * k) / len;
+      // Advance the reference phasor by a fixed rotation per sample instead of
+      // calling cos/sin n times per harmonic.
+      const cw = Math.cos(w), sw = Math.sin(w);
+      let c = Math.cos(w * (i0 - start)), s2 = Math.sin(w * (i0 - start));
+      let sr = 0, si = 0;
+      for (let i = 0; i < n; i++) {
+        const s = x[i0 + i];
+        if (s !== undefined) { sr += s * c; si -= s * s2; }
+        const nc = c * cw - s2 * sw;
+        s2 = s2 * cw + c * sw;
+        c = nc;
+      }
+      // The inverse FFT below divides by SIZE; scale so the reconstruction is
+      // the source cycle resampled, not attenuated by SIZE/n.
+      const g = SIZE / n;
+      re[k] = sr * g; im[k] = si * g;
+      re[SIZE - k] = sr * g; im[SIZE - k] = -si * g; // conjugate: real output
     }
+    fft(re, im, true);
+    const frame = new Float32Array(SIZE);
+    for (let i = 0; i < SIZE; i++) frame[i] = re[i];
     frames.push(frame);
   }
   return frames;
