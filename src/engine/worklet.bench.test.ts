@@ -23,6 +23,22 @@ const HEAVY: Partial<ParamValues> = {
   'mat2.src': 2, 'mat2.dst': 1, 'mat2.amt': 0.3,
 };
 
+// FX conditions (finding W6: the chain now runs inside the worklet). ALL_OFF is
+// the closest thing to the old native-node worklet — every stage gated, only the
+// drive dry delay, DC blocker and limiter still running.
+const FX_ALL_OFF: Partial<ParamValues> = {
+  'fx.eq.on': 0, 'fx.drive.on': 0, 'fx.chorus.on': 0,
+  'fx.delay.on': 0, 'fx.reverb.on': 0, 'fx.comp.on': 0,
+};
+const FX_ALL_ON: Partial<ParamValues> = {
+  'fx.eq.on': 1, 'fx.eq.low': 3, 'fx.eq.mid': -2, 'fx.eq.high': 2,
+  'fx.drive.on': 1, 'fx.drive.amt': 0.6, 'fx.drive.mix': 0.8,
+  'fx.chorus.on': 1, 'fx.chorus.mix': 0.5,
+  'fx.delay.on': 1, 'fx.delay.mix': 0.4, 'fx.delay.fb': 0.4,
+  'fx.reverb.on': 1, 'fx.reverb.mix': 0.4,
+  'fx.comp.on': 1,
+};
+
 const LIGHT: Partial<ParamValues> = {
   'oscA.on': 1, 'oscA.unison': 1, 'oscA.level': 0.75,
   'oscB.on': 0,
@@ -59,5 +75,20 @@ describe.skipIf(!process.env.BENCH)('WT-1 render cost', () => {
   it('light patch', () => {
     const us = measure(LIGHT);
     process.stderr.write(`light: ${us.toFixed(1)} µs/block (${((us / 2666.7) * 100).toFixed(1)} % of a core)\n`);
+  }, 120_000);
+
+  it('heavy patch, FX chain all off', () => {
+    const us = measure({ ...HEAVY, ...FX_ALL_OFF });
+    process.stderr.write(`heavy + FX off: ${us.toFixed(1)} µs/block (${((us / 2666.7) * 100).toFixed(1)} % of a core)\n`);
+  }, 120_000);
+
+  it('heavy patch, full FX chain', () => {
+    const us = measure({ ...HEAVY, ...FX_ALL_ON });
+    process.stderr.write(`heavy + full FX: ${us.toFixed(1)} µs/block (${((us / 2666.7) * 100).toFixed(1)} % of a core)\n`);
+  }, 120_000);
+
+  it('FX chain alone (silent input, full chain)', () => {
+    const us = measure({ 'oscA.on': 0, 'oscB.on': 0, 'sub.on': 0, 'noise.on': 0, ...FX_ALL_ON });
+    process.stderr.write(`FX chain alone: ${us.toFixed(1)} µs/block (${((us / 2666.7) * 100).toFixed(1)} % of a core)\n`);
   }, 120_000);
 });

@@ -167,6 +167,17 @@ const NOISE_ON = PID['noise.on'], NOISE_TYPE = PID['noise.type'], NOISE_LEVEL = 
 const ENV1_A = PID['env1.a'], ENV2_A = PID['env2.a'];
 const MASTER_GLIDE = PID['master.glide'], MASTER_MONO = PID['master.mono'];
 const SEQ_BPM = PID['seq.bpm'], SEQ_SWING = PID['seq.swing'], SEQ_ROOT = PID['seq.root'];
+// FX + master param indices (the FX chain moved into the worklet, finding W6).
+const FXEQ_ON = PID['fx.eq.on'], FXEQ_LOW = PID['fx.eq.low'], FXEQ_MID = PID['fx.eq.mid'],
+      FXEQ_MFREQ = PID['fx.eq.mfreq'], FXEQ_HIGH = PID['fx.eq.high'];
+const FXDRIVE_ON = PID['fx.drive.on'], FXDRIVE_AMT = PID['fx.drive.amt'], FXDRIVE_MIX = PID['fx.drive.mix'];
+const FXCHORUS_ON = PID['fx.chorus.on'], FXCHORUS_RATE = PID['fx.chorus.rate'],
+      FXCHORUS_DEPTH = PID['fx.chorus.depth'], FXCHORUS_MIX = PID['fx.chorus.mix'];
+const FXDELAY_ON = PID['fx.delay.on'], FXDELAY_TIME = PID['fx.delay.time'],
+      FXDELAY_FB = PID['fx.delay.fb'], FXDELAY_MIX = PID['fx.delay.mix'];
+const FXREVERB_ON = PID['fx.reverb.on'], FXREVERB_SIZE = PID['fx.reverb.size'], FXREVERB_MIX = PID['fx.reverb.mix'];
+const FXCOMP_ON = PID['fx.comp.on'], FXCOMP_THR = PID['fx.comp.thr'], FXCOMP_GAIN = PID['fx.comp.gain'];
+const MASTER_VOLUME = PID['master.volume'];
 
 // dst index -> param index, or one of these sentinels for the three globals.
 const D_NONE = -1, D_PITCH = -2, D_AMP = -3, D_PAN = -4;
@@ -189,6 +200,19 @@ for (const id in MOD_PARAM_INFO) {
   MOD_CURVE[i] = inf.curve === 'log' ? 2 : 1;
   MOD_SPAN[i] = inf.hi - inf.lo;
 }
+
+// LP24 resonance taper (finding B3). The cascade used to run two stages at the
+// SAME damping k, so the peak at fc was (1/k)^2 — two coincident resonances —
+// and with k = 2 - 1.93*res bottoming out at 0.071 the filter only reached
+// Q ~= 14 and never rang. The resonance now lives in stage 1 alone and stage 2
+// stays critically damped:
+//   resT = res + 0.0035*res^4
+//   k1   = max(LP24_K_MIN, 0.5*(2 - 1.93*resT)^2),  k2 = 2
+// 1/(k1*k2) reproduces the old (1/k)^2 magnitude at fc to within 1.3 dB across
+// the whole knob and to within 0.03 dB up to res 0.9, so presets keep their
+// timbre, while the single resonant stage's Q climbs from 14 to ~470 at the top
+// — a filter that sings instead of merely peaking. Identical to Engine.cpp.
+const LP24_K_MIN = 0.002; // Q = 500 damping floor
 
 // Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
 // so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
@@ -367,7 +391,8 @@ function makeFilterState() {
     cutSm: 0,
     satXL: 0, satXR: 0,         // ADAA drive: previous input per channel
     ftype: 0, twoPole: false,
-    k1: 0,                      // SVF damping (a1..a3 ramp per sub-block)
+    k1: 0,                      // SVF damping, stage 1 (a1..a3 ramp per sub-block)
+    k2: 0,                      // SVF damping, stage 2 (LP24 only; = k1 elsewhere)
     cutTarget: 0, cutPrev: 0,   // runFilter ramps cutPrev -> cutTarget
     combLen: 1, combLenPrev: 0, combFb: 0, // comb coefs
     fc: new Float64Array(9),    // formant biquad coefs: 3 bands x (b0, a1, a2)
@@ -435,6 +460,717 @@ class Voice {
   }
   noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); }
   kill() { this.gate = false; this.pending = null; this.ampEnv.kill(); this.modEnv.kill(); }
+}
+
+// ---------- FX chain (finding W6) ----------
+// A line-for-line port of juce/source/dsp/Fx.cpp / Fx.h into the worklet, so the
+// web app and the plugin run ONE algorithm: EQ -> drive -> chorus -> ping-pong
+// delay -> reverb -> leveling compressor -> master gain -> DC block -> lookahead
+// limiter. The web build used to assemble this from native WebAudio nodes
+// (WaveShaper / Delay / Convolver / DynamicsCompressor), which differed from the
+// plugin in every stage and could not be tested offline. synth.ts now keeps the
+// native graph only for the scope and spectrum analysers.
+
+// Safety-limiter static curve: threshold -8 dB, ratio 14 — the WebAudio
+// DynamicsCompressor settings the old master limiter used. Only its spec makeup
+// gain survives here; the ceiling is the lookahead limiter's hard -1 dBFS.
+const LIM_THR = 0.398, LIM_RATIO = 14.0;
+// Leveling compressor: WebAudio DynamicsCompressor defaults (ratio 4, knee 9 dB,
+// attack 10 ms, release 200 ms) with THRESH/MAKEUP params.
+const COMP_RATIO = 4.0, COMP_KNEE = 9.0;
+
+// WebAudio DynamicsCompressor static curve, in dB of gain reduction (<= 0).
+function compGainDb(xDb, thrDb) {
+  const over = xDb - thrDb;
+  if (over <= 0) return 0;
+  if (over < COMP_KNEE) return ((1 / COMP_RATIO) - 1) * over * over / (2 * COMP_KNEE);
+  return ((1 / COMP_RATIO) - 1) * (over - COMP_KNEE * 0.5);
+}
+
+// One-pole smoother toward a target (setTargetAtTime equivalent).
+class Smooth {
+  constructor() { this.cur = 0; this.target = 0; this.coef = 0.01; }
+  setTime(tau) { this.coef = 1 - Math.exp(-1 / (tau * sampleRate)); }
+  next() { this.cur += (this.target - this.cur) * this.coef; return this.cur; }
+  snap(v) { this.cur = this.target = v; }
+}
+
+// RBJ cookbook biquad, transposed direct form II. 0 dB gain on the shelving /
+// peaking designs yields exact unity, so "EQ off" is a true bypass.
+class Biquad {
+  constructor() { this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.z1 = 0; this.z2 = 0; }
+  reset() { this.z1 = 0; this.z2 = 0; }
+  process(x) {
+    const y = this.b0 * x + this.z1;
+    this.z1 = this.b1 * x - this.a1 * y + this.z2;
+    this.z2 = this.b2 * x - this.a2 * y;
+    return y;
+  }
+  lowpass(freq, q) {
+    const w0 = 2 * Math.PI * Math.min(freq, sampleRate * 0.49) / sampleRate;
+    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
+    this.b0 = (1 - cw) / 2 / a0; this.b1 = (1 - cw) / a0; this.b2 = this.b0;
+    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
+  }
+  highpass(freq, q) {
+    const w0 = 2 * Math.PI * Math.min(freq, sampleRate * 0.49) / sampleRate;
+    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
+    this.b0 = (1 + cw) / 2 / a0; this.b1 = -(1 + cw) / a0; this.b2 = this.b0;
+    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
+  }
+  lowShelf(freq, gainDb) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * Math.min(freq, sampleRate * 0.49) / sampleRate;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const alpha = sw / 2 * Math.SQRT2; // shelf slope S = 1
+    const tsa = 2 * Math.sqrt(A) * alpha;
+    const a0 = (A + 1) + (A - 1) * cw + tsa;
+    this.b0 = A * ((A + 1) - (A - 1) * cw + tsa) / a0;
+    this.b1 = 2 * A * ((A - 1) - (A + 1) * cw) / a0;
+    this.b2 = A * ((A + 1) - (A - 1) * cw - tsa) / a0;
+    this.a1 = -2 * ((A - 1) + (A + 1) * cw) / a0;
+    this.a2 = ((A + 1) + (A - 1) * cw - tsa) / a0;
+  }
+  highShelf(freq, gainDb) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * Math.min(freq, sampleRate * 0.49) / sampleRate;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const alpha = sw / 2 * Math.SQRT2;
+    const tsa = 2 * Math.sqrt(A) * alpha;
+    const a0 = (A + 1) - (A - 1) * cw + tsa;
+    this.b0 = A * ((A + 1) + (A - 1) * cw + tsa) / a0;
+    this.b1 = -2 * A * ((A - 1) + (A + 1) * cw) / a0;
+    this.b2 = A * ((A + 1) + (A - 1) * cw - tsa) / a0;
+    this.a1 = 2 * ((A - 1) - (A + 1) * cw) / a0;
+    this.a2 = ((A + 1) - (A - 1) * cw - tsa) / a0;
+  }
+  peaking(freq, q, gainDb) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * Math.min(freq, sampleRate * 0.49) / sampleRate;
+    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q);
+    const a0 = 1 + alpha / A;
+    this.b0 = (1 + alpha * A) / a0; this.b1 = (-2 * cw) / a0; this.b2 = (1 - alpha * A) / a0;
+    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha / A) / a0;
+  }
+}
+
+// Fractional-read delay line. Float32 storage mirrors the plugin's `float` buffers
+// so a feedback path quantizes identically.
+class DelayLine {
+  constructor(n) { this.buf = new Float32Array(n); this.w = 0; }
+  reset() { this.buf.fill(0); this.w = 0; }
+  write(x) { this.buf[this.w] = x; if (++this.w >= this.buf.length) this.w = 0; }
+  read(d) {
+    const sz = this.buf.length;
+    let rd = this.w - d;
+    while (rd < 0) rd += sz;
+    const i0 = rd | 0, frac = rd - i0;
+    const i1 = i0 + 1 < sz ? i0 + 1 : 0;
+    return this.buf[i0] + frac * (this.buf[i1] - this.buf[i0]);
+  }
+  // 4-point Catmull-Rom, for the modulated reads (chorus, echo). Chromium's
+  // DelayNode interpolated linearly; this is what the plugin does.
+  // Adopt another line's contents and write position (mono fast path).
+  copyFrom(o) { this.buf.set(o.buf); this.w = o.w; }
+  // Block form of write-then-read at a fixed delay (the drive's dry path).
+  blockRead(src, dst, n, d) {
+    for (let i = 0; i < n; i++) { this.write(src[i]); dst[i] = this.read(d); }
+  }
+  readHermite(d) {
+    const b = this.buf, sz = b.length;
+    let rd = this.w - d;
+    while (rd < 0) rd += sz;
+    const i1 = rd | 0, t = rd - i1;
+    const i0 = i1 > 0 ? i1 - 1 : sz - 1;
+    const i2 = i1 + 1 < sz ? i1 + 1 : 0;
+    const i3 = i2 + 1 < sz ? i2 + 1 : 0;
+    const y0 = b[i0], y1 = b[i1], y2 = b[i2], y3 = b[i3];
+    const c1 = 0.5 * (y2 - y0);
+    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
+    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    return ((c3 * t + c2) * t + c1) * t + y1;
+  }
+}
+
+// Hoisted out of the per-sample chorus LFO. Exactly the double 2*Math.PI.
+const TWO_PI = 6.283185307179586;
+
+function besselI0(x) {
+  let sum = 1, term = 1;
+  for (let k = 1; k < 64; k++) {
+    term *= x * x / (4 * k * k);
+    sum += term;
+    if (term < 1e-16 * sum) break;
+  }
+  return sum;
+}
+
+// Odd-length Kaiser-windowed half-band FIR (cutoff = rate/4), stored POLYPHASE
+// (finding J4). Every tap an even distance from the centre is structurally zero
+// and the centre tap is exactly 0.5, so the direct form spends most of its
+// multiplies on zeros; on top of that the interpolator's input is half
+// zero-stuffed samples and the decimator throws away half its outputs. Split
+// into phases, one branch is therefore a BARE DELAY (the lone centre tap) and
+// the other a dense FIR of ceil(taps/2) taps — about a quarter of the direct
+// form's MACs, 86 per base sample through the 4x drive path instead of 324.
+// The dense loop is unrolled by 4. Same decomposition as HalfBandFir in
+// juce/source/dsp/Fx.cpp and HalfBand in src/bass/engine/worklet-bass.js.
+//
+// One instance is driven in ONE mode: interpolate() or decimate(), never both —
+// each keeps its own history.
+class HalfBandFir {
+  constructor(taps, beta) {
+    const h = new Float64Array(taps);
+    const M = taps - 1, ib = besselI0(beta);
+    for (let i = 0; i < taps; i++) {
+      const m = i - M * 0.5;
+      const sinc = m === 0 ? 0.5 : Math.sin(Math.PI * 0.5 * m) / (Math.PI * m);
+      const t = 2 * m / M;
+      h[i] = sinc * besselI0(beta * Math.sqrt(Math.max(0, 1 - t * t))) / ib;
+    }
+    // sin(PI*m/2) for an even integer m evaluates to ~1e-16, not 0. Forcing
+    // those taps to zero makes the polyphase split exact.
+    const c = (taps - 1) >> 1;
+    for (let i = 0; i < taps; i++) if (i !== c && ((i - c) % 2) === 0) h[i] = 0;
+    this.h = h;
+
+    const ne = (taps + 1) >> 1, no = taps >> 1;
+    this.cEven = (c & 1) === 0; // which phase the centre tap lands in
+    const branch = new Float64Array(this.cEven ? no : ne);
+    for (let j = 0; j < branch.length; j++) branch[j] = h[this.cEven ? 2 * j + 1 : 2 * j];
+    this.g = branch;        // the dense phase
+    this.dly = c >> 1;      // the delay phase's single tap, in phase samples
+    this.np = Math.max(ne, no + 1);
+    // Mirror-written histories: writing each sample at p and p+np lets a branch
+    // read a contiguous window with no wrap test.
+    this.hx = new Float64Array(2 * this.np);
+    this.he = new Float64Array(2 * this.np);
+    this.ho = new Float64Array(2 * this.np);
+    this.px = 0; this.pd = 0;
+    this.y0 = 0; this.y1 = 0;
+  }
+
+  reset() {
+    this.hx.fill(0); this.he.fill(0); this.ho.fill(0);
+    this.px = 0; this.pd = 0; this.y0 = 0; this.y1 = 0;
+  }
+
+  // Adopt another instance's history. Used by the mono fast path, where the
+  // right channel was skipped because its input was identical to the left's:
+  // had it run, its state would be exactly this.
+  copyFrom(o) {
+    this.hx.set(o.hx); this.he.set(o.he); this.ho.set(o.ho);
+    this.px = o.px; this.pd = o.pd;
+  }
+
+  // Block forms of the two entry points. A block at a time rather than a
+  // sample at a time, so each filter's taps and pointers land in locals once
+  // per block instead of once per sample — measured at 23 % of the whole drive
+  // stage. Same arithmetic and the same state evolution, sample for sample.
+
+  // 2x interpolate: n base-rate samples in, 2n upsampled samples out.
+  // Equivalent to the direct form fed 2*x then 0 for each input.
+  interpBlock(x, out, n) {
+    const np = this.np, hx = this.hx, g = this.g, nb = g.length;
+    const dly = this.dly, cEven = this.cEven;
+    let p = this.px;
+    for (let i = 0; i < n; i++) {
+      if (--p < 0) p = np - 1;
+      const v = x[i];
+      hx[p] = v; hx[p + np] = v;
+      let a = 0, j = 0;
+      for (; j + 3 < nb; j += 4) {
+        a += g[j] * hx[p + j] + g[j + 1] * hx[p + j + 1]
+           + g[j + 2] * hx[p + j + 2] + g[j + 3] * hx[p + j + 3];
+      }
+      for (; j < nb; j++) a += g[j] * hx[p + j];
+      a += a;                     // the zero-stuff gain of 2
+      const d = hx[p + dly];      // delay branch: 2 * 0.5 * x[n - dly]
+      const o = i + i;
+      if (cEven) { out[o] = d; out[o + 1] = a; } else { out[o] = a; out[o + 1] = d; }
+    }
+    this.px = p;
+  }
+
+  // 2x decimate: 2n high-rate samples in, n outputs at the kept (first) phase.
+  // Equivalent to the direct form fed both samples, keeping the first result.
+  decimBlock(x, out, n) {
+    const np = this.np, he = this.he, ho = this.ho, g = this.g, nb = g.length;
+    const dly = this.dly, cEven = this.cEven;
+    let p = this.pd;
+    for (let i = 0; i < n; i++) {
+      if (--p < 0) p = np - 1;
+      const o = i + i;
+      const x0 = x[o], x1 = x[o + 1];
+      he[p] = x0; he[p + np] = x0;
+      ho[p] = x1; ho[p + np] = x1;
+      // The dense branch reads the phase the centre tap does not.
+      const b = cEven ? ho : he;
+      const q = cEven ? p + 1 : p;
+      let a = 0, j = 0;
+      for (; j + 3 < nb; j += 4) {
+        a += g[j] * b[q + j] + g[j + 1] * b[q + j + 1]
+           + g[j + 2] * b[q + j + 2] + g[j + 3] * b[q + j + 3];
+      }
+      for (; j < nb; j++) a += g[j] * b[q + j];
+      out[i] = a + 0.5 * (cEven ? he[p + dly] : ho[p + dly + 1]);
+    }
+    this.pd = p;
+  }
+
+}
+
+// Oversampler and drive scratch. Module-level and grown on demand: the render
+// thread must never allocate. OS_X4 holds 4x the block length.
+let OS_IN = new Float64Array(128), OS_X2 = new Float64Array(256);
+let OS_X4 = new Float64Array(512), OS_Y2 = new Float64Array(256);
+let FX_EQL = new Float64Array(128), FX_EQR = new Float64Array(128);
+let FX_DRYL = new Float64Array(128), FX_DRYR = new Float64Array(128);
+let FX_WETL = new Float64Array(128), FX_WETR = new Float64Array(128);
+function fxScratch(n) {
+  if (OS_IN.length >= n) return;
+  OS_IN = new Float64Array(n); OS_X2 = new Float64Array(2 * n);
+  OS_X4 = new Float64Array(4 * n); OS_Y2 = new Float64Array(2 * n);
+  FX_EQL = new Float64Array(n); FX_EQR = new Float64Array(n);
+  FX_DRYL = new Float64Array(n); FX_DRYR = new Float64Array(n);
+  FX_WETL = new Float64Array(n); FX_WETR = new Float64Array(n);
+}
+
+// 4x drive oversampler stages: 47-tap first half-band (2x), 17-tap second (4x).
+// Total up+shape+down group delay is an exact integer in base samples.
+const HB1_TAPS = 47, HB2_TAPS = 17;
+const DRIVE_LATENCY = ((HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4) | 0; // 27
+
+// Lookahead brickwall limiter: fixed makeup gain feeding a delayed signal path,
+// linked-stereo sliding-window-minimum gain that fully develops inside the
+// ~1.5 ms lookahead, ~200 ms release, hard -1 dBFS sample-peak ceiling. The
+// WebAudio DynamicsCompressor this replaces had no ceiling at all.
+const LIM_CEILING = 0.8912509381337456; // -1 dBFS
+
+class LookaheadLimiter {
+  constructor(makeup) {
+    this.la = Math.max(8, Math.round(0.0015 * sampleRate));
+    this.qcap = this.la + 2;
+    this.dlL = new Float32Array(this.la);
+    this.dlR = new Float32Array(this.la);
+    this.qv = new Float64Array(this.qcap);
+    this.qi = new Float64Array(this.qcap);
+    this.atk = 1 - Math.exp(-4 / this.la);                 // develops inside the window
+    this.rel = 1 - Math.exp(-1 / (0.2 * sampleRate));      // ~200 ms release
+    this.makeup = makeup;
+    this.reset();
+  }
+  reset() {
+    this.dlL.fill(0); this.dlR.fill(0); this.qv.fill(1); this.qi.fill(0);
+    this.qh = 0; this.qt = 0; this.w = 0; this.t = 0; this.env = 1;
+    this.outL = 0; this.outR = 0;
+  }
+  process(l, r) {
+    const cap = this.qcap;
+    const xl = l * this.makeup, xr = r * this.makeup;
+    const pk = Math.abs(xl) > Math.abs(xr) ? Math.abs(xl) : Math.abs(xr);
+    const g = pk > LIM_CEILING ? LIM_CEILING / pk : 1;
+    // monotonic ring queue: minimum required gain over the last la+1 samples
+    const qv = this.qv, qi = this.qi;
+    while (this.qh !== this.qt) {
+      const pv = this.qt > 0 ? this.qt - 1 : cap - 1;
+      if (qv[pv] < g) break;
+      this.qt = pv;
+    }
+    qv[this.qt] = g; qi[this.qt] = this.t;
+    this.qt = this.qt + 1 < cap ? this.qt + 1 : 0;
+    if (qi[this.qh] < this.t - this.la) this.qh = this.qh + 1 < cap ? this.qh + 1 : 0;
+    const wmin = qv[this.qh];
+    this.env += (wmin - this.env) * (wmin < this.env ? this.atk : this.rel);
+    const dl = this.dlL[this.w], dr = this.dlR[this.w];
+    this.dlL[this.w] = xl; this.dlR[this.w] = xr;
+    if (++this.w >= this.la) this.w = 0;
+    this.t++;
+    let gg = this.env;
+    const ad = Math.abs(dl), bd = Math.abs(dr);
+    const pd = ad > bd ? ad : bd;
+    if (gg * pd > LIM_CEILING) gg = LIM_CEILING / pd; // catch smoothing residue
+    this.outL = dl * gg; this.outR = dr * gg;
+  }
+}
+
+// Freeverb building blocks.
+class FvComb {
+  constructor(n) { this.buf = new Float32Array(n); this.idx = 0; this.filt = 0; this.damp1 = 0.2; this.damp2 = 0.8; this.feedback = 0.84; }
+  reset() { this.buf.fill(0); this.filt = 0; }
+  process(x) {
+    const out = this.buf[this.idx];
+    this.filt = out * this.damp2 + this.filt * this.damp1;
+    this.buf[this.idx] = x + this.filt * this.feedback;
+    if (++this.idx >= this.buf.length) this.idx = 0;
+    return out;
+  }
+}
+class FvAllpass {
+  constructor(n) { this.buf = new Float32Array(n); this.idx = 0; this.feedback = 0.5; }
+  reset() { this.buf.fill(0); }
+  process(x) {
+    const bo = this.buf[this.idx];
+    const out = -x + bo;
+    this.buf[this.idx] = x + bo * this.feedback;
+    if (++this.idx >= this.buf.length) this.idx = 0;
+    return out;
+  }
+}
+
+// Classic Freeverb tuning, scaled to the device sample rate. The web build used
+// a ConvolverNode fed a random-noise impulse that was RE-RENDERED on every SIZE
+// change, and the buffer swap cut the tail dead; SIZE here only moves the comb
+// feedback and damping, so the tail bends instead of dropping out.
+const FV_COMB_TUNE = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+const FV_AP_TUNE = [556, 441, 341, 225];
+const FV_SPREAD = 23;
+
+function mixGate(on, amount, wet) {
+  if (wet) return on ? Math.sin(amount * Math.PI / 2) : 0;
+  return on ? Math.cos(amount * Math.PI / 2) : 1;
+}
+
+class Fx {
+  constructor() {
+    const scale = sampleRate / 44100;
+    this.combL = []; this.combR = []; this.apL = []; this.apR = [];
+    for (let i = 0; i < 8; i++) {
+      this.combL.push(new FvComb((FV_COMB_TUNE[i] * scale) | 0));
+      this.combR.push(new FvComb(((FV_COMB_TUNE[i] + FV_SPREAD) * scale) | 0));
+    }
+    for (let i = 0; i < 4; i++) {
+      this.apL.push(new FvAllpass((FV_AP_TUNE[i] * scale) | 0));
+      this.apR.push(new FvAllpass(((FV_AP_TUNE[i] + FV_SPREAD) * scale) | 0));
+    }
+
+    this.eqLoL = new Biquad(); this.eqLoR = new Biquad();
+    this.eqMidL = new Biquad(); this.eqMidR = new Biquad();
+    this.eqHiL = new Biquad(); this.eqHiR = new Biquad();
+
+    this.driveK = 1; this.drivePre = 1; this.driveNorm = 1;
+    this.driveWet = new Smooth(); this.driveDry = new Smooth();
+    this.up1L = new HalfBandFir(HB1_TAPS, 6); this.up2L = new HalfBandFir(HB2_TAPS, 6);
+    this.dn2L = new HalfBandFir(HB2_TAPS, 6); this.dn1L = new HalfBandFir(HB1_TAPS, 6);
+    this.up1R = new HalfBandFir(HB1_TAPS, 6); this.up2R = new HalfBandFir(HB2_TAPS, 6);
+    this.dn2R = new HalfBandFir(HB2_TAPS, 6); this.dn1R = new HalfBandFir(HB1_TAPS, 6);
+    this.dryL = new DelayLine(DRIVE_LATENCY + 4); this.dryR = new DelayLine(DRIVE_LATENCY + 4);
+    this.driveSilenced = false;
+    this.monoRun = false;
+
+    this.chPhase = 0; this.chRate = 0.6; this.chDepth = 0.5;
+    this.chWet = new Smooth(); this.chDry = new Smooth();
+    this.chDl1 = new DelayLine((0.05 * sampleRate) | 0);
+    this.chDl2 = new DelayLine((0.05 * sampleRate) | 0);
+    this.chorusOff = false; this.chorusGated = false;
+
+    this.dlTime = new Smooth(); this.dlFb = new Smooth();
+    this.dlWet = new Smooth(); this.dlDry = new Smooth();
+    this.dlL = new DelayLine(((2 * sampleRate) | 0) + 4);
+    this.dlR = new DelayLine(((2 * sampleRate) | 0) + 4);
+    this.dlDamp = new Biquad();
+    this.delayOff = false; this.delayGated = false;
+
+    this.verbWet = new Smooth(); this.verbDry = new Smooth();
+    this.roomSize = 0.84; this.verbOff = false; this.verbGated = false;
+
+    this.compThrDb = new Smooth(); this.compMakeup = new Smooth();
+    this.compWet = new Smooth(); this.compDry = new Smooth();
+    this.compEnv = 0;
+    this.compAtk = 1 - Math.exp(-1 / (0.010 * sampleRate));
+    this.compRel = 1 - Math.exp(-1 / (0.200 * sampleRate));
+    this.compOff = false; this.compGated = false;
+
+    this.masterGain = new Smooth();
+    this.dcL = new Biquad(); this.dcR = new Biquad();
+
+    for (const s of [this.driveWet, this.driveDry, this.chWet, this.chDry, this.dlFb,
+      this.dlWet, this.dlDry, this.verbWet, this.verbDry, this.compThrDb,
+      this.compMakeup, this.compWet, this.compDry, this.masterGain]) s.setTime(0.02);
+    this.dlTime.setTime(0.08);
+    this.driveDry.snap(1); this.chDry.snap(1); this.dlDry.snap(1); this.verbDry.snap(1); this.compDry.snap(1);
+
+    this.dcL.highpass(8, 0.707); this.dcR.highpass(8, 0.707);
+    this.dlDamp.lowpass(4500, 0.707);
+
+    // WebAudio's DynamicsCompressor applies a spec-defined makeup gain
+    // ((1/c(1))^0.6, c = the static curve at 0 dBFS). The old web master limiter
+    // WAS that node, so its ~4.5 dB makeup stays ahead of the lookahead limiter
+    // or every patch drops in level.
+    const c1 = Math.pow(1 / LIM_THR, 1 / LIM_RATIO - 1);
+    this.lim = new LookaheadLimiter(Math.pow(1 / c1, 0.6));
+  }
+
+  latencySamples() { return DRIVE_LATENCY + this.lim.la; }
+
+  reset() {
+    this.chDl1.reset(); this.chDl2.reset(); this.dlL.reset(); this.dlR.reset();
+    this.dryL.reset(); this.dryR.reset();
+    for (const c of this.combL) c.reset();
+    for (const c of this.combR) c.reset();
+    for (const a of this.apL) a.reset();
+    for (const a of this.apR) a.reset();
+    this.dcL.reset(); this.dcR.reset(); this.dlDamp.reset();
+    this.eqLoL.reset(); this.eqLoR.reset(); this.eqMidL.reset();
+    this.eqMidR.reset(); this.eqHiL.reset(); this.eqHiR.reset();
+    this.up1L.reset(); this.up2L.reset(); this.dn2L.reset(); this.dn1L.reset();
+    this.up1R.reset(); this.up2R.reset(); this.dn2R.reset(); this.dn1R.reset();
+    this.compEnv = 0;
+    this.lim.reset();
+    this.chPhase = 0;
+    this.monoRun = false;
+    this.driveSilenced = this.chorusGated = this.delayGated = this.verbGated = this.compGated = false;
+  }
+
+  setParams(p) {
+    // 3-band tone EQ (first FX). Gains apply only when on; off forces 0 dB, an
+    // exact unity bypass. Shelves at fixed corners, mid bell sweepable at Q 0.9.
+    const eqOn = p[FXEQ_ON] > 0.5;
+    const loDb = eqOn ? p[FXEQ_LOW] : 0;
+    const midDb = eqOn ? p[FXEQ_MID] : 0;
+    const hiDb = eqOn ? p[FXEQ_HIGH] : 0;
+    const mFreq = p[FXEQ_MFREQ];
+    this.eqLoL.lowShelf(120, loDb); this.eqLoR.lowShelf(120, loDb);
+    this.eqMidL.peaking(mFreq, 0.9, midDb); this.eqMidR.peaking(mFreq, 0.9, midDb);
+    this.eqHiL.highShelf(6000, hiDb); this.eqHiR.highShelf(6000, hiDb);
+
+    const amt = p[FXDRIVE_AMT];
+    this.drivePre = 1 + amt * 2;
+    this.driveK = 1 + amt * 12;
+    this.driveNorm = 1 / (this.drivePre * Math.tanh(this.driveK));
+    // No separate OFF flag: mixGate gives wet 0 for OFF and for MIX 0 alike, so
+    // `driveWet.target === 0` covers both and drives the one silence gate below.
+    const dOn = p[FXDRIVE_ON] > 0.5;
+    this.driveWet.target = mixGate(dOn, p[FXDRIVE_MIX], true);
+    this.driveDry.target = mixGate(dOn, p[FXDRIVE_MIX], false);
+
+    this.chRate = p[FXCHORUS_RATE];
+    this.chDepth = p[FXCHORUS_DEPTH];
+    const cOn = p[FXCHORUS_ON] > 0.5;
+    this.chorusOff = !cOn;
+    this.chWet.target = mixGate(cOn, p[FXCHORUS_MIX] * 0.8, true);
+    this.chDry.target = mixGate(cOn, p[FXCHORUS_MIX] * 0.8, false);
+
+    this.dlTime.target = p[FXDELAY_TIME];
+    this.dlFb.target = p[FXDELAY_FB];
+    const delOn = p[FXDELAY_ON] > 0.5;
+    this.delayOff = !delOn;
+    this.dlWet.target = mixGate(delOn, p[FXDELAY_MIX] * 0.85, true);
+    this.dlDry.target = mixGate(delOn, p[FXDELAY_MIX] * 0.85, false);
+
+    // SIZE maps to roomsize/decay — a longer, brighter tail with size. No buffer
+    // is rebuilt, so a SIZE sweep never cuts the tail.
+    const size = p[FXREVERB_SIZE];
+    this.roomSize = 0.7 + size * 0.28;
+    const damp = 0.4 - size * 0.2;
+    for (let i = 0; i < 8; i++) {
+      this.combL[i].feedback = this.combR[i].feedback = this.roomSize;
+      this.combL[i].damp1 = this.combR[i].damp1 = damp;
+      this.combL[i].damp2 = this.combR[i].damp2 = 1 - damp;
+    }
+    const rOn = p[FXREVERB_ON] > 0.5;
+    this.verbOff = !rOn;
+    this.verbWet.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9, true);
+    this.verbDry.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9, false);
+
+    // Leveling compressor — implicit spec makeup (the static curve at 0 dBFS)
+    // times the user MAKEUP, so quiet patches lift while the 4:1 curve tames
+    // loud ones.
+    const thrDb = p[FXCOMP_THR];
+    this.compThrDb.target = thrDb;
+    const implicit = Math.pow(10, -0.6 * compGainDb(0, thrDb) / 20);
+    this.compMakeup.target = implicit * Math.pow(10, p[FXCOMP_GAIN] / 20);
+    const kOn = p[FXCOMP_ON] > 0.5;
+    this.compOff = !kOn;
+    this.compWet.target = mixGate(kOn, 1, true);
+    this.compDry.target = mixGate(kOn, 1, false);
+
+    const vol = p[MASTER_VOLUME];
+    this.masterGain.target = vol * vol * 1.6;
+  }
+
+  // One channel of a block through the 4x oversampled shaper: interpolate to
+  // 2x then 4x, shape all 4n samples in one flat loop, then decimate back.
+  // Stage at a time rather than six filter calls per sample; the decimators
+  // keep the phase aligned with the integer DRIVE_LATENCY group delay.
+  driveBlock(u1, u2, d2, d1, out, n) {
+    u1.interpBlock(OS_IN, OS_X2, n);
+    u2.interpBlock(OS_X2, OS_X4, 2 * n);
+    // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth
+    // nonlinearity). The old web path was a 513-point WaveShaper table read at
+    // 2x with linear interpolation between entries.
+    const K = this.driveK, norm = this.driveNorm, m = 4 * n;
+    for (let i = 0; i < m; i++) OS_X4[i] = Math.tanh(OS_X4[i] * K) * norm;
+    d2.decimBlock(OS_X4, OS_Y2, 2 * n);
+    d1.decimBlock(OS_Y2, out, n);
+  }
+
+  // Resync the right-hand drive state from the left. The mono fast path skips
+  // the right channel while its input is identical to the left's, so had those
+  // filters run, their state would be exactly this.
+  syncRight() {
+    this.up1R.copyFrom(this.up1L); this.up2R.copyFrom(this.up2L);
+    this.dn2R.copyFrom(this.dn2L); this.dn1R.copyFrom(this.dn1L);
+    this.dryR.copyFrom(this.dryL);
+    this.monoRun = false;
+  }
+
+  process(L, R, n) {
+    // Gate only when OFF; mix == 0 while ON must keep state accumulation alive.
+    // The drive's wet gain being zero — MIX 0 while ON, as well as OFF — means
+    // the oversampler's output is multiplied by zero, so it is not run at all.
+    // The plugin still runs it whenever the stage is ON; the only difference is
+    // that here the FIR history restarts from zero when MIX leaves 0, under a
+    // wet gain below 1e-6 that then ramps in over 20 ms. Every other stage has
+    // a tail or a feedback loop that MUST keep accumulating at MIX 0, so this
+    // shortcut applies to the drive alone.
+    const driveSilent = this.driveWet.target === 0 && Math.abs(this.driveWet.cur) < 1e-6;
+    const chorusGate = this.chorusOff && this.chWet.target === 0 && Math.abs(this.chWet.cur) < 1e-6;
+    const delayGate = this.delayOff && this.dlWet.target === 0 && Math.abs(this.dlWet.cur) < 1e-6;
+    const verbGate = this.verbOff && this.verbWet.target === 0 && Math.abs(this.verbWet.cur) < 1e-6;
+    const compGate = this.compOff && this.compWet.target === 0 && Math.abs(this.compWet.cur) < 1e-6;
+
+    if (driveSilent && !this.driveSilenced) {
+      // Both targets are exact here: mixGate gives wet 0 / dry 1 for OFF and
+      // for MIX 0 alike, so snapping is snapping to the target and the skipped
+      // path is exactly `1 * dry`, not `(1 - eps) * dry`.
+      this.driveWet.snap(0); this.driveDry.snap(1);
+      this.up1L.reset(); this.up2L.reset(); this.dn2L.reset(); this.dn1L.reset();
+      this.up1R.reset(); this.up2R.reset(); this.dn2R.reset(); this.dn1R.reset();
+    }
+    this.driveSilenced = driveSilent;
+    if (chorusGate && !this.chorusGated) { this.chWet.snap(0); this.chDry.snap(1); this.chDl1.reset(); this.chDl2.reset(); }
+    if (delayGate && !this.delayGated) { this.dlWet.snap(0); this.dlDry.snap(1); this.dlL.reset(); this.dlR.reset(); this.dlDamp.reset(); }
+    if (verbGate && !this.verbGated) {
+      this.verbWet.snap(0); this.verbDry.snap(1);
+      for (const c of this.combL) c.reset();
+      for (const c of this.combR) c.reset();
+      for (const a of this.apL) a.reset();
+      for (const a of this.apR) a.reset();
+    }
+    if (compGate && !this.compGated) { this.compWet.snap(0); this.compDry.snap(1); this.compEnv = 0; }
+
+    this.chorusGated = chorusGate;
+    this.delayGated = delayGate; this.verbGated = verbGate; this.compGated = compGate;
+
+    const combL = this.combL, combR = this.combR, apL = this.apL, apR = this.apR;
+    fxScratch(n);
+
+    // ---- 3-band tone EQ (first FX; 0 dB coeffs = transparent) ----
+    // Into double scratch, not back into L/R: the whole chain stays in double
+    // precision until the final write, as the per-sample loop it replaces did.
+    for (let i = 0; i < n; i++) {
+      FX_EQL[i] = this.eqHiL.process(this.eqMidL.process(this.eqLoL.process(L[i])));
+      FX_EQR[i] = this.eqHiR.process(this.eqMidR.process(this.eqLoR.process(R[i])));
+    }
+
+    // ---- drive (4x oversampled tanh waveshaper), a block at a time ----
+    // The dry/bypass path always runs through a DRIVE_LATENCY delay so the
+    // dry/wet mix stays time-aligned with the shaper's FIR group delay and the
+    // chain latency is constant whether drive is active or gated.
+    //
+    // Mono fast path: while L and R carry identical samples the drive runs once
+    // and the right-hand filters are left alone; they are resynced from the left
+    // the moment the channels differ, which costs nothing because their state
+    // would have been exactly the left's. WT-1 sits here whenever unison is 1
+    // and SPREAD and PAN are 0.
+    let mono = true;
+    for (let i = 0; i < n; i++) if (FX_EQL[i] !== FX_EQR[i]) { mono = false; break; }
+    if (!mono && this.monoRun) this.syncRight();
+    this.monoRun = mono;
+
+    this.dryL.blockRead(FX_EQL, FX_DRYL, n, DRIVE_LATENCY + 1);
+    if (!mono) this.dryR.blockRead(FX_EQR, FX_DRYR, n, DRIVE_LATENCY + 1);
+    if (driveSilent) {
+      for (let i = 0; i < n; i++) FX_EQL[i] = FX_DRYL[i];
+      if (mono) { for (let i = 0; i < n; i++) FX_EQR[i] = FX_DRYL[i]; }
+      else { for (let i = 0; i < n; i++) FX_EQR[i] = FX_DRYR[i]; }
+    } else {
+      const pre = this.drivePre;
+      for (let i = 0; i < n; i++) OS_IN[i] = pre * FX_EQL[i];
+      this.driveBlock(this.up1L, this.up2L, this.dn2L, this.dn1L, FX_WETL, n);
+      if (!mono) {
+        for (let i = 0; i < n; i++) OS_IN[i] = pre * FX_EQR[i];
+        this.driveBlock(this.up1R, this.up2R, this.dn2R, this.dn1R, FX_WETR, n);
+      }
+      for (let i = 0; i < n; i++) {
+        const wet = this.driveWet.next(), dry = this.driveDry.next();
+        const dl = dry * FX_DRYL[i] + wet * FX_WETL[i];
+        FX_EQL[i] = dl;
+        FX_EQR[i] = mono ? dl : dry * FX_DRYR[i] + wet * FX_WETR[i];
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      let l = FX_EQL[i], r = FX_EQR[i];
+
+      // ---- chorus (two modulated taps, stereo) ----
+      if (!chorusGate) {
+        this.chPhase += this.chRate / sampleRate;
+        if (this.chPhase >= 1) this.chPhase -= 1;
+        const lfo = Math.sin(TWO_PI * this.chPhase);
+        const depth = 0.0008 + this.chDepth * 0.0045;
+        const mono = 0.5 * (l + r);
+        this.chDl1.write(mono); this.chDl2.write(mono);
+        const c1 = this.chDl1.readHermite((0.012 + depth * lfo) * sampleRate);
+        const c2 = this.chDl2.readHermite((0.017 - depth * 0.8 * lfo) * sampleRate);
+        const wet = this.chWet.next(), dry = this.chDry.next();
+        l = dry * l + wet * c1;
+        r = dry * r + wet * c2;
+      }
+
+      // ---- ping-pong delay ----
+      if (!delayGate) {
+        const dt = this.dlTime.next() * sampleRate;
+        const fb = this.dlFb.next();
+        const dL = this.dlL.readHermite(dt);
+        const dR = this.dlR.readHermite(dt);
+        const mono = 0.5 * (l + r);
+        this.dlL.write(mono + fb * dR);
+        this.dlR.write(this.dlDamp.process(fb * dL));
+        const wet = this.dlWet.next(), dry = this.dlDry.next();
+        l = dry * l + wet * dL;
+        r = dry * r + wet * dR;
+      }
+
+      // ---- reverb (Freeverb) ----
+      if (!verbGate) {
+        const input = (l + r) * 0.015; // fixed input gain (Freeverb convention)
+        let outL = 0, outR = 0;
+        for (let c = 0; c < 8; c++) { outL += combL[c].process(input); outR += combR[c].process(input); }
+        for (let a = 0; a < 4; a++) { outL = apL[a].process(outL); outR = apR[a].process(outR); }
+        const wet = this.verbWet.next(), dry = this.verbDry.next();
+        l = dry * l + wet * outL;
+        r = dry * r + wet * outR;
+      }
+
+      // ---- leveling compressor (WebAudio DynamicsCompressor semantics) ----
+      if (!compGate) {
+        const al = l < 0 ? -l : l, ar = r < 0 ? -r : r;
+        const pk = al > ar ? al : ar;
+        this.compEnv += (pk - this.compEnv) * (pk > this.compEnv ? this.compAtk : this.compRel);
+        const thrDb = this.compThrDb.next();
+        let cg = 1;
+        if (this.compEnv > 1e-6) cg = Math.pow(10, compGainDb(20 * Math.log10(this.compEnv), thrDb) / 20);
+        cg *= this.compMakeup.next();
+        const wet = this.compWet.next(), dry = this.compDry.next();
+        l = dry * l + wet * (l * cg);
+        r = dry * r + wet * (r * cg);
+      }
+
+      // ---- master gain ----
+      const g = this.masterGain.next();
+      l *= g; r *= g;
+
+      // ---- DC block ----
+      l = this.dcL.process(l);
+      r = this.dcR.process(r);
+
+      // ---- lookahead safety limiter (makeup inside, -1 dBFS ceiling) ----
+      this.lim.process(l, r);
+      L[i] = this.lim.outL; R[i] = this.lim.outR;
+    }
+  }
 }
 
 class FableProcessor extends AudioWorkletProcessor {
@@ -517,6 +1253,10 @@ class FableProcessor extends AudioWorkletProcessor {
     this.modViz = new Float32Array(DST_TARGET.length);
     this.modVizAny = false;
     this.modIdleSent = true;
+    // The FX chain now runs here rather than as native WebAudio nodes
+    // (finding W6): same algorithm as juce/source/dsp/Fx.cpp, testable offline.
+    this.fx = new Fx();
+    this.fxLatency = this.fx.latencySamples();
     this.port.onmessage = (e) => this.onMsg(e.data);
   }
 
@@ -530,6 +1270,10 @@ class FableProcessor extends AudioWorkletProcessor {
           if (i !== undefined && Number.isFinite(v)) this.p[i] = v;
         }
         this.bpm = Math.min(1000, Math.max(1, this.p[SEQ_BPM] || 120));
+        // The FX drive FIR + limiter lookahead add a fixed latency the main
+        // thread needs for scope/transport alignment; the plugin reports the
+        // same number through setLatencySamples.
+        this.port.postMessage({ t: 'latency', n: this.fxLatency });
         break;
       case 'p': {
         // The string id is resolved to its index here, once per message —
@@ -590,6 +1334,7 @@ class FableProcessor extends AudioWorkletProcessor {
         this.clipPend = null;
         this.clipStopAt = -1;
         this.clipStep = -1;
+        this.fx.reset();
         break;
       case 'host': this.hosted = !!d.on; break;
       case 'tempo':
@@ -1060,7 +1805,17 @@ class FableProcessor extends AudioWorkletProcessor {
       // sub-block in runFilter from the ramped cutoff (finding W1); only the
       // damping term is fixed for the chunk.
       fs.twoPole = ftype === 1; // LP24 = two cascaded stages
-      fs.k1 = 2 - 1.93 * res;
+      if (fs.twoPole) {
+        // Finding B3: all the resonance in stage 1, stage 2 critically damped.
+        const r2 = res * res;
+        const resT = res + 0.0035 * r2 * r2;
+        const kk = 2 - 1.93 * resT;
+        fs.k1 = Math.max(LP24_K_MIN, 0.5 * kk * kk);
+        fs.k2 = 2;
+      } else {
+        fs.k1 = 2 - 1.93 * res;
+        fs.k2 = fs.k1;
+      }
     } else if (ftype === 5) {
       // tuned feedback comb: delay length tracks cutoff pitch, RES -> feedback
       let len = sampleRate / cut;
@@ -1120,7 +1875,7 @@ class FableProcessor extends AudioWorkletProcessor {
       // Finding W1: the cutoff ramps from the previous chunk's value across the
       // chunk and the SVF coefficients are recomputed per <=32-sample
       // sub-block, so an automated or modulated cutoff never steps.
-      const k1 = fs.k1;
+      const k1 = fs.k1, k2 = fs.k2;
       const c1c = fs.cutTarget;
       const c0c = fs.cutPrev > 0 ? fs.cutPrev : c1c;
       const F = fs.svf;
@@ -1130,6 +1885,9 @@ class FableProcessor extends AudioWorkletProcessor {
         const gC = Math.tan((Math.PI * cut) / sampleRate);
         const a1 = 1 / (1 + gC * (gC + k1));
         const a2 = gC * a1, a3 = gC * a2;
+        // Stage 2 (LP24) runs its own damping, so it needs its own coefficients.
+        const a1b = 1 / (1 + gC * (gC + k2));
+        const a2b = gC * a1b, a3b = gC * a2b;
         for (let ch = 0; ch < 2; ch++) {
           const buf = ch === 0 ? outL : outR;
           const o1 = ch * 2;
@@ -1158,8 +1916,8 @@ class FableProcessor extends AudioWorkletProcessor {
             for (let i = at; i < at + m; i++) {
               const x = buf[i];
               const v3 = x - ic2;
-              const v1 = a1 * ic1 + a2 * v3;
-              const v2 = ic2 + a2 * ic1 + a3 * v3;
+              const v1 = a1b * ic1 + a2b * v3;
+              const v2 = ic2 + a2b * ic1 + a3b * v3;
               ic1 = 2 * v1 - ic1;
               ic2 = 2 * v2 - ic2;
               buf[i] = v2;
@@ -1529,6 +2287,10 @@ class FableProcessor extends AudioWorkletProcessor {
       }
       off += run;
     }
+    // FX are block-rate parameterised (as in the plugin) and run over the whole
+    // host block, after every sequencer-split chunk has been rendered.
+    this.fx.setParams(this.p);
+    this.fx.process(L, R, n);
     return true;
   }
 

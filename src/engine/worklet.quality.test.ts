@@ -11,13 +11,24 @@ import { defaultParams, type ParamValues } from '../params';
 // A steady single voice, one unison, both filters bypassed: the oscillator and
 // nothing else, so the only spectral content besides the harmonics is what the
 // table read invents.
+// Every FX stage off and the master volume low enough that the safety limiter
+// never engages, so what these tests measure is the oscillator and not the FX
+// chain that now runs inside the worklet (finding W6). With the stages gated
+// the chain is still a fixed 99-sample delay plus the DC blocker and the
+// limiter's spec makeup gain — all linear, none of which invents spectrum.
+const FX_OFF: Partial<ParamValues> = {
+  'fx.eq.on': 0, 'fx.drive.on': 0, 'fx.chorus.on': 0,
+  'fx.delay.on': 0, 'fx.reverb.on': 0, 'fx.comp.on': 0,
+  'master.volume': 0.4,
+};
+
 const PURE: Partial<ParamValues> = {
+  ...FX_OFF,
   'oscA.on': 1, 'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 1,
   'oscA.level': 1, 'oscA.detune': 0, 'oscA.spread': 0, 'oscA.pan': 0,
   'oscB.on': 0, 'sub.on': 0, 'noise.on': 0,
   'filter.on': 0, 'filter2.on': 0,
   'env1.a': 0.001, 'env1.d': 0.005, 'env1.s': 1, 'env1.r': 0.1,
-  'master.volume': 1,
 };
 
 // 4-term Blackman-Harris. The shipped C++ alias test uses a Hann window with a
@@ -168,6 +179,10 @@ function stealFadeMs(sampleRate: number): number {
   h.render(Math.ceil(sampleRate / 128)); // ~1 s, envelope at sustain
   h.send({ t: 'on', n: note, v: 1 });    // retrigger -> steal fade, then restart
   const { L } = h.render(Math.ceil((sampleRate * 0.02) / 128));
+  // The FX chain delays the output by a fixed number of samples (drive FIR +
+  // limiter lookahead); the worklet reports it at init. Subtract it so this
+  // measures the fade and not the chain.
+  const lat = (h.sent.find((m) => m.t === 'latency')!.n as number);
   // Envelope: peak over a one-period sliding window, so the trough between the
   // fade-out and the pending note's attack is located to the sample.
   const per = Math.round(sampleRate / (440 * Math.pow(2, (note - 69) / 12)));
@@ -178,7 +193,7 @@ function stealFadeMs(sampleRate: number): number {
     for (let j = i; j < i + per; j++) m = Math.max(m, Math.abs(L[j]));
     if (m < best) { best = m; at = i; }
   }
-  return (at / sampleRate) * 1000;
+  return ((at - lat) / sampleRate) * 1000;
 }
 
 describe('WT-1 steal fade', () => {
