@@ -16,9 +16,15 @@ const tableMsg = {
   list: tables.map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, buf: t.data.slice().buffer })),
 };
 
+// The master FX rack now runs inside the worklet, so every render passes
+// through it. These tests measure the voice, so boot() switches the four wet
+// stages off; the rack has its own file (worklet-bass.fx.test.ts). Master gain,
+// the DC block and the lookahead limiter always run, exactly as in the plugin.
+const FX_OFF = { 'fx.drive.on': 0, 'fx.chorus.on': 0, 'fx.delay.on': 0, 'fx.reverb.on': 0 };
+
 function boot(params: ParamValues, sr = 48000): BassHarness {
   const h = makeBassProcessor(sr);
-  h.send({ t: 'init', params });
+  h.send({ t: 'init', params: { ...params, ...FX_OFF } });
   h.send(tableMsg);
   return h;
 }
@@ -339,6 +345,10 @@ describe('BL-1 filter housekeeping (B8)', () => {
       p['flt.env'] = 0;
       p['flt.drive'] = 0;
       p['aenv.sus'] = 1;
+      // Keep the master limiter out of the comparison: it has 200 ms of gain
+      // memory, so the loud run would still be releasing when the quiet one is
+      // not. This test is about the filter state, so run below the ceiling.
+      p['master.volume'] = 0.2;
       const h = boot(p);
       h.send({ t: 'noteon', semi: 24, vel: 1 });
       h.render(40); // ring the ladder up (or not)
@@ -355,4 +365,118 @@ describe('BL-1 filter housekeeping (B8)', () => {
     // Stale state leaves the two runs 19 dB apart.
     expect(10 * Math.log10(e / s)).toBeLessThan(-80);
   });
+});
+
+// ---------------------------------------------------------------------------
+// B3 — LP24 used to cascade two stages with the same k, so the peak at fc was
+// (1/k)^2 (two coincident resonances) and k = 2 - 1.93*res bottomed out at
+// Q ~= 14, so the filter never rang. The resonance now lives in stage 1 alone
+// with stage 2 critically damped, keeping k1*k2 = (2 - 1.93*resT)^2 so the peak
+// magnitude — and therefore existing patches — barely move, while the single
+// resonant stage's Q climbs to ~470 at the top of the knob.
+// Lockstep with juce/source/dsp/Engine.cpp:738-757.
+// ---------------------------------------------------------------------------
+describe('BL-1 LP24 resonance (B3)', () => {
+  const F0 = 440 * Math.pow(2, (36 + 24 - 12 - 69) / 12); // sub sine, semi 24
+
+  const resPatch = (res: number, ftype: number, fc: number): ParamValues => {
+    const p = defaultBassParams();
+    p['osc.level'] = 0;
+    p['sub.level'] = 1;
+    p['sub.shape'] = 0;
+    p['sub.oct'] = -1;
+    p['flt.type'] = ftype;
+    p['flt.res'] = res;
+    p['flt.cut'] = fc;
+    p['flt.env'] = 0;
+    p['flt.track'] = 0;
+    p['flt.drive'] = 0;
+    p['lfo.depth'] = 0;
+    p['aenv.att'] = 0.001;
+    p['aenv.sus'] = 1;
+    p['master.volume'] = 0.05; // stay far under the limiter ceiling
+    return p;
+  };
+
+  // Amplitude of the sub partial once the filter has settled. Settling is the
+  // whole difficulty here: at res = 1 the pole Q is ~470, so at fc = 130.8 Hz
+  // the ring decays with tau = Q/(pi*fc) = 1.15 s. 4 s of settle reads 0.27 dB
+  // low; 16 s is ~14 tau and lands on the closed form.
+  const level = (res: number, ftype: number, fc: number): number => {
+    const h = boot(resPatch(res, ftype, fc));
+    h.send({ t: 'noteon', semi: 24, vel: 1 });
+    h.render(res > 0.95 ? 6000 : res > 0.85 ? 1500 : 200);
+    return Math.sqrt(binPower(h.render(32).L, F0, 48000));
+  };
+
+  // Gain at the cutoff, in dB: put fc on the partial and reference it against a
+  // cutoff far above, where the filter passes unity.
+  const gainAtCutDb = (res: number, ftype: number): number =>
+    20 * Math.log10(level(res, ftype, F0) / level(res, ftype, F0 * 32));
+
+  // The design target. k1*k2 = (2 - 1.93*resT)^2, so the gain at fc is
+  // 1/(k1*k2) — the same closed form the old two-identical-stage filter had as
+  // (1/k)^2, which is why patches keep their timbre.
+  const expectedDb = (res: number): number => {
+    const r = Math.min(0.999, Math.max(0, res));
+    const resT = r + 0.0035 * r * r * r * r;
+    const kk = 2 - 1.93 * resT;
+    const k1 = Math.max(0.002, 0.5 * kk * kk);
+    return -20 * Math.log10(k1 * 2);
+  };
+
+  // Measured on this build: -12.025, -0.589, +23.497, +47.430 dB, against a
+  // closed form of -12.041, -0.591, +23.497, +47.430. The old
+  // two-identical-stage filter, same measurement: -12.03, -0.61, +23.19,
+  // +45.71 — unchanged where patches live. The point of the change is that
+  // stage 1 now carries Q ~= 470 instead of two stages carrying ~14 each.
+  it.each([0, 0.5, 0.9, 1.0])('matches 1/(k1*k2) at the cutoff, res %s', (res) => {
+    expect(gainAtCutDb(res, 1)).toBeCloseTo(expectedDb(res), 1);
+  }, 180_000);
+
+  // The other half of the picture: max_f |H(f)|, the peak anywhere in the
+  // response rather than the gain at fc. |H(fc)| above is the preset-fidelity
+  // check; this is the "does the knob actually resonate" check, and it reads
+  // 0 dB whenever the response has no peak at all. Only the low half of the
+  // knob is measured here — above res ~0.75 the peak sits on fc and the test
+  // above already covers it to three decimals.
+  const peakOverFcDb = (res: number, ftype: number): number => {
+    const ref = level(res, ftype, F0 * 32);
+    let best = 0;
+    for (let k = 0; k <= 28; k++) best = Math.max(best, level(res, ftype, F0 * Math.pow(2, (k / 28) * 5 - 0.15)));
+    return 20 * Math.log10(best / ref);
+  };
+
+  it.each([
+    [0, 0],      // no peak: the response is monotonic
+    [0.5, 0.76], // analytic; the old two-stage cascade measured +2.11 here
+  ])('peaks nowhere above the passband at res %s (max_f %s dB)', (res, want) => {
+    expect(peakOverFcDb(res, 1)).toBeCloseTo(want, 1);
+  }, 120_000);
+
+  it('leaves LP12 alone', () => {
+    // Only the two-stage type changed; a 12 dB patch keeps k = 2 - 1.93*res,
+    // so its gain at fc stays 1/k.
+    const k = 2 - 1.93 * 0.62;
+    expect(gainAtCutDb(0.62, 0)).toBeCloseTo(-20 * Math.log10(k), 0);
+  }, 120_000);
+
+  it('sings at the top of the knob', () => {
+    // The old filter topped out at Q ~= 14 and rang out in ~0.3 s. One stage at
+    // Q ~= 470 rings for seconds. The amp env gates the filter, so the source
+    // is removed mid-note rather than the note released.
+    const h = boot(resPatch(1, 1, F0));
+    h.send({ t: 'noteon', semi: 24, vel: 1 });
+    h.render(4);
+    h.send({ t: 'p', k: 'sub.level', v: 0 });
+    const { L } = h.render(1200); // 3.2 s
+    const win = (at: number): number => {
+      let m = 0;
+      for (let i = at; i < at + 2048; i++) m = Math.max(m, Math.abs(L[i]));
+      return m;
+    };
+    const start = win(128 * 40);
+    expect(start).toBeGreaterThan(1e-5);
+    expect(win(L.length - 2048)).toBeGreaterThan(start / 1000); // above -60 dB at 3.2 s
+  }, 120_000);
 });
