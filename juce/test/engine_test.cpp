@@ -66,7 +66,15 @@ static double aliasFloorDb(const float* x, int N, double sr, double f0) {
     auto mag2 = [&](int k) { return re[k] * re[k] + im[k] * im[k]; };
 
     double binHz = sr / N;
-    int halfWin = 12;                // bins around each harmonic counted as "signal"
+    // The mask must be wider than the window's skirt, or the measurement reads
+    // leakage from the harmonics instead of the engine. A fixed +/-12 bins is
+    // wide enough only while the harmonics are far apart: at note 36 (89 bins
+    // apart, 366 harmonics) it reported -77.5 dB, and widening the mask to
+    // +/-40 dropped the same render to -98.3 dB — 21 dB of pure leakage. Wider
+    // still would leave no gap to measure in, so cap at 40 and keep at least a
+    // few bins clear either side of the midpoint between harmonics.
+    const double spacing = f0 / binHz;
+    int halfWin = (int)std::min(40.0, std::max(12.0, spacing / 2 - 4));
     int loBin = (int)(40 / binHz);   // ignore DC / sub-bass leakage
     std::vector<char> isHarm(N / 2, 0);
     for (int k = 1; k * f0 < sr * 0.5; k++) {
@@ -168,13 +176,13 @@ int main() {
             double f0 = 440.0 * std::pow(2.0, (note - 69) / 12.0);
             auto buf = renderNote(eng, note, (double)(N + 4096) / sr, sr);
             double db = aliasFloorDb(buf.data() + (buf.size() - N), N, sr, f0);
-            // -85 dB is the real anti-aliasing bound. Note 36 is the exception:
-            // its harmonics are only 89 bins apart, so ~30000 unmasked bins are
-            // integrated, and each one sits on the float32 output floor at
-            // about -98 dB. That sums to about -78 dB of *broadband* floor with
-            // no discrete image anywhere near it — the metric is measuring the
-            // 24-bit floor there, not the engine.
-            const double limit = note <= 36 ? -75.0 : -85.0;
+            // -85 dB at every note, with no per-note exception: the mask in
+            // aliasFloorDb widens where the harmonics crowd together, so the
+            // measurement floor stays below the bound everywhere. Measured with
+            // the Hermite read: -98.3 / -92.8 / -103.8 / -100.1 / -102.5 /
+            // -100.3 dB. Reverting rdH to a linear read gives -86.7 / -72.9 /
+            // -81.8, so notes 48 and 60 fail — the check has teeth.
+            const double limit = -85.0;
             check(db < limit, "alias floor low @ note " + std::to_string(note),
                   std::to_string(db) + " dB");
             eng.panic();
@@ -809,7 +817,11 @@ int main() {
         // (5) 16-voice render must not alias. aliasFloorDb scores any energy off
         // the exact-harmonic comb as "alias", so detune (which legitimately places
         // partials between harmonics) would false-fail. Use detune=0 to isolate the
-        // band-limited mip path for 16 summed voices; reuse the -55 dB threshold.
+        // band-limited mip path for 16 summed voices. Now that the mask scales
+        // with the harmonic spacing the measurement is clean here too, so this
+        // holds the same -85 dB bound as the single-voice check rather than the
+        // -55 dB the leakage-limited metric used to need. Measured -103 to
+        // -106 dB, so the margin is ~18 dB.
         {
             Engine e; e.prepare(sr); e.setTables(tables);
             auto p = defaultParams();
@@ -827,7 +839,7 @@ int main() {
                 auto buf = renderNote(e, note, 0.4, sr);
                 int N = 16384;
                 double db = aliasFloorDb(buf.data() + (buf.size() - N), N, sr, f0);
-                check(db < -55.0, "16-voice alias floor low @ note " + std::to_string(note),
+                check(db < -85.0, "16-voice alias floor low @ note " + std::to_string(note),
                       std::to_string(db) + " dB");
                 e.panic();
                 std::vector<float> flush((size_t)(sr * 0.2), 0);

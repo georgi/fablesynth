@@ -68,19 +68,26 @@ static std::string onsetsStr(const std::vector<int>& o) {
 }
 static bool near(int a, int b, int tol) { return std::abs(a - b) <= tol; }
 
-// ---- anti-aliasing measurement (copied from engine_test.cpp): ratio of ----
-// ---- non-harmonic to harmonic energy over a Hann-windowed FFT          ----
+// ---- anti-aliasing measurement (kept in step with engine_test.cpp) -------
+// A Hann window with a +/-6-bin mask leaks about -57 dB into the "alias" bins,
+// so it scored a linear and a cubic Hermite read identically — it measured the
+// window, not the engine. A 4-term Blackman-Harris window (-92 dB sidelobes)
+// with a mask that widens where the harmonics crowd together puts the
+// measurement floor below -100 dB, where the reads actually differ.
 static double aliasFloorDb(const float* x, int N, double sr, double f0) {
     std::vector<double> re(N), im(N, 0.0);
+    static const double a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
     for (int i = 0; i < N; i++) {
-        double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1)); // Hann
+        const double t = 2 * M_PI * i / (N - 1);
+        const double w = a0 - a1 * std::cos(t) + a2 * std::cos(2 * t) - a3 * std::cos(3 * t);
         re[i] = x[i] * w;
     }
     fft(re.data(), im.data(), N, false);
     auto mag2 = [&](int k) { return re[k] * re[k] + im[k] * im[k]; };
 
     double binHz = sr / N;
-    int halfWin = 6;                 // bins around each harmonic counted as "signal"
+    const double spacing = f0 / binHz;
+    int halfWin = (int)std::min(40.0, std::max(12.0, spacing / 2 - 4));
     int loBin = (int)(40 / binHz);   // ignore DC / sub-bass leakage
     std::vector<char> isHarm(N / 2, 0);
     for (int k = 1; k * f0 < sr * 0.5; k++) {
@@ -342,7 +349,10 @@ int main() {
         auto ab = renderMain(ae, 48000);
         double f0 = 440.0 * std::pow(2.0, (60 + 24 - 69) / 12.0);
         double fdb = aliasFloorDb(ab.data() + 4800, 32768, 48000, f0);
-        check(fdb < -55.0, "GRIT +24st alias floor < -55 dB", std::to_string(fdb) + " dB");
+        // -85 dB, the same bound the WT-1 check holds. The -55 dB it used to
+        // assert was set for the leakage-limited metric above; with the window
+        // and mask fixed this measures -102.8 dB, so the margin is ~18 dB.
+        check(fdb < -85.0, "GRIT +24st alias floor < -85 dB", std::to_string(fdb) + " dB");
     }
     {
         // Per-pad routing: editing pad 1's chain cannot alter a pad 0 hit,
