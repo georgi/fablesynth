@@ -21,10 +21,23 @@ public:
     void setParams(const BassParamArray& p); // reads BL_FX* and BL_MASTER_VOLUME
     void process(float* L, float* R, int n); // in-place, stereo
     void reset();
+    // Jump every ramped coefficient to its target (prepare / patch load), so a
+    // fresh start is not a 15 ms glide up from silence.
+    void snapRamps();
     int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
 
 private:
     double sr_ = 48000;
+
+    // Finding J1: AMT / chorus RATE+DEPTH / reverb SIZE reach the FX as block
+    // values, so their derived coefficients used to jump once per host block.
+    // They now ramp over ~15 ms in kCoefChunk-sample steps, the same scheme
+    // Fx uses for its EQ/drive/reverb coefficients. (Mix, feedback, delay time
+    // and master gain were already per-sample Smooths.)
+    static constexpr int kCoefChunk = 32;
+    int chunkPos_ = 0;
+    ChunkRamp driveAmtR_, chRateR_, chDepthR_, verbSizeR_;
+    void updateCoefs(bool force);
 
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;

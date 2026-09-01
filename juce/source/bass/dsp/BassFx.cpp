@@ -38,6 +38,11 @@ void BassFx::prepare(double sampleRate) {
     dlL_.prepare((int)(2.0 * sr_) + 4);
     dlR_.prepare((int)(2.0 * sr_) + 4);
 
+    // ~15 ms of coefficient ramp, in kCoefChunk-sample steps (Finding J1).
+    const int steps = std::max(1, (int)std::lround(0.015 * sr_ / kCoefChunk));
+    driveAmtR_.setSteps(steps); chRateR_.setSteps(steps);
+    chDepthR_.setSteps(steps); verbSizeR_.setSteps(steps);
+
     driveWet_.setTime(0.02, sr_); driveDry_.setTime(0.02, sr_);
     chWet_.setTime(0.02, sr_); chDry_.setTime(0.02, sr_);
     dlTime_.setTime(0.08, sr_); dlFb_.setTime(0.02, sr_);
@@ -80,7 +85,12 @@ void BassFx::reset() {
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     lim_.reset();
     chPhase_ = 0;
+    chunkPos_ = 0;
     driveGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
+    // A re-prepare must not leave a ramp mid-flight.
+    driveAmtR_.snapToTarget(); chRateR_.snapToTarget();
+    chDepthR_.snapToTarget(); verbSizeR_.snapToTarget();
+    updateCoefs(true);
     // settle smoothers at their targets so no stale ramp survives a re-prepare
     driveWet_.snap(driveWet_.target); driveDry_.snap(driveDry_.target);
     chWet_.snap(chWet_.target); chDry_.snap(chDry_.target);
@@ -96,19 +106,16 @@ static inline float mixGate(bool on, float amount, bool wet) {
 }
 
 void BassFx::setParams(const BassParamArray& p) {
-    // drive
-    float amt = p[BL_FXDRIVE_AMT];
-    drivePre_ = 1 + amt * 2;
-    driveK_ = 1 + amt * 12;
-    driveNorm_ = 1.0f / (drivePre_ * std::tanh(driveK_));
+    // drive — AMT ramps; the shaper gains are rebuilt in updateCoefs.
+    driveAmtR_.setTarget(p[BL_FXDRIVE_AMT]);
     bool dOn = p[BL_FXDRIVE_ON] > 0.5f;
     driveOff_ = !dOn;
     driveWet_.target = mixGate(dOn, p[BL_FXDRIVE_MIX], true);
     driveDry_.target = mixGate(dOn, p[BL_FXDRIVE_MIX], false);
 
     // chorus
-    chRate_ = p[BL_FXCHORUS_RATE];
-    chDepth_ = p[BL_FXCHORUS_DEPTH];
+    chRateR_.setTarget(p[BL_FXCHORUS_RATE]);
+    chDepthR_.setTarget(p[BL_FXCHORUS_DEPTH]);
     bool cOn = p[BL_FXCHORUS_ON] > 0.5f;
     chorusOff_ = !cOn;
     chWet_.target = mixGate(cOn, p[BL_FXCHORUS_MIX] * 0.8f, true);
@@ -122,15 +129,9 @@ void BassFx::setParams(const BassParamArray& p) {
     dlWet_.target = mixGate(delOn, p[BL_FXDELAY_MIX] * 0.85f, true);
     dlDry_.target = mixGate(delOn, p[BL_FXDELAY_MIX] * 0.85f, false);
 
-    // reverb — SIZE maps to roomsize/decay (longer & brighter tail with size)
-    float size = p[BL_FXREVERB_SIZE];
-    roomSize_ = 0.7f + size * 0.28f;
-    float damp = 0.4f - size * 0.2f;
-    for (size_t i = 0; i < 8; i++) {
-        combL_[i].feedback = combR_[i].feedback = roomSize_;
-        combL_[i].damp1 = combR_[i].damp1 = damp;
-        combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
-    }
+    // reverb — SIZE maps to roomsize/decay (longer & brighter tail with size);
+    // the comb coefficients follow it in updateCoefs.
+    verbSizeR_.setTarget(p[BL_FXREVERB_SIZE]);
     bool rOn = p[BL_FXREVERB_ON] > 0.5f;
     verbOff_ = !rOn;
     verbWet_.target = mixGate(rOn, p[BL_FXREVERB_MIX] * 0.9f, true);
@@ -140,25 +141,62 @@ void BassFx::setParams(const BassParamArray& p) {
     masterGain_.target = vol * vol * 1.6f;
 }
 
+// Finding J1: rebuild every coefficient that derives from a ramped parameter.
+// Called once per kCoefChunk samples, and only while something is moving.
+void BassFx::updateCoefs(bool force) {
+    bool moved = force;
+    moved |= driveAmtR_.next();
+    moved |= chRateR_.next();
+    moved |= chDepthR_.next();
+    const bool verbMoved = verbSizeR_.next();
+    if (moved) {
+        const float amt = driveAmtR_.cur;
+        drivePre_ = 1 + amt * 2;
+        driveK_ = 1 + amt * 12;
+        driveNorm_ = 1.0f / (drivePre_ * std::tanh(driveK_));
+        chRate_ = chRateR_.cur;
+        chDepth_ = chDepthR_.cur;
+    }
+    if (verbMoved || force) {
+        const float size = verbSizeR_.cur;
+        roomSize_ = 0.7f + size * 0.28f;
+        const float damp = 0.4f - size * 0.2f;
+        for (size_t i = 0; i < 8; i++) {
+            combL_[i].feedback = combR_[i].feedback = roomSize_;
+            combL_[i].damp1 = combR_[i].damp1 = damp;
+            combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
+        }
+    }
+}
+
+void BassFx::snapRamps() {
+    driveAmtR_.snapToTarget(); chRateR_.snapToTarget();
+    chDepthR_.snapToTarget(); verbSizeR_.snapToTarget();
+    updateCoefs(true);
+}
+
 float BassFx::shape(float x) const {
     // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth nonlinearity)
     return std::tanh(x * driveK_) * driveNorm_;
 }
 
-// One channel through the 4x oversampled shaper (see Fx.cpp for the phase
-// bookkeeping); zero-stuff gain x2 per stage, decimation keeps the base phase.
+// One channel through the 4x oversampled shaper. Finding J4: polyphase, the
+// same transcription as Fx::driveChannel — interpolate() replaces the
+// process(2x)/process(0) pair and decimate() replaces the process/process
+// pair whose second result was thrown away, so neither the zero-stuffed
+// multiplies nor the discarded decimation phase are computed at all. Same
+// filters, same group delay, same kDriveLatency. Each HalfBandFir here is
+// driven ONLY through interpolate/decimate (the two modes keep separate
+// histories and must never be mixed on one instance).
 float BassFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x) {
-    double a[2] = { u1.process(2.0 * x), u1.process(0.0) };
-    double y = 0;
-    for (int k = 0; k < 2; k++) {
-        double b0 = u2.process(2.0 * a[k]);
-        double b1 = u2.process(0.0);
-        double c = d2.process((double)shape((float)b0));
-        d2.process((double)shape((float)b1)); // discarded decimation phase
-        double d = d1.process(c);
-        if (k == 0) y = d;                    // keep the base-rate phase
-    }
-    return (float)y;
+    double a0, a1;
+    u1.interpolate(x, a0, a1);                       // 2x
+    double b00, b01, b10, b11;
+    u2.interpolate(a0, b00, b01);                    // 4x
+    u2.interpolate(a1, b10, b11);
+    double c0 = d2.decimate((double)shape((float)b00), (double)shape((float)b01));
+    double c1 = d2.decimate((double)shape((float)b10), (double)shape((float)b11));
+    return (float)d1.decimate(c0, c1);
 }
 
 void BassFx::process(float* L, float* R, int n) {
@@ -195,6 +233,8 @@ void BassFx::process(float* L, float* R, int n) {
     verbGated_ = verbGate;
 
     for (int i = 0; i < n; i++) {
+        if (chunkPos_ == 0) updateCoefs(false);
+        if (++chunkPos_ >= kCoefChunk) chunkPos_ = 0;
         float l = L[i], r = R[i];
 
         // ---- drive (4x oversampled tanh waveshaper, post-accent) ----

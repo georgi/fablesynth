@@ -109,7 +109,7 @@ private:
     std::array<std::atomic<float>*, fable::BL_NUM_PARAMS> rawParams_{};
 
     // command FIFO (message thread -> audio thread)
-    enum CmdType { CmdNoteOn = 0, CmdNoteOff, CmdPlay, CmdStop, CmdPanic };
+    enum CmdType { CmdNoteOn = 0, CmdNoteOff, CmdPlay, CmdStop, CmdPanic, CmdSnapParams };
     struct Cmd { int type = 0; int a = 0; float v = 0; };
     juce::AbstractFifo cmdFifo_{64};
     std::array<Cmd, 64> cmds_{};

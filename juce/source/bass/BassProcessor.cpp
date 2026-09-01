@@ -72,8 +72,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout BassAudioProcessor::createLa
 
 void BassAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
+    // Message thread: reclaim any table set retired by an earlier publish
+    // (Finding J3) before publishing this one.
     engine.setTables(tables_);
     fx.prepare(sampleRate);
+    // Finding J1: start the FX coefficient ramps at the current patch values
+    // rather than gliding up from the prepare defaults on the first block.
+    fx.setParams(engine.params());
+    fx.snapRamps();
     setLatencySamples(fx.latencySamples());
     // Sized generously here so processBlock never allocates; oversized host
     // blocks are rendered in chunks of this capacity.
@@ -195,6 +201,7 @@ void BassAudioProcessor::setCurrentProgram(int index) {
     for (int& c : chain_) c = juce::jlimit(0, BL_NPATTERNS - 1, c);
     editPattern_ = chain_[0];
     pushCmd(CmdPanic, 0, 0);          // web loadPatchByValue panics the voice
+    pushCmd(CmdSnapParams, 0, 0);     // Finding J1: a patch load is not an automation move
     shareSeqState(true, true);
 }
 
@@ -247,6 +254,10 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
                     case CmdPlay:    engine.play();           break;
                     case CmdStop:    engine.stop();           break;
                     case CmdPanic:   engine.panic();          break;
+                    // Finding J1: a patch or session load replaces every value at
+                    // once — jump the smoothers to it instead of gliding 45
+                    // parameters over 12 ms.
+                    case CmdSnapParams: engine.snapParams();  break;
                 }
             }
         };
@@ -395,6 +406,7 @@ void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
 
     if (params.isValid())
         apvts.replaceState(params);
+    pushCmd(CmdSnapParams, 0, 0);     // Finding J1: a session load is not an automation move
 }
 
 // ---- editor -------------------------------------------------------------------

@@ -39,6 +39,31 @@ static const double BL_POS_TAU = 16.0 / (48000.0 * 0.4307829160924542);
 static const double BL_CUT_TAU = 128.0 / (48000.0 * kLn2);
 static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
 
+// Finding J1: how each parameter crosses the APVTS -> engine boundary.
+//  Snap — discrete or structural (enums, unison count, sequencer timing, and
+//         every FX id, which BassFx smooths itself); a switch may arm a J2
+//         crossfade instead.
+//  Lin  — gains, amounts, times, and pitch offsets (semitones are already the
+//         log of frequency, so linear here IS log-domain pitch).
+//  Log  — the filter cutoff, in Hz.
+enum class BassSmooth : unsigned char { Snap, Lin, Log };
+static BassSmooth bassSmoothKind(int id) {
+    switch (id) {
+        case BL_OSC_POS: case BL_OSC_TUNE: case BL_OSC_FINE:
+        case BL_OSC_DETUNE: case BL_OSC_SPREAD: case BL_OSC_LEVEL:
+        case BL_SUB_LEVEL:
+        case BL_FLT_RES: case BL_FLT_DRIVE: case BL_FLT_ENV: case BL_FLT_TRACK:
+        case BL_FENV_ATT: case BL_FENV_DEC:
+        case BL_AENV_ATT: case BL_AENV_DEC: case BL_AENV_SUS: case BL_AENV_REL:
+        case BL_ACC_AMT: case BL_SLIDE_TIME: case BL_LFO_DEPTH:
+            return BassSmooth::Lin;
+        case BL_FLT_CUT:
+            return BassSmooth::Log;
+        default:
+            return BassSmooth::Snap;
+    }
+}
+
 // Finding 10: cubic Hermite (Catmull-Rom) table read, indices pre-wrapped.
 static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i2, double f) {
     const double ym1 = d[off + im1], y0 = d[off + i0], y1 = d[off + i1], y2 = d[off + i2];
@@ -54,6 +79,8 @@ static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i
 void BassEngine::prepare(double sampleRate) {
     sr_ = sampleRate;
     dcR_ = std::pow(BL_DC_R, 48000.0 / sr_);   // Finding 9
+    xfLen_ = std::max(8, (int)std::lround(BL_SWITCH_XFADE * sr_));  // Finding J2
+    snapParams();                              // Finding J1: no ramp across a re-prepare
     panic();
     held_.clear();
     held_.reserve(128);            // Finding B6: keyOn never allocates after this
@@ -75,13 +102,21 @@ void BassEngine::prepare(double sampleRate) {
     subPhase_ = 0; subIncPrev_ = -1;
     dcxL_ = dcxR_ = dcyL_ = dcyR_ = 0;
     shVal_ = 0; shPhase_ = -1;
+    oscXfPos_ = fltXfPos_ = 1 << 30;
+    std::fill(std::begin(svfOld_), std::end(svfOld_), 0.0);
+    collectRetiredTables();        // message thread: reclaim anything pending
 }
 
-// Finding 2: lock-free publication — same scheme as Engine::setTables. The
-// audio thread never blocks on a table swap and never substitutes silence;
-// retired_ keeps the previous set so its free lands on the message thread.
+// Finding J3: the previous scheme published the set through the free-function
+// std::atomic_load/atomic_exchange on a shared_ptr. Both libstdc++ and libc++
+// implement those with a hashed spinlock pool, so the audio thread could spin
+// behind the message thread, and the render's local snapshot could be the last
+// reference — running ~TableSet (and every TablePtr release inside it) on the
+// audio thread. Now a raw std::atomic<const TableSet*> is published, the
+// message thread keeps the only owning references, and retired sets are freed
+// by collectRetiredTables() once no render can still hold the pointer.
 void BassEngine::setTables(std::vector<TablePtr> tables) {
-    auto next = std::make_shared<TableSet>();
+    auto next = std::make_unique<TableSet>();
     next->reserve(tables.size());
     for (auto& t : tables) {
         BassTable e;
@@ -92,7 +127,98 @@ void BassEngine::setTables(std::vector<TablePtr> tables) {
         }
         next->push_back(std::move(e));
     }
-    retired_ = std::atomic_exchange(&tables_, std::shared_ptr<const TableSet>(std::move(next)));
+    auto prev = std::move(live_);
+    live_ = std::unique_ptr<const TableSet>(next.release());
+    // Sequentially consistent: the epoch must be sampled AFTER the publish is
+    // globally visible, or a render that starts in between could load the old
+    // pointer and still be tagged with an already-passed epoch.
+    tablesPub_.store(live_.get(), std::memory_order_seq_cst);
+    if (prev)
+        retired_.push_back({ std::move(prev), renderEpoch_.load(std::memory_order_seq_cst) });
+    collectRetiredTables();
+}
+
+// Message thread. A retired set is safe to free once the render epoch has moved
+// PAST the value sampled at retirement: renders are strictly sequential on the
+// audio thread, so a higher epoch proves the render that could still hold the
+// pointer has returned. Nothing here ever runs on the audio thread.
+void BassEngine::collectRetiredTables() {
+    const uint64_t e = renderEpoch_.load(std::memory_order_acquire);
+    retired_.erase(std::remove_if(retired_.begin(), retired_.end(),
+                                  [e](const RetiredSet& r) { return e > r.epoch; }),
+                   retired_.end());
+}
+
+// Finding B3 — see BassEngine.h for the derivation of the taper.
+void BassEngine::resToK(double res, bool twoPole, double& k1, double& k2) {
+    res = clampd(res, 0.0, 0.999);   // 0.999, not 1.0 — see BassEngine.h
+    if (twoPole) {
+        const double r2 = res * res;
+        const double resT = res + 0.0035 * r2 * r2;
+        const double kk = 2 - 1.93 * resT;
+        k1 = std::max(BL_LP24_KMIN, 0.5 * kk * kk);
+        k2 = BL_LP24_K2;
+    } else {
+        k1 = k2 = 2 - 1.93 * res;
+    }
+}
+
+// Finding J1: start this render call's automation ramp. Every continuous
+// parameter travels from its current value to the block target across the
+// call, capped so a huge host block does not stretch an automation move.
+void BassEngine::beginParamRamp(int n) {
+    ps_ = p_;
+    rampPos_ = 0;
+    rampLen_ = std::min(n, std::max(1, (int)(BL_PARAM_RAMP_MAX_SEC * sr_)));
+}
+
+// Finding J1: evaluate the ramp at the end of one <=128-sample chunk. Gains,
+// amounts and times move linearly; the cutoff moves geometrically, so a decade
+// sweep is perceptually even. Discrete parameters were already taken by
+// applyDiscreteParams before the first chunk.
+void BassEngine::advanceParams(int n) {
+    if (!smoothParams_) { p_ = target_; return; }
+    rampPos_ += n;
+    const double f = rampLen_ <= 0 ? 1.0 : std::min(1.0, (double)rampPos_ / rampLen_);
+    for (int i = 0; i < BL_NUM_PARAMS; ++i) {
+        const size_t k = (size_t)i;
+        const BassSmooth kind = bassSmoothKind(i);
+        if (kind == BassSmooth::Snap) continue;
+        const double t = target_[k], s0 = ps_[k];
+        if (!(t != s0) || f >= 1.0 || !std::isfinite(t) || !std::isfinite(s0)) {
+            p_[k] = target_[k];
+            continue;
+        }
+        p_[k] = (kind == BassSmooth::Log && s0 > 0.0 && t > 0.0)
+                  ? (float)(s0 * std::pow(t / s0, f))
+                  : (float)(s0 + (t - s0) * f);
+    }
+}
+
+// Discrete parameters take effect once per render call — the sequencer reads
+// tempo/swing before the first chunk is even sized, and a host cannot move an
+// enum inside a block anyway. A switch arms its J2 crossfade here.
+void BassEngine::applyDiscreteParams() {
+    const float oTbl = p_[BL_OSC_TABLE], oSh = p_[BL_SUB_SHAPE], oOct = p_[BL_SUB_OCT];
+    const float oFt = p_[BL_FLT_TYPE];
+    for (int i = 0; i < BL_NUM_PARAMS; ++i)
+        if (bassSmoothKind(i) == BassSmooth::Snap) p_[(size_t)i] = target_[(size_t)i];
+
+    // Finding J2: arm the fades. An idle voice needs none — nothing is
+    // sounding to click — and a fade already in flight simply restarts from
+    // the configuration that was live a moment ago.
+    if (!switchXfade_ || ampStage_ == 0) return;
+    if (p_[BL_OSC_TABLE] != oTbl || p_[BL_SUB_SHAPE] != oSh || p_[BL_SUB_OCT] != oOct) {
+        saveOsc(oscOld_);
+        oldTbl_ = oTbl; oldSubShape_ = oSh; oldSubOct_ = oOct;
+        oscXfPos_ = 0;
+    }
+    if (p_[BL_FLT_TYPE] != oFt) {
+        std::copy(std::begin(svf_), std::end(svf_), std::begin(svfOld_));
+        ftypeOld_ = (int)oFt;
+        twoPoleOld_ = ftypeOld_ == 1;
+        fltXfPos_ = 0;
+    }
 }
 
 // ---------- voice control (js:126-173) ----------
@@ -128,6 +254,9 @@ void BassEngine::kill() {
     posSm_ = -1; cutSm_ = 0; cutPrev_ = -1;
     havePrev_ = false; subIncPrev_ = -1;
     monoPrev_ = false; gainPrev_ = -1;
+    // Finding J2: a fade in flight must not survive into the next note — its
+    // old-configuration oscillator state belongs to a voice that is gone.
+    oscXfPos_ = fltXfPos_ = 1 << 30;
 }
 
 void BassEngine::panic() {
@@ -542,7 +671,10 @@ void BassEngine::setupFilter(double noteAbs, double beats, int n) {
     if (twoPole && !twoPole_) { svf_[4] = svf_[5] = svf_[6] = svf_[7] = 0; }
     ftype_ = ftype;
     twoPole_ = twoPole;
-    k1_ = 2 - 1.93 * res;             // SVF a1..a3 recomputed per sub-block in runFilter
+    // Finding B3: for LP24 the resonance now lives in stage 1 alone and stage
+    // 2 stays critically damped, instead of two coincident resonant stages.
+    // SVF a1..a3 are recomputed per sub-block in runFilter.
+    resToK(res, twoPole, k1_, k2_);
 
     // Finding B8: the mono fast path is valid only when every unison voice
     // pans dead centre AND it was already valid last chunk — renderOsc ramps
@@ -637,11 +769,40 @@ void BassEngine::runFilter(const float* inL, const float* inR,
 
     // Finding 7: cutoff ramps from the previous chunk's value; coefficients
     // recomputed per <=32-sample sub-block.
-    const int ftype = ftype_;
-    const double k1 = k1_;
     const double c1c = cutTarget_;
     const double c0c = cutPrev_ > 0 ? cutPrev_ : c1c;
-    double* F = svf_;
+
+    // Finding J2: while a filter-type switch is fading, the OLD type keeps
+    // running on the copy of the SVF state taken at the switch, over the same
+    // post-drive signal, and the two are equal-power mixed. Both see the same
+    // cutoff ramp, so only the type (and its k) differ.
+    const bool fade = fltXfPos_ < xfLen_;
+    if (fade) {
+        std::copy(outL, outL + n, fxL_);
+        if (!mono) std::copy(outR, outR + n, fxR_);
+    }
+
+    svfChain(outL, outR, n, c0c, c1c, ftype_, twoPole_, k1_, k2_, svf_, mono);
+
+    if (fade) {
+        double ok1 = 0, ok2 = 0;
+        resToK(clampd(p_[BL_FLT_RES], 0.0, 0.999), twoPoleOld_, ok1, ok2);
+        svfChain(fxL_, fxR_, n, c0c, c1c, ftypeOld_, twoPoleOld_, ok1, ok2, svfOld_, mono);
+        for (int i = 0; i < n; i++) {
+            const double w = std::min(1.0, (double)(fltXfPos_ + i) / xfLen_);
+            const double gOld = std::cos(w * kPi * 0.5), gNew = std::sin(w * kPi * 0.5);
+            outL[i] = (float)(fxL_[i] * gOld + outL[i] * gNew);
+            outR[i] = (float)(fxR_[i] * gOld + outR[i] * gNew);
+        }
+        fltXfPos_ += n;
+    }
+    cutPrev_ = c1c;
+}
+
+// One filter pass over `n` samples with its own state block F[8].
+void BassEngine::svfChain(float* bufL, float* bufR, int n, double c0c, double c1c,
+                          int ftype, bool twoPole, double k1, double k2,
+                          double* F, bool mono) const {
     for (int at = 0; at < n; at += 32) {
         const int m = std::min(32, n - at);
         const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
@@ -650,15 +811,19 @@ void BassEngine::runFilter(const float* inL, const float* inR,
         const double a2 = gC * a1, a3 = gC * a2;
         const int chans = mono ? 1 : 2;
         for (int ch = 0; ch < chans; ch++) {
-            float* buf = ch == 0 ? outL : outR;
+            float* buf = ch == 0 ? bufL : bufR;
             const int o1 = ch * 2;
             svfRunType(ftype, buf, at, at + m, a1, a2, a3, k1, F[o1], F[o1 + 1]);
         }
-        if (twoPole_) {
+        if (twoPole) {
+            // Finding B3: the LP24 second stage is critically damped, not a
+            // second copy of the resonant pair — it needs its own coefficients.
+            const double b1 = 1 / (1 + gC * (gC + k2));
+            const double b2 = gC * b1, b3 = gC * b2;
             for (int ch = 0; ch < chans; ch++) {
-                float* buf = ch == 0 ? outL : outR;
+                float* buf = ch == 0 ? bufL : bufR;
                 const int o1 = 4 + ch * 2;
-                svfRun<0>(buf, at, at + m, a1, a2, a3, k1, F[o1], F[o1 + 1]);
+                svfRun<0>(buf, at, at + m, b1, b2, b3, k2, F[o1], F[o1 + 1]);
             }
         }
     }
@@ -666,18 +831,16 @@ void BassEngine::runFilter(const float* inL, const float* inR,
         // Keep the right channel's state in lockstep so a later spread > 0
         // resumes without a discontinuity, and mirror the samples out.
         F[2] = F[0]; F[3] = F[1]; F[6] = F[4]; F[7] = F[5];
-        for (int i = 0; i < n; i++) outR[i] = outL[i];
+        for (int i = 0; i < n; i++) bufR[i] = bufL[i];
     }
-    cutPrev_ = c1c;
 }
 
-// ---------- render voice (js:482-543) ----------
-void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
-    if (ampStage_ == 0 && !gate_) return;          // LFO clock advances outside
-    float* tmpL = tmpL_;
-    float* tmpR = tmpR_;
-    std::fill(tmpL, tmpL + n, 0.0f);
-    std::fill(tmpR, tmpR + n, 0.0f);
+// Finding J2: the oscillator + sub pass over one chunk, factored out so the
+// old table / sub shape can be rendered a second time from its own state
+// while a switch crossfades.
+void BassEngine::oscPass(float* dstL, float* dstR, int n) {
+    std::fill(dstL, dstL + n, 0.0f);
+    std::fill(dstR, dstR + n, 0.0f);
 
     // glide: one-pole approach of semiTarget with time-constant slide.time
     const double tau = std::max(0.005, (double)p_[BL_SLIDE_TIME]) * sr_;
@@ -691,9 +854,61 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
         }
         const double noteRootAbs = BL_ROOT_MIDI + semi_;
         const double noteAbs = noteRootAbs + p_[BL_OSC_TUNE] + p_[BL_OSC_FINE] / 100.0;
-        if (setupOsc(noteAbs, count)) renderOsc(tmpL, tmpR, at, count);
+        if (setupOsc(noteAbs, count)) renderOsc(dstL, dstR, at, count);
         else havePrev_ = false;
-        renderSub(tmpL, tmpR, at, count, noteRootAbs);
+        renderSub(dstL, dstR, at, count, noteRootAbs);
+    }
+}
+
+void BassEngine::saveOsc(OscSnap& s) const {
+    std::copy(std::begin(phases_), std::end(phases_), std::begin(s.phases));
+    std::copy(std::begin(pIncs_), std::end(pIncs_), std::begin(s.pIncs));
+    std::copy(std::begin(pGl_), std::end(pGl_), std::begin(s.pGl));
+    std::copy(std::begin(pGr_), std::end(pGr_), std::begin(s.pGr));
+    s.pFt = pFt_; s.posSm = posSm_; s.subPhase = subPhase_;
+    s.subIncPrev = subIncPrev_; s.semi = semi_;
+    s.pOff0 = pOff0_; s.pUni = pUni_; s.havePrev = havePrev_;
+}
+
+void BassEngine::restoreOsc(const OscSnap& s) {
+    std::copy(std::begin(s.phases), std::end(s.phases), std::begin(phases_));
+    std::copy(std::begin(s.pIncs), std::end(s.pIncs), std::begin(pIncs_));
+    std::copy(std::begin(s.pGl), std::end(s.pGl), std::begin(pGl_));
+    std::copy(std::begin(s.pGr), std::end(s.pGr), std::begin(pGr_));
+    pFt_ = s.pFt; posSm_ = s.posSm; subPhase_ = s.subPhase;
+    subIncPrev_ = s.subIncPrev; semi_ = s.semi;
+    pOff0_ = s.pOff0; pUni_ = s.pUni; havePrev_ = s.havePrev;
+}
+
+// ---------- render voice (js:482-543) ----------
+void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
+    if (ampStage_ == 0 && !gate_) return;          // LFO clock advances outside
+    float* tmpL = tmpL_;
+    float* tmpR = tmpR_;
+
+    oscPass(tmpL, tmpR, n);
+
+    // Finding J2: a table / sub-shape / sub-octave switch renders the chunk a
+    // second time from the pre-switch configuration and its own oscillator
+    // state, then equal-power mixes the two. The published table set is
+    // immutable and snapshotted for the whole render call, so the old table
+    // index stays valid for as long as the fade runs.
+    if (oscXfPos_ < xfLen_) {
+        OscSnap post; saveOsc(post);
+        restoreOsc(oscOld_);
+        const float sT = p_[BL_OSC_TABLE], sS = p_[BL_SUB_SHAPE], sO = p_[BL_SUB_OCT];
+        p_[BL_OSC_TABLE] = oldTbl_; p_[BL_SUB_SHAPE] = oldSubShape_; p_[BL_SUB_OCT] = oldSubOct_;
+        oscPass(xL_, xR_, n);
+        p_[BL_OSC_TABLE] = sT; p_[BL_SUB_SHAPE] = sS; p_[BL_SUB_OCT] = sO;
+        saveOsc(oscOld_);
+        restoreOsc(post);
+        for (int i = 0; i < n; i++) {
+            const double w = std::min(1.0, (double)(oscXfPos_ + i) / xfLen_);
+            const double gOld = std::cos(w * kPi * 0.5), gNew = std::sin(w * kPi * 0.5);
+            tmpL[i] = (float)(xL_[i] * gOld + tmpL[i] * gNew);
+            tmpR[i] = (float)(xR_[i] * gOld + tmpR[i] * gNew);
+        }
+        oscXfPos_ += n;
     }
 
     setupFilter(BL_ROOT_MIDI + semi_ + p_[BL_OSC_TUNE], beats, n);
@@ -748,12 +963,18 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
 void BassEngine::render(float* L, float* R, int n) {
     std::fill(L, L + n, 0.0f);
     std::fill(R, R + n, 0.0f);
+    applyDiscreteParams();       // Finding J1/J2: block-rate discrete update
+    beginParamRamp(n);           // Finding J1: automation ramp for this call
 
-    // Finding 2: snapshot the published table set once for the whole call —
-    // the shared_ptr keeps setupOsc's cached raw pointers valid even if the
-    // message thread publishes a new set mid-block. Never blocks, never silent.
-    const std::shared_ptr<const TableSet> snap = std::atomic_load(&tables_);
-    curTables_ = snap.get();
+    // Finding J3: read the published table set once for the whole call. The
+    // pointer stays valid because setTables retires the outgoing set to a
+    // message-thread list instead of dropping the audio thread's last
+    // reference. Never blocks, never allocates, never frees, never silent.
+    // Finding J3: bump the epoch BEFORE loading the published pointer so a
+    // concurrent setTables either sees this render in flight (and defers the
+    // free) or publishes before this load (and we take the new set).
+    renderEpoch_.fetch_add(1, std::memory_order_seq_cst);
+    curTables_ = tablesPub_.load(std::memory_order_seq_cst);
 
     // Hosted clip mode owns the transport exclusively: it suppresses both the
     // host-transport-locked and internal-clock firing below so the
@@ -803,6 +1024,7 @@ void BassEngine::render(float* L, float* R, int n) {
         const double beats = hostRun ? hostPpq_ + pos * ppqPerSample
                             : hostClipMode_ ? std::max(0.0, hostFrame_ - anchorFrame_) * beatsPerSample
                                             : songPos_ * beatsPerSample;
+        advanceParams(run);          // Finding J1/J2: chunk-rate parameter update
         renderVoice(L, R, pos, run, beats);
 
         if (internalRun) {

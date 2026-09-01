@@ -9,6 +9,7 @@
 #include "../source/bass/dsp/BassPatches.h"
 #include "../source/dsp/Wavetables.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -673,6 +674,218 @@ int main() {
         const double ideal = dur * lastIdx;   // stepAt[k] is the k-th boundary
         check(std::abs(seen - ideal) < 12.0, "no cumulative step drift over four bars",
               num(seen) + " vs " + num(ideal));
+    }
+
+    printf("\n== host automation is not block-rate (finding J1) ==\n");
+    {
+        // Sweep the cutoff over one second at a 1024-sample host block. Without
+        // the smoother the engine sees one cutoff step per block, which
+        // amplitude-modulates every harmonic at the block rate; the sidebands
+        // show up as a line at 46.875 Hz (48000/1024) and its harmonics in the
+        // spectrum of the signal's instantaneous power.
+        auto tables = makeTables();
+        const int BLK = 1024, N = 32768;
+        const double blockRate = SR / BLK;             // 46.875 Hz, exactly bin 32
+        auto sweepMetric = [&](bool smoothing) {
+            BassEngine e; e.prepare(SR); e.setTables(tables);
+            auto p = defaultBassParams();
+            p[BL_OSC_UNISON] = 1; p[BL_OSC_SPREAD] = 0; p[BL_OSC_DETUNE] = 0;
+            p[BL_SUB_LEVEL] = 0; p[BL_FLT_TYPE] = 1;   // LP24
+            p[BL_FLT_RES] = 0.7f; p[BL_FLT_DRIVE] = 0; p[BL_FLT_ENV] = 0;
+            p[BL_FLT_TRACK] = 0; p[BL_LFO_DEPTH] = 0;
+            p[BL_AENV_ATT] = 0.002f; p[BL_AENV_SUS] = 1.0f; p[BL_AENV_DEC] = 20.0f;
+            p[BL_FLT_CUT] = 300.0f;
+            e.setParams(p); e.snapParams();
+            e.setParamSmoothing(smoothing);
+            e.keyOn(0, 1.0f);                          // C2, f0 = 65.4 Hz
+            std::vector<float> L((size_t)(N + 4 * BLK)), R(L.size());
+            const int blocks = (int)L.size() / BLK;
+            for (int b = 0; b < blocks; b++) {
+                // log sweep 300 -> 3000 Hz across the whole capture, set once
+                // per host block exactly as a DAW writes an automation lane
+                const double u = (double)b / (blocks - 1);
+                e.params()[BL_FLT_CUT] = (float)(300.0 * std::pow(10.0, u));
+                e.render(L.data() + b * BLK, R.data() + b * BLK, BLK);
+            }
+            // AM detector: instantaneous power, mean removed, Blackman-Harris.
+            const int off = (int)L.size() - N;
+            std::vector<double> re((size_t)N), im((size_t)N, 0.0);
+            double mean = 0;
+            for (int i = 0; i < N; i++) mean += (double)L[(size_t)(off + i)] * L[(size_t)(off + i)];
+            mean /= N;
+            static const double a0 = 0.35875, a1 = 0.48829, a2 = 0.14128, a3 = 0.01168;
+            double sumW = 0;
+            for (int i = 0; i < N; i++) {
+                const double t = 2 * M_PI * i / (N - 1);
+                const double w = a0 - a1 * std::cos(t) + a2 * std::cos(2 * t) - a3 * std::cos(3 * t);
+                const double x = L[(size_t)(off + i)];
+                re[(size_t)i] = (x * x - mean) * w;
+                sumW += w;
+            }
+            fft(re.data(), im.data(), N, false);
+            const double binHz = SR / N;
+            auto mag = [&](int k) {
+                return std::sqrt(re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k]);
+            };
+            // Line level: the strongest bin within +/-1 of each block-rate
+            // harmonic. Floor: the median magnitude over 20..400 Hz, so the
+            // note's own harmonics cannot set it.
+            double line = 0;
+            for (int h = 1; h <= 4; h++) {
+                const int b = (int)std::lround(h * blockRate / binHz);
+                for (int j = b - 1; j <= b + 1; j++) line = std::max(line, mag(j));
+            }
+            // Report it as a modulation depth: the line's amplitude in the
+            // power signal, relative to the mean power. sumW is the window's
+            // coherent gain, and a real cosine splits across +/-f.
+            return 20 * std::log10(std::max(2 * line / (sumW * mean), 1e-30));
+        };
+        const double off = sweepMetric(false), on = sweepMetric(true);
+        check(on < -85.0, "block-rate modulation is inaudible with the J1 ramp",
+              num(on) + " dB");
+        check(off - on > 8.0, "fix disabled: the same sweep modulates far harder",
+              num(off) + " dB off vs " + num(on) + " dB on");
+    }
+
+    printf("\n== discrete switches are crossfaded (finding J2) ==\n");
+    {
+        // A switch clicks by however much the two configurations differ AT THE
+        // SWITCH SAMPLE, so the size of the click depends on the oscillator
+        // phase. Sweep the switch instant across an oscillator period and take
+        // the worst sample-to-sample step in the eight samples straddling it;
+        // a reference run that never switches gives the floor.
+        auto tables = makeTables();
+        // mode 0 = no switch, 1 = switch with the crossfade off, 2 = with it on
+        auto worstStep = [&](int pid, float from, float to, int mode) {
+            double worst = 0;
+            for (int ph = 0; ph < 24; ph++) {
+                const int pre = 12032 + ph * 32;     // ~ one C2 period, in 24 steps
+                BassEngine e; e.prepare(SR); e.setTables(tables);
+                auto p = defaultBassParams();
+                p[BL_OSC_UNISON] = 1; p[BL_OSC_SPREAD] = 0;
+                p[BL_SUB_LEVEL] = 0.6f; p[BL_FLT_DRIVE] = 0; p[BL_FLT_ENV] = 0;
+                p[BL_FLT_CUT] = 3000.0f; p[BL_FLT_RES] = 0.3f;
+                p[BL_AENV_ATT] = 0.002f; p[BL_AENV_SUS] = 1.0f; p[BL_AENV_DEC] = 20.0f;
+                p[(size_t)pid] = from;
+                e.setParams(p); e.snapParams();
+                e.setSwitchCrossfade(mode == 2);
+                e.keyOn(0, 1.0f);
+                std::vector<float> L((size_t)(pre + 3000)), R(L.size());
+                for (int at = 0; at < pre; at += 32) e.render(L.data() + at, R.data() + at, 32);
+                if (mode > 0) e.params()[(size_t)pid] = to;
+                for (int at = pre; at < (int)L.size(); at += 32)
+                    e.render(L.data() + at, R.data() + at, 32);
+                worst = std::max(worst, maxDelta(L, pre - 1, pre + 8));
+            }
+            return worst;
+        };
+        struct Case { const char* name; int pid; float from, to; };
+        const Case cases[] = {
+            { "filter type LP24 -> BP12", BL_FLT_TYPE,  1, 2 },
+            { "table 0 -> 3",             BL_OSC_TABLE, 0, 3 },
+            { "sub shape sine -> square", BL_SUB_SHAPE, 0, 1 },
+        };
+        for (const auto& c : cases) {
+            const double floorStep = worstStep(c.pid, c.from, c.to, 0);
+            const double off = worstStep(c.pid, c.from, c.to, 1);
+            const double on  = worstStep(c.pid, c.from, c.to, 2);
+            check(on < floorStep * 1.5, std::string("no click: ") + c.name,
+                  num(on) + " vs " + num(floorStep) + " unswitched");
+            check(off > on * 3.0, std::string("fix disabled: ") + c.name + " clicks",
+                  num(off) + " off vs " + num(on) + " on");
+        }
+    }
+
+    printf("\n== table publication is lock-free and frees off the audio thread (finding J3) ==\n");
+    {
+        // setTables retires the outgoing set to a message-thread list; render()
+        // only ever loads a raw pointer, so no TableSet destructor and no
+        // shared_ptr lock can land on the audio thread.
+        auto tables = makeTables();
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        auto p = defaultBassParams();
+        p[BL_AENV_SUS] = 1.0f; p[BL_AENV_DEC] = 20.0f;
+        e.setParams(p); e.snapParams();
+        e.keyOn(0, 1.0f);
+        std::vector<float> L(256), R(256);
+        bool ok = true, noAudioFree = true;
+        for (int i = 0; i < 40; i++) {
+            e.setTables(tables);                   // "message thread" publish
+            const size_t before = e.retiredTableSetCount();
+            e.render(L.data(), R.data(), 256);     // "audio thread"
+            if (e.retiredTableSetCount() != before) noAudioFree = false;
+            if (!finite(L) || !finite(R)) ok = false;
+        }
+        check(ok, "output stays finite across 40 table swaps under render");
+        check(noAudioFree, "render() never drops a table-set reference");
+        check(e.retiredTableSetCount() > 0, "retired sets accumulate off the audio thread",
+              num((double)e.retiredTableSetCount()));
+        e.render(L.data(), R.data(), 256);
+        e.render(L.data(), R.data(), 256);
+        e.collectRetiredTables();
+        check(e.retiredTableSetCount() == 0, "the message-thread drain reclaims them all",
+              num((double)e.retiredTableSetCount()));
+    }
+
+    printf("\n== resonance taper (finding B3) ==\n");
+    {
+        // LP24's resonance now lives in stage 1 alone with a critically damped
+        // stage 2, so the pole Q is the knob's real meaning instead of a
+        // product of two coincident peaks. Peak at fc = 1/(k1*k2).
+        auto peakDb = [](double res, bool lp24) {
+            double k1 = 0, k2 = 0;
+            BassEngine::resToK(res, lp24, k1, k2);
+            // LP24 runs both stages; every other type runs stage 1 only.
+            return 20 * std::log10(lp24 ? 1.0 / (k1 * k2) : 1.0 / k1);
+        };
+        auto legacyDb = [](double res, bool lp24) {
+            const double k = 2 - 1.93 * std::min(res, 0.999);
+            return (lp24 ? 40.0 : 20.0) * std::log10(1.0 / k);
+        };
+        // Magnitude preservation: every patch keeps its voicing.
+        double worst = 0;
+        for (int i = 0; i <= 90; i++)
+            worst = std::max(worst, std::abs(peakDb(i / 100.0, true) - legacyDb(i / 100.0, true)));
+        check(worst < 0.35, "LP24 magnitude matches the legacy curve to res 0.9",
+              num(worst) + " dB worst case");
+        double k1 = 0, k2 = 0;
+        BassEngine::resToK(0.62, false, k1, k2);
+        check(std::abs(k1 - (2 - 1.93 * 0.62)) < 1e-12,
+              "one-pole-pair types (LP12/BP/HP/notch) are untouched");
+        // The change is the pole Q, which is what rings.
+        BassEngine::resToK(1.0, true, k1, k2);
+        check(1.0 / k1 > 400.0,
+              "the top of the knob approaches self-oscillation (pole Q)", num(1.0 / k1));
+        BassEngine::resToK(0.999, true, k1, k2);
+        const double legacyPoleQ = 1.0 / (2 - 1.93 * 0.999);
+        check(1.0 / k1 > legacyPoleQ * 20.0, "pole Q at the top is far past the legacy 14",
+              num(1.0 / k1) + " vs " + num(legacyPoleQ));
+        BassEngine::resToK(0.0, true, k1, k2);
+        check(std::abs(k1 - 2.0) < 1e-12 && std::abs(k2 - 2.0) < 1e-12,
+              "res 0 is still two critically damped stages, no peak");
+        bool mono = true; double prev = -1e9;
+        for (int i = 0; i <= 100; i++) {
+            const double d = peakDb(i / 100.0, true);
+            if (d <= prev) mono = false;
+            prev = d;
+        }
+        check(mono, "the taper is strictly monotonic over the whole knob");
+        // Every lowpass factory patch must keep its legacy voicing at cutoff.
+        double patchWorst = 0; int checked = 0;
+        for (const auto& patch : bassFactoryPatches()) {
+            const BassParamArray pv = applyBassPatch(patch);
+            const int ft = (int)pv[BL_FLT_TYPE];
+            if (ft != 0 && ft != 1) continue;
+            const double r = pv[BL_FLT_RES];
+            patchWorst = std::max(patchWorst, std::abs(peakDb(r, ft == 1) - legacyDb(r, ft == 1)));
+            checked++;
+        }
+        check(checked > 10, "the lowpass patches were actually measured", num((double)checked));
+        check(patchWorst < 0.1, "no lowpass factory patch moves audibly at cutoff",
+              num(patchWorst) + " dB worst case");
+        check(std::abs(peakDb(0.62, true) - legacyDb(0.62, true)) < 0.03,
+              "the default res keeps the legacy +3.80 dB LP24 peak",
+              num(peakDb(0.62, true)) + " dB");
     }
 
     printf("%s\n", g_fail == 0 ? "BASS ENGINE CHECKS PASSED" : "BASS ENGINE CHECKS FAILED");

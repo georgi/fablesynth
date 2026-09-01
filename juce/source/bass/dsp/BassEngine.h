@@ -15,6 +15,7 @@
 #include "../../dsp/Engine.h"      // fable::Rng + TablePtr (via Wavetables.h)
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -38,6 +39,37 @@ constexpr double BL_ACC_GAIN    = 0.7;
 constexpr double BL_ACC_DEC_SHORTEN = 0.35;
 constexpr int    BL_KEYTRACK_REF = 60;
 
+// Finding J1: host automation arrives once per host block. Interpolating it
+// ACROSS the block is what a block-rate value actually means, so each
+// continuous parameter ramps from its value at render() entry to the target,
+// evaluated once per <=128-sample chunk. The engine's existing intra-chunk
+// ramps then interpolate the rest, and the parameter an automated knob feeds
+// the DSP is continuous instead of a staircase at the block rate. Same scheme
+// (and the same cap) as Engine::beginParamRamp, so a very long host block does
+// not turn an automation move into a slow glide.
+constexpr double BL_PARAM_RAMP_MAX_SEC = 0.050;
+// Finding J2: discrete switches (filter type, table, sub shape/octave) are
+// equal-power crossfaded over this window instead of taking effect instantly.
+constexpr double BL_SWITCH_XFADE = 0.003; // 3 ms — the DR-1 filter-switch value
+
+// Finding B3: the resonance taper (identical formula to WT-1's Engine.cpp, so
+// the two JUCE filters and their two web twins stay one filter). "LP24" used
+// to cascade two SVF stages with the SAME k = 2 - 1.93*res, so the peak at fc
+// was (1/k)^2 — two coincident resonances — and with k bottoming out at 0.071
+// the pole Q reached only ~14, so the filter never rang. The resonance now
+// lives in stage 1 alone and stage 2 stays critically damped:
+//   resT = res + 0.0035*res^4
+//   k1   = max(BL_LP24_KMIN, 0.5*(2 - 1.93*resT)^2),  k2 = 2
+// 1/(k1*k2) reproduces the legacy (1/k)^2 magnitude at fc to within 0.03 dB up
+// to res = 0.9, so every factory patch keeps its timbre, while the resonant
+// stage's Q climbs from 14 to ~470 at the top of the knob. One-pole-pair types
+// (LP12, BP, HP, notch) keep k = 2 - 1.93*res unchanged. res is clamped to
+// 0.999, matching WT-1 and both web twins: at exactly 1.0, k1 sits on the
+// max() floor, so the last sliver of travel would do nothing and the plugin
+// would ring 0.53 dB hotter than the browser.
+constexpr double BL_LP24_KMIN = 0.002;   // pole Q 500, the top of the travel
+constexpr double BL_LP24_K2   = 2.0;     // critically damped second stage
+
 // Engine table view — identical shape to DrumEngine's DrumTable: shares the
 // source table's sample data (src keeps it alive).
 struct BassTable {
@@ -56,10 +88,36 @@ struct BassStep {
 class BassEngine {
 public:
     void prepare(double sampleRate);
+
+    // Finding J3: message-thread publication. Builds the new set, publishes a
+    // raw pointer to it, and parks the outgoing set on a retire list that only
+    // the message thread ever frees (collectRetiredTables). Never allocates
+    // for, blocks, or frees anything on the audio thread.
     void setTables(std::vector<TablePtr> tables);
-    void setParam(int id, float v) { p_[(size_t)id] = v; }
-    void setParams(const BassParamArray& p) { p_ = p; }
-    BassParamArray& params() { return p_; }
+    // Message thread: free every retired set no render can still be reading.
+    // Called from setTables and from the editor timer; safe to call anywhere
+    // except the audio thread.
+    void collectRetiredTables();
+    size_t retiredTableSetCount() const { return retired_.size(); }
+
+    // ---- parameters (Finding J1) ----
+    // These write the BLOCK TARGETS. The DSP reads a smoothed copy that the
+    // render loop advances once per <=128-sample chunk; snapParams() jumps the
+    // smoothed copy to the targets (prepare, program load, state restore).
+    void setParam(int id, float v) { target_[(size_t)id] = v; }
+    void setParams(const BassParamArray& p) { target_ = p; }
+    BassParamArray& params() { return target_; }
+    void snapParams() { p_ = target_; }
+    const BassParamArray& smoothedParams() const { return p_; }
+    // Test hooks: turn the J1 smoother / the J2 switch crossfade off so a test
+    // can measure the same render with and without the fix. Always on in the
+    // plugin.
+    void setParamSmoothing(bool on) { smoothParams_ = on; if (!on) snapParams(); }
+    void setSwitchCrossfade(bool on) { switchXfade_ = on; }
+
+    // Finding B3: res -> the SVF damping of both filter stages. Public so the
+    // tests assert the shipping taper rather than a copy of it.
+    static void resToK(double res, bool twoPole, double& k1, double& k2);
 
     // ---- voice control (worklet onMsg 'noteon'/'noteoff'/'panic') ----
     void keyOn(int semi, float vel, bool acc = false); // audition when stopped; legato = slide
@@ -177,7 +235,33 @@ private:
                    float* outL, float* outR, double drive, int n);
     void renderVoice(float* L, float* R, int off, int n, double beats);
 
-    BassParamArray p_ = defaultBassParams();
+    // Finding J1/J2: advance the smoothed parameter copy by one chunk and arm
+    // a crossfade for any discrete parameter that changed with it.
+    void beginParamRamp(int n);
+    void advanceParams(int n);
+    void applyDiscreteParams();
+    // Finding J2 helpers.
+    struct OscSnap {
+        double phases[BL_MAXUNI], pIncs[BL_MAXUNI];
+        float  pGl[BL_MAXUNI], pGr[BL_MAXUNI];
+        double pFt, posSm, subPhase, subIncPrev, semi;
+        int    pOff0, pUni;
+        bool   havePrev;
+    };
+    void saveOsc(OscSnap& s) const;
+    void restoreOsc(const OscSnap& s);
+    void oscPass(float* dstL, float* dstR, int n);   // the sub-block osc+sub loop
+    // One SVF pass (drive output -> filter output) over `n` samples with its
+    // own state block, so the old filter type can run beside the new one.
+    void svfChain(float* bufL, float* bufR, int n, double c0c, double c1c,
+                  int ftype, bool twoPole, double k1, double k2,
+                  double* F, bool mono) const;
+
+    BassParamArray target_ = defaultBassParams();   // host/UI block targets
+    BassParamArray p_ = defaultBassParams();        // smoothed values the DSP reads
+    BassParamArray ps_ = defaultBassParams();       // where this call's ramp starts
+    int rampPos_ = 0, rampLen_ = 0;
+    bool smoothParams_ = true, switchXfade_ = true;
     double sr_ = 48000;
     Rng    rng_;                   // LFO S&H (deterministic tests)
 
@@ -247,7 +331,7 @@ private:
     double cutTarget_ = 0, cutPrev_ = -1;   // chunk cutoff ramp (Finding 7)
     double satXL_ = 0, satXR_ = 0;
     int    ftype_ = 1; bool twoPole_ = true;
-    double k1_ = 0;
+    double k1_ = 0, k2_ = 0;
     double fenvVal_ = 0;
     bool   mono_ = false, monoPrev_ = false;   // Finding B8: L == R fast path
     double gainPrev_ = -1;                     // Finding B2: accent gain ramp
@@ -255,17 +339,45 @@ private:
     double dcxL_ = 0, dcxR_ = 0, dcyL_ = 0, dcyR_ = 0;
     double dcR_ = BL_DC_R;                  // sr-derived DC pole (Finding 9)
 
-    // Lock-free table publication (Finding 2) — same scheme as Engine::tables_:
-    // setTables atomically publishes an immutable set; render() atomic_loads
-    // one snapshot per call and keeps it alive for the whole block.
+    // ---- Finding J2: discrete-switch crossfades ----
+    // Osc side (table / sub shape / sub octave): the chunk is rendered twice —
+    // once with the new configuration from the live state, once with the old
+    // configuration from oldOsc_ — and equal-power mixed. Filter side: the old
+    // type keeps running on a copy of the SVF state (svfOld_) beside the new
+    // one until the fade completes.
+    int    xfLen_ = 144;                      // sr-derived in prepare()
+    int    oscXfPos_ = 1 << 30;               // >= xfLen_ means "not fading"
+    OscSnap oscOld_{};
+    float  oldTbl_ = 0, oldSubShape_ = 0, oldSubOct_ = 0;
+    int    fltXfPos_ = 1 << 30;
+    double svfOld_[8] = {0};
+    int    ftypeOld_ = 1; bool twoPoleOld_ = true;
+
+    // Lock-free table publication (Finding J3) — identical scheme to
+    // Engine::tablesPub_ (see Engine.h for the full rationale). The message
+    // thread builds a complete immutable set and publishes a RAW pointer; the
+    // audio thread loads it once per render() and uses it for the whole block.
+    // The old free-function std::atomic_load on a shared_ptr was a hashed
+    // spinlock in both libstdc++ and libc++, so the audio thread could block
+    // behind a UI table swap, and the render's snapshot could drop the last
+    // reference — a free inside the audio callback. Now the message thread
+    // owns every set: a replaced one moves to retired_ tagged with the render
+    // epoch, and collectRetiredTables() frees it once a LATER render has
+    // started. Renders are strictly sequential, so a higher epoch proves the
+    // render that could still hold the pointer has returned.
     using TableSet = std::vector<BassTable>;
-    std::shared_ptr<const TableSet> tables_ = std::make_shared<TableSet>();
-    std::shared_ptr<const TableSet> retired_;
-    const TableSet* curTables_ = nullptr;
+    std::unique_ptr<const TableSet> live_ = std::make_unique<const TableSet>();
+    std::atomic<const TableSet*> tablesPub_{live_.get()};
+    std::atomic<uint64_t> renderEpoch_{0};
+    struct RetiredSet { std::unique_ptr<const TableSet> set; uint64_t epoch = 0; };
+    std::vector<RetiredSet> retired_;      // message thread only
+    const TableSet* curTables_ = nullptr;  // render-call snapshot (audio thread only)
 
     // per-block scratch (worklet process quantum)
     float tmpL_[128] = {0}, tmpR_[128] = {0};
     float fL_[128] = {0}, fR_[128] = {0};
+    float xL_[128] = {0}, xR_[128] = {0};     // J2: old osc configuration
+    float fxL_[128] = {0}, fxR_[128] = {0};   // J2: old filter type
 };
 
 } // namespace fable
