@@ -78,9 +78,17 @@ export class BassEngine {
   dlFb2!: GainNode;
   dlDamp!: BiquadFilterNode;
   delayMix!: WetDry;
+  // Two convolvers, crossfaded: a SIZE change loads the idle one and fades
+  // across, because swapping a live convolver's buffer cuts its tail dead.
   convolver!: ConvolverNode;
+  convolverB!: ConvolverNode;
+  verbGainA!: GainNode;
+  verbGainB!: GainNode;
+  verbOnB!: boolean;
   verbMix!: WetDry;
   verbTimer!: ReturnType<typeof setTimeout> | 0;
+  driveAmt!: number;
+  drivePreGain!: number;
   masterGain!: GainNode;
   dcBlock!: BiquadFilterNode;
   limiter!: DynamicsCompressorNode;
@@ -205,11 +213,21 @@ export class BassEngine {
     // -- reverb --
     const verbOut = ctx.createGain();
     this.convolver = ctx.createConvolver();
-    delayOut.connect(this.convolver);
+    this.convolverB = ctx.createConvolver();
+    this.verbGainA = ctx.createGain();
+    this.verbGainB = ctx.createGain();
+    this.verbGainA.gain.value = 1;
+    this.verbGainB.gain.value = 0;
+    this.verbOnB = false;
+    delayOut.connect(this.convolver).connect(this.verbGainA);
+    delayOut.connect(this.convolverB).connect(this.verbGainB);
     this.verbMix = this.mkWetDry(delayOut, verbOut);
-    this.convolver.connect(this.verbMix.wet);
+    this.verbGainA.connect(this.verbMix.wet);
+    this.verbGainB.connect(this.verbMix.wet);
     this.verbTimer = 0;
-    this.renderImpulse();
+    this.driveAmt = NaN;
+    this.drivePreGain = 1;
+    this.renderImpulse(true);
 
     // -- master (safety limiter only — no bus comp) --
     this.masterGain = ctx.createGain();
@@ -230,22 +248,48 @@ export class BassEngine {
     this.masterGain.connect(this.scopeAnalyser);
   }
 
-  renderImpulse(): void {
-    if (!this.ready) return;
+  makeImpulse(): AudioBuffer {
     const size = this.params['fx.reverb.size'];
     const dur = 0.5 + size * 4.5;
     const sr = this.ctx.sampleRate;
     const len = Math.floor(dur * sr);
     const buf = this.ctx.createBuffer(2, len, sr);
     const decay = 2.2 + size * 1.5;
+    // Seeded xorshift, not Math.random: the same patch renders the same tail.
+    let s = 0x9e3779b9;
+    const rnd = (): number => {
+      s ^= s << 13; s >>>= 0;
+      s ^= s >>> 17;
+      s ^= s << 5; s >>>= 0;
+      return (s >>> 8) * (1 / 16777216);
+    };
     for (let ch = 0; ch < 2; ch++) {
       const d = buf.getChannelData(ch);
       for (let i = 0; i < len; i++) {
         const t = i / len;
-        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * (i < 80 ? i / 80 : 1);
+        d[i] = (rnd() * 2 - 1) * Math.pow(1 - t, decay) * (i < 80 ? i / 80 : 1);
       }
     }
-    this.convolver.buffer = buf;
+    return buf;
+  }
+
+  // immediate = the initial load, where there is no tail to protect.
+  renderImpulse(immediate = false): void {
+    if (!this.ready) return;
+    const buf = this.makeImpulse();
+    if (immediate) {
+      this.convolver.buffer = buf;
+      return;
+    }
+    const t = this.ctx.currentTime;
+    const toB = !this.verbOnB;
+    const next = toB ? this.convolverB : this.convolver;
+    const rise = toB ? this.verbGainB : this.verbGainA;
+    const fall = toB ? this.verbGainA : this.verbGainB;
+    next.buffer = buf;
+    rise.gain.setTargetAtTime(1, t, 0.05);
+    fall.gain.setTargetAtTime(0, t, 0.05);
+    this.verbOnB = toB;
   }
 
   setMix(mix: WetDry, on: number, amount: number): void {
@@ -262,10 +306,17 @@ export class BassEngine {
     const p = this.params;
     const t = this.ctx.currentTime;
 
+    // applyAllFx runs on every FX edit. Rebuild the shaper curve only when the
+    // drive amount actually moved (reassigning `curve` resets the oversampler),
+    // and ramp the pre-gain instead of stepping it.
     const amt = p['fx.drive.amt'];
-    const { curve, preGain } = makeDriveCurve(amt);
-    this.driveShaper.curve = curve;
-    this.drivePre.gain.value = preGain;
+    if (amt !== this.driveAmt) {
+      const { curve, preGain } = makeDriveCurve(amt);
+      this.driveShaper.curve = curve;
+      this.drivePreGain = preGain;
+      this.driveAmt = amt;
+    }
+    this.drivePre.gain.setTargetAtTime(this.drivePreGain, t, 0.02);
     this.setMix(this.driveMix, p['fx.drive.on'], p['fx.drive.mix']);
 
     this.chLfo.frequency.setTargetAtTime(p['fx.chorus.rate'], t, 0.05);
