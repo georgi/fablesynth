@@ -13,3 +13,6 @@ Synthesizer mockup design-handoff.zip
 
 # Claude Code session state (agent worktrees, local settings)
 .claude/
+
+# Offscreen editor snapshots written by the JUCE host tests
+*_editor.png
