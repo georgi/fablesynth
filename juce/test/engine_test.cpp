@@ -1590,6 +1590,14 @@ int main() {
         for (float x : l) clean = clean && std::isfinite(x);
         check(clean, "table deletion produces finite audio");
     }
+    {
+        Engine e; e.prepare(sr); e.setTables(tables);
+        e.setSeqHostTransport(0.24, 120, true);
+        float l[128], r[128];
+        e.render(l, r, 128);
+        e.render(l, r, 128);
+        check(e.seqCurrentStep() == 1, "host clock continues across render segments");
+    }
 
     printf("\n== 17b. Table publication is lock-free and frees off the audio thread (J3) ==\n");
     {

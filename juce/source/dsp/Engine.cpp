@@ -1458,7 +1458,14 @@ void Engine::render(float* L, float* R, int n) {
         off += run;
     }
     playing_ = hostPlayingFlag;
-    if (hostRun) seqHostEndPpq_ = seqHostPpq_ + n * ppqPerSample;
+    if (hostRun) {
+        seqHostEndPpq_ = seqHostPpq_ + n * ppqPerSample;
+        seqHostPpq_ = seqHostEndPpq_;
+    }
+    // A processor can split one host block at MIDI events or scratch limits.
+    // The next render continues at this segment's end until the next host
+    // position replaces it (including explicit seeks/loops).
+    if (playing_) ppq_ += n * beatsPerSample;
     rendering_.store(false, std::memory_order_seq_cst);
 }
 

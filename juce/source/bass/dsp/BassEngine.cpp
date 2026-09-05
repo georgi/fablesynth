@@ -1041,7 +1041,12 @@ void BassEngine::render(float* L, float* R, int n) {
         }
         pos += run;
     }
-    if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
+    if (hostRun) {
+        hostEndPpq_ = hostPpq_ + n * ppqPerSample;
+        // Consecutive renders may be MIDI-delimited segments of one host
+        // block. Continue from this segment until setHostTransport replaces it.
+        hostPpq_ = hostEndPpq_;
+    }
 
     vizPos  = ampStage_ != 0 ? (float)posSm_ : -1.0f;
     vizEnv  = (float)ampLevel_;

@@ -61,6 +61,30 @@ int main(int argc, char** argv) {
     BassAudioProcessor proc;
     const double sr = 48000;
     const int block = 512;
+    // A boundary 240 samples into the block must fire even when unrelated
+    // MIDI controller events divide the callback into 64-sample segments.
+    {
+        BassAudioProcessor segmented;
+        segmented.apvts.getParameter("master.swing")->setValueNotifyingHost(0.0f);
+        segmented.prepareToPlay(sr, 256);
+        MockPlayHead clock;
+        clock.bpm = 120; clock.reportPpq = true; clock.ppq = 0.24;
+        clock.ppqInc = 256.0 / sr * 2.0;
+        segmented.setPlayHead(&clock);
+        juce::AudioBuffer<float> audio(2, 256);
+        juce::MidiBuffer events;
+        for (int offset : {64, 128, 192})
+            events.addEvent(juce::MidiMessage::controllerEvent(1, 1, 64), offset);
+        segmented.processBlock(audio, events);
+        check(segmented.getCurrentStep() == 1,
+              "MIDI segments preserve host sequencer boundary", segmented.getCurrentStep());
+        events.clear();
+        segmented.processBlock(audio, events);
+        check(segmented.getCurrentStep() == 1,
+              "next block does not skip the step after MIDI segments", segmented.getCurrentStep());
+        segmented.setPlayHead(nullptr);
+    }
+
 
     printf("\n== BL-1 plugin-boundary test (BassAudioProcessor) ==\n");
 

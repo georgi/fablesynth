@@ -347,6 +347,16 @@ int main() {
               num(rms(cut, a, b)) + " -> " + num(rms(tied, a, b)));
     }
 
+    {
+        BassEngine e; e.prepare(SR); e.setTables(tables);
+        e.params()[BL_MASTER_SWING] = 0;
+        e.setHostTransport(0.24, 120, true);
+        float l[128], r[128];
+        e.render(l, r, 128);
+        e.render(l, r, 128);
+        check(e.currentStep() == 1, "host clock continues across render segments");
+    }
+
     printf("\n== host transport lock ==\n");
     {
         BassEngine e;

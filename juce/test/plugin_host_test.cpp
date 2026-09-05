@@ -101,7 +101,6 @@ int main(int argc, char** argv) {
     FableAudioProcessor proc;
     const double sr = 48000;
     const int block = 512;
-
     const int HYPER_SAW = 4; // factory preset index (unison 7 + sub + chorus + reverb)
     proc.setCurrentProgram(HYPER_SAW);
     proc.prepareToPlay(sr, block);
@@ -175,6 +174,30 @@ int main(int argc, char** argv) {
         if (!c) fail++;
     };
     printf("\n== Plugin-boundary test (FableAudioProcessor, preset HYPER SAW) ==\n");
+    // A boundary 240 samples into the block must fire even when unrelated
+    // MIDI controller events divide the callback into 64-sample segments.
+    {
+        FableAudioProcessor segmented;
+        segmented.prepareToPlay(sr, 256);
+        MockPlayHead clock;
+        clock.bpm = 120; clock.reportPpq = true; clock.ppq = 0.24;
+        clock.ppqInc = 256.0 / sr * 2.0;
+        segmented.setPlayHead(&clock);
+        juce::AudioBuffer<float> audio(2, 256);
+        juce::MidiBuffer events;
+        for (int offset : {64, 128, 192})
+            events.addEvent(juce::MidiMessage::controllerEvent(1, 1, 64), offset);
+        segmented.processBlock(audio, events);
+        check(segmented.getCurrentStep() == 1,
+              "MIDI segments preserve host sequencer boundary", segmented.getCurrentStep());
+        events.clear();
+        segmented.processBlock(audio, events);
+        check(segmented.getCurrentStep() == 1,
+              "next block does not skip the step after MIDI segments", segmented.getCurrentStep());
+        segmented.setPlayHead(nullptr);
+    }
+
+
     check(proc.getName() == "FableSynth WT-1", "plugin name is FableSynth WT-1", 0);
     check(proc.getLatencySamples() > 0, "FX latency reported to the host",
           proc.getLatencySamples());
