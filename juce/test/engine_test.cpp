@@ -1563,6 +1563,34 @@ int main() {
               std::to_string(det) + " vs " + std::to_string(period));
     }
 
+    // Deleting the selected table must retain the outgoing samples across
+    // render calls, then reclaim them on the message thread after the fade.
+    {
+        Engine e; e.prepare(sr);
+        auto user = std::make_shared<const GeneratedTable>(*tables[0]);
+        std::weak_ptr<const GeneratedTable> retired = user;
+        e.setTables({tables[0], user});
+        user.reset();
+        e.setParam(OSCA_BASE + OSC_TABLE, 1);
+        e.setParam(ENV1_BASE + 2, 1.0f);
+        e.noteOn(60, 1);
+        float l[1024], r[1024];
+        e.render(l, r, 1024);
+        e.setTables({tables[0]});
+        e.setParam(OSCA_BASE + OSC_TABLE, 0);
+        check(!retired.expired(), "deleted table remains alive between renders");
+        e.render(l, r, 1);
+        e.collectRetiredTables();
+        check(!retired.expired(), "deleted table remains alive during crossfade");
+        for (int n = 0; n < 16; ++n) e.render(l, r, 128);
+        check(!retired.expired(), "audio leaves table destruction to collector");
+        e.collectRetiredTables();
+        check(retired.expired(), "deleted table reclaimed after crossfade");
+        bool clean = true;
+        for (float x : l) clean = clean && std::isfinite(x);
+        check(clean, "table deletion produces finite audio");
+    }
+
     printf("\n== 17b. Table publication is lock-free and frees off the audio thread (J3) ==\n");
     {
         // render() used to take a shared_ptr snapshot with the free-function
@@ -1627,6 +1655,9 @@ int main() {
         stop.store(true);
         audio.join();
 
+        // Finish the final replacement fade before collecting its old table.
+        float settleL[1024], settleR[1024];
+        e.render(settleL, settleR, 1024);
         // Everything still pending is reclaimed here, on the message thread.
         e.collectRetiredTables();
         check(clean.load(), "rendered output stays finite and bounded across table swaps");

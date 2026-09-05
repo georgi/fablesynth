@@ -103,6 +103,8 @@ struct FilterState {
     void   reset();
 };
 
+struct EngineTable;
+
 struct OscState {
     double phases[MAXUNI] = {0};
     double incs[MAXUNI]   = {0};
@@ -117,6 +119,9 @@ struct OscState {
     double cacheDet = 0, cacheSpr = 0, cacheBlend = 0, cachePan = 0;
     int    mask = 0, size = 0;
     const float* data = nullptr;
+    // Pins the table between render calls, including the frozen fade side.
+    // Retired sets retain the final owner so destruction stays off audio.
+    std::shared_ptr<const EngineTable> tableOwner;
     double posSm = -1;
     // Which table slot / on-state this state was last configured for. A change
     // in either freezes a copy of the whole OscState and crossfades it out
@@ -393,12 +398,11 @@ private:
     // block behind a UI table swap, and the last reference could be dropped on
     // audio (a free in the render callback). Now the message thread owns every
     // set: a replaced set moves to retired_ tagged with the render epoch, and
-    // collectRetiredTables() frees it only once a LATER render has started, or
-    // once no render is in flight at all (a bypassed or stopped plugin stops
-    // advancing the epoch, and retired sets must not pile up). Renders are
-    // strictly sequential on one thread, so a higher epoch proves the render
-    // that could still hold the pointer has returned.
-    using TableSet = std::vector<EngineTable>;
+    // collectRetiredTables() first waits for a LATER render or an idle audio
+    // thread, then checks that no oscillator pins any entry. Normal shared_ptr
+    // copies pin entries across blocks/fades; no atomic shared_ptr load or
+    // final destruction happens on audio. Renders are strictly sequential.
+    using TableSet = std::vector<std::shared_ptr<const EngineTable>>;
     std::unique_ptr<const TableSet> live_ = std::make_unique<const TableSet>();
     std::atomic<const TableSet*> tablesPub_{live_.get()};
     std::atomic<uint64_t> renderEpoch_{0};

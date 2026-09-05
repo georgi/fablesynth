@@ -148,6 +148,9 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
     for (int i = 0; i < MAXUNI; i++) { oA.phases[i] = rng.next() * SIZE; oB.phases[i] = rng.next() * SIZE; }
     oA.posSm = -1; oB.posSm = -1;
     oA.havePrev = false; oB.havePrev = false;
+    oA.tableOwner.reset(); oB.tableOwner.reset();
+    oldA.tableOwner.reset(); oldB.tableOwner.reset();
+    oA.data = oB.data = oldA.data = oldB.data = nullptr;
     subPhase = 0; subIncPrev = -1; ampFacPrev = -1;
     f1.reset(); f2.reset();
     dcxL = dcxR = dcyL = dcyR = 0;
@@ -184,6 +187,9 @@ void Engine::prepare(double sampleRate) {
         v.subPhase = 0; v.subIncPrev = -1; v.ampFacPrev = -1;
         v.oA.posSm = -1; v.oB.posSm = -1;
         v.oA.havePrev = false; v.oB.havePrev = false;
+        v.oA.tableOwner.reset(); v.oB.tableOwner.reset();
+        v.oldA.tableOwner.reset(); v.oldB.tableOwner.reset();
+        v.oA.data = v.oB.data = v.oldA.data = v.oldB.data = nullptr;
         v.lfo1.rng = &rng_; v.lfo2.rng = &rng_;
     }
     gLfo1_.rng = &rng_; gLfo2_.rng = &rng_;
@@ -235,7 +241,7 @@ void Engine::setTables(std::vector<TablePtr> tables) {
             e.data = t->data.data();
             e.src = std::move(t);
         }
-        next->push_back(std::move(e));
+        next->push_back(std::make_shared<const EngineTable>(std::move(e)));
     }
     auto prev = std::move(live_);
     live_ = std::unique_ptr<const TableSet>(next.release());
@@ -251,7 +257,8 @@ void Engine::setTables(std::vector<TablePtr> tables) {
 // Message thread. A retired set is safe to free once the render epoch has moved
 // PAST the value sampled at retirement: renders are strictly sequential on the
 // audio thread, so a higher epoch proves the render that could still hold the
-// pointer has returned. Nothing here ever runs on the audio thread.
+// pointer has returned. Oscillator pins must also drain before reclamation.
+// Nothing here ever runs on the audio thread.
 void Engine::collectRetiredTables() {
     const uint64_t e = renderEpoch_.load(std::memory_order_seq_cst);
     // rendering_ is raised BEFORE the audio thread loads the published pointer,
@@ -260,7 +267,14 @@ void Engine::collectRetiredTables() {
     // where the epoch never advances again.
     const bool idle = !rendering_.load(std::memory_order_seq_cst);
     retired_.erase(std::remove_if(retired_.begin(), retired_.end(),
-                                  [e, idle](const RetiredSet& r) { return idle || e > r.epoch; }),
+                                  [e, idle](const RetiredSet& r) {
+                                      if (!idle && e <= r.epoch) return false;
+                                      // Oscillator caches outlive render(). A set
+                                      // can be freed only after all live/frozen
+                                      // oscillators have released its entries.
+                                      return std::all_of(r.set->begin(), r.set->end(),
+                                          [](const auto& t) { return t.use_count() == 1; });
+                                  }),
                    retired_.end());
 }
 
@@ -568,7 +582,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     if (p_[slot(base + OSC_ON)] < 0.5) return false;
     int ti = (int)p_[slot(base + OSC_TABLE)];
     if (ti < 0 || ti >= (int)curTables_->size()) return false;
-    const EngineTable& table = (*curTables_)[(size_t)ti];
+    const EngineTable& table = *(*curTables_)[(size_t)ti];
     if (!table.data) return false; // empty slot
 
     double basePitch = v.pitch + bend_ + p_[slot(base + OSC_OCT)] * 12
@@ -622,6 +636,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     o.off1b = (f1 * table.mips + fineMip) * table.size;
     o.mipBlend = mipBlend;
     o.data = table.data;
+    o.tableOwner = (*curTables_)[(size_t)ti];
     o.mask = table.mask;
     o.size = table.size;
     o.uni = uni;
@@ -1056,11 +1071,17 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     auto oscSwitch = [&](OscState& o, OscState& frozen, int& rem, int& len, int base) {
         const int ti = (int)p_[slot(base + OSC_TABLE)];
         const bool on = p_[slot(base + OSC_ON)] >= 0.5;
-        if (o.tableIdx >= 0 && (ti != o.tableIdx || on != o.wasOn)) {
+        const float* nextData = ti >= 0 && ti < (int)curTables_->size()
+            ? (*curTables_)[(size_t)ti]->data : nullptr;
+        if (o.tableIdx >= 0 && (ti != o.tableIdx || on != o.wasOn
+                               || (on && o.data != nextData))) {
             frozen = o;                           // keeps the old table pointers
             // A silent old side (the oscillator was off) still starts a fade:
             // the new one has to come UP from zero rather than switch on.
-            if (!o.wasOn || !o.havePrev || !o.data) frozen.data = nullptr;
+            if (!o.wasOn || !o.havePrev || !o.data) {
+                frozen.data = nullptr;
+                frozen.tableOwner.reset();
+            }
             rem = len = xfSamples();
         }
         o.tableIdx = ti; o.wasOn = on;
@@ -1098,6 +1119,7 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
             addRamp(std::cos(t0 * PI * 0.5), std::cos(t1 * PI * 0.5));
         }
         rem = std::max(0, rem - n);
+        if (rem == 0) { frozen.data = nullptr; frozen.tableOwner.reset(); }
     };
 
     if (v.aXfRemain > 0) fadeMix(v.oA, v.oldA, aOn, v.aXfRemain, v.aXfLen, tmpL_, tmpR_);
@@ -1106,6 +1128,8 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         fadeMix(v.oB, v.oldB, bOn, v.bXfRemain, v.bXfLen, split ? bL_ : tmpL_, split ? bR_ : tmpR_);
     else if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n);
     else v.oB.havePrev = false;
+    if (!aOn) { v.oA.data = nullptr; v.oA.tableOwner.reset(); }
+    if (!bOn) { v.oB.data = nullptr; v.oB.tableOwner.reset(); }
 
     // sub oscillator
     if (p_[SUB_ON] > 0.5) {
@@ -1296,7 +1320,12 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
             v.hasPending = false;
             v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_);
         }
-        if (!v.active()) continue;
+        if (!v.active()) {
+            v.oA.tableOwner.reset(); v.oB.tableOwner.reset();
+            v.oldA.tableOwner.reset(); v.oldB.tableOwner.reset();
+            v.oA.data = v.oB.data = v.oldA.data = v.oldB.data = nullptr;
+            continue;
+        }
         renderVoice(v, L, R, n);
         // Prefer held voices for the POS viz, like the worklet's `if (v.gate ||
         // !viz)`: release tails must not yank the indicator off the held note.
