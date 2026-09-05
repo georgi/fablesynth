@@ -1093,7 +1093,9 @@ class DrumProcessor extends AudioWorkletProcessor {
       case 'panic':
         for (const v of this.voices) v.kill();
         for (const v of this.tails) v.kill();
-        this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        if (!d.preserveTransport) {
+          this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        }
         break;
       case 'host': this.hosted = !!d.on; break;
       case 'tempo':

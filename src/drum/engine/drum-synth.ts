@@ -225,8 +225,9 @@ export class DrumEngine {
     if (this.ready) this.node.port.postMessage({ t: 'sel', pad: i });
   }
 
-  panic(): void {
-    if (this.ready) this.node.port.postMessage({ t: 'panic' });
+  // Hosted preset changes reset voices while preserving active and queued clips.
+  panic(preserveTransport = false): void {
+    if (this.ready) this.node.port.postMessage({ t: 'panic', preserveTransport });
   }
 
   // ---------- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----------

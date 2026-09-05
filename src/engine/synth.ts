@@ -209,7 +209,8 @@ export class SynthEngine {
   noteOn(n: number, vel = 1): void { if (this.ready) this.node.port.postMessage({ t: 'on', n, v: vel }); }
   noteOff(n: number): void { if (this.ready) this.node.port.postMessage({ t: 'off', n }); }
   bend(semis: number): void { if (this.ready) this.node.port.postMessage({ t: 'bend', s: semis }); }
-  panic(): void { if (this.ready) this.node.port.postMessage({ t: 'panic' }); }
+  // Hosted preset changes reset sound while preserving active and queued clips.
+  panic(preserveTransport = false): void { if (this.ready) this.node.port.postMessage({ t: 'panic', preserveTransport }); }
 
   // ---------- note sequencer ----------
   setSeqPatterns(pats: Uint8Array): void { if (this.ready) this.node.port.postMessage({ t: 'pats', data: pats }); }

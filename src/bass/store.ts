@@ -473,7 +473,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
 
     const state = patchToState(patch);
     if (get().hosted) {
-      bassEngine.panic();
+      bassEngine.panic(true);
       bassEngine.params = { ...state.params };
       bassEngine.applyAllParams();
       set({ params: state.params, patchValue: value, dirty: false });

@@ -869,7 +869,11 @@ class BassProcessor extends AudioWorkletProcessor {
       case 'noteoff': this.keyOff(d.semi | 0); break;
       case 'panic':
         this.kill(); this.held.length = 0;
-        this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        this.samplesToGateOff = -1;
+        this.fx.reset();
+        if (!d.preserveTransport) {
+          this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
+        }
         break;
       case 'host': this.hosted = !!d.on; break;
       case 'tempo':
@@ -1287,7 +1291,7 @@ class BassProcessor extends AudioWorkletProcessor {
   // ---------- LFO (bar-locked while playing) ----------
   lfoValue() {
     const p = this.p;
-    const bpm = Math.max(60, Math.min(200, p['seq.bpm'] || 138));
+    const bpm = Math.max(60, Math.min(200, (this.hosted ? this.hostBpm : p['seq.bpm']) || 138));
     const cpb = LFO_DIV_F[p['lfo.rate'] | 0] || 2;
     const phase = ((this.songPos / sampleRate) * (bpm / 60) * cpb) % 1;
     const shape = p['lfo.shape'] | 0;

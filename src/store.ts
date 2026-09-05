@@ -231,7 +231,7 @@ export const useStore = create<SynthStore>((set, get) => {
 
   applyPreset: (presetParams, presetMods) => {
     const params = resolvePresetMods(presetParams, presetMods);
-    engine.panic();
+    engine.panic(get().hosted);
     engine.params = { ...params };
     set({ params, dirty: false });
     engine.applyAllParams();

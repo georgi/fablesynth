@@ -456,7 +456,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     if (get().hosted) {
       // Hosted: a kit is a sound, not a song — params only, clip keeps its pattern.
       const userTables = state.tables.map((table) => deserializeUserTable(table).table);
-      drumEngine.panic();
+      drumEngine.panic(true);
       drumEngine.setUserTables(userTables);
       drumEngine.params = { ...state.params };
       drumEngine.applyAllParams();
@@ -528,7 +528,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   },
 
   setParamsFromKit: (params) => {
-    drumEngine.panic();
+    drumEngine.panic(get().hosted);
     drumEngine.params = { ...params };
     drumEngine.applyAllParams();
     set({ params: { ...params } });

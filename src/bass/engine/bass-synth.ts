@@ -156,8 +156,9 @@ export class BassEngine {
     if (this.ready) this.node.port.postMessage({ t: 'chain', list: c });
   }
 
-  panic(): void {
-    if (this.ready) this.node.port.postMessage({ t: 'panic' });
+  // Hosted preset changes reset sound while preserving active and queued clips.
+  panic(preserveTransport = false): void {
+    if (this.ready) this.node.port.postMessage({ t: 'panic', preserveTransport });
   }
   // ---------- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----------
   setHostMode(on: boolean): void {

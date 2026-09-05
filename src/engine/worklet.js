@@ -1269,7 +1269,7 @@ class FableProcessor extends AudioWorkletProcessor {
           const i = PID[k], v = d.params[k];
           if (i !== undefined && Number.isFinite(v)) this.p[i] = v;
         }
-        this.bpm = Math.min(1000, Math.max(1, this.p[SEQ_BPM] || 120));
+        this.bpm = Math.min(1000, Math.max(1, (this.hosted ? this.hostBpm : this.p[SEQ_BPM]) || 120));
         // The FX drive FIR + limiter lookahead add a fixed latency the main
         // thread needs for scope/transport alignment; the plugin reports the
         // same number through setLatencySamples.
@@ -1283,7 +1283,7 @@ class FableProcessor extends AudioWorkletProcessor {
           this.p[i] = d.v;
           // The web build has no host transport: while the sequencer is the
           // tempo authority, synced LFOs follow it.
-          if (i === SEQ_BPM) this.bpm = Math.min(1000, Math.max(1, d.v));
+          if (i === SEQ_BPM && !this.hosted) this.bpm = Math.min(1000, Math.max(1, d.v));
         }
         break;
       }
@@ -1330,10 +1330,12 @@ class FableProcessor extends AudioWorkletProcessor {
         this.seqOffQueue.length = 0;
         this.held.length = 0;
         this.seqLastNote = -1;
-        this.clip = null;
-        this.clipPend = null;
-        this.clipStopAt = -1;
-        this.clipStep = -1;
+        if (!d.preserveTransport) {
+          this.clip = null;
+          this.clipPend = null;
+          this.clipStopAt = -1;
+          this.clipStep = -1;
+        }
         this.fx.reset();
         break;
       case 'host': this.hosted = !!d.on; break;
