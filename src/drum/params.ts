@@ -3,7 +3,7 @@
 // (same params-as-truth discipline as WT-1's src/params.ts).
 
 import {
-  fmtHz, fmtSec, fmtPct, fmtPan, fmtBi,
+  PARAM_DEFS, fmtHz, fmtSec, fmtPct, fmtPan, fmtBi,
   type ParamDef, type ParamValues,
 } from '../params';
 
@@ -67,6 +67,7 @@ export const FX_DEFS: ParamDef[] = [
   { id: 'fx.ott.down', label: 'DOWNWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
   // Legacy serialized field; web OTT now uses automatic gain.
   { id: 'fx.ott.gain', label: 'OUTPUT', min: -48, max: 24, def: 0, curve: 'lin', fmt: (v) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB' },
+  ...PARAM_DEFS.filter((d) => d.id.startsWith('fx.eq.')),
 ];
 
 function oscFields(): ParamDef[] {

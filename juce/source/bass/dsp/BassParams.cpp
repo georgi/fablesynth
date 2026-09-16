@@ -46,7 +46,7 @@ std::vector<ParamInfo> build() {
     v.push_back({BL_LFO_RATE,   "lfo.rate",   "RATE",     0, (float)LFO_DIVS.size() - 1,   6, Curve::Int, Kind::Enum, &LFO_DIVS});
     v.push_back({BL_LFO_SHAPE,  "lfo.shape",  "SHAPE",    0, (float)LFO_SHAPES.size() - 1, 0, Curve::Int, Kind::Enum, &LFO_SHAPES});
     v.push_back({BL_LFO_DEPTH,  "lfo.depth",  "DEPTH",    0, 1,      0.15f, Curve::Lin, Kind::Float, nullptr});
-    // ---- FX (post-accent drive · no compressor, accents live) ----
+    // ---- FX (post-accent drive; appended dynamics follow the legacy layout) ----
     v.push_back({BL_FXDRIVE_ON,    "fx.drive.on",    "ON",     0, 1,      1,     Curve::Int, Kind::Bool,  nullptr});
     v.push_back({BL_FXDRIVE_AMT,   "fx.drive.amt",   "AMT",    0, 1,      0.35f, Curve::Lin, Kind::Float, nullptr});
     v.push_back({BL_FXDRIVE_MIX,   "fx.drive.mix",   "MIX",    0, 1,      0.2f,  Curve::Lin, Kind::Float, nullptr});
@@ -65,6 +65,20 @@ std::vector<ParamInfo> build() {
     v.push_back({BL_SEQ_BPM,       "seq.bpm",        "BPM",   60, 200,    138,   Curve::Int, Kind::Float, nullptr});
     v.push_back({BL_MASTER_SWING,  "master.swing",   "SWING",  0, 1,      0.3f,  Curve::Lin, Kind::Float, nullptr});
     v.push_back({BL_MASTER_VOLUME, "master.volume",  "OUTPUT", 0, 1,      0.78f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({BL_FXCOMP_ON,     "fx.comp.on",     "ON",      0, 1,      0,     Curve::Int, Kind::Bool, nullptr});
+    v.push_back({BL_FXCOMP_THR,    "fx.comp.thr",    "THRESH", -40, 0,    -16,    Curve::Lin, Kind::Float, nullptr});
+    v.push_back({BL_FXOTT_ON,      "fx.ott.on",      "ON",      0, 1,      0,     Curve::Int, Kind::Bool, nullptr});
+    v.push_back({BL_FXOTT_DEPTH,   "fx.ott.depth",   "DEPTH",   0, 1,      0.35f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({BL_FXOTT_TIME,    "fx.ott.time",    "TIME",    0.01f, 10, 1,    Curve::Log, Kind::Float, nullptr});
+    v.push_back({BL_FXOTT_UP,      "fx.ott.up",      "UPWARD",  0, 2,      1,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({BL_FXOTT_DOWN,    "fx.ott.down",    "DOWNWARD",0, 2,      1,     Curve::Lin, Kind::Float, nullptr});
+    // WT-1 ranges, shapes and neutral defaults.
+    for (const auto& source : paramInfo()) {
+        if (source.pid.rfind("fx.eq.", 0) != 0) continue;
+        auto d = source;
+        d.id = (int)v.size();
+        v.push_back(d);
+    }
     return v;
 }
 

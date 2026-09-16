@@ -1,3 +1,4 @@
+#include "InstrumentEqChecks.h"
 // Headless verification harness for the BL-1 bass DSP core (no JUCE).
 // Mirrors test/drum_engine_test.cpp's style; the lockstep reference is the
 // web app under src/bass/ (params.ts, worklet-bass.js, seq.ts, patches.ts).
@@ -108,10 +109,22 @@ static std::vector<float> render(BassEngine& e, int n, int block = 512,
 }
 
 int main() {
+    check(instrumentEqChecks<fable::BassFx>([](auto& fx, double sr, bool on, float gain) {
+        auto p = fable::defaultBassParams();
+        for (const auto& d : fable::bassParamInfo())
+            if (d.pid.find("fx.") != std::string::npos && d.pid.size() >= 3 && d.pid.substr(d.pid.size() - 3) == ".on")
+                p[(size_t)d.id] = 0;
+        const int base = 0;
+        p[(size_t)(base + fable::BL_FXEQ_ON)] = on ? 1.f : 0.f;
+        p[(size_t)(base + fable::BL_FXEQ_MID)] = gain;
+        p[(size_t)(base + fable::BL_FXEQ_MFREQ)] = 1000;
+        fx.prepare(sr);
+        fx.setParams(p);
+    }), "four-band EQ: neutral/bypass, +/-6 dB response and stereo isolation at three sample rates");
     printf("\n== BL-1 params (BassParams vs src/bass/params.ts) ==\n");
     {
         const auto& info = bassParamInfo();
-        check((int)info.size() == BL_NUM_PARAMS, "descriptor count == BL_NUM_PARAMS (45)",
+        check((int)info.size() == BL_NUM_PARAMS, "descriptor count == BL_NUM_PARAMS (73)",
               num((double)info.size()));
         bool ordered = true;
         for (int i = 0; i < (int)info.size(); i++) if (info[(size_t)i].id != i) ordered = false;

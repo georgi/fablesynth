@@ -56,7 +56,7 @@ void DrumFxRack::Group::paintGroup(juce::Graphics& g) {
 }
 
 // ===================== DrumFxRack =====================
-DrumFxRack::DrumFxRack(DrumUiModel& p) : proc(p) {
+DrumFxRack::DrumFxRack(DrumUiModel& p, bool routingOnly) : proc(p), routingOnly_(routingOnly) {
     proc.selectionChanges().addChangeListener(this);
     rebuild();
     lastSig = routeSignature();
@@ -73,6 +73,7 @@ void DrumFxRack::changeListenerCallback(juce::ChangeBroadcaster*) {
 
 void DrumFxRack::rebuild() {
     groups.clear();
+    if (routingOnly_) { resized(); repaint(); return; }
     struct Def { const char* fx; const char* title; std::initializer_list<const char*> k; };
     const Def defs[] = {
         {"drive",  "DRIVE",  {"amt", "mix"}},
@@ -80,6 +81,7 @@ void DrumFxRack::rebuild() {
         {"chorus", "CHORUS", {"rate", "depth", "mix"}},
         {"delay",  "DELAY",  {"time", "fb", "mix"}},
         {"reverb", "REVERB", {"size", "mix"}},
+        {"ott",    "OTT",    {"depth", "time", "up", "down"}},
     };
     for (const auto& d : defs) {
         auto* m = groups.add(new Group(proc, d.fx, d.title, d.k));
@@ -92,8 +94,9 @@ void DrumFxRack::rebuild() {
 
 void DrumFxRack::resized() {
     auto r = getLocalBounds().reduced(8);        // .dr-fx-panel padding
-    const int gap = 10, outW = 190;
-    const float cw = static_cast<float>(r.getWidth() - outW - gap * 5) / 5.0f;
+    if (routingOnly_) { outBounds = r; return; }
+    const int gap = 10, outW = 190, count = groups.size();
+    const float cw = static_cast<float>(r.getWidth() - outW - gap * count) / static_cast<float>(count);
     for (int i = 0; i < groups.size(); ++i)
         groups[i]->layout({ (int)std::round(static_cast<float>(r.getX())
                                              + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
@@ -119,6 +122,7 @@ void DrumFxRack::timerCallback() {
 
 void DrumFxRack::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
+    if (routingOnly_) { paintOutPanel(g); return; }
     g.setColour(col::acA);
     g.setFont(dispFont(8.0f));
     drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2) + " FX",

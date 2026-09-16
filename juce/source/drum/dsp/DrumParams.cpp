@@ -114,6 +114,20 @@ void addPad(std::vector<ParamInfo>& v, int i) {
     v.push_back({b + DP_FXREVERB_ON,    p + "fx.reverb.on",    "ON",        0, 1,     1,      Curve::Int, Kind::Bool,  nullptr});
     v.push_back({b + DP_FXREVERB_SIZE,  p + "fx.reverb.size",  "SIZE",      0, 1,     0.4f,   Curve::Lin, Kind::Float, nullptr});
     v.push_back({b + DP_FXREVERB_MIX,   p + "fx.reverb.mix",   "MIX",       0, 1,     0.16f,  Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXOTT_ON,       p + "fx.ott.on",        "ON",        0, 1,     0,      Curve::Int, Kind::Bool, nullptr});
+    v.push_back({b + DP_FXOTT_DEPTH,    p + "fx.ott.depth",     "DEPTH",     0, 1,     0.35f,  Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXOTT_TIME,     p + "fx.ott.time",      "TIME",      0.01f, 10, 1, Curve::Log, Kind::Float, nullptr});
+    v.push_back({b + DP_FXOTT_UP,       p + "fx.ott.up",        "UPWARD",    0, 2,     1,      Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXOTT_DOWN,     p + "fx.ott.down",      "DOWNWARD",  0, 2,     1,      Curve::Lin, Kind::Float, nullptr});
+    v.push_back({b + DP_FXOTT_GAIN,     p + "fx.ott.gain",      "OUTPUT",    -48, 24,  0,      Curve::Lin, Kind::Float, nullptr});
+    // WT-1 ranges, shapes and neutral defaults.
+    for (const auto& source : paramInfo()) {
+        if (source.pid.rfind("fx.eq.", 0) != 0) continue;
+        auto d = source;
+        d.id = (int)v.size();
+        d.pid = p + d.pid;
+        v.push_back(d);
+    }
 }
 
 // GLOBAL_DEFS (params.ts:75-96).
@@ -169,6 +183,9 @@ int legacyDrumFxField(const std::string& pid) {
         {"fx.delay.fb", DP_FXDELAY_FB}, {"fx.delay.mix", DP_FXDELAY_MIX},
         {"fx.reverb.on", DP_FXREVERB_ON}, {"fx.reverb.size", DP_FXREVERB_SIZE},
         {"fx.reverb.mix", DP_FXREVERB_MIX},
+        {"fx.ott.on", DP_FXOTT_ON}, {"fx.ott.depth", DP_FXOTT_DEPTH},
+        {"fx.ott.time", DP_FXOTT_TIME}, {"fx.ott.up", DP_FXOTT_UP},
+        {"fx.ott.down", DP_FXOTT_DOWN}, {"fx.ott.gain", DP_FXOTT_GAIN},
     };
     const auto it = fields.find(pid);
     return it == fields.end() ? -1 : it->second;

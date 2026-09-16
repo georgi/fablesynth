@@ -24,7 +24,8 @@ FableAudioProcessor::FableAudioProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     for (const auto& d : paramInfo()) {
-        juce::ParameterID pid(d.pid, 1);
+        const int version = d.id >= FXOTT_ON ? 2 : 1;
+        juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique: repeated blocks share short labels
         // (both LFOs are "SHAPE"/"RATE", both oscs "POS", etc.). A DAW that keys
         // automation / MIDI-learn / its generic editor by name would otherwise
@@ -224,8 +225,6 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     auto& p = engine.paramTargets();
     for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
         if (rawParams[i]) p[i] = rawParams[i]->load();
-    fx.setParams(p);
-
     // Push host tempo + transport for LFO sync and downbeat phase-locking
     // (fallbacks when the host provides nothing: 120 BPM, position 0, stopped).
     // Sequencer host sync (BL-1 conventions): a reported tempo overrides
@@ -245,6 +244,10 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     engine.setBpmOverride(synced ? bpm : 0.0);
     engine.setSeqHostTransport(ppq, synced ? bpm : 120.0,
                                playing && hasPpq && synced);
+    // WT-1's synced tape echo follows the same effective tempo as the web
+    // worklet: host tempo when available, otherwise seq.bpm.
+    const double fxBpm = synced ? bpm : std::max(1.0, (double)p[SEQ_BPM]);
+    fx.setParams(p, fxBpm);
     hostBpm.store((float)bpm, std::memory_order_relaxed);
     hostPpq.store(ppq, std::memory_order_relaxed);
     hostPlaying.store(playing, std::memory_order_relaxed);

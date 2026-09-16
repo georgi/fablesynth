@@ -9,6 +9,8 @@
 
 namespace fui {
 
+fable::FxTelemetry HostedBassModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(1, pad, bus); }
+
 namespace {
 
 const fable::ParamInfo* bassCatalogData() {

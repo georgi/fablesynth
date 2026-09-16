@@ -11,6 +11,8 @@
 #include <algorithm>
 
 namespace fui {
+
+fable::FxTelemetry HostedWtModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(track_, pad, bus); }
 namespace {
 
 const std::vector<fable::UserTable>& noUserTables() {

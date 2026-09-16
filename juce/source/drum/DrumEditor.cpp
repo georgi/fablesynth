@@ -5,6 +5,7 @@ namespace fui {
 class StandaloneDrumUiModel final : public DrumUiModel {
 public:
     explicit StandaloneDrumUiModel(DrumAudioProcessor& p) : proc(p) {}
+    fable::FxTelemetry fxTelemetry(int pad, int bus) const override { return proc.fxTelemetry(pad, bus); }
     ParameterSource parameters() override { const auto& i = fable::drumParamInfo(); return ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     DeviceUiCapabilities capabilities() const override { return {}; }
     bool programDirty() const override { return proc.isProgramDirty(); }

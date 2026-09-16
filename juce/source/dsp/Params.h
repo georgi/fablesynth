@@ -108,13 +108,23 @@ enum Pid : int {
     FXCHORUS_ON, FXCHORUS_RATE, FXCHORUS_DEPTH, FXCHORUS_MIX,
     FXDELAY_ON, FXDELAY_TIME, FXDELAY_FB, FXDELAY_MIX,
     FXREVERB_ON, FXREVERB_SIZE, FXREVERB_MIX,
-    FXCOMP_ON, FXCOMP_THR, FXCOMP_GAIN, // leveling "glue" comp, last FX
-    FXEQ_ON, FXEQ_LOW, FXEQ_MID, FXEQ_MFREQ, FXEQ_HIGH, // 3-band tone EQ, first FX
+    FXCOMP_ON, FXCOMP_THR, FXCOMP_GAIN, // leveling comp; makeup is legacy serialized data
+    FXEQ_ON, FXEQ_LOW, FXEQ_MID, FXEQ_MFREQ, FXEQ_HIGH, // original EQ controls
     MASTER_VOLUME, MASTER_GLIDE,
     // Note sequencer clock (params.ts appends these after master too). seq.bpm
     // also drives the engine's virtual transport while the internal sequencer
     // plays, so synced LFOs phase-lock to the sequencer tempo (web parity).
     SEQ_BPM, SEQ_SWING, SEQ_GATE, SEQ_ROOT,
+    // Appended web FX controls. Keep all established ids above stable for
+    // saved host state and factory programs.
+    FXOTT_ON, FXOTT_DEPTH, FXOTT_TIME, FXOTT_UP, FXOTT_DOWN,
+    FXEQLFREQ, FXEQM2FREQ, FXEQHFREQ, FXEQMID2,
+    FXEQLQ, FXEQLTYPE, FXEQLON,
+    FXEQMQ, FXEQMTYPE, FXEQMON,
+    FXEQM2Q, FXEQM2TYPE, FXEQM2ON,
+    FXEQHQ, FXEQHTYPE, FXEQHON,
+    FXDELAY_TONE, FXDELAY_SAT, FXDELAY_WOW, FXDELAY_FLUTTER,
+    FXDELAY_WIDTH, FXDELAY_MODE, FXDELAY_SYNC, FXDELAY_DIV,
     NUM_PARAMS
 };
 

@@ -65,7 +65,9 @@ BassFxRack::BassFxRack(BassUiModel& p) {
         {"drive",  "DRIVE",  "POST-ACCENT",            {"amt", "mix"}},
         {"chorus", "CHORUS", "",                       {"rate", "depth", "mix"}},
         {"delay",  "DELAY",  "PING-PONG",              {"time", "fb", "mix"}},
-        {"reverb", "REVERB", "NO COMP - ACCENTS LIVE", {"size", "mix"}},
+        {"reverb", "REVERB", "",                       {"size", "mix"}},
+        {"comp",   "COMP",   "AUTO GAIN",              {"thr"}},
+        {"ott",    "OTT",    "AUTO GAIN",              {"depth", "time", "up", "down"}},
     };
     for (const auto& d : defs) {
         auto* m = groups.add(new Group(p, d.fx, d.title, d.note, d.k));
@@ -77,8 +79,11 @@ BassFxRack::BassFxRack(BassUiModel& p) {
 void BassFxRack::resized() {
     auto r = getLocalBounds().reduced(8);        // .bl-fx-panel padding
     const int gap = 10;
-    const float cw = static_cast<float>(r.getWidth() - gap * 3) / 4.0f;
-    for (int i = 0; i < groups.size(); ++i)
+    const int count = groups.size();
+    const float cw = count > 0
+        ? static_cast<float>(r.getWidth() - gap * (count - 1)) / static_cast<float>(count)
+        : 0.0f;
+    for (int i = 0; i < count; ++i)
         groups[i]->layout({ (int)std::round(static_cast<float>(r.getX())
                                              + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
                             (int)std::round(cw), r.getHeight() });

@@ -3,10 +3,10 @@
 #include "BassUiModel.h"
 #include "../../ui/Controls.h"
 
-// Master FX rack — port of src/bass/components/BassFxRack.tsx. Four
-// power+knob groups (DRIVE CHORUS DELAY REVERB) bound to the global fx.*
-// params, with the web's dim per-group notes ("POST-ACCENT", "NO COMP ·
-// ACCENTS LIVE"). Modeled on DrumFxRack minus the compressor + OUT panel.
+// Master FX rack — port of src/bass/components/BassFxRack.tsx. Six
+// power+knob groups (DRIVE CHORUS DELAY REVERB COMP OTT) bound to the global
+// fx.* params, with the web's dim per-group notes. Modeled on DrumFxRack minus
+// the OUT panel.
 namespace fui {
 
 class BassFxRack : public juce::Component {
@@ -28,7 +28,7 @@ private:
         void paintGroup(juce::Graphics&);
     };
 
-    juce::OwnedArray<Group> groups;         // drive chorus delay reverb
+    juce::OwnedArray<Group> groups;         // drive chorus delay reverb comp ott
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassFxRack)
 };
 

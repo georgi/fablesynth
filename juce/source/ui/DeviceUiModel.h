@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ParameterSource.h"
+#include "../dsp/FxTelemetry.h"
 
 // Host transport snapshot used by tempo-synchronised device displays.
 struct HostTransport {
@@ -26,6 +27,7 @@ class DeviceUiModel {
 public:
     virtual ~DeviceUiModel() = default;
     virtual ParameterSource parameters() = 0;
+    virtual fable::FxTelemetry fxTelemetry(int = 0, int = 0) const { return {}; }
     virtual DeviceUiCapabilities capabilities() const = 0;
 
     // True once any param/pattern edit has landed since the current program

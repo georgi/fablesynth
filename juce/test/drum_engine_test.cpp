@@ -1,3 +1,4 @@
+#include "InstrumentEqChecks.h"
 // Headless verification harness for the DR-1 drum DSP core (no JUCE).
 // Mirrors test/engine_test.cpp's style; the lockstep reference is the web
 // app under src/drum/ (params.ts, worklet-drum.js, drumtables.ts, kits.ts).
@@ -154,6 +155,18 @@ static std::vector<float> renderMain(DrumEngine& e, int n) {
 }
 
 int main() {
+    check(instrumentEqChecks<fable::DrumFx>([](auto& fx, double sr, bool on, float gain) {
+        auto p = fable::defaultDrumParams();
+        for (const auto& d : fable::drumParamInfo())
+            if (d.pid.find("fx.") != std::string::npos && d.pid.size() >= 3 && d.pid.substr(d.pid.size() - 3) == ".on")
+                p[(size_t)d.id] = 0;
+        const int base = fable::dpid(7, 0);
+        p[(size_t)(base + fable::DP_FXEQ_ON)] = on ? 1.f : 0.f;
+        p[(size_t)(base + fable::DP_FXEQ_MID)] = gain;
+        p[(size_t)(base + fable::DP_FXEQ_MFREQ)] = 1000;
+        fx.prepare(sr);
+        fx.setParams(p, 7);
+    }), "four-band EQ: neutral/bypass, +/-6 dB response and stereo isolation at three sample rates");
     using namespace fable;
     // Silence unused-helper warnings until later tasks use them. Explicit
     // function-pointer casts: newer glibc exposes a global ::finite, which
@@ -163,7 +176,7 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 67, "67 per-pad fields including FX");
+    check(DPAD_NFIELDS == 94, "94 per-pad fields including four-band EQ");
     check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3, "per-pad params plus 3 globals");
     const auto& info = drumParamInfo();
     check((int)info.size() == DR_NUM_PARAMS, "info covers all params");

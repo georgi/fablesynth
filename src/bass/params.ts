@@ -3,7 +3,7 @@
 // table (same params-as-truth discipline as WT-1/DR-1).
 
 import {
-  fmtHz, fmtSec, fmtPct, fmtBi,
+  PARAM_DEFS, fmtHz, fmtSec, fmtPct, fmtBi,
   LFO_DIVS, LFO_SHAPES, TABLE_NAMES,
   type ParamDef, type ParamValues,
 } from '../params';
@@ -84,6 +84,7 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   { id: 'fx.ott.time', label: 'TIME', min: 0.01, max: 10, def: 1, curve: 'log', fmt: fmtPct },
   { id: 'fx.ott.up', label: 'UPWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
   { id: 'fx.ott.down', label: 'DOWNWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
+  ...PARAM_DEFS.filter((d) => d.id.startsWith('fx.eq.')),
 ];
 
 export const BASS_PARAMS: Record<string, ParamDef> = Object.fromEntries(BASS_PARAM_DEFS.map((d) => [d.id, d]));

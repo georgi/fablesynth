@@ -792,7 +792,7 @@
 .dr-fx-panel .fx-rack {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas: 'ott comp echo reverb' 'drive chorus routing routing';
+  grid-template-areas: 'eq eq ott comp' 'drive chorus echo reverb' 'routing routing routing routing';
   gap: 10px;
 }
 .dr-fx-panel { padding: 8px; }
@@ -801,7 +801,7 @@
 .dr-fx-panel .fx-rack > .fx-group + .fx-group { grid-area: chorus; }
 .dr-fx-panel .fx-rack > .out-panel { grid-area: routing; }
 @media (max-width: 1150px) {
-  .dr-fx-panel .fx-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'ott comp' 'echo reverb' 'drive chorus' 'routing routing'; }
+  .dr-fx-panel .fx-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'eq eq' 'ott comp' 'echo reverb' 'drive chorus' 'routing routing'; }
 }
 .dr-fx-panel .fx-rack > .panel-dynamics,
 .dr-fx-panel .fx-rack > .panel-echo,

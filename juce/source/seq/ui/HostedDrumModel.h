@@ -17,6 +17,7 @@ public:
     void reloadPatchFromSession();
 
     ParameterSource parameters() override { return bank_.source(); }
+    fable::FxTelemetry fxTelemetry(int pad, int bus) const override;
     DeviceUiCapabilities capabilities() const override;
     int selectedPad() const override { return selectedPad_; }
     void selectPad(int) override;

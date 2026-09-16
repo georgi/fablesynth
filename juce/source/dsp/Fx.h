@@ -1,13 +1,13 @@
 // FX chain — C++ port of the Web Audio graph in src/engine/synth.ts:
-// drive -> chorus -> ping-pong delay -> reverb -> leveling compressor ->
+// EQ -> OTT -> leveling compressor -> drive -> chorus -> tape echo -> reverb ->
 // master gain -> DC block -> safety limiter. The web app builds this from native
 // WebAudio nodes; here each stage is reimplemented as pure DSP so it runs inside
 // the plugin and the headless test harness alike.
 //
-// The leveling compressor is the last FX (WebAudio DynamicsCompressor semantics,
-// ratio 4 / knee 9 dB / attack 10 ms / release 200 ms) with THRESH/MAKEUP/ON
-// params — defaults ON to bring patches to roughly the same loudness. Same
-// static-curve math as DR-1's bus compressor (source/drum/dsp/DrumFx).
+// The leveling compressor is a shared dynamics stage (WebAudio
+// DynamicsCompressor semantics, ratio 4 / knee 9 dB / attack 10 ms /
+// release 200 ms) with THRESH/ON params. The serialized MAKEUP field remains
+// for compatibility while the web chain uses automatic gain matching.
 //
 // The convolution reverb (generated exponential-noise impulse) is approximated
 // by a Freeverb-style network tuned by SIZE — a standard, real-time-safe stand-in
@@ -15,6 +15,7 @@
 #pragma once
 
 #include "Params.h"
+#include "FxTelemetry.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -26,6 +27,10 @@ struct Smooth {
     float cur = 0, target = 0, coef = 0.01f;
     void  setTime(double tau, double sr) { coef = (float)(1.0 - std::exp(-1.0 / (tau * sr))); }
     inline float next() { cur += (target - cur) * coef; return cur; }
+    inline float nextN(int n) {
+        if (n > 0) cur += (target - cur) * (1.0f - std::pow(1.0f - coef, (float)n));
+        return cur;
+    }
     void  snap(float v) { cur = target = v; }
 };
 
@@ -59,8 +64,8 @@ struct Biquad {
     double z1 = 0, z2 = 0;
     void   lowpass(double freq, double q, double sr);
     void   highpass(double freq, double q, double sr);
-    void   lowShelf(double freq, double gainDb, double sr);
-    void   highShelf(double freq, double gainDb, double sr);
+    void   lowShelf(double freq, double gainDb, double sr, double q = 0.7071067811865476);
+    void   highShelf(double freq, double gainDb, double sr, double q = 0.7071067811865476);
     void   peaking(double freq, double q, double gainDb, double sr);
     inline double process(double x) {
         double y = b0 * x + z1;
@@ -69,6 +74,77 @@ struct Biquad {
         return y;
     }
     void reset() { z1 = z2 = 0; }
+};
+
+// Shared web FX primitives. These are deliberately small, allocation-free
+// state machines so WT-1, BL-1 and DR-1 can use the same dynamics behavior.
+class AutoGain {
+public:
+    explicit AutoGain(double sampleRate = 48000.0) { prepare(sampleRate); }
+    void prepare(double sampleRate);
+    void reset();
+    double next(double inL, double inR, double wetL, double wetR);
+    double gain = 1.0;
+private:
+    double energyCoef_ = 0, gainCoef_ = 0;
+    double input_ = 0, wet_ = 0, target_ = 1;
+    int tick_ = 0;
+};
+
+class PeakGuard {
+public:
+    explicit PeakGuard(double sampleRate = 48000.0) { prepare(sampleRate); }
+    void prepare(double sampleRate);
+    void reset() { gain = 1.0; }
+    double gainFor(double l, double r);
+    void process(float* L, float* R, int n);
+    double gain = 1.0;
+    static constexpr double kCeiling = 0.8912509381337456; // -1 dBFS
+private:
+    double release_ = 0;
+};
+
+// Shared 4:1 / 9 dB knee dynamics stage. The web version uses automatic gain
+// matching and retains the serialized makeup field for compatibility only.
+class WebCompressor {
+public:
+    explicit WebCompressor(double sampleRate = 48000.0) { prepare(sampleRate); }
+    void prepare(double sampleRate);
+    void setParams(bool on, float thresholdDb);
+    void reset();
+    void process(float* L, float* R, int n);
+    void processSample(double inL, double inR, double& outL, double& outR);
+    bool wetTarget = false;
+    double env = 0, gain = 1;
+    AutoGain autoGain;
+private:
+    double sr_ = 48000, smooth_ = 0, attack_ = 0, release_ = 0;
+    double wet_ = 0, threshold_ = -16, thresholdTarget_ = -16;
+    double gainStep_ = 0;
+    int tick_ = 0;
+};
+
+// Three-band OTT-style dynamics stage shared by all instrument worklets.
+class OttCompressor {
+public:
+    explicit OttCompressor(double sampleRate = 48000.0) { prepare(sampleRate); }
+    void prepare(double sampleRate);
+    void setParams(bool on, float depth, float time, float up, float down);
+    void reset();
+    void process(float* L, float* R, int n);
+    void processSample(double inL, double inR, double& outL, double& outR);
+    double depthTarget = 0, depth = 0;
+    std::array<double, 3> env{{0, 0, 0}};
+    std::array<double, 3> gain{{1, 1, 1}};
+    AutoGain autoGain;
+private:
+    double sr_ = 48000, lowCoef_ = 0, highCoef_ = 0, smooth_ = 0;
+    std::array<double, 4> split_{{0, 0, 0, 0}};
+    std::array<double, 3> target_{{1, 1, 1}};
+    std::array<double, 3> bandsL_{{0, 0, 0}}, bandsR_{{0, 0, 0}};
+    std::array<double, 3> attack_{{0, 0, 0}}, release_{{0, 0, 0}};
+    double up_ = 1, down_ = 1, time_ = 0;
+    int tick_ = 0;
 };
 
 // Fractional-read delay line.
@@ -261,8 +337,9 @@ struct FvAllpass {
 
 class Fx {
 public:
+    FxTelemetry telemetry() const { return meter_.read(); }
     void prepare(double sampleRate);
-    void setParams(const ParamArray& p); // reads fx.* and master.volume
+    void setParams(const ParamArray& p, double tempoBpm = 0.0); // reads fx.* and master.volume
     void process(float* L, float* R, int n);
     void reset();
     int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
@@ -274,7 +351,9 @@ public:
     static constexpr int kCoefChunk = 32;
 
 private:
+    FxMeter meter_;
     double sr_ = 48000;
+    double tempoBpm_ = 120.0;
 
     // Chunk-rate targets for everything whose coefficients are expensive to
     // rebuild. setParams() feeds these; advanceCoefs() consumes them.
@@ -287,10 +366,16 @@ private:
     bool forceCoefs_ = true; // rebuild everything on the next chunk boundary
     void advanceCoefs(bool force);
 
-    // 3-band tone EQ (first FX): fixed-corner low/high shelves + sweepable mid
-    // bell. Coefficients rebuilt per chunk while the ramps move; 0 dB gain is
-    // an exact bypass.
-    Biquad eqLoL_, eqLoR_, eqMidL_, eqMidR_, eqHiL_, eqHiR_;
+    // Four-band parametric EQ (first FX). The original gain ids keep their
+    // established ramps; the appended frequency/Q/type/bypass ids are
+    // applied at the same coefficient boundary.
+    Biquad eqLoL_, eqLoR_, eqMidL_, eqMidR_, eqMid2L_, eqMid2R_, eqHiL_, eqHiR_;
+    float eqLoFreq_ = 120, eqMid2Freq_ = 2500, eqHiFreq_ = 6000;
+    float eqMid2Db_ = 0, eqLoQ_ = 0.70710678f, eqMidQ_ = 0.9f;
+    float eqMid2Q_ = 0.9f, eqHiQ_ = 0.70710678f;
+    int eqLoType_ = 0, eqMidType_ = 1, eqMid2Type_ = 1, eqHiType_ = 2;
+    bool eqLoOn_ = true, eqMidOn_ = true, eqMid2On_ = true, eqHiOn_ = true;
+    bool eqExtDirty_ = true;
 
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;
@@ -310,10 +395,16 @@ private:
     DelayLine chDl1_, chDl2_;
     bool chorusOff_ = false, chorusGated_ = false;
 
-    // delay
+    // Tape echo. The original delay ids remain the base time/feedback/mix;
+    // appended controls add tone loss, saturation, drift, width, mode and BPM
+    // sync while retaining the same delay buffer and latency contract.
     Smooth dlTime_, dlFb_, dlWet_, dlDry_;
     DelayLine dlL_, dlR_;
-    Biquad dlDamp_;
+    Biquad dlDamp_, dlDampR_, dlHpL_, dlHpR_;
+    Smooth dlSat_, dlWow_, dlFlutter_, dlWidth_, dlMode_;
+    float dlTone_ = 4500, dlToneTarget_ = 4500;
+    double tapeClock_ = 0, dlDriftL_ = 0, dlDriftR_ = 0;
+    bool delayInitialized_ = false;
     bool delayOff_ = false, delayGated_ = false;
 
     // reverb
@@ -323,9 +414,12 @@ private:
     float roomSize_ = 0.84f;
     bool verbOff_ = false, verbGated_ = false;
 
-    // leveling compressor (WebAudio DynamicsCompressor semantics), last FX
-    Smooth compThrDb_, compMakeup_, compWet_, compDry_;
-    double compEnv_ = 0, compAtk_ = 0, compRel_ = 0;
+    // shared web dynamics: OTT -> leveling compressor
+    OttCompressor ott_;
+    WebCompressor comp_;
+    PeakGuard headroomInput_, headroomEq_, headroomOtt_, headroomComp_;
+    PeakGuard headroomDrive_, headroomChorus_, headroomDelay_, headroomReverb_;
+    PeakGuard delayFeedbackGuard_;
     bool compOff_ = false, compGated_ = false;
 
     // master + limiter

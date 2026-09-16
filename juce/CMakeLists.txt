@@ -75,6 +75,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/StandaloneTopBar.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
+        source/ui/FxChain.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
@@ -131,6 +132,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/ui/StepSeqView.cpp
         source/drum/ui/DrumFxRack.cpp
         source/ui/Controls.cpp
+        source/ui/FxChain.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
@@ -189,6 +191,7 @@ if(FABLE_BUILD_PLUGIN)
         source/bass/ui/PitchSeqView.cpp
         source/bass/ui/BassFxRack.cpp
         source/ui/Controls.cpp
+        source/ui/FxChain.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
@@ -261,6 +264,7 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/dsp/SeqFactory.cpp
         source/seq/dsp/Conductor.cpp
         source/ui/Controls.cpp source/ui/ParameterSource.cpp source/ui/DeviceParameterBank.cpp
+        source/ui/FxChain.cpp
         source/ui/Modulation.cpp
         # all three machines' DSP (each list already exists above):
         source/dsp/Engine.cpp source/dsp/Presets.cpp
@@ -307,6 +311,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/StandaloneTopBar.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
+        source/ui/FxChain.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp

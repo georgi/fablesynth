@@ -9,6 +9,8 @@
 
 namespace fui {
 
+fable::FxTelemetry HostedDrumModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(0, pad, bus); }
+
 HostedDrumModel::HostedDrumModel(SeqAudioProcessor& proc)
     : proc_(proc),
       bank_(fable::drumParamInfo().data(), fable::drumParamInfo().size()) {

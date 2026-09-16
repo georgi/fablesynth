@@ -5,10 +5,12 @@
 
 BassDeviceBody::BassDeviceBody(fui::BassUiModel& model)
     : osc(model), sub(model), filter(model), env(model), lfo(model), accent(model),
-      keys(model), seq(model), fxRack(model) {
+      keys(model), seq(model), fxRack(model, false) {
     for (auto* component : std::initializer_list<juce::Component*>{
              &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
         addAndMakeVisible(*component);
+    addAndMakeVisible(pages);
+    pages.onChange = [this] { resized(); };
 }
 
 // Keyboard last, the way every hardware and soft synth puts it: KEYS is a
@@ -39,9 +41,14 @@ void BassDeviceBody::resized() {
         }
     };
 
-    layRow({ { &osc, 464 }, { &sub, 192 }, { &filter, 355 }, { &env, 386 } }, 103, 243);
-    layRow({ { &lfo, 290 }, { &accent, 250 } }, 355, 140);
-    seq.setBounds(18, 504, fullW, 276);
-    fxRack.setBounds(18, 789, fullW, 120);
+    pages.setBounds(18,103,fullW,26);
+    const bool showFx = pages.fxSelected();
+    for (auto* c : std::initializer_list<juce::Component*>{&osc,&sub,&filter,&env,&lfo,&accent}) c->setVisible(!showFx);
+    fxRack.setVisible(showFx);
+    layRow({ { &osc, 464 }, { &sub, 192 }, { &filter, 355 }, { &env, 386 } }, 139, 243);
+    layRow({ { &lfo, 290 }, { &accent, 250 } }, 391, 140);
+    keys.setVisible(!showFx);
+    seq.setBounds(18, showFx ? 729 : 540, fullW, showFx ? 329 : 369);
+    fxRack.setBounds(18, 139, fullW, 581);
     keys.setBounds(18, 918, fullW, 140);
 }

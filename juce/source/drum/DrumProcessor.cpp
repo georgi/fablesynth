@@ -57,7 +57,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     const auto& info = drumParamInfo();
 
     auto make = [](const ParamInfo& d) -> std::unique_ptr<juce::RangedAudioParameter> {
-        juce::ParameterID pid(d.pid, 1);
+        const int field = d.id % DPAD_NFIELDS;
+        const int version = field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
+        juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique (all 16 pads share short labels);
         // derive it from the id like WT-1 does.
         juce::String name = juce::String(d.pid).replaceCharacter('.', ' ').toUpperCase();
@@ -80,7 +82,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     for (int pad = 0; pad < DR_NPADS; ++pad) {
         auto g = std::make_unique<juce::AudioProcessorParameterGroup>(
             "pad" + juce::String(pad), juce::String::formatted("PAD %02d", pad + 1), " | ");
-        for (int f = 0; f < DPAD_NFIELDS; ++f)
+        for (int f = 0; f < DP_FXEQ_ON; ++f)
             g->addChild(make(info[(size_t)dpid(pad, f)]));
         layout.add(std::move(g));
     }
@@ -88,6 +90,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     for (int i : {(int)DG_SEQ_BPM, (int)DG_MASTER_SWING, (int)DG_MASTER_VOLUME})
         seq->addChild(make(info[(size_t)i]));
     layout.add(std::move(seq));
+    // Keep every pre-EQ host parameter at its established index.
+    for (int pad = 0; pad < DR_NPADS; ++pad) {
+        auto eq = std::make_unique<juce::AudioProcessorParameterGroup>(
+            "padEq" + juce::String(pad), "PAD " + juce::String(pad + 1) + " EQ", " | ");
+        for (int f = DP_FXEQ_ON; f < DPAD_NFIELDS; ++f)
+            eq->addChild(make(info[(size_t)dpid(pad, f)]));
+        layout.add(std::move(eq));
+    }
     return layout;
 }
 

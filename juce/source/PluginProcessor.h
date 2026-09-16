@@ -44,6 +44,7 @@ public:
 
     // Edited-since-preset-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
+    fable::FxTelemetry fxTelemetry() const { return fx.telemetry(); }
 
     // ---- wavetable visualization feed (read on the message thread) ----
     // The live modulated frame position per oscillator is published from the
@@ -173,6 +174,7 @@ class StandaloneWtUiModel final : public fui::WtUiModel {
 public:
     explicit StandaloneWtUiModel(FableAudioProcessor& p) : proc(p) {}
     fui::ParameterSource parameters() override;
+    fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
     bool programDirty() const override;
     int currentProgram() const override;

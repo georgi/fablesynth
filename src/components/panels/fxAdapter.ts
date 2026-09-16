@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 /** Small structural surface shared by WT-1, BL-1 and DR-1 FX visualizers. */
 export interface FxTelemetryEngine {
+  ctx?: { sampleRate: number } | null;
   subscribeDynamics(listener: (message: DynamicsMessage) => void): () => void;
   subscribeEcho(listener: (message: EchoMessage) => void): () => void;
   subscribeReverb(listener: (message: ReverbMessage) => void): () => void;

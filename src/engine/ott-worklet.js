@@ -174,3 +174,128 @@ globalThis.FableOttCompressor = OttCompressor;
 globalThis.FableAutoGain = AutoGain;
 globalThis.FablePeakGuard = PeakGuard;
 globalThis.FableCompressor = Compressor;
+
+// Shared four-band EQ; coefficient formulas match WT-1.
+class EqBiquad {
+  constructor(sr) { this.sr = sr; this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.z1 = 0; this.z2 = 0; }
+  reset() { this.z1 = 0; this.z2 = 0; }
+  process(x) {
+    const y = this.b0 * x + this.z1;
+    this.z1 = this.b1 * x - this.a1 * y + this.z2;
+    this.z2 = this.b2 * x - this.a2 * y;
+    return y;
+  }
+  lowpass(freq, q) {
+    const w0 = 2 * Math.PI * Math.min(freq, this.sr * 0.49) / this.sr;
+    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
+    this.b0 = (1 - cw) / 2 / a0; this.b1 = (1 - cw) / a0; this.b2 = this.b0;
+    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
+  }
+  highpass(freq, q) {
+    const w0 = 2 * Math.PI * Math.min(freq, this.sr * 0.49) / this.sr;
+    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
+    this.b0 = (1 + cw) / 2 / a0; this.b1 = -(1 + cw) / a0; this.b2 = this.b0;
+    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
+  }
+  lowShelf(freq, gainDb, q = Math.SQRT1_2) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * Math.min(freq, this.sr * 0.49) / this.sr;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const alpha = sw / (2 * q);
+    const tsa = 2 * Math.sqrt(A) * alpha;
+    const a0 = (A + 1) + (A - 1) * cw + tsa;
+    this.b0 = A * ((A + 1) - (A - 1) * cw + tsa) / a0;
+    this.b1 = 2 * A * ((A - 1) - (A + 1) * cw) / a0;
+    this.b2 = A * ((A + 1) - (A - 1) * cw - tsa) / a0;
+    this.a1 = -2 * ((A - 1) + (A + 1) * cw) / a0;
+    this.a2 = ((A + 1) + (A - 1) * cw - tsa) / a0;
+  }
+  highShelf(freq, gainDb, q = Math.SQRT1_2) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * Math.min(freq, this.sr * 0.49) / this.sr;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const alpha = sw / (2 * q);
+    const tsa = 2 * Math.sqrt(A) * alpha;
+    const a0 = (A + 1) - (A - 1) * cw + tsa;
+    this.b0 = A * ((A + 1) + (A - 1) * cw + tsa) / a0;
+    this.b1 = -2 * A * ((A - 1) + (A + 1) * cw) / a0;
+    this.b2 = A * ((A + 1) + (A - 1) * cw - tsa) / a0;
+    this.a1 = 2 * ((A - 1) - (A + 1) * cw) / a0;
+    this.a2 = ((A + 1) - (A - 1) * cw - tsa) / a0;
+  }
+  peaking(freq, q, gainDb) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * Math.min(freq, this.sr * 0.49) / this.sr;
+    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q);
+    const a0 = 1 + alpha / A;
+    this.b0 = (1 + alpha * A) / a0; this.b1 = (-2 * cw) / a0; this.b2 = (1 - alpha * A) / a0;
+    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha / A) / a0;
+  }
+}
+
+
+const EQ_FIELDS = ['on','low','mid','mfreq','high','lfreq','m2freq','hfreq','mid2','lq','ltype','lon','mq','mtype','mon','m2q','m2type','m2on','hq','htype','hon'].map(k => 'fx.eq.' + k);
+const EQ_DEFAULTS = [0,0,0,900,0,120,2500,6000,0,Math.SQRT1_2,0,1,.9,1,1,.9,1,1,Math.SQRT1_2,2,1];
+const EQ_KEYS = [[5,1,9,10,11],[3,2,12,13,14],[6,8,15,16,17],[7,4,18,19,20]];
+class ParametricEq {
+  constructor(sr) {
+    this.sr = sr; this.steps = Math.max(1, Math.floor(sr * .015 / 32));
+    this.wetCoef = 1 - Math.exp(-1 / (.005 * sr));
+    this.guard = new PeakGuard(sr); this.wet = this.targetWet = 0; this.primed = false;
+    this.bands = EQ_KEYS.map(keys => ({keys, l:new EqBiquad(sr), r:new EqBiquad(sr),
+      cur:[0,0,0], target:[0,0,0], step:[0,0,0], left:[0,0,0], type:1, dirty:true}));
+    this.reset();
+  }
+  reset() {
+    this.wet = this.targetWet; this.left = 0; this.guard.reset();
+    for (const b of this.bands) {
+      b.l.reset(); b.r.reset(); b.dirty = true;
+      for (let i=0;i<3;i++) { b.cur[i]=b.target[i]; b.left[i]=0; }
+    }
+  }
+  setParams(read) {
+    const get = i => { const v=read(EQ_FIELDS[i]); return Number.isFinite(v)?v:EQ_DEFAULTS[i]; };
+    this.targetWet = get(0) > .5 ? 1 : 0;
+    if (!this.primed) this.wet = this.targetWet;
+    for (const b of this.bands) {
+      const k=b.keys;
+      const values=[Math.log2(Math.max(20,Math.min(20000,get(k[0])))),
+        get(k[4])>.5?Math.max(-15,Math.min(15,get(k[1]))):0, Math.max(.2,Math.min(12,get(k[2])))];
+      for(let i=0;i<3;i++) {
+        if(!this.primed) { b.cur[i]=b.target[i]=values[i]; b.left[i]=0; }
+        else if(values[i]!==b.target[i]) { b.target[i]=values[i]; b.step[i]=(values[i]-b.cur[i])/this.steps; b.left[i]=this.steps; }
+      }
+      const type=Math.max(0,Math.min(2,get(k[3])|0));
+      b.dirty ||= b.type!==type; b.type=type;
+    }
+    this.primed=true;
+  }
+  process(L,R,n) {
+    for(let i=0;i<n;i++) {
+      if(this.left--<=0) {
+        this.left=31;
+        for(const b of this.bands) {
+          let changed=b.dirty;
+          for(let j=0;j<3;j++) if(b.left[j]>0) { changed=true; b.cur[j]=--b.left[j]===0?b.target[j]:b.cur[j]+b.step[j]; }
+          if(!changed) continue;
+          const f=Math.pow(2,b.cur[0]),g=b.cur[1],q=b.cur[2];
+          if(b.type===0) { b.l.lowShelf(f,g,q); b.r.lowShelf(f,g,q); }
+          else if(b.type===2) { b.l.highShelf(f,g,q); b.r.highShelf(f,g,q); }
+          else { b.l.peaking(f,q,g); b.r.peaking(f,q,g); }
+          b.dirty=false;
+        }
+      }
+      this.wet+=(this.targetWet-this.wet)*this.wetCoef;
+      if(this.targetWet===0 && this.wet<1e-6) {
+        if(this.wet!==0) { this.wet=0; for(const b of this.bands) { b.l.reset(); b.r.reset(); } }
+        continue;
+      }
+      let l=L[i],r=R[i];
+      for(const b of this.bands) { l=b.l.process(l); r=b.r.process(r); }
+      L[i]+=this.wet*(l-L[i]); R[i]+=this.wet*(r-R[i]);
+      const gain=this.guard.gainFor(L[i],R[i]); L[i]*=gain; R[i]*=gain;
+    }
+  }
+}
+globalThis.FableParametricEq = ParametricEq;
+globalThis.FableEqFields = EQ_FIELDS;

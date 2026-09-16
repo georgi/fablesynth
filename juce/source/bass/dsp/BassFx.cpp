@@ -20,6 +20,8 @@ static const int AP_TUNE[4]    = {556, 441, 341, 225};
 static const int STEREO_SPREAD = 23;
 
 void BassFx::prepare(double sampleRate) {
+    meter_.prepare(sampleRate);
+    eq_.prepare(sampleRate);
     sr_ = sampleRate;
     double scale = sr_ / 44100.0;
 
@@ -62,6 +64,10 @@ void BassFx::prepare(double sampleRate) {
     dryL_.prepare(kDriveLatency + 4);
     dryR_.prepare(kDriveLatency + 4);
     dlDamp_.lowpass(4500, 0.707, sr_);
+    ott_.prepare(sr_); comp_.prepare(sr_);
+    headroomInput_.prepare(sr_); headroomOtt_.prepare(sr_); headroomComp_.prepare(sr_);
+    headroomDrive_.prepare(sr_); headroomChorus_.prepare(sr_); headroomDelay_.prepare(sr_);
+    headroomReverb_.prepare(sr_); delayFeedbackGuard_.prepare(sr_);
 
     // WebAudio's DynamicsCompressor applies spec-defined makeup gain
     // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
@@ -74,6 +80,8 @@ void BassFx::prepare(double sampleRate) {
 }
 
 void BassFx::reset() {
+    meter_.reset();
+    eq_.reset();
     chDl1_.reset(); chDl2_.reset(); dlL_.reset(); dlR_.reset();
     dryL_.reset(); dryR_.reset();
     for (auto& c : combL_) c.reset();
@@ -81,12 +89,16 @@ void BassFx::reset() {
     for (auto& a : apL_) a.reset();
     for (auto& a : apR_) a.reset();
     dcL_.reset(); dcR_.reset(); dlDamp_.reset();
+    ott_.reset(); comp_.reset();
+    headroomInput_.reset(); headroomOtt_.reset(); headroomComp_.reset(); headroomDrive_.reset();
+    headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset(); delayFeedbackGuard_.reset();
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     lim_.reset();
     chPhase_ = 0;
     chunkPos_ = 0;
     driveGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
+    compGated_ = false;
     // A re-prepare must not leave a ramp mid-flight.
     driveAmtR_.snapToTarget(); chRateR_.snapToTarget();
     chDepthR_.snapToTarget(); verbSizeR_.snapToTarget();
@@ -106,6 +118,11 @@ static inline float mixGate(bool on, float amount, bool wet) {
 }
 
 void BassFx::setParams(const BassParamArray& p) {
+    eq_.setParams(p.data() + BL_FXEQ_ON);
+    compOff_ = p[BL_FXCOMP_ON] <= 0.5f;
+    comp_.setParams(!compOff_, p[BL_FXCOMP_THR]);
+    ott_.setParams(p[BL_FXOTT_ON] > 0.5f, p[BL_FXOTT_DEPTH], p[BL_FXOTT_TIME], p[BL_FXOTT_UP], p[BL_FXOTT_DOWN]);
+
     // drive — AMT ramps; the shaper gains are rebuilt in updateCoefs.
     driveAmtR_.setTarget(p[BL_FXDRIVE_AMT]);
     bool dOn = p[BL_FXDRIVE_ON] > 0.5f;
@@ -231,11 +248,29 @@ void BassFx::process(float* L, float* R, int n) {
     chorusGated_ = chorusGate;
     delayGated_ = delayGate;
     verbGated_ = verbGate;
+    // WebCompressor owns its wet fade and state reset, so it continues to run
+    // while switched off just long enough to settle its bypass.
+    compGated_ = false;
+
+    headroomInput_.process(L, R, n);
+    eq_.process(L, R, n);
 
     for (int i = 0; i < n; i++) {
         if (chunkPos_ == 0) updateCoefs(false);
         if (++chunkPos_ >= kCoefChunk) chunkPos_ = 0;
         float l = L[i], r = R[i];
+
+        // ---- OTT -> leveling compressor (automatic level matching) ----
+        double ottL, ottR;
+        meter_.level(FxTelemetry::ottIn, l, r);
+            ott_.processSample(l, r, ottL, ottR);
+            meter_.level(FxTelemetry::ottOut, ottL, ottR); l = (float)ottL; r = (float)ottR;
+        double gOtt = headroomOtt_.gainFor(l, r); l *= (float)gOtt; r *= (float)gOtt;
+        double compL, compR;
+        meter_.level(FxTelemetry::compIn, l, r);
+            comp_.processSample(l, r, compL, compR);
+            meter_.level(FxTelemetry::compOut, compL, compR); l = (float)compL; r = (float)compR;
+        double gComp = headroomComp_.gainFor(l, r); l *= (float)gComp; r *= (float)gComp;
 
         // ---- drive (4x oversampled tanh waveshaper, post-accent) ----
         // The dry/bypass path always runs through a kDriveLatency delay so the
@@ -253,6 +288,7 @@ void BassFx::process(float* L, float* R, int n) {
         } else {
             l = dlyL; r = dlyR;
         }
+        double gDrive = headroomDrive_.gainFor(l, r); l *= (float)gDrive; r *= (float)gDrive;
 
         // ---- chorus (two modulated taps, stereo) ----
         if (!chorusGated_) {
@@ -271,6 +307,7 @@ void BassFx::process(float* L, float* R, int n) {
             l = dry * l + wet * c1;
             r = dry * r + wet * c2;
         }
+        double gChorus = headroomChorus_.gainFor(l, r); l *= (float)gChorus; r *= (float)gChorus;
 
         // ---- ping-pong delay ----
         if (!delayGated_) {
@@ -279,12 +316,17 @@ void BassFx::process(float* L, float* R, int n) {
             float dL = dlL_.readHermite(dt);
             float dR = dlR_.readHermite(dt);
             float mono = 0.5f * (l + r);
-            dlL_.write(mono + fb * dR);
-            dlR_.write((float)dlDamp_.process(fb * dL));
+            float feedbackL = mono + fb * dR;
+            float feedbackR = (float)dlDamp_.process(fb * dL);
+            double gFb = delayFeedbackGuard_.gainFor(feedbackL, feedbackR);
+            dlL_.write(feedbackL * (float)gFb);
+            dlR_.write(feedbackR * (float)gFb);
             float wet = dlWet_.next(), dry = dlDry_.next();
-            l = dry * l + wet * dL;
+            meter_.stereo(FxTelemetry::echoL, wet * dL, wet * dR);
+                l = dry * l + wet * dL;
             r = dry * r + wet * dR;
         }
+        double gDelay = headroomDelay_.gainFor(l, r); l *= (float)gDelay; r *= (float)gDelay;
 
         // ---- reverb (Freeverb) ----
         if (!verbGated_) {
@@ -293,9 +335,12 @@ void BassFx::process(float* L, float* R, int n) {
             for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
             for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
             float wet = verbWet_.next(), dry = verbDry_.next();
-            l = dry * l + wet * outL;
+            meter_.stereo(FxTelemetry::verbL, wet * outL, wet * outR);
+                l = dry * l + wet * outL;
             r = dry * r + wet * outR;
         }
+        meter_.finish(ott_, comp_, dlTime_.cur);
+        double gVerb = headroomReverb_.gainFor(l, r); l *= (float)gVerb; r *= (float)gVerb;
 
         // ---- master gain ----
         float g = masterGain_.next();

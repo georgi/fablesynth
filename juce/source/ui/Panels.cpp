@@ -556,6 +556,23 @@ void MatrixPanel::paint(juce::Graphics& g) {
 
 void MatrixPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
+    // The SOUND page has a wide, shallow matrix rail after moving FX to its
+    // own page. Keep sources and ADD ROUTE above the scrollable route rows.
+    if (getWidth() > 900 && getHeight() < 112) {
+        auto head = r.removeFromTop(22);
+        titleArea = head.removeFromLeft(150);
+        addArea = head.removeFromRight(100);
+        addBtn.setBounds(addArea);
+        for (auto* chip : chips) {
+            chip->setBounds(head.removeFromLeft(82).withSizeKeepingCentre(78, 18));
+        }
+        hintArea = head;
+        r.removeFromTop(5);
+        rowsArea = r;
+        viewport.setBounds(rowsArea);
+        relayoutRows();
+        return;
+    }
     auto rail = r.removeFromLeft(172);
     r.removeFromLeft(9);
 
@@ -611,12 +628,13 @@ void FxPanel::Module::paintModule(juce::Graphics& g) {
 FxPanel::FxPanel(ParameterSource s) {
     struct Def { const char* fx; const char* title; juce::StringArray k; };
     std::vector<Def> defs = {
-        {"eq", "EQ", {"low", "mid", "mfreq", "high"}},
+        {"eq", "EQ", {"low", "mid", "mfreq", "high", "lfreq", "m2freq", "mid2", "hfreq"}},
         {"drive", "DRIVE", {"amt", "mix"}},
         {"chorus", "CHORUS", {"rate", "depth", "mix"}},
         {"delay", "DELAY", {"time", "fb", "mix"}},
         {"reverb", "REVERB", {"size", "mix"}},
         {"comp", "COMP", {"thr", "gain"}},
+        {"ott", "OTT", {"depth", "time", "up", "down"}},
     };
     for (auto& d : defs) {
         auto* m = new Module(s, d.fx, d.title, d.k);

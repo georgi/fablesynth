@@ -3,6 +3,7 @@
 #include "Panels.h"
 #include "NoteSeqView.h"
 #include "WtUiModel.h"
+#include "FxChain.h"
 
 // Reusable WT-1 sound-design and note-sequencer surface. The standalone
 // editor adds its own header around this body; SQ-4 embeds the body directly.
@@ -26,6 +27,7 @@ private:
     fui::EnvPanel env1, env2;
     fui::LfoPanel lfos;
     fui::MatrixPanel matrix;
-    fui::FxPanel fx;
+    fui::FxChain fx;
+    fui::DevicePageTabs pages;
     fui::NoteSeqView seq;
 };

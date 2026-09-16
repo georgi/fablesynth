@@ -64,8 +64,10 @@
   less drive blending, and no compressor or reverb. Await listening feedback.
 - Warm tone should still have a firm transient. Do not soften attacks merely
   to avoid brightness. Compare revisions at matched loudness.
-- Use supported parameters from each machine's definitions. DR-1's per-pad FX
-  do not support the WT-1 `fx.eq.*` controls; use its filter for tone shaping.
+- Use supported parameters from each machine's definitions. All instruments
+  support the four-band `fx.eq.*` controls; DR-1 namespaces them as
+  `pad<i>.fx.eq.*`. EQ is bypassed by default. Preserve the accepted filter
+  settings and do not enable EQ on existing songs as an unrelated side effect.
 
 ## Authoring and compatibility
 

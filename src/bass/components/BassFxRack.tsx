@@ -1,5 +1,6 @@
 import { bassEngine, useBassStore } from '../store';
 import { BassKnob } from './BassKnob';
+import { EqPanel } from '../../components/panels/EqPanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
 import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
 import { ReverbPanel } from '../../components/panels/ReverbPanel';
@@ -51,12 +52,13 @@ export function BassFxRack() {
     engine: bassEngine,
     params,
     setParam,
-    renderKnob: (id) => <BassKnob paramId={id} size="sm" accent="n" />,
+    renderKnob: (id, key) => <BassKnob paramId={id} label={id.includes('fx.eq.') ? key?.toUpperCase() : undefined} size="sm" accent="n" />,
     renderPower: (id) => <BassPower paramId={id} />,
   };
   return (
     <section className="panel bl-fx-panel">
       <div className="fx-rack bl-fx-rack">
+        <EqPanel adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />
         <DynamicsPanel kind="comp" adapter={adapter} />
         <FxGroup effect="drive" title="DRIVE" note="POST-ACCENT" knobs={['fx.drive.amt', 'fx.drive.mix']} />

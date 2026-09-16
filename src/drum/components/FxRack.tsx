@@ -3,6 +3,7 @@ import { drumEngine, useDrumStore } from '../store';
 import { OUT_NAMES, pad } from '../params';
 import { DrumKnob } from './DrumKnob';
 import { OutPanel } from './OutPanel';
+import { EqPanel } from '../../components/panels/EqPanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
 import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
 import { ReverbPanel } from '../../components/panels/ReverbPanel';
@@ -63,7 +64,7 @@ export function FxRack() {
     params,
     setParam,
     prefix: pad(selectedPad, ''),
-    renderKnob: (id) => <DrumKnob paramId={id} size="sm" accent="n" />,
+    renderKnob: (id, key) => <DrumKnob paramId={id} label={id.includes('fx.eq.') ? key?.toUpperCase() : undefined} size="sm" accent="n" />,
     renderPower: (id) => <DrumPower paramId={id} />,
   };
 
@@ -73,9 +74,10 @@ export function FxRack() {
         <span className="dr-led dr-led-a" aria-hidden="true" />
         <h2>PAD {padNumber} FX CHAIN</h2>
         <span className="dr-fx-padname">{padName}</span>
-        <span className="dr-fx-flow" aria-hidden="true">OTT › COMP › DRIVE › CHORUS › DELAY › REVERB</span>
+        <span className="dr-fx-flow" aria-hidden="true">EQ › OTT › COMP › DRIVE › CHORUS › DELAY › REVERB</span>
       </div>
       <div className="fx-rack">
+        <EqPanel key={selectedPad} adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />
         <DynamicsPanel kind="comp" adapter={adapter} />
         <FxGroup padIndex={selectedPad} effect="drive" title="DRIVE" knobs={['fx.drive.amt', 'fx.drive.mix']} />

@@ -3,6 +3,7 @@
 #include "ui/BassPanels.h"
 #include "ui/PitchSeqView.h"
 #include "ui/BassFxRack.h"
+#include "../ui/FxChain.h"
 
 // Reusable BL-1 machine surface. It depends only on BassUiModel and can be
 // composed by either the standalone rack or SQ-4 without processor symbols.
@@ -21,5 +22,6 @@ private:
     fui::BassAccentPanel accent;
     fui::BassKeysPanel keys;
     fui::PitchSeqView seq;
-    fui::BassFxRack fxRack;
+    fui::FxChain fxRack;
+    fui::DevicePageTabs pages;
 };

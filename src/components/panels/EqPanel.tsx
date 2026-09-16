@@ -1,9 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Knob } from '../Knob';
 import { PowerButton } from '../PowerButton';
 import { engine, useStore } from '../../store';
 import { PARAMS, fmtDb, fmtHz } from '../../params';
 import { EQ_BANDS, eqCoefficients, eqResponseDb, eqValue, readEqBands } from '../../engine/eqResponse';
+import type { FxPanelAdapter } from './fxAdapter';
 import './eq.css';
 
 const W = 360, H = 126, LEFT = 26, RIGHT = 348, TOP = 12, BOTTOM = 106;
@@ -11,16 +12,25 @@ const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(ma
 const X = (freq: number) => LEFT + Math.log(freq / 20) / Math.log(1000) * (RIGHT - LEFT);
 const Y = (gain: number) => TOP + (15 - gain) / 30 * (BOTTOM - TOP);
 
-export function EqPanel() {
-  const params = useStore(s => s.params);
-  const setParam = useStore(s => s.setParam);
+export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
+  const wtParams = useStore(s => s.params);
+  const wtSetParam = useStore(s => s.setParam);
+  const prefix = adapter?.prefix ?? '';
+  const source = adapter?.params ?? wtParams;
+  const params = useMemo(() => Object.fromEntries(
+    Object.keys(PARAMS).filter(k => k.startsWith('fx.eq.')).map(k => [k, source[prefix + k] ?? PARAMS[k].def])
+  ), [source, prefix]);
+  const writeParam = adapter?.setParam ?? wtSetParam;
+  const setParam = useCallback((key: string, value: number) => writeParam(prefix + key, value), [writeParam, prefix]);
+  const current = useRef(params);
+  current.current = params;
   const [selected, select] = useState(1);
   const id = useId();
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<{ index: number; x: number; y: number; freq: number; gain: number } | null>(null);
   const bands = readEqBands(params), keys = EQ_BANDS[selected], band = bands[selected];
   const on = params['fx.eq.on'] > 0.5;
-  const sampleRate = engine.ctx?.sampleRate ?? 48000;
+  const sampleRate = (adapter?.engine ?? engine).ctx?.sampleRate ?? 48000;
   useEffect(() => {
     const el = svg.current;
     if (!el) return;
@@ -30,7 +40,7 @@ export function EqPanel() {
       e.preventDefault();
       const index = Number(node.getAttribute('data-eq-band')), key = EQ_BANDS[index].q;
       select(index);
-      const value = eqValue(useStore.getState().params, key);
+      const value = eqValue(current.current, key);
       setParam(key, clamp(value * Math.exp(-Math.sign(e.deltaY) * (e.shiftKey ? 0.015 : 0.12)), 0.2, 12));
     };
     el.addEventListener('wheel', wheel, { passive: false });
@@ -58,7 +68,7 @@ export function EqPanel() {
   return (
     <section className={`panel panel-eq${on ? '' : ' eq-bypassed'}`} style={{ gridArea: 'eq' }} aria-label="Four-band parametric equalizer">
       <div className="panel-head">
-        <PowerButton paramId="fx.eq.on" />
+        {adapter?.renderPower?.(prefix + "fx.eq.on") ?? <PowerButton paramId="fx.eq.on" />}
         <h2>EQ</h2>
         <span className="eq-caption">{on ? '4 BAND' : 'BYPASS'}</span>
         <div className="eq-bands" role="group" aria-label="Select EQ band">
@@ -135,7 +145,7 @@ export function EqPanel() {
       </div>
       <div className="eq-controls">
         {(['freq', 'gain', 'q'] as const).map(key => <div className="eq-control" key={`${selected}-${key}`}>
-          <Knob paramId={keys[key]} label={key.toUpperCase()} size="sm" accent="n" />
+          {adapter?.renderKnob?.(prefix + keys[key], key) ?? <Knob paramId={keys[key]} label={key.toUpperCase()} size="sm" accent="n" />}
           <output>{PARAMS[keys[key]].fmt!(eqValue(params, keys[key]))}</output>
         </div>)}
       </div>

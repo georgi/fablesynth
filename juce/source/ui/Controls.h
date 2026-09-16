@@ -44,6 +44,7 @@ public:
     void itemDropped(const SourceDetails&) override;
 
     static int svgPx(Size s) { return s == Lg ? 74 : s == Md ? 56 : s == Sm ? 44 : 34; }
+    void setLabelText(const juce::String& text) { label = text; repaint(); }
 
 private:
     void  timerCallback() override;

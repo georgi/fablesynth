@@ -120,6 +120,11 @@ public:
     // Editor timer (~30 Hz) / tests call this to deliver the audio thread's
     // clipstart/clipstop acks to the conductor and reset stopped step readouts.
     void drainAcks();
+    fable::FxTelemetry fxTelemetry(int track, int pad = 0, int bus = 0) const {
+        if (track == 0) return drum_.fxTelemetry(pad, bus);
+        if (track == 1) return bassFx_.telemetry();
+        return wtFx_[(size_t)juce::jlimit(0, 1, track - 2)].telemetry();
+    }
 
     // Re-apply a track's PatchRef (message thread) via the command FIFO — the
     // patch stepper (Task 11) uses this to hot-swap a track's sound.

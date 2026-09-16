@@ -24,6 +24,7 @@ public:
     void reloadPatchFromSession();
 
     ParameterSource parameters() override;
+    fable::FxTelemetry fxTelemetry(int pad, int bus) const override;
     DeviceUiCapabilities capabilities() const override;
 
     int currentProgram() const override;

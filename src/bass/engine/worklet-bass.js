@@ -435,6 +435,7 @@ class BassFx {
     const sm = (tau) => { const s = new Smooth(); s.setTime(tau, sr); return s; };
     this.driveWet = sm(0.02); this.driveDry = sm(0.02);
     this.comp = new globalThis.FableCompressor(sr);
+    this.eq = new globalThis.FableParametricEq(sr);
     this.ott = new globalThis.FableOttCompressor(sr);
     this.chWet = sm(0.02); this.chDry = sm(0.02);
     this.dlTime = sm(0.08); this.dlFb = sm(0.02);
@@ -513,7 +514,7 @@ class BassFx {
     this.dcL.reset(); this.dcR.reset(); this.dlDamp.reset();
     for (const guard of Object.values(this.headroom)) guard.reset();
     this.delayFeedbackGuard.reset();
-    this.comp.reset(); this.ott.reset();
+    this.comp.reset(); this.ott.reset(); this.eq.reset();
     for (const o of [this.osL, this.osR]) { o.u1.reset(); o.u2.reset(); o.d2.reset(); o.d1.reset(); }
     this.lim.reset();
     this.chPhase = 0;
@@ -528,6 +529,7 @@ class BassFx {
   }
 
   setParams(p) {
+    this.eq.setParams(k => p[k]);
     const num = (k, d) => (Number.isFinite(p[k]) ? p[k] : d);
 
     // AMT ramps; the shaper gains are rebuilt in updateCoefs.
@@ -661,6 +663,7 @@ class BassFx {
     const sr = this.sr;
     const dlL = this.dlLine[0], dlR = this.dlLine[1];
     this.headroom.input.process(L, R, n);
+    this.eq.process(L, R, n);
 
     // ---- OTT -> compressor (automatic level matching) ----
     // These stages precede the oversampled drive. Process the source arrays

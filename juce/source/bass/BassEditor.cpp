@@ -5,6 +5,7 @@ namespace {
 class StandaloneBassUiModel final : public fui::BassUiModel {
 public:
     explicit StandaloneBassUiModel(BassAudioProcessor& p) : proc(p) {}
+    fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::ParameterSource parameters() override { const auto& i = fable::bassParamInfo(); return fui::ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
     bool programDirty() const override { return proc.isProgramDirty(); }

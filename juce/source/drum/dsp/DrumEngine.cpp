@@ -214,6 +214,7 @@ void DrumEngine::prepare(double sampleRate) {
     snapSmoothers();                 // Finding J1: no stale ramp survives a re-prepare
     for (auto& row : fxSeen_) std::fill(std::begin(row), std::end(row), -1.0e30f);
     for (auto& fx : padFx_) fx.prepare(sampleRate);
+    for (auto& rv : reverbs_) rv.prepare(sampleRate);
     for (auto& b : busOut_) b.prepare(sampleRate);
     // Finding D9: the one-shot bank is a function-local static that render()
     // used to touch first — its first-use construction would allocate on the
@@ -1171,6 +1172,11 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             for (auto& bo : busOut_) bo.setParams(ps_);   // Finding D1
         }
 
+        for (int b = 0; b < DR_NBUSES; ++b) {
+            std::fill(verbInL_[b], verbInL_[b] + run, 0.0f);
+            std::fill(verbInR_[b], verbInR_[b] + run, 0.0f);
+        }
+
         for (int i = 0; i < DR_NPADS; i++) {
             PadVoice& v = voices_[(size_t)i];
             PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
@@ -1183,17 +1189,37 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             }
             std::fill(padL_, padL_ + run, 0.0f);
             std::fill(padR_, padR_ + run, 0.0f);
+            std::fill(verbSendL_, verbSendL_ + run, 0.0f);
+            std::fill(verbSendR_, verbSendR_ + run, 0.0f);
             if (tl.active) renderPad(tl, i, padL_, padR_, 0, run);
             if (v.active) renderPad(v, i, padL_, padR_, 0, run);
-            // Each pad owns a continuous chain, including its delay/reverb
-            // tail. Processing silence after the one-shot voice ends is what
-            // lets that tail ring naturally and keeps all pad paths aligned.
-            padFx_[(size_t)i].process(padL_, padR_, run);
+            // Each pad owns a continuous insert chain, including its delay
+            // tail. Reverb is sent to the shared network below so pads on the
+            // same output bus share one tail.
+            padFx_[(size_t)i].processInsert(padL_, padR_, verbSendL_, verbSendR_, run);
             int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
             for (int s = 0; s < run; ++s) {
                 outs[out][0][pos + s] += padL_[s];
                 outs[out][1][pos + s] += padR_[s];
+                verbInL_[out][s] += verbSendL_[s];
+                verbInR_[out][s] += verbSendR_[s];
             }
+        }
+        // Shared reverb receives the summed pad sends, then the bus gain/DC/
+        // limiter runs once per output, matching the web graph.
+        for (int b = 0; b < DR_NBUSES; ++b) {
+            double sizeAcc = 0, sizeW = 0;
+            for (int i = 0; i < DR_NPADS; ++i) {
+                const auto& fx = padFx_[(size_t)i];
+                if (fx.isIdle()) continue; // web excludes a gated pad from the mean
+                const int base = dpid(i, 0);
+                const int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(base + DP_OUT)));
+                if (out != b) continue;
+                const double w = std::max(0.0, (double)fx.reverbSendWeight());
+                sizeAcc += w * fx.reverbSize(); sizeW += w;
+            }
+            if (sizeW > 0) reverbs_[(size_t)b].setSize((float)(sizeAcc / sizeW));
+            reverbs_[(size_t)b].process(verbInL_[b], verbInR_[b], outs[b][0] + pos, outs[b][1] + pos, run);
         }
         // Finding D1: master gain, DC block and the safety limiter run here,
         // once per bus after the sum, not sixteen times inside the pad chains.

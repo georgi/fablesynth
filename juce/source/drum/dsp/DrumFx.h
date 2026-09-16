@@ -1,10 +1,8 @@
 // One DR-1 pad FX chain — C++ port of the Web Audio graph in
 // src/drum/engine/drum-synth.ts buildFx()/applyAllFx():
-// drive -> comp -> chorus -> ping-pong delay -> reverb. Same topology as WT-1's
-// Fx (source/dsp/Fx.h, the template for every shared stage) plus the bus
-// compressor, which follows
-// WebAudio DynamicsCompressorNode semantics (ratio 4, knee 9 dB, attack 3 ms,
-// release 250 ms, spec-defined implicit makeup) with THRESH/MAKEUP params.
+// OTT -> leveling compressor -> drive -> chorus -> ping-pong delay -> reverb
+// send. Reverb is shared per output bus; the bus then applies master gain, DC
+// block and the lookahead limiter.
 //
 // The convolution reverb (generated exponential-noise impulse) is approximated
 // by the same Freeverb network as WT-1, tuned by SIZE. JUCE-free.
@@ -15,27 +13,38 @@
 // (drum-synth.ts:204-218, 296), so limiting sixteen pads independently left the
 // bus itself without a ceiling.
 #pragma once
+#include "../../dsp/ParametricEq.h"
 
 #include "DrumParams.h"
 #include "../../dsp/Fx.h"   // Smooth, Biquad, DelayLine, FvComb, FvAllpass
 
 #include <array>
+#include <algorithm>
 
 namespace fable {
 
 class DrumFx {
 public:
+    FxTelemetry telemetry() const { return meter_.read(); }
     void prepare(double sampleRate);
     void setParams(const DrumParamArray& p, int pad); // reads pad<i>.fx.*
     void process(float* L, float* R, int n); // in-place, before pad output routing
+    // Insert-only form used by DrumEngine: returns the equal-power reverb send
+    // while leaving reverb processing to the shared per-bus network.
+    void processInsert(float* L, float* R, float* sendL, float* sendR, int n);
     void reset();
     int  latencySamples() const { return kDriveLatency; }
     // Finding D8: true while the whole chain is bypassed because its input AND
     // its own output have been below kIdleLevel for kIdleHold. Read by the
     // tests (and DrumEngine::activeFxChains) to prove the gate engages.
     bool isIdle() const { return idle_; }
+    float reverbSize() const { return verbSize_; }
+    float reverbSendWeight() const { return verbWet_.target; }
 
 private:
+    ParametricEq eq_;
+    FxMeter meter_;
+    void processImpl(float* L, float* R, float* sendL, float* sendR, int n);
     double sr_ = 48000;
 
     // Finding D8: sixteen chains used to run every sample whether or not there
@@ -60,20 +69,12 @@ private:
     inline float shape(float x) const;
     float driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x);
 
-    // compressor (WebAudio DynamicsCompressorNode semantics)
-    Smooth compThrDb_, compMakeup_, compWet_, compDry_;
-    double compEnv_ = 0;
-    double compAtk_ = 0, compRel_ = 0;
-    bool compOff_ = false, compGated_ = false;
-    // Finding D8: the static curve (pow + log10) is evaluated once per
-    // kCompUpdate samples and the resulting gain is ramped linearly across that
-    // window. The envelope follower still runs per sample, so peak detection is
-    // unchanged; only the curve lookup is decimated, which the 3 ms attack
-    // already smooths over.
-    static constexpr int kCompUpdate = 32;
-    double compG_ = 1, compGStep_ = 0;
-    int    compGCount_ = 0;
-
+    // OTT plus leveling compressor (shared web dynamics primitives)
+    OttCompressor ott_;
+    WebCompressor comp_;
+    PeakGuard headroomInput_, headroomOtt_, headroomComp_, headroomDrive_;
+    PeakGuard headroomChorus_, headroomDelay_, headroomReverb_, delayFeedbackGuard_;
+    bool compOff_ = true;
     // chorus
     double chPhase_ = 0;
     float  chRate_ = 0.6f, chDepth_ = 0.5f;
@@ -91,8 +92,32 @@ private:
     std::array<FvComb, 8> combL_, combR_;
     std::array<FvAllpass, 4> apL_, apR_;
     Smooth verbWet_, verbDry_;
+    float verbSize_ = 0.4f;
     float roomSize_ = 0.84f;
     bool verbOff_ = false, verbGated_ = false;
+};
+
+// One shared Freeverb network per drum output bus, matching the web worklet's
+// post-insert reverb send topology.
+class DrumReverb {
+public:
+    FxTelemetry telemetry() const { return meter_.read(); }
+    void prepare(double sampleRate);
+    void setSize(float size) { size_.target = std::max(0.0f, std::min(1.0f, size)); }
+    void process(float* inL, float* inR, float* outL, float* outR, int n);
+    void reset();
+    bool isActive() const { return !gated_; }
+
+private:
+    FxMeter meter_;
+    double sr_ = 48000;
+    PeakGuard inputGuard_;
+    Smooth size_;
+    std::array<FvComb, 8> combL_, combR_;
+    std::array<FvAllpass, 4> apL_, apR_;
+    float feedback_ = 0.812f, damp1_ = 0.32f, damp2_ = 0.68f;
+    bool gated_ = true;
+    double silent_ = 0;
 };
 
 // Per-bus output stage (Finding D1): master gain -> DC block -> lookahead
@@ -108,6 +133,7 @@ public:
 
 private:
     double sr_ = 48000;
+    PeakGuard inputGuard_;
     Smooth masterGain_;
     Biquad dcL_, dcR_;
     LookaheadLimiter lim_; // WebAudio-spec makeup applied inside, computed in prepare()

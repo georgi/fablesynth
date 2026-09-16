@@ -53,6 +53,14 @@ class DrumEngine {
 public:
     void prepare(double sampleRate);
     void enablePadFx(bool on) { padFxEnabled_ = on; }
+    FxTelemetry fxTelemetry(int pad, int bus) const {
+        auto result = padFx_[(size_t)std::clamp(pad, 0, DR_NPADS - 1)].telemetry();
+        const auto tail = reverbs_[(size_t)std::clamp(bus, 0, DR_NBUSES - 1)].telemetry();
+        for (auto field : {FxTelemetry::verbL, FxTelemetry::verbR, FxTelemetry::correlation})
+            result.values[(size_t)field] = tail[field];
+        result.reverbSerial = tail.serial; result.reverbSeconds = tail.seconds;
+        return result;
+    }
     int latencySamples() const {
         return padFxEnabled_ ? padFx_[0].latencySamples() + busOut_[0].latencySamples() : 0;
     }
@@ -154,6 +162,10 @@ public:
     int activeFxChains() const {
         int n = 0;
         for (const auto& fx : padFx_) if (!fx.isIdle()) n++;
+        // Reverb moved to a shared bus network. Once the pad insert has gone
+        // idle, keep one logical chain active while that bus tail is audible.
+        if (n == 0)
+            for (const auto& rv : reverbs_) if (rv.isActive()) { n = 1; break; }
         return n;
     }
 
@@ -392,7 +404,11 @@ private:
     float yL_[128] = {0}, yR_[128] = {0};
     float padL_[128] = {0}, padR_[128] = {0};
     std::array<DrumFx, DR_NPADS> padFx_;
+    std::array<DrumReverb, DR_NBUSES> reverbs_;
     std::array<DrumBusOut, DR_NBUSES> busOut_;   // per-bus gain/DC/limiter (D1)
+    float verbInL_[DR_NBUSES][128] = {{0}};
+    float verbInR_[DR_NBUSES][128] = {{0}};
+    float verbSendL_[128] = {0}, verbSendR_[128] = {0};
     double hostSwing_ = 0;         // last hostTempo() swing, re-applied on prepare
     bool padFxEnabled_ = false; // pure engine tests/embedders opt in explicitly
 };

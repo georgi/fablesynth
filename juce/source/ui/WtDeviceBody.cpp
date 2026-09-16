@@ -10,11 +10,13 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
       lfos(model.parameters(), transportProvider ? std::move(transportProvider) : [&model] {
           return HostTransport{ model.hostBpm(), 0.0, model.sequencerPlaying() };
       }),
-      matrix(model.parameters()), fx(model.parameters()), seq(model) {
+      matrix(model.parameters()), fx(model, true), seq(model) {
     addAndMakeVisible(oscA); addAndMakeVisible(oscB); addAndMakeVisible(util);
     addAndMakeVisible(filter); addAndMakeVisible(env1); addAndMakeVisible(env2);
     addAndMakeVisible(lfos); addAndMakeVisible(matrix); addAndMakeVisible(fx);
     addAndMakeVisible(seq);
+    addAndMakeVisible(pages);
+    pages.onChange = [this] { resized(); };
     oscA.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
     oscB.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
 }
@@ -29,8 +31,8 @@ juce::Rectangle<int> WtDeviceBody::colArea(int c0, int span, int y, int h) const
 
 void WtDeviceBody::resized() {
     const int gap = 9;
-    const int row1 = 250, row2 = 206, row3 = 124, row4 = 270;
-    const int y1 = 2;
+    const int row1 = 250, row2 = 206, row3 = 90, row4 = 270;
+    const int y1 = 36;
     const int y2 = y1 + row1 + gap;
     const int y3 = y2 + row2 + gap;
     const int y4 = y3 + row3 + gap;
@@ -41,7 +43,11 @@ void WtDeviceBody::resized() {
     env1.setBounds(colArea(4, 2, y2, row2));
     env2.setBounds(colArea(6, 2, y2, row2));
     lfos.setBounds(colArea(8, 4, y2, row2));
-    matrix.setBounds(colArea(0, 4, y3, row3));
-    fx.setBounds(colArea(4, 8, y3, row3));
+    pages.setBounds(14, 2, LW-28, 26);
+    const bool showFx = pages.fxSelected();
+    for (auto* c : std::initializer_list<juce::Component*>{&oscA,&oscB,&util,&filter,&env1,&env2,&lfos,&matrix}) c->setVisible(!showFx);
+    fx.setVisible(showFx);
+    matrix.setBounds(colArea(0, 12, y3, row3));
+    fx.setBounds(colArea(0, 12, y1, y4-y1-gap));
     seq.setBounds(colArea(0, 12, y4, row4));
 }

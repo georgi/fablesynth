@@ -106,6 +106,7 @@ public:
     float getVizEnv() const { return vizEnv_.load(); }
     bool  getMidiActive() const { return midiGlow_.load() > 0; }
     double getCurrentSr() const { return currentSr_.load(); }
+    fable::FxTelemetry fxTelemetry(int pad, int bus) const { return engine.fxTelemetry(pad, bus); }
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

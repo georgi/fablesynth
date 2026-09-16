@@ -4,13 +4,22 @@
 #include <utility>
 
 DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& model)
-    : pads(model), padStrip(model), oscA(model, 0), oscB(model, 1), noise(model),
+    : model_(model), pads(model), padStrip(model), oscA(model, 0), oscB(model, 1), noise(model),
       pitchEnv(model), ampEnv(model), filter(model), mod(model), selBar(model),
-      stepSeq(model), fxRack(model) {
+      stepSeq(model), fxRack(model, false), routing(model, true) {
     for (auto* component : std::initializer_list<juce::Component*>{
              &pads, &padStrip, &oscA, &oscB, &noise, &pitchEnv, &ampEnv,
-             &filter, &mod, &selBar, &stepSeq, &fxRack })
+             &filter, &mod, &selBar, &stepSeq, &fxRack, &routing })
         addAndMakeVisible(*component);
+    addAndMakeVisible(pages);
+    pages.onChange = [this] { resized(); };
+    model_.selectionChanges().addChangeListener(this);
+    changeListenerCallback(nullptr);
+}
+
+DrumDeviceBody::~DrumDeviceBody() { model_.selectionChanges().removeChangeListener(this); }
+void DrumDeviceBody::changeListenerCallback(juce::ChangeBroadcaster*) {
+    fxRack.setPad(model_.selectedPad(), model_.padName(model_.selectedPad()));
 }
 
 // Row heights are fixed; the column table is derived from the body's own
@@ -46,9 +55,14 @@ void DrumDeviceBody::resized() {
 
     pads.setBounds(18, 103, 352, 369);
     padStrip.setBounds(18, 481, 352, 119);
-    selBar.setBounds(rightX, 103, rightW, 31);
-    layRow({ { &oscA, 424 }, { &oscB, 425 }, { &noise, 196 } }, 143, 243);
-    layRow({ { &pitchEnv, 225 }, { &ampEnv, 259 }, { &filter, 259 }, { &mod, 293 } }, 395, 209);
-    fxRack.setBounds(18, 613, fullW, 131);
+    routing.setBounds(18,609,352,135);
+    pages.setBounds(rightX,103,rightW,26);
+    const bool showFx = pages.fxSelected();
+    for (auto* c : std::initializer_list<juce::Component*>{&selBar,&oscA,&oscB,&noise,&pitchEnv,&ampEnv,&filter,&mod}) c->setVisible(!showFx);
+    fxRack.setVisible(showFx);
+    selBar.setBounds(rightX, 139, rightW, 31);
+    layRow({ { &oscA, 424 }, { &oscB, 425 }, { &noise, 196 } }, 179, 243);
+    layRow({ { &pitchEnv, 225 }, { &ampEnv, 259 }, { &filter, 259 }, { &mod, 293 } }, 431, 209);
+    fxRack.setBounds(rightX,139,rightW,605);
     stepSeq.setBounds(18, 753, fullW, 399);   // 16 lanes x 21px + head + padding
 }

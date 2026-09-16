@@ -96,6 +96,7 @@ public:
     bool  getVizGate() const { return vizGate_.load(); }
     bool  getMidiActive() const { return midiGlow_.load() > 0; }
     double getCurrentSr() const { return currentSr_.load(); }
+    fable::FxTelemetry fxTelemetry() const { return fx.telemetry(); }
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

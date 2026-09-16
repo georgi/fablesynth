@@ -30,6 +30,7 @@
 #include "../source/seq/ui/HostedDrumModel.h"
 #include "../source/seq/ui/HostedBassModel.h"
 #include "../source/seq/ui/HostedWtModel.h"
+#include "FxUiChecks.h"
 #include "../source/ui/Theme.h"
 
 #include <algorithm>
@@ -853,6 +854,40 @@ int main(int argc, char** argv) {
           "focus container exposes exactly the active native body");
     ed2->resized();
     snapshotFocusedEditor(2); // DRUMS / DROP A clip editor over the live scene
+    for (int track = 0; track < 4; ++track) {
+        ed2->enterFocus(track, 2);
+        auto* body = focusView.activeBodyComponent();
+        auto* tabs = findFxComponent<juce::TextButton>(*body, "FX CHAIN");
+        auto* chain = findFxComponent<fui::FxChain>(*body);
+        check(tabs != nullptr && chain != nullptr, "hosted device exposes the shared FX page", track);
+        if (tabs != nullptr && chain != nullptr) {
+            tabs->setToggleState(true, juce::dontSendNotification);
+            tabs->onClick();
+            check(chain->isVisible() && chain->getHeight() >= 550,
+                  "hosted FX page has room for the web visualizers", track);
+            if (track == 0) chain->setPad(0, "KICK");
+            auto* eq = findFxComponent<fui::FxModuleView>(*chain, "EQ visual FX");
+            check(eq != nullptr, "every hosted instrument has interactive EQ", track);
+            if (eq != nullptr) {
+                eq->keyPressed(juce::KeyPress(juce::KeyPress::homeKey));
+                eq->keyPressed(juce::KeyPress(juce::KeyPress::upKey));
+                if (track == 0) focusView.drumModelForTest().flushPendingPatch();
+                else if (track == 1) focusView.bassModelForTest().flushPendingPatch();
+                else if (track == 2) focusView.wt2ModelForTest().flushPendingPatch();
+                else focusView.wt3ModelForTest().flushPendingPatch();
+                const auto values = p.trackParameterValues(track);
+                const auto found = values.find(track == 0 ? "pad0.fx.eq.mid" : "fx.eq.mid");
+                check(found != values.end() && std::abs(found->second - .5f) < 1e-5f,
+                      "hosted EQ edits reach the SQ-4 inline sound", track);
+            }
+            auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+            dir.createDirectory();
+            if (auto out = dir.getChildFile("sq4-fx-track-" + juce::String(track) + ".png").createOutputStream()) {
+                out->setPosition(0); out->truncate();
+                juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+            }
+        }
+    }
     ed2->exitFocus();
 
     delete ed;

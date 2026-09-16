@@ -4,6 +4,7 @@
 // transport lock through a mock AudioPlayHead, state round-trip, and a
 // headless editor render. Modeled on drum_host_test.cpp.
 #include "../source/bass/BassProcessor.h"
+#include "FxUiChecks.h"
 #include "../source/bass/BassEditor.h"
 #include <array>
 #include <cmath>
@@ -339,9 +340,9 @@ int main(int argc, char** argv) {
             { "env view",     1240, 200 },
             { "lfo view",      120, 420 },
             { "accent knobs",  420, 430 },
-            { "keys",         1000, 440 },
-            { "seq lanes",     700, 620 },
-            { "fx rack",       400, 845 },
+            { "keys",         1000, 980 },
+            { "seq lanes",     700, 750 },
+            { "seq controls",  400, 665 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);
@@ -665,5 +666,6 @@ int main(int argc, char** argv) {
     }
 
     printf("%s\n", g_fail == 0 ? "BASS PLUGIN CHECKS PASSED" : "BASS PLUGIN CHECKS FAILED");
+    if (!runFxUiChecks<BassAudioProcessor>("bl", BassRack::LW, BassRack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++g_fail;
     return g_fail == 0 ? 0 : 1;
 }

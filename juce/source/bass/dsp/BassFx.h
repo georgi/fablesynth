@@ -1,12 +1,12 @@
 // BL-1 master FX chain — C++ port of the Web Audio graph in
 // src/bass/engine/bass-synth.ts buildFx()/applyAllFx():
-// drive -> chorus -> ping-pong delay -> reverb -> master gain -> DC block ->
-// safety limiter. Same topology as DR-1's DrumFx minus the bus compressor
-// ("no comp — accents live"); the limiter threshold is -6 dB, matching the
-// web bass limiter. The convolution reverb (generated exponential-noise
+// OTT -> leveling compressor -> drive -> chorus -> ping-pong delay -> reverb
+// -> master gain -> DC block -> safety limiter. The limiter threshold is -6 dB,
+// matching the web bass limiter. The convolution reverb (generated exponential-noise
 // impulse) is approximated by the same Freeverb network, tuned by SIZE.
 // JUCE-free.
 #pragma once
+#include "../../dsp/ParametricEq.h"
 
 #include "BassParams.h"
 #include "../../dsp/Fx.h"   // Smooth, Biquad, DelayLine, FvComb, FvAllpass
@@ -17,6 +17,7 @@ namespace fable {
 
 class BassFx {
 public:
+    FxTelemetry telemetry() const { return meter_.read(); }
     void prepare(double sampleRate);
     void setParams(const BassParamArray& p); // reads BL_FX* and BL_MASTER_VOLUME
     void process(float* L, float* R, int n); // in-place, stereo
@@ -27,6 +28,8 @@ public:
     int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
 
 private:
+    ParametricEq eq_;
+    FxMeter meter_;
     double sr_ = 48000;
 
     // Finding J1: AMT / chorus RATE+DEPTH / reverb SIZE reach the FX as block
@@ -67,6 +70,15 @@ private:
     Smooth verbWet_, verbDry_;
     float roomSize_ = 0.84f;
     bool verbOff_ = false, verbGated_ = false;
+
+    // Web chain extension: OTT -> leveling compressor precedes the existing
+    // drive/chorus/delay/reverb insert. Legacy BL compressor makeup is ignored
+    // by the web implementation and remains serialized only.
+    OttCompressor ott_;
+    WebCompressor comp_;
+    PeakGuard headroomInput_, headroomOtt_, headroomComp_, headroomDrive_;
+    PeakGuard headroomChorus_, headroomDelay_, headroomReverb_, delayFeedbackGuard_;
+    bool compOff_ = true, compGated_ = false;
 
     // master + limiter
     Smooth masterGain_;

@@ -3,6 +3,7 @@
 // MIDI chord, process blocks — confirming the parameter bridge + MIDI handling
 // + engine + FX all work together through the JUCE plugin surface.
 #include "../source/PluginProcessor.h"
+#include "FxUiChecks.h"
 #include "../source/PluginEditor.h"
 #include "../source/WavetableView.h"
 #include "../source/ui/WavetableEditor.h"
@@ -754,5 +755,6 @@ int main(int argc, char** argv) {
     }
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
+    if (!runFxUiChecks<FableAudioProcessor>("wt", Rack::LW, Rack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++fail;
     return fail == 0 ? 0 : 1;
 }

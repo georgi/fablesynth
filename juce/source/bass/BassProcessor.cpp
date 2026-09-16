@@ -29,13 +29,14 @@ BassAudioProcessor::BassAudioProcessor()
 
 // Build the APVTS layout from the canonical descriptor table, using the exact
 // same value<->norm mapping as the web app so curves are identical. Grouped
-// SOUND / SEQ / FX so hosts display a sane 45-parameter tree.
+// SOUND / SEQ / FX so hosts display a sane 52-parameter tree.
 juce::AudioProcessorValueTreeState::ParameterLayout BassAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     const auto& info = bassParamInfo();
 
     auto make = [](const ParamInfo& d) -> std::unique_ptr<juce::RangedAudioParameter> {
-        juce::ParameterID pid(d.pid, 1);
+        const int version = d.id >= BL_FXEQ_ON ? 3 : d.id >= BL_FXCOMP_ON ? 2 : 1;
+        juce::ParameterID pid(d.pid, version);
         // Host-facing name derived from the id so it stays unique (the short
         // labels repeat: LVL, MIX, ...) — WT-1/DR-1 scheme.
         juce::String name = juce::String(d.pid).replaceCharacter('.', ' ').toUpperCase();

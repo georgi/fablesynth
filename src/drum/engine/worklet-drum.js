@@ -522,6 +522,7 @@ class PadFx {
     // two channels differ. Halves the cost of the chain's dominant stage.
     this.monoRun = false;
     this.comp = new globalThis.FableCompressor(sr);
+    this.eq = new globalThis.FableParametricEq(sr);
     this.ott = new globalThis.FableOttCompressor(sr);
     // chorus
     this.chPhase = 0; this.chRate = 0.6; this.chDepth = 0.5;
@@ -565,12 +566,13 @@ class PadFx {
     this.dlL.reset(); this.dlR.reset(); this.dlDamp.reset();
     this.chPhase = 0;
     this.comp.reset();
-    this.ott.reset();
+    this.ott.reset(); this.eq.reset();
     this.meterInput = 0; this.meterOtt = 0; this.meterCompIn = 0; this.meterCompOut = 0;
     this.meterEchoIn = 0; this.meterEchoL = 0; this.meterEchoR = 0;
   }
 
   setParams(pv, f) {
+    this.eq.setParams(k => pv[f[fid(k)]]);
     const amt = pv[f[P_FXDRIVE_AMT]];
     if (amt !== this.driveAmt) {
       this.driveAmt = amt;
@@ -678,6 +680,7 @@ class PadFx {
     this.chorusGated = chorusGate; this.delayGated = delayGate;
     if (this.meterSelected) for (let i = 0; i < n; i++) this.meterInput += 0.5 * (L[i] * L[i] + R[i] * R[i]);
     this.headroom.input.process(L, R, n);
+    this.eq.process(L, R, n);
 
     // ---- OTT -> compressor (automatic level matching) ----
     this.ott.process(L, R, n);
@@ -858,6 +861,7 @@ const FIELDS = [
   'fx.delay.on', 'fx.delay.time', 'fx.delay.fb', 'fx.delay.mix',
   'fx.reverb.on', 'fx.reverb.size', 'fx.reverb.mix',
   'fx.ott.on', 'fx.ott.depth', 'fx.ott.time', 'fx.ott.up', 'fx.ott.down', 'fx.ott.gain',
+  ...globalThis.FableEqFields,
 ];
 const NF = FIELDS.length;
 const fid = (name) => FIELDS.indexOf(name);

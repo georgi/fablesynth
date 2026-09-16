@@ -6,6 +6,9 @@ namespace fable {
 
 namespace {
 using V = std::vector<std::string>;
+const V EQ_TYPES = {"LOW SHELF", "BELL", "HIGH SHELF"};
+const V ECHO_DIVS = {"1/4", "1/4.", "1/8", "1/8.", "1/8T", "1/16"};
+const V ECHO_MODES = {"PING PONG", "STEREO"};
 
 // Helpers mirroring the param-group factories in params.ts.
 void addOsc(std::vector<ParamInfo>& v, const std::string& pre, int base, float defOn, float defTable) {
@@ -101,11 +104,11 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({FXCOMP_THR,     "fx.comp.thr",    "THRESH", -40, 0,   -18,    Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXCOMP_GAIN,    "fx.comp.gain",   "MAKEUP",   0, 12,  4,     Curve::Lin, Kind::Float, nullptr});
 
-    // 3-band tone EQ (first FX, pre-drive). Gains default 0 dB → transparent.
+    // Original EQ controls (first FX, pre-drive). Gains default 0 dB → transparent.
     v.push_back({FXEQ_ON,        "fx.eq.on",       "ON",       0, 1,    0,     Curve::Int, Kind::Bool,  nullptr});
     v.push_back({FXEQ_LOW,       "fx.eq.low",      "LOW",    -15, 15,    0,     Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXEQ_MID,       "fx.eq.mid",      "MID",    -15, 15,    0,     Curve::Lin, Kind::Float, nullptr});
-    v.push_back({FXEQ_MFREQ,     "fx.eq.mfreq",    "M FREQ", 200, 5000,  900,   Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQ_MFREQ,     "fx.eq.mfreq",    "M FREQ", 20, 20000,  900,   Curve::Log, Kind::Float, nullptr});
     v.push_back({FXEQ_HIGH,      "fx.eq.high",     "HIGH",   -15, 15,    0,     Curve::Lin, Kind::Float, nullptr});
 
     v.push_back({MASTER_VOLUME, "master.volume", "OUTPUT", 0, 1,    0.75f, Curve::Lin, Kind::Float, nullptr});
@@ -116,6 +119,38 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({SEQ_SWING, "seq.swing", "SWING", 0,    1,     0,     Curve::Lin, Kind::Float, nullptr});
     v.push_back({SEQ_GATE,  "seq.gate",  "GATE",  0.1f, 0.98f, 0.55f, Curve::Lin, Kind::Float, nullptr});
     v.push_back({SEQ_ROOT,  "seq.root",  "ROOT",  24,   72,    48,    Curve::Int, Kind::Float, nullptr});
+
+    // Appended WT-1 web FX controls. Existing parameter positions above are
+    // intentionally left untouched for host-state compatibility.
+    v.push_back({FXOTT_ON,      "fx.ott.on",      "ON",       0, 1,    0,     Curve::Int, Kind::Bool,  nullptr});
+    v.push_back({FXOTT_DEPTH,   "fx.ott.depth",   "DEPTH",    0, 1,    0.35f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXOTT_TIME,    "fx.ott.time",    "TIME",     0.01f, 10, 1,   Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXOTT_UP,      "fx.ott.up",      "UPWARD",   0, 2,    1,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXOTT_DOWN,    "fx.ott.down",    "DOWNWARD", 0, 2,    1,     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXEQLFREQ,     "fx.eq.lfreq",    "LOW FREQ", 20, 20000, 120, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQM2FREQ,    "fx.eq.m2freq",   "MID 2 FREQ", 20, 20000, 2500, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQHFREQ,     "fx.eq.hfreq",    "HIGH FREQ", 20, 20000, 6000, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQMID2,      "fx.eq.mid2",     "MID 2",    -15, 15, 0, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXEQLQ,        "fx.eq.lq",       "LOW Q",    0.2f, 12, 0.70710678f, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQLTYPE,     "fx.eq.ltype",    "LOW TYPE", 0, 2, 0, Curve::Int, Kind::Enum, &EQ_TYPES});
+    v.push_back({FXEQLON,       "fx.eq.lon",      "LOW ON",   0, 1, 1, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXEQMQ,        "fx.eq.mq",       "MID Q",    0.2f, 12, 0.9f, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQMTYPE,     "fx.eq.mtype",    "MID TYPE", 0, 2, 1, Curve::Int, Kind::Enum, &EQ_TYPES});
+    v.push_back({FXEQMON,       "fx.eq.mon",      "MID ON",   0, 1, 1, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXEQM2Q,       "fx.eq.m2q",      "MID 2 Q",  0.2f, 12, 0.9f, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQM2TYPE,    "fx.eq.m2type",   "MID 2 TYPE", 0, 2, 1, Curve::Int, Kind::Enum, &EQ_TYPES});
+    v.push_back({FXEQM2ON,      "fx.eq.m2on",     "MID 2 ON", 0, 1, 1, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXEQHQ,        "fx.eq.hq",       "HIGH Q",   0.2f, 12, 0.70710678f, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXEQHTYPE,     "fx.eq.htype",    "HIGH TYPE", 0, 2, 2, Curve::Int, Kind::Enum, &EQ_TYPES});
+    v.push_back({FXEQHON,       "fx.eq.hon",      "HIGH ON",  0, 1, 1, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXDELAY_TONE,  "fx.delay.tone",  "TONE",     400, 12000, 4500, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXDELAY_SAT,   "fx.delay.sat",   "SAT",      0, 1, 0.2f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXDELAY_WOW,   "fx.delay.wow",   "WOW",      0, 1, 0.18f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXDELAY_FLUTTER, "fx.delay.flutter", "FLUTTER", 0, 1, 0.12f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXDELAY_WIDTH, "fx.delay.width", "WIDTH",    0, 1, 1, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXDELAY_MODE,  "fx.delay.mode",  "MODE",     0, 1, 0, Curve::Int, Kind::Enum, &ECHO_MODES});
+    v.push_back({FXDELAY_SYNC,  "fx.delay.sync",  "SYNC",     0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXDELAY_DIV,   "fx.delay.div",   "DIV",      0, 5, 3, Curve::Int, Kind::Enum, &ECHO_DIVS});
 
     std::array<ParamInfo, NUM_PARAMS> out{};
     for (auto& info : v) out[(size_t)info.id] = info; // place by id so [Pid] indexing is exact
