@@ -622,11 +622,22 @@
 .bl-step-cursor.cur { opacity: 1; }
 
 /* ============ fx rack ============ */
-.fx-rack {
+.bl-fx-rack {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas: 'ott comp echo reverb' 'drive drive chorus chorus';
   gap: 10px;
 }
+.bl-fx-rack > .panel { min-width: 0; }
+.bl-fx-rack .dynamics-curve { height: 144px; aspect-ratio: auto; }
+.bl-fx-rack > .fx-group { grid-area: drive; }
+.bl-fx-rack > .fx-group + .fx-group { grid-area: chorus; }
+@media (max-width: 1150px) {
+  .bl-fx-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'ott comp' 'echo reverb' 'drive chorus'; }
+}
+.bl-fx-rack > .panel-dynamics,
+.bl-fx-rack > .panel-echo,
+.bl-fx-rack > .panel-reverb { padding: 8px; }
 .fx-group {
   min-width: 0;
   min-height: 104px;
@@ -663,6 +674,7 @@
   gap: 2px;
 }
 .fx-knobs .knob { min-width: 0; }
+.bl-ott .fx-knobs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 3px; }
 .bl-fx-note {
   margin-left: auto;
   color: var(--text-dim);

@@ -17,10 +17,13 @@ const tableMsg = {
 };
 
 // The master FX rack now runs inside the worklet, so every render passes
-// through it. These tests measure the voice, so boot() switches the four wet
+// through it. These tests measure the voice, so boot() switches the six wet
 // stages off; the rack has its own file (worklet-bass.fx.test.ts). Master gain,
 // the DC block and the lookahead limiter always run, exactly as in the plugin.
-const FX_OFF = { 'fx.drive.on': 0, 'fx.chorus.on': 0, 'fx.delay.on': 0, 'fx.reverb.on': 0 };
+const FX_OFF = {
+  'fx.drive.on': 0, 'fx.comp.on': 0, 'fx.ott.on': 0,
+  'fx.chorus.on': 0, 'fx.delay.on': 0, 'fx.reverb.on': 0,
+};
 
 function boot(params: ParamValues, sr = 48000): BassHarness {
   const h = makeBassProcessor(sr);
@@ -382,7 +385,10 @@ describe('BL-1 LP24 resonance (B3)', () => {
   const resPatch = (res: number, ftype: number, fc: number): ParamValues => {
     const p = defaultBassParams();
     p['osc.level'] = 0;
-    p['sub.level'] = 1;
+    // The analytical high-Q cases reach +47 dB at fc. Keep the source below
+    // the production peak guards so this measures the filter transfer curve,
+    // rather than deliberately exercising the FX protection path.
+    p['sub.level'] = 0.05;
     p['sub.shape'] = 0;
     p['sub.oct'] = -1;
     p['flt.type'] = ftype;

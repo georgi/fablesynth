@@ -184,13 +184,14 @@ const ctx = vm.createContext({
   AudioWorkletProcessor: class { constructor() { this.port = { onmessage: null, postMessage() {} }; } },
   registerProcessor: (_n, Ctor) => (ctx.Ctor = Ctor),
 });
+new vm.Script(await readFile(new URL('../src/engine/ott-worklet.js', import.meta.url), 'utf8')).runInContext(ctx);
 new vm.Script(await readFile(new URL('../src/engine/worklet.js', import.meta.url), 'utf8')).runInContext(ctx);
 const tables = generateTables().map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, mask: t.size - 1, data: t.data }));
 
 function renderMono(preset, note) {
   seededMath.random = mulberry32(0x5eed); // independent, reproducible per render
   const p = new ctx.Ctor();
-  p.p = { ...defaultParams(), ...preset.params };
+  p.port.onmessage({ data: { t: 'init', params: { ...defaultParams(), ...preset.params } } });
   p.tables = tables;
   p.noteOn(note, 1);
   const mono = new Float32Array(TOTAL);

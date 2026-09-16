@@ -2,6 +2,7 @@
 // source in-process so vitest can drive the real DSP offline. Mirrors the
 // AudioWorklet contract: constructor gets a port, process(inputs, outputs).
 import WT_SRC from './worklet.js?raw';
+import OTT_SRC from './ott-worklet.js?raw';
 import { generateTables } from './wavetables';
 import { defaultParams, type ParamValues } from '../params';
 
@@ -30,6 +31,9 @@ export function makeWtProcessor(sampleRate = 48000): WtHarness {
   const register = (_name: string, cls: new () => WtHarness['proc']) => { Proc = cls; };
   // The worklet is an ES module only because of Vite's loader; it has no
   // imports/exports, so Function-evaluating its text is safe and exact.
+  new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', OTT_SRC)(
+    sampleRate, AWP, register,
+  );
   new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', WT_SRC)(
     sampleRate, AWP, register,
   );

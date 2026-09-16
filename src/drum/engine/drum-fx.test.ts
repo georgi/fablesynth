@@ -52,6 +52,179 @@ const maxDelta = (x: Float32Array, a: number, b: number): number => {
   return m;
 };
 
+describe('DR-1 OTT insert', () => {
+  it('changes only the enabled pad', () => {
+    const p = bare();
+    const render = (params: ParamValues, padIndex: number) => {
+      const h = boot(params);
+      h.send({ t: 'trig', pad: padIndex, v: 0.4 });
+      return h.render(100).L;
+    };
+    const wet = { ...p, [pad(0, 'fx.ott.on')]: 1, [pad(0, 'fx.ott.depth')]: 1 };
+    expect(render(wet, 0)).not.toEqual(render(p, 0));
+    expect(render(wet, 1)).toEqual(render(p, 1));
+    expect(render(wet, 0).every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe('DR-1 opt-in FX telemetry', () => {
+  it('does not change audio and stops sending packets after the editor unsubscribes', () => {
+    const p = bare();
+    for (const effect of ['ott', 'comp', 'delay', 'reverb']) p[pad(0, `fx.${effect}.on`)] = 1;
+    const plain = boot(p), metered = boot(p);
+    for (const t of ['dynamics', 'echo', 'reverb']) metered.send({ t, on: true });
+    plain.send({ t: 'trig', pad: 0, v: 1 }); metered.send({ t: 'trig', pad: 0, v: 1 });
+    const reference = plain.render(200), actual = metered.render(200);
+    expect(actual.L).toEqual(reference.L); expect(actual.R).toEqual(reference.R);
+    const count = metered.sent.filter(m => ['dynamics', 'echo', 'reverb'].includes(m.t)).length;
+    for (const t of ['dynamics', 'echo', 'reverb']) metered.send({ t, on: false });
+    metered.render(40);
+    expect(metered.sent.filter(m => ['dynamics', 'echo', 'reverb'].includes(m.t))).toHaveLength(count);
+  });
+  it('tags selected-pad packets and reports the shared output bus', () => {
+    const p = bare();
+    p[pad(3, 'fx.ott.on')] = 1; p[pad(3, 'fx.ott.depth')] = 1;
+    p[pad(3, 'fx.comp.on')] = 1; p[pad(3, 'fx.delay.on')] = 1; p[pad(3, 'fx.delay.mix')] = 1;
+    p[pad(3, 'fx.reverb.on')] = 1; p[pad(3, 'fx.reverb.mix')] = 1;
+    const h = boot(p);
+    h.send({ t: 'meterPad', pad: 3 }); h.send({ t: 'dynamics', on: true });
+    h.send({ t: 'echo', on: true }); h.send({ t: 'reverb', on: true });
+    h.send({ t: 'trig', pad: 3, v: 1 }); h.render(20);
+    const dynamics = h.sent.find(m => m.t === 'dynamics');
+    const echo = h.sent.find(m => m.t === 'echo');
+    const reverb = h.sent.find(m => m.t === 'reverb');
+    expect(dynamics?.pad).toBe(3); expect(echo?.pad).toBe(3);
+    expect(reverb?.pad).toBe(3); expect(reverb?.shared).toBe(true); expect(typeof reverb?.bus).toBe('number');
+  });
+
+  it('reports silence for a zero reverb send while the dry pad plays', () => {
+    const p = bare();
+    p[pad(0, 'fx.reverb.on')] = 1;
+    p[pad(0, 'fx.reverb.mix')] = 0;
+    const h = boot(p);
+    h.send({ t: 'meterPad', pad: 0 }); h.send({ t: 'reverb', on: true });
+    h.send({ t: 'trig', pad: 0, v: 1 }); h.render(20);
+    const packet = h.sent.filter(m => m.t === 'reverb').slice(-1)[0];
+    expect(packet?.bus).toBe(0);
+    expect(packet?.left).toBe(-90); expect(packet?.right).toBe(-90);
+  });
+
+  it('keeps a silent selected AUX pad on its bus and measures that bus tail', () => {
+    const p = bare();
+    p[pad(3, 'out')] = 1; // selected pad: AUX, silent
+    p[pad(4, 'out')] = 1; // unrelated sounding pad: same AUX bus
+    p[pad(4, 'fx.reverb.on')] = 1; p[pad(4, 'fx.reverb.mix')] = 1;
+    const h = boot(p);
+    h.send({ t: 'meterPad', pad: 3 }); h.send({ t: 'reverb', on: true });
+    h.send({ t: 'trig', pad: 0, v: 1 }); // unrelated MAIN dry input
+    h.send({ t: 'trig', pad: 4, v: 1 });
+    h.render(30);
+    const packet = h.sent.filter(m => m.t === 'reverb').slice(-1)[0];
+    expect(packet?.pad).toBe(3); expect(packet?.bus).toBe(1);
+    expect(packet?.left).toBeGreaterThan(-90); expect(packet?.right).toBeGreaterThan(-90);
+  });
+});
+
+interface PeakGuard {
+  gain: number;
+  reset(): void;
+  gainFor(l: number, r: number): number;
+  process(l: Float32Array, r: Float32Array, n: number): void;
+}
+
+describe('DR-1 module headroom', () => {
+  const ceiling = 0.8912509381337456;
+  const internals = (h: DrumHarness) => h.proc as unknown as {
+    padFx: { headroom: Record<string, PeakGuard>; delayFeedbackGuard: PeakGuard }[];
+    verbInputGuards: PeakGuard[];
+    busOut: { inputGuard: PeakGuard }[];
+  };
+
+  it('passes normal levels unchanged, catches the first overload, and preserves stereo balance', () => {
+    const guard = internals(boot(bare())).padFx[0].headroom.input;
+    const l = new Float32Array([0, 0.1, -0.7, 0.8]);
+    const r = new Float32Array([0.02, -0.3, 0.5, -0.8]);
+    const dryL = l.slice(), dryR = r.slice();
+    guard.process(l, r, l.length);
+    expect(l).toEqual(dryL); expect(r).toEqual(dryR);
+    const hotL = new Float32Array([20, -12, 0.2]);
+    const hotR = new Float32Array([5, -3, 0.05]);
+    guard.process(hotL, hotR, hotL.length);
+    expect(peak(hotL)).toBeLessThanOrEqual(ceiling + 1e-7);
+    for (let i = 0; i < hotL.length; i++) expect(hotL[i] / hotR[i]).toBeCloseTo(4, 6);
+    // Release recovers gradually rather than snapping to unity between peaks.
+    expect(hotL[2]).toBeLessThan(0.02);
+    const quiet = new Float32Array(96000);
+    guard.process(quiet, quiet.slice(), quiet.length);
+    expect(guard.gain).toBe(1);
+    guard.reset();
+    expect(guard.gain).toBe(1);
+  });
+
+  it('contains invalid samples before they enter a stateful module', () => {
+    const guard = internals(boot(bare())).padFx[0].headroom.input;
+    const l = new Float32Array([NaN, Infinity, 0.1]);
+    const r = new Float32Array([0.1, -Infinity, 0.2]);
+    guard.process(l, r, l.length);
+    expect([...l]).toEqual([0, 0, Math.fround(0.1)]);
+    expect([...r]).toEqual([0, 0, Math.fround(0.2)]);
+  });
+
+  it.each([44100, 48000, 96000])('bounds every FX boundary and feedback write under overload at %i Hz', (sr) => {
+    const p = defaultDrumParams();
+    for (let i = 0; i < PAD_COUNT; i++) {
+      for (const effect of ['drive', 'comp', 'ott', 'chorus', 'delay', 'reverb']) p[pad(i, `fx.${effect}.on`)] = 1;
+      p[pad(i, 'fx.drive.amt')] = 1; p[pad(i, 'fx.drive.mix')] = 0.5;
+      p[pad(i, 'fx.comp.thr')] = -40;
+      p[pad(i, 'fx.ott.depth')] = 1; p[pad(i, 'fx.ott.up')] = 2;
+      p[pad(i, 'fx.ott.down')] = 2; p[pad(i, 'fx.ott.time')] = 0.01;
+      p[pad(i, 'fx.chorus.mix')] = 1; p[pad(i, 'fx.chorus.depth')] = 1;
+      p[pad(i, 'fx.delay.mix')] = 1; p[pad(i, 'fx.delay.fb')] = 0.92;
+      p[pad(i, 'fx.delay.time')] = 0.02;
+      p[pad(i, 'fx.reverb.mix')] = 0.8; p[pad(i, 'fx.reverb.size')] = 1;
+      p[pad(i, 'lvl')] = 1; p[pad(i, 'out')] = i % BUS_COUNT;
+    }
+    p['master.volume'] = 1;
+    const h = boot(p, sr), state = internals(h);
+    const boundaries = [...state.padFx.flatMap((fx) => Object.values(fx.headroom)),
+      ...state.verbInputGuards, ...state.busOut.map((b) => b.inputGuard)];
+    const seen = new Set<PeakGuard>();
+    let worst = 0, feedbackWorst = 0, invalid = false, reductions = 0;
+    for (const guard of boundaries) {
+      const process = guard.process.bind(guard);
+      guard.process = (l, r, n) => {
+        if (peak(l, 0, n) > ceiling || peak(r, 0, n) > ceiling) reductions++;
+        process(l, r, n); seen.add(guard);
+        worst = Math.max(worst, peak(l, 0, n), peak(r, 0, n));
+        invalid ||= !l.every(Number.isFinite) || !r.every(Number.isFinite);
+      };
+    }
+    for (const fx of state.padFx) {
+      const guard = fx.delayFeedbackGuard, gainFor = guard.gainFor.bind(guard);
+      guard.gainFor = (l, r) => {
+        const g = gainFor(l, r);
+        feedbackWorst = Math.max(feedbackWorst, Math.abs(l * g), Math.abs(r * g));
+        return g;
+      };
+    }
+    let outputPeak = 0;
+    for (let hit = 0; hit < 6; hit++) {
+      for (let i = 0; i < PAD_COUNT; i++) h.send({ t: 'trig', pad: i, v: hit < 2 ? 0.15 : 1 });
+      const out = h.renderBus(64, 0);
+      outputPeak = Math.max(outputPeak, peak(out.L), peak(out.R));
+    }
+    const tail = h.renderBus(128, 0);
+    expect(tail.L.every(Number.isFinite)).toBe(true);
+    expect(seen.size).toBe(boundaries.length);
+    expect(reductions).toBeGreaterThan(0);
+    expect(invalid).toBe(false);
+    expect(worst).toBeLessThanOrEqual(ceiling + 1e-7);
+    expect(feedbackWorst).toBeLessThanOrEqual(ceiling + 1e-7);
+    expect(outputPeak).toBeGreaterThan(0.01);
+    expect(outputPeak).toBeLessThanOrEqual(ceiling + 1e-7);
+  });
+});
+
 describe('DR-1 chain latency', () => {
   // Same figure the plugin reports (Fx.h kDriveLatency + the limiter lookahead):
   // the dry path is delayed by the shaper's FIR group delay whether the drive
@@ -365,21 +538,49 @@ describe('DR-1 pad compressor', () => {
     p[pad(0, 'v2l')] = 0;
     const h = boot(p);
     h.send({ t: 'trig', pad: 0, v: 1 });
-    const { L } = h.render(80); // inside the flat top, past the 3 ms attack
+    const { L } = h.render(80);
+    // After compressor attack/threshold smoothing, before auto-gain settles.
     let s2 = 0;
-    for (let i = 4096; i < L.length; i++) s2 += L[i] * L[i];
-    return Math.sqrt(s2 / (L.length - 4096));
+    for (let i = 1024; i < 3072; i++) s2 += L[i] * L[i];
+    return Math.sqrt(s2 / 2048);
   };
 
-  it('narrows the range between a loud and a quiet hit', () => {
-    // WebAudio's node applies a spec-defined makeup even at MAKEUP 0, so the
-    // thing to measure is the ratio, not the absolute level.
-    const dry = held(0, 1) / held(0, 0.25);
-    const wet = held(1, 1) / held(1, 0.25);
-    expect(wet).toBeLessThan(dry * 0.8);
+  it('compresses an abrupt loud passage before auto-gain catches up', () => {
+    const p = bare(); p[pad(0, 'fx.comp.on')] = 1; p[pad(0, 'fx.comp.thr')] = -40;
+    const h = boot(p); h.render(1);
+    const fx = (h.proc as unknown as { padFx: { process(l: Float32Array, r: Float32Array, n: number, live: boolean): void }[] }).padFx[0];
+    const l = new Float32Array(128), r = new Float32Array(128);
+    let inputEnergy = 0, outputEnergy = 0;
+    for (let block = 0; block < 770; block++) {
+      const amp = block < 750 ? 0.03 : 0.3;
+      for (let i = 0; i < 128; i++) l[i] = r[i] = amp * Math.sin(2 * Math.PI * 600 * (block * 128 + i) / 48000);
+      if (block >= 760) for (const v of l) inputEnergy += v * v;
+      fx.process(l, r, 128, true);
+      if (block >= 760) for (const v of l) outputEnergy += v * v;
+    }
+    expect(Math.sqrt(outputEnergy / inputEnergy)).toBeLessThan(0.8);
   });
 
-  it('adds MAKEUP on top of the curve', () => {
-    expect(held(1, 1, 12)).toBeGreaterThan(held(1, 1, 0) * 1.5);
+  it('uses automatic gain instead of the serialized legacy MAKEUP value', () => {
+    expect(held(1, 1, 12)).toBe(held(1, 1, 0));
+  });
+
+  it('matches sustained input level after settling at different thresholds', () => {
+    for (const threshold of [-16, -32, -40]) {
+      const p = bare(); p[pad(0, 'fx.comp.on')] = 1; p[pad(0, 'fx.comp.thr')] = threshold;
+      const h = boot(p);
+      // Feed the actual worklet pad FX directly, before the bus limiter.
+      const fx = (h.proc as unknown as { padFx: { process(l: Float32Array, r: Float32Array, n: number, live: boolean): void }[] }).padFx[0];
+      h.render(1); // distribute the parameter snapshot to the pad chain
+      let inputEnergy = 0, outputEnergy = 0;
+      const l = new Float32Array(128), r = new Float32Array(128);
+      for (let block = 0; block < 1500; block++) {
+        for (let i = 0; i < 128; i++) l[i] = r[i] = 0.15 * Math.sin(2 * Math.PI * 600 * (block * 128 + i) / 48000);
+        if (block > 1125) for (const v of l) inputEnergy += v * v;
+        fx.process(l, r, 128, true);
+        if (block > 1125) for (const v of l) outputEnergy += v * v;
+      }
+      expect(Math.abs(10 * Math.log10(outputEnergy / inputEnergy))).toBeLessThan(0.5);
+    }
   });
 });

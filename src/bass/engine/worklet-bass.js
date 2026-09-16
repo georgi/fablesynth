@@ -75,8 +75,8 @@ function rdH(d, off, im1, i0, i1, i2, f) {
 // accents and resonance peaks came out several dB apart between the two
 // products (audio-engine review B5/W6). One algorithm now runs in both.
 //
-// drive -> chorus -> ping-pong delay -> Freeverb -> master gain -> DC block ->
-// lookahead limiter (-1 dBFS hard ceiling). No bus compressor: accents live.
+// OTT -> compressor -> drive -> chorus -> ping-pong delay -> Freeverb ->
+// master gain -> DC block -> lookahead limiter (-1 dBFS hard ceiling).
 // ---------------------------------------------------------------------------
 
 const HB1_TAPS = 47;
@@ -411,6 +411,11 @@ class BassFx {
   constructor(sr) {
     this.sr = sr;
     const scale = sr / 44100;
+    this.headroom = {};
+    for (const stage of ['input', 'ott', 'comp', 'drive', 'chorus', 'delay', 'reverb']) {
+      this.headroom[stage] = new globalThis.FablePeakGuard(sr);
+    }
+    this.delayFeedbackGuard = new globalThis.FablePeakGuard(sr);
 
     this.combL = []; this.combR = [];
     for (let i = 0; i < 8; i++) {
@@ -429,6 +434,8 @@ class BassFx {
 
     const sm = (tau) => { const s = new Smooth(); s.setTime(tau, sr); return s; };
     this.driveWet = sm(0.02); this.driveDry = sm(0.02);
+    this.comp = new globalThis.FableCompressor(sr);
+    this.ott = new globalThis.FableOttCompressor(sr);
     this.chWet = sm(0.02); this.chDry = sm(0.02);
     this.dlTime = sm(0.08); this.dlFb = sm(0.02);
     this.dlWet = sm(0.02); this.dlDry = sm(0.02);
@@ -482,6 +489,11 @@ class BassFx {
     this.roomSize = 0.84;
     this.driveOff = false; this.chorusOff = false; this.delayOff = false; this.verbOff = false;
     this.driveGated = false; this.chorusGated = false; this.delayGated = false; this.verbGated = false;
+    // Opt-in UI telemetry. These accumulators are idle unless a panel is
+    // subscribed, so the normal audio path does not pay for metering.
+    this.metering = false; this.meterSamples = 0; this.meterEnergy = new Float64Array(4); this.meterReduction = 0;
+    this.echoMetering = false; this.echoSamples = 0; this.echoEnergy = new Float64Array(3);
+    this.reverbMetering = false; this.reverbSamples = 0; this.reverbEnergy = new Float64Array(3);
     this.reset();
   }
 
@@ -489,6 +501,9 @@ class BassFx {
 
   reset() {
     this.chDl1.reset(); this.chDl2.reset();
+    this.meterEnergy.fill(0); this.meterSamples = 0; this.meterReduction = 0;
+    this.echoEnergy.fill(0); this.echoSamples = 0;
+    this.reverbEnergy.fill(0); this.reverbSamples = 0;
     this.dlLine[0].reset(); this.dlLine[1].reset();
     this.dryL.reset(); this.dryR.reset();
     for (const c of this.combL) c.reset();
@@ -496,12 +511,18 @@ class BassFx {
     for (const a of this.apL) a.reset();
     for (const a of this.apR) a.reset();
     this.dcL.reset(); this.dcR.reset(); this.dlDamp.reset();
+    for (const guard of Object.values(this.headroom)) guard.reset();
+    this.delayFeedbackGuard.reset();
+    this.comp.reset(); this.ott.reset();
     for (const o of [this.osL, this.osR]) { o.u1.reset(); o.u2.reset(); o.d2.reset(); o.d1.reset(); }
     this.lim.reset();
     this.chPhase = 0;
     this.chunkPos = 0;
     this.snapRamps();
     this.driveGated = false; this.chorusGated = false; this.delayGated = false; this.verbGated = false;
+    this.meterSamples = 0; this.meterEnergy.fill(0); this.meterReduction = 0;
+    this.echoSamples = 0; this.echoEnergy.fill(0);
+    this.reverbSamples = 0; this.reverbEnergy.fill(0);
     for (const s of [this.driveWet, this.driveDry, this.chWet, this.chDry, this.dlTime,
       this.dlFb, this.dlWet, this.dlDry, this.verbWet, this.verbDry, this.masterGain]) s.snap(s.target);
   }
@@ -516,6 +537,10 @@ class BassFx {
     const dMix = num('fx.drive.mix', 0);
     this.driveWet.target = mixGate(dOn, dMix, true);
     this.driveDry.target = mixGate(dOn, dMix, false);
+
+    this.comp.setParams(num('fx.comp.on', 0) > 0.5, num('fx.comp.thr', -16));
+    this.ott.setParams(num('fx.ott.on', 0) > 0.5, num('fx.ott.depth', 0.35),
+      num('fx.ott.time', 1), num('fx.ott.up', 1), num('fx.ott.down', 1));
 
     this.chRateR.setTarget(num('fx.chorus.rate', 0.6));
     this.chDepthR.setTarget(num('fx.chorus.depth', 0.3));
@@ -635,6 +660,29 @@ class BassFx {
 
     const sr = this.sr;
     const dlL = this.dlLine[0], dlR = this.dlLine[1];
+    this.headroom.input.process(L, R, n);
+
+    // ---- OTT -> compressor (automatic level matching) ----
+    // These stages precede the oversampled drive. Process the source arrays
+    // first so both the drive's wet segment and latency-aligned dry path see
+    // the dynamics-processed signal.
+    for (let i = 0; i < n; i++) {
+      if (this.metering) this.meterEnergy[0] += 0.5 * (L[i] * L[i] + R[i] * R[i]);
+      this.ott.processSample(L[i], R[i]);
+      let l = this.ott.l, r = this.ott.r;
+      if (this.metering) this.meterEnergy[1] += 0.5 * (l * l + r * r);
+      const og = this.headroom.ott.gainFor(l, r);
+      l *= og; r *= og;
+      if (this.metering) this.meterEnergy[2] += 0.5 * (l * l + r * r);
+      this.comp.processSample(l, r);
+      l = this.comp.l; r = this.comp.r;
+      if (this.metering) {
+        this.meterEnergy[3] += 0.5 * (l * l + r * r);
+        this.meterReduction = Math.max(this.meterReduction, Math.max(0, -20 * Math.log10(Math.max(1e-9, this.comp.gain))));
+      }
+      const cg = this.headroom.comp.gainFor(l, r);
+      L[i] = l * cg; R[i] = r * cg;
+    }
 
     // The two channels carry the same signal whenever the voice ran its own
     // mono fast path (uni 1 or spread 0 — review finding B8), which is the
@@ -689,6 +737,9 @@ class BassFx {
           l = dryLv; r = dryRv;
         }
 
+        const driveGuard = this.headroom.drive.gainFor(l, r);
+        l *= driveGuard; r *= driveGuard;
+
         // ---- chorus (two modulated taps, stereo) ----
         if (!this.chorusGated) {
           this.chPhase += this.chRate / sr;
@@ -703,6 +754,8 @@ class BassFx {
           l = dry * l + wet * c1;
           r = dry * r + wet * c2;
         }
+        const chorusGuard = this.headroom.chorus.gainFor(l, r);
+        l *= chorusGuard; r *= chorusGuard;
 
         // ---- ping-pong delay ----
         if (!this.delayGated) {
@@ -710,13 +763,23 @@ class BassFx {
           const fb = this.dlFb.next();
           const dLv = dlL.readH(dt);
           const dRv = dlR.readH(dt);
+          if (this.echoMetering) this.echoEnergy[0] += 0.5 * (l * l + r * r);
           const mono = 0.5 * (l + r);
-          dlL.write(mono + fb * dRv);
-          dlR.write(this.dlDamp.process(fb * dLv));
+          const feedbackL = mono + fb * dRv;
+          const feedbackR = this.dlDamp.process(fb * dLv);
+          const feedbackGain = this.delayFeedbackGuard.gainFor(feedbackL, feedbackR);
+          dlL.write(feedbackL * feedbackGain);
+          dlR.write(feedbackR * feedbackGain);
           const wet = this.dlWet.next(), dry = this.dlDry.next();
+          if (this.echoMetering) {
+            this.echoEnergy[1] += (wet * dLv) * (wet * dLv);
+            this.echoEnergy[2] += (wet * dRv) * (wet * dRv);
+          }
           l = dry * l + wet * dLv;
           r = dry * r + wet * dRv;
         }
+        const delayGuard = this.headroom.delay.gainFor(l, r);
+        l *= delayGuard; r *= delayGuard;
 
         // ---- reverb (Freeverb) ----
         if (!this.verbGated) {
@@ -725,9 +788,15 @@ class BassFx {
           for (let c = 0; c < 8; c++) { outL += this.combL[c].process(input); outR += this.combR[c].process(input); }
           for (let a = 0; a < 4; a++) { outL = this.apL[a].process(outL); outR = this.apR[a].process(outR); }
           const wet = this.verbWet.next(), dry = this.verbDry.next();
+          if (this.reverbMetering) {
+            const wetL = wet * outL, wetR = wet * outR;
+            this.reverbEnergy[0] += wetL * wetL; this.reverbEnergy[1] += wetR * wetR; this.reverbEnergy[2] += wetL * wetR;
+          }
           l = dry * l + wet * outL;
           r = dry * r + wet * outR;
         }
+        const reverbGuard = this.headroom.reverb.gainFor(l, r);
+        l *= reverbGuard; r *= reverbGuard;
 
         // ---- master gain, DC block, lookahead limiter ----
         const g = this.masterGain.next();
@@ -737,6 +806,9 @@ class BassFx {
         L[i] = this.lim.outL;
         R[i] = this.lim.outR;
       }
+      if (this.metering) this.meterSamples += m;
+      if (this.echoMetering) this.echoSamples += m;
+      if (this.reverbMetering) this.reverbSamples += m;
       pos += m;
     }
 
@@ -826,6 +898,15 @@ class BassProcessor extends AudioWorkletProcessor {
 
   onMsg(d) {
     switch (d.t) {
+      case 'dynamics':
+        this.fx.metering = !!d.on; this.fx.meterEnergy.fill(0); this.fx.meterSamples = 0; this.fx.meterReduction = 0;
+        break;
+      case 'echo':
+        this.fx.echoMetering = !!d.on; this.fx.echoEnergy.fill(0); this.fx.echoSamples = 0;
+        break;
+      case 'reverb':
+        this.fx.reverbMetering = !!d.on; this.fx.reverbEnergy.fill(0); this.fx.reverbSamples = 0;
+        break;
       case 'init':
         for (const k in d.params) {
           const v = d.params[k];
@@ -1620,6 +1701,34 @@ class BassProcessor extends AudioWorkletProcessor {
       this.fxDirty = false;
     }
     this.fx.process(L, R, n);
+
+    // Telemetry is deliberately emitted at ~30 Hz and only after an explicit
+    // subscription. It reports measured stage/bus levels, never simulated
+    // values, and resets after each packet.
+    if (this.fx.reverbMetering && this.fx.reverbSamples >= sampleRate / 30) {
+      const fx = this.fx, e = fx.reverbEnergy;
+      const rms = i => Math.max(-90, 10 * Math.log10(Math.max(1e-9, e[i] / fx.reverbSamples)));
+      const product = Math.sqrt(e[0] * e[1]);
+      this.port.postMessage({ t: 'reverb', left: rms(0), right: rms(1), correlation: product > fx.reverbSamples * 1e-9 ? Math.max(-1, Math.min(1, e[2] / product)) : 0 });
+      e.fill(0); fx.reverbSamples = 0;
+    }
+    if (this.fx.echoMetering && this.fx.echoSamples >= sampleRate / 30) {
+      const fx = this.fx, e = fx.echoEnergy;
+      const rms = i => Math.max(-90, 10 * Math.log10(Math.max(1e-9, e[i] / fx.echoSamples)));
+      this.port.postMessage({ t: 'echo', input: rms(0), left: rms(1), right: rms(2), time: fx.dlTime.cur, driftL: 0, driftR: 0 });
+      e.fill(0); fx.echoSamples = 0;
+    }
+    if (this.fx.metering && this.fx.meterSamples >= sampleRate / 30) {
+      const fx = this.fx, e = fx.meterEnergy, ott = fx.ott, comp = fx.comp;
+      const db = value => Math.max(-90, Math.min(60, 20 * Math.log10(Math.max(1e-9, value))));
+      const rms = i => db(Math.sqrt(e[i] / fx.meterSamples));
+      const active = ott.depthTarget > 0;
+      this.port.postMessage({ t: 'dynamics',
+        ott: { input: rms(0), output: rms(1), levels: Array.from(ott.env, v => active ? db(v) : -90), gains: Array.from(ott.gain, (v, i) => active && ott.env[i] > 1e-7 ? db(v) : 0), makeup: active ? db(ott.autoGain.gain) : 0 },
+        comp: { input: rms(2), output: rms(3), reduction: fx.meterReduction, makeup: comp.wetTarget ? db(comp.autoGain.gain) : 0 },
+      });
+      e.fill(0); fx.meterSamples = 0; fx.meterReduction = 0;
+    }
 
     this.vizCount += n;
     if (this.vizCount >= 2048) {

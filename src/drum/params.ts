@@ -46,6 +46,7 @@ export const FX_DEFS: ParamDef[] = [
   { id: 'fx.drive.mix', label: 'MIX', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
   { id: 'fx.comp.on', type: 'bool', def: 1 },
   { id: 'fx.comp.thr', label: 'THRESH', min: -40, max: 0, def: -16, curve: 'lin', fmt: (v) => Math.round(v) + ' dB' },
+  // Retained for saved/native patches; web COMP now uses automatic gain.
   { id: 'fx.comp.gain', label: 'MAKEUP', min: 0, max: 12, def: 4, curve: 'lin', fmt: (v) => '+' + v.toFixed(1) + ' dB' },
   { id: 'fx.chorus.on', type: 'bool', def: 0 },
   { id: 'fx.chorus.rate', label: 'RATE', min: 0.05, max: 8, def: 0.6, curve: 'log', fmt: (v) => v.toFixed(2) + ' Hz' },
@@ -58,6 +59,14 @@ export const FX_DEFS: ParamDef[] = [
   { id: 'fx.reverb.on', type: 'bool', def: 1 },
   { id: 'fx.reverb.size', label: 'SIZE', min: 0, max: 1, def: 0.4, curve: 'lin', fmt: fmtPct },
   { id: 'fx.reverb.mix', label: 'MIX', min: 0, max: 1, def: 0.16, curve: 'lin', fmt: fmtPct },
+  // Web OTT insert. Append so existing parameter ordering stays stable.
+  { id: 'fx.ott.on', type: 'bool', def: 0 },
+  { id: 'fx.ott.depth', label: 'DEPTH', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.ott.time', label: 'TIME', min: 0.01, max: 10, def: 1, curve: 'log', fmt: fmtPct },
+  { id: 'fx.ott.up', label: 'UPWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.ott.down', label: 'DOWNWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
+  // Legacy serialized field; web OTT now uses automatic gain.
+  { id: 'fx.ott.gain', label: 'OUTPUT', min: -48, max: 24, def: 0, curve: 'lin', fmt: (v) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB' },
 ];
 
 function oscFields(): ParamDef[] {

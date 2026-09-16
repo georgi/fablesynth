@@ -56,7 +56,7 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   { id: 'lfo.rate', type: 'enum', options: LFO_DIVS, def: 6 }, // 1/8.
   { id: 'lfo.shape', type: 'enum', options: LFO_SHAPES, def: 0 },
   { id: 'lfo.depth', label: 'DEPTH', min: 0, max: 1, def: 0.15, curve: 'lin', fmt: fmtPct },
-  // ---- FX (post-accent drive · no compressor, accents live) ----
+  // ---- FX (post-accent insert chain) ----
   { id: 'fx.drive.on', type: 'bool', def: 1 },
   { id: 'fx.drive.amt', label: 'AMT', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
   { id: 'fx.drive.mix', label: 'MIX', min: 0, max: 1, def: 0.2, curve: 'lin', fmt: fmtPct },
@@ -76,6 +76,14 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   { id: 'master.swing', label: 'SWING', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
   // Final visible gain stage: after FX, before the limiter.
   { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
+  // Append web-only dynamics to preserve existing parameter positions.
+  { id: 'fx.comp.on', type: 'bool', def: 0 },
+  { id: 'fx.comp.thr', label: 'THRESH', min: -40, max: 0, def: -16, curve: 'lin', fmt: (v) => Math.round(v) + ' dB' },
+  { id: 'fx.ott.on', type: 'bool', def: 0 },
+  { id: 'fx.ott.depth', label: 'DEPTH', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.ott.time', label: 'TIME', min: 0.01, max: 10, def: 1, curve: 'log', fmt: fmtPct },
+  { id: 'fx.ott.up', label: 'UPWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.ott.down', label: 'DOWNWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
 ];
 
 export const BASS_PARAMS: Record<string, ParamDef> = Object.fromEntries(BASS_PARAM_DEFS.map((d) => [d.id, d]));

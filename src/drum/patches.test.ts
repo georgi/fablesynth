@@ -116,6 +116,8 @@ describe('patches', () => {
     params[pad(padI, 'mod2.src')] = 3;
     params[pad(padI, 'mod2.dst')] = 5;
     params[pad(padI, 'mod2.amt')] = -0.7;
+    params[pad(padI, 'fx.ott.on')] = 1;
+    params[pad(padI, 'fx.ott.depth')] = 0.9;
     const kick = FACTORY_PATCHES.find((p) => p.name === 'BD DEEP')!;
     Object.assign(params, applyPatchToParams(params, padI, kick));
     // BD DEEP doesn't touch noise/filter/mod2 -> they must be back at defaults.
@@ -125,6 +127,7 @@ describe('patches', () => {
     expect(params[pad(padI, 'mod2.src')]).toBe(0);
     expect(params[pad(padI, 'mod2.dst')]).toBe(0);
     expect(params[pad(padI, 'mod2.amt')]).toBe(0);
+    expect(params[pad(padI, 'fx.ott.on')]).toBe(0);
     // ...while the patch's own overrides landed.
     expect(params[pad(padI, 'oscA.tune')]).toBe(-26);
     expect(params[pad(padI, 'penv.amt')]).toBe(24);

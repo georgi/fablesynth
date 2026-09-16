@@ -4,6 +4,22 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 
+// Shared OTT and BL-1 COMP are web-only until the native DSP port lands.
+// Omit bypassed fields from native artifacts; reject active unsupported FX.
+function nativeSession(session) {
+  return { ...session, tracks: session.tracks.map((track) => {
+    if (track.patch.kind !== 'inline') return track;
+    const params = Object.fromEntries(Object.entries(track.patch.data.params).filter(([id, value]) => {
+      const webOnly = /^(?:pad\d+\.)?fx\.ott\./.test(id)
+        || (track.machine === 'BL1' && id.startsWith('fx.comp.'));
+      if (!webOnly) return true;
+      if (id.endsWith('.on') && value > 0.5) throw new Error(`Enabled ${track.machine} ${id} is not yet supported by native sessions`);
+      return false;
+    }));
+    return { ...track, patch: { ...track.patch, data: { ...track.patch.data, params } } };
+  }) };
+}
+
 // Bundle in memory so generation needs neither a dev server nor a network port.
 const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessionPresets"; export * from "./src/seq/protocol";', resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'esm', write: false });
 {
@@ -17,7 +33,7 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
     '    std::vector<SessionPreset> result;',
   ];
   for (const preset of AUTHORED_SESSION_PRESETS) {
-    const s = preset.session;
+    const s = nativeSession(preset.session);
     text.push('    {', '        SessionPreset p;',
       `        p.name = ${quote(preset.name)}; p.family = ${quote(preset.family)};`,
       `        p.variation = ${quote(preset.variation)}; p.energy = ${preset.energy};`,
@@ -52,7 +68,7 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
   text.push('    return result;', '}', '} // namespace fable', '');
   const outputs = [
     ['juce/source/seq/dsp/AuthoredSessions.gen.h', text.join('\n')],
-    ['juce/test/fixtures/web-session-presets.json', JSON.stringify(FACTORY_SESSION_PRESETS.map(({ name, family, variation, energy, session }) => ({ name, family, variation, energy, session }))) + '\n'],
+    ['juce/test/fixtures/web-session-presets.json', JSON.stringify(FACTORY_SESSION_PRESETS.map(({ name, family, variation, energy, session }) => ({ name, family, variation, energy, session: nativeSession(session) }))) + '\n'],
   ];
   for (const [path, content] of outputs) {
     if (process.argv.includes('--check')) {

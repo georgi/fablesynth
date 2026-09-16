@@ -7,6 +7,10 @@ import { generateDrumTables } from './drumtables';
 import { generateSampledDrumTables } from './sampledtables.gen';
 import { loadDrumOneShots, type DrumOneShot } from './oneshots.gen';
 import workletUrl from './worklet-drum.js?url';
+import ottWorkletUrl from '../../engine/ott-worklet.js?url';
+import type { DynamicsMessage } from '../../engine/dynamics';
+import type { EchoMessage } from '../../engine/echo';
+import type { ReverbMessage } from '../../engine/reverb';
 
 export interface VizTable {
   name: string;
@@ -51,6 +55,42 @@ export function fxPadFromParam(id: string): number | null {
 }
 
 export class DrumEngine {
+  private dynamicsListeners = new Set<(message: DynamicsMessage) => void>();
+  private echoListeners = new Set<(message: EchoMessage) => void>();
+  private reverbListeners = new Set<(message: ReverbMessage) => void>();
+  private meterPad = 0;
+  private meterBus = 0;
+
+  setMeterPad(padIndex: number): void {
+    this.meterPad = Math.max(0, Math.min(PAD_COUNT - 1, padIndex | 0));
+    this.meterBus = Math.max(0, Math.min(BUS_COUNT - 1, this.params[pad(this.meterPad, 'out')] | 0));
+    if (this.ready) this.node.port.postMessage({ t: 'meterPad', pad: this.meterPad });
+  }
+
+  subscribeDynamics(listener: (message: DynamicsMessage) => void): () => void {
+    this.dynamicsListeners.add(listener);
+    if (this.ready && this.dynamicsListeners.size === 1) this.node.port.postMessage({ t: 'dynamics', on: true });
+    return () => {
+      this.dynamicsListeners.delete(listener);
+      if (this.ready && !this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: false });
+    };
+  }
+  subscribeEcho(listener: (message: EchoMessage) => void): () => void {
+    this.echoListeners.add(listener);
+    if (this.ready && this.echoListeners.size === 1) this.node.port.postMessage({ t: 'echo', on: true });
+    return () => {
+      this.echoListeners.delete(listener);
+      if (this.ready && !this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: false });
+    };
+  }
+  subscribeReverb(listener: (message: ReverbMessage) => void): () => void {
+    this.reverbListeners.add(listener);
+    if (this.ready && this.reverbListeners.size === 1) this.node.port.postMessage({ t: 'reverb', on: true });
+    return () => {
+      this.reverbListeners.delete(listener);
+      if (this.ready && !this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: false });
+    };
+  }
   params: ParamValues;
   tables: VizTable[] | null;
   builtInTables: GeneratedTable[];
@@ -97,6 +137,7 @@ export class DrumEngine {
     const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
     this.output = opts.output ?? null;
+    await ctx.audioWorklet.addModule(ottWorkletUrl);
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.builtInTables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()];
@@ -119,9 +160,16 @@ export class DrumEngine {
       if (e.data.t === 'latency') this.latencySamples = e.data.n as number;
       if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
       if (e.data.t === 'clipstop' && this.onclipstop) this.onclipstop(e.data.frame as number);
+      if (e.data.t === 'dynamics' && (e.data.pad === undefined || e.data.pad === this.meterPad)) this.dynamicsListeners.forEach(listener => listener(e.data as DynamicsMessage));
+      if (e.data.t === 'echo' && (e.data.pad === undefined || e.data.pad === this.meterPad)) this.echoListeners.forEach(listener => listener(e.data as EchoMessage));
+      if (e.data.t === 'reverb' && (e.data.pad === undefined || e.data.pad === this.meterPad) && (e.data.bus === undefined || e.data.bus === this.meterBus)) this.reverbListeners.forEach(listener => listener(e.data as ReverbMessage));
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
+    if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
+    if (this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: true });
+    if (this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: true });
+    this.node.port.postMessage({ t: 'meterPad', pad: this.meterPad });
     this.pushTables();
     this.pushSamples();
 
@@ -192,6 +240,7 @@ export class DrumEngine {
       return;
     }
     this.params[id] = v;
+    if (id === pad(this.meterPad, 'out')) this.meterBus = Math.max(0, Math.min(BUS_COUNT - 1, v | 0));
     if (!this.ready) return;
     this.node.port.postMessage({ t: 'p', k: id, v });
   }
@@ -223,6 +272,7 @@ export class DrumEngine {
 
   selectPad(i: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'sel', pad: i });
+    this.setMeterPad(i);
   }
 
   // Hosted preset changes reset voices while preserving active and queued clips.

@@ -9,6 +9,10 @@ import { EnvPanel } from './components/panels/EnvPanel';
 import { LfoPanel } from './components/panels/LfoPanel';
 import { MatrixPanel } from './components/panels/MatrixPanel';
 import { FxPanel } from './components/panels/FxPanel';
+import { EqPanel } from './components/panels/EqPanel';
+import { DynamicsPanel } from './components/panels/DynamicsPanel';
+import { TapeEchoPanel } from './components/panels/TapeEchoPanel';
+import { ReverbPanel } from './components/panels/ReverbPanel';
 import { SeqPanel } from './components/panels/SeqPanel';
 import { KeyboardBar } from './components/panels/KeyboardBar';
 import { useComputerKeys } from './hooks/useComputerKeys';
@@ -45,6 +49,11 @@ export function App() {
           <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
           <LfoPanel />
           <MatrixPanel />
+          <EqPanel />
+          <DynamicsPanel kind="ott" />
+          <DynamicsPanel kind="comp" />
+          <TapeEchoPanel />
+          <ReverbPanel />
           <FxPanel />
           <SeqPanel />
         </div>

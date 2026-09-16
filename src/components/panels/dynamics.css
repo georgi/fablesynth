@@ -1,0 +1,22 @@
+.panel-dynamics { --ac: var(--ac-n); }
+.panel-dynamics .panel-head { gap: 7px; height: 22px; margin-bottom: 7px; }
+.dynamics-caption, .dynamics-legend { font: 8px var(--font-mono); letter-spacing: 0.08em; color: var(--ac-n); white-space: nowrap; }
+.dynamics-caption { color: var(--text-dim); }
+.dynamics-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.dynamics-legend i { display: inline-block; width: 10px; height: 1px; background: var(--ac-n); opacity: 0.5; }
+.dynamics-legend .legend-out { background: var(--text); opacity: 1; }
+.dynamics-curve { display: block; width: 100%; height: auto; aspect-ratio: 360 / 126; border: 1px solid var(--line); border-radius: 9px; background: #07090e; }
+.dynamics-readouts { display: flex; justify-content: space-between; gap: 8px; padding: 9px 2px 8px; }
+.dynamics-readouts > div { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.dynamics-readouts span { font: 8px var(--font-mono); letter-spacing: 0.06em; color: var(--ac-n); }
+.dynamics-readouts output { font: 9px var(--font-mono); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dynamics-controls { display: flex; align-items: center; justify-content: space-around; gap: 10px; }
+.dynamics-note { font: 9px var(--font-mono); color: var(--ac-n); display: flex; flex-direction: column; gap: 7px; }
+.dynamics-note span, .dynamics-footnote { font: 8px var(--font-mono); color: var(--ac-n); letter-spacing: 0.03em; }
+.dynamics-footnote { text-align: center; margin-top: 7px; }
+.dynamics-bypassed .dynamics-controls { opacity: 0.55; }
+@media (max-width: 1100px) {
+  .dynamics-readouts > div { flex-direction: column; gap: 4px; }
+  .dynamics-note span { max-width: 18ch; line-height: 1.6; }
+  .dynamics-legend { font-size: 7px; }
+}

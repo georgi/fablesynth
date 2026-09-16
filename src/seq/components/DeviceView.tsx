@@ -31,6 +31,10 @@ import { makeEmptyPatterns as wtEmpty } from '../../noteseq';
 import { EnvPanel } from '../../components/panels/EnvPanel';
 import { FilterPanel } from '../../components/panels/FilterPanel';
 import { FxPanel } from '../../components/panels/FxPanel';
+import { EqPanel } from '../../components/panels/EqPanel';
+import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
+import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
+import { ReverbPanel } from '../../components/panels/ReverbPanel';
 import { KeyboardBar } from '../../components/panels/KeyboardBar';
 import { LfoPanel } from '../../components/panels/LfoPanel';
 import { MatrixPanel } from '../../components/panels/MatrixPanel';
@@ -437,6 +441,11 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
             <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
             <LfoPanel />
             <MatrixPanel />
+            <EqPanel />
+            <DynamicsPanel kind="ott" />
+            <DynamicsPanel kind="comp" />
+            <TapeEchoPanel />
+            <ReverbPanel />
             <FxPanel />
           </>
         )}

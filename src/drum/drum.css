@@ -789,12 +789,23 @@
   text-overflow: ellipsis;
 }
 
-.fx-rack {
+.dr-fx-panel .fx-rack {
   display: grid;
-  grid-template-columns: repeat(5, 1fr) 190px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas: 'ott comp echo reverb' 'drive chorus routing routing';
   gap: 10px;
 }
 .dr-fx-panel { padding: 8px; }
+.dr-fx-panel .dynamics-curve { height: 144px; aspect-ratio: auto; }
+.dr-fx-panel .fx-rack > .fx-group { grid-area: drive; }
+.dr-fx-panel .fx-rack > .fx-group + .fx-group { grid-area: chorus; }
+.dr-fx-panel .fx-rack > .out-panel { grid-area: routing; }
+@media (max-width: 1150px) {
+  .dr-fx-panel .fx-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'ott comp' 'echo reverb' 'drive chorus' 'routing routing'; }
+}
+.dr-fx-panel .fx-rack > .panel-dynamics,
+.dr-fx-panel .fx-rack > .panel-echo,
+.dr-fx-panel .fx-rack > .panel-reverb { min-width: 0; padding: 8px; }
 .dr-fx-head {
   display: flex;
   align-items: center;
@@ -863,6 +874,8 @@
   gap: 2px;
 }
 .fx-knobs .knob { min-width: 0; }
+.dr-fx-panel .dr-ott-knobs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 3px; }
+.dr-ott-bands { margin-left: auto; color: var(--text-dim); font-size: 7px; white-space: nowrap; }
 
 .out-head {
   justify-content: space-between;

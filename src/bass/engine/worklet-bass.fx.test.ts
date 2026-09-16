@@ -146,6 +146,33 @@ describe('BL-1 FX drive is 4x oversampled (W6)', () => {
   });
 });
 
+describe('BL-1 opt-in FX telemetry', () => {
+  it('is sample-identical to the unmetered signal', () => {
+    const p = defaultBassParams();
+    for (const effect of ['ott', 'comp', 'delay', 'reverb']) p[`fx.${effect}.on`] = 1;
+    const plain = boot(p), metered = boot(p);
+    for (const t of ['dynamics', 'echo', 'reverb']) metered.send({ t, on: true });
+    plain.send({ t: 'noteon', semi: 12, vel: 1 }); metered.send({ t: 'noteon', semi: 12, vel: 1 });
+    const reference = plain.render(200), actual = metered.render(200);
+    expect(actual.L).toEqual(reference.L); expect(actual.R).toEqual(reference.R);
+  });
+  it('emits measured dynamics, delay and reverb packets only when enabled', () => {
+    const p = defaultBassParams();
+    p['fx.ott.on'] = 1; p['fx.ott.depth'] = 1; p['fx.comp.on'] = 1;
+    p['fx.delay.on'] = 1; p['fx.delay.mix'] = 1; p['fx.reverb.on'] = 1; p['fx.reverb.mix'] = 1;
+    const h = boot(p);
+    h.send({ t: 'dynamics', on: true }); h.send({ t: 'echo', on: true }); h.send({ t: 'reverb', on: true });
+    h.send({ t: 'noteon', semi: 12, vel: 1 }); h.render(20);
+    expect(h.sent.some(m => m.t === 'dynamics')).toBe(true);
+    expect(h.sent.some(m => m.t === 'echo')).toBe(true);
+    expect(h.sent.some(m => m.t === 'reverb')).toBe(true);
+    const before = h.sent.filter(m => ['dynamics', 'echo', 'reverb'].includes(m.t)).length;
+    h.send({ t: 'dynamics', on: false }); h.send({ t: 'echo', on: false }); h.send({ t: 'reverb', on: false });
+    h.render(20);
+    expect(h.sent.filter(m => ['dynamics', 'echo', 'reverb'].includes(m.t)).length).toBe(before);
+  });
+});
+
 describe('BL-1 drive mono fast path', () => {
   it('resyncs the skipped channel when the voice opens up', () => {
     // A 303 patch is mono through the shaper whenever uni = 1 or spread = 0
@@ -310,5 +337,47 @@ describe('BL-1 reverb survives a SIZE change (W6)', () => {
     join.set(edited.before.subarray(edited.before.length - 8), 0);
     join.set(edited.after.subarray(0, 8), 8);
     expect(jump(join)).toBeLessThanOrEqual(2 * Math.max(jump(edited.before), jump(edited.after)));
+  }, 120_000);
+});
+
+describe('BL-1 compressor and OTT insert stages', () => {
+  const rms = (x: Float32Array): number => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+
+  it('hard-bypasses both dynamics stages when OFF', () => {
+    const p = sinePatch();
+    p['master.volume'] = 0.3;
+    const reference = boot(p);
+    const bypass = boot({ ...p, 'fx.comp.on': 0, 'fx.comp.thr': -40, 'fx.ott.on': 0, 'fx.ott.depth': 1 });
+    for (const h of [reference, bypass]) h.send({ t: 'noteon', semi: 24, vel: 1 });
+    reference.render(40); bypass.render(40);
+    expect(Array.from(bypass.render(16).L)).toEqual(Array.from(reference.render(16).L));
+  });
+
+  it('automatically matches processed dynamics to the input level', () => {
+    const p = sinePatch();
+    p['master.volume'] = 0.3;
+    const dry = boot(p);
+    const wet = boot({ ...p, 'fx.comp.on': 1, 'fx.comp.thr': -40, 'fx.ott.on': 1, 'fx.ott.depth': 1, 'fx.ott.time': 0.1 });
+    for (const h of [dry, wet]) h.send({ t: 'noteon', semi: 24, vel: 1 });
+    dry.render(500); wet.render(500); // let the slow automatic gain settle
+    const deltaDb = 20 * Math.log10(rms(wet.render(128).L) / rms(dry.render(128).L));
+    expect(deltaDb).toBeGreaterThan(-2);
+    expect(deltaDb).toBeLessThan(2);
+  });
+
+  it('guards a fully driven dynamics chain before the final limiter', () => {
+    const p = sinePatch();
+    p['master.volume'] = 1;
+    p['fx.drive.on'] = 1; p['fx.drive.amt'] = 1; p['fx.drive.mix'] = 1;
+    p['fx.comp.on'] = 1; p['fx.comp.thr'] = -40;
+    p['fx.ott.on'] = 1; p['fx.ott.depth'] = 1; p['fx.ott.time'] = 0.01;
+    p['fx.ott.up'] = 2; p['fx.ott.down'] = 2;
+    const h = boot(p);
+    h.send({ t: 'noteon', semi: 24, vel: 1 });
+    const { L, R } = h.render(1200);
+    expect(L.every(Number.isFinite)).toBe(true);
+    expect(R.every(Number.isFinite)).toBe(true);
+    expect(peak(L)).toBeLessThanOrEqual(CEILING + 1e-6);
+    expect(peak(R)).toBeLessThanOrEqual(CEILING + 1e-6);
   }, 120_000);
 });

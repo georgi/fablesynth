@@ -10,7 +10,7 @@ import type { ParamValues } from '../params';
 
 const FX_OFF: Partial<ParamValues> = {
   'fx.eq.on': 0, 'fx.drive.on': 0, 'fx.chorus.on': 0,
-  'fx.delay.on': 0, 'fx.reverb.on': 0, 'fx.comp.on': 0,
+  'fx.delay.on': 0, 'fx.reverb.on': 0, 'fx.comp.on': 0, 'fx.ott.on': 0,
 };
 
 // A single steady voice with the filters bypassed.
@@ -270,6 +270,45 @@ describe('FX bypass', () => {
     expect(ref).toBeGreaterThan(1e-3);
     expect(worst).toBeLessThan(ref * 1e-4);
   });
+});
+
+// ---------------------------------------------------------------- dynamics
+
+describe('compressor and OTT insert stages', () => {
+  const rms = (x: Float32Array): number => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
+
+  it('hard-bypasses both dynamics stages when OFF', () => {
+    const base = { ...TONE, 'master.volume': 0.2 };
+    const a = bootWt(base), b = bootWt({ ...base, 'fx.comp.thr': -40, 'fx.ott.depth': 1 });
+    for (const h of [a, b]) h.send({ t: 'on', n: 60, v: 1 });
+    a.render(80); b.render(80);
+    expect(Array.from(a.render(16).L)).toEqual(Array.from(b.render(16).L));
+  });
+
+  it('automatically matches the combined dynamics level', () => {
+    const base = { ...TONE, 'master.volume': 0.25 };
+    const dry = bootWt(base);
+    const wet = bootWt({ ...base, 'fx.comp.on': 1, 'fx.comp.thr': -40,
+      'fx.ott.on': 1, 'fx.ott.depth': 1, 'fx.ott.time': 0.1 });
+    for (const h of [dry, wet]) h.send({ t: 'on', n: 60, v: 1 });
+    dry.render(500); wet.render(500);
+    const deltaDb = 20 * Math.log10(rms(wet.render(128).L) / rms(dry.render(128).L));
+    expect(deltaDb).toBeGreaterThan(-2);
+    expect(deltaDb).toBeLessThan(2);
+  });
+
+  it('remains finite and bounded with every dynamics stage driven', () => {
+    const h = bootWt({ ...TONE, 'master.volume': 1,
+      'fx.drive.on': 1, 'fx.drive.amt': 1, 'fx.drive.mix': 1,
+      'fx.comp.on': 1, 'fx.comp.thr': -40,
+      'fx.ott.on': 1, 'fx.ott.depth': 1, 'fx.ott.time': 0.01, 'fx.ott.up': 2, 'fx.ott.down': 2 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    const { L, R } = h.render(1200);
+    expect(L.every(Number.isFinite)).toBe(true);
+    expect(R.every(Number.isFinite)).toBe(true);
+    expect(maxAbs(L)).toBeLessThanOrEqual(CEILING + 1e-6);
+    expect(maxAbs(R)).toBeLessThanOrEqual(CEILING + 1e-6);
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------- B3

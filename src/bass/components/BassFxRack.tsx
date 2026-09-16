@@ -1,8 +1,18 @@
-import { useBassStore } from '../store';
+import { bassEngine, useBassStore } from '../store';
 import { BassKnob } from './BassKnob';
+import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
+import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
+import { ReverbPanel } from '../../components/panels/ReverbPanel';
+import type { FxPanelAdapter } from '../../components/panels/fxAdapter';
+
+function BassPower({ paramId }: { paramId: string }) {
+  const on = useBassStore(s => s.params[paramId] > 0.5);
+  const setParam = useBassStore(s => s.setParam);
+  return <button className={`power-btn fx-power${on ? ' on' : ''}`} type="button" aria-label={`${paramId} power`} aria-pressed={on} onClick={() => setParam(paramId, on ? 0 : 1)} />;
+}
 
 interface FxGroupProps {
-  effect: 'drive' | 'chorus' | 'delay' | 'reverb';
+  effect: 'drive' | 'comp' | 'chorus' | 'delay' | 'reverb';
   title: string;
   note?: string;
   knobs: string[];
@@ -28,19 +38,31 @@ function FxGroup({ effect, title, note, knobs }: FxGroupProps) {
       </div>
       <div className="fx-knobs">
         {knobs.map((paramId) => <BassKnob paramId={paramId} size="sm" accent="n" key={paramId} />)}
+        {effect === 'comp' ? <span className="fx-auto-gain">AUTO GAIN</span> : null}
       </div>
     </section>
   );
 }
 
 export function BassFxRack() {
+  const params = useBassStore(s => s.params);
+  const setParam = useBassStore(s => s.setParam);
+  const adapter: FxPanelAdapter = {
+    engine: bassEngine,
+    params,
+    setParam,
+    renderKnob: (id) => <BassKnob paramId={id} size="sm" accent="n" />,
+    renderPower: (id) => <BassPower paramId={id} />,
+  };
   return (
     <section className="panel bl-fx-panel">
       <div className="fx-rack bl-fx-rack">
+        <DynamicsPanel kind="ott" adapter={adapter} />
+        <DynamicsPanel kind="comp" adapter={adapter} />
         <FxGroup effect="drive" title="DRIVE" note="POST-ACCENT" knobs={['fx.drive.amt', 'fx.drive.mix']} />
         <FxGroup effect="chorus" title="CHORUS" knobs={['fx.chorus.rate', 'fx.chorus.depth', 'fx.chorus.mix']} />
-        <FxGroup effect="delay" title="DELAY" note="PING-PONG · SYNC" knobs={['fx.delay.time', 'fx.delay.fb', 'fx.delay.mix']} />
-        <FxGroup effect="reverb" title="REVERB" note="NO COMP · ACCENTS LIVE" knobs={['fx.reverb.size', 'fx.reverb.mix']} />
+        <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
+        <ReverbPanel adapter={adapter} />
       </div>
     </section>
   );

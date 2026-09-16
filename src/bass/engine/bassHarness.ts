@@ -2,6 +2,7 @@
 // source in-process so vitest can drive the real DSP offline. Mirrors the
 // AudioWorklet contract: constructor gets a port, process(inputs, outputs).
 import BASS_SRC from './worklet-bass.js?raw';
+import OTT_SRC from '../../engine/ott-worklet.js?raw';
 
 export interface BassHarness {
   proc: {
@@ -25,6 +26,9 @@ export function makeBassProcessor(sampleRate = 48000): BassHarness {
   const register = (_name: string, cls: new () => BassHarness['proc']) => { Proc = cls; };
   // The worklet is an ES module only because of Vite's loader; it has no
   // imports/exports, so Function-evaluating its text is safe and exact.
+  new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', OTT_SRC)(
+    sampleRate, AWP, register,
+  );
   new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', BASS_SRC)(
     sampleRate, AWP, register,
   );

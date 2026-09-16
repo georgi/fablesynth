@@ -803,7 +803,8 @@
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
     'filter filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos'
-    'matrix matrix matrix matrix fx fx fx fx fx fx fx fx';
+    'eq eq eq eq ott ott ott ott comp comp comp comp'
+    'matrix matrix matrix echo echo echo echo reverb reverb reverb fx fx';
 }
 
 .sq-clipbar {

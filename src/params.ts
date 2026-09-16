@@ -230,13 +230,12 @@ export const PARAM_DEFS: ParamDef[] = [
 
   ...Array.from({ length: 16 }, (_, i) => matParams(i + 1)).flat(),
 
-  // 3-band tone EQ — first in the FX chain (pre-drive). Fixed-corner low/high
-  // shelves plus a sweepable mid bell; all gains default to 0 dB so the stage is
-  // transparent until dialed in, and bypasses cleanly when off.
+  // Four-band EQ. Keep the original gain IDs and defaults for existing patches;
+  // additional controls are appended below to preserve parameter indices.
   { id: 'fx.eq.on', type: 'bool', def: 0 },
   { id: 'fx.eq.low', label: 'LOW', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
   { id: 'fx.eq.mid', label: 'MID', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
-  { id: 'fx.eq.mfreq', label: 'M FREQ', min: 200, max: 5000, def: 900, curve: 'log', fmt: fmtHz },
+  { id: 'fx.eq.mfreq', label: 'FREQ', min: 20, max: 20000, def: 900, curve: 'log', fmt: fmtHz },
   { id: 'fx.eq.high', label: 'HIGH', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
 
   { id: 'fx.drive.on', type: 'bool', def: 0 },
@@ -270,6 +269,34 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'seq.bpm', label: 'BPM', min: 60, max: 200, def: 120, curve: 'int', fmt: (v) => String(Math.round(v)) },
   { id: 'seq.swing', label: 'SWING', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
   { id: 'seq.root', label: 'ROOT', min: 24, max: 72, def: 48, curve: 'int', fmt: fmtNote },
+
+  // Appended to retain all established WT-1 parameter IDs. Dynamics has
+  // automatic level matching; fx.comp.gain remains serialized only.
+  { id: 'fx.ott.on', type: 'bool', def: 0 },
+  { id: 'fx.ott.depth', label: 'DEPTH', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.ott.time', label: 'TIME', min: 0.01, max: 10, def: 1, curve: 'log', fmt: fmtPct },
+  { id: 'fx.ott.up', label: 'UPWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.ott.down', label: 'DOWNWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
+
+  // Web parametric EQ extension: shelves + two bells, all freely tunable.
+  { id: 'fx.eq.lfreq', label: 'FREQ', min: 20, max: 20000, def: 120, curve: 'log', fmt: fmtHz },
+  { id: 'fx.eq.m2freq', label: 'FREQ', min: 20, max: 20000, def: 2500, curve: 'log', fmt: fmtHz },
+  { id: 'fx.eq.hfreq', label: 'FREQ', min: 20, max: 20000, def: 6000, curve: 'log', fmt: fmtHz },
+  { id: 'fx.eq.mid2', label: 'GAIN', min: -15, max: 15, def: 0, curve: 'lin', fmt: fmtDb },
+  ...(['l', 'm', 'm2', 'h'] as const).flatMap((band, i): ParamDef[] => [
+    { id: `fx.eq.${band}q`, label: 'Q', min: 0.2, max: 12, def: i === 0 || i === 3 ? Math.SQRT1_2 : 0.9, curve: 'log', fmt: v => v.toFixed(2) },
+    { id: `fx.eq.${band}type`, type: 'enum', options: ['LOW SHELF', 'BELL', 'HIGH SHELF'], def: i === 0 ? 0 : i === 3 ? 2 : 1 },
+    { id: `fx.eq.${band}on`, type: 'bool', def: 1 },
+  ]),
+  // Tape echo extension; keep the original delay IDs and saved timings.
+  { id: 'fx.delay.tone', label: 'TONE', min: 400, max: 12000, def: 4500, curve: 'log', fmt: fmtHz },
+  { id: 'fx.delay.sat', label: 'SAT', min: 0, max: 1, def: 0.2, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.delay.wow', label: 'WOW', min: 0, max: 1, def: 0.18, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.delay.flutter', label: 'FLUTTER', min: 0, max: 1, def: 0.12, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.delay.width', label: 'WIDTH', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.delay.mode', type: 'enum', options: ['PING PONG', 'STEREO'], def: 0 },
+  { id: 'fx.delay.sync', type: 'bool', def: 0 },
+  { id: 'fx.delay.div', type: 'enum', options: ['1/4', '1/4.', '1/8', '1/8.', '1/8T', '1/16'], def: 3 },
 ];
 
 export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));

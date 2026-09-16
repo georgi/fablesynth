@@ -288,7 +288,8 @@ body::before {
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
     'filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos lfos'
-    'matrix matrix matrix fx fx fx fx fx fx fx fx fx'
+    'eq eq eq eq ott ott ott ott comp comp comp comp'
+    'matrix matrix matrix echo echo echo echo reverb reverb reverb fx fx'
     'seq seq seq seq seq seq seq seq seq seq seq seq';
   gap: 9px;
 }
@@ -811,23 +812,32 @@ body::before {
 /* ============ fx rack ============ */
 .panel-fx {
   display: grid;
-  /* EQ (first module) carries 4 knobs vs 2-3 elsewhere, so give it a wider
-     column; the remaining five share the rest evenly. */
-  grid-template-columns: 1.3fr 1fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 .fx-module {
   border: 1px solid var(--line);
   border-radius: 9px;
-  /* 5px sides: at the rack's 1420px min-width the EQ (4 knobs) and
-     chorus/delay (3) rows are within ~2px of their column width — 8px
-     padding made them wrap and spill out of the 124px row. */
+  /* Compact utility effects below the visual processing row. */
   padding: 8px 5px 4px;
   background: rgba(0, 0, 0, 0.18);
   min-width: 0;
 }
 .fx-module .panel-head { margin-bottom: 4px; }
-.fx-module .knob-row { justify-content: space-evenly; }
+.fx-module .knob-row { display: flex; justify-content: space-evenly; gap: 3px; }
+.auto-gain-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 44px;
+  height: 58px;
+  color: var(--text-dim);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+}
+.fx-group.on .auto-gain-indicator { color: var(--ac-n); }
 
 /* ============ keyboard ============ */
 .kb-bar {
@@ -926,14 +936,15 @@ body::before {
 }
 
 /* ============ responsive nudge ============ */
-@media (max-width: 1260px) {
+@media (max-width: 1420px) {
   #rack { min-width: 0; }
   .panels {
     grid-template-areas:
       'oscA oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB oscB'
       'util util filter filter filter filter env1 env1 env2 env2 env2 env2'
       'lfos lfos lfos lfos lfos matrix matrix matrix matrix matrix matrix matrix'
-      'fx fx fx fx fx fx fx fx fx fx fx fx'
+      'eq eq eq eq ott ott ott ott comp comp comp comp'
+      'echo echo echo echo echo reverb reverb reverb reverb fx fx fx'
       'seq seq seq seq seq seq seq seq seq seq seq seq';
   }
   .hud { display: none; }

@@ -1,6 +1,6 @@
 // Main-thread BL-1 engine: owns the AudioContext and the bass worklet.
 //
-// The master FX rack (drive, chorus, ping-pong delay, reverb, master gain, DC
+// The master FX rack (drive, compressor, OTT, chorus, ping-pong delay, reverb, master gain, DC
 // block, lookahead limiter) lives inside the worklet, ported from the plugin's
 // BassFx — see audio-engine-review B5/W6. The native-node graph it replaces was
 // a different algorithm from the plugin's on every stage. The only node left on
@@ -10,6 +10,10 @@ import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { type ParamValues } from '../../params';
 import { defaultBassParams } from '../params';
 import workletUrl from './worklet-bass.js?url';
+import ottWorkletUrl from '../../engine/ott-worklet.js?url';
+import type { DynamicsMessage } from '../../engine/dynamics';
+import type { EchoMessage } from '../../engine/echo';
+import type { ReverbMessage } from '../../engine/reverb';
 
 export interface VizTable {
   name: string;
@@ -45,6 +49,34 @@ export interface EngineInitOpts {
 }
 
 export class BassEngine {
+  private dynamicsListeners = new Set<(message: DynamicsMessage) => void>();
+  private echoListeners = new Set<(message: EchoMessage) => void>();
+  private reverbListeners = new Set<(message: ReverbMessage) => void>();
+
+  subscribeDynamics(listener: (message: DynamicsMessage) => void): () => void {
+    this.dynamicsListeners.add(listener);
+    if (this.ready && this.dynamicsListeners.size === 1) this.node.port.postMessage({ t: 'dynamics', on: true });
+    return () => {
+      this.dynamicsListeners.delete(listener);
+      if (this.ready && !this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: false });
+    };
+  }
+  subscribeEcho(listener: (message: EchoMessage) => void): () => void {
+    this.echoListeners.add(listener);
+    if (this.ready && this.echoListeners.size === 1) this.node.port.postMessage({ t: 'echo', on: true });
+    return () => {
+      this.echoListeners.delete(listener);
+      if (this.ready && !this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: false });
+    };
+  }
+  subscribeReverb(listener: (message: ReverbMessage) => void): () => void {
+    this.reverbListeners.add(listener);
+    if (this.ready && this.reverbListeners.size === 1) this.node.port.postMessage({ t: 'reverb', on: true });
+    return () => {
+      this.reverbListeners.delete(listener);
+      if (this.ready && !this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: false });
+    };
+  }
   params: ParamValues;
   tables: VizTable[] | null;
   builtInTables: GeneratedTable[];
@@ -79,6 +111,7 @@ export class BassEngine {
     const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
     this.output = opts.output ?? null;
+    await ctx.audioWorklet.addModule(ottWorkletUrl);
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.builtInTables = generateTables();
@@ -95,9 +128,15 @@ export class BassEngine {
       if (e.data.t === 'pos' && this.onpos) this.onpos({ step: e.data.step as number, bar: e.data.bar as number });
       if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
       if (e.data.t === 'clipstop' && this.onclipstop) this.onclipstop(e.data.frame as number);
+      if (e.data.t === 'dynamics') this.dynamicsListeners.forEach(listener => listener(e.data as DynamicsMessage));
+      if (e.data.t === 'echo') this.echoListeners.forEach(listener => listener(e.data as EchoMessage));
+      if (e.data.t === 'reverb') this.reverbListeners.forEach(listener => listener(e.data as ReverbMessage));
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
+    if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
+    if (this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: true });
+    if (this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: true });
     this.pushTables();
 
     this.scopeAnalyser = ctx.createAnalyser();
