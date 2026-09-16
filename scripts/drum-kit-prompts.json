@@ -1,0 +1,92 @@
+{
+  "01-dry-machine": {
+    "title": "Dry Machine Core",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "100 BPM. Deep tight kick, snappy compact clap, soft crisp 808 hats. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "02-round-pocket": {
+    "title": "Round Pocket",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "104 BPM. Round woody kick with a solid low body, warm short clap, delicate closed hats. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "03-tight-cellar": {
+    "title": "Tight Cellar",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "110 BPM. Short punchy analog kick, dry papery snare and tight handclap, restrained tick hats. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "04-soft-circuit": {
+    "title": "Soft Circuit",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "106 BPM. Soft-edged 808 kick with firm attack, layered intimate clap, short airy open hats. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "05-dusty-transistor": {
+    "title": "Dusty Transistor",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "100 BPM. Subtly grainy transistor drum machine, weighty compact kick, crunchy short clap, dry silky hats. Gentle coloration without crackle. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "06-velvet-pulse": {
+    "title": "Velvet Pulse",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "102 BPM. Full rounded analog kick, soft thick handclap, dry fine-grain hats. Warm and weighty. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "07-paper-snap": {
+    "title": "Paper Snap",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "108 BPM. Compact kick, papery snare with a firm snap, tight layered handclap, light short hats. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "08-micro-jack": {
+    "title": "Micro Jack",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "112 BPM. Early house drum machine, short rubbery kick, snappy dry clap, clipped closed hats and brief open hats. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "09-smoked-copper": {
+    "title": "Smoked Copper",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "100 BPM. Muted analog kick, earthy dry clap and soft noise snare, silky restrained hats. Subtle warm saturation. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  },
+  "10-clean-room": {
+    "title": "Clean Room",
+    "duration": 40,
+    "prompt": "Instrumental drum tool. Solo drum sections with full stops and isolated hits. Exposed kick, clap, snare and hats, taking turns.",
+    "style": "106 BPM. Clean precise electronic kick, compact crisp handclap, short airy closed and open hats. Clear attacks and controlled low end. Dry studio drum-machine performance. Instruments take turns in separate solo sections: kick, clap or snare, then closed and open hats. Sparse stop-start phrases with full silence between hits. Close direct recording, mono-centered transients, fast clean decay, no room sound.",
+    "negative_tags": "bassline, synthesizer, keys, pads, vocals, melody, reverb, delay, cymbal wash, busy fills, distortion, cowbell, triangle",
+    "style_weight": 0.95,
+    "weirdness_constraint": 0.05
+  }
+}
