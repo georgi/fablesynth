@@ -23,6 +23,7 @@ void BassFx::prepare(double sampleRate) {
     meter_.prepare(sampleRate);
     eq_.prepare(sampleRate);
     sr_ = sampleRate;
+    driveColorL_.prepare(sr_); driveColorR_.prepare(sr_);
     double scale = sr_ / 44100.0;
 
     for (size_t i = 0; i < 8; i++) {
@@ -89,7 +90,7 @@ void BassFx::reset() {
     for (auto& a : apL_) a.reset();
     for (auto& a : apR_) a.reset();
     dcL_.reset(); dcR_.reset(); dlDamp_.reset();
-    ott_.reset(); comp_.reset();
+    ott_.reset(); driveColorL_.reset(); driveColorR_.reset(); comp_.reset();
     headroomInput_.reset(); headroomOtt_.reset(); headroomComp_.reset(); headroomDrive_.reset();
     headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset(); delayFeedbackGuard_.reset();
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
@@ -120,7 +121,9 @@ static inline float mixGate(bool on, float amount, bool wet) {
 void BassFx::setParams(const BassParamArray& p) {
     eq_.setParams(p.data() + BL_FXEQ_ON);
     compOff_ = p[BL_FXCOMP_ON] <= 0.5f;
-    comp_.setParams(!compOff_, p[BL_FXCOMP_THR]);
+    driveColorL_.setParams(p[BL_FXDRIVE_TYPE], p[BL_FXDRIVE_TONE]);
+    driveColorR_.setParams(p[BL_FXDRIVE_TYPE], p[BL_FXDRIVE_TONE]);
+    comp_.setParams(!compOff_, p[BL_FXCOMP_THR], p[BL_FXCOMP_ATT], p[BL_FXCOMP_REL], p[BL_FXCOMP_RATIO]);
     ott_.setParams(p[BL_FXOTT_ON] > 0.5f, p[BL_FXOTT_DEPTH], p[BL_FXOTT_TIME], p[BL_FXOTT_UP], p[BL_FXOTT_DOWN]);
 
     // drive — AMT ramps; the shaper gains are rebuilt in updateCoefs.
@@ -192,11 +195,6 @@ void BassFx::snapRamps() {
     updateCoefs(true);
 }
 
-float BassFx::shape(float x) const {
-    // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth nonlinearity)
-    return std::tanh(x * driveK_) * driveNorm_;
-}
-
 // One channel through the 4x oversampled shaper. Finding J4: polyphase, the
 // same transcription as Fx::driveChannel — interpolate() replaces the
 // process(2x)/process(0) pair and decimate() replaces the process/process
@@ -205,14 +203,17 @@ float BassFx::shape(float x) const {
 // filters, same group delay, same kDriveLatency. Each HalfBandFir here is
 // driven ONLY through interpolate/decimate (the two modes keep separate
 // histories and must never be mixed on one instance).
-float BassFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x) {
+float BassFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x, DriveColor& color) {
+    auto shape = [&](float v) { return (float)color.shape(v, driveK_, driveNorm_); };
     double a0, a1;
     u1.interpolate(x, a0, a1);                       // 2x
     double b00, b01, b10, b11;
     u2.interpolate(a0, b00, b01);                    // 4x
     u2.interpolate(a1, b10, b11);
-    double c0 = d2.decimate((double)shape((float)b00), (double)shape((float)b01));
-    double c1 = d2.decimate((double)shape((float)b10), (double)shape((float)b11));
+    const double s0a = shape((float)b00), s0b = shape((float)b01);
+    const double c0 = d2.decimate(s0a, s0b);
+    const double s1a = shape((float)b10), s1b = shape((float)b11);
+    const double c1 = d2.decimate(s1a, s1b);
     return (float)d1.decimate(c0, c1);
 }
 
@@ -225,6 +226,7 @@ void BassFx::process(float* L, float* R, int n) {
 
     if (driveGate && !driveGated_) {
         driveWet_.snap(0); driveDry_.snap(1);
+        driveColorL_.reset(); driveColorR_.reset();
         up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
         up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     }
@@ -281,10 +283,10 @@ void BassFx::process(float* L, float* R, int n) {
         float dlyR = dryR_.read((double)(kDriveLatency + 1));
         if (!driveGated_) {
             float wet = driveWet_.next(), dry = driveDry_.next();
-            float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l);
-            float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r);
-            l = dry * dlyL + wet * dl;
-            r = dry * dlyR + wet * dr;
+            float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l, driveColorL_);
+            float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r, driveColorR_);
+            l = dry * dlyL + wet * driveColorL_.processTone(dl);
+            r = dry * dlyR + wet * driveColorR_.processTone(dr);
         } else {
             l = dlyL; r = dlyR;
         }

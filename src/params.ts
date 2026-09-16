@@ -297,6 +297,12 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'fx.delay.mode', type: 'enum', options: ['PING PONG', 'STEREO'], def: 0 },
   { id: 'fx.delay.sync', type: 'bool', def: 0 },
   { id: 'fx.delay.div', type: 'enum', options: ['1/4', '1/4.', '1/8', '1/8.', '1/8T', '1/16'], def: 3 },
+  // Dynamics and drive extensions. Neutral defaults preserve existing patches.
+  { id: 'fx.comp.att', label: 'ATTACK', min: 0.0001, max: 0.1, def: 0.003, curve: 'log', fmt: v => v < 0.01 ? (v * 1000).toFixed(1) + ' ms' : fmtSec(v) },
+  { id: 'fx.comp.rel', label: 'RELEASE', min: 0.01, max: 2, def: 0.25, curve: 'log', fmt: fmtSec },
+  { id: 'fx.comp.ratio', label: 'RATIO', min: 1, max: 20, def: 4, curve: 'log', fmt: v => v.toFixed(1) + ':1' },
+  { id: 'fx.drive.tone', label: 'TONE', min: -1, max: 1, def: 0, curve: 'lin', fmt: v => v === 0 ? 'NEUTRAL' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'DARK' : 'BRIGHT'}` },
+  { id: 'fx.drive.type', type: 'enum', options: ['SOFT', 'TAPE', 'HARD'], def: 0 },
 ];
 
 export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));

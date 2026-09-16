@@ -4,10 +4,9 @@
 // WebAudio nodes; here each stage is reimplemented as pure DSP so it runs inside
 // the plugin and the headless test harness alike.
 //
-// The leveling compressor is a shared dynamics stage (WebAudio
-// DynamicsCompressor semantics, ratio 4 / knee 9 dB / attack 10 ms /
-// release 200 ms) with THRESH/ON params. The serialized MAKEUP field remains
-// for compatibility while the web chain uses automatic gain matching.
+// Shared stereo-linked compressor: adjustable attack, release and ratio,
+// a 9 dB soft knee and automatic gain matching. Defaults: 3 ms / 250 ms / 4:1.
+// The serialized MAKEUP field remains for compatibility.
 //
 // The convolution reverb (generated exponential-noise impulse) is approximated
 // by a Freeverb-style network tuned by SIZE — a standard, real-time-safe stand-in
@@ -16,6 +15,7 @@
 
 #include "Params.h"
 #include "FxTelemetry.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -106,11 +106,45 @@ private:
 
 // Shared 4:1 / 9 dB knee dynamics stage. The web version uses automatic gain
 // matching and retains the serialized makeup field for compatibility only.
+// Matches DriveColor in ott-worklet.js. One instance per oversampled channel.
+class DriveColor {
+public:
+    void prepare(double sr) {
+        fade_ = 1 - std::exp(-1 / (0.01 * sr * 4));
+        smooth_ = 1 - std::exp(-1 / (0.02 * sr));
+        pole_ = 1 - std::exp(-2 * 3.141592653589793 * 1000 / sr);
+        reset();
+    }
+    void setParams(float type, float tone) {
+        tapeTarget_ = std::round(type) == 1 ? 1 : 0;
+        hardTarget_ = std::round(type) == 2 ? 1 : 0;
+        toneTarget_ = std::clamp((double)tone, -1.0, 1.0);
+    }
+    void reset() { low_ = 0; tape_ = tapeTarget_; hard_ = hardTarget_; tone_ = toneTarget_; }
+    double shape(double x, double k, double norm) {
+        tape_ += (tapeTarget_ - tape_) * fade_;
+        hard_ += (hardTarget_ - hard_) * fade_;
+        const double z = x * k, soft = std::tanh(z);
+        const double tape = std::abs(z) < 1 ? 1.5 * z - 0.5 * z * z * z : (z > 0 ? 1 : z < 0 ? -1 : 0);
+        const double hard = std::clamp(z, -1.0, 1.0);
+        return (soft + tape_ * (tape - soft) + hard_ * (hard - soft)) * norm;
+    }
+    double processTone(double x) {
+        tone_ += (toneTarget_ - tone_) * smooth_;
+        low_ += pole_ * (x - low_);
+        return x + tone_ * (tone_ < 0 ? 0.5 : 1) * (x - low_);
+    }
+private:
+    double fade_ = 0, smooth_ = 0, pole_ = 0, low_ = 0;
+    double tape_ = 0, hard_ = 0, tone_ = 0;
+    double tapeTarget_ = 0, hardTarget_ = 0, toneTarget_ = 0;
+};
+
 class WebCompressor {
 public:
     explicit WebCompressor(double sampleRate = 48000.0) { prepare(sampleRate); }
     void prepare(double sampleRate);
-    void setParams(bool on, float thresholdDb);
+    void setParams(bool on, float thresholdDb, float attack = 0.003f, float release = 0.25f, float ratio = 4);
     void reset();
     void process(float* L, float* R, int n);
     void processSample(double inL, double inR, double& outL, double& outR);
@@ -120,6 +154,7 @@ public:
 private:
     double sr_ = 48000, smooth_ = 0, attack_ = 0, release_ = 0;
     double wet_ = 0, threshold_ = -16, thresholdTarget_ = -16;
+    double ratio_ = 4, ratioTarget_ = 4;
     double gainStep_ = 0;
     int tick_ = 0;
 };
@@ -385,8 +420,8 @@ private:
     // true while the wet gain is zero (stage OFF or MIX 0): the 4x shaper is
     // skipped entirely and the dry delay carries the signal
     bool driveSilent_ = false;
-    inline float shape(float x) const;
-    float driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x);
+    DriveColor driveColorL_, driveColorR_;
+    float driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x, DriveColor& color);
 
     // chorus
     double chPhase_ = 0;

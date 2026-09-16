@@ -46,17 +46,21 @@ class PeakGuard {
   }
 }
 
-// DR-1's 4:1 compressor with a 9 dB knee and measured automatic gain.
+// Stereo-linked compressor with a 9 dB knee and measured automatic gain.
 class Compressor {
   constructor(sr) {
     this.smooth = 1 - Math.exp(-1 / (0.02 * sr));
     this.attack = 1 - Math.exp(-1 / (0.003 * sr));
     this.release = 1 - Math.exp(-1 / (0.25 * sr));
     this.autoGain = new AutoGain(sr);
+    this.sr = sr; this.ratio = this.ratioTarget = 4;
     this.wet = 0; this.threshold = -16;
     this.setParams(false, -16); this.reset();
   }
-  setParams(on, threshold) {
+  setParams(on, threshold, attack = 0.003, release = 0.25, ratio = 4) {
+    this.attack = 1 - Math.exp(-1 / (Math.max(0.0001, Math.min(0.1, attack)) * this.sr));
+    this.release = 1 - Math.exp(-1 / (Math.max(0.01, Math.min(2, release)) * this.sr));
+    this.ratioTarget = Math.max(1, Math.min(20, ratio));
     this.wetTarget = on ? 1 : 0;
     this.thresholdTarget = Math.max(-40, Math.min(0, threshold));
   }
@@ -69,9 +73,11 @@ class Compressor {
     const pk = Math.max(Math.abs(l), Math.abs(r));
     this.env += (pk - this.env) * (pk > this.env ? this.attack : this.release);
     this.threshold += (this.thresholdTarget - this.threshold) * this.smooth;
+    this.ratio += (this.ratioTarget - this.ratio) * this.smooth;
     if (this.tick === 0) {
       const over = 20 * Math.log10(Math.max(1e-9, this.env)) - this.threshold;
-      const db = over <= 0 ? 0 : over < 9 ? -0.75 * over * over / 18 : -0.75 * (over - 4.5);
+      const slope = 1 / this.ratio - 1;
+      const db = over <= 0 ? 0 : over < 9 ? slope * over * over / 18 : slope * (over - 4.5);
       this.step = (Math.pow(10, db / 20) - this.gain) / 32;
     }
     this.tick = (this.tick + 1) & 31;
@@ -299,3 +305,37 @@ class ParametricEq {
 }
 globalThis.FableParametricEq = ParametricEq;
 globalThis.FableEqFields = EQ_FIELDS;
+
+// Per-channel drive color. Saturation switches crossfade at 4x; the tone
+// shelf runs after decimation. Zero tone is exactly transparent.
+class DriveColor {
+  constructor(sr) {
+    this.fade = 1 - Math.exp(-1 / (0.01 * sr * 4));
+    this.smooth = 1 - Math.exp(-1 / (0.02 * sr));
+    this.pole = 1 - Math.exp(-2 * Math.PI * 1000 / sr);
+    this.tapeTarget = this.hardTarget = this.toneTarget = 0;
+    this.reset();
+  }
+  setParams(type = 0, tone = 0) {
+    this.tapeTarget = Math.round(type) === 1 ? 1 : 0;
+    this.hardTarget = Math.round(type) === 2 ? 1 : 0;
+    this.toneTarget = Math.max(-1, Math.min(1, tone));
+  }
+  reset() { this.low = 0; this.tape = this.tapeTarget; this.hard = this.hardTarget; this.tone = this.toneTarget; }
+  copyShapeFrom(o) { this.tape = o.tape; this.hard = o.hard; }
+  shape(x, k, norm) {
+    this.tape += (this.tapeTarget - this.tape) * this.fade;
+    this.hard += (this.hardTarget - this.hard) * this.fade;
+    const z = x * k, soft = Math.tanh(z);
+    const tape = Math.abs(z) < 1 ? 1.5 * z - 0.5 * z * z * z : Math.sign(z);
+    const hard = Math.max(-1, Math.min(1, z));
+    return (soft + this.tape * (tape - soft) + this.hard * (hard - soft)) * norm;
+  }
+  processTone(x) {
+    this.tone += (this.toneTarget - this.tone) * this.smooth;
+    this.low += this.pole * (x - this.low);
+    // ±6 dB high shelf, neutral at centre; keeps the low-end foundation.
+    return x + this.tone * (this.tone < 0 ? 0.5 : 1) * (x - this.low);
+  }
+}
+globalThis.FableDriveColor = DriveColor;

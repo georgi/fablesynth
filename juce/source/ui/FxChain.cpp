@@ -50,10 +50,10 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
         keys = {"depth", "time", "up", "down"};
         break;
     case Comp:
-        keys = {"thr"};
+        keys = {"thr", "att", "rel", "ratio"};
         break;
     case Drive:
-        keys = {"amt", "mix"};
+        keys = {"amt", "tone", "mix"};
         break;
     case Chorus:
         keys = {"rate", "depth", "mix"};
@@ -86,6 +86,24 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
         addAndMakeVisible(bandOn_);
         addAndMakeVisible(reset_);
         selectBand(1);
+    }
+    if (kind == Drive) {
+        const char* names[] = {"SOFT", "TAPE", "HARD"};
+        for (int i = 0; i < 3; ++i) {
+            auto& button = driveTypes_[(size_t)i];
+            button.setButtonText(names[i]);
+            button.setName(names[i]);
+            button.setToggleState((int)value(prefix_ + "fx.drive.type") == i, juce::dontSendNotification);
+            button.setTitle(juce::String(names[i]) + " saturation");
+            button.setClickingTogglesState(true);
+            button.setColour(juce::TextButton::buttonOnColourId, col::acN.withAlpha(.18f));
+            button.onClick = [this, i] {
+                write(prefix_ + "fx.drive.type", (float)i);
+                for (int j = 0; j < 3; ++j)
+                    driveTypes_[(size_t)j].setToggleState(i == j, juce::dontSendNotification);
+            };
+            addAndMakeVisible(button);
+        }
     }
     if (kind == Echo && tape) {
         mode_.addItemList({"PING PONG", "STEREO"}, 1);
@@ -195,6 +213,9 @@ void FxModuleView::timerCallback() {
         shape_.setSelectedId((int)value(bandKey("type")) + 1, juce::dontSendNotification);
         bandOn_.setToggleState(value(bandKey("on")) > 0.5f, juce::dontSendNotification);
     }
+    if (kind_ == Drive)
+        for (int i = 0; i < 3; ++i)
+            driveTypes_[(size_t)i].setToggleState((int)value(prefix_ + "fx.drive.type") == i, juce::dontSendNotification);
     if (kind_ == Echo && tape_) {
         const bool sync = value("fx.delay.sync") > 0.5f;
         mode_.setSelectedId((int)value("fx.delay.mode") + 1, juce::dontSendNotification);
@@ -230,13 +251,18 @@ void FxModuleView::resized() {
         mode_.setBounds(head.removeFromRight(98));
     }
     r.removeFromTop(6);
-    if (kind_ == Drive || kind_ == Chorus) {
+    if (kind_ == Chorus) {
         plot_ = {};
         controls_ = r;
     } else {
-        const int bottom = kind_ == Eq ? 112 : kind_ == Ott ? 106 : 92;
+        const int bottom = kind_ == Eq ? 112 : kind_ == Ott || kind_ == Comp ? 106 : kind_ == Drive ? 98 : 92;
         plot_ = r.removeFromTop(juce::jmax(72, r.getHeight() - bottom));
         readouts_ = r.removeFromTop(kind_ == Eq ? 28 : 24);
+        if (kind_ == Drive) {
+            auto types = readouts_.reduced(0, 2);
+            const int width = types.getWidth() / 3;
+            for (auto& button : driveTypes_) button.setBounds(types.removeFromLeft(width));
+        }
         if (kind_ == Eq) {
             auto tools = readouts_.reduced(0, 3);
             bandOn_.setBounds(tools.removeFromLeft(75));
@@ -248,8 +274,6 @@ void FxModuleView::resized() {
         footer_ = r;
     }
     auto controls = controls_;
-    if (kind_ == Comp)
-        controls = controls.removeFromLeft(78);
     if (kind_ == Reverb)
         controls = controls.withTrimmedRight(controls.getWidth() / 3);
     const int n = knobs_.size();
@@ -268,7 +292,9 @@ void FxModuleView::paint(juce::Graphics &g) {
     if (kind_ == Ott)
         caption = power_.isOn() ? juce::String::fromUTF8("3 BAND         LEVEL / ± GAIN") : "BYPASS";
     if (kind_ == Comp)
-        caption = power_.isOn() ? juce::String::fromUTF8("4:1 · SOFT KNEE        IN / OUT") : "BYPASS";
+        caption = power_.isOn() ? juce::String(value(prefix_ + "fx.comp.ratio"), 1) + juce::String::fromUTF8(":1 · SOFT KNEE") : "BYPASS";
+    if (kind_ == Drive)
+        caption = power_.isOn() ? "4x SATURATION" : "BYPASS";
     if (kind_ == Reverb)
         caption = prefix_.isNotEmpty() ? (power_.isOn() ? "PAD SEND" : "SEND OFF")
                   : power_.isOn()      ? "STEREO"
@@ -285,6 +311,8 @@ void FxModuleView::paint(juce::Graphics &g) {
             drawEq(g, (float)plot_.getWidth(), (float)plot_.getHeight());
         if (kind_ == Ott || kind_ == Comp)
             drawDynamics(g, (float)plot_.getWidth(), (float)plot_.getHeight());
+        if (kind_ == Drive)
+            drawDrive(g, (float)plot_.getWidth(), (float)plot_.getHeight());
         if (kind_ == Echo)
             drawEcho(g, (float)plot_.getWidth(), (float)plot_.getHeight());
         if (kind_ == Reverb)
@@ -318,13 +346,9 @@ void FxModuleView::paint(juce::Graphics &g) {
                        .withWidth(readouts_.getWidth() / readings.size()),
                    juce::Justification::centred);
     if (kind_ == Comp) {
-        auto note = controls_.withTrimmedLeft(90);
         g.setColour(col::acN);
-        g.drawText("AUTO GAIN", note.removeFromTop(20), juce::Justification::centredLeft);
-        g.drawText(juce::String::fromUTF8("3 ms ATTACK · 250 ms RELEASE"), note.removeFromTop(18),
-                   juce::Justification::centredLeft);
-        g.drawText(juce::String::fromUTF8("GR BEFORE AUTO · ~3 s HISTORY"), note,
-                   juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("AUTO GAIN · GR BEFORE AUTO · ~3 s HISTORY"), footer_,
+                   juce::Justification::centred);
     }
     if (kind_ == Ott) {
         g.setColour(col::acN);
@@ -538,6 +562,42 @@ void FxModuleView::drawReverb(juce::Graphics &g, float w, float h) {
     text(g, "L", 16, h - 8);
     text(g, "NOW", center, h - 8, col::acN, juce::Justification::centred);
     text(g, "R", w - 16, h - 8, col::acN, juce::Justification::right);
+}
+
+void FxModuleView::drawDrive(juce::Graphics& g, float w, float h) {
+    const float left = 22, right = w - 14, middle = h * .38f, scale = h * .22f;
+    const bool on = power_.isOn();
+    const double amount = value(prefix_ + "fx.drive.amt"), pre = 1 + amount * 2, k = 1 + amount * 12;
+    const double mix = value(prefix_ + "fx.drive.mix"), angle = mix * juce::MathConstants<double>::halfPi;
+    const double tone = on ? value(prefix_ + "fx.drive.tone") : 0;
+    fable::DriveColor shape;
+    shape.setParams(value(prefix_ + "fx.drive.type"), 0); shape.reset();
+    text(g, "TRANSFER / MIX", left, 14);
+    line(g, left, middle, right, middle);
+    line(g, (left + right) / 2, middle - scale, (left + right) / 2, middle + scale);
+    line(g, left, middle + scale, right, middle - scale, .25f);
+    juce::Path transfer, response;
+    const double sr = juce::jmax(8000.0, data_.sampleRate), pole = std::exp(-2 * juce::MathConstants<double>::pi * 1000 / sr);
+    const float toneY = h * .83f;
+    text(g, "WET TONE", left, h * .7f);
+    line(g, left, toneY, right, toneY);
+    for (int i = 0; i <= 160; ++i) {
+        const float x = left + (right - left) * (float)i / 160;
+        const double input = i / 80.0 - 1;
+        const double output = on ? std::cos(angle) * input + std::sin(angle) * shape.shape(input * pre, k, 1 / (pre * std::tanh(k))) : input;
+        const float y = middle - (float)output * scale;
+        const double freq = 100 * std::pow(100.0, i / 160.0);
+        const auto z = std::polar(1.0, -2 * juce::MathConstants<double>::pi * freq / sr);
+        const double gain = tone * (tone < 0 ? .5 : 1);
+        const double dbGain = 20 * std::log10(std::abs(1.0 + gain * (1.0 - (1 - pole) / (1.0 - pole * z))));
+        const float ty = toneY - (float)dbGain * h * .012f;
+        if (i) { transfer.lineTo(x, y); response.lineTo(x, ty); }
+        else { transfer.startNewSubPath(x, y); response.startNewSubPath(x, ty); }
+    }
+    stroke(g, transfer, col::text, 1.5f); stroke(g, response, col::acN, 1.2f);
+    text(g, "100 Hz", left, h - 5);
+    text(g, "1k", (left + right) / 2, h - 5, col::acN, juce::Justification::centred);
+    text(g, "10k", right, h - 5, col::acN, juce::Justification::right);
 }
 
 void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
@@ -775,12 +835,11 @@ void FxChain::resized() {
         place(FxModuleView::Ott, top.removeFromLeft(third));
         top.removeFromLeft(gap);
         place(FxModuleView::Comp, top);
-        auto utility = bottom.removeFromLeft(210);
+        place(FxModuleView::Drive, bottom.removeFromLeft(juce::jmax(220, bottom.getWidth() / 4)));
         bottom.removeFromLeft(gap);
-        place(FxModuleView::Drive, utility.removeFromTop((utility.getHeight() - gap) / 2));
-        utility.removeFromTop(gap);
-        place(FxModuleView::Chorus, utility);
     }
+    place(FxModuleView::Chorus, bottom.removeFromLeft(180));
+    bottom.removeFromLeft(gap);
     place(FxModuleView::Echo, bottom.removeFromLeft((bottom.getWidth() - gap) * (tape_ ? 58 : 50) / 100));
     bottom.removeFromLeft(gap);
     place(FxModuleView::Reverb, bottom);

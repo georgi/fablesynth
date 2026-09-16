@@ -152,6 +152,13 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({FXDELAY_SYNC,  "fx.delay.sync",  "SYNC",     0, 1, 0, Curve::Int, Kind::Bool, nullptr});
     v.push_back({FXDELAY_DIV,   "fx.delay.div",   "DIV",      0, 5, 3, Curve::Int, Kind::Enum, &ECHO_DIVS});
 
+    static const std::vector<std::string> driveTypes { "SOFT", "TAPE", "HARD" };
+    v.push_back({FXCOMP_ATT, "fx.comp.att", "ATTACK", 0.0001f, 0.1f, 0.003f, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXCOMP_REL, "fx.comp.rel", "RELEASE", 0.01f, 2, 0.25f, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXCOMP_RATIO, "fx.comp.ratio", "RATIO", 1, 20, 4, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXDRIVE_TONE, "fx.drive.tone", "TONE", -1, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXDRIVE_TYPE, "fx.drive.type", "TYPE", 0, 2, 0, Curve::Int, Kind::Enum, &driveTypes});
+
     std::array<ParamInfo, NUM_PARAMS> out{};
     for (auto& info : v) out[(size_t)info.id] = info; // place by id so [Pid] indexing is exact
     return out;

@@ -176,7 +176,7 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 94, "94 per-pad fields including four-band EQ");
+    check(DPAD_NFIELDS == 99, "99 per-pad fields including dynamics and drive controls");
     check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3, "per-pad params plus 3 globals");
     const auto& info = drumParamInfo();
     check((int)info.size() == DR_NUM_PARAMS, "info covers all params");

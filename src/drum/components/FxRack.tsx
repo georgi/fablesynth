@@ -4,6 +4,7 @@ import { OUT_NAMES, pad } from '../params';
 import { DrumKnob } from './DrumKnob';
 import { OutPanel } from './OutPanel';
 import { EqPanel } from '../../components/panels/EqPanel';
+import { DrivePanel } from '../../components/panels/DrivePanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
 import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
 import { ReverbPanel } from '../../components/panels/ReverbPanel';
@@ -80,7 +81,7 @@ export function FxRack() {
         <EqPanel key={selectedPad} adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />
         <DynamicsPanel kind="comp" adapter={adapter} />
-        <FxGroup padIndex={selectedPad} effect="drive" title="DRIVE" knobs={['fx.drive.amt', 'fx.drive.mix']} />
+        <DrivePanel adapter={adapter} />
         <FxGroup padIndex={selectedPad} effect="chorus" title="CHORUS" knobs={['fx.chorus.rate', 'fx.chorus.depth', 'fx.chorus.mix']} />
         <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
         <ReverbPanel adapter={{ ...adapter, context: OUT_NAMES[bus] }} />

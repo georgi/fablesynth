@@ -25,6 +25,13 @@ inline juce::String fmtPan(float v) {
 
 inline juce::String formatParam(const juce::String& pid, float v) {
     auto ends = [&](const char* s) { return pid.endsWith(s); };
+    if (ends("fx.comp.thr")) return juce::String(v, 0) + " dB";
+    if (ends("fx.drive.amt") || ends("fx.drive.mix")) return fmtPct(v);
+    if (ends("fx.comp.att") || ends("fx.comp.rel"))
+        return v < 0.01f ? juce::String(v * 1000, 1) + " ms" : fmtSec(v);
+    if (ends("fx.comp.ratio")) return juce::String(v, 1) + ":1";
+    if (ends("fx.drive.tone")) return std::abs(v) < 0.0001f ? "NEUTRAL"
+        : fmtPct(std::abs(v)) + (v < 0 ? " DARK" : " BRIGHT");
     // DR-1 per-pad params ("pad<i>.…", src/drum/params.ts fmt column). No WT-1
     // id starts with "pad", so this block never changes WT-1 read-outs.
     if (pid.startsWith("pad")) {

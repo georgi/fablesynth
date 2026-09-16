@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { DrivePanel } from './DrivePanel';
 import { DynamicsPanel } from './DynamicsPanel';
 import { TapeEchoPanel } from './TapeEchoPanel';
 import { ReverbPanel } from './ReverbPanel';
@@ -16,11 +17,14 @@ describe('shared instrument FX panels', () => {
     };
     const html = renderToStaticMarkup(<>
       <DynamicsPanel kind="ott" adapter={adapter} /><DynamicsPanel kind="comp" adapter={adapter} />
+      <DrivePanel adapter={adapter} />
       <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY' }} />
       <ReverbPanel adapter={{ ...adapter, context: prefix ? 'AUX 2' : undefined }} />
     </>);
-    expect(controls).toEqual(['ott.depth', 'ott.time', 'ott.up', 'ott.down', 'comp.thr',
+    expect(controls).toEqual(['ott.depth', 'ott.time', 'ott.up', 'ott.down', 'comp.thr', 'comp.att', 'comp.rel', 'comp.ratio', 'drive.amt', 'drive.tone', 'drive.mix',
       'delay.time', 'delay.fb', 'delay.mix', 'reverb.size', 'reverb.mix'].map(id => `${prefix}fx.${id}`));
+    expect(html).toContain('Saturation type');
+    expect(html).toContain('TRANSFER / MIX');
     expect(html).not.toContain('TAPE ECHO');
     expect(html).not.toContain('DRIFT');
     if (prefix) expect(html).toContain('SHARED BUS RETURN');

@@ -124,7 +124,7 @@ int main() {
     printf("\n== BL-1 params (BassParams vs src/bass/params.ts) ==\n");
     {
         const auto& info = bassParamInfo();
-        check((int)info.size() == BL_NUM_PARAMS, "descriptor count == BL_NUM_PARAMS (73)",
+        check((int)info.size() == BL_NUM_PARAMS, "descriptor count == BL_NUM_PARAMS",
               num((double)info.size()));
         bool ordered = true;
         for (int i = 0; i < (int)info.size(); i++) if (info[(size_t)i].id != i) ordered = false;

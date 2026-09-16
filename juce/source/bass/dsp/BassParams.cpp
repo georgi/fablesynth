@@ -74,7 +74,8 @@ std::vector<ParamInfo> build() {
     v.push_back({BL_FXOTT_DOWN,    "fx.ott.down",    "DOWNWARD",0, 2,      1,     Curve::Lin, Kind::Float, nullptr});
     // WT-1 ranges, shapes and neutral defaults.
     for (const auto& source : paramInfo()) {
-        if (source.pid.rfind("fx.eq.", 0) != 0) continue;
+        if (source.pid.rfind("fx.eq.", 0) != 0 &&
+            source.pid != "fx.comp.att" && source.pid != "fx.comp.rel" && source.pid != "fx.comp.ratio" && source.pid != "fx.drive.tone" && source.pid != "fx.drive.type") continue;
         auto d = source;
         d.id = (int)v.size();
         v.push_back(d);

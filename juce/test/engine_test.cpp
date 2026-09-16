@@ -186,6 +186,59 @@ int main() {
     const double sr = 48000;
     auto gen = generateTables();
 
+    printf("\n== Dynamics and drive controls ==\n");
+    for (double rate : {44100.0, 48000.0, 96000.0}) {
+        auto runComp = [rate](WebCompressor& comp, double seconds, double level) {
+            double l, r;
+            for (int i = 0; i < rate * seconds; ++i) comp.processSample(level, level, l, r);
+            return comp.gain;
+        };
+        WebCompressor fast(rate), slow(rate), quick(rate), longRelease(rate), unity(rate);
+        fast.setParams(true, -24, 0.0001f, 0.25f, 8);
+        slow.setParams(true, -24, 0.1f, 0.25f, 8);
+        runComp(fast, 0.3, 0); runComp(slow, 0.3, 0);
+        check(runComp(fast, 0.01, 0.5) < runComp(slow, 0.01, 0.5) * 0.5, "compressor attack changes transient gain");
+        quick.setParams(true, -24, 0.003f, 0.01f, 4);
+        longRelease.setParams(true, -24, 0.003f, 2, 4);
+        runComp(quick, 0.4, 0.5); runComp(longRelease, 0.4, 0.5);
+        check(runComp(quick, 0.1, 0) > runComp(longRelease, 0.1, 0) * 2, "compressor release changes recovery");
+        unity.setParams(true, -24, 0.003f, 0.25f, 1);
+        check(std::abs(runComp(unity, 1, 0.5) - 1) < 1e-6, "1:1 ratio has no reduction");
+        double previous = 1;
+        for (float ratio : {2.0f, 4.0f, 20.0f}) {
+            WebCompressor comp(rate); comp.setParams(true, -24, 0.003f, 0.25f, ratio);
+            double g = runComp(comp, 1, 0.5);
+            check(g < previous, "higher ratio increases gain reduction"); previous = g;
+        }
+        DriveColor neutral; neutral.prepare(rate);
+        bool legacy = true;
+        for (int i = -100; i <= 100; ++i) {
+            double x = i / 100.0;
+            legacy &= neutral.shape(x, 7, 0.5) == std::tanh(x * 7) * 0.5;
+            legacy &= neutral.processTone(x) == x;
+        }
+        check(legacy, "default drive preserves soft curve and neutral tone");
+        for (int type = 0; type < 3; ++type) {
+            DriveColor color; color.prepare(rate); color.setParams((float)type, 0); color.reset();
+            bool bounded = true;
+            for (int i = -100; i <= 100; ++i) {
+                double x = i / 10.0, y = color.shape(x, 13, 0.4);
+                bounded &= std::isfinite(y) && std::abs(y) <= 0.4 && std::abs(y + color.shape(-x, 13, 0.4)) < 1e-12;
+            }
+            check(bounded, "saturation stays finite, bounded and symmetric");
+        }
+        auto energy = [rate](float tone) {
+            DriveColor color; color.prepare(rate); color.setParams(0, tone); color.reset();
+            double sum = 0;
+            for (int i = 0; i < rate; ++i) {
+                double y = color.processTone(std::sin(2 * M_PI * 10000 * i / rate));
+                if (i >= rate / 2) sum += y * y;
+            }
+            return sum;
+        };
+        check(energy(-1) < energy(0) * 0.4 && energy(1) > energy(0) * 3, "drive tone darkens and brightens high frequencies");
+    }
+
     printf("\n== 1. Wavetable generation ==\n");
     {
         bool ok = gen.size() == 6;

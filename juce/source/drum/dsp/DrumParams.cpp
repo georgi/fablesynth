@@ -122,7 +122,8 @@ void addPad(std::vector<ParamInfo>& v, int i) {
     v.push_back({b + DP_FXOTT_GAIN,     p + "fx.ott.gain",      "OUTPUT",    -48, 24,  0,      Curve::Lin, Kind::Float, nullptr});
     // WT-1 ranges, shapes and neutral defaults.
     for (const auto& source : paramInfo()) {
-        if (source.pid.rfind("fx.eq.", 0) != 0) continue;
+        if (source.pid.rfind("fx.eq.", 0) != 0 &&
+            source.pid != "fx.comp.att" && source.pid != "fx.comp.rel" && source.pid != "fx.comp.ratio" && source.pid != "fx.drive.tone" && source.pid != "fx.drive.type") continue;
         auto d = source;
         d.id = (int)v.size();
         d.pid = p + d.pid;

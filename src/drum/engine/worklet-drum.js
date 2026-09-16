@@ -521,6 +521,8 @@ class PadFx {
     // filters are left alone; they are resynced from the left the moment the
     // two channels differ. Halves the cost of the chain's dominant stage.
     this.monoRun = false;
+    this.driveColorL = new globalThis.FableDriveColor(sr);
+    this.driveColorR = new globalThis.FableDriveColor(sr);
     this.comp = new globalThis.FableCompressor(sr);
     this.eq = new globalThis.FableParametricEq(sr);
     this.ott = new globalThis.FableOttCompressor(sr);
@@ -550,6 +552,7 @@ class PadFx {
   }
 
   syncRight() {
+    this.driveColorR.copyShapeFrom(this.driveColorL);
     this.u1R.copyFrom(this.u1L); this.u2R.copyFrom(this.u2L);
     this.d2R.copyFrom(this.d2L); this.d1R.copyFrom(this.d1L);
     this.dryR.copyFrom(this.dryL);
@@ -565,7 +568,7 @@ class PadFx {
     this.chDl1.reset(); this.chDl2.reset();
     this.dlL.reset(); this.dlR.reset(); this.dlDamp.reset();
     this.chPhase = 0;
-    this.comp.reset();
+    this.driveColorL.reset(); this.driveColorR.reset(); this.comp.reset();
     this.ott.reset(); this.eq.reset();
     this.meterInput = 0; this.meterOtt = 0; this.meterCompIn = 0; this.meterCompOut = 0;
     this.meterEchoIn = 0; this.meterEchoL = 0; this.meterEchoR = 0;
@@ -573,6 +576,8 @@ class PadFx {
 
   setParams(pv, f) {
     this.eq.setParams(k => pv[f[fid(k)]]);
+    this.driveColorL.setParams(pv[f[fid('fx.drive.type')]], pv[f[fid('fx.drive.tone')]]);
+    this.driveColorR.setParams(pv[f[fid('fx.drive.type')]], pv[f[fid('fx.drive.tone')]]);
     const amt = pv[f[P_FXDRIVE_AMT]];
     if (amt !== this.driveAmt) {
       this.driveAmt = amt;
@@ -586,7 +591,7 @@ class PadFx {
     this.driveDry.target = mixGate(dOn, pv[f[P_FXDRIVE_MIX]], false);
 
     // Legacy makeup is retained in saved/native patches, not applied on web.
-    this.comp.setParams(pv[f[P_FXCOMP_ON]] > 0.5, pv[f[P_FXCOMP_THR]]);
+    this.comp.setParams(pv[f[P_FXCOMP_ON]] > 0.5, pv[f[P_FXCOMP_THR]], pv[f[fid('fx.comp.att')]], pv[f[fid('fx.comp.rel')]], pv[f[fid('fx.comp.ratio')]]);
     this.ott.setParams(pv[f[P_FXOTT_ON]] > 0.5, pv[f[P_FXOTT_DEPTH]],
       pv[f[P_FXOTT_TIME]], pv[f[P_FXOTT_UP]], pv[f[P_FXOTT_DOWN]]);
 
@@ -638,8 +643,9 @@ class PadFx {
   driveBlock(u1, u2, d2, d1, out, n) {
     u1.interpBlock(OS_IN, OS_X2, n);
     u2.interpBlock(OS_X2, OS_X4, 2 * n);
+    const color = u1 === this.u1L ? this.driveColorL : this.driveColorR;
     const K = this.driveK, norm = this.driveNorm, m = 4 * n;
-    for (let i = 0; i < m; i++) OS_X4[i] = Math.tanh(OS_X4[i] * K) * norm;
+    for (let i = 0; i < m; i++) OS_X4[i] = color.shape(OS_X4[i], K, norm);
     d2.decimBlock(OS_X4, OS_Y2, 2 * n);
     d1.decimBlock(OS_Y2, out, n);
   }
@@ -670,6 +676,7 @@ class PadFx {
     const delayGate = this.delayOff && this.dlWet.target === 0 && Math.abs(this.dlWet.cur) < 1e-6;
     if (driveGate && !this.driveGated) {
       this.driveWet.snap(0); this.driveDry.snap(1);
+      this.driveColorL.reset(); this.driveColorR.reset();
       this.u1L.reset(); this.u2L.reset(); this.d2L.reset(); this.d1L.reset();
       this.u1R.reset(); this.u2R.reset(); this.d2R.reset(); this.d1R.reset();
     }
@@ -718,9 +725,9 @@ class PadFx {
       }
       for (let i = 0; i < n; i++) {
         const wet = this.driveWet.next(), dry = this.driveDry.next();
-        const dl = dry * dbL[i] + wet * this.wetL[i];
+        const dl = dry * dbL[i] + wet * this.driveColorL.processTone(this.wetL[i]);
         L[i] = dl;
-        R[i] = mono ? dl : dry * dbR[i] + wet * this.wetR[i];
+        R[i] = dry * (mono ? dbL[i] : dbR[i]) + wet * this.driveColorR.processTone(mono ? this.wetL[i] : this.wetR[i]);
       }
     }
 
@@ -862,6 +869,7 @@ const FIELDS = [
   'fx.reverb.on', 'fx.reverb.size', 'fx.reverb.mix',
   'fx.ott.on', 'fx.ott.depth', 'fx.ott.time', 'fx.ott.up', 'fx.ott.down', 'fx.ott.gain',
   ...globalThis.FableEqFields,
+  'fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type',
 ];
 const NF = FIELDS.length;
 const fid = (name) => FIELDS.indexOf(name);

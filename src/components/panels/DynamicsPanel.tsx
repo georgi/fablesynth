@@ -16,14 +16,14 @@ export function DynamicsPanel({ kind, adapter }: { kind: 'ott' | 'comp'; adapter
     <div className="panel-head">
       {power(fxId(prefix, `fx.${kind}.on`))}
       <h2>{kind === 'ott' ? 'OTT' : 'COMP'}</h2>
-      <span className="dynamics-caption">{on ? kind === 'ott' ? '3 BAND' : '4:1 · SOFT KNEE' : 'BYPASS'}</span>
+      <span className="dynamics-caption">{on ? kind === 'ott' ? '3 BAND' : `${(params[fxId(prefix, 'fx.comp.ratio')] ?? 4).toFixed(1)}:1 · SOFT KNEE` : 'BYPASS'}</span>
       <span className="dynamics-legend">{kind === 'ott' ? 'LEVEL / ± GAIN' : <><i /> IN <i className="legend-out" /> OUT</>}</span>
     </div>
     <DynamicsView kind={kind} telemetryEngine={adapter?.engine ?? wtEngine} telemetryParams={params} prefix={prefix} />
     <div className="dynamics-controls">
-      {(kind === 'ott' ? ['depth', 'time', 'up', 'down'] : ['thr']).map(k => <span key={k}>{knob(fxId(prefix, `fx.${kind}.${k}`), k)}</span>)}
-      {kind === 'comp' && <div className="dynamics-note">AUTO GAIN<span>3 ms ATTACK · 250 ms RELEASE</span><span>GR BEFORE AUTO · ~3 s HISTORY</span></div>}
+      {(kind === 'ott' ? ['depth', 'time', 'up', 'down'] : ['thr', 'att', 'rel', 'ratio']).map(k => <span key={k}>{knob(fxId(prefix, `fx.${kind}.${k}`), k)}</span>)}
     </div>
+    {kind === 'comp' && <div className="dynamics-footnote">AUTO GAIN · GR BEFORE AUTO · ~3 s HISTORY</div>}
     {kind === 'ott' && <div className="dynamics-footnote">120 Hz / 2.5 kHz · WET GAIN BEFORE AUTO · ±24 dB VIEW</div>}
   </section>;
 }

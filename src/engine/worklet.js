@@ -149,6 +149,7 @@ PARAM_IDS.push('fx.eq.lfreq', 'fx.eq.m2freq', 'fx.eq.hfreq', 'fx.eq.mid2');
 for (const band of ['l', 'm', 'm2', 'h']) PARAM_IDS.push(`fx.eq.${band}q`, `fx.eq.${band}type`, `fx.eq.${band}on`);
 PARAM_IDS.push('fx.delay.tone', 'fx.delay.sat', 'fx.delay.wow', 'fx.delay.flutter', 'fx.delay.width', 'fx.delay.mode', 'fx.delay.sync', 'fx.delay.div');
 
+PARAM_IDS.push('fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type');
 const NUM_PARAMS = PARAM_IDS.length;
 const PID = Object.create(null);
 for (let i = 0; i < NUM_PARAMS; i++) PID[PARAM_IDS[i]] = i;
@@ -871,6 +872,8 @@ class Fx {
     this.dryL = new DelayLine(DRIVE_LATENCY + 4); this.dryR = new DelayLine(DRIVE_LATENCY + 4);
     this.driveSilenced = false;
     this.monoRun = false;
+    this.driveColorL = new globalThis.FableDriveColor(sampleRate);
+    this.driveColorR = new globalThis.FableDriveColor(sampleRate);
     this.comp = new globalThis.FableCompressor(sampleRate);
     this.ott = new globalThis.FableOttCompressor(sampleRate);
     // Opt-in metering: no sample taps or messages for hidden SQ-4 devices.
@@ -946,7 +949,7 @@ class Fx {
     this.up1L.reset(); this.up2L.reset(); this.dn2L.reset(); this.dn1L.reset();
     this.up1R.reset(); this.up2R.reset(); this.dn2R.reset(); this.dn1R.reset();
     for (const guard of Object.values(this.headroom)) guard.reset();
-    this.delayFeedbackGuard.reset(); this.comp.reset(); this.ott.reset();
+    this.delayFeedbackGuard.reset(); this.driveColorL.reset(); this.driveColorR.reset(); this.comp.reset(); this.ott.reset();
     this.meterEnergy.fill(0); this.meterSamples = 0; this.meterReduction = 0;
     this.lim.reset();
     this.chPhase = 0;
@@ -1017,7 +1020,9 @@ class Fx {
     this.verbDry.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9, false);
 
     // fx.comp.gain remains serialized for native compatibility only.
-    this.comp.setParams(p[FXCOMP_ON] > 0.5, p[FXCOMP_THR]);
+    this.driveColorL.setParams(p[PID['fx.drive.type']], p[PID['fx.drive.tone']]);
+    this.driveColorR.setParams(p[PID['fx.drive.type']], p[PID['fx.drive.tone']]);
+    this.comp.setParams(p[FXCOMP_ON] > 0.5, p[FXCOMP_THR], p[PID['fx.comp.att']], p[PID['fx.comp.rel']], p[PID['fx.comp.ratio']]);
     this.ott.setParams(p[FXOTT_ON] > 0.5, p[FXOTT_DEPTH], p[FXOTT_TIME], p[FXOTT_UP], p[FXOTT_DOWN]);
 
     const vol = p[MASTER_VOLUME];
@@ -1034,8 +1039,9 @@ class Fx {
     // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth
     // nonlinearity). The old web path was a 513-point WaveShaper table read at
     // 2x with linear interpolation between entries.
+    const color = u1 === this.up1L ? this.driveColorL : this.driveColorR;
     const K = this.driveK, norm = this.driveNorm, m = 4 * n;
-    for (let i = 0; i < m; i++) OS_X4[i] = Math.tanh(OS_X4[i] * K) * norm;
+    for (let i = 0; i < m; i++) OS_X4[i] = color.shape(OS_X4[i], K, norm);
     d2.decimBlock(OS_X4, OS_Y2, 2 * n);
     d1.decimBlock(OS_Y2, out, n);
   }
@@ -1044,6 +1050,7 @@ class Fx {
   // the right channel while its input is identical to the left's, so had those
   // filters run, their state would be exactly this.
   syncRight() {
+    this.driveColorR.copyShapeFrom(this.driveColorL);
     this.up1R.copyFrom(this.up1L); this.up2R.copyFrom(this.up2L);
     this.dn2R.copyFrom(this.dn2L); this.dn1R.copyFrom(this.dn1L);
     this.dryR.copyFrom(this.dryL);
@@ -1069,6 +1076,7 @@ class Fx {
       // for MIX 0 alike, so snapping is snapping to the target and the skipped
       // path is exactly `1 * dry`, not `(1 - eps) * dry`.
       this.driveWet.snap(0); this.driveDry.snap(1);
+      this.driveColorL.reset(); this.driveColorR.reset();
       this.up1L.reset(); this.up2L.reset(); this.dn2L.reset(); this.dn1L.reset();
       this.up1R.reset(); this.up2R.reset(); this.dn2R.reset(); this.dn1R.reset();
     }
@@ -1152,9 +1160,9 @@ class Fx {
       }
       for (let i = 0; i < n; i++) {
         const wet = this.driveWet.next(), dry = this.driveDry.next();
-        const dl = dry * FX_DRYL[i] + wet * FX_WETL[i];
+        const dl = dry * FX_DRYL[i] + wet * this.driveColorL.processTone(FX_WETL[i]);
         FX_EQL[i] = dl;
-        FX_EQR[i] = mono ? dl : dry * FX_DRYR[i] + wet * FX_WETR[i];
+        FX_EQR[i] = dry * (mono ? FX_DRYL[i] : FX_DRYR[i]) + wet * this.driveColorR.processTone(mono ? FX_WETL[i] : FX_WETR[i]);
       }
     }
     this.headroom.drive.process(FX_EQL, FX_EQR, n);

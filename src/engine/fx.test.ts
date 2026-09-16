@@ -188,7 +188,7 @@ describe('drive mono fast path', () => {
     expect(worst).toBe(0);
   });
 
-  it('resyncs the right channel to exactly what a running filter would hold', () => {
+  it.each([[0, 0], [1, -1], [2, 1]])('resyncs the right channel with type %i and tone %i', (type, tone) => {
     // Render the same patch twice, mono for 60 blocks and then panned hard one
     // way or the other. In the +0.8 run the right-hand drive filters idled
     // through the mono stretch and are resynced from the left; in the -0.8 run
@@ -196,7 +196,7 @@ describe('drive mono fast path', () => {
     // the chain is off, so the two must agree sample for sample — which is the
     // resync invariant stated directly rather than inferred from a step size.
     const run = (pan: number) => {
-      const h = bootWt(MONO_DRIVEN);
+      const h = bootWt({ ...MONO_DRIVEN, 'fx.drive.type': type, 'fx.drive.tone': tone });
       h.send({ t: 'on', n: 55, v: 0.95 });
       h.render(60);
       h.send({ t: 'p', k: 'oscA.pan', v: pan });

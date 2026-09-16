@@ -24,7 +24,7 @@ FableAudioProcessor::FableAudioProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     for (const auto& d : paramInfo()) {
-        const int version = d.id >= FXOTT_ON ? 2 : 1;
+        const int version = d.id >= FXCOMP_ATT ? 3 : d.id >= FXOTT_ON ? 2 : 1;
         juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique: repeated blocks share short labels
         // (both LFOs are "SHAPE"/"RATE", both oscs "POS", etc.). A DAW that keys

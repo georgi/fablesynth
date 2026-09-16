@@ -5,6 +5,6 @@ import { defineConfig } from 'vitest/config';
 // never picks up JUCE's vendored example tests under juce/build/_deps.
 export default defineConfig({
   test: {
-    include: ['src/**/*.{test,spec}.ts'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 });

@@ -1,6 +1,7 @@
 import { bassEngine, useBassStore } from '../store';
 import { BassKnob } from './BassKnob';
 import { EqPanel } from '../../components/panels/EqPanel';
+import { DrivePanel } from '../../components/panels/DrivePanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
 import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
 import { ReverbPanel } from '../../components/panels/ReverbPanel';
@@ -61,7 +62,7 @@ export function BassFxRack() {
         <EqPanel adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />
         <DynamicsPanel kind="comp" adapter={adapter} />
-        <FxGroup effect="drive" title="DRIVE" note="POST-ACCENT" knobs={['fx.drive.amt', 'fx.drive.mix']} />
+        <DrivePanel adapter={adapter} />
         <FxGroup effect="chorus" title="CHORUS" knobs={['fx.chorus.rate', 'fx.chorus.depth', 'fx.chorus.mix']} />
         <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
         <ReverbPanel adapter={adapter} />

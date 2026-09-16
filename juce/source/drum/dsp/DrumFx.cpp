@@ -23,6 +23,7 @@ void DrumFx::prepare(double sampleRate) {
     meter_.prepare(sampleRate);
     eq_.prepare(sampleRate);
     sr_ = sampleRate;
+    driveColorL_.prepare(sr_); driveColorR_.prepare(sr_);
     double scale = sr_ / 44100.0;
 
     for (size_t i = 0; i < 8; i++) {
@@ -77,7 +78,7 @@ void DrumFx::reset() {
     dlDamp_.reset();
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
-    ott_.reset(); comp_.reset();
+    ott_.reset(); driveColorL_.reset(); driveColorR_.reset(); comp_.reset();
     headroomInput_.reset(); headroomOtt_.reset(); headroomComp_.reset(); headroomDrive_.reset();
     headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset(); delayFeedbackGuard_.reset();
     idle_ = false; idleSilent_ = 0;
@@ -112,7 +113,9 @@ void DrumFx::setParams(const DrumParamArray& p, int pad) {
     // Web dynamics. The legacy COMP/OTT gain fields are retained in the
     // parameter schema for portable state but automatic gain is used here.
     compOff_ = p[(size_t)(b + DP_FXCOMP_ON)] <= 0.5f;
-    comp_.setParams(!compOff_, p[(size_t)(b + DP_FXCOMP_THR)]);
+    driveColorL_.setParams(p[(size_t)(b + DP_FXDRIVE_TYPE)], p[(size_t)(b + DP_FXDRIVE_TONE)]);
+    driveColorR_.setParams(p[(size_t)(b + DP_FXDRIVE_TYPE)], p[(size_t)(b + DP_FXDRIVE_TONE)]);
+    comp_.setParams(!compOff_, p[(size_t)(b + DP_FXCOMP_THR)], p[(size_t)(b + DP_FXCOMP_ATT)], p[(size_t)(b + DP_FXCOMP_REL)], p[(size_t)(b + DP_FXCOMP_RATIO)]);
     ott_.setParams(p[(size_t)(b + DP_FXOTT_ON)] > 0.5f,
                    p[(size_t)(b + DP_FXOTT_DEPTH)], p[(size_t)(b + DP_FXOTT_TIME)],
                    p[(size_t)(b + DP_FXOTT_UP)], p[(size_t)(b + DP_FXOTT_DOWN)]);
@@ -149,11 +152,6 @@ void DrumFx::setParams(const DrumParamArray& p, int pad) {
     verbDry_.target = mixGate(rOn, p[(size_t)(b + DP_FXREVERB_MIX)] * 0.9f, false);
 }
 
-float DrumFx::shape(float x) const {
-    // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth nonlinearity)
-    return std::tanh(x * driveK_) * driveNorm_;
-}
-
 // One channel through the 4x oversampled shaper. Finding J4: the four
 // half-bands run through the polyphase entry points instead of the direct
 // form. interpolate() produces both upsampled samples from one base sample
@@ -162,14 +160,17 @@ float DrumFx::shape(float x) const {
 // without computing the discarded one — 86 MACs per base sample instead of
 // 324, for a bit-identical result (Fx.h documents the verification). Each
 // filter here is driven in exactly one mode, which the API requires.
-float DrumFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x) {
+float DrumFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x, DriveColor& color) {
+    auto shape = [&](float v) { return (float)color.shape(v, driveK_, driveNorm_); };
     double a0, a1;
     u1.interpolate(x, a0, a1);
     double b0, b1;
     u2.interpolate(a0, b0, b1);
-    const double c0 = d2.decimate((double)shape((float)b0), (double)shape((float)b1));
+    const double s0a = shape((float)b0), s0b = shape((float)b1);
+    const double c0 = d2.decimate(s0a, s0b);
     u2.interpolate(a1, b0, b1);
-    const double c1 = d2.decimate((double)shape((float)b0), (double)shape((float)b1));
+    const double s1a = shape((float)b0), s1b = shape((float)b1);
+    const double c1 = d2.decimate(s1a, s1b);
     return (float)d1.decimate(c0, c1);        // keeps the base-rate phase
 }
 
@@ -203,6 +204,7 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
 
     if (driveGate && !driveGated_) {
         driveWet_.snap(0); driveDry_.snap(1);
+        driveColorL_.reset(); driveColorR_.reset();
         up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
         up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     }
@@ -255,10 +257,10 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
         float dlyR = dryR_.read((double)(kDriveLatency + 1));
         if (!driveGated_) {
             float wet = driveWet_.next(), dry = driveDry_.next();
-            float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l);
-            float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r);
-            l = dry * dlyL + wet * dl;
-            r = dry * dlyR + wet * dr;
+            float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l, driveColorL_);
+            float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r, driveColorR_);
+            l = dry * dlyL + wet * driveColorL_.processTone(dl);
+            r = dry * dlyR + wet * driveColorR_.processTone(dr);
         } else {
             l = dlyL; r = dlyR;
         }

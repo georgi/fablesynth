@@ -58,7 +58,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
 
     auto make = [](const ParamInfo& d) -> std::unique_ptr<juce::RangedAudioParameter> {
         const int field = d.id % DPAD_NFIELDS;
-        const int version = field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
+        const int version = field >= DP_FXCOMP_ATT ? 4 : field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
         juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique (all 16 pads share short labels);
         // derive it from the id like WT-1 does.
@@ -94,9 +94,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     for (int pad = 0; pad < DR_NPADS; ++pad) {
         auto eq = std::make_unique<juce::AudioProcessorParameterGroup>(
             "padEq" + juce::String(pad), "PAD " + juce::String(pad + 1) + " EQ", " | ");
-        for (int f = DP_FXEQ_ON; f < DPAD_NFIELDS; ++f)
+        for (int f = DP_FXEQ_ON; f < DP_FXCOMP_ATT; ++f)
             eq->addChild(make(info[(size_t)dpid(pad, f)]));
         layout.add(std::move(eq));
+    }
+    // Append new controls after every established pad EQ automation position.
+    for (int pad = 0; pad < DR_NPADS; ++pad) {
+        auto color = std::make_unique<juce::AudioProcessorParameterGroup>(
+            "padColor" + juce::String(pad), "PAD " + juce::String(pad + 1) + " DYNAMICS / DRIVE", " | ");
+        for (int f = DP_FXCOMP_ATT; f < DPAD_NFIELDS; ++f)
+            color->addChild(make(info[(size_t)dpid(pad, f)]));
+        layout.add(std::move(color));
     }
     return layout;
 }

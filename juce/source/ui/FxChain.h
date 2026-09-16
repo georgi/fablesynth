@@ -32,6 +32,7 @@ class FxModuleView : public juce::Component, private juce::Timer {
     void finishDrag();
     void drawEq(juce::Graphics &, float width, float height);
     void drawDynamics(juce::Graphics &, float w, float h);
+    void drawDrive(juce::Graphics &, float w, float h);
     void drawEcho(juce::Graphics &, float w, float h);
     void drawReverb(juce::Graphics &, float w, float h);
     int hitBand(juce::Point<float>) const;
@@ -46,6 +47,7 @@ class FxModuleView : public juce::Component, private juce::Timer {
     PowerButton power_;
     juce::OwnedArray<Knob> knobs_;
     std::array<juce::TextButton, 4> bands_;
+    std::array<juce::TextButton, 3> driveTypes_;
     juce::TextButton bandOn_{"BAND 2"}, reset_{"RESET"}, sync_{"SYNC"};
     juce::ComboBox shape_, mode_, division_;
     juce::Rectangle<int> plot_, readouts_, controls_, footer_, caption_;

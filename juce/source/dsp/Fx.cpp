@@ -109,11 +109,12 @@ void PeakGuard::process(float* L, float* R, int n) {
     }
 }
 
-static inline double webCompGainDb(double xDb, double thresholdDb) {
+static inline double webCompGainDb(double xDb, double thresholdDb, double ratio) {
     const double over = xDb - thresholdDb;
     if (over <= 0.0) return 0.0;
-    if (over < 9.0) return -0.75 * over * over / 18.0;
-    return -0.75 * (over - 4.5);
+    const double slope = 1.0 / ratio - 1.0;
+    if (over < 9.0) return slope * over * over / 18.0;
+    return slope * (over - 4.5);
 }
 
 void WebCompressor::prepare(double sampleRate) {
@@ -124,10 +125,14 @@ void WebCompressor::prepare(double sampleRate) {
     autoGain.prepare(sr_);
     wetTarget = false;
     threshold_ = thresholdTarget_ = -16.0;
+    ratio_ = ratioTarget_ = 4;
     reset();
 }
 
-void WebCompressor::setParams(bool on, float thresholdDb) {
+void WebCompressor::setParams(bool on, float thresholdDb, float attack, float release, float ratio) {
+    attack_ = 1.0 - std::exp(-1.0 / (std::clamp((double)attack, 0.0001, 0.1) * sr_));
+    release_ = 1.0 - std::exp(-1.0 / (std::clamp((double)release, 0.01, 2.0) * sr_));
+    ratioTarget_ = std::clamp((double)ratio, 1.0, 20.0);
     wetTarget = on;
     thresholdTarget_ = std::max(-40.0, std::min(0.0, (double)thresholdDb));
 }
@@ -145,8 +150,9 @@ void WebCompressor::processSample(double inL, double inR, double& outL, double& 
     const double peak = std::max(std::abs(inL), std::abs(inR));
     env += (peak - env) * (peak > env ? attack_ : release_);
     threshold_ += (thresholdTarget_ - threshold_) * smooth_;
+    ratio_ += (ratioTarget_ - ratio_) * smooth_;
     if (tick_ == 0) {
-        const double db = webCompGainDb(20.0 * std::log10(std::max(1.0e-9, env)), threshold_);
+        const double db = webCompGainDb(20.0 * std::log10(std::max(1.0e-9, env)), threshold_, ratio_);
         const double targetGain = std::pow(10.0, db / 20.0);
         gainStep_ = (targetGain - gain) / 32.0;
     }
@@ -338,6 +344,7 @@ static const int STEREO_SPREAD  = 23;
 void Fx::prepare(double sampleRate) {
     meter_.prepare(sampleRate);
     sr_ = sampleRate;
+    driveColorL_.prepare(sr_); driveColorR_.prepare(sr_);
     double scale = sr_ / 44100.0;
 
     for (size_t i = 0; i < 8; i++) {
@@ -410,7 +417,7 @@ void Fx::reset() {
     eqMid2L_.reset(); eqMid2R_.reset(); eqHiL_.reset(); eqHiR_.reset();
     up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
     up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
-    ott_.reset(); comp_.reset();
+    ott_.reset(); driveColorL_.reset(); driveColorR_.reset(); comp_.reset();
     headroomInput_.reset(); headroomEq_.reset(); headroomOtt_.reset(); headroomComp_.reset();
     headroomDrive_.reset(); headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset();
     delayFeedbackGuard_.reset();
@@ -512,7 +519,9 @@ void Fx::setParams(const ParamArray& p, double tempoBpm) {
     verbDry_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, false);
 
     compOff_ = p[FXCOMP_ON] <= 0.5f;
-    comp_.setParams(!compOff_, p[FXCOMP_THR]);
+    driveColorL_.setParams(p[FXDRIVE_TYPE], p[FXDRIVE_TONE]);
+    driveColorR_.setParams(p[FXDRIVE_TYPE], p[FXDRIVE_TONE]);
+    comp_.setParams(!compOff_, p[FXCOMP_THR], p[FXCOMP_ATT], p[FXCOMP_REL], p[FXCOMP_RATIO]);
     ott_.setParams(p[FXOTT_ON] > 0.5f, p[FXOTT_DEPTH], p[FXOTT_TIME], p[FXOTT_UP], p[FXOTT_DOWN]);
 
     float vol = p[MASTER_VOLUME];
@@ -580,25 +589,23 @@ void Fx::advanceCoefs(bool force) {
     }
 }
 
-float Fx::shape(float x) const {
-    // tanh is bounded — no pre-clamp (a hard clamp is its own nonsmooth nonlinearity)
-    return std::tanh(x * driveK_) * driveNorm_;
-}
-
 // One channel through the 4x oversampled shaper: 2x half-band interpolate,
 // 2x again, tanh at 4x, then the mirrored decimators. The polyphase entry
 // points carry the zero-stuff gain (x2 per stage) internally and drop the
 // multiplies against the stuffed zeros and the discarded decimation phase;
 // decimation keeps the phase aligned with the integer kDriveLatency group
 // delay, so the chain latency is exactly what it was.
-float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x) {
+float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x, DriveColor& color) {
+    auto shape = [&](float v) { return (float)color.shape(v, driveK_, driveNorm_); };
     double a0, a1;
     u1.interpolate(x, a0, a1);                       // 2x
     double b00, b01, b10, b11;
     u2.interpolate(a0, b00, b01);                    // 4x
     u2.interpolate(a1, b10, b11);
-    double c0 = d2.decimate((double)shape((float)b00), (double)shape((float)b01));
-    double c1 = d2.decimate((double)shape((float)b10), (double)shape((float)b11));
+    const double s0a = shape((float)b00), s0b = shape((float)b01);
+    const double c0 = d2.decimate(s0a, s0b);
+    const double s1a = shape((float)b10), s1b = shape((float)b11);
+    const double c1 = d2.decimate(s1a, s1b);
     return (float)d1.decimate(c0, c1);
 }
 
@@ -630,6 +637,7 @@ void Fx::process(float* L, float* R, int n) {
         // known state. On leaving, it refills in kDriveLatency samples (0.56 ms)
         // under a wet gain still ramping up over 20 ms.
         driveWet_.snap(0); driveDry_.snap(1);
+        driveColorL_.reset(); driveColorR_.reset();
         up1L_.reset(); up2L_.reset(); dn2L_.reset(); dn1L_.reset();
         up1R_.reset(); up2R_.reset(); dn2R_.reset(); dn1R_.reset();
     }
@@ -703,10 +711,10 @@ void Fx::process(float* L, float* R, int n) {
             float dlyR = dryR_.read((double)(kDriveLatency + 1));
             if (!driveSilent_) {
                 float wet = driveWet_.next(), dry = driveDry_.next();
-                float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l);
-                float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r);
-                l = dry * dlyL + wet * dl;
-                r = dry * dlyR + wet * dr;
+                float dl = driveChannel(up1L_, up2L_, dn2L_, dn1L_, (double)drivePre_ * l, driveColorL_);
+                float dr = driveChannel(up1R_, up2R_, dn2R_, dn1R_, (double)drivePre_ * r, driveColorR_);
+                l = dry * dlyL + wet * driveColorL_.processTone(dl);
+                r = dry * dlyR + wet * driveColorR_.processTone(dr);
             } else {
                 l = dlyL; r = dlyR;
             }

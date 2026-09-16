@@ -434,6 +434,8 @@ class BassFx {
 
     const sm = (tau) => { const s = new Smooth(); s.setTime(tau, sr); return s; };
     this.driveWet = sm(0.02); this.driveDry = sm(0.02);
+    this.driveColorL = new globalThis.FableDriveColor(sr);
+    this.driveColorR = new globalThis.FableDriveColor(sr);
     this.comp = new globalThis.FableCompressor(sr);
     this.eq = new globalThis.FableParametricEq(sr);
     this.ott = new globalThis.FableOttCompressor(sr);
@@ -514,7 +516,7 @@ class BassFx {
     this.dcL.reset(); this.dcR.reset(); this.dlDamp.reset();
     for (const guard of Object.values(this.headroom)) guard.reset();
     this.delayFeedbackGuard.reset();
-    this.comp.reset(); this.ott.reset(); this.eq.reset();
+    this.driveColorL.reset(); this.driveColorR.reset(); this.comp.reset(); this.ott.reset(); this.eq.reset();
     for (const o of [this.osL, this.osR]) { o.u1.reset(); o.u2.reset(); o.d2.reset(); o.d1.reset(); }
     this.lim.reset();
     this.chPhase = 0;
@@ -540,7 +542,9 @@ class BassFx {
     this.driveWet.target = mixGate(dOn, dMix, true);
     this.driveDry.target = mixGate(dOn, dMix, false);
 
-    this.comp.setParams(num('fx.comp.on', 0) > 0.5, num('fx.comp.thr', -16));
+    this.driveColorL.setParams(num('fx.drive.type', 0), num('fx.drive.tone', 0));
+    this.driveColorR.setParams(num('fx.drive.type', 0), num('fx.drive.tone', 0));
+    this.comp.setParams(num('fx.comp.on', 0) > 0.5, num('fx.comp.thr', -16), num('fx.comp.att', 0.003), num('fx.comp.rel', 0.25), num('fx.comp.ratio', 4));
     this.ott.setParams(num('fx.ott.on', 0) > 0.5, num('fx.ott.depth', 0.35),
       num('fx.ott.time', 1), num('fx.ott.up', 1), num('fx.ott.down', 1));
 
@@ -625,8 +629,9 @@ class BassFx {
     for (let i = 0; i < m; i++) inb[i] = pre * src[at + i];
     o.u1.interpolateBlock(inb, 0, m, up1);
     o.u2.interpolateBlock(up1, 0, 2 * m, up2);
+    const color = o === this.osL ? this.driveColorL : this.driveColorR;
     const k = this.driveK, norm = this.driveNorm, n4 = 4 * m;
-    for (let i = 0; i < n4; i++) up2[i] = Math.tanh(up2[i] * k) * norm;
+    for (let i = 0; i < n4; i++) up2[i] = color.shape(up2[i], k, norm);
     o.d2.decimateBlock(up2, 2 * m, dn2, 0);
     o.d1.decimateBlock(dn2, m, dst, 0);
   }
@@ -640,6 +645,7 @@ class BassFx {
 
     if (driveGate && !this.driveGated) {
       this.driveWet.snap(0); this.driveDry.snap(1);
+      this.driveColorL.reset(); this.driveColorR.reset();
       for (const o of [this.osL, this.osR]) { o.u1.reset(); o.u2.reset(); o.d2.reset(); o.d1.reset(); }
     }
     if (chorusGate && !this.chorusGated) {
@@ -734,8 +740,8 @@ class BassFx {
         const dryRv = this.dryR.read(DRIVE_LATENCY + 1);
         if (!this.driveGated) {
           const wet = this.driveWet.next(), dry = this.driveDry.next();
-          l = dry * dryLv + wet * wetLB[i - pos];
-          r = dry * dryRv + wet * wetRB[i - pos];
+          l = dry * dryLv + wet * this.driveColorL.processTone(wetLB[i - pos]);
+          r = dry * dryRv + wet * this.driveColorR.processTone(wetRB[i - pos]);
         } else {
           l = dryLv; r = dryRv;
         }
@@ -818,6 +824,7 @@ class BassFx {
     // Keep the skipped oversampler in step, so the moment the channels diverge
     // its history is what it would have been had it run all along.
     if (monoDrive) {
+      this.driveColorR.copyShapeFrom(this.driveColorL);
       this.osR.u1.copyStateFrom(this.osL.u1); this.osR.u2.copyStateFrom(this.osL.u2);
       this.osR.d2.copyStateFrom(this.osL.d2); this.osR.d1.copyStateFrom(this.osL.d1);
     }

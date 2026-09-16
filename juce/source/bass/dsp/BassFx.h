@@ -48,8 +48,8 @@ private:
     HalfBandFir up1L_, up2L_, dn2L_, dn1L_, up1R_, up2R_, dn2R_, dn1R_; // 4x oversampler
     DelayLine dryL_, dryR_; // constant-latency dry path aligned with the shaper FIRs
     bool driveOff_ = false, driveGated_ = false;
-    inline float shape(float x) const;
-    float driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x);
+    DriveColor driveColorL_, driveColorR_;
+    float driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBandFir& d1, double x, DriveColor& color);
 
     // chorus
     double chPhase_ = 0;

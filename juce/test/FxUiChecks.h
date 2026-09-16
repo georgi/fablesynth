@@ -56,6 +56,34 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         ok &= std::abs(gain->getValue() - gain->getDefaultValue()) < 1e-6f;
         set(prefix + "fx.eq.mid", -5);
     } else { return false; }
+    auto* comp = findFxComponent<fui::FxModuleView>(*chain, "COMP visual FX");
+    auto* drive = findFxComponent<fui::FxModuleView>(*chain, "DRIVE visual FX");
+    if (!comp || !drive) return false;
+    auto checkKnobs = [&](juce::Component& module, const juce::StringArray& keys) {
+        int index = 0;
+        for (auto* child : module.getChildren()) {
+            if (auto* knob = dynamic_cast<fui::Knob*>(child)) {
+                if (index >= keys.size()) return false;
+                auto* param = proc->apvts.getParameter(prefix + keys[index++]);
+                if (!param || knob->getWidth() < 40 || knob->getHeight() < 44) return false;
+                param->setValueNotifyingHost(.4f);
+                juce::MouseWheelDetails wheel; wheel.deltaY = .1f;
+                const juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),
+                    {}, {}, 1, 0, 0, 0, 0, knob, knob, juce::Time::getCurrentTime(),
+                    {}, juce::Time::getCurrentTime(), 1, false);
+                knob->mouseWheelMove(event, wheel);
+                if (param->getValue() <= .4f) return false;
+            }
+        }
+        return index == keys.size();
+    };
+    ok &= checkKnobs(*comp, {"fx.comp.thr", "fx.comp.att", "fx.comp.rel", "fx.comp.ratio"});
+    ok &= checkKnobs(*drive, {"fx.drive.amt", "fx.drive.tone", "fx.drive.mix"});
+    auto* hard = findFxComponent<juce::TextButton>(*drive, "HARD");
+    if (!hard) return false;
+    hard->onClick();
+    ok &= proc->apvts.getRawParameterValue(prefix + "fx.drive.type")->load() == 2;
+    set(prefix + "fx.drive.on", 1);
     if (drum) {
         chain->setPad(7, "EQ ISOLATION");
         auto* eq = findFxComponent<fui::FxModuleView>(*chain, "EQ visual FX");
@@ -69,6 +97,15 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         for (int pad = 0; pad < 16; ++pad)
             ok &= proc->apvts.getParameter("pad" + juce::String(pad) + ".oscA.table")->getParameterIndex() == pad * 73;
         ok &= proc->apvts.getParameter("seq.bpm")->getParameterIndex() == 16 * 73;
+        // The appended controls preserve all previous EQ automation positions too.
+        for (int pad = 0; pad < 16; ++pad)
+            ok &= proc->apvts.getParameter("pad" + juce::String(pad) + ".fx.eq.on")->getParameterIndex() == 16 * 73 + 3 + pad * 21;
+        auto* padDrive = findFxComponent<fui::FxModuleView>(*chain, "DRIVE visual FX");
+        auto* tape = padDrive ? findFxComponent<juce::TextButton>(*padDrive, "TAPE") : nullptr;
+        if (!tape) return false;
+        tape->onClick();
+        ok &= proc->apvts.getRawParameterValue("pad7.fx.drive.type")->load() == 1;
+        ok &= proc->apvts.getRawParameterValue("pad0.fx.drive.type")->load() == 2;
         chain->setPad(0, "KICK");
     }
     {
@@ -78,8 +115,8 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         proc->getStateInformation(state);
         auto restored = std::make_unique<Processor>();
         restored->setStateInformation(state.getData(), (int)state.getSize());
-        for (auto key : {"on", "mid", "m2q", "m2type"}) {
-            const auto id = prefix + "fx.eq." + key;
+        for (auto key : {"fx.eq.on", "fx.eq.mid", "fx.eq.m2q", "fx.eq.m2type", "fx.comp.att", "fx.comp.rel", "fx.comp.ratio", "fx.drive.tone", "fx.drive.type"}) {
+            const auto id = prefix + key;
             ok &= std::abs(restored->apvts.getRawParameterValue(id)->load() -
                            proc->apvts.getRawParameterValue(id)->load()) < 1e-5f;
         }

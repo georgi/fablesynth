@@ -174,12 +174,13 @@ describe('BL-1 opt-in FX telemetry', () => {
 });
 
 describe('BL-1 drive mono fast path', () => {
-  it('resyncs the skipped channel when the voice opens up', () => {
+  it.each([[0, 0], [1, -1], [2, 1]])('resyncs the skipped channel with type %i and tone %i', (type, tone) => {
     // A 303 patch is mono through the shaper whenever uni = 1 or spread = 0
     // (review B8), so the right oversampler is skipped and its state mirrored
     // from the left. The moment the channels diverge that state has to be what
     // it would have been had it run all along, or the right channel steps.
     const p = sinePatch();
+    p['fx.drive.type'] = type; p['fx.drive.tone'] = tone;
     p['osc.level'] = 0.9;
     p['sub.level'] = 0.5;
     p['osc.unison'] = 1;

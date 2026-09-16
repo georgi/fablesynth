@@ -97,12 +97,35 @@ describe('shared automatic gain', () => {
 
 describe('shared compressor', () => {
   interface Comp {
-    l: number; r: number;
-    setParams(on: boolean, threshold: number): void;
+    l: number; r: number; gain: number;
+    setParams(on: boolean, threshold: number, attack?: number, release?: number, ratio?: number): void;
     process(l: Float32Array, r: Float32Array, n: number): void;
     processSample(l: number, r: number): void;
   }
   const Comp = new Function(`${source}\nreturn Compressor;`)() as new (sr: number) => Comp;
+  it.each([44100, 48000, 96000])('controls transient attack, recovery and ratio at %i Hz', sr => {
+    const run = (comp: Comp, seconds: number, level: number) => {
+      for (let i = 0; i < sr * seconds; i++) comp.processSample(level, level);
+      return comp.gain;
+    };
+    const fast = new Comp(sr), slow = new Comp(sr);
+    fast.setParams(true, -24, 0.0001, 0.25, 8);
+    slow.setParams(true, -24, 0.1, 0.25, 8);
+    run(fast, 0.3, 0); run(slow, 0.3, 0);
+    expect(run(fast, 0.01, 0.5)).toBeLessThan(run(slow, 0.01, 0.5) * 0.5);
+    const quick = new Comp(sr), long = new Comp(sr);
+    quick.setParams(true, -24, 0.003, 0.01, 4);
+    long.setParams(true, -24, 0.003, 2, 4);
+    run(quick, 0.4, 0.5); run(long, 0.4, 0.5);
+    expect(run(quick, 0.1, 0)).toBeGreaterThan(run(long, 0.1, 0) * 2);
+    const gains = [1, 2, 4, 20].map(ratio => {
+      const comp = new Comp(sr); comp.setParams(true, -24, 0.003, 0.25, ratio);
+      return run(comp, 1, 0.5);
+    });
+    expect(gains[0]).toBeCloseTo(1, 6);
+    expect(gains[1]).toBeGreaterThan(gains[2]);
+    expect(gains[2]).toBeGreaterThan(gains[3]);
+  });
   it('uses the same DSP through block and sample entry points', () => {
     const block = new Comp(48000), sample = new Comp(48000);
     block.setParams(true, -28); sample.setParams(true, -28);

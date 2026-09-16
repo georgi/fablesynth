@@ -68,6 +68,7 @@ export const FX_DEFS: ParamDef[] = [
   // Legacy serialized field; web OTT now uses automatic gain.
   { id: 'fx.ott.gain', label: 'OUTPUT', min: -48, max: 24, def: 0, curve: 'lin', fmt: (v) => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB' },
   ...PARAM_DEFS.filter((d) => d.id.startsWith('fx.eq.')),
+  ...PARAM_DEFS.filter((d) => ['fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type'].includes(d.id)),
 ];
 
 function oscFields(): ParamDef[] {
