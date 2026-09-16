@@ -14,7 +14,9 @@
     "bass:loudness": "node scripts/measure-bass-patches.mjs",
     "wt1:loudness": "node scripts/measure-wt1-presets.mjs",
     "standalone:build": "cmake --build juce/build --target FableSynth_Standalone FableDrum_Standalone FableBass_Standalone FableSeq_Standalone -j4",
-    "vst:install": "bash scripts/install-vst.sh"
+    "vst:install": "bash scripts/install-vst.sh",
+    "songs:generate": "node scripts/generate-authored-sessions.mjs",
+    "songs:check": "node scripts/generate-authored-sessions.mjs --check"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -25,6 +27,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "0.21.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^4.1.9"

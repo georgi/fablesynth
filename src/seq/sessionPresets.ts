@@ -1,8 +1,10 @@
-// SQ-4 factory session presets. Keep the same names, families, patch choices
-// and clip-selection rule as JUCE's SeqFactory.cpp so the web and native
-// instruments present one coherent factory library.
+// SQ-4 factory sessions: legacy generator plus individually authored songs.
+// Legacy rules mirror SeqFactory.cpp; authored scores are compiled to native
+// data with npm run songs:generate, keeping both libraries in the same order.
 
 import { factorySession } from './factory';
+import { TIDAL_MEMORY } from './songs/tidalMemory';
+import { PHASE_RUNNER } from './songs/phaseRunner';
 import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
 
 export interface SessionPreset {
@@ -510,10 +512,14 @@ function buildSession(spec: Spec): SessionDoc {
   return session;
 }
 
-export const FACTORY_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
+export const GENERATED_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
   ...spec,
   session: buildSession(spec),
 }));
+
+// Append authored songs to preserve existing host program numbers.
+export const AUTHORED_SESSION_PRESETS: SessionPreset[] = [TIDAL_MEMORY, PHASE_RUNNER];
+export const FACTORY_SESSION_PRESETS: SessionPreset[] = [...GENERATED_SESSION_PRESETS, ...AUTHORED_SESSION_PRESETS];
 
 /**
  * The session SQ-4 opens with. `factorySession()` stays the NEON TALE base
@@ -532,7 +538,8 @@ export function defaultSession(): SessionDoc {
 export function copySession(session: SessionDoc): SessionDoc {
   return {
     ...session,
-    tracks: session.tracks.map((track) => ({ ...track, patch: { ...track.patch } })),
+    tracks: session.tracks.map((track) => ({ ...track, patch: track.patch.kind === 'inline'
+      ? { ...track.patch, data: structuredClone(track.patch.data) } : { ...track.patch } })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip }) })),
   };
 }

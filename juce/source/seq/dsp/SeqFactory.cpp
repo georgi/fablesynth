@@ -1,3 +1,4 @@
+#include "AuthoredSessions.gen.h"
 // C++ port of src/seq/factory.ts — note-for-note transcription so both builds
 // ship the same NEON TALE factory session. The session *library* generator
 // (factorySessionLibrary) is likewise a transcription of
@@ -874,6 +875,8 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 20, 59, 56 }, 2),          // STEPPER ROOT · DEEP TICK / DUB SKANK
             make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 20, 59, 1 }, 3),     // STEPPER ROOT · DEEP TICK / VELVET PAD
         };
+        for (auto& authored : authoredSessionLibrary())
+            library.push_back(std::move(authored));
         return library;
     }();
     return presets;

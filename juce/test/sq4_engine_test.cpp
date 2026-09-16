@@ -1447,10 +1447,14 @@ static void testUndoRestoresDeletedClip() {
 static void testSessionLibraryMusicality() {
     using namespace fable;
     const auto& library = factorySessionLibrary();
-    CHECK(library.size() == 40);
+    CHECK(library.size() == 42);
+    CHECK(library[40].name == "TIDAL MEMORY"
+        && library.back().name == "PHASE RUNNER");
+    CHECK(validateSession(library.back().session).empty());
 
     // Register split: every generated pad sits strictly below every lead note.
     for (size_t p = 0; p < library.size(); ++p) {
+        if (library[p].variation == "AUTHORED") continue; // Legacy generator constraints only.
         for (const auto& scene : library[p].session.scenes) {
             if (!scene.hasClip[2] || !scene.hasClip[3]) continue;
             const auto pitches = [](const ClipData& clip) {
@@ -1476,6 +1480,7 @@ static void testSessionLibraryMusicality() {
         dropDrums.insert(preset.session.scenes[2].clips[0].bytes);
     CHECK(dropDrums.size() == library.size());
     for (size_t p = 0; p < library.size(); ++p) {
+        if (library[p].variation == "AUTHORED") continue; // Legacy generator constraints only.
         const auto& scenes = library[p].session.scenes;
         CHECK(!scenes[4].hasClip[0]); // BREAK stays drumless
         std::set<std::vector<uint8_t>> perScene;

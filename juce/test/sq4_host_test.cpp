@@ -69,8 +69,16 @@ static double renderRms(SeqAudioProcessor& p, juce::AudioBuffer<float>& buf, int
     return std::sqrt(sumSq / (double)std::max(1L, cnt));
 }
 
+#include "render_session.h"
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui; // message manager for the processor
+
+    if (argc >= 4 && juce::String(argv[1]) == "--render-preset")
+        return renderSessionPreset(argv[2], juce::File(argv[3]), argc > 4 ? juce::String(argv[4]).getIntValue() : -1);
+
+    if (argc >= 4 && juce::String(argv[1]) == "--render-session")
+        return renderSessionFile(juce::File(argv[2]), juce::File(argv[3]));
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
 
@@ -419,8 +427,8 @@ int main(int argc, char** argv) {
     check(!p.conductor().playing(), "combined transport button stops playback");
 
     const auto& sessionLibrary = fable::factorySessionLibrary();
-    check(sessionLibrary.size() == 40 && p.getNumPrograms() == 40,
-          "SQ-4 ships 40 complete session programs");
+    check(sessionLibrary.size() == 42 && p.getNumPrograms() == 42,
+          "SQ-4 ships 40 legacy programs and two authored songs");
     std::map<std::string, int> familyCounts;
     std::set<std::string> rigNames;
     bool rigMetadataValid = true, rigProgramsValid = true, completeSessionContent = true;
@@ -436,7 +444,8 @@ int main(int argc, char** argv) {
         };
         for (int t = 0; t < 4; ++t) {
             const auto& patch = preset.session.tracks[(size_t)t].patch;
-            if (!patch.factory || patch.index < 0 || patch.index >= counts[(size_t)t])
+            if (patch.index < 0 || patch.index >= counts[(size_t)t]
+                || (!patch.factory && patch.params.empty()))
                 rigProgramsValid = false;
         }
         for (int t = 0; t < 4; ++t) {
@@ -447,11 +456,11 @@ int main(int argc, char** argv) {
             if (!hasPlayableClip) completeSessionContent = false;
         }
     }
-    bool familiesValid = familyCounts.size() == 10;
+    bool familiesValid = familyCounts.size() == 11;
     for (const auto& [family, count] : familyCounts)
-        if (family.empty() || count != 4) familiesValid = false;
+        if (family.empty() || count != (family == "DUB TECHNO" ? 2 : 4)) familiesValid = false;
     check(rigMetadataValid, "every SQ-4 library entry is a valid complete session");
-    check(familiesValid, "session library has ten families with four variations each");
+    check(familiesValid, "session library includes the authored dub techno pilot");
     check(rigProgramsValid, "every session references valid device programs");
     check(completeSessionContent, "every session contains playable clips and device patches");
     // Session names are unique. Four-device rig *combinations* are deliberately
@@ -1002,7 +1011,7 @@ int main(int argc, char** argv) {
         const auto* webPresets = parsed.getArray();
         const auto& native = fable::factorySessionLibrary();
         check(webPresets != nullptr && webPresets->size() == (int)native.size(),
-              "fixture carries all 40 presets");
+              "fixture carries all presets");
         bool metaMatches = true, clipsMatch = true;
         for (int p = 0; webPresets != nullptr && p < webPresets->size(); ++p) {
             const auto& web = (*webPresets)[p];
@@ -1021,7 +1030,20 @@ int main(int argc, char** argv) {
                             && t < (int)mine.session.tracks.size(); ++t) {
                 const auto& webTrack = (*tracks)[t];
                 const auto& nativeTrack = mine.session.tracks[(size_t)t];
-                if ((int)webTrack.getProperty("patch", {}).getProperty("index", -1) != nativeTrack.patch.index
+                const auto webPatch = webTrack.getProperty("patch", {});
+                const bool factory = webPatch.getProperty("kind", "").toString() == "factory";
+                if (factory != nativeTrack.patch.factory) metaMatches = false;
+                if (!factory) {
+                    const auto params = webPatch.getProperty("data", {}).getProperty("params", {});
+                    const auto* object = params.getDynamicObject();
+                    if (object == nullptr || object->getProperties().size() != (int)nativeTrack.patch.params.size())
+                        metaMatches = false;
+                    for (const auto& [id, value] : nativeTrack.patch.params)
+                        if (!params.hasProperty(juce::Identifier(id))
+                            || std::abs((double)params.getProperty(juce::Identifier(id), 0) - value) > 1e-4)
+                            metaMatches = false;
+                }
+                if ((int)webPatch.getProperty(factory ? "index" : "base", -1) != nativeTrack.patch.index
                     || std::abs((double)webTrack.getProperty("gain", -1.0) - (double)nativeTrack.gain) > 1e-6)
                     metaMatches = false;
             }
@@ -1047,7 +1069,7 @@ int main(int argc, char** argv) {
             }
         }
         check(metaMatches, "session-preset metadata matches the web generator");
-        check(clipsMatch, "all 40 preset sessions match the web generator byte-for-byte");
+        check(clipsMatch, "all preset sessions match the web source byte-for-byte");
     }
 
     // ---- LOAD/SAVE UI test handles (SeqHeader::loadClick/saveClick apply the
