@@ -18,3 +18,7 @@ Synthesizer mockup design-handoff.zip
 *_editor.png
 plugin_editor_*.png
 wavetable_view.png
+
+# Local secrets and Python bytecode
+.env
+__pycache__/
