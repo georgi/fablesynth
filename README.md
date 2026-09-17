@@ -23,9 +23,8 @@ The plugins ship as **FableSynth WT-1** (wavetable synth), **FableSynth
 DR-1** (drum machine), **FableSynth BL-1** (acid bassline) and **FableSynth
 SQ-4** (session launcher) — separate zips per platform.
 
-Then rescan plugins in your DAW. macOS builds are **universal** (Apple Silicon +
-Intel) and ad-hoc signed; on first launch you may need to right-click → Open, or
-clear quarantine with `xattr -dr com.apple.quarantine <path>`.
+Then rescan plugins in your DAW. macOS release builds are **universal** (Apple
+Silicon + Intel), Developer ID signed, and notarized by Apple.
 
 > Building from source instead? See [`juce/README.md`](juce/README.md).
 
