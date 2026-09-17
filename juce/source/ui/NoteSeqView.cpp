@@ -586,7 +586,9 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
             dragStartPos_ = dragCurPos_ = e.position;
             return;
         }
-        return;                                                 // 4) empty cell: toggle on up
+        drawingNote_ = true; drawDuration_ = 1;
+        repaint();
+        return;                                                 // 4) empty cell: draw a note
     }
 
     // oct / accent rows (the step-number strip below is a plain label now).
@@ -599,6 +601,11 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
 }
 
 void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
+    if (drawingNote_) {
+        drawDuration_ = juce::jmax(1, stepAtX(e.getPosition().x) - downStep_ + 1);
+        repaint();
+        return;
+    }
     if (resizeStep_ >= 0) {
         const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
         resizeStep(resizeStep_, resizeStartDuration_ + delta);
@@ -639,6 +646,18 @@ void NoteSeqView::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
+    if (drawingNote_) {
+        mouseDrag(e);
+        drawingNote_ = false;
+        history_.push(snapshot());
+        auto note = model.sequenceStep(model.editPattern(), downStep_);
+        note.on = true; note.note = downNote_; note.duration = drawDuration_;
+        model.setSequenceStep(model.editPattern(), downStep_, note);
+        hasLastCell_ = true; lastCellStep_ = downStep_; lastCellNote_ = downNote_;
+        downStep_ = downNote_ = -1;
+        repaint();
+        return;
+    }
     if (resizeStep_ >= 0) { resizeStep_ = -1; return; }
     if (sweeping_) {                       // commit the swept rectangle
         sweeping_ = false;
@@ -705,6 +724,7 @@ void NoteSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_,
 void NoteSeqView::cancelGesture() {
     sweeping_ = false;
     moveArmed_ = moving_ = false;
+    drawingNote_ = false;
     noteDragArmed_ = noteDragActive_ = false;
     ghost_ = false; ghostHasHover_ = false;
     barDragFrom_ = -1; barDragging_ = false; barDropTarget_ = -1;
@@ -748,6 +768,7 @@ void NoteSeqView::timerCallback() {
     if (identity != lastClipIdentity_) {
         lastClipIdentity_ = identity;
         hasRect_ = false; sweeping_ = false;
+        drawingNote_ = false;
         moveArmed_ = moving_ = false; noteDragArmed_ = noteDragActive_ = false;
         ghost_ = false; ghostHasHover_ = false;
         barDragFrom_ = -1; barDragging_ = false; barDropTarget_ = -1;
@@ -911,9 +932,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
     }
     g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
-    // web "TAP LANE = NOTE · CYCLE OCT · ACCENT" (tie retired; note length
-    // lives in the duration bits, surfaced by the milestone-3 piano roll)
-    drawSpaced(g, "TAP LANE = NOTE - CYCLE OCT - ACCENT",
+    drawSpaced(g, "DRAG EMPTY = DRAW - EDGE = LENGTH",
                { hintRight - 360, kHeadY, 360, kHeadH }, 0.9f,
                juce::Justification::right);
 
@@ -1073,6 +1092,14 @@ void NoteSeqView::paint(juce::Graphics& g) {
 
     // Note-drag feedback: dim the source cell, outline the hovered target
     // (.drag-src / .drag-over[.copy]).
+    if (drawingNote_) {
+        auto r = cellBounds(downStep_, downNote_).toFloat();
+        r.setRight(cellBounds(downStep_ + drawDuration_ - 1, downNote_).toFloat().getRight());
+        g.setColour(cyan.withAlpha(0.45f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(cyan.withAlpha(0.9f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.2f);
+    }
     if (noteDragActive_) {
         // The dragged note previews at its landing spot with its real length,
         // and the note it left behind is dimmed (.ns-note-preview / .drag-src).

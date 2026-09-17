@@ -1,5 +1,6 @@
 #include "BassProcessor.h"
 #include "BassEditor.h"
+#include "../ui/ArpCodec.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -73,6 +74,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BassAudioProcessor::createLa
 
 void BassAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
+    arpInput_.clear(); arpInput_.set(arpSettings_); applyArp();
     // Message thread: reclaim any table set retired by an earlier publish
     // (Finding J3) before publishing this one.
     engine.setTables(tables_);
@@ -242,6 +244,11 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     hostSynced_.store(synced, std::memory_order_relaxed);
     hostBpm_.store(synced ? bpm : 0.0, std::memory_order_relaxed);
 
+    ArpSettings arpUpdate;
+    if (arpMailbox_.consume(arpUpdate, arpVersion_)) {
+        if (arpUpdate.enabled != arpInput_.settings.enabled || arpUpdate.keys != arpInput_.settings.keys) engine.panic();
+        arpInput_.set(arpUpdate); applyArp();
+    }
     // Drain the UI command FIFO (audition/transport).
     {
         int s1, sz1, s2, sz2;
@@ -250,11 +257,18 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             for (int i = 0; i < count; ++i) {
                 const Cmd& c = cmds_[(size_t)(start + i)];
                 switch (c.type) {
-                    case CmdNoteOn:  engine.keyOn(c.a, c.v);  break;
-                    case CmdNoteOff: engine.keyOff(c.a);      break;
+                    case CmdNoteOn:
+                        if (arpInput_.key(c.a + BL_ROOT_MIDI, true)) applyArp();
+                        else engine.keyOn(c.a, c.v);
+                        break;
+                    case CmdNoteOff:
+                        if (arpInput_.key(c.a + BL_ROOT_MIDI, false)) applyArp();
+                        else engine.keyOff(c.a);
+                        break;
                     case CmdPlay:    engine.play();           break;
                     case CmdStop:    engine.stop();           break;
-                    case CmdPanic:   engine.panic();          break;
+                    case CmdPanic:   engine.panic(); arpInput_.clear(); applyArp(); break;
+                    case CmdArpClear: arpInput_.clear(); applyArp(); break;
                     // Finding J1: a patch or session load replaces every value at
                     // once — jump the smoothers to it instead of gliding 45
                     // parameters over 12 ms.
@@ -310,12 +324,14 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             // brighter, shorter filter env), the 303-clone mapping; softer
             // notes stay on plain level. The UI keyboard keeps the plain path.
             const float mv = m.getFloatVelocity();
-            engine.keyOn(m.getNoteNumber() - BL_ROOT_MIDI, mv, mv >= BL_MIDI_ACCENT_VEL);
+            if (arpInput_.key(m.getNoteNumber(), true)) applyArp();
+            else engine.keyOn(m.getNoteNumber() - BL_ROOT_MIDI, mv, mv >= BL_MIDI_ACCENT_VEL);
             midiGlow_.store(20);
         } else if (m.isNoteOff()) {
-            engine.keyOff(m.getNoteNumber() - BL_ROOT_MIDI);
+            if (arpInput_.key(m.getNoteNumber(), false)) applyArp();
+            else engine.keyOff(m.getNoteNumber() - BL_ROOT_MIDI);
         } else if (m.isAllNotesOff() || m.isAllSoundOff()) {
-            engine.panic();
+            engine.panic(); arpInput_.clear(); applyArp();
         }
     }
     renderTo(n);
@@ -360,6 +376,7 @@ void BassAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     root.appendChild(state, nullptr);
 
     juce::ValueTree bass("BASS");
+    bass.setProperty("arp", juce::JSON::toString(arpToVar(arpSettings_), false, 17), nullptr);
     bass.setProperty("patterns",
         juce::Base64::toBase64(patterns_.data(), patterns_.size()), nullptr);
     juce::StringArray chainStr;
@@ -385,6 +402,9 @@ void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
         params = juce::ValueTree::fromXml(*xml); // legacy: bare parameter tree
     }
 
+    auto restoredArp = bassArpDefaults();
+    arpFromVar(juce::JSON::parse(bass.getProperty("arp").toString()), restoredArp);
+    setArpSettings(restoredArp);
     if (bass.isValid()) {
         juce::MemoryOutputStream raw;
         if (juce::Base64::convertFromBase64(raw, bass.getProperty("patterns", "").toString())

@@ -648,7 +648,7 @@ int BassKeysPanel::hotKey() const {
     if (semi <= -100) return -100;
     // sequencer semis are root-relative (-12..23): show them an octave up so
     // the lane octave lands mid-keyboard; audition semis are already key ids.
-    int hot = proc.sequencerPlaying() ? semi + 12 : semi;
+    int hot = proc.sequencerPlaying() && !proc.arpSettings().enabled ? semi + 12 : semi;
     while (hot > fable::BL_KEY_COUNT - 1) hot -= 12;
     while (hot < 0) hot += 12;
     return hot;
@@ -684,7 +684,10 @@ void BassKeysPanel::resized() {
 void BassKeysPanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
-    drawHeadNote(g, head.removeFromRight(240), "AUDITION WHEN STOPPED - LEGATO = SLIDE");
+    const auto arp = proc.arpSettings();
+    drawHeadNote(g, head.removeFromRight(300), arp.enabled
+        ? (arp.keys ? "ARP KEY INPUT - LATCH HOLDS THE CHORD" : "ARP USES STORED NOTES")
+        : "AUDITION WHEN STOPPED - LEGATO = SLIDE");
     drawHeadTitle(g, head, "KEYS", col::text);
 
     const int hot = hotKey();

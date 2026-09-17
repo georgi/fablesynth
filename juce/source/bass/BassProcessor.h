@@ -77,6 +77,10 @@ public:
     void setChain(std::vector<int> c);
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
+    fable::ArpSettings getArpSettings() const { return arpSettings_; }
+    void setArpSettings(const fable::ArpSettings& a) { arpSettings_ = a; arpMailbox_.publish(a); }
+    fable::ArpSettings getLiveArp() const { arpLiveMailbox_.consume(arpLive_, arpLiveVersion_); return arpLive_; }
+    void clearArpKeys() { pushCmd(CmdArpClear, 0, 0); }
 
     // Decision-6: bulk pattern-buffer access for StepEditOps.h range/pattern
     // ops and the view's undo history (mirrors the per-step accessors above).
@@ -104,13 +108,21 @@ private:
     void shareSeqState(bool patterns, bool chain);
 
     fable::BassEngine engine;
+    fable::ArpSettings arpSettings_ = fable::bassArpDefaults();
+    fable::ArpMailbox arpMailbox_;
+    fable::ArpInput arpInput_;
+    uint32_t arpVersion_ = 0;
+    fable::ArpMailbox arpLiveMailbox_;
+    mutable fable::ArpSettings arpLive_ = fable::bassArpDefaults();
+    mutable uint32_t arpLiveVersion_ = 0;
+    void applyArp() { engine.setArp(arpInput_.pattern()); arpLiveMailbox_.publish(arpInput_.snapshot()); }
     fable::BassFx fx;
     std::vector<fable::TablePtr> tables_;
 
     std::array<std::atomic<float>*, fable::BL_NUM_PARAMS> rawParams_{};
 
     // command FIFO (message thread -> audio thread)
-    enum CmdType { CmdNoteOn = 0, CmdNoteOff, CmdPlay, CmdStop, CmdPanic, CmdSnapParams };
+    enum CmdType { CmdNoteOn = 0, CmdNoteOff, CmdPlay, CmdStop, CmdPanic, CmdSnapParams, CmdArpClear };
     struct Cmd { int type = 0; int a = 0; float v = 0; };
     juce::AbstractFifo cmdFifo_{64};
     std::array<Cmd, 64> cmds_{};

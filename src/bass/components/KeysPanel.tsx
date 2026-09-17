@@ -12,6 +12,9 @@ const WHITE_COUNT = 15;
 
 export function KeysPanel() {
   const playing = useBassStore((s) => s.playing);
+  const arpInput = useBassStore(s => s.arpMode && !s.hosted && s.arp.input === 'keys');
+  const arpMode = useBassStore(s => s.arpMode && !s.hosted);
+  const heldSemis = useBassStore(s => s.heldSemis);
   const curSemi = useBassStore((s) => s.curSemi);
   const noteOn = useBassStore((s) => s.noteOn);
   const noteOff = useBassStore((s) => s.noteOff);
@@ -20,7 +23,7 @@ export function KeysPanel() {
   if (curSemi > -100) {
     // sequencer semis are root-relative (-12..23): show them an octave up so
     // the lane octave lands mid-keyboard; audition semis are already key ids.
-    hot = playing ? curSemi + 12 : curSemi;
+    hot = playing && !arpMode ? curSemi + 12 : curSemi;
     while (hot > KEY_COUNT - 1) hot -= 12;
     while (hot < 0) hot += 12;
   }
@@ -47,7 +50,7 @@ export function KeysPanel() {
   for (let semi = 0; semi < KEY_COUNT; semi++) {
     const pc = semi % 12;
     const oct = Math.floor(semi / 12);
-    const isHot = semi === hot;
+    const isHot = arpInput ? heldSemis.includes(semi) : semi === hot;
     if (IS_BLACK[pc]) {
       blacks.push(
         <button
@@ -76,7 +79,7 @@ export function KeysPanel() {
     <section className="panel bl-keys-section">
       <div className="panel-head">
         <h2>KEYS</h2>
-        <span className="bl-head-note">AUDITION WHEN STOPPED · LEGATO = SLIDE</span>
+        <span className="bl-head-note">{arpInput ? 'PLAY NOTES INTO ARP · LATCH HOLDS THE CHORD' : 'AUDITION WHEN STOPPED · LEGATO = SLIDE'}</span>
       </div>
       <div className="bl-keys">
         <div className="bl-keys-white">{whites}</div>

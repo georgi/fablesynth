@@ -43,7 +43,7 @@ export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) 
   const playingClip = focus && focusState && owner[focusState.track] === s
     ? sc.clips[focusState.track] : null;
   const progress = pos && playingClip
-    ? Math.min(1, (pos.bar * STEPS_PER_BAR + pos.step + 1) / (playingClip.bars * STEPS_PER_BAR))
+    ? playingClip.arp?.enabled ? (pos.step + 1) / STEPS_PER_BAR : Math.min(1, (pos.bar * STEPS_PER_BAR + pos.step + 1) / (playingClip.bars * STEPS_PER_BAR))
     : null;
 
   return (

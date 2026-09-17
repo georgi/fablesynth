@@ -559,6 +559,11 @@ juce::uint32 SceneGridView::paintSignature(juce::RectangleList<int>& animate) co
                 const auto& clip = sc.clips[(size_t)t];
                 mixStr(clip.name);
                 mix(clip.bars);
+                mix(clip.hasArp && clip.arp.enabled ? 1 : 0);
+                if (clip.hasArp && clip.arp.enabled) {
+                    const auto arp = fable::compileArp(clip.arp);
+                    for (int i = 0; i < 16; ++i) { mix(arp.notes[i]); mix(arp.hits[i] ? 1 : 0); }
+                }
                 // The step preview reads the clip's first bar only.
                 const int n = juce::jmin((int)clip.bytes.size(),
                                          fable::sqBytesPerBar(sess.tracks[(size_t)t].machine));
@@ -830,7 +835,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     // "{bars}B" chip on the right — a bordered pill like the web .sq-cell-len,
     // not bare text.
     {
-        const juce::String chipTxt = juce::String(clip.bars) + "B";
+        const juce::String chipTxt = clip.hasArp && clip.arp.enabled ? "ARP" : juce::String(clip.bars) + "B";
         const auto chipFont = monoFont(7.0f);
         const int w = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 9;
         auto chip = head.removeFromRight(w).withSizeKeepingCentre(w, 13);
@@ -849,6 +854,11 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
     auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
     if (!clip.bytes.empty()) {
         auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
+        if (clip.hasArp && clip.arp.enabled) {
+            const auto arp = fable::compileArp(clip.arp);
+            for (int i = 0; i < 16; ++i)
+                steps[(size_t)i] = { juce::jlimit(4, 19, (int)std::lround(5 + (arp.notes[i] % 24) * .6)), arp.notes[i] >= 0 && arp.hits[i] };
+        }
         const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
         for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
             const auto& sb = steps[(size_t)i];
@@ -869,7 +879,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         const int bar = proc.trackBar[t].load();
         const int step = proc.trackStep[t].load();
         if (bar >= 0 && step >= 0) {
-            const int totalSteps = clip.bars * fable::SQ_STEPS_PER_BAR;
+            const int totalSteps = (clip.hasArp && clip.arp.enabled ? 1 : clip.bars) * fable::SQ_STEPS_PER_BAR;
             const int pos = ((bar * fable::SQ_STEPS_PER_BAR + step) % totalSteps + totalSteps) % totalSteps;
             const float frac = juce::jlimit(0.0f, 1.0f, (float)pos / (float)totalSteps);
             auto lit = progress.withWidth((int)(static_cast<float>(progress.getWidth()) * frac));
@@ -942,7 +952,8 @@ float SceneGridView::railProgress(int scene) const {
     const auto& scenes = proc.conductor().session().scenes;
     if (scene < 0 || scene >= (int)scenes.size() || !scenes[(size_t)scene].hasClip[(size_t)focusTrack_])
         return -1.0f;
-    const int bars = juce::jmax(1, scenes[(size_t)scene].clips[(size_t)focusTrack_].bars);
+    const auto& clip = scenes[(size_t)scene].clips[(size_t)focusTrack_];
+    const int bars = clip.hasArp && clip.arp.enabled ? 1 : juce::jmax(1, clip.bars);
     const float done = (float)(juce::jmax(0, bar) * fable::SQ_STEPS_PER_BAR + step + 1);
     return juce::jlimit(0.0f, 1.0f, done / (float)(bars * fable::SQ_STEPS_PER_BAR));
 }

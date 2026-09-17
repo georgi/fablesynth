@@ -2,6 +2,7 @@
 
 #include "ParameterSource.h"
 #include "../dsp/FxTelemetry.h"
+#include "../dsp/Arp.h"
 
 // Host transport snapshot used by tempo-synchronised device displays.
 struct HostTransport {
@@ -35,6 +36,15 @@ public:
     // draw next to the program name (web parity: the stores' dirty flags).
     // Hosted SQ-4 models have no program concept and keep the default.
     virtual bool programDirty() const { return false; }
+    virtual fable::ArpSettings arpSettings() const { return {}; }
+    virtual void setArpSettings(const fable::ArpSettings&) {}
+    virtual fable::ArpSettings arpLiveSettings() const { return arpSettings(); }
+    virtual void clearArpKeys() {}
+    virtual void arpKeyInput(int, bool) {}
+    virtual double arpSwing() const { return 0; }
+    virtual void setArpSwing(double) {}
+    virtual double arpTempo() const { return 120; }
+    virtual bool arpQueued() const { return false; }
 };
 
 } // namespace fui

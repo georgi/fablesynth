@@ -8,6 +8,17 @@
 #include <algorithm>
 
 namespace fui {
+double HostedBassModel::arpSwing() const { return proc_.conductor().swing(); }
+bool HostedBassModel::arpQueued() const { return hasTargetClip() && proc_.conductor().queueOf(1) == scene_; }
+void HostedBassModel::setArpSwing(double v) { proc_.conductor().setSwing(v); }
+fable::ArpSettings HostedBassModel::arpSettings() const {
+    if (!hasTargetClip()) return fable::bassArpDefaults();
+    const auto& c = proc_.conductor().session().scenes[(size_t)scene_].clips[1];
+    return c.hasArp ? c.arp : fable::bassArpDefaults();
+}
+void HostedBassModel::setArpSettings(const fable::ArpSettings& a) {
+    if (hasTargetClip()) proc_.conductor().updateClipArp(scene_, 1, a);
+}
 
 fable::FxTelemetry HostedBassModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(1, pad, bus); }
 
@@ -114,9 +125,9 @@ bool HostedBassModel::sequencerPlaying() const {
     return validScene() && proc_.conductor().ownerOf(kTrack) == scene_;
 }
 
-void HostedBassModel::setSequencerPlaying(bool) {
-    // SQ-4 owns launch/stop transport. The reusable body advertises that fact
-    // through capabilities(); a defensive no-op keeps accidental calls safe.
+void HostedBassModel::setSequencerPlaying(bool on) {
+    if (!hasTargetClip()) return;
+    if (on) proc_.conductor().launch(kTrack, scene_); else proc_.conductor().stopTrack(kTrack);
 }
 
 int HostedBassModel::currentStep() const {

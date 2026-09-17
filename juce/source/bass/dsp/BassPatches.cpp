@@ -85,8 +85,14 @@ const std::vector<BassPatch>& bassFactoryPatches() {
         std::vector<BassPatch> out;
         // The design defaults ARE the acid line — overrides only where the
         // mock differs.
-        out.push_back({ "ACID LINE", {}, acid, { 0 } });
+        out.push_back({ "ACID LINE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
+        }, acid, { 0 } });
         out.push_back({ "RUBBER SUB", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.14f }, { "fx.ott.time", 1.6f }, { "fx.ott.up", 0.35f }, { "fx.ott.down", 0.6f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.14f }, { "fx.comp.ratio", 2.5f },
+            { "fx.drive.type", 1 }, { "fx.drive.tone", -0.2f },
             { "osc.table", 2 },       // PULSE
             { "osc.pos", 0.12f },
             { "osc.level", 0.6f },
@@ -107,6 +113,8 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "master.swing", 0.42f },
         }, acid, { 0 } });
         out.push_back({ "NEON SQUELCH", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.3f }, { "fx.ott.time", 1 }, { "fx.ott.up", 0.75f }, { "fx.ott.down", 0.85f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -21 }, { "fx.comp.att", 0.018f }, { "fx.comp.rel", 0.09f }, { "fx.comp.ratio", 3 },
             { "osc.pos", 0.55f },
             { "osc.unison", 3 },
             { "osc.detune", 0.3f },
@@ -138,6 +146,8 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 112 }, { "master.swing", 0.4f },
         }, acid, { 0 } });
         out.push_back({ "WAREHOUSE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.34f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.8f }, { "fx.ott.down", 0.9f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -22 }, { "fx.comp.att", 0.024f }, { "fx.comp.rel", 0.095f }, { "fx.comp.ratio", 3.5f },
             { "osc.table", 3 }, { "osc.pos", 0.72f }, { "osc.unison", 2 }, { "osc.detune", 0.18f },
             { "osc.spread", 0.18f }, { "sub.level", 0.38f },
             { "flt.type", 1 }, { "flt.cut", 430 }, { "flt.res", 0.68f }, { "flt.drive", 0.72f },
@@ -147,6 +157,9 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "fx.reverb.mix", 0.05f }, { "seq.bpm", 136 }, { "master.swing", 0.16f },
         }, acid, { 0, 1 } });
         out.push_back({ "ROUNDHOUSE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.2f }, { "fx.ott.time", 1.5f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.7f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.028f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.type", 1 }, { "fx.drive.tone", -0.2f },
             { "osc.table", 1 }, { "osc.pos", 0.28f }, { "osc.unison", 1 }, { "osc.level", 0.68f },
             { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 0.68f },
             { "flt.type", 0 }, { "flt.cut", 680 }, { "flt.res", 0.22f }, { "flt.drive", 0.34f },
@@ -158,6 +171,8 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 124 }, { "master.swing", 0.32f },
         }, acid, { 0 } });
         out.push_back({ "METAL PULSE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.28f }, { "fx.ott.time", 1.2f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.024f }, { "fx.comp.rel", 0.11f }, { "fx.comp.ratio", 3 },
             // A bandpass on a bass throws away most of its energy; the level
             // here is set so the patch can still reach the mix target at a
             // sane track fader.
@@ -186,6 +201,8 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 104 }, { "master.swing", 0.5f },
         }, acid, { 0 } });
         out.push_back({ "REESE MONO", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.28f }, { "fx.ott.time", 1.3f }, { "fx.ott.up", 0.7f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -21 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.16f }, { "fx.comp.ratio", 3 },
             { "osc.table", 0 }, { "osc.pos", 0.64f }, { "osc.unison", 7 }, { "osc.detune", 0.46f },
             { "osc.spread", 0.18f }, { "osc.level", 0.72f }, { "sub.shape", 0 }, { "sub.level", 0.54f },
             { "flt.type", 1 }, { "flt.cut", 360 }, { "flt.res", 0.3f }, { "flt.drive", 0.54f },
@@ -198,6 +215,8 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 128 }, { "master.swing", 0.24f },
         }, acid, { 0, 1 } });
         out.push_back({ "PLUCKED WIRE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.22f }, { "fx.ott.time", 1.5f }, { "fx.ott.up", 0.55f }, { "fx.ott.down", 0.7f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.028f }, { "fx.comp.rel", 0.08f }, { "fx.comp.ratio", 3 },
             { "osc.table", 2 }, { "osc.pos", 0.62f }, { "osc.tune", 0 }, { "osc.unison", 2 },
             { "osc.detune", 0.1f }, { "osc.spread", 0.28f }, { "osc.level", 1 },
             { "sub.level", 0.18f }, { "flt.type", 1 }, { "flt.cut", 1500 }, { "flt.res", 0.42f },
@@ -252,6 +271,9 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 96 }, { "master.swing", 0.2f },
         }, acid, { 0 } });
         out.push_back({ "HOUSE ORGAN", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.22f }, { "fx.ott.time", 1.5f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.11f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.type", 1 }, { "fx.drive.tone", -0.2f },
             // HOUSE: the classic organ-ish bump — short, round, under a 4/4 kick.
             { "osc.table", 2 }, { "osc.pos", 0.42f }, { "osc.unison", 2 }, { "osc.detune", 0.12f },
             { "osc.spread", 0.2f }, { "osc.level", 0.72f },
@@ -306,6 +328,9 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 132 }, { "master.swing", 0 },
         }, acid, { 0 } });
         out.push_back({ "808 GLIDE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.12f }, { "fx.ott.time", 1.8f }, { "fx.ott.up", 0.3f }, { "fx.ott.down", 0.6f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.18f }, { "fx.comp.ratio", 2.5f },
+            { "fx.drive.type", 1 }, { "fx.drive.tone", -0.2f },
             // FUTURE BASS: the 808 — pure sub, long tail, glides between roots.
             { "osc.table", 0 }, { "osc.pos", 0.06f }, { "osc.unison", 1 }, { "osc.level", 0.3f },
             { "sub.shape", 0 }, { "sub.oct", -1 }, { "sub.level", 1 },
@@ -317,6 +342,8 @@ const std::vector<BassPatch>& bassFactoryPatches() {
             { "seq.bpm", 150 }, { "master.swing", 0 },
         }, acid, { 0 } });
         out.push_back({ "GROWL WIDE", Overrides{
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.38f }, { "fx.ott.time", 1 }, { "fx.ott.up", 0.9f }, { "fx.ott.down", 0.85f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -22 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 3.5f },
             // FUTURE BASS: the other half — wide detuned growl, 1/8 filter motion.
             { "osc.table", 5 }, { "osc.pos", 0.48f }, { "osc.unison", 5 }, { "osc.detune", 0.38f },
             { "osc.spread", 0.42f }, { "osc.level", 0.66f },

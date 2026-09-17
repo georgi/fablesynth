@@ -105,6 +105,8 @@ private:
     bool sweeping_ = false;
     fable::RectSel pending_;
 
+    bool drawingNote_ = false;
+    int drawDuration_ = 1;
     bool noteDragArmed_ = false, noteDragActive_ = false;
     int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
     // Pixel-space drag tracking: the preview follows the pointer continuously

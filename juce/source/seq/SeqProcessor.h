@@ -208,6 +208,7 @@ private:
         float gain = 0;
         uint32_t gen = 0;                            // Reset: the new generation
         std::shared_ptr<std::vector<uint8_t>> bytes; // Clip / Update
+        fable::ArpPattern arp;
         std::shared_ptr<std::vector<float>>  params; // Patch (flat engine params)
     };
     void pushCmd(Cmd&& c);
@@ -220,6 +221,8 @@ private:
         void ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double at, int tag) override;
         void ioScheduleStop(int t, double at) override;
         void ioUpdateClip(int t, const std::vector<uint8_t>& bytes, int bars) override;
+        void ioScheduleArpClip(int t, const fable::ClipData&, double at, int tag) override;
+        void ioUpdateArpClip(int t, const fable::ClipData&) override;
         void ioSetTrackGain(int t, float gain) override;
         void ioSendTempo(double bpm, double swing, double anchor) override;
         SeqAudioProcessor& p;

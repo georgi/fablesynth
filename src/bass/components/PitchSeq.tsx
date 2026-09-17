@@ -6,10 +6,12 @@
 // from useBassKeys.
 
 import type { ReactNode } from 'react';
+import { BassArpModeSwitch, BassArpPanel } from './BassArpPanel';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
 import { useSeqGhostPaste } from '../../components/useSeqGhostPaste';
+import { useSeqNoteDraw } from '../../components/useSeqNoteDraw';
 import { useSeqNoteDrag } from '../../components/useSeqNoteDrag';
 import { useSeqRectSelect } from '../../components/useSeqRectSelect';
 import { copyRectChain, rectNorm } from '../../shared/seqEdit';
@@ -52,7 +54,12 @@ function SeqLength() {
   );
 }
 
-export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: ReactNode } = {}) {
+export function PitchSeq(props: { bars?: number; headerExtra?: ReactNode } = {}) {
+  const arp = useBassStore(s => s.arpMode && !s.hosted);
+  return arp ? <BassArpPanel /> : <PitchSeqGrid {...props} />;
+}
+
+function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: ReactNode } = {}) {
   const hosted = useBassStore((s) => s.hosted);
   const playing = useBassStore((s) => s.playing);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
@@ -82,6 +89,14 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
   // the selection menu open over the grid right after every drop.
   const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern) => {
     moveStepNote(from, to, note, { copy }, pattern);
+  });
+
+  const { drawing, startNoteDraw, consumeDrawClick } = useSeqNoteDraw(({ absoluteStep, note, duration }) => {
+    const bar = Math.floor(absoluteStep / STEPS);
+    const step = absoluteStep % STEPS;
+    const state = useBassStore.getState();
+    const pattern = hosted ? bar : state.chain[bar];
+    state.drawNote(step, note, duration, pattern);
   });
 
   // Rectangle selection + in-rect block-move
@@ -142,10 +157,11 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
           </button>
         )}
         <h2>PITCH SEQ</h2>
+        {!hosted && <BassArpModeSwitch />}
         {!hosted && <SeqLength />}
         {headerExtra}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
-        <span className="bl-seq-hint">DRAG = MOVE · EDGE = LENGTH · SLD = LEGATO</span>
+        <span className="bl-seq-hint">DRAG EMPTY = DRAW · DRAG NOTE = MOVE · EDGE = LENGTH</span>
       </div>
 
       <div className="bl-seq-body">
@@ -196,6 +212,7 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
+                              if (event.button !== 0 || ghost) return;
                               // Grab a lit cell — or the painted body of a longer
                               // note covering this cell — to move it (Alt = copy,
                               // Esc cancels). Shift-drag sweeps a selection rect;
@@ -207,12 +224,12 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                               if (event.shiftKey) { startRectSelect(event, absoluteStep, note); return; }
                               if (rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
                               const srcStep = noteHead();
-                              if (srcStep < 0) return;
+                              if (srcStep < 0) { startNoteDraw(event, absoluteStep, note, totalSteps); return; }
                               event.preventDefault();
                               startNoteDrag(event, srcStep, note, pattern, step);
                             }}
                             onClick={() => {
-                              if (consumeRectClick() || consumeDragClick()) return;
+                              if (consumeDrawClick() || consumeRectClick() || consumeDragClick()) return;
                               // A click on a note selects it — head cell or
                               // painted body alike. Only an empty cell makes a
                               // new note. DELETE in the selection menu (or the
@@ -235,6 +252,10 @@ export function PitchSeq({ bars, headerExtra }: { bars?: number; headerExtra?: R
                               muted={dragSrc}
                               onChange={(duration) => setStepDuration(step, duration, pattern)}
                             />
+                          )}
+                          {drawing?.absoluteStep === absoluteStep && drawing.note === note && (
+                            <span className="bl-note-preview" aria-hidden="true"
+                              style={{ width: `calc(${drawing.duration * 100}% + ${(drawing.duration - 1) * 5}px)` }} />
                           )}
                           {drag && dragPreview && (
                             <span

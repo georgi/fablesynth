@@ -29,6 +29,7 @@ export function useSeqEditKeys() {
 
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
+      if (useStore.getState().arpMode && !useStore.getState().hosted) return;
       if (isFormTarget(e.target)) return;
       if (e.repeat) return;
       const mod = e.metaKey || e.ctrlKey;

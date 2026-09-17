@@ -43,6 +43,9 @@ export function SeqApp() {
       const el = e.target as HTMLElement | null;
       if (el?.closest('input, textarea, select, [role="slider"], [contenteditable="true"]')) return;
       if (st.focus) {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && st.session.scenes[st.focus.scene]?.clips[st.focus.track]?.arp) {
+          e.preventDefault(); if (e.shiftKey) st.redo(); else st.undo(); return;
+        }
         if (e.key === 'Escape') st.exitFocus();
         else if (e.key >= '1' && e.key <= String(st.session.tracks.length)) st.enterFocus(Number(e.key) - 1);
         else if (e.key === 'ArrowUp') { e.preventDefault(); st.focusScene(st.focus.scene - 1); }

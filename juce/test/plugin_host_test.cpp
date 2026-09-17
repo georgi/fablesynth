@@ -4,6 +4,8 @@
 // + engine + FX all work together through the JUCE plugin surface.
 #include "../source/PluginProcessor.h"
 #include "FxUiChecks.h"
+#include "NoteDrawChecks.h"
+#include "ArpProcessorChecks.h"
 #include "../source/PluginEditor.h"
 #include "../source/WavetableView.h"
 #include "../source/ui/WavetableEditor.h"
@@ -500,6 +502,8 @@ int main(int argc, char** argv) {
         proc.setEditPattern(0);
         proc.setChain({ 0 });
 
+        check(checkNoteDrawing(seq, proc), "empty-grid draw: length, pitch, cancel, undo, tap, bounds", 0);
+
         // toggleCell: tap = set note, tap same lane again = rest
         fable::NoteSeqStep offStep;
         proc.setSeqStep(0, 4, offStep);
@@ -756,5 +760,6 @@ int main(int argc, char** argv) {
 
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<FableAudioProcessor>("wt", Rack::LW, Rack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++fail;
+    if (!runArpProcessorChecks<FableAudioProcessor>("wt", false)) ++fail;
     return fail == 0 ? 0 : 1;
 }

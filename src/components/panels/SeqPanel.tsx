@@ -3,6 +3,7 @@
 // rows, bars 1–4 + sequence length, RAND, transport and ROOT controls.
 
 import type { ReactNode } from 'react';
+import { ArpPanel, ArpModeSwitch } from './WtArpPanel';
 import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
 import { copyRectChain, rectNorm, type RectCells, type RectSel } from '../../shared/seqEdit';
 import { useStore } from '../../store';
@@ -11,6 +12,7 @@ import { SeqSelectionMenu } from '../SeqSelectionMenu';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
 import { useSeqGhostPaste } from '../useSeqGhostPaste';
+import { useSeqNoteDraw } from '../useSeqNoteDraw';
 import { useSeqNoteDrag } from '../useSeqNoteDrag';
 import { useSeqRectSelect } from '../useSeqRectSelect';
 
@@ -70,7 +72,7 @@ interface SeqPanelProps {
   /** Hosted SQ-4 clips have up to eight WT voices per step; standalone patterns do not. */
   polySteps?: SeqStep[][];
   bars?: number;
-  onToggleChordNote?: (step: number, note: number) => void;
+  onToggleChordNote?: (step: number, note: number, duration?: number) => void;
   onSetChordDuration?: (step: number, note: number, duration: number) => void;
   /** Hosted-only: enables rect selection with these verb implementations. */
   rectOps?: SeqRectOps;
@@ -80,7 +82,12 @@ interface SeqPanelProps {
   headerExtra?: ReactNode;
 }
 
-export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra }: SeqPanelProps = {}) {
+export function SeqPanel(props: SeqPanelProps = {}) {
+  const arp = useStore(s => s.arpMode && !s.hosted);
+  return arp ? <ArpPanel /> : <NoteSeqPanel {...props} />;
+}
+
+function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
   const seqPlaying = useStore((s) => s.seqPlaying);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
@@ -112,6 +119,15 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
   const { drag, startNoteDrag, consumeDragClick } = useSeqNoteDrag((from, to, note, copy, pattern, srcNote) => {
     if (onMoveChordNote) onMoveChordNote(from, to, note, srcNote, copy, pattern);
     else moveStepNote(from, to, note, { copy }, pattern);
+  });
+
+  const { drawing, startNoteDraw, consumeDrawClick } = useSeqNoteDraw(({ absoluteStep, note, duration }) => {
+    const bar = Math.floor(absoluteStep / STEPS);
+    const step = absoluteStep % STEPS;
+    if (onToggleChordNote) { onToggleChordNote(absoluteStep, note, duration); return; }
+    const state = useStore.getState();
+    const pattern = hosted ? bar : state.chain[bar];
+    state.drawNote(step, note, duration, pattern);
   });
 
   // Rectangle selection + in-rect block-move
@@ -185,10 +201,11 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
           </button>
         )}
         <h2>NOTE SEQ</h2>
+        {!hosted && <ArpModeSwitch />}
         {!hosted && <SeqLength />}
         {headerExtra}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
-        <span className="ns-hint">TAP = NOTE · CLICK NOTE = SELECT · SHIFT-DRAG = RECT</span>
+        <span className="ns-hint">DRAG EMPTY = DRAW · CLICK NOTE = SELECT · SHIFT-DRAG = RECT</span>
       </div>
 
       <div className="ns-body">
@@ -240,6 +257,7 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {
+                              if (event.button !== 0 || ghost) return;
                               // Grab a lit cell — or the painted body of a longer
                               // note covering this cell — to move it; standalone
                               // mono grid only (hosted poly keeps chord callbacks).
@@ -249,12 +267,12 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                               if (selectable && rectSel && inRect(absoluteStep, note) && !pending) { startRectMove(event, absoluteStep, note); return; }
                               if (hosted && !onMoveChordNote) return;
                               const srcStep = noteHead();
-                              if (srcStep < 0) return;
+                              if (srcStep < 0) { startNoteDraw(event, absoluteStep, note, totalSteps); return; }
                               event.preventDefault();
                               startNoteDrag(event, srcStep, note, pattern, step);
                             }}
                             onClick={() => {
-                              if (consumeRectClick() || consumeDragClick()) return;
+                              if (consumeDrawClick() || consumeRectClick() || consumeDragClick()) return;
                               // A click on a note selects it — head cell or
                               // painted body alike. Only an empty cell makes a
                               // new note. DELETE in the selection menu (or the
@@ -281,6 +299,10 @@ export function SeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuratio
                                 ? onSetChordDuration(absoluteStep, note, duration)
                                 : setStepDuration(step, duration, pattern)}
                             />
+                          )}
+                          {drawing?.absoluteStep === absoluteStep && drawing.note === note && (
+                            <span className="ns-note-preview" aria-hidden="true"
+                              style={{ width: `calc(${drawing.duration * 100}% + ${(drawing.duration - 1) * 5}px)` }} />
                           )}
                           {drag && dragPreview && (
                             <span

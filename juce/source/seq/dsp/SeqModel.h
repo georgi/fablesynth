@@ -5,6 +5,7 @@
 #pragma once
 
 #include "SeqProtocol.h"
+#include "../../dsp/Arp.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -19,6 +20,8 @@ struct ClipData {
     std::string name;
     int bars = 1;
     std::vector<uint8_t> bytes;
+    bool hasArp = false;
+    ArpSettings arp;
 };
 
 // v1 sessions use factory patches; params are only meaningful when !factory.
@@ -70,6 +73,8 @@ inline std::string validateSession(const SessionData& doc) {
         for (size_t t = 0; t < sc.clips.size(); t++) {
             if (!sc.hasClip[t]) continue;
             const auto& c = sc.clips[t];
+            if (c.hasArp && (doc.tracks[t].machine == Machine::DR1 || !validArpSettings(c.arp, true)))
+                return "invalid clip arpeggiator";
             if (!(c.bars >= 1 && c.bars <= SQ_MAX_BARS))
                 return "scene " + std::to_string(s) + " track " + std::to_string(t) + ": bars out of range";
             const int want = c.bars * sqBytesPerBar(doc.tracks[t].machine);

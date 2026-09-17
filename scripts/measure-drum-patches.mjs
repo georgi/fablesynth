@@ -24,7 +24,7 @@ new vm.Script(await readFile(new URL('../src/drum/engine/worklet-drum.js', impor
 const tables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()].map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, mask: t.size - 1, data: t.data }));
 function loudnessDb(audio) { let sum = 0; for (const sample of audio) sum += sample * sample; return -0.691 + 10 * Math.log10(sum / audio.length); }
 const readings = [];
-for (const patch of FACTORY_PATCHES) { const proc = new context.Ctor(); proc.p = defaultDrumParams(); Object.assign(proc.p, applyPatchToParams(proc.p, 0, patch)); proc.tables = tables; proc.samples = samples; proc.trigger(0, 1); const audio = new Float32Array(frames); for (let at = 0; at < frames; at += block) { const out = Array.from({ length: 16 }, () => [new Float32Array(block), new Float32Array(block)]); context.currentFrame = at; proc.process([], out); audio.set(out[0][0], at); } readings.push({ name: patch.name, lufs: loudnessDb(audio) }); }
+for (const patch of FACTORY_PATCHES) { const proc = new context.Ctor(); const params = defaultDrumParams(); Object.assign(params, applyPatchToParams(params, 0, patch)); proc.port.onmessage({ data: { t: 'init', params } }); proc.tables = tables; proc.samples = samples; proc.trigger(0, 1); const audio = new Float32Array(frames); for (let at = 0; at < frames; at += block) { const out = Array.from({ length: 16 }, () => [new Float32Array(block), new Float32Array(block)]); context.currentFrame = at; proc.process([], out); audio.set(out[0][0], at); } readings.push({ name: patch.name, lufs: loudnessDb(audio) }); }
 if (readings.some((reading) => !Number.isFinite(reading.lufs))) {
   throw new Error('one or more patches rendered silence; calibration aborted');
 }

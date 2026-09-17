@@ -31,6 +31,7 @@
 #include "../source/seq/ui/HostedBassModel.h"
 #include "../source/seq/ui/HostedWtModel.h"
 #include "FxUiChecks.h"
+#include "../source/ui/ArpPanel.h"
 #include "../source/ui/Theme.h"
 
 #include <algorithm>
@@ -887,6 +888,34 @@ int main(int argc, char** argv) {
                 juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
             }
         }
+    }
+    for (int track = 1; track < 4; ++track) {
+        ed2->enterFocus(track, 2);
+        auto* body = focusView.activeBodyComponent();
+        auto* mode = findFxComponent<fui::ArpModeBar>(*body);
+        auto* arp = findFxComponent<fui::ArpPanel>(*body);
+        auto before = p.conductor().session().scenes[2].clips[(size_t)track];
+        check(mode && arp, "SQ melodic editors expose SEQ/ARP", track);
+        if (mode && arp) {
+            for (auto* child : mode->getChildren())
+                if (auto* b = dynamic_cast<juce::TextButton*>(child); b && b->getButtonText() == "ARP") b->onClick();
+            check(arp->isVisible() && p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
+                  "SQ ARP tab enables only the selected clip", track);
+            auto* input = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator input");
+            check(input && !input->isEnabled(), "SQ arp uses portable stored notes", track);
+            auto* rate = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator rate");
+            if (rate) rate->setSelectedId(7, juce::sendNotificationSync);
+            const auto& clip = p.conductor().session().scenes[2].clips[(size_t)track];
+            check(rate && std::abs(clip.arp.rate - 1.0 / 6) < 1e-12 && clip.bytes == before.bytes,
+                  "SQ arp rate edits preserve written pattern bytes", track);
+            auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+            dir.createDirectory();
+            if (auto out = dir.getChildFile("sq4-arp-track-" + juce::String(track) + ".png").createOutputStream()) {
+                out->setPosition(0); out->truncate();
+                juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+            }
+        }
+        p.conductor().pasteClip(2, track, before);
     }
     ed2->exitFocus();
 

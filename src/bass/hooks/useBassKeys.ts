@@ -41,6 +41,7 @@ export function useBassKeys() {
       if (isEditableTarget(document.activeElement)) return;
 
       if (e.metaKey || e.ctrlKey) {
+        if (useBassStore.getState().arpMode && !useBassStore.getState().hosted) return;
         if (e.repeat) return;
         const {
           copySelection, cutSelection, pasteSelection, duplicateSelection,
@@ -69,6 +70,7 @@ export function useBassKeys() {
         return;
       }
       if (e.code === 'Delete' || e.code === 'Backspace') {
+        if (useBassStore.getState().arpMode && !useBassStore.getState().hosted) return;
         useBassStore.getState().deleteSelection();
         return;
       }

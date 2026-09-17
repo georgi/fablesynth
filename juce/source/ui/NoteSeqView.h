@@ -126,6 +126,8 @@ private:
 
     // Note drag of a single lit cell: armed on mouseDown, becomes active once
     // the pointer reaches a different cell (so a plain tap still toggles).
+    bool drawingNote_ = false;
+    int drawDuration_ = 1;
     bool noteDragArmed_ = false, noteDragActive_ = false;
     int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
     // Pixel-space drag tracking: the preview follows the pointer continuously

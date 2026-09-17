@@ -5,6 +5,8 @@
 // headless editor render. Modeled on drum_host_test.cpp.
 #include "../source/bass/BassProcessor.h"
 #include "FxUiChecks.h"
+#include "NoteDrawChecks.h"
+#include "ArpProcessorChecks.h"
 #include "../source/bass/BassEditor.h"
 #include <array>
 #include <cmath>
@@ -355,6 +357,8 @@ int main(int argc, char** argv) {
         proc.setEditPattern(0);
         proc.setChain({ 0 });
 
+        check(checkNoteDrawing(seq, proc), "empty-grid draw: length, pitch, cancel, undo, tap, bounds", 0);
+
         // toggleCell: tap = set note, tap same lane again = rest
         fable::BassSeqStep offStep;
         proc.setSeqStep(0, 4, offStep);
@@ -667,5 +671,6 @@ int main(int argc, char** argv) {
 
     printf("%s\n", g_fail == 0 ? "BASS PLUGIN CHECKS PASSED" : "BASS PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<BassAudioProcessor>("bl", BassRack::LW, BassRack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++g_fail;
+    if (!runArpProcessorChecks<BassAudioProcessor>("bl", true)) ++g_fail;
     return g_fail == 0 ? 0 : 1;
 }

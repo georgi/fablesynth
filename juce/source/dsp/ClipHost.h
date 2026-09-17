@@ -6,6 +6,7 @@
 #pragma once
 
 #include "../seq/dsp/SeqProtocol.h"
+#include "Arp.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -54,8 +55,9 @@ public:
     // before the boundary re-targets; docs §6 rule 1). `tag` is the clip's
     // launch identity (scene index), carried through to the Start ack so the
     // conductor attributes it correctly (Finding 1).
-    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0) {
+    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0, ArpPattern arp = {}) {
         pend_.assign(d, d + n); pendBars_ = bars; pendAt_ = at; hasPend_ = true;
+        pendArp_ = arp;
         pendTag_ = tag;
         hasStop_ = false;
     }
@@ -67,25 +69,31 @@ public:
     // Hot-swap bytes: pending slot when one exists, else the live clip.
     // Position is derived arithmetic, so the playhead never moves; a bars
     // change re-derives the entry under floor() (mid-flight resize).
-    void updateClip(const uint8_t* d, size_t n, int bars) {
-        if (hasPend_) { pend_.assign(d, d + n); pendBars_ = bars; return; }
+    void updateClip(const uint8_t* d, size_t n, int bars, ArpPattern arp = {}) {
+        if (hasPend_) { pend_.assign(d, d + n); pendBars_ = bars; pendArp_ = arp; return; }
         if (!playing_) return;
+        const bool rephase = arp.enabled != arp_.enabled || (arp.enabled && arp.rate != arp_.rate);
+        arp_ = arp;
         clip_.assign(d, d + n);
         const bool resized = bars != clipBars_;
         clipBars_ = bars;
-        if (resized && clipStep_ >= 0)
-            clipStep_ = phaseStep(lastFrame_, bars * SQ_STEPS_PER_BAR, /*roundNearest*/ false);
+        if (rephase) rephase_ = true;
+        else if (resized && clipStep_ >= 0)
+            clipStep_ = phaseStep(lastFrame_, totalSteps(), /*roundNearest*/ false);
     }
 
     void clear() { playing_ = false; hasPend_ = false; hasStop_ = false; clipStep_ = -1; }
 
     bool isPlaying() const { return playing_; }
+    bool hasPending() const { return hasPend_; }
     int  playingBars() const { return hasPend_ ? pendBars_ : clipBars_; }
     // Bars of the currently loaded (live) clip — unlike playingBars(), never
     // shadowed by a still-pending clip; the fire callback needs this to wrap
     // its tie lookahead within the clip that's actually sounding.
     int  clipBars() const { return clipBars_; }
     const uint8_t* clipData() const { return clip_.data(); }
+    const ArpPattern& arp() const { return arp_; }
+    double stepInterval(int) const { return std::max(1.0, toNext_); }
     int  clipStep() const { return clipStep_; } // last fired absolute step
 
     // Test hooks: reserved buffer capacities, to assert prepare()'s
@@ -132,15 +140,21 @@ public:
             // clip_ and pend_ retain their reserved buffers — pend_ inherits
             // the outgoing clip's storage for the next scheduleClip's assign().
             std::swap(clip_, pend_); clipBars_ = pendBars_; clipTag_ = pendTag_;
+            arp_ = pendArp_;
             playing_ = true;
+            rephase_ = false;
             // Phase-locked entry: enter at the global grid position, -1 so
             // the immediate fire below lands ON that step (worklet clipPhase).
-            clipStep_ = phaseStep(frame, clipBars_ * SQ_STEPS_PER_BAR, true) - 1;
+            clipStep_ = phaseStep(frame, totalSteps(), true) - 1;
             toNext_ = 0;
             onSwap(wasPlaying);
             pushEvent({ HostEvent::T::Start, frame, 0, 0, clipTag_ });
         }
         if (playing_) {
+            if (rephase_) {
+                clipStep_ = phaseStep(frame, totalSteps(), false) - 1;
+                toNext_ = 0; rephase_ = false;
+            }
             // A large host quantum (offline render, high bpm) can leave more
             // than one grid step already due as of this block's start.
             // fireStep reschedules anchor-absolute from the frame it's given
@@ -179,10 +193,12 @@ private:
 
     double clampBpm() const { return std::max(60.0, std::min(200.0, bpm_)); }
     double clampSwing() const { return std::max(0.0, std::min(1.0, swing_)); }
+    double stepDuration() const { return 60.0 / clampBpm() * (arp_.enabled ? arp_.rate : .25) * sr_; }
+    int totalSteps() const { return arp_.enabled ? 16 : clipBars_ * SQ_STEPS_PER_BAR; }
 
     // round: activation snaps to the boundary step; floor: mid-flight resize.
     int phaseStep(double frame, int total, bool roundNearest) const {
-        const double dur = sqSamplesPerStep(clampBpm(), sr_);
+        const double dur = stepDuration();
         const double pos = std::max(0.0, frame - anchor_) / dur;
         const long idx = roundNearest ? (long)std::lround(pos) : (long)std::floor(pos);
         return (int)(((idx % total) + total) % total);
@@ -196,28 +212,29 @@ private:
     // times (docs/sq4-clips.md §6 rule 2; worklet.js clipFire).
     template <typename FireFn>
     void fireStep(double frame, FireFn&& fire) {
-        const double dur = sqSamplesPerStep(clampBpm(), sr_);
+        const double dur = stepDuration();
         const double sw = clampSwing();
-        const int total = clipBars_ * SQ_STEPS_PER_BAR;
+        const int total = totalSteps();
         const int abs = (clipStep_ + 1) % total;
         const int s = abs % SQ_STEPS_PER_BAR;
         clipStep_ = abs;
-        fire(abs);
-        pushEvent({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR, clipTag_ });
 
         const double offNow  = (s % 2 == 1) ? sw * SQ_SWING_MAX * dur : 0.0;
         const int sNext = (s + 1) % SQ_STEPS_PER_BAR;
         const double offNext = (sNext % 2 == 1) ? sw * SQ_SWING_MAX * dur : 0.0;
         const long idx = (long)std::lround((frame - anchor_ - offNow) / dur);
         toNext_ = anchor_ + (double)(idx + 1) * dur + offNext - frame;
+        fire(abs);
+        pushEvent({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR, clipTag_ });
     }
 
     double bpm_ = 120, swing_ = 0, sr_ = 48000, anchor_ = 0;
     std::vector<uint8_t> clip_, pend_;
+    ArpPattern arp_, pendArp_;
     int clipBars_ = 0, pendBars_ = 0;
     int clipTag_ = 0, pendTag_ = 0; // launch identity (scene) of live/pending clip
     double pendAt_ = -1, stopAt_ = -1, toNext_ = 0, lastFrame_ = 0;
-    bool hasPend_ = false, hasStop_ = false, playing_ = false;
+    bool hasPend_ = false, hasStop_ = false, playing_ = false, rephase_ = false;
     int clipStep_ = -1;
     size_t maxEvents_ = 0; // reserved event headroom, 0 until prepare() (see pushEvent)
 };

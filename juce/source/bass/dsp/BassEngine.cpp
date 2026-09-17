@@ -339,6 +339,23 @@ BassStep BassEngine::readStep(const uint8_t* pats, int pat, int s) {
 
 // Shared step-fire body (js:200-210): trigger the step and schedule the gate,
 // holding through when the NEXT step ties in with a slide.
+void BassEngine::setArp(const ArpPattern& a) {
+    if (hostClipMode_) return;
+    const bool changed = a.enabled != arp_.enabled;
+    if (changed || (a.enabled && !arpHasNotes(a))) { release(); samplesToGateOff_ = -1; }
+    if (changed) { step_ = -1; chainPos_ = 0; samplesToNext_ = 0; }
+    if (changed || a.rate != arp_.rate) hostSynced_ = false;
+    arp_ = a;
+}
+void BassEngine::arpFire(const ArpPattern& a, int s, double interval) {
+    if (a.hits[s] && a.notes[s] >= 0) {
+        const int semi = a.notes[s] - BL_ROOT_MIDI;
+        if (a.slides[s] && gate_) glideTo(semi, a.accents[s]);
+        else noteOn(semi, a.accents[s], a.accents[s] ? BL_ACCENT_VEL : BL_PLAIN_VEL);
+        const int next = (s + 1) % 16;
+        samplesToGateOff_ = a.hits[next] && a.notes[next] >= 0 && a.slides[next] ? -1 : interval * a.gate;
+    } else { release(); samplesToGateOff_ = -1; }
+}
 void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
     const BassStep st = readStep(pats_.data(), pat, s);
     if (st.on) {
@@ -359,6 +376,7 @@ void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
 // separate chain. Does not touch step_ (that's the internal/host-transport
 // sequencer's own position; clipHost_.clipStep() is the hosted position).
 void BassEngine::clipFireAt(int abs) {
+    if (clipHost_.arp().enabled) { arpFire(clipHost_.arp(), abs, clipHost_.stepInterval(abs)); return; }
     const uint8_t* clip = clipHost_.clipData();
     const int total = std::max(1, clipHost_.clipBars() * BL_STEPS);
     const int s = abs % BL_STEPS;
@@ -376,6 +394,11 @@ void BassEngine::clipFireAt(int abs) {
 // js:187-218
 void BassEngine::fireStep() {
     const double bpm = effectiveBpm();
+    if (arp_.enabled) {
+        const int s = (step_ + 1) % 16;
+        const double interval = 60.0 / bpm * arp_.rate * sr_ * (1 + (s % 2 ? -1 : 1) * std::clamp((double)p_[BL_MASTER_SWING], 0.0, 1.0) * BL_SWING_MAX);
+        arpFire(arp_, s, interval); step_ = s; chainPos_ = 0; samplesToNext_ += interval; return;
+    }
     const double dur = (60.0 / bpm / 4.0) * sr_;
     const double swing = p_[BL_MASTER_SWING];
     if (step_ + 1 >= BL_STEPS) {                   // bar wrap advances the chain
@@ -422,11 +445,12 @@ void BassEngine::setHostTransport(double ppq, double bpm, bool playing) {
 
 double BassEngine::hostStepPpq(long k) const {
     double swing = clampd((double)p_[BL_MASTER_SWING], 0.0, 1.0);
-    return (double)k * 0.25 + ((k & 1) ? swing * BL_SWING_MAX * 0.25 : 0.0);
+    const double rate = arp_.enabled ? arp_.rate : .25;
+    return (double)k * rate + ((k & 1) ? swing * BL_SWING_MAX * rate : 0.0);
 }
 
 void BassEngine::hostResync() {
-    long k = (long)std::floor(hostPpq_ / 0.25) - 1;
+    long k = (long)std::floor(hostPpq_ / (arp_.enabled ? arp_.rate : .25)) - 1;
     if (k < 0) k = 0;
     while (hostStepPpq(k) < hostPpq_ - 1e-9) k++;
     hostNextK_ = k;
@@ -435,6 +459,10 @@ void BassEngine::hostResync() {
 
 void BassEngine::fireHostStep(long k) {
     const int  s   = (int)(k % BL_STEPS);
+    if (arp_.enabled) {
+        arpFire(arp_, s, (hostStepPpq(k + 1) - hostStepPpq(k)) * 60.0 / hostBpm_ * sr_);
+        step_ = s; chainPos_ = 0; return;
+    }
     const long bar = k / BL_STEPS;
     chainPos_ = (int)(bar % (long)chainLen_);
     const int pat = chain_[(size_t)chainPos_];

@@ -49,6 +49,7 @@ import { clipToPatterns, patternsToClip } from '../hostBridge';
 import { b64ToBytes, HOSTED_MAX_BARS, type MachineId, wtNoteIdx } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
 import { HostedClipBar, HostedLengthControl } from './HostedClipBar';
+import { HostedArpEditor, HostedArpModeSwitch } from './HostedArpPanel';
 
 // One uniform handle per machine over the three (differently-typed) stores.
 interface HostedStore {
@@ -291,7 +292,7 @@ function BassPanels({ bars }: { bars?: number }) {
           <AccentPanel />
         </div>
       )}
-      {mode === 'seq' && <div id="bl-seq"><PitchSeq bars={bars} headerExtra={<HostedLengthControl machine="BL1" />} /></div>}
+      {mode === 'seq' && <div id="bl-seq"><HostedArpEditor machine="BL1"><PitchSeq bars={bars} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="BL1" /></>} /></HostedArpEditor></div>}
       {mode === 'edit' && <div id="bl-fxrack"><BassFxRack /></div>}
       {/* Keyboard last, where a synth's keys belong. */}
       {mode === 'seq' && <div id="bl-keysrow"><KeysPanel /></div>}
@@ -311,7 +312,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
       return { on: !!(flags & 1), acc: !!(flags & 2), duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)), note: Math.min(11, bytes[o + 1] ?? 0), oct: Math.max(-1, Math.min(1, (bytes[o + 2] ?? 1) - 1)) };
     }));
   }, [clip?.pattern, clip?.bars]);
-  const toggleChordNote = (absoluteStep: number, note: number) => {
+  const toggleChordNote = (absoluteStep: number, note: number, duration = 1) => {
     if (!focus || !clip) return;
     const bytes = b64ToBytes(clip.pattern);
     const bar = Math.floor(absoluteStep / 16), step = absoluteStep % 16;
@@ -327,7 +328,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
       const lane = lanes.find((candidate) => !(bytes[wtNoteIdx(bar, step, candidate)] & 1));
       if (lane === undefined) return;
       const o = wtNoteIdx(bar, step, lane);
-      bytes[o] = 1 | (1 << 2); bytes[o + 1] = note; bytes[o + 2] = 1;
+      bytes[o] = 1 | (Math.min(63, clip.bars * 16 - absoluteStep, Math.max(1, duration)) << 2); bytes[o + 1] = note; bytes[o + 2] = 1;
     }
     useSeqStore.getState().updateClipBytes(focus.scene, focus.track, bytes, clip.bars);
   };
@@ -450,7 +451,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           </>
         )}
         {mode === 'seq' && (
-          <SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<HostedLengthControl machine="WT1" />} />
+          <HostedArpEditor machine="WT1"><SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="WT1" /></>} /></HostedArpEditor>
         )}
       </div>
       {mode === 'seq' && <KeyboardBar />}

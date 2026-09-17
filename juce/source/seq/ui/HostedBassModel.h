@@ -26,6 +26,12 @@ public:
     ParameterSource parameters() override;
     fable::FxTelemetry fxTelemetry(int pad, int bus) const override;
     DeviceUiCapabilities capabilities() const override;
+    fable::ArpSettings arpSettings() const override;
+    void setArpSettings(const fable::ArpSettings&) override;
+    double arpSwing() const override;
+    void setArpSwing(double) override;
+    double arpTempo() const override { return hostBpm(); }
+    bool arpQueued() const override;
 
     int currentProgram() const override;
     int numPrograms() const override;

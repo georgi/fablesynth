@@ -512,8 +512,8 @@ void SeqAudioProcessor::drainCmds() {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
                         case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag); break;
-                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag); break;
-                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag); break;
+                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp); break;
+                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp); break;
                     }
                 } break;
                 case Cmd::K::Stop:
@@ -527,8 +527,8 @@ void SeqAudioProcessor::drainCmds() {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
                         case 0: drum_.hostClipUpdate(d, nb, c.bars); break;
-                        case 1: bass_.hostClipUpdate(d, nb, c.bars); break;
-                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars); break;
+                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp); break;
+                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp); break;
                     }
                 } break;
                 case Cmd::K::Gain:
@@ -562,6 +562,18 @@ void SeqAudioProcessor::drainCmds() {
 }
 
 // ConductorIO -> command FIFO (all on the message thread).
+void SeqAudioProcessor::IO::ioScheduleArpClip(int t, const fable::ClipData& clip, double at, int tag) {
+    Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = clip.bars; c.at = at; c.tag = tag;
+    c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
+    if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    p.pushCmd(std::move(c));
+}
+void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) {
+    Cmd c; c.k = Cmd::K::Update; c.t = t; c.bars = clip.bars;
+    c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
+    if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    p.pushCmd(std::move(c));
+}
 void SeqAudioProcessor::IO::ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double at, int tag) {
     Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = bars; c.at = at; c.tag = tag;
     c.bytes = std::make_shared<std::vector<uint8_t>>(bytes);

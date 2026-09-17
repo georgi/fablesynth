@@ -5,11 +5,12 @@
 
 BassDeviceBody::BassDeviceBody(fui::BassUiModel& model)
     : osc(model), sub(model), filter(model), env(model), lfo(model), accent(model),
-      keys(model), seq(model), fxRack(model, false) {
+      keys(model), seq(model), fxRack(model, false), arp(model, true), arpMode(model, seq, arp) {
     for (auto* component : std::initializer_list<juce::Component*>{
              &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
         addAndMakeVisible(*component);
     addAndMakeVisible(pages);
+    addAndMakeVisible(arp); addAndMakeVisible(arpMode);
     pages.onChange = [this] { resized(); };
 }
 
@@ -48,7 +49,9 @@ void BassDeviceBody::resized() {
     layRow({ { &osc, 464 }, { &sub, 192 }, { &filter, 355 }, { &env, 386 } }, 139, 243);
     layRow({ { &lfo, 290 }, { &accent, 250 } }, 391, 140);
     keys.setVisible(!showFx);
-    seq.setBounds(18, showFx ? 729 : 540, fullW, showFx ? 329 : 369);
+    arpMode.setBounds(18, showFx ? 729 : 540, fullW, 24);
+    seq.setBounds(18, (showFx ? 729 : 540) + 28, fullW, (showFx ? 329 : 369) - 28);
+    arp.setBounds(seq.getBounds());
     fxRack.setBounds(18, 139, fullW, 581);
     keys.setBounds(18, 918, fullW, 140);
 }

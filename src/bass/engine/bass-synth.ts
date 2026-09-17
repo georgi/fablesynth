@@ -14,6 +14,7 @@ import ottWorkletUrl from '../../engine/ott-worklet.js?url';
 import type { DynamicsMessage } from '../../engine/dynamics';
 import type { EchoMessage } from '../../engine/echo';
 import type { ReverbMessage } from '../../engine/reverb';
+import type { ArpConfig } from '../../seq/clipArp';
 
 export interface VizTable {
   name: string;
@@ -49,6 +50,9 @@ export interface EngineInitOpts {
 }
 
 export class BassEngine {
+  setArp(config: { notes: number[]; hits: boolean[]; accents: boolean[]; slides?: boolean[]; rate: number; gate: number } | null): void {
+    if (this.ready) this.node.port.postMessage({ t: 'arp', config });
+  }
   private dynamicsListeners = new Set<(message: DynamicsMessage) => void>();
   private echoListeners = new Set<(message: EchoMessage) => void>();
   private reverbListeners = new Set<(message: ReverbMessage) => void>();
@@ -208,15 +212,15 @@ export class BassEngine {
     if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
   }
 
-  scheduleClip(data: Uint8Array, bars: number, atFrame: number): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame });
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp });
   }
 
   scheduleStop(atFrame: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame });
   }
 
-  updateClip(data: Uint8Array, bars: number): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars });
+  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp });
   }
 }

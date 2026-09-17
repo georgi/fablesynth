@@ -2,6 +2,8 @@
 // mutation is mirrored to the imperative audio engine.
 
 import { create } from 'zustand';
+import { arpNotes, loadArp, newArp, type ArpState } from '../arp';
+import { ROOT_MIDI } from './params';
 import type { ParamValues } from '../params';
 import { BassEngine } from './engine/bass-synth';
 import {
@@ -38,6 +40,12 @@ const history = makeHistory<Patterns>();
 let durationGestureKey: string | null = null;
 
 export interface BassStore {
+  arp: ArpState;
+  arpMode: boolean;
+  arpKeys: number[];
+  setArpMode: (on: boolean) => void;
+  updateArp: (patch: Partial<ArpState>) => void;
+  clearArpKeys: () => void;
   params: ParamValues;
   patterns: Patterns;
   chain: number[];
@@ -71,6 +79,7 @@ export interface BassStore {
   _setPatterns: (next: Patterns) => void;
   _clearHistory: () => void;
   toggleCell: (step: number, note: number, pattern?: number) => void;
+  drawNote: (step: number, note: number, duration: number, pattern: number) => void;
   cycleStepOct: (step: number, pattern?: number) => void;
   toggleStepAcc: (step: number, pattern?: number) => void;
   toggleStepSlide: (step: number, pattern?: number) => void;
@@ -103,7 +112,30 @@ export interface BassStore {
   stepPatch: (delta: number) => void;
 }
 
-export const useBassStore = create<BassStore>((set, get) => ({
+export const useBassStore = create<BassStore>((set, get) => {
+  const syncArp = () => {
+    const { arp, arpMode, arpKeys, hosted } = get();
+    if (!hosted) bassEngine.setArp(arpMode ? { ...arp, notes: arpNotes(arp, arp.input === 'keys' ? arpKeys : arp.notes) } : null);
+  };
+  return {
+  arp: loadArp('bl1-arp-v1', { ...newArp(), notes: [36, 39, 43, 46], slides: Array(16).fill(false) }),
+  arpMode: false, arpKeys: [],
+  setArpMode: (on) => {
+    if (get().hosted || get().arpMode === on) return;
+    bassEngine.panic();
+    set({ arpMode: on, arpKeys: [], heldSemis: [], curStep: -1, curSemi: -100, rectSel: null });
+    syncArp();
+  },
+  updateArp: (patch) => {
+    if (get().hosted) return;
+    if (patch.input && patch.input !== get().arp.input) bassEngine.panic();
+    const arp = { ...get().arp, ...patch };
+    if (patch.input || patch.latch === false) set({ arpKeys: get().heldSemis.map(s => s + ROOT_MIDI) });
+    set({ arp });
+    try { localStorage.setItem('bl1-arp-v1', JSON.stringify(arp)); } catch { /* private storage */ }
+    syncArp();
+  },
+  clearArpKeys: () => { set({ arpKeys: [], heldSemis: [] }); syncArp(); },
   params: initialState.params,
   patterns: initialState.patterns,
   chain: sequenceChain(sequenceLengthFromChain(initialState.chain)),
@@ -137,6 +169,13 @@ export const useBassStore = create<BassStore>((set, get) => ({
   },
 
   noteOn: (semi, vel) => {
+    if (get().arpMode && !get().hosted && get().arp.input === 'keys') {
+      const { arp, arpKeys, heldSemis } = get();
+      set({ arpKeys: [...new Set([...(arp.latch && !heldSemis.length ? [] : arpKeys), semi + ROOT_MIDI])],
+        heldSemis: [...heldSemis.filter(s => s !== semi), semi] });
+      syncArp();
+      return;
+    }
     bassEngine.noteOn(semi, vel);
     set((state) => {
       if (state.playing) return {};
@@ -146,6 +185,12 @@ export const useBassStore = create<BassStore>((set, get) => ({
   },
 
   noteOff: (semi) => {
+    if (get().arpMode && !get().hosted && get().arp.input === 'keys') {
+      set({ heldSemis: get().heldSemis.filter(s => s !== semi),
+        arpKeys: get().arp.latch ? get().arpKeys : get().arpKeys.filter(n => n !== semi + ROOT_MIDI) });
+      syncArp();
+      return;
+    }
     bassEngine.noteOff(semi);
     set((state) => {
       const heldSemis = state.heldSemis.filter((s) => s !== semi);
@@ -169,6 +214,12 @@ export const useBassStore = create<BassStore>((set, get) => ({
   _clearHistory: () => {
     history.clear();
     durationGestureKey = null;
+  },
+
+  drawNote: (step, note, duration, pattern) => {
+    get()._setPatterns(setStep(get().patterns, pattern, step, { on: true, note, duration }));
+    const bar = get().hosted ? pattern : get().chain.indexOf(pattern);
+    if (bar >= 0) set({ lastCell: { step: bar * STEPS + step, note } });
   },
 
   toggleCell: (step, note, pattern) => {
@@ -413,7 +464,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
   play: () => {
     if (get().hosted) return;
     bassEngine.play();
-    set({ playing: true, heldSemis: [] });
+    set({ playing: true, heldSemis: get().arpMode ? get().heldSemis : [] });
   },
 
   stop: () => {
@@ -438,6 +489,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
     await bassEngine.init();
     bassEngine.onstep = (data) => set(() => {
       const base: Partial<BassStore> = { curStep: data.s, curPat: data.pat };
+      if (get().arpMode) base.curSemi = data.semi;
       if (data.semi > -100) {
         base.curSemi = data.semi;
         base.hitTick = performance.now();
@@ -452,6 +504,7 @@ export const useBassStore = create<BassStore>((set, get) => ({
     bassEngine.applyAllParams();
     bassEngine.setPatterns(get().patterns);
     bassEngine.setChain(get().chain);
+    syncArp();
     set({ powered: true });
   },
 
@@ -503,4 +556,5 @@ export const useBassStore = create<BassStore>((set, get) => ({
     else index = (index + delta + options.length) % options.length;
     get().loadPatchByValue(options[index].value);
   },
-}));
+};
+});

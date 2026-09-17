@@ -1,28 +1,11 @@
 import { DrivePanel } from './DrivePanel';
-import { Knob } from '../Knob';
-import { PowerButton } from '../PowerButton';
-
-function FxModule({ fx, title, knobs }: { fx: string; title: string; knobs: string[] }) {
-  return (
-    <div className="fx-module" data-fx={fx}>
-      <div className="panel-head">
-        <span className="ph-power"><PowerButton paramId={`fx.${fx}.on`} /></span>
-        <h2>{title}</h2>
-      </div>
-      <div className="knob-row">
-        {knobs.map((k) => (
-          <Knob key={k} paramId={`fx.${fx}.${k}`} size="sm" accent="n" />
-        ))}
-      </div>
-    </div>
-  );
-}
+import { ChorusPanel } from './ChorusPanel';
 
 export function FxPanel() {
   return (
-    <section className="panel panel-fx" style={{ gridArea: 'fx' }}>
-      <DrivePanel compact />
-      <FxModule fx="chorus" title="CHORUS" knobs={['rate', 'depth', 'mix']} />
-    </section>
+    <>
+      <DrivePanel />
+      <ChorusPanel />
+    </>
   );
 }

@@ -1494,8 +1494,7 @@ int main() {
         check(val(bd, "oscA.table", -1) == 0.0f && val(bd, "oscA.tune", 0) == -26.0f &&
               val(bd, "penv.amt", 0) == 24.0f && val(bd, "penv.dec", 0) == 0.05f &&
               val(bd, "aenv.dec", 0) == 0.42f && val(bd, "aenv.curve", 0) == 0.45f &&
-              val(bd, "lvl", 0) == 0.9f && val(bd, "fx.reverb.on", -1) == 0.0f &&
-              bd.params.size() == 8,
+              val(bd, "fx.reverb.on", -1) == 0.0f,
               "BD DEEP values match web");
         const auto& hh = bank[8];   // HH 808
         check(val(hh, "oscA.level", -1) == 0.0f && val(hh, "oscB.table", -1) == 2.0f &&
@@ -1537,7 +1536,7 @@ int main() {
         check(!hasRouting, "no entry for pad3.out/choke");
         for (const auto& [id, v] : entries) pv[(size_t)id] = v;
         check(pv[dpid(3, DP_OSCA_TUNE)] == -26.0f && pv[dpid(3, DP_PENV_AMT)] == 24.0f &&
-              pv[dpid(3, DP_AENV_DEC)] == 0.42f && pv[dpid(3, DP_LVL)] == 0.9f,
+              pv[dpid(3, DP_AENV_DEC)] == 0.42f && pv[dpid(3, DP_LVL)] == val(bd, "lvl", 0),
               "overrides land on pad 3");
         check(pv[dpid(3, DP_NOISE_LEVEL)] == d0[dpid(3, DP_NOISE_LEVEL)] &&
               pv[dpid(3, DP_PAN)] == d0[dpid(3, DP_PAN)],

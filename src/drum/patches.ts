@@ -25,41 +25,64 @@ export const PATCH_FIELDS: string[] = PAD_FIELDS.filter((f) => !EXCLUDED.has(f))
 const fp = (name: string, params: Record<string, number>): PadPatch => ({ v: 1, name, params });
 
 export const FACTORY_PATCHES: PadPatch[] = [
+  // Driven voices use compensated pad levels; slower COMP/OTT attacks retain
+  // the initial hit. Hats, cymbals and the pure BD SUB keep their original sound.
   // Kicks — THUD body, pitch envelope does the punch.
   fp('BD DEEP', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.12, 'fx.ott.time': 1.8, 'fx.ott.up': 0.3, 'fx.ott.down': 0.65,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -26, 'penv.amt': 24, 'penv.dec': 0.05,
-    'aenv.dec': 0.42, 'aenv.curve': 0.45, 'lvl': 0.9, 'fx.reverb.on': 0,
+    'aenv.dec': 0.42, 'aenv.curve': 0.45, 'lvl': 0.6151, 'fx.reverb.on': 0,
   }),
   fp('BD PUNCH', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.6, 'fx.ott.up': 0.5, 'fx.ott.down': 0.8,
+    'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.075, 'fx.comp.ratio': 3.5,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -19, 'penv.amt': 32, 'penv.dec': 0.028,
-    'aenv.dec': 0.2, 'aenv.curve': 0.5, 'lvl': 0.9, 'fx.reverb.on': 0,
+    'aenv.dec': 0.2, 'aenv.curve': 0.5, 'lvl': 0.5601, 'fx.reverb.on': 0,
   }),
   fp('BD SUB', {
     'oscA.table': 0, 'oscA.tune': -34, 'penv.amt': 20, 'penv.dec': 0.06,
     'aenv.dec': 0.95, 'aenv.hold': 0.02, 'aenv.curve': 0.3, 'lvl': 0.92, 'fx.reverb.on': 0,
   }),
   fp('BD 808', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.14, 'fx.ott.time': 1.8, 'fx.ott.up': 0.3, 'fx.ott.down': 0.65,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.14, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -24, 'penv.amt': 26, 'penv.dec': 0.075,
     'aenv.dec': 0.65, 'aenv.curve': 0.35, 'flt.on': 1, 'flt.type': 0,
-    'flt.cut': 900, 'flt.drive': 0.35, 'lvl': 0.92, 'fx.reverb.on': 0,
+    'flt.cut': 900, 'flt.drive': 0.35, 'lvl': 0.6271, 'fx.reverb.on': 0,
   }),
   // Snares — tonal crack plus a bright noise layer.
   fp('SD CRACK', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.28, 'fx.ott.time': 1.4, 'fx.ott.up': 0.65, 'fx.ott.down': 0.8,
+    'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.09, 'fx.comp.ratio': 3.5,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 1, 'oscA.tune': -12, 'penv.amt': 5, 'penv.dec': 0.03,
-    'noise.level': 0.5, 'noise.color': 0.3, 'aenv.dec': 0.18, 'lvl': 0.85,
+    'noise.level': 0.5, 'noise.color': 0.3, 'aenv.dec': 0.18, 'lvl': 0.5144,
   }),
   fp('SD 808', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.2, 'fx.ott.time': 1.5, 'fx.ott.up': 0.5, 'fx.ott.down': 0.75,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.022, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.level': 0, 'oscB.table': 0, 'oscB.level': 0.9,
-    'noise.level': 0.12, 'noise.color': 0.45, 'aenv.dec': 0.42, 'lvl': 0.85,
+    'noise.level': 0.12, 'noise.color': 0.45, 'aenv.dec': 0.42, 'lvl': 0.6383,
   }),
   fp('SD RIM', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.16, 'fx.ott.time': 1.5, 'fx.ott.up': 0.4, 'fx.ott.down': 0.65,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.065, 'fx.comp.ratio': 2.5,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 1, 'oscA.tune': 0, 'penv.amt': 2, 'penv.dec': 0.015,
-    'noise.level': 0.18, 'noise.color': 0.6, 'aenv.dec': 0.08, 'lvl': 0.8,
+    'noise.level': 0.18, 'noise.color': 0.6, 'aenv.dec': 0.08, 'lvl': 0.5786,
   }),
   // Clap — sampled 808 clap with a room-friendly tail.
   fp('CP 808', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.18, 'fx.ott.time': 1.6, 'fx.ott.up': 0.45, 'fx.ott.down': 0.7,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.028, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 2.5,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.level': 0, 'oscB.table': 1, 'oscB.level': 0.9,
-    'aenv.hold': 0.02, 'aenv.dec': 0.65, 'aenv.curve': 0.4, 'lvl': 0.85,
+    'aenv.hold': 0.02, 'aenv.dec': 0.65, 'aenv.curve': 0.4, 'lvl': 0.6042,
   }),
   // Hats — sampled 808 hats, high-passed to sit above the kit.
   fp('HH 808', {
@@ -83,16 +106,25 @@ export const FACTORY_PATCHES: PadPatch[] = [
   }),
   // Toms — THUD tuned across the range with a modest pitch sweep.
   fp('TM LO', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.16, 'fx.ott.time': 1.6, 'fx.ott.up': 0.4, 'fx.ott.down': 0.7,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -19, 'penv.amt': 12, 'penv.dec': 0.07,
-    'aenv.dec': 0.28, 'lvl': 0.85,
+    'aenv.dec': 0.28, 'lvl': 0.5809,
   }),
   fp('TM MID', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.18, 'fx.ott.time': 1.6, 'fx.ott.up': 0.45, 'fx.ott.down': 0.7,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.024, 'fx.comp.rel': 0.1, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -12, 'penv.amt': 10, 'penv.dec': 0.06,
-    'aenv.dec': 0.24, 'lvl': 0.85,
+    'aenv.dec': 0.24, 'lvl': 0.5812,
   }),
   fp('TM HI', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.18, 'fx.ott.time': 1.6, 'fx.ott.up': 0.45, 'fx.ott.down': 0.7,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.022, 'fx.comp.rel': 0.09, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -5, 'penv.amt': 8, 'penv.dec': 0.05,
-    'aenv.dec': 0.2, 'lvl': 0.85,
+    'aenv.dec': 0.2, 'lvl': 0.5858,
   }),
   // Perc / vox / glitch flavors. The fixed-Hz ring carrier creates
   // inharmonic sidebands, avoiding the cartoonish pitched-table character.
@@ -117,14 +149,20 @@ export const FACTORY_PATCHES: PadPatch[] = [
     'lvl': 0.78,
   }),
   fp('PC GLITCH', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.32, 'fx.ott.time': 1.1, 'fx.ott.up': 0.8, 'fx.ott.down': 0.8,
+    'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.08, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 3, 'oscA.tune': -12, 'oscA.pos': 0.5, 'penv.amt': 9,
-    'penv.dec': 0.04, 'aenv.dec': 0.22, 'lvl': 0.78,
+    'penv.dec': 0.04, 'aenv.dec': 0.22, 'lvl': 0.4131,
   }),
   // Hybrid voices — procedural transient/body layered with the new raw banks.
   fp('HX BD UZU', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.18, 'fx.ott.time': 1.7, 'fx.ott.up': 0.4, 'fx.ott.down': 0.7,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 0, 'oscA.tune': -26, 'oscA.level': 0.50,
     'oscB.table': 16, 'oscB.level': 0.72, 'penv.amt': 22, 'penv.dec': 0.045,
-    'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1400, 'lvl': 0.90, 'fx.reverb.on': 0,
+    'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1400, 'lvl': 0.6367, 'fx.reverb.on': 0,
   }),
   fp('HX BD 808', {
     'oscA.table': 0, 'oscA.tune': -31, 'oscA.level': 0.45,
@@ -132,14 +170,20 @@ export const FACTORY_PATCHES: PadPatch[] = [
     'aenv.dec': 0.72, 'flt.on': 1, 'flt.type': 0, 'flt.cut': 1100, 'lvl': 0.92, 'fx.reverb.on': 0,
   }),
   fp('HX SD UZU', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.5, 'fx.ott.up': 0.55, 'fx.ott.down': 0.8,
+    'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.024, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 1, 'oscA.tune': -12, 'oscA.level': 0.42,
     'oscB.table': 18, 'oscB.level': 0.70, 'noise.level': 0.16,
-    'aenv.dec': 0.50, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 900, 'lvl': 0.84,
+    'aenv.dec': 0.50, 'flt.on': 1, 'flt.type': 3, 'flt.cut': 900, 'lvl': 0.5877,
   }),
   fp('HX CP CROSS', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.2, 'fx.ott.time': 1.6, 'fx.ott.up': 0.5, 'fx.ott.down': 0.7,
+    'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.028, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 2.5,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.14, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 1, 'oscA.tune': 7, 'oscA.level': 0.25,
     'oscB.table': 1, 'oscB.level': 0.76, 'noise.level': 0.12,
-    'aenv.hold': 0.02, 'aenv.dec': 0.70, 'lvl': 0.82,
+    'aenv.hold': 0.02, 'aenv.dec': 0.70, 'lvl': 0.5711,
   }),
   fp('HX RIM', {
     'oscA.table': 2, 'oscA.tune': 19, 'oscA.level': 0.40,
@@ -197,9 +241,12 @@ export const FACTORY_PATCHES: PadPatch[] = [
     'aenv.dec': 0.60, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 1800, 'lvl': 0.76,
   }),
   fp('HX MOD', {
+    'fx.ott.on': 1, 'fx.ott.depth': 0.3, 'fx.ott.time': 1.2, 'fx.ott.up': 0.75, 'fx.ott.down': 0.8,
+    'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.09, 'fx.comp.ratio': 3,
+    'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
     'oscA.table': 9, 'oscA.pos': 0.55, 'oscA.tune': -12, 'oscA.level': 0.35,
     'oscB.table': 31, 'oscB.level': 0.68, 'ring.freq': 2203, 'ring.mix': 0.32,
-    'aenv.dec': 0.25, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 2600, 'lvl': 0.76,
+    'aenv.dec': 0.25, 'flt.on': 1, 'flt.type': 2, 'flt.cut': 2600, 'lvl': 0.4553,
   }),
 ];
 

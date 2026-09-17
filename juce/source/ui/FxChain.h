@@ -5,7 +5,7 @@
 
 namespace fui {
 
-// Shared native ports of EqPanel, DynamicsView, TapeEchoPanel and ReverbPanel.
+// Shared native ports of the web EQ, dynamics, Drive, Chorus, Echo and Reverb panels.
 // The web's drawing coordinates are retained; only the surrounding rack reflows.
 class FxModuleView : public juce::Component, private juce::Timer {
   public:
@@ -33,6 +33,7 @@ class FxModuleView : public juce::Component, private juce::Timer {
     void drawEq(juce::Graphics &, float width, float height);
     void drawDynamics(juce::Graphics &, float w, float h);
     void drawDrive(juce::Graphics &, float w, float h);
+    void drawChorus(juce::Graphics &, float w, float h);
     void drawEcho(juce::Graphics &, float w, float h);
     void drawReverb(juce::Graphics &, float w, float h);
     int hitBand(juce::Point<float>) const;

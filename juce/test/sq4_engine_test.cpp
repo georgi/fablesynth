@@ -15,6 +15,7 @@
 #include "../source/seq/dsp/SeqModel.h"
 #include "../source/seq/dsp/SeqProtocol.h"
 #include "../source/seq/dsp/SnapshotHistory.h"
+#include "ArpEngineChecks.h"
 #if FABLE_SQ4_TEST_JUCE
 #include "../source/seq/SessionCodec.h"
 #include "../source/seq/ClipClipboardCodec.h"
@@ -1491,6 +1492,9 @@ static void testSessionLibraryMusicality() {
 }
 
 int main() {
+    runArpEngineChecks([](bool ok, const char* name) {
+        if (!ok) { std::printf("FAIL arp: %s\n", name); ++failures; }
+    });
     testClipLibrarySchema();
     testProtocol();
     testModelAndFactory();

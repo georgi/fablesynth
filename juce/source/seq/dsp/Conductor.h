@@ -36,6 +36,8 @@ struct ConductorIO {
     virtual void ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double atFrame, int tag) = 0;
     virtual void ioScheduleStop(int t, double atFrame) = 0;
     virtual void ioUpdateClip(int t, const std::vector<uint8_t>& bytes, int bars) = 0;
+    virtual void ioScheduleArpClip(int t, const ClipData& c, double at, int tag) { ioScheduleClip(t, c.bytes, c.bars, at, tag); }
+    virtual void ioUpdateArpClip(int t, const ClipData& c) { ioUpdateClip(t, c.bytes, c.bars); }
     virtual void ioSetTrackGain(int t, float gain) = 0;                           // post-curve, 0 when closed
     virtual void ioSendTempo(double bpm, double swing, double anchorFrame) = 0;
     virtual ~ConductorIO() = default;
@@ -57,6 +59,7 @@ public:
     void stopAll();
     void togglePassThrough(int s, int t);
     void updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int bars);
+    void updateClipArp(int s, int t, const ArpSettings&);
     void createClip(int s, int t);
     // Replace or create exactly one scene cell from a compatible library
     // entry. A live/pending target is updated in place (phase preserved).

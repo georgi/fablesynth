@@ -4,6 +4,7 @@
 #include "ui/PitchSeqView.h"
 #include "ui/BassFxRack.h"
 #include "../ui/FxChain.h"
+#include "../ui/ArpPanel.h"
 
 // Reusable BL-1 machine surface. It depends only on BassUiModel and can be
 // composed by either the standalone rack or SQ-4 without processor symbols.
@@ -24,4 +25,6 @@ private:
     fui::PitchSeqView seq;
     fui::FxChain fxRack;
     fui::DevicePageTabs pages;
+    fui::ArpPanel arp;
+    fui::ArpModeBar arpMode;
 };

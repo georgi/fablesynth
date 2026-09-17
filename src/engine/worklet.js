@@ -24,6 +24,14 @@
 //      {t:'clipstart', frame} {t:'clipstop', frame} {t:'pos', step, bar}   hosted
 
 const NVOICES = 8;
+function readClipArp(a) {
+  if (!a || !Array.isArray(a.notes) || a.notes.length !== 16 ||
+      !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
+      !Number.isFinite(a.rate) || !Number.isFinite(a.gate)) return null;
+  return { notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
+    hits: a.hits.slice(0, 16), accents: a.accents.slice(0, 16),
+    rate: Math.max(.125, Math.min(1, a.rate)), gate: Math.max(.05, Math.min(.95, a.gate)) };
+}
 const MAXUNI = 16;
 // Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
 // in the params/slot helpers and the VST's MOD_MATRIX_SIZE.
@@ -1296,6 +1304,7 @@ class FableProcessor extends AudioWorkletProcessor {
     this.clock = 0;
     // ---- note sequencer state ----
     this.seqPlaying = false;
+    this.arp = null;
     this.seqStep = -1;
     this.seqPats = new Uint8Array(SEQ_NPATTERNS * SEQ_STEPS * SEQ_STRIDE);
     for (let i = 2; i < this.seqPats.length; i += SEQ_STRIDE) this.seqPats[i] = 1; // oct byte: 1 = oct 0
@@ -1405,6 +1414,20 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'bend': this.bend = d.s; break;
       case 'bpm': this.bpm = d.v > 1 ? Math.min(d.v, 1000) : 120; break;
       case 'pats': this.seqPats = new Uint8Array(d.data); break;
+      case 'arp': {
+        if (this.hosted) break;
+        const a = d.config;
+        if (a && (!Array.isArray(a.notes) || a.notes.length !== 16 ||
+          !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
+          !Number.isFinite(a.rate) || !Number.isFinite(a.gate))) break;
+        const changedMode = !!a !== !!this.arp;
+        this.arp = a ? { notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
+          hits: a.hits.slice(0, 16), accents: a.accents.slice(0, 16),
+          rate: Math.max(.125, Math.min(1, a.rate)), gate: Math.max(.05, Math.min(.95, a.gate)) } : null;
+        if (changedMode || (a && !a.notes.some(n => n >= 0))) this.seqGateOff();
+        if (changedMode) { this.seqStep = -1; this.seqChainPos = 0; this.seqToNext = 0; }
+        break;
+      }
       case 'chain':
         if (Array.isArray(d.list) && d.list.length) {
           this.seqChain = d.list.map((x) => x | 0);
@@ -1444,7 +1467,7 @@ class FableProcessor extends AudioWorkletProcessor {
         if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp) };
         this.clipStopAt = -1; // a new launch supersedes a pending stop
         break;
       case 'clipstop':
@@ -1456,16 +1479,20 @@ class FableProcessor extends AudioWorkletProcessor {
         // derived arithmetic, so a live swap never moves the playhead.
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
+        const arp = readClipArp(d.arp);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars;
-          this.clip = { data, bars };
+          const rephase = this.clip.arp?.rate !== arp?.rate;
+          this.clip = { data, bars, arp };
+          if (rephase) { this.seqGateOff(); this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; }
+          else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i])) this.seqGateOff();
           // Re-derive the phase only on a bar-count change (plain modulo can
           // land a grown clip half a cycle off). Same-length edits — every
           // sequencer click — are a pure data swap: touching the phase inside
           // a swing/quantization window would skip a step and desync devices.
-          if (resized && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
+          if (resized && !rephase && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
         }
         break;
       }
@@ -1568,13 +1595,14 @@ class FableProcessor extends AudioWorkletProcessor {
   // mid-flight resizes floor (the last fired step).
   clipPhase(quantize) {
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
-    const dur = (60 / bpm / 4) * sampleRate;
-    const total = this.clip.bars * SEQ_STEPS;
+    const dur = (60 / bpm) * (this.clip.arp?.rate ?? .25) * sampleRate;
+    const total = this.clip.arp ? SEQ_STEPS : this.clip.bars * SEQ_STEPS;
     const idx = quantize(Math.max(0, this.frameNow - this.hostAnchor) / dur);
     return ((idx % total) + total) % total;
   }
 
   clipFire() {
+    if (this.clip.arp) { this.clipArpFire(); return; }
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
@@ -1607,8 +1635,45 @@ class FableProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ t: 'pos', step: s, bar: (abs / SEQ_STEPS) | 0 });
   }
 
+  clipArpFire() {
+    const a = this.clip.arp;
+    const s = (this.clipStep + 1) % 16;
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = 60 / bpm * a.rate * sampleRate;
+    const swing = Math.max(0, Math.min(1, this.hostSwing || 0));
+    const offNow = s % 2 ? swing * SEQ_SWING_MAX * dur : 0;
+    const idx = Math.round((this.frameNow - this.hostAnchor - offNow) / dur);
+    const next = this.hostAnchor + (idx + 1) * dur + ((s + 1) % 2 ? swing * SEQ_SWING_MAX * dur : 0);
+    const interval = Math.max(1, next - this.frameNow);
+    this.seqGateOff();
+    if (a.hits[s] && a.notes[s] >= 0) {
+      this.noteOn(a.notes[s], a.accents[s] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+      this.seqScheduleOff(a.notes[s], interval * a.gate);
+    }
+    this.clipStep = s;
+    this.clipToNext = interval;
+    this.port.postMessage({ t: 'pos', step: s, bar: 0 });
+  }
+
   seqFire() {
     const bpm = Math.max(60, Math.min(200, this.p[SEQ_BPM] || 120));
+    if (this.arp) {
+      const a = this.arp;
+      const s = (this.seqStep + 1) % 16;
+      const dur = 60 / bpm * a.rate * sampleRate;
+      const swing = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
+      const interval = dur * (1 + (s % 2 ? -1 : 1) * swing * SEQ_SWING_MAX);
+      this.seqGateOff();
+      const note = a.notes[s];
+      if (a.hits[s] && note >= 0) {
+        this.noteOn(note, a.accents[s] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+        this.seqScheduleOff(note, interval * a.gate);
+      }
+      this.seqStep = s;
+      this.seqToNext = interval;
+      this.port.postMessage({ t: 'step', s, pat: 0 });
+      return;
+    }
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
     if (this.seqStep + 1 >= SEQ_STEPS) {

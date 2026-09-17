@@ -16,6 +16,7 @@ import ottWorkletUrl from './ott-worklet.js?url';
 import type { DynamicsMessage } from './dynamics';
 import type { EchoMessage } from './echo';
 import type { ReverbMessage } from './reverb';
+import type { ArpConfig } from '../seq/clipArp';
 
 export interface VizMessage {
   t: 'viz';
@@ -257,6 +258,9 @@ export class SynthEngine {
   setSeqPatterns(pats: Uint8Array): void { if (this.ready) this.node.port.postMessage({ t: 'pats', data: pats }); }
   setSeqChain(list: number[]): void { if (this.ready) this.node.port.postMessage({ t: 'chain', list }); }
   seqPlay(): void { if (this.ready) this.node.port.postMessage({ t: 'play' }); }
+  setArp(config: { notes: number[]; hits: boolean[]; accents: boolean[]; rate: number; gate: number } | null): void {
+    if (this.ready) this.node.port.postMessage({ t: 'arp', config });
+  }
   seqStop(): void { if (this.ready) this.node.port.postMessage({ t: 'stop' }); }
 
   // ---------- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----------
@@ -264,9 +268,9 @@ export class SynthEngine {
   setTempo(bpm: number, swing: number, anchor: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
   }
-  scheduleClip(data: Uint8Array, bars: number, atFrame: number): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame });
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp });
   }
   scheduleStop(atFrame: number): void { if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame }); }
-  updateClip(data: Uint8Array, bars: number): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars }); }
+  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp }); }
 }

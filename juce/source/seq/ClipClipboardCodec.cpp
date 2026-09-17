@@ -1,6 +1,7 @@
 // SQ-4 clip-clipboard <-> JSON codec (see ClipClipboardCodec.h). Mirrors
 // SessionCodec's base64/JSON handling for the clip payloads.
 #include "ClipClipboardCodec.h"
+#include "../ui/ArpCodec.h"
 
 namespace fable {
 
@@ -32,6 +33,7 @@ juce::String clipClipboardToJson(const ClipClipboardData& data) {
                 auto* co = new juce::DynamicObject();
                 co->setProperty("name", juce::String(clip.name));
                 co->setProperty("bars", clip.bars);
+                if (clip.hasArp) co->setProperty("arp", arpToVar(clip.arp));
                 co->setProperty("pattern",
                     juce::Base64::toBase64(clip.bytes.data(), clip.bytes.size()));
                 row.add(juce::var(co));
@@ -43,7 +45,7 @@ juce::String clipClipboardToJson(const ClipClipboardData& data) {
     }
     root->setProperty("cells", rows);
 
-    return juce::JSON::toString(juce::var(root));
+    return juce::JSON::toString(juce::var(root), false, 17);
 }
 
 bool clipClipboardFromJson(const juce::String& json, ClipClipboardData& out) {
@@ -74,6 +76,10 @@ bool clipClipboardFromJson(const juce::String& json, ClipClipboardData& out) {
                 ClipData cd;
                 cd.name = cv.getProperty("name", "").toString().toStdString();
                 cd.bars = (int)cv.getProperty("bars", 0);
+                if (cv.hasProperty("arp")) {
+                    cd.hasArp = true;
+                    if (d.machines[(size_t)c] == Machine::DR1 || !arpFromVar(cv["arp"], cd.arp, true)) return false;
+                }
                 if (!(cd.bars >= 1 && cd.bars <= SQ_MAX_BARS)) return false;
                 juce::MemoryOutputStream raw;
                 juce::Base64::convertFromBase64(raw, cv.getProperty("pattern", "").toString());

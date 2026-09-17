@@ -48,6 +48,8 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'ACID LINE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.1, 'fx.ott.up': 0.65, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.1, 'fx.comp.ratio': 3,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.level': 0.85,
       'sub.on': 1, 'sub.level': 0.4, 'sub.oct': -1,
       'filter.type': 1, 'filter.cutoff': 240, 'filter.res': 0.78, 'filter.env': 0.85, 'filter.drive': 0.35,
@@ -64,6 +66,8 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'CRYSTAL PLUCK',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.16, 'fx.ott.time': 1.4, 'fx.ott.up': 0.5, 'fx.ott.down': 0.65,
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 2.5,
       'oscA.table': 4, 'oscA.pos': 0.72, 'oscA.oct': 1, 'oscA.level': 0.8, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.spread': 0.5,
       'filter.type': 0, 'filter.cutoff': 3200, 'filter.res': 0.2, 'filter.env': 0.6, 'filter.key': 0.6,
       'env1.a': 0.001, 'env1.d': 0.5, 'env1.s': 0, 'env1.r': 0.6,
@@ -80,6 +84,8 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'HYPER SAW',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.3, 'fx.ott.time': 1, 'fx.ott.up': 0.8, 'fx.ott.down': 0.85,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.16, 'fx.comp.ratio': 3,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 7, 'oscA.detune': 0.42, 'oscA.spread': 1, 'oscA.level': 0.8,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': 1, 'oscB.unison': 5, 'oscB.detune': 0.35, 'oscB.spread': 0.9, 'oscB.level': 0.45,
       'sub.on': 1, 'sub.level': 0.45,
@@ -95,6 +101,8 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'VOWEL TALK',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.3, 'fx.ott.time': 1, 'fx.ott.up': 0.85, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.14, 'fx.comp.ratio': 3,
       'oscA.table': 3, 'oscA.pos': 0.1, 'oscA.level': 0.85, 'oscA.unison': 3, 'oscA.detune': 0.12, 'oscA.spread': 0.6,
       'sub.on': 1, 'sub.level': 0.5, 'sub.oct': -1,
       'filter.type': 0, 'filter.cutoff': 4500, 'filter.res': 0.25,
@@ -128,6 +136,8 @@ export const FACTORY_PRESETS: Preset[] = [
   {
     name: 'NEURO WOBBLE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.38, 'fx.ott.time': 0.85, 'fx.ott.up': 0.9, 'fx.ott.down': 0.9,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.015, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3.5,
       'oscA.table': 5, 'oscA.pos': 0.3, 'oscA.level': 0.8,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 1, 'oscB.oct': -1, 'oscB.level': 0.55,
       'sub.on': 1, 'sub.level': 0.55, 'sub.oct': -1,
@@ -149,6 +159,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Detuned twin-saw Reese: the staple drum'n'bass / neuro foundation.
     name: 'REESE BASS',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.26, 'fx.ott.time': 1.25, 'fx.ott.up': 0.65, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.16, 'fx.comp.ratio': 3,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 4, 'oscA.detune': 0.5, 'oscA.spread': 0.35, 'oscA.level': 0.85,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.semi': -12, 'oscB.unison': 2, 'oscB.detune': 0.28, 'oscB.level': 0.5,
       'sub.on': 1, 'sub.level': 0.5, 'sub.oct': -1,
@@ -167,6 +179,10 @@ export const FACTORY_PRESETS: Preset[] = [
     // The legendary stacked-fifths saw lead — second osc a fifth up.
     name: 'POWER FIFTHS',
     params: {
+      'master.volume': 0.5005, // Match the original output after adding drive.
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.15, 'fx.ott.up': 0.6, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.15, 'fx.comp.ratio': 3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.18, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 3, 'oscA.detune': 0.22, 'oscA.spread': 0.7, 'oscA.level': 0.7,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.semi': 7, 'oscB.unison': 3, 'oscB.detune': 0.22, 'oscB.spread': 0.7, 'oscB.level': 0.55,
       'sub.on': 1, 'sub.level': 0.35,
@@ -185,6 +201,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Talking dubstep growl: LFO sweeps the vowel table + cutoff into drive.
     name: 'GROWL BASS',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.4, 'fx.ott.time': 0.85, 'fx.ott.up': 1, 'fx.ott.down': 0.85,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.015, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 3.5,
       'oscA.table': 3, 'oscA.pos': 0.15, 'oscA.unison': 2, 'oscA.detune': 0.14, 'oscA.spread': 0.5, 'oscA.level': 0.85,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': -1, 'oscB.level': 0.5,
       'sub.on': 1, 'sub.level': 0.55, 'sub.oct': -1,
@@ -203,6 +221,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Wide future-bass chord stab — 7-voice supersaw under a bloom layer.
     name: 'FUTURE CHORD',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.3, 'fx.ott.time': 1.25, 'fx.ott.up': 0.75, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.18, 'fx.comp.ratio': 3,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 7, 'oscA.detune': 0.32, 'oscA.spread': 1, 'oscA.level': 0.72,
       'oscB.on': 1, 'oscB.table': 1, 'oscB.pos': 0.4, 'oscB.unison': 3, 'oscB.detune': 0.24, 'oscB.spread': 0.8, 'oscB.level': 0.4,
       'filter.type': 0, 'filter.cutoff': 8000, 'filter.res': 0.08, 'filter.env': 0.25, 'filter.key': 0.2,
@@ -221,6 +241,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Aggressive riddim screech — square-wave hook clamped by a fast LFO + drive.
     name: 'SCREECH LEAD',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.1, 'fx.ott.up': 0.5, 'fx.ott.down': 0.9,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
       'oscA.table': 2, 'oscA.pos': 0.7, 'oscA.unison': 3, 'oscA.detune': 0.3, 'oscA.spread': 0.7, 'oscA.level': 0.78,
       'oscB.on': 1, 'oscB.table': 5, 'oscB.pos': 0.4, 'oscB.level': 0.4,
       'filter.type': 2, 'filter.cutoff': 1800, 'filter.res': 0.6, 'filter.drive': 0.4,
@@ -241,6 +263,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Hardstyle "donk" stab: hollow pulse with a mod-env pitch blip on attack.
     name: 'DONK STAB',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.28, 'fx.ott.time': 1.4, 'fx.ott.up': 0.65, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -21, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.095, 'fx.comp.ratio': 3.5,
       'oscA.table': 2, 'oscA.pos': 0.25, 'oscA.level': 0.85,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 1, 'oscB.oct': 1, 'oscB.level': 0.28,
       'sub.on': 1, 'sub.level': 0.4,
@@ -259,6 +283,10 @@ export const FACTORY_PRESETS: Preset[] = [
     // Progressive-house pluck: snappy saw, key-tracked filter, ping-pong delay.
     name: 'HOUSE PLUCK',
     params: {
+      'master.volume': 0.5365, // Match the original output after adding drive.
+      'fx.ott.on': 1, 'fx.ott.depth': 0.2, 'fx.ott.time': 1.5, 'fx.ott.up': 0.5, 'fx.ott.down': 0.7,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.1, 'fx.comp.ratio': 3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.16, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.oct': 1, 'oscA.unison': 3, 'oscA.detune': 0.18, 'oscA.spread': 0.6, 'oscA.level': 0.78,
       'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.3, 'oscB.oct': 1, 'oscB.semi': 12, 'oscB.level': 0.3,
       'filter.type': 1, 'filter.cutoff': 2200, 'filter.res': 0.2, 'filter.env': 0.55, 'filter.key': 0.5,
@@ -331,6 +359,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Classic dubstep wobble: square LFO throws the lowpass open and shut.
     name: 'WUB BASS',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.34, 'fx.ott.time': 1, 'fx.ott.up': 0.85, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.13, 'fx.comp.ratio': 3.5,
       'oscA.table': 0, 'oscA.pos': 1, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.level': 0.8,
       'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.5, 'oscB.oct': -1, 'oscB.level': 0.5,
       'sub.on': 1, 'sub.level': 0.6, 'sub.oct': -1,
@@ -391,6 +421,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // octaves up, deep chorus. Harder velocity = brighter and more bell.
     name: 'DYNO EPIANO',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.14, 'fx.ott.time': 1.5, 'fx.ott.up': 0.45, 'fx.ott.down': 0.65,
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.14, 'fx.comp.ratio': 2.5,
       'oscA.table': 0, 'oscA.pos': 0.05, 'oscA.level': 0.75,
       'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.3, 'oscB.oct': 2, 'oscB.level': 0.15,
       'filter.type': 0, 'filter.cutoff': 2500, 'filter.res': 0.08, 'filter.env': 0.3, 'filter.key': 0.5,
@@ -430,6 +462,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // Leslie-style wobble panning the whole thing.
     name: 'ROCK ORGAN',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.2, 'fx.ott.time': 1.2, 'fx.ott.up': 0.6, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.15, 'fx.comp.ratio': 3,
       'oscA.table': 2, 'oscA.pos': 0, 'oscA.unison': 2, 'oscA.detune': 0.08, 'oscA.level': 0.75,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0, 'oscB.oct': 1, 'oscB.level': 0.45,
       'sub.on': 1, 'sub.level': 0.5, 'sub.oct': -1,
@@ -487,6 +521,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // slightly-lagged mod env, subtle vibrato, a touch of drive.
     name: 'BRASS SECTION',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.18, 'fx.ott.time': 1.3, 'fx.ott.up': 0.5, 'fx.ott.down': 0.7,
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.14, 'fx.comp.ratio': 2.5,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 3, 'oscA.detune': 0.15, 'oscA.spread': 0.5, 'oscA.level': 0.8,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.fine': 8, 'oscB.level': 0.5,
       'sub.on': 1, 'sub.level': 0.3,
@@ -622,6 +658,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // and pan every step so held notes burble like a telemetry feed.
     name: 'DATA STREAM',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.1, 'fx.ott.up': 0.7, 'fx.ott.down': 0.7,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.09, 'fx.comp.ratio': 3,
       'oscA.table': 5, 'oscA.pos': 0.55, 'oscA.level': 0.8,
       'filter.type': 1, 'filter.cutoff': 1400, 'filter.res': 0.5,
       'env1.a': 0.002, 'env1.d': 0.2, 'env1.s': 0.8, 'env1.r': 0.08,
@@ -701,6 +739,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // env spits a formant on each attack while a triangle LFO keeps it chewing.
     name: 'TALKBOX BASS',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.34, 'fx.ott.time': 1, 'fx.ott.up': 0.85, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.13, 'fx.comp.ratio': 3,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.level': 1,
       'sub.on': 1, 'sub.shape': 1, 'sub.level': 0.65, 'sub.oct': -1,
       'filter.type': 6, 'filter.cutoff': 500, 'filter.res': 0.45,
@@ -780,6 +820,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // fat 24 dB lowpass with a little drive, short glide and hand vibrato.
     name: 'MINI LEAD',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.18, 'fx.ott.time': 1.2, 'fx.ott.up': 0.5, 'fx.ott.down': 0.7,
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 2.5,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.2, 'oscA.level': 0.85,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': -1, 'oscB.fine': 6, 'oscB.level': 0.5,
       'filter.type': 1, 'filter.cutoff': 1300, 'filter.res': 0.3, 'filter.env': 0.55, 'filter.key': 0.35, 'filter.drive': 0.2,
@@ -818,6 +860,10 @@ export const FACTORY_PRESETS: Preset[] = [
     // filter with just a kiss of envelope — instant arena stab.
     name: 'JUMP BRASS',
     params: {
+      'master.volume': 0.5033, // Match the original output after adding drive.
+      'fx.ott.on': 1, 'fx.ott.depth': 0.22, 'fx.ott.time': 1.4, 'fx.ott.up': 0.6, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.18, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.18, 'oscA.spread': 0.6, 'oscA.level': 0.8,
       'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.1, 'oscB.fine': -7, 'oscB.level': 0.6,
       'filter.type': 0, 'filter.cutoff': 4500, 'filter.res': 0.08, 'filter.env': 0.15, 'filter.key': 0.3,
@@ -913,6 +959,8 @@ export const FACTORY_PRESETS: Preset[] = [
     // portamento and wide vibrato — the G-funk siren.
     name: 'FUNKY WORM',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.22, 'fx.ott.time': 1.2, 'fx.ott.up': 0.6, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.1, 'fx.comp.ratio': 3,
       'oscA.table': 0, 'oscA.pos': 0, 'oscA.oct': 1, 'oscA.level': 0.9,
       'filter.type': 0, 'filter.cutoff': 4000, 'filter.res': 0.1, 'filter.key': 0.5,
       'env1.a': 0.002, 'env1.d': 0.3, 'env1.s': 0.85, 'env1.r': 0.15,
@@ -931,6 +979,10 @@ export const FACTORY_PRESETS: Preset[] = [
     // decays away FM-fast, velocity digging the filter open.
     name: 'LATELY BASS',
     params: {
+      'master.volume': 0.4767, // Match the original output after adding drive.
+      'fx.ott.on': 1, 'fx.ott.depth': 0.26, 'fx.ott.time': 1.4, 'fx.ott.up': 0.65, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -21, 'fx.comp.att': 0.028, 'fx.comp.rel': 0.1, 'fx.comp.ratio': 3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.22, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
       'oscA.table': 0, 'oscA.pos': 0.05, 'oscA.level': 0.9,
       'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.level': 0.45,
       'sub.on': 1, 'sub.level': 0.4, 'sub.oct': -1,
@@ -948,6 +1000,10 @@ export const FACTORY_PRESETS: Preset[] = [
     // half-sustain envelope and a resonant filter bite.
     name: 'PROPHET STAB',
     params: {
+      'master.volume': 0.4805, // Match the original output after adding drive.
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.5, 'fx.ott.up': 0.6, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.2, 'fx.drive.mix': 0.2, 'fx.drive.type': 1, 'fx.drive.tone': -0.18,
       'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 2, 'oscA.detune': 0.1, 'oscA.spread': 0.5, 'oscA.level': 0.75,
       'oscB.on': 1, 'oscB.table': 2, 'oscB.pos': 0.3, 'oscB.fine': 5, 'oscB.level': 0.55,
       'filter.type': 0, 'filter.cutoff': 1700, 'filter.res': 0.25, 'filter.env': 0.55, 'filter.key': 0.4,

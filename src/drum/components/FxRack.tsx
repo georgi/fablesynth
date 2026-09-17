@@ -5,6 +5,7 @@ import { DrumKnob } from './DrumKnob';
 import { OutPanel } from './OutPanel';
 import { EqPanel } from '../../components/panels/EqPanel';
 import { DrivePanel } from '../../components/panels/DrivePanel';
+import { ChorusPanel } from '../../components/panels/ChorusPanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
 import { TapeEchoPanel } from '../../components/panels/TapeEchoPanel';
 import { ReverbPanel } from '../../components/panels/ReverbPanel';
@@ -14,41 +15,6 @@ function DrumPower({ paramId }: { paramId: string }) {
   const on = useDrumStore(s => s.params[paramId] > 0.5);
   const setParam = useDrumStore(s => s.setParam);
   return <button className={`power-btn fx-power${on ? ' on' : ''}`} type="button" aria-label={`${paramId} power`} aria-pressed={on} onClick={() => setParam(paramId, on ? 0 : 1)} />;
-}
-
-interface FxGroupProps {
-  padIndex: number;
-  effect: 'drive' | 'comp' | 'chorus' | 'delay' | 'reverb';
-  title: string;
-  knobs: string[];
-}
-
-function FxGroup({ padIndex, effect, title, knobs }: FxGroupProps) {
-  const onId = pad(padIndex, `fx.${effect}.on`);
-  const on = useDrumStore((s) => s.params[onId]);
-  const setParam = useDrumStore((s) => s.setParam);
-
-  return (
-    <section className={`fx-group${on === 1 ? ' on' : ''}`} data-accent="n">
-      <div className="fx-group-head">
-        <button
-          className={`power-btn fx-power${on === 1 ? ' on' : ''}`}
-          type="button"
-          aria-label={`${title} power`}
-          aria-pressed={on === 1}
-          onClick={() => setParam(onId, on === 1 ? 0 : 1)}
-        />
-        <h2>{title}</h2>
-      </div>
-      <div className="fx-knobs">
-        {knobs.map((field) => {
-          const paramId = pad(padIndex, field);
-          return <DrumKnob paramId={paramId} size="sm" accent="n" key={paramId} />;
-        })}
-        {effect === 'comp' && <span className="fx-auto-gain">AUTO GAIN</span>}
-      </div>
-    </section>
-  );
 }
 
 export function FxRack() {
@@ -82,7 +48,7 @@ export function FxRack() {
         <DynamicsPanel kind="ott" adapter={adapter} />
         <DynamicsPanel kind="comp" adapter={adapter} />
         <DrivePanel adapter={adapter} />
-        <FxGroup padIndex={selectedPad} effect="chorus" title="CHORUS" knobs={['fx.chorus.rate', 'fx.chorus.depth', 'fx.chorus.mix']} />
+        <ChorusPanel adapter={adapter} />
         <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
         <ReverbPanel adapter={{ ...adapter, context: OUT_NAMES[bus] }} />
         <OutPanel />

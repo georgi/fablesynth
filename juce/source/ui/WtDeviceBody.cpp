@@ -10,11 +10,12 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
       lfos(model.parameters(), transportProvider ? std::move(transportProvider) : [&model] {
           return HostTransport{ model.hostBpm(), 0.0, model.sequencerPlaying() };
       }),
-      matrix(model.parameters()), fx(model, true), seq(model) {
+      matrix(model.parameters()), fx(model, true), seq(model), arp(model, false), arpMode(model, seq, arp) {
     addAndMakeVisible(oscA); addAndMakeVisible(oscB); addAndMakeVisible(util);
     addAndMakeVisible(filter); addAndMakeVisible(env1); addAndMakeVisible(env2);
     addAndMakeVisible(lfos); addAndMakeVisible(matrix); addAndMakeVisible(fx);
     addAndMakeVisible(seq);
+    addAndMakeVisible(arp); addAndMakeVisible(arpMode);
     addAndMakeVisible(pages);
     pages.onChange = [this] { resized(); };
     oscA.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
@@ -49,5 +50,7 @@ void WtDeviceBody::resized() {
     fx.setVisible(showFx);
     matrix.setBounds(colArea(0, 12, y3, row3));
     fx.setBounds(colArea(0, 12, y1, y4-y1-gap));
-    seq.setBounds(colArea(0, 12, y4, row4));
+    arpMode.setBounds(colArea(0, 12, y4, 24));
+    seq.setBounds(colArea(0, 12, y4 + 28, row4 - 28));
+    arp.setBounds(seq.getBounds());
 }

@@ -166,12 +166,14 @@ public:
         anchorFrame_ = anchorFrame;
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
+    void setArp(const ArpPattern&);
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
     }
     void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
-        clipHost_.updateClip(data, (size_t)bytes, bars);
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}) {
+        if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp)))) { release(); samplesToGateOff_ = -1; }
+        clipHost_.updateClip(data, (size_t)bytes, bars, arp);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
@@ -189,7 +191,7 @@ public:
     // minStepDur at max bpm 200; maxBlock<=0 keeps the old fixed 64.
     int hostMaxEvents(int maxBlock) const {
         if (maxBlock <= 0) return 64;
-        const double minStepDur = sr_ * 60.0 / 200.0 / 4.0;
+        const double minStepDur = sr_ * 60.0 / 200.0 / 8.0;
         const int n = (int)std::ceil((double)maxBlock / minStepDur) + 8;
         return std::max(64, n);
     }
@@ -209,6 +211,8 @@ public:
 private:
     // ---- voice control (worklet noteOn/glideTo/release/kill) ----
     void noteOn(int semi, bool acc, float vel);
+    void arpFire(const ArpPattern&, int step, double interval);
+    ArpPattern arp_;
     void glideTo(int semi, bool acc);
     void release();
     void kill();

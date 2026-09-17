@@ -288,8 +288,8 @@ body::before {
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
     'filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos lfos'
-    'eq eq eq eq ott ott ott ott comp comp comp comp'
-    'matrix matrix matrix echo echo echo echo reverb reverb reverb fx fx'
+    'matrix matrix matrix eq eq eq ott ott ott comp comp comp'
+    'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb'
     'seq seq seq seq seq seq seq seq seq seq seq seq';
   gap: 9px;
 }
@@ -944,7 +944,7 @@ body::before {
       'util util filter filter filter filter env1 env1 env2 env2 env2 env2'
       'lfos lfos lfos lfos lfos matrix matrix matrix matrix matrix matrix matrix'
       'eq eq eq eq ott ott ott ott comp comp comp comp'
-      'echo echo echo echo echo reverb reverb reverb reverb fx fx fx'
+      'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb'
       'seq seq seq seq seq seq seq seq seq seq seq seq';
   }
   .hud { display: none; }

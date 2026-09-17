@@ -11,6 +11,20 @@
 #include <algorithm>
 
 namespace fui {
+double HostedWtModel::arpSwing() const { return proc_.conductor().swing(); }
+bool HostedWtModel::arpQueued() const { return hasTargetClip() && proc_.conductor().queueOf(track_) == scene_; }
+void HostedWtModel::setArpSwing(double v) { proc_.conductor().setSwing(v); }
+void HostedWtModel::setSequencerPlaying(bool on) {
+    if (!hasTargetClip()) return;
+    if (on) proc_.conductor().launch(track_, scene_); else proc_.conductor().stopTrack(track_);
+}
+fable::ArpSettings HostedWtModel::arpSettings() const {
+    const auto* clip = targetClip();
+    return clip && clip->hasArp ? clip->arp : fable::ArpSettings{};
+}
+void HostedWtModel::setArpSettings(const fable::ArpSettings& a) {
+    if (targetClip()) proc_.conductor().updateClipArp(scene_, track_, a);
+}
 
 fable::FxTelemetry HostedWtModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(track_, pad, bus); }
 namespace {

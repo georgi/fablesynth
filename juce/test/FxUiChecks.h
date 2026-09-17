@@ -21,7 +21,7 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
             p->setValueNotifyingHost(p->convertTo0to1(value));
     };
     juce::String prefix = drum ? "pad0." : "";
-    for (auto fx : {"ott", "comp", "delay", "reverb"})
+    for (auto fx : {"ott", "comp", "chorus", "delay", "reverb"})
         set(prefix + "fx." + fx + ".on", 1);
     set(prefix + "fx.delay.time", .18f);
     set(prefix + "fx.delay.mix", .55f);
@@ -58,7 +58,10 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     } else { return false; }
     auto* comp = findFxComponent<fui::FxModuleView>(*chain, "COMP visual FX");
     auto* drive = findFxComponent<fui::FxModuleView>(*chain, "DRIVE visual FX");
-    if (!comp || !drive) return false;
+    auto* chorus = findFxComponent<fui::FxModuleView>(*chain, "CHORUS visual FX");
+    if (!comp || !drive || !chorus) return false;
+    ok &= drive->getY() == chorus->getY() && drive->getRight() < chorus->getX();
+    ok &= chorus->getWidth() >= 220;
     auto checkKnobs = [&](juce::Component& module, const juce::StringArray& keys) {
         int index = 0;
         for (auto* child : module.getChildren()) {
@@ -79,6 +82,26 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     };
     ok &= checkKnobs(*comp, {"fx.comp.thr", "fx.comp.att", "fx.comp.rel", "fx.comp.ratio"});
     ok &= checkKnobs(*drive, {"fx.drive.amt", "fx.drive.tone", "fx.drive.mix"});
+    ok &= checkKnobs(*chorus, {"fx.chorus.rate", "fx.chorus.depth", "fx.chorus.mix"});
+    // Hash only the plot: a changing knob label must not masquerade as a
+    // working visualizer. Preview redraws without audio or a running timer.
+    auto chorusPlotHash = [](fui::FxModuleView& module) {
+        const auto image = module.createComponentSnapshot({12, 40, module.getWidth() - 24,
+                                                           module.getHeight() / 2 - 40});
+        uint64_t hash = 1469598103934665603ull;
+        for (int y = 0; y < image.getHeight(); ++y)
+            for (int x = 0; x < image.getWidth(); ++x)
+                hash = (hash ^ image.getPixelAt(x, y).getARGB()) * 1099511628211ull;
+        return hash;
+    };
+    set(prefix + "fx.chorus.rate", .6f);
+    set(prefix + "fx.chorus.depth", .5f);
+    const auto preview = chorusPlotHash(*chorus);
+    set(prefix + "fx.chorus.rate", 4);
+    ok &= chorusPlotHash(*chorus) != preview;
+    set(prefix + "fx.chorus.rate", .6f);
+    set(prefix + "fx.chorus.depth", 1);
+    ok &= chorusPlotHash(*chorus) != preview;
     auto* hard = findFxComponent<juce::TextButton>(*drive, "HARD");
     if (!hard) return false;
     hard->onClick();
@@ -106,6 +129,13 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         tape->onClick();
         ok &= proc->apvts.getRawParameterValue("pad7.fx.drive.type")->load() == 1;
         ok &= proc->apvts.getRawParameterValue("pad0.fx.drive.type")->load() == 2;
+        auto* padChorus = findFxComponent<fui::FxModuleView>(*chain, "CHORUS visual FX");
+        if (!padChorus) return false;
+        set("pad7.fx.chorus.rate", .6f);
+        const auto otherPreview = chorusPlotHash(*padChorus);
+        set("pad7.fx.chorus.rate", 3.25f);
+        ok &= chorusPlotHash(*padChorus) != otherPreview;
+        ok &= std::abs(proc->apvts.getRawParameterValue("pad0.fx.chorus.rate")->load() - .6f) < 1e-5f;
         chain->setPad(0, "KICK");
     }
     {
@@ -166,7 +196,7 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     sound->onClick();
     ok &= !chain->isVisible();
     save("-sound");
-    printf("  [%s] %s FX page: tabs, EQ edits, live dynamics/echo/reverb, finite telemetry, screenshots\n",
+    printf("  [%s] %s FX page: tabs, EQ edits, Chorus preview/layout, live dynamics/echo/reverb, finite telemetry, screenshots\n",
            ok ? "PASS" : "FAIL", machine.toRawUTF8());
     return ok;
 }

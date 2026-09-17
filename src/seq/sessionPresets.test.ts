@@ -30,11 +30,11 @@ describe('SQ-4 legacy generated session patch contract', () => {
   });
 
   it('uses clean lead voices and measured per-track scene faders', () => {
-    // Songs whose whole point is a distorted lead may break the clean-voice
-    // rule; everything else keeps drive off so the lead sits on top unfuzzed.
+    // Intentionally driven lead voices keep their authored saturation.
     // FINAL HORIZON's TAURUS PEDAL is a driven pedal-synth voice — the grit is
     // the patch, not an oversight.
-    const DRIVEN_LEADS = new Set(['PEAK SIGNAL', 'FINAL HORIZON']);
+    // ACID FLASH's LATELY BASS now adds a light tape edge to its attack.
+    const DRIVEN_LEADS = new Set(['PEAK SIGNAL', 'FINAL HORIZON', 'ACID FLASH']);
     const drumGains = new Set<number>();
     const bassGains = new Set<number>();
     const leadGains = new Set<number>();

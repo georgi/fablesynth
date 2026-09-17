@@ -464,6 +464,21 @@ double Engine::seqEarliestOff() const {
 // Shared step-fire body (worklet seqFire). noteOn then schedule this note's
 // own gate-off at st.duration 16th-steps — no seqGateOff first, so a note can
 // overlap the next step's note when its duration extends past it.
+void Engine::setArp(const ArpPattern& a) {
+    if (hostClipMode_) return;
+    const bool changed = a.enabled != arp_.enabled;
+    if (changed || (a.enabled && !arpHasNotes(a))) seqGateOff();
+    if (changed) { seqStep_ = -1; seqChainPos_ = 0; seqToNext_ = 0; }
+    if (changed || a.rate != arp_.rate) seqHostSynced_ = false;
+    arp_ = a;
+}
+void Engine::arpFire(const ArpPattern& a, int s, double interval) {
+    seqGateOff();
+    if (a.hits[s] && a.notes[s] >= 0) {
+        noteOn(a.notes[s], a.accents[s] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+        seqScheduleOff(a.notes[s], interval * a.gate);
+    }
+}
 void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
     const SeqReadStep st = readSeqStep(seqPats_.data(), pat, s);
     if (st.on) {
@@ -483,6 +498,7 @@ void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
 // lane) is byte-identical to a seq pattern, so readSeqStep() reads it with
 // the clip's bar standing in for `pat`.
 void Engine::clipFireAt(int abs) {
+    if (clipHost_.arp().enabled) { arpFire(clipHost_.arp(), abs, clipHost_.stepInterval(abs)); return; }
     const uint8_t* clip = clipHost_.clipData();
     const int bar = abs / SEQ_STEPS;
     const int s   = abs % SEQ_STEPS;
@@ -510,6 +526,11 @@ void Engine::clipFireAt(int abs) {
 // odd 16ths by swing * SEQ_SWING_MAX of a step.
 void Engine::seqFire() {
     const double bpm = seqEffectiveBpm();
+    if (arp_.enabled) {
+        const int s = (seqStep_ + 1) % 16;
+        const double interval = 60.0 / bpm * arp_.rate * sr_ * (1 + (s % 2 ? -1 : 1) * std::clamp((double)p_[SEQ_SWING], 0.0, 1.0) * SEQ_SWING_MAX);
+        arpFire(arp_, s, interval); seqStep_ = s; seqChainPos_ = 0; seqToNext_ += interval; return;
+    }
     const double dur = (60.0 / bpm / 4.0) * sr_;
     const double swing = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
     if (seqStep_ + 1 >= SEQ_STEPS) {               // bar wrap advances the chain
@@ -554,11 +575,12 @@ void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
 
 double Engine::seqHostStepPpq(long k) const {
     const double swing = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
-    return (double)k * 0.25 + ((k & 1) ? swing * SEQ_SWING_MAX * 0.25 : 0.0);
+    const double rate = arp_.enabled ? arp_.rate : .25;
+    return (double)k * rate + ((k & 1) ? swing * SEQ_SWING_MAX * rate : 0.0);
 }
 
 void Engine::seqHostResync() {
-    long k = (long)std::floor(seqHostPpq_ / 0.25) - 1;
+    long k = (long)std::floor(seqHostPpq_ / (arp_.enabled ? arp_.rate : .25)) - 1;
     if (k < 0) k = 0;
     while (seqHostStepPpq(k) < seqHostPpq_ - 1e-9) k++;
     seqHostNextK_ = k;
@@ -567,6 +589,10 @@ void Engine::seqHostResync() {
 
 void Engine::seqFireHostStep(long k) {
     const int  s   = (int)(k % SEQ_STEPS);
+    if (arp_.enabled) {
+        arpFire(arp_, s, (seqHostStepPpq(k + 1) - seqHostStepPpq(k)) * 60.0 / seqHostBpm_ * sr_);
+        seqStep_ = s; seqChainPos_ = 0; return;
+    }
     const long bar = k / SEQ_STEPS;
     seqChainPos_ = (int)(bar % (long)seqChain_.size());
     const int pat = seqChain_[(size_t)seqChainPos_];

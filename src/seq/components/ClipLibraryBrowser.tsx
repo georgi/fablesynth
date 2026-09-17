@@ -114,7 +114,7 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
     try { localStorage.setItem(FAV_KEY, JSON.stringify(next)); } catch { /* storage optional */ }
   };
   const saveCurrent = (name: string) => {
-    if (!current) return;
+    if (!current || current.arp?.enabled) return;
     if (allSources.some((clip) => clip.name.trim().toLowerCase() === name.toLowerCase())) {
       window.alert('A clip with that name already exists.'); return;
     }
@@ -241,7 +241,7 @@ export function ClipLibraryBrowser({ machine, onClose }: Props) {
               onCancel={() => setEditing(null)}
             />
           ) : (
-            <button disabled={!current} onClick={() => setEditing('save')}>SAVE CURRENT</button>
+            <button disabled={!current || current.arp?.enabled} title={current?.arp?.enabled ? 'Save the session to retain the arp. Switch to SEQ to save written notes here.' : undefined} onClick={() => setEditing('save')}>SAVE CURRENT</button>
           )}
           <button disabled={!selected} onClick={duplicate}>DUPLICATE</button>
           <button onClick={() => importInput.current?.click()}>IMPORT .SQCLIP</button>

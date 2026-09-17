@@ -4,13 +4,14 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 
-// Shared OTT and BL-1 COMP are web-only until the native DSP port lands.
+// BL-1 COMP remains web-only. DR-1's pad OTT is supported by the native drum
+// DSP, so authored sessions can carry the same kit treatment in both hosts.
 // Omit bypassed fields from native artifacts; reject active unsupported FX.
 function nativeSession(session) {
   return { ...session, tracks: session.tracks.map((track) => {
     if (track.patch.kind !== 'inline') return track;
     const params = Object.fromEntries(Object.entries(track.patch.data.params).filter(([id, value]) => {
-      const webOnly = /^(?:pad\d+\.)?fx\.ott\./.test(id)
+      const webOnly = (track.machine !== 'DR1' && /^(?:pad\d+\.)?fx\.ott\./.test(id))
         || (track.machine === 'BL1' && id.startsWith('fx.comp.'));
       if (!webOnly) return true;
       if (id.endsWith('.on') && value > 0.5) throw new Error(`Enabled ${track.machine} ${id} is not yet supported by native sessions`);

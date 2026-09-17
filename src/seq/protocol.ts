@@ -5,6 +5,7 @@
 // this contract (host/tempo/clip/clipstop in, clipstart/clipstop/pos out).
 
 import type { Quant } from './model';
+import { validClipArp, type ClipArp } from './clipArp';
 
 export type MachineId = 'DR1' | 'BL1' | 'WT1';
 
@@ -82,6 +83,7 @@ export interface SceneDoc {
 }
 
 export interface ClipDoc {
+  arp?: ClipArp;
   name: string;
   bars: number; // 1..MAX_BARS
   pattern: string; // base64 of the machine's packed clip bytes
@@ -160,6 +162,7 @@ export function validateSession(doc: SessionDoc): string | null {
     for (let t = 0; t < sc.clips.length; t++) {
       const c = sc.clips[t];
       if (!c) continue;
+      if (c.arp !== undefined && (doc.tracks[t].machine === 'DR1' || !validClipArp(c.arp))) return `scene ${s} track ${t}: invalid arpeggiator`;
       if (!(c.bars >= 1 && c.bars <= MAX_BARS)) return `scene ${s} track ${t}: bars out of range`;
       const bytes = b64ToBytes(c.pattern);
       const want = c.bars * bytesPerBar(doc.tracks[t].machine);

@@ -8,6 +8,11 @@ public:
     fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::ParameterSource parameters() override { const auto& i = fable::bassParamInfo(); return fui::ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
+    void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
+    fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
+    void clearArpKeys() override { proc.clearArpKeys(); }
+    void arpKeyInput(int n, bool on) override { if (on) proc.noteOn(n - fable::BL_ROOT_MIDI, .8f); else proc.noteOff(n - fable::BL_ROOT_MIDI); }
     bool programDirty() const override { return proc.isProgramDirty(); }
     int currentProgram() const override { return proc.getCurrentProgram(); }
     int numPrograms() const override { return proc.getNumPrograms(); }

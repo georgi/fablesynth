@@ -5,6 +5,7 @@
 // their clipstart/clipstop acks so the grid shows what is audible.
 
 import { create } from 'zustand';
+import { compileClipArp, newClipArp, validClipArp, type ClipArp } from './clipArp';
 import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
   b64ToBytes, boundaryFrame, bytesToB64, emptyClipBytes, loadSession,
@@ -60,6 +61,7 @@ export interface SeqStore {
   stopScene: (s: number) => void;
   togglePassThrough: (s: number, t: number) => void;
   updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
+  updateClipArp: (s: number, t: number, patch: Partial<ClipArp>) => void;
   createClip: (s: number, t: number) => void;
   deleteClip: (s: number, t: number) => void;
   loadLibraryClip: (s: number, t: number, entry: RuntimeClipLibraryEntry, semitones?: number) => boolean;
@@ -221,7 +223,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         clipBytes.set(key, bytes);
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
-        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars);
+        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip));
       }
     }
   };
@@ -250,7 +252,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const a = cur.scenes[s]?.clips[t] ?? null;
         const b = snapshot.scenes[s].clips[t];
         if (a === b) continue;
-        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name) continue;
+        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp) continue;
         writes.push({ s, t, clip: b });
       }
     }
@@ -369,7 +371,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary());
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip));
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -420,6 +422,17 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
     },
 
+    updateClipArp: (s, t, patch) => {
+      const st = get();
+      const clip = st.session.scenes[s]?.clips[t];
+      const machine = st.session.tracks[t]?.machine;
+      if (!clip || !machine || machine === 'DR1') return;
+      const arp = { ...(clip.arp ?? newClipArp(machine)), ...patch };
+      if (!validClipArp(arp)) return;
+      // The grid's existing history/runtime path preserves notes and queues.
+      applyGridWrites([{ s, t, clip: { ...clip, arp: JSON.parse(JSON.stringify(arp)) as ClipArp } }], 0);
+    },
+
     updateClipBytes: (s, t, bytes, bars) => {
       const st = get();
       const clip = st.session.scenes[s]?.clips[t];
@@ -438,7 +451,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars);
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip));
       }
     },
 
@@ -488,7 +501,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
-      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars);
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded));
       return true;
     },
 

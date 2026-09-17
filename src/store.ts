@@ -4,6 +4,7 @@
 // back through `setParam`, which also forwards to the audio engine.
 
 import { create } from 'zustand';
+import { arpNotes, loadArp, type ArpState } from './arp';
 import { SynthEngine } from './engine/synth';
 import { feedModLive } from './engine/modLive';
 import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
@@ -46,6 +47,12 @@ export function presetOptions(userPresets: Preset[]): PresetOption[] {
 }
 
 interface SynthStore {
+  arp: ArpState;
+  arpMode: boolean;
+  arpKeys: number[];
+  setArpMode: (on: boolean) => void;
+  updateArp: (patch: Partial<ArpState>) => void;
+  clearArpKeys: () => void;
   params: ParamValues;
   modDrag: number; // source being dragged (MOD_SOURCES index), 0 = none
   powered: boolean;
@@ -101,6 +108,7 @@ interface SynthStore {
   // note sequencer actions (mirror BL-1's pitch-seq conventions)
   _setPatterns: (next: Patterns) => void;
   toggleCell: (step: number, note: number, pattern?: number) => void;
+  drawNote: (step: number, note: number, duration: number, pattern: number) => void;
   cycleStepOct: (step: number, pattern?: number) => void;
   toggleStepAcc: (step: number, pattern?: number) => void;
   setStepDuration: (step: number, duration: number, pattern?: number) => void;
@@ -155,6 +163,11 @@ interface SeqSnapshot { patterns: Patterns; chain: number[] }
 const seqHistory = makeHistory<SeqSnapshot>(50);
 
 export const useStore = create<SynthStore>((set, get) => {
+  const syncArp = () => {
+    const { arp, arpMode, arpKeys, hosted } = get();
+    if (hosted) return;
+    engine.setArp(arpMode ? { ...arp, notes: arpNotes(arp, arp.input === 'keys' ? arpKeys : arp.notes) } : null);
+  };
   const pushSeqHistory = () => seqHistory.push({ patterns: get().patterns, chain: get().chain });
 
   // Worklet->UI telemetry, shared by standalone (powerOn) and hosted
@@ -170,6 +183,22 @@ export const useStore = create<SynthStore>((set, get) => {
   };
 
   return {
+  arp: loadArp(), arpMode: false, arpKeys: [],
+  setArpMode: (on) => {
+    if (get().hosted || get().arpMode === on) return;
+    engine.panic();
+    set({ arpMode: on, arpKeys: [], activeNotes: new Set(), curStep: -1, rectSel: null });
+    syncArp();
+  },
+  updateArp: (patch) => {
+    if (patch.input && patch.input !== get().arp.input && !get().hosted) engine.panic();
+    const arp = { ...get().arp, ...patch };
+    if (patch.input || patch.latch === false) set({ arpKeys: [...get().activeNotes] });
+    set({ arp });
+    try { localStorage.setItem('wt1-arp-v1', JSON.stringify(arp)); } catch { /* private storage */ }
+    syncArp();
+  },
+  clearArpKeys: () => { set({ arpKeys: [], activeNotes: new Set() }); syncArp(); },
   params: defaultParams(),
   modDrag: 0,
   powered: false,
@@ -336,6 +365,13 @@ export const useStore = create<SynthStore>((set, get) => {
     set({ patterns: next });
     engine.setSeqPatterns(next);
     if (!get().hosted) saveSeqState(next, get().chain);
+  },
+
+  drawNote: (step, note, duration, pattern) => {
+    pushSeqHistory();
+    get()._setPatterns(setStep(get().patterns, pattern, step, { on: true, note, duration }));
+    const bar = get().hosted ? pattern : get().chain.indexOf(pattern);
+    if (bar >= 0) set({ lastCell: { step: bar * STEPS + step, note } });
   },
 
   toggleCell: (step, note, pattern) => {
@@ -594,10 +630,23 @@ export const useStore = create<SynthStore>((set, get) => {
     engine.onstep = (d) => set({ curStep: d.s, curPat: d.pat });
     engine.setSeqPatterns(get().patterns);
     engine.setSeqChain(get().chain);
+    syncArp();
     set({ powered: true });
   },
 
   playNote: (n, vel) => {
+    if (get().arpMode && !get().hosted) {
+      const { arp, arpKeys, activeNotes } = get();
+      if (arp.input === 'keys') {
+        const keys = vel > 0
+          ? [...new Set([...(arp.latch && !activeNotes.size ? [] : arpKeys), n])]
+          : arp.latch ? arpKeys : arpKeys.filter(k => k !== n);
+        set({ arpKeys: keys });
+        get().setActive(n, vel > 0);
+        syncArp();
+        return;
+      }
+    }
     if (vel > 0) {
       engine.noteOn(n, vel);
       get().setActive(n, true);
@@ -619,6 +668,8 @@ export const useStore = create<SynthStore>((set, get) => {
   panic: () => {
     if (get().seqPlaying) get().seqStop();
     engine.panic();
+    set({ activeNotes: new Set(), arpKeys: [] });
+    syncArp();
   },
 
   bend: (semis) => engine.bend(semis),

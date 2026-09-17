@@ -24,6 +24,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"ACID LINE", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.018f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.level", 0.85f},
             {"sub.on", 1}, {"sub.level", 0.4f}, {"sub.oct", -1},
             {"filter.type", 1}, {"filter.cutoff", 240}, {"filter.res", 0.78f}, {"filter.env", 0.85f}, {"filter.drive", 0.35f},
@@ -37,6 +39,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"CRYSTAL PLUCK", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.16f }, { "fx.ott.time", 1.4f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.65f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 2.5f },
             {"oscA.table", 4}, {"oscA.pos", 0.72f}, {"oscA.oct", 1}, {"oscA.level", 0.8f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f},
             {"filter.type", 0}, {"filter.cutoff", 3200}, {"filter.res", 0.2f}, {"filter.env", 0.6f}, {"filter.key", 0.6f},
             {"env1.a", 0.001f}, {"env1.d", 0.5f}, {"env1.s", 0}, {"env1.r", 0.6f},
@@ -50,6 +54,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"HYPER SAW", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.3f }, { "fx.ott.time", 1 }, { "fx.ott.up", 0.8f }, { "fx.ott.down", 0.85f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.16f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 7}, {"oscA.detune", 0.42f}, {"oscA.spread", 1}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.oct", 1}, {"oscB.unison", 5}, {"oscB.detune", 0.35f}, {"oscB.spread", 0.9f}, {"oscB.level", 0.45f},
             {"sub.on", 1}, {"sub.level", 0.45f},
@@ -62,6 +68,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"VOWEL TALK", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.3f }, { "fx.ott.time", 1 }, { "fx.ott.up", 0.85f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.018f }, { "fx.comp.rel", 0.14f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 3}, {"oscA.pos", 0.1f}, {"oscA.level", 0.85f}, {"oscA.unison", 3}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.6f},
             {"sub.on", 1}, {"sub.level", 0.5f}, {"sub.oct", -1},
             {"filter.type", 0}, {"filter.cutoff", 4500}, {"filter.res", 0.25f},
@@ -89,6 +97,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"NEURO WOBBLE", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.38f }, { "fx.ott.time", 0.85f }, { "fx.ott.up", 0.9f }, { "fx.ott.down", 0.9f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -22 }, { "fx.comp.att", 0.015f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 3.5f },
             {"oscA.table", 5}, {"oscA.pos", 0.3f}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 1}, {"oscB.oct", -1}, {"oscB.level", 0.55f},
             {"sub.on", 1}, {"sub.level", 0.55f}, {"sub.oct", -1},
@@ -104,6 +114,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"REESE BASS", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.26f }, { "fx.ott.time", 1.25f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.16f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 4}, {"oscA.detune", 0.5f}, {"oscA.spread", 0.35f}, {"oscA.level", 0.85f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.semi", -12}, {"oscB.unison", 2}, {"oscB.detune", 0.28f}, {"oscB.level", 0.5f},
             {"sub.on", 1}, {"sub.level", 0.5f}, {"sub.oct", -1},
@@ -118,6 +130,10 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"POWER FIFTHS", {
+            { "master.volume", 0.5005f }, // Drive output compensation.
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.15f }, { "fx.ott.up", 0.6f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.15f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.on", 1 }, { "fx.drive.amt", 0.18f }, { "fx.drive.mix", 0.2f }, { "fx.drive.type", 1 }, { "fx.drive.tone", -0.18f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 3}, {"oscA.detune", 0.22f}, {"oscA.spread", 0.7f}, {"oscA.level", 0.7f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.semi", 7}, {"oscB.unison", 3}, {"oscB.detune", 0.22f}, {"oscB.spread", 0.7f}, {"oscB.level", 0.55f},
             {"sub.on", 1}, {"sub.level", 0.35f},
@@ -132,6 +148,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"GROWL BASS", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.4f }, { "fx.ott.time", 0.85f }, { "fx.ott.up", 1 }, { "fx.ott.down", 0.85f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -22 }, { "fx.comp.att", 0.015f }, { "fx.comp.rel", 0.11f }, { "fx.comp.ratio", 3.5f },
             {"oscA.table", 3}, {"oscA.pos", 0.15f}, {"oscA.unison", 2}, {"oscA.detune", 0.14f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.85f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.oct", -1}, {"oscB.level", 0.5f},
             {"sub.on", 1}, {"sub.level", 0.55f}, {"sub.oct", -1},
@@ -146,6 +164,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"FUTURE CHORD", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.3f }, { "fx.ott.time", 1.25f }, { "fx.ott.up", 0.75f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.18f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 7}, {"oscA.detune", 0.32f}, {"oscA.spread", 1}, {"oscA.level", 0.72f},
             {"oscB.on", 1}, {"oscB.table", 1}, {"oscB.pos", 0.4f}, {"oscB.unison", 3}, {"oscB.detune", 0.24f}, {"oscB.spread", 0.8f}, {"oscB.level", 0.4f},
             {"filter.type", 0}, {"filter.cutoff", 8000}, {"filter.res", 0.08f}, {"filter.env", 0.25f}, {"filter.key", 0.2f},
@@ -160,6 +180,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"SCREECH LEAD", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.9f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 2}, {"oscA.pos", 0.7f}, {"oscA.unison", 3}, {"oscA.detune", 0.3f}, {"oscA.spread", 0.7f}, {"oscA.level", 0.78f},
             {"oscB.on", 1}, {"oscB.table", 5}, {"oscB.pos", 0.4f}, {"oscB.level", 0.4f},
             {"filter.type", 2}, {"filter.cutoff", 1800}, {"filter.res", 0.6f}, {"filter.drive", 0.4f},
@@ -175,6 +197,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"DONK STAB", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.28f }, { "fx.ott.time", 1.4f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -21 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.095f }, { "fx.comp.ratio", 3.5f },
             {"oscA.table", 2}, {"oscA.pos", 0.25f}, {"oscA.level", 0.85f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 1}, {"oscB.oct", 1}, {"oscB.level", 0.28f},
             {"sub.on", 1}, {"sub.level", 0.4f},
@@ -189,6 +213,10 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"HOUSE PLUCK", {
+            { "master.volume", 0.5365f }, // Drive output compensation.
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.2f }, { "fx.ott.time", 1.5f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.7f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.on", 1 }, { "fx.drive.amt", 0.16f }, { "fx.drive.mix", 0.2f }, { "fx.drive.type", 1 }, { "fx.drive.tone", -0.18f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.oct", 1}, {"oscA.unison", 3}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.78f},
             {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.oct", 1}, {"oscB.semi", 12}, {"oscB.level", 0.3f},
             {"filter.type", 1}, {"filter.cutoff", 2200}, {"filter.res", 0.2f}, {"filter.env", 0.55f}, {"filter.key", 0.5f},
@@ -244,6 +272,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"WUB BASS", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.34f }, { "fx.ott.time", 1 }, { "fx.ott.up", 0.85f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -22 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.13f }, { "fx.comp.ratio", 3.5f },
             {"oscA.table", 0}, {"oscA.pos", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.5f}, {"oscB.oct", -1}, {"oscB.level", 0.5f},
             {"sub.on", 1}, {"sub.level", 0.6f}, {"sub.oct", -1},
@@ -288,6 +318,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"DYNO EPIANO", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.14f }, { "fx.ott.time", 1.5f }, { "fx.ott.up", 0.45f }, { "fx.ott.down", 0.65f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.14f }, { "fx.comp.ratio", 2.5f },
             {"oscA.table", 0}, {"oscA.pos", 0.05f}, {"oscA.level", 0.75f},
             {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.3f}, {"oscB.oct", 2}, {"oscB.level", 0.15f},
             {"filter.type", 0}, {"filter.cutoff", 2500}, {"filter.res", 0.08f}, {"filter.env", 0.3f}, {"filter.key", 0.5f},
@@ -317,6 +349,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"ROCK ORGAN", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.2f }, { "fx.ott.time", 1.2f }, { "fx.ott.up", 0.6f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.15f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 2}, {"oscA.pos", 0}, {"oscA.unison", 2}, {"oscA.detune", 0.08f}, {"oscA.level", 0.75f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0}, {"oscB.oct", 1}, {"oscB.level", 0.45f},
             {"sub.on", 1}, {"sub.level", 0.5f}, {"sub.oct", -1},
@@ -359,6 +393,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"BRASS SECTION", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.18f }, { "fx.ott.time", 1.3f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.7f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.14f }, { "fx.comp.ratio", 2.5f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 3}, {"oscA.detune", 0.15f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.fine", 8}, {"oscB.level", 0.5f},
             {"sub.on", 1}, {"sub.level", 0.3f},
@@ -454,6 +490,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"DATA STREAM", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.7f }, { "fx.ott.down", 0.7f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.018f }, { "fx.comp.rel", 0.09f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 5}, {"oscA.pos", 0.55f}, {"oscA.level", 0.8f},
             {"filter.type", 1}, {"filter.cutoff", 1400}, {"filter.res", 0.5f},
             {"env1.a", 0.002f}, {"env1.d", 0.2f}, {"env1.s", 0.8f}, {"env1.r", 0.08f},
@@ -513,6 +551,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"TALKBOX BASS", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.34f }, { "fx.ott.time", 1 }, { "fx.ott.up", 0.85f }, { "fx.ott.down", 0.8f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -22 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.13f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.level", 1},
             {"sub.on", 1}, {"sub.shape", 1}, {"sub.level", 0.65f}, {"sub.oct", -1},
             {"filter.type", 6}, {"filter.cutoff", 500}, {"filter.res", 0.45f},
@@ -570,6 +610,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"MINI LEAD", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.18f }, { "fx.ott.time", 1.2f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.7f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 2.5f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.2f}, {"oscA.level", 0.85f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.oct", -1}, {"oscB.fine", 6}, {"oscB.level", 0.5f},
             {"filter.type", 1}, {"filter.cutoff", 1300}, {"filter.res", 0.3f}, {"filter.env", 0.55f}, {"filter.key", 0.35f}, {"filter.drive", 0.2f},
@@ -599,6 +641,10 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"JUMP BRASS", {
+            { "master.volume", 0.5033f }, // Drive output compensation.
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.22f }, { "fx.ott.time", 1.4f }, { "fx.ott.up", 0.6f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.on", 1 }, { "fx.drive.amt", 0.18f }, { "fx.drive.mix", 0.2f }, { "fx.drive.type", 1 }, { "fx.drive.tone", -0.18f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.6f}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.1f}, {"oscB.fine", -7}, {"oscB.level", 0.6f},
             {"filter.type", 0}, {"filter.cutoff", 4500}, {"filter.res", 0.08f}, {"filter.env", 0.15f}, {"filter.key", 0.3f},
@@ -669,6 +715,8 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"FUNKY WORM", {
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.22f }, { "fx.ott.time", 1.2f }, { "fx.ott.up", 0.6f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0}, {"oscA.oct", 1}, {"oscA.level", 0.9f},
             {"filter.type", 0}, {"filter.cutoff", 4000}, {"filter.res", 0.1f}, {"filter.key", 0.5f},
             {"env1.a", 0.002f}, {"env1.d", 0.3f}, {"env1.s", 0.85f}, {"env1.r", 0.15f},
@@ -682,6 +730,10 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"LATELY BASS", {
+            { "master.volume", 0.4767f }, // Drive output compensation.
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.26f }, { "fx.ott.time", 1.4f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -21 }, { "fx.comp.att", 0.028f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.on", 1 }, { "fx.drive.amt", 0.22f }, { "fx.drive.mix", 0.2f }, { "fx.drive.type", 1 }, { "fx.drive.tone", -0.18f },
             {"oscA.table", 0}, {"oscA.pos", 0.05f}, {"oscA.level", 0.9f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.66f}, {"oscB.level", 0.45f},
             {"sub.on", 1}, {"sub.level", 0.4f}, {"sub.oct", -1},
@@ -694,6 +746,10 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"PROPHET STAB", {
+            { "master.volume", 0.4805f }, // Drive output compensation.
+            { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.5f }, { "fx.ott.up", 0.6f }, { "fx.ott.down", 0.75f },
+            { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.03f }, { "fx.comp.rel", 0.11f }, { "fx.comp.ratio", 3 },
+            { "fx.drive.on", 1 }, { "fx.drive.amt", 0.2f }, { "fx.drive.mix", 0.2f }, { "fx.drive.type", 1 }, { "fx.drive.tone", -0.18f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.1f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.75f},
             {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.3f}, {"oscB.fine", 5}, {"oscB.level", 0.55f},
             {"filter.type", 0}, {"filter.cutoff", 1700}, {"filter.res", 0.25f}, {"filter.env", 0.55f}, {"filter.key", 0.4f},

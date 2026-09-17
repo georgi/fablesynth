@@ -11,14 +11,15 @@ import { clipPattern, resetSeqStore, useSeqStore } from './store';
 import { decodeClipLibrary } from './clipLibrary';
 import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 import { factorySession } from './factory';
+import { newClipArp, type ArpConfig } from './clipArp';
 
 const library = decodeClipLibrary({ v: 1, clips: FACTORY_CLIP_LIBRARY }).clips;
 
 class FakeDevice implements SeqDevice {
-  clips: Array<{ bars: number; atFrame: number; bytes: number }> = [];
+  clips: Array<{ bars: number; atFrame: number; bytes: number; arp?: ArpConfig }> = [];
   stops: number[] = [];
   tempos: Array<{ bpm: number; swing: number; anchor: number }> = [];
-  updates: Array<{ bars: number; bytes: number }> = [];
+  updates: Array<{ bars: number; bytes: number; arp?: ArpConfig }> = [];
   patches: unknown[] = [];
   onClipStart: ((frame: number) => void) | null = null;
   onClipStop: ((frame: number) => void) | null = null;
@@ -29,14 +30,14 @@ class FakeDevice implements SeqDevice {
   setTempo(bpm: number, swing: number, anchor: number): void {
     this.tempos.push({ bpm, swing, anchor });
   }
-  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number): void {
-    this.clips.push({ bars, atFrame, bytes: pattern.length });
+  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void {
+    this.clips.push({ bars, atFrame, bytes: pattern.length, ...(arp ? { arp } : {}) });
   }
   scheduleStop(atFrame: number): void {
     this.stops.push(atFrame);
   }
-  updateClip(pattern: Uint8Array, bars: number): void {
-    this.updates.push({ bars, bytes: pattern.length });
+  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig): void {
+    this.updates.push({ bars, bytes: pattern.length, ...(arp ? { arp } : {}) });
   }
   panic(): void {}
 }
@@ -72,6 +73,41 @@ beforeEach(async () => {
   rig = new FakeRig();
   rig.frame = 1000;
   await st().powerOn(rig);
+});
+
+describe('clip arpeggiators', () => {
+  it('keeps settings per clip, preserves written notes, and sends the arp on launch', () => {
+    const before = st().session;
+    const arp = { ...newClipArp('BL1'), enabled: true };
+    st().updateClipArp(2, 1, arp);
+    expect(st().session.scenes[2].clips[1]?.pattern).toBe(before.scenes[2].clips[1]?.pattern);
+    expect(st().session.scenes[2].clips[2]).toBe(before.scenes[2].clips[2]);
+    expect(st().session.scenes[3]).toBe(before.scenes[3]);
+    st().launch(1, 2);
+    expect(rig.dev(1).clips[0].arp?.notes.slice(0, 4)).toEqual([36, 39, 43, 46]);
+    arp.settings.notes[0] = 99;
+    expect(st().session.scenes[2].clips[1]?.arp?.settings.notes[0]).toBe(36);
+  });
+  it('hot-swaps only the queued target and undo restores its original playback mode', () => {
+    st().launch(1, 2); rig.dev(1).onClipStart!(0);
+    st().launch(1, 3);
+    st().updateClipArp(2, 1, { enabled: true });
+    expect(rig.dev(1).updates).toHaveLength(0);
+    st().updateClipArp(3, 1, { enabled: true });
+    expect(rig.dev(1).updates[0].arp).toBeDefined();
+    st().undo();
+    expect(rig.dev(1).updates[1].arp).toBeUndefined();
+    st().redo();
+    expect(rig.dev(1).updates[2].arp).toBeDefined();
+  });
+  it('leaves drums unchanged and preserves arp metadata during note edits', () => {
+    const drums = st().session.scenes[2].clips[0];
+    st().updateClipArp(2, 0, { enabled: true });
+    expect(st().session.scenes[2].clips[0]).toBe(drums);
+    st().updateClipArp(2, 1, { enabled: true }); st().launch(1, 2);
+    st().updateClipBytes(2, 1, clipPattern(st().session, 2, 1)!, st().session.scenes[2].clips[1]!.bars);
+    expect(rig.dev(1).updates[0].arp).toBeDefined();
+  });
 });
 
 describe('power-on', () => {

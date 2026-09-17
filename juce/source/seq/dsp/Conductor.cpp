@@ -60,7 +60,7 @@ void Conductor::launch(int t, int s) {
     // Stamp the scene as the clip's launch identity: it rides the command to the
     // device and comes back on the Start ack, so onClipStart can attribute the
     // ack to this scene rather than whatever was scheduled last (Finding 1).
-    io_.ioScheduleClip(t, sc.clips[(size_t)t].bytes, sc.clips[(size_t)t].bars, boundary(), s);
+    io_.ioScheduleArpClip(t, sc.clips[(size_t)t], boundary(), s);
     queue_[t] = s;
 }
 
@@ -117,7 +117,17 @@ void Conductor::updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int ba
     const int q = qit != queue_.end() ? qit->second : kNone;
     const int owner = ownerOf(t);
     const int target = (q != kNone && q != SQ_STOP) ? q : owner;
-    if (target == s) io_.ioUpdateClip(t, bytes, bars);
+    if (target == s) io_.ioUpdateArpClip(t, sc.clips[(size_t)t]);
+}
+
+void Conductor::updateClipArp(int s, int t, const ArpSettings& a) {
+    if (!validArpSettings(a, true)) return;
+    if (s < 0 || s >= (int)session_.scenes.size() || t < 0 || t >= (int)session_.tracks.size()
+        || session_.tracks[(size_t)t].machine == Machine::DR1 || !session_.scenes[(size_t)s].hasClip[(size_t)t]) return;
+    auto& c = session_.scenes[(size_t)s].clips[(size_t)t];
+    c.hasArp = true; c.arp = a; c.arp.keys = false; c.arp.latch = false;
+    const int q = queueOf(t), target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateArpClip(t, c);
 }
 
 void Conductor::createClip(int s, int t) {
@@ -171,7 +181,7 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
     const auto qit = queue_.find(t);
     const int q = qit != queue_.end() ? qit->second : kNone;
     const int target = (q != kNone && q != SQ_STOP) ? q : ownerOf(t);
-    if (target == s) io_.ioUpdateClip(t, bytes, entry.bars);
+    if (target == s) io_.ioUpdateArpClip(t, session_.scenes[(size_t)s].clips[(size_t)t]);
     return true;
 }
 
@@ -201,6 +211,7 @@ bool Conductor::pasteClip(int s, int t, const ClipData& clip) {
     // pattern bytes are machine-specific, so a payload whose byte count does
     // not match this track's machine is rejected (no partial corruption).
     if (!(clip.bars >= 1 && clip.bars <= SQ_MAX_BARS)) return false;
+    if (clip.hasArp && (session_.tracks[(size_t)t].machine == Machine::DR1 || !validArpSettings(clip.arp, true))) return false;
     if ((int)clip.bytes.size() != clip.bars * sqBytesPerBar(session_.tracks[(size_t)t].machine))
         return false;
 
@@ -213,7 +224,7 @@ bool Conductor::pasteClip(int s, int t, const ClipData& clip) {
     const auto qit = queue_.find(t);
     const int q = qit != queue_.end() ? qit->second : kNone;
     const int target = (q != kNone && q != SQ_STOP) ? q : ownerOf(t);
-    if (target == s) io_.ioUpdateClip(t, clip.bytes, clip.bars);
+    if (target == s) io_.ioUpdateArpClip(t, clip);
     return true;
 }
 

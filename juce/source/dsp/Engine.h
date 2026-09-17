@@ -244,6 +244,7 @@ public:
     // concurrently — matching the web worklet's poly seqOffQueue; accents fire
     // velocity SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod routes respond.
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
+    void setArp(const ArpPattern&);
     void seqStop();                                 // worklet 'stop'
     bool seqIsPlaying() const { return seqPlaying_ || seqHostPlaying_; }
     void setSeqPatterns(const uint8_t* data, int n); // n must be SEQ_PATTERN_BYTES; copies
@@ -282,12 +283,13 @@ public:
         hostAnchor_ = anchorFrame; // beat zero of the shared timebase (synced-LFO phase)
         clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}) {
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
     }
     void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
-        clipHost_.updateClip(data, (size_t)bytes, bars);
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}) {
+        if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp)))) seqGateOff();
+        clipHost_.updateClip(data, (size_t)bytes, bars, arp);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max` events, then erase ONLY the copied
@@ -317,7 +319,7 @@ public:
     // (the standalone/unit callers) keeps the old fixed 64.
     int hostMaxEvents(int maxBlock) const {
         if (maxBlock <= 0) return 64;
-        const double minStepDur = sr_ * 60.0 / 200.0 / 4.0; // sqSamplesPerStep(200, sr_)
+        const double minStepDur = sr_ * 60.0 / 200.0 / 8.0; // fastest arp: 1/32
         const int n = (int)std::ceil((double)maxBlock / minStepDur) + 8;
         return std::max(64, n);
     }
@@ -373,6 +375,7 @@ private:
 
     // ---- note sequencer internals ----
     void seqGateOff();                       // worklet seqGateOff (gate off all)
+    void arpFire(const ArpPattern&, int step, double interval);
     void seqScheduleOff(int note, double remaining); // per-note off queue (worklet seqScheduleOff)
     double seqEarliestOff() const;           // smallest pending-off remaining (-1 = none)
     void seqFire();                          // worklet seqFire (internal clock)
@@ -433,6 +436,7 @@ private:
 
     // ---- note sequencer state (worklet fields) ----
     std::vector<uint8_t> seqPats_ = makeEmptySeqPatterns();
+    ArpPattern arp_;
     std::vector<int> seqChain_ { 0 };
     int    seqChainPos_ = 0;
     bool   seqPlaying_ = false;       // internal clock running

@@ -756,25 +756,60 @@ const PIRATE_RADIO_PATTERNS = buildPatterns(
 
 const PATTERNS = trVoidPatterns();
 
+// DR-1's kit browser is the primary solo-instrument preset path. Give the
+// transient-heavy voices a small, authored dynamics/saturation treatment in
+// every factory kit, while leaving hats, cymbals, and existing kit-specific
+// pad settings alone.
+function withPunchFx(params: Partial<ParamValues>): Partial<ParamValues> {
+  const voices: Array<[number, number, number, number, number, number | undefined]> = [
+    [0, 0.12, 1.8, 0.3, 0.65, 0.14],
+    [1, 0.16, 1.7, 0.4, 0.7, 0.14],
+    [2, 0.2, 1.5, 0.5, 0.75, undefined],
+    [3, 0.18, 1.6, 0.45, 0.7, undefined],
+    [8, 0.16, 1.6, 0.4, 0.7, 0.14],
+    [9, 0.18, 1.6, 0.45, 0.7, 0.14],
+    [10, 0.18, 1.6, 0.45, 0.7, 0.14],
+  ];
+  for (const [padI, depth, time, up, down, drive] of voices) {
+    const put = (field: string, value: number) => {
+      const id = pad(padI, field);
+      if (params[id] === undefined) params[id] = value;
+    };
+    put('fx.ott.on', 1); put('fx.ott.depth', depth); put('fx.ott.time', time);
+    put('fx.ott.up', up); put('fx.ott.down', down);
+    put('fx.comp.on', 1); put('fx.comp.thr', -18); put('fx.comp.att', 0.024);
+    put('fx.comp.rel', 0.11); put('fx.comp.ratio', 3);
+    if (drive !== undefined) {
+      put('fx.drive.on', 1); put('fx.drive.amt', drive); put('fx.drive.mix', 0.2);
+      put('fx.drive.type', 1); put('fx.drive.tone', -0.18);
+    }
+  }
+  return params;
+}
+
+const kit = (name: string, params: Partial<ParamValues>, padNames: string[], patterns: number[], chain: number[]): Kit => ({
+  name, params: withPunchFx(params), padNames, patterns, chain,
+});
+
 export const FACTORY_KITS: Kit[] = [
-  { name: 'TR-VOID', params: trVoidParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'ROOM ONE', params: roomOneParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'BITCRUSH', params: bitcrushParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: '808 CLASSIC', params: classic808Params(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'DEEP DUB', params: deepDubParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'DUST HOUSE', params: dustHouseParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'WAREHOUSE', params: warehouseParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'METAL WORK', params: metalWorkParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'TAPE KIT', params: tapeKitParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'MINIMAL', params: minimalParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'BROKEN TOYS', params: brokenToysParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'LIVE ROOM', params: liveRoomParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'UZU', params: uzuParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: '808+UZU HYBRID', params: hybridParams(), padNames: [...PAD_NAMES], patterns: [...PATTERNS], chain: [0] },
-  { name: 'NEON GRID', params: neonGridParams(), padNames: [...NEON_GRID_PADS], patterns: NEON_GRID_PATTERNS, chain: [...AB_CHAIN] },
-  { name: 'ACID CAVE', params: acidCaveParams(), padNames: [...ACID_CAVE_PADS], patterns: ACID_CAVE_PATTERNS, chain: [...AB_CHAIN] },
-  { name: 'BOOM BAP', params: boomBapParams(), padNames: [...BOOM_BAP_PADS], patterns: BOOM_BAP_PATTERNS, chain: [...AB_CHAIN] },
-  { name: 'PIRATE RADIO', params: pirateRadioParams(), padNames: [...PIRATE_RADIO_PADS], patterns: PIRATE_RADIO_PATTERNS, chain: [...AB_CHAIN] },
+  kit('TR-VOID', trVoidParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('ROOM ONE', roomOneParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('BITCRUSH', bitcrushParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('808 CLASSIC', classic808Params(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('DEEP DUB', deepDubParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('DUST HOUSE', dustHouseParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('WAREHOUSE', warehouseParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('METAL WORK', metalWorkParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('TAPE KIT', tapeKitParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('MINIMAL', minimalParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('BROKEN TOYS', brokenToysParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('LIVE ROOM', liveRoomParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('UZU', uzuParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('808+UZU HYBRID', hybridParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('NEON GRID', neonGridParams(), [...NEON_GRID_PADS], NEON_GRID_PATTERNS, [...AB_CHAIN]),
+  kit('ACID CAVE', acidCaveParams(), [...ACID_CAVE_PADS], ACID_CAVE_PATTERNS, [...AB_CHAIN]),
+  kit('BOOM BAP', boomBapParams(), [...BOOM_BAP_PADS], BOOM_BAP_PATTERNS, [...AB_CHAIN]),
+  kit('PIRATE RADIO', pirateRadioParams(), [...PIRATE_RADIO_PADS], PIRATE_RADIO_PATTERNS, [...AB_CHAIN]),
 ];
 
 export function kitToState(kit: Kit): {

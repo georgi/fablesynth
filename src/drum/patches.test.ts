@@ -127,7 +127,8 @@ describe('patches', () => {
     expect(params[pad(padI, 'mod2.src')]).toBe(0);
     expect(params[pad(padI, 'mod2.dst')]).toBe(0);
     expect(params[pad(padI, 'mod2.amt')]).toBe(0);
-    expect(params[pad(padI, 'fx.ott.on')]).toBe(0);
+    expect(params[pad(padI, 'fx.ott.on')]).toBe(kick.params['fx.ott.on'] ?? 0);
+    expect(params[pad(padI, 'fx.ott.depth')]).toBe(kick.params['fx.ott.depth'] ?? DRUM_PARAMS[pad(padI, 'fx.ott.depth')].def);
     // ...while the patch's own overrides landed.
     expect(params[pad(padI, 'oscA.tune')]).toBe(-26);
     expect(params[pad(padI, 'penv.amt')]).toBe(24);

@@ -787,6 +787,10 @@
 /* Device stylesheets style their own root ids; neutralize page-level sizing
    so the rack renders as an embedded panel, not a full page. */
 .sq-hosted-rack { width: auto; min-height: 0; margin: 0; padding: 12px; }
+/* The arp is a fluid editor; do not inherit WT-1's standalone rack width. */
+#rack.sq-hosted-rack:has(.arp-panel) { min-width: 0; width: 100%; margin: 0; padding: 12px; }
+#rack.sq-hosted-rack:has(.arp-panel) .panels { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+#rack.sq-hosted-rack .arp-panel { --ac-a: #4de8ff; }
 
 /* SEQ/EDIT device modes: the hidden group is unmounted, so each rack's grid
    is re-declared per mode to let the visible group fill the vacated space.
@@ -803,8 +807,8 @@
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
     'filter filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos'
-    'eq eq eq eq ott ott ott ott comp comp comp comp'
-    'matrix matrix matrix echo echo echo echo reverb reverb reverb fx fx';
+    'matrix matrix matrix eq eq eq ott ott ott comp comp comp'
+    'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb';
 }
 
 .sq-clipbar {

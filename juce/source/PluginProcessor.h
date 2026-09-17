@@ -98,6 +98,11 @@ public:
     // ---- note sequencer (BL-1 conventions) --------------------------------
     // Transport: message thread -> engine via a lock-free command FIFO.
     void setSeqPlaying(bool on);
+    fable::ArpSettings getArpSettings() const { return arpSettings_; }
+    void setArpSettings(const fable::ArpSettings& a) { arpSettings_ = a; arpMailbox_.publish(a); }
+    fable::ArpSettings getLiveArp() const { arpLiveMailbox_.consume(arpLive_, arpLiveVersion_); return arpLive_; }
+    void clearArpKeys() { pushCmd(CmdArpClear); }
+    void arpKeyInput(int note, bool on) { if (note >= 0 && note < 128) pushCmd((on ? CmdArpKeyOn : CmdArpKeyOff) + note); }
     bool isSeqPlaying() const { return seqPlaying_.load(); }
     int  getCurrentStep() const { return curStep_.load(); }      // -1 stopped
     int  getCurrentPattern() const { return curPattern_.load(); }
@@ -147,7 +152,15 @@ private:
     fui::ProgramDirtyTracker programDirty_{*this};
 
     // ---- note sequencer bridge (BassAudioProcessor scheme) ----
-    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic };
+    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic, CmdArpClear, CmdArpKeyOn = 128, CmdArpKeyOff = 256 };
+    fable::ArpSettings arpSettings_;
+    fable::ArpMailbox arpMailbox_;
+    fable::ArpInput arpInput_;
+    uint32_t arpVersion_ = 0;
+    fable::ArpMailbox arpLiveMailbox_;
+    mutable fable::ArpSettings arpLive_;
+    mutable uint32_t arpLiveVersion_ = 0;
+    void applyArp() { engine.setArp(arpInput_.pattern()); arpLiveMailbox_.publish(arpInput_.snapshot()); }
     juce::AbstractFifo cmdFifo_{64};
     std::array<int, 64> cmds_{};
 
@@ -176,6 +189,11 @@ public:
     fui::ParameterSource parameters() override;
     fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
+    void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
+    fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
+    void clearArpKeys() override { proc.clearArpKeys(); }
+    void arpKeyInput(int n, bool on) override { proc.arpKeyInput(n, on); }
     bool programDirty() const override;
     int currentProgram() const override;
     int numPrograms() const override;

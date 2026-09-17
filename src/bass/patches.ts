@@ -41,13 +41,19 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     // The design defaults ARE the acid line — overrides only where the mock differs.
     name: 'ACID LINE',
-    params: {},
+    params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.1, 'fx.ott.up': 0.65, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.1, 'fx.comp.ratio': 3,
+    },
     patterns: [...ACID_PATTERNS],
     chain: [0],
   },
   {
     name: 'RUBBER SUB',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.14, 'fx.ott.time': 1.6, 'fx.ott.up': 0.35, 'fx.ott.down': 0.6,
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.14, 'fx.comp.ratio': 2.5,
+      'fx.drive.type': 1, 'fx.drive.tone': -0.2,
       'osc.table': 2, // PULSE
       'osc.pos': 0.12,
       'osc.level': 0.6,
@@ -73,6 +79,8 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'NEON SQUELCH',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.3, 'fx.ott.time': 1, 'fx.ott.up': 0.75, 'fx.ott.down': 0.85,
+      'fx.comp.on': 1, 'fx.comp.thr': -21, 'fx.comp.att': 0.018, 'fx.comp.rel': 0.09, 'fx.comp.ratio': 3,
       'osc.pos': 0.55,
       'osc.unison': 3,
       'osc.detune': 0.3,
@@ -113,6 +121,8 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'WAREHOUSE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.34, 'fx.ott.time': 1.1, 'fx.ott.up': 0.8, 'fx.ott.down': 0.9,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.024, 'fx.comp.rel': 0.095, 'fx.comp.ratio': 3.5,
       'osc.table': 3, 'osc.pos': 0.72, 'osc.unison': 2, 'osc.detune': 0.18,
       'osc.spread': 0.18, 'sub.level': 0.38,
       'flt.type': 1, 'flt.cut': 430, 'flt.res': 0.68, 'flt.drive': 0.72,
@@ -126,6 +136,9 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'ROUNDHOUSE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.2, 'fx.ott.time': 1.5, 'fx.ott.up': 0.5, 'fx.ott.down': 0.7,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.028, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+      'fx.drive.type': 1, 'fx.drive.tone': -0.2,
       'osc.table': 1, 'osc.pos': 0.28, 'osc.unison': 1, 'osc.level': 0.68,
       'sub.shape': 0, 'sub.oct': -1, 'sub.level': 0.68,
       'flt.type': 0, 'flt.cut': 680, 'flt.res': 0.22, 'flt.drive': 0.34,
@@ -141,6 +154,8 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'METAL PULSE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.28, 'fx.ott.time': 1.2, 'fx.ott.up': 0.65, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.024, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 3,
       // A bandpass on a bass throws away most of its energy; the level here is
       // set so the patch can still reach the mix target at a sane track fader.
       'osc.table': 4, 'osc.pos': 0.86, 'osc.fine': 9,
@@ -176,6 +191,8 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'REESE MONO',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.28, 'fx.ott.time': 1.3, 'fx.ott.up': 0.7, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -21, 'fx.comp.att': 0.025, 'fx.comp.rel': 0.16, 'fx.comp.ratio': 3,
       'osc.table': 0, 'osc.pos': 0.64, 'osc.unison': 7, 'osc.detune': 0.46,
       'osc.spread': 0.18, 'osc.level': 0.72, 'sub.shape': 0, 'sub.level': 0.54,
       'flt.type': 1, 'flt.cut': 360, 'flt.res': 0.3, 'flt.drive': 0.54,
@@ -192,6 +209,8 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
   {
     name: 'PLUCKED WIRE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.22, 'fx.ott.time': 1.5, 'fx.ott.up': 0.55, 'fx.ott.down': 0.7,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.028, 'fx.comp.rel': 0.08, 'fx.comp.ratio': 3,
       'osc.table': 2, 'osc.pos': 0.62, 'osc.tune': 0, 'osc.unison': 2,
       'osc.detune': 0.1, 'osc.spread': 0.28, 'osc.level': 1,
       'sub.level': 0.18, 'flt.type': 1, 'flt.cut': 1500, 'flt.res': 0.42,
@@ -263,6 +282,9 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
     // HOUSE: the classic organ-ish bump — short, round, sits under a 4/4 kick.
     name: 'HOUSE ORGAN',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.22, 'fx.ott.time': 1.5, 'fx.ott.up': 0.5, 'fx.ott.down': 0.75,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.11, 'fx.comp.ratio': 3,
+      'fx.drive.type': 1, 'fx.drive.tone': -0.2,
       'osc.table': 2, 'osc.pos': 0.42, 'osc.unison': 2, 'osc.detune': 0.12,
       'osc.spread': 0.2, 'osc.level': 0.72,
       'sub.shape': 0, 'sub.oct': -1, 'sub.level': 0.7,
@@ -332,6 +354,9 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
     // FUTURE BASS: the 808 — pure sub, long tail, glides between roots.
     name: '808 GLIDE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.12, 'fx.ott.time': 1.8, 'fx.ott.up': 0.3, 'fx.ott.down': 0.6,
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.03, 'fx.comp.rel': 0.18, 'fx.comp.ratio': 2.5,
+      'fx.drive.type': 1, 'fx.drive.tone': -0.2,
       'osc.table': 0, 'osc.pos': 0.06, 'osc.unison': 1, 'osc.level': 0.3,
       'sub.shape': 0, 'sub.oct': -1, 'sub.level': 1,
       'flt.type': 1, 'flt.cut': 240, 'flt.res': 0.1, 'flt.drive': 0.35,
@@ -347,6 +372,8 @@ const FACTORY_PATCHES_RAW: BassPatch[] = [
     // FUTURE BASS: the other half — wide detuned growl with 1/8 filter motion.
     name: 'GROWL WIDE',
     params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.38, 'fx.ott.time': 1, 'fx.ott.up': 0.9, 'fx.ott.down': 0.85,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3.5,
       'osc.table': 5, 'osc.pos': 0.48, 'osc.unison': 5, 'osc.detune': 0.38,
       'osc.spread': 0.42, 'osc.level': 0.66,
       'sub.shape': 0, 'sub.oct': -1, 'sub.level': 0.62,

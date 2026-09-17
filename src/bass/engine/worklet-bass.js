@@ -839,6 +839,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.pats = new Uint8Array(NPATTERNS * STEPS * STEP_STRIDE);
     this.chain = [0]; this.chainPos = 0;
     this.playing = false;
+    this.arp = null;
     this.step = -1;
     this.samplesToNext = 0;
     this.samplesToGateOff = -1;
@@ -939,6 +940,25 @@ class BassProcessor extends AudioWorkletProcessor {
         this.havePrev = false; // new offsets — nothing to ramp from
         break;
       case 'pats': this.pats = new Uint8Array(d.data.slice(0)); break;
+      case 'arp': {
+        if (this.hosted) break;
+        const a = d.config;
+        if (a && (!Array.isArray(a.notes) || a.notes.length !== STEPS ||
+          !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
+          !Number.isFinite(a.rate) || !Number.isFinite(a.gate))) break;
+        const changedMode = !!a !== !!this.arp;
+        this.arp = a ? {
+          notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
+          hits: a.hits.slice(0, STEPS), accents: a.accents.slice(0, STEPS),
+          slides: Array.isArray(a.slides) ? a.slides.slice(0, STEPS) : [],
+          rate: Math.max(.125, Math.min(1, a.rate)), gate: Math.max(.05, Math.min(.95, a.gate)),
+        } : null;
+        if (changedMode || (a && !a.notes.some(n => n >= 0))) {
+          this.release(); this.held.length = 0; this.samplesToGateOff = -1;
+        }
+        if (changedMode) { this.step = -1; this.chainPos = 0; this.samplesToNext = 0; }
+        break;
+      }
       case 'chain':
         if (Array.isArray(d.list) && d.list.length) {
           this.chain = d.list.map((x) => x | 0);
@@ -973,7 +993,7 @@ class BassProcessor extends AudioWorkletProcessor {
         if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: this.readClipArp(d.arp) };
         this.clipStopAt = -1;
         break;
       case 'clipstop':
@@ -985,16 +1005,20 @@ class BassProcessor extends AudioWorkletProcessor {
         // derived arithmetic, so a live swap never moves the playhead.
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
+        const arp = this.readClipArp(d.arp);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars;
-          this.clip = { data, bars };
+          const rephase = this.clip.arp?.rate !== arp?.rate;
+          this.clip = { data, bars, arp };
+          if (rephase) { this.release(); this.samplesToGateOff = -1; this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; }
+          else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i])) { this.release(); this.samplesToGateOff = -1; }
           // Re-derive the phase only on a bar-count change (plain modulo can
           // land a grown clip half a cycle off). Same-length edits — every
           // sequencer click — are a pure data swap: touching the phase inside
           // a swing/quantization window would skip a step and desync devices.
-          if (resized && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
+          if (resized && !rephase && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor);
         }
         break;
       }
@@ -1002,6 +1026,16 @@ class BassProcessor extends AudioWorkletProcessor {
   }
 
   // ---------- hosted clip transport ----------
+  readClipArp(a) {
+    if (!a || !Array.isArray(a.notes) || a.notes.length !== STEPS ||
+      !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
+      !Number.isFinite(a.rate) || !Number.isFinite(a.gate)) return null;
+    return { notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
+      hits: a.hits.slice(0, STEPS), accents: a.accents.slice(0, STEPS),
+      slides: Array.isArray(a.slides) ? a.slides.slice(0, STEPS) : [],
+      rate: Math.max(.125, Math.min(1, a.rate)), gate: Math.max(.05, Math.min(.95, a.gate)) };
+  }
+
   clipRead(abs) {
     const o = abs * STEP_STRIDE;
     const flags = this.clip.data[o];
@@ -1029,6 +1063,7 @@ class BassProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ t: 'clipstop', frame: currentFrame });
     }
     if (this.clipPend && this.clipPend.at < end) {
+      if (this.clip?.arp || this.clipPend.arp) { this.release(); this.samplesToGateOff = -1; }
       this.clip = this.clipPend;
       this.clipPend = null;
       // Phase-lock to the shared timebase: enter at the global song position
@@ -1050,13 +1085,14 @@ class BassProcessor extends AudioWorkletProcessor {
   // mid-flight resizes floor (the last fired step).
   clipPhase(quantize) {
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
-    const dur = (60 / bpm / 4) * sampleRate;
-    const total = this.clip.bars * STEPS;
+    const dur = (60 / bpm) * (this.clip.arp?.rate ?? .25) * sampleRate;
+    const total = this.clip.arp ? STEPS : this.clip.bars * STEPS;
     const idx = quantize(Math.max(0, currentFrame - this.hostAnchor) / dur);
     return ((idx % total) + total) % total;
   }
 
   clipFire() {
+    if (this.clip.arp) { this.clipArpFire(); return; }
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
@@ -1085,6 +1121,29 @@ class BassProcessor extends AudioWorkletProcessor {
   }
 
   // ---------- voice control ----------
+  clipArpFire() {
+    const a = this.clip.arp;
+    const s = (this.clipStep + 1) % STEPS;
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = 60 / bpm * a.rate * sampleRate;
+    const swing = Math.max(0, Math.min(1, this.hostSwing || 0));
+    const offNow = s % 2 ? swing * SWING_MAX * dur : 0;
+    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
+    const next = this.hostAnchor + (idx + 1) * dur + ((s + 1) % 2 ? swing * SWING_MAX * dur : 0);
+    const interval = Math.max(1, next - currentFrame);
+    if (a.hits[s] && a.notes[s] >= 0) {
+      const semi = a.notes[s] - ROOT_MIDI;
+      if (a.slides[s] && this.gate) this.glideTo(semi, a.accents[s]);
+      else this.noteOn(semi, a.accents[s]);
+      const nextStep = (s + 1) % STEPS;
+      this.samplesToGateOff = a.hits[nextStep] && a.notes[nextStep] >= 0 && a.slides[nextStep]
+        ? -1 : interval * a.gate;
+    } else { this.release(); this.samplesToGateOff = -1; }
+    this.clipStep = s;
+    this.clipToNext = interval;
+    this.port.postMessage({ t: 'pos', step: s, bar: 0 });
+  }
+
   noteOn(semi, acc, vel) {
     this.gate = true;
     this.acc = !!acc;
@@ -1171,6 +1230,31 @@ class BassProcessor extends AudioWorkletProcessor {
 
   fireStep() {
     const bpm = Math.max(60, Math.min(200, this.p['seq.bpm'] || 138));
+    if (this.arp) {
+      const a = this.arp;
+      const s = (this.step + 1) % STEPS;
+      const dur = 60 / bpm * a.rate * sampleRate;
+      const swing = Math.max(0, Math.min(1, this.p['master.swing'] || 0));
+      const interval = dur * (1 + (s % 2 ? -1 : 1) * swing * SWING_MAX);
+      let semi = -100, slide = false, acc = false;
+      if (a.hits[s] && a.notes[s] >= 0) {
+        semi = a.notes[s] - ROOT_MIDI;
+        acc = !!a.accents[s];
+        slide = !!a.slides[s] && this.step >= 0 && this.gate;
+        if (slide) this.glideTo(semi, acc);
+        else this.noteOn(semi, acc);
+        const next = (s + 1) % STEPS;
+        // A slide belongs to the destination step, matching BL-1's editor.
+        this.samplesToGateOff = a.hits[next] && a.notes[next] >= 0 && a.slides[next]
+          ? -1 : interval * a.gate;
+      } else {
+        this.release(); this.samplesToGateOff = -1;
+      }
+      this.step = s;
+      this.samplesToNext += interval;
+      this.port.postMessage({ t: 'step', s, pat: 0, semi, acc, slide });
+      return;
+    }
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = this.p['master.swing'] || 0;
     const next = this.step + 1;

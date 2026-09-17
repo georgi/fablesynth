@@ -509,6 +509,8 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
             dragStartPos_ = dragCurPos_ = e.position;
             return;
         }
+        drawingNote_ = true; drawDuration_ = 1;
+        repaint();
         return;
     }
 
@@ -523,6 +525,11 @@ void PitchSeqView::mouseDown(const juce::MouseEvent& e) {
 }
 
 void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
+    if (drawingNote_) {
+        drawDuration_ = juce::jmax(1, stepAt(e.getPosition().x) - downStep_ + 1);
+        repaint();
+        return;
+    }
     if (resizeStep_ >= 0) {
         const int delta = (int)std::round(e.getDistanceFromDragStartX() / (double)juce::jmax(1, colBounds(resizeStep_).getWidth()));
         resizeStep(resizeStep_, resizeStartDuration_ + delta);
@@ -559,6 +566,18 @@ void PitchSeqView::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void PitchSeqView::mouseUp(const juce::MouseEvent& e) {
+    if (drawingNote_) {
+        mouseDrag(e);
+        drawingNote_ = false;
+        pushHistory();
+        auto note = proc.sequenceStep(proc.editPattern(), downStep_);
+        note.on = true; note.note = downNote_; note.duration = drawDuration_;
+        proc.setSequenceStep(proc.editPattern(), downStep_, note);
+        hasLastCell_ = true; lastCellStep_ = downStep_; lastCellNote_ = downNote_;
+        downStep_ = downNote_ = -1;
+        repaint();
+        return;
+    }
     if (resizeStep_ >= 0) { resizeStep_ = -1; return; }
     if (sweeping_) {
         sweeping_ = false;
@@ -621,6 +640,7 @@ void PitchSeqView::cancelResize() { if (resizeStep_ >= 0) resizeStep(resizeStep_
 void PitchSeqView::cancelGesture() {
     sweeping_ = false;
     moveArmed_ = moving_ = false;
+    drawingNote_ = false;
     noteDragArmed_ = noteDragActive_ = false;
     ghost_ = false; ghostHasHover_ = false;
     barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1;
@@ -668,6 +688,7 @@ void PitchSeqView::timerCallback() {
         lastPatternSrc_ = srcId;
         history_.clear();
         hasRect_ = false; sweeping_ = false;
+        drawingNote_ = false;
         moveArmed_ = moving_ = false; noteDragArmed_ = noteDragActive_ = false;
         ghost_ = false; ghostHasHover_ = false;
         barDragFrom_ = -1; barDragStarted_ = false; barDragHover_ = -1;
@@ -794,8 +815,7 @@ void PitchSeqView::paint(juce::Graphics& g) {
     // ---- head: hint, right-aligned (.bl-seq-hint) ----
     g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
-    // web "TAP LANE = NOTE · SLIDE TIES INTO STEP FROM PREV" — ASCII middle dot
-    drawSpaced(g, "TAP LANE = NOTE - SLIDE TIES INTO STEP FROM PREV",
+    drawSpaced(g, "DRAG EMPTY = DRAW - EDGE = LENGTH",
                { getWidth() - kPadX - 320, kHeadY, 320, kHeadH }, 0.9f,
                juce::Justification::right);
 
@@ -946,6 +966,14 @@ void PitchSeqView::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
     }
 
+    if (drawingNote_) {
+        auto r = cellBounds(downStep_, downNote_).toFloat();
+        r.setRight(cellBounds(downStep_ + drawDuration_ - 1, downNote_).toFloat().getRight());
+        g.setColour(green.withAlpha(0.45f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(green.withAlpha(0.9f));
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.2f);
+    }
     if (noteDragActive_) {
         // The dragged note previews at its landing spot with its real length,
         // and the note it left behind is dimmed (.ns-note-preview / .drag-src).

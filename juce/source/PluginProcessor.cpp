@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "ui/ArpCodec.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -54,6 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
 
 void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate);
+    arpInput_.clear(); arpInput_.set(arpSettings_); applyArp();
     rebuildEngineTables();
     fx.prepare(sampleRate);
     setLatencySamples(fx.latencySamples());
@@ -254,16 +256,30 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     hostSynced_.store(synced, std::memory_order_relaxed);
     hostSeqBpm_.store(synced ? bpm : 0.0, std::memory_order_relaxed);
 
+    ArpSettings arpUpdate;
+    if (arpMailbox_.consume(arpUpdate, arpVersion_)) {
+        if (arpUpdate.enabled != arpInput_.settings.enabled || arpUpdate.keys != arpInput_.settings.keys) engine.panic();
+        arpInput_.set(arpUpdate); applyArp();
+    }
     // Drain the UI command FIFO (sequencer transport / panic).
     {
         int s1, sz1, s2, sz2;
         cmdFifo_.prepareToRead(cmdFifo_.getNumReady(), s1, sz1, s2, sz2);
         auto run = [&](int start, int count) {
             for (int i = 0; i < count; ++i) {
-                switch (cmds_[(size_t)(start + i)]) {
+                const int cmd = cmds_[(size_t)(start + i)];
+                if (cmd >= CmdArpKeyOn) {
+                    const bool on = cmd < CmdArpKeyOff;
+                    const int note = cmd - (on ? CmdArpKeyOn : CmdArpKeyOff);
+                    if (arpInput_.key(note, on)) applyArp();
+                    else if (on) engine.noteOn(note, .8); else engine.noteOff(note);
+                    continue;
+                }
+                switch (cmd) {
                     case CmdPlay:  engine.seqPlay();  break;
                     case CmdStop:  engine.seqStop();  break;
-                    case CmdPanic: engine.panic();    break;
+                    case CmdPanic: engine.panic(); arpInput_.clear(); applyArp(); break;
+                    case CmdArpClear: arpInput_.clear(); applyArp(); break;
                 }
             }
         };
@@ -310,9 +326,15 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     for (const auto meta : midi) {
         renderTo(juce::jlimit(0, n, meta.samplePosition));
         const auto m = meta.getMessage();
-        if (m.isNoteOn())        { engine.noteOn(m.getNoteNumber(), m.getFloatVelocity()); midiGlow.store(20); }
-        else if (m.isNoteOff())  engine.noteOff(m.getNoteNumber());
-        else if (m.isAllNotesOff() || m.isAllSoundOff()) engine.panic();
+        if (m.isNoteOn()) {
+            if (arpInput_.key(m.getNoteNumber(), true)) applyArp();
+            else engine.noteOn(m.getNoteNumber(), m.getFloatVelocity());
+            midiGlow.store(20);
+        } else if (m.isNoteOff()) {
+            if (arpInput_.key(m.getNoteNumber(), false)) applyArp();
+            else engine.noteOff(m.getNoteNumber());
+        }
+        else if (m.isAllNotesOff() || m.isAllSoundOff()) { engine.panic(); arpInput_.clear(); applyArp(); }
         else if (m.isPitchWheel()) { engine.pitchBend((m.getPitchWheelValue() - 8192) / 8192.0 * 2.0); midiGlow.store(20); }
     }
     renderTo(n);
@@ -433,6 +455,7 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     // Note sequencer session: all 4 patterns in the web's packed 3-byte/step
     // layout (base64) + the chain + the edit pattern (BL-1 BASS-child scheme).
     juce::ValueTree seq("NOTESEQ");
+    seq.setProperty("arp", juce::JSON::toString(arpToVar(arpSettings_), false, 17), nullptr);
     seq.setProperty("patterns",
         juce::Base64::toBase64(patterns_.data(), patterns_.size()), nullptr);
     juce::StringArray chainStr;
@@ -459,6 +482,9 @@ void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
         params = juce::ValueTree::fromXml(*xml); // legacy: bare parameter tree
     }
 
+    ArpSettings restoredArp;
+    arpFromVar(juce::JSON::parse(seq.getProperty("arp").toString()), restoredArp);
+    setArpSettings(restoredArp);
     // Restore the sequencer session (legacy states without NOTESEQ keep the
     // empty-pattern defaults).
     if (seq.isValid()) {

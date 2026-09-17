@@ -57,6 +57,8 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
         break;
     case Chorus:
         keys = {"rate", "depth", "mix"};
+        setDescription("Stereo delay modulation preview over two seconds, not a live audio meter. "
+                       "Solid line: left tap. Dashed line: right tap. Delay in milliseconds.");
         break;
     case Echo:
         keys = tape ? juce::StringArray{"time", "fb", "mix", "tone", "sat", "wow", "flutter", "width"}
@@ -251,10 +253,7 @@ void FxModuleView::resized() {
         mode_.setBounds(head.removeFromRight(98));
     }
     r.removeFromTop(6);
-    if (kind_ == Chorus) {
-        plot_ = {};
-        controls_ = r;
-    } else {
+    {
         const int bottom = kind_ == Eq ? 112 : kind_ == Ott || kind_ == Comp ? 106 : kind_ == Drive ? 98 : 92;
         plot_ = r.removeFromTop(juce::jmax(72, r.getHeight() - bottom));
         readouts_ = r.removeFromTop(kind_ == Eq ? 28 : 24);
@@ -295,6 +294,8 @@ void FxModuleView::paint(juce::Graphics &g) {
         caption = power_.isOn() ? juce::String(value(prefix_ + "fx.comp.ratio"), 1) + juce::String::fromUTF8(":1 · SOFT KNEE") : "BYPASS";
     if (kind_ == Drive)
         caption = power_.isOn() ? "4x SATURATION" : "BYPASS";
+    if (kind_ == Chorus)
+        caption = !power_.isOn() ? "BYPASS" : value(prefix_ + "fx.chorus.mix") > 0 ? "STEREO" : "DRY";
     if (kind_ == Reverb)
         caption = prefix_.isNotEmpty() ? (power_.isOn() ? "PAD SEND" : "SEND OFF")
                   : power_.isOn()      ? "STEREO"
@@ -313,6 +314,8 @@ void FxModuleView::paint(juce::Graphics &g) {
             drawDynamics(g, (float)plot_.getWidth(), (float)plot_.getHeight());
         if (kind_ == Drive)
             drawDrive(g, (float)plot_.getWidth(), (float)plot_.getHeight());
+        if (kind_ == Chorus)
+            drawChorus(g, (float)plot_.getWidth(), (float)plot_.getHeight());
         if (kind_ == Echo)
             drawEcho(g, (float)plot_.getWidth(), (float)plot_.getHeight());
         if (kind_ == Reverb)
@@ -338,6 +341,11 @@ void FxModuleView::paint(juce::Graphics &g) {
     }
     if (kind_ == Reverb)
         readings = {"L RETURN  " + db(data_[M::verbL]) + " dB", "R RETURN  " + db(data_[M::verbR]) + " dB"};
+    if (kind_ == Chorus) {
+        const float excursion = .8f + value(prefix_ + "fx.chorus.depth") * 4.5f;
+        readings = {juce::String::fromUTF8("L  12 ± ") + juce::String(excursion, 1) + " ms",
+                    juce::String::fromUTF8("R  17 ± ") + juce::String(excursion * .8f, 1) + " ms"};
+    }
     g.setFont(monoFont(8));
     g.setColour(col::text);
     for (int i = 0; i < readings.size(); ++i)
@@ -600,6 +608,49 @@ void FxModuleView::drawDrive(juce::Graphics& g, float w, float h) {
     text(g, "10k", right, h - 5, col::acN, juce::Justification::right);
 }
 
+void FxModuleView::drawChorus(juce::Graphics& g, float w, float h) {
+    // The same phase-zero, two-second parameter preview as ChorusPanel.tsx.
+    // No synthetic running phase or audio-thread telemetry is needed.
+    const float left = 28, right = w - 14, top = 32, bottom = h - 32;
+    const auto y = [&](float ms) { return bottom - (ms - 5) / 20 * (bottom - top); };
+    text(g, "MODULATION", 12, 14);
+    text(g, "2 s", right, 14, col::acN, juce::Justification::right);
+    for (const float ms : {5.f, 15.f, 25.f}) {
+        line(g, left, y(ms), right, y(ms), .2f);
+        text(g, juce::String((int)ms), left - 7, y(ms) + 3, col::acN, juce::Justification::right);
+    }
+    for (int i = 0; i <= 4; ++i) {
+        const float x = left + (right - left) * (float)i / 4;
+        line(g, x, top, x, bottom, .2f);
+    }
+    const float dashes[] = {3, 2};
+    for (const float ms : {12.f, 17.f}) {
+        g.setColour(col::acN.withAlpha(.2f));
+        g.drawDashedLine({left, y(ms), right, y(ms)}, dashes, 2, .6f);
+    }
+    const double rate = value(prefix_ + "fx.chorus.rate");
+    const double excursion = .8 + value(prefix_ + "fx.chorus.depth") * 4.5;
+    juce::Path l, r;
+    for (int i = 0; i <= 512; ++i) {
+        const float x = left + (right - left) * (float)i / 512;
+        const double modulation = excursion * std::sin(juce::MathConstants<double>::twoPi * rate * i / 256);
+        const float yl = y((float)(12 + modulation)), yr = y((float)(17 - .8 * modulation));
+        if (i) { l.lineTo(x, yl); r.lineTo(x, yr); }
+        else { l.startNewSubPath(x, yl); r.startNewSubPath(x, yr); }
+    }
+    const float alpha = power_.isOn() ? .3f + .7f * value(prefix_ + "fx.chorus.mix") : .24f;
+    stroke(g, l, col::text.withAlpha(alpha), 1.5f);
+    juce::Path dashed;
+    juce::PathStrokeType(1.5f).createDashedStroke(dashed, r, dashes, 2);
+    g.setColour(col::acN.withAlpha(alpha)); g.fillPath(dashed);
+    text(g, "ms", 12, h - 8);
+    line(g, 51, h - 11, 66, h - 11, 1, col::text);
+    text(g, "L", 72, h - 8);
+    g.setColour(col::acN); g.drawDashedLine({100, h - 11, 115, h - 11}, dashes, 2, 1.5f);
+    text(g, "R", 121, h - 8);
+    text(g, "DELAY", right, h - 8, col::acN, juce::Justification::right);
+}
+
 void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
     const float right = width - 12, bottom = height - 20;
     const auto X = [&](float freq) { return 26 + std::log(freq / 20) / std::log(1000.f) * (right - 26); };
@@ -835,12 +886,16 @@ void FxChain::resized() {
         place(FxModuleView::Ott, top.removeFromLeft(third));
         top.removeFromLeft(gap);
         place(FxModuleView::Comp, top);
-        place(FxModuleView::Drive, bottom.removeFromLeft(juce::jmax(220, bottom.getWidth() / 4)));
-        bottom.removeFromLeft(gap);
     }
-    place(FxModuleView::Chorus, bottom.removeFromLeft(180));
+    // Each visual effect gets a real column. Tape Echo retains extra width for
+    // its eight controls; Chorus must no longer be a 180px knob-only strip.
+    const int available = juce::jmax(0, bottom.getWidth() - 3 * gap);
+    const int moduleWidth = available * (tape_ ? 22 : 25) / 100;
+    place(FxModuleView::Drive, bottom.removeFromLeft(moduleWidth));
     bottom.removeFromLeft(gap);
-    place(FxModuleView::Echo, bottom.removeFromLeft((bottom.getWidth() - gap) * (tape_ ? 58 : 50) / 100));
+    place(FxModuleView::Chorus, bottom.removeFromLeft(moduleWidth));
+    bottom.removeFromLeft(gap);
+    place(FxModuleView::Echo, bottom.removeFromLeft(available - 3 * moduleWidth));
     bottom.removeFromLeft(gap);
     place(FxModuleView::Reverb, bottom);
 }

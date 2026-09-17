@@ -23,6 +23,12 @@ void set(Overrides& o, const std::string& pid, float v) {
         if (p == pid) { val = v; return; }
     o.emplace_back(pid, v);
 }
+bool has(const Overrides& o, const std::string& pid) {
+    return std::any_of(o.begin(), o.end(), [&](const auto& entry) { return entry.first == pid; });
+}
+void setIfMissing(Overrides& o, const std::string& pid, float v) {
+    if (!has(o, pid)) o.emplace_back(pid, v);
+}
 float get(const Overrides& o, const std::string& pid, float fallback) {
     for (const auto& [p, val] : o)
         if (p == pid) return val;
@@ -30,6 +36,36 @@ float get(const Overrides& o, const std::string& pid, float fallback) {
 }
 std::string padPid(int i, const char* field) {
     return "pad" + std::to_string(i) + "." + field;
+}
+
+// kits.ts withPunchFx(): the solo DR-1 kit bank carries its authored pad FX
+// directly, so loading a kit exposes the same punch treatment as the pad bank.
+Overrides withPunchFx(Overrides p) {
+    struct Voice { int pad; float depth, time, up, down, drive; };
+    static constexpr Voice voices[] = {
+        { 0, 0.12f, 1.8f, 0.3f, 0.65f, 0.14f },
+        { 1, 0.16f, 1.7f, 0.4f, 0.7f, 0.14f },
+        { 2, 0.2f, 1.5f, 0.5f, 0.75f, -1.0f },
+        { 3, 0.18f, 1.6f, 0.45f, 0.7f, -1.0f },
+        { 8, 0.16f, 1.6f, 0.4f, 0.7f, 0.14f },
+        { 9, 0.18f, 1.6f, 0.45f, 0.7f, 0.14f },
+        { 10, 0.18f, 1.6f, 0.45f, 0.7f, 0.14f },
+    };
+    for (const auto& voice : voices) {
+        const auto id = [&](const char* field) { return padPid(voice.pad, field); };
+        setIfMissing(p, id("fx.ott.on"), 1); setIfMissing(p, id("fx.ott.depth"), voice.depth);
+        setIfMissing(p, id("fx.ott.time"), voice.time); setIfMissing(p, id("fx.ott.up"), voice.up);
+        setIfMissing(p, id("fx.ott.down"), voice.down);
+        setIfMissing(p, id("fx.comp.on"), 1); setIfMissing(p, id("fx.comp.thr"), -18);
+        setIfMissing(p, id("fx.comp.att"), 0.024f); setIfMissing(p, id("fx.comp.rel"), 0.11f);
+        setIfMissing(p, id("fx.comp.ratio"), 3);
+        if (voice.drive >= 0.0f) {
+            setIfMissing(p, id("fx.drive.on"), 1); setIfMissing(p, id("fx.drive.amt"), voice.drive);
+            setIfMissing(p, id("fx.drive.mix"), 0.2f); setIfMissing(p, id("fx.drive.type"), 1);
+            setIfMissing(p, id("fx.drive.tone"), -0.18f);
+        }
+    }
+    return p;
 }
 
 int patIdx(int pat, int padI, int step) {
@@ -767,24 +803,24 @@ const std::vector<DrumKit>& factoryKits() {
     static const std::vector<DrumKit> kits = [] {
         const std::vector<uint8_t> patterns = trVoidPatterns();
         std::vector<DrumKit> out;
-        out.push_back({ "TR-VOID", trVoidParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "ROOM ONE", roomOneParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "BITCRUSH", bitcrushParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "808 CLASSIC", classic808Params(), kPadNames, patterns, { 0 } });
-        out.push_back({ "DEEP DUB", deepDubParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "DUST HOUSE", dustHouseParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "WAREHOUSE", warehouseParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "METAL WORK", metalWorkParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "TAPE KIT", tapeKitParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "MINIMAL", minimalParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "BROKEN TOYS", brokenToysParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "LIVE ROOM", liveRoomParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "UZU", uzuParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "808+UZU HYBRID", hybridParams(), kPadNames, patterns, { 0 } });
-        out.push_back({ "NEON GRID", neonGridParams(), kNeonGridPads, neonGridPatterns(), { 0, 1, 2, 3 } });
-        out.push_back({ "ACID CAVE", acidCaveParams(), kAcidCavePads, acidCavePatterns(), { 0, 1, 2, 3 } });
-        out.push_back({ "BOOM BAP", boomBapParams(), kBoomBapPads, boomBapPatterns(), { 0, 1, 2, 3 } });
-        out.push_back({ "PIRATE RADIO", pirateRadioParams(), kPirateRadioPads, pirateRadioPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "TR-VOID", withPunchFx(trVoidParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "ROOM ONE", withPunchFx(roomOneParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "BITCRUSH", withPunchFx(bitcrushParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "808 CLASSIC", withPunchFx(classic808Params()), kPadNames, patterns, { 0 } });
+        out.push_back({ "DEEP DUB", withPunchFx(deepDubParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "DUST HOUSE", withPunchFx(dustHouseParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "WAREHOUSE", withPunchFx(warehouseParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "METAL WORK", withPunchFx(metalWorkParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "TAPE KIT", withPunchFx(tapeKitParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "MINIMAL", withPunchFx(minimalParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "BROKEN TOYS", withPunchFx(brokenToysParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "LIVE ROOM", withPunchFx(liveRoomParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "UZU", withPunchFx(uzuParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "808+UZU HYBRID", withPunchFx(hybridParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "NEON GRID", withPunchFx(neonGridParams()), kNeonGridPads, neonGridPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "ACID CAVE", withPunchFx(acidCaveParams()), kAcidCavePads, acidCavePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "BOOM BAP", withPunchFx(boomBapParams()), kBoomBapPads, boomBapPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "PIRATE RADIO", withPunchFx(pirateRadioParams()), kPirateRadioPads, pirateRadioPatterns(), { 0, 1, 2, 3 } });
         return out;
     }();
     return kits;

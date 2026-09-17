@@ -41,6 +41,19 @@ describe('bass store', () => {
   // Full note-lane band, mirroring the old 1D step-range tests' intent.
   const fullRect = (from: number, to: number) => ({ stepFrom: from, stepTo: to, noteFrom: 0, noteTo: NOTE_LANES - 1 });
 
+  it('draws a whole note in one undo step and preserves other notes', () => {
+    const state = useBassStore.getState();
+    state.toggleCell(9, 7);
+    const before = useBassStore.getState().patterns;
+    state.drawNote(2, 5, 6, 0);
+    expect(getStep(useBassStore.getState().patterns, 0, 2)).toMatchObject({ on: true, note: 5, duration: 6 });
+    expect(getStep(useBassStore.getState().patterns, 0, 9)).toMatchObject({ on: true, note: 7 });
+    state.undo();
+    expect(useBassStore.getState().patterns).toEqual(before);
+    state.redo();
+    expect(getStep(useBassStore.getState().patterns, 0, 2)).toMatchObject({ on: true, duration: 6 });
+  });
+
   it('toggleCell sets a note, same lane clears, other lane moves', () => {
     const s = useBassStore.getState();
     s.toggleCell(4, 7);

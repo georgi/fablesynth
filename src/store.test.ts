@@ -42,6 +42,19 @@ describe('WT-1 step-sequencer editing', () => {
     });
   });
 
+  it('draws a whole note in one undo step and preserves other notes', () => {
+    const state = useStore.getState();
+    state.toggleCell(9, 7);
+    const before = useStore.getState().patterns;
+    state.drawNote(2, 5, 6, 0);
+    expect(getStep(useStore.getState().patterns, 0, 2)).toMatchObject({ on: true, note: 5, duration: 6 });
+    expect(getStep(useStore.getState().patterns, 0, 9)).toMatchObject({ on: true, note: 7 });
+    state.undoSeq();
+    expect(useStore.getState().patterns).toEqual(before);
+    state.redoSeq();
+    expect(getStep(useStore.getState().patterns, 0, 2)).toMatchObject({ on: true, duration: 6 });
+  });
+
   it('setRectSel clamps to the pattern and clearStepSel/selectAllSteps toggle it', () => {
     const s = useStore.getState();
     s.setRectSel({ stepFrom: -3, stepTo: 99, noteFrom: -3, noteTo: 99 });

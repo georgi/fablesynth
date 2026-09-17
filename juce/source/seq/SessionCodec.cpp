@@ -2,6 +2,7 @@
 // SessionDoc). The JUCE layer owns base64 (juce::Base64) and JSON
 // (juce::JSON) — the pure model (SeqModel.h) stays JUCE-free.
 #include "SessionCodec.h"
+#include "../ui/ArpCodec.h"
 #include "../dsp/Presets.h"
 #include "../bass/dsp/BassPatches.h"
 #include "../drum/dsp/DrumKits.h"
@@ -121,6 +122,7 @@ juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
                 auto* co = new juce::DynamicObject();
                 co->setProperty("name", juce::String(c.name));
                 co->setProperty("bars", c.bars);
+                if (c.hasArp) co->setProperty("arp", arpToVar(c.arp));
                 co->setProperty("pattern",
                     juce::Base64::toBase64(c.bytes.data(), c.bytes.size()));
                 clips.add(juce::var(co));
@@ -138,7 +140,7 @@ juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
     }
     root->setProperty("scenes", scenes);
 
-    return juce::JSON::toString(juce::var(root));
+    return juce::JSON::toString(juce::var(root), false, 17);
 }
 
 bool sessionFromJson(const juce::String& json, SessionData& out) {
@@ -196,6 +198,11 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
                 ClipData cd;
                 cd.name = cv.getProperty("name", "").toString().toStdString();
                 cd.bars = (int)cv.getProperty("bars", 1);
+                if (cv.hasProperty("arp")) {
+                    cd.hasArp = true;
+                    if (!arpFromVar(cv["arp"], cd.arp, true)) return false;
+                    if (sc.clips.size() >= s.tracks.size() || s.tracks[sc.clips.size()].machine == Machine::DR1) return false;
+                }
                 juce::MemoryOutputStream raw;
                 juce::Base64::convertFromBase64(raw, cv.getProperty("pattern", "").toString());
                 cd.bytes.assign((const uint8_t*)raw.getData(),

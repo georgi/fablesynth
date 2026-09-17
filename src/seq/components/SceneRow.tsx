@@ -9,6 +9,7 @@ import { isTrackAudible, previewSteps, STOP } from '../model';
 import { barSeconds } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
 import { SceneCard } from './SceneCard';
+import { compileClipArp } from '../clipArp';
 
 const DRAG_THRESHOLD = 4; // px of pointer travel before a click becomes a drag
 
@@ -132,7 +133,8 @@ function ClipCell({ s, t }: { s: number; t: number }) {
   }
 
   const bytes = clipPattern(session, s, t);
-  const steps = bytes ? previewSteps(tr.machine, bytes, clip.bars) : [];
+  const arp = compileClipArp(clip);
+  const steps = arp ? arp.notes.map((n, i) => ({ on: n >= 0 && arp.hits[i], h: Math.max(4, Math.min(19, 5 + (n % 24) * .6)) })) : bytes ? previewSteps(tr.machine, bytes, clip.bars) : [];
 
   const cls = ['sq-cell'];
   if (live) cls.push('live');
@@ -173,7 +175,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
             <span className="sq-cell-idle">▶</span>
           )}
           <span className="sq-cell-name">{clip.name}</span>
-          <span className="sq-cell-len">{clip.bars}B</span>
+          <span className="sq-cell-len">{arp ? 'ARP' : `${clip.bars}B`}</span>
         </div>
         <div className="sq-steps">
           {steps.map((sp, i) => (
@@ -184,7 +186,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
           {live && (
             <div
               style={{
-                animationDuration: `${clip.bars * barSeconds(session.bpm)}s`,
+                animationDuration: `${arp ? 16 * arp.rate * 60 / session.bpm : clip.bars * barSeconds(session.bpm)}s`,
               }}
             />
           )}
