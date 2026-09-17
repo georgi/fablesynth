@@ -90,7 +90,20 @@ and the same signal flow, so a patch sounds the same in either.
 The web app is still the place to **import and draw user wavetables**, and it's
 the quickest way to try the synth with nothing to install:
 
-[![](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
+[![WT-1 web rack — DUB SKANK with the full FX section visible](docs/wt1-web-fx-detail.png)](docs/wt1-web-fx-full.png)
+
+Fresh captures from the running web app:
+
+![SQ-4 transport running on the NEON TALE factory session](docs/sq4-neon-running.png)
+
+![SQ-4 DROP A queued at the next one-bar boundary](docs/sq4-neon-drop-a-queued.png)
+
+![SQ-4 LEAD device focus while the session remains running](docs/sq4-device-focus.png)
+
+The WT-1 detail frame above is linked to a full-rack capture; it includes the
+EQ, OTT, compressor, Drive, Chorus, Tape Echo and Reverb panels.
+
+[![FableSynth web prototype](docs/screenshot.png)](https://github.com/georgi/fablesynth/raw/main/docs/fablesynth.mp4)
 
 https://github.com/user-attachments/assets/0855c756-2155-4dd3-b353-fe80abd48db9
 
