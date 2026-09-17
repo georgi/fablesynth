@@ -27,12 +27,17 @@ jobs:
             name: macOS
             # Universal binary: runs natively on Apple Silicon and Intel.
             cmake_args: "-DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"
+            build_parallel: ""
           - os: ubuntu-22.04
             name: Linux
             cmake_args: ""
+            # Building all four plug-ins without a limit can exhaust the
+            # hosted runner and disconnect it from GitHub Actions.
+            build_parallel: "2"
           - os: windows-2022
             name: Windows
             cmake_args: ""
+            build_parallel: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +57,7 @@ jobs:
 
       - name: Build plugin
         working-directory: juce
-        run: cmake --build build --config Release --target FableSynth_All FableDrum_All FableBass_All FableSeq_All --parallel
+        run: cmake --build build --config Release --target FableSynth_All FableDrum_All FableBass_All FableSeq_All --parallel ${{ matrix.build_parallel }}
 
       # Local macOS builds remain ad-hoc signed by CMake so hardened DAW
       # scanners accept them. Release artifacts need a real Developer ID
