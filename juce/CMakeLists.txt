@@ -3,6 +3,7 @@ project(FableSynth VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
 
 # ---- JUCE ----
 # By default fetch JUCE from GitHub. To build offline, point JUCE_DIR at a local
@@ -19,6 +20,15 @@ if(FABLE_BUILD_PLUGIN)
             GIT_TAG 8.0.4
             GIT_SHALLOW TRUE)
         FetchContent_MakeAvailable(JUCE)
+    endif()
+
+    # Sandboxed agent loop and its pinned QuickJS-NG runtime. The codeact target
+    # reuses the JUCE target above and never runs from the audio callback.
+    add_subdirectory(codeact)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(FABLE_JUCE_USE_CURL 1)
+    else()
+        set(FABLE_JUCE_USE_CURL 0)
     endif()
 
     # JUCE modules are compiled directly into each application target, so the
@@ -57,6 +67,26 @@ if(FABLE_BUILD_PLUGIN)
             assets/fonts/IBMPlexMono-SemiBold.ttf)
     set_target_properties(FableFonts PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
+    get_filename_component(FABLE_AGENT_DEFAULT_ENV_FILE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../.env" ABSOLUTE)
+    add_library(fable_agent_core INTERFACE)
+    target_sources(fable_agent_core INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/agent/FableAgent.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/agent/AgentConfig.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/agent/OpenRouterModels.cpp")
+    target_include_directories(fable_agent_core INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/agent")
+    target_link_libraries(fable_agent_core INTERFACE
+        fable::codeact juce::juce_audio_processors juce::juce_data_structures)
+    target_compile_definitions(fable_agent_core INTERFACE
+        FABLE_AGENT_DEFAULT_ENV_FILE="${FABLE_AGENT_DEFAULT_ENV_FILE}")
+
+    add_library(fable_agent_ui INTERFACE)
+    target_sources(fable_agent_ui INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/source/agent/AgentPanel.cpp")
+    target_link_libraries(fable_agent_ui INTERFACE
+        fable_agent_core juce::juce_audio_utils)
+
     juce_add_plugin(FableSynth
         PRODUCT_NAME "FableSynth WT-1"
         COMPANY_NAME "FableSynth"
@@ -92,13 +122,14 @@ if(FABLE_BUILD_PLUGIN)
 
     target_compile_definitions(FableSynth PUBLIC
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
+        JUCE_USE_CURL=${FABLE_JUCE_USE_CURL}
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
     juce_generate_juce_header(FableSynth)
 
     target_link_libraries(FableSynth PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -153,13 +184,14 @@ if(FABLE_BUILD_PLUGIN)
 
     target_compile_definitions(FableDrum PUBLIC
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
+        JUCE_USE_CURL=${FABLE_JUCE_USE_CURL}
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
     juce_generate_juce_header(FableDrum)
 
     target_link_libraries(FableDrum PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -208,13 +240,14 @@ if(FABLE_BUILD_PLUGIN)
 
     target_compile_definitions(FableBass PUBLIC
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
+        JUCE_USE_CURL=${FABLE_JUCE_USE_CURL}
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
     juce_generate_juce_header(FableBass)
 
     target_link_libraries(FableBass PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         PUBLIC
@@ -277,9 +310,9 @@ if(FABLE_BUILD_PLUGIN)
         source/dsp/Wavetables.cpp source/dsp/Params.cpp source/dsp/UserTables.cpp source/dsp/Fx.cpp)
 
     target_sources(FableSeq PRIVATE ${FABLE_SEQ_SOURCES})
-    target_compile_definitions(FableSeq PUBLIC FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_compile_definitions(FableSeq PUBLIC FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL} JUCE_VST3_CAN_REPLACE_VST2=0)
     juce_generate_juce_header(FableSeq)
-    target_link_libraries(FableSeq PRIVATE FableFonts juce::juce_audio_utils juce::juce_dsp
+    target_link_libraries(FableSeq PRIVATE FableFonts fable_agent_ui juce::juce_audio_utils juce::juce_dsp
         PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
     # On macOS, JUCE regenerates moduleinfo.json as a post-build step *after* the
@@ -326,9 +359,10 @@ if(FABLE_BUILD_PLUGIN)
         source/dsp/Presets.cpp
         source/dsp/UserTables.cpp)
     target_compile_definitions(plugin_host_test PRIVATE
-        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
     target_link_libraries(plugin_host_test PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -341,9 +375,10 @@ if(FABLE_BUILD_PLUGIN)
         test/drum_host_test.cpp
         ${FABLE_DRUM_SOURCES})
     target_compile_definitions(drum_host_test PRIVATE
-        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
     target_link_libraries(drum_host_test PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -356,9 +391,10 @@ if(FABLE_BUILD_PLUGIN)
         test/bass_host_test.cpp
         ${FABLE_BASS_SOURCES})
     target_compile_definitions(bass_host_test PRIVATE
-        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
     target_link_libraries(bass_host_test PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
@@ -371,14 +407,48 @@ if(FABLE_BUILD_PLUGIN)
         test/sq4_host_test.cpp
         ${FABLE_SEQ_SOURCES})
     target_compile_definitions(sq4_host_test PRIVATE
-        FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+        FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
     target_link_libraries(sq4_host_test PRIVATE
         FableFonts
+        fable_agent_ui
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     add_test(NAME sq4_host_test COMMAND sq4_host_test)
+
+    juce_add_console_app(fable_agent_test PRODUCT_NAME "fable_agent_test")
+    target_sources(fable_agent_test PRIVATE test/fable_agent_test.cpp)
+    target_compile_definitions(fable_agent_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
+    target_link_libraries(fable_agent_test PRIVATE
+        fable_agent_core
+        juce::juce_audio_utils
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME fable_agent_test COMMAND fable_agent_test)
+
+    juce_add_console_app(fable_agent_config_test PRODUCT_NAME "fable_agent_config_test")
+    target_sources(fable_agent_config_test PRIVATE test/agent_config_test.cpp)
+    target_compile_definitions(fable_agent_config_test PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
+    target_link_libraries(fable_agent_config_test PRIVATE
+        fable_agent_core
+        juce::juce_audio_utils
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME fable_agent_config_test COMMAND fable_agent_config_test)
+
+    # Explicit opt-in smoke executable. It is intentionally not registered with
+    # CTest because it performs a paid network request when invoked.
+    juce_add_console_app(fable_agent_live_smoke PRODUCT_NAME "fable_agent_live_smoke")
+    target_sources(fable_agent_live_smoke PRIVATE test/agent_live_smoke.cpp)
+    target_compile_definitions(fable_agent_live_smoke PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
+    target_link_libraries(fable_agent_live_smoke PRIVATE
+        fable_agent_core
+        juce::juce_audio_utils
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
 endif()
 
 # ---- Headless DSP verification harness (no JUCE) ----
@@ -468,6 +538,12 @@ add_executable(step_edit_ops_test
     test/step_edit_ops_test.cpp)
 target_compile_features(step_edit_ops_test PRIVATE cxx_std_17)
 
+# ---- Realtime output-meter verification (no JUCE) ----
+add_executable(audio_meter_test test/audio_meter_test.cpp)
+target_compile_features(audio_meter_test PRIVATE cxx_std_17)
+find_package(Threads REQUIRED)
+target_link_libraries(audio_meter_test PRIVATE Threads::Threads)
+
 # Calibration tool (not a ctest): renders every factory song's four tracks
 # through their full engine+FX chains and prints recommended mixer faders.
 add_executable(measure_track_levels
@@ -495,9 +571,9 @@ add_executable(measure_track_levels
     source/seq/dsp/Conductor.cpp)
 target_compile_features(measure_track_levels PRIVATE cxx_std_17)
 
-enable_testing()
 add_test(NAME engine_test COMMAND engine_test)
 add_test(NAME drum_engine_test COMMAND drum_engine_test)
 add_test(NAME bass_engine_test COMMAND bass_engine_test)
 add_test(NAME sq4_engine_test COMMAND sq4_engine_test)
 add_test(NAME step_edit_ops_test COMMAND step_edit_ops_test)
+add_test(NAME audio_meter_test COMMAND audio_meter_test)

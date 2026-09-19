@@ -9,7 +9,7 @@
 // SQ-4 track header row — port of src/seq/components/TrackHeads.tsx + seq.css
 // (scenes card + one card per track: live LED, name, machine chip, patch
 // label, mute/solo, xs vol knob). Painted directly and hit-tested in
-// mouseDown, same scheme as SeqHeader — the whole slot is a single 1424x60
+// mouseDown, same scheme as SeqHeader — the whole slot is a single 1254x60
 // strip and every element is a small click/drag target, not a
 // juce::Component child.
 //

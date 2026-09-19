@@ -454,7 +454,7 @@ void SceneGridView::resized() {
 
 void SceneGridView::layoutRow(int s) {
     const int y = s * 82;
-    constexpr int rowX = 0, sceneWidth = 218, cellWidth = 292;
+    constexpr int rowX = 0, sceneWidth = 218, cellWidth = 250;
     sceneCardR[s] = { rowX, y, sceneWidth, 73 };
     for (int t = 0; t < kTracks; ++t)
         cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 73 };

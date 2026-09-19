@@ -1,19 +1,18 @@
 #include "SeqEditor.h"
 #include "../ui/Controls.h"
 
-// Layout, re-pitched 2026-07-18 to match the web's half-height header
-// (commit bb7f768: .sq-top now 44px total, right-side controls shrunk to
-// match) -- the whole session rack shifts up another 22px to follow:
-//   rack              1460 x 722
-//   header            (18,  14) 1424 x 44
-//   track heads       (18,  67) 1424 x 60
-//   scene grid        (18, 136) 1424 x 491   (6 rows, 73 tall, 82 step)
-//   footer            (18, 627) 1424 x 65
+// Compact native layout, retaining the web's half-height header and vertical
+// rhythm while removing excess width from the four clip columns:
+//   rack              1290 x 722
+//   header            (18,  14) 1254 x 44
+//   track heads       (18,  67) 1254 x 60
+//   scene grid        (18, 136) 1254 x 491   (6 rows, 73 tall, 82 step)
+//   footer            (18, 627) 1254 x 65
 //   hint line          18, 700
 // JUCE's uniform 73px scene rows run to 136+5*82+73=619; the footer sits 8px
 // below that to clear row 6.
-// Scene grid columns: scene col (18, 218), then 4 track cols of 292 each,
-// 9px gaps: x = 18 + 218 + 9 + i*(292 + 9).
+// Scene grid columns: scene col (18, 218), then 4 track cols of 250 each,
+// 9px gaps: x = 18 + 218 + 9 + i*(250 + 9).
 //
 // Focus mode (re-pitched 2026-07-21 to follow the web) keeps the header and
 // the heads row -- the heads double as the instrument switcher there, the
@@ -22,7 +21,7 @@
 //                                             "< SESSION" + the same 6 scene
 //                                             cards the grid draws, stacked --
 //                                             see paintFocusStrip)
-//   device body      (245, 136) 1197 x 800
+//   device body      (245, 136) 1027 x 800
 // The footer hides. The launcher keeps the grid's 218 lead-column width, so
 // both views share one left edge and the scene cards are literally the same
 // painter. The switch between the session and focus geometries is instant
@@ -84,12 +83,12 @@ void SeqRack::resized() { applyLayout(); }
 // launcher rail and the device surface beside it.
 void SeqRack::applyLayout() {
     constexpr int hintH = 14;
-    header.setBounds(18, 14, 1424, 44);
-    trackHeads.setBounds(18, 67, 1424, 60); // stays visible in focus
+    header.setBounds(18, 14, 1254, 44);
+    trackHeads.setBounds(18, 67, 1254, 60); // stays visible in focus
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching twice.
-    footer.setBounds(18, 627, 1424, 65);
+    footer.setBounds(18, 627, 1254, 65);
     if (focusMode_) {
         // The launcher keeps the session grid's lead-column width so the two
         // views share one left edge (web: .sq-launcher width 218px, 9px gap).
@@ -98,19 +97,21 @@ void SeqRack::applyLayout() {
         const int contentH = (hintY - 8) - contentY;                // 936-136 = 800
         sceneGrid.setBounds(18, contentY, railW, contentH);
         deviceFocus.setBounds(18 + railW + railGap, contentY,
-                              1424 - railW - railGap, contentH);
-        hint.setBounds(18, hintY, 1424, hintH);
+                              1254 - railW - railGap, contentH);
+        hint.setBounds(18, hintY, 1254, hintH);
     } else {
-        sceneGrid.setBounds(18, 136, 1424, 491); // 491 = footerY(627) - 136
-        hint.setBounds(18, 700, 1424, hintH);
+        sceneGrid.setBounds(18, 136, 1254, 491); // 491 = footerY(627) - 136
+        hint.setBounds(18, 700, 1254, hintH);
     }
 }
 
 // ---- SeqEditor ----
 SeqEditor::SeqEditor(SeqAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), proc_(p), rack(p) {
+    : juce::AudioProcessorEditor(p), proc_(p), rack(p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
+    addAndMakeVisible(agentOverlay);
+    agentOverlay.beforeStateRead = [this] { deviceFocus().flushPendingPatches(); };
     rack.setBounds(0, 0, SeqRack::LW, SeqRack::LH);
 
     // Focus wiring: a head click focuses that device (session mode only --
@@ -143,7 +144,7 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
         c->setFixedAspectRatio((double)SeqRack::LW / SeqRack::LH);
     setResizeLimits(840, (int)(840 * (double)SeqRack::LH / SeqRack::LW),
                     2100, (int)(2100 * (double)SeqRack::LH / SeqRack::LW));
-    setSize(1200, (int)(1200 * (double)SeqRack::LH / SeqRack::LW));
+    setSize(1080, (int)(1080 * (double)SeqRack::LH / SeqRack::LW));
 }
 
 SeqEditor::~SeqEditor() { setLookAndFeel(nullptr); }
@@ -213,6 +214,7 @@ void SeqEditor::focusScene(int s) {
 }
 
 bool SeqEditor::keyPressed(const juce::KeyPress& k) {
+    if (agentOverlay.isPanelOpen()) return false;
     auto& g = rack.getGrid();
     const auto mods = k.getModifiers();
     const bool cmd = mods.isCommandDown();
@@ -273,8 +275,10 @@ void SeqEditor::paint(juce::Graphics& g) {
 }
 
 void SeqEditor::resized() {
-    // The rack's logical size is mode-dependent (session 1460x722, focus
-    // 1460xLHF -- SeqRack::logicalHeight()); the transform below just scales
+    agentOverlay.setBounds(getLocalBounds());
+    agentOverlay.toFront(false);
+    // The rack's logical size is mode-dependent (session 1290x722, focus
+    // 1290xLHF -- SeqRack::logicalHeight()); the transform below just scales
     // that logical canvas to whatever the window currently is.
     const int lh = rack.logicalHeight();
     const float sc = juce::jmin(static_cast<float>(getWidth()) / static_cast<float>(SeqRack::LW),

@@ -3,11 +3,9 @@
 #include "DrumUiModel.h"
 #include "../../ui/Controls.h"
 
-// Selected-pad FX rack + OUT routing summary — port of src/drum/components/
-// {FxRack,OutPanel}.tsx. Six power+knob groups (DRIVE COMP OTT CHORUS DELAY
-// REVERB) bound to the pad fx.* params, plus a read-only OUT panel listing
-// which pads feed MAIN / AUX 1-4 (now real multi-out routing). Modeled on the
-// WT-1 FxPanel (ui/Panels.cpp).
+// Selected-pad FX rack + OUT routing control. The compact routing-only form
+// is one row bound to the selected pad's MAIN / AUX 1-4 parameter. The full
+// form retains the six power+knob FX groups and routing summary.
 namespace fui {
 
 class DrumFxRack : public juce::Component, private juce::Timer, private juce::ChangeListener {
@@ -30,7 +28,7 @@ private:
         void paintGroup(juce::Graphics&);
     };
 
-    void timerCallback() override;          // OUT panel refresh (sig-diffed)
+    void timerCallback() override;          // full OUT summary refresh (sig-diffed)
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void rebuild();
     juce::String routeSignature() const;    // pad->out assignments + pad names
@@ -39,6 +37,7 @@ private:
     DrumUiModel& proc;
     bool routingOnly_ = false;
     juce::OwnedArray<Group> groups;         // drive comp ott chorus delay reverb
+    std::unique_ptr<Stepper> outSelector;    // compact selected-pad routing control
     juce::Rectangle<int> outBounds;
     juce::String lastSig;
     juce::Rectangle<int> padTitleArea;

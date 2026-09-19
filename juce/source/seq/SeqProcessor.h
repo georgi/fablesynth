@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../agent/FableAgent.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "dsp/Conductor.h"
@@ -64,7 +66,7 @@ public:
     ~SeqAudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override { stopTimer(); }
+    void releaseResources() override { stopTimer(); agentOutputMeter_.reset(); }
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -192,9 +194,19 @@ public:
     // Copy the most recent n post-limiter mono samples (oldest -> newest).
     float readScope(float* dest, int n) const;
 
+    fable::FableAgent& getAgent();
+    std::uint64_t getAgentEditRevision() const { return agentEditRevision_; }
+    std::uint64_t trackPatchRevision(int track) const {
+        return track >= 0 && track < 4 ? trackPatchRevision_[(size_t)track].load() : 0;
+    }
     juce::AudioProcessorValueTreeState apvts;
 
 private:
+    std::array<std::atomic<std::uint64_t>, 4> trackPatchRevision_ {};
+    std::uint64_t agentEditRevision_ = 0;
+    fable::AudioMeter agentOutputMeter_;
+    std::unique_ptr<fable::FableAgent> agent_;
+    std::atomic<std::uint64_t> agentStateGeneration_ { 0 };
     static constexpr int kTracks = 4;
 
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

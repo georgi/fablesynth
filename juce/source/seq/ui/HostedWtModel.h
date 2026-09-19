@@ -8,6 +8,8 @@
 
 #include <juce_events/juce_events.h>
 
+#include <cstdint>
+
 class SeqAudioProcessor;
 
 namespace fable { struct ClipData; }
@@ -88,12 +90,14 @@ public:
 
 private:
     void timerCallback() override;
+    bool reloadIfTrackPatchChanged();
     const fable::ClipData* targetClip() const;
 
     SeqAudioProcessor& proc_;
     const int track_;
     int scene_ = -1;
     int editPattern_ = 0;
+    std::uint64_t trackPatchRevision_ = 0;
     std::vector<int> chain_ { 0 };
     DeviceParameterBank parameters_;
 

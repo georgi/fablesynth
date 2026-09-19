@@ -15,6 +15,7 @@ HostedDrumModel::HostedDrumModel(SeqAudioProcessor& proc)
     : proc_(proc),
       bank_(fable::drumParamInfo().data(), fable::drumParamInfo().size()) {
     bank_.load(proc_.trackParameterValues(0));
+    trackPatchRevision_ = proc_.trackPatchRevision(0);
     startTimerHz(30);
 }
 
@@ -41,16 +42,36 @@ void HostedDrumModel::flushPendingPatch() {
 }
 
 void HostedDrumModel::flushPendingPatch(bool invalidatePadPatchSelection) {
+    if (reloadIfTrackPatchChanged()) return;
     if (bank_.consumeDirty()) {
         proc_.setTrackInlineParams(0, bank_.snapshot());
+        trackPatchRevision_ = proc_.trackPatchRevision(0);
         // Knob edits make a named pad patch custom, but applying that named
         // patch must not immediately clear its own readout in SelBarView.
         if (invalidatePadPatchSelection) ++patchRevision_;
     }
 }
 
+void HostedDrumModel::timerCallback() {
+    flushPendingPatch();
+}
+
+bool HostedDrumModel::reloadIfTrackPatchChanged() {
+    const auto revision = proc_.trackPatchRevision(0);
+    if (revision == trackPatchRevision_) return false;
+    // An external writer (agent/preset/session load) won the message-thread
+    // race. Replace the whole mirror before its stale dirty snapshot can be
+    // written back over the processor's newer patch.
+    bank_.load(proc_.trackParameterValues(0));
+    trackPatchRevision_ = revision;
+    ++patchRevision_;
+    selectionChanges_.sendChangeMessage();
+    return true;
+}
+
 void HostedDrumModel::reloadPatchFromSession() {
     bank_.load(proc_.trackParameterValues(0));
+    trackPatchRevision_ = proc_.trackPatchRevision(0);
     ++patchRevision_;
     selectionChanges_.sendChangeMessage();
 }

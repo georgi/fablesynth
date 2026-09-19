@@ -28,6 +28,7 @@ public:
     int targetTrack() const { return targetTrack_; }
     ActiveBody activeBody() const { return activeBody_; }
     void reloadPatchesFromSession();
+    void flushPendingPatches();
     juce::Component* activeBodyComponent();
     const juce::Component* activeBodyComponent() const;
 
@@ -52,18 +53,13 @@ public:
     void resized() override;
 
 private:
-    // DR-1 is the one body taller than the focus slot's aspect, so at the
-    // standalone's 1460 it scaled to fit on height and letterboxed with ~80px
-    // of dead space down each side. It is hosted on a wider canvas instead
-    // (DrumDeviceBody::resized() derives its columns from the width, so the
-    // standalone at 1460 is untouched): the focus slot is 1197 x 762 usable,
-    // and 1197 * (kDrumHeight - 103) / 762 = 1682 makes the body fill both
-    // axes. BL-1 and WT-1 are already width-bound and need no such widening.
-    static constexpr int kDrumWidth = 1682, kDrumHeight = 1174;
-    // BL-1 gained a full-width KEYS row at the bottom, which made it taller
-    // than the slot's aspect too; same remedy as DR-1, and the same
-    // derivation: 1197 * (kBassHeight - 103) / 762 = 1535.
-    static constexpr int kBassWidth = 1535, kBassHeight = 1080;
+    // DR-1 is taller than the compact focus slot's aspect. Host it on a
+    // responsive logical canvas derived from the 1027 x 754 body slot so
+    // the FX-page extent fills both axes: 1027 * (kDrumHeight - 103) / 754 = 1276.
+    static constexpr int kDrumWidth = 1276, kDrumHeight = 1040;
+    // BL-1's full-width KEYS row needs the same treatment:
+    // 1027 * (kBassHeight - 103) / 762 = 1317.
+    static constexpr int kBassWidth = 1317, kBassHeight = 1080;
 
     void timerCallback() override;
     void flushActiveModel();

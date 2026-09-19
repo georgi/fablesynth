@@ -4,6 +4,7 @@
 // + engine + FX all work together through the JUCE plugin surface.
 #include "../source/PluginProcessor.h"
 #include "FxUiChecks.h"
+#include "AgentProcessorChecks.h"
 #include "NoteDrawChecks.h"
 #include "ArpProcessorChecks.h"
 #include "../source/PluginEditor.h"
@@ -761,5 +762,6 @@ int main(int argc, char** argv) {
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<FableAudioProcessor>("wt", Rack::LW, Rack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++fail;
     if (!runArpProcessorChecks<FableAudioProcessor>("wt", false)) ++fail;
+    if (!runAgentProcessorChecks<FableAudioProcessor>("wt", fable::paramInfo().data(), fable::paramInfo().size(), "filter.cutoff", "oscA.oct")) ++fail;
     return fail == 0 ? 0 : 1;
 }

@@ -18,9 +18,7 @@ void PadStrip::changeListenerCallback(juce::ChangeBroadcaster*) {
 void PadStrip::rebuild() {
     const auto pre = "pad" + juce::String(proc.selectedPad()) + ".";
     choke = std::make_unique<Stepper>(proc.parameters(), pre + "choke", Accent::A);
-    out   = std::make_unique<Stepper>(proc.parameters(), pre + "out",   Accent::A);
     addAndMakeVisible(*choke);
-    addAndMakeVisible(*out);
     knobs.clear();
     for (const char* id : { "lvl", "pan", "v2l", "v2m" })
         addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pre + id, Knob::Sm, Accent::A)));
@@ -29,19 +27,14 @@ void PadStrip::rebuild() {
 }
 
 void PadStrip::resized() {
-    // .panel padding 8px 12px 10px; head row with the steppers pushed right
-    // (.padstrip-steppers), then the 4-knob row (.padstrip-knobs).
+    // .panel padding 8px 12px 10px; head row with CHOKE pushed right,
+    // then the 4-knob row (.padstrip-knobs).
     auto r = getLocalBounds();
     r.removeFromLeft(12);  r.removeFromRight(12);
     r.removeFromTop(8);    r.removeFromBottom(10);
 
     headArea = r.removeFromTop(18);
     auto head = headArea;
-    if (out) {
-        out->setBounds(head.removeFromRight(84).withSizeKeepingCentre(84, 18));
-        outLabel = head.removeFromRight(26);
-        head.removeFromRight(8);
-    }
     if (choke) {
         choke->setBounds(head.removeFromRight(84).withSizeKeepingCentre(84, 18));
         chokeLabel = head.removeFromRight(40);
@@ -68,7 +61,6 @@ void PadStrip::paint(juce::Graphics& g) {
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "CHOKE", chokeLabel, 1.0f);
-    drawSpaced(g, "OUT", outLabel, 1.0f);
 }
 
 } // namespace fui

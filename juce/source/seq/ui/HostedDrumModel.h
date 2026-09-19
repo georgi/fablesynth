@@ -4,6 +4,8 @@
 #include "../../ui/DeviceParameterBank.h"
 #include "../SeqProcessor.h"
 
+#include <cstdint>
+
 namespace fui {
 
 class HostedDrumModel final : public DrumUiModel, private juce::Timer {
@@ -58,14 +60,16 @@ public:
     int clipIdentity() const override { return scene_; }
 
 private:
-    void timerCallback() override { flushPendingPatch(); }
+    void timerCallback() override;
     void flushPendingPatch(bool invalidatePadPatchSelection);
+    bool reloadIfTrackPatchChanged();
     const fable::ClipData* clip() const;
 
     SeqAudioProcessor& proc_;
     DeviceParameterBank bank_;
     int scene_ = 0, selectedPad_ = 0, editBar_ = 0;
     uint32_t patchRevision_ = 0;
+    std::uint64_t trackPatchRevision_ = 0;
     std::vector<int> chain_ { 0 };
     juce::ChangeBroadcaster selectionChanges_;
 };

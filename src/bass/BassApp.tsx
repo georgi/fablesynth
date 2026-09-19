@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { WebAgentPanel } from '../agent/WebAgentPanel';
+import { makeBassAgentHost } from '../agent/bassAgentHost';
 import { BassFxRack } from './components/BassFxRack';
 import { BassPowerOverlay } from './components/BassPowerOverlay';
 import { EnvPanel } from './components/EnvPanel';
@@ -13,6 +15,8 @@ import { useBassMidi } from './hooks/useBassMidi';
 import { bassEngine, useBassStore } from './store';
 
 export function BassApp() {
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentHost] = useState(makeBassAgentHost);
   useBassKeys();
   useBassMidi();
 
@@ -27,6 +31,7 @@ export function BassApp() {
   return (
     <>
       <BassPowerOverlay />
+      {agentOpen && <WebAgentPanel host={agentHost} plugin="BL-1" onClose={() => setAgentOpen(false)} />}
       <main id="bass-rack">
         <Header />
         <div id="bl-editrow">
@@ -44,6 +49,7 @@ export function BassApp() {
         {/* Keyboard last, where a synth's keys belong. */}
         <div id="bl-keysrow"><KeysPanel /></div>
       </main>
+      <button className="web-agent-launcher" onClick={() => setAgentOpen(true)}>AGENT</button>
     </>
   );
 }

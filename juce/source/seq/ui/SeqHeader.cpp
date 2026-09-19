@@ -302,19 +302,19 @@ void SeqHeader::resized() {
     beatsArea = clockArea.removeFromTop(8); // beat-dot row
     clockLineArea = clockArea;
 
-    scopeArea = { 1073, 9, 190, 26 };
+    scopeArea = { 903, 9, 190, 26 };
 
     // LOAD/SAVE (JUCE-only surface, no web equivalent): a compact stacked
     // pair -- side-by-side doesn't leave enough width per button to read
     // "LOAD"/"SAVE" at this font, so this stays a tight 2x15 stack,
     // re-centered for the 44px header.
-    auto helpSlot = juce::Rectangle<int>(1266, 5, 48, 34);
+    auto helpSlot = juce::Rectangle<int>(1096, 5, 48, 34);
     loadBtn = helpSlot.removeFromTop(15);
     helpSlot.removeFromTop(4);
     saveBtn = helpSlot;
 
     // Master knobs: 24px circles (paintKnob) + a tiny label, centered in 44.
-    auto knobsArea = juce::Rectangle<int>(1317, 5, 90, 34);
+    auto knobsArea = juce::Rectangle<int>(1147, 5, 90, 34);
     swingKnob = knobsArea.removeFromLeft(45).withSizeKeepingCentre(44, 34);
     volKnob = knobsArea.withSizeKeepingCentre(44, 34);
 }

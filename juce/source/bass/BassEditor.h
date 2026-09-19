@@ -1,4 +1,5 @@
 #pragma once
+#include "../agent/AgentPanel.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassProcessor.h"
@@ -38,5 +39,6 @@ private:
     fui::DarkLNF lnf;
     std::unique_ptr<fui::BassUiModel> model;
     BassRack rack;
+    fable::AgentOverlay agentOverlay;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassEditor)
 };

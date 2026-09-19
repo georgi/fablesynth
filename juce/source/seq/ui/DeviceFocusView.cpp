@@ -11,11 +11,12 @@ constexpr int kImportAction = 2;
 constexpr int kExportAction = 3;
 constexpr int kTransformActionBase = 100;
 
-// Height of the toolbar strip reserved at the top of the view (patch/clip
-// controls). layoutBody() offsets the hosted device body below this same
-// extent, so paint() reuses it to draw the panel background under the
-// toolbar row without touching resized()'s geometry.
+// Height of the patch/clip toolbar and the breathing room before the hosted
+// instrument. Bodies are top-aligned below this gap: centring a width-bound
+// WT-1 created a large empty band, while height-bound bodies touched the
+// toolbar and visually overlapped its rounded edge.
 constexpr int kToolbarHeight = 38;
+constexpr int kBodyGap = 8;
 
 const std::array<const char*, 10> kTransformNames {{
     "ROTATE +1", "REVERSE", "DENSITY x2", "DENSITY /2", "SHIFT ACCENTS",
@@ -119,6 +120,10 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
 
 DeviceFocusView::~DeviceFocusView() {
     stopTimer();
+    flushPendingPatches();
+}
+
+void DeviceFocusView::flushPendingPatches() {
     drumModel_.flushPendingPatch();
     bassModel_.flushPendingPatch();
     wt2Model_.flushPendingPatch();
@@ -520,13 +525,12 @@ void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,
     if (getWidth() <= 0 || getHeight() <= 0) return;
     constexpr int selectorHeight = kToolbarHeight;
     const int contentHeight = logicalHeight - contentTop;
+    const int availableHeight = juce::jmax(1, getHeight() - selectorHeight - kBodyGap);
     const float scale = std::min(static_cast<float>(getWidth()) / static_cast<float>(logicalWidth),
-                                 static_cast<float>(juce::jmax(1, getHeight() - selectorHeight))
+                                 static_cast<float>(availableHeight)
                                      / static_cast<float>(contentHeight));
     const float dx = (static_cast<float>(getWidth()) - static_cast<float>(logicalWidth) * scale) * 0.5f;
-    const float dy = selectorHeight
-        + (static_cast<float>(getHeight() - selectorHeight)
-           - static_cast<float>(contentHeight) * scale) * 0.5f;
+    const float dy = static_cast<float>(selectorHeight + kBodyGap);
     body.setTransform(juce::AffineTransform::translation(0.0f, (float)-contentTop)
                           .scaled(scale).translated(dx, dy));
 }
@@ -546,7 +550,7 @@ void DeviceFocusView::resized() {
     layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
     layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
 
-    constexpr int controlHeight = 28, patchWidth = 205, patchButtonWidth = 26;
+    constexpr int controlHeight = 28, patchWidth = 170, patchButtonWidth = 26;
     auto toolbar = juce::Rectangle<int>(12, 5, juce::jmax(0, getWidth() - 24), controlHeight);
     patchLabel_.setBounds(toolbar.removeFromLeft(48));
     toolbar.removeFromLeft(6);
@@ -557,13 +561,13 @@ void DeviceFocusView::resized() {
     nextPatchButton_.setBounds(toolbar.removeFromLeft(patchButtonWidth));
     toolbar.removeFromLeft(16);
 
-    clipTargetLabel_.setBounds(toolbar.removeFromLeft(155));
+    clipTargetLabel_.setBounds(toolbar.removeFromLeft(120));
     toolbar.removeFromLeft(8);
-    clipSourceSelector_.setBounds(toolbar.removeFromLeft(96));
+    clipSourceSelector_.setBounds(toolbar.removeFromLeft(80));
     toolbar.removeFromLeft(6);
-    clipSelector_.setBounds(toolbar.removeFromLeft(215));
+    clipSelector_.setBounds(toolbar.removeFromLeft(180));
     toolbar.removeFromLeft(8);
-    clipActionsSelector_.setBounds(toolbar.removeFromRight(130));
+    clipActionsSelector_.setBounds(toolbar.removeFromRight(115));
     toolbar.removeFromRight(8);
     clipMetadataLabel_.setBounds(toolbar);
 

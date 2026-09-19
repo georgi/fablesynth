@@ -5,6 +5,7 @@
 // AudioPlayHead. Modeled on plugin_host_test.cpp.
 #include "../source/drum/DrumProcessor.h"
 #include "FxUiChecks.h"
+#include "AgentProcessorChecks.h"
 #include "../source/drum/DrumEditor.h"
 #include <array>
 #include <cmath>
@@ -351,7 +352,7 @@ int main(int argc, char** argv) {
             { "header",    700,  54 },
             { "pad grid",  194, 287 },
             { "osc row",   910, 264 },
-            { "output routing", 194, 665 },
+            { "output selector", 194, 632 },
             { "step seq",  730, 805 },
             // Task 11 pad editor panels (centres of view/knob areas)
             { "osc A terrain",   560, 230 },
@@ -360,9 +361,9 @@ int main(int argc, char** argv) {
             { "amp env view",    742, 458 },
             { "filter view",    1010, 458 },
             { "mod rows",       1200, 452 },
-            // Task 13 FX rack + OUT panel (DRIVE knob body / MAIN route dot)
-            { "out routes",    89, 673 },
-            { "out main dot",   38, 654 },
+            // Compact selected-pad OUT row: label and MAIN selector well.
+            { "out row label",  48, 632 },
+            { "out selector",  269, 632 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);
@@ -765,5 +766,6 @@ int main(int argc, char** argv) {
 
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<DrumAudioProcessor>("dr", DrumRack::LW, DrumRack::LH, true, [](const auto& p) { return p.fxTelemetry(0,0); })) ++g_fail;
+    if (!runAgentProcessorChecks<DrumAudioProcessor>("dr", fable::drumParamInfo().data(), fable::drumParamInfo().size(), "pad15.flt.cut", "pad15.oscA.table")) ++g_fail;
     return g_fail == 0 ? 0 : 1;
 }

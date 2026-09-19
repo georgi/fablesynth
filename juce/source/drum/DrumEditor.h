@@ -1,4 +1,5 @@
 #pragma once
+#include "../agent/AgentPanel.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumProcessor.h"
@@ -11,9 +12,9 @@
 // layout stays pixel-faithful — same scheme as the WT-1 Rack (PluginEditor.h).
 class DrumRack : public juce::Component {
 public:
-    // LH grew from 880 when the step sequencer went from one lane to all 16
-    // (drum.css .dr-lanes); every panel above keeps its original geometry.
-    static constexpr int LW = 1460, LH = 1174;
+    // The 16-lane sequencer uses compact 12px rows; the FX page remains the
+    // taller layout because its visualizer rack needs the full 605px height.
+    static constexpr int LW = 1460, LH = 1040;
     explicit DrumRack(fui::DrumUiModel&);
     void resized() override;
 
@@ -37,5 +38,6 @@ private:
     fui::DarkLNF lnf;
     std::unique_ptr<fui::DrumUiModel> model;
     DrumRack rack;
+    fable::AgentOverlay agentOverlay;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumEditor)
 };

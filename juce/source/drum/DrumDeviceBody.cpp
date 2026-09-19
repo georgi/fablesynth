@@ -55,7 +55,7 @@ void DrumDeviceBody::resized() {
 
     pads.setBounds(18, 103, 352, 369);
     padStrip.setBounds(18, 481, 352, 119);
-    routing.setBounds(18,609,352,135);
+    routing.setBounds(18, 609, 352, 45);
     pages.setBounds(rightX,103,rightW,26);
     const bool showFx = pages.fxSelected();
     for (auto* c : std::initializer_list<juce::Component*>{&selBar,&oscA,&oscB,&noise,&pitchEnv,&ampEnv,&filter,&mod}) c->setVisible(!showFx);
@@ -64,5 +64,9 @@ void DrumDeviceBody::resized() {
     layRow({ { &oscA, 424 }, { &oscB, 425 }, { &noise, 196 } }, 179, 243);
     layRow({ { &pitchEnv, 225 }, { &ampEnv, 259 }, { &filter, 259 }, { &mod, 293 } }, 431, 209);
     fxRack.setBounds(rightX,139,rightW,605);
-    stepSeq.setBounds(18, 753, fullW, 399);   // 16 lanes x 21px + head + padding
+    // Twelve-pixel lanes keep all 16 pads visible without making the drum
+    // sequencer dominate the device. The FX page still needs its full-height
+    // visualizers, so its sequencer begins below that rack.
+    constexpr int stepH = 265;
+    stepSeq.setBounds(18, showFx ? 753 : 663, fullW, stepH);
 }

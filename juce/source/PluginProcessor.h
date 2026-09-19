@@ -1,5 +1,7 @@
 #pragma once
 
+#include "agent/FableAgent.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/Engine.h"
 #include "dsp/Fx.h"
@@ -18,7 +20,7 @@ public:
     ~FableAudioProcessor() override = default;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override { agentOutputMeter_.reset(); }
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -40,6 +42,7 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    fable::FableAgent& getAgent();
     juce::AudioProcessorValueTreeState apvts;
 
     // Edited-since-preset-load flag for the header's dirty dot.
@@ -119,6 +122,9 @@ public:
     void setEditPattern(int p);
 
 private:
+    fable::AudioMeter agentOutputMeter_;
+    std::unique_ptr<fable::FableAgent> agent_;
+    std::atomic<std::uint64_t> agentStateGeneration_ { 0 };
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void pushCmd(int type);
     void shareSeqState(bool patterns, bool chain);

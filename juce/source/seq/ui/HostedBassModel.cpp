@@ -54,8 +54,11 @@ void HostedBassModel::setTargetScene(int scene) {
 }
 
 void HostedBassModel::flushPendingPatch() {
-    if (parameterBank_.consumeDirty())
+    if (reloadIfTrackPatchChanged()) return;
+    if (parameterBank_.consumeDirty()) {
         proc_.setTrackInlineParams(kTrack, parameterBank_.snapshot());
+        trackPatchRevision_ = proc_.trackPatchRevision(kTrack);
+    }
 }
 
 ParameterSource HostedBassModel::parameters() {
@@ -219,6 +222,16 @@ void HostedBassModel::timerCallback() {
 
 void HostedBassModel::reloadParameters() {
     parameterBank_.load(proc_.trackParameterValues(kTrack));
+    trackPatchRevision_ = proc_.trackPatchRevision(kTrack);
+}
+
+bool HostedBassModel::reloadIfTrackPatchChanged() {
+    const auto revision = proc_.trackPatchRevision(kTrack);
+    if (revision == trackPatchRevision_) return false;
+    // Do this before consumeDirty(): a stale editor snapshot must not overwrite
+    // a newer processor-owned agent/preset/session patch.
+    reloadParameters();
+    return true;
 }
 
 void HostedBassModel::reloadPatchFromSession() {

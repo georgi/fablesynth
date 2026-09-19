@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { WebAgentPanel } from '../agent/WebAgentPanel';
+import { makeDrumAgentHost } from '../agent/drumAgentHost';
 import { AmpEnvPanel } from './components/AmpEnvPanel';
 import { DrumPowerOverlay } from './components/DrumPowerOverlay';
 import { FilterSection } from './components/FilterSection';
@@ -18,6 +20,8 @@ import { useDrumMidi } from './hooks/useDrumMidi';
 import { drumEngine, useDrumStore } from './store';
 
 export function DrumApp() {
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentHost] = useState(makeDrumAgentHost);
   useDrumKeys();
   useDrumMidi();
   // STEP mode drops the pad strip — its per-pad knobs belong to the pad being
@@ -35,6 +39,7 @@ export function DrumApp() {
   return (
     <>
       <DrumPowerOverlay />
+      {agentOpen && <WebAgentPanel host={agentHost} plugin="DR-1" onClose={() => setAgentOpen(false)} />}
       <main id="drum-rack">
         <Header />
         <div className={`dr-main${mode === 'step' ? ' fit-pads' : ''}`}>
@@ -60,6 +65,7 @@ export function DrumApp() {
         <div id="dr-fxrack"><FxRack /></div>
         <div id="dr-stepseq"><StepSeq /></div>
       </main>
+      <button className="web-agent-launcher" onClick={() => setAgentOpen(true)}>AGENT</button>
     </>
   );
 }

@@ -127,6 +127,33 @@ and play.
 | MIDI | plug in a controller — notes + pitch bend (Chrome/Edge) |
 | On-screen keys | click/touch, vertical position = velocity, drag for glissando |
 
+## Fable agent on the web
+
+WT-1 (`/app/`), DR-1 (`/drum/`), BL-1 (`/bass/`), and SQ-4 (`/seq/`) each
+have an **AGENT** button in the lower-right corner. Open it, choose a
+tool-capable OpenRouter model from the live dropdown, paste an OpenRouter API
+key, and send a plain-language request such as “make the bass warmer” or
+“measure the drums before reducing the peak.” The current OpenRouter catalog
+includes `openai/gpt-5.6-luna` when that model is offered for tool use.
+
+The agent receives the instrument's parameter ranges and current values. SQ-4
+also exposes its master controls, track faders, and the full parameter set of
+its four hosted devices. It can read the browser's frozen output measurements
+and per-track meters, but it does not listen to or record audio. A model can
+make several sequential tool calls in one response; the panel keeps the full
+model-visible activity log, including tool inputs, results, and errors.
+
+Every sound change remains a proposal until you select **Apply changes**. A
+follow-up stays in the current panel conversation, while **New conversation**
+clears its context and any staged proposal. The browser key is held only in
+memory for that open panel: it is never stored in `localStorage`, presets, or
+exported sessions. Sending a request transmits the prompt and instrument
+snapshot to OpenRouter and may incur the selected model's normal charges.
+
+The native VST3, AU, and Standalone editors provide the same workflow but save
+the key in per-user JUCE settings so it survives restarts. See
+[`juce/AGENT.md`](juce/AGENT.md) for native setup and storage details.
+
 The web rack also carries a **16-step note sequencer** (the NOTE SEQ panel,
 web-only for now): 12 note lanes per step with per-step octave (−1/0/+1),
 **accents** (full velocity — route VELO in the mod matrix to make them bite)

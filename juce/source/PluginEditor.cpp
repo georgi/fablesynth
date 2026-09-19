@@ -17,9 +17,10 @@ void Rack::resized() {
 // ---- Editor ----
 FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
     : juce::AudioProcessorEditor(p),
-      model(std::make_unique<StandaloneWtUiModel>(p)), rack(*model, p.apvts, p), wtEditor(*model) {
+      model(std::make_unique<StandaloneWtUiModel>(p)), rack(*model, p.apvts, p), wtEditor(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
+    addAndMakeVisible(agentOverlay);
     rack.setBounds(0, 0, Rack::LW, Rack::LH);
     addChildComponent(wtEditor);
     rack.onEditTable = [this](int osc) { wtEditor.openFor(osc); };
@@ -42,6 +43,8 @@ void FableAudioProcessorEditor::paint(juce::Graphics& g) {
 }
 
 void FableAudioProcessorEditor::resized() {
+    agentOverlay.setBounds(getLocalBounds());
+    agentOverlay.toFront(false);
     const float width = static_cast<float>(getWidth());
     const float height = static_cast<float>(getHeight());
     const float rackWidth = static_cast<float>(Rack::LW);

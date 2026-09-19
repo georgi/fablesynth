@@ -208,15 +208,15 @@ void TrackHeadsView::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 // ---- layout --------------------------------------------------------------
-// Component-local columns matching the rack grid table (Task 9): scene card
-// x=0 w=218, track head i at x=218+9+i*(292+9) w=292 (i=0..3).
+// Component-local columns matching the compact native rack grid: scene card
+// x=0 w=218, track head i at x=218+9+i*(250+9) w=250 (i=0..3).
 
 void TrackHeadsView::resized() {
     const int h = getHeight();
     sceneCard = { 0, 0, 218, h };
 
     for (int t = 0; t < 4; ++t) {
-        auto r = juce::Rectangle<int>(218 + 9 + t * (292 + 9), 0, 292, h);
+        auto r = juce::Rectangle<int>(218 + 9 + t * (250 + 9), 0, 250, h);
         trackHead[t] = r;
 
         auto content = r.reduced(10, 6); // css padding: 6px 10px

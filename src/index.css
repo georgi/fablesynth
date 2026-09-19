@@ -1588,3 +1588,50 @@ body::before {
   border-radius: 5px; background: transparent; color: var(--ac); font-size: 14px; cursor: pointer;
 }
 .wte-frame-add:hover { border-color: var(--ac); }
+
+/* Browser agent — an in-app conversation, not a browser prompt. */
+.web-agent-launcher {
+  position: fixed; z-index: 2100; right: 14px; bottom: 14px; height: 30px; padding: 0 13px;
+  border: 1px solid color-mix(in srgb, var(--ac-a) 45%, var(--line)); border-radius: 7px;
+  background: #132b36; color: var(--ac-a); font: 600 10px var(--font-mono); letter-spacing: .12em; cursor: pointer;
+}
+.web-agent-launcher:hover { border-color: var(--ac-a); box-shadow: 0 0 14px color-mix(in srgb, var(--ac-a) 28%, transparent); }
+.web-agent-backdrop { position: fixed; z-index: 2200; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(3, 5, 9, .76); }
+.web-agent-panel { width: min(760px, 100%); max-height: min(760px, calc(100vh - 36px)); display: flex; flex-direction: column; gap: 10px; padding: 16px; box-sizing: border-box; border: 1px solid #445866; border-radius: 12px; background: linear-gradient(180deg, #1b232d, #10151c); box-shadow: 0 20px 80px rgba(0, 0, 0, .58); color: var(--text); }
+.web-agent-header, .web-agent-footer, .web-agent-settings { display: flex; align-items: center; gap: 10px; }
+.web-agent-header strong { font: 17px var(--font-disp); letter-spacing: .08em; }
+.web-agent-header .pb-btn { margin-left: auto; }
+.web-agent-settings { align-items: stretch; }
+.web-agent-settings label { flex: 1; min-width: 0; display: grid; gap: 4px; color: var(--text-dim); font: 9px var(--font-mono); letter-spacing: .12em; }
+.web-agent-settings select, .web-agent-settings input, .web-agent-composer { box-sizing: border-box; width: 100%; border: 1px solid #34424c; border-radius: 6px; background: #0b1016; color: var(--text); font: 12px var(--font-mono); }
+.web-agent-settings select, .web-agent-settings input { height: 32px; padding: 0 9px; }
+.web-agent-note { margin: -3px 0 0; color: #e5b680; font: 10px var(--font-mono); }
+.web-agent-chat { min-height: 165px; max-height: 390px; overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #0b1016; }
+.web-agent-turn { display: grid; gap: 8px; margin-bottom: 12px; }
+.web-agent-turn:last-child { margin-bottom: 0; }
+.web-agent-bubble { max-width: 84%; padding: 10px 12px; border: 1px solid #4b6170; border-radius: 10px; background: #1b2731; font: 12px var(--font-mono); line-height: 1.35; }
+.web-agent-bubble b, .web-agent-activity summary { display: block; margin-bottom: 7px; color: var(--text-hint); font: 600 9px var(--font-mono); letter-spacing: .12em; }
+.web-agent-bubble p { margin: 0; white-space: pre-wrap; }
+.web-agent-bubble.user { justify-self: end; border-color: color-mix(in srgb, var(--ac-a) 48%, #2c5968); background: #173e4c; }
+.web-agent-bubble.user b { color: var(--ac-a); }
+.web-agent-bubble.error { border-color: #9a555d; background: #382126; }
+.web-agent-bubble.error b { color: #ff9ca3; }
+.web-agent-bubble.proposal { border-color: #78649e; background: #29243a; }
+.web-agent-bubble.proposal b { color: #c1a4ff; }
+.web-agent-bubble ul { margin: 0; padding-left: 18px; }
+.web-agent-activity { padding: 9px 11px; border: 1px solid #3e4d58; border-radius: 8px; background: #121a22; color: var(--text); }
+.web-agent-activity summary { margin: 0; cursor: pointer; color: var(--text-hint); }
+.web-agent-activity pre { max-height: 260px; overflow: auto; margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font: 11px/1.35 var(--font-mono); }
+.web-agent-composer { min-height: 60px; resize: vertical; padding: 9px; }
+.web-agent-footer { justify-content: space-between; align-items: center; min-height: 30px; color: var(--text-dim); font: 10px var(--font-mono); }
+.web-agent-footer > span { max-width: 42%; }
+.web-agent-footer > div { display: flex; justify-content: flex-end; gap: 6px; }
+.web-agent-apply:not(:disabled) { color: #c1a4ff; border-color: #78649e; }
+@media (max-width: 620px) {
+  .web-agent-backdrop { padding: 6px; }
+  .web-agent-panel { max-height: calc(100vh - 12px); padding: 12px; }
+  .web-agent-settings { display: grid; }
+  .web-agent-footer { align-items: stretch; flex-direction: column; }
+  .web-agent-footer > span { max-width: none; }
+  .web-agent-footer > div { flex-wrap: wrap; justify-content: flex-start; }
+}

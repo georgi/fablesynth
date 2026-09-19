@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { WebAgentPanel } from '../agent/WebAgentPanel';
+import { makeSqAgentHost } from '../agent/sqAgentHost';
 import { DeviceView } from './components/DeviceView';
 import { FooterRow } from './components/FooterRow';
 import { Header } from './components/Header';
@@ -10,6 +12,8 @@ import { TrackHeads } from './components/TrackHeads';
 import { useSeqStore } from './store';
 
 export function SeqApp() {
+  const [agentOpen, setAgentOpen] = useState(false);
+  const agentHost = useState(makeSqAgentHost)[0];
   const session = useSeqStore((s) => s.session);
   const powered = useSeqStore((s) => s.powered);
   const quant = useSeqStore((s) => s.quant);
@@ -95,6 +99,7 @@ export function SeqApp() {
     <>
       <SqPowerOverlay />
       <Onboarding />
+      {agentOpen && <WebAgentPanel host={agentHost} plugin="SQ-4" onClose={() => setAgentOpen(false)} />}
       <main id="sq-rack" className={focus ? 'focused' : ''}>
         <Header />
         <TrackHeads />
@@ -122,6 +127,7 @@ export function SeqApp() {
             : `TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO ${quant} · CMD-CLICK SELECTS · DRAG MOVES (ALT COPIES) · CMD-C/X/V/D/Z EDIT · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH`}
         </div>
       </main>
+      <button className="web-agent-launcher" onClick={() => setAgentOpen(true)}>AGENT</button>
     </>
   );
 }

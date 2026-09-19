@@ -10,7 +10,7 @@
 // beat dots + bar/BPM readout from the shared timebase, a master scope, and
 // the SWING/VOL master knobs. Everything is drawn directly in paint() and hit
 // -tested in mouseDown/Drag — no juce::Button/Knob children — since the whole
-// slot is a single 1424x66 strip and every element is either static text or a
+// slot is a single 1254x44 strip and every element is either static text or a
 // small drag/click target.
 namespace fui {
 

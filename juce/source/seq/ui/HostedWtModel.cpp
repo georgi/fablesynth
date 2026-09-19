@@ -46,6 +46,7 @@ HostedWtModel::HostedWtModel(SeqAudioProcessor& proc, int track)
       parameters_(fable::paramInfo().data(), fable::paramInfo().size()) {
     jassert(track_ == 2 || track_ == 3);
     parameters_.load(proc_.trackParameterValues(track_));
+    trackPatchRevision_ = proc_.trackPatchRevision(track_);
     startTimerHz(30);
 }
 
@@ -83,12 +84,26 @@ DeviceUiCapabilities HostedWtModel::capabilities() const {
 void HostedWtModel::timerCallback() { flushPendingPatch(); }
 
 void HostedWtModel::flushPendingPatch() {
-    if (parameters_.consumeDirty())
+    if (reloadIfTrackPatchChanged()) return;
+    if (parameters_.consumeDirty()) {
         proc_.setTrackInlineParams(track_, parameters_.snapshot());
+        trackPatchRevision_ = proc_.trackPatchRevision(track_);
+    }
+}
+
+bool HostedWtModel::reloadIfTrackPatchChanged() {
+    const auto revision = proc_.trackPatchRevision(track_);
+    if (revision == trackPatchRevision_) return false;
+    // Do this before consumeDirty(): a stale editor snapshot must not overwrite
+    // a newer processor-owned agent/preset/session patch.
+    parameters_.load(proc_.trackParameterValues(track_));
+    trackPatchRevision_ = revision;
+    return true;
 }
 
 void HostedWtModel::reloadPatchFromSession() {
     parameters_.load(proc_.trackParameterValues(track_));
+    trackPatchRevision_ = proc_.trackPatchRevision(track_);
 }
 
 int HostedWtModel::currentProgram() const {

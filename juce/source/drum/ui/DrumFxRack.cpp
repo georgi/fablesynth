@@ -59,8 +59,10 @@ void DrumFxRack::Group::paintGroup(juce::Graphics& g) {
 DrumFxRack::DrumFxRack(DrumUiModel& p, bool routingOnly) : proc(p), routingOnly_(routingOnly) {
     proc.selectionChanges().addChangeListener(this);
     rebuild();
-    lastSig = routeSignature();
-    startTimerHz(1); // OUT panel reflects live pad.out routing + renames
+    if (!routingOnly_) {
+        lastSig = routeSignature();
+        startTimerHz(1); // full OUT summary reflects live routing + renames
+    }
 }
 
 DrumFxRack::~DrumFxRack() {
@@ -73,7 +75,15 @@ void DrumFxRack::changeListenerCallback(juce::ChangeBroadcaster*) {
 
 void DrumFxRack::rebuild() {
     groups.clear();
-    if (routingOnly_) { resized(); repaint(); return; }
+    outSelector.reset();
+    if (routingOnly_) {
+        const auto id = "pad" + juce::String(proc.selectedPad()) + ".out";
+        outSelector = std::make_unique<Stepper>(proc.parameters(), id, Accent::A);
+        addAndMakeVisible(*outSelector);
+        resized();
+        repaint();
+        return;
+    }
     struct Def { const char* fx; const char* title; std::initializer_list<const char*> k; };
     const Def defs[] = {
         {"drive",  "DRIVE",  {"amt", "mix"}},
@@ -93,8 +103,16 @@ void DrumFxRack::rebuild() {
 }
 
 void DrumFxRack::resized() {
+    if (routingOnly_) {
+        outBounds = getLocalBounds();
+        auto row = getLocalBounds().reduced(12, 8);
+        padTitleArea = row.removeFromLeft(142);
+        row.removeFromLeft(8);
+        if (outSelector)
+            outSelector->setBounds(row.withSizeKeepingCentre(row.getWidth(), 24));
+        return;
+    }
     auto r = getLocalBounds().reduced(8);        // .dr-fx-panel padding
-    if (routingOnly_) { outBounds = r; return; }
     const int gap = 10, outW = 190, count = groups.size();
     const float cw = static_cast<float>(r.getWidth() - outW - gap * count) / static_cast<float>(count);
     for (int i = 0; i < groups.size(); ++i)
@@ -132,6 +150,20 @@ void DrumFxRack::paint(juce::Graphics& g) {
 }
 
 void DrumFxRack::paintOutPanel(juce::Graphics& g) {
+    if (routingOnly_) {
+        auto labels = padTitleArea;
+        auto title = labels.removeFromLeft(38);
+        g.setColour(col::text);
+        g.setFont(dispFont(8.0f));
+        drawSpaced(g, "OUT", title, 1.4f);
+        g.setColour(col::textDim);
+        g.setFont(monoFont(6.5f));
+        drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2)
+                          + " " + proc.padName(proc.selectedPad()),
+                   labels, 0.5f, juce::Justification::centredLeft);
+        return;
+    }
+
     drawGroupBox(g, outBounds);
     auto inner = outBounds;
     inner.removeFromLeft(9);  inner.removeFromRight(9);

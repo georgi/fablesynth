@@ -5,6 +5,7 @@
 // headless editor render. Modeled on drum_host_test.cpp.
 #include "../source/bass/BassProcessor.h"
 #include "FxUiChecks.h"
+#include "AgentProcessorChecks.h"
 #include "NoteDrawChecks.h"
 #include "ArpProcessorChecks.h"
 #include "../source/bass/BassEditor.h"
@@ -672,5 +673,6 @@ int main(int argc, char** argv) {
     printf("%s\n", g_fail == 0 ? "BASS PLUGIN CHECKS PASSED" : "BASS PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<BassAudioProcessor>("bl", BassRack::LW, BassRack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++g_fail;
     if (!runArpProcessorChecks<BassAudioProcessor>("bl", true)) ++g_fail;
+    if (!runAgentProcessorChecks<BassAudioProcessor>("bl", fable::bassParamInfo().data(), fable::bassParamInfo().size(), "flt.cut", "osc.tune")) ++g_fail;
     return g_fail == 0 ? 0 : 1;
 }

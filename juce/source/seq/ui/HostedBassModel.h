@@ -6,6 +6,8 @@
 
 #include <juce_events/juce_events.h>
 
+#include <cstdint>
+
 class SeqAudioProcessor;
 
 namespace fui {
@@ -80,12 +82,14 @@ private:
 
     void timerCallback() override;
     void reloadParameters();
+    bool reloadIfTrackPatchChanged();
     bool validScene() const;
 
     SeqAudioProcessor& proc_;
     DeviceParameterBank parameterBank_;
     int scene_ = -1;
     int editPattern_ = 0;
+    std::uint64_t trackPatchRevision_ = 0;
     std::vector<int> chain_ { 0 };
 };
 

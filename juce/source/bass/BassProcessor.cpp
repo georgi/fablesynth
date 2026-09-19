@@ -8,6 +8,20 @@
 
 using namespace fable;
 
+fable::FableAgent& BassAudioProcessor::getAgent() {
+    if (!agent_) {
+        const auto& info = bassParamInfo();
+        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this](codeact::Snapshot& snapshot) {
+            snapshot.audio = fable::agentAudioMeasurements(agentOutputMeter_.snapshot(), "Final main output after device FX/output processing");
+            juce::Array<codeact::Json> effects;
+            effects.add(fable::agentFxMeters(fxTelemetry(), "instrument"));
+            snapshot.meters = fable::agentMeterObservations(snapshot.audio, effects);
+        });
+    }
+    return *agent_;
+}
+
+
 // ---- construction --------------------------------------------------------
 
 BassAudioProcessor::BassAudioProcessor()
@@ -73,6 +87,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BassAudioProcessor::createLa
 }
 
 void BassAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    agentOutputMeter_.prepare(sampleRate, getMainBusNumOutputChannels());
     engine.prepare(sampleRate);
     arpInput_.clear(); arpInput_.set(arpSettings_); applyArp();
     // Message thread: reclaim any table set retired by an earlier publish
@@ -176,6 +191,7 @@ void BassAudioProcessor::setEditPattern(int p) {
 // ---- patches as programs ----------------------------------------------------
 
 void BassAudioProcessor::setCurrentProgram(int index) {
+    agentStateGeneration_.fetch_add(1);
     const auto& bank = bassFactoryPatches();
     if (index < 0 || index >= (int)bank.size()) return;
     currentProgram_ = index;
@@ -357,6 +373,11 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             scopeBuf_[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
         scopeW_.store(w + n, std::memory_order_relaxed);
     }
+    // Fixed-window measurement of the actual final output. No allocation or locking.
+    const float* meterChannels[2] { buffer.getNumChannels() > 0 ? buffer.getReadPointer(0) : nullptr,
+        buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr };
+    agentOutputMeter_.process(meterChannels, buffer.getNumChannels(), buffer.getNumSamples());
+
 }
 
 void BassAudioProcessor::readScope(float* dst, int n) const {
@@ -389,6 +410,7 @@ void BassAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 }
 
 void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    agentStateGeneration_.fetch_add(1);
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
     fui::ProgramDirtyTracker::LoadScope loading(programDirty_);

@@ -78,6 +78,100 @@ const std::vector<ParamInfo>& seqParamInfo() {
 }
 } // namespace fable
 
+fable::FableAgent& SeqAudioProcessor::getAgent() {
+    if (!agent_) agent_ = std::make_unique<fable::FableAgent>([this] {
+        fable::FableAgent::CapturedState state;
+        state.snapshot.pluginName = getName();
+        state.generation = agentStateGeneration_.load();
+        const auto& surface = seqParamInfo();
+        appendAgentApvts(state.snapshot, apvts, surface.data(), surface.size());
+        const auto& session = conductor_ ? conductor_->session() : initialSession_;
+        for (int track = 0; track < kTracks; ++track) {
+            const auto values = computeTrackParams(track, session.tracks[(size_t)track].patch);
+            const auto prefix = "track" + juce::String(track) + ".";
+            auto append = [&](const auto& info) {
+                for (const auto& d : info)
+                    state.snapshot.parameters.push_back(agentParameter(d, values[(size_t)d.id], prefix));
+            };
+            if (track == 0) append(drumParamInfo());
+            else if (track == 1) append(bassParamInfo());
+            else append(paramInfo());
+        }
+        state.document = captureAgentDocument(*this);
+        state.snapshot.audio = agentAudioMeasurements(agentOutputMeter_.snapshot(), "SQ-4 final main output after track faders, master gain, and master limiter");
+        juce::Array<codeact::Json> effects, tracks;
+        for (int pad = 0; pad < DR_NPADS; ++pad)
+            effects.add(agentFxMeters(fxTelemetry(0, pad, 0), "track0.pad" + juce::String(pad), "track0 MAIN shared reverb bus"));
+        for (int track = 1; track < kTracks; ++track)
+            effects.add(agentFxMeters(fxTelemetry(track), "track" + juce::String(track)));
+        for (int track = 0; track < kTracks; ++track) {
+            const auto rms = trackRms[track].load(std::memory_order_relaxed);
+            tracks.add(codeact::object({
+                { "scope", "track" + juce::String(track) },
+                { "available", static_cast<bool>(codeact::get(state.snapshot.audio, "available")) && std::isfinite(rms) },
+                { "tap", "Post track fader, before master fader/limiter; most recently rendered host block" },
+                { "rmsLinear", std::isfinite(rms) ? codeact::Json(rms) : codeact::Json() },
+                { "rmsDbfs", std::isfinite(rms) ? codeact::Json(std::max(-120.0, 20.0 * std::log10(std::max(1.0e-6, (double)rms)))) : codeact::Json() },
+                { "window", "Last host block; independent of the output measurement's fixed 100 ms window" }
+            }));
+        }
+        state.snapshot.meters = agentMeterObservations(state.snapshot.audio, effects, tracks);
+        return state;
+    }, [this](const std::vector<codeact::Change>& changes, juce::String& error) {
+        if (!conductor_) { error = "Prepare SQ-4 audio before applying changes"; return false; }
+        std::array<std::unordered_map<std::string, float>, kTracks> patches;
+        std::array<bool, kTracks> touched {};
+        std::vector<codeact::Change> surface;
+        // Resolve every route and build complete patches before modifying the
+        // document. A hosted patch keeps every original, unmodified parameter.
+        for (const auto& c : changes) {
+            if (apvts.getParameter(c.id)) { surface.push_back(c); continue; }
+            bool found = false;
+            for (int track = 0; track < kTracks; ++track) {
+                const auto prefix = "track" + juce::String(track) + ".";
+                if (!c.id.startsWith(prefix)) continue;
+                if (!touched[(size_t)track]) patches[(size_t)track] = trackParameterValues(track);
+                const auto key = c.id.substring(prefix.length()).toStdString();
+                auto it = patches[(size_t)track].find(key);
+                if (it == patches[(size_t)track].end()) break;
+                it->second = static_cast<float>(c.after);
+                touched[(size_t)track] = true;
+                found = true;
+                break;
+            }
+            if (!found) { error = "Parameter is no longer available: " + c.id; return false; }
+        }
+        // Conductor intentionally refuses tempo changes while clips are live
+        // or queued. Reject the entire transaction instead of merely moving
+        // the host parameter while leaving musical tempo unchanged.
+        for (const auto& c : surface) if (c.id == "bpm" && c.before != c.after)
+            for (int track = 0; track < kTracks; ++track)
+                if (conductor_->ownerOf(track) != -2 || conductor_->queueOf(track) != -2) {
+                    error = "Stop SQ-4 clips before applying a tempo change, then submit again.";
+                    return false;
+                }
+        // Existing setTrackInlineParams/pollSessionParams enqueue commands.
+        // Guarantee capacity for all four patches and all mixer/tempo updates
+        // before any write; the audio consumer can only increase free space.
+        if (cmdFifo_.getFreeSpace() < 32) {
+            error = "SQ-4 audio command queue is busy. Try a new request after playback resumes.";
+            return false;
+        }
+        pushUndoSnapshot();
+        if (!applyAgentApvts(apvts, surface, error)) return false;
+        for (int track = 0; track < kTracks; ++track)
+            if (touched[(size_t)track]) setTrackInlineParams(track, patches[(size_t)track]);
+        for (const auto& c : surface) if (c.id == "quant") {
+            const auto target = static_cast<Quant>(static_cast<int>(c.after));
+            for (int i = 0; i < 3 && conductor_->quant() != target; ++i) conductor_->cycleQuant(1);
+        }
+        pollSessionParams();
+        ++agentEditRevision_;
+        return true;
+    });
+    return *agent_;
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout SeqAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     const auto& info = seqParamInfo();
@@ -267,6 +361,7 @@ void SeqAudioProcessor::loadTrackParams(int t, const std::vector<float>& v) {
 
 void SeqAudioProcessor::applyTrackPatch(int t) {
     if (t < 0 || t >= kTracks || !conductor_) return;
+    trackPatchRevision_[(size_t)t].fetch_add(1);
     // conductor_->session() is the runtime truth for patch swaps (setTrackPatch
     // writes there, not to initialSession_) — reading initialSession_ here
     // would re-apply whatever patch the track shipped with, not the one just
@@ -299,7 +394,7 @@ void SeqAudioProcessor::setTrackInlineParams(
     if (t < 0 || t >= kTracks || !conductor_) return;
     PatchRef patch;
     patch.factory = false;
-    patch.index = 0;
+    patch.index = conductor_->session().tracks[(size_t)t].patch.index;
     patch.params.insert(values.begin(), values.end());
     conductor_->setTrackPatch(t, std::move(patch));
     applyTrackPatch(t);
@@ -411,6 +506,7 @@ std::vector<float> SeqAudioProcessor::debugTrackParams(int t) {
 // ---- prepare ---------------------------------------------------------------
 
 void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    agentOutputMeter_.prepare(sampleRate, getMainBusNumOutputChannels());
     preparedSampleRate_ = sampleRate;
     drum_.prepare(sampleRate); drum_.enablePadFx(true);
     bass_.prepare(sampleRate); bassFx_.prepare(sampleRate);
@@ -791,6 +887,11 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // block that consumes it agree on the reference frame.
     frame_ = base + n;
     currentFrame.store(frame_);
+    // Fixed-window measurement of the actual final output. No allocation or locking.
+    const float* meterChannels[2] { buffer.getNumChannels() > 0 ? buffer.getReadPointer(0) : nullptr,
+        buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr };
+    agentOutputMeter_.process(meterChannels, buffer.getNumChannels(), buffer.getNumSamples());
+
 }
 
 float SeqAudioProcessor::readScope(float* dest, int n) const {
@@ -815,6 +916,7 @@ void SeqAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 }
 
 void SeqAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    agentStateGeneration_.fetch_add(1);
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return; // garbage -> keep current session/params
 
@@ -884,7 +986,21 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
         const int target = q >= 0 ? q : conductor_->ownerOf(t);
         if (target >= 0 && target < (int)restored.scenes.size()) relaunch[t] = target;
     }
+    agentStateGeneration_.fetch_add(1);
+    for (auto& revision : trackPatchRevision_) revision.fetch_add(1);
     initialSession_ = std::move(restored);
+    // Restore the host/UI surface together with the document. Otherwise undo
+    // restores a different conductor tempo/mix but leaves APVTS and its polling
+    // baselines at the newer values. Master is independent of SessionDoc v1.
+    auto restoreSurface = [this](const juce::String& id, float value) {
+        if (auto* parameter = apvts.getParameter(id))
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+    };
+    restoreSurface("bpm", static_cast<float>(initialSession_.bpm));
+    restoreSurface("swing", static_cast<float>(initialSession_.swing));
+    restoreSurface("quant", static_cast<float>(initialSession_.quant));
+    for (int track = 0; track < kTracks; ++track)
+        restoreSurface("vol" + juce::String(track), initialSession_.tracks[(size_t)track].gain);
     if (preparedSampleRate_ > 0.0) {
         // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
         // that lands after this point would otherwise flip an owner in the new

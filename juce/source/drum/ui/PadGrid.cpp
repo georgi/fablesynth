@@ -1,5 +1,6 @@
 #include "PadGrid.h"
 #include "../../dsp/UserTables.h"
+#include "../../agent/AgentPanel.h"
 
 namespace fui {
 
@@ -89,6 +90,13 @@ void PadGrid::mouseDown(const juce::MouseEvent& e) {
 }
 
 bool PadGrid::keyPressed(const juce::KeyPress& k, juce::Component*) {
+    // Agent controls and text fields must never audition pads via shortcuts.
+    if (auto* focus = juce::Component::getCurrentlyFocusedComponent())
+        if (dynamic_cast<juce::TextEditor*>(focus) != nullptr
+            || focus->findParentComponentOfClass<juce::TextEditor>() != nullptr
+            || dynamic_cast<fable::AgentPanel*>(focus) != nullptr
+            || focus->findParentComponentOfClass<fable::AgentPanel>() != nullptr)
+            return false;
     const auto mods = k.getModifiers();
     if (mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown()) return false;
     if (k.getKeyCode() == juce::KeyPress::escapeKey) {   // useDrumKeys: Escape = stop

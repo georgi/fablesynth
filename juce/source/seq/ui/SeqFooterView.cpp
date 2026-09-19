@@ -80,8 +80,8 @@ void SeqFooterView::mouseMove(const juce::MouseEvent& e) {
 }
 
 // ---- layout --------------------------------------------------------------
-// Component-local columns match the rack grid table (Task 9): master col
-// x=0 w=218, track cell i at x=218+9+i*(292+9) w=292 (i=0..3).
+// Component-local columns match the compact native rack grid: master col
+// x=0 w=218, track cell i at x=218+9+i*(250+9) w=250 (i=0..3).
 
 void SeqFooterView::resized() {
     const int h = getHeight();
@@ -92,7 +92,7 @@ void SeqFooterView::resized() {
     chipsArea = m;
 
     for (int t = 0; t < 4; ++t) {
-        auto r = juce::Rectangle<int>(218 + 9 + t * (292 + 9), 0, 292, h);
+        auto r = juce::Rectangle<int>(218 + 9 + t * (250 + 9), 0, 250, h);
         cellArea[t] = r;
         auto content = r.reduced(10, 7);
         cellStopBtn[t] = content.removeFromLeft(22).withSizeKeepingCentre(22, 22);

@@ -81,10 +81,11 @@ void DrumRack::resized() {
 
 // ---- DrumEditor ----
 DrumEditor::DrumEditor(DrumAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), model(fui::makeStandaloneDrumUiModel(p)), rack(*model) {
+    : juce::AudioProcessorEditor(p), model(fui::makeStandaloneDrumUiModel(p)), rack(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     setWantsKeyboardFocus(true); // QWERTY pad map (PadGrid key-listens on us)
     addAndMakeVisible(rack);
+    addAndMakeVisible(agentOverlay);
     rack.setBounds(0, 0, DrumRack::LW, DrumRack::LH);
 
     setResizable(true, true);
@@ -108,6 +109,8 @@ void DrumEditor::paint(juce::Graphics& g) {
 }
 
 void DrumEditor::resized() {
+    agentOverlay.setBounds(getLocalBounds());
+    agentOverlay.toFront(false);
     const float width = static_cast<float>(getWidth());
     const float height = static_cast<float>(getHeight());
     const float rackWidth = static_cast<float>(DrumRack::LW);

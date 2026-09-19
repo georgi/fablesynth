@@ -8,6 +8,20 @@
 
 using namespace fable;
 
+fable::FableAgent& FableAudioProcessor::getAgent() {
+    if (!agent_) {
+        const auto& info = paramInfo();
+        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this](codeact::Snapshot& snapshot) {
+            snapshot.audio = fable::agentAudioMeasurements(agentOutputMeter_.snapshot(), "Final main output after device FX/output processing");
+            juce::Array<codeact::Json> effects;
+            effects.add(fable::agentFxMeters(fxTelemetry(), "instrument"));
+            snapshot.meters = fable::agentMeterObservations(snapshot.audio, effects);
+        });
+    }
+    return *agent_;
+}
+
+
 FableAudioProcessor::FableAudioProcessor()
     : juce::AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMS", createLayout()) {
@@ -54,6 +68,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
 }
 
 void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    agentOutputMeter_.prepare(sampleRate, getMainBusNumOutputChannels());
     engine.prepare(sampleRate);
     arpInput_.clear(); arpInput_.set(arpSettings_); applyArp();
     rebuildEngineTables();
@@ -364,9 +379,15 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
             scopeBuf[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
         scopeW.store(w + n, std::memory_order_relaxed);
     }
+    // Fixed-window measurement of the actual final output. No allocation or locking.
+    const float* meterChannels[2] { buffer.getNumChannels() > 0 ? buffer.getReadPointer(0) : nullptr,
+        buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr };
+    agentOutputMeter_.process(meterChannels, buffer.getNumChannels(), buffer.getNumSamples());
+
 }
 
 void FableAudioProcessor::setCurrentProgram(int index) {
+    agentStateGeneration_.fetch_add(1);
     if (index < 0 || index >= (int)factoryPresets().size()) return;
     currentProgram = index;
     fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
@@ -468,6 +489,7 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 }
 
 void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    agentStateGeneration_.fetch_add(1);
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
     fui::ProgramDirtyTracker::LoadScope loading(programDirty_);

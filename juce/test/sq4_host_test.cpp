@@ -10,6 +10,7 @@
 // `npx tsx scripts/dump-session.ts > juce/test/fixtures/web-session.json`).
 // Modeled on bass_host_test.cpp.
 #include "../source/seq/SeqProcessor.h"
+#include "../source/agent/AgentPanel.h"
 #include "../source/seq/SeqEditor.h"
 #include "../source/seq/SessionCodec.h"
 #include "../source/seq/ClipLibraryStorage.h"
@@ -404,7 +405,7 @@ int main(int argc, char** argv) {
     // ---- 8. Editor: correct logical size, paints without crashing, snapshot PNG. ----
     auto* ed = p.createEditor();
     check(ed != nullptr, "createEditor returns non-null");
-    ed->setSize(SeqRack::LW, SeqRack::LH); // 1460 x 722 (half-height header, re-pitched session rack)
+    ed->setSize(SeqRack::LW, SeqRack::LH); // 1290 x 722 compact native session rack
     juce::Image img(juce::Image::ARGB, SeqRack::LW, SeqRack::LH, true);
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
@@ -1492,6 +1493,224 @@ int main(int argc, char** argv) {
         renderRms(p5, big, 1);
         check(std::abs(p5.currentFrame.load() - (frameBeforeLargeBlock + 1024)) < 1e-6,
               "currentFrame advances by the full over-large block", p5.currentFrame.load());
+    }
+
+    // Agent boundary: complete metadata, transactional validation, real hosted
+    // DSP delivery, persistence, undo, and editor mirror synchronization.
+    {
+        std::printf("\n== agent parameter boundary ==\n");
+        SeqAudioProcessor p;
+        auto& agent = p.getAgent();
+        check(agent.snapshot().parameters.size() == fable::seqParamInfo().size()
+                  + fable::drumParamInfo().size() + fable::bassParamInfo().size()
+                  + 2 * fable::paramInfo().size(), "agent discovers every SQ and hosted parameter before prepare");
+        p.prepareToPlay(48000, 256);
+        juce::AudioBuffer<float> audio(2, 256);
+        juce::MidiBuffer midi;
+        p.processBlock(audio, midi); p.drainAcks();
+        const auto before = agent.capture();
+        const auto oldSession = p.currentSessionJson();
+        std::vector<codeact::Change> changes;
+        const std::vector<std::pair<juce::String, double>> requested {
+            { "master", 0.53 }, { "bpm", 131 }, { "vol1", 0.61 }, { "quant", 2 },
+            { "track0.pad15.flt.cut", 1440 }, { "track1.flt.cut", 420 },
+            { "track2.filter.cutoff", 1700 }, { "track3.filter.cutoff", 2300 }
+        };
+        for (const auto& request : requested) {
+            const auto found = std::find_if(before.snapshot.parameters.begin(), before.snapshot.parameters.end(),
+                [&](const auto& parameter) { return parameter.id == request.first; });
+            check(found != before.snapshot.parameters.end(), "agent qualified parameter exists");
+            if (found != before.snapshot.parameters.end()) changes.push_back({ found->id, found->value, request.second });
+        }
+        juce::String error;
+        auto invalid = changes;
+        invalid.push_back({ "track3.missing", 0, 0 });
+        check(!agent.applyProposal(before, invalid, error), "invalid hosted proposal rejected");
+        check(agent.capture().document == before.document, "invalid hosted batch leaves entire document unchanged");
+        p.conductor().launchScene(0);
+        check(!agent.applyProposal(before, changes, error), "tempo transaction rejects live or queued clips");
+        check(agent.capture().document == before.document, "tempo guard leaves entire batch unapplied");
+        p.conductor().stopTransport();
+        p.processBlock(audio, midi); p.drainAcks();
+        check(agent.applyProposal(before, changes, error), "agent applies surface plus four hosted instruments");
+        if (error.isNotEmpty()) std::fprintf(stderr, "agent apply: %s\n", error.toRawUTF8());
+        check(!agent.applyProposal(before, changes, error), "agent rejects stale full-session proposal");
+        p.processBlock(audio, midi); p.drainAcks();
+        check(p.conductor().quant() == fable::Quant::Off, "agent quant reaches conductor");
+        check(std::abs(p.conductor().session().bpm - 131) < 1e-6, "agent BPM reaches conductor");
+        auto expectedSession = p.conductor().session();
+        fable::SessionData originalSession;
+        check(fable::sessionFromJson(oldSession, originalSession), "decode agent original session");
+        for (int track = 0; track < 4; ++track) {
+            const auto values = p.trackParameterValues(track);
+            const auto dsp = p.debugTrackParams(track);
+            auto compare = [&](const auto& catalog) {
+                bool equal = true;
+                for (const auto& d : catalog)
+                    equal = equal && std::abs(dsp[(size_t)d.id] - values.at(d.pid)) < 1e-5;
+                check(equal, "agent complete hosted patch reaches real DSP");
+            };
+            if (track == 0) compare(fable::drumParamInfo());
+            else if (track == 1) compare(fable::bassParamInfo());
+            else compare(fable::paramInfo());
+            check(!expectedSession.tracks[(size_t)track].patch.factory, "agent writes portable inline patch");
+            check(expectedSession.tracks[(size_t)track].patch.index == originalSession.tracks[(size_t)track].patch.index,
+                  "agent retains patch base identity");
+            expectedSession.tracks[(size_t)track].patch = originalSession.tracks[(size_t)track].patch;
+        }
+        expectedSession.bpm = originalSession.bpm;
+        expectedSession.quant = originalSession.quant;
+        expectedSession.tracks[1].gain = originalSession.tracks[1].gain;
+        check(fable::sessionToJson(expectedSession) == fable::sessionToJson(originalSession),
+              "agent retains every unrelated scene, note, and session field");
+        // Parameters absent from the proposal are preserved in every patch.
+        const auto after = agent.snapshot();
+        bool unchanged = true;
+        for (std::size_t i = 0; i < before.snapshot.parameters.size(); ++i) {
+            const auto& parameter = before.snapshot.parameters[i];
+            const auto changed = std::find_if(changes.begin(), changes.end(),
+                [&](const auto& change) { return change.id == parameter.id; });
+            if (changed == changes.end()) unchanged = unchanged && after.parameters[i].value == parameter.value;
+        }
+        check(unchanged, "agent retains each unmodified parameter");
+        juce::MemoryBlock persisted;
+        p.getStateInformation(persisted);
+        SeqAudioProcessor restored;
+        restored.setStateInformation(persisted.getData(), (int)persisted.getSize());
+        check(restored.currentSessionJson() == p.currentSessionJson(), "agent hosted changes round-trip plugin state");
+        fable::SessionData restoredDocument;
+        check(fable::sessionFromJson(restored.currentSessionJson(), restoredDocument), "decode persisted agent patches");
+        for (int track = 0; track < 4; ++track)
+            check(restoredDocument.tracks[(size_t)track].patch.index == originalSession.tracks[(size_t)track].patch.index,
+                  "agent patch base survives plugin state reload", track);
+        check(restored.apvts.getRawParameterValue("master")->load() == p.apvts.getRawParameterValue("master")->load(),
+              "agent master round-trips plugin state");
+        check(p.undo(), "agent transaction participates in SQ undo");
+        check(p.currentSessionJson() == oldSession, "agent undo restores full prior session");
+        check(std::abs(p.apvts.getRawParameterValue("bpm")->load() - originalSession.bpm) < 1e-5,
+              "agent undo restores host/UI tempo");
+        check(std::abs(p.apvts.getRawParameterValue("vol1")->load() - originalSession.tracks[1].gain) < 1e-5,
+              "agent undo restores host/UI mixer");
+        check(p.apvts.getRawParameterValue("quant")->load() == static_cast<float>(originalSession.quant),
+              "agent undo restores host/UI quantization");
+        p.processBlock(audio, midi); p.drainAcks();
+
+        fui::HostedWtModel hosted(p, 2);
+        auto* control = hosted.parameters().parameter("filter.cutoff");
+        control->setValueNotifyingHost(control->convertTo0to1(950));
+        auto external = p.trackParameterValues(2);
+        external["filter.cutoff"] = 1800;
+        p.setTrackInlineParams(2, external);
+        hosted.flushPendingPatch();
+        check(p.trackParameterValues(2).at("filter.cutoff") == 1800,
+              "dirty hosted mirror cannot revert external agent patch");
+        check(std::abs(control->convertFrom0to1(control->getValue()) - 1800) < 0.01,
+              "dirty hosted control refreshes external patch");
+        external["filter.cutoff"] = 2100;
+        p.setTrackInlineParams(2, external);
+        hosted.flushPendingPatch();
+        check(std::abs(control->convertFrom0to1(control->getValue()) - 2100) < 0.01,
+              "clean hosted control refreshes external patch");
+        auto checkHostedMirror = [&](auto& model, int track, const juce::String& id) {
+            auto* parameter = model.parameters().parameter(id);
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(950));
+            auto patch = p.trackParameterValues(track);
+            patch[id.toStdString()] = 1800;
+            p.setTrackInlineParams(track, patch);
+            model.flushPendingPatch();
+            check(p.trackParameterValues(track).at(id.toStdString()) == 1800,
+                  "DR/BL dirty hosted mirror cannot revert external patch", track);
+            check(std::abs(parameter->convertFrom0to1(parameter->getValue()) - 1800) < 0.01,
+                  "DR/BL dirty hosted control refreshes external patch", track);
+            patch[id.toStdString()] = 2100;
+            p.setTrackInlineParams(track, patch);
+            model.flushPendingPatch();
+            check(std::abs(parameter->convertFrom0to1(parameter->getValue()) - 2100) < 0.01,
+                  "DR/BL clean hosted control refreshes external patch", track);
+        };
+        fui::HostedDrumModel drumModel(p);
+        checkHostedMirror(drumModel, 0, "pad15.flt.cut");
+        fui::HostedBassModel bassModel(p);
+        checkHostedMirror(bassModel, 1, "flt.cut");
+
+        fable::AgentPanel panel(agent);
+        panel.setBounds(0, 0, 650, 530);
+        juce::TextEditor* keyEntry = nullptr;
+        for (auto* child : panel.getChildren())
+            if (auto* entry = dynamic_cast<juce::TextEditor*>(child))
+                if (entry->getName() == "OpenRouter API key") keyEntry = entry;
+        check(keyEntry && keyEntry->getPasswordCharacter() != 0 && keyEntry->getText().isEmpty(),
+              "plugin key entry is masked and never prefills a configured credential");
+        const auto screenshot = panel.createComponentSnapshot(panel.getLocalBounds());
+        check(screenshot.isValid() && screenshot.getWidth() == 650 && screenshot.getHeight() == 530,
+              "agent panel renders without an editor or desktop peer");
+        const auto imageDirectory = juce::File::getCurrentWorkingDirectory().getChildFile("build/agent-visuals");
+        imageDirectory.createDirectory();
+        auto imageOutput = imageDirectory.getChildFile("sq4-agent-panel.png").createOutputStream();
+        check(imageOutput != nullptr, "agent panel snapshot output opens");
+        if (imageOutput) {
+            imageOutput->setPosition(0); imageOutput->truncate();
+            check(juce::PNGImageFormat().writeImageToStream(screenshot, *imageOutput),
+                  "agent panel snapshot PNG written");
+        }
+    }
+
+    {
+        std::printf("\n== agent audio and meter observations ==\n");
+        SeqAudioProcessor measuredProcessor;
+        auto& agent = measuredProcessor.getAgent();
+        check(!static_cast<bool>(codeact::get(agent.snapshot().audio, "available")),
+              "SQ audio is unavailable before processing");
+        measuredProcessor.prepareToPlay(48000, 128);
+        while (measuredProcessor.conductor().quant() != fable::Quant::Off)
+            measuredProcessor.conductor().cycleQuant(1);
+        measuredProcessor.conductor().launchScene(2);
+        juce::AudioBuffer<float> output(2, 128);
+        juce::MidiBuffer midi;
+        double energy = 0, peak = 0;
+        int measuredFrames = 0;
+        for (int block = 0; block < 38; ++block) {
+            output.clear();
+            measuredProcessor.processBlock(output, midi);
+            measuredProcessor.drainAcks();
+            for (int frame = 0; frame < output.getNumSamples() && measuredFrames < 4800; ++frame, ++measuredFrames)
+                for (int channel = 0; channel < 2; ++channel) {
+                    const auto sample = output.getSample(channel, frame);
+                    energy += static_cast<double>(sample) * sample;
+                    peak = std::max(peak, std::abs(static_cast<double>(sample)));
+                }
+        }
+        const auto captured = agent.capture();
+        const auto audio = captured.snapshot.audio;
+        const auto combined = codeact::get(audio, "combined");
+        const auto rms = static_cast<double>(codeact::get(combined, "rmsLinear"));
+        check(static_cast<bool>(codeact::get(audio, "available")) && std::isfinite(rms) && rms > 1.0e-8,
+              "SQ scene produces a finite nonzero output measurement", rms);
+        check(std::abs(rms - std::sqrt(energy / (4800 * 2))) < 1.0e-6,
+              "SQ meter RMS matches exact post-master-limiter output", rms);
+        check(std::abs(static_cast<double>(codeact::get(combined, "samplePeakLinear")) - peak) < 1.0e-6,
+              "SQ meter sample peak matches exact post-master-limiter output", peak);
+        check(codeact::get(captured.snapshot.meters, "tracks").size() == 4,
+              "SQ exposes four post-fader track meters");
+        check(codeact::get(captured.snapshot.meters, "fx").size() == fable::DR_NPADS + 3,
+              "SQ exposes all drum-pad and hosted instrument FX taps");
+        check(static_cast<double>(codeact::get(audio, "nonFiniteSampleCount")) == 0,
+              "SQ normal render has no non-finite samples");
+        for (int block = 0; block < 40; ++block) {
+            measuredProcessor.processBlock(output, midi);
+            measuredProcessor.drainAcks();
+        }
+        check(static_cast<double>(codeact::get(agent.snapshot().audio, "serial"))
+                  > static_cast<double>(codeact::get(audio, "serial")), "SQ output measurement advances with audio");
+        const auto master = std::find_if(captured.snapshot.parameters.begin(), captured.snapshot.parameters.end(),
+                                        [](const auto& parameter) { return parameter.id == "master"; });
+        juce::String error;
+        check(master != captured.snapshot.parameters.end()
+                  && agent.applyProposal(captured, {{"master", master->value, 0.71}}, error),
+              "evolving audio telemetry does not stale a parameter proposal");
+        measuredProcessor.releaseResources();
+        check(!static_cast<bool>(codeact::get(agent.snapshot().audio, "available")),
+              "SQ released resources invalidate output measurements");
     }
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);

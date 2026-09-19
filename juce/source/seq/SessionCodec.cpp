@@ -99,6 +99,7 @@ juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
             patch->setProperty("index", t.patch.index);
         } else {
             patch->setProperty("kind", "inline");
+            patch->setProperty("base", t.patch.index);
             // Web contract: { kind:"inline", data:{ params:{ name:number,... } } }.
             auto* paramsObj = new juce::DynamicObject();
             writeEmbeddedPatchParams(*paramsObj, t.machine, t.patch);
@@ -169,6 +170,7 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
         const juce::var& pv = tv.getProperty("patch", juce::var());
         if (pv.getProperty("kind", "factory").toString() == "inline") {
             td.patch.factory = false;
+            td.patch.index = (int)pv.getProperty("base", 0);
             if (auto* dataObj = pv.getProperty("data", juce::var()).getDynamicObject()) {
                 // Web schema nests the params under data.params; accept that,
                 // and fall back to the legacy JUCE-flat form (params written

@@ -1,5 +1,8 @@
 # FableSynth WT-1 — JUCE / C++ port (VST3 · AU · Standalone)
 
+All four native instruments now include a parameter agent powered by OpenRouter.
+See [agent setup, usage, and verification](AGENT.md).
+
 A faithful C++/JUCE port of the FableSynth web wavetable synth. The DSP core
 is reimplemented one-to-one from the AudioWorklet engine; the parameters,
 presets and signal flow match the web build so a patch sounds the same.

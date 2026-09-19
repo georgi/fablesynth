@@ -10,6 +10,21 @@
 
 using namespace fable;
 
+fable::FableAgent& DrumAudioProcessor::getAgent() {
+    if (!agent_) {
+        const auto& info = drumParamInfo();
+        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this](codeact::Snapshot& snapshot) {
+            snapshot.audio = fable::agentAudioMeasurements(agentOutputMeter_.snapshot(), "MAIN bus post-device-FX/output processing; auxiliary buses excluded");
+            juce::Array<codeact::Json> effects;
+            for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+                effects.add(fable::agentFxMeters(fxTelemetry(pad, 0), "pad" + juce::String(pad), "MAIN shared reverb bus"));
+            snapshot.meters = fable::agentMeterObservations(snapshot.audio, effects);
+        });
+    }
+    return *agent_;
+}
+
+
 namespace {
 void collectParameterState(const juce::ValueTree& tree,
                            std::unordered_map<std::string, float>& values) {
@@ -110,6 +125,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
 }
 
 void DrumAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    agentOutputMeter_.prepare(sampleRate, getMainBusNumOutputChannels());
     engine.prepare(sampleRate);
     engine.enablePadFx(true);
     rebuildEngineTables();
@@ -258,6 +274,7 @@ void DrumAudioProcessor::setPadName(int i, juce::String n) {
 // ---- kits as programs ------------------------------------------------------
 
 void DrumAudioProcessor::setCurrentProgram(int index) {
+    agentStateGeneration_.fetch_add(1);
     const auto& kits = factoryKits();
     if (index < 0 || index >= (int)kits.size()) return;
     patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
@@ -452,6 +469,11 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             scopeBuf_[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
         scopeW_.store(w + n, std::memory_order_relaxed);
     }
+    // Fixed-window measurement of the actual final MAIN bus only (AUX excluded). No allocation or locking.
+    const float* meterChannels[2] { mainBus.getNumChannels() > 0 ? mainBus.getReadPointer(0) : nullptr,
+        mainBus.getNumChannels() > 1 ? mainBus.getReadPointer(1) : nullptr };
+    agentOutputMeter_.process(meterChannels, mainBus.getNumChannels(), mainBus.getNumSamples());
+
 }
 
 void DrumAudioProcessor::readScope(float* dst, int n) const {
@@ -498,6 +520,7 @@ void DrumAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 }
 
 void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    agentStateGeneration_.fetch_add(1);
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../agent/AgentPanel.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "SeqProcessor.h"
@@ -35,9 +36,9 @@ private:
     juce::String last_;
 };
 
-// The SQ-4 rack: all sections laid out at a fixed logical size matching the
-// web CSS grid (src/seq/seq.css, #seq-rack at its 1460px max-width). The
-// editor scales it to the window so the layout stays pixel-faithful — same
+// The SQ-4 rack: all sections laid out at a fixed logical size derived from
+// the web grid, but compacted horizontally for the native editor. The editor
+// scales it to the window so the layout stays pixel-faithful — same
 // scheme as the WT-1/DR-1/BL-1 racks.
 //
 // Two layouts share one anatomy (docs/.../sq4-device-focus-design.md §2,
@@ -51,7 +52,7 @@ private:
 // focus enter/exit animation either.
 class SeqRack : public juce::Component {
 public:
-    static constexpr int LW = 1460, LH = 722;
+    static constexpr int LW = 1290, LH = 722;
     // Focus-mode logical height. The web rack auto-grows to viewport height
     // in focus mode (SeqApp.tsx); the JUCE analogue grows the editor window
     // instead (see SeqEditor::enterFocus/exitFocus). Derivation, top to
@@ -62,7 +63,7 @@ public:
     //                                                instruments)
     //   content top                         = 136
     //   DeviceFocusView                     + 800 (38 toolbar + content, sized
-    //                                                so BASS -- 1460x931
+    //                                                so BASS -- 1290x931
     //                                                logical, the tallest
     //                                                hosted body -- renders
     //                                                at ~0.92 scale, near-1:1)
@@ -137,5 +138,6 @@ private:
     int focusTrack_ = -1, focusScene_ = -1;
     int lastFocusScene_ = 0;
 
+    fable::AgentOverlay agentOverlay;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SeqEditor)
 };
