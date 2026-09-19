@@ -1009,3 +1009,84 @@
   .sq-cell-stopping::before,
   .sq-cell-stopping::after { transform: scaleX(1); opacity: 0.75; }
 }
+
+/* ============ phone layout ============ */
+@media (max-width: 700px) {
+  #sq-rack {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .sq-top {
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 8px;
+  }
+  .sq-logo { flex: 1 1 auto; min-width: 0; font-size: 12px; }
+  .sq-logo-model { margin-left: 5px; letter-spacing: 0.16em; }
+  .sq-session-preset {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+  .sq-session-preset select { width: 100%; height: 36px; }
+  .sq-sessions-open { min-height: 36px; }
+  .sq-top-right { display: none; }
+  .sq-quant { margin-left: auto; }
+  .sq-help { min-width: 32px; min-height: 32px; }
+  .sq-master-knobs .knob svg { width: 28px; height: 28px; }
+
+  /* Track headers stay a compact, swipeable instrument switcher. Scene rows
+     become a vertical stack so every clip is a full-width touch target. */
+  .sq-heads {
+    display: flex;
+    gap: 7px;
+    margin-bottom: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .sq-heads::-webkit-scrollbar { display: none; }
+  .sq-heads > * { flex: 0 0 auto; }
+  .sq-heads .sq-scenes-card { width: 176px; }
+  .sq-heads .sq-track-head { width: 154px; }
+  .sq-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; margin-bottom: 7px; }
+  .sq-scene-card { padding: 9px; }
+  .sq-cell { min-height: 70px; padding: 9px 10px; }
+  .sq-foot-cell { min-height: 58px; }
+  .sq-hint { white-space: normal; line-height: 1.45; text-align: center; }
+
+  #sq-rack.focused {
+    height: auto;
+    min-height: 100dvh;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .sq-focus { flex-direction: column; gap: 8px; }
+  .sq-launcher {
+    width: 100%;
+    flex-direction: row;
+    gap: 7px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+  }
+  .sq-launcher-back,
+  .sq-launcher .sq-scene-card { flex: 0 0 150px; }
+  .sq-device { min-height: 0; }
+  .sq-device-body { overflow: visible; }
+
+  .sq-lib {
+    inset: 42px 6px auto 6px;
+    max-height: calc(100dvh - 54px);
+  }
+  .sq-lib-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sq-lib-list > button { grid-template-columns: 22px minmax(0, 1fr); }
+  .sq-lib-list > button > :last-child { grid-column: 2; }
+  .sq-sessions { width: calc(100% - 12px); }
+
+  .ns-head { flex-wrap: wrap; gap: 6px; }
+  .ns-hint { order: 10; flex: 1 1 100%; margin-left: 0; white-space: normal; line-height: 1.35; }
+}

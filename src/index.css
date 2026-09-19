@@ -1635,3 +1635,137 @@ body::before {
   .web-agent-footer > span { max-width: none; }
   .web-agent-footer > div { flex-wrap: wrap; justify-content: flex-start; }
 }
+
+/* ============ phone layout ============
+   The instrument is dense by design, but a phone still needs one readable
+   signal path at a time. Desktop grids collapse into a single rack column;
+   only editors with an intrinsically wide timeline keep a local scroller. */
+@media (max-width: 700px) {
+  html,
+  body {
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+
+  #root { width: 100%; min-width: 0; }
+
+  #power-overlay {
+    padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  .po-inner { width: min(100%, 350px); }
+  .po-brand {
+    font-size: clamp(23px, 8vw, 34px);
+    letter-spacing: 0.045em;
+    white-space: nowrap;
+  }
+  .po-model,
+  .po-hint { letter-spacing: 0.14em; line-height: 1.5; }
+  .po-error { max-width: 100%; }
+
+  #rack {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .top-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px;
+  }
+  .brand {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+    letter-spacing: 0.075em;
+  }
+  .brand small { margin-left: 6px; font-size: 8px; letter-spacing: 0.2em; }
+  .preset-bar {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+  .preset-bar #preset-select,
+  .preset-bar .pb-name-input {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+  }
+  .pb-btn { min-width: 36px; height: 36px; }
+  .hud { display: none; }
+  .top-clock { margin-left: 0; padding-inline: 7px; }
+  #master-knob { margin-left: auto; }
+
+  .panels {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'oscA'
+      'oscB'
+      'util'
+      'filter'
+      'env1'
+      'env2'
+      'lfos'
+      'matrix'
+      'eq'
+      'ott'
+      'comp'
+      'drive'
+      'chorus'
+      'echo'
+      'reverb'
+      'seq';
+    gap: 8px;
+  }
+  .panel { border-radius: 10px; padding: 8px; }
+  .panel-head { min-height: 28px; gap: 6px; }
+  .panel-head h2 { font-size: 9px; letter-spacing: 0.18em; }
+
+  .osc-body {
+    grid-template-columns: minmax(0, 1fr) 30px;
+    grid-template-rows: minmax(120px, 32vw) auto;
+  }
+  .osc-knobs {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px 2px;
+    justify-items: center;
+  }
+  .osc-knobs > .knob,
+  .osc-knobs > .stepper { min-width: 0; justify-self: center; }
+  .osc-knobs .knob-sm svg { width: 38px; height: 38px; }
+  .osc-knobs .knob-sm .k-label { font-size: 7px; letter-spacing: 0.08em; }
+  .panel-lfos { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .panel-matrix {
+    height: auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+  .matrix-rows { height: auto; max-height: 220px; }
+  .mx-row { min-width: 0; }
+  .panel-fx { min-height: 0; }
+
+  .ns-head { flex-wrap: wrap; gap: 6px; }
+  .ns-hint { order: 10; flex: 1 1 100%; margin-left: 0; white-space: normal; line-height: 1.35; }
+
+  .kb-bar { flex-direction: column; gap: 8px; }
+  .kb-side {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 7px 9px;
+  }
+  #keyboard { width: 100%; min-height: 112px; height: 112px; }
+}
+
+@media (pointer: coarse) and (max-width: 700px) {
+  .power-btn { width: 24px; height: 24px; }
+  .st-btn { width: 30px; height: 30px; }
+  .filter-tab { min-height: 32px; }
+  .lfo-tg { width: 38px; height: 30px; }
+  select { min-height: 36px; }
+}

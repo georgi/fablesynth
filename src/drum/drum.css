@@ -961,3 +961,84 @@
   letter-spacing: 0.16em;
 }
 .dr-spacer { flex: 1; }
+
+/* ============ phone layout ============ */
+@media (max-width: 700px) {
+  #drum-rack {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .dr-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 0;
+    padding: 9px;
+  }
+  .dr-header .brand { flex: 1 1 auto; min-width: 0; }
+  .dr-kitbar {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+  .dr-kitname,
+  .dr-name-input { flex: 1 1 0; min-width: 0; width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .dr-mode { order: 4; }
+  .dr-midi { display: none; }
+  .dr-tempo { order: 5; margin-left: auto; }
+  .dr-master { order: 6; height: 48px; }
+
+  .dr-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .dr-left,
+  .dr-right { gap: 8px; }
+  .dr-main.fit-pads { grid-template-columns: minmax(0, 1fr); }
+
+  #dr-oscrow,
+  #dr-editrow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .dr-edit-panel { min-height: 0; }
+  .dr-osc-section,
+  .dr-noise-section { min-height: 0; }
+  .dr-osc-body { grid-template-rows: minmax(126px, 35vw) auto; }
+  .dr-osc-knobs,
+  .dr-noise-knobs { gap: 2px; justify-content: space-around; }
+  .dr-osc-knobs .knob-sm svg,
+  .dr-noise-knobs .knob-sm svg { width: 38px; height: 38px; }
+  .dr-osc-knobs .knob-sm .k-label,
+  .dr-noise-knobs .knob-sm .k-label { font-size: 7px; letter-spacing: 0.08em; }
+
+  .dr-stepseq-head { flex-wrap: wrap; gap: 6px; min-height: 0; }
+  .dr-step-editing {
+    order: 10;
+    flex: 1 1 100%;
+    margin-left: 0;
+    white-space: normal;
+    line-height: 1.35;
+  }
+  .dr-lanes-wrap { max-width: 100%; overflow-x: auto; }
+  .dr-lanes-wrap > .dr-lanes,
+  .dr-lanes-wrap.single > .step-row { min-width: 512px; }
+  .dr-lane { min-width: 512px; }
+
+  .dr-fx-panel .fx-rack {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'eq'
+      'ott'
+      'comp'
+      'drive'
+      'chorus'
+      'echo'
+      'reverb'
+      'routing';
+    gap: 8px;
+  }
+}
