@@ -18,6 +18,7 @@
 #include <vector>
 #include <string>
 #include <atomic>
+#include <climits>
 #include <thread>
 
 using namespace fable;
@@ -1830,6 +1831,29 @@ int main() {
               std::to_string(dbRaw) + " -> " + std::to_string(dbSm) + " dB");
         check(dbFlat < -100.0, "static-cutoff reference sits at the measurement floor",
               std::to_string(dbFlat) + " dB");
+    }
+
+    printf("\n== 19. Parameter ramp clock stays bounded (finding J1) ==\n");
+    {
+        Engine e;
+        e.prepare(sr);
+        const int cutoff = FILTER1_BASE + FLT_CUTOFF;
+        e.paramTargets()[cutoff] = 6000.0f;
+        e.advanceParamSmoothingForTesting(INT_MAX);
+        const int rampLen = (int)(Engine::PARAM_RAMP_MAX_SEC * sr);
+        check(e.paramRampPositionForTesting() == rampLen,
+              "wavetable ramp cursor clamps at its duration",
+              std::to_string(e.paramRampPositionForTesting()));
+        check(e.smoothedParam(cutoff) == 6000.0f,
+              "wavetable ramp reaches its target after a large advance");
+
+        e.paramTargets()[cutoff] = 1200.0f;
+        e.advanceParamSmoothingForTesting(1);
+        check(e.paramRampPositionForTesting() == 1,
+              "wavetable retarget starts a fresh ramp",
+              std::to_string(e.paramRampPositionForTesting()));
+        check(e.smoothedParam(cutoff) > 1200.0f && e.smoothedParam(cutoff) < 6000.0f,
+              "wavetable retarget advances from the prior value");
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());

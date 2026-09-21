@@ -342,7 +342,8 @@ void Engine::beginParamRamp() {
 void Engine::smoothParams(int n) {
     if (!smoothParams_) return;
     const auto& kind = paramRampKind();
-    rampPos_ += n;
+    if (rampPos_ < rampLen_)
+        rampPos_ += std::min(n, rampLen_ - rampPos_);
     const double f = rampLen_ <= 0 ? 1.0 : std::min(1.0, (double)rampPos_ / (double)rampLen_);
     for (int i = 0; i < NUM_PARAMS; i++) {
         const float t = rampTarget_[(size_t)i];
@@ -357,6 +358,11 @@ void Engine::smoothParams(int n) {
                           ? (float)((double)s0 * std::pow((double)t / (double)s0, f))
                           : (float)((double)s0 + ((double)t - (double)s0) * f);
     }
+}
+
+void Engine::advanceParamSmoothingForTesting(int n) {
+    beginParamRamp();
+    smoothParams(n);
 }
 
 void Engine::noteOn(int n, double vel) {

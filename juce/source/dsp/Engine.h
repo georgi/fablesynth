@@ -232,6 +232,8 @@ public:
     // target-ramp clock. Neither exposes mutable DSP state.
     int combCapacity() const { return combCapacity_; }
     float smoothedParam(int id) const { return p_[(size_t)id]; }
+    void advanceParamSmoothingForTesting(int n);
+    int paramRampPositionForTesting() const { return rampPos_; }
 
     void noteOn(int note, double vel);
     void noteOff(int note);

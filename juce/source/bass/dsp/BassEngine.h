@@ -114,6 +114,8 @@ public:
     // plugin.
     void setParamSmoothing(bool on) { smoothParams_ = on; if (!on) snapParams(); }
     void setSwitchCrossfade(bool on) { switchXfade_ = on; }
+    void advanceParamSmoothingForTesting(int n);
+    int paramRampPositionForTesting() const { return rampPos_; }
 
     // Finding B3: res -> the SVF damping of both filter stages. Public so the
     // tests assert the shipping taper rather than a copy of it.

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -538,6 +539,29 @@ int main() {
         check(finite(controlL) && finite(transitionL) && crossing < 0.02,
               "ADAA enable ramps across the former threshold",
               num(crossing));
+    }
+
+    printf("\n== parameter ramp clock stays bounded (finding J1) ==\n");
+    {
+        BassEngine e;
+        e.prepare(SR);
+        e.setParam(BL_FLT_CUT, 6000.0f);
+        e.advanceParamSmoothingForTesting(INT_MAX);
+        const int rampLen = (int)(BL_PARAM_RAMP_MAX_SEC * SR);
+        check(e.paramRampPositionForTesting() == rampLen,
+              "bass ramp cursor clamps at its duration",
+              std::to_string(e.paramRampPositionForTesting()));
+        check(e.smoothedParams()[(size_t)BL_FLT_CUT] == 6000.0f,
+              "bass ramp reaches its target after a large advance");
+
+        e.setParam(BL_FLT_CUT, 1200.0f);
+        e.advanceParamSmoothingForTesting(1);
+        check(e.paramRampPositionForTesting() == 1,
+              "bass retarget starts a fresh ramp",
+              std::to_string(e.paramRampPositionForTesting()));
+        const float cut = e.smoothedParams()[(size_t)BL_FLT_CUT];
+        check(cut > 1200.0f && cut < 6000.0f,
+              "bass retarget advances from the prior value");
     }
 
     printf("\n== filter-type switch stays bounded (finding B8) ==\n");

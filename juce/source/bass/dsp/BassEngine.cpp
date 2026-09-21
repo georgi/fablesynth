@@ -192,7 +192,8 @@ void BassEngine::beginParamRamp(int) {
 // applyDiscreteParams before the first chunk.
 void BassEngine::advanceParams(int n) {
     if (!smoothParams_) { p_ = target_; return; }
-    rampPos_ += n;
+    if (rampPos_ < rampLen_)
+        rampPos_ += std::min(n, rampLen_ - rampPos_);
     const double f = rampLen_ <= 0 ? 1.0 : std::min(1.0, (double)rampPos_ / rampLen_);
     for (int i = 0; i < BL_NUM_PARAMS; ++i) {
         const size_t k = (size_t)i;
@@ -207,6 +208,11 @@ void BassEngine::advanceParams(int n) {
                   ? (float)(s0 * std::pow(t / s0, f))
                   : (float)(s0 + (t - s0) * f);
     }
+}
+
+void BassEngine::advanceParamSmoothingForTesting(int n) {
+    beginParamRamp(0);
+    advanceParams(n);
 }
 
 // Discrete parameters take effect once per render call — the sequencer reads
