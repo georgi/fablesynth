@@ -23,7 +23,10 @@ namespace fable {
 
 constexpr int NVOICES  = 8;
 constexpr int MAXUNI   = 16;
-constexpr int COMB_MAX = 4096;
+// The comb delay is sized in prepare() from the active sample rate.  This is
+// merely the small safe minimum for an unprepared engine; at 48 kHz the
+// prepared capacity remains 2402 samples (20 Hz + fractional-read headroom).
+constexpr int COMB_MIN_CAPACITY = 3;
 
 // Fast deterministic RNG (xorshift32) — replaces Math.random() for noise,
 // start-phase randomisation and S&H. Deterministic => reproducible tests.
@@ -82,6 +85,7 @@ struct FilterCore {
     double fmt[12] = {0};   // formant: 2 ch x 3 bands x (s1, s2)
     double satXL = 0, satXR = 0;       // ADAA drive: previous input per channel
     double drive = 0;                  // ADAA drive amount for this run
+    double driveMix = 0, driveMixTarget = 0; // dry <-> ADAA transition state
     double cutSm = 0;
     // k1 damps SVF stage 1, k2 stage 2. They differ only for LP24, where the
     // resonance now lives in ONE stage (finding B3); every other type sets
@@ -98,8 +102,10 @@ struct FilterCore {
 struct FilterState {
     FilterCore c;                      // live configuration
     FilterCore old;                    // frozen pre-switch copy (J2 crossfade)
-    std::array<float, COMB_MAX> combL{};
-    std::array<float, COMB_MAX> combR{};
+    // Allocated only by Engine::prepare(), never from render(). A fixed 4096
+    // sample line silently shortened a 20 Hz comb at high sample rates.
+    std::vector<float> combL, combR;
+    void   prepare(int combCapacity);
     void   reset();
 };
 
@@ -198,8 +204,8 @@ public:
     // Direct (snapped) parameter access — preset loads, state restore and the
     // offline harness. Both arrays move together so the smoothers below have
     // nothing to chase.
-    void setParam(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = v; }
-    void setParams(const ParamArray& p) { p_ = ps_ = pt_ = p; }
+    void setParam(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = rampTarget_[(size_t)id] = v; }
+    void setParams(const ParamArray& p) { p_ = ps_ = pt_ = rampTarget_ = p; }
     // NOTE: an engine driven by paramTargets() must not also be written through
     // params() — the ramp would pull the direct write back to the last target.
     // Nothing does today: the plugin uses paramTargets() exclusively and SQ-4
@@ -222,6 +228,10 @@ public:
     // leaves no line at the block rate.
     ParamArray& paramTargets() { smoothParams_ = true; return pt_; }
     static constexpr double PARAM_RAMP_MAX_SEC = 0.050;
+    // Narrow native-test hooks for the prepare-time comb allocation and the
+    // target-ramp clock. Neither exposes mutable DSP state.
+    int combCapacity() const { return combCapacity_; }
+    float smoothedParam(int id) const { return p_[(size_t)id]; }
 
     void noteOn(int note, double vel);
     void noteOff(int note);
@@ -347,7 +357,7 @@ public:
     bool   vizModAny = false;
 
 private:
-    void beginParamRamp(int n);        // finding J1, once per render() call
+    void beginParamRamp();             // once per target change, sample-clocked
     void smoothParams(int n);          // finding J1, per render chunk
     // Crossfade length for a discrete switch (finding J2): 3 ms, sample-rate
     // derived, matching the DR-1 engine's filter-type fade.
@@ -390,6 +400,7 @@ private:
     ParamArray p_ = defaultParams();   // smoothed values the DSP reads
     ParamArray pt_ = defaultParams();  // automation targets (finding J1)
     ParamArray ps_ = defaultParams();  // ramp start: p_ as of this render() entry
+    ParamArray rampTarget_ = defaultParams(); // target that armed the current ramp
     int rampLen_ = 0, rampPos_ = 0;    // automation ramp, in samples
     bool smoothParams_ = false;        // set by paramTargets()
 
@@ -419,6 +430,7 @@ private:
     int lfoXfRemain_[2] = {0, 0}, lfoXfLen_[2] = {0, 0};
     std::array<Voice, NVOICES> voices_;
     double sr_ = 48000;
+    int    combCapacity_ = COMB_MIN_CAPACITY;
     // Sample-rate-derived per-sample coefficients (Finding 9), set in prepare():
     // DC-blocker pole and Kellet pink-noise poles/gains mapped from their
     // 48 kHz reference so 44.1/48/96/192 kHz produce the same spectra.

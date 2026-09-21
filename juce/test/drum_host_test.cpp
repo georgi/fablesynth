@@ -11,7 +11,23 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <new>
 #include <vector>
+
+// Count ordinary C++ heap allocations on the callback thread only.
+static thread_local bool countDrumCallbackAllocations = false;
+static thread_local size_t drumCallbackAllocations = 0;
+void* operator new(std::size_t size) {
+    if (countDrumCallbackAllocations) ++drumCallbackAllocations;
+    if (auto* p = std::malloc(size ? size : 1)) return p;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 static int g_fail = 0;
 static void check(bool c, const char* msg, double val = 0) {
@@ -85,6 +101,37 @@ int main(int argc, char** argv) {
 
     check(proc.getLatencySamples() > 0, "FX latency reported to the host",
           proc.getLatencySamples());
+
+    // Pattern/chain edits coalesce without blocking or allocating in audio.
+    // The old engine vector grew here when the chain expanded from one to four.
+    {
+        DrumAudioProcessor edited;
+        edited.enableAllBuses();
+        edited.prepareToPlay(sr, block);
+        juce::AudioBuffer<float> editBuffer(10, block);
+        juce::MidiBuffer empty;
+        edited.processBlock(editBuffer, empty); // warm lazy framework state
+        for (int pattern = 0; pattern < fable::DR_NPATTERNS; ++pattern)
+            for (int pad = 0; pad < fable::DR_NPADS; ++pad)
+                for (int step = 0; step < fable::DR_STEPS; ++step)
+                    edited.setStep(pattern, pad, step, 0);
+        edited.setChain({1, 1});
+        edited.setChain({3, 2, 1, 0}); // the latest complete snapshot wins
+        edited.setStep(3, 2, 0, 2);
+        edited.setSeqPlaying(true);
+        drumCallbackAllocations = 0;
+        countDrumCallbackAllocations = true;
+        edited.processBlock(editBuffer, empty);
+        countDrumCallbackAllocations = false;
+        check(drumCallbackAllocations == 0, "growing chain and applying patterns allocate nothing in callback",
+              (double)drumCallbackAllocations);
+        check(edited.getCurrentPattern() == 3 && edited.consumeHitFlags() == (1u << 2),
+              "latest pattern and four-entry chain reach audio together");
+        edited.releaseResources();
+    }
+
+    if (argc > 1 && juce::String(argv[1]) == "--dsp-review")
+        return g_fail == 0 ? 0 : 1;
 
     // Sample-accurate MIDI: a pad trigger at offset K on a clean processor
     // must leave MAIN [0, K) exactly silent, with signal appearing at/after K

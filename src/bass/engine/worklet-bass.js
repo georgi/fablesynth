@@ -41,6 +41,8 @@ const CUT_TAU = 128 / (48000 * Math.LN2);
 // accented step) fades in over this time instead of stepping the amp gain and
 // the filter-env peak at the chunk boundary. A fresh note-on snaps.
 const ACC_TAU = 0.008;
+const ADAA_FULL_DRIVE = 0.01;
+const ADAA_MIX_C = 1 - Math.exp(-1 / (0.005 * sampleRate));
 // Cutoff coefficient update rate inside a chunk (samples).
 const FLT_SUB = 32;
 // Cycles per beat for each lfo.rate index — mirrors LFO_DIV_F in src/params.ts.
@@ -885,7 +887,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.svf = new Float64Array(8);
     this.cutSm = 0; this.curCut = 0;
     this.cutTarget = 0; this.cutPrev = -1; // chunk cutoff ramp
-    this.satXL = 0; this.satXR = 0;
+    this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
     this.ftype = 1; this.twoPole = true;
     this.k1 = 0; this.k2 = 0;
     this.accSm = 0; // ramped accent amount (0..1)
@@ -1183,7 +1185,7 @@ class BassProcessor extends AudioWorkletProcessor {
   kill() {
     this.gate = false; this.acc = false; this.ampStage = 0; this.ampLevel = 0;
     this.fenvT = 1e9;
-    this.svf.fill(0); this.satXL = 0; this.satXR = 0;
+    this.svf.fill(0); this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
     this.posSm = -1; this.cutSm = 0; this.cutPrev = -1; this.cutTarget = 0;
     this.accSm = 0;
     this.phases.fill(0);
@@ -1517,7 +1519,7 @@ class BassProcessor extends AudioWorkletProcessor {
       // A type switch changes what the states mean — the LP24 second stage in
       // particular keeps ringing into the new response. Start clean.
       this.svf.fill(0);
-      this.satXL = 0; this.satXR = 0;
+      this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
     }
     this.ftype = ftype;
     this.twoPole = ftype === 1;
@@ -1595,7 +1597,8 @@ class BassProcessor extends AudioWorkletProcessor {
   // value and the coefficients are recomputed every FLT_SUB samples — holding
   // one cutoff per chunk puts an audible step on every filter-env sweep.
   runFilter(inL, inR, outL, outR, drive, n, mono) {
-    if (drive > 0.005) {
+    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FULL_DRIVE));
+    if (adaaTarget > 0 || this.adaaMix > 1e-6) {
       const dg = 1 + drive * 7;
       const dcomp = 1 / Math.pow(dg, 0.55);
       const kF = dcomp / dg;
@@ -1606,7 +1609,9 @@ class BassProcessor extends AudioWorkletProcessor {
           const aL = inL[i];
           const dxL = aL - xpL;
           const FL = kF * lcosh(dg * aL);
-          outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
+          const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
+          this.adaaMix += (adaaTarget - this.adaaMix) * ADAA_MIX_C;
+          outL[i] = aL + this.adaaMix * (satL - aL);
           xpL = aL; FpL = FL;
         }
         this.satXL = xpL; this.satXR = xpL;
@@ -1617,11 +1622,14 @@ class BassProcessor extends AudioWorkletProcessor {
           const aL = inL[i], aR = inR[i];
           const dxL = aL - xpL;
           const FL = kF * lcosh(dg * aL);
-          outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
+          const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
           xpL = aL; FpL = FL;
           const dxR = aR - xpR;
           const FR = kF * lcosh(dg * aR);
-          outR[i] = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+          const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+          this.adaaMix += (adaaTarget - this.adaaMix) * ADAA_MIX_C;
+          outL[i] = aL + this.adaaMix * (satL - aL);
+          outR[i] = aR + this.adaaMix * (satR - aR);
           xpR = aR; FpR = FR;
         }
         this.satXL = xpL; this.satXR = xpR;

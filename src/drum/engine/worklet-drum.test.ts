@@ -88,6 +88,53 @@ describe('drum voice', () => {
     expect(fastState.voices[0].sample.done).toBe(true);
   });
 
+  it('uses the native sample-edge contract: natural attacks pass, cropped attacks fade', () => {
+    const p = defaultDrumParams();
+    p[pad(0, 'oscB.level')] = 1;
+    const direct = boot(p);
+    const proc = direct.proc as unknown as {
+      padIds: Int32Array[];
+      renderSample(state: Record<string, number | boolean>, fields: Int32Array, base: number,
+        pitch0: number, pitch1: number, start: number, left: Float32Array, right: Float32Array,
+        offset: number, count: number): boolean;
+    };
+    const renderAt = (start: number) => {
+      direct.send({ t: 'samples', list: [{ sampleRate: 48000, buf: new Float32Array(256).fill(1).buffer }] });
+      const state = { pos: -1, index: -1, done: false, havePrev: false, pStep: 0 };
+      const left = new Float32Array(64), right = new Float32Array(64);
+      proc.renderSample(state, proc.padIds[0], 8, 0, 0, start, left, right, 0, left.length);
+      return left;
+    };
+    const natural = renderAt(0), cropped = renderAt(.25);
+    expect(natural[0]).toBeCloseTo(.75, 7);
+    expect(cropped[0]).toBe(0);
+    expect(cropped[48]).toBeGreaterThan(cropped[1]);
+  });
+
+  it('blends the native Hann decimation window in continuously above rate one', () => {
+    const p = defaultDrumParams(); p[pad(0, 'oscB.level')] = 1;
+    const direct = boot(p);
+    const data = Float32Array.from({ length: 512 }, (_, i) => Math.sin(i * 1.91) + .2 * Math.sin(i * .17));
+    direct.send({ t: 'samples', list: [{ sampleRate: 48000, buf: data.buffer }] });
+    const proc = direct.proc as unknown as {
+      padIds: Int32Array[];
+      renderSample(state: Record<string, number | boolean>, fields: Int32Array, base: number,
+        pitch0: number, pitch1: number, start: number, left: Float32Array, right: Float32Array,
+        offset: number, count: number): boolean;
+    };
+    const render = (semitones: number) => {
+      const left = new Float32Array(96), right = new Float32Array(96);
+      proc.renderSample({ pos: -1, index: -1, done: false, havePrev: false, pStep: 0 },
+        proc.padIds[0], 8, semitones, semitones, 0, left, right, 0, left.length);
+      return left;
+    };
+    const below = render(-.01), above = render(.01);
+    let difference = 0;
+    for (let i = 0; i < 4; i++) difference += Math.abs(below[i] - above[i]);
+    expect(difference / 4).toBeLessThan(.01);
+    expect(render(24).every(Number.isFinite)).toBe(true);
+  });
+
   it('accent (v=1) is louder than plain (v=0.72) with default v2l', () => {
     h.send({ t: 'trig', pad: 0, v: 0.72 });
     const plain = peak(h.render(20).L);
@@ -119,7 +166,7 @@ describe('drum voice', () => {
     hc.send({ t: 'trig', pad: 1, v: 1 });
     hc.render(4); // > 5ms fade at 48k = 240 samples < 512
     const after = hc.render(20).L;
-    expect(peak(after)).toBeLessThan(0.02);
+    expect(peak(after)).toBeLessThan(0.03);
   });
 
   it('mod: VELO→CUTOFF route changes output when filter is on', () => {

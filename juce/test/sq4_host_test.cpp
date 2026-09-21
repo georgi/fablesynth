@@ -73,6 +73,7 @@ static double renderRms(SeqAudioProcessor& p, juce::AudioBuffer<float>& buf, int
 }
 
 #include "render_session.h"
+#include "SeqOutputChecks.h"
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI gui; // message manager for the processor
@@ -84,6 +85,74 @@ int main(int argc, char** argv) {
         return renderSessionFile(juce::File(argv[2]), juce::File(argv[3]));
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
+    SeqOutputTestAccess::run();
+
+    // Hosted DR-1 folds all five processed buses into its one stereo track.
+    // Routing a lone pad to AUX must match MAIN, including the group strip.
+    {
+        auto renderRoute = [](int bus, bool groupDrive) {
+            SeqAudioProcessor hosted;
+            hosted.prepareToPlay(48000, 128);
+            auto params = fable::defaultDrumParams();
+            params[fable::dpid(0, fable::DP_OUT)] = (float)bus;
+            params[fable::dpid(0, fable::DP_OSCA_LEVEL)] = 0;
+            params[fable::dpid(0, fable::DP_OSCB_LEVEL)] = 0.5f;
+            params[fable::dpid(0, fable::DP_OSCB_TABLE)] = 0;
+            params[fable::dpid(0, fable::DP_NOISE_LEVEL)] = 0;
+            params[fable::dpid(0, fable::DP_FLT_ON)] = 0;
+            for (int field : {fable::DP_FXCOMP_ON, fable::DP_FXCHORUS_ON,
+                              fable::DP_FXDELAY_ON, fable::DP_FXREVERB_ON, fable::DP_FXDRIVE_ON}) {
+                params[fable::dpid(0, field)] = 0;
+                params[fable::dgfx(field)] = 0;
+            }
+            params[fable::dgfx(fable::DP_FXDRIVE_ON)] = groupDrive ? 1 : 0;
+            params[fable::dgfx(fable::DP_FXDRIVE_AMT)] = 0.8f;
+            params[fable::dgfx(fable::DP_FXDRIVE_MIX)] = 1;
+            std::unordered_map<std::string, float> values;
+            const auto& info = fable::drumParamInfo();
+            for (size_t i = 0; i < params.size(); ++i) values[info[i].pid] = params[i];
+            hosted.setTrackInlineParams(0, values);
+            juce::AudioBuffer<float> buffer(2, 128);
+            renderRms(hosted, buffer, 100); // settle all patch/gain smoothers
+            hosted.auditionDrum(0, 1);
+            std::vector<float> result;
+            for (int b = 0; b < 64; ++b) {
+                juce::MidiBuffer midi;
+                hosted.processBlock(buffer, midi);
+                result.insert(result.end(), buffer.getReadPointer(0), buffer.getReadPointer(0) + 128);
+                result.insert(result.end(), buffer.getReadPointer(1), buffer.getReadPointer(1) + 128);
+            }
+            hosted.releaseResources();
+            return result;
+        };
+        std::vector<float> clean;
+        for (bool groupDrive : {false, true}) {
+            const auto main = renderRoute(0, groupDrive);
+            double energy = 0;
+            for (float x : main) energy += x * x;
+            check(energy > 0.001, "hosted routing reference is audible", energy);
+            if (!groupDrive) clean = main;
+            else {
+                double change = 0;
+                for (size_t i = 0; i < main.size(); ++i) change += std::abs(main[i] - clean[i]);
+                check(change > 0.01, "hosted group drive changes the routed signal", change);
+            }
+            for (int bus = 1; bus < fable::DR_NBUSES; ++bus) {
+                const auto aux = renderRoute(bus, groupDrive);
+                double error = 0;
+                bool finiteOutput = true;
+                for (size_t i = 0; i < aux.size(); ++i) {
+                    finiteOutput &= std::isfinite(aux[i]);
+                    error = std::max(error, std::abs((double)aux[i] - main[i]));
+                }
+                check(finiteOutput && error < 1e-6,
+                      groupDrive ? "processed AUX matches hosted MAIN" : "dry AUX matches hosted MAIN", error);
+            }
+        }
+    }
+
+    if (argc > 1 && juce::String(argv[1]) == "--drum-routing")
+        return failures == 0 ? 0 : 1;
 
     // Native USER/IMPORTED persistence and portable .sqclip validation.
     {
@@ -346,6 +415,22 @@ int main(int argc, char** argv) {
     for (int t = 0; t < 4; ++t)
         check(p.trackStep[t].load() >= 0, "track step position published",
               p.trackStep[t].load());
+
+    if (auto* vol1 = p.apvts.getParameter("vol1")) {
+        const float before = p.conductor().trackVol(1);
+        vol1->setValueNotifyingHost(vol1->convertTo0to1(0.0f));
+        renderRms(p, buf, 100);
+        check(p.trackRms[1].load() < 1e-5f,
+              "audio-thread musical snapshot mutes an automated fader without timer",
+              p.trackRms[1].load());
+        check(std::abs(p.conductor().trackVol(1) - before) < 1e-6f,
+              "fader audio snapshot does not require message-thread session polling",
+              p.conductor().trackVol(1));
+        vol1->setValueNotifyingHost(vol1->convertTo0to1(before));
+        renderRms(p, buf, 100);
+    } else {
+        check(false, "vol1 APVTS parameter exists for audio-thread snapshot test");
+    }
 
     // ---- 3. Every sample finite (asserted inside renderRms). ----
 

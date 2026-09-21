@@ -292,7 +292,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SeqAudioProcessor::createLay
     return layout;
 }
 
-// ---- master safety limiter -------------------------------------------------
+// ---- legacy master compressor ---------------------------------------------
 // The WT/DR/BL web DynamicsCompressorNode port: threshold -6 dB, knee 4 dB,
 // ratio 12, attack 2 ms, release 250 ms, spec-defined implicit makeup gain.
 namespace {
@@ -338,7 +338,6 @@ void SeqAudioProcessor::MasterFx::setParams(const std::array<float, 33>& p) {
 
 void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n) {
     eq.process(l, r, n);
-    float limiterIn = 0.0f, limiterOut = 0.0f, limiterReduction = 0.0f;
     for (int i = 0; i < n; ++i) {
         meter.level(fable::FxTelemetry::ottIn, l[i], r[i]);
         double ottL, ottR;
@@ -356,17 +355,56 @@ void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n) {
             const float gain = ceiling / inPeak;
             outL *= gain;
             outR *= gain;
-            limiterReduction = juce::jmax(limiterReduction, -20.0f * std::log10(gain));
         }
-        limiterIn = juce::jmax(limiterIn, inPeak);
-        limiterOut = juce::jmax(limiterOut, juce::jmax(std::abs(outL), std::abs(outR)));
         l[i] = outL;
         r[i] = outR;
         meter.finish(ott, comp, 0.0);
     }
-    limiterInDb.store(fable::FxMeter::db(limiterIn), std::memory_order_relaxed);
-    limiterOutDb.store(fable::FxMeter::db(limiterOut), std::memory_order_relaxed);
-    limiterReductionDb.store(limiterOn ? limiterReduction : 0.0f, std::memory_order_relaxed);
+}
+
+void SeqAudioProcessor::processMaster(float* l, float* r, int n) {
+    masterFx_.process(l, r, n);
+    float inputPeak = 0, outputPeak = 0;
+    double minimumGain = 1.0;
+    const double ceiling = masterFx_.limiterOn ? masterFx_.ceiling : fable::LookaheadLimiter::kCeiling;
+    for (int i = 0; i < n; ++i) {
+        const float gain = masterGain_.getNextValue();
+        l[i] *= gain; r[i] *= gain;
+        limiter_.process(l[i], r[i]);
+        inputPeak = std::max(inputPeak, std::max(std::abs(l[i]), std::abs(r[i])));
+        minimumGain = std::min(minimumGain, outputLimiter_.process(l[i], r[i], ceiling));
+        outputPeak = std::max(outputPeak, std::max(std::abs(l[i]), std::abs(r[i])));
+    }
+    // The limiter meters now describe the final safety stage, including the
+    // legacy compressor's makeup. Configurable FX bypass retains output safety.
+    masterFx_.limiterInDb.store(fable::FxMeter::db(inputPeak), std::memory_order_relaxed);
+    masterFx_.limiterOutDb.store(fable::FxMeter::db(outputPeak), std::memory_order_relaxed);
+    masterFx_.limiterReductionDb.store((float)(-20.0 * std::log10(minimumGain)), std::memory_order_relaxed);
+}
+
+void SeqAudioProcessor::alignTrack(int track, float* l, float* r, int n) {
+    const auto t = (size_t)track;
+    const int delay = trackDelaySamples_[t];
+    if (delay == 0) return;
+    auto& left = trackDelay_[t][0];
+    auto& right = trackDelay_[t][1];
+    for (int i = 0; i < n; ++i) {
+        const float dl = left.read(delay), dr = right.read(delay);
+        left.write(l[i]); right.write(r[i]);
+        l[i] = dl; r[i] = dr;
+    }
+}
+
+double SeqAudioProcessor::getTailLengthSeconds() const {
+    // Static bound: hosts may query before prepare or while patches change.
+    // Allow two serial drum pad/group delay+reverb chains, the longest voice
+    // release (12 s), and output/filter settling. -160 dB loop decay leaves
+    // 60 dB of downstream headroom above a -100 dBFS silence threshold.
+    // Delay: 1.5 s maximum plus modulation margin, feedback <= .92.
+    // Reverb: .98 feedback and <50 ms longest comb/allpass loop at any rate.
+    const double delayTail = 1.6 * std::ceil(std::log(1.0e-8) / std::log(0.92));
+    const double reverbTail = 0.05 * std::ceil(std::log(1.0e-8) / std::log(0.98));
+    return std::ceil(12.0 + 2.0 * (delayTail + reverbTail) + 1.0);
 }
 
 // ---- construction ----------------------------------------------------------
@@ -662,17 +700,23 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     for (int t = 0; t < kTracks; ++t)
         loadTrackParams(t, computeTrackParams(t, liveSession.tracks[(size_t)t].patch));
 
-    trackBuf_.setSize(2, samplesPerBlock);
-    drumAux_.setSize(2 * (DR_NBUSES - 1), samplesPerBlock);
+    const int capacity = std::max(1, samplesPerBlock);
+    trackBuf_.setSize(2, capacity);
+    masterBuf_.setSize(2, capacity);
+    drumAux_.setSize(2 * (DR_NBUSES - 1), capacity);
     limiter_.prepare(sampleRate);
     masterFx_.prepare(sampleRate);
+    outputLimiter_.prepare(sampleRate, 1.0);
 
-    // Finding J7: every device chain delays its track by its drive-FIR +
-    // lookahead-limiter latency, so report it and let the DAW compensate. The
-    // master Limiter is feed-forward (no lookahead) and adds nothing. Tracks
-    // are summed, so the reported figure is the longest chain.
-    setLatencySamples(std::max(std::max(drum_.latencySamples(), bassFx_.latencySamples()),
-                               std::max(wtFx_[0].latencySamples(), wtFx_[1].latencySamples())));
+    const std::array<int, kTracks> latencies {{ drum_.latencySamples(), bassFx_.latencySamples(),
+                                              wtFx_[0].latencySamples(), wtFx_[1].latencySamples() }};
+    const int longest = *std::max_element(latencies.begin(), latencies.end());
+    for (int t = 0; t < kTracks; ++t) {
+        trackDelaySamples_[(size_t)t] = longest - latencies[(size_t)t];
+        for (auto& channel : trackDelay_[(size_t)t])
+            channel.prepare(trackDelaySamples_[(size_t)t] + 1);
+    }
+    setLatencySamples(longest + outputLimiter_.latencySamples());
 
     for (int t = 0; t < kTracks; ++t) {
         trackGain_[t].reset(sampleRate, 0.015);
@@ -704,6 +748,9 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     drum_.hostTempo(liveSession.bpm, sw, a);
     bass_.hostTempo(liveSession.bpm, sw, a);
     for (int i = 0; i < 2; ++i) wt_[i].hostTempo(liveSession.bpm, sw, a);
+    audioTempoReady_ = true;
+    audioBpm_ = liveSession.bpm; audioSwing_ = sw; audioTempoAnchor_ = a;
+    trackOpen_.fill(false);
 
     lastSwing_ = rawSwing_->load();
     lastBpm_   = rawBpm_->load();
@@ -758,12 +805,15 @@ void SeqAudioProcessor::drainCmds() {
                     }
                 } break;
                 case Cmd::K::Gain:
-                    trackGain_[c.t].setTargetValue(c.gain);
+                    trackOpen_[(size_t)c.t] = c.gain > 0.0f;
                     break;
                 case Cmd::K::Tempo:
-                    drum_.hostTempo(c.bpm, c.swing, c.anchor);
-                    bass_.hostTempo(c.bpm, c.swing, c.anchor);
-                    for (int wtIndex = 0; wtIndex < 2; ++wtIndex) wt_[wtIndex].hostTempo(c.bpm, c.swing, c.anchor);
+                    audioTempoReady_ = true;
+                    audioBpm_ = c.bpm; audioSwing_ = c.swing; audioTempoAnchor_ = c.anchor;
+                    drum_.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
+                    bass_.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
+                    for (int wtIndex = 0; wtIndex < 2; ++wtIndex)
+                        wt_[wtIndex].hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
                     break;
                 case Cmd::K::Patch:
                     loadTrackParams(c.t, *c.params);
@@ -872,6 +922,43 @@ void SeqAudioProcessor::pollSessionParams() {
     }
 }
 
+SeqAudioProcessor::MusicalParams SeqAudioProcessor::snapshotMusicalParams() const {
+    MusicalParams values;
+    auto finiteOr = [](const std::atomic<float>* raw, float fallback) {
+        const float value = raw ? raw->load(std::memory_order_relaxed) : fallback;
+        return std::isfinite(value) ? value : fallback;
+    };
+    values.master = finiteOr(rawMaster_, 0.75f);
+    values.swing = finiteOr(rawSwing_, 0.0f);
+    values.bpm = finiteOr(rawBpm_, 122.0f);
+    for (int t = 0; t < kTracks; ++t)
+        values.vol[(size_t)t] = finiteOr(rawVol_[t], 0.75f);
+    return values;
+}
+
+void SeqAudioProcessor::applyMusicalParams(const MusicalParams& values) {
+    const double bpm = juce::jlimit(60.0, 200.0, (double)values.bpm);
+    const double swing = juce::jlimit(0.0, 1.0, (double)values.swing);
+    if (!audioTempoReady_) {
+        audioTempoReady_ = true;
+        audioBpm_ = bpm; audioSwing_ = swing;
+    } else if (bpm != audioBpm_ || swing != audioSwing_) {
+        if (bpm != audioBpm_)
+            audioTempoAnchor_ = frame_ - (frame_ - audioTempoAnchor_) * audioBpm_ / bpm;
+        audioBpm_ = bpm; audioSwing_ = swing;
+        drum_.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
+        bass_.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
+        for (auto& wt : wt_) wt.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
+    }
+
+    masterGain_.setTargetValue(juce::jlimit(0.0f, 1.0f, values.master));
+    for (int t = 0; t < kTracks; ++t) {
+        const float fader = juce::jlimit(0.0f, 1.0f, values.vol[(size_t)t]);
+        trackGain_[t].setTargetValue(trackOpen_[(size_t)t]
+            ? fable::Conductor::gainCurve(fader) : 0.0f);
+    }
+}
+
 // ---- render helpers --------------------------------------------------------
 
 void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
@@ -883,6 +970,17 @@ void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
         outs[b][1] = drumAux_.getWritePointer(2 * (b - 1) + 1);
     }
     drum_.render(outs, n);         // zero-fills all buses, pads accumulate
+    // Hosted DR-1 has one stereo track: fold every processed output into it.
+    // Unity summing preserves MAIN-only levels and the track/master safety
+    // stages provide the final headroom contract.
+    for (int b = 1; b < DR_NBUSES; ++b) {
+        const float* auxL = drumAux_.getReadPointer(2 * (b - 1));
+        const float* auxR = drumAux_.getReadPointer(2 * (b - 1) + 1);
+        for (int i = 0; i < n; ++i) {
+            L[i] += auxL[i];
+            R[i] += auxR[i];
+        }
+    }
     drumVizA_.store(drum_.vizA, std::memory_order_relaxed);
     drumVizB_.store(drum_.vizB, std::memory_order_relaxed);
     drumVizEnv_.store(drum_.vizEnv, std::memory_order_relaxed);
@@ -926,7 +1024,7 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const int n = buffer.getNumSamples();
 
     drainCmds();
-    masterGain_.setTargetValue(rawMaster_ ? rawMaster_->load() : 0.75f);
+    applyMusicalParams(snapshotMusicalParams());
     std::array<float, 33> masterFxValues {};
     for (size_t i = 0; i < masterFxValues.size(); ++i)
         masterFxValues[i] = rawMasterFx_[i] ? rawMasterFx_[i]->load(std::memory_order_relaxed)
@@ -960,8 +1058,9 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     for (int off = 0; off < n; off += cap) {
         const int c = std::min(cap, n - off);
         frame_ = base + off;                         // engines render this chunk from here
-        float* oL = outL + off;
-        float* oR = (stereo ? outR : outL) + off;
+        masterBuf_.clear(0, c);
+        float* oL = masterBuf_.getWritePointer(0);
+        float* oR = masterBuf_.getWritePointer(1);
 
         for (int t = 0; t < kTracks; ++t) {
             switch (t) {
@@ -969,24 +1068,24 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 case 1: renderBass(tl, tr, c); break;
                 default: renderWt(t - 2, tl, tr, c); break;
             }
+            alignTrack(t, tl, tr, c);
             double sumSq = 0.0;
             for (int i = 0; i < c; ++i) {
                 const float g = trackGain_[t].getNextValue();
                 const float l = tl[i] * g, r = tr[i] * g;
-                if (stereo) { oL[i] += l; oR[i] += r; }
-                else        { oL[i] += 0.5f * (l + r); }
+                oL[i] += l; oR[i] += r;
                 sumSq += (double)l * l + (double)r * r;
             }
             trackSumSq[t] += sumSq;
         }
 
-        // Post-fader master FX -> gain -> safety limiter -> output.
-        if (stereo) masterFx_.process(oL, oR, c);
+        // Preserve stereo through all master FX and linked limiting. Averaging
+        // these bounded channels also bounds mono without changing FX behavior.
+        processMaster(oL, oR, c);
         for (int i = 0; i < c; ++i) {
-            const float g = masterGain_.getNextValue();
-            float l = oL[i] * g, r = (stereo ? oR[i] : oL[i]) * g;
-            limiter_.process(l, r);
-            oL[i] = l; if (stereo) oR[i] = r;
+            const float l = oL[i], r = oR[i];
+            outL[off + i] = stereo ? l : 0.5f * (l + r);
+            if (stereo) outR[off + i] = r;
             scopeRing_[(size_t)((scopeW + off + i) & (kScopeSize - 1))] = 0.5f * (l + r);
         }
 

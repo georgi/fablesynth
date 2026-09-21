@@ -107,7 +107,7 @@ public:
     void setParam(int id, float v) { target_[(size_t)id] = v; }
     void setParams(const BassParamArray& p) { target_ = p; }
     BassParamArray& params() { return target_; }
-    void snapParams() { p_ = target_; }
+    void snapParams() { p_ = ps_ = rampTarget_ = target_; rampPos_ = rampLen_ = 0; }
     const BassParamArray& smoothedParams() const { return p_; }
     // Test hooks: turn the J1 smoother / the J2 switch crossfade off so a test
     // can measure the same render with and without the fix. Always on in the
@@ -264,6 +264,7 @@ private:
     BassParamArray target_ = defaultBassParams();   // host/UI block targets
     BassParamArray p_ = defaultBassParams();        // smoothed values the DSP reads
     BassParamArray ps_ = defaultBassParams();       // where this call's ramp starts
+    BassParamArray rampTarget_ = defaultBassParams(); // target that armed the current ramp
     int rampPos_ = 0, rampLen_ = 0;
     bool smoothParams_ = true, switchXfade_ = true;
     double sr_ = 48000;
@@ -334,6 +335,7 @@ private:
     double cutSm_ = 0, curCut_ = 0;
     double cutTarget_ = 0, cutPrev_ = -1;   // chunk cutoff ramp (Finding 7)
     double satXL_ = 0, satXR_ = 0;
+    double driveMix_ = 0;                    // dry <-> ADAA transition state
     int    ftype_ = 1; bool twoPole_ = true;
     double k1_ = 0, k2_ = 0;
     double fenvVal_ = 0;

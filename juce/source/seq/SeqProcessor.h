@@ -81,7 +81,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 6.0; }
+    double getTailLengthSeconds() const override;
 
     int getNumPrograms() override;
     int getCurrentProgram() override;
@@ -209,6 +209,7 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
+    friend struct SeqOutputTestAccess;
     std::array<std::atomic<std::uint64_t>, 4> trackPatchRevision_ {};
     std::uint64_t agentEditRevision_ = 0;
     fable::AudioMeter agentOutputMeter_;
@@ -289,6 +290,17 @@ private:
     // ---- session param polling (message thread) -----------------------------
     void pollSessionParams();
 
+    // APVTS raw values are atomic, so processBlock snapshots the musical
+    // surface once and applies it on the audio thread. The timer still mirrors
+    // changes into the editable session document, but sound no longer waits
+    // for a message-loop turn during offline/headless rendering.
+    struct MusicalParams {
+        float master = 0.75f, swing = 0.0f, bpm = 122.0f;
+        std::array<float, kTracks> vol {{ 0.75f, 0.75f, 0.75f, 0.75f }};
+    };
+    MusicalParams snapshotMusicalParams() const;
+    void applyMusicalParams(const MusicalParams& values);
+
     // applySessionJson minus the history clear — the shared restore path used
     // by external loads AND by undo/redo (which must keep their stacks).
     bool restoreSessionJson(const juce::String& json);
@@ -360,7 +372,12 @@ private:
         }
     } masterFx_;
 
-    // Master safety limiter — the WT/DR/BL web DynamicsCompressorNode port,
+    void processMaster(float* l, float* r, int n);
+    fable::LookaheadLimiter outputLimiter_; // unity makeup, after every master gain stage
+
+    // Legacy master compressor — retained for existing session sound. The
+    // actual sample-peak safety limiter follows it (outputLimiter_).
+    // WT/DR/BL web DynamicsCompressorNode port,
     // configured threshold -6 dB, knee 4 dB, ratio 12, attack 2 ms, release
     // 250 ms (declared/defined in SeqProcessor.cpp).
     struct Limiter {
@@ -370,7 +387,13 @@ private:
         void process(float& l, float& r);
     } limiter_;
 
-    // per-track render scratch + DR-1 AUX backing (sized in prepareToPlay).
+    void alignTrack(int track, float* l, float* r, int n);
+    std::array<std::array<fable::DelayLine, 2>, kTracks> trackDelay_;
+    std::array<int, kTracks> trackDelaySamples_ {};
+
+    // Stereo summing precedes master processing even for a mono host layout.
+    // All scratch/delay storage is sized only in prepareToPlay.
+    juce::AudioBuffer<float> masterBuf_; // 2 ch
     juce::AudioBuffer<float> trackBuf_; // 2 ch
     juce::AudioBuffer<float> drumAux_;  // 8 ch (AUX 1..4)
 
@@ -393,6 +416,10 @@ private:
     std::atomic<float>* rawBpm_ = nullptr;
     std::atomic<float>* rawVol_[4] {};
     float lastSwing_ = 0, lastBpm_ = 0, lastVol_[4] {};
+
+    std::array<bool, kTracks> trackOpen_ {{ false, false, false, false }};
+    bool audioTempoReady_ = false;
+    double audioBpm_ = 122.0, audioSwing_ = 0.0, audioTempoAnchor_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SeqAudioProcessor)
 };

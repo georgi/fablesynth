@@ -301,23 +301,26 @@ private:
     int np_ = 1, px_ = 0, pd_ = 0;
 };
 
-// 4x drive oversampler stages: 47-tap first half-band (2x), 17-tap second (4x).
-// Total up+shape+down group delay is an exact integer in base samples.
-constexpr int kHB1Taps = 47, kHB2Taps = 17;
-constexpr int kDriveLatency = (kHB1Taps - 1) / 2 + (kHB2Taps - 1) / 4; // 27
+// 4x drive oversampler stages. The longer first stage narrows the 2x
+// transition at 44.1 kHz, where the old 47-tap filter left the least room
+// between the audible band and its first image. Both the wet and dry paths use
+// kDriveLatency below; keep it derived from the tap counts when retuning.
+constexpr int kHB1Taps = 63, kHB2Taps = 17;
+constexpr int kDriveLatency = (kHB1Taps - 1) / 2 + (kHB2Taps - 1) / 4; // 35
 
 // Lookahead brickwall limiter: fixed makeup gain feeding a delayed signal path,
 // linked-stereo sliding-window-minimum gain that fully develops inside the
-// ~1.5 ms lookahead, ~200 ms release, hard -1 dBFS sample-peak ceiling.
+// ~1.5 ms lookahead, ~200 ms release, hard -1 dBFS sample-peak ceiling by
+// default. A caller can supply a different ceiling; process returns applied gain.
 class LookaheadLimiter {
 public:
     void prepare(double sampleRate, double makeup);
     void reset();
     int  latencySamples() const { return la_; }
-    inline void process(float& l, float& r) {
+    inline double process(float& l, float& r, double ceiling = kCeiling) {
         double xl = l * makeup_, xr = r * makeup_;
         double pk = std::max(std::abs(xl), std::abs(xr));
-        double g = pk > kCeiling ? kCeiling / pk : 1.0;
+        double g = pk > ceiling ? ceiling / pk : 1.0;
         // monotonic ring queue: minimum required gain over the last la_+1 samples
         while (qh_ != qt_ && qv_[(size_t)prevQ(qt_)] >= g) qt_ = prevQ(qt_);
         qv_[(size_t)qt_] = g; qi_[(size_t)qt_] = t_; qt_ = nextQ(qt_);
@@ -330,8 +333,9 @@ public:
         ++t_;
         double gg = env_;
         double pd = std::max(std::abs((double)dl), std::abs((double)dr));
-        if (gg * pd > kCeiling) gg = kCeiling / pd; // catch smoothing residue
+        if (gg * pd > ceiling) gg = ceiling / pd; // also catches a lowered ceiling during lookahead
         l = (float)(dl * gg); r = (float)(dr * gg);
+        return gg;
     }
     static constexpr double kCeiling = 0.8912509381337456; // -1 dBFS
 private:

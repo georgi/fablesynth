@@ -28,6 +28,19 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
+constexpr double kAdaaInputLimit = 16.0;
+constexpr double kAdaaFadeWidth = 0.1;
+static inline double adaaInput(double x) {
+    return std::isfinite(x) ? std::clamp(x, -kAdaaInputLimit, kAdaaInputLimit) : 0.0;
+}
+static inline double adaaTanh(double x, double xp, double dg, double dcomp) {
+    const double dx = x - xp;
+    if (std::abs(dx) <= 1.0e-5 / dg)
+        return dcomp * std::tanh(dg * 0.5 * (x + xp));
+    const double kF = dcomp / dg;
+    return kF * (lcosh(dg * x) - lcosh(dg * xp)) / dx;
+}
+
 static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
@@ -163,13 +176,14 @@ void BassEngine::resToK(double res, bool twoPole, double& k1, double& k2) {
     }
 }
 
-// Finding J1: start this render call's automation ramp. Every continuous
-// parameter travels from its current value to the block target across the
-// call, capped so a huge host block does not stretch an automation move.
-void BassEngine::beginParamRamp(int n) {
+// A target change owns one fixed-duration, sample-clocked ramp. Re-arming it
+// for every render call made its duration depend on host/MIDI fragmentation.
+void BassEngine::beginParamRamp(int) {
+    if (target_ == rampTarget_) return;
     ps_ = p_;
+    rampTarget_ = target_;
     rampPos_ = 0;
-    rampLen_ = std::min(n, std::max(1, (int)(BL_PARAM_RAMP_MAX_SEC * sr_)));
+    rampLen_ = std::max(1, (int)(BL_PARAM_RAMP_MAX_SEC * sr_));
 }
 
 // Finding J1: evaluate the ramp at the end of one <=128-sample chunk. Gains,
@@ -184,9 +198,9 @@ void BassEngine::advanceParams(int n) {
         const size_t k = (size_t)i;
         const BassSmooth kind = bassSmoothKind(i);
         if (kind == BassSmooth::Snap) continue;
-        const double t = target_[k], s0 = ps_[k];
+        const double t = rampTarget_[k], s0 = ps_[k];
         if (!(t != s0) || f >= 1.0 || !std::isfinite(t) || !std::isfinite(s0)) {
-            p_[k] = target_[k];
+            p_[k] = rampTarget_[k];
             continue;
         }
         p_[k] = (kind == BassSmooth::Log && s0 > 0.0 && t > 0.0)
@@ -251,6 +265,7 @@ void BassEngine::kill() {
     fenvT_ = 1e9;
     std::fill(std::begin(svf_), std::end(svf_), 0.0);
     satXL_ = 0; satXR_ = 0;
+    driveMix_ = 0;
     posSm_ = -1; cutSm_ = 0; cutPrev_ = -1;
     havePrev_ = false; subIncPrev_ = -1;
     monoPrev_ = false; gainPrev_ = -1;
@@ -756,43 +771,39 @@ void BassEngine::runFilter(const float* inL, const float* inR,
     // sample identical, so run one and mirror it — that halves the ADAA
     // exp/log1p and SVF cost, which dominate this engine.
     const bool mono = mono_;
-    if (drive > 0.005) {
+    drive = std::isfinite(drive) ? clampd(drive, 0.0, 1.0) : 0.0;
+    const double mix0 = driveMix_;
+    // Fade the ADAA path in from silence over a small drive interval instead
+    // of making the old enable threshold a binary transfer-function switch.
+    const double mix1 = clampd(drive / kAdaaFadeWidth, 0.0, 1.0);
+    if (mix0 > 0.0 || mix1 > 0.0) {
         const double dg = 1 + drive * 7;
         const double dcomp = 1 / std::pow(dg, 0.55);
-        const double kF = dcomp / dg;
         double xpL = satXL_, xpR = satXR_;
-        double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
         if (mono) {
             for (int i = 0; i < n; i++) {
-                const double aL = inL[i];
-                const double dxL = aL - xpL;
-                const double FL = kF * lcosh(dg * aL);
-                outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
-                                                            : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
-                xpL = aL; FpL = FL;
+                const double aL = adaaInput(inL[i]);
+                const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
+                outL[i] = (float)(aL + m * (adaaTanh(aL, xpL, dg, dcomp) - aL));
+                xpL = aL;
             }
             satXL_ = satXR_ = xpL;
         } else {
             for (int i = 0; i < n; i++) {
-                const double aL = inL[i], aR = inR[i];
-                const double dxL = aL - xpL;
-                const double FL = kF * lcosh(dg * aL);
-                outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
-                                                            : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
-                xpL = aL; FpL = FL;
-                const double dxR = aR - xpR;
-                const double FR = kF * lcosh(dg * aR);
-                outR[i] = (float)(dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
-                                                            : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
-                xpR = aR; FpR = FR;
+                const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
+                const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
+                outL[i] = (float)(aL + m * (adaaTanh(aL, xpL, dg, dcomp) - aL));
+                outR[i] = (float)(aR + m * (adaaTanh(aR, xpR, dg, dcomp) - aR));
+                xpL = aL; xpR = aR;
             }
             satXL_ = xpL; satXR_ = xpR;
         }
     } else {
         for (int i = 0; i < n; i++) outL[i] = inL[i];
         if (!mono) for (int i = 0; i < n; i++) outR[i] = inR[i];
-        if (n > 0) { satXL_ = inL[n - 1]; satXR_ = mono ? inL[n - 1] : inR[n - 1]; }
+        if (n > 0) { satXL_ = adaaInput(inL[n - 1]); satXR_ = mono ? satXL_ : adaaInput(inR[n - 1]); }
     }
+    driveMix_ = mix1;
 
 
     // Finding 7: cutoff ramps from the previous chunk's value; coefficients

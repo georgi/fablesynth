@@ -246,6 +246,23 @@ describe('WT-1 click detector', () => {
   });
 });
 
+describe('WT-1 ADAA enable transition', () => {
+  it('moves continuously through the former 0.005 hard threshold', () => {
+    const h = bootWt({ ...PURE, 'filter.on': 1, 'filter.cut': 12000,
+      'filter.res': 0, 'filter.drive': 0.0049 });
+    h.send({ t: 'on', n: 96, v: .05 });
+    h.render(30);
+    const voice = (h.proc as unknown as { voices: Array<{ f1: { adaaMix: number } }> }).voices[0];
+    const before = voice.f1.adaaMix;
+    h.send({ t: 'p', k: 'filter.drive', v: 0.0051 });
+    const { L } = h.render(1, 1);
+    const after = voice.f1.adaaMix;
+    expect(after).toBeGreaterThan(before);
+    expect(after - before).toBeLessThan(.01);
+    expect(Number.isFinite(L[0])).toBe(true);
+  });
+});
+
 describe('WT-1 determinism', () => {
   it('renders bit-identically twice (seeded RNG, finding W5)', () => {
     const run = () => {

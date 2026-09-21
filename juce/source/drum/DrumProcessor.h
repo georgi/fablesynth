@@ -11,7 +11,6 @@
 
 #include <array>
 #include <atomic>
-#include <mutex>
 #include <vector>
 
 // FableSynth DR-1 VST/AU processor. Owns the JUCE-independent DSP core
@@ -24,8 +23,8 @@
 //  - UI actions (pad audition, transport, pad selection) go through a
 //    lock-free command FIFO drained in processBlock.
 //  - Patterns/chain are owned by the message thread; edits copy the whole
-//    array into a shared buffer under a mutex which processBlock try-locks
-//    (skip on contention, retry next block — never blocks the audio thread).
+//    state into a fixed triple buffer. The audio thread acquires the latest
+//    complete snapshot with one exchange, without locking or allocating.
 //  - Step/pattern/hit/viz/tempo feedback is published as atomics after render.
 class DrumAudioProcessor : public juce::AudioProcessor {
 public:
@@ -118,7 +117,7 @@ private:
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void rebuildEngineTables();
     void pushCmd(int type, int a, float v);
-    void shareSeqState(bool patterns, bool chain);   // copy message-thread seq state for the audio thread
+    void shareSeqState();   // copy message-thread seq state for the audio thread
 
     fable::DrumEngine engine;
     std::vector<fable::TablePtr> tables_;            // procedural: 4 drum + 6 WT-1
@@ -137,10 +136,19 @@ private:
     static constexpr int kPatternBytes = fable::DR_NPATTERNS * fable::DR_NPADS * fable::DR_STEPS;
     std::array<uint8_t, kPatternBytes> patterns_{};
     std::vector<int> chain_{0};
-    mutable std::mutex shareMutex_;
-    std::array<uint8_t, kPatternBytes> patternsShared_{};
-    std::vector<int> chainShared_{0};
-    bool patternsDirty_ = false, chainDirty_ = false;
+    struct SeqSnapshot {
+        std::array<uint8_t, kPatternBytes> patterns{};
+        std::array<int, fable::DR_NPATTERNS> chain{};
+        int chainSize = 1;
+    };
+    // Single producer (message thread), single consumer (audio). Each owns
+    // one slot; exchange hands off the middle slot. The dirty bit coalesces
+    // edits while audio is stopped without ever overwriting a reader's slot.
+    std::array<SeqSnapshot, 3> seqSnapshots_{};
+    static constexpr unsigned kSeqDirty = 4;
+    std::atomic<unsigned> seqMiddle_{1};
+    unsigned seqWrite_ = 2, seqRead_ = 0;
+    static_assert(std::atomic<unsigned>::is_always_lock_free);
 
     std::array<juce::String, fable::DR_NPADS> padNames_;
     int selectedPad_ = 0;
