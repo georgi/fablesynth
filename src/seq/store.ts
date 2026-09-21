@@ -21,6 +21,7 @@ import {
   inRect, moveWrites, pasteWrites, selRect,
 } from './gridEdit';
 import { isTourSeen, markTourSeen, nextTourStep, TOUR_STEPS } from './onboarding';
+import { masterFxParams, type MasterFxParams } from './masterFx';
 
 export interface TrackPos {
   step: number;
@@ -42,6 +43,11 @@ export interface SeqStore {
   quant: Quant;
   trackVol: number[];
   masterVol: number;
+  masterFx: MasterFxParams;
+  masterFxOpen: boolean;
+  drumFxOpen: boolean;
+  drumFxScope: 'pad' | 'group';
+  trackFxOpen: boolean;
   swing: number;
   rig: SeqRig | null;
   anchor: number; // songStartFrame — beat zero of the shared timebase
@@ -74,6 +80,10 @@ export interface SeqStore {
   cycleQuant: (d: number) => void;
   setTrackVol: (t: number, v: number) => void;
   setMasterVol: (v: number) => void;
+  setMasterFx: (params: Partial<MasterFxParams>) => void;
+  toggleMasterFx: () => void;
+  openDrumFx: (scope: 'pad' | 'group') => void;
+  toggleTrackFx: () => void;
   setSwing: (v: number) => void;
   loadSessionPreset: (index: number) => void;
   applySessionDoc: (doc: SessionDoc) => void;
@@ -280,6 +290,11 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     quant: initialSession.quant,
     trackVol: initialSession.tracks.map((t) => t.gain),
     masterVol: 0.75,
+    masterFx: masterFxParams(initialSession.masterFx),
+    masterFxOpen: false,
+    drumFxOpen: false,
+    drumFxScope: 'pad',
+    trackFxOpen: false,
     swing: initialSession.swing,
     rig: null,
     anchor: 0,
@@ -305,6 +320,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const anchor = rig.now() + 256;
       rig.sendTempo(session.bpm, get().swing, anchor);
       rig.setMasterGain(gainCurve(get().masterVol));
+      rig.setMasterFx?.(get().masterFx);
 
       // Wire acks — owner flips exactly when the audio changed.
       rig.devices.forEach((d, t) => {
@@ -564,6 +580,17 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       get().rig?.setMasterGain(gainCurve(v));
     },
 
+    setMasterFx: (patch) => {
+      const masterFx = masterFxParams({ ...get().masterFx, ...patch });
+      set((st) => ({ masterFx, session: { ...st.session, masterFx } }));
+      get().rig?.setMasterFx?.(masterFx);
+      persist();
+    },
+
+    toggleMasterFx: () => set((st) => ({ masterFxOpen: !st.masterFxOpen })),
+    openDrumFx: (scope) => set({ drumFxOpen: true, drumFxScope: scope }),
+    toggleTrackFx: () => set((st) => ({ trackFxOpen: !st.trackFxOpen })),
+
     // Swing is safe to change live: it only shifts intra-step offsets, never
     // the anchor math (docs §3/§6).
     setSwing: (v) => {
@@ -601,13 +628,14 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       });
       const anchor = st.rig ? st.rig.now() + 256 : 0;
       st.rig?.sendTempo(session.bpm, session.swing, anchor);
+      st.rig?.setMasterFx?.(masterFxParams(session.masterFx));
       clipBytes.clear();
       // Pre-load snapshots would undo the doc but not the rig, desyncing
       // audible vs persisted state — so history resets here.
       undoStack.length = 0;
       redoStack.length = 0;
       set({
-        session, quant: session.quant, swing: session.swing,
+        session, masterFx: masterFxParams(session.masterFx), quant: session.quant, swing: session.swing,
         trackVol: session.tracks.map((track) => track.gain),
         playing: false, beat: 0, bar: 1, owner: {}, queue: {},
         pos: session.tracks.map(() => null), anchor, focus: null,
@@ -634,14 +662,18 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const scene = s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene;
       set({
         focus: { track: t, scene: clampScene(scene) },
+        masterFxOpen: false,
         deviceMode: st.focus?.track === t ? st.deviceMode : 'seq',
+        drumFxOpen: st.focus?.track === t ? st.drumFxOpen : false,
+        drumFxScope: st.focus?.track === t ? st.drumFxScope : 'pad',
+        trackFxOpen: st.focus?.track === t ? st.trackFxOpen : false,
       });
     },
 
     exitFocus: () => {
       const f = get().focus;
       if (f) lastFocusScene = f.scene;
-      set({ focus: null });
+      set({ focus: null, drumFxOpen: false, drumFxScope: 'pad', trackFxOpen: false });
     },
 
     focusScene: (s) => {
@@ -789,6 +821,11 @@ export function resetSeqStore(session: SessionDoc = defaultSession()): void {
     quant: '1 BAR',
     trackVol: initialSession.tracks.map((t) => t.gain),
     masterVol: 0.75,
+    masterFx: masterFxParams(session.masterFx),
+    masterFxOpen: false,
+    drumFxOpen: false,
+    drumFxScope: 'pad',
+    trackFxOpen: false,
     swing: 0,
     rig: null,
     anchor: 0,

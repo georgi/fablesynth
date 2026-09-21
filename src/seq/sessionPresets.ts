@@ -7,6 +7,7 @@ import { copyClipArp } from './clipArp';
 import { TIDAL_MEMORY } from './songs/tidalMemory';
 import { PHASE_RUNNER } from './songs/phaseRunner';
 import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
+import { masterFxParams } from './masterFx';
 
 export interface SessionPreset {
   name: string;
@@ -539,6 +540,7 @@ export function defaultSession(): SessionDoc {
 export function copySession(session: SessionDoc): SessionDoc {
   return {
     ...session,
+    masterFx: masterFxParams(session.masterFx),
     tracks: session.tracks.map((track) => ({ ...track, patch: track.patch.kind === 'inline'
       ? { ...track.patch, data: structuredClone(track.patch.data) } : { ...track.patch } })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip,

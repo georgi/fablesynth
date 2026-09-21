@@ -6,6 +6,7 @@
 
 import type { Quant } from './model';
 import { validClipArp, type ClipArp } from './clipArp';
+import type { MasterFxParams } from './masterFx';
 
 export type MachineId = 'DR1' | 'BL1' | 'WT1';
 
@@ -55,6 +56,8 @@ export interface SessionDoc {
   quant: Quant;
   tracks: TrackDoc[];
   scenes: SceneDoc[];
+  /** Optional for v1 compatibility; omitted sessions recall neutral master processing. */
+  masterFx?: MasterFxParams;
 }
 
 export interface TrackDoc {

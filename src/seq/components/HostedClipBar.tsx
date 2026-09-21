@@ -35,8 +35,29 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   const focus = useSeqStore((s) => s.focus)!;
   const clip = useSeqStore((s) => s.session.scenes[focus.scene]?.clips[focus.track]);
   const { createClip } = useSeqStore.getState();
+  const drumFxOpen = useSeqStore((s) => s.drumFxOpen);
+  const drumFxScope = useSeqStore((s) => s.drumFxScope);
+  const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
+  const masterFxOpen = useSeqStore((s) => s.masterFxOpen);
   const patchSelect = <HostedPatchSelect machine={machine} />;
   const modeToggle = <DeviceModeToggle />;
+  const fxToggle = machine === 'DR1' ? <div className="sq-drum-fx-scope" role="group" aria-label="DR-1 FX scope"><button className={`sq-drum-fx-toggle${drumFxOpen && drumFxScope === 'pad' ? ' on' : ''}`} aria-pressed={drumFxOpen && drumFxScope === 'pad'} onClick={() => {
+    const st = useSeqStore.getState();
+    st.setDeviceMode('edit'); st.openDrumFx('pad');
+  }}>PAD FX</button><button className={`sq-drum-fx-toggle${drumFxOpen && drumFxScope === 'group' ? ' on' : ''}`} aria-pressed={drumFxOpen && drumFxScope === 'group'} onClick={() => {
+    const st = useSeqStore.getState();
+    st.setDeviceMode('edit'); st.openDrumFx('group');
+  }}>GROUP FX</button></div> : null;
+  const instrumentFxToggle = machine !== 'DR1' ? <button className={`sq-drum-fx-toggle${trackFxOpen ? ' on' : ''}`} aria-pressed={trackFxOpen} onClick={() => {
+    const st = useSeqStore.getState();
+    if (!st.trackFxOpen) st.setDeviceMode('edit');
+    st.toggleTrackFx();
+  }}>TRACK FX</button> : null;
+  const masterFxToggle = <button className={`sq-master-fx-toggle${masterFxOpen ? ' on' : ''}`} aria-pressed={masterFxOpen} onClick={() => {
+    const st = useSeqStore.getState();
+    if (!st.masterFxOpen) st.exitFocus();
+    st.toggleMasterFx();
+  }}>MASTER FX</button>;
 
   if (!clip) {
     return (
@@ -44,6 +65,9 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
         <div className="sq-clipbar">
           {patchSelect}
           {modeToggle}
+          {fxToggle}
+          {instrumentFxToggle}
+          {masterFxToggle}
           <button className="sq-clipbar-create" onClick={() => createClip(focus.scene, focus.track)}>＋ CREATE CLIP</button>
           <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
           <span className="sq-clipbar-hint">EMPTY SLOT — LOAD A CLIP OR CREATE ONE</span>
@@ -59,6 +83,9 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
         <div className="sq-clipbar">
           {patchSelect}
           {modeToggle}
+          {fxToggle}
+          {instrumentFxToggle}
+          {masterFxToggle}
           <span className="sq-clipbar-name">{clip.name}</span>
           <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
           <span className="sq-clipbar-lock">CLIP IS {clip.bars} BARS — EDITING CAPS AT {HOSTED_MAX_BARS} (PLAYBACK UNAFFECTED)</span>
@@ -73,6 +100,9 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
       <div className="sq-clipbar">
         {patchSelect}
         {modeToggle}
+        {fxToggle}
+        {instrumentFxToggle}
+        {masterFxToggle}
         <span className="sq-clipbar-name">{clip.name}</span>
         <button className="sq-clipbar-library" onClick={() => setLibraryOpen(true)}>▦ CLIP LIBRARY</button>
       </div>

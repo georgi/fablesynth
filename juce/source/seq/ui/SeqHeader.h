@@ -46,6 +46,7 @@ public:
     juce::String quantLabel() const;
 
     std::function<void()> onLibrarySessionChanged;
+    std::function<void()> onMasterFxToggle;
     juce::ComboBox& libraryForTest() { return library_; }
     void syncLibraryForTest() { refreshLibrarySelection(); }
 
@@ -70,7 +71,7 @@ private:
 
     juce::Rectangle<int> logoArea, playBtn, quantTagArea, quantPrevBtn, quantValArea,
         quantNextBtn, beatsArea, clockLineArea, libraryLabelArea, loadBtn, saveBtn,
-        scopeArea, swingKnob, volKnob;
+        scopeArea, swingKnob, volKnob, masterFxBtn;
 
     juce::ComboBox library_;
     int shownLibrarySession_ = -2;

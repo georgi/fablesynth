@@ -10,6 +10,7 @@
 #include "dsp/SnapshotHistory.h"
 #include "../dsp/Engine.h"
 #include "../dsp/Fx.h"
+#include "../dsp/ParametricEq.h"
 #include "../dsp/ClipHost.h"   // fable::HostEvent
 #include "../bass/dsp/BassEngine.h"
 #include "../bass/dsp/BassFx.h"
@@ -28,6 +29,9 @@ namespace fable {
 // strings "master" … "vol3" — the fui control resolver installed by
 // SeqHeader.cpp (same pattern as bassParamInfo/drumParamInfo).
 const std::vector<ParamInfo>& seqParamInfo();
+// Session-bus-only controls. Their UI-facing ids deliberately omit the
+// `master.` storage prefix so the shared FX modules can address `fx.*`.
+const std::vector<ParamInfo>& masterFxParamInfo();
 } // namespace fable
 // FableSynth SQ-4 (session launcher) processor. Hosts all four FableSynth
 // engines — DR-1 (DrumEngine), BL-1 (BassEngine), and two WT-1 (Engine) — in a
@@ -97,6 +101,9 @@ public:
     // JSON fails validation.
     bool applySessionJson(const juce::String& json);
     juce::String currentSessionJson() const;
+    juce::RangedAudioParameter* masterFxParameter(const juce::String& uiId) const;
+    fable::FxTelemetry masterFxTelemetry() const;
+    std::array<float, 3> masterLimiterTelemetry() const;
 
     // ---- editing undo substrate (message thread) -----------------------------
     // Bounded (50) session-JSON snapshot stack over currentSessionJson()/
@@ -330,6 +337,28 @@ private:
     double frame_ = 0;
     juce::SmoothedValue<float> trackGain_[4], masterGain_; // ~15 ms ramps
     std::atomic<float>* rawMaster_ = nullptr;
+    std::array<std::atomic<float>*, 33> rawMasterFx_ {};
+
+    struct MasterFx {
+        fable::ParametricEq eq;
+        fable::OttCompressor ott;
+        fable::WebCompressor comp;
+        fable::FxMeter meter;
+        bool limiterOn = true;
+        float ceiling = 0.89125094f;
+        std::atomic<float> limiterInDb { -90.0f }, limiterOutDb { -90.0f }, limiterReductionDb { 0.0f };
+        void prepare(double sampleRate) {
+            eq.prepare(sampleRate); ott.prepare(sampleRate); comp.prepare(sampleRate); meter.prepare(sampleRate);
+        }
+        void reset() { eq.reset(); ott.reset(); comp.reset(); meter.reset(); }
+        void setParams(const std::array<float, 33>& p);
+        void process(float* l, float* r, int n);
+        fable::FxTelemetry telemetry() const { return meter.read(); }
+        std::array<float, 3> limiterTelemetry() const {
+            return { limiterInDb.load(std::memory_order_relaxed), limiterOutDb.load(std::memory_order_relaxed),
+                     limiterReductionDb.load(std::memory_order_relaxed) };
+        }
+    } masterFx_;
 
     // Master safety limiter — the WT/DR/BL web DynamicsCompressorNode port,
     // configured threshold -6 dB, knee 4 dB, ratio 12, attack 2 ms, release

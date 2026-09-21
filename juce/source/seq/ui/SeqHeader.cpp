@@ -210,6 +210,7 @@ void SeqHeader::mouseDown(const juce::MouseEvent& e) {
     else if (quantNextBtn.contains(pos))  quantStep(+1);
     else if (loadBtn.contains(pos))       loadClick();
     else if (saveBtn.contains(pos))       saveClick();
+    else if (masterFxBtn.contains(pos))   { if (onMasterFxToggle) onMasterFxToggle(); }
     else if (swingKnob.contains(pos))     { dragging_ = Drag::Swing; lastY_ = e.position.y; }
     else if (volKnob.contains(pos)) {
         dragging_ = Drag::Vol;
@@ -303,6 +304,7 @@ void SeqHeader::resized() {
     clockLineArea = clockArea;
 
     scopeArea = { 903, 9, 190, 26 };
+    masterFxBtn = { 765, 11, 126, 21 };
 
     // LOAD/SAVE (JUCE-only surface, no web equivalent): a compact stacked
     // pair -- side-by-side doesn't leave enough width per button to read
@@ -384,6 +386,7 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
     }
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
+    drawBtn(masterFxBtn, "MASTER FX", false);
 }
 
 void SeqHeader::paintQuant(juce::Graphics& g) {

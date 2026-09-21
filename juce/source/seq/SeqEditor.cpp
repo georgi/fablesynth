@@ -29,16 +29,28 @@
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
-    : header(p), trackHeads(p), sceneGrid(p), footer(p), deviceFocus(p) {
+    : header(p), trackHeads(p), sceneGrid(p), footer(p), deviceFocus(p), masterFx(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(trackHeads);
     addAndMakeVisible(sceneGrid);
     addAndMakeVisible(footer);
     addAndMakeVisible(hint);
     addChildComponent(deviceFocus); // hidden until focus is entered
+    addChildComponent(masterFx);
+}
+
+void SeqRack::toggleMasterFx() {
+    if (focusMode_) return;
+    masterFxMode_ = !masterFxMode_;
+    sceneGrid.setVisible(!masterFxMode_);
+    footer.setVisible(!masterFxMode_);
+    masterFx.setVisible(masterFxMode_);
+    applyLayout();
 }
 
 void SeqRack::enterFocus(int track, int scene) {
+    masterFxMode_ = false;
+    masterFx.setVisible(false);
     focusMode_ = true;
     // The rack's own logical extent (its coordinate space for applyLayout(),
     // and the size the editor scales via its transform) switches to the
@@ -100,7 +112,11 @@ void SeqRack::applyLayout() {
                               1254 - railW - railGap, contentH);
         hint.setBounds(18, hintY, 1254, hintH);
     } else {
-        sceneGrid.setBounds(18, 136, 1254, 491); // 491 = footerY(627) - 136
+        if (masterFxMode_) {
+            masterFx.setBounds(18, 136, 1254, 556);
+        } else {
+            sceneGrid.setBounds(18, 136, 1254, 491); // 491 = footerY(627) - 136
+        }
         hint.setBounds(18, 700, 1254, hintH);
     }
 }
@@ -124,6 +140,10 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
     grid().onEditClip    = [this](int s, int t) { enterFocus(t, s); };
     grid().onRailScene   = [this](int s) { focusScene(s); };
     header().onLibrarySessionChanged = [this] { deviceFocus().reloadPatchesFromSession(); };
+    header().onMasterFxToggle = [this] {
+        if (focusTrack_ >= 0) exitFocus();
+        rack.toggleMasterFx();
+    };
 
     // Hint copy mirrors SeqApp.tsx's two .sq-hint strings.
     rack.getHint().setProvider([this]() -> juce::String {

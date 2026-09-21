@@ -8,6 +8,7 @@
 #include "ui/SceneGridView.h"
 #include "ui/SeqFooterView.h"
 #include "ui/DeviceFocusView.h"
+#include "ui/MasterFxView.h"
 #include "../ui/LookAndFeel.h"
 
 #include <functional>
@@ -87,6 +88,7 @@ public:
     void enterFocus(int track, int scene);
     void exitFocus();
     void setFocusScene(int scene);
+    void toggleMasterFx();
 
 private:
     fui::SeqHeader header;
@@ -94,11 +96,13 @@ private:
     fui::SceneGridView sceneGrid;
     fui::SeqFooterView footer;
     fui::DeviceFocusView deviceFocus;
+    fui::MasterFxView masterFx;
     HintBar hint;
 
     void applyLayout();
 
     bool focusMode_ = false;
+    bool masterFxMode_ = false;
     int focusTrack_ = -1;
 };
 

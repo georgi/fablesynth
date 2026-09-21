@@ -9,6 +9,7 @@ import { SceneCard } from './components/SceneCard';
 import { SceneRow } from './components/SceneRow';
 import { SqPowerOverlay } from './components/SqPowerOverlay';
 import { TrackHeads } from './components/TrackHeads';
+import { MasterFxRack } from './components/MasterFxRack';
 import { useSeqStore } from './store';
 
 export function SeqApp() {
@@ -18,6 +19,7 @@ export function SeqApp() {
   const powered = useSeqStore((s) => s.powered);
   const quant = useSeqStore((s) => s.quant);
   const focus = useSeqStore((s) => s.focus);
+  const masterFxOpen = useSeqStore((s) => s.masterFxOpen);
 
   // UI clock: beat dots / bar counter derive from the shared context-frame
   // timebase while the logical transport is running.
@@ -103,7 +105,9 @@ export function SeqApp() {
       <main id="sq-rack" className={focus ? 'focused' : ''}>
         <Header />
         <TrackHeads />
-        {focus ? (
+        {masterFxOpen ? (
+          <MasterFxRack />
+        ) : focus ? (
           <div className="sq-focus" key={`f${focus.track}`}>
             <aside className="sq-launcher">
               <button
@@ -120,9 +124,11 @@ export function SeqApp() {
         ) : (
           session.scenes.map((_, s) => <SceneRow key={s} s={s} />)
         )}
-        {!focus && <FooterRow />}
+        {!focus && !masterFxOpen && <FooterRow />}
         <div className="sq-hint">
-          {focus
+          {masterFxOpen
+            ? 'MASTER BUS · POST-FADER EQ → OTT → COMP → LIMITER · CLICK MASTER FX TO RETURN TO SESSION'
+            : focus
             ? 'SCENE CHIPS RETARGET THE EDITOR · 1–4 SWITCH DEVICE · ESC BACK TO SESSION'
             : `TAP CLIP TO LAUNCH · TAP AGAIN TO STOP · LAUNCHES QUANTIZE TO ${quant} · CMD-CLICK SELECTS · DRAG MOVES (ALT COPIES) · CMD-C/X/V/D/Z EDIT · RIGHT-CLICK EMPTY CELL TO TOGGLE PASS-THROUGH`}
         </div>

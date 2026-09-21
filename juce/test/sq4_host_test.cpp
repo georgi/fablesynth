@@ -859,9 +859,10 @@ int main(int argc, char** argv) {
     for (int track = 0; track < 4; ++track) {
         ed2->enterFocus(track, 2);
         auto* body = focusView.activeBodyComponent();
-        auto* tabs = findFxComponent<juce::TextButton>(*body, "FX CHAIN");
+        auto* tabs = findFxComponent<juce::TextButton>(*body,
+                                                        track == 0 ? "PAD FX" : "FX CHAIN");
         auto* chain = findFxComponent<fui::FxChain>(*body);
-        check(tabs != nullptr && chain != nullptr, "hosted device exposes the shared FX page", track);
+        check(tabs != nullptr && chain != nullptr, "hosted device exposes its dedicated FX workspace", track);
         if (tabs != nullptr && chain != nullptr) {
             tabs->setToggleState(true, juce::dontSendNotification);
             tabs->onClick();
@@ -893,13 +894,12 @@ int main(int argc, char** argv) {
     for (int track = 1; track < 4; ++track) {
         ed2->enterFocus(track, 2);
         auto* body = focusView.activeBodyComponent();
-        auto* mode = findFxComponent<fui::ArpModeBar>(*body);
+        auto* mode = findFxComponent<juce::TextButton>(*body, "ARP");
         auto* arp = findFxComponent<fui::ArpPanel>(*body);
         auto before = p.conductor().session().scenes[2].clips[(size_t)track];
-        check(mode && arp, "SQ melodic editors expose SEQ/ARP", track);
+        check(mode && arp, "SQ melodic editors expose dedicated SEQUENCER/ARP tabs", track);
         if (mode && arp) {
-            for (auto* child : mode->getChildren())
-                if (auto* b = dynamic_cast<juce::TextButton*>(child); b && b->getButtonText() == "ARP") b->onClick();
+            mode->onClick();
             check(arp->isVisible() && p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
                   "SQ ARP tab enables only the selected clip", track);
             auto* input = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator input");
@@ -1504,6 +1504,15 @@ int main(int argc, char** argv) {
         check(agent.snapshot().parameters.size() == fable::seqParamInfo().size()
                   + fable::drumParamInfo().size() + fable::bassParamInfo().size()
                   + 2 * fable::paramInfo().size(), "agent discovers every SQ and hosted parameter before prepare");
+        const auto references = agent.snapshot().references;
+        const auto catalog = codeact::get(references, "presetCatalog");
+        const auto techniqueLibrary = codeact::get(references, "techniqueLibrary");
+        check(static_cast<bool>(codeact::get(references, "available"))
+                  && static_cast<bool>(codeact::get(catalog, "readOnly"))
+                  && codeact::get(catalog, "entries").size() == (int)fable::factorySessionLibrary().size()
+                  && static_cast<bool>(codeact::get(techniqueLibrary, "readOnly"))
+                  && codeact::get(techniqueLibrary, "entries").size() > 0,
+              "agent exposes full read-only SQ-4 preset and sound-design orientation catalogs");
         p.prepareToPlay(48000, 256);
         juce::AudioBuffer<float> audio(2, 256);
         juce::MidiBuffer midi;

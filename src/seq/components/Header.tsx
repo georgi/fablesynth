@@ -20,8 +20,9 @@ export function Header() {
   const quant = useSeqStore((s) => s.quant);
   const swing = useSeqStore((s) => s.swing);
   const masterVol = useSeqStore((s) => s.masterVol);
+  const masterFxOpen = useSeqStore((s) => s.masterFxOpen);
   const sessionName = useSeqStore((s) => s.session.name);
-  const { toggleTransport, cycleQuant, setSwing, setMasterVol, loadSessionPreset, startTour } = useSeqStore.getState();
+  const { toggleTransport, cycleQuant, setSwing, setMasterVol, loadSessionPreset, startTour, toggleMasterFx } = useSeqStore.getState();
 
   return (
     <header className="sq-top">
@@ -51,6 +52,11 @@ export function Header() {
       </label>
 
       <button className="sq-sessions-open" onClick={() => setSessionsOpen(true)} title="Saved sessions">▦ SESSIONS</button>
+      <button className={`sq-master-fx-toggle${masterFxOpen ? ' on' : ''}`} onClick={() => {
+        const st = useSeqStore.getState();
+        if (!st.masterFxOpen && st.focus) st.exitFocus();
+        toggleMasterFx();
+      }} aria-pressed={masterFxOpen} title="Show master effects">MASTER FX</button>
       {sessionsOpen && <SessionLibraryBrowser onClose={() => setSessionsOpen(false)} />}
 
       <div className="sq-quant">

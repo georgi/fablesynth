@@ -245,6 +245,7 @@ export function DeviceView() {
 
 function DrumPanels() {
   const mode = useSeqStore((s) => s.deviceMode);
+  const drumFxOpen = useSeqStore((s) => s.drumFxOpen);
   return (
     <div id="drum-rack" className="sq-hosted-rack" data-mode={mode}>
       <div className={`dr-main${mode === 'seq' ? ' fit-pads' : ''}`}>
@@ -270,7 +271,7 @@ function DrumPanels() {
           )}
         </div>
       </div>
-      {mode === 'edit' && <div id="dr-fxrack"><FxRack /></div>}
+      {mode === 'edit' && drumFxOpen && <div id="dr-fxrack"><FxRack /></div>}
       {mode === 'seq' && <div id="dr-stepseq"><StepSeq headerExtra={<HostedLengthControl machine="DR1" />} /></div>}
     </div>
   );
@@ -278,6 +279,7 @@ function DrumPanels() {
 
 function BassPanels({ bars }: { bars?: number }) {
   const mode = useSeqStore((s) => s.deviceMode);
+  const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
   return (
     <div id="bass-rack" className="sq-hosted-rack" data-mode={mode}>
       <div id="bl-editrow">
@@ -293,7 +295,7 @@ function BassPanels({ bars }: { bars?: number }) {
         </div>
       )}
       {mode === 'seq' && <div id="bl-seq"><HostedArpEditor machine="BL1"><PitchSeq bars={bars} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="BL1" /></>} /></HostedArpEditor></div>}
-      {mode === 'edit' && <div id="bl-fxrack"><BassFxRack /></div>}
+      {mode === 'edit' && trackFxOpen && <div id="bl-fxrack"><BassFxRack /></div>}
       {/* Keyboard last, where a synth's keys belong. */}
       {mode === 'seq' && <div id="bl-keysrow"><KeysPanel /></div>}
     </div>
@@ -303,6 +305,7 @@ function BassPanels({ bars }: { bars?: number }) {
 function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) {
   const focus = useSeqStore((s) => s.focus);
   const mode = useSeqStore((s) => s.deviceMode);
+  const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
   const polySteps = useMemo<SeqStep[][] | undefined>(() => {
     if (!clip) return undefined;
     const bytes = b64ToBytes(clip.pattern);
@@ -442,12 +445,14 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
             <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
             <LfoPanel />
             <MatrixPanel />
-            <EqPanel />
-            <DynamicsPanel kind="ott" />
-            <DynamicsPanel kind="comp" />
-            <TapeEchoPanel />
-            <ReverbPanel />
-            <FxPanel />
+            {trackFxOpen && <>
+              <EqPanel />
+              <DynamicsPanel kind="ott" />
+              <DynamicsPanel kind="comp" />
+              <TapeEchoPanel />
+              <ReverbPanel />
+              <FxPanel />
+            </>}
           </>
         )}
         {mode === 'seq' && (

@@ -124,6 +124,31 @@ const std::vector<ParamInfo>& seqParamInfo() {
     }();
     return v;
 }
+
+const std::vector<ParamInfo>& masterFxParamInfo() {
+    static const std::vector<ParamInfo> v = [] {
+        std::vector<ParamInfo> p;
+        auto add = [&](const char* id, float lo, float hi, float def, Curve curve = Curve::Lin) {
+            p.push_back({ (int)p.size(), id, id, lo, hi, def, curve, Kind::Float, nullptr });
+        };
+        add("fx.eq.on", 0, 1, 0); add("fx.eq.low", -15, 15, 0); add("fx.eq.mid", -15, 15, 0);
+        add("fx.eq.mfreq", 20, 20000, 900, Curve::Log); add("fx.eq.high", -15, 15, 0);
+        add("fx.eq.lfreq", 20, 20000, 120, Curve::Log); add("fx.eq.m2freq", 20, 20000, 2500, Curve::Log);
+        add("fx.eq.hfreq", 20, 20000, 6000, Curve::Log); add("fx.eq.mid2", -15, 15, 0);
+        add("fx.eq.lq", .2f, 12, .70710678f, Curve::Log); add("fx.eq.ltype", 0, 2, 0, Curve::Int);
+        add("fx.eq.lon", 0, 1, 1); add("fx.eq.mq", .2f, 12, .9f, Curve::Log); add("fx.eq.mtype", 0, 2, 1, Curve::Int);
+        add("fx.eq.mon", 0, 1, 1); add("fx.eq.m2q", .2f, 12, .9f, Curve::Log); add("fx.eq.m2type", 0, 2, 1, Curve::Int);
+        add("fx.eq.m2on", 0, 1, 1); add("fx.eq.hq", .2f, 12, .70710678f, Curve::Log); add("fx.eq.htype", 0, 2, 2, Curve::Int);
+        add("fx.eq.hon", 0, 1, 1);
+        add("fx.ott.on", 0, 1, 1); add("fx.ott.depth", 0, 1, .35f); add("fx.ott.time", .01f, 10, 1, Curve::Log);
+        add("fx.ott.up", 0, 2, 1); add("fx.ott.down", 0, 2, 1);
+        add("fx.comp.on", 0, 1, 1); add("fx.comp.thr", -40, 0, -16); add("fx.comp.att", .0001f, .1f, .003f, Curve::Log);
+        add("fx.comp.rel", .01f, 2, .25f, Curve::Log); add("fx.comp.ratio", 1, 20, 4);
+        add("fx.limiter.on", 0, 1, 1); add("fx.limiter.ceiling", -12, -.1f, -1);
+        return p;
+    }();
+    return v;
+}
 } // namespace fable
 
 fable::FableAgent& SeqAudioProcessor::getAgent() {
@@ -252,6 +277,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout SeqAudioProcessor::createLay
     for (int i : { (int)SQ_SWING, (int)SQ_BPM, (int)SQ_QUANT })
         tr->addChild(make(info[(size_t)i]));
     layout.add(std::move(tr));
+    auto masterFx = std::make_unique<juce::AudioProcessorParameterGroup>("masterFx", "MASTER FX", " | ");
+    for (const auto& d : fable::masterFxParamInfo()) {
+        const auto descriptor = d;
+        juce::NormalisableRange<float> range(d.min, d.max,
+            [descriptor](float, float, float n) { return normToValue(descriptor, n); },
+            [descriptor](float, float, float v) { return valueToNorm(descriptor, v); });
+        if (d.curve == Curve::Int) range.interval = 1.0f;
+        masterFx->addChild(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID("master." + juce::String(d.pid), 1),
+            "MASTER " + juce::String(d.pid).toUpperCase(), range, d.def));
+    }
+    layout.add(std::move(masterFx));
     return layout;
 }
 
@@ -291,6 +328,47 @@ void SeqAudioProcessor::Limiter::process(float& l, float& r) {
     r = (float)(r * g);
 }
 
+void SeqAudioProcessor::MasterFx::setParams(const std::array<float, 33>& p) {
+    eq.setParams(p.data());
+    ott.setParams(p[21] > .5f, p[22], p[23], p[24], p[25]);
+    comp.setParams(p[26] > .5f, p[27], p[28], p[29], p[30]);
+    limiterOn = p[31] > .5f;
+    ceiling = std::pow(10.0f, p[32] / 20.0f);
+}
+
+void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n) {
+    eq.process(l, r, n);
+    float limiterIn = 0.0f, limiterOut = 0.0f, limiterReduction = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        meter.level(fable::FxTelemetry::ottIn, l[i], r[i]);
+        double ottL, ottR;
+        ott.processSample(l[i], r[i], ottL, ottR);
+        meter.level(fable::FxTelemetry::ottOut, ottL, ottR);
+
+        double compL, compR;
+        meter.level(fable::FxTelemetry::compIn, ottL, ottR);
+        comp.processSample(ottL, ottR, compL, compR);
+        meter.level(fable::FxTelemetry::compOut, compL, compR);
+
+        const float inPeak = juce::jmax(std::abs((float)compL), std::abs((float)compR));
+        float outL = (float)compL, outR = (float)compR;
+        if (limiterOn && inPeak > ceiling) {
+            const float gain = ceiling / inPeak;
+            outL *= gain;
+            outR *= gain;
+            limiterReduction = juce::jmax(limiterReduction, -20.0f * std::log10(gain));
+        }
+        limiterIn = juce::jmax(limiterIn, inPeak);
+        limiterOut = juce::jmax(limiterOut, juce::jmax(std::abs(outL), std::abs(outR)));
+        l[i] = outL;
+        r[i] = outR;
+        meter.finish(ott, comp, 0.0);
+    }
+    limiterInDb.store(fable::FxMeter::db(limiterIn), std::memory_order_relaxed);
+    limiterOutDb.store(fable::FxMeter::db(limiterOut), std::memory_order_relaxed);
+    limiterReductionDb.store(limiterOn ? limiterReduction : 0.0f, std::memory_order_relaxed);
+}
+
 // ---- construction ----------------------------------------------------------
 
 SeqAudioProcessor::SeqAudioProcessor()
@@ -298,6 +376,8 @@ SeqAudioProcessor::SeqAudioProcessor()
           .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMS", createLayout()) {
     rawMaster_ = apvts.getRawParameterValue("master");
+    for (size_t i = 0; i < rawMasterFx_.size(); ++i)
+        rawMasterFx_[i] = apvts.getRawParameterValue("master." + juce::String(fable::masterFxParamInfo()[i].pid));
     rawSwing_  = apvts.getRawParameterValue("swing");
     rawBpm_    = apvts.getRawParameterValue("bpm");
     for (int t = 0; t < kTracks; ++t) {
@@ -585,6 +665,7 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     trackBuf_.setSize(2, samplesPerBlock);
     drumAux_.setSize(2 * (DR_NBUSES - 1), samplesPerBlock);
     limiter_.prepare(sampleRate);
+    masterFx_.prepare(sampleRate);
 
     // Finding J7: every device chain delays its track by its drive-FIR +
     // lookahead-limiter latency, so report it and let the DAW compensate. The
@@ -846,6 +927,11 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     drainCmds();
     masterGain_.setTargetValue(rawMaster_ ? rawMaster_->load() : 0.75f);
+    std::array<float, 33> masterFxValues {};
+    for (size_t i = 0; i < masterFxValues.size(); ++i)
+        masterFxValues[i] = rawMasterFx_[i] ? rawMasterFx_[i]->load(std::memory_order_relaxed)
+                                            : fable::masterFxParamInfo()[i].def;
+    masterFx_.setParams(masterFxValues);
 
     float* outL = buffer.getWritePointer(0);
     const bool stereo = buffer.getNumChannels() > 1;
@@ -894,7 +980,8 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             trackSumSq[t] += sumSq;
         }
 
-        // Master gain -> limiter -> output; post-limiter mono into the scope ring.
+        // Post-fader master FX -> gain -> safety limiter -> output.
+        if (stereo) masterFx_.process(oL, oR, c);
         for (int i = 0; i < c; ++i) {
             const float g = masterGain_.getNextValue();
             float l = oL[i] * g, r = (stereo ? oR[i] : oL[i]) * g;
@@ -1091,6 +1178,14 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
 juce::String SeqAudioProcessor::currentSessionJson() const {
     return fable::sessionToJson(conductor_ ? conductor_->session() : initialSession_, true);
 }
+
+juce::RangedAudioParameter* SeqAudioProcessor::masterFxParameter(const juce::String& uiId) const {
+    return dynamic_cast<juce::RangedAudioParameter*>(apvts.getParameter("master." + uiId));
+}
+
+fable::FxTelemetry SeqAudioProcessor::masterFxTelemetry() const { return masterFx_.telemetry(); }
+
+std::array<float, 3> SeqAudioProcessor::masterLimiterTelemetry() const { return masterFx_.limiterTelemetry(); }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
     return new SeqAudioProcessor();

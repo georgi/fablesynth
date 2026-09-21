@@ -12,6 +12,7 @@ import { decodeClipLibrary } from './clipLibrary';
 import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 import { factorySession } from './factory';
 import { newClipArp, type ArpConfig } from './clipArp';
+import type { MasterFxParams } from './masterFx';
 
 const library = decodeClipLibrary({ v: 1, clips: FACTORY_CLIP_LIBRARY }).clips;
 
@@ -49,10 +50,12 @@ class FakeRig implements SeqRig {
   trackAnalysers = null;
   gains: Record<number, number> = {};
   master = 0;
+  masterFx: MasterFxParams | null = null;
 
   now(): number { return this.frame; }
   setTrackGain(t: number, gain: number): void { this.gains[t] = gain; }
   setMasterGain(gain: number): void { this.master = gain; }
+  setMasterFx(params: MasterFxParams): void { this.masterFx = { ...params }; }
   sendTempo(bpm: number, swing: number, anchor: number): void {
     for (const d of this.devices) d.setTempo(bpm, swing, anchor);
   }
@@ -124,6 +127,17 @@ describe('power-on', () => {
   it('applies fader gains (silent tracks stay open until muted)', () => {
     expect(rig.gains[0]).toBeGreaterThan(0);
     expect(rig.master).toBeGreaterThan(0);
+  });
+
+  it('keeps master processing session-scoped and sends live updates to the rig', () => {
+    expect(rig.masterFx?.['master.fx.limiter.on']).toBe(1);
+    expect(rig.masterFx?.['master.fx.eq.on']).toBe(0);
+    expect(rig.masterFx?.['master.fx.ott.on']).toBe(1);
+    expect(rig.masterFx?.['master.fx.comp.on']).toBe(1);
+    st().setMasterFx({ 'master.fx.eq.on': 1, 'master.fx.eq.low': -3 });
+    expect(st().session.masterFx).toMatchObject({ 'master.fx.eq.on': 1, 'master.fx.eq.low': -3 });
+    expect(rig.masterFx).toMatchObject({ 'master.fx.eq.on': 1, 'master.fx.eq.low': -3 });
+    expect(st().session.tracks[0].patch).toEqual(factorySession().tracks[0].patch);
   });
 });
 
@@ -739,6 +753,22 @@ describe('deviceMode', () => {
     stLocal().exitFocus();
     stLocal().enterFocus(1); // entering from null resets, even to the same track
     expect(stLocal().deviceMode).toBe('seq');
+  });
+
+  it('keeps advanced strips closed until explicitly opened', () => {
+    expect(stLocal().masterFxOpen).toBe(false);
+    expect(stLocal().drumFxOpen).toBe(false);
+    expect(stLocal().trackFxOpen).toBe(false);
+    stLocal().toggleMasterFx();
+    stLocal().openDrumFx('group');
+    stLocal().toggleTrackFx();
+    expect(stLocal().masterFxOpen).toBe(true);
+    expect(stLocal().drumFxOpen).toBe(true);
+    expect(stLocal().drumFxScope).toBe('group');
+    expect(stLocal().trackFxOpen).toBe(true);
+    stLocal().exitFocus();
+    expect(stLocal().drumFxOpen).toBe(false);
+    expect(stLocal().trackFxOpen).toBe(false);
   });
 });
 

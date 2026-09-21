@@ -148,6 +148,43 @@
 .sq-master-knobs .k-label { font-size: 6px; letter-spacing: 0.1em; margin-top: 1px; }
 .sq-master-knobs .k-value { display: none; }
 
+/* ============ master bus ============ */
+.sq-master-fx {
+  margin: 9px 0 0;
+  min-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #141824, #0c0f16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 8px 20px rgba(0,0,0,.32);
+  overflow: hidden;
+}
+.sq-master-fx-title {
+  min-height: 28px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line); background: #10151e;
+}
+.sq-master-fx-title > span { width: 7px; height: 7px; border-radius: 50%; background: var(--ac-n); box-shadow: 0 0 8px color-mix(in srgb, var(--ac-n) 70%, transparent); }
+.sq-master-fx-title h1 { margin: 0; font: 9px var(--font-disp); letter-spacing: .18em; color: var(--text); }
+.sq-master-fx-title p { margin: 0 0 0 auto; color: var(--text-dim); font: 7px var(--font-mono); letter-spacing: .17em; }
+.sq-master-fx-rack {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: 'eq ott comp' 'limiter limiter limiter'; gap: 8px; padding: 9px;
+}
+.sq-master-fx-rack > .panel { min-width: 0; }
+.sq-master-fx-rack .dynamics-curve, .sq-master-fx-rack .sq-limiter-view { height: 144px; aspect-ratio: auto; }
+.sq-master-knob { display: grid; justify-items: center; min-width: 0; }
+.sq-master-knob .k-value { display: none; }
+.sq-master-knob > output { margin-top: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font: 8px var(--font-mono); }
+.sq-limiter-panel { --ac: var(--ac-n); }
+.sq-limiter-view { display: block; width: 100%; border: 1px solid var(--line); border-radius: 9px; background: #07090e; }
+.sq-limiter-grid path { fill: none; stroke: var(--ac-n); stroke-opacity: .15; }
+.sq-limiter-grid text, .sq-limiter-view > text { fill: var(--text-dim); font: 8px var(--font-mono); }
+.sq-limiter-unity { fill: none; stroke: var(--ac-n); stroke-opacity: .35; stroke-dasharray: 3 4; }
+.sq-limiter-curve { fill: none; stroke: var(--text); stroke-width: 1.5; }
+.sq-limiter-readout { display: flex; justify-content: space-between; gap: 8px; padding: 9px 2px 7px; color: var(--ac-n); font: 8px var(--font-mono); letter-spacing: .05em; }
+.sq-limiter-readout output { color: var(--text); font: 9px var(--font-mono); }
+.sq-limiter-controls { display: flex; justify-content: center; }
+@media (max-width: 1250px) { .sq-master-fx-rack { grid-template-columns: 1fr; grid-template-areas: 'eq' 'ott' 'comp' 'limiter'; } }
+
 /* ============ small square buttons (M / S / ■) ============ */
 .sq-mini {
   width: 22px;
@@ -854,6 +891,14 @@
   background: #151c2a; color: #aeb8cc; cursor: pointer; font: inherit;
   font-size: 10px; letter-spacing: .08em;
 }
+.sq-drum-fx-toggle {
+  height: 25px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--tc) 42%, #303a50); border-radius: 5px;
+  background: #11141c; color: var(--tc); cursor: pointer; font: 8px var(--font-mono); letter-spacing: .1em;
+}
+.sq-drum-fx-scope { display: inline-flex; align-items: center; gap: 3px; }
+.sq-drum-fx-toggle:hover, .sq-drum-fx-toggle.on {
+  border-color: var(--tc); background: color-mix(in srgb, var(--tc) 14%, #11141c);
+}
 
 .sq-mode-toggle { display: inline-flex; border: 1px solid #303a50; border-radius: 5px; overflow: hidden; }
 .sq-mode-toggle button {
@@ -912,6 +957,13 @@
   letter-spacing: .12em; cursor: pointer;
 }
 .sq-sessions-open:hover { border-color: var(--tc); color: var(--tc); }
+.sq-master-fx-toggle {
+  flex: none; height: 25px; padding: 0 9px; border: 1px solid #303a50; border-radius: 5px;
+  background: #11141c; color: #8791a5; cursor: pointer; font: 8px var(--font-mono); letter-spacing: .1em;
+}
+.sq-master-fx-toggle:hover, .sq-master-fx-toggle.on {
+  border-color: var(--ac-n); color: var(--ac-n); background: color-mix(in srgb, var(--ac-n) 12%, #11141c);
+}
 
 .sq-lib-namefield {
   border: 1px solid var(--tc);
