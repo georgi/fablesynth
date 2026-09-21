@@ -41,16 +41,27 @@ void TopBar::timerCallback() {
 
 void TopBar::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
-    g.setFont(dispFont(17.0f));
-    int bx = brandArea.getX(), by = brandArea.getY();
+    // Measure the manually tracked face instead of relying on fixed slots.
+    // The latter left WT-1's tag inside the final glyph at Retina scale.
+    const auto brandFont = dispFont(17.0f);
+    g.setFont(brandFont);
+    auto brand = brandArea;
+    auto spacedWidth = [&](const juce::String& text, float tracking) {
+        float total = 0.0f;
+        for (int i = 0; i < text.length(); ++i)
+            total += juce::GlyphArrangement::getStringWidth(brandFont, text.substring(i, i + 1)) + tracking;
+        return (int)std::ceil(total - tracking);
+    };
+    const int fableW = spacedWidth("FABLE", 1.5f);
+    const int synthW = spacedWidth("SYNTH", 1.5f);
     g.setColour(col::text);
-    drawSpaced(g, "FABLE", { bx, by, 70, brandArea.getHeight() }, 1.5f);
-    int fableW = (int)juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "FABLE") + 5 * 5;
+    drawSpaced(g, "FABLE", brand.removeFromLeft(fableW), 1.5f);
     g.setColour(col::acA);
-    drawSpaced(g, "SYNTH", { bx + fableW, by, 80, brandArea.getHeight() }, 1.5f);
+    drawSpaced(g, "SYNTH", brand.removeFromLeft(synthW), 1.5f);
+    brand.removeFromLeft(10);
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
-    drawSpaced(g, "WT-1", { bx + fableW + 88, by + 4, 50, brandArea.getHeight() }, 2.0f);
+    drawSpaced(g, "WT-1", brand.withTrimmedTop(4), 2.0f);
     // Dirty dot (.pb-dirty): lit next to the preset select once any edit has
     // landed since the preset was loaded.
     if (proc.isProgramDirty()) {

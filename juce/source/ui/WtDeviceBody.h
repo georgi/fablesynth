@@ -20,8 +20,12 @@ public:
     fui::NoteSeqView& noteSeq() { return seq; }
 
 private:
-    juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
+    enum class Page { edit, fx, sequencer, arp };
 
+    juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
+    void selectPage(Page page);
+
+    fui::WtUiModel& model_;
     fui::OscPanel oscA, oscB;
     fui::UtilPanel util;
     fui::FilterPanel filter;
@@ -29,8 +33,11 @@ private:
     fui::LfoPanel lfos;
     fui::MatrixPanel matrix;
     fui::FxChain fx;
-    fui::DevicePageTabs pages;
     fui::NoteSeqView seq;
     fui::ArpPanel arp;
-    fui::ArpModeBar arpMode;
+    juce::TextButton editPage_ { "EDIT" };
+    juce::TextButton fxPage_ { "FX CHAIN" };
+    juce::TextButton sequencerPage_ { "SEQUENCER" };
+    juce::TextButton arpPage_ { "ARP" };
+    Page page_ = Page::edit;
 };

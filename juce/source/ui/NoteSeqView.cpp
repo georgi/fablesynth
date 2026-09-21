@@ -21,17 +21,18 @@ static constexpr int kMaxNote = fable::SEQ_NOTE_LANES - 1; // top lane (paste cl
 // ---- geometry (index.css .ns-*, rack-relative px) -----------------------------
 // panel padding 8px 12px 10px; head 24px + 10px margin; body: legend 36px +
 // 8px gap, 16 columns with 5px gaps, then the clock column (border-left,
-// 6px padding). Column: 143px of lanes (12 cells, 1px gaps), oct 5+20,
+// 6px padding). The dedicated view grows into a two-octave piano roll,
+// preserving the compact controls below it.
 // acc 4+14, step number 4+10.
 
 static constexpr int kPadX = 12, kHeadY = 8, kHeadH = 24;
 static constexpr int kBodyY = kHeadY + kHeadH + 10;
 static constexpr int kLegendW = 36, kLegendGap = 8;
-static constexpr int kLanesH = 143;
+static constexpr int kVisibleOctaves = 2;
+static constexpr int kVisibleLanes = 12 * kVisibleOctaves;
 static constexpr float kColGap = 5.0f;
-static constexpr int kOctY = kLanesH + 5, kOctH = 20;
-static constexpr int kAccY = kOctY + kOctH + 4, kAccH = 14;
-static constexpr int kNumY = kAccY + kAccH + 4;
+static constexpr int kOctH = 20, kAccH = 14;
+static constexpr int kControlGutter = 5 + kOctH + 4 + kAccH + 4 + 10 + 14;
 static constexpr int kClockW = 60, kClockGap = 6;
 
 NoteSeqView::NoteSeqView(WtUiModel& m)
@@ -56,6 +57,28 @@ void NoteSeqView::resized() {
     root_.setBounds(x, kBodyY, kClockW, 18);
 }
 
+int NoteSeqView::laneAreaHeight() const {
+    // A dedicated sequencer is a canvas, not a compact strip. Two octaves stay
+    // usable in a small hosted focus view, while surplus height becomes larger
+    // hit targets in the standalone and SQ-4 focus editors.
+    return juce::jmax(360, getHeight() - kBodyY - kControlGutter);
+}
+
+int NoteSeqView::laneHeight() const {
+    return juce::jmax(10, (laneAreaHeight() - (kVisibleLanes - 1)) / kVisibleLanes);
+}
+
+int NoteSeqView::octaveY() const { return laneAreaHeight() + 5; }
+int NoteSeqView::accentY() const { return octaveY() + kOctH + 4; }
+int NoteSeqView::stepNumberY() const { return accentY() + kAccH + 4; }
+
+int NoteSeqView::displayLane(const NoteSeqStep& step) const {
+    // Existing patches retain their octave byte. The lower octave is octave
+    // zero; +1 has a direct visual lane above it. -1 remains reachable through
+    // the per-step octave control and is drawn in the lower register.
+    return step.note + (step.oct > 0 ? 12 : 0);
+}
+
 juce::Rectangle<int> NoteSeqView::transportBounds() const {
     return { kPadX, kHeadY, 34, kHeadH };             // .ns-transport 34x24
 }
@@ -78,33 +101,34 @@ juce::Rectangle<int> NoteSeqView::colBounds(int step) const {
     const int gw = getWidth() - kPadX - kClockW - kClockGap - kLegendGap - gx;
     const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
     const float x = static_cast<float>(gx) + static_cast<float>(step) * (w + kColGap);
-    return juce::Rectangle<float>(x, (float)kBodyY, w, (float)(kNumY + 10)).toNearestInt();
+    return juce::Rectangle<float>(x, (float)kBodyY, w,
+                                  (float)(stepNumberY() + 10)).toNearestInt();
 }
 
 juce::Rectangle<int> NoteSeqView::cellBounds(int step, int note) const {
     const auto c = colBounds(step);
-    // 12 lanes over kLanesH with 1px gaps, note 11 on top (web lane order)
-    const float ch = (kLanesH - 11.0f) / 12.0f;
-    const int r = fable::SEQ_NOTE_LANES - 1 - note;
+    // 24 visible lanes, two chromatic octaves, with one-pixel seams.
+    const float ch = (float)laneHeight();
+    const int r = kVisibleLanes - 1 - juce::jlimit(0, kVisibleLanes - 1, note);
     const float y = static_cast<float>(c.getY()) + static_cast<float>(r) * (ch + 1.0f);
     return juce::Rectangle<float>((float)c.getX(), y, (float)c.getWidth(), ch).toNearestInt();
 }
 
 juce::Rectangle<int> NoteSeqView::octBounds(int step) const {
     const auto c = colBounds(step);
-    return { c.getX(), c.getY() + kOctY, c.getWidth(), kOctH };
+    return { c.getX(), c.getY() + octaveY(), c.getWidth(), kOctH };
 }
 
 juce::Rectangle<int> NoteSeqView::accBounds(int step) const {
     const auto c = colBounds(step);
-    return { c.getX(), c.getY() + kAccY, c.getWidth(), kAccH };
+    return { c.getX(), c.getY() + accentY(), c.getWidth(), kAccH };
 }
 
 // .ns-step-num — the selection strip: Shift-click/drag sweeps the step range,
 // a plain click inside the current selection starts a content drag-move.
 juce::Rectangle<int> NoteSeqView::stepNumBounds(int step) const {
     const auto c = colBounds(step);
-    return c.withY(c.getY() + kNumY).withHeight(10);
+    return c.withY(c.getY() + stepNumberY()).withHeight(10);
 }
 
 // Inverse of colBounds' x geometry — which column a drag's pointer x lands
@@ -120,17 +144,21 @@ int NoteSeqView::stepAtX(int x) const {
 
 // Inverse of cellBounds' lane math: note 11 sits on top, C at the bottom.
 // Clamped to the lane range since drags wander past the grid edges.
-int NoteSeqView::noteAtY(int y) const {
-    const float ch = (kLanesH - 11.0f) / 12.0f;
+int NoteSeqView::visualLaneAtY(int y) const {
+    const float ch = (float)laneHeight();
     const float rel = (float)(y - kBodyY) / (ch + 1.0f);
-    const int row = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, (int)std::floor(rel));
-    return fable::SEQ_NOTE_LANES - 1 - row;
+    const int row = juce::jlimit(0, kVisibleLanes - 1, (int)std::floor(rel));
+    return kVisibleLanes - 1 - row;
+}
+
+int NoteSeqView::noteAtY(int y) const {
+    return visualLaneAtY(y) % fable::SEQ_NOTE_LANES;
 }
 
 // The whole 16×12 note-lane area (excludes the oct / acc / step-number rows).
 juce::Rectangle<int> NoteSeqView::gridBounds() const {
     const auto a = colBounds(0), b = colBounds(fable::SEQ_STEPS - 1);
-    return { a.getX(), kBodyY, b.getRight() - a.getX(), kLanesH };
+    return { a.getX(), kBodyY, b.getRight() - a.getX(), laneAreaHeight() };
 }
 
 // Floating CUT · COPY · DUP · DEL · ✕ toolbar centered over the selected
@@ -165,16 +193,16 @@ bool NoteSeqView::inRect(int step, int note) const {
     return step >= n.stepLo && step <= n.stepHi && note >= n.noteLo && note <= n.noteHi;
 }
 
-// The origin step of a note grabbable at (step, note): the cell itself if lit,
+// The origin step of a note grabbable at (step, visual lane): the cell itself if lit,
 // else a longer note whose painted body covers this column (useSeqNoteDrag's
 // long-note-body grab). Returns -1 if no note is grabbable here.
 int NoteSeqView::grabNoteAt(int step, int note) const {
     const int pat = model.editPattern();
     const auto here = model.sequenceStep(pat, step);
-    if (here.on && here.note == note) return step;
+    if (here.on && displayLane(here) == note) return step;
     for (int c = step - 1; c >= 0; --c) {
         const auto v = model.sequenceStep(pat, c);
-        if (v.on && v.note == note && c + v.duration > step) return c;
+        if (v.on && displayLane(v) == note && c + v.duration > step) return c;
     }
     return -1;
 }
@@ -182,7 +210,7 @@ int NoteSeqView::grabNoteAt(int step, int note) const {
 juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
     const auto st = model.sequenceStep(model.editPattern(), step);
     if (!st.on) return {};
-    auto cell = cellBounds(step, st.note);
+    auto cell = cellBounds(step, displayLane(st));
     const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
     const int gridRight = getWidth() - kPadX - kClockW - kClockGap;
     cell.setWidth(juce::jmax(1, juce::jmin(w, gridRight - cell.getX())));
@@ -198,6 +226,20 @@ void NoteSeqView::toggleCell(int step, int note) {
         cur.on = false; cur.acc = false; cur.duration = 1;
     } else {
         cur.on = true; cur.note = note;
+    }
+    model.setSequenceStep(pat, step, cur);
+    repaint();
+}
+
+void NoteSeqView::toggleVisualCell(int step, int visualLane) {
+    const int pat = model.editPattern();
+    const int note = visualLane % 12;
+    const int oct = visualLane >= 12 ? 1 : 0;
+    NoteSeqStep cur = model.sequenceStep(pat, step);
+    if (cur.on && cur.note == note && cur.oct == oct) {
+        cur.on = false; cur.acc = false; cur.duration = 1;
+    } else {
+        cur.on = true; cur.note = note; cur.oct = oct;
     }
     model.setSequenceStep(pat, step, cur);
     repaint();
@@ -564,8 +606,11 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
     // Priority mirrors SeqPanel.tsx's onPointerDown ladder. The toggle is
     // deferred to mouseUp so a gesture that never moves still toggles the cell.
     if (gridBounds().contains(pos)) {
-        const int step = stepAtX(pos.x), note = noteAtY(pos.y);
+        const int step = stepAtX(pos.x);
+        const int visualLane = visualLaneAtY(pos.y);
+        const int note = visualLane % fable::SEQ_NOTE_LANES;
         downStep_ = step; downNote_ = note;
+        downVisualLane_ = visualLane;
         if (e.mods.isShiftDown()) {                              // 1) rectangle sweep
             sweeping_ = true; pending_ = { step, step, note, note };
             repaint();
@@ -578,7 +623,7 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
             dragStartPos_ = dragCurPos_ = e.position;
             return;
         }
-        const int origin = grabNoteAt(step, note);              // 3) note drag
+        const int origin = grabNoteAt(step, visualLane);        // 3) note drag
         if (origin >= 0) {
             noteDragArmed_ = true; noteDragActive_ = false;
             ndSrcStep_ = origin; ndSrcNote_ = note; ndGrabStep_ = step;
@@ -651,10 +696,13 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
         drawingNote_ = false;
         history_.push(snapshot());
         auto note = model.sequenceStep(model.editPattern(), downStep_);
-        note.on = true; note.note = downNote_; note.duration = drawDuration_;
+        note.on = true;
+        note.note = downVisualLane_ % fable::SEQ_NOTE_LANES;
+        note.oct = downVisualLane_ >= fable::SEQ_NOTE_LANES ? 1 : 0;
+        note.duration = drawDuration_;
         model.setSequenceStep(model.editPattern(), downStep_, note);
         hasLastCell_ = true; lastCellStep_ = downStep_; lastCellNote_ = downNote_;
-        downStep_ = downNote_ = -1;
+        downStep_ = downNote_ = downVisualLane_ = -1;
         repaint();
         return;
     }
@@ -674,7 +722,7 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
             if (head >= 0) setSelection({ head, head, downNote_, downNote_ }); // click a note = select it
             else toggleAt(downStep_, downNote_);                               // empty cell: make a note
         }
-        downStep_ = downNote_ = -1;
+        downStep_ = downNote_ = downVisualLane_ = -1;
         return;
     }
     if (noteDragArmed_) {
@@ -687,7 +735,7 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
         } else if (downStep_ >= 0) {       // plain tap on a note: select it (head or body)
             setSelection({ ndSrcStep_, ndSrcStep_, ndSrcNote_, ndSrcNote_ });
         }
-        downStep_ = downNote_ = -1;
+        downStep_ = downNote_ = downVisualLane_ = -1;
         return;
     }
     if (barDragFrom_ >= 0) {
@@ -702,7 +750,7 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
     }
     if (downStep_ >= 0) {                   // plain click on an empty cell: toggle on
         toggleAt(downStep_, downNote_);
-        downStep_ = downNote_ = -1;
+        downStep_ = downNote_ = downVisualLane_ = -1;
     }
 }
 
@@ -728,7 +776,7 @@ void NoteSeqView::cancelGesture() {
     noteDragArmed_ = noteDragActive_ = false;
     ghost_ = false; ghostHasHover_ = false;
     barDragFrom_ = -1; barDragging_ = false; barDropTarget_ = -1;
-    downStep_ = downNote_ = -1;
+    downStep_ = downNote_ = downVisualLane_ = -1;
     repaint();
 }
 
@@ -772,7 +820,7 @@ void NoteSeqView::timerCallback() {
         moveArmed_ = moving_ = false; noteDragArmed_ = noteDragActive_ = false;
         ghost_ = false; ghostHasHover_ = false;
         barDragFrom_ = -1; barDragging_ = false; barDropTarget_ = -1;
-        downStep_ = downNote_ = -1;
+        downStep_ = downNote_ = downVisualLane_ = -1;
         hasLastCell_ = false;
         clip_ = {};
         history_.clear();
@@ -938,22 +986,24 @@ void NoteSeqView::paint(juce::Graphics& g) {
 
     // ---- legend column (.ns-legend) ----
     {
-        const juce::Rectangle<int> legend(kPadX, kBodyY, kLegendW, kNumY + 10);
+        const juce::Rectangle<int> legend(kPadX, kBodyY, kLegendW, stepNumberY() + 10);
         g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
-        g.drawText("B",    legend.withHeight(10).translated(0, 2), juce::Justification::centredRight);
-        g.drawText("NOTE", legend.withHeight(10).translated(0, (kLanesH - 10) / 2), juce::Justification::centredRight);
-        g.drawText("C",    legend.withHeight(10).translated(0, kLanesH - 12), juce::Justification::centredRight);
-        g.drawText("OCT",  legend.withHeight(kOctH).translated(0, kOctY), juce::Justification::centredRight);
+        g.drawText("PITCH", legend.withHeight(10).translated(0, laneAreaHeight() / 2 - 5), juce::Justification::centredRight);
+        g.setColour(cyan.withAlpha(0.75f));
+        g.drawText("C+1", legend.withHeight(10).translated(0, 1), juce::Justification::centredRight);
+        g.drawText("C", legend.withHeight(10).translated(0, laneAreaHeight() / 2), juce::Justification::centredRight);
+        g.setColour(col::textDim);
+        g.drawText("OCT",  legend.withHeight(kOctH).translated(0, octaveY()), juce::Justification::centredRight);
         g.setColour(col::acB);
-        g.drawText("ACC",  legend.withHeight(kAccH).translated(0, kAccY), juce::Justification::centredRight);
+        g.drawText("ACC",  legend.withHeight(kAccH).translated(0, accentY()), juce::Justification::centredRight);
     }
 
     // ---- clock column divider (.ns-clock border-left) ----
     {
         const int cx = getWidth() - kPadX - kClockW - kClockGap;
         g.setColour(col::line);
-        g.drawVerticalLine(cx, (float)kBodyY, (float)(kBodyY + kNumY + 10));
+        g.drawVerticalLine(cx, (float)kBodyY, (float)(kBodyY + stepNumberY() + 10));
         // ROOT label under the stepper (the web Stepper renders its own label)
         g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
@@ -975,10 +1025,10 @@ void NoteSeqView::paint(juce::Graphics& g) {
         // sharp-degree lanes, so the 12 chromatic rows read like a keyboard.
         static const bool kSharpLane[12] = {false, true, false, true, false, false,
                                             true, false, true, false, true, false};
-        for (int note = 0; note < fable::SEQ_NOTE_LANES; ++note) {
+        for (int note = 0; note < kVisibleLanes; ++note) {
             const auto b = cellBounds(s, note).toFloat();
-            const bool active = st.on && st.note == note;
-            const bool rootLane = note == 0;
+            const bool active = st.on && displayLane(st) == note;
+            const bool rootLane = note % 12 == 0;
             if (active) {
                 if (st.acc)
                     g.setGradientFill(juce::ColourGradient(juce::Colour(0xffaef2ff), b.getX(), b.getY(),
@@ -997,6 +1047,12 @@ void NoteSeqView::paint(juce::Graphics& g) {
                                   : juce::Colours::white.withAlpha(0.045f));
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
         }
+
+        // A stronger octave seam gives the 24 chromatic lanes a quick musical
+        // read without adding a second control strip.
+        g.setColour(cyan.withAlpha(0.24f));
+        g.drawHorizontalLine(kBodyY + laneAreaHeight() / 2 - 1,
+                             (float)cellBounds(s, 0).getX(), (float)cellBounds(s, 0).getRight());
 
         // octave button (.ns-oct-btn)
         {
@@ -1033,13 +1089,13 @@ void NoteSeqView::paint(juce::Graphics& g) {
         const auto c = colBounds(s);
         g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
-        g.drawText(juce::String(s + 1), c.withY(c.getY() + kNumY).withHeight(10),
+        g.drawText(juce::String(s + 1), c.withY(c.getY() + stepNumberY()).withHeight(10),
                    juce::Justification::centredTop, false);
 
         // playhead cursor (.ns-step-cursor)
         if (playing && curStep == s && curPat == edit) {
             const auto cf = juce::Rectangle<float>((float)c.getX() - 2, (float)c.getY() - 2,
-                                                   (float)c.getWidth() + 4, (float)(kAccY + kAccH) + 4);
+                                                   (float)c.getWidth() + 4, (float)(accentY() + kAccH) + 4);
             g.setColour(cyan.withAlpha(0.85f));
             g.drawRoundedRectangle(cf, 6.0f, 1.0f);
             g.setColour(cyan.withAlpha(0.18f));
@@ -1053,7 +1109,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
     for (int s = 0; s < fable::SEQ_STEPS; ++s) {
         const auto& st = steps[s];
         if (!st.on) continue;
-        const auto start = cellBounds(s, st.note);
+        const auto start = cellBounds(s, displayLane(st));
         const int pitch = colBounds(s).getWidth();
         const int width = pitch * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
         auto block = start.withWidth(juce::jmax(pitch, juce::jmin(width, gridRight - start.getX()))).reduced(1, 1);

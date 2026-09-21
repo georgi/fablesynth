@@ -20,7 +20,9 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         if (auto *p = proc->apvts.getParameter(id))
             p->setValueNotifyingHost(p->convertTo0to1(value));
     };
-    juce::String prefix = drum ? "pad0." : "";
+    // DR-1 exposes the same unscoped FX parameter ids as the other devices:
+    // its rack is a group channel strip rather than a selected-pad editor.
+    juce::String prefix;
     for (auto fx : {"ott", "comp", "chorus", "delay", "reverb"})
         set(prefix + "fx." + fx + ".on", 1);
     set(prefix + "fx.delay.time", .18f);
@@ -108,14 +110,8 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     ok &= proc->apvts.getRawParameterValue(prefix + "fx.drive.type")->load() == 2;
     set(prefix + "fx.drive.on", 1);
     if (drum) {
-        chain->setPad(7, "EQ ISOLATION");
-        auto* eq = findFxComponent<fui::FxModuleView>(*chain, "EQ visual FX");
-        auto* other = proc->apvts.getParameter("pad7.fx.eq.mid");
-        if (!eq || !other) return false;
-        const auto before = other->getValue();
-        eq->keyPressed(juce::KeyPress(juce::KeyPress::upKey));
-        ok &= other->getValue() > before;
-        ok &= std::abs(proc->apvts.getRawParameterValue("pad0.fx.eq.mid")->load() + 5.f) < 1e-5f;
+        // Established pad automation positions remain stable; the new group
+        // strip is appended after them rather than rebinding the editor.
         // Internal pad stride grows; established host automation positions must not.
         for (int pad = 0; pad < 16; ++pad)
             ok &= proc->apvts.getParameter("pad" + juce::String(pad) + ".oscA.table")->getParameterIndex() == pad * 73;
@@ -123,20 +119,7 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         // The appended controls preserve all previous EQ automation positions too.
         for (int pad = 0; pad < 16; ++pad)
             ok &= proc->apvts.getParameter("pad" + juce::String(pad) + ".fx.eq.on")->getParameterIndex() == 16 * 73 + 3 + pad * 21;
-        auto* padDrive = findFxComponent<fui::FxModuleView>(*chain, "DRIVE visual FX");
-        auto* tape = padDrive ? findFxComponent<juce::TextButton>(*padDrive, "TAPE") : nullptr;
-        if (!tape) return false;
-        tape->onClick();
-        ok &= proc->apvts.getRawParameterValue("pad7.fx.drive.type")->load() == 1;
-        ok &= proc->apvts.getRawParameterValue("pad0.fx.drive.type")->load() == 2;
-        auto* padChorus = findFxComponent<fui::FxModuleView>(*chain, "CHORUS visual FX");
-        if (!padChorus) return false;
-        set("pad7.fx.chorus.rate", .6f);
-        const auto otherPreview = chorusPlotHash(*padChorus);
-        set("pad7.fx.chorus.rate", 3.25f);
-        ok &= chorusPlotHash(*padChorus) != otherPreview;
-        ok &= std::abs(proc->apvts.getRawParameterValue("pad0.fx.chorus.rate")->load() - .6f) < 1e-5f;
-        chain->setPad(0, "KICK");
+        ok &= proc->apvts.getParameter("fx.eq.mid") != nullptr;
     }
     {
         set(prefix + "fx.eq.m2q", 3.2f);

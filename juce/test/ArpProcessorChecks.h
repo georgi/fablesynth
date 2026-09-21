@@ -81,12 +81,11 @@ bool runArpProcessorChecks(const char* machine, bool bass) {
     {
         std::unique_ptr<juce::AudioProcessorEditor> editor(proc->createEditor());
         editor->setVisible(true);
-        auto* mode = findFxComponent<fui::ArpModeBar>(*editor);
+        auto* mode = findFxComponent<juce::TextButton>(*editor, "ARP");
         auto* arp = findFxComponent<fui::ArpPanel>(*editor);
-        check(mode && arp, "native SEQ/ARP controls exist");
+        check(mode && arp, "native dedicated SEQUENCER/ARP tabs exist");
         if (mode && arp) {
-            for (auto* child : mode->getChildren())
-                if (auto* button = dynamic_cast<juce::TextButton*>(child); button && button->getButtonText() == "ARP") button->onClick();
+            mode->onClick();
             check(arp->isVisible() && proc->getArpSettings().enabled, "ARP tab selects the live arp editor");
             for (auto* child : arp->getChildren()) if (child->isVisible())
                 check(!child->getBounds().isEmpty() && arp->getLocalBounds().contains(child->getBounds()), "arp controls fit inside editor");

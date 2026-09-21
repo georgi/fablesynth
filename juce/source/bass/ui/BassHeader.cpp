@@ -155,17 +155,26 @@ void BassHeader::timerCallback() {
 void BassHeader::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
-    // brand: FABLE (white) SYNTH (green)  BL-1 (dim) — web .brand
-    g.setFont(dispFont(17.0f));
-    int bx = brandArea.getX(), by = brandArea.getY();
+    // Use measured tracked segments so the model mark never crosses SYNTH.
+    const auto brandFont = dispFont(17.0f);
+    g.setFont(brandFont);
+    auto brand = brandArea;
+    auto spacedWidth = [&](const juce::String& text, float tracking) {
+        float total = 0.0f;
+        for (int i = 0; i < text.length(); ++i)
+            total += juce::GlyphArrangement::getStringWidth(brandFont, text.substring(i, i + 1)) + tracking;
+        return (int)std::ceil(total - tracking);
+    };
+    const int fableW = spacedWidth("FABLE", 1.5f);
+    const int synthW = spacedWidth("SYNTH", 1.5f);
     g.setColour(col::text);
-    drawSpaced(g, "FABLE", { bx, by, 70, brandArea.getHeight() }, 1.5f);
-    int fableW = (int)juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "FABLE") + 5 * 5;
+    drawSpaced(g, "FABLE", brand.removeFromLeft(fableW), 1.5f);
     g.setColour(accentA());
-    drawSpaced(g, "SYNTH", { bx + fableW, by, 80, brandArea.getHeight() }, 1.5f);
+    drawSpaced(g, "SYNTH", brand.removeFromLeft(synthW), 1.5f);
+    brand.removeFromLeft(10);
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
-    drawSpaced(g, "BL-1", { bx + fableW + 88, by + 4, 50, brandArea.getHeight() }, 2.0f);
+    drawSpaced(g, "BL-1", brand.withTrimmedTop(4), 2.0f);
 
     // "PATCH" mini head left of the stepper (web .bl-patch-label)
     g.setColour(col::textDim);

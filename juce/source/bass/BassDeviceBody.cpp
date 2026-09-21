@@ -4,14 +4,42 @@
 #include <utility>
 
 BassDeviceBody::BassDeviceBody(fui::BassUiModel& model)
-    : osc(model), sub(model), filter(model), env(model), lfo(model), accent(model),
-      keys(model), seq(model), fxRack(model, false), arp(model, true), arpMode(model, seq, arp) {
+    : model_(model), osc(model), sub(model), filter(model), env(model), lfo(model), accent(model),
+      keys(model), seq(model), fxRack(model, false), arp(model, true) {
     for (auto* component : std::initializer_list<juce::Component*>{
              &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
         addAndMakeVisible(*component);
-    addAndMakeVisible(pages);
-    addAndMakeVisible(arp); addAndMakeVisible(arpMode);
-    pages.onChange = [this] { resized(); };
+    addAndMakeVisible(arp);
+    const auto configurePage = [this](juce::TextButton& button, Page page) {
+        button.setClickingTogglesState(true);
+        button.setRadioGroupId(718);
+        button.setColour(juce::TextButton::buttonColourId, fui::col::panelHi);
+        button.setColour(juce::TextButton::buttonOnColourId, fui::accentA().withAlpha(0.18f));
+        button.setColour(juce::TextButton::textColourOffId, fui::col::textDim);
+        button.setColour(juce::TextButton::textColourOnId, fui::col::text);
+        button.onClick = [this, page] { selectPage(page); };
+        addAndMakeVisible(button);
+    };
+    configurePage(editPage_, Page::edit);
+    configurePage(fxPage_, Page::fx);
+    configurePage(sequencerPage_, Page::sequencer);
+    configurePage(arpPage_, Page::arp);
+    selectPage(model_.arpSettings().enabled ? Page::arp : Page::edit);
+}
+
+void BassDeviceBody::selectPage(Page page) {
+    page_ = page;
+    editPage_.setToggleState(page == Page::edit, juce::dontSendNotification);
+    fxPage_.setToggleState(page == Page::fx, juce::dontSendNotification);
+    sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
+    arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
+    auto settings = model_.arpSettings();
+    const bool arpEnabled = page == Page::arp;
+    if (settings.enabled != arpEnabled) {
+        settings.enabled = arpEnabled;
+        model_.setArpSettings(settings);
+    }
+    resized();
 }
 
 // Keyboard last, the way every hardware and soft synth puts it: KEYS is a
@@ -42,16 +70,24 @@ void BassDeviceBody::resized() {
         }
     };
 
-    pages.setBounds(18,103,fullW,26);
-    const bool showFx = pages.fxSelected();
-    for (auto* c : std::initializer_list<juce::Component*>{&osc,&sub,&filter,&env,&lfo,&accent}) c->setVisible(!showFx);
+    auto tabs = juce::Rectangle<int>(18, 103, fullW, 26);
+    editPage_.setBounds(tabs.removeFromLeft(76)); tabs.removeFromLeft(5);
+    fxPage_.setBounds(tabs.removeFromLeft(106)); tabs.removeFromLeft(5);
+    sequencerPage_.setBounds(tabs.removeFromLeft(126)); tabs.removeFromLeft(5);
+    arpPage_.setBounds(tabs.removeFromLeft(70));
+    const bool showEdit = page_ == Page::edit;
+    const bool showFx = page_ == Page::fx;
+    const bool showSequencer = page_ == Page::sequencer;
+    const bool showArp = page_ == Page::arp;
+    for (auto* c : std::initializer_list<juce::Component*>{&osc,&sub,&filter,&env,&lfo,&accent}) c->setVisible(showEdit);
     fxRack.setVisible(showFx);
     layRow({ { &osc, 464 }, { &sub, 192 }, { &filter, 355 }, { &env, 386 } }, 139, 243);
     layRow({ { &lfo, 290 }, { &accent, 250 } }, 391, 140);
-    keys.setVisible(!showFx);
-    arpMode.setBounds(18, showFx ? 729 : 540, fullW, 24);
-    seq.setBounds(18, (showFx ? 729 : 540) + 28, fullW, (showFx ? 329 : 369) - 28);
+    keys.setVisible(showEdit);
+    seq.setVisible(showSequencer);
+    arp.setVisible(showArp);
+    seq.setBounds(18, 139, fullW, 919);
     arp.setBounds(seq.getBounds());
     fxRack.setBounds(18, 139, fullW, 581);
-    keys.setBounds(18, 918, fullW, 140);
+    keys.setBounds(18, 540, fullW, 140);
 }

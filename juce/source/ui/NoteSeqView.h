@@ -97,7 +97,15 @@ private:
     void restore(const SeqSnapshot&);
 
     int stepAtX(int x) const;               // inverse of colBounds, for drag hit-testing
-    int noteAtY(int y) const;               // inverse of cellBounds' lane math (clamped 0..11)
+    int noteAtY(int y) const;               // data note for legacy selection gestures (0..11)
+    int visualLaneAtY(int y) const;         // two-octave display lane (0..23)
+    int displayLane(const fable::NoteSeqStep&) const;
+    int laneAreaHeight() const;
+    int laneHeight() const;
+    int octaveY() const;
+    int accentY() const;
+    int stepNumberY() const;
+    void toggleVisualCell(int step, int visualLane);
     bool inRect(int step, int note) const;  // is (step,note) inside the pending/committed rect?
     int grabNoteAt(int step, int note) const; // origin step of a note grabbable at (step,note), or -1
     void toggleAt(int step, int note);      // deferred single-cell toggle + paste-anchor update
@@ -128,6 +136,7 @@ private:
     // the pointer reaches a different cell (so a plain tap still toggles).
     bool drawingNote_ = false;
     int drawDuration_ = 1;
+    int downVisualLane_ = -1;
     bool noteDragArmed_ = false, noteDragActive_ = false;
     int ndSrcStep_ = 0, ndSrcNote_ = 0, ndGrabStep_ = 0, ndOverStep_ = 0, ndOverNote_ = 0;
     // Pixel-space drag tracking: the preview follows the pointer continuously

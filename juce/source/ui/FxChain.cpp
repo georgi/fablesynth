@@ -859,7 +859,7 @@ void FxChain::paint(juce::Graphics &g) {
     g.setFont(monoFont(9));
     g.setColour(col::acN);
     auto head = getLocalBounds().removeFromTop(22);
-    g.drawText(pad_ < 0 ? "SIGNAL FLOW"
+    g.drawText(pad_ < 0 ? (padName_.isNotEmpty() ? padName_ : "CHANNEL STRIP")
                         : "PAD " + juce::String(pad_ + 1).paddedLeft('0', 2) + "  " + padName_,
                head, juce::Justification::centredLeft);
     g.drawText(
