@@ -177,7 +177,8 @@ int main() {
 
     printf("\n== 1. DrumParams ==\n");
     check(DPAD_NFIELDS == 99, "99 per-pad fields including dynamics and drive controls");
-    check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3, "per-pad params plus 3 globals");
+    check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3 + (DPAD_NFIELDS - DP_FXDRIVE_ON),
+          "per-pad params plus transport and group-strip globals");
     const auto& info = drumParamInfo();
     check((int)info.size() == DR_NUM_PARAMS, "info covers all params");
     check(info[dpid(0, DP_OSCA_TABLE)].pid == "pad0.oscA.table", "pad0 table pid");
@@ -185,11 +186,15 @@ int main() {
     check(info[DG_SEQ_BPM].pid == "seq.bpm", "bpm pid");
     check(info[dpid(0, DP_FXREVERB_MIX)].pid == "pad0.fx.reverb.mix", "pad FX pid");
     check(info[dpid(15, DP_FXDELAY_MIX)].pid == "pad15.fx.delay.mix", "last pad FX namespace");
+    check(info[dgfx(DP_FXDELAY_MIX)].pid == "fx.delay.mix", "group-strip FX pid");
     auto d = defaultDrumParams();
     check(d[DG_SEQ_BPM] == 126.0f, "bpm default 126");
     check(d[dpid(5, DP_OSCA_LEVEL)] == 0.75f && d[dpid(5, DP_OSCB_LEVEL)] == 0.0f, "osc level defaults");
     check(d[dpid(0, DP_AENV_DEC)] == 0.24f && d[dpid(0, DP_LVL)] == 0.8f, "env/lvl defaults");
     check(d[dpid(0, DP_FXCOMP_ON)] == 1.0f && d[dpid(0, DP_FXREVERB_ON)] == 1.0f, "comp+reverb default on");
+    check(d[dgfx(DP_FXOTT_ON)] == 1.0f && d[dgfx(DP_FXCOMP_ON)] == 1.0f
+          && d[dgfx(DP_FXDRIVE_ON)] == 1.0f && d[dgfx(DP_FXREVERB_ON)] == 0.0f,
+          "group strip starts with OTT, comp and soft drive");
     check(drumIdFromString("pad15.out") == dpid(15, DP_OUT), "idFromString");
     check(legacyDrumFxField("fx.delay.mix") == DP_FXDELAY_MIX, "legacy FX migration lookup");
     check(drumIdFromString("nope") == -1, "unknown id -> -1");
@@ -201,13 +206,17 @@ int main() {
     auto dt = generateDrumTables();
     check(dt.size() == 4, "4 drum tables");
     check(generateSampledDrumTables().size() == 5, "5 sampled drum tables");
-    check(drumOneShots().size() == 32 && drumOneShots()[0].length == 22051
+    check(drumOneShots().size() == 52 && drumOneShots()[0].length == 22051
           && drumOneShots()[4].length == 110251
           && std::string(drumOneShots()[5].name) == "808BD"
           && std::string(drumOneShots()[15].name) == "808HT"
           && std::string(drumOneShots()[16].name) == "UZU BD1"
-          && std::string(drumOneShots()[31].name) == "UZU MOD",
-          "32 raw one-shots in stable 808 then UZU order");
+          && std::string(drumOneShots()[31].name) == "UZU MOD"
+          && std::string(drumOneShots()[32].name) == "CC0 IMPACT KICK"
+          && std::string(drumOneShots()[40].name) == "CC0 IMPACT CY"
+          && std::string(drumOneShots()[41].name) == "CC0 BOUNCE KICK 1"
+          && std::string(drumOneShots()[51].name) == "CC0 BOUNCE CY",
+          "52 raw one-shots preserve 808/UZU order and append both CC0 banks");
     check(allTables().size() == 15, "15 tables total (4 drum + 6 synth + 5 sampled)");
     check(dt[0].name == "THUD" && dt[1].name == "CRACK" && dt[2].name == "TINE" && dt[3].name == "GRIT", "names/order");
     // Web-reference overall peaks (vitest run of src/drum/engine/drumtables.ts):
@@ -370,37 +379,43 @@ int main() {
         check(fdb < -85.0, "GRIT +24st alias floor < -85 dB", std::to_string(fdb) + " dB");
     }
     {
-        // Per-pad routing: editing pad 1's chain cannot alter a pad 0 hit,
-        // while applying the same drive to pad 0 must alter it.
+        // Pad inserts and the post-mix group strip are independent. A pad's
+        // drive changes only its own voice; `fx.drive` follows the summed bus.
         auto clean = defaultDrumParams();
-        for (int pad = 0; pad < DR_NPADS; ++pad) {
-            clean[(size_t)dpid(pad, DP_FXDRIVE_ON)] = 0;
-            clean[(size_t)dpid(pad, DP_FXCOMP_ON)] = 0;
-            clean[(size_t)dpid(pad, DP_FXCHORUS_ON)] = 0;
-            clean[(size_t)dpid(pad, DP_FXDELAY_ON)] = 0;
-            clean[(size_t)dpid(pad, DP_FXREVERB_ON)] = 0;
-        }
+        for (int field = DP_FXDRIVE_ON; field < DPAD_NFIELDS; ++field)
+            clean[(size_t)dgfx(field)] = defaultDrumParams()[(size_t)dgfx(field)];
+        clean[(size_t)dgfx(DP_FXDRIVE_ON)] = 0;
+        clean[(size_t)dgfx(DP_FXCOMP_ON)] = 0;
+        clean[(size_t)dgfx(DP_FXCHORUS_ON)] = 0;
+        clean[(size_t)dgfx(DP_FXDELAY_ON)] = 0;
+        clean[(size_t)dgfx(DP_FXREVERB_ON)] = 0;
+        clean[(size_t)dgfx(DP_FXOTT_ON)] = 0;
         auto silentPadFx = clean;
         silentPadFx[(size_t)dpid(1, DP_FXDRIVE_ON)] = 1;
         silentPadFx[(size_t)dpid(1, DP_FXDRIVE_AMT)] = 1;
-        auto activePadFx = clean;
-        activePadFx[(size_t)dpid(0, DP_FXDRIVE_ON)] = 1;
-        activePadFx[(size_t)dpid(0, DP_FXDRIVE_AMT)] = 1;
+        auto selectedPadFx = clean;
+        selectedPadFx[(size_t)dpid(0, DP_FXDRIVE_ON)] = 1;
+        selectedPadFx[(size_t)dpid(0, DP_FXDRIVE_AMT)] = 1;
+        auto activeGroupFx = clean;
+        activeGroupFx[(size_t)dgfx(DP_FXDRIVE_ON)] = 1;
+        activeGroupFx[(size_t)dgfx(DP_FXDRIVE_AMT)] = 1;
 
         auto run = [&](const DrumParamArray& params) {
             DrumEngine e; e.prepare(48000); e.enablePadFx(true);
             e.setTables(allTables()); e.setParams(params); e.trigger(0, 1.0f);
             return renderMain(e, 4096);
         };
-        const auto a = run(clean), b = run(silentPadFx), c = run(activePadFx);
-        double unrelatedDiff = 0, selectedDiff = 0;
+        const auto a = run(clean), b = run(silentPadFx), c = run(selectedPadFx), d = run(activeGroupFx);
+        double unrelatedDiff = 0, padDiff = 0, groupDiff = 0;
         for (size_t i = 0; i < a.size(); ++i) {
             unrelatedDiff += std::abs((double)a[i] - b[i]);
-            selectedDiff += std::abs((double)a[i] - c[i]);
+            padDiff += std::abs((double)a[i] - c[i]);
+            groupDiff += std::abs((double)a[i] - d[i]);
         }
-        check(unrelatedDiff < 1e-9 && selectedDiff > 0.1,
-              "one independent FX chain per pad",
-              "other=" + std::to_string(unrelatedDiff) + " selected=" + std::to_string(selectedDiff));
+        check(unrelatedDiff < 1e-9 && padDiff > 0.1 && groupDiff > 0.1,
+              "pad inserts and group strip remain independent",
+              "other=" + std::to_string(unrelatedDiff) + " pad=" + std::to_string(padDiff)
+                + " group=" + std::to_string(groupDiff));
     }
 
     printf("\n== 4. Sequencer ==\n");
@@ -1195,16 +1210,13 @@ int main() {
         // decay to stay smooth until it passes below the gate threshold — a
         // gate that fired early shows up as a window collapsing to nothing.
         auto p = defaultDrumParams();
-        for (int i = 0; i < DR_NPADS; i++) {
-            p[(size_t)dpid(i, DP_FXDRIVE_ON)] = 0;
-            p[(size_t)dpid(i, DP_FXCOMP_ON)] = 0;
-            p[(size_t)dpid(i, DP_FXCHORUS_ON)] = 0;
-            p[(size_t)dpid(i, DP_FXDELAY_ON)] = 0;
-            p[(size_t)dpid(i, DP_FXREVERB_ON)] = 0;
-        }
-        p[(size_t)dpid(0, DP_FXREVERB_ON)] = 1;
-        p[(size_t)dpid(0, DP_FXREVERB_SIZE)] = 1.0f;   // longest tail
-        p[(size_t)dpid(0, DP_FXREVERB_MIX)] = 1.0f;
+        p[(size_t)dgfx(DP_FXDRIVE_ON)] = 0;
+        p[(size_t)dgfx(DP_FXCOMP_ON)] = 0;
+        p[(size_t)dgfx(DP_FXCHORUS_ON)] = 0;
+        p[(size_t)dgfx(DP_FXDELAY_ON)] = 0;
+        p[(size_t)dgfx(DP_FXREVERB_ON)] = 1;
+        p[(size_t)dgfx(DP_FXREVERB_SIZE)] = 1.0f;   // longest tail
+        p[(size_t)dgfx(DP_FXREVERB_MIX)] = 1.0f;
         p[(size_t)dpid(0, DP_AENV_ATT)] = 0.001f;
         p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.01f;
         p[(size_t)dpid(0, DP_AENV_DEC)] = 0.01f;       // 20 ms of input, then silence
@@ -1269,7 +1281,7 @@ int main() {
     printf("\n== 6. DrumKits ==\n");
     {
         const auto& kits = factoryKits();
-        check(kits.size() == 18, "18 factory kits");
+        check(kits.size() == 23, "23 factory kits");
         check(kits[0].name == "TR-VOID" && kits[1].name == "ROOM ONE" && kits[2].name == "BITCRUSH",
               "original kit names/order stay stable");
         check(kits[3].name == "808 CLASSIC" && kits[11].name == "LIVE ROOM" && kits[12].name == "UZU"
@@ -1278,6 +1290,10 @@ int main() {
         check(kits[14].name == "NEON GRID" && kits[15].name == "ACID CAVE"
               && kits[16].name == "BOOM BAP" && kits[17].name == "PIRATE RADIO",
               "authored kit bank names/order");
+        check(kits[18].name == "CC0 IMPACT", "CC0 factory kit is appended");
+        check(kits[19].name == "CC0 BOUNCE", "second CC0 factory kit is appended");
+        check(kits[20].name == "CC0 WAREHOUSE" && kits[21].name == "CC0 DEEP HOUSE"
+              && kits[22].name == "CC0 BASS RUSH", "three CC0 style kits are appended");
         auto classic = applyKit(kits[3]);
         check(classic[dpid(0, DP_OSCB_TABLE)] == 5
               && classic[dpid(8, DP_OSCB_TABLE)] == 13
@@ -1296,6 +1312,22 @@ int main() {
               && hybrid[dpid(0, DP_OSCA_LEVEL)] > 0
               && hybrid[dpid(0, DP_OSCB_LEVEL)] > 0,
               "hybrid kit keeps oscillator and sample layers active");
+        auto impact = applyKit(kits[18]);
+        check(impact[dpid(0, DP_OSCB_TABLE)] == 32
+              && impact[dpid(15, DP_OSCB_TABLE)] == 40
+              && impact[dpid(15, DP_OSCB_PHASE)] == 1
+              && impact[dpid(5, DP_CHOKE)] == 1 && impact[dpid(6, DP_CHOKE)] == 1,
+              "CC0 IMPACT maps the appended shared sample bank");
+        auto bounce = applyKit(kits[19]);
+        check(bounce[dpid(0, DP_OSCB_TABLE)] == 41
+              && bounce[dpid(13, DP_OSCB_TABLE)] == 43
+              && bounce[dpid(15, DP_OSCB_TABLE)] == 51,
+              "CC0 BOUNCE maps the expanded shared sample bank");
+        auto house = applyKit(kits[21]);
+        auto rush = applyKit(kits[22]);
+        check(house[DG_SEQ_BPM] == 122.0f && house[dgfx(DP_FXDELAY_ON)] == 1.0f
+              && rush[dpid(1, DP_OSCB_TABLE)] == 44.0f,
+              "CC0 style kit parameters map correctly");
 
         // MINIMAL drives only its kicks and toms, at 50% wet (kits.ts
         // minimalParams()). The untouched pads must stay dry, or the whole kit
@@ -1351,17 +1383,19 @@ int main() {
         check(allInRange, "all override values within [min,max]", badPid);
 
         // Structural invariants: classic kits (0-13) share the TR-VOID pad map
-        // and a single pattern; authored kits (14+) ship their own pads and an
-        // A A A B chain (kits.test.ts asserts the same on the web side).
+        // and a single pattern; authored kits (14..17) ship their own pads and
+        // an A A A B chain. CC0 IMPACT is a sample-bank layout with the shared
+        // grid (kits.test.ts asserts the same on the web side).
         for (size_t k = 0; k < kits.size(); ++k) {
             const auto& kit = kits[k];
             check((int)kit.patterns.size() == DR_NPATTERNS * DR_NPADS * DR_STEPS,
                   kit.name + " patterns 4*16*16");
-            const bool authored = k >= 14;
+            const bool authored = (k >= 14 && k < 18) || k >= 20;
             check(kit.chain == (authored ? std::vector<int>{0, 1, 2, 3} : std::vector<int>{0}),
                   kit.name + (authored ? " chain {0,1,2,3}" : " chain {0}"));
+            const bool sharedGrid = k < 14;
             check(kit.padNames[0] == "KICK"
-                      && (authored ? !kit.padNames[15].empty() : kit.padNames[15] == "GLITCH"),
+                      && (sharedGrid ? kit.padNames[15] == "GLITCH" : !kit.padNames[15].empty()),
                   kit.name + " pad names");
         }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "DrumUiModel.h"
+#include "RemoteAudioDownload.h"
 #include "../dsp/DrumEngine.h"
 #include "../../ui/Theme.h"
 #include <array>
@@ -48,12 +49,18 @@ public:
 private:
     void timerCallback() override;
     void parentHierarchyChanged() override;
-    void importFile(const juce::File&, int padIndex);
+    bool importFile(const juce::File&, int padIndex);
+    void showImportMenu(int padIndex, juce::Point<int> screenPosition);
+    void showRemoteImport(int padIndex);
+    void importRemoteUrl(juce::String urlText, int padIndex);
+    void finishRemoteImport(RemoteAudioDownload::Result, int padIndex);
     void flash(int padIndex);
 
     std::unique_ptr<DrumUiModel> ownedModel;
     DrumUiModel& proc;
     juce::AudioFormatManager formatMgr;
+    std::unique_ptr<juce::FileChooser> localChooser_;
+    std::unique_ptr<RemoteAudioDownload> remoteImport_;
 
     std::array<juce::uint32, fable::DR_NPADS> hitMs_{};   // last hit, ms ticks
     std::array<int, fable::DR_NPADS> lastTag_{};          // choke<<8|out cache

@@ -133,7 +133,7 @@ static constexpr float kGroupGap = 8.0f;
 // All 16 pad lanes at once (drum.css .dr-lanes), lane 0 = pad 15 at the top so
 // the stack reads like the pad grid's bottom-left origin. Flat BL-1-style cells
 // — the whole cell is the hit target, no inset pill leaving dead space.
-static constexpr int kLaneMaxH = 20, kLaneGap = 1, kLaneNameW = 92, kLaneNameGap = 7;
+static constexpr int kLaneMaxH = 42, kLaneGap = 1, kLaneNameW = 92, kLaneNameGap = 7;
 static constexpr int kRowBottomPad = 11;
 static constexpr float kStepGap = 2.0f;
 
@@ -175,10 +175,12 @@ int StepSeqView::laneOfPad(int pad) { return fable::DR_NPADS - 1 - pad; }
 int StepSeqView::padOfLane(int lane) { return fable::DR_NPADS - 1 - lane; }
 
 // Lanes divide whatever height the panel was given, so the view still reads
-// correctly when a host scales the rack down — capped at the web's 20px.
+// correctly when a host scales the rack down. In its dedicated workspace the
+// lane stack can use the full vertical canvas, making every hit target easier
+// to read and edit than the old compact strip.
 int StepSeqView::laneHeight() const {
     const int usable = getHeight() - kRowY - kRowBottomPad - (fable::DR_NPADS - 1) * kLaneGap;
-    return juce::jlimit(8, kLaneMaxH, usable / fable::DR_NPADS);
+    return juce::jlimit(10, kLaneMaxH, usable / fable::DR_NPADS);
 }
 
 juce::Rectangle<int> StepSeqView::laneBounds(int pad) const {

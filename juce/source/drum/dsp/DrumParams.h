@@ -23,7 +23,7 @@ constexpr int DR_STEPS = 16;
 
 // ---- option label tables (mirror src/drum/params.ts) ----
 extern const std::vector<std::string> DRUM_TABLE_NAMES;   // THUD CRACK TINE GRIT PRIME BLOOM PULSE VOX CHIME GLITCH
-extern const std::vector<std::string> DRUM_SAMPLE_NAMES;  // 16 CC0 TR-808 + 16 Unlicense UZU one-shots
+extern const std::vector<std::string> DRUM_SAMPLE_NAMES;  // 16 CC0 TR-808 + 16 UZU + 20 curated CC0 one-shots
 extern const std::vector<std::string> DRUM_FILTER_TYPES;  // LP 12, LP 24, BP 12, HP 12, NOTCH
 extern const std::vector<std::string> DMOD_SOURCES;       // —, MOD ENV, VELO, RAND
 extern const std::vector<std::string> DMOD_DESTS;         // —, A POS, B POS, LEVEL, CUTOFF, PITCH, A FINE, B FINE, NOISE LVL, RES
@@ -67,10 +67,14 @@ enum DPadField : int {
 enum DGlobalPid : int {
     DG_SEQ_BPM = DR_NPADS * DPAD_NFIELDS,
     DG_MASTER_SWING, DG_MASTER_VOLUME,
-    DR_NUM_PARAMS
+    // One canonical channel strip follows the established pad and transport
+    // parameter positions. The pad FX slots above remain load-compatible.
+    DG_FX_BASE,
+    DR_NUM_PARAMS = DG_FX_BASE + (DPAD_NFIELDS - DP_FXDRIVE_ON)
 };
 
 inline constexpr int dpid(int padI, int field) { return padI * DPAD_NFIELDS + field; }
+inline constexpr int dgfx(int field) { return DG_FX_BASE + field - DP_FXDRIVE_ON; }
 inline constexpr int doscBase(int osc) { return osc == 0 ? DP_OSCA_TABLE : DP_OSCB_TABLE; }
 
 using DrumParamArray = std::array<float, DR_NUM_PARAMS>;

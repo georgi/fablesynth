@@ -1,4 +1,5 @@
 #include "PadGrid.h"
+#include "RemoteSampleSources.h"
 #include "../../dsp/UserTables.h"
 #include "../../agent/AgentPanel.h"
 
@@ -18,6 +19,78 @@ static constexpr int    kGap      = 8;      // .pad-grid gap
 // QWERTY map — useDrumKeys.ts KEYMAP flattened so indexOfChar == pad index:
 // zxcv = pads 0-3, asdf = 4-7, qwer = 8-11, 1234 = 12-15.
 static const juce::String kKeyOrder("zxcvasdfqwer1234");
+
+class RemoteImportPopover final : public juce::Component {
+public:
+    explicit RemoteImportPopover(std::function<void(juce::String)> onImport)
+        : onImport_(std::move(onImport)) {
+        url_.setFont(monoFont(11.0f));
+        url_.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff0a0d13));
+        url_.setColour(juce::TextEditor::textColourId, col::text);
+        url_.setColour(juce::TextEditor::outlineColourId, col::line);
+        url_.setTextToShowWhenEmpty("https://…/direct-audio-file.wav", col::textDim);
+        url_.onReturnKey = [this] { submit(); };
+        addAndMakeVisible(url_);
+
+        for (int index = 0; index < (int) dr1Cc0SampleSources().size(); ++index)
+            sources_.addItem(dr1Cc0SampleSources()[(size_t) index].name, index + 1);
+        sources_.setSelectedId(1, juce::dontSendNotification);
+        sources_.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff11141c));
+        sources_.setColour(juce::ComboBox::textColourId, col::text);
+        sources_.setColour(juce::ComboBox::outlineColourId, col::line);
+        addAndMakeVisible(sources_);
+
+        auto style = [](juce::TextButton& button, juce::Colour text) {
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+            button.setColour(juce::TextButton::textColourOffId, text);
+        };
+        style(openSource_, col::textDim);
+        style(import_, col::acA);
+        openSource_.onClick = [this] {
+            const int i = juce::jlimit(0, (int) dr1Cc0SampleSources().size() - 1, sources_.getSelectedId() - 1);
+            juce::URL(dr1Cc0SampleSources()[(size_t) i].url).launchInDefaultBrowser();
+        };
+        import_.onClick = [this] { submit(); };
+        addAndMakeVisible(openSource_);
+        addAndMakeVisible(import_);
+        setSize(480, 170);
+    }
+
+    void paint(juce::Graphics& g) override {
+        drawPanel(g, getLocalBounds().toFloat(), 8.0f);
+        g.setColour(col::acA); g.setFont(dispFont(9.0f));
+        drawSpaced(g, "REMOTE AUDIO IMPORT", { 14, 10, getWidth() - 28, 15 }, 1.6f);
+        g.setColour(col::textHint); g.setFont(monoFont(8.0f));
+        g.drawText("CC0 SOURCES OPEN IN YOUR BROWSER. PASTE A DIRECT HTTPS AUDIO LINK.",
+                   juce::Rectangle<int>{ 14, 30, getWidth() - 28, 16 }, juce::Justification::centredLeft, true);
+        g.setColour(col::textDim); g.setFont(monoFont(7.0f));
+        g.drawText("32 MB MAX · DIRECT FILES ONLY · IMPORTS AS A PAD WAVETABLE",
+                   juce::Rectangle<int>{ 14, getHeight() - 28, getWidth() - 28, 14 }, juce::Justification::centredLeft, true);
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(14, 0);
+        area.removeFromTop(51);
+        url_.setBounds(area.removeFromTop(29));
+        area.removeFromTop(8);
+        auto row = area.removeFromTop(27);
+        sources_.setBounds(row.removeFromLeft(244));
+        row.removeFromLeft(8);
+        openSource_.setBounds(row.removeFromLeft(100));
+        row.removeFromLeft(8);
+        import_.setBounds(row);
+    }
+
+private:
+    void submit() {
+        if (onImport_) onImport_(url_.getText().trim());
+    }
+
+    std::function<void(juce::String)> onImport_;
+    juce::TextEditor url_;
+    juce::ComboBox sources_;
+    juce::TextButton openSource_ { "OPEN CC0" }, import_ { "IMPORT" };
+};
 
 PadGrid::PadGrid(DrumUiModel& p) : proc(p) {
     formatMgr.registerBasicFormats();
@@ -83,6 +156,7 @@ void PadGrid::flash(int i) {
 void PadGrid::mouseDown(const juce::MouseEvent& e) {
     const int i = padAt(e.getPosition());
     if (i < 0) return;
+    if (e.mods.isPopupMenu()) { showImportMenu(i, e.getScreenPosition()); return; }
     proc.selectPad(i);          // web store.selectPad: select + audition
     proc.triggerPad(i, kClickVel);
     flash(i);
@@ -148,9 +222,9 @@ void PadGrid::filesDropped(const juce::StringArray& files, int x, int y) {
 
 // Web PadGrid.dropFile: decode -> mixToMono -> detectCycleLength ->
 // sliceToFrames -> buildUserTable(name = file name upper-cased, 14 chars).
-void PadGrid::importFile(const juce::File& file, int padIndex) {
+bool PadGrid::importFile(const juce::File& file, int padIndex) {
     std::unique_ptr<juce::AudioFormatReader> reader(formatMgr.createReaderFor(file));
-    if (reader == nullptr || reader->lengthInSamples <= 0) return;
+    if (reader == nullptr || reader->lengthInSamples <= 0) return false;
     // Analysis only needs a bounded window; cap ~10 s so a long clip can't
     // blow up the allocation (WT-1 WavetableEditor precedent).
     const auto maxSamples = (juce::int64)(reader->sampleRate * 10.0);
@@ -161,12 +235,81 @@ void PadGrid::importFile(const juce::File& file, int padIndex) {
     const auto mono = fable::mixToMono(buf.getArrayOfReadPointers(), buf.getNumChannels(), n);
     auto frames = fable::sliceToFrames(mono, fable::detectCycleLength(mono, reader->sampleRate));
     if (frames.empty()) frames = fable::singleCycleFrame(mono);
-    if (frames.empty()) return;
+    if (frames.empty()) return false;
 
     auto name = file.getFileName().toUpperCase().substring(0, 14); // web fileTableName
     if (name.isEmpty()) name = "USER";
-    proc.addUserTableForPad(padIndex, fable::makeUserTable(name.toStdString(), frames));
+    if (proc.addUserTableForPad(padIndex, fable::makeUserTable(name.toStdString(), frames)) < 0)
+        return false;
     flash(padIndex);
+    return true;
+}
+
+void PadGrid::showImportMenu(int padIndex, juce::Point<int> screenPosition) {
+    juce::PopupMenu cc0;
+    for (int index = 0; index < (int) dr1Cc0SampleSources().size(); ++index)
+        cc0.addItem(100 + index, dr1Cc0SampleSources()[(size_t) index].name);
+    juce::PopupMenu menu;
+    menu.addItem(1, "IMPORT LOCAL AUDIO…");
+    menu.addItem(2, "IMPORT HTTPS AUDIO…");
+    menu.addSeparator();
+    menu.addSubMenu("CC0 SOURCE LIBRARY", cc0, true);
+    auto safe = juce::Component::SafePointer<PadGrid>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({ screenPosition.x, screenPosition.y, 1, 1 }),
+                       [safe, padIndex](int choice) {
+        if (safe == nullptr || choice == 0) return;
+        if (choice == 1) {
+            safe->localChooser_ = std::make_unique<juce::FileChooser>("Import audio into pad wavetable", juce::File{}, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+            safe->localChooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [safe, padIndex](const juce::FileChooser& chooser) {
+                    if (safe != nullptr && chooser.getResult().existsAsFile()) safe->importFile(chooser.getResult(), padIndex);
+                });
+        } else if (choice == 2) {
+            safe->showRemoteImport(padIndex);
+        } else if (choice >= 100 && choice < 100 + (int) dr1Cc0SampleSources().size()) {
+            juce::URL(dr1Cc0SampleSources()[(size_t) (choice - 100)].url).launchInDefaultBrowser();
+        }
+    });
+}
+
+void PadGrid::showRemoteImport(int padIndex) {
+    auto safe = juce::Component::SafePointer<PadGrid>(this);
+    auto* parent = getTopLevelComponent();
+    const auto target = parent != nullptr ? parent->getLocalArea(this, getLocalBounds()) : getScreenBounds();
+    juce::CallOutBox::launchAsynchronously(std::make_unique<RemoteImportPopover>([safe, padIndex](juce::String url) {
+        if (safe != nullptr) safe->importRemoteUrl(std::move(url), padIndex);
+    }), target, parent);
+}
+
+void PadGrid::importRemoteUrl(juce::String urlText, int padIndex) {
+    urlText = urlText.trim();
+    if (!urlText.startsWithIgnoreCase("https://") || !juce::URL::isProbablyAWebsiteURL(urlText)) {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "DR-1 remote import",
+                                                "Paste a direct HTTPS link to an audio file.");
+        return;
+    }
+    if (remoteImport_ != nullptr) {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "DR-1 remote import",
+                                                "An import is already in progress.");
+        return;
+    }
+    auto safe = juce::Component::SafePointer<PadGrid>(this);
+    remoteImport_ = std::make_unique<RemoteAudioDownload>(juce::URL(urlText), [safe, padIndex](RemoteAudioDownload::Result result) {
+        if (safe != nullptr) safe->finishRemoteImport(std::move(result), padIndex);
+        else if (result.file.existsAsFile()) result.file.deleteFile();
+    });
+    remoteImport_->begin();
+}
+
+void PadGrid::finishRemoteImport(RemoteAudioDownload::Result result, int padIndex) {
+    const bool imported = result.succeeded() && importFile(result.file, padIndex);
+    if (result.file.existsAsFile()) result.file.deleteFile();
+    remoteImport_.reset();
+    if (!imported) {
+        const auto message = result.error.isNotEmpty() ? result.error
+            : "The file could not be decoded as supported audio, or the user table pool is full.";
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "DR-1 remote import", message);
+    }
 }
 
 // ---- animation --------------------------------------------------------------
@@ -213,9 +356,9 @@ void PadGrid::paint(juce::Graphics& g) {
     drawSpaced(g, "PADS", head, 2.2f);
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
-    // web: "DROP WAV → WAVETABLE" — ASCII arrow; JUCE's default mono font has
-    // no U+2192 glyph and draws a fallback box instead.
-    drawSpaced(g, "DROP WAV -> WAVETABLE", head, 1.1f, juce::Justification::right);
+    // Right-click offers CC0 source bookmarks and a direct-HTTPS importer.
+    // ASCII arrows avoid the default mono font's fallback box for U+2192.
+    drawSpaced(g, "DROP WAV · RIGHT-CLICK SOURCE", head, 1.0f, juce::Justification::right);
 
     const auto now = juce::Time::getMillisecondCounter();
     const int sel = proc.selectedPad();

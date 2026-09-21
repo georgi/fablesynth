@@ -213,7 +213,9 @@ void DrumEngine::prepare(double sampleRate) {
     chokeCoef_ = 1.0 - std::exp(-1.0 / (DR_CHOKE_TAU * sr_));   // Finding D9
     snapSmoothers();                 // Finding J1: no stale ramp survives a re-prepare
     for (auto& row : fxSeen_) std::fill(std::begin(row), std::end(row), -1.0e30f);
+    std::fill(groupFxSeen_.begin(), groupFxSeen_.end(), -1.0e30f);
     for (auto& fx : padFx_) fx.prepare(sampleRate);
+    for (auto& fx : groupFx_) fx.prepare(sampleRate);
     for (auto& rv : reverbs_) rv.prepare(sampleRate);
     for (auto& b : busOut_) b.prepare(sampleRate);
     // Finding D9: the one-shot bank is a function-local static that render()
@@ -1169,6 +1171,13 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
                     padFx_[(size_t)i].setParams(ps_, i);
                 }
             }
+            const int groupBase = dgfx(DP_FXDRIVE_ON);
+            if (std::memcmp(groupFxSeen_.data(), &ps_[(size_t)groupBase],
+                            kNFxFields * sizeof(float)) != 0) {
+                std::memcpy(groupFxSeen_.data(), &ps_[(size_t)groupBase],
+                            kNFxFields * sizeof(float));
+                for (auto& fx : groupFx_) fx.setGroupParams(ps_);
+            }
             for (auto& bo : busOut_) bo.setParams(ps_);   // Finding D1
         }
 
@@ -1221,9 +1230,12 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             if (sizeW > 0) reverbs_[(size_t)b].setSize((float)(sizeAcc / sizeW));
             reverbs_[(size_t)b].process(verbInL_[b], verbInR_[b], outs[b][0] + pos, outs[b][1] + pos, run);
         }
-        // Finding D1: master gain, DC block and the safety limiter run here,
-        // once per bus after the sum, not sixteen times inside the pad chains.
-        // MAIN now actually has a ceiling.
+        // The group strip follows each output sum (one logical global strip;
+        // five independent instances preserve routed MAIN/AUX streams). Then
+        // master gain, DC block and the safety limiter run once per bus.
+        if (padFxEnabled_)
+            for (int b = 0; b < DR_NBUSES; ++b)
+                groupFx_[(size_t)b].process(outs[b][0] + pos, outs[b][1] + pos, run);
         if (padFxEnabled_)
             for (int b = 0; b < DR_NBUSES; ++b)
                 busOut_[(size_t)b].process(outs[b][0] + pos, outs[b][1] + pos, run);

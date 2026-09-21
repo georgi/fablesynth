@@ -13,12 +13,15 @@ using namespace fable;
 fable::FableAgent& DrumAudioProcessor::getAgent() {
     if (!agent_) {
         const auto& info = drumParamInfo();
-        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this](codeact::Snapshot& snapshot) {
+        juce::StringArray presetNames;
+        for (const auto& kit : factoryKits()) presetNames.add(juce::String(kit.name));
+        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this, presetNames](codeact::Snapshot& snapshot) {
             snapshot.audio = fable::agentAudioMeasurements(agentOutputMeter_.snapshot(), "MAIN bus post-device-FX/output processing; auxiliary buses excluded");
             juce::Array<codeact::Json> effects;
             for (int pad = 0; pad < fable::DR_NPADS; ++pad)
                 effects.add(fable::agentFxMeters(fxTelemetry(pad, 0), "pad" + juce::String(pad), "MAIN shared reverb bus"));
             snapshot.meters = fable::agentMeterObservations(snapshot.audio, effects);
+            snapshot.references = fable::agentPresetReferences("DR-1", presetNames, getCurrentProgram());
         });
     }
     return *agent_;
@@ -72,8 +75,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     const auto& info = drumParamInfo();
 
     auto make = [](const ParamInfo& d) -> std::unique_ptr<juce::RangedAudioParameter> {
-        const int field = d.id % DPAD_NFIELDS;
-        const int version = field >= DP_FXCOMP_ATT ? 4 : field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
+        const bool groupFx = d.id >= DG_FX_BASE;
+        const int field = groupFx ? DP_FXDRIVE_ON + d.id - DG_FX_BASE : d.id % DPAD_NFIELDS;
+        const int version = groupFx ? 5 : field >= DP_FXCOMP_ATT ? 4 : field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
         juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique (all 16 pads share short labels);
         // derive it from the id like WT-1 does.
@@ -121,6 +125,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
             color->addChild(make(info[(size_t)dpid(pad, f)]));
         layout.add(std::move(color));
     }
+    auto groupFx = std::make_unique<juce::AudioProcessorParameterGroup>("groupFx", "DRUM GROUP CHANNEL STRIP", " | ");
+    for (int field = DP_FXDRIVE_ON; field < DPAD_NFIELDS; ++field)
+        groupFx->addChild(make(info[(size_t)dgfx(field)]));
+    layout.add(std::move(groupFx));
     return layout;
 }
 

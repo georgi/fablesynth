@@ -13,6 +13,11 @@ const std::vector<std::string> DRUM_SAMPLE_NAMES = {
     "808LC", "808MC", "808HC", "808LT", "808MT", "808HT",
     "UZU BD1", "UZU BD2", "UZU SD", "UZU CP", "UZU RIM", "UZU HH", "UZU OH", "UZU RD",
     "UZU LT", "UZU MT", "UZU HT", "UZU CR", "UZU PERC", "UZU SH", "UZU TB", "UZU MOD",
+    "CC0 IMPACT KICK", "CC0 IMPACT BASS", "CC0 IMPACT SNARE", "CC0 IMPACT CLAP", "CC0 IMPACT RIM",
+    "CC0 IMPACT CH", "CC0 IMPACT OH", "CC0 IMPACT TOM", "CC0 IMPACT CY",
+    "CC0 BOUNCE KICK 1", "CC0 BOUNCE KICK 2", "CC0 BOUNCE KICK 3", "CC0 BOUNCE BASS",
+    "CC0 BOUNCE SNARE 1", "CC0 BOUNCE SNARE 2", "CC0 BOUNCE CLAP", "CC0 BOUNCE CH",
+    "CC0 BOUNCE OH", "CC0 BOUNCE TOM", "CC0 BOUNCE CY",
 };
 const std::vector<std::string> DRUM_FILTER_TYPES = {"LP 12", "LP 24", "BP 12", "HP 12", "NOTCH"};
 const std::vector<std::string> DMOD_SOURCES      = {"—", "MOD ENV", "VELO", "RAND"};
@@ -131,11 +136,28 @@ void addPad(std::vector<ParamInfo>& v, int i) {
     }
 }
 
-// GLOBAL_DEFS (params.ts:75-96).
+// GLOBAL_DEFS (params.ts). The group strip uses the reference default: OTT,
+// compression and soft drive on, with modulation and space left opt-in. Its
+// descriptors remain appended so existing host parameter positions stay intact.
 void addGlobals(std::vector<ParamInfo>& v) {
     v.push_back({DG_SEQ_BPM,        "seq.bpm",         "BPM",      60, 200,   126,    Curve::Int, Kind::Float, nullptr});
     v.push_back({DG_MASTER_SWING,   "master.swing",    "SWING",     0, 1,     0.22f,  Curve::Lin, Kind::Float, nullptr});
     v.push_back({DG_MASTER_VOLUME,  "master.volume",   "OUTPUT",    0, 1,     0.78f,  Curve::Lin, Kind::Float, nullptr});
+    for (int field = DP_FXDRIVE_ON; field < DPAD_NFIELDS; ++field) {
+        auto d = v[(size_t)dpid(0, field)];
+        d.id = dgfx(field);
+        d.pid = d.pid.substr(std::string("pad0.").size());
+        switch (field) {
+            case DP_FXOTT_ON:
+            case DP_FXCOMP_ON:
+            case DP_FXDRIVE_ON: d.def = 1.0f; break;
+            case DP_FXCHORUS_ON:
+            case DP_FXDELAY_ON:
+            case DP_FXREVERB_ON: d.def = 0.0f; break;
+            default: break;
+        }
+        v.push_back(std::move(d));
+    }
 }
 
 std::vector<ParamInfo> build() {

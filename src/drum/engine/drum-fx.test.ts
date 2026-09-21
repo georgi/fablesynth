@@ -226,16 +226,15 @@ describe('DR-1 module headroom', () => {
 });
 
 describe('DR-1 chain latency', () => {
-  // Same figure the plugin reports (Fx.h kDriveLatency + the limiter lookahead):
-  // the dry path is delayed by the shaper's FIR group delay whether the drive
-  // is on, off or gated, so the number never moves at run time.
-  it('reports drive FIR + limiter lookahead, 99 samples at 48 kHz', () => {
-    expect(boot(bare()).latency).toBe(99);
+  // Both the pad insert and the post-mix group strip retain their FIR-aligned
+  // drive latency, followed by the output limiter lookahead.
+  it('reports two drive FIR stages + limiter lookahead, 126 samples at 48 kHz', () => {
+    expect(boot(bare()).latency).toBe(126);
   });
 
   it('scales the lookahead with the sample rate', () => {
-    expect(boot(bare(), 44100).latency).toBe(27 + Math.round(0.0015 * 44100));
-    expect(boot(bare(), 96000).latency).toBe(27 + Math.round(0.0015 * 96000));
+    expect(boot(bare(), 44100).latency).toBe(54 + Math.round(0.0015 * 44100));
+    expect(boot(bare(), 96000).latency).toBe(54 + Math.round(0.0015 * 96000));
   });
 });
 
@@ -495,9 +494,12 @@ describe('DR-1 FX idle gate', () => {
     p[pad(0, 'fx.drive.on')] = 1;
     p[pad(0, 'fx.drive.amt')] = 0.6;
     p[pad(0, 'fx.drive.mix')] = 0.2;
+    // This test isolates insert gating. A live group reverb deliberately owns
+    // a longer post-mix tail and therefore keeps the output stage awake.
+    p['fx.reverb.on'] = 0;
     const h = boot(p);
     h.send({ t: 'trig', pad: 0, v: 1 });
-    h.render(200); // 0.53 s: hit gone, past the 0.25 s hold
+    h.render(300); // 0.8 s: enough for the serial pad + group insert gates
     const st = h.proc as unknown as { padFx: { gated: boolean }[]; busOut: { gated: boolean }[] };
     expect(st.padFx[0].gated).toBe(true);
     expect(st.busOut[0].gated).toBe(true);

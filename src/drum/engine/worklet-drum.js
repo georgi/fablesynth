@@ -900,8 +900,12 @@ const P_FXDELAY_ON = fid('fx.delay.on'), P_FXDELAY_TIME = fid('fx.delay.time');
 const P_FXDELAY_FB = fid('fx.delay.fb'), P_FXDELAY_MIX = fid('fx.delay.mix');
 const P_FXREVERB_ON = fid('fx.reverb.on'), P_FXREVERB_SIZE = fid('fx.reverb.size'), P_FXREVERB_MIX = fid('fx.reverb.mix');
 
-const GLOBALS = ['seq.bpm', 'master.swing', 'master.volume'];
+// Global FX controls are a second, post-mix chain. Their field order matches
+// the pad insert suffixes, letting PadFx be reused without sharing state.
+const GROUP_FX_FIELDS = FIELDS.slice(P_FXDRIVE_ON);
+const GLOBALS = ['seq.bpm', 'master.swing', 'master.volume', ...GROUP_FX_FIELDS];
 const G_BPM = NPADS * NF, G_SWING = G_BPM + 1, G_VOL = G_BPM + 2;
+const G_FX = G_VOL + 1;
 const PSIZE = NPADS * NF + GLOBALS.length;
 
 const PARAM_INDEX = new Map();
@@ -1025,13 +1029,20 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.clipStep = -1; // absolute step within the clip
     this.clipToNext = 0;
     this.vizCount = 0;
-    // ---- FX rack (review W6): pad chains, five bus strips, shared reverbs ----
+    // Pad inserts feed their routed buses; a second, same-control group chain
+    // follows each physical output sum. Those instances form one logical DR-1
+    // group strip while preserving separate MAIN/AUX output streams.
     this.padFx = [];
     for (let i = 0; i < NPADS; i++) this.padFx.push(new PadFx(sampleRate));
+    this.groupFx = []; this.groupFxIds = new Int32Array(NF);
+    for (let f = P_FXDRIVE_ON; f < NF; f++) this.groupFxIds[f] = G_FX + f - P_FXDRIVE_ON;
     this.busOut = []; this.verbs = []; this.verbInputGuards = [];
+    this.groupVerbs = []; this.groupVerbInputGuards = [];
     for (let b = 0; b < BUSES; b++) {
       this.busOut.push(new BusOut(sampleRate)); this.verbs.push(new Freeverb(sampleRate));
       this.verbInputGuards.push(new StereoPeakGuard(sampleRate));
+      this.groupFx.push(new PadFx(sampleRate)); this.groupVerbs.push(new Freeverb(sampleRate));
+      this.groupVerbInputGuards.push(new StereoPeakGuard(sampleRate));
     }
     this.sizeAcc = new Float64Array(BUSES);
     this.sizeW = new Float64Array(BUSES);
@@ -1042,7 +1053,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.fxDirty = true;
     // Reported the way the plugin does: drive FIR group delay + limiter
     // lookahead. Constant whether a stage is active, bypassed or gated.
-    this.latency = DRIVE_LATENCY + this.busOut[0].latencySamples();
+    this.latency = DRIVE_LATENCY * 2 + this.busOut[0].latencySamples();
     this.cap = 0;
     this.padL = []; this.padR = [];
     this.busL = []; this.busR = []; this.verbInL = []; this.verbInR = [];
@@ -1851,6 +1862,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     if (this.fxDirty) {
       this.fxDirty = false;
       for (let i = 0; i < NPADS; i++) this.padFx[i].setParams(this.pv, this.padIds[i]);
+      for (let b = 0; b < BUSES; b++) this.groupFx[b].setParams(this.pv, this.groupFxIds);
       const vol = this.pv[G_VOL];
       for (const b of this.busOut) b.gain.target = vol * vol * 1.6;
     }
@@ -1927,7 +1939,30 @@ class DrumProcessor extends AudioWorkletProcessor {
       if (this.reverbMetering && b === this.meterBus) {
         this.reverbEnergy[0] += verb.meterL; this.reverbEnergy[1] += verb.meterR; this.reverbEnergy[2] += verb.meterLR;
       }
+      // The group strip is a true post-mix insert. PadFx keeps reverb as a
+      // send, so give this second layer its own final group reverb network.
+      const group = this.groupFx[b];
       const bl = busL[b], br = busR[b];
+      group.process(bl, br, n, true);
+      const gvinL = vinL[b], gvinR = vinR[b];
+      gvinL.fill(0, 0, n); gvinR.fill(0, 0, n);
+      if (group.verbWet.settled() && group.verbDry.settled()) {
+        const w = group.verbWet.cur, d = group.verbDry.cur;
+        for (let k = 0; k < n; k++) {
+          const l = bl[k], r = br[k];
+          bl[k] = l * d; br[k] = r * d; gvinL[k] = l * w; gvinR[k] = r * w;
+        }
+      } else {
+        for (let k = 0; k < n; k++) {
+          const w = group.verbWet.next(), d = group.verbDry.next(), l = bl[k], r = br[k];
+          bl[k] = l * d; br[k] = r * d; gvinL[k] = l * w; gvinR[k] = r * w;
+        }
+      }
+      const groupVerb = this.groupVerbs[b];
+      groupVerb.size.target = group.verbSize;
+      groupVerb.update(n);
+      this.groupVerbInputGuards[b].process(gvinL, gvinR, n);
+      groupVerb.process(gvinL, gvinR, bl, br, n);
       let pk = 0;
       for (let k = 0; k < n; k++) {
         const a = bl[k] < 0 ? -bl[k] : bl[k], c = br[k] < 0 ? -br[k] : br[k];

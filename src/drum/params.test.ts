@@ -27,6 +27,11 @@ describe('drum params', () => {
       '808LC', '808MC', '808HC', '808LT', '808MT', '808HT',
       'UZU BD1', 'UZU BD2', 'UZU SD', 'UZU CP', 'UZU RIM', 'UZU HH', 'UZU OH', 'UZU RD',
       'UZU LT', 'UZU MT', 'UZU HT', 'UZU CR', 'UZU PERC', 'UZU SH', 'UZU TB', 'UZU MOD',
+      'CC0 IMPACT KICK', 'CC0 IMPACT BASS', 'CC0 IMPACT SNARE', 'CC0 IMPACT CLAP', 'CC0 IMPACT RIM',
+      'CC0 IMPACT CH', 'CC0 IMPACT OH', 'CC0 IMPACT TOM', 'CC0 IMPACT CY',
+      'CC0 BOUNCE KICK 1', 'CC0 BOUNCE KICK 2', 'CC0 BOUNCE KICK 3', 'CC0 BOUNCE BASS',
+      'CC0 BOUNCE SNARE 1', 'CC0 BOUNCE SNARE 2', 'CC0 BOUNCE CLAP', 'CC0 BOUNCE CH',
+      'CC0 BOUNCE OH', 'CC0 BOUNCE TOM', 'CC0 BOUNCE CY',
     ]);
     expect(DRUM_PARAMS['pad0.oscB.table']).toMatchObject({ options: DRUM_SAMPLE_NAMES, def: 0 });
     expect(DRUM_PARAMS['pad0.oscB.pos']).toMatchObject({ label: 'START', min: 0, max: 1 });
@@ -40,15 +45,20 @@ describe('drum params', () => {
     expect(DRUM_PARAMS['pad0.choke']).toMatchObject({ min: 0, max: 4, curve: 'int' });
   });
 
-  it('keeps transport/master global and gives every pad its own FX definitions', () => {
+  it('exposes one FX channel strip while retaining pad FX definitions for recall', () => {
     expect(DRUM_PARAMS['seq.bpm']).toMatchObject({ min: 60, max: 200, def: 126, curve: 'int' });
     expect(DRUM_PARAMS['master.swing'].def).toBeCloseTo(0.22);
     expect(DRUM_PARAMS['master.volume'].def).toBeCloseTo(0.78);
-    expect(DRUM_PARAMS['fx.comp.thr']).toBeUndefined();
+    expect(DRUM_PARAMS['fx.comp.thr']).toMatchObject({ min: -40, max: 0, def: -16 });
     expect(DRUM_PARAMS['pad0.fx.comp.thr']).toMatchObject({ min: -40, max: 0, def: -16 });
     expect(DRUM_PARAMS['pad7.fx.comp.on'].def).toBe(1);
     expect(DRUM_PARAMS['pad15.fx.reverb.on'].def).toBe(1);
     expect(DRUM_PARAMS['pad3.fx.drive.on'].def).toBe(0);
+    expect(DRUM_PARAMS['fx.ott.on'].def).toBe(1);
+    expect(DRUM_PARAMS['fx.drive.on'].def).toBe(1);
+    expect(DRUM_PARAMS['fx.reverb.on'].def).toBe(0);
+    expect(DRUM_PARAMS['pad3.fx.ott.on'].def).toBe(0);
+    expect(DRUM_PARAMS['pad3.fx.reverb.on'].def).toBe(1);
   });
 
   it('defaults map covers every def and enums line up', () => {

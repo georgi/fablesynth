@@ -830,6 +830,29 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.dr-fx-scope {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(7, 10, 16, 0.74);
+}
+.dr-fx-scope button {
+  border: 0;
+  border-radius: 3px;
+  padding: 3px 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: 500 7px var(--font-mono);
+  letter-spacing: .09em;
+  cursor: pointer;
+}
+.dr-fx-scope button.active {
+  background: rgba(77, 232, 255, .16);
+  color: var(--ac-a);
+  box-shadow: inset 0 0 0 1px rgba(77, 232, 255, .2);
+}
 .dr-fx-flow {
   margin-left: auto;
   color: var(--text-dim);

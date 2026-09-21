@@ -1,5 +1,6 @@
 import { useLayoutEffect } from 'react';
 import { drumEngine, useDrumStore } from '../store';
+import { useSeqStore } from '../../seq/store';
 import { OUT_NAMES, pad } from '../params';
 import { DrumKnob } from './DrumKnob';
 import { OutPanel } from './OutPanel';
@@ -19,8 +20,8 @@ function DrumPower({ paramId }: { paramId: string }) {
 
 export function FxRack() {
   const selectedPad = useDrumStore((s) => s.sel);
-  const padName = useDrumStore((s) => s.padNames[selectedPad]);
-  const padNumber = String(selectedPad + 1).padStart(2, '0');
+  const scope = useSeqStore((s) => s.drumFxScope);
+  const openDrumFx = useSeqStore((s) => s.openDrumFx);
   const params = useDrumStore(s => s.params);
   const setParam = useDrumStore(s => s.setParam);
   const activeEngine = drumEngine;
@@ -30,28 +31,32 @@ export function FxRack() {
     engine: activeEngine,
     params,
     setParam,
-    prefix: pad(selectedPad, ''),
+    prefix: scope === 'pad' ? pad(selectedPad, '') : '',
     renderKnob: (id, key) => <DrumKnob paramId={id} label={id.includes('fx.eq.') ? key?.toUpperCase() : undefined} size="sm" accent="n" />,
     renderPower: (id) => <DrumPower paramId={id} />,
   };
 
   return (
-    <section className="panel dr-fx-panel" aria-label={`Pad ${padNumber} ${padName} FX chain`}>
+    <section className="panel dr-fx-panel" aria-label={scope === 'pad' ? 'DR-1 selected pad effects' : 'DR-1 drum group channel strip'}>
       <div className="dr-fx-head">
         <span className="dr-led dr-led-a" aria-hidden="true" />
-        <h2>PAD {padNumber} FX CHAIN</h2>
-        <span className="dr-fx-padname">{padName}</span>
+        <h2>{scope === 'pad' ? 'PAD FX INSERT' : 'DRUM GROUP CHANNEL STRIP'}</h2>
+        <div className="dr-fx-scope" role="group" aria-label="FX scope">
+          <button type="button" className={scope === 'pad' ? 'active' : ''} aria-pressed={scope === 'pad'} onClick={() => openDrumFx('pad')}>PAD FX</button>
+          <button type="button" className={scope === 'group' ? 'active' : ''} aria-pressed={scope === 'group'} onClick={() => openDrumFx('group')}>GROUP FX</button>
+        </div>
+        <span className="dr-fx-padname">{scope === 'pad' ? `PAD ${String(selectedPad + 1).padStart(2, '0')}` : 'ALL 16 PADS'}</span>
         <span className="dr-fx-flow" aria-hidden="true">EQ › OTT › COMP › DRIVE › CHORUS › DELAY › REVERB</span>
       </div>
       <div className="fx-rack">
-        <EqPanel key={selectedPad} adapter={adapter} />
+        <EqPanel key={`${scope}-${selectedPad}`} adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />
         <DynamicsPanel kind="comp" adapter={adapter} />
         <DrivePanel adapter={adapter} />
         <ChorusPanel adapter={adapter} />
         <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
-        <ReverbPanel adapter={{ ...adapter, context: OUT_NAMES[bus] }} />
-        <OutPanel />
+        <ReverbPanel adapter={{ ...adapter, context: scope === 'pad' ? OUT_NAMES[bus] : 'POST MIX' }} />
+        {scope === 'pad' && <OutPanel />}
       </div>
     </section>
   );

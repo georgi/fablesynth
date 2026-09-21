@@ -228,17 +228,6 @@ export class DrumEngine {
 
   // ---------- parameter + transport API ----------
   setParam(id: string, v: number): void {
-    // Accept the old global IDs as a compatibility API by broadcasting them.
-    // New callers always use pad-scoped IDs.
-    if (id.startsWith('fx.')) {
-      for (let i = 0; i < PAD_COUNT; i++) {
-        const k = pad(i, id);
-        this.params[k] = v;
-        if (this.ready) this.node.port.postMessage({ t: 'p', k, v });
-      }
-      delete this.params[id];
-      return;
-    }
     this.params[id] = v;
     if (id === pad(this.meterPad, 'out')) this.meterBus = Math.max(0, Math.min(BUS_COUNT - 1, v | 0));
     if (!this.ready) return;

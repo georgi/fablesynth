@@ -1,8 +1,9 @@
-// One DR-1 pad FX chain — C++ port of the Web Audio graph in
-// src/drum/engine/drum-synth.ts buildFx()/applyAllFx():
+// One DR-1 FX chain — used independently by each pad and once after each
+// routed drum-bus sum for the global group strip. C++ port of the Web Audio
+// graph in src/drum/engine/drum-synth.ts buildFx()/applyAllFx():
 // OTT -> leveling compressor -> drive -> chorus -> ping-pong delay -> reverb
-// send. Reverb is shared per output bus; the bus then applies master gain, DC
-// block and the lookahead limiter.
+// send when used as a pad insert. Group instances use their direct reverb,
+// then the bus applies master gain, DC block and the lookahead limiter.
 //
 // The convolution reverb (generated exponential-noise impulse) is approximated
 // by the same Freeverb network as WT-1, tuned by SIZE. JUCE-free.
@@ -28,6 +29,7 @@ public:
     FxTelemetry telemetry() const { return meter_.read(); }
     void prepare(double sampleRate);
     void setParams(const DrumParamArray& p, int pad); // reads pad<i>.fx.*
+    void setGroupParams(const DrumParamArray& p);     // reads post-mix fx.*
     void process(float* L, float* R, int n); // in-place, before pad output routing
     // Insert-only form used by DrumEngine: returns the equal-power reverb send
     // while leaving reverb processing to the shared per-bus network.
@@ -44,6 +46,7 @@ public:
 private:
     ParametricEq eq_;
     FxMeter meter_;
+    void setParamsAt(const DrumParamArray& p, int base);
     void processImpl(float* L, float* R, float* sendL, float* sendR, int n);
     double sr_ = 48000;
 

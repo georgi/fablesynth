@@ -20,11 +20,12 @@ if (typeof localStorage === 'undefined') {
 describe('kits', () => {
   beforeEach(() => localStorage.clear());
 
-  it('ships 18 distinct factory kits; TR-VOID keeps the mockup names', () => {
+  it('ships 23 distinct factory kits; TR-VOID keeps the mockup names', () => {
     expect(FACTORY_KITS.map((k) => k.name)).toEqual([
       'TR-VOID', 'ROOM ONE', 'BITCRUSH', '808 CLASSIC', 'DEEP DUB', 'DUST HOUSE',
       'WAREHOUSE', 'METAL WORK', 'TAPE KIT', 'MINIMAL', 'BROKEN TOYS', 'LIVE ROOM', 'UZU',
-      '808+UZU HYBRID', 'NEON GRID', 'ACID CAVE', 'BOOM BAP', 'PIRATE RADIO',
+      '808+UZU HYBRID', 'NEON GRID', 'ACID CAVE', 'BOOM BAP', 'PIRATE RADIO', 'CC0 IMPACT', 'CC0 BOUNCE',
+      'CC0 WAREHOUSE', 'CC0 DEEP HOUSE', 'CC0 BASS RUSH',
     ]);
     const tv = FACTORY_KITS[0];
     expect(tv.padNames).toHaveLength(PAD_COUNT);
@@ -66,6 +67,26 @@ describe('kits', () => {
     expect(hybrid.params[pad(15, 'oscB.table')]).toBe(31);
     expect(hybrid.params[pad(0, 'oscA.level')]).toBeGreaterThan(0);
     expect(hybrid.params[pad(0, 'oscB.level')]).toBeGreaterThan(0);
+
+    const impact = kitToState(FACTORY_KITS[18]);
+    expect(impact.params[pad(0, 'oscB.table')]).toBe(32);
+    expect(impact.params[pad(15, 'oscB.table')]).toBe(40);
+    expect(impact.params[pad(15, 'oscB.phase')]).toBe(1);
+    expect(impact.params[pad(5, 'choke')]).toBe(1);
+    expect(impact.params[pad(6, 'choke')]).toBe(1);
+
+    const bounce = kitToState(FACTORY_KITS[19]);
+    expect(bounce.params[pad(0, 'oscB.table')]).toBe(41);
+    expect(bounce.params[pad(13, 'oscB.table')]).toBe(43);
+    expect(bounce.params[pad(15, 'oscB.table')]).toBe(51);
+
+    const warehouse = kitToState(FACTORY_KITS[20]);
+    const house = kitToState(FACTORY_KITS[21]);
+    const rush = kitToState(FACTORY_KITS[22]);
+    expect(warehouse.params['seq.bpm']).toBe(136);
+    expect(house.params['fx.delay.on']).toBe(1);
+    expect(rush.params[pad(1, 'oscB.table')]).toBe(44);
+    for (const kit of [warehouse, house, rush]) expect(kit.chain).toEqual([0, 1, 2, 3]);
   });
 
   it('authored kits mix osc and sample layers with their own grooves', () => {
@@ -136,7 +157,7 @@ describe('kits', () => {
     }
   });
 
-  it('broadcasts legacy global FX to every pad without overwriting new pad-scoped values', () => {
+  it('keeps a legacy global FX value in the group strip without overwriting pads', () => {
     const legacy: Kit = {
       ...FACTORY_KITS[0],
       params: {
@@ -146,9 +167,9 @@ describe('kits', () => {
       },
     };
     const state = kitToState(legacy);
-    expect(state.params['fx.delay.mix']).toBeUndefined();
-    expect(state.params['pad0.fx.delay.mix']).toBeCloseTo(0.73);
-    expect(state.params['pad15.fx.delay.mix']).toBeCloseTo(0.73);
+    expect(state.params['fx.delay.mix']).toBeCloseTo(0.73);
+    expect(state.params['pad0.fx.delay.mix']).toBeCloseTo(defaultDrumParams()['pad0.fx.delay.mix']);
+    expect(state.params['pad15.fx.delay.mix']).toBeCloseTo(defaultDrumParams()['pad15.fx.delay.mix']);
     expect(state.params['pad4.fx.delay.mix']).toBeCloseTo(0.21);
   });
 

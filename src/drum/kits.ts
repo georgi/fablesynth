@@ -180,6 +180,116 @@ function hybridParams(): Partial<ParamValues> {
   return params;
 }
 
+// CC0 IMPACT — nine deliberately selected, CC0-licensed one-shots. The bank
+// remains sample-forward: repeated tom/rim/cymbal slots give a practical 16-pad
+// performance layout without disguising the source recordings with synthesis.
+function cc0ImpactParams(): Partial<ParamValues> {
+  const params = { ...trVoidParams() };
+  params['seq.bpm'] = 132;
+  params['master.swing'] = 0.12;
+  params['fx.drive.on'] = 1;
+  params['fx.drive.amt'] = 0.22;
+  params['fx.drive.mix'] = 0.2;
+  params['fx.comp.on'] = 1;
+  params['fx.comp.thr'] = -14;
+  params['fx.reverb.mix'] = 0.08;
+  const samples = [32, 33, 34, 35, 36, 37, 38, 40, 39, 39, 39, 40, 33, 36, 35, 40];
+  const tunes = [0, -12, 0, 0, 0, 0, 0, 0, -7, 0, 7, 0, -12, 0, 0, 0];
+  const levels = [0.9, 0.7, 0.82, 0.74, 0.66, 0.66, 0.68, 0.6, 0.76, 0.74, 0.72, 0.58, 0.65, 0.6, 0.58, 0.35];
+  const decays = [0.42, 0.55, 0.24, 0.26, 0.08, 0.06, 0.35, 1.1, 0.34, 0.3, 0.28, 1.2, 0.3, 0.08, 0.18, 0.7];
+  for (let i = 0; i < PAD_COUNT; i++) {
+    params[pad(i, 'oscA.level')] = 0;
+    params[pad(i, 'oscB.table')] = samples[i];
+    params[pad(i, 'oscB.tune')] = tunes[i];
+    params[pad(i, 'oscB.level')] = levels[i];
+    params[pad(i, 'aenv.dec')] = decays[i];
+    params[pad(i, 'noise.level')] = 0;
+    params[pad(i, 'ring.mix')] = 0;
+    params[pad(i, 'penv.amt')] = 0;
+  }
+  for (const [padI, cut] of [[5, 8000], [6, 6500]] as const) {
+    params[pad(padI, 'choke')] = 1;
+    params[pad(padI, 'flt.on')] = 1;
+    params[pad(padI, 'flt.type')] = 3;
+    params[pad(padI, 'flt.cut')] = cut;
+  }
+  params[pad(0, 'fx.reverb.on')] = 0;
+  params[pad(1, 'fx.reverb.on')] = 0;
+  params[pad(15, 'oscB.phase')] = 1;
+  return params;
+}
+
+// CC0 BOUNCE — a brighter alternative set from the same auditable source. The
+// three kick options are distributed across the low pads for quick variation.
+function cc0BounceParams(): Partial<ParamValues> {
+  const params = { ...cc0ImpactParams() };
+  params['seq.bpm'] = 126;
+  params['master.swing'] = 0.2;
+  params['fx.drive.amt'] = 0.16;
+  const samples = [41, 44, 45, 47, 46, 48, 49, 51, 50, 50, 50, 51, 42, 43, 46, 51];
+  const tunes = [0, -12, 0, 0, 0, 0, 0, 0, -7, 0, 7, 0, 0, 0, 0, 0];
+  const levels = [0.9, 0.7, 0.8, 0.72, 0.64, 0.64, 0.68, 0.58, 0.74, 0.72, 0.7, 0.58, 0.86, 0.8, 0.58, 0.34];
+  const decays = [0.36, 0.48, 0.22, 0.24, 0.16, 0.055, 0.36, 1.0, 0.3, 0.28, 0.26, 1.1, 0.38, 0.34, 0.15, 0.65];
+  for (let i = 0; i < PAD_COUNT; i++) {
+    params[pad(i, 'oscB.table')] = samples[i];
+    params[pad(i, 'oscB.tune')] = tunes[i];
+    params[pad(i, 'oscB.level')] = levels[i];
+    params[pad(i, 'aenv.dec')] = decays[i];
+  }
+  return params;
+}
+
+function cc0WarehouseParams(): Partial<ParamValues> {
+  const params = { ...cc0BounceParams() };
+  params['seq.bpm'] = 136;
+  params['master.swing'] = 0.08;
+  params['fx.drive.amt'] = 0.48;
+  params['fx.comp.thr'] = -18;
+  params['fx.reverb.mix'] = 0.07;
+  params[pad(0, 'oscB.table')] = 43;
+  params[pad(0, 'oscB.level')] = 0.94;
+  params[pad(0, 'fx.reverb.on')] = 0;
+  params[pad(1, 'fx.reverb.on')] = 0;
+  return params;
+}
+
+function cc0DeepHouseParams(): Partial<ParamValues> {
+  const params = { ...cc0BounceParams() };
+  params['seq.bpm'] = 122;
+  params['master.swing'] = 0.46;
+  params['fx.drive.amt'] = 0.12;
+  params['fx.reverb.size'] = 0.65;
+  params['fx.reverb.mix'] = 0.16;
+  params['fx.delay.on'] = 1;
+  params['fx.delay.time'] = 0.365;
+  params['fx.delay.fb'] = 0.28;
+  params['fx.delay.mix'] = 0.1;
+  for (const [padI, cut] of [[5, 7200], [6, 5200]] as const) params[pad(padI, 'flt.cut')] = cut;
+  params[pad(0, 'fx.reverb.on')] = 0;
+  params[pad(1, 'fx.reverb.on')] = 0;
+  return params;
+}
+
+function cc0BassRushParams(): Partial<ParamValues> {
+  const params = { ...cc0BounceParams() };
+  params['seq.bpm'] = 140;
+  params['master.swing'] = 0.04;
+  params['fx.drive.amt'] = 0.35;
+  params['fx.comp.thr'] = -20;
+  params['fx.reverb.mix'] = 0.05;
+  params[pad(0, 'oscB.table')] = 43;
+  params[pad(0, 'oscB.level')] = 0.92;
+  params[pad(1, 'oscB.table')] = 44;
+  params[pad(1, 'oscB.tune')] = -19;
+  params[pad(1, 'oscB.level')] = 0.78;
+  params[pad(12, 'oscB.table')] = 44;
+  params[pad(12, 'oscB.tune')] = -12;
+  params[pad(12, 'oscB.level')] = 0.74;
+  params[pad(0, 'fx.reverb.on')] = 0;
+  params[pad(1, 'fx.reverb.on')] = 0;
+  return params;
+}
+
 function deepDubParams(): Partial<ParamValues> {
   const params = { ...trVoidParams() };
   params['seq.bpm'] = 112;
@@ -754,7 +864,31 @@ const PIRATE_RADIO_PATTERNS = buildPatterns(
   },
 );
 
+const CC0_WAREHOUSE_PATTERNS = buildPatterns(
+  { 0: { on: [0, 4, 8, 12], acc: [0] }, 2: { on: [4, 12], acc: [12] }, 5: { on: [2, 6, 10, 14], acc: [6, 14] }, 6: { on: [11] }, 8: { on: [3, 11] } },
+  { 0: { on: [0, 4, 7, 8, 12], acc: [0, 12] }, 2: { on: [4, 12], acc: [12] }, 3: { on: [12] }, 5: { on: [2, 6, 10, 14], acc: [6, 14] }, 6: { on: [11, 15] }, 8: { on: [3, 7, 11] }, 11: { on: [15] } },
+);
+const CC0_DEEP_HOUSE_PATTERNS = buildPatterns(
+  { 0: { on: [0, 4, 8, 12], acc: [0] }, 1: { on: [0, 6, 8, 14] }, 3: { on: [4, 12] }, 5: { on: [2, 6, 10, 14], acc: [6, 14] }, 6: { on: [6, 14] }, 8: { on: [11] } },
+  { 0: { on: [0, 4, 8, 12], acc: [0] }, 1: { on: [0, 6, 8, 10, 14] }, 3: { on: [4, 12] }, 5: { on: [2, 6, 10, 14], acc: [6, 14] }, 6: { on: [6, 14] }, 8: { on: [3, 11] }, 10: { on: [15] } },
+);
+const CC0_BASS_RUSH_PATTERNS = buildPatterns(
+  { 0: { on: [0, 3, 8, 11], acc: [0, 8] }, 1: { on: [0, 6, 8, 14] }, 2: { on: [4, 12], acc: [4, 12] }, 5: { on: [0, 2, 4, 6, 8, 10, 12, 14], acc: [0, 8] }, 6: { on: [7, 15] }, 12: { on: [2, 10] } },
+  { 0: { on: [0, 3, 6, 8, 11, 14], acc: [0, 8] }, 1: { on: [0, 6, 8, 14] }, 2: { on: [4, 12], acc: [4, 12] }, 3: { on: [12] }, 5: { on: [0, 2, 4, 6, 8, 10, 12, 14], acc: [0, 8] }, 6: { on: [7, 15] }, 10: { on: [14] }, 12: { on: [2, 6, 10, 14] } },
+);
+
 const PATTERNS = trVoidPatterns();
+const CC0_IMPACT_PADS = [
+  'KICK', 'BASS HIT', 'SNARE', 'CLAP', 'RIM', 'CH HAT', 'OH HAT', 'CYMBAL',
+  'TOM LO', 'TOM MD', 'TOM HI', 'CRASH', 'SUB HIT', 'RIM 2', 'CLAP 2', 'REV CY',
+];
+const CC0_BOUNCE_PADS = [
+  'KICK', 'BASS HIT', 'SNARE 1', 'CLAP', 'SNARE 2', 'CH HAT', 'OH HAT', 'CYMBAL',
+  'TOM LO', 'TOM MD', 'TOM HI', 'CRASH', 'KICK 2', 'KICK 3', 'SNARE 2', 'REV CY',
+];
+const CC0_WAREHOUSE_PADS = ['KICK', 'RUMBLE', 'SNARE', 'CLAP', 'SNARE 2', 'CH HAT', 'OH HAT', 'CYMBAL', 'TOM LO', 'TOM MD', 'TOM HI', 'CRASH', 'KICK 2', 'KICK 3', 'SNARE 2', 'REV CY'];
+const CC0_DEEP_HOUSE_PADS = ['KICK', 'BASS HIT', 'SNARE', 'CLAP', 'SNARE 2', 'CH HAT', 'OH HAT', 'CYMBAL', 'TOM LO', 'TOM MD', 'TOM HI', 'CRASH', 'KICK 2', 'KICK 3', 'SNARE 2', 'REV CY'];
+const CC0_BASS_RUSH_PADS = ['KICK', 'SUB BASS', 'SNARE', 'CLAP', 'SNARE 2', 'CH HAT', 'OH HAT', 'CYMBAL', 'TOM LO', 'TOM MD', 'TOM HI', 'CRASH', 'BASS STAB', 'KICK 3', 'SNARE 2', 'REV CY'];
 
 // DR-1's kit browser is the primary solo-instrument preset path. Give the
 // transient-heavy voices a small, authored dynamics/saturation treatment in
@@ -810,6 +944,11 @@ export const FACTORY_KITS: Kit[] = [
   kit('ACID CAVE', acidCaveParams(), [...ACID_CAVE_PADS], ACID_CAVE_PATTERNS, [...AB_CHAIN]),
   kit('BOOM BAP', boomBapParams(), [...BOOM_BAP_PADS], BOOM_BAP_PATTERNS, [...AB_CHAIN]),
   kit('PIRATE RADIO', pirateRadioParams(), [...PIRATE_RADIO_PADS], PIRATE_RADIO_PATTERNS, [...AB_CHAIN]),
+  kit('CC0 IMPACT', cc0ImpactParams(), [...CC0_IMPACT_PADS], [...PATTERNS], [0]),
+  kit('CC0 BOUNCE', cc0BounceParams(), [...CC0_BOUNCE_PADS], [...PATTERNS], [0]),
+  kit('CC0 WAREHOUSE', cc0WarehouseParams(), [...CC0_WAREHOUSE_PADS], CC0_WAREHOUSE_PATTERNS, [...AB_CHAIN]),
+  kit('CC0 DEEP HOUSE', cc0DeepHouseParams(), [...CC0_DEEP_HOUSE_PADS], CC0_DEEP_HOUSE_PATTERNS, [...AB_CHAIN]),
+  kit('CC0 BASS RUSH', cc0BassRushParams(), [...CC0_BASS_RUSH_PADS], CC0_BASS_RUSH_PATTERNS, [...AB_CHAIN]),
 ];
 
 export function kitToState(kit: Kit): {
@@ -821,18 +960,14 @@ export function kitToState(kit: Kit): {
 } {
   const params = { ...defaultDrumParams(), ...kit.params } as ParamValues;
 
-  // v1 kits stored one global rack under `fx.*`. Interpret that rack as the
-  // initial settings for every pad unless the kit already contains the newer
-  // pad-scoped value. This keeps old localStorage kits and all factory kits
-  // sounding intentional while allowing pads to diverge after loading.
+  // Older pad-only states did not have a group rack. Pad 01 is a deterministic
+  // fallback for that missing group value; never fan a group setting into pads,
+  // because their inserts are independently recallable.
   for (const def of FX_DEFS) {
-    const legacy = kit.params[def.id];
-    if (legacy === undefined) continue;
-    for (let i = 0; i < PAD_COUNT; i++) {
-      const id = pad(i, def.id);
-      if (kit.params[id] === undefined) params[id] = legacy;
+    if (kit.params[def.id] === undefined) {
+      const migrated = kit.params[pad(0, def.id)];
+      if (migrated !== undefined) params[def.id] = migrated;
     }
-    delete params[def.id];
   }
   return {
     params,

@@ -16,6 +16,9 @@ public:
     void resized() override;
 
 private:
+    enum class Page { edit, padFx, groupFx, sequencer };
+
+    void selectPage(Page page);
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     fui::DrumUiModel& model_;
     fui::PadGrid pads;
@@ -30,5 +33,9 @@ private:
     fui::StepSeqView stepSeq;
     fui::FxChain fxRack;
     fui::DrumFxRack routing;
-    fui::DevicePageTabs pages;
+    juce::TextButton editPage_ { "EDIT" };
+    juce::TextButton padFxPage_ { "PAD FX" };
+    juce::TextButton groupFxPage_ { "GROUP FX" };
+    juce::TextButton sequencerPage_ { "SEQUENCER" };
+    Page page_ = Page::edit;
 };

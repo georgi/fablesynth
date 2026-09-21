@@ -22,6 +22,11 @@ export const DRUM_SAMPLE_NAMES = [
   '808LC', '808MC', '808HC', '808LT', '808MT', '808HT',
   'UZU BD1', 'UZU BD2', 'UZU SD', 'UZU CP', 'UZU RIM', 'UZU HH', 'UZU OH', 'UZU RD',
   'UZU LT', 'UZU MT', 'UZU HT', 'UZU CR', 'UZU PERC', 'UZU SH', 'UZU TB', 'UZU MOD',
+  'CC0 IMPACT KICK', 'CC0 IMPACT BASS', 'CC0 IMPACT SNARE', 'CC0 IMPACT CLAP', 'CC0 IMPACT RIM',
+  'CC0 IMPACT CH', 'CC0 IMPACT OH', 'CC0 IMPACT TOM', 'CC0 IMPACT CY',
+  'CC0 BOUNCE KICK 1', 'CC0 BOUNCE KICK 2', 'CC0 BOUNCE KICK 3', 'CC0 BOUNCE BASS',
+  'CC0 BOUNCE SNARE 1', 'CC0 BOUNCE SNARE 2', 'CC0 BOUNCE CLAP', 'CC0 BOUNCE CH',
+  'CC0 BOUNCE OH', 'CC0 BOUNCE TOM', 'CC0 BOUNCE CY',
 ];
 export const DRUM_FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH'];
 export const NOISE_COLORS = ['WHITE'];
@@ -37,9 +42,9 @@ export const pad = (i: number, field: string): string => `pad${i}.${field}`;
 const fmtSt = (v: number) => (v > 0 ? '+' : '') + Math.round(v) + ' ST';
 const fmtCt = (v: number) => (v > 0 ? '+' : '') + Math.round(v) + ' CT';
 
-// The rack is part of a pad's sound, not a global insert. Keeping these as
-// relative definitions means the same `pad<i>.<field>` convention used by the
-// synth parameters also covers each pad's complete FX chain.
+// The same definitions back both DR-1 FX layers: `pad<n>.fx.*` is an
+// independent pad insert and unscoped `fx.*` is the post-mix drum-group strip.
+// They intentionally share the advanced module layout and parameter ranges.
 export const FX_DEFS: ParamDef[] = [
   { id: 'fx.drive.on', type: 'bool', def: 0 },
   { id: 'fx.drive.amt', label: 'AMT', min: 0, max: 1, def: 0.3, curve: 'lin', fmt: fmtPct },
@@ -70,6 +75,19 @@ export const FX_DEFS: ParamDef[] = [
   ...PARAM_DEFS.filter((d) => d.id.startsWith('fx.eq.')),
   ...PARAM_DEFS.filter((d) => ['fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type'].includes(d.id)),
 ];
+
+// The post-mix drum group starts with the reference strip: firm OTT and
+// compression into soft saturation, while modulation and space stay opt-in.
+// Pad inserts retain the neutral FX_DEFS values above so individual voices do
+// not inherit bus processing.
+const GROUP_FX_DEFAULTS: Record<string, number> = {
+  'fx.ott.on': 1,
+  'fx.comp.on': 1,
+  'fx.drive.on': 1,
+  'fx.chorus.on': 0,
+  'fx.delay.on': 0,
+  'fx.reverb.on': 0,
+};
 
 function oscFields(): ParamDef[] {
   return [
@@ -141,6 +159,7 @@ const GLOBAL_DEFS: ParamDef[] = [
   { id: 'master.swing', label: 'SWING', min: 0, max: 1, def: 0.22, curve: 'lin', fmt: fmtPct },
   // Final visible gain stage: after summed pad FX, before the limiter.
   { id: 'master.volume', label: 'OUTPUT', min: 0, max: 1, def: 0.78, curve: 'lin', fmt: fmtPct },
+  ...FX_DEFS.map((d) => ({ ...d, def: GROUP_FX_DEFAULTS[d.id] ?? d.def })),
 ];
 
 export const DRUM_PARAM_DEFS: ParamDef[] = [

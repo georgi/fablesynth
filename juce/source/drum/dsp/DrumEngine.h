@@ -62,7 +62,8 @@ public:
         return result;
     }
     int latencySamples() const {
-        return padFxEnabled_ ? padFx_[0].latencySamples() + busOut_[0].latencySamples() : 0;
+        return padFxEnabled_ ? padFx_[0].latencySamples() + groupFx_[0].latencySamples()
+                             + busOut_[0].latencySamples() : 0;
     }
     void setTables(std::vector<TablePtr> tables);   // lock-free publish + retire (Finding J3)
     // ---- parameters (Finding J1) ------------------------------------------
@@ -162,6 +163,7 @@ public:
     int activeFxChains() const {
         int n = 0;
         for (const auto& fx : padFx_) if (!fx.isIdle()) n++;
+        for (const auto& fx : groupFx_) if (!fx.isIdle()) n++;
         // Reverb moved to a shared bus network. Once the pad insert has gone
         // idle, keep one logical chain active while that bus tail is audible.
         if (n == 0)
@@ -327,6 +329,7 @@ private:
     // costs a tanh, two pows and ten sin/cos — has to run at all.
     static constexpr int kNFxFields = DPAD_NFIELDS - DP_FXDRIVE_ON;
     float fxSeen_[DR_NPADS][kNFxFields]{};
+    std::array<float, kNFxFields> groupFxSeen_{};
 
     // sequencer state (js:82-89)
     std::vector<uint8_t> pats_ =
@@ -404,6 +407,9 @@ private:
     float yL_[128] = {0}, yR_[128] = {0};
     float padL_[128] = {0}, padR_[128] = {0};
     std::array<DrumFx, DR_NPADS> padFx_;
+    // One post-mix chain per physical output retains DR-1's separate MAIN/AUX
+    // streams while all instances read the single global `fx.*` strip.
+    std::array<DrumFx, DR_NBUSES> groupFx_;
     std::array<DrumReverb, DR_NBUSES> reverbs_;
     std::array<DrumBusOut, DR_NBUSES> busOut_;   // per-bus gain/DC/limiter (D1)
     float verbInL_[DR_NBUSES][128] = {{0}};

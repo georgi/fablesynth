@@ -23,7 +23,7 @@ struct DrumKit {
     std::vector<int> chain;                               // e.g. {0}
 };
 
-// All 18 kits in the same order as FACTORY_KITS in kits.ts.
+// All 23 kits in the same order as FACTORY_KITS in kits.ts.
 const std::vector<DrumKit>& factoryKits();
 
 // defaultDrumParams() + kit overrides (resolved via drumIdFromString).

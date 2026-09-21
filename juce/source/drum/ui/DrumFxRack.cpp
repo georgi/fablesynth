@@ -11,11 +11,11 @@
 namespace fui {
 
 // ===================== Group =====================
-DrumFxRack::Group::Group(DrumUiModel& p, const char* fx, const char* t,
+DrumFxRack::Group::Group(DrumUiModel& p, const juce::String& prefix, const char* fx, const char* t,
                          std::initializer_list<const char*> knobIds)
-    : title(t), power(p.parameters(), "pad" + juce::String(p.selectedPad()) + ".fx." + fx + ".on", Accent::N) {
+    : title(t), power(p.parameters(), prefix + "fx." + fx + ".on", Accent::N) {
     for (const char* k : knobIds)
-        knobs.add(new Knob(p.parameters(), "pad" + juce::String(p.selectedPad()) + ".fx." + fx + "." + k, Knob::Sm, Accent::N));
+        knobs.add(new Knob(p.parameters(), prefix + "fx." + fx + "." + k, Knob::Sm, Accent::N));
 }
 
 void DrumFxRack::Group::layout(juce::Rectangle<int> r) {
@@ -58,6 +58,20 @@ void DrumFxRack::Group::paintGroup(juce::Graphics& g) {
 // ===================== DrumFxRack =====================
 DrumFxRack::DrumFxRack(DrumUiModel& p, bool routingOnly) : proc(p), routingOnly_(routingOnly) {
     proc.selectionChanges().addChangeListener(this);
+    if (!routingOnly_) {
+        auto styleScope = [this](juce::TextButton& button) {
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+            button.setColour(juce::TextButton::buttonOnColourId, col::acA.withAlpha(0.22f));
+            button.setColour(juce::TextButton::textColourOffId, col::textDim);
+            button.setColour(juce::TextButton::textColourOnId, col::acA);
+            button.setClickingTogglesState(true);
+            addAndMakeVisible(button);
+        };
+        styleScope(padFxButton_); styleScope(groupFxButton_);
+        padFxButton_.setToggleState(true, juce::dontSendNotification);
+        padFxButton_.onClick = [this] { groupMode_ = false; padFxButton_.setToggleState(true, juce::dontSendNotification); groupFxButton_.setToggleState(false, juce::dontSendNotification); rebuild(); };
+        groupFxButton_.onClick = [this] { groupMode_ = true; groupFxButton_.setToggleState(true, juce::dontSendNotification); padFxButton_.setToggleState(false, juce::dontSendNotification); rebuild(); };
+    }
     rebuild();
     if (!routingOnly_) {
         lastSig = routeSignature();
@@ -93,8 +107,9 @@ void DrumFxRack::rebuild() {
         {"reverb", "REVERB", {"size", "mix"}},
         {"ott",    "OTT",    {"depth", "time", "up", "down"}},
     };
+    const juce::String prefix = groupMode_ ? "" : "pad" + juce::String(proc.selectedPad()) + ".";
     for (const auto& d : defs) {
-        auto* m = groups.add(new Group(proc, d.fx, d.title, d.k));
+        auto* m = groups.add(new Group(proc, prefix, d.fx, d.title, d.k));
         addAndMakeVisible(m->power);
         for (auto* k : m->knobs) addAndMakeVisible(*k);
     }
@@ -113,13 +128,17 @@ void DrumFxRack::resized() {
         return;
     }
     auto r = getLocalBounds().reduced(8);        // .dr-fx-panel padding
-    const int gap = 10, outW = 190, count = groups.size();
+    auto scope = r.removeFromTop(16);
+    padFxButton_.setBounds(scope.removeFromLeft(58)); scope.removeFromLeft(3);
+    groupFxButton_.setBounds(scope.removeFromLeft(66));
+    r.removeFromTop(2);
+    const int gap = 10, outW = groupMode_ ? 0 : 190, count = groups.size();
     const float cw = static_cast<float>(r.getWidth() - outW - gap * count) / static_cast<float>(count);
     for (int i = 0; i < groups.size(); ++i)
         groups[i]->layout({ (int)std::round(static_cast<float>(r.getX())
                                              + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
                             (int)std::round(cw), r.getHeight() });
-    outBounds = { r.getRight() - outW, r.getY(), outW, r.getHeight() };
+    outBounds = groupMode_ ? juce::Rectangle<int>{} : juce::Rectangle<int>{ r.getRight() - outW, r.getY(), outW, r.getHeight() };
 }
 
 juce::String DrumFxRack::routeSignature() const {
@@ -143,10 +162,10 @@ void DrumFxRack::paint(juce::Graphics& g) {
     if (routingOnly_) { paintOutPanel(g); return; }
     g.setColour(col::acA);
     g.setFont(dispFont(8.0f));
-    drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2) + " FX",
-               { 17, 2, 100, 12 }, 1.4f);
+    drawSpaced(g, groupMode_ ? "DRUM GROUP FX" : "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2) + " FX",
+               { 145, 2, 120, 12 }, 1.4f);
     for (auto* m : groups) m->paintGroup(g);
-    paintOutPanel(g);
+    if (!groupMode_) paintOutPanel(g);
 }
 
 void DrumFxRack::paintOutPanel(juce::Graphics& g) {

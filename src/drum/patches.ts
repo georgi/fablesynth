@@ -15,7 +15,8 @@ export interface PadPatch {
 // Fields excluded from patches everywhere (kit-level routing behavior).
 const EXCLUDED = new Set(['out', 'choke']);
 
-export const PATCH_FIELDS: string[] = PAD_FIELDS.filter((f) => !EXCLUDED.has(f));
+// FX belongs to the kit-wide channel strip, never an individual pad patch.
+export const PATCH_FIELDS: string[] = PAD_FIELDS.filter((f) => !EXCLUDED.has(f) && !f.startsWith('fx.'));
 
 // -- Factory bank -------------------------------------------------------------
 // Table indices follow DRUM_TABLE_NAMES: THUD 0, CRACK 1, TINE 2, GRIT 3,

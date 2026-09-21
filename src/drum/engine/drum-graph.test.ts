@@ -5,7 +5,7 @@
 // themselves are covered by drum-fx.test.ts, which renders real audio.
 import { describe, it, expect } from 'vitest';
 import { DrumEngine } from './drum-synth';
-import { OUT_NAMES, PAD_COUNT, pad } from '../params';
+import { OUT_NAMES, pad } from '../params';
 
 interface MockNode {
   kind: string;
@@ -86,15 +86,15 @@ describe('DR-1 parameter plumbing', () => {
     expect(eng.params[pad(3, 'fx.reverb.size')]).toBe(0.77);
   });
 
-  it('broadcasts a legacy global fx. id to all sixteen pads', () => {
+  it('sends the group-strip value without changing any independent pad chain', () => {
     const { eng, sent } = bootGraph();
+    const padId = pad(4, 'fx.drive.amt');
+    eng.setParam(padId, 0.21);
+    sent.length = 0;
     eng.setParam('fx.drive.amt', 0.5);
-    expect(sent.length).toBe(PAD_COUNT);
-    for (let i = 0; i < PAD_COUNT; i++) {
-      expect(sent[i]).toEqual({ t: 'p', k: pad(i, 'fx.drive.amt'), v: 0.5 });
-      expect(eng.params[pad(i, 'fx.drive.amt')]).toBe(0.5);
-    }
-    expect(eng.params['fx.drive.amt']).toBeUndefined();
+    expect(sent).toEqual([{ t: 'p', k: 'fx.drive.amt', v: 0.5 }]);
+    expect(eng.params['fx.drive.amt']).toBe(0.5);
+    expect(eng.params[padId]).toBe(0.21);
   });
 
   it('sends master.volume and pad.out like any other parameter', () => {

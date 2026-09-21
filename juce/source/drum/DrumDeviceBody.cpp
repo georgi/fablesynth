@@ -11,15 +11,49 @@ DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& model)
              &pads, &padStrip, &oscA, &oscB, &noise, &pitchEnv, &ampEnv,
              &filter, &mod, &selBar, &stepSeq, &fxRack, &routing })
         addAndMakeVisible(*component);
-    addAndMakeVisible(pages);
-    pages.onChange = [this] { resized(); };
+
+    const auto configurePage = [this](juce::TextButton& button, Page page) {
+        button.setClickingTogglesState(true);
+        button.setRadioGroupId(716);
+        button.setColour(juce::TextButton::buttonColourId, fui::col::panelHi);
+        button.setColour(juce::TextButton::buttonOnColourId, fui::col::acA.withAlpha(0.18f));
+        button.setColour(juce::TextButton::textColourOffId, fui::col::textDim);
+        button.setColour(juce::TextButton::textColourOnId, fui::col::text);
+        button.onClick = [this, page] { selectPage(page); };
+        addAndMakeVisible(button);
+    };
+    configurePage(editPage_, Page::edit);
+    configurePage(padFxPage_, Page::padFx);
+    configurePage(groupFxPage_, Page::groupFx);
+    configurePage(sequencerPage_, Page::sequencer);
+
     model_.selectionChanges().addChangeListener(this);
-    changeListenerCallback(nullptr);
+    selectPage(Page::edit);
 }
 
 DrumDeviceBody::~DrumDeviceBody() { model_.selectionChanges().removeChangeListener(this); }
+
+void DrumDeviceBody::selectPage(Page page) {
+    page_ = page;
+    editPage_.setToggleState(page == Page::edit, juce::dontSendNotification);
+    padFxPage_.setToggleState(page == Page::padFx, juce::dontSendNotification);
+    groupFxPage_.setToggleState(page == Page::groupFx, juce::dontSendNotification);
+    sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
+
+    if (page == Page::padFx) {
+        const auto pad = model_.selectedPad();
+        fxRack.setPad(pad, model_.padName(pad));
+    } else if (page == Page::groupFx) {
+        fxRack.setPad(-1, "DRUM GROUP");
+    }
+    resized();
+}
+
 void DrumDeviceBody::changeListenerCallback(juce::ChangeBroadcaster*) {
-    fxRack.setPad(model_.selectedPad(), model_.padName(model_.selectedPad()));
+    if (page_ == Page::padFx) {
+        const auto pad = model_.selectedPad();
+        fxRack.setPad(pad, model_.padName(pad));
+    }
 }
 
 // Row heights are fixed; the column table is derived from the body's own
@@ -56,17 +90,28 @@ void DrumDeviceBody::resized() {
     pads.setBounds(18, 103, 352, 369);
     padStrip.setBounds(18, 481, 352, 119);
     routing.setBounds(18, 609, 352, 45);
-    pages.setBounds(rightX,103,rightW,26);
-    const bool showFx = pages.fxSelected();
-    for (auto* c : std::initializer_list<juce::Component*>{&selBar,&oscA,&oscB,&noise,&pitchEnv,&ampEnv,&filter,&mod}) c->setVisible(!showFx);
+    auto pageTabs = juce::Rectangle<int>(rightX, 103, rightW, 26);
+    editPage_.setBounds(pageTabs.removeFromLeft(76));
+    pageTabs.removeFromLeft(5);
+    padFxPage_.setBounds(pageTabs.removeFromLeft(96));
+    pageTabs.removeFromLeft(5);
+    groupFxPage_.setBounds(pageTabs.removeFromLeft(112));
+    pageTabs.removeFromLeft(5);
+    sequencerPage_.setBounds(pageTabs.removeFromLeft(126));
+    const bool showEdit = page_ == Page::edit;
+    const bool showFx = page_ == Page::padFx || page_ == Page::groupFx;
+    const bool showSequencer = page_ == Page::sequencer;
+    const bool showPadSidebar = !showSequencer;
+    for (auto* c : std::initializer_list<juce::Component*>{&pads,&padStrip,&routing}) c->setVisible(showPadSidebar);
+    for (auto* c : std::initializer_list<juce::Component*>{&selBar,&oscA,&oscB,&noise,&pitchEnv,&ampEnv,&filter,&mod}) c->setVisible(showEdit);
     fxRack.setVisible(showFx);
+    stepSeq.setVisible(showSequencer);
     selBar.setBounds(rightX, 139, rightW, 31);
     layRow({ { &oscA, 424 }, { &oscB, 425 }, { &noise, 196 } }, 179, 243);
     layRow({ { &pitchEnv, 225 }, { &ampEnv, 259 }, { &filter, 259 }, { &mod, 293 } }, 431, 209);
     fxRack.setBounds(rightX,139,rightW,605);
-    // Twelve-pixel lanes keep all 16 pads visible without making the drum
-    // sequencer dominate the device. The FX page still needs its full-height
-    // visualizers, so its sequencer begins below that rack.
-    constexpr int stepH = 265;
-    stepSeq.setBounds(18, showFx ? 753 : 663, fullW, stepH);
+    // The sequencer owns a full workspace rather than permanently occupying
+    // the lower third of sound and FX editing. Its own pad labels make the
+    // sidebar redundant while it is open.
+    stepSeq.setBounds(18, 139, fullW, 605);
 }

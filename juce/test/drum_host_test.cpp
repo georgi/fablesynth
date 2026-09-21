@@ -7,6 +7,7 @@
 #include "FxUiChecks.h"
 #include "AgentProcessorChecks.h"
 #include "../source/drum/DrumEditor.h"
+#include "../source/drum/ui/RemoteSampleSources.h"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -391,6 +392,10 @@ int main(int argc, char** argv) {
     // ---- 12. pad grid: drop-WAV import + QWERTY trigger (Task 10) ----
     printf("\n== pad grid ==\n");
     {
+        const auto& cc0Sources = fui::dr1Cc0SampleSources();
+        check(cc0Sources.size() >= 2 && juce::String(cc0Sources[0].url).startsWithIgnoreCase("https://")
+                  && juce::String(cc0Sources[1].url).startsWithIgnoreCase("https://"),
+              "CC0 source library has direct HTTPS provenance bookmarks", (double) cc0Sources.size());
         // Write a 440 Hz sine WAV to a temp file — the "dropped" payload.
         juce::TemporaryFile tmp(".wav");
         {

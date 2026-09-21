@@ -158,6 +158,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/DrumDeviceBody.cpp
         source/drum/ui/DrumHeader.cpp
         source/drum/ui/PadGrid.cpp
+        source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp
         source/drum/ui/DrumPanels.cpp
         source/drum/ui/StepSeqView.cpp
@@ -287,7 +288,8 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/ui/HostedBassModel.cpp
         source/seq/ui/HostedWtModel.cpp
         source/drum/DrumDeviceBody.cpp
-        source/drum/ui/PadGrid.cpp source/drum/ui/PadStrip.cpp source/drum/ui/DrumPanels.cpp
+        source/drum/ui/PadGrid.cpp source/drum/ui/RemoteAudioDownload.cpp
+        source/drum/ui/PadStrip.cpp source/drum/ui/DrumPanels.cpp
         source/drum/ui/StepSeqView.cpp source/drum/ui/DrumFxRack.cpp
         source/bass/BassDeviceBody.cpp
         source/bass/ui/BassPanels.cpp source/bass/ui/PitchSeqView.cpp source/bass/ui/BassFxRack.cpp

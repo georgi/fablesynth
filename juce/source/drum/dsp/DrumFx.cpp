@@ -98,7 +98,14 @@ static inline float mixGate(bool on, float amount, bool wet) {
 }
 
 void DrumFx::setParams(const DrumParamArray& p, int pad) {
-    const int b = dpid(std::max(0, std::min(DR_NPADS - 1, pad)), 0);
+    setParamsAt(p, dpid(std::max(0, std::min(DR_NPADS - 1, pad)), 0));
+}
+
+void DrumFx::setGroupParams(const DrumParamArray& p) {
+    setParamsAt(p, (int)DG_FX_BASE - (int)DP_FXDRIVE_ON);
+}
+
+void DrumFx::setParamsAt(const DrumParamArray& p, int b) {
     eq_.setParams(p.data() + b + DP_FXEQ_ON);
     // drive
     float amt = p[(size_t)(b + DP_FXDRIVE_AMT)];

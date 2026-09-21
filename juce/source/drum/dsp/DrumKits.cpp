@@ -259,6 +259,87 @@ Overrides hybridParams() {
     return p;
 }
 
+// CC0 IMPACT — direct, sample-forward factory layout for the nine CC0
+// recordings appended to the shared one-shot bank.
+Overrides cc0ImpactParams() {
+    Overrides p = trVoidParams();
+    set(p, "seq.bpm", 132.0f); set(p, "master.swing", 0.12f);
+    set(p, "fx.drive.on", 1.0f); set(p, "fx.drive.amt", 0.22f); set(p, "fx.drive.mix", 0.2f);
+    set(p, "fx.comp.on", 1.0f); set(p, "fx.comp.thr", -14.0f);
+    set(p, "fx.reverb.mix", 0.08f);
+    static const float kSamples[DR_NPADS] = { 32, 33, 34, 35, 36, 37, 38, 40, 39, 39, 39, 40, 33, 36, 35, 40 };
+    static const float kTunes[DR_NPADS] = { 0, -12, 0, 0, 0, 0, 0, 0, -7, 0, 7, 0, -12, 0, 0, 0 };
+    static const float kLevels[DR_NPADS] = { .9f, .7f, .82f, .74f, .66f, .66f, .68f, .6f, .76f, .74f, .72f, .58f, .65f, .6f, .58f, .35f };
+    static const float kDecays[DR_NPADS] = { .42f, .55f, .24f, .26f, .08f, .06f, .35f, 1.1f, .34f, .3f, .28f, 1.2f, .3f, .08f, .18f, .7f };
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscA.level"), 0.0f);
+        set(p, padPid(i, "oscB.table"), kSamples[i]);
+        set(p, padPid(i, "oscB.tune"), kTunes[i]);
+        set(p, padPid(i, "oscB.level"), kLevels[i]);
+        set(p, padPid(i, "aenv.dec"), kDecays[i]);
+        set(p, padPid(i, "noise.level"), 0.0f);
+        set(p, padPid(i, "ring.mix"), 0.0f);
+        set(p, padPid(i, "penv.amt"), 0.0f);
+    }
+    for (const auto& hat : { std::pair { 5, 8000.0f }, std::pair { 6, 6500.0f } }) {
+        set(p, padPid(hat.first, "choke"), 1.0f);
+        set(p, padPid(hat.first, "flt.on"), 1.0f);
+        set(p, padPid(hat.first, "flt.type"), 3.0f);
+        set(p, padPid(hat.first, "flt.cut"), hat.second);
+    }
+    set(p, padPid(0, "fx.reverb.on"), 0.0f);
+    set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    set(p, padPid(15, "oscB.phase"), 1.0f);
+    return p;
+}
+
+// CC0 BOUNCE — brighter alternate CC0 one-shots with three kick choices.
+Overrides cc0BounceParams() {
+    Overrides p = cc0ImpactParams();
+    set(p, "seq.bpm", 126.0f); set(p, "master.swing", 0.2f); set(p, "fx.drive.amt", 0.16f);
+    static const float kSamples[DR_NPADS] = { 41, 44, 45, 47, 46, 48, 49, 51, 50, 50, 50, 51, 42, 43, 46, 51 };
+    static const float kTunes[DR_NPADS] = { 0, -12, 0, 0, 0, 0, 0, 0, -7, 0, 7, 0, 0, 0, 0, 0 };
+    static const float kLevels[DR_NPADS] = { .9f, .7f, .8f, .72f, .64f, .64f, .68f, .58f, .74f, .72f, .7f, .58f, .86f, .8f, .58f, .34f };
+    static const float kDecays[DR_NPADS] = { .36f, .48f, .22f, .24f, .16f, .055f, .36f, 1.0f, .3f, .28f, .26f, 1.1f, .38f, .34f, .15f, .65f };
+    for (int i = 0; i < DR_NPADS; ++i) {
+        set(p, padPid(i, "oscB.table"), kSamples[i]);
+        set(p, padPid(i, "oscB.tune"), kTunes[i]);
+        set(p, padPid(i, "oscB.level"), kLevels[i]);
+        set(p, padPid(i, "aenv.dec"), kDecays[i]);
+    }
+    return p;
+}
+
+Overrides cc0WarehouseParams() {
+    Overrides p = cc0BounceParams();
+    set(p, "seq.bpm", 136.0f); set(p, "master.swing", 0.08f);
+    set(p, "fx.drive.amt", 0.48f); set(p, "fx.comp.thr", -18.0f); set(p, "fx.reverb.mix", 0.07f);
+    set(p, padPid(0, "oscB.table"), 43.0f); set(p, padPid(0, "oscB.level"), 0.94f);
+    set(p, padPid(0, "fx.reverb.on"), 0.0f); set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    return p;
+}
+
+Overrides cc0DeepHouseParams() {
+    Overrides p = cc0BounceParams();
+    set(p, "seq.bpm", 122.0f); set(p, "master.swing", 0.46f); set(p, "fx.drive.amt", 0.12f);
+    set(p, "fx.reverb.size", 0.65f); set(p, "fx.reverb.mix", 0.16f);
+    set(p, "fx.delay.on", 1.0f); set(p, "fx.delay.time", 0.365f); set(p, "fx.delay.fb", 0.28f); set(p, "fx.delay.mix", 0.1f);
+    set(p, padPid(5, "flt.cut"), 7200.0f); set(p, padPid(6, "flt.cut"), 5200.0f);
+    set(p, padPid(0, "fx.reverb.on"), 0.0f); set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    return p;
+}
+
+Overrides cc0BassRushParams() {
+    Overrides p = cc0BounceParams();
+    set(p, "seq.bpm", 140.0f); set(p, "master.swing", 0.04f); set(p, "fx.drive.amt", 0.35f);
+    set(p, "fx.comp.thr", -20.0f); set(p, "fx.reverb.mix", 0.05f);
+    set(p, padPid(0, "oscB.table"), 43.0f); set(p, padPid(0, "oscB.level"), 0.92f);
+    set(p, padPid(1, "oscB.table"), 44.0f); set(p, padPid(1, "oscB.tune"), -19.0f); set(p, padPid(1, "oscB.level"), 0.78f);
+    set(p, padPid(12, "oscB.table"), 44.0f); set(p, padPid(12, "oscB.tune"), -12.0f); set(p, padPid(12, "oscB.level"), 0.74f);
+    set(p, padPid(0, "fx.reverb.on"), 0.0f); set(p, padPid(1, "fx.reverb.on"), 0.0f);
+    return p;
+}
+
 Overrides deepDubParams() {
     Overrides p = trVoidParams();
     set(p, "seq.bpm", 112); set(p, "master.swing", 0.38f);
@@ -797,6 +878,43 @@ std::vector<uint8_t> pirateRadioPatterns() {
         });
 }
 
+std::vector<uint8_t> cc0WarehousePatterns() {
+    return buildPatterns(
+        { { 0, { 0, 4, 8, 12 }, { 0 } }, { 2, { 4, 12 }, { 12 } }, { 5, { 2, 6, 10, 14 }, { 6, 14 } }, { 6, { 11 }, {} }, { 8, { 3, 11 }, {} } },
+        { { 0, { 0, 4, 7, 8, 12 }, { 0, 12 } }, { 2, { 4, 12 }, { 12 } }, { 3, { 12 }, {} }, { 5, { 2, 6, 10, 14 }, { 6, 14 } }, { 6, { 11, 15 }, {} }, { 8, { 3, 7, 11 }, {} }, { 11, { 15 }, {} } });
+}
+std::vector<uint8_t> cc0DeepHousePatterns() {
+    return buildPatterns(
+        { { 0, { 0, 4, 8, 12 }, { 0 } }, { 1, { 0, 6, 8, 14 }, {} }, { 3, { 4, 12 }, {} }, { 5, { 2, 6, 10, 14 }, { 6, 14 } }, { 6, { 6, 14 }, {} }, { 8, { 11 }, {} } },
+        { { 0, { 0, 4, 8, 12 }, { 0 } }, { 1, { 0, 6, 8, 10, 14 }, {} }, { 3, { 4, 12 }, {} }, { 5, { 2, 6, 10, 14 }, { 6, 14 } }, { 6, { 6, 14 }, {} }, { 8, { 3, 11 }, {} }, { 10, { 15 }, {} } });
+}
+std::vector<uint8_t> cc0BassRushPatterns() {
+    return buildPatterns(
+        { { 0, { 0, 3, 8, 11 }, { 0, 8 } }, { 1, { 0, 6, 8, 14 }, {} }, { 2, { 4, 12 }, { 4, 12 } }, { 5, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 0, 8 } }, { 6, { 7, 15 }, {} }, { 12, { 2, 10 }, {} } },
+        { { 0, { 0, 3, 6, 8, 11, 14 }, { 0, 8 } }, { 1, { 0, 6, 8, 14 }, {} }, { 2, { 4, 12 }, { 4, 12 } }, { 3, { 12 }, {} }, { 5, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 0, 8 } }, { 6, { 7, 15 }, {} }, { 10, { 14 }, {} }, { 12, { 2, 6, 10, 14 }, {} } });
+}
+
+const std::array<std::string, DR_NPADS> kCc0ImpactPads = {
+    "KICK", "BASS HIT", "SNARE", "CLAP", "RIM", "CH HAT", "OH HAT", "CYMBAL",
+    "TOM LO", "TOM MD", "TOM HI", "CRASH", "SUB HIT", "RIM 2", "CLAP 2", "REV CY",
+};
+const std::array<std::string, DR_NPADS> kCc0BouncePads = {
+    "KICK", "BASS HIT", "SNARE 1", "CLAP", "SNARE 2", "CH HAT", "OH HAT", "CYMBAL",
+    "TOM LO", "TOM MD", "TOM HI", "CRASH", "KICK 2", "KICK 3", "SNARE 2", "REV CY",
+};
+const std::array<std::string, DR_NPADS> kCc0WarehousePads = {
+    "KICK", "RUMBLE", "SNARE", "CLAP", "SNARE 2", "CH HAT", "OH HAT", "CYMBAL",
+    "TOM LO", "TOM MD", "TOM HI", "CRASH", "KICK 2", "KICK 3", "SNARE 2", "REV CY",
+};
+const std::array<std::string, DR_NPADS> kCc0DeepHousePads = {
+    "KICK", "BASS HIT", "SNARE", "CLAP", "SNARE 2", "CH HAT", "OH HAT", "CYMBAL",
+    "TOM LO", "TOM MD", "TOM HI", "CRASH", "KICK 2", "KICK 3", "SNARE 2", "REV CY",
+};
+const std::array<std::string, DR_NPADS> kCc0BassRushPads = {
+    "KICK", "SUB BASS", "SNARE", "CLAP", "SNARE 2", "CH HAT", "OH HAT", "CYMBAL",
+    "TOM LO", "TOM MD", "TOM HI", "CRASH", "BASS STAB", "KICK 3", "SNARE 2", "REV CY",
+};
+
 } // namespace
 
 const std::vector<DrumKit>& factoryKits() {
@@ -821,6 +939,11 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "ACID CAVE", withPunchFx(acidCaveParams()), kAcidCavePads, acidCavePatterns(), { 0, 1, 2, 3 } });
         out.push_back({ "BOOM BAP", withPunchFx(boomBapParams()), kBoomBapPads, boomBapPatterns(), { 0, 1, 2, 3 } });
         out.push_back({ "PIRATE RADIO", withPunchFx(pirateRadioParams()), kPirateRadioPads, pirateRadioPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "CC0 IMPACT", withPunchFx(cc0ImpactParams()), kCc0ImpactPads, patterns, { 0 } });
+        out.push_back({ "CC0 BOUNCE", withPunchFx(cc0BounceParams()), kCc0BouncePads, patterns, { 0 } });
+        out.push_back({ "CC0 WAREHOUSE", withPunchFx(cc0WarehouseParams()), kCc0WarehousePads, cc0WarehousePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "CC0 DEEP HOUSE", withPunchFx(cc0DeepHouseParams()), kCc0DeepHousePads, cc0DeepHousePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "CC0 BASS RUSH", withPunchFx(cc0BassRushParams()), kCc0BassRushPads, cc0BassRushPatterns(), { 0, 1, 2, 3 } });
         return out;
     }();
     return kits;

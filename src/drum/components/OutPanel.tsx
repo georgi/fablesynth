@@ -28,7 +28,7 @@ export function OutPanel() {
     <section className="fx-group out-panel">
       <div className="fx-group-head out-head">
         <h2>OUT</h2>
-        <span>PER-PAD FX</span>
+        <span>GROUP STRIP → OUT</span>
       </div>
       <div className="out-routes">
         <div className="out-route main">

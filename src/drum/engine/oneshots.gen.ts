@@ -31,6 +31,26 @@ import sample28Url from '../../../assets/drum-samples/uzu/UZU_PERC.wav?url';
 import sample29Url from '../../../assets/drum-samples/uzu/UZU_SH.wav?url';
 import sample30Url from '../../../assets/drum-samples/uzu/UZU_TB.wav?url';
 import sample31Url from '../../../assets/drum-samples/uzu/UZU_MOD.wav?url';
+import sample32Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_KICK.wav?url';
+import sample33Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_BASS.wav?url';
+import sample34Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_SNARE.wav?url';
+import sample35Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_CLAP.wav?url';
+import sample36Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_RIM.wav?url';
+import sample37Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_CH.wav?url';
+import sample38Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_OH.wav?url';
+import sample39Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_TOM.wav?url';
+import sample40Url from '../../../assets/drum-samples/cc0-impact/CC0_IMPACT_CY.wav?url';
+import sample41Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_KICK_1.wav?url';
+import sample42Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_KICK_2.wav?url';
+import sample43Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_KICK_3.wav?url';
+import sample44Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_BASS.wav?url';
+import sample45Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_SNARE_1.wav?url';
+import sample46Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_SNARE_2.wav?url';
+import sample47Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_CLAP.wav?url';
+import sample48Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_CH.wav?url';
+import sample49Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_OH.wav?url';
+import sample50Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_TOM.wav?url';
+import sample51Url from '../../../assets/drum-samples/cc0-impact/CC0_BOUNCE_CY.wav?url';
 
 export interface DrumOneShot { name: string; sampleRate: number; data: Float32Array }
 
@@ -67,6 +87,26 @@ const RAW = [
   { name: 'UZU SH', url: sample29Url },
   { name: 'UZU TB', url: sample30Url },
   { name: 'UZU MOD', url: sample31Url },
+  { name: 'CC0 IMPACT KICK', url: sample32Url },
+  { name: 'CC0 IMPACT BASS', url: sample33Url },
+  { name: 'CC0 IMPACT SNARE', url: sample34Url },
+  { name: 'CC0 IMPACT CLAP', url: sample35Url },
+  { name: 'CC0 IMPACT RIM', url: sample36Url },
+  { name: 'CC0 IMPACT CH', url: sample37Url },
+  { name: 'CC0 IMPACT OH', url: sample38Url },
+  { name: 'CC0 IMPACT TOM', url: sample39Url },
+  { name: 'CC0 IMPACT CY', url: sample40Url },
+  { name: 'CC0 BOUNCE KICK 1', url: sample41Url },
+  { name: 'CC0 BOUNCE KICK 2', url: sample42Url },
+  { name: 'CC0 BOUNCE KICK 3', url: sample43Url },
+  { name: 'CC0 BOUNCE BASS', url: sample44Url },
+  { name: 'CC0 BOUNCE SNARE 1', url: sample45Url },
+  { name: 'CC0 BOUNCE SNARE 2', url: sample46Url },
+  { name: 'CC0 BOUNCE CLAP', url: sample47Url },
+  { name: 'CC0 BOUNCE CH', url: sample48Url },
+  { name: 'CC0 BOUNCE OH', url: sample49Url },
+  { name: 'CC0 BOUNCE TOM', url: sample50Url },
+  { name: 'CC0 BOUNCE CY', url: sample51Url },
 ] as const;
 
 function decodeWavPcm16(buf: ArrayBuffer): { sampleRate: number; data: Float32Array } {

@@ -15,7 +15,7 @@ function wav(buf) { const b = new Uint8Array(buf), d = new DataView(b.buffer, b.
 const source = await readFile(new URL('../src/drum/engine/oneshots.gen.ts', import.meta.url), 'utf8');
 const paths = [...source.matchAll(/from '(\.\.\/\.\.\/\.\.\/assets\/drum-samples\/[^']+)'/g)].map((m) => m[1].replace('../../../', ''));
 const samples = await Promise.all(paths.map(async (p) => wav(await readFile(new URL(`../${p}`, import.meta.url)))));
-if (samples.length !== 32 || samples.some((sample) => sample.data.length < 2)) {
+if (samples.length !== 52 || samples.some((sample) => sample.data.length < 2)) {
   throw new Error(`expected 32 decoded one-shots; received ${samples.length}`);
 }
 const context = vm.createContext({ Float32Array, Float64Array, Uint8Array, Math, sampleRate: sr, currentFrame: 0, AudioWorkletProcessor: class { constructor() { this.port = { onmessage: null, postMessage() {} }; } }, registerProcessor: (_name, Ctor) => { context.Ctor = Ctor; } });
