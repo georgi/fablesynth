@@ -152,7 +152,8 @@ class MasterProcessor extends AudioWorkletProcessor {
       // the final safety stage must enforce the selected ceiling immediately.
       // Otherwise a newly recalled lower ceiling can still overshoot while the
       // control smoother catches up.
-      const finalCeiling = SAFETY_CEILING + mix * (this.ceiling.target - SAFETY_CEILING);
+      const finalCeiling = this.ceilingMix.target > 0.5
+        ? this.ceiling.target : SAFETY_CEILING;
       this.safety.process(this.legacy.l, this.legacy.r, finalCeiling);
       left[i] = Number.isFinite(this.safety.l) ? this.safety.l : 0;
       right[i] = Number.isFinite(this.safety.r) ? this.safety.r : 0;

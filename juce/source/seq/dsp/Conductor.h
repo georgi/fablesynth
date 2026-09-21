@@ -91,7 +91,7 @@ public:
     void cycleQuant(int d);
     void setTrackVol(int t, float v);
     void setSwing(double v);
-    void setBpm(double bpm);              // guarded: only while no track owned/queued; re-anchors
+    bool setBpm(double bpm);              // guarded: only while no track owned/queued; re-anchors
 
     // audio-thread acks, delivered on the message thread by the editor timer.
     // `scene` is the launch identity the device stamped on the Start ack (the

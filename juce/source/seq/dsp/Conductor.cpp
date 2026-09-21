@@ -285,11 +285,12 @@ void Conductor::setSwing(double v) {
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
 }
 
-void Conductor::setBpm(double bpm) {
-    if (!owner_.empty() || !queue_.empty()) return;
+bool Conductor::setBpm(double bpm) {
+    if (!owner_.empty() || !queue_.empty()) return false;
     session_.bpm = bpm;
     anchor_ = io_.now() + 256;
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
+    return true;
 }
 
 void Conductor::onClipStart(int t, int scene) {

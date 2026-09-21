@@ -913,7 +913,13 @@ void SeqAudioProcessor::pollSessionParams() {
     float sw = rawSwing_->load();
     if (std::isunordered(sw, lastSwing_) || std::islessgreater(sw, lastSwing_)) { lastSwing_ = sw; conductor_->setSwing(sw); }
     float bpm = rawBpm_->load();
-    if (std::isunordered(bpm, lastBpm_) || std::islessgreater(bpm, lastBpm_)) { lastBpm_ = bpm; conductor_->setBpm(bpm); } // guarded in the conductor
+    if (std::isunordered(bpm, lastBpm_) || std::islessgreater(bpm, lastBpm_)) {
+        // The conductor is the sole owner of launch timing. While a clip is
+        // live or queued it rejects tempo changes; leave lastBpm_ unchanged so
+        // the request is retried after playback stops instead of letting the
+        // audio thread create a second, conflicting clock.
+        if (conductor_->setBpm(bpm)) lastBpm_ = bpm;
+    }
     for (int t = 0; t < kTracks; ++t) {
         float v = rawVol_[t]->load();
         if (std::isunordered(v, lastVol_[t]) || std::islessgreater(v, lastVol_[t])) {
@@ -939,16 +945,12 @@ SeqAudioProcessor::MusicalParams SeqAudioProcessor::snapshotMusicalParams() cons
 void SeqAudioProcessor::applyMusicalParams(const MusicalParams& values) {
     const double bpm = juce::jlimit(60.0, 200.0, (double)values.bpm);
     const double swing = juce::jlimit(0.0, 1.0, (double)values.swing);
+    // After initialization, tempo is changed only by the Conductor's Tempo
+    // command. The message-thread launcher may reject a live/queued BPM edit;
+    // applying the raw parameter here would create a second clock anyway.
     if (!audioTempoReady_) {
         audioTempoReady_ = true;
         audioBpm_ = bpm; audioSwing_ = swing;
-    } else if (bpm != audioBpm_ || swing != audioSwing_) {
-        if (bpm != audioBpm_)
-            audioTempoAnchor_ = frame_ - (frame_ - audioTempoAnchor_) * audioBpm_ / bpm;
-        audioBpm_ = bpm; audioSwing_ = swing;
-        drum_.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
-        bass_.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
-        for (auto& wt : wt_) wt.hostTempo(audioBpm_, audioSwing_, audioTempoAnchor_);
     }
 
     masterGain_.setTargetValue(juce::jlimit(0.0f, 1.0f, values.master));

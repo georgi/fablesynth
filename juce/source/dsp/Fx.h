@@ -399,7 +399,8 @@ private:
     ChunkRamp eqLoDb_, eqMidDb_, eqHiDb_, eqMidF2_; // eqMidF2_ is log2(Hz)
     ChunkRamp driveAmt_, chRateT_, chDepthT_, verbSize_;
     float eqMidHz_ = 900; // exact target, used once the log ramp comes to rest
-    int  rampSteps_ = 8;  // nominal ~15 ms, widened to span a long host block
+    int  rampSteps_ = 8;  // nominal ~15 ms at the fixed coefficient clock
+    int  coefSamples_ = 0; // samples remaining until the next coefficient step
     void setRampSteps(int steps);
     bool primed_ = false;    // first setParams after prepare() lands instantly
     bool forceCoefs_ = true; // rebuild everything on the next chunk boundary

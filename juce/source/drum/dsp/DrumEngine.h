@@ -208,6 +208,7 @@ private:
         double cutSm = 0;
         double cutTarget = 0, cutPrev = -1;  // chunk cutoff ramp (Finding 7)
         double satXL = 0, satXR = 0;   // ADAA drive: previous input per channel
+        double adaaMix = 0;            // dry -> ADAA transition state
         int    ftype = 0; bool twoPole = false;
         double k1 = 0;
         // Discrete-switch crossfade (the click the D-side click detector

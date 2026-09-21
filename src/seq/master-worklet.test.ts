@@ -53,4 +53,21 @@ describe('SQ-4 master output ceiling', () => {
     const peak = Math.max(...out.slice(0, 200).map(Math.abs));
     expect(peak).toBeLessThanOrEqual(Math.pow(10, -12 / 20) + 1e-5);
   });
+
+  it('enforces the selected ceiling immediately when re-enabled', () => {
+    const proc = boot();
+    send(proc, {
+      t: 'params',
+      params: { ...inactiveStages, 'master.fx.limiter.on': 0, 'master.fx.limiter.ceiling': -12 },
+    });
+    render(proc, new Float32Array(2400));
+    // Queue the transient while bypassed, then enable the limiter before its
+    // delayed sample reaches the output.
+    const impulse = new Float32Array([2]);
+    render(proc, impulse);
+    send(proc, { t: 'params', params: { 'master.fx.limiter.on': 1 } });
+    const out = render(proc, new Float32Array(256));
+    const peak = Math.max(...out.map(Math.abs));
+    expect(peak).toBeLessThanOrEqual(Math.pow(10, -12 / 20) + 1e-5);
+  });
 });

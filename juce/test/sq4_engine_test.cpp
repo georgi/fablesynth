@@ -1086,16 +1086,16 @@ static void testConductor() {
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.launch(0, 2);
-        c.setBpm(140);
+        CHECK(!c.setBpm(140));
         CHECK(c.session().bpm == 122.0);
         CHECK(io.bpm == 122.0);
         c.onClipStart(0, 2);
-        c.setBpm(140); // still owned
+        CHECK(!c.setBpm(140)); // still owned
         CHECK(c.session().bpm == 122.0);
         c.stopTrack(0);
         c.onClipStop(0);
         io.frame = c.anchor() + 500;
-        c.setBpm(140);
+        CHECK(c.setBpm(140));
         CHECK(c.session().bpm == 140.0);
         CHECK(io.bpm == 140.0);
         CHECK(io.anchor == io.frame + 256.0);

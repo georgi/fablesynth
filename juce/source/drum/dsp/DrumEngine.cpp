@@ -25,8 +25,15 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
+static constexpr double DR_ADAA_FADE_WIDTH = 0.1;
+static constexpr double DR_ADAA_INPUT_LIMIT = 16.0;
+
 static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static inline double adaaInput(double x) {
+    return std::isfinite(x) ? clampd(x, -DR_ADAA_INPUT_LIMIT, DR_ADAA_INPUT_LIMIT) : 0.0;
 }
 
 // Finding 6: chunk-invariant smoothers (see Engine.cpp for the derivation).
@@ -198,7 +205,7 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
     sample.pStep = 0; sample.havePrev = false;
     sample.xfIndex = -1; sample.xfLeft = 0; sample.xfDone = true;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
-    f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0;
+    f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0; f.adaaMix = 0;
     std::fill(std::begin(f.svfOld), std::end(f.svfOld), 0.0);
     f.pFtype = -1; f.xfLeft = 0;
     noiseY = 0; ringPhase = 0.25;
@@ -841,29 +848,38 @@ void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes
 // ---- runFilter (js:303-367): ADAA lcosh drive, SVF, LP24 second pass ----
 void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
                            float* outL, float* outR, double drive, int n) const {
-    if (drive > 0.005) {
+    const double adaaTarget = clampd(drive / DR_ADAA_FADE_WIDTH, 0.0, 1.0);
+    const double adaaStart = fs.adaaMix;
+    if (adaaTarget > 0 || adaaStart > 1e-6) {
         const double dg = 1 + drive * 7;
         const double dcomp = 1 / std::pow(dg, 0.55);
         const double kF = dcomp / dg;
         double xpL = fs.satXL, xpR = fs.satXR;
         double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
         for (int i = 0; i < n; i++) {
-            const double aL = inL[i], aR = inR[i];
+            const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
             const double dxL = aL - xpL;
             const double FL = kF * lcosh(dg * aL);
-            outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
-                                                        : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
-            xpL = aL; FpL = FL;
+            const double satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
+                                                          : dcomp * std::tanh(dg * 0.5 * (aL + xpL));
             const double dxR = aR - xpR;
             const double FR = kF * lcosh(dg * aR);
-            outR[i] = (float)(dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
-                                                        : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
+            const double satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
+                                                          : dcomp * std::tanh(dg * 0.5 * (aR + xpR));
+            const double mix = adaaStart + (adaaTarget - adaaStart) * ((double)(i + 1) / std::max(1, n));
+            outL[i] = (float)(aL + mix * (satL - aL));
+            xpL = aL; FpL = FL;
+            outR[i] = (float)(aR + mix * (satR - aR));
             xpR = aR; FpR = FR;
         }
         fs.satXL = xpL; fs.satXR = xpR;
+        fs.adaaMix = adaaTarget;
     } else {
         for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }
+        if (n > 0) {
+            fs.satXL = adaaInput(inL[n - 1]); fs.satXR = adaaInput(inR[n - 1]);
+        }
+        fs.adaaMix = 0;
     }
 
     // Finding 7: cutoff ramps from the previous chunk's value; coefficients

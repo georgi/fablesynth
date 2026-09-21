@@ -375,6 +375,7 @@ void Fx::prepare(double sampleRate) {
     // ~15 ms of chunk-rate glide for the coefficient-bearing parameters
     rampSteps_ = (int)std::lround(0.015 * sr_ / (double)kCoefChunk);
     setRampSteps(rampSteps_);
+    coefSamples_ = 0;
     primed_ = false; // the first setParams after a prepare() lands instantly
 
     dcL_.highpass(8, 0.707, sr_);
@@ -439,6 +440,7 @@ void Fx::reset() {
     eqMidF2_.snapToTarget(); driveAmt_.snapToTarget();
     chRateT_.snapToTarget(); chDepthT_.snapToTarget(); verbSize_.snapToTarget();
     eqExtDirty_ = true; forceCoefs_ = true;
+    coefSamples_ = 0;
 }
 
 static inline float mixGate(bool on, float amount, bool wet) {
@@ -610,9 +612,9 @@ float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBa
 }
 
 void Fx::process(float* L, float* R, int n) {
-    // The ramp owns a sample-clocked duration established at prepare(). Do not
-    // resize it from the host block length: a single 1024-sample callback and
-    // eight 128-sample callbacks must consume the same automation trajectory.
+    // The ramp owns a sample-clocked duration established at prepare(). Keep
+    // the coefficient clock across callbacks: a single 32-sample callback and
+    // thirty-two 1-sample callbacks must consume the same trajectory.
 
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive —
     // every stage below has a tail or a feedback loop that has to keep running.
@@ -671,10 +673,18 @@ void Fx::process(float* L, float* R, int n) {
     // The sample loop runs in kCoefChunk-sample chunks; the ramped EQ / drive /
     // reverb coefficients are rebuilt once per chunk, so automation of those
     // follows a 15 ms glide instead of stepping once per host block.
-    for (int off = 0; off < n; off += kCoefChunk) {
-        const int end = std::min(off + kCoefChunk, n);
-        advanceCoefs(forceCoefs_);
+    int off = 0;
+    if (forceCoefs_ && n > 0) {
+        advanceCoefs(true);
         forceCoefs_ = false;
+        coefSamples_ = kCoefChunk;
+    }
+    while (off < n) {
+        if (coefSamples_ <= 0) {
+            advanceCoefs(false);
+            coefSamples_ = kCoefChunk;
+        }
+        const int end = std::min(off + coefSamples_, n);
 
         for (int i = off; i < end; i++) {
             float l = L[i], r = R[i];
@@ -791,6 +801,8 @@ void Fx::process(float* L, float* R, int n) {
 
               L[i] = l; R[i] = r;
         }
+        coefSamples_ -= end - off;
+        off = end;
     }
 }
 

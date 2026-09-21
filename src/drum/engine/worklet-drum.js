@@ -981,6 +981,8 @@ class PadVoice {
     this.vel = v; this.rand = rand;
     this.t = 0; this.ampLevel = 0;
     this.oA.posSm = -1;
+    this.oA.havePrev = false;
+    this.oA.pData = null;
     this.sample.pos = -1; this.sample.index = -1; this.sample.done = false;
     this.sample.havePrev = false;
     this.f.svf.fill(0); this.f.cutSm = 0; this.f.satXL = 0; this.f.satXR = 0; this.f.adaaMix = 0;
@@ -991,7 +993,10 @@ class PadVoice {
   }
 
   choke() { if (this.active) this.choking = true; }
-  kill() { this.active = false; this.choking = false; this.ampLevel = 0; }
+  kill() {
+    this.active = false; this.choking = false; this.ampLevel = 0;
+    this.oA.havePrev = false; this.oA.pData = null;
+  }
 }
 
 class DrumProcessor extends AudioWorkletProcessor {
@@ -1368,7 +1373,7 @@ class DrumProcessor extends AudioWorkletProcessor {
       o.incs[u] = cps0 * ratio * table.size;
       o.incsEnd[u] = cps1 * ratio * table.size;
       maxInc0 = Math.max(maxInc0, prevValid ? o.pIncs[u] : o.incs[u]);
-      maxInc1 = Math.max(maxInc1, o.incs[u]);
+      maxInc1 = Math.max(maxInc1, o.incsEnd[u]);
       const pan = Math.max(-1, Math.min(1, sprd * spr));
       const a = ((pan + 1) * Math.PI) / 4;
       o.gl[u] = Math.cos(a);
