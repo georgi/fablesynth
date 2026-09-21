@@ -11,11 +11,14 @@ using namespace fable;
 fable::FableAgent& BassAudioProcessor::getAgent() {
     if (!agent_) {
         const auto& info = bassParamInfo();
-        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this](codeact::Snapshot& snapshot) {
+        juce::StringArray presetNames;
+        for (const auto& patch : bassFactoryPatches()) presetNames.add(juce::String(patch.name));
+        agent_ = fable::makeApvtsAgent(*this, apvts, info.data(), info.size(), agentStateGeneration_, [this, presetNames](codeact::Snapshot& snapshot) {
             snapshot.audio = fable::agentAudioMeasurements(agentOutputMeter_.snapshot(), "Final main output after device FX/output processing");
             juce::Array<codeact::Json> effects;
             effects.add(fable::agentFxMeters(fxTelemetry(), "instrument"));
             snapshot.meters = fable::agentMeterObservations(snapshot.audio, effects);
+            snapshot.references = fable::agentPresetReferences("BL-1", presetNames, getCurrentProgram());
         });
     }
     return *agent_;

@@ -7,10 +7,60 @@ import { FACTORY_PRESETS, resolvePresetMods } from '../presets';
 import { isTrackOpen } from '../seq/model';
 import { saveSession, type MachineId, type PatchDoc, type SessionDoc } from '../seq/protocol';
 import { embedSessionPatches } from '../seq/sessionExport';
+import { FACTORY_SESSION_PRESETS } from '../seq/sessionPresets';
 import { useSeqStore } from '../seq/store';
+import { soundDesignReferences } from './presetReferences';
 import type { AgentHost, AgentParameter, AgentSnapshot } from './webAgent';
 
 type Values = Record<string, number>;
+
+type PresetReference = {
+  id: string;
+  name: string;
+  source: 'factory' | 'authored';
+  family: string;
+  variation: string;
+  bpm: number;
+  swing: number;
+  energy: number;
+  tags: string[];
+  tracks: string[];
+  note?: string;
+};
+
+const authoredNotes: Record<string, string> = {
+  'TIDAL MEMORY': 'D minor, 118 BPM dub techno: soft chord stabs, deep bass, spacious dotted-eighth echoes.',
+  'PHASE RUNNER': 'F minor, 126 BPM dub techno: driving bass hook, dark chord echoes, low wooden response.',
+};
+
+// Intentionally compact. The agent gets musical identity and instrumentation,
+// not whole clips or patch dumps, so this remains a reference catalog rather
+// than a hidden preset-loading API.
+const presetReferences: readonly PresetReference[] = FACTORY_SESSION_PRESETS.map((preset, index) => ({
+  id: `session.${index}`,
+  name: preset.name,
+  source: preset.tags.includes('authored') ? 'authored' : 'factory',
+  family: preset.family,
+  variation: preset.variation,
+  bpm: preset.session.bpm,
+  swing: preset.session.swing,
+  energy: preset.energy,
+  tags: [...preset.tags],
+  tracks: preset.session.tracks.map(track => `${track.machine} · ${track.name}`),
+  note: authoredNotes[preset.name],
+}));
+
+function presetCatalog(currentSession: string): Record<string, unknown> {
+  return {
+    presetCatalog: {
+      readOnly: true,
+      description: 'Compact SQ-4 session references for musical orientation. Filter entries before returning them.',
+      currentSession,
+      entries: presetReferences,
+    },
+    ...soundDesignReferences('SQ-4'),
+  };
+}
 
 const defsFor = (machine: MachineId): ParamDef[] =>
   machine === 'DR1' ? DRUM_PARAM_DEFS : machine === 'BL1' ? BASS_PARAM_DEFS : PARAM_DEFS;
@@ -70,6 +120,7 @@ function snapshot(): AgentSnapshot {
     plugin: 'FableSynth SQ-4 (web)', parameters,
     audio: { available, tracks: trackMeters },
     meters: { available, tracks: trackMeters, master: { available: false, reason: 'SQ-4 exposes post-fader track analysers; master telemetry is not exposed yet.' } },
+    references: presetCatalog(state.session.name),
   };
 }
 

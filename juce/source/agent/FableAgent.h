@@ -89,4 +89,14 @@ std::unique_ptr<FableAgent> makeApvtsAgent(juce::AudioProcessor&,
     const std::atomic<std::uint64_t>& generation,
     std::function<void(codeact::Snapshot&)> measurements = {});
 
+// Compact, immutable factory-bank references for the standalone instrument
+// agents. These guide recommendations but are never proposal targets.
+codeact::Json agentPresetReferences(const juce::String& instrument,
+                                    const juce::StringArray& names,
+                                    int currentIndex);
+
+// Compact technique cues distilled from public educational material. They are
+// original FableSynth guidance, never third-party preset data or load targets.
+codeact::Json agentTechniqueReferences(const juce::String& instrument);
+
 } // namespace fable

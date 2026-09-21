@@ -1,5 +1,7 @@
 import { engine, useStore } from '../store';
 import { PARAM_DEFS, type ParamDef, type ParamValues } from '../params';
+import { FACTORY_PRESETS } from '../presets';
+import { presetReferences } from './presetReferences';
 import type { AgentHost, AgentParameter, AgentSnapshot } from './webAgent';
 
 function parameter(def: ParamDef, values: ParamValues): AgentParameter {
@@ -54,6 +56,11 @@ export function makeWtAgentHost(): AgentHost {
     getValues: () => useStore.getState().params,
     outputAnalyser: () => engine.ready ? engine.scopeAnalyser : null,
     unavailableReason: 'Power on WT-1 to measure output.',
+    presetReferences: () => {
+      const state = useStore.getState();
+      return presetReferences('WT-1', FACTORY_PRESETS.map(preset => preset.name), state.presetValue,
+        state.userPresets.map(preset => preset.name));
+    },
     applyValues: next => {
       const state = useStore.getState();
       engine.panic(state.hosted);
@@ -71,6 +78,7 @@ export interface SingleParamAgentHostOptions {
   outputAnalyser(): AnalyserNode | null;
   unavailableReason: string;
   applyValues(next: ParamValues): void;
+  presetReferences?(): Record<string, unknown>;
 }
 
 export function makeSingleParamAgentHost(options: SingleParamAgentHostOptions): AgentHost {
@@ -83,6 +91,7 @@ export function makeSingleParamAgentHost(options: SingleParamAgentHostOptions): 
         parameters: options.definitions.map(def => parameter(def, values)),
         audio: output,
         meters: { available: Boolean(output.available), output, fx: { available: false, reason: 'WT-1 web FX telemetry is not exposed to the agent yet.' } },
+        references: options.presetReferences?.(),
       };
     },
     revision: () => revision(options.getValues()),

@@ -57,6 +57,54 @@ bool sqLayoutMatches(const SessionData& doc) {
         if (doc.tracks[(size_t)i].machine != kLayout[i]) return false;
     return true;
 }
+
+const char* sqMachineLabel(Machine machine) {
+    switch (machine) {
+        case Machine::DR1: return "DR-1";
+        case Machine::BL1: return "BL-1";
+        case Machine::WT1: return "WT-1";
+    }
+    return "UNKNOWN";
+}
+
+codeact::Json sqPresetReferences(const SessionData& current) {
+    juce::Array<codeact::Json> entries;
+    const auto& library = factorySessionLibrary();
+    for (size_t index = 0; index < library.size(); ++index) {
+        const auto& preset = library[index];
+        const auto name = juce::String(preset.name);
+        const auto family = juce::String(preset.family);
+        const auto variation = juce::String(preset.variation);
+        bool authored = false;
+        juce::Array<codeact::Json> tags, tracks;
+        for (const auto& tag : preset.tags) {
+            tags.add(juce::String(tag));
+            authored = authored || tag == "authored";
+        }
+        for (const auto& track : preset.session.tracks)
+            tracks.add(juce::String(sqMachineLabel(track.machine)) + " · " + juce::String(track.name));
+        auto entry = codeact::object({
+            { "id", "session." + juce::String((int)index) },
+            { "name", name }, { "source", juce::String(authored ? "authored" : "factory") },
+            { "family", family }, { "variation", variation },
+            { "bpm", preset.session.bpm }, { "swing", preset.session.swing },
+            { "energy", preset.energy }, { "tags", codeact::Json(tags) },
+            { "tracks", codeact::Json(tracks) },
+        });
+        if (preset.name == "TIDAL MEMORY")
+            codeact::put(entry, "note", "D minor, 118 BPM dub techno: soft chord stabs, deep bass, spacious dotted-eighth echoes.");
+        else if (preset.name == "PHASE RUNNER")
+            codeact::put(entry, "note", "F minor, 126 BPM dub techno: driving bass hook, dark chord echoes, low wooden response.");
+        entries.add(std::move(entry));
+    }
+    const auto catalog = codeact::object({
+        { "readOnly", true },
+        { "description", "Compact SQ-4 session references for musical orientation. Filter entries before returning them." },
+        { "currentSession", juce::String(current.name) }, { "entries", codeact::Json(entries) },
+    });
+    return codeact::object({ { "available", true }, { "presetCatalog", catalog },
+                             { "techniqueLibrary", fable::agentTechniqueReferences("SQ-4") } });
+}
 } // namespace
 
 namespace fable {
@@ -116,6 +164,7 @@ fable::FableAgent& SeqAudioProcessor::getAgent() {
             }));
         }
         state.snapshot.meters = agentMeterObservations(state.snapshot.audio, effects, tracks);
+        state.snapshot.references = sqPresetReferences(session);
         return state;
     }, [this](const std::vector<codeact::Change>& changes, juce::String& error) {
         if (!conductor_) { error = "Prepare SQ-4 audio before applying changes"; return false; }

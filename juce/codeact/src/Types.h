@@ -161,6 +161,9 @@ struct Snapshot {
     std::vector<Parameter> parameters;
     Json audio = object({{"available", false}, {"reason", "Audio measurement unavailable"}});
     Json meters = object({{"available", false}, {"reason", "Meter data unavailable"}});
+    // Read-only musical orientation data, deliberately separate from mutable
+    // parameters and audio measurements.
+    Json references = object({{"available", false}, {"reason", "Preset references unavailable"}});
     void validate() const {
         if (parameters.size() > 8192 || pluginName.length() > 256) fail("Snapshot too large");
         std::set<juce::String> ids;
@@ -176,7 +179,7 @@ struct Snapshot {
             for (const auto& choice : p.choices)
                 if (choice.length() > 256) fail("Invalid parameter snapshot");
         }
-        for (const auto* observation : { &audio, &meters }) {
+        for (const auto* observation : { &audio, &meters, &references }) {
             if (!observation->getDynamicObject()) fail("Snapshot observation must be a JSON object");
             validateJsonData(*observation);
             if (jsonText(*observation).getNumBytesAsUTF8() > 64 * 1024)
@@ -193,7 +196,8 @@ struct Snapshot {
                                {"step", p.step}, {"choices", Json(choices)}}));
         }
         return object({{"plugin", pluginName}, {"parameters", Json(values)},
-                       {"audio", audio.clone()}, {"meters", meters.clone()}});
+                       {"audio", audio.clone()}, {"meters", meters.clone()},
+                       {"references", references.clone()}});
     }
 };
 struct Change {

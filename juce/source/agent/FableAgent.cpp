@@ -416,4 +416,100 @@ std::unique_ptr<FableAgent> makeApvtsAgent(juce::AudioProcessor& processor,
         return state;
     }, [&apvts](const auto& changes, auto& error) { return applyAgentApvts(apvts, changes, error); });
 }
+
+codeact::Json agentPresetReferences(const juce::String& instrument,
+                                    const juce::StringArray& names,
+                                    int currentIndex) {
+    juce::Array<codeact::Json> entries;
+    for (int index = 0; index < names.size(); ++index)
+        entries.add(codeact::object({
+            { "id", "preset." + juce::String(index) }, { "name", names[index] },
+            { "source", "factory" }, { "instrument", instrument },
+        }));
+    const auto catalog = codeact::object({
+        { "readOnly", true },
+        { "description", "Factory sound references for musical orientation. Filter entries before returning them." },
+        { "currentPreset", currentIndex }, { "entries", codeact::Json(entries) },
+    });
+    return codeact::object({ { "available", true }, { "presetCatalog", catalog },
+                             { "techniqueLibrary", agentTechniqueReferences(instrument) } });
+}
+
+codeact::Json agentTechniqueReferences(const juce::String& instrument) {
+    juce::Array<codeact::Json> entries;
+    const auto add = [&entries](const char* id, const char* title, const char* purpose,
+                                std::initializer_list<const char*> cues) {
+        juce::Array<codeact::Json> cueEntries;
+        for (const auto* cue : cues) cueEntries.add(juce::String(cue));
+        entries.add(codeact::object({
+            { "id", id }, { "title", title }, { "purpose", purpose },
+            { "cues", codeact::Json(cueEntries) },
+        }));
+    };
+    if (instrument == "WT-1") {
+        add("technique.dark-dub-chord", "Dark dub chord",
+            "A short, soft-edged chord stab with space around it.", {
+                "Build an original minor or suspended voicing from complementary oscillator layers.",
+                "Keep the sustained body dark with a low-pass filter, but use a brief filter-envelope lift for the attack.",
+                "Use noise and saturation sparingly for texture; preserve headroom for the repeats.",
+                "Use a tempo-related dotted delay and spacious reverb as rhythmic elements, not a wash.",
+            });
+        add("technique.slow-chord-evolution", "Slow chord evolution",
+            "Add movement without turning a warm chord into a bright lead.", {
+                "Use shallow, slow modulation of oscillator shape or blend and filter cutoff.",
+                "Keep modulation rates musical and subtle so phrase changes remain audible.",
+                "Vary effect depth gently rather than relying on high resonance or treble.",
+            });
+        add("technique.warm-expressive-lead", "Warm expressive lead",
+            "A close, human melodic voice that stays soft in a dense mix.", {
+                "Start from a rounded source and a lower register before adding width or movement.",
+                "Use velocity or a gentle envelope to shape presence; avoid bright octave attacks and excessive resonance.",
+                "Keep delay audible by leaving rests between phrases and using a restrained wet mix.",
+            });
+        add("technique.organic-pluck", "Organic percussive pluck",
+            "A tactile, rhythmic part that can support a groove without becoming a bell.", {
+                "Use a quick amplitude contour with a filtered, low-to-mid harmonic source.",
+                "Let a small filter-envelope movement define the strike instead of harsh high frequencies.",
+                "Keep the release short enough for the rhythm, then add only a trace of room or delay.",
+            });
+        add("technique.wide-supporting-pad", "Wide supporting pad",
+            "A slow, warm bed that complements—not masks—the active parts.", {
+                "Use complementary oscillator layers and modest detune for width while keeping the lowest frequencies focused.",
+                "Move filter, blend, or texture slowly with shallow modulation rather than fast tremolo.",
+                "Shape the spectrum around the bass and lead roles; brighter layers should remain secondary.",
+            });
+        add("technique.character-keys", "Character keys",
+            "A playable electric-key or organ-like voice with its own gesture and register.", {
+                "Balance a clear fundamental with a restrained upper layer so chords stay intelligible.",
+                "Use a medium attack and release when legato feel matters, or a shorter contour for rhythmic comping.",
+                "Add subtle motion or ambience after the core tone is useful on its own.",
+            });
+    } else if (instrument == "BL-1") {
+        add("technique.foundation-bass", "Foundational bass",
+            "A stable low role that leaves room for dub-delay chords.", {
+                "Start with a focused mono low-frequency source and a clear, controlled transient.",
+                "Use filtering and restrained drive for weight instead of bright octave layers.",
+                "Write rests and phrase variants with the drums; do not fill every subdivision.",
+            });
+    } else if (instrument == "DR-1") {
+        add("technique.dub-drum-foundation", "Dub drum foundation",
+            "Firm rhythm with a shared space rather than effects on every hit.", {
+                "Keep kick and bass roles distinct; preserve the kick transient and low-end headroom.",
+                "Use soft clap and short, choked 808-style hats instead of pitched metallic percussion.",
+                "Treat group effects as a controlled shared space with modest send and return levels.",
+            });
+    } else if (instrument == "SQ-4") {
+        add("technique.dub-arrangement", "Dub arrangement and master space",
+            "Make four parts feel like one performance while preserving contrast.", {
+                "Compose drums and bass together, then leave deliberate gaps for chord repeats.",
+                "Give one or two parts the evolving motion; keep the rest stable enough to anchor the groove.",
+                "Use group and master processing for cohesion and protection, not to flatten every transient.",
+            });
+    }
+    return codeact::object({
+        { "readOnly", true },
+        { "description", "Original FableSynth design cues distilled from public educational sound-design material. They are not preset data or instructions to copy settings." },
+        { "entries", codeact::Json(entries) },
+    });
+}
 } // namespace fable

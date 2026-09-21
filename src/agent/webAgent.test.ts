@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebAgent, type AgentHost } from './webAgent';
+import { presetReferences } from './presetReferences';
 
 const host: AgentHost = {
   snapshot: () => ({
@@ -19,6 +20,23 @@ function event(delta: Record<string, unknown>) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('WebAgent', () => {
+  it('keeps factory and user preset references compact and read-only', () => {
+    const catalog = presetReferences('DR-1', ['TR-VOID'], 'f0', ['MY KIT']) as {
+      presetCatalog: { readOnly: boolean; currentPreset: string; entries: Array<{ name: string; source: string }> };
+      techniqueLibrary: { readOnly: boolean; entries: Array<{ id: string }> };
+    };
+    expect(catalog.presetCatalog.readOnly).toBe(true);
+    expect(catalog.presetCatalog.currentPreset).toBe('f0');
+    expect(catalog.presetCatalog.entries).toEqual([
+      { id: 'preset.0', name: 'TR-VOID', source: 'factory', instrument: 'DR-1' },
+      { id: 'user.0', name: 'MY KIT', source: 'user', instrument: 'DR-1' },
+    ]);
+    expect(catalog.techniqueLibrary).toMatchObject({
+      readOnly: true,
+      entries: [{ id: 'technique.dub-drum-foundation' }],
+    });
+  });
+
   it('stages a constrained tool proposal and applies it only after Apply', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(event({
@@ -50,6 +68,30 @@ describe('WebAgent', () => {
 
     await agent.submit('Inspect the host.');
     expect(agent.getState().turns[0].activityLog).toContain('Unsupported expression: globalThis');
+    expect(agent.getState().turns[0].status).toBe('complete');
+  });
+
+  it('lets the model query compact read-only preset references', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(event({
+        tool_calls: [{ index: 0, id: 'tool_1', type: 'function', function: { name: 'execute_js', arguments: '{"code":"const refs = host.snapshot().references.presetCatalog.entries.filter(x => x.tags.includes(\\\"dub\\\")); return refs.map(x => x.name);"}' } }],
+      })))
+      .mockResolvedValueOnce(new Response(event({ content: 'I found the comparable reference.' })));
+    vi.stubGlobal('fetch', fetch);
+    const catalogHost: AgentHost = {
+      ...host,
+      snapshot: () => ({
+        ...host.snapshot(),
+        references: { presetCatalog: { readOnly: true, entries: [
+          { name: 'TIDAL MEMORY', tags: ['dub', 'deep'] },
+          { name: 'NEON TALE', tags: ['bright'] },
+        ] } },
+      }),
+    };
+    const agent = new WebAgent(catalogHost, { apiKey: 'test', model: 'openrouter/auto' });
+
+    await agent.submit('Find a dub reference.');
+    expect(agent.getState().turns[0].activityLog).toContain('TIDAL MEMORY');
     expect(agent.getState().turns[0].status).toBe('complete');
   });
 });
