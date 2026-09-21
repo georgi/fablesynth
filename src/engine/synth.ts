@@ -106,7 +106,7 @@ export class SynthEngine {
   ready: boolean;
   output: AudioNode | null; // hosted-mode output (null = ctx.destination)
   // Latency of the worklet's FX chain, in samples: the 4x drive oversampler's
-  // FIR group delay plus the limiter lookahead — 99 at 48 kHz. The worklet
+  // FIR group delay plus the limiter lookahead — 107 at 48 kHz. The worklet
   // reports it on init; Fx::latencySamples() in the plugin is the same number,
   // and BL-1/DR-1 expose the same property.
   latencySamples: number;

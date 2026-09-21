@@ -185,6 +185,11 @@ globalThis.FableCompressor = Compressor;
 class EqBiquad {
   constructor(sr) { this.sr = sr; this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.z1 = 0; this.z2 = 0; }
   reset() { this.z1 = 0; this.z2 = 0; }
+  copyFrom(other) {
+    this.b0 = other.b0; this.b1 = other.b1; this.b2 = other.b2;
+    this.a1 = other.a1; this.a2 = other.a2;
+    this.z1 = other.z1; this.z2 = other.z2;
+  }
   process(x) {
     const y = this.b0 * x + this.z1;
     this.z1 = this.b1 * x - this.a1 * y + this.z2;
@@ -248,31 +253,35 @@ class ParametricEq {
     this.sr = sr; this.steps = Math.max(1, Math.floor(sr * .015 / 32));
     this.wetCoef = 1 - Math.exp(-1 / (.005 * sr));
     this.guard = new PeakGuard(sr); this.wet = this.targetWet = 0; this.primed = false;
+    this.typeFadeSamples = Math.max(1, Math.round(.003 * sr));
     this.bands = EQ_KEYS.map(keys => ({keys, l:new EqBiquad(sr), r:new EqBiquad(sr),
-      cur:[0,0,0], target:[0,0,0], step:[0,0,0], left:[0,0,0], type:1, dirty:true}));
+      oldL:new EqBiquad(sr), oldR:new EqBiquad(sr),
+      cur:[0,0,0], target:[0,0,0], step:[0,0,0], left:[0,0,0],
+      type:1, pendingType:1, xfLeft:0, dirty:true}));
     this.reset();
   }
   reset() {
     this.wet = this.targetWet; this.left = 0; this.guard.reset();
     for (const b of this.bands) {
-      b.l.reset(); b.r.reset(); b.dirty = true;
+      b.l.reset(); b.r.reset(); b.oldL.reset(); b.oldR.reset(); b.xfLeft=0; b.dirty = true;
       for (let i=0;i<3;i++) { b.cur[i]=b.target[i]; b.left[i]=0; }
     }
   }
   setParams(read) {
     const get = i => { const v=read(EQ_FIELDS[i]); return Number.isFinite(v)?v:EQ_DEFAULTS[i]; };
-    this.targetWet = get(0) > .5 ? 1 : 0;
+    const eqOn = get(0) > .5;
+    this.targetWet = eqOn ? 1 : 0;
     if (!this.primed) this.wet = this.targetWet;
     for (const b of this.bands) {
       const k=b.keys;
       const values=[Math.log2(Math.max(20,Math.min(20000,get(k[0])))),
-        get(k[4])>.5?Math.max(-15,Math.min(15,get(k[1]))):0, Math.max(.2,Math.min(12,get(k[2])))];
+        eqOn&&get(k[4])>.5?Math.max(-15,Math.min(15,get(k[1]))):0, Math.max(.2,Math.min(12,get(k[2])))];
       for(let i=0;i<3;i++) {
         if(!this.primed) { b.cur[i]=b.target[i]=values[i]; b.left[i]=0; }
         else if(values[i]!==b.target[i]) { b.target[i]=values[i]; b.step[i]=(values[i]-b.cur[i])/this.steps; b.left[i]=this.steps; }
       }
       const type=Math.max(0,Math.min(2,get(k[3])|0));
-      b.dirty ||= b.type!==type; b.type=type;
+      b.dirty ||= b.pendingType!==type; b.pendingType=type;
     }
     this.primed=true;
   }
@@ -285,6 +294,10 @@ class ParametricEq {
           for(let j=0;j<3;j++) if(b.left[j]>0) { changed=true; b.cur[j]=--b.left[j]===0?b.target[j]:b.cur[j]+b.step[j]; }
           if(!changed) continue;
           const f=Math.pow(2,b.cur[0]),g=b.cur[1],q=b.cur[2];
+          if(b.type!==b.pendingType) {
+            b.oldL.copyFrom(b.l); b.oldR.copyFrom(b.r);
+            b.type=b.pendingType; b.xfLeft=this.typeFadeSamples;
+          }
           if(b.type===0) { b.l.lowShelf(f,g,q); b.r.lowShelf(f,g,q); }
           else if(b.type===2) { b.l.highShelf(f,g,q); b.r.highShelf(f,g,q); }
           else { b.l.peaking(f,q,g); b.r.peaking(f,q,g); }
@@ -297,7 +310,14 @@ class ParametricEq {
         continue;
       }
       let l=L[i],r=R[i];
-      for(const b of this.bands) { l=b.l.process(l); r=b.r.process(r); }
+      for(const b of this.bands) {
+        const inL=l,inR=r,newL=b.l.process(inL),newR=b.r.process(inR);
+        if(b.xfLeft>0) {
+          const oldL=b.oldL.process(inL),oldR=b.oldR.process(inR);
+          const mix=1-b.xfLeft/this.typeFadeSamples;
+          l=oldL+mix*(newL-oldL); r=oldR+mix*(newR-oldR); b.xfLeft--;
+        } else { l=newL; r=newR; }
+      }
       L[i]+=this.wet*(l-L[i]); R[i]+=this.wet*(r-R[i]);
       const gain=this.guard.gainFor(L[i],R[i]); L[i]*=gain; R[i]*=gain;
     }

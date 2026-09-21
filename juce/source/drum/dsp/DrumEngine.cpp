@@ -25,8 +25,15 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
+static constexpr double DR_ADAA_FADE_WIDTH = 0.1;
+static constexpr double DR_ADAA_INPUT_LIMIT = 16.0;
+
 static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static inline double adaaInput(double x) {
+    return std::isfinite(x) ? clampd(x, -DR_ADAA_INPUT_LIMIT, DR_ADAA_INPUT_LIMIT) : 0.0;
 }
 
 // Finding 6: chunk-invariant smoothers (see Engine.cpp for the derivation).
@@ -192,11 +199,13 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
     t = 0; ampLevel = 0;
     oA.posSm = -1; oA.havePrev = false; oA.pData = nullptr;
     oAxLeft = 0;                                   // Finding J2
+    oA.tableOwner.reset(); oAx.tableOwner.reset();
+    oA.data = oAx.data = nullptr;
     sample.pos = -1; sample.index = -1; sample.done = false;
     sample.pStep = 0; sample.havePrev = false;
     sample.xfIndex = -1; sample.xfLeft = 0; sample.xfDone = true;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
-    f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0;
+    f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0; f.adaaMix = 0;
     std::fill(std::begin(f.svfOld), std::end(f.svfOld), 0.0);
     f.pFtype = -1; f.xfLeft = 0;
     noiseY = 0; ringPhase = 0.25;
@@ -209,6 +218,10 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
 // remap the 48 kHz-reference DC pole to the new rate (Finding 9).
 void DrumEngine::prepare(double sampleRate) {
     sr_ = sampleRate;
+    // The native processor publishes at most DR_NPATTERNS chain entries.
+    // Reserve here so its audio-side setChain never grows storage; standalone
+    // engine callers retain the existing arbitrary-length chain API.
+    chain_.reserve(DR_NPATTERNS);
     dcR_ = std::pow(DR_DC_R, 48000.0 / sr_);
     chokeCoef_ = 1.0 - std::exp(-1.0 / (DR_CHOKE_TAU * sr_));   // Finding D9
     snapSmoothers();                 // Finding J1: no stale ramp survives a re-prepare
@@ -256,48 +269,33 @@ void DrumEngine::setTables(std::vector<TablePtr> tables) {
             e.data = t->data.data();
             e.src = std::move(t);
         }
-        next->push_back(std::move(e));
+        next->push_back(std::make_shared<const DrumTable>(std::move(e)));
     }
     std::shared_ptr<const TableSet> pub = std::move(next);
     const TableSet* raw = pub.get();
     auto prev = std::move(live_);
     live_ = std::move(pub);
-    tablesPtr_.store(raw, std::memory_order_release);
+    tablesPtr_.store(raw, std::memory_order_seq_cst);
     // Two setTables calls inside one render used to overwrite each other's
     // retired_ slot and drop the older set on the audio thread. The list holds
     // every one of them until the epoch says nobody can be reading it.
     if (prev)
         retired_.push_back({std::move(prev),
-                            renderEpoch_.load(std::memory_order_acquire)});
+                            renderEpoch_.load(std::memory_order_seq_cst)});
     drainRetiredTables();
 }
 
-// Message thread. Two ways a retired set becomes unreachable.
-//
-// An EVEN epoch means no render call is in flight at this instant: a render
-// that had loaded the old pointer would still be inside its odd window, and one
-// that starts after this load necessarily sees the pointer published before it.
-// So an even reading retires everything outstanding at once. This is the case
-// that matters for a loaded-but-silent instance — a bypassed plugin, or a
-// stopped transport in a host that skips processBlock — where the counter never
-// advances and the distance rule below would never fire, so importing table
-// after table would pile up retired sets forever.
-//
-// Otherwise a set retired at epoch e is unreachable once the counter has moved
-// on by kRetireEpochs: every render() that could have loaded the old pointer has
-// passed its closing increment. Unsigned wrap is well defined and the difference
-// is always small, so the arithmetic stays correct forever.
+// Message thread only. Quiescence ends snapshot access, but cached oscillator
+// states can outlive any number of render calls. Both conditions must hold.
 void DrumEngine::drainRetiredTables() {
-    const uint32_t now = renderEpoch_.load(std::memory_order_acquire);
-    if ((now & 1u) == 0u) {                 // quiescent: nothing can be reading
-        retired_.clear();
-        return;
-    }
+    const uint32_t now = renderEpoch_.load(std::memory_order_seq_cst);
     retired_.erase(std::remove_if(retired_.begin(), retired_.end(),
-                                  [now](const RetiredTables& r) {
-                                      return (uint32_t)(now - r.epoch) >= kRetireEpochs;
-                                  }),
-                   retired_.end());
+        [now](const RetiredTables& r) {
+            if ((now & 1u) != 0u && (uint32_t)(now - r.epoch) < kRetireEpochs)
+                return false;
+            return std::all_of(r.set->begin(), r.set->end(),
+                [](const auto& t) { return t.use_count() == 1; });
+        }), retired_.end());
 }
 
 // ---- trigger (js:126-143): choke group scan, velocity clamp, phase preset ----
@@ -479,8 +477,8 @@ bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
                           double mPos, double mFine, double mPitch, int n) {
     int ti = (int)param(base);
     const DrumTable* table =
-        (ti >= 0 && ti < (int)curTables_->size() && (*curTables_)[(size_t)ti].data)
-            ? &(*curTables_)[(size_t)ti] : nullptr;
+        (ti >= 0 && ti < (int)curTables_->size() && (*curTables_)[(size_t)ti]->data)
+            ? (*curTables_)[(size_t)ti].get() : nullptr;
     if (!table) return false;
 
     double basePitch = DR_BASE_NOTE + param(base + 2)
@@ -501,31 +499,14 @@ bool DrumEngine::setupOsc(OscState& o, int base, double pitchEnv,
     o.posSm += (pos - o.posSm) * smoothCoef(n, DR_POS_TAU * sr_);
     double posF = o.posSm * (table->frames - 1);
     int f0 = (int)posF;
-    int f1 = std::min(table->frames - 1, f0 + 1);
     o.posF = posF;
     o.f0 = f0;
 
     double cps = freq / sr_;
-    double maxRatio = std::pow(2.0, (std::fabs(det) * 50.0) / 1200.0);
-    // Finding D5: full trilinear mip blending. The old code only crossfaded
-    // inside a 0.07-octave band and hard-switched everywhere else, which a drum
-    // pitch envelope crosses in milliseconds. blend = mip - mipF is continuous
-    // across a mip boundary: just below integer M the coarse read is mip M with
-    // blend ~0, just above it is mip M+1 with blend ~1 onto fineMip = M.
-    double mipF = std::log2((cps * maxRatio * 1024.0) / 0.475);
-    int mip = 0;
-    if (mipF > 0) mip = std::min(table->mips - 1, (int)std::ceil(mipF));
-    else mipF = 0;                       // mip 0: off0b == off0, blend is a no-op
-    int fineMip = mip > 0 ? mip - 1 : 0;
-
-    o.off0  = (f0 * table->mips + mip) * table->size;
-    o.off1  = (f1 * table->mips + mip) * table->size;
-    o.off0b = (f0 * table->mips + fineMip) * table->size;
-    o.off1b = (f1 * table->mips + fineMip) * table->size;
-    o.mipF = mipF;
-    o.mip = mip;
-    o.mipBlend = clampd(mip - mipF, 0.0, 1.0);
     o.data = table->data;
+    o.tableOwner = (*curTables_)[(size_t)ti];
+    o.frames = table->frames;
+    o.mips = table->mips;
     o.mask = table->mask;
     o.size = table->size;
     o.uni = uni;
@@ -553,23 +534,37 @@ void DrumEngine::renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n
     const int mask = o.mask, size = o.size;
     const double invN = 1.0 / n;
     const bool rp = o.havePrev && o.pUni == o.uni && o.pData == data;
-    // Finding D5: the morph fraction used to stop ramping whenever the frame
-    // or mip offset changed. Ramp the ABSOLUTE frame position instead and
-    // express it in the current sub-block's f0, so a frame or mip step is a
-    // continuous sweep rather than a jump. The same trick ramps mipF, which
-    // makes the trilinear blend continuous too.
     const double ft1 = o.posF - o.f0;
     const double ft0 = rp ? clampd(o.pPosF - o.f0, -1.0, 1.0) : ft1;
     const double dFt = (ft1 - ft0) * invN;
-    const double mf1 = o.mipF;
-    const double mf0 = rp ? o.pMipF : mf1;
-    const double dMf = (mf1 - mf0) * invN;
-    const double blend0 = clampd(o.mip - mf0, 0.0, 1.0);
-    const double blend1 = o.mipBlend;
-    const bool   useBlend = blend0 > 0.001 || blend1 > 0.001;
-    const int    mipI = o.mip;
+    // Derive the mip from the actual linearly ramped increment, not a
+    // logarithmic pitch target. Both tables remain below Nyquist throughout
+    // this 0.07-octave fade (0.475 * 2^0.07 < 0.5), including rapid envelopes.
+    // Precompute once for all unison voices; no allocations in this path.
+    int coarse[128], fine[128];
+    double blend[128];
+    double maxInc0 = 0, maxInc1 = 0;
+    for (int u = 0; u < o.uni; ++u) {
+        maxInc0 = std::max(maxInc0, rp ? o.pIncs[u] : o.incs[u]);
+        maxInc1 = std::max(maxInc1, o.incs[u]);
+    }
+    const int mipSamples = maxInc0 == maxInc1 ? 1 : n;
+    for (int i = 0; i < mipSamples; ++i) {
+        const double inc = maxInc0 + (maxInc1 - maxInc0) * (i * invN);
+        const double mipF = std::log2(inc * 0.5 / 0.475);
+        const int mip = mipF > 0 ? std::min(o.mips - 1, (int)std::ceil(mipF)) : 0;
+        blend[i] = mip > 0 ? clampd(1 - (mipF - (mip - 1)) / 0.07, 0.0, 1.0) : 0;
+        coarse[i] = mip * size;
+        fine[i] = std::max(0, mip - 1) * size;
+    }
+    if (mipSamples == 1) {
+        std::fill_n(coarse + 1, n - 1, coarse[0]);
+        std::fill_n(fine + 1, n - 1, fine[0]);
+        std::fill_n(blend + 1, n - 1, blend[0]);
+    }
     const double g = o.gain;
-    const int off0 = o.off0, off1 = o.off1;
+    const int frame0 = o.f0 * o.mips * size;
+    const int frame1 = std::min(o.frames - 1, o.f0 + 1) * o.mips * size;
     for (int u = 0; u < o.uni; u++) {
         double ph = o.phases[u];
         const double inc1 = o.incs[u];
@@ -578,45 +573,29 @@ void DrumEngine::renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n
         const double gl1 = o.gl[u] * g, gr1 = o.gr[u] * g;
         const double gl0 = rp ? (double)o.pGl[u] : gl1, gr0 = rp ? (double)o.pGr[u] : gr1;
         const double dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
-        if (!useBlend) {
-            for (int i = 0; i < n; i++) {
-                int idx = (int)ph;
-                double frac = ph - idx;
-                int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
-                double s0 = rdH(data, off0, im1, idx, i2, i3, frac);
-                double s1 = rdH(data, off1, im1, idx, i2, i3, frac);
-                double s = s0 + (ft0 + dFt * i) * (s1 - s0);
-                tmpL[off + i] += (float)(s * (gl0 + dGl * i));
-                tmpR[off + i] += (float)(s * (gr0 + dGr * i));
-                ph += inc0 + dInc * i;
-                if (ph >= size) ph -= size;
+        for (int i = 0; i < n; i++) {
+            int idx = (int)ph;
+            double frac = ph - idx;
+            int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+            const double ft = ft0 + dFt * i;
+            double sc0 = rdH(data, frame0 + coarse[i], im1, idx, i2, i3, frac);
+            double sc1 = rdH(data, frame1 + coarse[i], im1, idx, i2, i3, frac);
+            double s = sc0 + ft * (sc1 - sc0);
+            if (blend[i] > 0) {
+                double sf0 = rdH(data, frame0 + fine[i], im1, idx, i2, i3, frac);
+                double sf1 = rdH(data, frame1 + fine[i], im1, idx, i2, i3, frac);
+                s += blend[i] * (sf0 + ft * (sf1 - sf0) - s);
             }
-        } else {
-            const int off0b = o.off0b, off1b = o.off1b;
-            for (int i = 0; i < n; i++) {
-                int idx = (int)ph;
-                double frac = ph - idx;
-                int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
-                double ftN = ft0 + dFt * i;
-                double blendN = clampd(mipI - (mf0 + dMf * i), 0.0, 1.0);
-                double sc0 = rdH(data, off0, im1, idx, i2, i3, frac);
-                double sc1 = rdH(data, off1, im1, idx, i2, i3, frac);
-                double sc = sc0 + ftN * (sc1 - sc0);
-                double sf0 = rdH(data, off0b, im1, idx, i2, i3, frac);
-                double sf1 = rdH(data, off1b, im1, idx, i2, i3, frac);
-                double sf = sf0 + ftN * (sf1 - sf0);
-                double s = sc + blendN * (sf - sc);
-                tmpL[off + i] += (float)(s * (gl0 + dGl * i));
-                tmpR[off + i] += (float)(s * (gr0 + dGr * i));
-                ph += inc0 + dInc * i;
-                if (ph >= size) ph -= size;
-            }
+            tmpL[off + i] += (float)(s * (gl0 + dGl * i));
+            tmpR[off + i] += (float)(s * (gr0 + dGr * i));
+            ph += inc0 + dInc * i;
+            if (ph >= size) ph -= size;
         }
         o.phases[u] = ph;
         o.pIncs[u] = inc1;
         o.pGl[u] = (float)gl1; o.pGr[u] = (float)gr1;
     }
-    o.pPosF = o.posF; o.pMipF = mf1; o.pUni = o.uni; o.pData = data;
+    o.pPosF = o.posF; o.pUni = o.uni; o.pData = data;
     o.havePrev = true;
 }
 
@@ -644,7 +623,10 @@ void DrumEngine::renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mo
 
     if (v.oAxLeft <= 0) {
         if (aOn) renderOsc(v.oA, tmpL, tmpR, at, count);
-        else v.oA.havePrev = false;
+        else {
+            v.oA.havePrev = false;
+            v.oA.data = nullptr; v.oA.tableOwner.reset();
+        }
         return;
     }
 
@@ -652,7 +634,10 @@ void DrumEngine::renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mo
     std::fill(yL_, yL_ + count, 0.0f); std::fill(yR_, yR_ + count, 0.0f);
     renderOsc(v.oAx, xL_, xR_, 0, count);
     if (aOn) renderOsc(v.oA, yL_, yR_, 0, count);
-    else v.oA.havePrev = false;
+    else {
+        v.oA.havePrev = false;
+        v.oA.data = nullptr; v.oA.tableOwner.reset();
+    }
     for (int i = 0; i < count; i++) {
         double wOut, wIn;
         switchWeights(v.oAxLeft, i, v.oAxLen, wOut, wIn);
@@ -660,6 +645,9 @@ void DrumEngine::renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mo
         tmpR[at + i] += (float)(wOut * xR_[i] + wIn * yR_[i]);
     }
     v.oAxLeft = std::max(0, v.oAxLeft - count);
+    if (v.oAxLeft == 0) {
+        v.oAx.data = nullptr; v.oAx.tableOwner.reset();
+    }
 }
 
 // One instance of the sample layer: a slot and region frozen at call time, so
@@ -860,29 +848,38 @@ void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes
 // ---- runFilter (js:303-367): ADAA lcosh drive, SVF, LP24 second pass ----
 void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
                            float* outL, float* outR, double drive, int n) const {
-    if (drive > 0.005) {
+    const double adaaTarget = clampd(drive / DR_ADAA_FADE_WIDTH, 0.0, 1.0);
+    const double adaaStart = fs.adaaMix;
+    if (adaaTarget > 0 || adaaStart > 1e-6) {
         const double dg = 1 + drive * 7;
         const double dcomp = 1 / std::pow(dg, 0.55);
         const double kF = dcomp / dg;
         double xpL = fs.satXL, xpR = fs.satXR;
         double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
         for (int i = 0; i < n; i++) {
-            const double aL = inL[i], aR = inR[i];
+            const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
             const double dxL = aL - xpL;
             const double FL = kF * lcosh(dg * aL);
-            outL[i] = (float)(dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
-                                                        : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
-            xpL = aL; FpL = FL;
+            const double satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
+                                                          : dcomp * std::tanh(dg * 0.5 * (aL + xpL));
             const double dxR = aR - xpR;
             const double FR = kF * lcosh(dg * aR);
-            outR[i] = (float)(dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
-                                                        : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
+            const double satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
+                                                          : dcomp * std::tanh(dg * 0.5 * (aR + xpR));
+            const double mix = adaaStart + (adaaTarget - adaaStart) * ((double)(i + 1) / std::max(1, n));
+            outL[i] = (float)(aL + mix * (satL - aL));
+            xpL = aL; FpL = FL;
+            outR[i] = (float)(aR + mix * (satR - aR));
             xpR = aR; FpR = FR;
         }
         fs.satXL = xpL; fs.satXR = xpR;
+        fs.adaaMix = adaaTarget;
     } else {
         for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }
+        if (n > 0) {
+            fs.satXL = adaaInput(inL[n - 1]); fs.satXR = adaaInput(inR[n - 1]);
+        }
+        fs.adaaMix = 0;
     }
 
     // Finding 7: cutoff ramps from the previous chunk's value; coefficients
@@ -1109,10 +1106,10 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     // Findings 2 + J3: one acquire load of a raw pointer, held for the whole
     // call so setupOsc's cached data pointers stay valid even if the message
     // thread publishes a new set mid-block. The odd epoch published here is
-    // what stops setTables from freeing the set under us. No lock, no refcount,
-    // no free on this thread.
-    renderEpoch_.fetch_add(1, std::memory_order_acq_rel);      // odd: in render
-    curTables_ = tablesPtr_.load(std::memory_order_acquire);
+    // what stops setTables from freeing the set under us. Oscillator pins keep
+    // cached reads alive between calls; retired sets retain their final owner.
+    renderEpoch_.fetch_add(1, std::memory_order_seq_cst);      // odd: in render
+    curTables_ = tablesPtr_.load(std::memory_order_seq_cst);
 
     // Finding J1: start from the raw targets for everything that is not
     // smoothed, then hand the DSP the smoothed view; advanceSmoothers moves it
@@ -1247,7 +1244,7 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
 
     curTables_ = nullptr;
-    renderEpoch_.fetch_add(1, std::memory_order_release);      // even: out of render
+    renderEpoch_.fetch_add(1, std::memory_order_seq_cst);      // even: out of render
 
     const PadVoice& v = voices_[(size_t)sel_];
     vizA = v.active ? (float)v.oA.posSm : -1.0f;

@@ -237,9 +237,9 @@ for (const id in MOD_PARAM_INFO) {
 // — a filter that sings instead of merely peaking. Identical to Engine.cpp.
 const LP24_K_MIN = 0.002; // Q = 500 damping floor
 
-// Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
-// so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
-const COMB_MAX = 4096;
+// Longest tuned-comb delay. Match native's sample-rate-aware capacity so the
+// 20 Hz lower cutoff remains representable at 96 kHz and above.
+const COMB_MAX = Math.max(4096, Math.ceil(sampleRate / 20) + 2);
 
 // LFO note-division factors (cycles per beat, beat = quarter note). Index maps
 // to params.ts LFO_DIVS.
@@ -267,6 +267,8 @@ const POS_TAU = 128 / (48000 * 0.4307829160924542); // -ln(0.65)
 const CUT_TAU = 128 / (48000 * Math.LN2);
 const STEAL_TAU = 1 / (48000 * 0.1278333715098849); // -ln(0.88)
 const STEAL_C = smoothCoef(1, STEAL_TAU * sampleRate);
+const ADAA_FADE_WIDTH = 0.1;
+const ADAA_INPUT_LIMIT = 16;
 
 // Fast deterministic RNG (xorshift32) — replaces Math.random() for noise, unison
 // start phases and S&H (finding W5). Mirrors `Rng` in Engine.h, so a seeded
@@ -389,6 +391,9 @@ function lcosh(z) {
   const a = Math.abs(z);
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
 }
+function adaaInput(x) {
+  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
+}
 
 // Finding W1: 4-point cubic Hermite (Catmull-Rom) table read, replacing the
 // linear read. Indices are pre-wrapped by the caller (branchless & mask), `off`
@@ -412,7 +417,7 @@ function makeFilterState() {
     combR: new Float32Array(COMB_MAX),
     combW: 0,
     cutSm: 0,
-    satXL: 0, satXR: 0,         // ADAA drive: previous input per channel
+    satXL: 0, satXR: 0, adaaMix: 0, // ADAA drive: history + smoothed enable mix
     ftype: 0, twoPole: false,
     k1: 0,                      // SVF damping, stage 1 (a1..a3 ramp per sub-block)
     k2: 0,                      // SVF damping, stage 2 (LP24 only; = k1 elsewhere)
@@ -426,7 +431,7 @@ function makeFilterState() {
 function resetFilterState(fs) {
   fs.svf.fill(0); fs.fmt.fill(0);
   fs.combL.fill(0); fs.combR.fill(0); fs.combW = 0;
-  fs.cutSm = 0; fs.satXL = 0; fs.satXR = 0;
+  fs.cutSm = 0; fs.satXL = 0; fs.satXR = 0; fs.adaaMix = 0;
   fs.cutPrev = 0; fs.combLenPrev = 0;
 }
 
@@ -751,10 +756,10 @@ function fxScratch(n) {
   FX_WETL = new Float64Array(n); FX_WETR = new Float64Array(n);
 }
 
-// 4x drive oversampler stages: 47-tap first half-band (2x), 17-tap second (4x).
+// 4x drive oversampler stages: 63-tap first half-band (2x), 17-tap second (4x).
 // Total up+shape+down group delay is an exact integer in base samples.
-const HB1_TAPS = 47, HB2_TAPS = 17;
-const DRIVE_LATENCY = ((HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4) | 0; // 27
+const HB1_TAPS = 63, HB2_TAPS = 17;
+const DRIVE_LATENCY = ((HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4) | 0; // 35
 
 // Lookahead brickwall limiter: fixed makeup gain feeding a delayed signal path,
 // linked-stereo sliding-window-minimum gain that fully develops inside the
@@ -864,12 +869,9 @@ class Fx {
       this.apR.push(new FvAllpass(((FV_AP_TUNE[i] + FV_SPREAD) * scale) | 0));
     }
 
-    this.eqLoL = new Biquad(); this.eqLoR = new Biquad();
-    this.eqMidL = new Biquad(); this.eqMidR = new Biquad();
-    this.eqHiL = new Biquad(); this.eqHiR = new Biquad();
-    this.eqMid2L = new Biquad(); this.eqMid2R = new Biquad();
-    this.eqBands = [[this.eqLoL, this.eqLoR], [this.eqMidL, this.eqMidR],
-      [this.eqMid2L, this.eqMid2R], [this.eqHiL, this.eqHiR]];
+    this.eq = new globalThis.FableParametricEq(sampleRate);
+    // Kept as an inspection surface for the EQ response tests.
+    this.eqBands = this.eq.bands.map((band) => [band.l, band.r]);
 
     this.driveK = 1; this.drivePre = 1; this.driveNorm = 1;
     this.driveWet = new Smooth(); this.driveDry = new Smooth();
@@ -951,9 +953,7 @@ class Fx {
     this.tapeClock = 0; this.dlDriftL = this.dlDriftR = 0; this.delayInitialized = false;
     this.echoSamples = 0; this.echoEnergy.fill(0);
     this.reverbSamples = 0; this.reverbEnergy.fill(0);
-    this.eqLoL.reset(); this.eqLoR.reset(); this.eqMidL.reset();
-    this.eqMidR.reset(); this.eqHiL.reset(); this.eqHiR.reset();
-    this.eqMid2L.reset(); this.eqMid2R.reset();
+    this.eq.reset();
     this.up1L.reset(); this.up2L.reset(); this.dn2L.reset(); this.dn1L.reset();
     this.up1R.reset(); this.up2R.reset(); this.dn2R.reset(); this.dn1R.reset();
     for (const guard of Object.values(this.headroom)) guard.reset();
@@ -966,19 +966,7 @@ class Fx {
   }
 
   setParams(p, bpm = 120) {
-    // Four parametric bands. Global and per-band bypass force unity gain.
-    const eqOn = p[FXEQ_ON] > 0.5;
-    for (let i = 0; i < 4; i++) {
-      const ids = EQ_BANDS[i];
-      const gain = eqOn && p[ids[4]] > 0.5 ? Math.max(-15, Math.min(15, p[ids[0]])) : 0;
-      const freq = Math.max(20, Math.min(20000, p[ids[1]]));
-      const q = Math.max(0.2, Math.min(12, p[ids[2]]));
-      for (const filter of this.eqBands[i]) {
-        if (p[ids[3]] < 0.5) filter.lowShelf(freq, gain, q);
-        else if (p[ids[3]] > 1.5) filter.highShelf(freq, gain, q);
-        else filter.peaking(freq, q, gain);
-      }
-    }
+    this.eq.setParams((key) => p[PID[key]]);
 
     const amt = p[FXDRIVE_AMT];
     this.drivePre = 1 + amt * 2;
@@ -1113,13 +1101,11 @@ class Fx {
     fxScratch(n);
     this.headroom.input.process(L, R, n);
 
-    // ---- 3-band tone EQ (first FX; 0 dB coeffs = transparent) ----
+    // ---- four-band EQ (first FX; shared smoothing/type-crossfade contract) ----
     // Into double scratch, not back into L/R: the whole chain stays in double
     // precision until the final write, as the per-sample loop it replaces did.
-    for (let i = 0; i < n; i++) {
-      FX_EQL[i] = this.eqHiL.process(this.eqMid2L.process(this.eqMidL.process(this.eqLoL.process(L[i]))));
-      FX_EQR[i] = this.eqHiR.process(this.eqMid2R.process(this.eqMidR.process(this.eqLoR.process(R[i]))));
-    }
+    for (let i = 0; i < n; i++) { FX_EQL[i]=L[i]; FX_EQR[i]=R[i]; }
+    this.eq.process(FX_EQL, FX_EQR, n);
     this.headroom.eq.process(FX_EQL, FX_EQR, n);
 
     // ---- OTT -> compressor (automatic level matching) ----
@@ -2012,25 +1998,31 @@ class FableProcessor extends AudioWorkletProcessor {
   // reading in*, writing out*. Stage 1 saturates in -> out, stage 2 filters in place.
   runFilter(fs, inL, inR, outL, outR, drive, n) {
     // -- drive (anti-aliased tanh via ADAA), or a plain copy when disabled --
-    if (drive > 0.005) {
+    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
+    const adaaStart = fs.adaaMix;
+    if (adaaTarget > 0 || fs.adaaMix > 1e-6) {
       const dg = 1 + drive * 7;
       const dcomp = 1 / Math.pow(dg, 0.55);
       const kF = dcomp / dg;
       let xpL = fs.satXL, xpR = fs.satXR;
       let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
       for (let i = 0; i < n; i++) {
-        const aL = inL[i], aR = inR[i];
+        const aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
         const dxL = aL - xpL;
         const FL = kF * lcosh(dg * aL);
         // |Δx| tiny → ADAA is numerically unstable; fall back to midpoint tanh.
-        outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
+        const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
         xpL = aL; FpL = FL;
         const dxR = aR - xpR;
         const FR = kF * lcosh(dg * aR);
-        outR[i] = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+        const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+        const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
+        outL[i] = aL + m * (satL - aL);
+        outR[i] = aR + m * (satR - aR);
         xpR = aR; FpR = FR;
       }
       fs.satXL = xpL; fs.satXR = xpR;
+      fs.adaaMix = adaaTarget;
     } else {
       for (let i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
       if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }

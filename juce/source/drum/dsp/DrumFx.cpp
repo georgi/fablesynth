@@ -194,6 +194,10 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
     // the chain is idle a silent input means there is nothing for it to do, so
     // the entire chain (drive oversampler, compressor, chorus, delay, Freeverb)
     // is skipped and its state stays frozen. The output is already the input.
+    // Include both ends of a time automation move; never freeze the delay
+    // while a repeat can still be travelling through either channel.
+    const double delayHorizon = delayGated_ ? 0 : std::max(dlTime_.cur, dlTime_.target);
+    float delayPk = 0;
     float inPk = 0;
     for (int i = 0; i < n; i++)
         inPk = std::max(inPk, std::max(std::abs(L[i]), std::abs(R[i])));
@@ -298,6 +302,7 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
             float fb = dlFb_.next();
             float dL = dlL_.readHermite(dt);
             float dR = dlR_.readHermite(dt);
+            delayPk = std::max(delayPk, std::max(std::abs(dL), std::abs(dR)));
             float mono = 0.5f * (l + r);
             float feedbackL = mono + fb * dR;
             float feedbackR = (float)dlDamp_.process(fb * dL);
@@ -338,9 +343,9 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
     // Finding D8: the chain may only be gated once its own OUTPUT has gone
     // quiet as well — that is what makes a seconds-long reverb tail safe. The
     // hold just stops the gate from chattering around the threshold.
-    if (inPk <= kIdleLevel && outPk <= kIdleLevel) idleSilent_ += n;
+    if (inPk <= kIdleLevel && outPk <= kIdleLevel && delayPk <= kIdleLevel) idleSilent_ += n;
     else idleSilent_ = 0;
-    if (idleSilent_ >= kIdleHold * sr_) idle_ = true;
+    if (idleSilent_ >= (kIdleHold + delayHorizon) * sr_) idle_ = true;
 }
 
 // ---------------- shared drum reverb ---------------------------------------

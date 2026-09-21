@@ -41,6 +41,10 @@ const CUT_TAU = 128 / (48000 * Math.LN2);
 // accented step) fades in over this time instead of stepping the amp gain and
 // the filter-env peak at the chunk boundary. A fresh note-on snaps.
 const ACC_TAU = 0.008;
+// Match the native ADAA transition: the drive amount is a linear blend over
+// the full 100 ms control range, rather than a block-size-dependent one-pole.
+const ADAA_FADE_WIDTH = 0.1;
+const ADAA_INPUT_LIMIT = 16;
 // Cutoff coefficient update rate inside a chunk (samples).
 const FLT_SUB = 32;
 // Cycles per beat for each lfo.rate index — mirrors LFO_DIV_F in src/params.ts.
@@ -49,6 +53,10 @@ const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
 function lcosh(z) {
   const a = Math.abs(z);
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
+}
+
+function adaaInput(x) {
+  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
 }
 
 // One-pole coefficient for n samples at time constant tauSr (in samples).
@@ -79,10 +87,10 @@ function rdH(d, off, im1, i0, i1, i2, f) {
 // master gain -> DC block -> lookahead limiter (-1 dBFS hard ceiling).
 // ---------------------------------------------------------------------------
 
-const HB1_TAPS = 47;
+const HB1_TAPS = 63;
 const HB2_TAPS = 17;
 // Up+shape+down group delay, exact in base samples.
-const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 27
+const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 35
 // Safety-limiter static curve: threshold -6 dB, ratio 14 — the settings of the
 // DynamicsCompressorNode this replaces, kept only to reproduce its makeup gain.
 const LIM_THR = 0.501;
@@ -885,7 +893,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.svf = new Float64Array(8);
     this.cutSm = 0; this.curCut = 0;
     this.cutTarget = 0; this.cutPrev = -1; // chunk cutoff ramp
-    this.satXL = 0; this.satXR = 0;
+    this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
     this.ftype = 1; this.twoPole = true;
     this.k1 = 0; this.k2 = 0;
     this.accSm = 0; // ramped accent amount (0..1)
@@ -1183,7 +1191,7 @@ class BassProcessor extends AudioWorkletProcessor {
   kill() {
     this.gate = false; this.acc = false; this.ampStage = 0; this.ampLevel = 0;
     this.fenvT = 1e9;
-    this.svf.fill(0); this.satXL = 0; this.satXR = 0;
+    this.svf.fill(0); this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
     this.posSm = -1; this.cutSm = 0; this.cutPrev = -1; this.cutTarget = 0;
     this.accSm = 0;
     this.phases.fill(0);
@@ -1517,7 +1525,7 @@ class BassProcessor extends AudioWorkletProcessor {
       // A type switch changes what the states mean — the LP24 second stage in
       // particular keeps ringing into the new response. Start clean.
       this.svf.fill(0);
-      this.satXL = 0; this.satXR = 0;
+      this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
     }
     this.ftype = ftype;
     this.twoPole = ftype === 1;
@@ -1595,7 +1603,9 @@ class BassProcessor extends AudioWorkletProcessor {
   // value and the coefficients are recomputed every FLT_SUB samples — holding
   // one cutoff per chunk puts an audible step on every filter-env sweep.
   runFilter(inL, inR, outL, outR, drive, n, mono) {
-    if (drive > 0.005) {
+    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
+    const adaaStart = this.adaaMix;
+    if (adaaTarget > 0 || adaaStart > 1e-6) {
       const dg = 1 + drive * 7;
       const dcomp = 1 / Math.pow(dg, 0.55);
       const kF = dcomp / dg;
@@ -1604,10 +1614,13 @@ class BassProcessor extends AudioWorkletProcessor {
       if (mono) {
         for (let i = 0; i < n; i++) {
           const aL = inL[i];
-          const dxL = aL - xpL;
-          const FL = kF * lcosh(dg * aL);
-          outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
-          xpL = aL; FpL = FL;
+          const safeL = adaaInput(aL);
+          const dxL = safeL - xpL;
+          const FL = kF * lcosh(dg * safeL);
+          const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (safeL + xpL));
+          const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
+          outL[i] = aL + m * (satL - aL);
+          xpL = safeL; FpL = FL;
         }
         this.satXL = xpL; this.satXR = xpL;
       } else {
@@ -1615,17 +1628,22 @@ class BassProcessor extends AudioWorkletProcessor {
         let FpR = kF * lcosh(dg * xpR);
         for (let i = 0; i < n; i++) {
           const aL = inL[i], aR = inR[i];
-          const dxL = aL - xpL;
-          const FL = kF * lcosh(dg * aL);
-          outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
-          xpL = aL; FpL = FL;
-          const dxR = aR - xpR;
-          const FR = kF * lcosh(dg * aR);
-          outR[i] = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
-          xpR = aR; FpR = FR;
+          const safeL = adaaInput(aL), safeR = adaaInput(aR);
+          const dxL = safeL - xpL;
+          const FL = kF * lcosh(dg * safeL);
+          const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (safeL + xpL));
+          xpL = safeL; FpL = FL;
+          const dxR = safeR - xpR;
+          const FR = kF * lcosh(dg * safeR);
+          const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (safeR + xpR));
+          const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
+          outL[i] = aL + m * (satL - aL);
+          outR[i] = aR + m * (satR - aR);
+          xpR = safeR; FpR = FR;
         }
         this.satXL = xpL; this.satXR = xpR;
       }
+      this.adaaMix = adaaTarget;
     } else {
       for (let i = 0; i < n; i++) outL[i] = inL[i];
       if (!mono) for (let i = 0; i < n; i++) outR[i] = inR[i];
@@ -1678,13 +1696,13 @@ class BassProcessor extends AudioWorkletProcessor {
 
     // glide: one-pole approach of semiTarget with time-constant slide.time
     const tau = Math.max(0.005, p['slide.time']) * sampleRate;
-    const gk16 = 1 - Math.exp(-16 / tau);
 
     let mono = true;
     for (let at = 0; at < n; at += 16) {
       const count = Math.min(16, n - at);
       if (this.semi !== this.semiTarget) {
-        this.semi += (this.semiTarget - this.semi) * gk16;
+        const glide = 1 - Math.exp(-count / tau);
+        this.semi += (this.semiTarget - this.semi) * glide;
         if (Math.abs(this.semiTarget - this.semi) < 0.001) this.semi = this.semiTarget;
       }
       const noteRootAbs = ROOT_MIDI + this.semi;

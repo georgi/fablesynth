@@ -154,7 +154,136 @@ static std::vector<float> renderMain(DrumEngine& e, int n) {
     return renderBuses(e, n)[0];   // MAIN L
 }
 
+// Review regressions: oscillator owners outlive callback boundaries and fades,
+// including retrigger tails, and the final destruction stays off audio.
+static void checkDrumTableLifetime() {
+    for (int block : {1, 16, 128}) {
+        bool inRender = false, freedOnAudio = false;
+        int frees = 0;
+        auto makeTable = [&] {
+            auto* t = new GeneratedTable();
+            t->frames = 1; t->mips = 11; t->size = SIZE;
+            t->data.resize((size_t)t->mips * SIZE);
+            for (int m = 0; m < t->mips; ++m)
+                for (int i = 0; i < SIZE; ++i)
+                    t->data[(size_t)m * SIZE + i] = 0.5f * std::sin(2 * M_PI * i / SIZE);
+            return TablePtr(t, [&](const GeneratedTable* p) {
+                freedOnAudio |= inRender; ++frees; delete p;
+            });
+        };
+        DrumEngine e; e.prepare(48000);
+        auto params = defaultDrumParams();
+        params[dpid(0, DP_AENV_ATT)] = 0;
+        params[dpid(0, DP_AENV_HOLD)] = 2;
+        params[dpid(0, DP_OSCB_LEVEL)] = 0;
+        e.setParams(params);
+        auto old = makeTable();
+        const std::weak_ptr<const GeneratedTable> oldWeak = old;
+        e.setTables({old}); old.reset();
+        e.trigger(0, 1);
+        renderMain(e, 128);
+        auto next = makeTable();
+        e.setTables({next});
+        check(!oldWeak.expired(), "table cache survives replacement between callbacks", std::to_string(block));
+        inRender = true; auto out = renderMain(e, block); inRender = false;
+        e.setTables({next});
+        check(!oldWeak.expired(), "outgoing table stays pinned during a short-block fade", std::to_string(block));
+        // This copies both incoming and outgoing oscillator states to a tail.
+        e.trigger(0, 1);
+        e.setTables({next});
+        check(!oldWeak.expired(), "retrigger tail keeps outgoing table alive", std::to_string(block));
+        bool ok = finite(out);
+        for (int n = 0; n < 1024; n += block) {
+            inRender = true; out = renderMain(e, block); inRender = false;
+            ok &= finite(out);
+            e.setTables({next}); // aggressively reclaim after every tiny callback
+        }
+        check(ok && oldWeak.expired() && frees == 1 && !freedOnAudio,
+              "faded table is reclaimed only by the publisher", std::to_string(block));
+    }
+}
+
+static void checkDrumMipSafety() {
+    // Mip 7 contains harmonic eight; mip 8 and coarser must exclude it.
+    // At 3.5 kHz that fine harmonic would fold from 28 kHz to 20 kHz.
+    auto t = std::make_shared<GeneratedTable>();
+    t->frames = 1; t->mips = 11; t->size = SIZE;
+    t->data.resize((size_t)t->mips * SIZE);
+    for (int mip = 0; mip < 8; ++mip)
+        for (int i = 0; i < SIZE; ++i)
+            t->data[(size_t)mip * SIZE + i] = 0.8f * std::sin(16 * M_PI * i / SIZE);
+    auto params = defaultDrumParams();
+    params[dpid(0, DP_OSCA_TABLE)] = 0;
+    params[dpid(0, DP_OSCA_DETUNE)] = 0;
+    params[dpid(0, DP_OSCB_LEVEL)] = 0;
+    params[dpid(0, DP_NOISE_LEVEL)] = 0;
+    params[dpid(0, DP_RING_MIX)] = 0;
+    params[dpid(0, DP_FLT_ON)] = 0;
+    params[dpid(0, DP_PENV_AMT)] = 0;
+    params[dpid(0, DP_AENV_ATT)] = 0;
+    params[dpid(0, DP_AENV_HOLD)] = 10;
+    auto tune = [](double freq) { return (float)(69 + 12 * std::log2(freq / 440.0) - DR_BASE_NOTE); };
+    for (double freq : {2700.0, 2999.0, 3010.0, 3500.0, 5000.0}) {
+        DrumEngine e; e.prepare(48000); e.setTables({t});
+        params[dpid(0, DP_OSCA_TUNE)] = tune(freq);
+        e.setParams(params); e.trigger(0, 1);
+        const auto out = renderMain(e, 4096);
+        check(finite(out) && (freq < 2800 ? rms(out) > 0.01 : peak(out) < 1e-7),
+              "mip transition excludes harmonic eight before Nyquist", std::to_string(freq));
+    }
+    // Rapid up/down ramps through several mips retain phase continuity and
+    // recover the safe fine table on the downward return.
+    DrumEngine e; e.prepare(48000); e.setTables({t});
+    params[dpid(0, DP_OSCA_TUNE)] = tune(2700);
+    e.setParams(params); e.trigger(0, 1);
+    auto before = renderMain(e, 1024);
+    e.setParam(dpid(0, DP_OSCA_TUNE), tune(5000));
+    auto up = renderMain(e, 512);
+    e.setParam(dpid(0, DP_OSCA_TUNE), tune(2700));
+    auto down = renderMain(e, 1024);
+    check(finite(up) && finite(down) && rms(down, 128) > 0.01
+              && rms(up, 128) < 0.001 && peak(up) < 0.3,
+          "fast mip sweeps are bounded and recover the finer table");
+}
+
+static void checkDrumLongDelayGate() {
+    for (bool group : {false, true}) {
+        DrumFx fx; fx.prepare(48000);
+        auto params = defaultDrumParams();
+        auto id = [group](int field) { return group ? dgfx(field) : dpid(0, field); };
+        for (int field : {DP_FXCOMP_ON, DP_FXDRIVE_ON, DP_FXCHORUS_ON, DP_FXREVERB_ON})
+            params[id(field)] = 0;
+        params[id(DP_FXDELAY_ON)] = 1;
+        params[id(DP_FXDELAY_TIME)] = 0.9f;
+        params[id(DP_FXDELAY_FB)] = 0.8f;
+        params[id(DP_FXDELAY_MIX)] = 0.8f;
+        auto set = [&] { if (group) fx.setGroupParams(params); else fx.setParams(params, 0); };
+        set(); fx.reset(); // settle the time before exciting the line
+        std::vector<float> L(48000 * 3), R(L.size());
+        for (int i = 0; i < 2400; ++i)
+            L[i] = R[i] = 0.3f * std::sin(2 * M_PI * 1000 * i / 48000);
+        bool prematurelyIdle = false;
+        for (int i = 0; i < (int)L.size(); i += 128) {
+            fx.process(L.data() + i, R.data() + i, std::min(128, (int)L.size() - i));
+            if (i < 43200) prematurelyIdle |= fx.isIdle();
+        }
+        check(!prematurelyIdle && rms(slice(L, 43200, 46000)) > 0.01
+                  && rms(slice(R, 86400, 89200)) > 0.001,
+              "900 ms delay survives quiet gap and ping-pong feedback", group ? "group" : "pad");
+        // Feedback eventually decays, so the optimization still engages.
+        float zeroL[128]{}, zeroR[128]{};
+        for (int i = 0; i < 48000 * 60 && !fx.isIdle(); i += 128) {
+            std::fill_n(zeroL, 128, 0); std::fill_n(zeroR, 128, 0);
+            fx.process(zeroL, zeroR, 128);
+        }
+        check(fx.isIdle(), "delay chain eventually gates after repeats decay", group ? "group" : "pad");
+    }
+}
+
 int main() {
+    checkDrumTableLifetime();
+    checkDrumMipSafety();
+    checkDrumLongDelayGate();
     check(instrumentEqChecks<fable::DrumFx>([](auto& fx, double sr, bool on, float gain) {
         auto p = fable::defaultDrumParams();
         for (const auto& d : fable::drumParamInfo())
@@ -1011,7 +1140,9 @@ int main() {
             double pk = 0;
             for (int k = b - 2; k <= b + 2; k++) pk = std::max(pk, mag(k));
             std::vector<double> around;
-            for (int k = b - 60; k <= b + 60; k++)
+            // Low-frequency bins have fewer than 60 valid neighbours below
+            // them. Never read a negative FFT bin (caught by the ASan run).
+            for (int k = std::max(0, b - 60); k <= std::min(N / 2 - 1, b + 60); k++)
                 if (std::abs(k - b) > 6) around.push_back(mag(k));
             std::sort(around.begin(), around.end());
             const double med = around[around.size() / 2];

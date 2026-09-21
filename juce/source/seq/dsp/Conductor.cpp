@@ -26,7 +26,7 @@ double Conductor::boundary() const {
 void Conductor::applyGains() {
     for (int t = 0; t < (int)session_.tracks.size(); t++) {
         const bool open = isTrackOpen(t, owner_, trackMute_, sceneMute_, solo_);
-        io_.ioSetTrackGain(t, open ? gainCurve(trackVol_[(size_t)t]) : 0.0f);
+        io_.ioSetTrackGain(t, gainCurve(trackVol_[(size_t)t]), open);
     }
 }
 
@@ -285,11 +285,12 @@ void Conductor::setSwing(double v) {
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
 }
 
-void Conductor::setBpm(double bpm) {
-    if (!owner_.empty() || !queue_.empty()) return;
+bool Conductor::setBpm(double bpm) {
+    if (!owner_.empty() || !queue_.empty()) return false;
     session_.bpm = bpm;
     anchor_ = io_.now() + 256;
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
+    return true;
 }
 
 void Conductor::onClipStart(int t, int scene) {

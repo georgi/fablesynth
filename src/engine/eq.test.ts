@@ -62,4 +62,21 @@ describe('WT-1 four-band EQ', () => {
     expect(measure({ 'fx.eq.m2on': 0 })).toBeCloseTo(0, 6);
     expect(measure({ 'fx.eq.on': 0 })).toBeCloseTo(0, 6);
   });
+
+  it('crossfades a discrete EQ topology change instead of stepping the state', () => {
+    const p = { ...defaultParams(), 'fx.eq.on': 1, 'fx.eq.low': 12,
+      'fx.eq.lfreq': 700, 'fx.eq.lq': 5, 'fx.eq.ltype': 0 };
+    const h = bootWt(p);
+    h.send({ t: 'on', n: 84, v: 1 });
+    h.render(30);
+    h.send({ t: 'p', k: 'fx.eq.ltype', v: 2 });
+    h.render(1, 1);
+    const band = (h.proc as unknown as { fx: { eq: { bands: Array<{ xfLeft: number }> } } }).fx.eq.bands[0];
+    const started = band.xfLeft;
+    expect(started).toBeGreaterThan(100);
+    h.render(1, 1);
+    expect(band.xfLeft).toBe(started - 1);
+    h.render(200, 1);
+    expect(band.xfLeft).toBe(0);
+  });
 });

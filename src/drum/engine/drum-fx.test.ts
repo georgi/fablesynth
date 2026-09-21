@@ -228,13 +228,13 @@ describe('DR-1 module headroom', () => {
 describe('DR-1 chain latency', () => {
   // Both the pad insert and the post-mix group strip retain their FIR-aligned
   // drive latency, followed by the output limiter lookahead.
-  it('reports two drive FIR stages + limiter lookahead, 126 samples at 48 kHz', () => {
-    expect(boot(bare()).latency).toBe(126);
+  it('reports two drive FIR stages + limiter lookahead, 142 samples at 48 kHz', () => {
+    expect(boot(bare()).latency).toBe(142);
   });
 
   it('scales the lookahead with the sample rate', () => {
-    expect(boot(bare(), 44100).latency).toBe(54 + Math.round(0.0015 * 44100));
-    expect(boot(bare(), 96000).latency).toBe(54 + Math.round(0.0015 * 96000));
+    expect(boot(bare(), 44100).latency).toBe(70 + Math.round(0.0015 * 44100));
+    expect(boot(bare(), 96000).latency).toBe(70 + Math.round(0.0015 * 96000));
   });
 });
 

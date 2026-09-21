@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -509,6 +510,58 @@ int main() {
               num(step) + " vs " + num(natural));
         check(rms(L, 6000, 8000) > rms(L, 2000, 4000), "accent still gets louder",
               num(rms(L, 2000, 4000)) + " -> " + num(rms(L, 6000, 8000)));
+    }
+
+    printf("\n== ADAA drive enable is continuous ==\n");
+    {
+        auto tables = makeTables();
+        auto p = voicePatch();
+        p[BL_FLT_DRIVE] = 0.004f;
+        BassEngine control; control.prepare(SR); control.setTables(tables);
+        BassEngine transition; transition.prepare(SR); transition.setTables(tables);
+        control.setParams(p); control.snapParams(); control.keyOn(12, 0.9f);
+        transition.setParams(p); transition.snapParams(); transition.keyOn(12, 0.9f);
+        const int n = 512;
+        std::vector<float> controlL((size_t)n, 0.0f), controlR(n, 0.0f);
+        std::vector<float> transitionL((size_t)n, 0.0f), transitionR(n, 0.0f);
+        control.render(controlL.data(), controlR.data(), 256);
+        transition.render(transitionL.data(), transitionR.data(), 256);
+        transition.params()[BL_FLT_DRIVE] = 0.006f;
+        // Isolate the ADAA transfer transition from the independent host
+        // smoothing-clock regression covered above: compare the same audio
+        // state before and after the former enable threshold.
+        transition.setParamSmoothing(false);
+        control.render(controlL.data() + 256, controlR.data() + 256, 256);
+        transition.render(transitionL.data() + 256, transitionR.data() + 256, 256);
+        double crossing = 0;
+        for (int i = 256; i < 384; ++i)
+            crossing = std::max(crossing, (double)std::abs(transitionL[i] - controlL[i]));
+        check(finite(controlL) && finite(transitionL) && crossing < 0.02,
+              "ADAA enable ramps across the former threshold",
+              num(crossing));
+    }
+
+    printf("\n== parameter ramp clock stays bounded (finding J1) ==\n");
+    {
+        BassEngine e;
+        e.prepare(SR);
+        e.setParam(BL_FLT_CUT, 6000.0f);
+        e.advanceParamSmoothingForTesting(INT_MAX);
+        const int rampLen = (int)(BL_PARAM_RAMP_MAX_SEC * SR);
+        check(e.paramRampPositionForTesting() == rampLen,
+              "bass ramp cursor clamps at its duration",
+              std::to_string(e.paramRampPositionForTesting()));
+        check(e.smoothedParams()[(size_t)BL_FLT_CUT] == 6000.0f,
+              "bass ramp reaches its target after a large advance");
+
+        e.setParam(BL_FLT_CUT, 1200.0f);
+        e.advanceParamSmoothingForTesting(1);
+        check(e.paramRampPositionForTesting() == 1,
+              "bass retarget starts a fresh ramp",
+              std::to_string(e.paramRampPositionForTesting()));
+        const float cut = e.smoothedParams()[(size_t)BL_FLT_CUT];
+        check(cut > 1200.0f && cut < 6000.0f,
+              "bass retarget advances from the prior value");
     }
 
     printf("\n== filter-type switch stays bounded (finding B8) ==\n");

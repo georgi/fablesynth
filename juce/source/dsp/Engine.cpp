@@ -57,6 +57,21 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2 * a)) - LN2;
 }
 
+// Keep ADAA arithmetic finite for malformed automation or an unstable
+// upstream graph. This envelope is well above factory-preset source levels.
+static constexpr double ADAA_INPUT_LIMIT = 16.0;
+static constexpr double ADAA_FADE_WIDTH = 0.1;
+static inline double adaaInput(double x) {
+    return std::isfinite(x) ? std::clamp(x, -ADAA_INPUT_LIMIT, ADAA_INPUT_LIMIT) : 0.0;
+}
+static inline double adaaTanh(double x, double xp, double dg, double dcomp) {
+    const double dx = x - xp;
+    if (std::abs(dx) <= 1.0e-5 / dg)
+        return dcomp * std::tanh(dg * 0.5 * (x + xp));
+    const double kF = dcomp / dg;
+    return (kF * (lcosh(dg * x) - lcosh(dg * xp))) / dx;
+}
+
 // Voice-steal fade length to -80 dB. Chosen so the coefficient at 48 kHz is
 // 0.12007 — the legacy fixed constant to five digits (finding J6).
 static constexpr double STEAL_FADE_SEC = 0.0015;
@@ -129,11 +144,19 @@ void FilterCore::reset() {
     for (auto& x : fmt) x = 0;
     combW = 0;
     cutSm = 0; satXL = 0; satXR = 0;
+    driveMix = driveMixTarget = 0;
     cutPrev = -1; combLenPrev = -1;
+}
+void FilterState::prepare(int combCapacity) {
+    const size_t n = (size_t)std::max(COMB_MIN_CAPACITY, combCapacity);
+    combL.assign(n, 0.0f);
+    combR.assign(n, 0.0f);
+    reset();
 }
 void FilterState::reset() {
     c.reset(); old.reset();
-    combL.fill(0); combR.fill(0);
+    std::fill(combL.begin(), combL.end(), 0.0f);
+    std::fill(combR.begin(), combR.end(), 0.0f);
 }
 
 // ---------------- Voice ----------------
@@ -166,7 +189,11 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
 // (filters, DC blockers, pink noise, smoothers, ramps) is cleared, and the
 // fixed 48 kHz-reference per-sample coefficients are remapped to sr (Finding 9).
 void Engine::prepare(double sampleRate) {
-    sr_ = sampleRate;
+    sr_ = std::max(1.0, sampleRate);
+    // A comb at the documented 20 Hz minimum needs sr / 20 samples, plus a
+    // second fractional-read sample. Allocate here, while the host is
+    // preparing, so render() never grows a delay line.
+    combCapacity_ = std::max(COMB_MIN_CAPACITY, (int)std::ceil(sr_ / 20.0) + 2);
     // Same analog pole at any rate: p' = p^(48k/sr); one-pole input gains are
     // rescaled to keep the low-frequency gain, so the pink spectrum matches
     // the 48 kHz reference (b[5]'s pole is negative — its DC gain is g/(1+p)).
@@ -181,7 +208,7 @@ void Engine::prepare(double sampleRate) {
     }
     for (auto& v : voices_) {
         v.kill();
-        v.f1.reset(); v.f2.reset();
+        v.f1.prepare(combCapacity_); v.f2.prepare(combCapacity_);
         v.dcxL = v.dcxR = v.dcyL = v.dcyR = 0;
         for (auto& x : v.pb) x = 0;
         v.subPhase = 0; v.subIncPrev = -1; v.ampFacPrev = -1;
@@ -200,6 +227,7 @@ void Engine::prepare(double sampleRate) {
     // plugin, params()/setParams() for a preset load or the offline harness.
     if (smoothParams_) p_ = ps_ = pt_;
     else               pt_ = ps_ = p_;
+    rampTarget_ = pt_;
     rampLen_ = rampPos_ = 0;
     collectRetiredTables();         // message thread: reclaim anything pending
 }
@@ -278,14 +306,11 @@ void Engine::collectRetiredTables() {
                    retired_.end());
 }
 
-// Finding J1: host automation arrives once per host block. Interpolating it
-// across the block is what the block-rate value actually means, so each
-// continuous parameter ramps from its value at render() entry to the target
-// over the call (capped at PARAM_RAMP_MAX_SEC). The ramp is evaluated per render
-// chunk, and the engine's existing intra-chunk ramps interpolate between those
-// chunk values, so the parameter really is continuous per sample: no step at
-// the block boundary, hence no block-rate line in the output. Discrete
-// parameters and the sequencer clock snap.
+// Host automation is a target stream, not a render-buffer clock. A prior
+// implementation armed a new ramp of `render()` samples on every call, so the
+// same target reached its destination sooner when a host fragmented a buffer.
+// Arm only when the target changes and advance against the sample clock. The
+// existing intra-chunk ramps interpolate the resulting values per sample.
 //
 // 0 = snap, 1 = linear, 2 = geometric (equal ratio per sample).
 static const std::array<uint8_t, NUM_PARAMS>& paramRampKind() {
@@ -305,20 +330,23 @@ static const std::array<uint8_t, NUM_PARAMS>& paramRampKind() {
     return kind;
 }
 
-void Engine::beginParamRamp(int n) {
+void Engine::beginParamRamp() {
     if (!smoothParams_) return;
-    ps_ = p_;                                  // where this call's ramp starts
+    if (pt_ == rampTarget_) return;
+    ps_ = p_;                                  // where this target change starts
+    rampTarget_ = pt_;
     rampPos_ = 0;
-    rampLen_ = std::min(n, std::max(1, (int)(PARAM_RAMP_MAX_SEC * sr_)));
+    rampLen_ = std::max(1, (int)(PARAM_RAMP_MAX_SEC * sr_));
 }
 
 void Engine::smoothParams(int n) {
     if (!smoothParams_) return;
     const auto& kind = paramRampKind();
-    rampPos_ += n;
+    if (rampPos_ < rampLen_)
+        rampPos_ += std::min(n, rampLen_ - rampPos_);
     const double f = rampLen_ <= 0 ? 1.0 : std::min(1.0, (double)rampPos_ / (double)rampLen_);
     for (int i = 0; i < NUM_PARAMS; i++) {
-        const float t = pt_[(size_t)i];
+        const float t = rampTarget_[(size_t)i];
         const float s0 = ps_[(size_t)i];
         if (exactlyEqual(s0, t)) { p_[(size_t)i] = t; continue; }   // nothing moving
         const uint8_t k = kind[(size_t)i];
@@ -330,6 +358,11 @@ void Engine::smoothParams(int n) {
                           ? (float)((double)s0 * std::pow((double)t / (double)s0, f))
                           : (float)((double)s0 + ((double)t - (double)s0) * f);
     }
+}
+
+void Engine::advanceParamSmoothingForTesting(int n) {
+    beginParamRamp();
+    smoothParams(n);
 }
 
 void Engine::noteOn(int n, double vel) {
@@ -766,7 +799,9 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
 void Engine::setupFilter(FilterCore& fs, int base, Voice& v, double e2, double mCut, const double* pm, int n) {
     int ftype = (int)p_[slot(base + FLT_TYPE)];
     fs.ftype = ftype;
-    fs.drive = pm[base + FLT_DRIVE];
+    const double requestedDrive = pm[base + FLT_DRIVE];
+    fs.drive = std::isfinite(requestedDrive) ? std::clamp(requestedDrive, 0.0, 1.0) : 0.0;
+    fs.driveMixTarget = std::clamp(fs.drive / ADAA_FADE_WIDTH, 0.0, 1.0);
 
     // The cutoff Log route is kept OUT of pm and passed as mCut here so the whole
     // exponent stays in a single std::pow — bit-identical to the legacy
@@ -808,7 +843,7 @@ void Engine::setupFilter(FilterCore& fs, int base, Voice& v, double e2, double m
         }
     } else if (ftype == 5) {
         double len = sr_ / cut;
-        len = std::min((double)COMB_MAX - 2, std::max(1.0, len));
+        len = std::min((double)combCapacity_ - 2, std::max(1.0, len));
         fs.combLen = len;
         fs.combFb = res * 0.97;
     } else {
@@ -838,28 +873,27 @@ void Engine::setupFilter(FilterCore& fs, int base, Voice& v, double e2, double m
 void Engine::runFilter(FilterState& fs, FilterCore& c, bool writeComb,
                        const float* inL, const float* inR, float* outL, float* outR, int n) {
     const double drive = c.drive;
-    if (drive > 0.005) {
+    const double mix0 = c.driveMix;
+    const double mix1 = c.driveMixTarget;
+    if (mix0 > 0.0 || mix1 > 0.0) {
         double dg = 1 + drive * 7;
         double dcomp = 1 / std::pow(dg, 0.55);
-        double kF = dcomp / dg;
         double xpL = c.satXL, xpR = c.satXR;
-        double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
         for (int i = 0; i < n; i++) {
-            double aL = inL[i], aR = inR[i];
-            double dxL = aL - xpL;
-            double FL = kF * lcosh(dg * aL);
-            outL[i] = (float)((dxL > 1e-5 || dxL < -1e-5) ? (FL - FpL) / dxL : dcomp * std::tanh(dg * 0.5 * (aL + xpL)));
-            xpL = aL; FpL = FL;
-            double dxR = aR - xpR;
-            double FR = kF * lcosh(dg * aR);
-            outR[i] = (float)((dxR > 1e-5 || dxR < -1e-5) ? (FR - FpR) / dxR : dcomp * std::tanh(dg * 0.5 * (aR + xpR)));
-            xpR = aR; FpR = FR;
+            const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
+            const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
+            const double sL = adaaTanh(aL, xpL, dg, dcomp);
+            const double sR = adaaTanh(aR, xpR, dg, dcomp);
+            outL[i] = (float)(aL + m * (sL - aL));
+            outR[i] = (float)(aR + m * (sR - aR));
+            xpL = aL; xpR = aR;
         }
         c.satXL = xpL; c.satXR = xpR;
     } else {
         for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) { c.satXL = inL[n - 1]; c.satXR = inR[n - 1]; }
+        if (n > 0) { c.satXL = adaaInput(inL[n - 1]); c.satXR = adaaInput(inR[n - 1]); }
     }
+    c.driveMix = mix1;
 
     int ftype = c.ftype;
     if (ftype <= 4) {
@@ -937,20 +971,22 @@ void Engine::runFilter(FilterState& fs, FilterCore& c, bool writeComb,
         const double dLen = (len1 - len0) / n;
         double fb = c.combFb, g0 = 1 - fb;
         float* cl = fs.combL.data(); float* cr = fs.combR.data();
+        const int combCapacity = (int)fs.combL.size();
+        if (combCapacity < COMB_MIN_CAPACITY) return; // defensive: prepare() owns allocation
         int w = c.combW;
         for (int i = 0; i < n; i++) {
             double len = len0 + dLen * (i + 1);
             double rd = w - len;
-            // w in [0, COMB_MAX), len in [1, COMB_MAX-2] => rd in (-COMB_MAX, COMB_MAX).
-            if (rd < 0) rd += COMB_MAX;
+            // w in [0, capacity), len in [1, capacity-2].
+            if (rd < 0) rd += combCapacity;
             int i0 = (int)rd;
             double frac = rd - i0;
-            int i1 = i0 + 1 < COMB_MAX ? i0 + 1 : 0;
+            int i1 = i0 + 1 < combCapacity ? i0 + 1 : 0;
             double yL = g0 * outL[i] + fb * (cl[i0] + frac * (cl[i1] - cl[i0]));
             double yR = g0 * outR[i] + fb * (cr[i0] + frac * (cr[i1] - cr[i0]));
             if (writeComb) { cl[w] = (float)yL; cr[w] = (float)yR; }
             outL[i] = (float)yL; outR[i] = (float)yR;
-            w = w + 1 < COMB_MAX ? w + 1 : 0;
+            w = w + 1 < combCapacity ? w + 1 : 0;
         }
         c.combW = w;
         c.combLenPrev = len1;
@@ -1390,7 +1426,7 @@ void Engine::render(float* L, float* R, int n) {
     // concurrent setTables either sees this render in flight (and defers the
     // free) or publishes before this load (and we take the new set).
     rendering_.store(true, std::memory_order_seq_cst);
-    beginParamRamp(n);              // finding J1: automation ramp for this call
+    beginParamRamp();               // target-change ramp on the sample clock
     renderEpoch_.fetch_add(1, std::memory_order_seq_cst);
     curTables_ = tablesPub_.load(std::memory_order_seq_cst);
     // Sequencer clocking. The host-locked path derives absolute 16ths from the

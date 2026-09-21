@@ -15,7 +15,7 @@ export interface DrumHarness {
   render(blocks: number): { L: Float32Array; R: Float32Array };
   // One named bus, for routing and per-bus ceiling checks.
   renderBus(blocks: number, bus: number): { L: Float32Array; R: Float32Array };
-  // Chain latency the worklet reports at construction (99 samples at 48 kHz).
+  // Chain latency the worklet reports at construction (142 samples at 48 kHz).
   latency: number;
 }
 

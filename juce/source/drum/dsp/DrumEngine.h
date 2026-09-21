@@ -185,21 +185,20 @@ private:
         float  gl[DR_MAXUNI]     = {0};
         float  gr[DR_MAXUNI]     = {0};
         int    uni = 1;
-        int    off0 = 0, off1 = 0, off0b = 0, off1b = 0;
+        int    frames = 0, mips = 0;
         double gain = 0;
         int    mask = 0, size = 0;
         const float* data = nullptr;
+        std::shared_ptr<const DrumTable> tableOwner; // current/frozen/retrigger lifetime
         double posSm = -1;
-        // Finding D5: full trilinear blending. posF is the absolute frame
-        // position (f0 + morph fraction) and mipF the fractional mip; both
-        // ramp per sample in renderOsc, so a fast pitch envelope crosses a
-        // frame or mip boundary continuously instead of switching.
-        double posF = 0, mipF = 0, mipBlend = 0;
-        int    f0 = 0, mip = 0;
+        // Absolute frame position ramps across sub-blocks; mip selection follows
+        // each sample's actual increment inside the alias-safe transition band.
+        double posF = 0;
+        int    f0 = 0;
         // Previous sub-block targets for the intra-block ramps (Finding 7).
         double pIncs[DR_MAXUNI] = {0};
         float  pGl[DR_MAXUNI] = {0}, pGr[DR_MAXUNI] = {0};
-        double pPosF = 0, pMipF = 0;
+        double pPosF = 0;
         const float* pData = nullptr;
         int    pUni = -1;
         bool   havePrev = false;
@@ -209,6 +208,7 @@ private:
         double cutSm = 0;
         double cutTarget = 0, cutPrev = -1;  // chunk cutoff ramp (Finding 7)
         double satXL = 0, satXR = 0;   // ADAA drive: previous input per channel
+        double adaaMix = 0;            // dry -> ADAA transition state
         int    ftype = 0; bool twoPole = false;
         double k1 = 0;
         // Discrete-switch crossfade (the click the D-side click detector
@@ -246,8 +246,8 @@ private:
         OscState oA;
         // Finding J2: the outgoing oscillator configuration after a table or
         // unison change. It keeps reading its old table for DR_SWITCH_FADE
-        // while the new one fades in; the old DrumTable stays alive because the
-        // published TableSet does (Finding J3).
+        // while the new one fades in. Both sides pin their DrumTable; retired
+        // sets keep the final owner until message-thread reclamation.
         OscState oAx;
         int      oAxLeft = 0, oAxLen = 1;
         SampleState sample;
@@ -259,7 +259,12 @@ private:
 
         void trigger(double v, double rnd);
         void choke() { if (active) choking = true; }
-        void kill()  { active = false; choking = false; ampLevel = 0; }
+        void kill()  {
+            active = false; choking = false; ampLevel = 0;
+            oA.tableOwner.reset(); oAx.tableOwner.reset();
+            oA.data = oAx.data = nullptr;
+            oA.havePrev = false; oAxLeft = 0;
+        }
     };
     struct Mod {                   // padMod() destination accumulators
         double posA = 0, posB = 0, level = 0, cut = 0, pitch = 0;
@@ -364,21 +369,12 @@ private:
     // to a retired set could die on the audio thread when the snapshot went out
     // of scope — a free inside render().
     //
-    // Now the published value is a plain raw pointer. render() reads it with
-    // one relaxed-cost acquire load and never touches a reference count.
-    // Lifetime is handled by quiescent-state reclamation: render() bumps
-    // renderEpoch_ on entry and on exit, so an odd value means "inside
-    // render". setTables parks the outgoing set in retired_ with the epoch at
-    // retire time and frees it only once the counter has advanced far enough
-    // that no render call can still hold the pointer. Every free therefore
-    // happens on the message thread, inside setTables.
-    using TableSet = std::vector<DrumTable>;
+    // Publication is a raw atomic pointer; the epoch protects the render-call
+    // snapshot. Oscillator owners additionally protect cached data between calls
+    // and throughout outgoing/retrigger fades. Retired sets retain the final
+    // owner, so releasing oscillator pins never destroys table data on audio.
+    using TableSet = std::vector<std::shared_ptr<const DrumTable>>;
     struct RetiredTables { std::shared_ptr<const TableSet> set; uint32_t epoch = 0; };
-    // A retired set is freed once the epoch has advanced by this much: each
-    // render() contributes 2, so 4 means two complete render calls have begun
-    // and ended after the publish. Two is provably enough; four is free. An
-    // even epoch short-circuits the whole rule (see drainRetiredTables) so an
-    // instance that is loaded but never rendering still reclaims.
     static constexpr uint32_t kRetireEpochs = 4;
     void drainRetiredTables();                       // message thread only
 

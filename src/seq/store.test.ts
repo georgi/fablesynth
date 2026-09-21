@@ -17,6 +17,7 @@ import type { MasterFxParams } from './masterFx';
 const library = decodeClipLibrary({ v: 1, clips: FACTORY_CLIP_LIBRARY }).clips;
 
 class FakeDevice implements SeqDevice {
+  latencySamples = 0;
   clips: Array<{ bars: number; atFrame: number; bytes: number; arp?: ArpConfig }> = [];
   stops: number[] = [];
   tempos: Array<{ bpm: number; swing: number; anchor: number }> = [];

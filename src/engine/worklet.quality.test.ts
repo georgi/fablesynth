@@ -14,7 +14,7 @@ import { defaultParams, type ParamValues } from '../params';
 // Every FX stage off and the master volume low enough that the safety limiter
 // never engages, so what these tests measure is the oscillator and not the FX
 // chain that now runs inside the worklet (finding W6). With the stages gated
-// the chain is still a fixed 99-sample delay plus the DC blocker and the
+// the chain is still a fixed 107-sample delay plus the DC blocker and the
 // limiter's spec makeup gain — all linear, none of which invents spectrum.
 const FX_OFF: Partial<ParamValues> = {
   'fx.eq.on': 0, 'fx.drive.on': 0, 'fx.chorus.on': 0,
@@ -243,6 +243,23 @@ describe('WT-1 click detector', () => {
     h.send({ t: 'on', n: 72, v: 1 }); // 9th note into an 8-voice pool -> steal
     const { L } = h.render(20);
     expect(maxStep(L, 0, 1024)).toBeLessThan(before * 4 + 1e-3);
+  });
+});
+
+describe('WT-1 ADAA enable transition', () => {
+  it('moves continuously through the former 0.005 hard threshold', () => {
+    const h = bootWt({ ...PURE, 'filter.on': 1, 'filter.cut': 12000,
+      'filter.res': 0, 'filter.drive': 0.0049 });
+    h.send({ t: 'on', n: 96, v: .05 });
+    h.render(30);
+    const voice = (h.proc as unknown as { voices: Array<{ f1: { adaaMix: number } }> }).voices[0];
+    const before = voice.f1.adaaMix;
+    h.send({ t: 'p', k: 'filter.drive', v: 0.0051 });
+    const { L } = h.render(1, 1);
+    const after = voice.f1.adaaMix;
+    expect(after).toBeGreaterThan(before);
+    expect(after - before).toBeLessThan(.01);
+    expect(Number.isFinite(L[0])).toBe(true);
   });
 });
 

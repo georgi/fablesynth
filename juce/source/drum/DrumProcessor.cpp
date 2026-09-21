@@ -144,7 +144,7 @@ void DrumAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     scratch_.setSize(2 * DR_NBUSES, std::max(samplesPerBlock, 8192));
     currentSr_.store(sampleRate);
     // Re-sync sequencer content into the (possibly reset) engine.
-    shareSeqState(true, true);
+    shareSeqState();
 }
 
 bool DrumAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -228,12 +228,13 @@ void DrumAudioProcessor::setSelectedPad(int i) {
 
 // ---- patterns / chain / names (message thread) -----------------------------
 
-// Copy the message-thread sequencer content into the shared mirror the audio
-// thread applies on its next block (try-lock there, so this never glitches).
-void DrumAudioProcessor::shareSeqState(bool patterns, bool chain) {
-    std::lock_guard<std::mutex> lk(shareMutex_);
-    if (patterns) { patternsShared_ = patterns_; patternsDirty_ = true; }
-    if (chain)    { chainShared_ = chain_;       chainDirty_ = true; }
+// Publish a complete sequencer edit; a newer edit may replace an unread one.
+void DrumAudioProcessor::shareSeqState() {
+    auto& snapshot = seqSnapshots_[seqWrite_];
+    snapshot.patterns = patterns_;
+    snapshot.chainSize = (int)chain_.size(); // all native writers cap at DR_NPATTERNS
+    std::copy(chain_.begin(), chain_.end(), snapshot.chain.begin());
+    seqWrite_ = seqMiddle_.exchange(seqWrite_ | kSeqDirty, std::memory_order_acq_rel) & ~kSeqDirty;
 }
 
 uint8_t DrumAudioProcessor::getStep(int pattern, int pad, int step) const {
@@ -248,7 +249,7 @@ void DrumAudioProcessor::setStep(int pattern, int pad, int step, uint8_t v) {
     patterns_[(size_t)(pattern * DR_NPADS * DR_STEPS + pad * DR_STEPS + step)] =
         (uint8_t)juce::jmin((int)v, 2);
     programDirty_.markEdited();
-    shareSeqState(true, false);
+    shareSeqState();
 }
 
 // Finding D6: this used to throw the caller's chain away and store
@@ -261,7 +262,7 @@ void DrumAudioProcessor::setChain(std::vector<int> c) {
     else chain_.assign(c.begin(), c.begin() + bars);
     for (int& v : chain_) v = juce::jlimit(0, DR_NPATTERNS - 1, v);
     programDirty_.markEdited();
-    shareSeqState(false, true);
+    shareSeqState();
 }
 
 void DrumAudioProcessor::setEditPattern(int p) {
@@ -311,7 +312,7 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
     for (int& c : chain_) c = juce::jlimit(0, DR_NPATTERNS - 1, c);
     for (int i = 0; i < DR_NPADS; ++i)
         padNames_[(size_t)i] = juce::String(kit.padNames[(size_t)i]);
-    shareSeqState(true, true);
+    shareSeqState();
     selectionBroadcaster.sendChangeMessage(); // pad names / bindings changed
 }
 
@@ -389,17 +390,13 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         cmdFifo_.finishedRead(sz1 + sz2);
     }
 
-    // Sync pattern/chain edits (try-lock: skip on contention, retry next block).
-    if (shareMutex_.try_lock()) {
-        if (patternsDirty_) {
-            engine.setPatterns(patternsShared_.data(), (int)patternsShared_.size());
-            patternsDirty_ = false;
-        }
-        if (chainDirty_) {
-            engine.setChain(chainShared_.data(), (int)chainShared_.size());
-            chainDirty_ = false;
-        }
-        shareMutex_.unlock();
+    // Acquire the newest complete pattern/chain edit. The previous read slot
+    // becomes available to the producer only after this exchange.
+    if (seqMiddle_.load(std::memory_order_acquire) & kSeqDirty) {
+        seqRead_ = seqMiddle_.exchange(seqRead_, std::memory_order_acq_rel) & ~kSeqDirty;
+        const auto& snapshot = seqSnapshots_[seqRead_];
+        engine.setPatterns(snapshot.patterns.data(), (int)snapshot.patterns.size());
+        engine.setChain(snapshot.chain.data(), snapshot.chainSize);
     }
 
     // 5-bus render, sample-accurate MIDI: render engine+FX up to each event's
@@ -594,7 +591,7 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
         editPattern_ = juce::jlimit(0, DR_NPATTERNS - 1, (int)drum.getProperty("editPattern", 0));
         pushCmd(CmdSelect, selectedPad_, 0);
     }
-    shareSeqState(true, true);
+    shareSeqState();
 
     // 3. Parameters last (their table indices now resolve).
     if (params.isValid()) {

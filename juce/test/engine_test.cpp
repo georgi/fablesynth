@@ -14,9 +14,11 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 #include <string>
 #include <atomic>
+#include <climits>
 #include <thread>
 
 using namespace fable;
@@ -434,6 +436,49 @@ int main() {
                   "LP24 at res 1 rings near self-oscillation (was 45 ms)",
                   std::to_string(ring) + " s to -60 dB");
         }
+    }
+
+    printf("\n== 4c. ADAA operating envelope and enable transition ==\n");
+    {
+        // The synthesizer's normal filter source is comfortably below the
+        // ADAA +24 dBFS guard. Deliberately exceed the public drive range and
+        // inject a non-finite automation value here: both must resolve to a
+        // finite, bounded DSP configuration rather than poisoning the voice.
+        auto adaaPatch = [] {
+            auto p = defaultParams();
+            p[FILTER1_BASE + FLT_ON] = 1;
+            p[FILTER1_BASE + FLT_TYPE] = 0;
+            p[FILTER1_BASE + FLT_CUTOFF] = 9000;
+            p[FILTER1_BASE + FLT_RES] = 0.15f;
+            p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f;
+            return p;
+        };
+        const int block = 128;
+        Engine e; e.prepare(sr); e.setTables(tables);
+        auto p = adaaPatch(); p[FILTER1_BASE + FLT_DRIVE] = 0.004f;
+        e.setParams(p); e.noteOn(57, 1.0);
+        std::vector<float> L((size_t)block * 4, 0), R(L.size(), 0);
+        e.render(L.data(), R.data(), block * 2);
+        // Cross the former hard on/off threshold. The transition is now one
+        // render chunk, so its worst sample step must remain near the source's
+        // ordinary slew rather than becoming a one-sample discontinuity.
+        e.params()[FILTER1_BASE + FLT_DRIVE] = 0.006f;
+        e.render(L.data() + block * 2, R.data() + block * 2, block * 2);
+        const double natural = maxDelta(L, block, block * 2);
+        const double crossing = maxDelta(L, block * 2, block * 3);
+        check(finite(L) && crossing < natural * 2.5,
+              "ADAA enable crosses continuously",
+              "step=" + std::to_string(crossing) + " vs slew=" + std::to_string(natural));
+
+        Engine bad; bad.prepare(sr); bad.setTables(tables);
+        auto malformed = adaaPatch();
+        malformed[FILTER1_BASE + FLT_DRIVE] = std::numeric_limits<float>::infinity();
+        bad.setParams(malformed); bad.noteOn(57, 1.0);
+        std::vector<float> BL((size_t)block * 8, 0), BR(BL.size(), 0);
+        bad.render(BL.data(), BR.data(), (int)BL.size());
+        check(finite(BL) && peak(BL) < 8.0f,
+              "ADAA clamps malformed drive into its finite operating envelope",
+              "peak=" + std::to_string(peak(BL)));
     }
 
     printf("\n== 5. FX chain stable ==\n");
@@ -1786,6 +1831,29 @@ int main() {
               std::to_string(dbRaw) + " -> " + std::to_string(dbSm) + " dB");
         check(dbFlat < -100.0, "static-cutoff reference sits at the measurement floor",
               std::to_string(dbFlat) + " dB");
+    }
+
+    printf("\n== 19. Parameter ramp clock stays bounded (finding J1) ==\n");
+    {
+        Engine e;
+        e.prepare(sr);
+        const int cutoff = FILTER1_BASE + FLT_CUTOFF;
+        e.paramTargets()[cutoff] = 6000.0f;
+        e.advanceParamSmoothingForTesting(INT_MAX);
+        const int rampLen = (int)(Engine::PARAM_RAMP_MAX_SEC * sr);
+        check(e.paramRampPositionForTesting() == rampLen,
+              "wavetable ramp cursor clamps at its duration",
+              std::to_string(e.paramRampPositionForTesting()));
+        check(e.smoothedParam(cutoff) == 6000.0f,
+              "wavetable ramp reaches its target after a large advance");
+
+        e.paramTargets()[cutoff] = 1200.0f;
+        e.advanceParamSmoothingForTesting(1);
+        check(e.paramRampPositionForTesting() == 1,
+              "wavetable retarget starts a fresh ramp",
+              std::to_string(e.paramRampPositionForTesting()));
+        check(e.smoothedParam(cutoff) > 1200.0f && e.smoothedParam(cutoff) < 6000.0f,
+              "wavetable retarget advances from the prior value");
     }
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());

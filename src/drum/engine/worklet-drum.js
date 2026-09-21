@@ -37,9 +37,10 @@ const CUT_TAU = 0.003847; // was cutSm += (fc - cutSm) * 0.5 per 128 samples
 const CHOKE_TAU = 0.0003; // ≈2.8 ms to -80 dB; also the retrigger fade (D2)
 const DC_R_48 = 0.9998; // DC-blocker pole, quoted at 48 kHz
 const NOISE_SR = 48000; // reference rate for the noise one-pole colour
-const MAX_STEP = 32; // sample-player playback-rate ceiling (was unbounded)
 const EDGE_FADE = 0.0015; // seconds of fade at a sample's start/end/stop
 const TYPE_XFADE = 0.003; // seconds of crossfade on a filter-type switch
+const ADAA_FADE_WIDTH = 0.1;
+const ADAA_INPUT_LIMIT = 16;
 const E45 = Math.exp(-4.5);
 const INV_E45 = 1 / (1 - E45);
 
@@ -52,6 +53,9 @@ const mapPole = (a48, sr) => 1 - Math.pow(1 - a48, NOISE_SR / sr);
 function lcosh(z) {
   const a = Math.abs(z);
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
+}
+function adaaInput(x) {
+  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
 }
 
 // 4-point cubic Hermite, the read JUCE uses. Linear reads left 10–20 dB more
@@ -101,9 +105,9 @@ class Rng {
 
 const BUSES = 5; // OUT_NAMES.length in ../params.ts
 const FX_TAU = 0.02; // wet/dry and gain smoothing, matching setTargetAtTime(.., 0.02)
-const HB1_TAPS = 47, HB2_TAPS = 17, HB_BETA = 6;
-// 4x drive oversampler group delay in base samples: (47-1)/2 + (17-1)/4.
-const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 27
+const HB1_TAPS = 63, HB2_TAPS = 17, HB_BETA = 6;
+// 4x drive oversampler group delay in base samples: (63-1)/2 + (17-1)/4.
+const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 35
 const LIM_THR = 0.398, LIM_RATIO = 14;
 const LIM_CEILING = 0.8912509381337456; // -1 dBFS
 
@@ -925,9 +929,12 @@ function makeOscState() {
     phases: new Float64Array(MAXUNI),
     incs: new Float64Array(MAXUNI),
     incsEnd: new Float64Array(MAXUNI),
+    pIncs: new Float64Array(MAXUNI),
     gl: new Float32Array(MAXUNI),
     gr: new Float32Array(MAXUNI),
-    uni: 1, off0: 0, off1: 0, off0b: 0, off1b: 0,
+    uni: 1, pUni: 1, pData: null, havePrev: false,
+    frame0: 0, frame1: 0, maxInc0: 0, maxInc1: 0, mips: 0,
+    off0: 0, off1: 0, off0b: 0, off1b: 0,
     blend: 0, blendEnd: 0,
     ft: 0, ftEnd: 0,
     gain: 0, mask: 0, size: 0, data: null, posSm: -1,
@@ -937,10 +944,7 @@ function makeOscState() {
 function makeSampleState() {
   return {
     pos: -1, index: -1, done: false,
-    // anti-alias pre-filter cursor: `fi` is the newest source index already
-    // filtered into h0..h3 (h3 newest), walked in the read direction.
-    primed: false, pre: false, fi: 0, z1: 0, z2: 0,
-    h0: 0, h1: 0, h2: 0, h3: 0,
+    havePrev: false, pStep: 0,
   };
 }
 
@@ -953,7 +957,7 @@ function makeFilterState() {
     ftypeOld: 0, twoPoleOld: false,
     xfLeft: 0, xfLen: 1,
     cutSm: 0,
-    satXL: 0, satXR: 0,
+    satXL: 0, satXR: 0, adaaMix: 0,
     ftype: 0, twoPole: false,
     a1: 0, a2: 0, a3: 0, k1: 0,
   };
@@ -977,9 +981,11 @@ class PadVoice {
     this.vel = v; this.rand = rand;
     this.t = 0; this.ampLevel = 0;
     this.oA.posSm = -1;
+    this.oA.havePrev = false;
+    this.oA.pData = null;
     this.sample.pos = -1; this.sample.index = -1; this.sample.done = false;
-    this.sample.primed = false;
-    this.f.svf.fill(0); this.f.cutSm = 0; this.f.satXL = 0; this.f.satXR = 0;
+    this.sample.havePrev = false;
+    this.f.svf.fill(0); this.f.cutSm = 0; this.f.satXL = 0; this.f.satXR = 0; this.f.adaaMix = 0;
     this.f.xfLeft = 0;
     this.noiseY = 0;
     this.ringPhase = 0.25;
@@ -987,7 +993,10 @@ class PadVoice {
   }
 
   choke() { if (this.active) this.choking = true; }
-  kill() { this.active = false; this.choking = false; this.ampLevel = 0; }
+  kill() {
+    this.active = false; this.choking = false; this.ampLevel = 0;
+    this.oA.havePrev = false; this.oA.pData = null;
+  }
 }
 
 class DrumProcessor extends AudioWorkletProcessor {
@@ -1349,29 +1358,12 @@ class DrumProcessor extends AudioWorkletProcessor {
     const cps0 = freq0 / sampleRate;
     const cps1 = fEnd / sampleRate;
     const maxRatio = Math.pow(2, (Math.abs(det) * 50) / 1200);
-    const k = (maxRatio * 1024) / 0.475;
-    const mipF0 = Math.log2(cps0 * k);
-    const mipF1 = Math.log2(cps1 * k);
-    // Full trilinear: blend by the mip fraction always. The old 0.07-octave
-    // window hard-switched mips inside a drum pitch envelope (review D5).
-    const mipFmax = Math.max(mipF0, mipF1);
-    let mip = 0;
-    if (mipFmax > 0) mip = Math.min(table.mips - 1, Math.ceil(mipFmax));
-    const fineMip = mip > 0 ? mip - 1 : 0;
-    if (mip > 0) {
-      o.blend = Math.min(1, Math.max(0, 1 - (mipF0 - (mip - 1))));
-      o.blendEnd = Math.min(1, Math.max(0, 1 - (mipF1 - (mip - 1))));
-    } else {
-      o.blend = 0; o.blendEnd = 0;
-    }
-
-    o.off0 = (f0 * table.mips + mip) * table.size;
-    o.off1 = (f1 * table.mips + mip) * table.size;
-    o.off0b = (f0 * table.mips + fineMip) * table.size;
-    o.off1b = (f1 * table.mips + fineMip) * table.size;
+    const prevValid = o.havePrev && o.pUni === uni && o.pData === table.data;
+    let maxInc0 = 0, maxInc1 = 0;
     o.data = table.data;
     o.mask = table.mask;
     o.size = table.size;
+    o.mips = table.mips;
     o.uni = uni;
 
     for (let u = 0; u < uni; u++) {
@@ -1380,37 +1372,51 @@ class DrumProcessor extends AudioWorkletProcessor {
       const ratio = Math.pow(2, cents / 1200);
       o.incs[u] = cps0 * ratio * table.size;
       o.incsEnd[u] = cps1 * ratio * table.size;
+      maxInc0 = Math.max(maxInc0, prevValid ? o.pIncs[u] : o.incs[u]);
+      maxInc1 = Math.max(maxInc1, o.incsEnd[u]);
       const pan = Math.max(-1, Math.min(1, sprd * spr));
       const a = ((pan + 1) * Math.PI) / 4;
       o.gl[u] = Math.cos(a);
       o.gr[u] = Math.sin(a);
     }
+    o.frame0 = f0 * table.mips * table.size;
+    o.frame1 = f1 * table.mips * table.size;
+    o.maxInc0 = maxInc0;
+    o.maxInc1 = maxInc1;
+    o.rampPrev = prevValid;
     o.gain = (level * 0.32) / Math.sqrt(uni);
     return true;
   }
 
   renderOsc(o, tmpL, tmpR, off, n) {
     const data = o.data, mask = o.mask, size = o.size, g = o.gain;
-    const off0 = o.off0, off1 = o.off1, off0b = o.off0b, off1b = o.off1b;
     const invN = n > 0 ? 1 / n : 0;
     const ft0 = o.ft, dFt = (o.ftEnd - ft0) * invN;
-    const b0 = o.blend, dB = (o.blendEnd - b0) * invN;
-    const blended = b0 > 0.001 || o.blendEnd > 0.001;
+    const maxInc0 = o.maxInc0, maxInc1 = o.maxInc1;
+    const frame0 = o.frame0, frame1 = o.frame1;
     for (let u = 0; u < o.uni; u++) {
       let ph = o.phases[u];
-      const inc0 = o.incs[u], dInc = (o.incsEnd[u] - inc0) * invN;
+      const inc0 = o.rampPrev ? o.pIncs[u] : o.incs[u];
+      const dInc = (o.incsEnd[u] - inc0) * invN;
       const gl = o.gl[u] * g, gr = o.gr[u] * g;
       for (let i = 0; i < n; i++) {
         const idx = ph | 0;
         const frac = ph - idx;
         const ft = ft0 + dFt * i;
+        const maxInc = maxInc0 + (maxInc1 - maxInc0) * (i * invN);
+        const mipF = Math.log2(maxInc * 0.5 / 0.475);
+        const mip = mipF > 0 ? Math.min(o.mips - 1, Math.ceil(mipF)) : 0;
+        const fineMip = Math.max(0, mip - 1);
+        const blend = mip > 0 ? Math.max(0, Math.min(1, 1 - (mipF - (mip - 1)) / 0.07)) : 0;
+        const off0 = frame0 + mip * size, off1 = frame1 + mip * size;
+        const off0b = frame0 + fineMip * size, off1b = frame1 + fineMip * size;
         const s0 = hermiteTable(data, off0, idx, mask, frac);
         const s1 = hermiteTable(data, off1, idx, mask, frac);
         let s = s0 + ft * (s1 - s0);
-        if (blended) {
+        if (blend > 0) {
           const t0 = hermiteTable(data, off0b, idx, mask, frac);
           const t1 = hermiteTable(data, off1b, idx, mask, frac);
-          s += (b0 + dB * i) * (t0 + ft * (t1 - t0) - s);
+          s += blend * (t0 + ft * (t1 - t0) - s);
         }
         tmpL[off + i] += s * gl;
         tmpR[off + i] += s * gr;
@@ -1419,12 +1425,17 @@ class DrumProcessor extends AudioWorkletProcessor {
         else if (ph < 0) ph += size;
       }
       o.phases[u] = ph;
+      o.pIncs[u] = o.incsEnd[u];
     }
+    o.pUni = o.uni;
+    o.pData = o.data;
+    o.havePrev = true;
   }
 
-  // One-shot sample layer: Hermite read, a two-pole pre-filter whenever the
-  // playback rate exceeds 1 (so pitching up no longer aliases), a clamped
-  // rate, per-sample rate ramp, and short edge fades (review D4).
+  // One-shot sample layer. This deliberately mirrors DrumEngine.cpp's
+  // playback contract: Hermite reads, a Hann-windowed decimation average
+  // blended in between rates 1 and 2, a per-sample rate ramp, and edge fades
+  // measured in output time. A sample's natural attack is not faded in.
   renderSample(st, f, base, pitch0, pitch1, start0, tmpL, tmpR, off, n) {
     if (st.done) return false;
     const pv = this.pv;
@@ -1446,32 +1457,21 @@ class DrumProcessor extends AudioWorkletProcessor {
     if (st.pos < 0 || st.index !== index) {
       st.index = index;
       st.pos = reverse ? hi : lo;
-      st.primed = false;
+      st.havePrev = false;
     }
 
     const dir = reverse ? -1 : 1;
     const rate = sample.sampleRate / sampleRate;
-    const raw0 = rate * Math.pow(2, pitch0 / 12) * dir;
-    const raw1 = rate * Math.pow(2, pitch1 / 12) * dir;
-    const step0 = Math.max(-MAX_STEP, Math.min(MAX_STEP, raw0));
-    const step1 = Math.max(-MAX_STEP, Math.min(MAX_STEP, raw1));
+    const step1 = rate * Math.pow(2, pitch1 / 12) * dir;
+    const step0 = st.havePrev ? st.pStep : step1;
     const dStep = n > 0 ? (step1 - step0) / n : 0;
-    const fade = Math.max(1, EDGE_FADE * sample.sampleRate);
-
-    const speed = Math.max(Math.abs(step0), Math.abs(step1));
-    const pre = speed > 1;
-    // Two one-poles at 0.45/speed of the source Nyquist: the band that would
-    // otherwise fold when the read decimates.
-    const a = pre ? 1 - Math.exp(-2 * Math.PI * (0.45 / speed)) : 0;
-    if (pre && (!st.primed || st.pre !== pre)) {
-      const seedI = Math.max(0, Math.min(last, Math.round(st.pos)));
-      const y = data[seedI];
-      st.fi = seedI - 4 * dir;
-      st.z1 = y; st.z2 = y;
-      st.h0 = y; st.h1 = y; st.h2 = y; st.h3 = y;
-    }
-    st.primed = true;
-    st.pre = pre;
+    const fadeInEdge = reverse ? hi < last - 1e-9 : lo > 1e-9;
+    const half = Math.max((hi - lo) * .5, 1);
+    const read = (position) => {
+      const i0 = Math.floor(position), frac = position - i0;
+      const at = (i) => data[i < 0 ? 0 : i > last ? last : i];
+      return hermite4(at(i0 - 1), at(i0), at(i0 + 1), at(i0 + 2), frac);
+    };
 
     let pos = st.pos;
     for (let i = 0; i < n; i++) {
@@ -1479,38 +1479,32 @@ class DrumProcessor extends AudioWorkletProcessor {
         st.done = true;
         break;
       }
-      const i0 = Math.floor(pos);
-      const frac = pos - i0;
-      let value;
-      if (pre) {
-        // Walk the pre-filter to the newest index the Hermite read needs.
-        const target = dir > 0 ? i0 + 2 : i0 - 1;
-        while (dir > 0 ? st.fi < target : st.fi > target) {
-          st.fi += dir;
-          const x = data[st.fi < 0 ? 0 : st.fi > last ? last : st.fi];
-          st.z1 += (x - st.z1) * a;
-          st.z2 += (st.z1 - st.z2) * a;
-          st.h0 = st.h1; st.h1 = st.h2; st.h2 = st.h3; st.h3 = st.z2;
+      const step = step0 + dStep * i;
+      const speed = Math.abs(step);
+      let value = read(pos);
+      if (speed > 1) {
+        const taps = Math.min(8, Math.ceil(speed) + 1);
+        let average = 0, weightSum = 0;
+        for (let k = 0; k < taps; k++) {
+          const u = k / (taps - 1) - .5;
+          const weight = .5 - .5 * Math.cos(2 * Math.PI * (k + 1) / (taps + 1));
+          average += weight * read(pos + u * speed); weightSum += weight;
         }
-        value = dir > 0
-          ? hermite4(st.h0, st.h1, st.h2, st.h3, frac)
-          : hermite4(st.h3, st.h2, st.h1, st.h0, frac);
-      } else {
-        const im1 = i0 > 0 ? i0 - 1 : 0;
-        const ip1 = i0 < last ? i0 + 1 : last;
-        const ip2 = i0 + 2 < last ? i0 + 2 : last;
-        const ic = i0 < 0 ? 0 : i0 > last ? last : i0;
-        value = hermite4(data[im1], data[ic], data[ip1], data[ip2], frac);
+        value += (average / weightSum - value) * Math.max(0, Math.min(1, speed - 1));
       }
-      // Edge fades replace the hard cuts at START/END and the reverse stop.
-      const dist = Math.min(pos - lo, hi - pos);
-      const eg = dist < fade ? Math.max(0, dist / fade) : 1;
+
+      const fadeSource = Math.min(Math.max(speed, 1) * EDGE_FADE * sampleRate, half);
+      const distanceIn = reverse ? hi - pos : pos - lo;
+      const distanceOut = reverse ? pos - lo : hi - pos;
+      let eg = Math.max(0, Math.min(1, distanceOut / fadeSource));
+      if (fadeInEdge) eg = Math.min(eg, Math.max(0, Math.min(1, distanceIn / fadeSource)));
       const s = value * gain * eg;
       tmpL[off + i] += s;
       tmpR[off + i] += s;
-      pos += step0 + dStep * i;
+      pos += step;
     }
     st.pos = pos;
+    st.pStep = step1; st.havePrev = true;
     return true;
   }
 
@@ -1545,24 +1539,30 @@ class DrumProcessor extends AudioWorkletProcessor {
   }
 
   runFilter(fs, inL, inR, outL, outR, drive, off, n) {
-    if (drive > 0.005) {
+    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
+    const adaaStart = fs.adaaMix;
+    if (adaaTarget > 0 || fs.adaaMix > 1e-6) {
       const dg = 1 + drive * 7;
       const dcomp = 1 / Math.pow(dg, 0.55);
       const kF = dcomp / dg;
       let xpL = fs.satXL, xpR = fs.satXR;
       let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
       for (let i = off; i < off + n; i++) {
-        const aL = inL[i], aR = inR[i];
+        const aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
         const dxL = aL - xpL;
         const FL = kF * lcosh(dg * aL);
-        outL[i] = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
+        const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
         xpL = aL; FpL = FL;
         const dxR = aR - xpR;
         const FR = kF * lcosh(dg * aR);
-        outR[i] = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+        const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
+        const m = adaaStart + (adaaTarget - adaaStart) * ((i - off + 1) / n);
+        outL[i] = aL + m * (satL - aL);
+        outR[i] = aR + m * (satR - aR);
         xpR = aR; FpR = FR;
       }
       fs.satXL = xpL; fs.satXR = xpR;
+      fs.adaaMix = adaaTarget;
     } else {
       for (let i = off; i < off + n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
       if (n > 0) { fs.satXL = inL[off + n - 1]; fs.satXR = inR[off + n - 1]; }

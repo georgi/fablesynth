@@ -38,7 +38,7 @@ struct ConductorIO {
     virtual void ioUpdateClip(int t, const std::vector<uint8_t>& bytes, int bars) = 0;
     virtual void ioScheduleArpClip(int t, const ClipData& c, double at, int tag) { ioScheduleClip(t, c.bytes, c.bars, at, tag); }
     virtual void ioUpdateArpClip(int t, const ClipData& c) { ioUpdateClip(t, c.bytes, c.bars); }
-    virtual void ioSetTrackGain(int t, float gain) = 0;                           // post-curve, 0 when closed
+    virtual void ioSetTrackGain(int t, float gain, bool open) = 0;               // post-curve plus logical gate
     virtual void ioSendTempo(double bpm, double swing, double anchorFrame) = 0;
     virtual ~ConductorIO() = default;
 };
@@ -91,7 +91,7 @@ public:
     void cycleQuant(int d);
     void setTrackVol(int t, float v);
     void setSwing(double v);
-    void setBpm(double bpm);              // guarded: only while no track owned/queued; re-anchors
+    bool setBpm(double bpm);              // guarded: only while no track owned/queued; re-anchors
 
     // audio-thread acks, delivered on the message thread by the editor timer.
     // `scene` is the launch identity the device stamped on the Start ack (the

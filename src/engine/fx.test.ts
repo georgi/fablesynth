@@ -35,18 +35,18 @@ function maxAbs(x: Float32Array, from = 0, to = x.length): number {
 // ---------------------------------------------------------------- latency
 
 describe('FX chain latency', () => {
-  it('reports drive FIR group delay + limiter lookahead (99 samples at 48 kHz)', () => {
+  it('reports drive FIR group delay + limiter lookahead (107 samples at 48 kHz)', () => {
     const h = bootWt(TONE);
     const lat = h.sent.find((m) => m.t === 'latency');
     expect(lat).toBeDefined();
-    // 47-tap half-band (23) + 17-tap at 4x (4) = 27, plus round(0.0015 * 48000) = 72.
-    expect(lat!.n).toBe(99);
+    // 63-tap half-band (31) + 17-tap at 4x (4) = 35, plus 72 lookahead.
+    expect(lat!.n).toBe(107);
   });
 
   it('scales the lookahead with the sample rate', () => {
     const h = bootWt(TONE, 96000);
-    // 27 (rate-relative FIRs) + round(0.0015 * 96000) = 144.
-    expect(h.sent.find((m) => m.t === 'latency')!.n).toBe(171);
+    // 35 (rate-relative FIRs) + round(0.0015 * 96000) = 144.
+    expect(h.sent.find((m) => m.t === 'latency')!.n).toBe(179);
   });
 
   it('delays the signal by exactly the reported amount', () => {
