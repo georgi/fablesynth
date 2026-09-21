@@ -112,7 +112,7 @@ export class DrumEngine {
 
   scopeAnalyser!: AnalyserNode;
   // Chain latency reported by the worklet: drive FIR group delay + limiter
-  // lookahead (99 samples at 48 kHz), the same figure the plugin reports.
+  // lookahead (142 samples at 48 kHz), the same figure the plugin reports.
   latencySamples: number;
 
   constructor() {

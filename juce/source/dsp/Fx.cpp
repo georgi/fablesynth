@@ -610,15 +610,9 @@ float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBa
 }
 
 void Fx::process(float* L, float* R, int n) {
-    // A host that hands us 1024-sample blocks only supplies a new automation
-    // value every 21 ms, so a fixed 15 ms glide would finish early and leave a
-    // plateau — the staircase again, just with rounded corners. Widen the ramp
-    // to span at least one block so consecutive targets join continuously.
-    {
-        int need = (n + kCoefChunk - 1) / kCoefChunk;
-        int steps = need > rampSteps_ ? need : rampSteps_;
-        if (steps != eqLoDb_.steps) setRampSteps(steps);
-    }
+    // The ramp owns a sample-clocked duration established at prepare(). Do not
+    // resize it from the host block length: a single 1024-sample callback and
+    // eight 128-sample callbacks must consume the same automation trajectory.
 
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive —
     // every stage below has a tail or a feedback loop that has to keep running.

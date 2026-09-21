@@ -97,13 +97,13 @@ describe('BL-1 FX drive is 4x oversampled (W6)', () => {
   }, 120_000);
 
   it('reports the chain latency the plugin reports', () => {
-    // drive FIR group delay (27) + limiter lookahead (72 at 48 kHz) = 99.
+    // drive FIR group delay (35) + limiter lookahead (72 at 48 kHz) = 107.
     const h = boot(defaultBassParams());
     const msg = h.sent.find((m) => m.t === 'latency');
-    expect(msg?.n).toBe(99);
+    expect(msg?.n).toBe(107);
     // 44.1 kHz: the lookahead is 1.5 ms, the FIR delay is rate-relative.
     const h44 = boot(defaultBassParams(), 44100);
-    expect(h44.sent.find((m) => m.t === 'latency')?.n).toBe(27 + 66);
+    expect(h44.sent.find((m) => m.t === 'latency')?.n).toBe(35 + 66);
   });
 
   it('delays the signal by the reported latency', () => {
@@ -116,7 +116,7 @@ describe('BL-1 FX drive is 4x oversampled (W6)', () => {
     for (let i = 0; i < L.length && onset < 0; i++) if (Math.abs(L[i]) > 1e-9) onset = i;
     // The sub sine starts at phase 0, so the voice's own first non-zero sample
     // is index 1; everything after that is the chain's delay.
-    expect(onset - 1).toBe(99);
+    expect(onset - 1).toBe(107);
   });
 
   it('keeps the drive path aligned with the dry path', () => {

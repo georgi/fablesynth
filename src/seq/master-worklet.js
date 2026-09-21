@@ -69,9 +69,10 @@ class LookaheadLimiter {
     this.rel = 1 - Math.exp(-1 / (.2 * sr));
     this.w = 0; this.qh = 0; this.qt = 0; this.t = 0; this.env = 1;
   }
-  process(l, r) {
+  process(l, r, ceiling = SAFETY_CEILING) {
+    const cap = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : SAFETY_CEILING;
     const peak = Math.max(Math.abs(l), Math.abs(r));
-    const required = peak > SAFETY_CEILING ? SAFETY_CEILING / peak : 1;
+    const required = peak > cap ? cap / peak : 1;
     while (this.qh !== this.qt) {
       const previous = this.qt > 0 ? this.qt - 1 : this.cap - 1;
       if (this.qv[previous] < required) break;
@@ -88,7 +89,7 @@ class LookaheadLimiter {
     this.t++;
     const delayedPeak = Math.max(Math.abs(dl), Math.abs(dr));
     let gain = this.env;
-    if (gain * delayedPeak > SAFETY_CEILING) gain = SAFETY_CEILING / delayedPeak;
+    if (gain * delayedPeak > cap) gain = cap / delayedPeak;
     this.l = dl * gain; this.r = dr * gain;
   }
 }
@@ -147,7 +148,12 @@ class MasterProcessor extends AudioWorkletProcessor {
 
       const master = this.master.next();
       this.legacy.process(l * master, r * master);
-      this.safety.process(this.legacy.l, this.legacy.r);
+      // The upstream gain follows a smoothed ceiling to avoid zippering, but
+      // the final safety stage must enforce the selected ceiling immediately.
+      // Otherwise a newly recalled lower ceiling can still overshoot while the
+      // control smoother catches up.
+      const finalCeiling = SAFETY_CEILING + mix * (this.ceiling.target - SAFETY_CEILING);
+      this.safety.process(this.legacy.l, this.legacy.r, finalCeiling);
       left[i] = Number.isFinite(this.safety.l) ? this.safety.l : 0;
       right[i] = Number.isFinite(this.safety.r) ? this.safety.r : 0;
     }

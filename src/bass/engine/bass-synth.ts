@@ -151,10 +151,10 @@ export class BassEngine {
 
   // Reported latency of the worklet's FX chain, in samples: the 4x drive
   // oversampler's FIR group delay plus the limiter lookahead. Matches
-  // BassFx::latencySamples() — 99 at 48 kHz.
+  // BassFx::latencySamples() — 107 at 48 kHz.
   get latencySamples(): number {
     if (!this.ready) return 0;
-    return 27 + Math.max(8, Math.round(0.0015 * this.ctx.sampleRate));
+    return 35 + Math.max(8, Math.round(0.0015 * this.ctx.sampleRate));
   }
 
   pushTables(): void {

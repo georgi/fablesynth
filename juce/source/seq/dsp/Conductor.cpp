@@ -26,7 +26,7 @@ double Conductor::boundary() const {
 void Conductor::applyGains() {
     for (int t = 0; t < (int)session_.tracks.size(); t++) {
         const bool open = isTrackOpen(t, owner_, trackMute_, sceneMute_, solo_);
-        io_.ioSetTrackGain(t, open ? gainCurve(trackVol_[(size_t)t]) : 0.0f);
+        io_.ioSetTrackGain(t, gainCurve(trackVol_[(size_t)t]), open);
     }
 }
 

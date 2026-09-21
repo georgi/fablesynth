@@ -883,12 +883,11 @@ void BassEngine::oscPass(float* dstL, float* dstR, int n) {
 
     // glide: one-pole approach of semiTarget with time-constant slide.time
     const double tau = std::max(0.005, (double)p_[BL_SLIDE_TIME]) * sr_;
-    const double gk16 = 1 - std::exp(-16 / tau);
-
     for (int at = 0; at < n; at += 16) {
         const int count = std::min(16, n - at);
         if (exactlyDifferent(semi_, semiTarget_)) {
-            semi_ += (semiTarget_ - semi_) * gk16;
+            const double glide = 1 - std::exp(-(double)count / tau);
+            semi_ += (semiTarget_ - semi_) * glide;
             if (std::fabs(semiTarget_ - semi_) < 0.001) semi_ = semiTarget_;
         }
         const double noteRootAbs = BL_ROOT_MIDI + semi_;

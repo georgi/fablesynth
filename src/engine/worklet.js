@@ -237,9 +237,9 @@ for (const id in MOD_PARAM_INFO) {
 // — a filter that sings instead of merely peaking. Identical to Engine.cpp.
 const LP24_K_MIN = 0.002; // Q = 500 damping floor
 
-// Longest tuned-comb delay. 4096 samples covers cutoffs down to ~11 Hz at 48 kHz,
-// so the full 20 Hz..20 kHz CUTOFF range maps to a valid comb pitch.
-const COMB_MAX = 4096;
+// Longest tuned-comb delay. Match native's sample-rate-aware capacity so the
+// 20 Hz lower cutoff remains representable at 96 kHz and above.
+const COMB_MAX = Math.max(4096, Math.ceil(sampleRate / 20) + 2);
 
 // LFO note-division factors (cycles per beat, beat = quarter note). Index maps
 // to params.ts LFO_DIVS.
@@ -267,8 +267,8 @@ const POS_TAU = 128 / (48000 * 0.4307829160924542); // -ln(0.65)
 const CUT_TAU = 128 / (48000 * Math.LN2);
 const STEAL_TAU = 1 / (48000 * 0.1278333715098849); // -ln(0.88)
 const STEAL_C = smoothCoef(1, STEAL_TAU * sampleRate);
-const ADAA_FULL_DRIVE = 0.01;
-const ADAA_MIX_C = 1 - Math.exp(-1 / (0.005 * sampleRate));
+const ADAA_FADE_WIDTH = 0.1;
+const ADAA_INPUT_LIMIT = 16;
 
 // Fast deterministic RNG (xorshift32) — replaces Math.random() for noise, unison
 // start phases and S&H (finding W5). Mirrors `Rng` in Engine.h, so a seeded
@@ -390,6 +390,9 @@ function wrapOscPhase(phase, size) {
 function lcosh(z) {
   const a = Math.abs(z);
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
+}
+function adaaInput(x) {
+  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
 }
 
 // Finding W1: 4-point cubic Hermite (Catmull-Rom) table read, replacing the
@@ -753,10 +756,10 @@ function fxScratch(n) {
   FX_WETL = new Float64Array(n); FX_WETR = new Float64Array(n);
 }
 
-// 4x drive oversampler stages: 47-tap first half-band (2x), 17-tap second (4x).
+// 4x drive oversampler stages: 63-tap first half-band (2x), 17-tap second (4x).
 // Total up+shape+down group delay is an exact integer in base samples.
-const HB1_TAPS = 47, HB2_TAPS = 17;
-const DRIVE_LATENCY = ((HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4) | 0; // 27
+const HB1_TAPS = 63, HB2_TAPS = 17;
+const DRIVE_LATENCY = ((HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4) | 0; // 35
 
 // Lookahead brickwall limiter: fixed makeup gain feeding a delayed signal path,
 // linked-stereo sliding-window-minimum gain that fully develops inside the
@@ -1995,7 +1998,8 @@ class FableProcessor extends AudioWorkletProcessor {
   // reading in*, writing out*. Stage 1 saturates in -> out, stage 2 filters in place.
   runFilter(fs, inL, inR, outL, outR, drive, n) {
     // -- drive (anti-aliased tanh via ADAA), or a plain copy when disabled --
-    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FULL_DRIVE));
+    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
+    const adaaStart = fs.adaaMix;
     if (adaaTarget > 0 || fs.adaaMix > 1e-6) {
       const dg = 1 + drive * 7;
       const dcomp = 1 / Math.pow(dg, 0.55);
@@ -2003,7 +2007,7 @@ class FableProcessor extends AudioWorkletProcessor {
       let xpL = fs.satXL, xpR = fs.satXR;
       let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
       for (let i = 0; i < n; i++) {
-        const aL = inL[i], aR = inR[i];
+        const aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
         const dxL = aL - xpL;
         const FL = kF * lcosh(dg * aL);
         // |Δx| tiny → ADAA is numerically unstable; fall back to midpoint tanh.
@@ -2012,12 +2016,13 @@ class FableProcessor extends AudioWorkletProcessor {
         const dxR = aR - xpR;
         const FR = kF * lcosh(dg * aR);
         const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
-        fs.adaaMix += (adaaTarget - fs.adaaMix) * ADAA_MIX_C;
-        outL[i] = aL + fs.adaaMix * (satL - aL);
-        outR[i] = aR + fs.adaaMix * (satR - aR);
+        const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
+        outL[i] = aL + m * (satL - aL);
+        outR[i] = aR + m * (satR - aR);
         xpR = aR; FpR = FR;
       }
       fs.satXL = xpL; fs.satXR = xpR;
+      fs.adaaMix = adaaTarget;
     } else {
       for (let i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
       if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }

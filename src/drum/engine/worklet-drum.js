@@ -39,8 +39,8 @@ const DC_R_48 = 0.9998; // DC-blocker pole, quoted at 48 kHz
 const NOISE_SR = 48000; // reference rate for the noise one-pole colour
 const EDGE_FADE = 0.0015; // seconds of fade at a sample's start/end/stop
 const TYPE_XFADE = 0.003; // seconds of crossfade on a filter-type switch
-const ADAA_FULL_DRIVE = 0.01;
-const ADAA_MIX_C = 1 - Math.exp(-1 / (0.005 * sampleRate));
+const ADAA_FADE_WIDTH = 0.1;
+const ADAA_INPUT_LIMIT = 16;
 const E45 = Math.exp(-4.5);
 const INV_E45 = 1 / (1 - E45);
 
@@ -53,6 +53,9 @@ const mapPole = (a48, sr) => 1 - Math.pow(1 - a48, NOISE_SR / sr);
 function lcosh(z) {
   const a = Math.abs(z);
   return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
+}
+function adaaInput(x) {
+  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
 }
 
 // 4-point cubic Hermite, the read JUCE uses. Linear reads left 10–20 dB more
@@ -102,9 +105,9 @@ class Rng {
 
 const BUSES = 5; // OUT_NAMES.length in ../params.ts
 const FX_TAU = 0.02; // wet/dry and gain smoothing, matching setTargetAtTime(.., 0.02)
-const HB1_TAPS = 47, HB2_TAPS = 17, HB_BETA = 6;
-// 4x drive oversampler group delay in base samples: (47-1)/2 + (17-1)/4.
-const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 27
+const HB1_TAPS = 63, HB2_TAPS = 17, HB_BETA = 6;
+// 4x drive oversampler group delay in base samples: (63-1)/2 + (17-1)/4.
+const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 35
 const LIM_THR = 0.398, LIM_RATIO = 14;
 const LIM_CEILING = 0.8912509381337456; // -1 dBFS
 
@@ -926,9 +929,12 @@ function makeOscState() {
     phases: new Float64Array(MAXUNI),
     incs: new Float64Array(MAXUNI),
     incsEnd: new Float64Array(MAXUNI),
+    pIncs: new Float64Array(MAXUNI),
     gl: new Float32Array(MAXUNI),
     gr: new Float32Array(MAXUNI),
-    uni: 1, off0: 0, off1: 0, off0b: 0, off1b: 0,
+    uni: 1, pUni: 1, pData: null, havePrev: false,
+    frame0: 0, frame1: 0, maxInc0: 0, maxInc1: 0, mips: 0,
+    off0: 0, off1: 0, off0b: 0, off1b: 0,
     blend: 0, blendEnd: 0,
     ft: 0, ftEnd: 0,
     gain: 0, mask: 0, size: 0, data: null, posSm: -1,
@@ -1347,29 +1353,12 @@ class DrumProcessor extends AudioWorkletProcessor {
     const cps0 = freq0 / sampleRate;
     const cps1 = fEnd / sampleRate;
     const maxRatio = Math.pow(2, (Math.abs(det) * 50) / 1200);
-    const k = (maxRatio * 1024) / 0.475;
-    const mipF0 = Math.log2(cps0 * k);
-    const mipF1 = Math.log2(cps1 * k);
-    // Full trilinear: blend by the mip fraction always. The old 0.07-octave
-    // window hard-switched mips inside a drum pitch envelope (review D5).
-    const mipFmax = Math.max(mipF0, mipF1);
-    let mip = 0;
-    if (mipFmax > 0) mip = Math.min(table.mips - 1, Math.ceil(mipFmax));
-    const fineMip = mip > 0 ? mip - 1 : 0;
-    if (mip > 0) {
-      o.blend = Math.min(1, Math.max(0, 1 - (mipF0 - (mip - 1))));
-      o.blendEnd = Math.min(1, Math.max(0, 1 - (mipF1 - (mip - 1))));
-    } else {
-      o.blend = 0; o.blendEnd = 0;
-    }
-
-    o.off0 = (f0 * table.mips + mip) * table.size;
-    o.off1 = (f1 * table.mips + mip) * table.size;
-    o.off0b = (f0 * table.mips + fineMip) * table.size;
-    o.off1b = (f1 * table.mips + fineMip) * table.size;
+    const prevValid = o.havePrev && o.pUni === uni && o.pData === table.data;
+    let maxInc0 = 0, maxInc1 = 0;
     o.data = table.data;
     o.mask = table.mask;
     o.size = table.size;
+    o.mips = table.mips;
     o.uni = uni;
 
     for (let u = 0; u < uni; u++) {
@@ -1378,37 +1367,51 @@ class DrumProcessor extends AudioWorkletProcessor {
       const ratio = Math.pow(2, cents / 1200);
       o.incs[u] = cps0 * ratio * table.size;
       o.incsEnd[u] = cps1 * ratio * table.size;
+      maxInc0 = Math.max(maxInc0, prevValid ? o.pIncs[u] : o.incs[u]);
+      maxInc1 = Math.max(maxInc1, o.incs[u]);
       const pan = Math.max(-1, Math.min(1, sprd * spr));
       const a = ((pan + 1) * Math.PI) / 4;
       o.gl[u] = Math.cos(a);
       o.gr[u] = Math.sin(a);
     }
+    o.frame0 = f0 * table.mips * table.size;
+    o.frame1 = f1 * table.mips * table.size;
+    o.maxInc0 = maxInc0;
+    o.maxInc1 = maxInc1;
+    o.rampPrev = prevValid;
     o.gain = (level * 0.32) / Math.sqrt(uni);
     return true;
   }
 
   renderOsc(o, tmpL, tmpR, off, n) {
     const data = o.data, mask = o.mask, size = o.size, g = o.gain;
-    const off0 = o.off0, off1 = o.off1, off0b = o.off0b, off1b = o.off1b;
     const invN = n > 0 ? 1 / n : 0;
     const ft0 = o.ft, dFt = (o.ftEnd - ft0) * invN;
-    const b0 = o.blend, dB = (o.blendEnd - b0) * invN;
-    const blended = b0 > 0.001 || o.blendEnd > 0.001;
+    const maxInc0 = o.maxInc0, maxInc1 = o.maxInc1;
+    const frame0 = o.frame0, frame1 = o.frame1;
     for (let u = 0; u < o.uni; u++) {
       let ph = o.phases[u];
-      const inc0 = o.incs[u], dInc = (o.incsEnd[u] - inc0) * invN;
+      const inc0 = o.rampPrev ? o.pIncs[u] : o.incs[u];
+      const dInc = (o.incsEnd[u] - inc0) * invN;
       const gl = o.gl[u] * g, gr = o.gr[u] * g;
       for (let i = 0; i < n; i++) {
         const idx = ph | 0;
         const frac = ph - idx;
         const ft = ft0 + dFt * i;
+        const maxInc = maxInc0 + (maxInc1 - maxInc0) * (i * invN);
+        const mipF = Math.log2(maxInc * 0.5 / 0.475);
+        const mip = mipF > 0 ? Math.min(o.mips - 1, Math.ceil(mipF)) : 0;
+        const fineMip = Math.max(0, mip - 1);
+        const blend = mip > 0 ? Math.max(0, Math.min(1, 1 - (mipF - (mip - 1)) / 0.07)) : 0;
+        const off0 = frame0 + mip * size, off1 = frame1 + mip * size;
+        const off0b = frame0 + fineMip * size, off1b = frame1 + fineMip * size;
         const s0 = hermiteTable(data, off0, idx, mask, frac);
         const s1 = hermiteTable(data, off1, idx, mask, frac);
         let s = s0 + ft * (s1 - s0);
-        if (blended) {
+        if (blend > 0) {
           const t0 = hermiteTable(data, off0b, idx, mask, frac);
           const t1 = hermiteTable(data, off1b, idx, mask, frac);
-          s += (b0 + dB * i) * (t0 + ft * (t1 - t0) - s);
+          s += blend * (t0 + ft * (t1 - t0) - s);
         }
         tmpL[off + i] += s * gl;
         tmpR[off + i] += s * gr;
@@ -1417,7 +1420,11 @@ class DrumProcessor extends AudioWorkletProcessor {
         else if (ph < 0) ph += size;
       }
       o.phases[u] = ph;
+      o.pIncs[u] = o.incsEnd[u];
     }
+    o.pUni = o.uni;
+    o.pData = o.data;
+    o.havePrev = true;
   }
 
   // One-shot sample layer. This deliberately mirrors DrumEngine.cpp's
@@ -1527,7 +1534,8 @@ class DrumProcessor extends AudioWorkletProcessor {
   }
 
   runFilter(fs, inL, inR, outL, outR, drive, off, n) {
-    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FULL_DRIVE));
+    const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
+    const adaaStart = fs.adaaMix;
     if (adaaTarget > 0 || fs.adaaMix > 1e-6) {
       const dg = 1 + drive * 7;
       const dcomp = 1 / Math.pow(dg, 0.55);
@@ -1535,7 +1543,7 @@ class DrumProcessor extends AudioWorkletProcessor {
       let xpL = fs.satXL, xpR = fs.satXR;
       let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
       for (let i = off; i < off + n; i++) {
-        const aL = inL[i], aR = inR[i];
+        const aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
         const dxL = aL - xpL;
         const FL = kF * lcosh(dg * aL);
         const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
@@ -1543,12 +1551,13 @@ class DrumProcessor extends AudioWorkletProcessor {
         const dxR = aR - xpR;
         const FR = kF * lcosh(dg * aR);
         const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
-        fs.adaaMix += (adaaTarget - fs.adaaMix) * ADAA_MIX_C;
-        outL[i] = aL + fs.adaaMix * (satL - aL);
-        outR[i] = aR + fs.adaaMix * (satR - aR);
+        const m = adaaStart + (adaaTarget - adaaStart) * ((i - off + 1) / n);
+        outL[i] = aL + m * (satL - aL);
+        outR[i] = aR + m * (satR - aR);
         xpR = aR; FpR = FR;
       }
       fs.satXL = xpL; fs.satXR = xpR;
+      fs.adaaMix = adaaTarget;
     } else {
       for (let i = off; i < off + n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
       if (n > 0) { fs.satXL = inL[off + n - 1]; fs.satXR = inR[off + n - 1]; }

@@ -30,6 +30,7 @@ export class WebAudioRig implements SeqRig {
   trackGains: GainNode[] = [];
   trackAnalysers: AnalyserNode[] | null = null;
   masterBus!: AudioWorkletNode;
+  trackDelays: DelayNode[] = [];
   sampleRate = 48000;
 
   async init(session: SessionDoc): Promise<void> {
@@ -49,20 +50,40 @@ export class WebAudioRig implements SeqRig {
 
     this.trackAnalysers = [];
     const inits: Promise<void>[] = [];
+    const deviceOutputs: GainNode[] = [];
     for (const track of session.tracks) {
       const gain = ctx.createGain();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
-      gain.connect(this.masterBus);
-      gain.connect(analyser);
       this.trackGains.push(gain);
       this.trackAnalysers.push(analyser);
 
       const device = makeDevice(track.machine);
       this.devices.push(device);
-      inits.push(device.init(ctx, gain).then(() => device.applyPatch(track.patch)));
+      const deviceOutput = ctx.createGain();
+      deviceOutputs.push(deviceOutput);
+      gain.connect(this.masterBus);
+      gain.connect(analyser);
+      inits.push(device.init(ctx, deviceOutput).then(() => device.applyPatch(track.patch)));
     }
     await Promise.all(inits);
+
+    // Worklets expose their internal latency, but the message that carries it
+    // can arrive after init() resolves. Keep a deterministic fallback matching
+    // the native 63/17 FIR contract and align every device before the shared
+    // summing bus, including the drum pad+group pair.
+    const limiter = Math.max(8, Math.round(0.0015 * ctx.sampleRate));
+    const fallback = (machine: string) => machine === 'DR1' ? 70 + limiter : 35 + limiter;
+    const latencies = this.devices.map((device, i) => device.latencySamples || fallback(session.tracks[i].machine));
+    const longest = Math.max(...latencies);
+    this.trackDelays = [];
+    for (let i = 0; i < deviceOutputs.length; i++) {
+      const delay = ctx.createDelay(1);
+      delay.delayTime.value = Math.max(0, longest - latencies[i]) / ctx.sampleRate;
+      deviceOutputs[i].connect(delay);
+      delay.connect(this.trackGains[i]);
+      this.trackDelays.push(delay);
+    }
   }
 
   now(): number {

@@ -226,6 +226,7 @@ private:
         int t = 0, bars = 0, tag = 0, key = 0;       // tag = launch scene (Clip)
         double at = 0, bpm = 0, swing = 0, anchor = 0;
         float gain = 0;
+        bool open = false;                         // logical track gate, independent of fader
         uint32_t gen = 0;                            // Reset: the new generation
         std::shared_ptr<std::vector<uint8_t>> bytes; // Clip / Update
         fable::ArpPattern arp;
@@ -243,7 +244,7 @@ private:
         void ioUpdateClip(int t, const std::vector<uint8_t>& bytes, int bars) override;
         void ioScheduleArpClip(int t, const fable::ClipData&, double at, int tag) override;
         void ioUpdateArpClip(int t, const fable::ClipData&) override;
-        void ioSetTrackGain(int t, float gain) override;
+        void ioSetTrackGain(int t, float gain, bool open) override;
         void ioSendTempo(double bpm, double swing, double anchor) override;
         SeqAudioProcessor& p;
     };

@@ -14,7 +14,7 @@ import { defaultParams, type ParamValues } from '../params';
 // Every FX stage off and the master volume low enough that the safety limiter
 // never engages, so what these tests measure is the oscillator and not the FX
 // chain that now runs inside the worklet (finding W6). With the stages gated
-// the chain is still a fixed 99-sample delay plus the DC blocker and the
+// the chain is still a fixed 107-sample delay plus the DC blocker and the
 // limiter's spec makeup gain — all linear, none of which invents spectrum.
 const FX_OFF: Partial<ParamValues> = {
   'fx.eq.on': 0, 'fx.drive.on': 0, 'fx.chorus.on': 0,

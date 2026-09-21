@@ -814,13 +814,13 @@ struct FakeIO : fable::ConductorIO {
     struct Sched { int t; int bars; double at; size_t bytes; };
     std::vector<Sched> clips; std::vector<std::pair<int,double>> stops;
     std::vector<std::tuple<int, std::vector<uint8_t>, int>> updates;
-    std::map<int,float> gains; double bpm = 0, swing = -1, anchor = -1;
+    std::map<int,float> gains; std::map<int,bool> gates; double bpm = 0, swing = -1, anchor = -1;
     double now() override { return frame; }
     std::vector<int> tags; // launch identity per scheduled clip (Finding 1)
     void ioScheduleClip(int t, const std::vector<uint8_t>& b, int bars, double at, int tag) override { clips.push_back({t,bars,at,b.size()}); tags.push_back(tag); }
     void ioScheduleStop(int t, double at) override { stops.push_back({t,at}); }
     void ioUpdateClip(int t, const std::vector<uint8_t>& b, int bars) override { updates.push_back({t,b,bars}); }
-    void ioSetTrackGain(int t, float g) override { gains[t] = g; }
+    void ioSetTrackGain(int t, float g, bool open) override { gains[t] = g; gates[t] = open; }
     void ioSendTempo(double b, double s, double a) override { bpm = b; swing = s; anchor = a; }
 };
 
@@ -1039,19 +1039,23 @@ static void testConductor() {
         c.powerOn();
         const float before = io.gains[0];
         c.toggleTrackMute(0);
-        CHECK(io.gains[0] == 0.0f);
+        CHECK(!io.gates[0]);
         c.toggleTrackMute(0);
-        CHECK(std::abs(io.gains[0] - before) < 1e-9);
+        CHECK(io.gates[0] && std::abs(io.gains[0] - before) < 1e-9);
+        c.setTrackVol(0, 0.0f);
+        CHECK(io.gates[0] && io.gains[0] == 0.0f);
+        c.setTrackVol(0, 0.75f);
+        CHECK(io.gates[0] && io.gains[0] > 0.0f);
     }
     {
         FakeIO io;
         Conductor c(factorySession(), io, 48000);
         c.powerOn();
         c.toggleSolo(1);
-        CHECK(io.gains[1] > 0.0f);
-        CHECK(io.gains[0] == 0.0f);
-        CHECK(io.gains[2] == 0.0f);
-        CHECK(io.gains[3] == 0.0f);
+        CHECK(io.gates[1] && io.gains[1] > 0.0f);
+        CHECK(!io.gates[0]);
+        CHECK(!io.gates[2]);
+        CHECK(!io.gates[3]);
     }
     {
         FakeIO io;
@@ -1060,8 +1064,8 @@ static void testConductor() {
         c.launch(0, 2);
         c.onClipStart(0, 2);
         c.toggleSceneMute(2);
-        CHECK(io.gains[0] == 0.0f);
-        CHECK(io.gains[1] > 0.0f); // unowned track keeps its independent open gate
+        CHECK(!io.gates[0]);
+        CHECK(io.gates[1] && io.gains[1] > 0.0f); // unowned track keeps its independent open gate
     }
 
     // 12. setSwing re-sends tempo with the unchanged anchor.

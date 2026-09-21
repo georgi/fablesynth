@@ -805,7 +805,7 @@ void SeqAudioProcessor::drainCmds() {
                     }
                 } break;
                 case Cmd::K::Gain:
-                    trackOpen_[(size_t)c.t] = c.gain > 0.0f;
+                    trackOpen_[(size_t)c.t] = c.open;
                     break;
                 case Cmd::K::Tempo:
                     audioTempoReady_ = true;
@@ -863,8 +863,8 @@ void SeqAudioProcessor::IO::ioUpdateClip(int t, const std::vector<uint8_t>& byte
     c.bytes = std::make_shared<std::vector<uint8_t>>(bytes);
     p.pushCmd(std::move(c));
 }
-void SeqAudioProcessor::IO::ioSetTrackGain(int t, float gain) {
-    Cmd c; c.k = Cmd::K::Gain; c.t = t; c.gain = gain; p.pushCmd(std::move(c));
+void SeqAudioProcessor::IO::ioSetTrackGain(int t, float gain, bool open) {
+    Cmd c; c.k = Cmd::K::Gain; c.t = t; c.gain = gain; c.open = open; p.pushCmd(std::move(c));
 }
 void SeqAudioProcessor::IO::ioSendTempo(double bpm, double swing, double anchor) {
     Cmd c; c.k = Cmd::K::Tempo; c.bpm = bpm; c.swing = swing; c.anchor = anchor; p.pushCmd(std::move(c));

@@ -25,6 +25,7 @@ export interface SeqDevice {
   onPos: ((step: number, bar: number) => void) | null;
   /** The live engine behind this device (absent on test fakes). */
   readonly engine?: DrumEngine | BassEngine | SynthEngine;
+  readonly latencySamples: number;
 }
 
 // The three engines expose an identical hosted surface (init opts, host/
@@ -39,6 +40,8 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
   constructor(engine: E) {
     this.engine = engine;
   }
+
+  get latencySamples(): number { return this.engine.latencySamples; }
 
   async init(ctx: AudioContext, output: AudioNode): Promise<void> {
     await this.engine.init({ ctx, output });
