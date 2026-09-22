@@ -282,4 +282,20 @@ bool DrumRhythmScheduler::nextEvent(double inclusiveEndBeat, DrumRhythmEvent& ev
     return true;
 }
 
+bool DrumRhythmScheduler::reschedule(DrumRhythmEvent& event) const {
+    if (event.lane < 0 || event.lane >= DR_RHYTHM_LANES)
+        return false;
+    const auto& lane = rhythm_.lanes[static_cast<std::size_t>(event.lane)];
+    if (!lane.enabled)
+        return false;
+
+    event.sourceBar = lane.sourceBar;
+    event.sourceStep = positiveModulo(event.eventOrdinal, lane.steps, lane.rotation);
+    event.cycle = event.eventOrdinal / static_cast<std::uint64_t>(lane.steps);
+    event.beat = eventBeat(lane, event.eventOrdinal);
+    event.sample = beatToSample(event.beat);
+    event.mode = lane.mode;
+    return true;
+}
+
 } // namespace fable

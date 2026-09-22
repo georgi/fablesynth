@@ -353,6 +353,7 @@ void DrumEngine::play() {
         rhythmScheduler_.setTempo(sr_, effectiveBpm(),
                                   clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
         rhythmScheduler_.reset(0.0);
+        rhythmScheduler_.retime(0.0, 0);
     }
 }
 
@@ -420,14 +421,39 @@ void DrumEngine::syncRhythmTempo() {
     if (!hasPolyRhythm()) return;
     const double bpm = hostPlaying_ ? hostBpm_ : effectiveBpm();
     const double swing = clampd((double)param(DG_MASTER_SWING), 0.0, 1.0);
-    if (std::fabs(rhythmScheduler_.bpm() - bpm) < 1.0e-12
-        && std::fabs(rhythmScheduler_.swing() - swing) < 1.0e-12) return;
+    const double oldBpm = rhythmScheduler_.bpm();
+    const double oldSwing = rhythmScheduler_.swing();
+    if (std::fabs(oldBpm - bpm) < 1.0e-12
+        && std::fabs(oldSwing - swing) < 1.0e-12) return;
     const double beat = hostPlaying_ ? std::max(0.0, hostPpq_) : currentRhythmBeat();
+
+    // samplesToNext_ describes the same next ordinary-grid event as the POLY
+    // scheduler. Recover that event's absolute ordinal under the old mapping,
+    // then place it under the new mapping. This keeps mixed ordinary/POLY
+    // lanes together even when the edit lands halfway through a swung step.
+    if (!hostPlaying_ && playing_ && step_ >= 0) {
+        const int nextStep = (step_ + 1) % DR_STEPS;
+        const double oldOffset = (nextStep & 1)
+            ? oldSwing * DR_SWING_MAX * 0.25 : 0.0;
+        const double oldTargetBeat = beat + samplesToNext_ * oldBpm / (60.0 * sr_);
+        const double cycleEstimate = (oldTargetBeat
+            - (double)nextStep * 0.25 - oldOffset) / 4.0;
+        const auto cycle = std::max<std::int64_t>(0, std::llround(cycleEstimate));
+        const auto ordinal = cycle * DR_STEPS + nextStep;
+        const double newOffset = (ordinal & 1)
+            ? swing * DR_SWING_MAX * 0.25 : 0.0;
+        const double newTargetBeat = (double)ordinal * 0.25 + newOffset;
+        samplesToNext_ = std::max(0.0, (newTargetBeat - beat) * 60.0 / bpm * sr_);
+    }
+
     rhythmScheduler_.retime(beat, (std::int64_t)rhythmFrame_);
     rhythmScheduler_.setTempo(sr_, bpm, swing);
     rhythmMapBeat_ = beat;
     rhythmMapFrame_ = rhythmFrame_;
-    rhythmHasNext_ = false;
+    // nextEvent() advances its lane cursor before returning. A block-boundary
+    // event can therefore remain cached here; dropping it would skip the hit.
+    if (rhythmHasNext_ && !rhythmScheduler_.reschedule(rhythmNext_))
+        rhythmHasNext_ = false;
 }
 
 void DrumEngine::emitSequencerHit(int pad, float velocity) {

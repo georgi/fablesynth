@@ -120,6 +120,12 @@ public:
     // method until it returns false for a rendering segment.
     bool nextEvent(double inclusiveEndBeat, DrumRhythmEvent& event);
 
+    // Recompute the musical/sample position of an event already returned by
+    // nextEvent().  Its cursor has advanced, so callers must retain and remap
+    // the event itself across a live tempo/swing change rather than fetching
+    // another one and skipping it.
+    bool reschedule(DrumRhythmEvent& event) const;
+
     double sampleRate() const { return sampleRate_; }
     double bpm() const { return bpm_; }
     double swing() const { return swing_; }
