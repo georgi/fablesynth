@@ -6,6 +6,86 @@ const run = (h: ReturnType<typeof makeDrumProcessor>, blocks: number, size: numb
 const clipIdx = (bar: number, pad: number, step: number) => (bar * 16 + pad) * 16 + step;
 
 describe('DR-1 POLY scheduler', () => {
+  it('does not replay a fired standalone legacy step when swing increases', () => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const patterns = makeEmptyPatterns();
+    patterns[patIdx(0, 0, 1)] = 1;
+    h.send({ t: 'p', k: 'seq.bpm', v: 120 });
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: null });
+    h.send({ t: 'play' });
+    run(h, 55, 128); // frame 7040: unswung step 1 fired at frame 6000
+    expect(h.sent.filter((m) => m.t === 'step' && m.s === 1)).toHaveLength(1);
+
+    h.send({ t: 'p', k: 'seq.swing', v: 1 });
+    run(h, 20, 128); // crosses the new, later step-1 time
+    expect(h.sent.filter((m) => m.t === 'step' && m.s === 1)).toHaveLength(1);
+  });
+
+  it('does not replay a fired hosted legacy step when swing increases', () => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const clip = new Uint8Array(256);
+    clip[clipIdx(0, 0, 1)] = 1;
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: clip.buffer, bars: 1, atFrame: 0, rhythm: null });
+    run(h, 55, 128); // frame 7040: unswung step 1 fired at frame 6000
+    expect(h.sent.filter((m) => m.t === 'pos' && m.step === 1)).toHaveLength(1);
+
+    h.send({ t: 'tempo', bpm: 120, swing: 1, anchor: 0 });
+    run(h, 20, 128); // crosses the new, later step-1 time
+    expect(h.sent.filter((m) => m.t === 'pos' && m.step === 1)).toHaveLength(1);
+  });
+
+  it('dispatches simultaneous FIT, GRID, and ordinary hits in ascending pad order', () => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const patterns = makeEmptyPatterns();
+    for (let pad = 0; pad < 3; pad++) patterns[patIdx(0, pad, 0)] = 1;
+    const lanes: Array<Record<string, unknown> | null> = Array.from({ length: 16 }, () => null);
+    lanes[0] = { enabled: true, sourceBar: 0, steps: 16, rotation: 0, timing: { mode: 'fit', cycleBeats: 4 } };
+    lanes[1] = { enabled: true, sourceBar: 0, steps: 16, rotation: 0, timing: { mode: 'grid' } };
+    const fired: number[] = [];
+    (h.proc as unknown as { trigger(pad: number, velocity: number): void }).trigger = (pad) => { fired.push(pad); };
+    h.send({ t: 'p', k: 'seq.bpm', v: 120 });
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes } });
+    h.send({ t: 'play' });
+    run(h, 1, 128);
+    expect(fired).toEqual([0, 1, 2]);
+  });
+
+  it.each(['grid', 'ordinary'] as const)(
+    'positions the GRID cursor when all-FIT playback gains a %s lane',
+    (mode) => {
+      (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+      const h = makeDrumProcessor();
+      const patterns = makeEmptyPatterns();
+      for (let step = 0; step < 3; step++) patterns[patIdx(0, 0, step)] = 1;
+      const fitLane = () => ({
+        enabled: true, sourceBar: 0, steps: 16, rotation: 0,
+        timing: { mode: 'fit', cycleBeats: 4 },
+      });
+      const lanes: Array<Record<string, unknown> | null> = Array.from({ length: 16 }, fitLane);
+      h.send({ t: 'p', k: 'seq.bpm', v: 120 });
+      h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes } });
+      h.send({ t: 'play' });
+      run(h, 79, 128); // frame 10112, after GRID steps 0 and 1 would have fired
+
+      const nextLanes = lanes.map((lane): Record<string, unknown> | null =>
+        lane ? { ...lane, timing: { ...(lane.timing as object) } } : null);
+      nextLanes[0] = mode === 'grid'
+        ? { enabled: true, sourceBar: 0, steps: 16, rotation: 0, timing: { mode: 'grid' } }
+        : null;
+      h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes: nextLanes } });
+      run(h, 1, 128);
+      expect(h.sent.filter((m) => m.t === 'step')).toHaveLength(0);
+
+      run(h, 14, 128); // crosses the next GRID boundary at frame 12000
+      expect(h.sent.filter((m) => m.t === 'step').map((m) => m.s)).toEqual([2]);
+    },
+  );
+
   it('keeps GRID events on absolute sixteenth frames across fragmented blocks', () => {
     (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
     const h = makeDrumProcessor();
