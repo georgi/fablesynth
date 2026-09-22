@@ -12,6 +12,7 @@
 
 #include "DrumParams.h"
 #include "DrumFx.h"
+#include "DrumRhythm.h"
 #include "../../dsp/ClipHost.h"
 #include "../../dsp/Engine.h"       // fable::Rng + TablePtr (via Wavetables.h)
 
@@ -88,6 +89,7 @@ public:
     bool isPlaying() const { return playing_ || hostPlaying_; }
     void setPatterns(const uint8_t* data, int n);   // n must be 4*16*16; copies
     void setChain(const int* list, int n);          // ignores empty; clamps entries + chainPos
+    void setDrumRhythm(const DrumRhythm* rhythm);
     void setBpmOverride(double bpm);                // host tempo; <= 0 clears the override
     int  currentStep() const { return step_; }      // -1 when stopped
     int  currentPattern() const { return chain_[(size_t)chainPos_]; }
@@ -294,6 +296,9 @@ private:
     double hostStepPpq(long k) const;   // p(k) with the current swing
     void   hostResync();                // smallest k >= 0 with p(k) >= hostPpq_
     void   fireHostStep(long k);        // trigger step k%16 of chain[(k/16) % len]
+    void fireRhythmEvent(const DrumRhythmEvent& event);
+    bool polyLaneEnabled(int pad) const;
+    bool hasPolyRhythm() const;
 
     // hosted-clip fire (docs/sq4-clips.md §6): byte source is clipHost_'s
     // live clip rather than pats_/chain_; no tie/lookahead state to carry
@@ -340,6 +345,12 @@ private:
     std::vector<uint8_t> pats_ =
         std::vector<uint8_t>(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
     std::vector<int> chain_ { 0 };
+    DrumRhythm rhythm_{};
+    bool hasRhythm_ = false;
+    DrumRhythmScheduler rhythmScheduler_{};
+    DrumRhythmEvent rhythmNext_{};
+    bool rhythmHasNext_ = false;
+    std::uint64_t rhythmFrame_ = 0;
     int    chainPos_ = 0;
     bool   playing_ = false;
     int    step_ = -1;

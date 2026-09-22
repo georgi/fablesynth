@@ -333,10 +333,18 @@ void DrumEngine::trigger(int padI, float vel) {
 void DrumEngine::play() {
     if (hostPlaying_) return;          // host owns the transport while rolling
     playing_ = true; step_ = -1; chainPos_ = 0; samplesToNext_ = 0;
+    rhythmFrame_ = 0;
+    rhythmHasNext_ = false;
+    if (hasPolyRhythm()) {
+        rhythmScheduler_.setTempo(sr_, effectiveBpm(),
+                                  clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
+        rhythmScheduler_.reset(0.0);
+    }
 }
 
 void DrumEngine::stop() {
     playing_ = false; step_ = -1;
+    rhythmHasNext_ = false;
 }
 
 void DrumEngine::setPatterns(const uint8_t* data, int n) {
@@ -350,6 +358,26 @@ void DrumEngine::setChain(const int* list, int n) {
     for (int& c : chain_)                           // js does `x|0`; C++ additionally
         c = std::max(0, std::min(DR_NPATTERNS - 1, c));   // clamps for memory safety
     chainPos_ = std::min(chainPos_, (int)chain_.size() - 1);
+}
+
+void DrumEngine::setDrumRhythm(const DrumRhythm* rhythm) {
+    if (rhythm == nullptr) {
+        hasRhythm_ = false;
+        rhythmHasNext_ = false;
+        return;
+    }
+    if (!validateDrumRhythm(*rhythm)) {
+        hasRhythm_ = false;
+        rhythmHasNext_ = false;
+        return;
+    }
+    rhythm_ = *rhythm;
+    hasRhythm_ = true;
+    rhythmHasNext_ = false;
+    rhythmScheduler_.setRhythm(rhythm_);
+    rhythmScheduler_.setTempo(sr_, effectiveBpm(),
+                              clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
+    rhythmScheduler_.reset(0.0);
 }
 
 void DrumEngine::setBpmOverride(double bpm) {
@@ -396,6 +424,12 @@ void DrumEngine::hostResync() {
     while (hostStepPpq(k) < hostPpq_ - 1e-9) k++;
     hostNextK_ = k;
     hostSynced_ = true;
+    rhythmHasNext_ = false;
+    if (hasPolyRhythm()) {
+        rhythmScheduler_.setTempo(sr_, hostBpm_,
+                                  clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
+        rhythmScheduler_.reset(std::max(0.0, hostPpq_));
+    }
 }
 
 void DrumEngine::fireHostStep(long k) {
@@ -404,10 +438,32 @@ void DrumEngine::fireHostStep(long k) {
     chainPos_ = (int)(bar % (long)chain_.size());
     int pat = chain_[(size_t)chainPos_];
     for (int i = 0; i < DR_NPADS; i++) {
+        if (polyLaneEnabled(i)) continue;
         uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
         if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
     }
     step_ = s;
+}
+
+bool DrumEngine::polyLaneEnabled(int pad) const {
+    return pad >= 0 && pad < DR_NPADS && hasRhythm_
+        && rhythm_.lanes[(size_t)pad].enabled;
+}
+
+bool DrumEngine::hasPolyRhythm() const {
+    if (!hasRhythm_) return false;
+    for (const auto& lane : rhythm_.lanes)
+        if (lane.enabled) return true;
+    return false;
+}
+
+void DrumEngine::fireRhythmEvent(const DrumRhythmEvent& event) {
+    if (event.lane < 0 || event.lane >= DR_NPADS || !polyLaneEnabled(event.lane)) return;
+    const int pat = std::max(0, std::min(DR_NPATTERNS - 1, event.sourceBar));
+    const int step = std::max(0, std::min(DR_STEPS - 1, event.sourceStep));
+    const uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS
+                                      + event.lane * DR_STEPS + step)];
+    if (val) trigger(event.lane, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
 }
 
 // Hosted twin of fireHostStep (docs/sq4-clips.md §6): byte source is the
@@ -435,6 +491,7 @@ void DrumEngine::fireStep() {
     int s = (step_ + 1) % DR_STEPS;
     int pat = chain_[(size_t)chainPos_];
     for (int i = 0; i < DR_NPADS; i++) {
+        if (polyLaneEnabled(i)) continue;
         uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
         if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
     }
@@ -1130,6 +1187,7 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         if (!hostSynced_) hostResync();
     }
     const bool internalRun = playing_ && !hostClipMode_;
+    const bool polyRun = hasPolyRhythm() && (hostRun || internalRun);
 
     int pos = 0;
     while (pos < n) {
@@ -1137,6 +1195,23 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         if (hostRun) {
             // Fire every step due at/before pos; split the run at the next one.
             for (;;) {
+                if (polyRun) {
+                    if (!rhythmHasNext_) {
+                        const double endBeat = hostPpq_ + (pos + run) * ppqPerSample;
+                        if (rhythmScheduler_.nextEvent(endBeat - 1.0e-12, rhythmNext_))
+                            rhythmHasNext_ = true;
+                    }
+                    if (rhythmHasNext_) {
+                        const double eventPos = (rhythmNext_.beat - hostPpq_) / ppqPerSample;
+                        if (eventPos <= pos + 1.0e-9) {
+                            fireRhythmEvent(rhythmNext_);
+                            rhythmHasNext_ = false;
+                            continue;
+                        }
+                        if (eventPos - pos < run)
+                            run = std::max(1, (int)std::ceil(eventPos - pos));
+                    }
+                }
                 long fireAt = (long)std::ceil(
                     (hostStepPpq(hostNextK_) - hostPpq_) * samplesPerPpq - 1e-9);
                 if (fireAt <= pos) { fireHostStep(hostNextK_++); continue; }
@@ -1144,6 +1219,27 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
                 break;
             }
         } else if (internalRun) {                    // js:465-469
+            if (polyRun) {
+                if (!rhythmHasNext_) {
+                    const double bpm = effectiveBpm();
+                    const double endBeat = (double)(rhythmFrame_ + pos + run)
+                        * bpm / (60.0 * sr_);
+                    if (rhythmScheduler_.nextEvent(endBeat - 1.0e-12, rhythmNext_))
+                        rhythmHasNext_ = true;
+                }
+                if (rhythmHasNext_) {
+                    const auto eventFrame = rhythmNext_.sample;
+                    const auto nowFrame = (std::int64_t)(rhythmFrame_ + pos);
+                    if (eventFrame <= nowFrame) {
+                        fireRhythmEvent(rhythmNext_);
+                        rhythmHasNext_ = false;
+                        continue;
+                    }
+                    if (eventFrame - nowFrame < run)
+                        run = std::max(1, (int)std::min<std::int64_t>(
+                            run, eventFrame - nowFrame));
+                }
+            }
             if (samplesToNext_ <= 0) fireStep();
             run = std::min(run, (int)std::ceil(samplesToNext_));
         } else if (hostClipMode_) {
@@ -1241,6 +1337,7 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         if (hostClipMode_) hostFrame_ += run;
         pos += run;
     }
+    if (internalRun) rhythmFrame_ += (std::uint64_t)n;
     if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
 
     curTables_ = nullptr;

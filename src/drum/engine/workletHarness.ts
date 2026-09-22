@@ -12,9 +12,9 @@ export interface DrumHarness {
   sent: { t: string; [k: string]: unknown }[];
   send(msg: unknown): void;
   // Sum of every output bus, the mix a listener hears.
-  render(blocks: number): { L: Float32Array; R: Float32Array };
+  render(blocks: number, blockSize?: number): { L: Float32Array; R: Float32Array };
   // One named bus, for routing and per-bus ceiling checks.
-  renderBus(blocks: number, bus: number): { L: Float32Array; R: Float32Array };
+  renderBus(blocks: number, bus: number, blockSize?: number): { L: Float32Array; R: Float32Array };
   // Chain latency the worklet reports at construction (142 samples at 48 kHz).
   latency: number;
 }
@@ -24,6 +24,8 @@ export interface DrumHarness {
 export const BUS_COUNT = 5;
 
 export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
+  const clock = globalThis as unknown as { currentFrame?: number };
+  if (clock.currentFrame === undefined) clock.currentFrame = 0;
   const sent: DrumHarness['sent'] = [];
   let Proc: new () => DrumHarness['proc'];
   class AWP {
@@ -40,24 +42,25 @@ export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
   );
   const proc = new Proc!();
   const send = (msg: unknown) => proc.port.onmessage!({ data: msg });
-  const renderBus = (blocks: number, bus: number) => {
-    const L = new Float32Array(blocks * 128);
-    const R = new Float32Array(blocks * 128);
+  const renderBus = (blocks: number, bus: number, blockSize = 128) => {
+    const L = new Float32Array(blocks * blockSize);
+    const R = new Float32Array(blocks * blockSize);
     for (let b = 0; b < blocks; b++) {
-      const outputs = Array.from({ length: BUS_COUNT }, () => [new Float32Array(128), new Float32Array(128)]);
+      const outputs = Array.from({ length: BUS_COUNT }, () => [new Float32Array(blockSize), new Float32Array(blockSize)]);
       proc.process([], outputs);
       for (let o = 0; o < BUS_COUNT; o++) {
         if (bus >= 0 && o !== bus) continue;
         const [l, r] = outputs[o];
-        for (let i = 0; i < 128; i++) {
-          L[b * 128 + i] += l[i];
-          R[b * 128 + i] += r[i];
+        for (let i = 0; i < blockSize; i++) {
+          L[b * blockSize + i] += l[i];
+          R[b * blockSize + i] += r[i];
         }
       }
+      (globalThis as unknown as { currentFrame: number }).currentFrame += blockSize;
     }
     return { L, R };
   };
-  const render = (blocks: number) => renderBus(blocks, -1);
+  const render = (blocks: number, blockSize = 128) => renderBus(blocks, -1, blockSize);
   const latency = (sent.find((m) => m.t === 'latency')?.n as number) ?? 0;
   return { proc, sent, send, render, renderBus, latency };
 }

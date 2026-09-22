@@ -6,6 +6,7 @@
 #include "dsp/DrumEngine.h"
 #include "dsp/DrumKits.h"
 #include "dsp/DrumParams.h"
+#include "dsp/DrumRhythm.h"
 #include "../dsp/UserTables.h"
 #include "../ui/ProgramDirty.h"
 
@@ -75,6 +76,8 @@ public:
     void    setStep(int pattern, int pad, int step, uint8_t v);  // 0/1/2
     const std::vector<int>& getChain() const { return chain_; }
     void setChain(std::vector<int> c);
+    void setDrumRhythm(const fable::DrumRhythm& rhythm);
+    void clearDrumRhythm();
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
     juce::String getPadName(int i) const;
@@ -136,10 +139,14 @@ private:
     static constexpr int kPatternBytes = fable::DR_NPATTERNS * fable::DR_NPADS * fable::DR_STEPS;
     std::array<uint8_t, kPatternBytes> patterns_{};
     std::vector<int> chain_{0};
+    bool hasRhythm_ = false;
+    fable::DrumRhythm rhythm_{};
     struct SeqSnapshot {
         std::array<uint8_t, kPatternBytes> patterns{};
         std::array<int, fable::DR_NPATTERNS> chain{};
         int chainSize = 1;
+        bool hasRhythm = false;
+        fable::DrumRhythm rhythm{};
     };
     // Single producer (message thread), single consumer (audio). Each owns
     // one slot; exchange hands off the middle slot. The dirty bit coalesces

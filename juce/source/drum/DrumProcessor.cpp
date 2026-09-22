@@ -234,6 +234,8 @@ void DrumAudioProcessor::shareSeqState() {
     snapshot.patterns = patterns_;
     snapshot.chainSize = (int)chain_.size(); // all native writers cap at DR_NPATTERNS
     std::copy(chain_.begin(), chain_.end(), snapshot.chain.begin());
+    snapshot.hasRhythm = hasRhythm_;
+    snapshot.rhythm = rhythm_;
     seqWrite_ = seqMiddle_.exchange(seqWrite_ | kSeqDirty, std::memory_order_acq_rel) & ~kSeqDirty;
 }
 
@@ -262,6 +264,17 @@ void DrumAudioProcessor::setChain(std::vector<int> c) {
     else chain_.assign(c.begin(), c.begin() + bars);
     for (int& v : chain_) v = juce::jlimit(0, DR_NPATTERNS - 1, v);
     programDirty_.markEdited();
+    shareSeqState();
+}
+
+void DrumAudioProcessor::setDrumRhythm(const fable::DrumRhythm& rhythm) {
+    rhythm_ = rhythm;
+    hasRhythm_ = true;
+    shareSeqState();
+}
+
+void DrumAudioProcessor::clearDrumRhythm() {
+    hasRhythm_ = false;
     shareSeqState();
 }
 
@@ -397,6 +410,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         const auto& snapshot = seqSnapshots_[seqRead_];
         engine.setPatterns(snapshot.patterns.data(), (int)snapshot.patterns.size());
         engine.setChain(snapshot.chain.data(), snapshot.chainSize);
+        engine.setDrumRhythm(snapshot.hasRhythm ? &snapshot.rhythm : nullptr);
     }
 
     // 5-bus render, sample-accurate MIDI: render engine+FX up to each event's

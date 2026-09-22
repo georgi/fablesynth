@@ -5,6 +5,7 @@ import type { ParamValues } from '../params';
 import type { SerializedUserTable } from '../engine/usertables';
 import { defaultDrumParams, FX_DEFS, pad, PAD_COUNT } from './params';
 import { makeEmptyPatterns, patIdx, type Patterns } from './seq';
+import { cloneDrumRhythm, validateDrumRhythm, type DrumRhythm } from './rhythm';
 
 export interface Kit {
   name: string;
@@ -12,6 +13,7 @@ export interface Kit {
   padNames: string[];
   patterns: number[];
   chain: number[];
+  drumRhythm?: DrumRhythm;
   tables?: SerializedUserTable[];
 }
 
@@ -956,6 +958,7 @@ export function kitToState(kit: Kit): {
   padNames: string[];
   patterns: Patterns;
   chain: number[];
+  drumRhythm?: DrumRhythm;
   tables: SerializedUserTable[];
 } {
   const params = { ...defaultDrumParams(), ...kit.params } as ParamValues;
@@ -974,6 +977,7 @@ export function kitToState(kit: Kit): {
     padNames: [...kit.padNames],
     patterns: Uint8Array.from(kit.patterns),
     chain: [...kit.chain],
+    ...(kit.drumRhythm ? { drumRhythm: cloneDrumRhythm(kit.drumRhythm, 4) } : {}),
     tables: kit.tables ? [...kit.tables] : [],
   };
 }
@@ -985,6 +989,7 @@ export function stateToKit(
   patterns: Patterns,
   chain: number[],
   tables: SerializedUserTable[] = [],
+  drumRhythm?: DrumRhythm,
 ): Kit {
   const kit: Kit = {
     name,
@@ -994,6 +999,11 @@ export function stateToKit(
     chain: [...chain],
   };
   if (tables.length) kit.tables = [...tables];
+  if (drumRhythm) {
+    const error = validateDrumRhythm(drumRhythm, 4);
+    if (error) throw new Error(`Invalid drum rhythm: ${error}`);
+    kit.drumRhythm = cloneDrumRhythm(drumRhythm, 4);
+  }
   return kit;
 }
 
@@ -1019,7 +1029,7 @@ function writeStored(key: string, value: string): void {
 export function loadUserKits(): Kit[] {
   try {
     const parsed = JSON.parse(readStored(LS_KEY) as string);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.filter((k) => !k.drumRhythm || !validateDrumRhythm(k.drumRhythm, 4)) : [];
   } catch {
     return [];
   }

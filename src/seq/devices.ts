@@ -11,14 +11,15 @@ import { SynthEngine } from '../engine/synth';
 import { FACTORY_PRESETS, resolvePresetMods } from '../presets';
 import type { PatchDoc } from './protocol';
 import type { ArpConfig } from './clipArp';
+import type { DrumRhythm } from '../drum/rhythm';
 
 export interface SeqDevice {
   init(ctx: AudioContext, output: AudioNode): Promise<void>;
   applyPatch(patch: PatchDoc): void;
   setTempo(bpm: number, swing: number, anchor: number): void;
-  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void;
+  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, rhythm?: DrumRhythm): void;
   scheduleStop(atFrame: number): void;
-  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig): void;
+  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm): void;
   panic(): void;
   onClipStart: ((frame: number) => void) | null;
   onClipStop: ((frame: number) => void) | null;
@@ -57,8 +58,8 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
     this.engine.setTempo(bpm, swing, anchor);
   }
 
-  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void {
-    if (this.engine instanceof DrumEngine) this.engine.scheduleClip(pattern, bars, atFrame);
+  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, rhythm?: DrumRhythm): void {
+    if (this.engine instanceof DrumEngine) this.engine.scheduleClip(pattern, bars, atFrame, rhythm);
     else this.engine.scheduleClip(pattern, bars, atFrame, arp);
   }
 
@@ -66,8 +67,8 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
     this.engine.scheduleStop(atFrame);
   }
 
-  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig): void {
-    if (this.engine instanceof DrumEngine) this.engine.updateClip(pattern, bars);
+  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm): void {
+    if (this.engine instanceof DrumEngine) this.engine.updateClip(pattern, bars, rhythm);
     else this.engine.updateClip(pattern, bars, arp);
   }
 

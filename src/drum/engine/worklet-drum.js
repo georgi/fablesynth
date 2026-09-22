@@ -28,6 +28,19 @@ const PLAIN_VEL = 0.72;
 const SWING_MAX = 0.667;
 const MOD_LOG_D = 5;
 const BASE_NOTE = 60;
+const positiveModulo = (v, n) => ((v % n) + n) % n;
+function normalizeRhythm(value) {
+  if (!value || !Array.isArray(value.lanes) || value.lanes.length !== NPADS) return null;
+  return { v: 1, lanes: value.lanes.map((lane) => {
+    if (!lane || !lane.enabled) return null;
+    const steps = Math.max(1, Math.min(16, lane.steps | 0));
+    const mode = lane.timing && String(lane.timing.mode).toLowerCase() === 'fit' ? 'fit' : 'grid';
+    return { enabled: true, sourceBar: Math.max(0, lane.sourceBar | 0), steps,
+      rotation: positiveModulo(lane.rotation | 0, steps),
+      timing: mode === 'fit' ? { mode, cycleBeats: lane.timing.cycleBeats === 8 ? 8 : 4 } : { mode } };
+  }) };
+}
+const rhythmHasEnabledLane = r => !!r && r.lanes.some(Boolean);
 
 // Time constants, not per-sample coefficients: every smoother below used to
 // hold a literal tuned at 48 kHz, so a 96 kHz context halved its time. Each
@@ -1022,6 +1035,9 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.playing = false;
     this.step = -1;
     this.samplesToNext = 0;
+    this.rhythm = null;
+    this.polyOrdinal = 0;
+    this.polyFitOrdinal = new Int32Array(NPADS);
     this.sel = 0;
     this.rng = new Rng(0x1d3c5b7f);
     this.dcR = Math.pow(DC_R_48, NOISE_SR / sampleRate);
@@ -1032,8 +1048,10 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.hostBpm = 120;
     this.hostSwing = 0;
     this.hostAnchor = 0; // songStartFrame — the shared timebase's beat zero
-    this.clip = null; // { data: Uint8Array, bars } — byte per pad-step, bar-major
-    this.clipPend = null; // { data, bars, at }
+    this.clip = null; // { data, bars, rhythm }
+    this.clipPend = null; // { data, bars, rhythm, at }
+    this.hostPolyOrdinal = 0;
+    this.hostPolyFitOrdinal = new Int32Array(NPADS);
     this.clipStopAt = -1;
     this.clipStep = -1; // absolute step within the clip
     this.clipToNext = 0;
@@ -1134,6 +1152,12 @@ class DrumProcessor extends AudioWorkletProcessor {
         break;
       case 'trig': this.trigger(d.pad | 0, d.v); break;
       case 'pats': this.pats = new Uint8Array(d.data.slice(0)); break;
+      case 'seq':
+        if (d.data) this.pats = new Uint8Array(d.data.slice(0));
+        if (Array.isArray(d.chain) && d.chain.length) this.chain = d.chain.map(x => Math.max(0, Math.min(NPATTERNS - 1, x | 0)));
+        this.rhythm = normalizeRhythm(d.rhythm ?? d.drumRhythm);
+        break;
+      case 'rhythm': this.rhythm = normalizeRhythm(d.rhythm ?? d.drumRhythm); break;
       case 'chain':
         if (Array.isArray(d.list) && d.list.length) {
           // Clamp like JUCE does: an out-of-range entry used to select a
@@ -1145,6 +1169,7 @@ class DrumProcessor extends AudioWorkletProcessor {
       case 'play':
         if (this.hosted) break; // conductor owns the transport
         this.playing = true; this.step = -1; this.chainPos = 0; this.samplesToNext = 0;
+        this.resetPoly(currentFrame);
         break;
       case 'stop': this.playing = false; this.step = -1; break;
       case 'sel': this.sel = Math.max(0, Math.min(NPADS - 1, d.pad | 0)); break;
@@ -1165,7 +1190,7 @@ class DrumProcessor extends AudioWorkletProcessor {
         if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0 };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), rhythm: normalizeRhythm(d.rhythm ?? d.drumRhythm), at: +d.atFrame || 0 };
         this.clipStopAt = -1;
         break;
       case 'clipstop':
@@ -1177,11 +1202,13 @@ class DrumProcessor extends AudioWorkletProcessor {
         // derived arithmetic, so a live swap never moves the playhead.
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
+        const rhythm = Object.prototype.hasOwnProperty.call(d, 'rhythm') || Object.prototype.hasOwnProperty.call(d, 'drumRhythm')
+          ? normalizeRhythm(d.rhythm ?? d.drumRhythm) : undefined;
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at };
+          this.clipPend = { data, bars, rhythm: rhythm === undefined ? this.clipPend.rhythm : rhythm, at: this.clipPend.at };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars;
-          this.clip = { data, bars };
+          this.clip = { data, bars, rhythm: rhythm === undefined ? this.clip.rhythm : rhythm };
           // Re-derive the phase only on a bar-count change (plain modulo can
           // land a grown clip half a cycle off). Same-length edits — every
           // sequencer click — are a pure data swap: touching the phase inside
@@ -1190,6 +1217,73 @@ class DrumProcessor extends AudioWorkletProcessor {
         }
         break;
       }
+    }
+  }
+
+  setRhythm(value) { this.rhythm = normalizeRhythm(value); }
+
+  polyBeat(frame, ordinal, bpm, lane, swing) {
+    const beat = (60 / Math.max(1, bpm)) * sampleRate;
+    if (lane && lane.timing.mode === 'fit') {
+      const cycle = lane.timing.cycleBeats * beat;
+      return Math.floor(ordinal / lane.steps) * cycle + (ordinal % lane.steps) * cycle / lane.steps;
+    }
+    const delay = ordinal % 2 ? Math.max(0, swing || 0) * SWING_MAX * beat / 4 : 0;
+    return ordinal * beat / 4 + delay;
+  }
+
+  resetPoly(frame) {
+    this.polyAnchor = frame;
+    this.polyOrdinal = 0;
+    this.polyFitOrdinal.fill(0);
+  }
+
+  polyValue(padI, ordinal, lane, hosted = false) {
+    const data = hosted ? this.clip.data : this.pats;
+    const bars = hosted ? this.clip.bars : NPATTERNS;
+    if (lane) {
+      const bar = Math.min(bars - 1, Math.max(0, lane.sourceBar | 0));
+      const step = positiveModulo(ordinal - lane.rotation, lane.steps);
+      return hosted ? data[(bar * NPADS + padI) * STEPS + step] : data[bar * NPADS * STEPS + padI * STEPS + step];
+    }
+    const abs = positiveModulo(ordinal, bars * STEPS);
+    const bar = (abs / STEPS) | 0, step = abs % STEPS;
+    return hosted ? data[(bar * NPADS + padI) * STEPS + step] : data[bar * NPADS * STEPS + padI * STEPS + step];
+  }
+
+  firePoly(frame, hosted = false, gridEvent = true) {
+    const rhythm = hosted ? this.clip.rhythm : this.rhythm;
+    const bpm = hosted ? this.hostBpm : (this.pv[G_BPM] || 126);
+    const swing = hosted ? this.hostSwing : (this.pv[G_SWING] || 0);
+    const anchor = hosted ? this.hostAnchor : this.polyAnchor;
+    const gridNeeded = rhythm.lanes.some(lane => !lane || lane.timing.mode !== 'fit');
+    const gridOrdinal = hosted ? this.hostPolyOrdinal : this.polyOrdinal;
+    if (gridEvent) {
+      if (hosted) this.hostPolyOrdinal++; else this.polyOrdinal++;
+    }
+    const hits = [];
+    for (let i = 0; i < NPADS; i++) {
+      const lane = rhythm && rhythm.lanes[i];
+      if (lane && lane.timing.mode === 'fit') continue;
+      const val = this.polyValue(i, gridOrdinal, lane, hosted);
+      if (val) { this.trigger(i, val === 2 ? ACCENT_VEL : PLAIN_VEL); hits.push(i); }
+    }
+    if (gridEvent && gridNeeded && !hosted) {
+      const s = positiveModulo(gridOrdinal, STEPS);
+      const pat = this.chain[positiveModulo(Math.floor(gridOrdinal / STEPS), this.chain.length)] | 0;
+      this.port.postMessage({ t: 'step', s, pat, hits, frame });
+    } else if (gridEvent && gridNeeded) {
+      const abs = positiveModulo(gridOrdinal, this.clip.bars * STEPS);
+      this.clipStep = abs;
+      this.port.postMessage({ t: 'pos', step: abs % STEPS, bar: (abs / STEPS) | 0, hits, frame });
+    }
+    if (!gridEvent) for (let i = 0; i < NPADS; i++) {
+      const lane = rhythm && rhythm.lanes[i];
+      if (!lane || lane.timing.mode !== 'fit') continue;
+      const ordinal = hosted ? this.hostPolyFitOrdinal[i]++ : this.polyFitOrdinal[i]++;
+      const val = this.polyValue(i, ordinal, lane, hosted);
+      if (val) this.trigger(i, val === 2 ? ACCENT_VEL : PLAIN_VEL);
+      this.port.postMessage({ t: 'poly', pad: i, ordinal, hit: !!val, frame });
     }
   }
 
@@ -1792,17 +1886,61 @@ class DrumProcessor extends AudioWorkletProcessor {
     const padL = this.padL, padR = this.padR;
     for (let i = 0; i < NPADS; i++) { padL[i].fill(0, 0, n); padR[i].fill(0, 0, n); }
 
-    if (this.hosted) this.hostTick(n);
+    const hostPoly = this.hosted && ((this.clip && rhythmHasEnabledLane(this.clip.rhythm)) || (this.clipPend && rhythmHasEnabledLane(this.clipPend.rhythm)));
+    if (this.hosted && !hostPoly) this.hostTick(n);
     const standalone = this.playing && !this.hosted;
+    const standalonePoly = standalone && rhythmHasEnabledLane(this.rhythm);
 
     let pos = 0;
     while (pos < n) {
       let run = n - pos;
+      const frame = currentFrame + pos;
+      if (hostPoly) {
+        if (this.clipStopAt >= 0 && this.clipStopAt <= frame) {
+          this.clipStopAt = -1; this.clip = null; this.clipStep = -1;
+          this.port.postMessage({ t: 'clipstop', frame });
+        }
+        if (this.clipPend && this.clipPend.at <= frame) {
+          this.clip = this.clipPend; this.clipPend = null;
+          this.hostPolyOrdinal = 0; this.hostPolyFitOrdinal.fill(0);
+          this.port.postMessage({ t: 'clipstart', frame });
+        }
+        if (this.clip) {
+          let next = currentFrame + n;
+          let gridAt = next;
+          const beat = (60 / Math.max(1, this.hostBpm)) * sampleRate;
+          const gridNeeded = this.clip.rhythm.lanes.some(lane => !lane || lane.timing.mode !== 'fit');
+          if (gridNeeded) { gridAt = this.hostAnchor + this.polyBeat(0, this.hostPolyOrdinal, this.hostBpm, null, this.hostSwing); next = Math.min(next, gridAt); }
+          let fitAt = currentFrame + n;
+          for (let i = 0; i < NPADS; i++) {
+            const lane = this.clip.rhythm && this.clip.rhythm.lanes[i];
+            if (lane && lane.timing.mode === 'fit') { fitAt = Math.min(fitAt, this.hostAnchor + this.polyBeat(0, this.hostPolyFitOrdinal[i], this.hostBpm, lane, 0)); next = Math.min(next, fitAt); }
+          }
+          const due = Math.ceil(next - frame - 1e-9);
+          if (due <= 0) { this.firePoly(frame, true, gridAt <= fitAt); continue; }
+          run = Math.min(run, Math.max(1, due));
+        }
+      }
+      if (standalonePoly) {
+        let next = currentFrame + n;
+        let gridAt = next;
+        const beat = (60 / Math.max(1, this.pv[G_BPM] || 126)) * sampleRate;
+        const gridNeeded = this.rhythm.lanes.some(lane => !lane || lane.timing.mode !== 'fit');
+        if (gridNeeded) { gridAt = this.polyAnchor + this.polyBeat(0, this.polyOrdinal, this.pv[G_BPM] || 126, null, this.pv[G_SWING] || 0); next = Math.min(next, gridAt); }
+        let fitAt = currentFrame + n;
+        for (let i = 0; i < NPADS; i++) {
+          const lane = this.rhythm && this.rhythm.lanes[i];
+          if (lane && lane.timing.mode === 'fit') { fitAt = Math.min(fitAt, this.polyAnchor + this.polyBeat(0, this.polyFitOrdinal[i], this.pv[G_BPM] || 126, lane, 0)); next = Math.min(next, fitAt); }
+        }
+        const due = Math.ceil(next - frame - 1e-9);
+        if (due <= 0) { this.firePoly(frame, false, gridAt <= fitAt); continue; }
+        run = Math.min(run, Math.max(1, due));
+      }
       if (standalone) {
-        if (this.samplesToNext <= 0) {
+        if (!standalonePoly && this.samplesToNext <= 0) {
           this.fireStep();
         }
-        run = Math.min(run, Math.ceil(this.samplesToNext));
+        if (!standalonePoly) run = Math.min(run, Math.ceil(this.samplesToNext));
       }
       for (let i = 0; i < NPADS; i++) {
         const v = this.voices[i];
