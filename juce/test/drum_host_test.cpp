@@ -41,6 +41,9 @@ struct BinPacker : juce::AudioProcessor {
     static void pack(const juce::XmlElement& xml, juce::MemoryBlock& dest) {
         copyXmlToBinary(xml, dest);
     }
+    static std::unique_ptr<juce::XmlElement> unpack(const juce::MemoryBlock& data) {
+        return getXmlFromBinary(data.getData(), (int)data.getSize());
+    }
 };
 
 // Minimal host playhead. bpm-only by default (tempo sync); with reportPpq it
@@ -101,6 +104,53 @@ int main(int argc, char** argv) {
 
     check(proc.getLatencySamples() > 0, "FX latency reported to the host",
           proc.getLatencySamples());
+
+    // A factory program is a complete grid-based sequence. Loading one after
+    // a POLY state must clear the old lane routing in both the audio snapshot
+    // and subsequent plugin-state serialization. Explicit state restore must
+    // remain able to reinstate the POLY metadata.
+    {
+        DrumAudioProcessor lifecycle;
+        lifecycle.enableAllBuses();
+        lifecycle.prepareToPlay(sr, block);
+        juce::AudioBuffer<float> lifecycleBuffer(10, block);
+        juce::MidiBuffer empty;
+
+        fable::DrumRhythm staleRhythm;
+        staleRhythm.lanes[0].enabled = true;
+        staleRhythm.lanes[0].sourceBar = 1; // empty in TR-VOID; would suppress its kick
+        staleRhythm.lanes[0].steps = fable::DR_STEPS;
+        staleRhythm.lanes[0].mode = fable::DrumRhythmMode::grid;
+        lifecycle.setDrumRhythm(staleRhythm);
+        juce::MemoryBlock polyState;
+        lifecycle.getStateInformation(polyState);
+
+        lifecycle.setCurrentProgram(0);
+        lifecycle.consumeHitFlags();
+        lifecycle.setSeqPlaying(true);
+        lifecycle.processBlock(lifecycleBuffer, empty);
+        check((lifecycle.consumeHitFlags() & 1u) != 0,
+              "factory program clears prior POLY lane before playback");
+
+        juce::MemoryBlock factoryState;
+        lifecycle.getStateInformation(factoryState);
+        auto factoryXml = BinPacker::unpack(factoryState);
+        auto* factoryDrum = factoryXml ? factoryXml->getChildByName("DRUM") : nullptr;
+        check(factoryDrum != nullptr && !factoryDrum->hasAttribute("rhythm"),
+              "factory program state omits prior POLY metadata");
+
+        lifecycle.setStateInformation(polyState.getData(), (int)polyState.getSize());
+        juce::MemoryBlock restoredState;
+        lifecycle.getStateInformation(restoredState);
+        auto restoredXml = BinPacker::unpack(restoredState);
+        auto* restoredDrum = restoredXml ? restoredXml->getChildByName("DRUM") : nullptr;
+        check(restoredDrum != nullptr && restoredDrum->hasAttribute("rhythm"),
+              "explicit state restore preserves POLY metadata");
+        lifecycle.releaseResources();
+    }
+
+    if (argc > 1 && juce::String(argv[1]) == "--poly-lifecycle")
+        return g_fail == 0 ? 0 : 1;
 
     // Pattern/chain edits coalesce without blocking or allocating in audio.
     // The old engine vector grew here when the chain expanded from one to four.
@@ -295,6 +345,14 @@ int main(int argc, char** argv) {
     proc.setChain({ 0, 1 });
     proc.setPadName(3, "ZAP");
     proc.setSelectedPad(3);
+    fable::DrumRhythm savedRhythm;
+    savedRhythm.lanes[0].enabled = true;
+    savedRhythm.lanes[0].sourceBar = 1;
+    savedRhythm.lanes[0].steps = 5;
+    savedRhythm.lanes[0].rotation = 2;
+    savedRhythm.lanes[0].mode = fable::DrumRhythmMode::fit;
+    savedRhythm.lanes[0].cycleBeats = 8;
+    proc.setDrumRhythm(savedRhythm);
     std::vector<float> sine((size_t)fable::SIZE);
     for (int i = 0; i < fable::SIZE; ++i)
         sine[(size_t)i] = (float)std::sin(2.0 * juce::MathConstants<double>::pi * i / fable::SIZE);
@@ -329,6 +387,24 @@ int main(int argc, char** argv) {
     float padTable2 = proc2.apvts.getRawParameterValue("pad2.oscA.table")->load();
     check((int)std::lround(padTable2) == userIdx, "pad2 oscA.table index round-trips", padTable2);
     check(proc2.tableAt(userIdx) != nullptr, "restored user table resolves in the engine list");
+    auto restoredXml = BinPacker::unpack(state);
+    auto* restoredDrum = restoredXml ? restoredXml->getChildByName("DRUM") : nullptr;
+    check(restoredDrum != nullptr && restoredDrum->hasAttribute("rhythmVersion")
+              && restoredDrum->hasAttribute("rhythm"),
+          "POLY rhythm metadata serialises into plugin state");
+
+    // Loading an ordinary state into the same instance must clear the prior
+    // POLY snapshot rather than leaving it active against the new patterns.
+    DrumAudioProcessor ordinary;
+    juce::MemoryBlock ordinaryState;
+    ordinary.getStateInformation(ordinaryState);
+    proc2.setStateInformation(ordinaryState.getData(), (int)ordinaryState.getSize());
+    juce::MemoryBlock clearedState;
+    proc2.getStateInformation(clearedState);
+    auto clearedXml = BinPacker::unpack(clearedState);
+    auto* clearedDrum = clearedXml ? clearedXml->getChildByName("DRUM") : nullptr;
+    check(clearedDrum != nullptr && !clearedDrum->hasAttribute("rhythm"),
+          "legacy state restore clears prior POLY metadata");
 
     // ---- 9. kit programs beyond TR-VOID ----
     printf("\n== kit programs ==\n");

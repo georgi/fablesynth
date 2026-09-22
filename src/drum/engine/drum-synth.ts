@@ -11,6 +11,7 @@ import ottWorkletUrl from '../../engine/ott-worklet.js?url';
 import type { DynamicsMessage } from '../../engine/dynamics';
 import type { EchoMessage } from '../../engine/echo';
 import type { ReverbMessage } from '../../engine/reverb';
+import type { DrumRhythm } from '../rhythm';
 
 export interface VizTable {
   name: string;
@@ -259,6 +260,10 @@ export class DrumEngine {
     if (this.ready) this.node.port.postMessage({ t: 'chain', list: c });
   }
 
+  setSequence(patterns: Uint8Array, chain: number[], rhythm?: DrumRhythm): void {
+    if (this.ready) this.node.port.postMessage({ t: 'seq', data: patterns.slice().buffer, chain: [...chain], rhythm });
+  }
+
   selectPad(i: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'sel', pad: i });
     this.setMeterPad(i);
@@ -278,15 +283,15 @@ export class DrumEngine {
     if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
   }
 
-  scheduleClip(data: Uint8Array, bars: number, atFrame: number): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame });
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number, rhythm?: DrumRhythm): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, ...(rhythm ? { rhythm } : {}) });
   }
 
   scheduleStop(atFrame: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame });
   }
 
-  updateClip(data: Uint8Array, bars: number): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars });
+  updateClip(data: Uint8Array, bars: number, rhythm?: DrumRhythm): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, rhythm: rhythm ?? null });
   }
 }

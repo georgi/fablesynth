@@ -21,6 +21,7 @@ import {
   cycleStep, NPATTERNS, patIdx, randomizePadPattern, STEPS, type Patterns,
 } from './seq';
 import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
+import type { DrumRhythm } from './rhythm';
 import {
   clearPadRect, copyPadRect, copyPattern, makeHistory, movePadRect, padRectNorm, pastePadRect,
   pastePattern, type PadRectCells, type PadRectSel, type SeqLayout,
@@ -68,6 +69,7 @@ export interface DrumStore {
   sel: number;
   patterns: Patterns;
   chain: number[];
+  drumRhythm?: DrumRhythm;
   editPattern: number;
   playing: boolean;
   curStep: number;
@@ -138,6 +140,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   sel: 0,
   patterns: initialKitState.patterns,
   chain: sequenceChain(sequenceLengthFromChain(initialKitState.chain)),
+  drumRhythm: initialKitState.drumRhythm,
   editPattern: 0,
   playing: false,
   curStep: -1,
@@ -181,7 +184,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // place. (Patterns persist inside kits, not standalone — no localStorage.)
   _setPatterns(next: Patterns) {
     set({ patterns: next, kitDirty: true });
-    drumEngine.setPatterns(next);
+    drumEngine.setSequence(next, get().chain, get().drumRhythm);
   },
 
   // Bounded undo/redo (50 snapshots) over the patterns buffer. Every editing
@@ -431,8 +434,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     drumEngine.onviz = (data) => set({ modPosA: data.a, modPosB: data.b, envLevel: data.env });
     drumEngine.params = { ...get().params };
     drumEngine.applyAllParams();
-    drumEngine.setPatterns(get().patterns);
-    drumEngine.setChain(get().chain);
+    drumEngine.setSequence(get().patterns, get().chain, get().drumRhythm);
     set({ powered: true });
   },
 
@@ -440,7 +442,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     const state = get();
     const tables = state.userTables.map((table) =>
       serializeUserTable(makeUserTable(table.name, framesFromGenerated(table))));
-    const kit = stateToKit(name, state.params, state.padNames, state.patterns, state.chain, tables);
+    const kit = stateToKit(name, state.params, state.padNames, state.patterns, state.chain, tables, state.drumRhythm);
     const userKits = saveUserKit(name, kit);
     const savedIndex = userKits.findIndex((entry) => entry.name === name);
     set({ userKits, kitValue: savedIndex >= 0 ? `u${savedIndex}` : state.kitValue, kitDirty: false });
@@ -472,8 +474,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     drumEngine.setUserTables(userTables);
     drumEngine.params = { ...state.params };
     drumEngine.applyAllParams();
-    drumEngine.setPatterns(state.patterns);
-    drumEngine.setChain(chain);
+    drumEngine.setSequence(state.patterns, chain, state.drumRhythm);
     // A kit replaces the entire song buffer, so snapshots from the prior kit
     // must never be allowed to overwrite it through undo.
     get()._clearHistory();
@@ -482,6 +483,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       padNames: state.padNames,
       patterns: state.patterns,
       chain,
+      drumRhythm: state.drumRhythm,
       editPattern: chain[0] ?? 0,
       userTables,
       kitValue: value,

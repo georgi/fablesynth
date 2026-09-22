@@ -627,6 +627,170 @@ int main() {
         se.stop();
     }
     {
+        // A byte-only sequence update must not rewind an active POLY clock.
+        DrumEngine pe; pe.prepare(48000); pe.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        pats[pidx(0, 0, 0)] = 1;
+        pe.setPatterns(pats.data(), (int)pats.size());
+        pe.setParam(DG_SEQ_BPM, 120.0f);
+        pe.setParam(dpid(0, DP_AENV_DEC), 0.02f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].sourceBar = 0;
+        rhythm.lanes[0].steps = 1;
+        rhythm.lanes[0].rotation = 0;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        pe.setDrumRhythm(&rhythm);
+        pe.play();
+        renderMain(pe, 7000);
+        const auto firstHits = pe.consumeHits();
+        pe.setPatterns(pats.data(), (int)pats.size());
+        pe.setDrumRhythm(&rhythm); // same snapshot: preserve the cursor
+        renderMain(pe, 1000);
+        const auto secondHits = pe.consumeHits();
+        check((firstHits & 1u) != 0 && secondHits == 0,
+              "byte-only POLY edit preserves the running cursor",
+              "first=" + std::to_string(firstHits) + " second=" + std::to_string(secondHits));
+    }
+    {
+        // A live tempo change keeps the current event at the transport frame
+        // and only changes the spacing of future POLY events.
+        DrumEngine te; te.prepare(48000); te.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        for (int s = 0; s < DR_STEPS; ++s) pats[pidx(0, 0, s)] = 1;
+        te.setPatterns(pats.data(), (int)pats.size());
+        te.setParam(DG_SEQ_BPM, 120.0f);
+        te.setParam(DG_MASTER_SWING, 0.0f);
+        te.setParam(dpid(0, DP_AENV_DEC), 0.02f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].sourceBar = 0;
+        rhythm.lanes[0].steps = DR_STEPS;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        te.setDrumRhythm(&rhythm);
+        te.play();
+        // Change tempo between grid events, so the next event is unambiguously
+        // in the new mapping rather than exactly on the render boundary.
+        const auto first = renderMain(te, 93000);
+        te.setBpmOverride(180.0);
+        const auto second = renderMain(te, 12000);
+        auto firstOn = onsets(first);
+        auto secondOn = onsets(second);
+        check(firstOn.size() == 16 && secondOn.size() >= 3
+                  && near(secondOn[0], 2000, 64)
+                  && near(secondOn[1], 6000, 64)
+                  && near(secondOn[2], 10000, 64),
+              "native POLY live tempo preserves phase and retimes future events",
+              "first=" + onsetsStr(firstOn) + " second=" + onsetsStr(secondOn));
+    }
+    {
+        // The odd swung event is 0.2 samples before this render boundary but
+        // rounds onto it. nextEvent() has already advanced its cursor, so a
+        // tempo edit must remap the cached event rather than discard it.
+        DrumEngine te; te.prepare(48000); te.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        for (int s = 0; s < DR_STEPS; ++s) pats[pidx(0, 0, s)] = 1;
+        te.setPatterns(pats.data(), (int)pats.size());
+        te.setParam(DG_SEQ_BPM, 120.0f);
+        te.setParam(DG_MASTER_SWING, 0.0999f);
+        te.setParam(dpid(0, DP_AENV_DEC), 0.002f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].steps = DR_STEPS;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        te.setDrumRhythm(&rhythm);
+        te.play();
+        renderMain(te, 6400);
+        te.setBpmOverride(180.0);
+        const auto after = onsets(renderMain(te, 5000));
+        check(after.size() >= 2 && near(after[0], 0, 2) && near(after[1], 3733, 2),
+              "boundary tempo edit preserves cached POLY event",
+              onsetsStr(after));
+    }
+    {
+        // A previous live retime leaves a non-zero scheduler anchor. Restart
+        // must establish a fresh sample-zero anchor so POLY and ordinary lanes
+        // both fire their first step at the new transport origin.
+        DrumEngine re; re.prepare(48000); re.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        for (int s = 0; s < DR_STEPS; ++s) {
+            pats[pidx(0, 0, s)] = 1; // POLY, MAIN
+            pats[pidx(0, 1, s)] = 1; // ordinary, AUX 1
+        }
+        re.setPatterns(pats.data(), (int)pats.size());
+        re.setParam(DG_SEQ_BPM, 120.0f);
+        re.setParam(dpid(0, DP_AENV_DEC), 0.002f);
+        re.setParam(dpid(1, DP_AENV_DEC), 0.002f);
+        re.setParam(dpid(1, DP_OUT), 1.0f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].steps = DR_STEPS;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        re.setDrumRhythm(&rhythm);
+        re.play();
+        renderMain(re, 93000);
+        re.setBpmOverride(180.0);
+        renderMain(re, 1000); // applies the live retime and its non-zero anchor
+        re.stop();
+        re.play();
+        const auto restarted = renderBuses(re, 512);
+        const auto polyOn = onsets(restarted[0]);
+        const auto ordinaryOn = onsets(restarted[2]);
+        check(!polyOn.empty() && !ordinaryOn.empty()
+                  && near(polyOn[0], 0, 2) && near(ordinaryOn[0], 0, 2),
+              "stop/play rebases POLY scheduler after live tempo edit",
+              "poly=" + onsetsStr(polyOn) + " ordinary=" + onsetsStr(ordinaryOn));
+    }
+    {
+        // Change both controls between steps. The ordinary clock's remaining
+        // samples must be rescheduled to the same new swung beat as POLY.
+        DrumEngine me; me.prepare(48000); me.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        for (int s = 0; s < DR_STEPS; ++s) {
+            pats[pidx(0, 0, s)] = 1; // POLY, MAIN
+            pats[pidx(0, 1, s)] = 1; // ordinary, AUX 1
+        }
+        me.setPatterns(pats.data(), (int)pats.size());
+        me.setParam(DG_SEQ_BPM, 120.0f);
+        me.setParam(DG_MASTER_SWING, 0.2f);
+        me.setParam(dpid(0, DP_AENV_DEC), 0.002f);
+        me.setParam(dpid(1, DP_AENV_DEC), 0.002f);
+        me.setParam(dpid(1, DP_OUT), 1.0f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].steps = DR_STEPS;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        me.setDrumRhythm(&rhythm);
+        me.play();
+        renderMain(me, 13000);
+        me.setBpmOverride(180.0);
+        me.setParam(DG_MASTER_SWING, 0.6f);
+        const auto after = renderBuses(me, 10000);
+        const auto polyOn = onsets(after[0]);
+        const auto ordinaryOn = onsets(after[2]);
+        check(polyOn.size() >= 2 && ordinaryOn.size() >= 2
+                  && near(polyOn[0], ordinaryOn[0], 2)
+                  && near(polyOn[1], ordinaryOn[1], 2)
+                  && near(polyOn[0], 4934, 2),
+              "mid-step BPM/swing edit keeps ordinary and POLY lanes aligned",
+              "poly=" + onsetsStr(polyOn) + " ordinary=" + onsetsStr(ordinaryOn));
+    }
+    {
         // multi-out: pad 0 routed to AUX 2 lands on bus 2 only; MAIN stays silent
         DrumEngine me; me.prepare(48000); me.setTables(allTables());
         me.setParam(dpid(0, DP_OUT), 2.0f);

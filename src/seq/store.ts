@@ -233,7 +233,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         clipBytes.set(key, bytes);
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
-        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip));
+        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm);
       }
     }
   };
@@ -387,7 +387,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip));
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm);
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -467,7 +467,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip));
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm);
       }
     },
 

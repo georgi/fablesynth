@@ -7,6 +7,7 @@
 import type { Quant } from './model';
 import { validClipArp, type ClipArp } from './clipArp';
 import type { MasterFxParams } from './masterFx';
+import { validateDrumRhythm, type DrumRhythm } from '../drum/rhythm';
 
 export type MachineId = 'DR1' | 'BL1' | 'WT1';
 
@@ -87,6 +88,7 @@ export interface SceneDoc {
 
 export interface ClipDoc {
   arp?: ClipArp;
+  drumRhythm?: DrumRhythm;
   name: string;
   bars: number; // 1..MAX_BARS
   pattern: string; // base64 of the machine's packed clip bytes
@@ -166,6 +168,11 @@ export function validateSession(doc: SessionDoc): string | null {
       const c = sc.clips[t];
       if (!c) continue;
       if (c.arp !== undefined && (doc.tracks[t].machine === 'DR1' || !validClipArp(c.arp))) return `scene ${s} track ${t}: invalid arpeggiator`;
+      if (c.drumRhythm !== undefined) {
+        if (doc.tracks[t].machine !== 'DR1') return `scene ${s} track ${t}: rhythm is only valid for DR1 clips`;
+        const rhythmError = validateDrumRhythm(c.drumRhythm, c.bars);
+        if (rhythmError) return `scene ${s} track ${t}: ${rhythmError}`;
+      }
       if (!(c.bars >= 1 && c.bars <= MAX_BARS)) return `scene ${s} track ${t}: bars out of range`;
       const bytes = b64ToBytes(c.pattern);
       const want = c.bars * bytesPerBar(doc.tracks[t].machine);
