@@ -105,6 +105,53 @@ int main(int argc, char** argv) {
     check(proc.getLatencySamples() > 0, "FX latency reported to the host",
           proc.getLatencySamples());
 
+    // A factory program is a complete grid-based sequence. Loading one after
+    // a POLY state must clear the old lane routing in both the audio snapshot
+    // and subsequent plugin-state serialization. Explicit state restore must
+    // remain able to reinstate the POLY metadata.
+    {
+        DrumAudioProcessor lifecycle;
+        lifecycle.enableAllBuses();
+        lifecycle.prepareToPlay(sr, block);
+        juce::AudioBuffer<float> lifecycleBuffer(10, block);
+        juce::MidiBuffer empty;
+
+        fable::DrumRhythm staleRhythm;
+        staleRhythm.lanes[0].enabled = true;
+        staleRhythm.lanes[0].sourceBar = 1; // empty in TR-VOID; would suppress its kick
+        staleRhythm.lanes[0].steps = fable::DR_STEPS;
+        staleRhythm.lanes[0].mode = fable::DrumRhythmMode::grid;
+        lifecycle.setDrumRhythm(staleRhythm);
+        juce::MemoryBlock polyState;
+        lifecycle.getStateInformation(polyState);
+
+        lifecycle.setCurrentProgram(0);
+        lifecycle.consumeHitFlags();
+        lifecycle.setSeqPlaying(true);
+        lifecycle.processBlock(lifecycleBuffer, empty);
+        check((lifecycle.consumeHitFlags() & 1u) != 0,
+              "factory program clears prior POLY lane before playback");
+
+        juce::MemoryBlock factoryState;
+        lifecycle.getStateInformation(factoryState);
+        auto factoryXml = BinPacker::unpack(factoryState);
+        auto* factoryDrum = factoryXml ? factoryXml->getChildByName("DRUM") : nullptr;
+        check(factoryDrum != nullptr && !factoryDrum->hasAttribute("rhythm"),
+              "factory program state omits prior POLY metadata");
+
+        lifecycle.setStateInformation(polyState.getData(), (int)polyState.getSize());
+        juce::MemoryBlock restoredState;
+        lifecycle.getStateInformation(restoredState);
+        auto restoredXml = BinPacker::unpack(restoredState);
+        auto* restoredDrum = restoredXml ? restoredXml->getChildByName("DRUM") : nullptr;
+        check(restoredDrum != nullptr && restoredDrum->hasAttribute("rhythm"),
+              "explicit state restore preserves POLY metadata");
+        lifecycle.releaseResources();
+    }
+
+    if (argc > 1 && juce::String(argv[1]) == "--poly-lifecycle")
+        return g_fail == 0 ? 0 : 1;
+
     // Pattern/chain edits coalesce without blocking or allocating in audio.
     // The old engine vector grew here when the chain expanded from one to four.
     {

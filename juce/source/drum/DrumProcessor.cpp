@@ -358,7 +358,11 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
         }
     }
 
-    // Non-param kit content: patterns, chain, pad names.
+    // Non-param kit content: patterns, chain, pad names. Factory kits use the
+    // ordinary 16-step grid, so a program change must also discard any POLY
+    // rhythm metadata left by a previously restored session.
+    hasRhythm_ = false;
+    rhythm_ = DrumRhythm{};
     if ((int)kit.patterns.size() == kPatternBytes)
         std::copy(kit.patterns.begin(), kit.patterns.end(), patterns_.begin());
     const int bars = juce::jlimit(1, DR_NPATTERNS, (int)kit.chain.size());
