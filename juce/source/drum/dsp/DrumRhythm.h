@@ -103,6 +103,10 @@ public:
 
     bool setTempo(double sampleRate, double bpm, double swing = 0.0);
     bool setSwing(double swing);
+    // Preserve the current musical position while changing the beat-to-sample
+    // mapping. Cursors are intentionally untouched, so no elapsed events are
+    // replayed when tempo or swing changes during playback.
+    bool retime(double absoluteBeat, std::int64_t absoluteSample);
     bool setRhythm(const DrumRhythm& rhythm);
     bool setRhythm(const DrumRhythmState& state);
 
@@ -140,6 +144,8 @@ private:
     double bpm_ = 120.0;
     double swing_ = 0.0;
     double currentBeat_ = 0.0;
+    double beatAnchor_ = 0.0;
+    std::int64_t sampleAnchor_ = 0;
     bool initialized_ = false;
     int lastLaneScanCount_ = 0;
 };

@@ -144,6 +144,14 @@ bool DrumRhythmScheduler::setSwing(double swing) {
     return true;
 }
 
+bool DrumRhythmScheduler::retime(double absoluteBeat, std::int64_t absoluteSample) {
+    if (!std::isfinite(absoluteBeat) || absoluteBeat < 0.0 || absoluteSample < 0)
+        return false;
+    beatAnchor_ = absoluteBeat;
+    sampleAnchor_ = absoluteSample;
+    return true;
+}
+
 bool DrumRhythmScheduler::setRhythm(const DrumRhythm& rhythm) {
     if (!validateDrumRhythm(rhythm))
         return false;
@@ -224,7 +232,8 @@ std::uint64_t DrumRhythmScheduler::firstGridOrdinal(double absoluteBeat) const {
 }
 
 std::int64_t DrumRhythmScheduler::beatToSample(double beat) const {
-    const long double samples = static_cast<long double>(beat)
+    const long double samples = static_cast<long double>(sampleAnchor_)
+        + static_cast<long double>(beat - beatAnchor_)
         * (60.0L / static_cast<long double>(bpm_))
         * static_cast<long double>(sampleRate_);
     return static_cast<std::int64_t>(std::llround(samples));

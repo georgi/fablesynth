@@ -656,6 +656,40 @@ int main() {
               "first=" + std::to_string(firstHits) + " second=" + std::to_string(secondHits));
     }
     {
+        // A live tempo change keeps the current event at the transport frame
+        // and only changes the spacing of future POLY events.
+        DrumEngine te; te.prepare(48000); te.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        for (int s = 0; s < DR_STEPS; ++s) pats[pidx(0, 0, s)] = 1;
+        te.setPatterns(pats.data(), (int)pats.size());
+        te.setParam(DG_SEQ_BPM, 120.0f);
+        te.setParam(DG_MASTER_SWING, 0.0f);
+        te.setParam(dpid(0, DP_AENV_DEC), 0.02f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].sourceBar = 0;
+        rhythm.lanes[0].steps = DR_STEPS;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        te.setDrumRhythm(&rhythm);
+        te.play();
+        // Change tempo between grid events, so the next event is unambiguously
+        // in the new mapping rather than exactly on the render boundary.
+        const auto first = renderMain(te, 93000);
+        te.setBpmOverride(180.0);
+        const auto second = renderMain(te, 12000);
+        auto firstOn = onsets(first);
+        auto secondOn = onsets(second);
+        check(firstOn.size() == 16 && secondOn.size() >= 3
+                  && near(secondOn[0], 2000, 64)
+                  && near(secondOn[1], 6000, 64)
+                  && near(secondOn[2], 10000, 64),
+              "native POLY live tempo preserves phase and retimes future events",
+              "first=" + onsetsStr(firstOn) + " second=" + onsetsStr(secondOn));
+    }
+    {
         // multi-out: pad 0 routed to AUX 2 lands on bus 2 only; MAIN stays silent
         DrumEngine me; me.prepare(48000); me.setTables(allTables());
         me.setParam(dpid(0, DP_OUT), 2.0f);

@@ -299,6 +299,10 @@ private:
     void fireRhythmEvent(const DrumRhythmEvent& event);
     bool polyLaneEnabled(int pad) const;
     bool hasPolyRhythm() const;
+    void emitSequencerHit(int pad, float velocity);
+    void flushSequencerHits();
+    void syncRhythmTempo();
+    double currentRhythmBeat() const;
 
     // hosted-clip fire (docs/sq4-clips.md §6): byte source is clipHost_'s
     // live clip rather than pats_/chain_; no tie/lookahead state to carry
@@ -356,6 +360,10 @@ private:
     int    step_ = -1;
     double samplesToNext_ = 0;
     double bpmOverride_ = 0;       // > 0: host tempo wins over DG_SEQ_BPM
+    double rhythmMapBeat_ = 0.0;
+    std::uint64_t rhythmMapFrame_ = 0;
+    std::array<std::uint8_t, DR_NPADS> queuedHits_{};
+    bool queueHits_ = false;
 
     // host transport lock state
     bool   hostPlaying_ = false;

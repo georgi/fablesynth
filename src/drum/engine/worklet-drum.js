@@ -1122,7 +1122,17 @@ class DrumProcessor extends AudioWorkletProcessor {
 
   setParam(k, v) {
     const i = PARAM_INDEX.get(k);
-    if (i !== undefined) { this.pv[i] = v; this.fxDirty = true; }
+    if (i === undefined) return;
+    const tempoChange = this.playing && (i === G_BPM || i === G_SWING);
+    const oldBpm = this.pv[G_BPM] || 126;
+    const oldSwing = this.pv[G_SWING] || 0;
+    this.pv[i] = v;
+    this.fxDirty = true;
+    if (tempoChange && (
+      (this.pv[G_BPM] || 126) !== oldBpm ||
+      (this.pv[G_SWING] || 0) !== oldSwing
+    ))
+      this.retimeStandalone(oldBpm, oldSwing, this.pv[G_BPM] || 126, this.pv[G_SWING] || 0, currentFrame);
   }
 
   onMsg(d) {
@@ -1201,9 +1211,19 @@ class DrumProcessor extends AudioWorkletProcessor {
         break;
       case 'host': this.hosted = !!d.on; break;
       case 'tempo':
-        if (Number.isFinite(d.bpm)) this.hostBpm = d.bpm;
+        const anchorMatches = Number.isFinite(d.anchor) && d.anchor === this.hostAnchor;
+        if (Number.isFinite(d.bpm)) {
+          const oldBpm = this.hostBpm;
+          if (anchorMatches && oldBpm > 0 && d.bpm > 0 && oldBpm !== d.bpm) {
+            const beat = (currentFrame - this.hostAnchor) / ((60 / oldBpm) * sampleRate);
+            this.hostAnchor = currentFrame - beat * (60 / d.bpm) * sampleRate;
+          }
+          this.hostBpm = d.bpm;
+        }
         if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
-        if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
+        if (Number.isFinite(d.anchor) && !anchorMatches)
+          this.hostAnchor = d.anchor;
+        if (this.clip && !rhythmHasEnabledLane(this.clip.rhythm)) this.syncLegacyClip(currentFrame);
         break;
       case 'clip':
         this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), rhythm: normalizeRhythm(d.rhythm ?? d.drumRhythm), at: +d.atFrame || 0 };
@@ -1231,7 +1251,7 @@ class DrumProcessor extends AudioWorkletProcessor {
           // sequencer click — are a pure data swap: touching the phase inside
           // a swing/quantization window would skip a step and desync devices.
           if (rhythmChanged && rhythmHasEnabledLane(this.clip.rhythm)) this.resetHostedPoly(currentFrame);
-          else if (rhythmChanged && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor, currentFrame);
+          else if (rhythmChanged) this.syncLegacyClip(currentFrame);
           else if (resized && this.clipStep >= 0) this.clipStep = this.clipPhase(Math.floor, currentFrame);
         }
         break;
@@ -1241,9 +1261,52 @@ class DrumProcessor extends AudioWorkletProcessor {
 
   setRhythm(value) {
     const next = normalizeRhythm(value);
-    const changed = !rhythmEqual(this.rhythm, next);
+    const previous = this.rhythm;
+    const changed = !rhythmEqual(previous, next);
     this.rhythm = next;
-    if (changed && this.playing && rhythmHasEnabledLane(next)) this.resetPoly(currentFrame);
+    if (!changed || !this.playing) return;
+    const oldActive = rhythmHasEnabledLane(previous);
+    const nextActive = rhythmHasEnabledLane(next);
+    const bpm = this.pv[G_BPM] || 126;
+    const swing = this.pv[G_SWING] || 0;
+    if (oldActive && !nextActive) {
+      this.syncLegacyStandalone(currentFrame, bpm, swing);
+      return;
+    }
+    if (!oldActive && nextActive) {
+      this.polyOrdinal = this.polyFirstOrdinal(currentFrame, this.polyAnchor, bpm, null, swing);
+      for (let i = 0; i < NPADS; i++) {
+        const lane = next.lanes[i];
+        this.polyFitOrdinal[i] = lane && lane.timing.mode === 'fit'
+          ? this.polyFirstOrdinal(currentFrame, this.polyAnchor, bpm, lane, 0) : 0;
+      }
+      this.syncLegacyStandalone(currentFrame, bpm, swing);
+      return;
+    }
+    for (let i = 0; i < NPADS; i++) {
+      const before = previous && previous.lanes[i];
+      const after = next && next.lanes[i];
+      const timingChanged = !before || !after || before.timing.mode !== after.timing.mode
+        || (after.timing.mode === 'fit' && before.timing.cycleBeats !== after.timing.cycleBeats)
+        || before.steps !== after.steps;
+      if (after && after.timing.mode === 'fit' && timingChanged)
+        this.polyFitOrdinal[i] = this.polyFirstOrdinal(currentFrame, this.polyAnchor, bpm, after, 0);
+    }
+  }
+
+  retimeStandalone(oldBpm, oldSwing, newBpm, newSwing, frame) {
+    if (!this.playing) return;
+    const oldQuarter = (60 / Math.max(1, oldBpm)) * sampleRate;
+    const beat = (frame - this.polyAnchor) / oldQuarter;
+    this.polyAnchor = frame - beat * (60 / Math.max(1, newBpm)) * sampleRate;
+    if (!rhythmHasEnabledLane(this.rhythm)) this.syncLegacyStandalone(frame, newBpm, newSwing);
+  }
+
+  syncLegacyStandalone(frame, bpm, swing) {
+    const next = this.polyFirstOrdinal(frame, this.polyAnchor, bpm, null, swing);
+    this.step = positiveModulo(next - 1, STEPS);
+    this.chainPos = positiveModulo(Math.floor((next - 1) / STEPS), this.chain.length);
+    this.samplesToNext = Math.max(0, this.polyEventFrame(this.polyAnchor, next, bpm, null, swing) - frame);
   }
 
   polyBeat(frame, ordinal, bpm, lane, swing) {
@@ -1377,6 +1440,21 @@ class DrumProcessor extends AudioWorkletProcessor {
     const total = this.clip.bars * STEPS;
     const idx = quantize(Math.max(0, frame - this.hostAnchor) / dur);
     return ((idx % total) + total) % total;
+  }
+
+  syncLegacyClip(frame) {
+    if (!this.clip) return;
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const dur = (60 / bpm / 4) * sampleRate;
+    const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
+    const total = this.clip.bars * STEPS;
+    const elapsed = Math.max(0, frame - this.hostAnchor);
+    let ordinal = Math.max(0, Math.floor(elapsed / dur) - 1);
+    const at = k => this.hostAnchor + k * dur + (k % 2 ? swing * SWING_MAX * dur : 0);
+    while (at(ordinal) < frame - 1e-7) ordinal++;
+    while (ordinal > 0 && at(ordinal - 1) >= frame - 1e-7) ordinal--;
+    this.clipStep = positiveModulo(ordinal - 1, total);
+    this.clipToNext = Math.max(0, at(ordinal) - frame);
   }
 
   clipFire(frame = currentFrame) {

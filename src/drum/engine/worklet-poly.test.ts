@@ -128,4 +128,63 @@ describe('DR-1 POLY scheduler', () => {
     const proc = h.proc as unknown as { clip: { rhythm: unknown } | null };
     expect(proc.clip?.rhythm).toBeNull();
   });
+
+  it('keeps the shared standalone clock when rotation changes live', () => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const patterns = makeEmptyPatterns();
+    patterns[patIdx(0, 0, 0)] = 1;
+    patterns[patIdx(0, 2, 0)] = 1;
+    const lanes = Array.from({ length: 16 }, () => null) as Array<Record<string, unknown> | null>;
+    lanes[0] = { enabled: true, sourceBar: 0, steps: 3, rotation: 0, timing: { mode: 'fit', cycleBeats: 4 } };
+    h.send({ t: 'p', k: 'seq.bpm', v: 120 });
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes } });
+    h.send({ t: 'play' });
+    run(h, 79, 128); // currentFrame = 10112, just after the live edit point
+    lanes[0] = { ...lanes[0], rotation: 1 };
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes } });
+    run(h, 700, 128);
+    const kickFrames = h.sent.filter((m) => m.t === 'step' && (m.hits as number[]).includes(2)).map((m) => m.frame as number);
+    const fitFrames = h.sent.filter((m) => m.t === 'poly' && m.pad === 0).map((m) => m.frame as number);
+    expect(kickFrames).toEqual([0, 96000]);
+    expect(fitFrames.slice(0, 3)).toEqual([0, 32000, 64000]);
+  });
+
+  it('hands standalone playback back to the legacy clock without an immediate retrigger', () => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const patterns = makeEmptyPatterns();
+    patterns[patIdx(0, 0, 0)] = 1;
+    const lanes = Array.from({ length: 16 }, () => null) as Array<Record<string, unknown> | null>;
+    lanes[0] = { enabled: true, sourceBar: 0, steps: 3, rotation: 0, timing: { mode: 'fit', cycleBeats: 4 } };
+    h.send({ t: 'p', k: 'seq.bpm', v: 120 });
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes } });
+    h.send({ t: 'play' });
+    run(h, 79, 128);
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: null });
+    run(h, 20, 128);
+    let frames = h.sent.filter((m) => m.t === 'step' && (m.hits as number[]).includes(0));
+    expect(frames).toHaveLength(0);
+    run(h, 660, 128);
+    frames = h.sent.filter((m) => m.t === 'step' && (m.hits as number[]).includes(0));
+    expect(frames).toHaveLength(1);
+  });
+
+  it('re-times future POLY events at a live BPM change without catch-up', () => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const patterns = makeEmptyPatterns();
+    for (let s = 0; s < 16; s++) patterns[patIdx(0, 0, s)] = 1;
+    const lanes = Array.from({ length: 16 }, () => null) as Array<Record<string, unknown> | null>;
+    lanes[0] = { enabled: true, sourceBar: 0, steps: 16, rotation: 0, timing: { mode: 'grid' } };
+    h.send({ t: 'p', k: 'seq.bpm', v: 120 });
+    h.send({ t: 'seq', data: patterns.buffer, chain: [0], rhythm: { v: 1, lanes } });
+    h.send({ t: 'play' });
+    run(h, 750, 128); // exactly 96000 samples
+    h.send({ t: 'p', k: 'seq.bpm', v: 180 });
+    run(h, 100, 128);
+    const frames = h.sent.filter((m) => m.t === 'step').map((m) => m.frame as number);
+    const after = frames.filter((frame) => frame >= 96000);
+    expect(after.slice(0, 3)).toEqual([96000, 100000, 104000]);
+  });
 });

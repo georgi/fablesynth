@@ -41,6 +41,9 @@ struct BinPacker : juce::AudioProcessor {
     static void pack(const juce::XmlElement& xml, juce::MemoryBlock& dest) {
         copyXmlToBinary(xml, dest);
     }
+    static std::unique_ptr<juce::XmlElement> unpack(const juce::MemoryBlock& data) {
+        return getXmlFromBinary(data.getData(), (int)data.getSize());
+    }
 };
 
 // Minimal host playhead. bpm-only by default (tempo sync); with reportPpq it
@@ -295,6 +298,14 @@ int main(int argc, char** argv) {
     proc.setChain({ 0, 1 });
     proc.setPadName(3, "ZAP");
     proc.setSelectedPad(3);
+    fable::DrumRhythm savedRhythm;
+    savedRhythm.lanes[0].enabled = true;
+    savedRhythm.lanes[0].sourceBar = 1;
+    savedRhythm.lanes[0].steps = 5;
+    savedRhythm.lanes[0].rotation = 2;
+    savedRhythm.lanes[0].mode = fable::DrumRhythmMode::fit;
+    savedRhythm.lanes[0].cycleBeats = 8;
+    proc.setDrumRhythm(savedRhythm);
     std::vector<float> sine((size_t)fable::SIZE);
     for (int i = 0; i < fable::SIZE; ++i)
         sine[(size_t)i] = (float)std::sin(2.0 * juce::MathConstants<double>::pi * i / fable::SIZE);
@@ -329,6 +340,24 @@ int main(int argc, char** argv) {
     float padTable2 = proc2.apvts.getRawParameterValue("pad2.oscA.table")->load();
     check((int)std::lround(padTable2) == userIdx, "pad2 oscA.table index round-trips", padTable2);
     check(proc2.tableAt(userIdx) != nullptr, "restored user table resolves in the engine list");
+    auto restoredXml = BinPacker::unpack(state);
+    auto* restoredDrum = restoredXml ? restoredXml->getChildByName("DRUM") : nullptr;
+    check(restoredDrum != nullptr && restoredDrum->hasAttribute("rhythmVersion")
+              && restoredDrum->hasAttribute("rhythm"),
+          "POLY rhythm metadata serialises into plugin state");
+
+    // Loading an ordinary state into the same instance must clear the prior
+    // POLY snapshot rather than leaving it active against the new patterns.
+    DrumAudioProcessor ordinary;
+    juce::MemoryBlock ordinaryState;
+    ordinary.getStateInformation(ordinaryState);
+    proc2.setStateInformation(ordinaryState.getData(), (int)ordinaryState.getSize());
+    juce::MemoryBlock clearedState;
+    proc2.getStateInformation(clearedState);
+    auto clearedXml = BinPacker::unpack(clearedState);
+    auto* clearedDrum = clearedXml ? clearedXml->getChildByName("DRUM") : nullptr;
+    check(clearedDrum != nullptr && !clearedDrum->hasAttribute("rhythm"),
+          "legacy state restore clears prior POLY metadata");
 
     // ---- 9. kit programs beyond TR-VOID ----
     printf("\n== kit programs ==\n");

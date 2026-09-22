@@ -10,6 +10,47 @@
 
 using namespace fable;
 
+namespace {
+
+juce::String encodeDrumRhythm(const DrumRhythm& rhythm) {
+    juce::StringArray lanes;
+    for (const auto& lane : rhythm.lanes) {
+        lanes.add(juce::String(lane.enabled ? 1 : 0) + ","
+            + juce::String(lane.sourceBar) + ","
+            + juce::String(lane.steps) + ","
+            + juce::String(lane.rotation) + ","
+            + juce::String(lane.mode == DrumRhythmMode::fit ? 1 : 0) + ","
+            + juce::String(lane.cycleBeats));
+    }
+    return lanes.joinIntoString(";");
+}
+
+bool decodeDrumRhythm(const juce::String& encoded, int version, DrumRhythm& out) {
+    if (version != (int)DR_RHYTHM_VERSION) return false;
+    juce::StringArray lanes;
+    lanes.addTokens(encoded, ";", "");
+    if (lanes.size() != DR_RHYTHM_LANES) return false;
+    DrumRhythm candidate;
+    candidate.v = (std::uint32_t)version;
+    for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
+        juce::StringArray fields;
+        fields.addTokens(lanes[i], ",", "");
+        if (fields.size() != 6) return false;
+        auto& lane = candidate.lanes[(size_t)i];
+        lane.enabled = fields[0].getIntValue() != 0;
+        lane.sourceBar = fields[1].getIntValue();
+        lane.steps = fields[2].getIntValue();
+        lane.rotation = fields[3].getIntValue();
+        lane.mode = fields[4].getIntValue() != 0 ? DrumRhythmMode::fit : DrumRhythmMode::grid;
+        lane.cycleBeats = fields[5].getIntValue();
+    }
+    if (!validateDrumRhythm(candidate)) return false;
+    out = candidate;
+    return true;
+}
+
+} // namespace
+
 fable::FableAgent& DrumAudioProcessor::getAgent() {
     if (!agent_) {
         const auto& info = drumParamInfo();
@@ -533,6 +574,10 @@ void DrumAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     drum.setProperty("padNames", names.joinIntoString("\n"), nullptr);
     drum.setProperty("selectedPad", selectedPad_, nullptr);
     drum.setProperty("editPattern", editPattern_, nullptr);
+    if (hasRhythm_) {
+        drum.setProperty("rhythmVersion", (int)rhythm_.v, nullptr);
+        drum.setProperty("rhythm", encodeDrumRhythm(rhythm_), nullptr);
+    }
     root.appendChild(drum, nullptr);
 
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
@@ -581,7 +626,19 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
     rebuildEngineTables();
 
     // 2. Patterns / chain / names / selection.
+    hasRhythm_ = false;
+    rhythm_ = DrumRhythm{};
     if (drum.isValid()) {
+        // Legacy states have no rhythm property and must explicitly disable
+        // any POLY state left on a reused processor instance.
+        if (drum.hasProperty("rhythm")) {
+            DrumRhythm restored;
+            if (decodeDrumRhythm(drum.getProperty("rhythm", "").toString(),
+                                 (int)drum.getProperty("rhythmVersion", 0), restored)) {
+                rhythm_ = restored;
+                hasRhythm_ = true;
+            }
+        }
         juce::MemoryOutputStream raw;
         if (juce::Base64::convertFromBase64(raw, drum.getProperty("patterns", "").toString())
             && raw.getDataSize() == patterns_.size()) {
