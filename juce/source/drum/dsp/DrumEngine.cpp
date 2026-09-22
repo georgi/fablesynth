@@ -32,6 +32,18 @@ static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+static bool sameRhythm(const DrumRhythm& a, const DrumRhythm& b) {
+    if (a.v != b.v) return false;
+    for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
+        const auto& x = a.lanes[(size_t)i];
+        const auto& y = b.lanes[(size_t)i];
+        if (x.enabled != y.enabled || x.sourceBar != y.sourceBar || x.steps != y.steps
+            || x.rotation != y.rotation || x.mode != y.mode || x.cycleBeats != y.cycleBeats)
+            return false;
+    }
+    return true;
+}
+
 static inline double adaaInput(double x) {
     return std::isfinite(x) ? clampd(x, -DR_ADAA_INPUT_LIMIT, DR_ADAA_INPUT_LIMIT) : 0.0;
 }
@@ -362,6 +374,7 @@ void DrumEngine::setChain(const int* list, int n) {
 
 void DrumEngine::setDrumRhythm(const DrumRhythm* rhythm) {
     if (rhythm == nullptr) {
+        if (!hasRhythm_) return;
         hasRhythm_ = false;
         rhythmHasNext_ = false;
         return;
@@ -371,13 +384,17 @@ void DrumEngine::setDrumRhythm(const DrumRhythm* rhythm) {
         rhythmHasNext_ = false;
         return;
     }
+    if (hasRhythm_ && sameRhythm(rhythm_, *rhythm)) return;
+    const double currentBeat = hostPlaying_
+        ? std::max(0.0, hostPpq_)
+        : (playing_ ? (double)rhythmFrame_ * effectiveBpm() / (60.0 * sr_) : 0.0);
     rhythm_ = *rhythm;
     hasRhythm_ = true;
     rhythmHasNext_ = false;
     rhythmScheduler_.setRhythm(rhythm_);
     rhythmScheduler_.setTempo(sr_, effectiveBpm(),
                               clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
-    rhythmScheduler_.reset(0.0);
+    rhythmScheduler_.reset(currentBeat);
 }
 
 void DrumEngine::setBpmOverride(double bpm) {

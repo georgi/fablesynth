@@ -627,6 +627,35 @@ int main() {
         se.stop();
     }
     {
+        // A byte-only sequence update must not rewind an active POLY clock.
+        DrumEngine pe; pe.prepare(48000); pe.setTables(allTables());
+        std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
+        auto pidx = [](int pat, int padI, int step) {
+            return pat * DR_NPADS * DR_STEPS + padI * DR_STEPS + step;
+        };
+        pats[pidx(0, 0, 0)] = 1;
+        pe.setPatterns(pats.data(), (int)pats.size());
+        pe.setParam(DG_SEQ_BPM, 120.0f);
+        pe.setParam(dpid(0, DP_AENV_DEC), 0.02f);
+        DrumRhythm rhythm;
+        rhythm.lanes[0].enabled = true;
+        rhythm.lanes[0].sourceBar = 0;
+        rhythm.lanes[0].steps = 1;
+        rhythm.lanes[0].rotation = 0;
+        rhythm.lanes[0].mode = DrumRhythmMode::grid;
+        pe.setDrumRhythm(&rhythm);
+        pe.play();
+        renderMain(pe, 7000);
+        const auto firstHits = pe.consumeHits();
+        pe.setPatterns(pats.data(), (int)pats.size());
+        pe.setDrumRhythm(&rhythm); // same snapshot: preserve the cursor
+        renderMain(pe, 1000);
+        const auto secondHits = pe.consumeHits();
+        check((firstHits & 1u) != 0 && secondHits == 0,
+              "byte-only POLY edit preserves the running cursor",
+              "first=" + std::to_string(firstHits) + " second=" + std::to_string(secondHits));
+    }
+    {
         // multi-out: pad 0 routed to AUX 2 lands on bus 2 only; MAIN stays silent
         DrumEngine me; me.prepare(48000); me.setTables(allTables());
         me.setParam(dpid(0, DP_OUT), 2.0f);

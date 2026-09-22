@@ -197,6 +197,9 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
         if (!clips.isArray()) return false;
         for (const auto& cv : *clips.getArray()) {
             if (cv.isObject()) {
+                // Native SQ-4 v1 does not carry DR-1 POLY metadata. Reject
+                // rather than silently loading a different musical result.
+                if (cv.hasProperty("drumRhythm")) return false;
                 ClipData cd;
                 cd.name = cv.getProperty("name", "").toString().toStdString();
                 cd.bars = (int)cv.getProperty("bars", 1);

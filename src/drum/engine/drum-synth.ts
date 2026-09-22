@@ -292,6 +292,6 @@ export class DrumEngine {
   }
 
   updateClip(data: Uint8Array, bars: number, rhythm?: DrumRhythm): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, ...(rhythm ? { rhythm } : {}) });
+    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, rhythm: rhythm ?? null });
   }
 }

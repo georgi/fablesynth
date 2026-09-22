@@ -519,6 +519,7 @@ add_executable(sq4_engine_test
     source/drum/dsp/SampledTables.gen.cpp
     source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumRhythm.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
@@ -572,6 +573,7 @@ add_executable(measure_track_levels
     source/drum/dsp/SampledTables.gen.cpp
     source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumRhythm.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
