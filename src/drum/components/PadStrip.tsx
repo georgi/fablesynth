@@ -12,7 +12,6 @@ export function PadStrip() {
         <h2>PAD</h2>
         <div className="padstrip-steppers">
           <DrumStepper paramId={pad(sel, 'choke')} label="CHOKE" />
-          <DrumStepper paramId={pad(sel, 'out')} label="OUT" />
         </div>
       </div>
       <div className="knob-row padstrip-knobs">

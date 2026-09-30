@@ -18,6 +18,7 @@ export function PadGrid() {
   const hitTick = useDrumStore((s) => s.hitTick);
   const params = useDrumStore((s) => s.params);
   const selectPad = useDrumStore((s) => s.selectPad);
+  const setParam = useDrumStore((s) => s.setParam);
   const setPadName = useDrumStore((s) => s.setPadName);
   const importPadTable = useDrumStore((s) => s.importPadTable);
   const [now, setNow] = useState(() => performance.now());
@@ -123,6 +124,13 @@ export function PadGrid() {
           );
         })}
       </div>
+      <label className="dr-pad-output">
+        <span>OUTPUT</span>
+        <select aria-label="Selected pad output" value={params[pad(sel, 'out')] | 0}
+          onChange={(e) => setParam(pad(sel, 'out'), Number(e.target.value))}>
+          {OUT_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
+        </select>
+      </label>
     </section>
   );
 }

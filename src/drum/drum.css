@@ -304,6 +304,7 @@
 }
 .dr-osc-section,
 .dr-noise-section { min-height: 238px; }
+.dr-noise-section .panel-head h2 { white-space: nowrap; font-size: 9px; letter-spacing: 0.14em; }
 .dr-osc-stepper { margin-left: auto; }
 .dr-osc-stepper .st-value { min-width: 62px; }
 .dr-osc-body {
@@ -393,19 +394,25 @@
   justify-content: space-evenly;
   gap: 0;
 }
-.dr-noise-knobs .knob { min-width: 0; }
+.dr-noise-knobs .knob { min-width: 0; flex: 1 1 0; }
+.dr-noise-knobs .k-label { white-space: nowrap; font-size: 7px; letter-spacing: 0.06em; }
 
 .pad-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
-/* Sequencer modes drop the pad strip, leaving the pads panel alone in the left
-   column. Pads keep their square aspect, so the panel's height follows its
-   width — narrow the column until it ends level with the osc panel row beside
-   it, and pin it to the top so it never stretches past. */
-.dr-main.fit-pads { grid-template-columns: 277px 1fr; }
-.dr-main.fit-pads .dr-left { align-self: start; }
+.dr-pad-output {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: var(--text-dim);
+  font: 8px var(--font-mono);
+  letter-spacing: .14em;
+}
+.dr-pad-output select { width: 132px; }
 .pad {
   position: relative;
   aspect-ratio: 1 / 1;
@@ -1020,7 +1027,6 @@
   }
   .dr-left,
   .dr-right { gap: 8px; }
-  .dr-main.fit-pads { grid-template-columns: minmax(0, 1fr); }
 
   #dr-oscrow,
   #dr-editrow {
