@@ -6,6 +6,8 @@
 #include "dsp/DrumEngine.h"
 #include "dsp/DrumKits.h"
 #include "dsp/DrumParams.h"
+#include "dsp/DrumRhythm.h"
+#include "ui/DrumUiModel.h"
 #include "../dsp/UserTables.h"
 #include "../ui/ProgramDirty.h"
 
@@ -47,7 +49,7 @@ public:
 
     int getNumPrograms() override { return (int)fable::factoryKits().size(); }
     int getCurrentProgram() override { return currentProgram_; }
-    void setCurrentProgram(int index) override;   // applyKit onto APVTS + patterns/chain/names
+    void setCurrentProgram(int index) override;   // apply kit sounds + pad names; keep sequence
     const juce::String getProgramName(int index) override;
     void changeProgramName(int, const juce::String&) override {}
 
@@ -75,6 +77,13 @@ public:
     void    setStep(int pattern, int pad, int step, uint8_t v);  // 0/1/2
     const std::vector<int>& getChain() const { return chain_; }
     void setChain(std::vector<int> c);
+    uint32_t getSequenceContextRevision() const { return sequenceContextRevision_; }
+    fui::DrumSequence getSequence() const;
+    bool commitSequence(const fui::DrumSequence&);
+    bool loadFactoryPatternPreset(int index);
+    int getLanePosition(int pad) const { return lanePositions_[(size_t)pad].load(std::memory_order_relaxed) - 1; }
+    void setDrumRhythm(const fable::DrumRhythm& rhythm);
+    void clearDrumRhythm();
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
     juce::String getPadName(int i) const;
@@ -136,10 +145,14 @@ private:
     static constexpr int kPatternBytes = fable::DR_NPATTERNS * fable::DR_NPADS * fable::DR_STEPS;
     std::array<uint8_t, kPatternBytes> patterns_{};
     std::vector<int> chain_{0};
+    bool hasRhythm_ = false;
+    fable::DrumRhythm rhythm_{};
     struct SeqSnapshot {
         std::array<uint8_t, kPatternBytes> patterns{};
         std::array<int, fable::DR_NPATTERNS> chain{};
         int chainSize = 1;
+        bool hasRhythm = false;
+        fable::DrumRhythm rhythm{};
     };
     // Single producer (message thread), single consumer (audio). Each owns
     // one slot; exchange hands off the middle slot. The dirty bit coalesces
@@ -159,6 +172,9 @@ private:
 
     // atomics published from the audio thread
     std::atomic<bool> seqPlaying_{false};
+    uint32_t sequenceContextRevision_ = 0;
+    uint16_t configuredLanes_ = 0;
+    std::array<std::atomic<int>, 16> lanePositions_{};
     std::atomic<int> curStep_{-1}, curPattern_{0};
     std::atomic<uint32_t> hitFlags_{0};
     std::atomic<bool> hostSynced_{false};

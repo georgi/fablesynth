@@ -1,3 +1,4 @@
+import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rhythm';
 // The SQ-4 conductor (docs/sq4-clips.md §9). Owns all musical decisions:
 // the owner/queue launcher state, quantize boundary scheduling against the
 // shared context-frame timebase, and the track gain (fader × mute × solo)
@@ -66,6 +67,7 @@ export interface SeqStore {
   launchScene: (s: number) => void;
   stopScene: (s: number) => void;
   togglePassThrough: (s: number, t: number) => void;
+  updateDrumClipSequence: (s: number, t: number, bytes: Uint8Array, bars: number, rhythm: DrumRhythm | null) => string | null;
   updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
   updateClipArp: (s: number, t: number, patch: Partial<ClipArp>) => void;
   createClip: (s: number, t: number) => void;
@@ -233,7 +235,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         clipBytes.set(key, bytes);
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
-        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip));
+        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm);
       }
     }
   };
@@ -387,7 +389,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip));
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm);
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -449,10 +451,39 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       applyGridWrites([{ s, t, clip: { ...clip, arp: JSON.parse(JSON.stringify(arp)) as ClipArp } }], 0);
     },
 
+    updateDrumClipSequence: (s, t, bytes, bars, rhythm) => {
+      const st = get();
+      const clip = st.session.scenes[s]?.clips[t];
+      if (!clip || st.session.tracks[t]?.machine !== 'DR1') return 'No drum clip';
+      if (!Number.isInteger(bars) || bars < 1 || bars > 4 || bytes.length !== bars * 256 || bytes.some(v => v > 2)) return 'Invalid drum clip';
+      const conflict = drumSourceConflict(rhythm ?? undefined, bars);
+      if (conflict) return conflict;
+      let drumRhythm: DrumRhythm | undefined;
+      try { drumRhythm = cloneDrumRhythm(rhythm ?? undefined, bars); }
+      catch (error) { return (error as Error).message; }
+      const nextClip = { ...clip, bars, pattern: bytesToB64(bytes), drumRhythm };
+      const scenes = st.session.scenes.map((sc, i) => {
+        if (i !== s) return sc;
+        const clips = sc.clips.slice(); clips[t] = nextClip;
+        return { ...sc, clips };
+      });
+      set({ session: { ...st.session, scenes } });
+      clipBytes.set(`${s}:${t}`, bytes.slice());
+      persist();
+      const q = st.queue[t];
+      const target = q != null && q !== STOP ? q : st.owner[t];
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, bars, undefined, drumRhythm);
+      return null;
+    },
+
     updateClipBytes: (s, t, bytes, bars) => {
       const st = get();
       const clip = st.session.scenes[s]?.clips[t];
       if (!clip) return;
+      if (st.session.tracks[t]?.machine === 'DR1') {
+        get().updateDrumClipSequence(s, t, bytes, bars, clip.drumRhythm ?? null);
+        return;
+      }
       const scenes = st.session.scenes.map((sc, i) => {
         if (i !== s) return sc;
         const clips = sc.clips.slice();
@@ -467,7 +498,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip));
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm);
       }
     },
 

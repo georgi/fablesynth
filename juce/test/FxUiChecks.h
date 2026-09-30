@@ -36,8 +36,8 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     std::unique_ptr<juce::AudioProcessorEditor> editor(proc->createEditor());
     editor->setSize(width, height);
     editor->setVisible(true);
-    auto *tab = findFxComponent<juce::TextButton>(*editor, "FX CHAIN");
-    auto *sound = findFxComponent<juce::TextButton>(*editor, "SOUND");
+    auto *tab = findFxComponent<juce::TextButton>(*editor, drum ? "GROUP FX" : "FX CHAIN");
+    auto *sound = findFxComponent<juce::TextButton>(*editor, drum ? "EDIT" : "SOUND");
     auto *chain = findFxComponent<fui::FxChain>(*editor);
     if (!tab || !sound || !chain || chain->isVisible())
         return false;

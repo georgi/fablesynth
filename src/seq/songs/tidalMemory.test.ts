@@ -5,11 +5,26 @@ import { defaultParams } from '../../params';
 import { b64ToBytes, bytesPerBar, HOSTED_MAX_BARS, validateSession } from '../protocol';
 import { AUTHORED_SESSION_PRESETS, copySession, FACTORY_SESSION_PRESETS, GENERATED_SESSION_PRESETS } from '../sessionPresets';
 import { exportSessionJson, importSessionJson } from '../sessionLibrary';
+import { embedSessionPatches } from '../sessionExport';
 import { TIDAL_MEMORY } from './tidalMemory';
 import { PHASE_RUNNER } from './phaseRunner';
 import { LATE_CHECKOUT } from './lateCheckout';
 
 describe('authored SQ-4 pilot', () => {
+  it('keeps the drum group and bass drums dry in every factory session', () => {
+    for (const preset of FACTORY_SESSION_PRESETS) {
+      const drum = embedSessionPatches(preset.session).tracks.find(track => track.machine === 'DR1');
+      expect(drum, preset.name).toBeDefined();
+      if (!drum || drum.patch.kind !== 'inline') continue;
+      const params = (drum.patch.data as { params: Record<string, number> }).params;
+      expect(params['fx.reverb.on'], preset.name).toBe(0);
+      expect(params['fx.reverb.mix'], preset.name).toBe(0);
+      for (const i of [0, 1]) {
+        expect(params[`pad${i}.fx.reverb.on`], `${preset.name}: pad ${i}`).toBe(0);
+        expect(params[`pad${i}.fx.reverb.mix`], `${preset.name}: pad ${i}`).toBe(0);
+      }
+    }
+  });
   it('appends the pilot without moving existing host programs', () => {
     expect(FACTORY_SESSION_PRESETS).toHaveLength(42);
     expect(FACTORY_SESSION_PRESETS.slice(0, 40)).toEqual(GENERATED_SESSION_PRESETS);

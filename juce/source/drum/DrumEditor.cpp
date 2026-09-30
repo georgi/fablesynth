@@ -40,6 +40,12 @@ public:
     void setEditPattern(int i) override { proc.setEditPattern(i); }
     uint8_t step(int a, int b, int c) const override { return proc.getStep(a, b, c); }
     void setStep(int a, int b, int c, uint8_t v) override { proc.setStep(a, b, c, v); }
+    bool supportsPoly() const override { return true; }
+    DrumSequence sequence() const override { return proc.getSequence(); }
+    bool commitSequence(const DrumSequence& s) override { return proc.commitSequence(s); }
+    bool loadPatternPreset(int i) override { return proc.loadFactoryPatternPreset(i); }
+    int lanePosition(int i) const override { return proc.getLanePosition(i); }
+    int clipIdentity() const override { return (int)proc.getSequenceContextRevision(); }
     const std::vector<int>& chain() const override { return proc.getChain(); }
     void setChain(std::vector<int> c) override { proc.setChain(std::move(c)); }
 private:
@@ -72,6 +78,9 @@ DrumRack::DrumRack(fui::DrumUiModel& p) : header(p), body(p) {
     // header strip. Keep the header above it so its program and master
     // controls receive mouse events.
     addAndMakeVisible(header);
+    body.onPreferredHeightChanged = [this] {
+        if (onPreferredHeightChanged) onPreferredHeightChanged();
+    };
 }
 
 void DrumRack::resized() {
@@ -86,17 +95,24 @@ DrumEditor::DrumEditor(DrumAudioProcessor& p)
     setWantsKeyboardFocus(true); // QWERTY pad map (PadGrid key-listens on us)
     addAndMakeVisible(rack);
     addAndMakeVisible(agentOverlay);
-    rack.setBounds(0, 0, DrumRack::LW, DrumRack::LH);
-
+    rack.onPreferredHeightChanged = [this] { fitWindowToPage(); };
     setResizable(true, true);
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio((double)DrumRack::LW / DrumRack::LH);
-    setResizeLimits(840, (int)(840 * (double)DrumRack::LH / DrumRack::LW),
-                    2100, (int)(2100 * (double)DrumRack::LH / DrumRack::LW));
-    setSize(1200, (int)(1200 * (double)DrumRack::LH / DrumRack::LW));
+    fitWindowToPage();
 }
 
 DrumEditor::~DrumEditor() { setLookAndFeel(nullptr); }
+
+void DrumEditor::fitWindowToPage() {
+    const int logicalHeight = rack.logicalHeight();
+    const double ratio = (double)logicalHeight / DrumRack::LW;
+    // Keep the user's width and control scale when changing pages; only the
+    // height needed by the visible content changes.
+    const int width = getWidth() > 0 ? getWidth() : 1200;
+    rack.setSize(DrumRack::LW, logicalHeight);
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio(1.0 / ratio);
+    setResizeLimits(840, juce::roundToInt(840 * ratio), 2100, juce::roundToInt(2100 * ratio));
+    setSize(width, juce::roundToInt(width * ratio));
+}
 
 void DrumEditor::paint(juce::Graphics& g) {
     g.fillAll(fui::col::bg);
@@ -114,9 +130,10 @@ void DrumEditor::resized() {
     const float width = static_cast<float>(getWidth());
     const float height = static_cast<float>(getHeight());
     const float rackWidth = static_cast<float>(DrumRack::LW);
-    const float rackHeight = static_cast<float>(DrumRack::LH);
+    const float rackHeight = static_cast<float>(rack.logicalHeight());
     const float sc = juce::jmin(width / rackWidth, height / rackHeight);
     const float dx = (width - rackWidth * sc) * 0.5f;
     const float dy = (height - rackHeight * sc) * 0.5f;
     rack.setTransform(juce::AffineTransform::scale(sc).translated(dx, dy));
+    rack.setDisplayScale(sc);
 }

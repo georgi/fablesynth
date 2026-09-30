@@ -171,6 +171,7 @@ public:
     void auditionWtOff(int track, int note);
 
     uint32_t consumeDrumHitFlags() { return drumHitFlags_.exchange(0); }
+    int drumLanePosition(int pad) const { return pad >= 0 && pad < 16 ? drumLanePositions_[(size_t)pad].load() - 1 : -1; }
     float drumVizPosition(int oscillator) const;
     float drumVizEnvelope() const { return drumVizEnv_.load(); }
     float bassVizPosition() const { return bassVizPos_.load(); }
@@ -230,6 +231,7 @@ private:
         uint32_t gen = 0;                            // Reset: the new generation
         std::shared_ptr<std::vector<uint8_t>> bytes; // Clip / Update
         fable::ArpPattern arp;
+        std::shared_ptr<fable::DrumRhythm> drumRhythm;
         std::shared_ptr<std::vector<float>>  params; // Patch (flat engine params)
     };
     void pushCmd(Cmd&& c);
@@ -311,6 +313,7 @@ private:
     void timerCallback() override { drainAcks(); }
 
     // The four engines + their standalone FX chains (identical topology/order).
+    std::array<std::atomic<int>, 16> drumLanePositions_{};
     fable::DrumEngine drum_;
     fable::BassEngine bass_;  fable::BassFx bassFx_;
     fable::Engine     wt_[2]; fable::Fx     wtFx_[2];

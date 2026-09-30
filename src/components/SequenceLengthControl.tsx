@@ -6,6 +6,7 @@ const DRAG_THRESHOLD = 4;
 interface SequenceLengthControlProps {
   editBar: number;
   length: number;
+  availableBars?: number;
   playingBar?: number | null;
   onEditBar: (bar: number) => void;
   onLengthChange: (length: number) => void;
@@ -17,6 +18,7 @@ interface SequenceLengthControlProps {
 export function SequenceLengthControl({
   editBar,
   length,
+  availableBars = MAX_SEQUENCE_BARS,
   playingBar = null,
   onEditBar,
   onLengthChange,
@@ -83,6 +85,7 @@ export function SequenceLengthControl({
             className={`seq-bar${editBar === index ? ' active' : ''}${index < barCount ? ' included' : ''}${barCount > 1 && playingBar === index ? ' playing' : ''}${dragFrom === index ? ' dragging' : ''}${dropTarget === index ? ' drop-target' : ''}`}
             type="button"
             data-bar-chip={index}
+            disabled={index >= availableBars}
             aria-label={`Edit bar ${index + 1}${index < barCount ? ', included in sequence' : ''}${barCount > 1 && playingBar === index ? ', currently playing' : ''}`}
             aria-pressed={editBar === index}
             key={index}

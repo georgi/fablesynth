@@ -12,8 +12,6 @@ export function Header() {
   const kitDirty = useDrumStore((s) => s.kitDirty);
   const stepKit = useDrumStore((s) => s.stepKit);
   const saveKit = useDrumStore((s) => s.saveKit);
-  const mode = useDrumStore((s) => s.mode);
-  const setMode = useDrumStore((s) => s.setMode);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState('');
   const cancelled = useRef(false);
@@ -66,10 +64,6 @@ export function Header() {
         ) : (
           <button className="pb-btn pb-save" onClick={beginSave}>SAVE</button>
         )}
-      </div>
-      <div className="dr-mode" aria-label="performance mode">
-        <button className={`pb-btn${mode === 'step' ? ' active' : ''}`} aria-pressed={mode === 'step'} onClick={() => setMode('step')}>STEP</button>
-        <button className={`pb-btn${mode === 'pads' ? ' active' : ''}`} aria-pressed={mode === 'pads'} onClick={() => setMode('pads')}>PADS</button>
       </div>
       <div className="hud dr-hud">
         <div className="hud-cell">

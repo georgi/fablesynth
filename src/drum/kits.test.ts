@@ -1,3 +1,4 @@
+import { updateDrumLane } from './rhythm';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FACTORY_KITS, loadUserKits, saveUserKit, kitToState, stateToKit, type Kit } from './kits';
 import { DRUM_PARAMS, defaultDrumParams, pad, PAD_COUNT } from './params';
@@ -109,7 +110,7 @@ describe('kits', () => {
       expect(acid.params[pad(i, 'mod1.src')]).toBe(1); // MOD ENV
       expect(acid.params[pad(i, 'mod1.dst')]).toBe(4);
     }
-    expect(acid.params[pad(1, 'fx.reverb.mix')]).toBeCloseTo(0.55); // rumble pad
+    expect(acid.params[pad(1, 'fx.reverb.mix')]).toBe(0); // low drum stays dry
 
     // BOOM BAP is sample-forward, lo-fi capped, with a reversed UZU MOD pad.
     const bap = kitToState(byName('BOOM BAP'));
@@ -157,6 +158,20 @@ describe('kits', () => {
     }
   });
 
+  it('keeps the drum group and every bass drum dry in all factory kits', () => {
+    for (const kit of FACTORY_KITS) {
+      const { params, padNames } = kitToState(kit);
+      expect(params['fx.reverb.on'], kit.name).toBe(0);
+      expect(params['fx.reverb.mix'], kit.name).toBe(0);
+      padNames.forEach((name, i) => {
+        if (i < 2 || name.startsWith('KICK')) {
+          expect(params[pad(i, 'fx.reverb.on')], `${kit.name}: ${name}`).toBe(0);
+          expect(params[pad(i, 'fx.reverb.mix')], `${kit.name}: ${name}`).toBe(0);
+        }
+      });
+    }
+  });
+
   it('keeps a legacy global FX value in the group strip without overwriting pads', () => {
     const legacy: Kit = {
       ...FACTORY_KITS[0],
@@ -194,4 +209,16 @@ describe('kits', () => {
     saveUserKit('X', kit);
     expect(loadUserKits()).toHaveLength(1);
   });
+});
+
+
+it('round-trips disabled lane settings and notes through a saved kit without aliases', () => {
+  const rhythm = updateDrumLane(undefined, 15, { enabled: false, sourceBar: 3, steps: 5, rotation: 4, timing: { mode: 'fit', cycleBeats: 8 } });
+  const patterns = new Uint8Array(1024); patterns[patIdx(3, 15, 4)] = 2;
+  const kit = stateToKit('POLY ROUND TRIP', defaultDrumParams(), FACTORY_KITS[0].padNames, patterns, [0], [], rhythm);
+  saveUserKit(kit.name, kit);
+  const restored = kitToState(loadUserKits().find(k => k.name === kit.name)!);
+  expect(restored.drumRhythm).toEqual(rhythm); expect(restored.patterns).toEqual(patterns);
+  restored.drumRhythm!.lanes[15]!.steps = 7;
+  expect(kit.drumRhythm?.lanes[15]?.steps).toBe(5);
 });

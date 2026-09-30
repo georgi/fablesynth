@@ -1,3 +1,4 @@
+import { updateDrumLane, type DrumRhythm } from '../drum/rhythm';
 // Conductor tests: a FakeRig with recordable devices and a controllable
 // frame clock stands in for the WebAudio rig. Acks are fired manually to
 // assert the owner-flips-on-ack contract.
@@ -21,7 +22,7 @@ class FakeDevice implements SeqDevice {
   clips: Array<{ bars: number; atFrame: number; bytes: number; arp?: ArpConfig }> = [];
   stops: number[] = [];
   tempos: Array<{ bpm: number; swing: number; anchor: number }> = [];
-  updates: Array<{ bars: number; bytes: number; arp?: ArpConfig }> = [];
+  updates: Array<{ bars: number; bytes: number; arp?: ArpConfig; rhythm?: DrumRhythm }> = [];
   patches: unknown[] = [];
   onClipStart: ((frame: number) => void) | null = null;
   onClipStop: ((frame: number) => void) | null = null;
@@ -38,8 +39,8 @@ class FakeDevice implements SeqDevice {
   scheduleStop(atFrame: number): void {
     this.stops.push(atFrame);
   }
-  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig): void {
-    this.updates.push({ bars, bytes: pattern.length, ...(arp ? { arp } : {}) });
+  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm): void {
+    this.updates.push({ bars, bytes: pattern.length, ...(arp ? { arp } : {}), rhythm });
   }
   panic(): void {}
 }
@@ -808,5 +809,30 @@ describe('focus', () => {
     st().enterFocus(0, 4);
     st().enterFocus(1);
     expect(st().focus).toEqual({ track: 1, scene: 4 });
+  });
+});
+
+
+describe('hosted DR-1 complete sequence bridge', () => {
+  it('writes metadata-only edits and explicit removal to the pending target only', () => {
+    st().launch(0, 0); rig.dev(0).onClipStart!(0);
+    st().launch(0, 1);
+    const rhythm = updateDrumLane(undefined, 3, { enabled: true, steps: 5 }, 0);
+    const write = (scene: number, r: DrumRhythm | null) => {
+      const clip = st().session.scenes[scene].clips[0]!;
+      return st().updateDrumClipSequence(scene, 0, clipPattern(st().session, scene, 0)!, clip.bars, r);
+    };
+    expect(write(0, rhythm)).toBeNull(); expect(rig.dev(0).updates).toHaveLength(0);
+    expect(write(1, rhythm)).toBeNull(); expect(rig.dev(0).updates[rig.dev(0).updates.length - 1]?.rhythm?.lanes[3]?.steps).toBe(5);
+    expect(write(1, null)).toBeNull(); expect(rig.dev(0).updates[rig.dev(0).updates.length - 1]?.rhythm).toBeUndefined();
+    expect(st().session.scenes[1].clips[0]?.drumRhythm).toBeUndefined();
+    expect(st().session.scenes[0].clips[0]?.drumRhythm?.lanes[3]?.steps).toBe(5);
+  });
+  it('rejects shrinking a source referenced by a disabled configuration', () => {
+    const rhythm = updateDrumLane(undefined, 15, { enabled: false, sourceBar: 3 }, 0);
+    expect(st().updateDrumClipSequence(0, 0, new Uint8Array(1024), 4, rhythm)).toBeNull();
+    const before = st().session;
+    expect(st().updateDrumClipSequence(0, 0, new Uint8Array(768), 3, rhythm)).toContain('BAR 4');
+    expect(st().session).toBe(before);
   });
 });

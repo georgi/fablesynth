@@ -784,7 +784,7 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Clip: {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
-                        case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag); break;
+                        case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag, c.drumRhythm.get()); break;
                         case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp); break;
                         default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp); break;
                     }
@@ -799,7 +799,7 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Update: {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
-                        case 0: drum_.hostClipUpdate(d, nb, c.bars); break;
+                        case 0: drum_.hostClipUpdate(d, nb, c.bars, c.drumRhythm.get()); break;
                         case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp); break;
                         default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp); break;
                     }
@@ -841,12 +841,14 @@ void SeqAudioProcessor::drainCmds() {
 void SeqAudioProcessor::IO::ioScheduleArpClip(int t, const fable::ClipData& clip, double at, int tag) {
     Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = clip.bars; c.at = at; c.tag = tag;
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
+    if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
     if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
     p.pushCmd(std::move(c));
 }
 void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) {
     Cmd c; c.k = Cmd::K::Update; c.t = t; c.bars = clip.bars;
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
+    if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
     if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
     p.pushCmd(std::move(c));
 }
@@ -986,6 +988,7 @@ void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
     drumVizA_.store(drum_.vizA, std::memory_order_relaxed);
     drumVizB_.store(drum_.vizB, std::memory_order_relaxed);
     drumVizEnv_.store(drum_.vizEnv, std::memory_order_relaxed);
+    for (int i = 0; i < 16; ++i) drumLanePositions_[(size_t)i].store(drum_.lanePosition(i) + 1, std::memory_order_relaxed);
     drumHitFlags_.fetch_or(drum_.consumeHits(), std::memory_order_relaxed);
 }
 

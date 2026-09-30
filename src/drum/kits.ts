@@ -5,6 +5,7 @@ import type { ParamValues } from '../params';
 import type { SerializedUserTable } from '../engine/usertables';
 import { defaultDrumParams, FX_DEFS, pad, PAD_COUNT } from './params';
 import { makeEmptyPatterns, patIdx, type Patterns } from './seq';
+import { cloneDrumRhythm, validateDrumRhythm, type DrumRhythm } from './rhythm';
 
 export interface Kit {
   name: string;
@@ -12,6 +13,7 @@ export interface Kit {
   padNames: string[];
   patterns: number[];
   chain: number[];
+  drumRhythm?: DrumRhythm;
   tables?: SerializedUserTable[];
 }
 
@@ -593,12 +595,10 @@ function acidCaveParams(): Partial<ParamValues> {
     [pad(0, 'oscA.tune')]: -25, [pad(0, 'penv.amt')]: 28, [pad(0, 'penv.dec')]: 0.035,
     [pad(0, 'aenv.dec')]: 0.3, [pad(0, 'aenv.curve')]: 0.5,
     [pad(0, 'lvl')]: 0.92, [pad(0, 'fx.reverb.on')]: 0,
-    // Rumble: same THUD an octave under the kick, low-passed and drowned in a
-    // huge per-pad reverb — the classic sub-rumble trick.
+    // Rumble: a long, low-passed THUD envelope without reverb.
     [pad(1, 'oscA.tune')]: -25, [pad(1, 'penv.amt')]: 8, [pad(1, 'penv.dec')]: 0.08,
     [pad(1, 'aenv.dec')]: 2.6, [pad(1, 'lvl')]: 0.55,
     [pad(1, 'flt.on')]: 1, [pad(1, 'flt.type')]: 1, [pad(1, 'flt.cut')]: 300,
-    [pad(1, 'fx.reverb.size')]: 0.85, [pad(1, 'fx.reverb.mix')]: 0.55,
     [pad(2, 'oscA.table')]: 3, [pad(2, 'oscA.tune')]: -7,
     [pad(2, 'noise.level')]: 0.55, [pad(2, 'noise.color')]: 0.1, [pad(2, 'aenv.dec')]: 0.16,
     [pad(3, 'oscA.level')]: 0, [pad(3, 'oscB.table')]: 19, [pad(3, 'oscB.tune')]: -3,
@@ -921,9 +921,20 @@ function withPunchFx(params: Partial<ParamValues>): Partial<ParamValues> {
   return params;
 }
 
-const kit = (name: string, params: Partial<ParamValues>, padNames: string[], patterns: number[], chain: number[]): Kit => ({
-  name, params: withPunchFx(params), padNames, patterns, chain,
-});
+const kit = (name: string, params: Partial<ParamValues>, padNames: string[], patterns: number[], chain: number[]): Kit => {
+  const dry = withPunchFx(params);
+  // Factory drum buses and bass drums stay dry, including extra kick pads in
+  // kits that place them outside the first two slots.
+  dry['fx.reverb.on'] = 0;
+  dry['fx.reverb.mix'] = 0;
+  padNames.forEach((label, i) => {
+    if (i < 2 || label.startsWith('KICK')) {
+      dry[pad(i, 'fx.reverb.on')] = 0;
+      dry[pad(i, 'fx.reverb.mix')] = 0;
+    }
+  });
+  return { name, params: dry, padNames, patterns, chain };
+};
 
 export const FACTORY_KITS: Kit[] = [
   kit('TR-VOID', trVoidParams(), [...PAD_NAMES], [...PATTERNS], [0]),
@@ -956,6 +967,7 @@ export function kitToState(kit: Kit): {
   padNames: string[];
   patterns: Patterns;
   chain: number[];
+  drumRhythm?: DrumRhythm;
   tables: SerializedUserTable[];
 } {
   const params = { ...defaultDrumParams(), ...kit.params } as ParamValues;
@@ -974,6 +986,7 @@ export function kitToState(kit: Kit): {
     padNames: [...kit.padNames],
     patterns: Uint8Array.from(kit.patterns),
     chain: [...kit.chain],
+    ...(kit.drumRhythm ? { drumRhythm: cloneDrumRhythm(kit.drumRhythm, 4) } : {}),
     tables: kit.tables ? [...kit.tables] : [],
   };
 }
@@ -985,6 +998,7 @@ export function stateToKit(
   patterns: Patterns,
   chain: number[],
   tables: SerializedUserTable[] = [],
+  drumRhythm?: DrumRhythm,
 ): Kit {
   const kit: Kit = {
     name,
@@ -994,6 +1008,11 @@ export function stateToKit(
     chain: [...chain],
   };
   if (tables.length) kit.tables = [...tables];
+  if (drumRhythm) {
+    const error = validateDrumRhythm(drumRhythm, 4);
+    if (error) throw new Error(`Invalid drum rhythm: ${error}`);
+    kit.drumRhythm = cloneDrumRhythm(drumRhythm, 4);
+  }
   return kit;
 }
 
@@ -1019,7 +1038,7 @@ function writeStored(key: string, value: string): void {
 export function loadUserKits(): Kit[] {
   try {
     const parsed = JSON.parse(readStored(LS_KEY) as string);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.filter((k) => !k.drumRhythm || !validateDrumRhythm(k.drumRhythm, 4)) : [];
   } catch {
     return [];
   }

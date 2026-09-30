@@ -54,6 +54,11 @@ void HostedDrumModel::flushPendingPatch(bool invalidatePadPatchSelection) {
 
 void HostedDrumModel::timerCallback() {
     flushPendingPatch();
+    const int bars = clipBars();
+    if ((int)chain_.size() != bars) {
+        chain_.clear(); for (int bar = 0; bar < bars; ++bar) chain_.push_back(bar);
+        editBar_ = std::min(editBar_, bars - 1);
+    }
 }
 
 bool HostedDrumModel::reloadIfTrackPatchChanged() {
@@ -128,16 +133,44 @@ void HostedDrumModel::setEditPattern(int bar) {
     editBar_ = juce::jlimit(0, juce::jmax(0, clipBars() - 1), bar);
 }
 
-void HostedDrumModel::setChain(std::vector<int> sequence) {
+DrumSequence HostedDrumModel::sequence() const {
+    DrumSequence state; state.steps.resize(1024, 0);
+    if (const auto* current = clip()) {
+        std::copy_n(current->bytes.begin(), std::min(current->bytes.size(), state.steps.size()), state.steps.begin());
+        state.hasRhythm = current->hasDrumRhythm; state.rhythm = current->drumRhythm;
+        state.configuredLanes = current->drumConfiguredLanes;
+    }
+    for (int bar = 0; bar < clipBars(); ++bar) state.chain.push_back(bar);
+    return state;
+}
+bool HostedDrumModel::commitSequence(const DrumSequence& state) {
     const auto* current = clip();
-    if (!current || current->bars > fable::SQ_HOSTED_MAX_BARS) return;
-    const int bars = juce::jlimit(1, fable::SQ_HOSTED_MAX_BARS, (int)sequence.size());
-    auto bytes = fable::sqEmptyClip(fable::Machine::DR1, bars);
-    std::copy_n(current->bytes.begin(), juce::jmin(current->bytes.size(), bytes.size()), bytes.begin());
-    proc_.conductor().updateClipBytes(scene_, 0, std::move(bytes), bars);
-    editBar_ = juce::jmin(editBar_, bars - 1);
-    chain_.clear();
-    for (int bar = 0; bar < bars; ++bar) chain_.push_back(bar);
+    if (!current || current->bars > fable::SQ_HOSTED_MAX_BARS || state.steps.size() != 1024
+        || state.chain.empty() || state.chain.size() > fable::SQ_HOSTED_MAX_BARS
+        || std::any_of(state.steps.begin(), state.steps.end(), [](uint8_t v) { return v > 2; })) return false;
+    for (size_t i = 0; i < state.chain.size(); ++i) if (state.chain[i] != (int)i) return false;
+    auto next = *current; next.bars = (int)state.chain.size();
+    next.bytes.assign(state.steps.begin(), state.steps.begin() + next.bars * 256);
+    next.hasDrumRhythm = state.hasRhythm; next.drumRhythm = state.rhythm;
+    next.drumConfiguredLanes = state.configuredLanes;
+    if (!proc_.conductor().updateDrumClip(scene_, next)) return false;
+    chain_ = state.chain; editBar_ = std::min(editBar_, next.bars - 1); return true;
+}
+bool HostedDrumModel::loadPatternPreset(int index) {
+    const auto& presets = fable::factoryKits();
+    if (index < 0 || index >= (int)presets.size() || !hasTargetClip()) return false;
+    const auto& preset = presets[(size_t)index];
+    if (preset.patterns.size() != 1024 || preset.chain.empty()) return false;
+    auto next = sequence();
+    next.steps = preset.patterns;
+    next.chain = preset.chain;
+    next.hasRhythm = false;
+    next.rhythm = fable::DrumRhythm{};
+    next.configuredLanes = 0;
+    return commitSequence(next);
+}
+void HostedDrumModel::setChain(std::vector<int> chain) {
+    auto state = sequence(); state.chain = std::move(chain); commitSequence(state);
 }
 
 const fable::ClipData* HostedDrumModel::clip() const {

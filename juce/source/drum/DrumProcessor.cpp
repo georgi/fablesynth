@@ -10,6 +10,61 @@
 
 using namespace fable;
 
+namespace {
+
+juce::String encodeDrumRhythm(const DrumRhythm& rhythm) {
+    juce::StringArray lanes;
+    for (const auto& lane : rhythm.lanes) {
+        lanes.add(juce::String(lane.enabled ? 1 : 0) + ","
+            + juce::String(lane.sourceBar) + ","
+            + juce::String(lane.steps) + ","
+            + juce::String(lane.rotation) + ","
+            + juce::String(lane.mode == DrumRhythmMode::fit ? 1 : 0) + ","
+            + juce::String(lane.cycleBeats));
+        if (lane.micro) {
+            auto& encoded = lanes.getReference(lanes.size() - 1);
+            encoded += "," + juce::String(lane.delayMs);
+            for (int value : lane.stepDelayMs) encoded += "," + juce::String(value);
+        }
+    }
+    return lanes.joinIntoString(";");
+}
+
+bool decodeDrumRhythm(const juce::String& encoded, int version, DrumRhythm& out) {
+    if (version != (int)DR_RHYTHM_VERSION) return false;
+    juce::StringArray lanes;
+    lanes.addTokens(encoded, ";", "");
+    if (lanes.size() != DR_RHYTHM_LANES) return false;
+    DrumRhythm candidate;
+    candidate.v = (std::uint32_t)version;
+    for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
+        juce::StringArray fields;
+        fields.addTokens(lanes[i], ",", "");
+        if (fields.size() != 6 && fields.size() != 263) return false;
+        auto& lane = candidate.lanes[(size_t)i];
+        lane.enabled = fields[0].getIntValue() != 0;
+        lane.sourceBar = fields[1].getIntValue();
+        lane.steps = fields[2].getIntValue();
+        lane.rotation = fields[3].getIntValue();
+        lane.mode = fields[4].getIntValue() != 0 ? DrumRhythmMode::fit : DrumRhythmMode::grid;
+        lane.cycleBeats = fields[5].getIntValue();
+        if (fields.size() == 263) {
+            lane.micro = true; lane.delayMs = fields[6].getIntValue();
+            for (int s = 0; s < 256; ++s) lane.stepDelayMs[(size_t)s] = fields[s + 7].getIntValue();
+        }
+    }
+    auto checked = candidate;
+    for (auto& lane : checked.lanes) {
+        if (lane.sourceBar < 0 || lane.sourceBar >= 4) return false;
+        lane.enabled = true;
+    }
+    if (!validateDrumRhythm(checked)) return false;
+    out = candidate;
+    return true;
+}
+
+} // namespace
+
 fable::FableAgent& DrumAudioProcessor::getAgent() {
     if (!agent_) {
         const auto& info = drumParamInfo();
@@ -63,8 +118,15 @@ DrumAudioProcessor::DrumAudioProcessor()
     for (auto& g : generateSampledDrumTables())
         tables_.push_back(std::make_shared<const GeneratedTable>(std::move(g)));
 
-    // Boot on TR-VOID like the web app (params + patterns + chain + names).
+    // Boot on TR-VOID sounds and its starter pattern. Later kit recalls only
+    // change sounds; pattern selection and editing remain independent.
+    const DrumKit& starter = factoryKits().front();
+    if ((int)starter.patterns.size() == kPatternBytes)
+        std::copy(starter.patterns.begin(), starter.patterns.end(), patterns_.begin());
+    const int starterBars = juce::jlimit(1, DR_NPATTERNS, (int)starter.chain.size());
+    chain_.assign(starter.chain.begin(), starter.chain.begin() + starterBars);
     setCurrentProgram(0);
+    shareSeqState();
 }
 
 // Build the APVTS layout from the canonical descriptor table, using the exact
@@ -234,6 +296,8 @@ void DrumAudioProcessor::shareSeqState() {
     snapshot.patterns = patterns_;
     snapshot.chainSize = (int)chain_.size(); // all native writers cap at DR_NPATTERNS
     std::copy(chain_.begin(), chain_.end(), snapshot.chain.begin());
+    snapshot.hasRhythm = hasRhythm_;
+    snapshot.rhythm = rhythm_;
     seqWrite_ = seqMiddle_.exchange(seqWrite_ | kSeqDirty, std::memory_order_acq_rel) & ~kSeqDirty;
 }
 
@@ -265,6 +329,56 @@ void DrumAudioProcessor::setChain(std::vector<int> c) {
     shareSeqState();
 }
 
+fui::DrumSequence DrumAudioProcessor::getSequence() const {
+    return { std::vector<uint8_t>(patterns_.begin(), patterns_.end()), chain_, hasRhythm_, rhythm_, configuredLanes_ };
+}
+
+bool DrumAudioProcessor::commitSequence(const fui::DrumSequence& s) {
+    if (s.steps.size() != patterns_.size() || s.chain.empty() || s.chain.size() > 4) return false;
+    for (auto v : s.steps) if (v > 2) return false;
+    for (auto v : s.chain) if (v < 0 || v >= 4) return false;
+    if (s.hasRhythm) {
+        // Validate retained (disabled) configurations as well as sounding lanes.
+        auto checked = s.rhythm;
+        for (auto& lane : checked.lanes) {
+            if (lane.sourceBar < 0 || lane.sourceBar >= 4) return false;
+            lane.enabled = true;
+        }
+        if (!validateDrumRhythm(checked)) return false;
+    }
+    std::copy(s.steps.begin(), s.steps.end(), patterns_.begin());
+    chain_ = s.chain; hasRhythm_ = s.hasRhythm; rhythm_ = s.rhythm; configuredLanes_ = s.configuredLanes;
+    programDirty_.markEdited();
+    shareSeqState();
+    return true;
+}
+
+bool DrumAudioProcessor::loadFactoryPatternPreset(int index) {
+    const auto& kits = factoryKits();
+    if (index < 0 || index >= (int)kits.size()) return false;
+    const auto& preset = kits[(size_t)index];
+    if (preset.patterns.size() != patterns_.size() || preset.chain.empty()) return false;
+    auto next = getSequence();
+    next.steps = preset.patterns;
+    next.chain = preset.chain;
+    next.hasRhythm = false;
+    next.rhythm = DrumRhythm{};
+    next.configuredLanes = 0;
+    if (!commitSequence(next)) return false;
+    setEditPattern(0);
+    return true;
+}
+
+void DrumAudioProcessor::setDrumRhythm(const fable::DrumRhythm& rhythm) {
+    auto s = getSequence(); s.hasRhythm = true; s.rhythm = rhythm; s.configuredLanes = 0xffff;
+    commitSequence(s);
+}
+
+void DrumAudioProcessor::clearDrumRhythm() {
+    auto s = getSequence(); s.hasRhythm = false; s.rhythm = {}; s.configuredLanes = 0;
+    commitSequence(s);
+}
+
 void DrumAudioProcessor::setEditPattern(int p) {
     editPattern_ = juce::jlimit(0, DR_NPATTERNS - 1, p);
 }
@@ -293,6 +407,9 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
 
     // Apply kit values onto the APVTS so the host + UI reflect them (WT-1 scheme).
     DrumParamArray pv = applyKit(kit);
+    // Tempo belongs to the pattern/transport, not the sound kit.
+    if (rawParams_[(size_t)DG_SEQ_BPM] != nullptr)
+        pv[(size_t)DG_SEQ_BPM] = rawParams_[(size_t)DG_SEQ_BPM]->load();
     const auto& info = drumParamInfo();
     for (int i = 0; i < DR_NUM_PARAMS; ++i) {
         if (auto* param = apvts.getParameter(info[(size_t)i].pid)) {
@@ -304,15 +421,10 @@ void DrumAudioProcessor::setCurrentProgram(int index) {
         }
     }
 
-    // Non-param kit content: patterns, chain, pad names.
-    if ((int)kit.patterns.size() == kPatternBytes)
-        std::copy(kit.patterns.begin(), kit.patterns.end(), patterns_.begin());
-    const int bars = juce::jlimit(1, DR_NPATTERNS, (int)kit.chain.size());
-    chain_.assign(kit.chain.begin(), kit.chain.begin() + bars);   // Finding D6
-    for (int& c : chain_) c = juce::jlimit(0, DR_NPATTERNS - 1, c);
+    // The sequencer has its own pattern library and state. Kit recall changes
+    // only the sound and pad labels, preserving patterns, chain and POLY data.
     for (int i = 0; i < DR_NPADS; ++i)
         padNames_[(size_t)i] = juce::String(kit.padNames[(size_t)i]);
-    shareSeqState();
     selectionBroadcaster.sendChangeMessage(); // pad names / bindings changed
 }
 
@@ -397,6 +509,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         const auto& snapshot = seqSnapshots_[seqRead_];
         engine.setPatterns(snapshot.patterns.data(), (int)snapshot.patterns.size());
         engine.setChain(snapshot.chain.data(), snapshot.chainSize);
+        engine.setDrumRhythm(snapshot.hasRhythm ? &snapshot.rhythm : nullptr);
     }
 
     // 5-bus render, sample-accurate MIDI: render engine+FX up to each event's
@@ -456,6 +569,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     renderTo(n);
 
     // Publish transport/viz feedback for the editor.
+    for (int i = 0; i < 16; ++i) lanePositions_[(size_t)i].store(engine.lanePosition(i) + 1, std::memory_order_relaxed);
     curStep_.store(engine.currentStep(), std::memory_order_relaxed);
     curPattern_.store(engine.currentPattern(), std::memory_order_relaxed);
     seqPlaying_.store(engine.isPlaying(), std::memory_order_relaxed);
@@ -519,12 +633,18 @@ void DrumAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     drum.setProperty("padNames", names.joinIntoString("\n"), nullptr);
     drum.setProperty("selectedPad", selectedPad_, nullptr);
     drum.setProperty("editPattern", editPattern_, nullptr);
+    if (hasRhythm_) {
+        drum.setProperty("configuredLanes", (int)configuredLanes_, nullptr);
+        drum.setProperty("rhythmVersion", (int)rhythm_.v, nullptr);
+        drum.setProperty("rhythm", encodeDrumRhythm(rhythm_), nullptr);
+    }
     root.appendChild(drum, nullptr);
 
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
 }
 
 void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    ++sequenceContextRevision_;
     agentStateGeneration_.fetch_add(1);
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (!xml) return;
@@ -567,7 +687,21 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
     rebuildEngineTables();
 
     // 2. Patterns / chain / names / selection.
+    hasRhythm_ = false;
+    rhythm_ = DrumRhythm{};
+    configuredLanes_ = 0;
     if (drum.isValid()) {
+        // Legacy states have no rhythm property and must explicitly disable
+        // any POLY state left on a reused processor instance.
+        if (drum.hasProperty("rhythm")) {
+            DrumRhythm restored;
+            if (decodeDrumRhythm(drum.getProperty("rhythm", "").toString(),
+                                 (int)drum.getProperty("rhythmVersion", 0), restored)) {
+                rhythm_ = restored;
+                configuredLanes_ = (uint16_t)(int)drum.getProperty("configuredLanes", 65535);
+                hasRhythm_ = true;
+            }
+        }
         juce::MemoryOutputStream raw;
         if (juce::Base64::convertFromBase64(raw, drum.getProperty("patterns", "").toString())
             && raw.getDataSize() == patterns_.size()) {

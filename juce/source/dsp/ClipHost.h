@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <limits>
 
 namespace fable {
 
@@ -95,6 +96,16 @@ public:
     const ArpPattern& arp() const { return arp_; }
     double stepInterval(int) const { return std::max(1.0, toNext_); }
     int  clipStep() const { return clipStep_; } // last fired absolute step
+
+    // Embedders with independent lane clocks can tick the first sample, split
+    // before the next transport/grid boundary, then consume the remaining span.
+    double nextBoundary(double frame) const {
+        double next = playing_ ? frame + std::max(0.0, toNext_) : std::numeric_limits<double>::infinity();
+        if (hasPend_) next = std::min(next, pendAt_);
+        if (hasStop_) next = std::min(next, stopAt_);
+        return next;
+    }
+    void elapse(int samples) { if (playing_) toNext_ -= samples; }
 
     // Test hooks: reserved buffer capacities, to assert prepare()'s
     // allocation-free steady state (no realloc across launch/update/stop).

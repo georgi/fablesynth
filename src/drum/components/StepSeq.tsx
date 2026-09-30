@@ -1,4 +1,7 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { drumFitSteps, drumLaneBadge } from '../rhythm';
+import { SequenceNumberInput } from './SequenceNumberInput';
+import { LaneCursor, PolyLanePanel } from './PolyLanePanel';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
 import { useSeqRectSelect } from '../../components/useSeqRectSelect';
@@ -6,20 +9,8 @@ import { padRectNorm, type RectSel } from '../../shared/seqEdit';
 import { STEPS, patIdx } from '../seq';
 import { PAD_COUNT } from '../params';
 import { useDrumStore } from '../store';
+import { FACTORY_KITS } from '../kits';
 import { useDrumGhostPaste } from './useDrumGhostPaste';
-
-/** The playhead marker over one step cell.
- *
- * The engine reports a new step 8–12 times a second. With `curStep` read at
- * the panel level, every one of those ticks reconciled all 16 × 16 step
- * buttons. Each cell owns its cursor instead: the selector returns a boolean,
- * so zustand bails out when it does not change and a tick re-renders only the
- * cells whose highlight actually moves. The overlay carries the highlight
- * that used to live on `.step.cur` (see `.step-cur` in drum.css). */
-function StepCursor({ step, pattern }: { step: number; pattern: number }) {
-  const current = useDrumStore((s) => s.playing && s.curStep === step && s.curPat === pattern);
-  return <span className={`step-cur${current ? ' cur' : ''}`} aria-hidden="true" />;
-}
 
 /** The bar / sequence-length control, with its own store subscriptions.
  *
@@ -46,8 +37,13 @@ function SeqLength() {
 }
 
 export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
+  const [timingStep, setTimingStep] = useState(0);
+  const [patternPreset, setPatternPreset] = useState('');
+  const setMicroDelay = useDrumStore(s => s.setMicroDelay);
+  const sequenceContext = useDrumStore(s => s.sequenceContext);
+  const rhythm = useDrumStore(s => s.drumRhythm);
+  const sequenceError = useDrumStore(s => s.sequenceError);
   const hosted = useDrumStore((s) => s.hosted);
-  const mode = useDrumStore((s) => s.mode);
   const playing = useDrumStore((s) => s.playing);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
   // them, so the engine tick never reconciles the whole grid.
@@ -68,7 +64,10 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const deleteSelection = useDrumStore((s) => s.deleteSelection);
   const clearStepSel = useDrumStore((s) => s.clearStepSel);
   const randomizePad = useDrumStore((s) => s.randomizePad);
-  const selectPad = useDrumStore((s) => s.selectPad);
+  const loadPatternPreset = useDrumStore((s) => s.loadPatternPreset);
+  const selectPad = useDrumStore((s) => s.selectLane);
+
+  useEffect(() => setPatternPreset(''), [sequenceContext]);
 
   // Shift-drag rectangle selection + in-rect block move over the step × pad
   // grid — the shared WT-1/BL-1 pointer hook, with the note axis reused as the
@@ -111,17 +110,13 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
 
   const onStepClick = (padI: number, step: number) => {
     if (consumeRectClick()) return;
+    setTimingStep(step);
     toggleStep(step, padI);
   };
 
-  // One lane per pad in STEP mode (the pad grid is hidden there); PADS mode
-  // keeps the single tall row for the pad being played. Lanes run high pad to
-  // low, top to bottom, so the stack reads like the pad grid's bottom-left
-  // origin rather than inverted from it.
-  const laneView = hosted || mode === 'step';
-  const lanes = laneView
-    ? Array.from({ length: PAD_COUNT }, (_, i) => PAD_COUNT - 1 - i)
-    : [sel];
+  // Keep the full kit visible in the sequencer in standalone and hosted views.
+  // Lanes run high pad to low, matching the pad grid's bottom-left origin.
+  const lanes = Array.from({ length: PAD_COUNT }, (_, i) => PAD_COUNT - 1 - i);
 
   // Geometry for the single selection rectangle. WT-1 and BL-1 derive theirs
   // from calc() over fixed column widths, but DR-1's lanes sit behind a name
@@ -133,6 +128,11 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap || stepLo === undefined || ghost) { setSelBox(null); return; }
+    // Source ranges can wrap visually after FIT rotation. Mark their actual
+    // cells individually instead of drawing a misleading contiguous rectangle.
+    if (lanes.some(p => p >= padLo! && p <= padHi! && drumFitSteps(rhythm?.lanes[p], editPattern))) {
+      setSelBox(null); return;
+    }
     const measure = () => {
       const w = wrapRef.current;
       if (!w) return;
@@ -149,20 +149,27 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
     const ro = new ResizeObserver(measure);
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [stepLo, stepHi, padLo, padHi, ghost, laneView]);
+  }, [stepLo, stepHi, padLo, padHi, ghost, rhythm, editPattern]);
 
-  const renderStep = (padI: number, step: number) => {
+  const renderStep = (padI: number, step: number, fit?: { phase: number; beat: number; cycleBeats: number }) => {
     const value = patterns[patIdx(editPattern, padI, step)];
+    const lane = rhythm?.lanes[padI];
+    const outsideLoop = lane?.enabled && (lane.sourceBar !== editPattern || step >= lane.steps);
     const isGhost = ghost ? ghostAt(step, padI) : false;
     const cutSrc = ghost ? isCutSrc(step, padI) : false;
     return (
       <button
-        className={`step${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
+        className={`step${outsideLoop ? ` poly-outside${lane.timing.mode === 'grid' ? ' poly-grid' : ''}` : ''}${fit ? ' fit-step' : ''}${inRect(step, padI) ? ' selected' : ''}${lane?.enabled && lane.timing.mode === 'fit' && lane.sourceBar === editPattern && step < lane.steps ? ' poly-source' : ''}${padI === sel && step === timingStep ? ' timing-selected' : ''}${value >= 1 ? ' on' : ''}${value === 2 ? ' accented' : ''}${isGhost ? ' ghost' : ''}${cutSrc ? ' cut-src' : ''}`}
         type="button"
+        style={fit ? {
+          left: `${fit.phase * 100}%`,
+          width: `min(calc(${100 / lane!.steps}% - 2px), max(24px, calc(${100 / (fit.cycleBeats * 4)}% - 2px)))`,
+        } : undefined}
+        title={`Step ${step + 1}: ${lane?.stepDelayMs?.[editPattern * 16 + step] ?? 0} ms (plus lane ${lane?.delayMs ?? 0} ms)`}
         data-seq-cell
         data-abs-step={step}
         data-note={padI}
-        aria-label={`${padNames[padI]} step ${step + 1}: ${value === 2 ? 'accent' : value === 1 ? 'on' : 'off'}`}
+        aria-label={`${padNames[padI]} step ${step + 1}: ${value === 2 ? 'accent' : value === 1 ? 'on' : 'off'}${outsideLoop ? ', outside loop' : ''}`}
         aria-pressed={value >= 1}
         key={step}
         onClick={() => onStepClick(padI, step)}
@@ -171,7 +178,8 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
         <span className="step-accent" aria-hidden="true" />
         <span className="step-fill" aria-hidden="true" />
         <span className="step-num" aria-hidden="true">{step + 1}</span>
-        <StepCursor step={step} pattern={editPattern} />
+        {!!lane?.stepDelayMs?.[editPattern * 16 + step] && <span className="dr-micro-mark" aria-hidden="true">{lane.stepDelayMs[editPattern * 16 + step] > 0 ? '+' : '−'}</span>}
+        <LaneCursor pad={padI} step={step} pattern={editPattern} />
       </button>
     );
   };
@@ -199,27 +207,50 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
           </>
         )}
         {headerExtra}
+        <select
+          className="mod-select dr-pattern-preset"
+          aria-label="Load drum pattern preset"
+          title="Load drum pattern preset without changing kit or BPM"
+          value={patternPreset}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value && loadPatternPreset(Number(value))) setPatternPreset(value);
+          }}
+        >
+          <option value="">PATTERN PRESET</option>
+          {FACTORY_KITS.map((kit, index) => <option key={kit.name} value={index}>{kit.name}</option>)}
+        </select>
         <div className="dr-step-editing">
           <span>TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT</span>
         </div>
       </div>
-      <div className={`dr-lanes-wrap${laneView ? '' : ' single'}`} ref={wrapRef}>
-        <div className={laneView ? 'dr-lanes' : undefined}>
+      <div className="dr-lanes-wrap" ref={wrapRef}>
+        <div className="dr-lanes">
           {lanes.map((padI) => (
             <div className="dr-lane" key={padI}>
-              {laneView && (
-                <button
-                  className={`dr-lane-name${padI === sel ? ' sel' : ''}`}
-                  type="button"
-                  onClick={() => selectPad(padI)}
-                >
-                  <span className="dr-lane-num">{String(padI + 1).padStart(2, '0')}</span>
-                  {padNames[padI]}
-                </button>
-              )}
-              <div className="step-row">
-                {Array.from({ length: STEPS }, (_, step) => renderStep(padI, step))}
-              </div>
+              <button
+                className={`dr-lane-name${padI === sel ? ' sel' : ''}`}
+                type="button"
+                aria-pressed={padI === sel}
+                onClick={() => selectPad(padI)}
+              >
+                <span className="dr-lane-num">{String(padI + 1).padStart(2, '0')}</span>
+                {padNames[padI]}
+                {drumLaneBadge(rhythm?.lanes[padI]) && <span className="dr-poly-badge">{drumLaneBadge(rhythm?.lanes[padI])}</span>}
+              </button>
+              {(() => {
+                const fit = drumFitSteps(rhythm?.lanes[padI], editPattern);
+                const beats = fit?.[0].cycleBeats;
+                return <div className={`step-row${fit ? ' fit-row' : ''}`}
+                  style={beats ? { '--fit-beats': beats } as CSSProperties : undefined}
+                  aria-label={beats ? `${padNames[padI]} FIT cycle, ${beats / 4} ${beats === 4 ? 'bar' : 'bars'}` : undefined}>
+                  {fit ? <>
+                    <span className="fit-bar-label" aria-hidden="true">1</span>
+                    {beats === 8 && <span className="fit-bar-label second" aria-hidden="true">2</span>}
+                    {fit.map(position => renderStep(padI, position.sourceStep, position))}
+                  </> : Array.from({ length: STEPS }, (_, step) => renderStep(padI, step))}
+                </div>;
+              })()}
             </div>
           ))}
         </div>
@@ -241,6 +272,24 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
             />
           );
         })()}
+      </div>
+      <div className="dr-inspector-grid">
+      {(() => {
+        const laneMs = rhythm?.lanes[sel]?.delayMs ?? 0;
+        const stepMs = rhythm?.lanes[sel]?.stepDelayMs?.[editPattern * 16 + timingStep] ?? 0;
+        const total = laneMs + stepMs;
+        return <div className="dr-timing-panel" id="dr-timing-panel" data-sequence-controls onKeyDown={e => e.stopPropagation()}>
+          <div className="dr-timing-context"><strong>MICRO TIMING</strong><span>{String(sel + 1).padStart(2, '0')} {padName}</span></div>
+          <div className="dr-timing-control"><SequenceNumberInput key={`lane-delay-${sel}`} label="LANE OFFSET" min={-50} max={50} value={laneMs} onChange={v => setMicroDelay(sel, v)} /></div>
+          <div className="dr-timing-control"><SequenceNumberInput key={`step-delay-${sel}-${editPattern}-${timingStep}`} label={`STEP ${String(timingStep + 1).padStart(2, '0')}`} min={-50} max={50} value={stepMs} onChange={v => setMicroDelay(sel, v, timingStep)} /></div>
+          <div className="dr-timing-result"><span>COMBINED OFFSET</span><strong>{total > 0 ? '+' : ''}{total} ms</strong></div>
+          <p className="dr-timing-hint">CLICK STEP TO SELECT <span>− EARLY&nbsp; / &nbsp;+ LATE</span></p>
+        </div>;
+      })()}
+      {sequenceError && <p className="dr-poly-error" role="alert">{sequenceError}</p>}
+      <div className="dr-poly-slot">
+        <PolyLanePanel key={sequenceContext} />
+      </div>
       </div>
     </section>
   );

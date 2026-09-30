@@ -9,6 +9,7 @@ import { defaultParams } from '../params';
 import { FACTORY_PRESETS, resolvePresetMods } from '../presets';
 import type { PatchDoc, SessionDoc } from './protocol';
 import { copyClipArp } from './clipArp';
+import { cloneDrumRhythm } from '../drum/rhythm';
 
 function embeddedPatch(machine: SessionDoc['tracks'][number]['machine'], patch: PatchDoc): PatchDoc {
   if (patch.kind === 'inline') {
@@ -32,6 +33,7 @@ export function embedSessionPatches(session: SessionDoc): SessionDoc {
     tracks: session.tracks.map((track) => ({ ...track, patch: embeddedPatch(track.machine, track.patch) })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip,
       ...(clip.arp ? { arp: copyClipArp(clip.arp) } : {}),
+      ...(clip.drumRhythm ? { drumRhythm: cloneDrumRhythm(clip.drumRhythm, clip.bars) } : {}),
     }) })),
   };
 }

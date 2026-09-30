@@ -24,9 +24,6 @@ export function DrumApp() {
   const [agentHost] = useState(makeDrumAgentHost);
   useDrumKeys();
   useDrumMidi();
-  // STEP mode drops the pad strip — its per-pad knobs belong to the pad being
-  // performed, and the 16-lane sequencer below edits every pad at once.
-  const mode = useDrumStore((s) => s.mode);
 
   // exposed for debugging / automated verification
   useEffect(() => {
@@ -42,10 +39,10 @@ export function DrumApp() {
       {agentOpen && <WebAgentPanel host={agentHost} plugin="DR-1" onClose={() => setAgentOpen(false)} />}
       <main id="drum-rack">
         <Header />
-        <div className={`dr-main${mode === 'step' ? ' fit-pads' : ''}`}>
+        <div className="dr-main">
           <div className="dr-left">
             <div id="dr-pads"><PadGrid /></div>
-            {mode !== 'step' && <div id="dr-padstrip"><PadStrip /></div>}
+            <div id="dr-padstrip"><PadStrip /></div>
           </div>
           <div className="dr-right">
             <div id="dr-selbar"><SelBar /></div>

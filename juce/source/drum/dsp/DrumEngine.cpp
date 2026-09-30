@@ -32,6 +32,19 @@ static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+static bool sameRhythm(const DrumRhythm& a, const DrumRhythm& b) {
+    if (a.v != b.v) return false;
+    for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
+        const auto& x = a.lanes[(size_t)i];
+        const auto& y = b.lanes[(size_t)i];
+        if (x.enabled != y.enabled || x.sourceBar != y.sourceBar || x.steps != y.steps
+            || x.rotation != y.rotation || x.mode != y.mode || x.cycleBeats != y.cycleBeats
+            || x.micro != y.micro || x.delayMs != y.delayMs || x.stepDelayMs != y.stepDelayMs)
+            return false;
+    }
+    return true;
+}
+
 static inline double adaaInput(double x) {
     return std::isfinite(x) ? clampd(x, -DR_ADAA_INPUT_LIMIT, DR_ADAA_INPUT_LIMIT) : 0.0;
 }
@@ -333,10 +346,23 @@ void DrumEngine::trigger(int padI, float vel) {
 void DrumEngine::play() {
     if (hostPlaying_) return;          // host owns the transport while rolling
     playing_ = true; step_ = -1; chainPos_ = 0; samplesToNext_ = 0;
+    lanePositions_.fill(0);
+    rhythmFrame_ = 0;
+    internalGridOrdinal_ = 0;
+    rhythmMapFrame_ = 0;
+    rhythmMapBeat_ = 0.0;
+    rhythmHasNext_ = false;
+    {
+        rhythmScheduler_.setTempo(sr_, effectiveBpm(),
+                                  clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
+        rhythmScheduler_.reset(0.0);
+        rhythmScheduler_.retime(0.0, 0);
+    }
 }
 
 void DrumEngine::stop() {
     playing_ = false; step_ = -1;
+    rhythmHasNext_ = false;
 }
 
 void DrumEngine::setPatterns(const uint8_t* data, int n) {
@@ -350,6 +376,24 @@ void DrumEngine::setChain(const int* list, int n) {
     for (int& c : chain_)                           // js does `x|0`; C++ additionally
         c = std::max(0, std::min(DR_NPATTERNS - 1, c));   // clamps for memory safety
     chainPos_ = std::min(chainPos_, (int)chain_.size() - 1);
+    rhythmScheduler_.setChain(chain_.data(), (int)chain_.size());
+}
+
+void DrumEngine::setDrumRhythm(const DrumRhythm* rhythm) {
+    const DrumRhythm next = rhythm ? *rhythm : DrumRhythm{};
+    if (!validateDrumRhythm(next)) return;
+    if (hasRhythm_ == (rhythm != nullptr) && sameRhythm(rhythm_, next)) return;
+    syncRhythmTempo();
+    const double currentBeat = hostPlaying_ ? std::max(0.0, hostPpq_) : currentRhythmBeat();
+    if (rhythmHasNext_) rhythmScheduler_.returnEvent(rhythmNext_);
+    rhythmHasNext_ = false;
+    rhythmScheduler_.setTempo(sr_, effectiveBpm(), clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
+    rhythmScheduler_.updateRhythm(next, currentBeat, hostPlaying_ ? (std::uint64_t)std::max(0L, hostNextK_) : internalGridOrdinal_);
+    rhythm_ = next;
+    hasRhythm_ = rhythm != nullptr;
+    rhythmScheduler_.retime(currentBeat, (std::int64_t)rhythmFrame_);
+    rhythmMapBeat_ = currentBeat;
+    rhythmMapFrame_ = rhythmFrame_;
 }
 
 void DrumEngine::setBpmOverride(double bpm) {
@@ -359,6 +403,69 @@ void DrumEngine::setBpmOverride(double bpm) {
 double DrumEngine::effectiveBpm() const {
     double pbpm = std::fpclassify(p_[DG_SEQ_BPM]) != FP_ZERO ? (double)p_[DG_SEQ_BPM] : 126.0;
     return bpmOverride_ > 0 ? bpmOverride_ : clampd(pbpm, 60.0, 200.0);
+}
+
+double DrumEngine::currentRhythmBeat() const {
+    if (!playing_) return rhythmMapBeat_;
+    const double bpm = std::max(1.0, rhythmScheduler_.bpm());
+    return rhythmMapBeat_ + (double)(rhythmFrame_ - rhythmMapFrame_)
+        * bpm / (60.0 * sr_);
+}
+
+void DrumEngine::syncRhythmTempo() {
+    const double bpm = hostPlaying_ ? hostBpm_ : effectiveBpm();
+    const double swing = clampd((double)param(DG_MASTER_SWING), 0.0, 1.0);
+    const double oldBpm = rhythmScheduler_.bpm();
+    const double oldSwing = rhythmScheduler_.swing();
+    if (std::fabs(oldBpm - bpm) < 1.0e-12
+        && std::fabs(oldSwing - swing) < 1.0e-12) return;
+    const double beat = hostPlaying_ ? std::max(0.0, hostPpq_) : currentRhythmBeat();
+
+    // samplesToNext_ describes the same next ordinary-grid event as the POLY
+    // scheduler. Recover that event's absolute ordinal under the old mapping,
+    // then place it under the new mapping. This keeps mixed ordinary/POLY
+    // lanes together even when the edit lands halfway through a swung step.
+    if (!hostPlaying_ && playing_ && step_ >= 0) {
+        const int nextStep = (step_ + 1) % DR_STEPS;
+        const double oldOffset = (nextStep & 1)
+            ? oldSwing * DR_SWING_MAX * 0.25 : 0.0;
+        const double oldTargetBeat = beat + samplesToNext_ * oldBpm / (60.0 * sr_);
+        const double cycleEstimate = (oldTargetBeat
+            - (double)nextStep * 0.25 - oldOffset) / 4.0;
+        const auto cycle = std::max<std::int64_t>(0, std::llround(cycleEstimate));
+        const auto ordinal = cycle * DR_STEPS + nextStep;
+        const double newOffset = (ordinal & 1)
+            ? swing * DR_SWING_MAX * 0.25 : 0.0;
+        const double newTargetBeat = (double)ordinal * 0.25 + newOffset;
+        samplesToNext_ = std::max(0.0, (newTargetBeat - beat) * 60.0 / bpm * sr_);
+    }
+
+    rhythmScheduler_.retime(beat, (std::int64_t)rhythmFrame_);
+    rhythmScheduler_.setTempo(sr_, bpm, swing);
+    rhythmMapBeat_ = beat;
+    rhythmMapFrame_ = rhythmFrame_;
+    // nextEvent() advances its lane cursor before returning. A block-boundary
+    // event can therefore remain cached here; dropping it would skip the hit.
+    if (rhythmHasNext_ && !rhythmScheduler_.reschedule(rhythmNext_))
+        rhythmHasNext_ = false;
+}
+
+void DrumEngine::emitSequencerHit(int pad, float velocity) {
+    if (!queueHits_) {
+        trigger(pad, velocity);
+        return;
+    }
+    if (pad < 0 || pad >= DR_NPADS) return;
+    auto& hit = queuedHits_[(size_t)pad];
+    hit = std::max(hit, (std::uint8_t)(velocity >= DR_ACCENT_VEL ? 2 : 1));
+}
+
+void DrumEngine::flushSequencerHits() {
+    for (int pad = 0; pad < DR_NPADS; ++pad) {
+        const auto hit = queuedHits_[(size_t)pad];
+        if (hit) trigger(pad, hit == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+    }
+    queuedHits_.fill(0);
 }
 
 // ---- host transport lock ----
@@ -396,6 +503,15 @@ void DrumEngine::hostResync() {
     while (hostStepPpq(k) < hostPpq_ - 1e-9) k++;
     hostNextK_ = k;
     hostSynced_ = true;
+    rhythmHasNext_ = false;
+    if (hasPolyRhythm()) {
+        rhythmScheduler_.setTempo(sr_, hostBpm_,
+                                  clampd((double)param(DG_MASTER_SWING), 0.0, 1.0));
+        rhythmScheduler_.reset(std::max(0.0, hostPpq_));
+        rhythmScheduler_.retime(std::max(0.0, hostPpq_), (std::int64_t)rhythmFrame_);
+        rhythmMapBeat_ = std::max(0.0, hostPpq_);
+        rhythmMapFrame_ = rhythmFrame_;
+    }
 }
 
 void DrumEngine::fireHostStep(long k) {
@@ -404,27 +520,121 @@ void DrumEngine::fireHostStep(long k) {
     chainPos_ = (int)(bar % (long)chain_.size());
     int pat = chain_[(size_t)chainPos_];
     for (int i = 0; i < DR_NPADS; i++) {
+        if (polyLaneEnabled(i)) continue;
         uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
-        if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+        if (val) emitSequencerHit(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
     }
     step_ = s;
+}
+
+bool DrumEngine::polyLaneEnabled(int pad) const {
+    return pad >= 0 && pad < DR_NPADS && hasRhythm_
+        && rhythm_.lanes[(size_t)pad].scheduled();
+}
+
+bool DrumEngine::hasPolyRhythm() const {
+    if (!hasRhythm_) return false;
+    for (const auto& lane : rhythm_.lanes)
+        if (lane.scheduled()) return true;
+    return false;
+}
+
+void DrumEngine::fireRhythmEvent(const DrumRhythmEvent& event) {
+    if (event.lane >= 0 && event.lane < 16) lanePositions_[(size_t)event.lane] = event.sourceBar * 16 + event.sourceStep + 1;
+    if (event.lane < 0 || event.lane >= DR_NPADS || !polyLaneEnabled(event.lane)) return;
+    const int pat = std::max(0, std::min(DR_NPATTERNS - 1, event.sourceBar));
+    const int step = std::max(0, std::min(DR_STEPS - 1, event.sourceStep));
+    const uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS
+                                      + event.lane * DR_STEPS + step)];
+    if (val) emitSequencerHit(event.lane, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
 }
 
 // Hosted twin of fireHostStep (docs/sq4-clips.md §6): byte source is the
 // ClipHost's live clip instead of pats_/chain_. Each pad's val is
 // independent (no tie/slide lookahead), so this is a straight per-pad scan.
+void DrumEngine::hostTempo(double bpm, double swing, double anchorFrame) {
+    const bool changed = bpm != effectiveBpm() || swing != hostSwing_ || anchorFrame != anchorFrame_;
+    setBpmOverride(bpm); anchorFrame_ = anchorFrame; hostSwing_ = swing;
+    clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
+    if (changed && clipRhythmHasNext_) { clipRhythmScheduler_.returnEvent(clipRhythmNext_); clipRhythmHasNext_ = false; }
+    clipRhythmScheduler_.setTempo(sr_, effectiveBpm(), swing);
+    // Anchor may be fractional; retime at the current integer audio frame.
+    clipRhythmScheduler_.retime(std::max(0.0, (hostFrame_ - anchorFrame_) * effectiveBpm() / (60.0 * sr_)), (int64_t)hostFrame_);
+}
+void DrumEngine::hostClip(const uint8_t* data, int bytes, int bars, double at, int tag, const DrumRhythm* rhythm) {
+    pendingClipRhythm_ = rhythm ? *rhythm : DrumRhythm{}; pendingClipHasRhythm_ = rhythm != nullptr;
+    clipHost_.scheduleClip(data, (size_t)bytes, bars, at, tag);
+}
+void DrumEngine::hostClipUpdate(const uint8_t* data, int bytes, int bars, const DrumRhythm* rhythm) {
+    const bool pending = clipHost_.hasPending();
+    clipHost_.updateClip(data, (size_t)bytes, bars);
+    if (pending) { pendingClipRhythm_ = rhythm ? *rhythm : DrumRhythm{}; pendingClipHasRhythm_ = rhythm != nullptr; }
+    else if (clipHost_.isPlaying()) {
+        clipRhythm_ = rhythm ? *rhythm : DrumRhythm{}; clipHasRhythm_ = rhythm != nullptr;
+        syncClipRhythm(false);
+    }
+}
+void DrumEngine::syncClipRhythm(bool launch) {
+    if (clipRhythmHasNext_) clipRhythmScheduler_.returnEvent(clipRhythmNext_);
+    clipRhythmHasNext_ = false;
+    const double beat = std::max(0.0, (hostFrame_ - anchorFrame_) * effectiveBpm() / (60.0 * sr_));
+    clipRhythmScheduler_.setTempo(sr_, effectiveBpm(), hostSwing_);
+    int bars[16]; for (int i = 0; i < 16; ++i) bars[i] = i;
+    clipRhythmScheduler_.setChain(bars, clipHost_.clipBars());
+    if (launch) {
+        lanePositions_.fill(0);
+        clipRhythmScheduler_.setRhythm(clipRhythm_);
+        // Preserve the launch grid's first hit: negative offsets at entry
+        // cannot precede the launch and are dispatched on its first sample.
+        clipRhythmScheduler_.reset(beat, true);
+    } else clipRhythmScheduler_.updateRhythm(clipRhythm_, beat, (uint64_t)std::max(0.0, std::ceil(beat * 4 - 1e-9)));
+    clipRhythmScheduler_.retime(beat, (int64_t)hostFrame_);
+}
+void DrumEngine::fireClipRhythm(const DrumRhythmEvent& event) {
+    if (event.lane < 0 || event.lane >= 16 || event.sourceBar < 0 || event.sourceBar >= clipHost_.clipBars()) return;
+    lanePositions_[(size_t)event.lane] = event.sourceBar * 16 + event.sourceStep + 1;
+    const auto value = clipHost_.clipData()[(event.sourceBar * 16 + event.lane) * 16 + event.sourceStep];
+    if (value) emitSequencerHit(event.lane, value == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+}
+int DrumEngine::renderClipTiming(double frame, int maxRun) {
+    // One transport sample first, so a swap/stop is applied before lane hits.
+    clipHost_.tick(frame, 1, [&](int abs) { clipFireAt(abs); }, [&](bool) {
+        clipRhythm_ = pendingClipRhythm_; clipHasRhythm_ = pendingClipHasRhythm_;
+        syncClipRhythm(true);
+    });
+    int run = std::max(1, std::min(maxRun, (int)std::min((double)maxRun,
+        std::ceil(clipHost_.nextBoundary(frame + 1) - frame - 1e-9))));
+    if (clipHost_.isPlaying() && clipHasRhythm_) {
+        for (;;) {
+            if (!clipRhythmHasNext_) {
+                const double endBeat = (frame + run - anchorFrame_) * effectiveBpm() / (60.0 * sr_);
+                clipRhythmHasNext_ = clipRhythmScheduler_.nextEvent(endBeat - 1e-12, clipRhythmNext_);
+            }
+            if (!clipRhythmHasNext_) break;
+            if (clipRhythmNext_.sample <= frame) {
+                fireClipRhythm(clipRhythmNext_); clipRhythmHasNext_ = false; continue;
+            }
+            run = std::max(1, std::min(run, (int)(clipRhythmNext_.sample - frame))); break;
+        }
+    } else clipRhythmHasNext_ = false;
+    clipHost_.elapse(run - 1);
+    return run;
+}
+
 void DrumEngine::clipFireAt(int abs) {
     const uint8_t* clip = clipHost_.clipData();
     const int bar = abs / DR_STEPS, s = abs % DR_STEPS;
     for (int i = 0; i < DR_NPADS; i++) {
+        if (clipHasRhythm_ && clipRhythm_.lanes[(size_t)i].scheduled()) continue;
         uint8_t val = clip[(size_t)(bar * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
-        if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+        if (val) emitSequencerHit(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
     }
 }
 
 // ---- fireStep (js:493-518). The host-tempo override bypasses the 60..200 ----
 // ---- param clamp — the sequencer follows whatever the DAW runs at.       ----
 void DrumEngine::fireStep() {
+    ++internalGridOrdinal_;
     double bpm = effectiveBpm();
     double dur = (60.0 / bpm / 4.0) * sr_;
     double swing = p_[DG_MASTER_SWING];
@@ -435,8 +645,9 @@ void DrumEngine::fireStep() {
     int s = (step_ + 1) % DR_STEPS;
     int pat = chain_[(size_t)chainPos_];
     for (int i = 0; i < DR_NPADS; i++) {
+        if (polyLaneEnabled(i)) continue;
         uint8_t val = pats_[(size_t)(pat * DR_NPADS * DR_STEPS + i * DR_STEPS + s)];
-        if (val) trigger(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
+        if (val) emitSequencerHit(i, val == 2 ? DR_ACCENT_VEL : DR_PLAIN_VEL);
     }
     step_ = s;
     double offNow = (s % 2 == 1) ? swing * DR_SWING_MAX * dur : 0.0;
@@ -1130,6 +1341,9 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         if (!hostSynced_) hostResync();
     }
     const bool internalRun = playing_ && !hostClipMode_;
+    const bool polyRun = hasPolyRhythm() && (hostRun || internalRun);
+    syncRhythmTempo();
+    queueHits_ = polyRun || hostClipMode_;
 
     int pos = 0;
     while (pos < n) {
@@ -1137,6 +1351,23 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         if (hostRun) {
             // Fire every step due at/before pos; split the run at the next one.
             for (;;) {
+                if (polyRun) {
+                    if (!rhythmHasNext_) {
+                        const double endBeat = hostPpq_ + (pos + run) * ppqPerSample;
+                        if (rhythmScheduler_.nextEvent(endBeat - 1.0e-12, rhythmNext_))
+                            rhythmHasNext_ = true;
+                    }
+                    if (rhythmHasNext_) {
+                        const double eventPos = (rhythmNext_.beat - hostPpq_) / ppqPerSample;
+                        if (eventPos <= pos + 1.0e-9) {
+                            fireRhythmEvent(rhythmNext_);
+                            rhythmHasNext_ = false;
+                            continue;
+                        }
+                        if (eventPos - pos < run)
+                            run = std::max(1, (int)std::ceil(eventPos - pos));
+                    }
+                }
                 long fireAt = (long)std::ceil(
                     (hostStepPpq(hostNextK_) - hostPpq_) * samplesPerPpq - 1e-9);
                 if (fireAt <= pos) { fireHostStep(hostNextK_++); continue; }
@@ -1144,6 +1375,30 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
                 break;
             }
         } else if (internalRun) {                    // js:465-469
+            if (polyRun) {
+                if (!rhythmHasNext_) {
+                    const double bpm = effectiveBpm();
+                    const auto endFrame = static_cast<std::int64_t>(rhythmFrame_)
+                        + pos + run;
+                    const double endBeat = rhythmMapBeat_
+                        + (double)(endFrame - static_cast<std::int64_t>(rhythmMapFrame_))
+                            * bpm / (60.0 * sr_);
+                    if (rhythmScheduler_.nextEvent(endBeat - 1.0e-12, rhythmNext_))
+                        rhythmHasNext_ = true;
+                }
+                if (rhythmHasNext_) {
+                    const auto eventFrame = rhythmNext_.sample;
+                    const auto nowFrame = static_cast<std::int64_t>(rhythmFrame_) + pos;
+                    if (eventFrame <= nowFrame) {
+                        fireRhythmEvent(rhythmNext_);
+                        rhythmHasNext_ = false;
+                        continue;
+                    }
+                    if (eventFrame - nowFrame < run)
+                        run = std::max(1, (int)std::min<std::int64_t>(
+                            run, eventFrame - nowFrame));
+                }
+            }
             if (samplesToNext_ <= 0) fireStep();
             run = std::min(run, (int)std::ceil(samplesToNext_));
         } else if (hostClipMode_) {
@@ -1151,8 +1406,9 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             // are one-shot voices with no gate to release on Stop/swap
             // (worklet-drum.js hostTick/clipFire never touch a sounding
             // pad) — 2-arg tick, no onSwap hook needed.
-            clipHost_.tick(hostFrame_, run, [&](int abs) { clipFireAt(abs); });
+            run = renderClipTiming(hostFrame_, run);
         }
+        flushSequencerHits();
         // Finding J1: the chunk length is now known, so move every smoother by
         // exactly this many samples and re-derive the FX coefficients from the
         // result. setParams is skipped for a pad whose values did not move, so
@@ -1241,6 +1497,8 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         if (hostClipMode_) hostFrame_ += run;
         pos += run;
     }
+    if (internalRun || hostRun) rhythmFrame_ += (std::uint64_t)n;
+    queueHits_ = false;
     if (hostRun) hostEndPpq_ = hostPpq_ + n * ppqPerSample;
 
     curTables_ = nullptr;

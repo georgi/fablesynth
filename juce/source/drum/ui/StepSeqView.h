@@ -2,6 +2,7 @@
 #include <functional>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumUiModel.h"
+#include "PolyLanePanel.h"
 #include "../../ui/StepEditOps.h"
 #include "../../ui/Theme.h"
 
@@ -41,22 +42,21 @@ private:
 // the chain, so cross-pattern verbs (duplicate-to-next-bar, bar-chip
 // move/copy, sequence-length changes) restore coherently. Coarse (like the
 // SQ-4 session-JSON snapshot decision) — acceptable for v1.
-struct DrStepSnapshot {
-    fable::StepBytes steps;   // DR_NPATTERNS * DR_NPADS * DR_STEPS, pattern-major
-    std::vector<int> chain;
-};
+using DrStepSnapshot = DrumSequence;
 
 // 2-D rectangle selection (step × pad-lane) over the edit pattern — port of the
 // web DR-1 grid (src/shared/seqEdit.ts pad-rect verbs + useSeqRectSelect /
 // useDrumGhostPaste). Shift-drag sweeps a rectangle; a drag from inside it moves
 // the whole block (Alt copies); the floating CUT/COPY/DUP/DEL menu drives ghost
 // paste; verbs mirror the web store. Standalone editing plus SQ-4 hosted clips.
-class StepSeqView : public juce::Component, private juce::Timer {
+class StepSeqView : public juce::Component, private juce::Timer, private juce::ScrollBar::Listener {
 public:
     explicit StepSeqView(DrumUiModel&);
     explicit StepSeqView(DrumAudioProcessor&); // standalone-test compatibility
     ~StepSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
+    void resized() override;
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -126,6 +126,24 @@ public:
     static int padOfLane(int lane);
 
 private:
+    void setupPoly();
+    void refreshTiming();
+    void setMicroDelay(int value, bool step);
+    juce::TextButton timingDisclosure_{"TIMING v"};
+    juce::ComboBox patternPreset_;
+    juce::Component timingPanel_;
+    juce::Slider laneDelay_, stepDelay_;
+    juce::Label laneDelayLabel_, stepDelayLabel_;
+    int timingStep_ = 0;
+    bool refreshingTiming_ = false;
+    bool timingGesture_ = false, timingGestureSaved_ = false;
+    void syncHistoryContext();
+    void scrollBarMoved(juce::ScrollBar*, double start) override { laneOffset_ = (int)start; repaint(); }
+    int gridBottom() const;
+    std::unique_ptr<PolyLanePanel> polyPanel_;
+    juce::ScrollBar laneScroll_{true};
+    int laneOffset_ = 0;
+    std::array<int, 16> lastLanePositions_{};
     void timerCallback() override;          // 30 Hz playhead / state watcher
 
     void cancelGesture();                   // Esc: drop any in-flight sweep/move/ghost uncommitted
@@ -135,8 +153,10 @@ private:
     bool cellAt(juce::Point<int> pos, int& pad, int& step) const;
     void cellClamp(juce::Point<int> pos, int& pad, int& step) const;
 
+    juce::Rectangle<int> stepBoundsForLane(int pad, int step, const fable::DrumLaneRhythm*) const;
     fable::StepLayout gridLayout() const;
     fable::StepBytes buildPatternBuffer(int pat) const;
+    void writePatternBuffer(DrumSequence&, int pat, const fable::StepBytes&);
     void applyPatternBuffer(int pat, const fable::StepBytes&);
     DrStepSnapshot captureSnapshot() const;
     void restoreSnapshot(const DrStepSnapshot&);

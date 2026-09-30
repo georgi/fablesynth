@@ -161,6 +161,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp
         source/drum/ui/DrumPanels.cpp
+        source/drum/ui/PolyLanePanel.cpp
         source/drum/ui/StepSeqView.cpp
         source/drum/ui/DrumFxRack.cpp
         source/ui/Controls.cpp
@@ -172,7 +173,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/dsp/DrumTables.cpp
         source/drum/dsp/SampledTables.gen.cpp
         source/drum/dsp/OneShotSamples.gen.cpp
-        source/drum/dsp/DrumEngine.cpp
+        source/drum/dsp/DrumEngine.cpp source/drum/dsp/DrumRhythm.cpp
         source/drum/dsp/DrumFx.cpp
         source/drum/dsp/DrumKits.cpp
         source/drum/dsp/DrumPatches.cpp
@@ -291,6 +292,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/DrumDeviceBody.cpp
         source/drum/ui/PadGrid.cpp source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp source/drum/ui/DrumPanels.cpp
+        source/drum/ui/PolyLanePanel.cpp
         source/drum/ui/StepSeqView.cpp source/drum/ui/DrumFxRack.cpp
         source/bass/BassDeviceBody.cpp
         source/bass/ui/BassPanels.cpp source/bass/ui/PitchSeqView.cpp source/bass/ui/BassFxRack.cpp
@@ -305,7 +307,7 @@ if(FABLE_BUILD_PLUGIN)
         # all three machines' DSP (each list already exists above):
         source/dsp/Engine.cpp source/dsp/Presets.cpp
         source/drum/dsp/DrumParams.cpp source/drum/dsp/DrumTables.cpp
-        source/drum/dsp/SampledTables.gen.cpp source/drum/dsp/DrumEngine.cpp
+        source/drum/dsp/SampledTables.gen.cpp source/drum/dsp/DrumEngine.cpp source/drum/dsp/DrumRhythm.cpp
         source/drum/dsp/OneShotSamples.gen.cpp
         source/drum/dsp/DrumFx.cpp source/drum/dsp/DrumKits.cpp source/drum/dsp/DrumPatches.cpp
         source/bass/dsp/BassParams.cpp source/bass/dsp/BassEngine.cpp
@@ -473,6 +475,7 @@ add_executable(drum_engine_test
     source/drum/dsp/SampledTables.gen.cpp
     source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumRhythm.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
@@ -481,6 +484,11 @@ add_executable(drum_engine_test
     source/dsp/Wavetables.cpp
     source/dsp/UserTables.cpp)
 target_compile_features(drum_engine_test PRIVATE cxx_std_17)
+
+add_executable(drum_rhythm_test
+    test/drum_rhythm_test.cpp
+    source/drum/dsp/DrumRhythm.cpp)
+target_compile_features(drum_rhythm_test PRIVATE cxx_std_17)
 
 # ---- BL-1 headless DSP verification harness (no JUCE) ----
 add_executable(bass_engine_test
@@ -513,6 +521,7 @@ add_executable(sq4_engine_test
     source/drum/dsp/SampledTables.gen.cpp
     source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumRhythm.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
@@ -566,6 +575,7 @@ add_executable(measure_track_levels
     source/drum/dsp/SampledTables.gen.cpp
     source/drum/dsp/OneShotSamples.gen.cpp
     source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumRhythm.cpp
     source/drum/dsp/DrumFx.cpp
     source/drum/dsp/DrumKits.cpp
     source/drum/dsp/DrumPatches.cpp
@@ -576,6 +586,7 @@ target_compile_features(measure_track_levels PRIVATE cxx_std_17)
 
 add_test(NAME engine_test COMMAND engine_test)
 add_test(NAME drum_engine_test COMMAND drum_engine_test)
+add_test(NAME drum_rhythm_test COMMAND drum_rhythm_test)
 add_test(NAME bass_engine_test COMMAND bass_engine_test)
 add_test(NAME sq4_engine_test COMMAND sq4_engine_test)
 add_test(NAME step_edit_ops_test COMMAND step_edit_ops_test)
