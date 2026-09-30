@@ -12,11 +12,13 @@
 // layout stays pixel-faithful — same scheme as the WT-1 Rack (PluginEditor.h).
 class DrumRack : public juce::Component {
 public:
-    // The 16-lane sequencer uses compact 12px rows; the FX page remains the
-    // taller layout because its visualizer rack needs the full 605px height.
-    static constexpr int LW = 1460, LH = 1040;
+    // Reference extent for the editor and FX snapshots. Sequencer expands further.
+    static constexpr int LW = 1460, LH = DrumDeviceBody::workspaceHeight;
     explicit DrumRack(fui::DrumUiModel&);
     void resized() override;
+    void setDisplayScale(float scale) { body.setDisplayScale(scale); }
+    int logicalHeight() const { return body.preferredHeight(); }
+    std::function<void()> onPreferredHeightChanged;
 
 private:
     fui::DrumHeader header;
@@ -35,6 +37,7 @@ public:
     DrumRack& getRack() { return rack; }
 
 private:
+    void fitWindowToPage();
     fui::DarkLNF lnf;
     std::unique_ptr<fui::DrumUiModel> model;
     DrumRack rack;

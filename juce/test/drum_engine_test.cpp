@@ -627,6 +627,45 @@ int main() {
         se.stop();
     }
     {
+        DrumEngine pe; pe.prepare(48000); pe.setTables(allTables());
+        std::vector<uint8_t> pats(1024, 0); pats[1] = 1;
+        pe.setPatterns(pats.data(), (int)pats.size()); pe.setParam(DG_SEQ_BPM, 120);
+        pe.play(); renderMain(pe, 7040); check(pe.consumeHits() == 1, "ordinary slot fires before swing edit");
+        pe.setParam(DG_MASTER_SWING, 1);
+        DrumRhythm rhythm; rhythm.lanes[0].enabled = true; rhythm.lanes[0].steps = 15;
+        pe.setDrumRhythm(&rhythm); renderMain(pe, 4000);
+        check(pe.consumeHits() == 0, "enabling GRID after swing edit cannot replay a fired ordinary slot");
+        rhythm.lanes[0].steps = 14; pe.setDrumRhythm(&rhythm); renderMain(pe, 200);
+        check(pe.consumeHits() == 0, "GRID step-count edits retain the next event cursor");
+    }
+    {
+        auto run = [&](bool poly) {
+            DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParam(DG_SEQ_BPM, 120);
+            e.setParam(dpid(0, DP_CHOKE), 1); e.setParam(dpid(1, DP_CHOKE), 1);
+            std::vector<uint8_t> pats(1024, 0); pats[0] = 1; pats[16] = 1;
+            e.setPatterns(pats.data(), (int)pats.size());
+            DrumRhythm rhythm; rhythm.lanes[0].enabled = true; rhythm.lanes[0].steps = 3;
+            rhythm.lanes[0].mode = DrumRhythmMode::fit;
+            if (poly) e.setDrumRhythm(&rhythm);
+            e.play(); return renderMain(e, 512);
+        };
+        check(run(false) == run(true), "coincident POLY and ordinary choke hits match ascending pad order");
+    }
+    {
+        DrumEngine micro; micro.prepare(48000); micro.setTables(allTables());
+        std::vector<uint8_t> pats(1024, 0); pats[1] = 1; pats[256] = 1;
+        micro.setPatterns(pats.data(), (int)pats.size()); const int chain[] = {0, 1}; micro.setChain(chain, 2);
+        micro.setParam(DG_SEQ_BPM, 120); micro.setParam(DG_MASTER_SWING, 0);
+        DrumRhythm rhythm; auto& lane = rhythm.lanes[0]; lane.micro = true; lane.delayMs = 10;
+        lane.stepDelayMs[1] = 15; lane.stepDelayMs[16] = -50;
+        micro.setDrumRhythm(&rhythm); micro.play();
+        const auto before = renderMain(micro, 7200);
+        check(micro.consumeHits() == 0 && finite(before), "micro engine does not fire a delayed hit on the grid");
+        renderMain(micro, 1); check(micro.consumeHits() == 1, "micro engine fires combined +25 ms offset at sample 7200");
+        renderMain(micro, 94080 - 7201); check(micro.consumeHits() == 0, "micro engine waits for early next-bar hit");
+        renderMain(micro, 1); check(micro.consumeHits() == 1, "micro engine anticipates next bar at sample 94080");
+    }
+    {
         // A byte-only sequence update must not rewind an active POLY clock.
         DrumEngine pe; pe.prepare(48000); pe.setTables(allTables());
         std::vector<uint8_t> pats(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
@@ -1589,6 +1628,17 @@ int main() {
         check(kits[19].name == "CC0 BOUNCE", "second CC0 factory kit is appended");
         check(kits[20].name == "CC0 WAREHOUSE" && kits[21].name == "CC0 DEEP HOUSE"
               && kits[22].name == "CC0 BASS RUSH", "three CC0 style kits are appended");
+        bool dryFactoryDrums = true;
+        for (const auto& kit : kits) {
+            const auto params = applyKit(kit);
+            dryFactoryDrums &= params[dgfx(DP_FXREVERB_ON)] == 0.0f
+                && params[dgfx(DP_FXREVERB_MIX)] == 0.0f;
+            for (int i = 0; i < DR_NPADS; ++i)
+                if (i < 2 || kit.padNames[(size_t)i].rfind("KICK", 0) == 0)
+                    dryFactoryDrums &= params[dpid(i, DP_FXREVERB_ON)] == 0.0f
+                        && params[dpid(i, DP_FXREVERB_MIX)] == 0.0f;
+        }
+        check(dryFactoryDrums, "factory kits keep drum buses and bass drums dry");
         auto classic = applyKit(kits[3]);
         check(classic[dpid(0, DP_OSCB_TABLE)] == 5
               && classic[dpid(8, DP_OSCB_TABLE)] == 13

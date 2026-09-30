@@ -33,7 +33,14 @@ DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& model)
 
 DrumDeviceBody::~DrumDeviceBody() { model_.selectionChanges().removeChangeListener(this); }
 
+int DrumDeviceBody::preferredHeight() const {
+    // Bottom of the visible controls plus the rack's 22px lower margin.
+    return page_ == Page::edit ? editHeight
+         : page_ == Page::sequencer ? sequencerHeight : workspaceHeight;
+}
+
 void DrumDeviceBody::selectPage(Page page) {
+    const int previousHeight = preferredHeight();
     page_ = page;
     editPage_.setToggleState(page == Page::edit, juce::dontSendNotification);
     padFxPage_.setToggleState(page == Page::padFx, juce::dontSendNotification);
@@ -47,6 +54,8 @@ void DrumDeviceBody::selectPage(Page page) {
         fxRack.setPad(-1, "DRUM GROUP");
     }
     resized();
+    if (preferredHeight() != previousHeight && onPreferredHeightChanged)
+        onPreferredHeightChanged();
 }
 
 void DrumDeviceBody::changeListenerCallback(juce::ChangeBroadcaster*) {
@@ -113,5 +122,9 @@ void DrumDeviceBody::resized() {
     // The sequencer owns a full workspace rather than permanently occupying
     // the lower third of sound and FX editing. Its own pad labels make the
     // sidebar redundant while it is open.
-    stepSeq.setBounds(18, 139, fullW, 605);
+    const float scale = model_.supportsPoly() ? displayScale_ : 1.0f;
+    stepSeq.setTransform(juce::AffineTransform::scale(1.0f / scale));
+    stepSeq.setBounds(juce::roundToInt(18 * scale), juce::roundToInt(139 * scale),
+                      juce::roundToInt(fullW * scale),
+                      juce::roundToInt((sequencerHeight - 139 - 22) * scale));
 }

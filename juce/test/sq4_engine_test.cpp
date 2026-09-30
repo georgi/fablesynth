@@ -1449,6 +1449,88 @@ static void testUndoRestoresDeletedClip() {
 }
 #endif // FABLE_SQ4_TEST_JUCE
 
+static void testDrumMetadataPlayback() {
+    using namespace fable;
+    DrumEngine engine; engine.prepare(48000); engine.setTables(makeDrumTables());
+    engine.setHostClipMode(true, 128); engine.hostTempo(120, 0, 0);
+    int frame = 0;
+    const auto until = [&](int end) {
+        while (frame < end) {
+            const int n = std::min(127, end - frame);
+            float samples[DR_NBUSES][2][128]{}; float* outputs[DR_NBUSES][2];
+            for (int b = 0; b < DR_NBUSES; ++b) for (int c = 0; c < 2; ++c) outputs[b][c] = samples[b][c];
+            engine.hostSetFrame(frame); engine.render(outputs, n); frame += n;
+            HostEvent events[16]; while (engine.takeHostEvents(events, 16)) {}
+        }
+    };
+    auto bytes = sqEmptyClip(Machine::DR1, 2); bytes[1] = 1; bytes[256] = 1;
+    DrumRhythm rhythm; auto& lane = rhythm.lanes[0]; lane.micro = true; lane.delayMs = 10;
+    lane.stepDelayMs[1] = 15; lane.stepDelayMs[16] = -50;
+    engine.hostClip(bytes.data(), (int)bytes.size(), 2, 0, 0, &rhythm);
+    until(1000); CHECK(engine.consumeHits() == 0);
+    auto next = sqEmptyClip(Machine::DR1, 1); for (int i = 0; i < 16; ++i) next[(size_t)i] = 1;
+    DrumRhythm pending; pending.lanes[0].micro = true; pending.lanes[0].delayMs = -20;
+    engine.hostClip(next.data(), (int)next.size(), 1, 96000, 1, &pending);
+    pending.lanes[0].delayMs = -40;
+    engine.hostClipUpdate(next.data(), (int)next.size(), 1, &pending);
+    until(7200); CHECK(engine.consumeHits() == 0);
+    until(7201); CHECK(engine.consumeHits() == 1); // pending edit left the live +25 ms hit alone
+    until(94080); CHECK(engine.consumeHits() == 0);
+    until(94081); CHECK(engine.consumeHits() == 1); // next live bar starts 40 ms early
+    until(96000); CHECK(engine.consumeHits() == 0);
+    until(96001); CHECK(engine.consumeHits() == 1); // incoming early first hit clamps to launch
+    engine.hostClipStop(97234);
+    until(110000); CHECK(engine.consumeHits() == 0); CHECK(engine.lanePosition(0) == -1);
+
+    // Plain scene clears prior timing, including the negative lane offset.
+    engine.hostClip(next.data(), (int)next.size(), 1, 192000, 2);
+    until(192000); CHECK(engine.consumeHits() == 0);
+    until(192001); CHECK(engine.consumeHits() == 1);
+    until(198000); CHECK(engine.consumeHits() == 0);
+    until(198001); CHECK(engine.consumeHits() == 1);
+
+    // FIT uses a fixed source in the full sixteen-bar protocol, independent of
+    // the four-bar editor limit; global phase at launch chooses source step 0.
+    auto longClip = sqEmptyClip(Machine::DR1, 16); longClip[(15 * 16 + 1) * 16] = 1;
+    DrumRhythm fit; auto& fitLane = fit.lanes[1]; fitLane.enabled = true;
+    fitLane.sourceBar = 15; fitLane.steps = 3; fitLane.mode = DrumRhythmMode::fit;
+    engine.hostClip(longClip.data(), (int)longClip.size(), 16, 288000, 3, &fit);
+    until(288000); engine.consumeHits();
+    until(288001); CHECK(engine.consumeHits() == 2); CHECK(engine.lanePosition(1) == 15 * 16);
+    until(320001); CHECK(engine.consumeHits() == 0); CHECK(engine.lanePosition(1) == 15 * 16 + 1);
+}
+
+#if FABLE_SQ4_TEST_JUCE
+static void testDrumMetadataCodec() {
+    using namespace fable;
+    auto session = factorySession(); auto& clip = session.scenes[0].clips[0];
+    clip.bars = 2; clip.bytes = sqEmptyClip(Machine::DR1, 2);
+    clip.hasDrumRhythm = true; clip.drumConfiguredLanes = (1u << 0) | (1u << 15);
+    auto& lane = clip.drumRhythm.lanes[0]; lane.enabled = true; lane.steps = 5; lane.rotation = 2;
+    lane.sourceBar = 1; lane.mode = DrumRhythmMode::fit; lane.cycleBeats = 8;
+    lane.micro = true; lane.delayMs = -12; lane.stepDelayMs[31] = 23;
+    clip.drumRhythm.lanes[15].steps = 7; // retained OFF settings
+    const auto json = sessionToJson(session); SessionData back;
+    CHECK(sessionFromJson(json, back));
+    const auto& restored = back.scenes[0].clips[0];
+    CHECK(restored.hasDrumRhythm && restored.drumConfiguredLanes == clip.drumConfiguredLanes);
+    CHECK(restored.drumRhythm.lanes[0].stepDelayMs[31] == 23 && restored.drumRhythm.lanes[0].delayMs == -12);
+    CHECK(restored.drumRhythm.lanes[0].rotation == 2 && restored.drumRhythm.lanes[15].steps == 7);
+    CHECK(sessionToJson(back) == json);
+    ClipClipboardData copied; copied.machines = {Machine::DR1}; copied.cells = {{clip}}; copied.hasCell = {{true}};
+    ClipClipboardData pasted; CHECK(clipClipboardFromJson(clipClipboardToJson(copied), pasted));
+    CHECK(pasted.cells[0][0].drumRhythm.lanes[0].stepDelayMs[31] == 23);
+    auto bad = session; bad.scenes[0].clips[0].drumRhythm.lanes[0].sourceBar = 2;
+    CHECK(!sessionFromJson(sessionToJson(bad), back));
+    bad = session; bad.scenes[0].clips[0].drumRhythm.lanes[0].delayMs = 51;
+    CHECK(!sessionFromJson(sessionToJson(bad), back));
+    bad = session; bad.tracks[0].machine = Machine::BL1;
+    CHECK(!sessionFromJson(sessionToJson(bad), back));
+    CHECK(sessionFromJson(sessionToJson(factorySession()), back));
+    CHECK(!back.scenes[0].clips[0].hasDrumRhythm);
+}
+#endif
+
 static void testSessionLibraryMusicality() {
     using namespace fable;
     const auto& library = factorySessionLibrary();
@@ -1511,11 +1593,13 @@ int main() {
     testBl1Hosted();
     testBl1ClipSwapGatesOldNote();
     testDr1Hosted();
+    testDrumMetadataPlayback();
     testConductor();
     testConductorEditVerbs();
     testSnapshotHistory();
 #if FABLE_SQ4_TEST_JUCE
     testClipClipboardCodec();
+    testDrumMetadataCodec();
     testUndoRestoresDeletedClip();
 #endif
     testSessionLibraryMusicality();

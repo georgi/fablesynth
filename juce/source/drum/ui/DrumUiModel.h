@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../ui/DeviceUiModel.h"
+#include "../dsp/DrumRhythm.h"
 
 #include <cstdint>
 #include <memory>
@@ -10,6 +11,14 @@ namespace fable { struct GeneratedTable; struct UserTable; }
 class DrumAudioProcessor;
 
 namespace fui {
+
+struct DrumSequence {
+    std::vector<uint8_t> steps;
+    std::vector<int> chain;
+    bool hasRhythm = false;
+    fable::DrumRhythm rhythm{};
+    uint16_t configuredLanes = 0;
+};
 
 class DrumUiModel : public DeviceUiModel {
 public:
@@ -50,6 +59,23 @@ public:
     virtual void setStep(int pattern, int pad, int step, uint8_t) = 0;
     virtual const std::vector<int>& chain() const = 0;
     virtual void setChain(std::vector<int>) = 0;
+
+    virtual bool supportsPoly() const { return false; }
+    virtual DrumSequence sequence() const {
+        DrumSequence s; s.chain = chain(); s.steps.resize(1024);
+        for (int b = 0; b < 4; ++b) for (int p = 0; p < 16; ++p) for (int i = 0; i < 16; ++i)
+            s.steps[(b * 16 + p) * 16 + i] = step(b, p, i);
+        return s;
+    }
+    virtual bool commitSequence(const DrumSequence& s) {
+        if (s.hasRhythm) return false;
+        setChain(s.chain);
+        for (int b = 0; b < 4; ++b) for (int p = 0; p < 16; ++p) for (int i = 0; i < 16; ++i)
+            setStep(b, p, i, s.steps[(b * 16 + p) * 16 + i]);
+        return true;
+    }
+    virtual bool loadPatternPreset(int) { return false; }
+    virtual int lanePosition(int) const { return -1; }
 
     // Hosted clip surface. Standalone implementations return false/1 and no-op.
     virtual bool hasTargetClip() const { return true; }

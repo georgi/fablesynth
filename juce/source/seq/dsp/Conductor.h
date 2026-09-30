@@ -58,6 +58,7 @@ public:
     void stopScene(int s);
     void stopAll();
     void togglePassThrough(int s, int t);
+    bool updateDrumClip(int scene, const ClipData&);
     void updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int bars);
     void updateClipArp(int s, int t, const ArpSettings&);
     void createClip(int s, int t);

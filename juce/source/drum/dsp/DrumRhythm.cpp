@@ -1,6 +1,7 @@
 #include "DrumRhythm.h"
 
 #include <cmath>
+#include <algorithm>
 #include <limits>
 
 namespace fable {
@@ -26,8 +27,11 @@ bool validateDrumRhythm(const DrumRhythm& rhythm, DrumRhythmError* error) {
     }
 
     for (const auto& lane : rhythm.lanes) {
-        if (!lane.enabled)
-            continue;
+        if (lane.delayMs < -50 || lane.delayMs > 50
+            || std::any_of(lane.stepDelayMs.begin(), lane.stepDelayMs.end(), [](int v) { return v < -50 || v > 50; })) {
+            setError(error, DrumRhythmError::invalidDelay); return false;
+        }
+        if (!lane.enabled) continue;
         if (lane.sourceBar < 0) {
             setError(error, DrumRhythmError::sourceBarOutOfRange);
             return false;
@@ -69,6 +73,8 @@ std::uint64_t DrumRhythmState::pack(const DrumLaneRhythm& lane) {
     word |= static_cast<std::uint64_t>(static_cast<std::uint32_t>(lane.rotation) & 0x1fu) << 38;
     word |= static_cast<std::uint64_t>(lane.mode == DrumRhythmMode::fit ? 1u : 0u) << 43;
     word |= static_cast<std::uint64_t>(static_cast<std::uint32_t>(lane.cycleBeats) & 0x0fu) << 44;
+    word |= (std::uint64_t)(lane.micro ? 1 : 0) << 48;
+    word |= (std::uint64_t)(lane.delayMs + 50) << 49;
     return word;
 }
 
@@ -80,6 +86,8 @@ DrumLaneRhythm DrumRhythmState::unpack(std::uint64_t word) {
     lane.rotation = static_cast<int>((word >> 38) & 0x1fu);
     lane.mode = ((word >> 43) & 1u) != 0 ? DrumRhythmMode::fit : DrumRhythmMode::grid;
     lane.cycleBeats = static_cast<int>((word >> 44) & 0x0fu);
+    lane.micro = ((word >> 48) & 1u) != 0;
+    lane.delayMs = (int)((word >> 49) & 127u) - 50;
     return lane;
 }
 
@@ -94,6 +102,8 @@ bool DrumRhythmState::publish(const DrumRhythm& rhythm) {
     for (int i = 0; i < DR_RHYTHM_LANES; ++i)
         lanes_[static_cast<std::size_t>(i)].store(pack(rhythm.lanes[static_cast<std::size_t>(i)]),
                                                   std::memory_order_relaxed);
+    for (int i = 0; i < 16; ++i) for (int s = 0; s < 256; ++s)
+        stepDelays_[(size_t)i][(size_t)s].store(rhythm.lanes[(size_t)i].stepDelayMs[(size_t)s], std::memory_order_relaxed);
     sequence_.fetch_add(1, std::memory_order_release); // even: complete snapshot
     return true;
 }
@@ -113,6 +123,8 @@ bool DrumRhythmState::read(DrumRhythm& rhythm, int maxAttempts) const {
             candidate.lanes[static_cast<std::size_t>(i)] = unpack(
                 lanes_[static_cast<std::size_t>(i)].load(std::memory_order_relaxed));
 
+        for (int i = 0; i < 16; ++i) for (int s = 0; s < 256; ++s)
+            candidate.lanes[(size_t)i].stepDelayMs[(size_t)s] = stepDelays_[(size_t)i][(size_t)s].load(std::memory_order_relaxed);
         const auto after = sequence_.load(std::memory_order_acquire);
         if (before == after && (after & 1u) == 0) {
             rhythm = candidate;
@@ -165,7 +177,44 @@ bool DrumRhythmScheduler::setRhythm(const DrumRhythmState& state) {
     return state.read(rhythm) && setRhythm(rhythm);
 }
 
-bool DrumRhythmScheduler::reset(double absoluteBeat) {
+void DrumRhythmScheduler::setChain(const int* bars, int count) {
+    if (!bars || count < 1 || count > 16) return;
+    chainLength_ = count;
+    for (int i = 0; i < count; ++i) chain_[(size_t)i] = std::clamp(bars[i], 0, 15);
+}
+
+void DrumRhythmScheduler::returnEvent(const DrumRhythmEvent& event) {
+    if (event.lane < 0 || event.lane >= 16) return;
+    auto& cursor = cursors_[(size_t)event.lane];
+    if (event.eventOrdinal < cursor.ordinal) {
+        const auto distance = cursor.ordinal - event.eventOrdinal;
+        cursor.consumed = distance >= 32 ? 0xfffffffeu
+            : (cursor.consumed << distance) | (((1u << distance) - 1u) & ~1u);
+        cursor.ordinal = event.eventOrdinal;
+    } else {
+        const auto distance = event.eventOrdinal - cursor.ordinal;
+        if (distance < 32) cursor.consumed &= ~(1u << distance);
+    }
+}
+
+bool DrumRhythmScheduler::updateRhythm(const DrumRhythm& next, double beat, std::uint64_t minimumGridOrdinal) {
+    if (!validateDrumRhythm(next)) return false;
+    if (!initialized_) reset(beat);
+    for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
+        const auto& a = rhythm_.lanes[(size_t)i];
+        const auto& b = next.lanes[(size_t)i];
+        if (b.scheduled() && (!a.scheduled() || a.enabled != b.enabled || a.mode != b.mode
+            || (b.mode == DrumRhythmMode::fit && (a.steps != b.steps || a.cycleBeats != b.cycleBeats)))) {
+            cursors_[(size_t)i].consumed = 0;
+            cursors_[(size_t)i].ordinal = b.mode == DrumRhythmMode::grid ? std::max(minimumGridOrdinal, firstGridOrdinal(beat))
+                : (std::uint64_t)std::max(0.0, std::ceil(beat / spacing(b) - kBeatEpsilon));
+        }
+    }
+    rhythm_ = next;
+    return true;
+}
+
+bool DrumRhythmScheduler::reset(double absoluteBeat, bool includeEarlyEntry) {
     if (!std::isfinite(absoluteBeat) || absoluteBeat < 0.0)
         return false;
 
@@ -173,11 +222,28 @@ bool DrumRhythmScheduler::reset(double absoluteBeat) {
     for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
         const auto& lane = rhythm_.lanes[static_cast<std::size_t>(i)];
         const auto slotBeats = spacing(lane);
-        if (!lane.enabled || slotBeats <= 0.0) {
+        cursors_[(size_t)i].consumed = 0;
+        if (!lane.scheduled() || slotBeats <= 0.0) {
             cursors_[static_cast<std::size_t>(i)].ordinal = 0;
             continue;
         }
 
+        if (lane.micro && includeEarlyEntry) {
+            auto& cursor = cursors_[(size_t)i];
+            cursor.ordinal = (uint64_t)std::max(0.0, std::floor(absoluteBeat / slotBeats) - 1);
+            const bool fit = lane.enabled && lane.mode == DrumRhythmMode::fit;
+            while ((double)cursor.ordinal * slotBeats + (!fit && (cursor.ordinal & 1u)
+                ? swing_ * kSwingMax * kGridSpacingBeats : 0.0) < absoluteBeat - kBeatEpsilon) ++cursor.ordinal;
+            continue;
+        }
+        if (lane.micro) {
+            auto& cursor = cursors_[(size_t)i];
+            cursor.ordinal = (std::uint64_t)std::max(0.0, std::floor((absoluteBeat - .1 * bpm_ / 60.0) / slotBeats) - 1);
+            for (int bit = 0; bit < 32; ++bit)
+                if (eventBeat(lane, cursor.ordinal + bit) < absoluteBeat - kBeatEpsilon) cursor.consumed |= 1u << bit;
+            while (cursor.consumed & 1u) { cursor.consumed >>= 1; ++cursor.ordinal; }
+            continue;
+        }
         // Subtracting a tiny epsilon makes a mathematically exact event at a
         // seek point inclusive, while still being insensitive to a caller's
         // last-bit floating-point representation.
@@ -200,25 +266,24 @@ int DrumRhythmScheduler::positiveModulo(std::uint64_t value, int modulus, int ro
     return wrapped < 0 ? wrapped + modulus : wrapped;
 }
 
+int DrumRhythmScheduler::sourceBar(const DrumLaneRhythm& lane, std::uint64_t ordinal) const {
+    return lane.enabled ? lane.sourceBar : chain_[(size_t)((ordinal / 16) % (std::uint64_t)chainLength_)];
+}
+int DrumRhythmScheduler::sourceStep(const DrumLaneRhythm& lane, std::uint64_t ordinal) const {
+    return lane.enabled ? positiveModulo(ordinal, lane.steps, lane.rotation) : (int)(ordinal % 16);
+}
 double DrumRhythmScheduler::spacing(const DrumLaneRhythm& lane) const {
-    if (lane.mode == DrumRhythmMode::grid)
-        return kGridSpacingBeats;
-    return static_cast<double>(lane.cycleBeats) / static_cast<double>(lane.steps);
+    return lane.enabled && lane.mode == DrumRhythmMode::fit
+        ? (double)lane.cycleBeats / lane.steps : kGridSpacingBeats;
 }
 
-double DrumRhythmScheduler::eventBeat(const DrumLaneRhythm& lane,
-                                      std::uint64_t ordinal) const {
-    if (lane.mode == DrumRhythmMode::grid) {
-        const double base = static_cast<double>(ordinal) * kGridSpacingBeats;
-        return base + ((ordinal & 1u) != 0
-            ? swing_ * kSwingMax * kGridSpacingBeats : 0.0);
-    }
-
-    const auto steps = static_cast<std::uint64_t>(lane.steps);
-    const auto cycle = ordinal / steps;
-    const auto step = ordinal % steps;
-    return static_cast<double>(cycle) * static_cast<double>(lane.cycleBeats)
-        + static_cast<double>(step) * spacing(lane);
+double DrumRhythmScheduler::eventBeat(const DrumLaneRhythm& lane, std::uint64_t ordinal) const {
+    const bool fit = lane.enabled && lane.mode == DrumRhythmMode::fit;
+    const double base = (double)ordinal * spacing(lane)
+        + (!fit && (ordinal & 1u) ? swing_ * kSwingMax * kGridSpacingBeats : 0.0);
+    const int index = sourceBar(lane, ordinal) * 16 + sourceStep(lane, ordinal);
+    const int offset = lane.delayMs + (index >= 0 && index < 256 ? lane.stepDelayMs[(size_t)index] : 0);
+    return std::max(0.0, base + (lane.micro ? offset * bpm_ / 60000.0 : 0.0));
 }
 
 std::uint64_t DrumRhythmScheduler::firstGridOrdinal(double absoluteBeat) const {
@@ -245,20 +310,24 @@ bool DrumRhythmScheduler::nextEvent(double inclusiveEndBeat, DrumRhythmEvent& ev
     if (!std::isfinite(inclusiveEndBeat))
         return false;
 
-    int selected = -1;
+    int selected = -1, selectedBit = 0;
     double selectedBeat = std::numeric_limits<double>::infinity();
     lastLaneScanCount_ = DR_RHYTHM_LANES;
     for (int i = 0; i < DR_RHYTHM_LANES; ++i) {
-        const auto& lane = rhythm_.lanes[static_cast<std::size_t>(i)];
-        if (!lane.enabled)
-            continue;
-        const auto candidate = eventBeat(lane, cursors_[static_cast<std::size_t>(i)].ordinal);
-        if (candidate > inclusiveEndBeat + kBeatEpsilon)
-            continue;
-        if (selected < 0 || candidate < selectedBeat - kBeatEpsilon
-            || (std::fabs(candidate - selectedBeat) <= kBeatEpsilon && i < selected)) {
-            selected = i;
-            selectedBeat = candidate;
+        const auto& lane = rhythm_.lanes[(size_t)i];
+        if (!lane.scheduled()) continue;
+        const auto& cursor = cursors_[(size_t)i];
+        for (int bit = 0; bit < (lane.micro ? 32 : 1); ++bit) {
+            const auto ordinal = cursor.ordinal + bit;
+            // Unswung base minus the largest possible advance bounds all later hits.
+            if ((double)ordinal * spacing(lane) - (lane.micro ? .1 * bpm_ / 60.0 : 0.0)
+                > std::min(inclusiveEndBeat, selectedBeat) + kBeatEpsilon) break;
+            if ((cursor.consumed >> bit) & 1u) continue;
+            const auto candidate = eventBeat(lane, ordinal);
+            if (candidate > inclusiveEndBeat + kBeatEpsilon) continue;
+            if (selected < 0 || candidate < selectedBeat - kBeatEpsilon) {
+                selected = i; selectedBit = bit; selectedBeat = candidate;
+            }
         }
     }
 
@@ -267,11 +336,14 @@ bool DrumRhythmScheduler::nextEvent(double inclusiveEndBeat, DrumRhythmEvent& ev
 
     const auto index = static_cast<std::size_t>(selected);
     const auto& lane = rhythm_.lanes[index];
-    const auto ordinal = cursors_[index].ordinal++;
+    auto& cursor = cursors_[index];
+    const auto ordinal = cursor.ordinal + selectedBit;
+    cursor.consumed |= 1u << selectedBit;
+    while (cursor.consumed & 1u) { cursor.consumed >>= 1; ++cursor.ordinal; }
     event.lane = selected;
-    event.sourceBar = lane.sourceBar;
-    event.sourceStep = positiveModulo(ordinal, lane.steps, lane.rotation);
     event.eventOrdinal = ordinal;
+    event.sourceBar = sourceBar(lane, ordinal);
+    event.sourceStep = sourceStep(lane, ordinal);
     event.cycle = lane.mode == DrumRhythmMode::grid
         ? ordinal / static_cast<std::uint64_t>(lane.steps)
         : ordinal / static_cast<std::uint64_t>(lane.steps);
@@ -286,11 +358,11 @@ bool DrumRhythmScheduler::reschedule(DrumRhythmEvent& event) const {
     if (event.lane < 0 || event.lane >= DR_RHYTHM_LANES)
         return false;
     const auto& lane = rhythm_.lanes[static_cast<std::size_t>(event.lane)];
-    if (!lane.enabled)
+    if (!lane.scheduled())
         return false;
 
-    event.sourceBar = lane.sourceBar;
-    event.sourceStep = positiveModulo(event.eventOrdinal, lane.steps, lane.rotation);
+    event.sourceBar = sourceBar(lane, event.eventOrdinal);
+    event.sourceStep = sourceStep(lane, event.eventOrdinal);
     event.cycle = event.eventOrdinal / static_cast<std::uint64_t>(lane.steps);
     event.beat = eventBeat(lane, event.eventOrdinal);
     event.sample = beatToSample(event.beat);

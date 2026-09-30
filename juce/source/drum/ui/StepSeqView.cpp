@@ -1,4 +1,5 @@
 #include "StepSeqView.h"
+#include "../dsp/DrumKits.h"
 #include "../dsp/DrumPatches.h"
 #include <cmath>
 #include <limits>
@@ -133,12 +134,15 @@ static constexpr float kGroupGap = 8.0f;
 // All 16 pad lanes at once (drum.css .dr-lanes), lane 0 = pad 15 at the top so
 // the stack reads like the pad grid's bottom-left origin. Flat BL-1-style cells
 // — the whole cell is the hit target, no inset pill leaving dead space.
-static constexpr int kLaneMaxH = 42, kLaneGap = 1, kLaneNameW = 92, kLaneNameGap = 7;
+static constexpr int kLaneMaxH = 42, kLaneGap = 1, kLaneNameW = 120, kLaneNameGap = 7;
 static constexpr int kRowBottomPad = 11;
+static constexpr int kTimingHeight = 82;
+static constexpr int kInspectorGap = 4;
 static constexpr float kStepGap = 2.0f;
 
 StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
-    setInterceptsMouseClicks(true, false);
+    setInterceptsMouseClicks(true, true);
+    setupPoly();
     setWantsKeyboardFocus(true);   // verbs on keyPressed, modifier combos only
     startTimerHz(30);
 }
@@ -146,11 +150,123 @@ StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
 #ifndef FABLE_HOSTED_UI
 StepSeqView::StepSeqView(DrumAudioProcessor& p)
     : ownedModel(makeStandaloneDrumUiModel(p)), proc(*ownedModel) {
-    setInterceptsMouseClicks(true, false);
+    setInterceptsMouseClicks(true, true);
+    setupPoly();
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 #endif
+
+void StepSeqView::setupPoly() {
+    patternPreset_.setTextWhenNothingSelected("PATTERN PRESET");
+    patternPreset_.setTooltip("Load a drum pattern preset without changing the kit or tempo");
+    patternPreset_.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff0d1017));
+    patternPreset_.setColour(juce::ComboBox::textColourId, col::textDim);
+    patternPreset_.setColour(juce::ComboBox::outlineColourId, col::line);
+    const auto& patternPresets = fable::factoryKits();
+    for (int i = 0; i < (int)patternPresets.size(); ++i)
+        patternPreset_.addItem(juce::String(patternPresets[(size_t)i].name), i + 1);
+    patternPreset_.setEnabled(proc.hasTargetClip());
+    patternPreset_.onChange = [this] {
+        const int index = patternPreset_.getSelectedId() - 1;
+        if (index < 0 || !proc.hasTargetClip()) return;
+        pushHistoryEntry();
+        if (proc.loadPatternPreset(index)) {
+            proc.setEditPattern(0);
+            clearSelection();
+            repaint();
+        }
+    };
+    addAndMakeVisible(patternPreset_);
+    if (!proc.supportsPoly()) return;
+    addAndMakeVisible(timingDisclosure_);
+    addChildComponent(timingPanel_);
+    for (auto* slider : { &laneDelay_, &stepDelay_ }) {
+        slider->setSliderStyle(juce::Slider::IncDecButtons);
+        slider->setTextBoxStyle(juce::Slider::TextBoxLeft, false, 78, 28);
+        slider->setRange(-50, 50, 1); slider->setTextValueSuffix(" ms");
+        slider->setDoubleClickReturnValue(true, 0);
+        timingPanel_.addAndMakeVisible(*slider);
+        slider->onDragStart = [this] { timingGesture_ = true; timingGestureSaved_ = false; };
+        slider->onDragEnd = [this] { timingGesture_ = timingGestureSaved_ = false; };
+    }
+    laneDelay_.setTitle("Lane micro delay in milliseconds");
+    stepDelay_.setTitle("Step micro delay in milliseconds");
+    laneDelay_.onValueChange = [this] { if (!refreshingTiming_) setMicroDelay((int)laneDelay_.getValue(), false); };
+    stepDelay_.onValueChange = [this] { if (!refreshingTiming_) setMicroDelay((int)stepDelay_.getValue(), true); };
+    for (auto* label : { &laneDelayLabel_, &stepDelayLabel_ }) {
+        timingPanel_.addAndMakeVisible(*label);
+        label->setFont(monoFont(9, true));
+        label->setColour(juce::Label::textColourId, col::textDim);
+    }
+    timingDisclosure_.onClick = [this] {
+        const bool open = !timingPanel_.isVisible();
+        timingPanel_.setVisible(open);
+        timingDisclosure_.setButtonText(open ? "TIMING ^" : "TIMING v");
+        clearSelection(); refreshTiming(); resized(); repaint();
+    };
+    polyPanel_ = std::make_unique<PolyLanePanel>(proc);
+    addAndMakeVisible(*polyPanel_); addAndMakeVisible(laneScroll_);
+    polyPanel_->beforeEdit = [this] { pushHistoryEntry(); };
+    polyPanel_->onUndo = [this] { undo(); }; polyPanel_->onRedo = [this] { redo(); };
+    laneScroll_.addListener(this);
+}
+int StepSeqView::gridBottom() const {
+    if (!polyPanel_) return getHeight() - kRowBottomPad;
+    return (timingPanel_.isVisible() ? timingPanel_.getY() : polyPanel_->getY()) - kInspectorGap;
+}
+void StepSeqView::resized() {
+    if (!polyPanel_) return;
+    timingDisclosure_.setBounds(getWidth() - 174, kHeadY, 80, 28);
+    patternPreset_.setBounds(randButtonBounds().getRight() + 8, kHeadY + 2, 148, 24);
+    const int panelWidth = juce::jmax(0, getWidth() - 24);
+    const int h = PolyLanePanel::preferredHeight(panelWidth);
+    polyPanel_->setBounds(12, getHeight() - h - 4, panelWidth, h);
+    const bool compactTiming = panelWidth < 840;
+    const int timingHeight = compactTiming ? 116 : kTimingHeight;
+    timingPanel_.setBounds(12, polyPanel_->getY() - kInspectorGap - timingHeight,
+                           panelWidth, timingHeight);
+    const int laneX = compactTiming ? 16 : 194;
+    const int stepX = compactTiming ? 220 : 396;
+    const int labelY = compactTiming ? 52 : 12;
+    const int sliderY = compactTiming ? 74 : 35;
+    laneDelayLabel_.setBounds(laneX, labelY, 180, 18);
+    laneDelay_.setBounds(laneX, sliderY, 176, 30);
+    stepDelayLabel_.setBounds(stepX, labelY, 180, 18);
+    stepDelay_.setBounds(stepX, sliderY, 176, 30);
+    const int visible = juce::jmax(24, gridBottom() - kRowY);
+    const int total = laneHeight() * fable::DR_NPADS
+                    + kLaneGap * (fable::DR_NPADS - 1);
+    laneScroll_.setBounds(getWidth() - 12, kRowY, 12, visible);
+    laneScroll_.setRangeLimits(0, total);
+    laneScroll_.setCurrentRange(juce::jlimit(0, juce::jmax(0, total - visible), laneOffset_), visible);
+    laneOffset_ = (int)laneScroll_.getCurrentRangeStart();
+    laneScroll_.setVisible(total > visible);
+}
+void StepSeqView::refreshTiming() {
+    if (!timingPanel_.isVisible()) return;
+    const auto s = proc.sequence(); const auto& lane = s.rhythm.lanes[(size_t)proc.selectedPad()];
+    refreshingTiming_ = true;
+    laneDelayLabel_.setText("LANE OFFSET", juce::dontSendNotification);
+    stepDelayLabel_.setText("STEP " + juce::String(timingStep_ + 1).paddedLeft('0', 2), juce::dontSendNotification);
+    laneDelay_.setValue(lane.delayMs, juce::dontSendNotification);
+    stepDelay_.setValue(lane.stepDelayMs[(size_t)(proc.editPattern() * 16 + timingStep_)], juce::dontSendNotification);
+    refreshingTiming_ = false;
+}
+void StepSeqView::setMicroDelay(int value, bool step) {
+    auto s = proc.sequence(); const auto pad = (size_t)proc.selectedPad();
+    auto& lane = s.rhythm.lanes[pad];
+    auto& target = step ? lane.stepDelayMs[(size_t)(proc.editPattern() * 16 + timingStep_)] : lane.delayMs;
+    if (target == value) return;
+    if (!timingGesture_ || !timingGestureSaved_) { pushHistoryEntry(); timingGestureSaved_ = true; }
+    target = std::clamp(value, -50, 50); lane.micro = true;
+    s.hasRhythm = true; s.configuredLanes |= (uint16_t)(1u << pad);
+    proc.commitSequence(s); refreshTiming(); repaint();
+}
+
+void StepSeqView::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& d) {
+    laneScroll_.setCurrentRangeStart(laneScroll_.getCurrentRangeStart() - d.deltaY * 160);
+}
 
 juce::Rectangle<int> StepSeqView::transportBounds() const {
     return { kPadX, kHeadY, 34, 28 };            // .dr-transport 34x28
@@ -176,17 +292,17 @@ int StepSeqView::padOfLane(int lane) { return fable::DR_NPADS - 1 - lane; }
 
 // Lanes divide whatever height the panel was given, so the view still reads
 // correctly when a host scales the rack down. In its dedicated workspace the
-// lane stack can use the full vertical canvas, making every hit target easier
-// to read and edit than the old compact strip.
+// lane stack can use the full vertical canvas. Keep the minimum compact enough
+// for all 16 lanes to remain visible above the timing and poly inspectors.
 int StepSeqView::laneHeight() const {
-    const int usable = getHeight() - kRowY - kRowBottomPad - (fable::DR_NPADS - 1) * kLaneGap;
-    return juce::jlimit(10, kLaneMaxH, usable / fable::DR_NPADS);
+    const int usable = gridBottom() - kRowY - (fable::DR_NPADS - 1) * kLaneGap;
+    return juce::jlimit(18, kLaneMaxH, usable / fable::DR_NPADS);
 }
 
 juce::Rectangle<int> StepSeqView::laneBounds(int pad) const {
     const int h = laneHeight();
-    return { kPadX, kRowY + laneOfPad(pad) * (h + kLaneGap),
-             juce::jmax(0, getWidth() - 2 * kPadX), h };
+    return { kPadX, kRowY + laneOfPad(pad) * (h + kLaneGap) - laneOffset_,
+             juce::jmax(0, getWidth() - 2 * kPadX - 12), h };
 }
 
 juce::Rectangle<int> StepSeqView::laneNameBounds(int pad) const {
@@ -194,7 +310,19 @@ juce::Rectangle<int> StepSeqView::laneNameBounds(int pad) const {
 }
 
 juce::Rectangle<int> StepSeqView::stepBounds(int pad, int step) const {
+    const auto sequence = proc.sequence();
+    return stepBoundsForLane(pad, step, sequence.hasRhythm ? &sequence.rhythm.lanes[(size_t)pad] : nullptr);
+}
+
+juce::Rectangle<int> StepSeqView::stepBoundsForLane(int pad, int step, const fable::DrumLaneRhythm* rhythm) const {
     const auto lane = laneBounds(pad).withTrimmedLeft(kLaneNameW + kLaneNameGap);
+    if (rhythm && rhythm->enabled && rhythm->mode == fable::DrumRhythmMode::fit && rhythm->sourceBar == proc.editPattern()) {
+        if (step >= rhythm->steps) return {}; // retained source notes are outside this cycle
+        const int slot = (step + rhythm->rotation) % rhythm->steps;
+        const float pitch = (float)lane.getWidth() / (float)rhythm->steps;
+        const float width = juce::jmin(pitch - 2.0f, juce::jmax(24.0f, (float)lane.getWidth() / (float)(rhythm->cycleBeats * 4) - 2.0f));
+        return juce::Rectangle<float>((float)lane.getX() + (float)slot * pitch, (float)lane.getY(), width, (float)lane.getHeight()).toNearestInt();
+    }
     const float w = ((float)lane.getWidth() - 15.0f * kStepGap - 3.0f * kGroupGap) / 16.0f;
     float x = (float)lane.getX();
     for (int i = 0; i < step; ++i) {
@@ -212,9 +340,9 @@ juce::Rectangle<int> StepSeqView::stepBounds(int step) const {
 
 // The union of every lane × step cell (excludes the lane-name selectors).
 juce::Rectangle<int> StepSeqView::gridBounds() const {
-    const auto tl = stepBounds(padOfLane(0), 0);                       // top lane, first step
-    const auto br = stepBounds(padOfLane(fable::DR_NPADS - 1), fable::DR_STEPS - 1); // bottom, last
-    return { tl.getX(), tl.getY(), br.getRight() - tl.getX(), br.getBottom() - tl.getY() };
+    const auto top = laneBounds(padOfLane(0)).withTrimmedLeft(kLaneNameW + kLaneNameGap);
+    const auto bottom = laneBounds(padOfLane(fable::DR_NPADS - 1)).withTrimmedLeft(kLaneNameW + kLaneNameGap);
+    return top.getUnion(bottom);
 }
 
 // Floating CUT · COPY · DUP · DEL · ✕ toolbar centered over the selected step
@@ -224,8 +352,8 @@ juce::Rectangle<int> StepSeqView::selMenuBounds() const {
     constexpr int w = n * bw + (n - 1) * gap;
     const auto nrm = fable::padRectNorm(rect_);
     const int topPad = padOfLane(0);
-    const auto lo = stepBounds(topPad, juce::jlimit(0, fable::DR_STEPS - 1, nrm.stepLo));
-    const auto hi = stepBounds(topPad, juce::jlimit(0, fable::DR_STEPS - 1, nrm.stepHi));
+    const auto lo = stepBoundsForLane(topPad, juce::jlimit(0, fable::DR_STEPS - 1, nrm.stepLo), nullptr);
+    const auto hi = stepBoundsForLane(topPad, juce::jlimit(0, fable::DR_STEPS - 1, nrm.stepHi), nullptr);
     const int cx = (lo.getX() + hi.getRight()) / 2;
     const auto grid = gridBounds();
     const int x = juce::jlimit(grid.getX(), juce::jmax(grid.getX(), grid.getRight() - w), cx - w / 2);
@@ -249,9 +377,10 @@ bool StepSeqView::inRect(int step, int pad) const {
 }
 
 bool StepSeqView::cellAt(juce::Point<int> pos, int& pad, int& step) const {
+    const auto sequence = proc.sequence();
     for (int p = 0; p < fable::DR_NPADS; ++p)
         for (int s = 0; s < fable::DR_STEPS; ++s)
-            if (stepBounds(p, s).contains(pos)) { pad = p; step = s; return true; }
+            if (stepBoundsForLane(p, s, sequence.hasRhythm ? &sequence.rhythm.lanes[(size_t)p] : nullptr).contains(pos)) { pad = p; step = s; return true; }
     return false;
 }
 
@@ -263,9 +392,12 @@ void StepSeqView::cellClamp(juce::Point<int> pos, int& pad, int& step) const {
         const int dy = std::abs(pos.y - laneBounds(p).getCentreY());
         if (dy < bestDy) { bestDy = dy; pad = p; }
     }
+    const auto sequence = proc.sequence();
     step = 0; int bestDx = std::numeric_limits<int>::max();
     for (int s = 0; s < fable::DR_STEPS; ++s) {
-        const int dx = std::abs(pos.x - stepBounds(pad, s).getCentreX());
+        const auto cell = stepBoundsForLane(pad, s, sequence.hasRhythm ? &sequence.rhythm.lanes[(size_t)pad] : nullptr);
+        if (cell.isEmpty()) continue;
+        const int dx = std::abs(pos.x - cell.getCentreX());
         if (dx < bestDx) { bestDx = dx; step = s; }
     }
 }
@@ -274,8 +406,10 @@ void StepSeqView::cellClamp(juce::Point<int> pos, int& pad, int& step) const {
 
 void StepSeqView::toggleStep(int pad, int step) {
     const int pat = proc.editPattern();
+    pushHistoryEntry();
     const auto v = (uint8_t)((proc.step(pat, pad, step) + 1) % 3);
-    proc.setStep(pat, pad, step, v);             // seq.ts cycleStep
+    auto state = captureSnapshot(); state.steps[(size_t)((pat * 16 + pad) * 16 + step)] = v;
+    proc.commitSequence(state);
     hasLastCell_ = true; lastCellStep_ = step; lastCellPad_ = pad;
     repaint();
 }
@@ -291,7 +425,10 @@ void StepSeqView::setSequenceLength(int bars) {
     bars = juce::jlimit(1, fable::DR_NPATTERNS, bars);
     std::vector<int> sequence;
     for (int bar = 0; bar < bars; ++bar) sequence.push_back(bar);
-    proc.setChain(std::move(sequence));
+    if (proc.chain() == sequence) return;
+    pushHistoryEntry();
+    auto state = captureSnapshot(); state.chain = std::move(sequence);
+    proc.commitSequence(state);
     repaint();
 }
 
@@ -303,7 +440,7 @@ void StepSeqView::randomizePad(std::function<float()> rng) {
     if (!rng) rng = [] { return juce::Random::getSystemRandom().nextFloat(); };
     // randomizeLane rewrites the lane at laneOffset; give it a per-pad layout.
     fable::StepLayout lane = gridLayout();
-    lane.laneOffset = pad * fable::DR_STEPS;
+    lane.laneOffset = pad * fable::DR_STEPS * 2;
     applyPatternBuffer(pat, fable::randomizeLane(buildPatternBuffer(pat), lane, 0, rng));
     repaint();
 }
@@ -316,56 +453,42 @@ void StepSeqView::randomizePad(std::function<float()> rng) {
 // this grid layout (no laneOffset; they compute the per-pad offset themselves).
 fable::StepLayout StepSeqView::gridLayout() const {
     fable::StepLayout l;
-    l.stride = 1;
+    l.stride = 2;
     l.stepsPerPattern = fable::DR_STEPS;
-    l.patternSize = fable::DR_NPADS * fable::DR_STEPS;
+    l.patternSize = fable::DR_NPADS * fable::DR_STEPS * 2;
     l.laneOffset = 0;
     return l;
 }
 
 fable::StepBytes StepSeqView::buildPatternBuffer(int pat) const {
-    fable::StepBytes buf((size_t)(fable::DR_NPADS * fable::DR_STEPS), (uint8_t)0);
-    for (int pad = 0; pad < fable::DR_NPADS; ++pad)
-        for (int s = 0; s < fable::DR_STEPS; ++s)
-            buf[(size_t)(pad * fable::DR_STEPS + s)] = proc.step(pat, pad, s);
+    const auto state = proc.sequence();
+    fable::StepBytes buf(512, 0);
+    for (int pad = 0; pad < 16; ++pad) for (int step = 0; step < 16; ++step) {
+        const auto index = (size_t)(pad * 16 + step);
+        buf[index * 2] = state.steps[(size_t)pat * 256 + index];
+        buf[index * 2 + 1] = (uint8_t)state.rhythm.lanes[(size_t)pad].stepDelayMs[(size_t)(pat * 16 + step)];
+    }
     return buf;
 }
-
-void StepSeqView::applyPatternBuffer(int pat, const fable::StepBytes& buf) {
-    for (int pad = 0; pad < fable::DR_NPADS; ++pad)
-        for (int s = 0; s < fable::DR_STEPS; ++s) {
-            const uint8_t v = buf[(size_t)(pad * fable::DR_STEPS + s)];
-            if (proc.step(pat, pad, s) != v) proc.setStep(pat, pad, s, v);
+void StepSeqView::writePatternBuffer(DrumSequence& state, int pat, const fable::StepBytes& buf) {
+    for (int pad = 0; pad < 16; ++pad) for (int step = 0; step < 16; ++step) {
+        const auto index = (size_t)(pad * 16 + step);
+        state.steps[(size_t)pat * 256 + index] = buf[index * 2];
+        const int raw = buf[index * 2 + 1], delay = raw > 127 ? raw - 256 : raw;
+        auto& lane = state.rhythm.lanes[(size_t)pad];
+        if (delay != lane.stepDelayMs[(size_t)(pat * 16 + step)]) {
+            lane.stepDelayMs[(size_t)(pat * 16 + step)] = delay;
+            lane.micro = true; state.hasRhythm = true; state.configuredLanes |= (uint16_t)(1u << pad);
         }
+    }
 }
-
-DrStepSnapshot StepSeqView::captureSnapshot() const {
-    DrStepSnapshot s;
-    s.steps.resize((size_t)(fable::DR_NPATTERNS * fable::DR_NPADS * fable::DR_STEPS));
-    for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)
-        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
-            for (int st = 0; st < fable::DR_STEPS; ++st)
-                s.steps[(size_t)((pat * fable::DR_NPADS + pad) * fable::DR_STEPS + st)] =
-                    proc.step(pat, pad, st);
-    s.chain = proc.chain();
-    return s;
+void StepSeqView::applyPatternBuffer(int pat, const fable::StepBytes& buf) {
+    auto state = captureSnapshot(); writePatternBuffer(state, pat, buf); proc.commitSequence(state);
 }
+DrStepSnapshot StepSeqView::captureSnapshot() const { return proc.sequence(); }
+void StepSeqView::restoreSnapshot(const DrStepSnapshot& s) { proc.commitSequence(s); repaint(); }
 
-void StepSeqView::restoreSnapshot(const DrStepSnapshot& s) {
-    // Chain first: hosted DR-1's setStep drops writes for patterns beyond the
-    // current clip bar count, so restoring across a sequence-length shrink
-    // must grow the clip before the bar's steps are written back.
-    if (proc.chain() != s.chain) proc.setChain(s.chain);
-    for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)
-        for (int pad = 0; pad < fable::DR_NPADS; ++pad)
-            for (int st = 0; st < fable::DR_STEPS; ++st) {
-                const uint8_t v = s.steps[(size_t)((pat * fable::DR_NPADS + pad) * fable::DR_STEPS + st)];
-                if (proc.step(pat, pad, st) != v) proc.setStep(pat, pad, st, v);
-            }
-    repaint();
-}
-
-void StepSeqView::pushHistoryEntry() { history_.push(captureSnapshot()); }
+void StepSeqView::pushHistoryEntry() { syncHistoryContext(); history_.push(captureSnapshot()); }
 
 // ---- selection ---------------------------------------------------------------
 
@@ -446,8 +569,11 @@ void StepSeqView::duplicatePattern() {
     if (target >= fable::DR_NPATTERNS) return;   // no pattern slot past bar 4
     pushHistoryEntry();
     const int curBars = proc.capabilities().hosted ? proc.clipBars() : (int)proc.chain().size();
-    if (target + 1 > curBars) setSequenceLength(target + 1); // extend up to 4
-    applyPatternBuffer(target, buildPatternBuffer(edit));
+    auto state = captureSnapshot();
+    if (target + 1 > curBars) { state.chain.clear(); for (int b = 0; b <= target; ++b) state.chain.push_back(b); }
+    const auto data = buildPatternBuffer(edit);
+    writePatternBuffer(state, target, data);
+    proc.commitSequence(state);
     repaint();
 }
 
@@ -520,22 +646,24 @@ void StepSeqView::movePattern(int fromBar, int toBar, bool copy) {
     pushHistoryEntry();
     const auto layout = gridLayout();
     const auto a = fable::copyPattern(buildPatternBuffer(fromBar), layout, 0);
-    if (copy) {
-        applyPatternBuffer(toBar, a);            // Alt-drag: copy A over B, A unchanged
-    } else {
-        const auto b = fable::copyPattern(buildPatternBuffer(toBar), layout, 0);
-        applyPatternBuffer(toBar, a);            // plain drag: swap A <-> B
-        applyPatternBuffer(fromBar, b);
+    auto state = captureSnapshot();
+    writePatternBuffer(state, toBar, a);
+    if (!copy) {
+        const auto b = buildPatternBuffer(toBar);
+        writePatternBuffer(state, fromBar, b);
     }
+    proc.commitSequence(state);
     repaint();
 }
 
 void StepSeqView::undo() {
+    syncHistoryContext();
     DrStepSnapshot restored, current = captureSnapshot();
     if (history_.undo(current, restored)) restoreSnapshot(restored);
 }
 
 void StepSeqView::redo() {
+    syncHistoryContext();
     DrStepSnapshot restored, current = captureSnapshot();
     if (history_.redo(current, restored)) restoreSnapshot(restored);
 }
@@ -595,6 +723,7 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
         randomizePad();
         return;
     }
+    if (pos.y >= gridBottom() || pos.y < kRowY) return;
     for (int pad = 0; pad < fable::DR_NPADS; ++pad)
         if (laneNameBounds(pad).contains(pos)) { // lane name = pad selector
             proc.selectPad(pad);
@@ -606,6 +735,9 @@ void StepSeqView::mouseDown(const juce::MouseEvent& e) {
     if (gridBounds().contains(pos)) {
         int pad, step;
         if (!cellAt(pos, pad, step)) return;     // between cells (group gap): ignore
+        if (timingPanel_.isVisible()) {
+            proc.selectPad(pad); timingStep_ = step; refreshTiming(); repaint(); return;
+        }
         downStep_ = step; downPad_ = pad;
         if (e.mods.isShiftDown()) {              // 1) rectangle sweep
             sweeping_ = true;
@@ -741,7 +873,7 @@ void StepSeqView::cancelGesture() {
 
 // ---- animation ----------------------------------------------------------------
 
-void StepSeqView::timerCallback() {
+void StepSeqView::syncHistoryContext() {
     // The hosted clip/pattern source can swap under us (SQ-4 focus switching a
     // HostedDrumModel to another scene) — clear the undo history and any
     // selection so a later undo can never reach back into a different clip.
@@ -755,6 +887,12 @@ void StepSeqView::timerCallback() {
         ghost_ = false; ghostHasHover_ = false;
     }
 
+}
+
+void StepSeqView::timerCallback() {
+    syncHistoryContext();
+    patternPreset_.setEnabled(proc.hasTargetClip());
+    refreshTiming();
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
     const bool playing = proc.sequencerPlaying();
@@ -768,6 +906,10 @@ void StepSeqView::timerCallback() {
     for (int pad = 0; pad < fable::DR_NPADS; ++pad)
         for (int s = 0; s < fable::DR_STEPS; ++s) mix(proc.step(edit, pad, s));
     mix(proc.padName(sel).hashCode());
+    if (proc.supportsPoly()) {
+        const auto state = proc.sequence();
+        for (const auto& lane : state.rhythm.lanes) { mix(lane.enabled); mix(lane.steps); mix(lane.rotation); mix(lane.sourceBar); mix((int)lane.mode); mix(lane.cycleBeats); mix(lane.delayMs); for (int v : lane.stepDelayMs) mix(v); }
+    }
     const auto n = fable::padRectNorm(rect_);
     mix(hasRect_ ? (1 + n.stepLo * 40 + n.stepHi * 4 + n.padLo * 400 + n.padHi) : 0);
     mix(sweeping_ ? 7777 : 0);
@@ -786,6 +928,12 @@ void StepSeqView::timerCallback() {
         repaint();
         return;
     }
+    for (int p = 0; p < fable::DR_NPADS; ++p) {
+        const int position = proc.lanePosition(p);
+        if (position != lastLanePositions_[(size_t)p]) {
+            repaint(laneBounds(p)); lastLanePositions_[(size_t)p] = position;
+        }
+    }
     if (curStep == lastCursorStep_ && curPat == lastCursorPattern_) return;
 
     // Only the playhead moved: repaint the old and the new cursor column. The
@@ -793,8 +941,8 @@ void StepSeqView::timerCallback() {
     // lane stack; pad generously to cover the 1px rings and rounding.
     static constexpr int kCursorPad = 6;
     auto columnBounds = [this](int step) {
-        const auto top = stepBounds(padOfLane(0), step);
-        const auto bot = stepBounds(padOfLane(fable::DR_NPADS - 1), step);
+        const auto top = stepBoundsForLane(padOfLane(0), step, nullptr);
+        const auto bot = stepBoundsForLane(padOfLane(fable::DR_NPADS - 1), step, nullptr);
         return juce::Rectangle<int>(top.getX(), top.getY(), top.getWidth(),
                                     bot.getBottom() - top.getY()).expanded(kCursorPad);
     };
@@ -901,7 +1049,7 @@ void StepSeqView::paint(juce::Graphics& g) {
     if (!proc.capabilities().hosted)
         drawSeqBtn(g, randButtonBounds(), "RAND", false, 0.9f);
 
-    // ---- head: tap hint, right-aligned ----
+    /* ---- head: tap hint, right-aligned ----
     auto right = getLocalBounds().withY(kHeadY).withHeight(kHeadH)
                      .withTrimmedRight(kPadX).withTrimmedLeft(660);
     g.setColour(col::textHint);
@@ -909,10 +1057,49 @@ void StepSeqView::paint(juce::Graphics& g) {
     drawSpaced(g, "TAP STEP - ON -> ACCENT -> OFF - SHIFT-DRAG TO SELECT",
                right.removeFromRight(320), 0.9f, juce::Justification::right);
 
+    */
+    if (timingPanel_.isVisible()) {
+        drawPanel(g, timingPanel_.getBounds().toFloat(), 9.0f);
+        const auto panel = timingPanel_.getBounds();
+        const bool compact = panel.getWidth() < 840;
+        const int x = panel.getX(), y = panel.getY(), w = panel.getWidth();
+        g.setColour(col::text); g.setFont(dispFont(10));
+        drawSpaced(g, "MICRO TIMING", {x + 16, y + 10, 160, 20}, 1.0f);
+        g.setColour(col::acA); g.setFont(monoFont(10, true));
+        drawSpaced(g, juce::String(sel + 1).paddedLeft('0', 2) + " " + proc.padName(sel),
+                   {x + 16, y + 37, 160, 20}, .8f);
+        const auto sequence = proc.sequence();
+        const auto& lane = sequence.rhythm.lanes[(size_t)sel];
+        const int total = lane.delayMs + lane.stepDelayMs[(size_t)(edit * 16 + timingStep_)];
+        const juce::String totalText = (total > 0 ? "+" : "") + juce::String(total) + " ms";
+        const int resultX = compact ? x + w - 172 : x + 610;
+        g.setColour(col::textDim); g.setFont(monoFont(9, true));
+        drawSpaced(g, "COMBINED OFFSET", {resultX, y + (compact ? 10 : 12), 164, 18}, .8f);
+        g.setColour(col::acA); g.setFont(monoFont(16, true));
+        g.drawText(totalText, juce::Rectangle<int>{resultX, y + (compact ? 31 : 35), 160, 30},
+                   juce::Justification::centredLeft);
+        g.setColour(col::line);
+        if (!compact) {
+            g.drawVerticalLine(x + 180, (float)y + 13, (float)y + 69);
+            g.drawVerticalLine(x + 592, (float)y + 13, (float)y + 69);
+        }
+        if (w >= 1100) {
+            g.setColour(col::textDim); g.setFont(monoFont(9));
+            drawSpaced(g, "CLICK STEP TO SELECT", {x + w - 280, y + 17, 262, 18}, .8f,
+                       juce::Justification::right);
+            drawSpaced(g, "- EARLY  /  + LATE", {x + w - 280, y + 42, 262, 18}, .8f,
+                       juce::Justification::right);
+        }
+    }
+
     // ---- lanes: every pad at once, flat cells (drum.css .dr-lanes) ----
+    g.reduceClipRegion(0, kRowY, getWidth() - 12, juce::jmax(0, gridBottom() - kRowY));
+    const auto sequence = proc.sequence();
     const int curStep = proc.currentStep(), curPat = proc.currentPattern();
     for (int pad = 0; pad < fable::DR_NPADS; ++pad) {
         const bool isSel = pad == sel;
+        const auto& rhythm = sequence.rhythm.lanes[(size_t)pad];
+        const bool poly = sequence.hasRhythm && rhythm.enabled;
 
         // Lane name doubles as the pad selector (.dr-lane-name).
         const auto nb = laneNameBounds(pad).toFloat();
@@ -927,12 +1114,40 @@ void StepSeqView::paint(juce::Graphics& g) {
         g.setFont(monoFont(8.0f));
         g.drawText(juce::String(pad + 1).paddedLeft('0', 2),
                    text.removeFromLeft(16), juce::Justification::centredLeft, false);
+        if (poly) {
+            auto badge = text.removeFromBottom(12);
+            g.setColour(col::acB); g.setFont(monoFont(9));
+            g.drawText(rhythm.mode == fable::DrumRhythmMode::grid ? "GRID " + juce::String(rhythm.steps)
+                : "FIT " + juce::String(rhythm.steps) + "/" + juce::String(rhythm.cycleBeats / 4) + "B", badge, juce::Justification::centredLeft);
+            g.setColour(isSel ? col::acA : col::textDim);
+        }
         g.drawText(proc.padName(pad), text, juce::Justification::centredLeft, true);
 
+        const bool fit = poly && rhythm.mode == fable::DrumRhythmMode::fit && rhythm.sourceBar == edit;
+        if (fit) {
+            const auto timeline = laneBounds(pad).withTrimmedLeft(kLaneNameW + kLaneNameGap);
+            for (int beat = 0; beat < rhythm.cycleBeats; ++beat) {
+                const float x = (float)timeline.getX() + (float)(beat * timeline.getWidth()) / (float)rhythm.cycleBeats;
+                g.setColour(col::textDim.withAlpha(.35f));
+                g.drawVerticalLine(juce::roundToInt(x), (float)timeline.getY(), (float)timeline.getBottom());
+                if (beat % 4 == 0) {
+                    g.setColour(col::textDim); g.setFont(monoFont(8));
+                    g.drawText(juce::String(beat / 4 + 1), juce::roundToInt(x) - 9, timeline.getY(), 8, 10, juce::Justification::centredRight);
+                }
+            }
+        }
+        const bool hasNotes = [&] {
+            const int bar = poly ? rhythm.sourceBar : edit;
+            const int count = poly ? rhythm.steps : fable::DR_STEPS;
+            for (int i = 0; i < count; ++i) if (proc.step(bar, pad, i) != 0) return true;
+            return false;
+        }();
         for (int s = 0; s < fable::DR_STEPS; ++s) {
-            const auto b = stepBounds(pad, s).toFloat();
+            const auto bounds = stepBoundsForLane(pad, s, sequence.hasRhythm ? &rhythm : nullptr);
+            if (bounds.isEmpty()) continue;
+            const auto b = bounds.toFloat();
             const int v = proc.step(edit, pad, s);
-            const bool cur = playing && curStep == s && curPat == edit;
+            const bool cur = playing && hasNotes && (poly ? proc.lanePosition(pad) == edit * 16 + s && rhythm.sourceBar == edit : curStep == s && curPat == edit);
             const bool accented = v == 2;
 
             // Ghost source cells dim while carried (CUT only).
@@ -955,6 +1170,18 @@ void StepSeqView::paint(juce::Graphics& g) {
                 g.setColour(juce::Colour(0xff0a0d13));
             }
             g.fillRoundedRectangle(b, 2.0f);
+            // Keep the cells in place and retain their notes, but distinguish
+            // everything that this lane no longer plays from its active loop.
+            if (poly && (rhythm.sourceBar != edit || s >= rhythm.steps)) {
+                g.setColour(rhythm.mode == fable::DrumRhythmMode::grid
+                    ? juce::Colour(0xff0c0f15).withAlpha(v ? .85f : 1.0f)
+                    : col::panelLo.withAlpha(.82f));
+                g.fillRoundedRectangle(b, 2.0f);
+                if (rhythm.mode == fable::DrumRhythmMode::fit) {
+                    g.setColour(col::textDim); g.setFont(monoFont(9));
+                    g.drawText(juce::String(s + 1), b.toNearestInt(), juce::Justification::centred);
+                }
+            }
             if (cutSrc) {
                 g.setColour(juce::Colours::black.withAlpha(0.45f));
                 g.fillRoundedRectangle(b, 2.0f);
@@ -962,11 +1189,25 @@ void StepSeqView::paint(juce::Graphics& g) {
 
             if (cur) {                           // .step.cur amber playhead ring
                 g.setColour(col::acB);
+            } else if (fit && s < rhythm.steps) {
+                g.setColour(col::acB.withAlpha(.65f));
             } else {
                 g.setColour(juce::Colours::white.withAlpha(0.045f));
             }
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
 
+            if (fit) {
+                g.setColour(v ? col::panelLo : col::text); g.setFont(monoFont(9));
+                g.drawText(juce::String(s + 1), bounds, juce::Justification::centred);
+            }
+            if (timingPanel_.isVisible() && pad == sel && s == timingStep_) {
+                g.setColour(col::acA); g.drawRect(bounds, 2);
+            }
+            const int delay = rhythm.stepDelayMs[(size_t)(edit * 16 + s)];
+            if (delay != 0) {
+                g.setColour(v ? col::panelLo : col::acA); g.setFont(monoFont(10));
+                g.drawText(delay > 0 ? "+" : "-", bounds.reduced(3), juce::Justification::topRight);
+            }
             // Selection ring (pending sweep or committed rect), lit cells kept.
             if (inRect(s, pad)) {
                 if (v == 0) {

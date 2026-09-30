@@ -144,6 +144,46 @@ void checkInvalidInputs() {
 
 int main() {
     std::printf("\n== DR-1 POLY rhythm timing core ==\n");
+    {
+        DrumRhythmScheduler scheduler(48000, 120, 0);
+        auto rhythm = oneLane(DrumRhythmMode::fit, 3);
+        rhythm.lanes[1] = rhythm.lanes[0]; rhythm.lanes[1].steps = 5;
+        scheduler.setRhythm(rhythm); scheduler.reset();
+        auto initial = collect(scheduler, 1.0);
+        rhythm.lanes[0].rotation = 1; rhythm.lanes[0].sourceBar = 2;
+        check(scheduler.updateRhythm(rhythm, 1.0), "live metadata edit accepted");
+        auto next = collect(scheduler, 1.5);
+        check(next.size() == 1 && next[0].lane == 0 && next[0].eventOrdinal == 1 && next[0].sourceStep == 0
+            && next[0].sourceBar == 2, "rotation and source edits retain event cursors");
+        rhythm.lanes[0].steps = 7;
+        scheduler.updateRhythm(rhythm, 1.5);
+        auto unchanged = collect(scheduler, 1.65);
+        check(unchanged.size() == 1 && unchanged[0].lane == 1 && unchanged[0].eventOrdinal == 2,
+            "step-count edit leaves other lane phase untouched");
+    }
+    {
+        DrumRhythm rhythm; auto& lane = rhythm.lanes[0];
+        lane.micro = true; lane.delayMs = 10; lane.stepDelayMs[1] = 15; lane.stepDelayMs[16] = -50;
+        DrumRhythmScheduler scheduler(48000, 120, 0); const int chain[] = {0, 1};
+        scheduler.setChain(chain, 2); scheduler.setRhythm(rhythm); scheduler.reset();
+        const auto events = collect(scheduler, 4.0);
+        check(events.size() == 17 && events[1].sample == 7200 && events[16].sample == 94080
+            && events[16].sourceBar == 1, "micro timing adds offsets and anticipates the next bar");
+        lane.delayMs = 0; lane.stepDelayMs.fill(0); lane.stepDelayMs[1] = 50; lane.stepDelayMs[2] = -50;
+        scheduler.setTempo(48000, 200, 1); scheduler.setRhythm(rhythm); scheduler.reset();
+        const auto reordered = collect(scheduler, .6);
+        check(reordered.size() == 3 && reordered[1].eventOrdinal == 2 && reordered[1].sample == 4800
+            && reordered[2].eventOrdinal == 1 && reordered[2].sample == 8401,
+            "micro timing orders adjacent swung hits by actual time");
+        DrumRhythmState state; DrumRhythm restored;
+        check(state.publish(rhythm) && state.read(restored) && restored.lanes[0].micro
+            && restored.lanes[0].stepDelayMs[2] == -50, "atomic snapshot retains signed micro timing");
+        lane.delayMs = -20; lane.stepDelayMs.fill(0);
+        scheduler.setTempo(48000, 120, 0); scheduler.setRhythm(rhythm); scheduler.reset();
+        const auto early = collect(scheduler, .3);
+        check(early.size() == 2 && early[0].sample == 0 && early[1].sample == 5040,
+            "first early event clamps to start, subsequent events stay early");
+    }
     checkAtomicState();
     checkQuarterGrid();
     checkFitFixture(3, 4, {0, 32000, 64000}, "FIT 3 fixture setup");

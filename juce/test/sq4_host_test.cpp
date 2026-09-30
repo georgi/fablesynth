@@ -239,6 +239,23 @@ int main(int argc, char** argv) {
         hosted.prepareToPlay(48000.0, 128);
         juce::AudioBuffer<float> hostedBuf(2, 128);
         fui::HostedDrumModel drum(hosted);
+        check(drum.supportsPoly(), "native SQ-4 supports DR-1 POLY and micro timing");
+        {
+            drum.setTargetScene(0);
+            auto sequence = drum.sequence(); sequence.hasRhythm = true; sequence.configuredLanes = 1;
+            auto& lane = sequence.rhythm.lanes[0]; lane.enabled = true; lane.steps = 3;
+            lane.mode = fable::DrumRhythmMode::fit; lane.micro = true; lane.delayMs = -12; lane.stepDelayMs[1] = 23;
+            check(drum.commitSequence(sequence), "hosted sequence commits notes and metadata together");
+            const auto& clip = hosted.conductor().session().scenes[0].clips[0];
+            check(clip.hasDrumRhythm && clip.drumRhythm.lanes[0].stepDelayMs[1] == 23,
+                "hosted model retains signed timing in the session");
+            fable::SessionData restored;
+            check(fable::sessionFromJson(fable::sessionToJson(hosted.conductor().session()), restored)
+                && restored.scenes[0].clips[0].drumRhythm.lanes[0].delayMs == -12,
+                "hosted DR-1 metadata survives session save/load");
+            drum.setTargetScene(1); check(!drum.sequence().hasRhythm, "switching scenes clears the inspector metadata");
+            drum.setTargetScene(0); check(drum.sequence().rhythm.lanes[0].steps == 3, "returning to a scene restores its POLY settings");
+        }
         fui::HostedBassModel bass(hosted);
         fui::HostedWtModel wt2(hosted, 2), wt3(hosted, 3);
         drum.setTargetScene(2);

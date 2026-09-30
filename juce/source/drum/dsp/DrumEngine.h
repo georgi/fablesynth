@@ -55,6 +55,8 @@ public:
     void prepare(double sampleRate);
     void enablePadFx(bool on) { padFxEnabled_ = on; }
     FxTelemetry fxTelemetry(int pad, int bus) const {
+        if (pad < 0)
+            return groupFx_[(size_t)std::clamp(bus, 0, DR_NBUSES - 1)].telemetry();
         auto result = padFx_[(size_t)std::clamp(pad, 0, DR_NPADS - 1)].telemetry();
         const auto tail = reverbs_[(size_t)std::clamp(bus, 0, DR_NBUSES - 1)].telemetry();
         for (auto field : {FxTelemetry::verbL, FxTelemetry::verbR, FxTelemetry::correlation})
@@ -90,6 +92,12 @@ public:
     void setPatterns(const uint8_t* data, int n);   // n must be 4*16*16; copies
     void setChain(const int* list, int n);          // ignores empty; clamps entries + chainPos
     void setDrumRhythm(const DrumRhythm* rhythm);
+    int lanePosition(int i) const {
+        if (i < 0 || i >= 16) return -1;
+        if (hostClipMode_) return clipHost_.isPlaying() && clipHasRhythm_ && clipRhythm_.lanes[(size_t)i].scheduled()
+            ? lanePositions_[(size_t)i] - 1 : -1;
+        return isPlaying() && polyLaneEnabled(i) ? lanePositions_[(size_t)i] - 1 : -1;
+    }
     void setBpmOverride(double bpm);                // host tempo; <= 0 clears the override
     int  currentStep() const { return step_; }      // -1 when stopped
     int  currentPattern() const { return chain_[(size_t)chainPos_]; }
@@ -121,19 +129,10 @@ public:
         if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
         else clipHost_.clear();
     }
-    void hostTempo(double bpm, double swing, double anchorFrame) {
-        setBpmOverride(bpm);
-        anchorFrame_ = anchorFrame;
-        hostSwing_ = swing;
-        clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
-    }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0) {
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag);
-    }
+    void hostTempo(double bpm, double swing, double anchorFrame);
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, const DrumRhythm* rhythm = nullptr);
     void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars) {
-        clipHost_.updateClip(data, (size_t)bytes, bars);
-    }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, const DrumRhythm* rhythm = nullptr);
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
     // rest for the next call (Finding 3 — the SeqProcessor loops until 0).
@@ -349,12 +348,14 @@ private:
     std::vector<uint8_t> pats_ =
         std::vector<uint8_t>(DR_NPATTERNS * DR_NPADS * DR_STEPS, 0);
     std::vector<int> chain_ { 0 };
+    std::array<int, 16> lanePositions_{};
     DrumRhythm rhythm_{};
     bool hasRhythm_ = false;
     DrumRhythmScheduler rhythmScheduler_{};
     DrumRhythmEvent rhythmNext_{};
     bool rhythmHasNext_ = false;
     std::uint64_t rhythmFrame_ = 0;
+    std::uint64_t internalGridOrdinal_ = 0;
     int    chainPos_ = 0;
     bool   playing_ = false;
     int    step_ = -1;
@@ -378,6 +379,14 @@ private:
     double   hostFrame_ = 0;
     double   anchorFrame_ = 0;     // shared timebase's beat zero (hostTempo)
     ClipHost clipHost_;
+    DrumRhythm clipRhythm_{}, pendingClipRhythm_{};
+    bool clipHasRhythm_ = false, pendingClipHasRhythm_ = false, clipRhythmHasNext_ = false;
+    DrumRhythmScheduler clipRhythmScheduler_{};
+    DrumRhythmEvent clipRhythmNext_{};
+    void syncClipRhythm(bool launch);
+    int renderClipTiming(double frame, int maxRun);
+    void fireClipRhythm(const DrumRhythmEvent&);
+
 
     DrumParamArray p_ = defaultDrumParams();
     uint32_t hits_ = 0;

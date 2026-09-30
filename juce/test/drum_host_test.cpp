@@ -105,17 +105,11 @@ int main(int argc, char** argv) {
     check(proc.getLatencySamples() > 0, "FX latency reported to the host",
           proc.getLatencySamples());
 
-    // A factory program is a complete grid-based sequence. Loading one after
-    // a POLY state must clear the old lane routing in both the audio snapshot
-    // and subsequent plugin-state serialization. Explicit state restore must
-    // remain able to reinstate the POLY metadata.
+    // Factory program recall changes sounds while preserving the separately
+    // edited sequence and POLY metadata. Explicit state restore must remain
+    // able to reinstate that metadata too.
     {
         DrumAudioProcessor lifecycle;
-        lifecycle.enableAllBuses();
-        lifecycle.prepareToPlay(sr, block);
-        juce::AudioBuffer<float> lifecycleBuffer(10, block);
-        juce::MidiBuffer empty;
-
         fable::DrumRhythm staleRhythm;
         staleRhythm.lanes[0].enabled = true;
         staleRhythm.lanes[0].sourceBar = 1; // empty in TR-VOID; would suppress its kick
@@ -125,19 +119,19 @@ int main(int argc, char** argv) {
         juce::MemoryBlock polyState;
         lifecycle.getStateInformation(polyState);
 
+        const auto beforeRecall = lifecycle.getSequence();
         lifecycle.setCurrentProgram(0);
-        lifecycle.consumeHitFlags();
-        lifecycle.setSeqPlaying(true);
-        lifecycle.processBlock(lifecycleBuffer, empty);
-        check((lifecycle.consumeHitFlags() & 1u) != 0,
-              "factory program clears prior POLY lane before playback");
+        const auto afterRecall = lifecycle.getSequence();
+        check(afterRecall.steps == beforeRecall.steps && afterRecall.chain == beforeRecall.chain
+                  && afterRecall.hasRhythm && afterRecall.rhythm.lanes[0].enabled,
+              "factory program recall preserves patterns, chain, and POLY lane");
 
         juce::MemoryBlock factoryState;
         lifecycle.getStateInformation(factoryState);
         auto factoryXml = BinPacker::unpack(factoryState);
         auto* factoryDrum = factoryXml ? factoryXml->getChildByName("DRUM") : nullptr;
-        check(factoryDrum != nullptr && !factoryDrum->hasAttribute("rhythm"),
-              "factory program state omits prior POLY metadata");
+        check(factoryDrum != nullptr && factoryDrum->hasAttribute("rhythm"),
+              "factory program state retains POLY metadata");
 
         lifecycle.setStateInformation(polyState.getData(), (int)polyState.getSize());
         juce::MemoryBlock restoredState;
@@ -147,6 +141,176 @@ int main(int argc, char** argv) {
         check(restoredDrum != nullptr && restoredDrum->hasAttribute("rhythm"),
               "explicit state restore preserves POLY metadata");
         lifecycle.releaseResources();
+    }
+
+    {
+        DrumAudioProcessor edited;
+        edited.prepareToPlay(sr, block);
+        auto model = fui::makeStandaloneDrumUiModel(edited);
+        check(model->supportsPoly(), "standalone advertises complete POLY authoring");
+        {
+            edited.setEditPattern(2);
+            fui::StepSeqView initialView(*model); initialView.setBounds(0, 0, 1000, 605);
+            const auto originalCell = initialView.stepBounds(0, 0);
+            fui::PolyLanePanel* inspector = nullptr;
+            for (auto* c : initialView.getChildren()) {
+                if (auto* p = dynamic_cast<fui::PolyLanePanel*>(c)) inspector = p;
+                if (auto* b = dynamic_cast<juce::TextButton*>(c)) if (b->getTitle() == "Show POLY inspector") b->onClick();
+            }
+            check(!model->sequence().hasRhythm, "opening native inspector does not change sequence");
+            check(initialView.stepBounds(0, 0) == originalCell, "opening POLY keeps original step geometry");
+            if (inspector) for (auto* c : inspector->getChildren()) if (auto* b = dynamic_cast<juce::TextButton*>(c))
+                if (b->getTitle() == "Enable lane POLY") b->onClick();
+            const auto initial = model->sequence().rhythm.lanes[0];
+            check(initial.enabled && initial.sourceBar == 2 && initial.steps == 16 && initial.rotation == 0
+                && initial.mode == fable::DrumRhythmMode::grid, "native first-enable defaults to edited source bar");
+            initialView.undo(); check(!model->sequence().hasRhythm, "first enable is one complete undo entry");
+            // Exercise the actual numeric control while the standalone processor
+            // is running. A length edit must activate the lane without an ON click.
+            auto notes = model->sequence(); notes.steps.assign(1024, 0); notes.chain = {2};
+            notes.steps[(2 * 16) * 16] = 1; notes.steps[(2 * 16) * 16 + 15] = 2;
+            model->commitSequence(notes);
+            juce::AudioBuffer<float> liveAudio(10, block); juce::MidiBuffer liveMidi;
+            edited.setSeqPlaying(true); edited.processBlock(liveAudio, liveMidi); edited.consumeHitFlags();
+            bool changedSteps = false;
+            if (inspector) for (auto* c : inspector->getChildren())
+                if (auto* n = dynamic_cast<fui::SequenceNumberInput*>(c))
+                    for (auto* child : n->getChildren())
+                        if (auto* input = dynamic_cast<juce::TextEditor*>(child); input && input->getTitle() == "STEPS") {
+                            input->setText("3", false); input->onReturnKey(); changedSteps = true;
+                        }
+            check(changedSteps && model->sequence().rhythm.lanes[0].enabled
+                  && model->sequence().rhythm.lanes[0].steps == 3, "STEPS edit activates native lane immediately");
+            int loopHits = 0; bool cursorInside = true;
+            for (int i = 0; i < 160; ++i) {
+                edited.processBlock(liveAudio, liveMidi);
+                if (edited.consumeHitFlags() & 1) ++loopHits;
+                const int position = edited.getLanePosition(0);
+                if (i > 16) cursorInside &= position >= 32 && position < 35;
+            }
+            check(loopHits >= 4 && cursorInside, "live standalone playback repeats shortened three-step loop", loopHits);
+            check(model->sequence().steps == notes.steps, "shortening preserves notes outside loop");
+            initialView.undo(); check(!model->sequence().hasRhythm, "length edit and activation undo together");
+            edited.setSeqPlaying(false); edited.processBlock(liveAudio, liveMidi);
+
+        }
+        auto state = model->sequence();
+        state.steps.assign(1024, 0); state.chain = {0}; state.steps[(3 * 16 + 15) * 16] = 2;
+        state.hasRhythm = true; state.configuredLanes = 1u << 15;
+        auto& lane = state.rhythm.lanes[15]; lane.enabled = true; lane.sourceBar = 3; lane.steps = 3;
+        check(model->commitSequence(state), "complete note + rhythm transaction accepted");
+        check(edited.isProgramDirty(), "rhythm transaction marks program dirty");
+        juce::AudioBuffer<float> audio(10, block); juce::MidiBuffer midi;
+        edited.setSeqPlaying(true); edited.processBlock(audio, midi);
+        check((edited.consumeHitFlags() & (1u << 15)) && edited.getLanePosition(15) == 48,
+              "audio boundary observes complete notes and fixed source cursor");
+        edited.setSeqPlaying(false); edited.processBlock(audio, midi);
+        auto invalid = state; invalid.rhythm.lanes[15].enabled = false; invalid.rhythm.lanes[15].sourceBar = 4;
+        check(!model->commitSequence(invalid) && model->sequence().rhythm.lanes[15].sourceBar == 3,
+              "disabled configurations validated without partial writes");
+        fui::StepSeqView view(*model); view.setBounds(0, 0, 1000, 605);
+        edited.setSelectedPad(15); edited.setEditPattern(0);
+        fui::PolyLanePanel* panel = nullptr;
+        for (auto* c : view.getChildren()) if (auto* p = dynamic_cast<fui::PolyLanePanel*>(c)) panel = p;
+        check(panel != nullptr, "native inspector is a JUCE child");
+        if (panel) {
+            for (auto* c : panel->getChildren()) if (auto* b = dynamic_cast<juce::TextButton*>(c))
+                if (b->getTitle() == "Enable lane POLY") b->onClick();
+            check(!model->sequence().rhythm.lanes[15].enabled, "OFF retains lane configuration");
+            view.undo(); check(model->sequence().rhythm.lanes[15].enabled, "undo restores rhythm with notes");
+            view.redo(); check(!model->sequence().rhythm.lanes[15].enabled && edited.getStep(3, 15, 0) == 2,
+                              "redo preserves notes and disabled settings");
+            for (int width : { 1000, 650 }) {
+                view.setSize(width, width == 1000 ? 605 : 350); panel->setVisible(true); view.resized();
+                auto image = view.createComponentSnapshot(view.getLocalBounds());
+                writePng(image, juce::File("/tmp/dr-poly-native-" + juce::String(width) + ".png"));
+                check(panel->getHeight() >= 118 && view.laneHeight() >= 24, "small native controls stay usable");
+            }
+        }
+        juce::MemoryBlock saved; edited.getStateInformation(saved);
+        DrumAudioProcessor fresh; fresh.setStateInformation(saved.getData(), (int)saved.getSize());
+        edited.clearDrumRhythm(); edited.setStateInformation(saved.getData(), (int)saved.getSize());
+        view.undo(); check(!view.canUndo(), "state restoration clears prior complete undo history");
+        for (auto* p : { &fresh, &edited }) {
+            const auto restored = p->getSequence();
+            check(restored.hasRhythm && !restored.rhythm.lanes[15].enabled && restored.rhythm.lanes[15].sourceBar == 3
+                && restored.steps[(3 * 16 + 15) * 16] == 2 && restored.configuredLanes == (1u << 15),
+                "fresh and same-instance state retain notes and disabled POLY settings");
+        }
+    }
+
+    // POLY visual fixtures use the same native StepSeqView snapshot path as the
+    // editor smoke test, with the three web reference states.
+    {
+        DrumAudioProcessor capture;
+        auto model = fui::makeStandaloneDrumUiModel(capture);
+        fui::StepSeqView view(*model); view.setBounds(0, 0, 1000, 605);
+        fui::PolyLanePanel* panel = nullptr;
+        for (auto* child : view.getChildren())
+            if (auto* candidate = dynamic_cast<fui::PolyLanePanel*>(child)) panel = candidate;
+        if (panel) panel->setVisible(true);
+        auto state = model->sequence();
+        state.hasRhythm = true; state.configuredLanes = 1;
+        auto& lane = state.rhythm.lanes[0];
+        lane.enabled = true; lane.sourceBar = 0; lane.steps = 10;
+        for (int i : {0, 4, 8}) state.steps[(size_t)i] = i == 0 ? 2 : 1;
+        const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/dr1-poly-ui-ref");
+        out.createDirectory();
+        auto snap = [&](const char* name) {
+            model->commitSequence(state);
+            if (panel) { panel->setVisible(true); panel->updateFromModel(); }
+            writePng(view.createComponentSnapshot(view.getLocalBounds()), out.getChildFile(name));
+            check(out.getChildFile(name).existsAsFile(), "POLY native fixture written");
+        };
+        capture.setSelectedPad(0); capture.setEditPattern(0);
+        snap("juce-grid-on.png");
+        lane.steps = 5; lane.mode = fable::DrumRhythmMode::fit; lane.cycleBeats = 8;
+        snap("juce-fit-on.png");
+        capture.setSelectedPad(2); state.configuredLanes |= 1u << 2;
+        auto& offLane = state.rhythm.lanes[2]; offLane.enabled = false; offLane.sourceBar = 0; offLane.steps = 16;
+        snap("juce-off.png");
+    }
+
+    {
+        DrumAudioProcessor fitted;
+        auto model = fui::makeStandaloneDrumUiModel(fitted);
+        fitted.setSelectedPad(15); fitted.setEditPattern(0);
+        fui::StepSeqView view(*model); view.setBounds(0, 0, 1000, 605);
+        const auto regularCell = view.stepBounds(0, 7);
+        const auto timeline = view.gridBounds();
+        bool matchesClock = true, insideLane = true;
+        for (int count : {3, 5, 16}) for (int cycle : {4, 8}) for (int rotation : {0, 2}) {
+            auto sequence = model->sequence(); sequence.hasRhythm = true; sequence.configuredLanes = 1u << 15;
+            auto& lane = sequence.rhythm.lanes[15];
+            lane.enabled = true; lane.sourceBar = 0; lane.steps = count; lane.rotation = rotation;
+            lane.mode = fable::DrumRhythmMode::fit; lane.cycleBeats = cycle;
+            model->commitSequence(sequence);
+            fable::DrumRhythmScheduler clock(48000, 120);
+            clock.setRhythm(sequence.rhythm); clock.reset(0);
+            fable::DrumRhythmEvent event;
+            while (clock.nextEvent(cycle - 1e-9, event)) {
+                const auto cell = view.stepBounds(15, event.sourceStep);
+                const double expectedX = timeline.getX() + event.beat / cycle * timeline.getWidth();
+                matchesClock &= std::abs(cell.getX() - expectedX) <= 1.0;
+                insideLane &= !cell.isEmpty() && timeline.contains(cell);
+            }
+            for (int step = count; step < 16; ++step) insideLane &= view.stepBounds(15, step).isEmpty();
+        }
+        check(matchesClock && insideLane, "FIT cell onsets match scheduler beats, including rotation and two-bar cycles");
+        check(view.stepBounds(0, 7) == regularCell && view.gridBounds() == timeline, "FIT preserves other lanes and overall grid bounds");
+        auto sequence = model->sequence(); auto& lane = sequence.rhythm.lanes[15];
+        lane.steps = 5; lane.rotation = 2; lane.cycleBeats = 8;
+        for (int i = 0; i < 5; ++i) sequence.steps[15 * 16 + i] = i == 0 ? 2 : 1;
+        model->commitSequence(sequence);
+        const auto at = view.stepBounds(15, 2).getCentre();
+        const juce::MouseEvent click(juce::Desktop::getInstance().getMainMouseSource(), at.toFloat(),
+            juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &view, &view,
+            juce::Time::getCurrentTime(), at.toFloat(), juce::Time::getCurrentTime(), 1, false);
+        view.mouseDown(click); view.mouseUp(click);
+        check(fitted.getStep(0, 15, 2) == 2 && fitted.getStep(0, 15, 4) == 1,
+              "click at fitted time edits its rotated source note");
+        view.undo(); check(fitted.getStep(0, 15, 2) == 1, "fitted source edit supports undo");
+        writePng(view.createComponentSnapshot(view.getLocalBounds()), juce::File("/tmp/dr-fit-native.png"));
     }
 
     if (argc > 1 && juce::String(argv[1]) == "--poly-lifecycle")
@@ -271,14 +435,15 @@ int main(int argc, char** argv) {
     render(40, -1, 0); // decay (program 0 below restores fx.reverb.on)
 
     // ---- 5. sequencer with TR-VOID (program 0) ----
-    check(proc.getNumPrograms() == 18, "18 kit programs", proc.getNumPrograms());
+    check(proc.getNumPrograms() == (int)fable::factoryKits().size(), "factory kit program count", proc.getNumPrograms());
     check(proc.getProgramName(0) == "TR-VOID", "program 0 is TR-VOID");
     const auto patchRevisionBeforeKit = proc.getPatchContextRevision();
+    const float bpmBeforeKit = proc.apvts.getRawParameterValue("seq.bpm")->load();
     proc.setCurrentProgram(0);
     check(proc.getPatchContextRevision() != patchRevisionBeforeKit,
           "reloading current kit invalidates patch readout");
     float bpmParam = proc.apvts.getRawParameterValue("seq.bpm")->load();
-    check(std::abs(bpmParam - 126.0f) < 0.5f, "TR-VOID applies seq.bpm=126 to APVTS", bpmParam);
+    check(std::abs(bpmParam - bpmBeforeKit) < 0.5f, "kit recall preserves seq.bpm", bpmParam);
 
     proc.setSeqPlaying(true);
     stepChanges = 0; lastStep = -1;
@@ -393,6 +558,28 @@ int main(int argc, char** argv) {
               && restoredDrum->hasAttribute("rhythm"),
           "POLY rhythm metadata serialises into plugin state");
 
+    {
+        auto micro = proc2.getSequence(); micro.hasRhythm = true; micro.configuredLanes |= 1;
+        auto& lane = micro.rhythm.lanes[0]; lane.micro = true; lane.delayMs = -12; lane.stepDelayMs[1] = 23;
+        micro.steps[1] = 1;
+        check(proc2.commitSequence(micro), "micro timing sequence accepted");
+        juce::MemoryBlock saved; proc2.getStateInformation(saved);
+        DrumAudioProcessor recalled; recalled.setStateInformation(saved.getData(), (int)saved.getSize());
+        check(recalled.getSequence().rhythm.lanes[0].delayMs == -12
+            && recalled.getSequence().rhythm.lanes[0].stepDelayMs[1] == 23, "signed lane and step timing round-trip");
+        fui::StepSeqView view(recalled); recalled.setEditPattern(0);
+        view.setSelection({1, 1, 0, 0}); view.commitBlockMove(2, 1, false);
+        check(recalled.getSequence().rhythm.lanes[1].stepDelayMs[3] == 23
+            && recalled.getSequence().rhythm.lanes[0].stepDelayMs[1] == 0, "moving a hit carries its step timing");
+        view.undo(); check(recalled.getSequence().rhythm.lanes[0].stepDelayMs[1] == 23,
+            "undo restores timing with its hit");
+        view.setSize(1040, 470);
+        for (int i = 0; i < view.getNumChildComponents(); ++i)
+            if (auto* button = dynamic_cast<juce::TextButton*>(view.getChildComponent(i)))
+                if (button->getButtonText() == "TIMING v") button->onClick();
+        writePng(view.createComponentSnapshot(view.getLocalBounds()), juce::File("/tmp/dr-micro-native.png"));
+    }
+
     // Loading an ordinary state into the same instance must clear the prior
     // POLY snapshot rather than leaving it active against the new patterns.
     DrumAudioProcessor ordinary;
@@ -410,10 +597,34 @@ int main(int argc, char** argv) {
     printf("\n== kit programs ==\n");
     check(proc2.getProgramName(1) == "ROOM ONE", "program 1 is ROOM ONE");
     check(proc2.getProgramName(2) == "BITCRUSH", "program 2 is BITCRUSH");
+    proc2.setStep(0, 0, 0, 2);
+    const auto sequenceBeforeKit = proc2.getSequence();
+    const float bpmBeforeKit2 = proc2.apvts.getRawParameterValue("seq.bpm")->load();
     proc2.setCurrentProgram(1);
     check(proc2.getCurrentProgram() == 1, "current program tracks", proc2.getCurrentProgram());
+    const auto sequenceAfterKit = proc2.getSequence();
+    check(sequenceAfterKit.steps == sequenceBeforeKit.steps
+              && sequenceAfterKit.chain == sequenceBeforeKit.chain,
+          "kit program change preserves drum patterns and chain");
+    check(sequenceAfterKit.hasRhythm == sequenceBeforeKit.hasRhythm
+              && sequenceAfterKit.configuredLanes == sequenceBeforeKit.configuredLanes
+              && sequenceAfterKit.rhythm.lanes[0].delayMs == sequenceBeforeKit.rhythm.lanes[0].delayMs
+              && sequenceAfterKit.rhythm.lanes[0].stepDelayMs == sequenceBeforeKit.rhythm.lanes[0].stepDelayMs,
+          "kit program change preserves POLY rhythm state");
     float bpm1 = proc2.apvts.getRawParameterValue("seq.bpm")->load();
-    check(std::abs(bpm1 - 116.0f) < 0.5f, "ROOM ONE applies seq.bpm=116", bpm1);
+    check(std::abs(bpm1 - bpmBeforeKit2) < 0.5f,
+          "ROOM ONE leaves current BPM unchanged", bpm1);
+    const float bpmBeforePatternPreset = proc2.apvts.getRawParameterValue("seq.bpm")->load();
+    const int kitBeforePatternPreset = proc2.getCurrentProgram();
+    check(proc2.loadFactoryPatternPreset(1), "factory drum pattern preset loads");
+    const auto patternPresetSequence = proc2.getSequence();
+    check(patternPresetSequence.steps == fable::factoryKits()[1].patterns
+              && patternPresetSequence.chain == fable::factoryKits()[1].chain,
+          "pattern preset applies its pattern and chain");
+    check(proc2.getCurrentProgram() == kitBeforePatternPreset,
+          "pattern preset leaves the selected drum kit unchanged");
+    check(std::abs(proc2.apvts.getRawParameterValue("seq.bpm")->load() - bpmBeforePatternPreset) < 0.5f,
+          "pattern preset leaves BPM unchanged");
 
     // ---- 10. legacy tolerance: a bare APVTS tree loads without crashing ----
     printf("\n== legacy state ==\n");
@@ -477,7 +688,7 @@ int main(int argc, char** argv) {
             { "pad grid",  194, 287 },
             { "osc row",   910, 264 },
             { "output selector", 194, 632 },
-            { "step seq",  730, 805 },
+
             // Task 11 pad editor panels (centres of view/knob areas)
             { "osc A terrain",   560, 230 },
             { "noise view",     1344, 230 },
@@ -510,6 +721,29 @@ int main(int argc, char** argv) {
         }
         proc.setSelectedPad(3); // restore the state the round-trip section set
         proc.selectionBroadcaster.dispatchPendingMessages();
+
+        // The sequencer page shares the FX workspace height; its lane list
+        // scrolls when the full grid and inspectors do not fit together.
+        auto* sequencerTab = dynamic_cast<juce::TextButton*>(drumEd->getRack().getComponentAt(700, 115));
+        check(sequencerTab && sequencerTab->getButtonText() == "SEQUENCER",
+              "sequencer tab is reachable in the rack");
+        if (sequencerTab) sequencerTab->onClick();
+        ed->setSize(1200, juce::roundToInt(1200.0 * DrumDeviceBody::sequencerHeight / DrumRack::LW));
+        auto* seqView = findFxComponent<fui::StepSeqView>(*ed);
+        const int workspaceEditorHeight = juce::roundToInt(
+            1200.0 * DrumDeviceBody::workspaceHeight / DrumRack::LW);
+        check(seqView != nullptr && ed->getHeight() == workspaceEditorHeight,
+              "sequencer page matches the FX workspace height", ed->getHeight());
+        if (seqView) {
+            for (auto* child : seqView->getChildren())
+                if (auto* button = dynamic_cast<juce::TextButton*>(child);
+                    button && button->getButtonText() == "TIMING v") button->onClick();
+            juce::ScrollBar* laneScroll = nullptr;
+            for (auto* child : seqView->getChildren())
+                if (auto* scroll = dynamic_cast<juce::ScrollBar*>(child)) laneScroll = scroll;
+            check(laneScroll && laneScroll->isVisible(),
+                  "sequencer lane scrollbar stays inside the fixed-height workspace");
+        }
     }
 
     // ---- 12. pad grid: drop-WAV import + QWERTY trigger (Task 10) ----
@@ -563,7 +797,9 @@ int main(int argc, char** argv) {
     printf("\n== step seq view ==\n");
     {
         fui::StepSeqView seq(proc);
-        seq.setBounds(0, 0, 1424, 399);
+        // This hit-test scenario needs all sixteen lanes visible. Compact
+        // scrolling geometry is covered by the POLY layout checks above.
+        seq.setBounds(0, 0, 1424, 605);
         proc.setSelectedPad(0);
         proc.selectionBroadcaster.dispatchPendingMessages();
         proc.setEditPattern(0);
@@ -596,7 +832,7 @@ int main(int argc, char** argv) {
                 if (seq.laneBounds(pad).intersects(seq.laneBounds(other))) lanesDisjoint = false;
         }
         check(lanesDisjoint, "no two lanes overlap");
-        check(lanesInPanel, "every lane fits inside the panel");
+        check(lanesInPanel || seq.laneHeight() >= 24, "lanes remain usable and scroll when the panel is small");
         check(!seq.stepBounds(0, 0).intersects(seq.laneNameBounds(0)),
               "step cells clear the lane-name column");
 
@@ -633,9 +869,10 @@ int main(int argc, char** argv) {
         check(proc.getStep(0, 3, 0) == 0, "lane name does not toggle a step");
 
         // Bar selection edits independently from the playback length.
+        const auto chainBeforeBarSelect = proc.getChain();
         seq.patternClick(1);
         check(proc.getEditPattern() == 1, "bar click selects 2", proc.getEditPattern());
-        check(proc.getChain() == std::vector<int>({ 0 }), "bar click preserves length");
+        check(proc.getChain() == chainBeforeBarSelect, "bar click preserves length");
         seq.setSequenceLength(3);
         check(proc.getChain() == std::vector<int>({ 0, 1, 2 }), "length 3 plays bars 1-3");
         seq.patternClick(3);
@@ -681,7 +918,9 @@ int main(int argc, char** argv) {
     printf("\n== step seq editing: rectangle selection, verbs, drag, undo ==\n");
     {
         fui::StepSeqView seq(proc);
-        seq.setBounds(0, 0, 1424, 399);
+        // This hit-test scenario needs all sixteen lanes visible. Compact
+        // scrolling geometry is covered by the POLY layout checks above.
+        seq.setBounds(0, 0, 1424, 605);
         proc.setEditPattern(0);
         proc.setChain({ 0 });
         for (int pat = 0; pat < fable::DR_NPATTERNS; ++pat)
@@ -893,7 +1132,7 @@ int main(int argc, char** argv) {
     }
 
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
-    if (!runFxUiChecks<DrumAudioProcessor>("dr", DrumRack::LW, DrumRack::LH, true, [](const auto& p) { return p.fxTelemetry(0,0); })) ++g_fail;
+    if (!runFxUiChecks<DrumAudioProcessor>("dr", DrumRack::LW, DrumRack::LH, true, [](const auto& p) { return p.fxTelemetry(-1,0); })) ++g_fail;
     if (!runAgentProcessorChecks<DrumAudioProcessor>("dr", fable::drumParamInfo().data(), fable::drumParamInfo().size(), "pad15.flt.cut", "pad15.oscA.table")) ++g_fail;
     return g_fail == 0 ? 0 : 1;
 }

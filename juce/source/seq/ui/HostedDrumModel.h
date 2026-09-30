@@ -54,6 +54,11 @@ public:
     void setStep(int pattern, int pad, int step, uint8_t) override;
     const std::vector<int>& chain() const override { return chain_; }
     void setChain(std::vector<int>) override;
+    bool supportsPoly() const override { return true; }
+    DrumSequence sequence() const override;
+    bool commitSequence(const DrumSequence&) override;
+    bool loadPatternPreset(int) override;
+    int lanePosition(int pad) const override { return sequencerPlaying() ? proc_.drumLanePosition(pad) : -1; }
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;

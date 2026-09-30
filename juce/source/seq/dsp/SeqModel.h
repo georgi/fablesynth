@@ -6,6 +6,7 @@
 
 #include "SeqProtocol.h"
 #include "../../dsp/Arp.h"
+#include "../../drum/dsp/DrumRhythm.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,7 +23,24 @@ struct ClipData {
     std::vector<uint8_t> bytes;
     bool hasArp = false;
     ArpSettings arp;
+    bool hasDrumRhythm = false;
+    DrumRhythm drumRhythm{};
+    uint16_t drumConfiguredLanes = 0;
 };
+
+inline bool validDrumClip(const ClipData& clip, Machine machine) {
+    if (!clip.hasDrumRhythm) return true;
+    if (machine != Machine::DR1) return false;
+    auto checked = clip.drumRhythm;
+    for (int i = 0; i < 16; ++i) {
+        auto& lane = checked.lanes[(size_t)i];
+        if ((clip.drumConfiguredLanes & (1u << i)) || lane.scheduled()) {
+            if (lane.sourceBar < 0 || lane.sourceBar >= clip.bars) return false;
+            lane.enabled = true; // Validate retained OFF settings as well.
+        }
+    }
+    return validateDrumRhythm(checked);
+}
 
 // v1 sessions use factory patches; params are only meaningful when !factory.
 struct PatchRef {
@@ -73,6 +91,7 @@ inline std::string validateSession(const SessionData& doc) {
         for (size_t t = 0; t < sc.clips.size(); t++) {
             if (!sc.hasClip[t]) continue;
             const auto& c = sc.clips[t];
+            if (!validDrumClip(c, doc.tracks[t].machine)) return "invalid drum rhythm";
             if (c.hasArp && (doc.tracks[t].machine == Machine::DR1 || !validArpSettings(c.arp, true)))
                 return "invalid clip arpeggiator";
             if (!(c.bars >= 1 && c.bars <= SQ_MAX_BARS))

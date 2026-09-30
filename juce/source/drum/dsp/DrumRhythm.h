@@ -20,10 +20,15 @@ enum class DrumRhythmMode : std::uint8_t {
     fit = 1,
 };
 
-// A disabled lane is the native equivalent of a null lane entry.  The other
+// A disabled lane follows the ordinary pattern chain; micro timing can still
+// schedule its hits independently. The other
 // fields remain present so the complete 16-lane snapshot has a fixed layout.
 struct DrumLaneRhythm {
     bool enabled = false;
+    bool micro = false;
+    int delayMs = 0;
+    std::array<int, 256> stepDelayMs{};
+    bool scheduled() const { return enabled || micro; }
     int sourceBar = 0;
     int steps = DR_RHYTHM_MAX_STEPS;
     int rotation = 0;
@@ -44,6 +49,7 @@ enum class DrumRhythmError : std::uint8_t {
     rotationOutOfRange,
     invalidMode,
     invalidFitCycle,
+    invalidDelay,
 };
 
 // Validation is allocation-free and does not modify the supplied snapshot.
@@ -66,7 +72,8 @@ struct DrumRhythmEvent {
 
 // A fixed-size atomic snapshot.  The normal usage is one message-thread
 // publisher and one audio-thread reader.  Each lane is encoded in an atomic
-// word and a seqlock makes a read coherent without a mutex, allocation, or a
+// word, step offsets use atomic integers, and a seqlock makes reads coherent
+// without a mutex, allocation, or a
 // second heap-owned snapshot.  read() is bounded; false means a writer was
 // continuously publishing during all attempts and the caller should retain
 // its previous snapshot.
@@ -89,6 +96,7 @@ private:
 
     std::array<std::atomic<std::uint64_t>, DR_RHYTHM_LANES> lanes_{};
     std::atomic<std::uint32_t> sequence_{0};
+    std::array<std::array<std::atomic<int>, 256>, DR_RHYTHM_LANES> stepDelays_{};
 };
 
 // Schedules only POLY lane events.  Each call to nextEvent() examines exactly
@@ -109,11 +117,14 @@ public:
     bool retime(double absoluteBeat, std::int64_t absoluteSample);
     bool setRhythm(const DrumRhythm& rhythm);
     bool setRhythm(const DrumRhythmState& state);
+    bool updateRhythm(const DrumRhythm&, double beat, std::uint64_t minimumGridOrdinal = 0);
+    void setChain(const int* bars, int count);
+    void returnEvent(const DrumRhythmEvent& event);
 
     // The next event at or after absoluteBeat is returned first.  reset() is
     // also the explicit seek/loop boundary operation; it prevents catch-up
     // bursts after a transport jump.
-    bool reset(double absoluteBeat = 0.0);
+    bool reset(double absoluteBeat = 0.0, bool includeEarlyEntry = false);
 
     // Includes an event exactly on inclusiveEndBeat.  Equal-time events are
     // returned in ascending lane order.  The caller can repeatedly call this
@@ -135,15 +146,20 @@ public:
 private:
     struct Cursor {
         std::uint64_t ordinal = 0;
+        std::uint32_t consumed = 0;
     };
 
     static int positiveModulo(std::uint64_t value, int modulus, int rotation);
+    int sourceBar(const DrumLaneRhythm&, std::uint64_t ordinal) const;
+    int sourceStep(const DrumLaneRhythm&, std::uint64_t ordinal) const;
     double spacing(const DrumLaneRhythm& lane) const;
     double eventBeat(const DrumLaneRhythm& lane,
                      std::uint64_t ordinal) const;
     std::uint64_t firstGridOrdinal(double absoluteBeat) const;
     std::int64_t beatToSample(double beat) const;
 
+    std::array<int, 16> chain_{{0, 1, 2, 3}};
+    int chainLength_ = 1;
     DrumRhythm rhythm_{};
     std::array<Cursor, DR_RHYTHM_LANES> cursors_{};
     double sampleRate_ = 48000.0;

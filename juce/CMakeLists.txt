@@ -161,6 +161,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp
         source/drum/ui/DrumPanels.cpp
+        source/drum/ui/PolyLanePanel.cpp
         source/drum/ui/StepSeqView.cpp
         source/drum/ui/DrumFxRack.cpp
         source/ui/Controls.cpp
@@ -291,6 +292,7 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/DrumDeviceBody.cpp
         source/drum/ui/PadGrid.cpp source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp source/drum/ui/DrumPanels.cpp
+        source/drum/ui/PolyLanePanel.cpp
         source/drum/ui/StepSeqView.cpp source/drum/ui/DrumFxRack.cpp
         source/bass/BassDeviceBody.cpp
         source/bass/ui/BassPanels.cpp source/bass/ui/PitchSeqView.cpp source/bass/ui/BassFxRack.cpp

@@ -1,4 +1,5 @@
 #include "PadGrid.h"
+#include "PolyLanePanel.h"
 #include "RemoteSampleSources.h"
 #include "../../dsp/UserTables.h"
 #include "../../agent/AgentPanel.h"
@@ -166,7 +167,9 @@ void PadGrid::mouseDown(const juce::MouseEvent& e) {
 bool PadGrid::keyPressed(const juce::KeyPress& k, juce::Component*) {
     // Agent controls and text fields must never audition pads via shortcuts.
     if (auto* focus = juce::Component::getCurrentlyFocusedComponent())
-        if (dynamic_cast<juce::TextEditor*>(focus) != nullptr
+        if (dynamic_cast<PolyLanePanel*>(focus) != nullptr
+            || focus->findParentComponentOfClass<PolyLanePanel>() != nullptr
+            || dynamic_cast<juce::TextEditor*>(focus) != nullptr
             || focus->findParentComponentOfClass<juce::TextEditor>() != nullptr
             || dynamic_cast<fable::AgentPanel*>(focus) != nullptr
             || focus->findParentComponentOfClass<fable::AgentPanel>() != nullptr)
