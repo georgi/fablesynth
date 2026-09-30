@@ -21,7 +21,7 @@ import {
   cycleStep, NPATTERNS, patIdx, randomizePadPattern, STEPS, type Patterns,
 } from './seq';
 import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
-import type { DrumRhythm } from './rhythm';
+import { cloneDrumSequence, drumSourceConflict, updateDrumLane, type DrumRhythm, type DrumLaneRhythm, type DrumSequence } from './rhythm';
 import {
   clearPadRect, copyPadRect, copyPattern, makeHistory, movePadRect, padRectNorm, pastePadRect,
   pastePattern, type PadRectCells, type PadRectSel, type SeqLayout,
@@ -32,21 +32,52 @@ export type { PadRectSel } from '../shared/seqEdit';
 export let drumEngine = new DrumEngine();
 const initialKitState = kitToState(FACTORY_KITS[0]);
 
-// The DR-1 pattern buffer as a step × pad grid: stride-1 step cells, a pad's
+// Editor cells carry two bytes (hit, signed timing); a pad's
 // row is a lane. One layout covers both the whole-pattern block ops
 // (copyPattern/pastePattern span all pads) and the pad-rect ops (which compute
 // the per-pad offset themselves from padCount = PAD_COUNT).
-const DRUM_LAYOUT: SeqLayout = { stride: 1, stepsPerPattern: STEPS, patternSize: PAD_COUNT * STEPS };
+const DRUM_LAYOUT: SeqLayout = { stride: 2, stepsPerPattern: STEPS, patternSize: PAD_COUNT * STEPS * 2 };
+
+// The editor carries hit + signed timing together through the existing cell
+// operations. Playback and persisted pattern bytes retain their original layout.
+function timingEditBytes(st: DrumSequence): Uint8Array {
+  const bytes = new Uint8Array(2048);
+  for (let bar = 0; bar < 4; bar++) for (let pad = 0; pad < 16; pad++) for (let step = 0; step < 16; step++) {
+    const index = patIdx(bar, pad, step);
+    bytes[index * 2] = st.patterns[index];
+    bytes[index * 2 + 1] = (st.drumRhythm?.lanes[pad]?.stepDelayMs?.[bar * 16 + step] ?? 0) & 255;
+  }
+  return bytes;
+}
+function sequenceFromEditBytes(st: DrumSequence, bytes: Uint8Array): DrumSequence {
+  const patterns = new Uint8Array(1024);
+  let drumRhythm = st.drumRhythm;
+  for (let pad = 0; pad < 16; pad++) {
+    const offsets = [...(drumRhythm?.lanes[pad]?.stepDelayMs ?? [])];
+    let changed = false;
+    for (let bar = 0; bar < 4; bar++) for (let step = 0; step < 16; step++) {
+      const index = patIdx(bar, pad, step), raw = bytes[index * 2 + 1];
+      patterns[index] = bytes[index * 2];
+      const delay = raw > 127 ? raw - 256 : raw;
+      if (delay !== (offsets[bar * 16 + step] ?? 0)) {
+        while (offsets.length <= bar * 16 + step) offsets.push(0);
+        offsets[bar * 16 + step] = delay; changed = true;
+      }
+    }
+    if (changed) drumRhythm = updateDrumLane(drumRhythm, pad, { stepDelayMs: offsets }, 0, 4);
+  }
+  return { patterns, chain: st.chain, drumRhythm };
+}
 
 export type DrumClipboard =
   | { kind: 'rect'; data: PadRectCells }
   | { kind: 'pattern'; data: Uint8Array }
   | null;
 
-// Bounded undo/redo over the patterns buffer. Module-level (not store state)
-// since snapshots aren't rendered; `_pushHistory` captures the pre-mutation
-// buffer before every editing verb (knob/param changes never touch this).
-const patternHistory = makeHistory<Patterns>();
+// Complete sequence history stays outside rendered state. Parameter edits are independent.
+let sequenceGesture = false;
+let gesturePushed = false;
+const patternHistory = makeHistory<DrumSequence>();
 
 export interface KitOption {
   value: string;
@@ -93,6 +124,18 @@ export interface DrumStore {
   clipboard: DrumClipboard;
   kitDirty: boolean;
 
+  sequenceContext: number;
+  lanePositions: number[];
+  sequenceError: string | null;
+  selectLane: (pad: number) => void;
+  commitSequence: (next: DrumSequence, history?: boolean) => boolean;
+  loadPatternPreset: (index: number) => boolean;
+  setLaneEnabled: (pad: number, enabled: boolean) => void;
+  updateLaneRhythm: (pad: number, patch: Partial<DrumLaneRhythm>) => void;
+  setMicroDelay: (pad: number, value: number, step?: number) => void;
+  toggleSourceCell: (pad: number, bar: number, step: number) => void;
+  beginSequenceGesture: () => void;
+  endSequenceGesture: () => void;
   setParam: (id: string, v: number) => void;
   selectPad: (i: number) => void;
   triggerPad: (i: number, vel: number) => void;
@@ -164,6 +207,68 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   clipboard: null,
   kitDirty: false,
 
+  sequenceContext: 0,
+  lanePositions: Array(16).fill(-1),
+  sequenceError: null,
+  selectLane: (i) => { drumEngine.selectPad(i); set({ sel: i, patchValue: '' }); },
+  beginSequenceGesture: () => { sequenceGesture = true; gesturePushed = false; },
+  endSequenceGesture: () => { sequenceGesture = false; gesturePushed = false; },
+  commitSequence: (value, history = true) => {
+    try {
+      const conflict = get().hosted && drumSourceConflict(value.drumRhythm, value.chain.length, get().padNames);
+      if (conflict) throw new Error(conflict);
+      const next = cloneDrumSequence(value, get().hosted ? value.chain.length : 4);
+      if (history) get()._pushHistory();
+      set({ ...next, kitDirty: true, sequenceError: null });
+      if (!get().hosted) drumEngine.setSequence(next.patterns, next.chain, next.drumRhythm);
+      return true;
+    } catch (error) { set({ sequenceError: (error as Error).message }); return false; }
+  },
+  loadPatternPreset: (index) => {
+    const preset = FACTORY_KITS[index];
+    if (!preset) return false;
+    const chain = get().hosted
+      ? sequenceChain(preset.chain.length)
+      : [...preset.chain];
+    const loaded = get().commitSequence({
+      patterns: Uint8Array.from(preset.patterns),
+      chain,
+      drumRhythm: undefined,
+    });
+    if (loaded) set({ editPattern: 0, rectSel: null });
+    return loaded;
+  },
+  setMicroDelay: (pad, value, step) => {
+    const st = get();
+    const lane = st.drumRhythm?.lanes[pad];
+    const patch: Partial<DrumLaneRhythm> = { enabled: lane?.enabled ?? false, ...(!lane ? { sourceBar: 0 } : {}) };
+    if (step === undefined) patch.delayMs = value;
+    else {
+      if (!Number.isInteger(step) || step < 0 || step >= 16) return;
+      const offsets = [...(lane?.stepDelayMs ?? [])];
+      while (offsets.length <= st.editPattern * 16 + step) offsets.push(0);
+      offsets[st.editPattern * 16 + step] = value;
+      patch.stepDelayMs = offsets;
+    }
+    st.updateLaneRhythm(pad, patch);
+  },
+  setLaneEnabled: (i, enabled) => get().updateLaneRhythm(i, { enabled }),
+  updateLaneRhythm: (i, patch) => {
+    const st = get();
+    try {
+      const drumRhythm = updateDrumLane(st.drumRhythm, i,
+        { enabled: true, ...patch }, 0, st.hosted ? st.chain.length : 4);
+      st.commitSequence({ patterns: st.patterns, chain: st.chain, drumRhythm });
+    } catch (error) { set({ sequenceError: (error as Error).message }); }
+  },
+  toggleSourceCell: (i, bar, step) => {
+    const st = get();
+    if (!Number.isInteger(bar) || bar < 0 || bar >= (st.hosted ? st.chain.length : 4) || step < 0 || step > 15) return;
+    const patterns = st.patterns.slice();
+    const index = patIdx(bar, i, step);
+    patterns[index] = cycleStep(patterns[index]);
+    st.commitSequence({ patterns, chain: st.chain, drumRhythm: st.drumRhythm });
+  },
   setParam: (id, v) => {
     drumEngine.setParam(id, v);
     set((state) => ({ params: { ...state.params, [id]: v }, kitDirty: true }));
@@ -183,15 +288,19 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // Every pattern mutation writes the store and pushes to the engine in one
   // place. (Patterns persist inside kits, not standalone — no localStorage.)
   _setPatterns(next: Patterns) {
-    set({ patterns: next, kitDirty: true });
-    drumEngine.setSequence(next, get().chain, get().drumRhythm);
+    get().commitSequence(next.length === 2048 ? sequenceFromEditBytes(get(), next)
+      : { patterns: next, chain: get().chain, drumRhythm: get().drumRhythm }, false);
   },
 
-  // Bounded undo/redo (50 snapshots) over the patterns buffer. Every editing
+  // Bounded undo/redo (50 complete sequence snapshots). Every editing
   // verb — including plain step toggling — pushes the pre-mutation buffer
   // here first; knob/param changes never touch history.
-  _pushHistory: () => patternHistory.push(get().patterns),
-  _clearHistory: () => patternHistory.clear(),
+  _pushHistory: () => {
+    if (sequenceGesture && gesturePushed) return;
+    patternHistory.push(cloneDrumSequence(get()));
+    if (sequenceGesture) gesturePushed = true;
+  },
+  _clearHistory: () => { patternHistory.clear(); sequenceGesture = false; gesturePushed = false; set({ sequenceError: null, sequenceContext: get().sequenceContext + 1 }); },
 
   toggleStep: (step, padI) => {
     const { patterns, editPattern, sel } = get();
@@ -214,12 +323,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     get()._setPatterns(randomizePadPattern(patterns, editPattern, sel));
   },
 
-  setEditPattern: (i) => set({ editPattern: i }),
+  setEditPattern: (i) => set({ editPattern: Math.max(0, Math.min(get().hosted ? get().chain.length - 1 : 3, i | 0)) }),
 
   setSequenceLength: (length) => {
     const chain = sequenceChain(length);
-    set({ chain });
-    drumEngine.setChain(chain);
+    get().commitSequence({ patterns: get().patterns, chain, drumRhythm: get().drumRhythm });
   },
 
   // Clamp a rectangle into the step × pad grid so the stored selection and any
@@ -243,7 +351,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // Copy/cut fall back to the whole edit pattern (all pads) when nothing is
   // selected; a rectangle scopes to its step × pad band.
   copySelection: () => {
-    const { patterns, editPattern, rectSel } = get();
+    const patterns = timingEditBytes(get());
+    const { editPattern, rectSel } = get();
     if (rectSel) {
       set({ clipboard: { kind: 'rect', data: copyPadRect(patterns, DRUM_LAYOUT, editPattern, rectSel) } });
     } else {
@@ -254,13 +363,14 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // Copy then clear exactly what copySelection captured (rectangle, or the
   // whole edit pattern as fallback).
   cutSelection: () => {
+    const patterns = timingEditBytes(get());
     get().copySelection();
-    const { patterns, editPattern, rectSel } = get();
+    const { editPattern, rectSel } = get();
     get()._pushHistory();
     if (rectSel) {
       get()._setPatterns(clearPadRect(patterns, DRUM_LAYOUT, editPattern, rectSel));
     } else {
-      get()._setPatterns(pastePattern(patterns, DRUM_LAYOUT, editPattern, new Uint8Array(PAD_COUNT * STEPS)));
+      get()._setPatterns(pastePattern(patterns, DRUM_LAYOUT, editPattern, new Uint8Array(PAD_COUNT * STEPS * 2)));
     }
   },
 
@@ -268,7 +378,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // pattern as an implicit fallback (Delete/Backspace with nothing selected
   // is a no-op, unlike Cmd/Ctrl-X).
   deleteSelection: () => {
-    const { patterns, editPattern, rectSel } = get();
+    const patterns = timingEditBytes(get());
+    const { editPattern, rectSel } = get();
     if (!rectSel) return;
     get()._pushHistory();
     get()._setPatterns(clearPadRect(patterns, DRUM_LAYOUT, editPattern, rectSel));
@@ -278,7 +389,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // last-touched cell, else the grid origin; whole-pattern payloads always
   // land on the current edit pattern (all pads). Selection follows the paste.
   pasteSelection: () => {
-    const { clipboard, patterns, editPattern, rectSel, lastCell } = get();
+    const patterns = timingEditBytes(get());
+    const { clipboard, editPattern, rectSel, lastCell } = get();
     if (!clipboard) return;
     get()._pushHistory();
     if (clipboard.kind === 'pattern') {
@@ -302,7 +414,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // With no selection: duplicate the current bar into the next one, extending
   // the sequence length if needed.
   duplicateSelection: () => {
-    const { patterns, editPattern, rectSel } = get();
+    const patterns = timingEditBytes(get());
+    const { editPattern, rectSel } = get();
     if (rectSel) {
       const { stepLo, stepHi, padLo, padHi } = padRectNorm(rectSel);
       const at = stepHi + 1;
@@ -317,15 +430,16 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     if (nextPat === editPattern) return; // already the last bar
     get()._pushHistory();
     const data = copyPattern(patterns, DRUM_LAYOUT, editPattern);
-    get()._setPatterns(pastePattern(patterns, DRUM_LAYOUT, nextPat, data));
-    if (get().chain.length <= nextPat) get().setSequenceLength(nextPat + 1);
+    get().commitSequence({ ...sequenceFromEditBytes(get(), pastePattern(patterns, DRUM_LAYOUT, nextPat, data)),
+      chain: get().chain.length <= nextPat ? sequenceChain(nextPat + 1) : get().chain }, false);
     set({ editPattern: nextPat, rectSel: null });
   },
 
   // In-rect drag: move (or Alt-copy) the whole block by (dStep, dPad), clamped
   // so the rectangle stays inside the grid. One undo entry.
   moveRectSel: (dStep, dPad, opts = {}) => {
-    const { patterns, editPattern, rectSel } = get();
+    const patterns = timingEditBytes(get());
+    const { editPattern, rectSel } = get();
     if (!rectSel) return;
     const { stepLo, stepHi, padLo, padHi } = padRectNorm(rectSel);
     const ds = Math.min(STEPS - 1 - stepHi, Math.max(-stepLo, dStep | 0));
@@ -340,8 +454,9 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // with their top-left at (atStep, atPad); a CUT clears its source in the same
   // undo entry as the paste. Selection follows the dropped block.
   dropRect: (data, atStep, atPad, clearSrc) => {
+    const patterns = timingEditBytes(get());
     if (!data.cells.length) return;
-    const { patterns, editPattern } = get();
+    const { editPattern } = get();
     get()._pushHistory();
     const base = clearSrc ? clearPadRect(patterns, DRUM_LAYOUT, editPattern, clearSrc) : patterns;
     get()._setPatterns(pastePadRect(base, DRUM_LAYOUT, editPattern, atStep, atPad, data, PAD_COUNT));
@@ -356,8 +471,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // Bar-chip drag on SequenceLengthControl: move = swap patterns `from`/`to`
   // (all pads); Alt held = copy `from` over `to`, leaving `from` untouched.
   movePattern: (from, to, opts = {}) => {
+    const patterns = timingEditBytes(get());
     if (from === to) return;
-    const { patterns } = get();
     const dataFrom = copyPattern(patterns, DRUM_LAYOUT, from);
     get()._pushHistory();
     if (opts.copy) {
@@ -370,13 +485,13 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   },
 
   undo: () => {
-    const restored = patternHistory.undo(get().patterns);
-    if (restored) get()._setPatterns(restored);
+    const restored = patternHistory.undo(cloneDrumSequence(get()));
+    if (restored) get().commitSequence(restored, false);
   },
 
   redo: () => {
-    const restored = patternHistory.redo(get().patterns);
-    if (restored) get()._setPatterns(restored);
+    const restored = patternHistory.redo(cloneDrumSequence(get()));
+    if (restored) get().commitSequence(restored, false);
   },
 
   setMode: (mode) => set({ mode }),
@@ -425,6 +540,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     await drumEngine.init();
     const userTables = get().userTables;
     if (userTables.length) drumEngine.setUserTables(userTables);
+    drumEngine.onlanepos = (lanePositions) => set({ lanePositions });
     drumEngine.onstep = (data) => set((state) => {
       const hitTick = { ...state.hitTick };
       const now = performance.now();
@@ -455,6 +571,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     if (!kit) return;
 
     const state = kitToState(kit);
+    // Kit presets are sound banks. Keep transport tempo in the sequencer.
+    state.params['seq.bpm'] = get().params['seq.bpm'];
     if (get().hosted) {
       // Hosted: a kit is a sound, not a song — params only, clip keeps its pattern.
       const userTables = state.tables.map((table) => deserializeUserTable(table).table);
@@ -469,22 +587,13 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       return;
     }
     const userTables = state.tables.map((table) => deserializeUserTable(table).table);
-    const chain = sequenceChain(sequenceLengthFromChain(state.chain));
     drumEngine.panic();
     drumEngine.setUserTables(userTables);
     drumEngine.params = { ...state.params };
     drumEngine.applyAllParams();
-    drumEngine.setSequence(state.patterns, chain, state.drumRhythm);
-    // A kit replaces the entire song buffer, so snapshots from the prior kit
-    // must never be allowed to overwrite it through undo.
-    get()._clearHistory();
     set({
       params: state.params,
       padNames: state.padNames,
-      patterns: state.patterns,
-      chain,
-      drumRhythm: state.drumRhythm,
-      editPattern: chain[0] ?? 0,
       userTables,
       kitValue: value,
       patchValue: '',

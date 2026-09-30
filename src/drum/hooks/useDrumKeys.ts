@@ -13,7 +13,7 @@ const KEYMAP: Record<string, number> = {
 // while one of those is focused.
 function isFormTarget(target: EventTarget | null): boolean {
   return target instanceof Element
-    && target.matches('input, textarea, select, [contenteditable], [role="slider"]');
+    && !!target.closest('input, textarea, select, [contenteditable], [role="slider"], [data-sequence-controls]');
 }
 
 export function useDrumKeys() {

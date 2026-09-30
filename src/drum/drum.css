@@ -718,6 +718,7 @@
   letter-spacing: 0.1em;
   text-shadow: 0 0 8px color-mix(in srgb, var(--ac-a) 45%, transparent);
 }
+.dr-pattern-preset { width: 148px; flex: 0 0 148px; }
 .dr-transport {
   width: 34px;
   min-width: 34px;
@@ -1071,3 +1072,246 @@
     gap: 8px;
   }
 }
+
+/* POLY lane inspector: one machined strip under the grid. It speaks the header's
+   vocabulary (8px mono labels, 30px segmented wells). Amber marks POLY state:
+   the power LED, the loop meter, and the lane badge. Cyan marks selection. */
+.dr-poly {
+  --poly: var(--ac-b);
+  margin-top: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: linear-gradient(#0f131b, #0b0e14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+.dr-poly-head { display: flex; align-items: center; gap: 12px; min-height: 30px; }
+.dr-poly-title {
+  color: var(--text);
+  font-family: var(--font-disp);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+.dr-poly-pad { color: var(--ac-a); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; white-space: nowrap; }
+.dr-poly-power {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0d1017;
+  color: var(--text-dim);
+  font: 600 8px var(--font-mono);
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.dr-poly-power-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #262d3a;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.dr-poly-power[aria-pressed=true] { border-color: color-mix(in srgb, var(--poly) 45%, transparent); color: var(--poly); }
+.dr-poly-power[aria-pressed=true] .dr-poly-power-led { background: var(--poly); box-shadow: 0 0 6px var(--poly); }
+.dr-poly-power:hover { color: var(--text); }
+
+.dr-poly-meter {
+  display: grid;
+  grid-template-columns: repeat(var(--poly-steps), 1fr);
+  gap: 3px;
+  width: min(260px, calc(var(--poly-steps) * 16px + 14px));
+  height: 24px;
+  margin-left: auto;
+  padding: 0 7px;
+  align-items: center;
+  border-radius: 5px;
+  background: #07090e;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.dr-poly-led { height: 5px; border-radius: 2px; background: #1a202b; transition: background 0.06s, box-shadow 0.06s; }
+.dr-poly-led.hit { background: color-mix(in srgb, var(--poly) 38%, #1a202b); }
+.dr-poly-led.accent { height: 10px; }
+.dr-poly.on .dr-poly-led.now { background: var(--text); box-shadow: 0 0 5px rgba(223, 230, 243, 0.55); }
+.dr-poly.on .dr-poly-led.hit.now { background: var(--poly); box-shadow: 0 0 7px var(--poly); }
+.dr-poly:not(.on) .dr-poly-meter { opacity: 0.45; }
+.dr-poly-readout {
+  min-width: 170px;
+  color: var(--text-hint);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.dr-poly.on .dr-poly-readout { color: color-mix(in srgb, var(--poly) 75%, var(--text-hint)); }
+.dr-poly-history { display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; }
+.dr-poly-history button {
+  width: 28px;
+  height: 24px;
+  border: 0;
+  background: #0d1017;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dr-poly-history button + button { border-left: 1px solid var(--line); }
+.dr-poly-history button:hover { color: var(--ac-a); }
+
+.dr-poly-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.dr-poly:not(.on) .dr-poly-controls { opacity: 0.6; }
+.dr-poly-group, .dr-sequence-number { display: flex; align-items: center; gap: 7px; margin: 0; padding: 0; border: 0; }
+.dr-poly-group legend, .dr-sequence-number > label {
+  float: left;
+  padding: 0;
+  color: var(--text-dim);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+}
+.dr-poly-seg, .dr-number-controls {
+  display: flex;
+  height: 30px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0a0d13;
+}
+.dr-poly-seg label { position: relative; display: flex; }
+.dr-poly-seg label + label { border-left: 1px solid var(--line); }
+.dr-poly-seg input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.dr-poly-seg span {
+  display: grid;
+  min-width: 30px;
+  padding: 0 10px;
+  place-items: center;
+  background: #11141c;
+  color: var(--text-dim);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  transition: color 0.15s, background 0.15s;
+}
+.dr-poly-seg label:hover span { color: var(--ac-a); }
+.dr-poly-seg input:checked + span {
+  background: color-mix(in srgb, var(--ac-a) 12%, #0a0d13);
+  color: var(--ac-a);
+  box-shadow: inset 0 -2px 0 var(--ac-a);
+}
+.dr-poly-seg input:focus-visible + span { outline: 1px solid var(--ac-a); outline-offset: -3px; }
+.dr-number-controls button {
+  width: 30px;
+  padding: 0;
+  border: 0;
+  background: #11141c;
+  color: var(--text);
+  font: 700 15px var(--font-mono);
+  cursor: pointer;
+}
+.dr-number-controls button:first-child { border-right: 1px solid var(--line); }
+.dr-number-controls .dr-number-plus { order: 2; border-left: 1px solid var(--line); }
+.dr-number-controls button:hover { color: var(--ac-a); }
+.dr-number-controls input {
+  order: 1;
+  width: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--ac-a);
+  font: 500 11px var(--font-mono);
+  text-align: center;
+}
+.dr-number-controls input[aria-invalid=true] { color: var(--ac-b); }
+.dr-poly :focus-visible, .dr-lane-name:focus-visible { outline: 1px solid var(--ac-a); outline-offset: 1px; }
+.dr-poly-hint { margin: 8px 0 0; color: var(--text-hint); font: 8px var(--font-mono); letter-spacing: 0.12em; }
+.dr-poly-error { color: var(--ac-b); font: 9px var(--font-mono); letter-spacing: 0.08em; }
+.dr-poly-badge { margin-left: auto; color: var(--ac-b); font-size: 8px; letter-spacing: 0.1em; white-space: nowrap; }
+.dr-lane-name { min-width: 155px; }
+.dr-stepseq .step.poly-source { outline: 1px solid #b4884a; outline-offset: -1px; }
+@media (max-width: 700px) {
+  .dr-stepseq-head { flex-wrap: wrap; }
+  .dr-poly-head { flex-wrap: wrap; }
+  .dr-poly-meter { order: 5; width: 100%; margin-left: 0; }
+  .dr-lanes-wrap { overflow-x: auto; }
+  .dr-lanes { min-width: 690px; }
+}
+.dr-lanes .step, .dr-lane-name, .dr-seq-btn { min-height: 24px; }
+@media (pointer: coarse) {
+  .dr-poly-seg, .dr-number-controls, .dr-seq-btn { min-height: 44px; }
+  .dr-poly-seg span, .dr-number-controls button { min-width: 44px; }
+  .dr-lanes .step, .dr-lane-name { min-height: 44px; }
+  .dr-lanes-wrap > .dr-lanes { min-width: 940px; }
+}
+
+/* Timing and lane-loop inspectors share one compact row beneath the grid. */
+.dr-inspector-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 6px; align-items: stretch; }
+.dr-poly-slot { min-width: 0; }
+.dr-stepseq .step.poly-outside { background: #10151e; outline: 1px dashed #33404c; outline-offset: -1px; }
+.dr-stepseq .step.poly-outside.poly-grid { outline: none; background: #353b45; opacity: 0.7; }
+.dr-stepseq .step.poly-outside .step-fill,
+.dr-stepseq .step.poly-outside .step-accent { opacity: .15; }
+.dr-lanes .step.poly-outside:not(.poly-grid) .step-num { display: block; position: static; color: #8a9bad; font-size: 9px; }
+
+/* FIT shows the entire lane cycle. Hit onsets retain their fractional timing;
+   faint quarter-note marks and bar numbers identify this lane's time scale. */
+.dr-stepseq .fit-row {
+  position: relative;
+  display: block;
+  height: 45px;
+  background: repeating-linear-gradient(to right, #33404c 0 1px, transparent 1px calc(100% / var(--fit-beats)));
+}
+.dr-lanes .fit-row { height: 24px; }
+.dr-stepseq .fit-row .step { position: absolute; top: 0; height: 100%; margin: 0; }
+.dr-stepseq .fit-row .step-num { display: block; color: #b9c4d3; }
+.dr-lanes .fit-row .step-num { top: 50%; bottom: auto; transform: translateY(-50%); font-size: 9px; }
+.dr-stepseq .fit-row .step.on .step-num { color: #10151e; }
+.fit-bar-label { position: absolute; right: 100%; padding-right: 2px; top: 0; color: #a6b6c9; font: 8px 'IBM Plex Mono', monospace; pointer-events: none; }
+.fit-bar-label.second { right: 50%; }
+.dr-stepseq .step.selected { outline: 1px solid var(--ac-f, #b18cff); outline-offset: -1px; }
+@media (pointer: coarse) { .dr-lanes .fit-row { height: 44px; } }
+
+.dr-timing-panel {
+  display: grid;
+  grid-template-columns: minmax(90px, .7fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(90px, .7fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: linear-gradient(#111722, #0c1018);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+  font-family: var(--font-mono);
+}
+.dr-timing-context, .dr-timing-result { display: flex; flex-direction: column; gap: 5px; }
+.dr-timing-context { border-right: 1px solid var(--line); }
+.dr-timing-context strong { color: var(--text); font: 500 10px var(--font-disp); letter-spacing: .1em; }
+.dr-timing-context span { color: var(--ac-a); font-size: 10px; font-weight: 600; letter-spacing: .1em; }
+.dr-timing-control .dr-sequence-number { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.dr-timing-control .dr-sequence-number > label,
+.dr-timing-result > span { color: #9ca9bd; font-size: 9px; font-weight: 600; letter-spacing: .14em; }
+.dr-timing-control .dr-number-controls { height: 32px; }
+.dr-timing-control .dr-number-controls input { width: 62px; font-size: 12px; }
+.dr-timing-result { padding-left: 8px; border-left: 1px solid var(--line); }
+.dr-timing-result strong { color: var(--ac-a); font-size: 16px; font-weight: 600; line-height: 1; }
+.dr-timing-hint { display: none; }
+@media (max-width: 1120px) {
+  .dr-inspector-grid { grid-template-columns: 1fr; }
+  .dr-timing-panel { grid-template-columns: minmax(85px, .7fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(85px, .7fr); }
+}
+@media (max-width: 730px) {
+  .dr-timing-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .dr-timing-context { border: 0; }
+  .dr-timing-result { padding-left: 0; border: 0; }
+}
+.dr-stepseq .step.timing-selected { outline: 2px solid var(--ac-a); outline-offset: -2px; }
+.dr-micro-mark { position: absolute; right: 3px; top: 1px; font-size: 10px; color: var(--ac-a); }

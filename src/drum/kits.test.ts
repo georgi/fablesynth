@@ -1,3 +1,4 @@
+import { updateDrumLane } from './rhythm';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FACTORY_KITS, loadUserKits, saveUserKit, kitToState, stateToKit, type Kit } from './kits';
 import { DRUM_PARAMS, defaultDrumParams, pad, PAD_COUNT } from './params';
@@ -208,4 +209,16 @@ describe('kits', () => {
     saveUserKit('X', kit);
     expect(loadUserKits()).toHaveLength(1);
   });
+});
+
+
+it('round-trips disabled lane settings and notes through a saved kit without aliases', () => {
+  const rhythm = updateDrumLane(undefined, 15, { enabled: false, sourceBar: 3, steps: 5, rotation: 4, timing: { mode: 'fit', cycleBeats: 8 } });
+  const patterns = new Uint8Array(1024); patterns[patIdx(3, 15, 4)] = 2;
+  const kit = stateToKit('POLY ROUND TRIP', defaultDrumParams(), FACTORY_KITS[0].padNames, patterns, [0], [], rhythm);
+  saveUserKit(kit.name, kit);
+  const restored = kitToState(loadUserKits().find(k => k.name === kit.name)!);
+  expect(restored.drumRhythm).toEqual(rhythm); expect(restored.patterns).toEqual(patterns);
+  restored.drumRhythm!.lanes[15]!.steps = 7;
+  expect(kit.drumRhythm?.lanes[15]?.steps).toBe(5);
 });

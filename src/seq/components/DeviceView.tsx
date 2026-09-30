@@ -1,3 +1,4 @@
+import { cloneDrumRhythm, type DrumRhythm } from '../../drum/rhythm';
 // Hosted device view (focus mode): attaches the focused track's running
 // engine to that machine's standalone store, keeps the target clip and the
 // track patch in sync with the session doc, and renders the device panels.
@@ -55,7 +56,7 @@ import { HostedArpEditor, HostedArpModeSwitch } from './HostedArpPanel';
 interface HostedStore {
   attach: (engine: unknown) => void;
   getPatterns: () => Uint8Array;
-  setPatterns: (p: Uint8Array, bars: number) => void;
+  setPatterns: (p: Uint8Array, bars: number, rhythm?: DrumRhythm) => void;
   getParams: () => Record<string, number>;
   setPos: (step: number, bar: number, playing: boolean) => void;
   subscribe: (fn: () => void) => () => void;
@@ -70,9 +71,9 @@ const HOSTS: Record<MachineId, HostedStore> = {
     // step selection and the undo history (which snapshot the previous clip)
     // must not survive the swap — a later undo would restore one clip's
     // patterns into a different clip.
-    setPatterns: (p) => {
+    setPatterns: (p, bars, rhythm) => {
       useDrumStore.getState()._clearHistory();
-      useDrumStore.setState({ patterns: p, editPattern: 0, rectSel: null });
+      useDrumStore.setState({ patterns: p, chain: Array.from({ length: bars }, (_, i) => i), drumRhythm: cloneDrumRhythm(rhythm, bars), lanePositions: Array(16).fill(-1), editPattern: 0, rectSel: null });
     },
     getParams: () => useDrumStore.getState().params,
     setPos: (step, bar, playing) => useDrumStore.setState({ curStep: step, curPat: bar, playing }),
@@ -141,7 +142,7 @@ export function DeviceView() {
     syncing.current = true;
     const bytes = clipPattern(session, focus.scene, focus.track);
     const bars = Math.max(1, Math.min(HOSTED_MAX_BARS, clip?.bars ?? 1));
-    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty(), bars);
+    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty(), bars, editable ? clip?.drumRhythm : undefined);
     syncing.current = false;
     // Intentionally NOT keyed on the pattern string: our own write-backs must
     // not reload (they'd reset editPattern); createClip flips `!!clip`.
@@ -151,15 +152,21 @@ export function DeviceView() {
   useEffect(() => {
     if (!focus || !host || !machine || !editable) return;
     let prev = host.getPatterns();
+    let prevRhythm = useDrumStore.getState().drumRhythm;
+    let prevChain = useDrumStore.getState().chain;
     return host.subscribe(() => {
       const next = host.getPatterns();
-      if (next === prev || syncing.current) { prev = next; return; }
-      prev = next;
+      const drum = useDrumStore.getState();
+      const changed = next !== prev || (machine === 'DR1' && (drum.drumRhythm !== prevRhythm || drum.chain !== prevChain));
+      prev = next; prevRhythm = drum.drumRhythm; prevChain = drum.chain;
+      if (!changed || syncing.current) return;
       const st = useSeqStore.getState();
       const cur = st.session.scenes[focus.scene]?.clips[focus.track];
       if (!cur) return;
       const base = clipPattern(st.session, focus.scene, focus.track) ?? undefined;
-      st.updateClipBytes(focus.scene, focus.track, patternsToClip(machine, next, cur.bars, base), cur.bars);
+      if (machine === 'DR1') {
+        st.updateDrumClipSequence(focus.scene, focus.track, patternsToClip(machine, next, drum.chain.length, base), drum.chain.length, drum.drumRhythm ?? null);
+      } else st.updateClipBytes(focus.scene, focus.track, patternsToClip(machine, next, cur.bars, base), cur.bars);
     });
   }, [focus?.scene, focus?.track, host, machine, editable]);
 
@@ -212,6 +219,11 @@ export function DeviceView() {
   useEffect(() => {
     if (!focus || !host) return;
     const { scene, track } = focus;
+    const engine = rig?.devices[track].engine;
+    if (machine === 'DR1' && engine) (engine as import('../../drum/engine/drum-synth').DrumEngine).onlanepos = lanePositions => {
+      const s = useSeqStore.getState();
+      if (s.owner[track] === scene && s.playing) useDrumStore.setState({ lanePositions });
+    };
     let last = '';
     const apply = () => {
       const s = useSeqStore.getState();
@@ -226,8 +238,9 @@ export function DeviceView() {
       host.setPos(step, bar, on);
     };
     apply();
-    return useSeqStore.subscribe(apply);
-  }, [focus?.scene, focus?.track, host]);
+    const unsub = useSeqStore.subscribe(apply);
+    return () => { unsub(); if (machine === 'DR1' && engine) (engine as import('../../drum/engine/drum-synth').DrumEngine).onlanepos = null; };
+  }, [focus?.scene, focus?.track, host, rig, machine]);
 
   if (!focus || !track || !machine) return null;
 
@@ -235,7 +248,7 @@ export function DeviceView() {
     <section className="sq-device" style={{ '--tc': track.color } as React.CSSProperties}>
       <HostedClipBar machine={machine} />
       <div className="sq-device-body">
-        {machine === 'DR1' && <DrumPanels />}
+        {machine === 'DR1' && <DrumPanels sequenceEditable={editable} />}
         {machine === 'BL1' && <BassPanels bars={clip?.bars} />}
         {machine === 'WT1' && <WtPanels clip={clip} />}
       </div>
@@ -243,7 +256,7 @@ export function DeviceView() {
   );
 }
 
-function DrumPanels() {
+function DrumPanels({ sequenceEditable }: { sequenceEditable: boolean }) {
   const mode = useSeqStore((s) => s.deviceMode);
   const drumFxOpen = useSeqStore((s) => s.drumFxOpen);
   return (
@@ -272,7 +285,7 @@ function DrumPanels() {
         </div>
       </div>
       {mode === 'edit' && drumFxOpen && <div id="dr-fxrack"><FxRack /></div>}
-      {mode === 'seq' && <div id="dr-stepseq"><StepSeq headerExtra={<HostedLengthControl machine="DR1" />} /></div>}
+      {mode === 'seq' && sequenceEditable && <div id="dr-stepseq"><StepSeq headerExtra={<HostedLengthControl machine="DR1" />} /></div>}
     </div>
   );
 }

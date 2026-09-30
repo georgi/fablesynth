@@ -127,6 +127,11 @@ export function HostedLengthControl({ machine }: { machine: MachineId }) {
   const setBars = (n: number) => {
     const next = Math.max(1, Math.min(HOSTED_MAX_BARS, n));
     if (next === clip.bars) return;
+    if (machine === 'DR1') {
+      useDrumStore.getState().setSequenceLength(next);
+      if (!useDrumStore.getState().sequenceError && editBar >= next) bars.set(next - 1);
+      return;
+    }
     const base = clipPattern(useSeqStore.getState().session, focus.scene, focus.track) ?? undefined;
     useSeqStore.getState().updateClipBytes(
       focus.scene, focus.track, patternsToClip(machine, bars.patterns(), next, base), next,
@@ -138,6 +143,7 @@ export function HostedLengthControl({ machine }: { machine: MachineId }) {
     <SequenceLengthControl
       editBar={editBar}
       length={clip.bars}
+      availableBars={machine === 'DR1' ? clip.bars : undefined}
       playingBar={currentBar}
       onEditBar={bars.set}
       onLengthChange={setBars}

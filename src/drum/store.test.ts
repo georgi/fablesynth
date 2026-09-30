@@ -4,7 +4,8 @@ import { drumEngine, useDrumStore } from './store';
 import { DrumEngine } from './engine/drum-synth';
 import { patIdx, STEPS } from './seq';
 import { defaultDrumParams, PAD_COUNT } from './params';
-import { FACTORY_PATCHES, patchOptions } from './patches';
+import { FACTORY_PATCHES, PATCH_FIELDS, patchOptions } from './patches';
+import { FACTORY_KITS } from './kits';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -79,7 +80,7 @@ describe('drum store', () => {
     expect(state.patchValue).toBe('f0');
     const patch = FACTORY_PATCHES[0];
     for (const [rel, value] of Object.entries(patch.params)) {
-      expect(state.params[`pad3.${rel}`]).toBe(value);
+      if (PATCH_FIELDS.includes(rel)) expect(state.params[`pad3.${rel}`]).toBe(value);
     }
     expect(state.params['pad3.out']).toBe(2);
     expect(state.params['pad2.oscA.tune']).toBe(7);
@@ -118,12 +119,11 @@ describe('drum store', () => {
     expect(useDrumStore.getState().patterns[patIdx(0, 1, 0)]).toBe(1);
   });
 
-  it('clears pattern undo history when a standalone kit replaces the song buffer', () => {
+  it('keeps pattern undo history when a standalone kit changes sounds', () => {
     useDrumStore.getState().toggleStep(0);
     useDrumStore.getState().loadKitByValue('f1');
-    const loaded = useDrumStore.getState().patterns;
     useDrumStore.getState().undo();
-    expect(useDrumStore.getState().patterns).toBe(loaded);
+    expect(useDrumStore.getState().patterns[patIdx(0, 0, 0)]).toBe(0);
   });
 });
 
@@ -179,7 +179,7 @@ describe('step editing verbs', () => {
     s.copySelection();
     const clip = useDrumStore.getState().clipboard;
     expect(clip?.kind).toBe('pattern');
-    expect(clip?.kind === 'pattern' && clip.data.length).toBe(16 * 16);
+    expect(clip?.kind === 'pattern' && clip.data.length).toBe(16 * 16 * 2);
   });
 
   it('cutSelection copies then clears only the rectangle', () => {
@@ -347,6 +347,34 @@ describe('step editing verbs', () => {
     useDrumStore.getState().undo();
     expect(useDrumStore.getState().patterns).toBe(before);
   });
+
+  it('kit loads change sounds without replacing the standalone pattern sequence', () => {
+    const s = useDrumStore.getState();
+    s.setParam('seq.bpm', 103);
+    s.toggleStep(3, 2);
+    s.setSequenceLength(2);
+    const patterns = useDrumStore.getState().patterns;
+    const chain = useDrumStore.getState().chain;
+    useDrumStore.getState().loadKitByValue('f1');
+    const after = useDrumStore.getState();
+    expect(after.patterns).toBe(patterns);
+    expect(after.chain).toBe(chain);
+    expect(after.patterns[patIdx(0, 2, 3)]).toBe(1);
+    expect(after.params['seq.bpm']).toBe(103);
+    expect(after.kitValue).toBe('f1');
+  });
+
+  it('pattern presets replace the sequence without changing kit or BPM', () => {
+    const s = useDrumStore.getState();
+    s.setParam('seq.bpm', 109);
+    const kitValue = useDrumStore.getState().kitValue;
+    expect(useDrumStore.getState().loadPatternPreset(1)).toBe(true);
+    const after = useDrumStore.getState();
+    expect(Array.from(after.patterns)).toEqual(FACTORY_KITS[1].patterns);
+    expect(after.chain).toEqual(FACTORY_KITS[1].chain);
+    expect(after.kitValue).toBe(kitValue);
+    expect(after.params['seq.bpm']).toBe(109);
+  });
 });
 
 describe('hosted mode', () => {
@@ -370,10 +398,24 @@ describe('hosted mode', () => {
 
   it('kit loads apply params only — patterns stay untouched', () => {
     useDrumStore.getState().attachHosted(new DrumEngine());
+    useDrumStore.getState().setParam('seq.bpm', 107);
     const before = useDrumStore.getState().patterns;
     useDrumStore.getState().loadKitByValue('f1');
     const s = useDrumStore.getState();
     expect(s.patterns).toBe(before);
+    expect(s.params['seq.bpm']).toBe(107);
     expect(s.kitValue).toBe('f1');
+  });
+
+  it('hosted pattern presets update the clip pattern without changing kit or BPM', () => {
+    useDrumStore.getState().attachHosted(new DrumEngine());
+    useDrumStore.getState().setParam('seq.bpm', 111);
+    const kitValue = useDrumStore.getState().kitValue;
+    expect(useDrumStore.getState().loadPatternPreset(14)).toBe(true);
+    const s = useDrumStore.getState();
+    expect(Array.from(s.patterns)).toEqual(FACTORY_KITS[14].patterns);
+    expect(s.chain).toEqual(FACTORY_KITS[14].chain);
+    expect(s.kitValue).toBe(kitValue);
+    expect(s.params['seq.bpm']).toBe(111);
   });
 });

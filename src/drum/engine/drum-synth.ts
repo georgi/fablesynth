@@ -11,7 +11,7 @@ import ottWorkletUrl from '../../engine/ott-worklet.js?url';
 import type { DynamicsMessage } from '../../engine/dynamics';
 import type { EchoMessage } from '../../engine/echo';
 import type { ReverbMessage } from '../../engine/reverb';
-import type { DrumRhythm } from '../rhythm';
+import { cloneDrumRhythm, type DrumRhythm } from '../rhythm';
 
 export interface VizTable {
   name: string;
@@ -31,6 +31,7 @@ export interface DrumVizMessage {
   a: number;
   b: number;
   env: number;
+  lanes?: number[];
 }
 
 // One output bus per OUT_NAMES entry. The FX rack — per-pad drive, compressor,
@@ -98,6 +99,7 @@ export class DrumEngine {
   userTables: GeneratedTable[];
   samples: DrumOneShot[];
   ready: boolean;
+  onlanepos: ((positions: number[]) => void) | null = null;
   onstep: ((d: { s: number; pat: number; hits: number[] }) => void) | null;
   onviz: ((d: { a: number; b: number; env: number }) => void) | null;
   onclipstart: ((frame: number) => void) | null;
@@ -152,6 +154,7 @@ export class DrumEngine {
     });
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
+      if (e.data.t === 'viz' && Array.isArray(e.data.lanes)) this.onlanepos?.(e.data.lanes);
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as DrumVizMessage);
       if (e.data.t === 'pos') {
         if (this.onpos) this.onpos({ step: e.data.step as number, bar: e.data.bar as number });
@@ -261,7 +264,7 @@ export class DrumEngine {
   }
 
   setSequence(patterns: Uint8Array, chain: number[], rhythm?: DrumRhythm): void {
-    if (this.ready) this.node.port.postMessage({ t: 'seq', data: patterns.slice().buffer, chain: [...chain], rhythm });
+    if (this.ready) this.node.port.postMessage({ t: 'seq', data: patterns.slice().buffer, chain: [...chain], rhythm: cloneDrumRhythm(rhythm, 4) });
   }
 
   selectPad(i: number): void {
@@ -284,7 +287,7 @@ export class DrumEngine {
   }
 
   scheduleClip(data: Uint8Array, bars: number, atFrame: number, rhythm?: DrumRhythm): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, ...(rhythm ? { rhythm } : {}) });
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, ...(rhythm ? { rhythm: cloneDrumRhythm(rhythm, bars) } : {}) });
   }
 
   scheduleStop(atFrame: number): void {
@@ -292,6 +295,6 @@ export class DrumEngine {
   }
 
   updateClip(data: Uint8Array, bars: number, rhythm?: DrumRhythm): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, rhythm: rhythm ?? null });
+    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, rhythm: cloneDrumRhythm(rhythm, bars) ?? null });
   }
 }

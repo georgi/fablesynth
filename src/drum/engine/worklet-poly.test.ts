@@ -72,6 +72,8 @@ describe('DR-1 POLY scheduler', () => {
       h.send({ t: 'play' });
       run(h, 79, 128); // frame 10112, after GRID steps 0 and 1 would have fired
 
+      expect(h.sent.filter(m => m.t === 'step').map(m => m.s)).toEqual([0, 1]);
+      h.sent.length = 0;
       const nextLanes = lanes.map((lane): Record<string, unknown> | null =>
         lane ? { ...lane, timing: { ...(lane.timing as object) } } : null);
       nextLanes[0] = mode === 'grid'
@@ -263,8 +265,56 @@ describe('DR-1 POLY scheduler', () => {
     run(h, 750, 128); // exactly 96000 samples
     h.send({ t: 'p', k: 'seq.bpm', v: 180 });
     run(h, 100, 128);
-    const frames = h.sent.filter((m) => m.t === 'step').map((m) => m.frame as number);
+    const frames = h.sent.filter((m) => m.t === 'step' && (m.hits as number[]).includes(0)).map((m) => m.frame as number);
     const after = frames.filter((frame) => frame >= 96000);
     expect(after.slice(0, 3)).toEqual([96000, 100000, 104000]);
   });
+});
+
+describe('POLY authoring playback feedback', () => {
+  it.each([false, true])('maps rotated source cells and preserves independent cursors (hosted=%s)', (hosted) => {
+    (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+    const h = makeDrumProcessor();
+    const data = makeEmptyPatterns();
+    data[patIdx(0, 0, 0)] = 1; data[patIdx(1, 0, 0)] = 2;
+    const lane = { enabled: true, sourceBar: 0, steps: 3, rotation: 0, timing: { mode: 'fit', cycleBeats: 4 } };
+    const lanes: Array<typeof lane | null> = Array(16).fill(null);
+    lanes[0] = lane; lanes[1] = { ...lane, steps: 5 };
+    const velocities: number[] = [];
+    (h.proc as unknown as { trigger(p: number, v: number): void }).trigger = (p, v) => { if (p === 0) velocities.push(v); };
+    const publish = () => h.send(hosted ? { t: 'clipupdate', data, bars: 4, rhythm: { v: 1, lanes } }
+      : { t: 'seq', data, chain: [0], rhythm: { v: 1, lanes } });
+    if (hosted) {
+      h.send({ t: 'host', on: 1 }); h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+      h.send({ t: 'clip', data, bars: 4, atFrame: 0, rhythm: { v: 1, lanes } });
+    } else { h.send({ t: 'p', k: 'seq.bpm', v: 120 }); publish(); h.send({ t: 'play' }); }
+    run(h, 79, 128);
+    lanes[0] = { ...lane, sourceBar: 1, rotation: 1 }; publish();
+    run(h, 180, 128); // through the second FIT-3 event
+    expect(velocities).toEqual([0.72, 1]);
+    expect(h.sent.filter(m => m.t === 'poly' && m.pad === 0).map(m => m.frame)).toEqual([0, 32000]);
+    expect(h.sent.filter(m => m.t === 'poly' && m.pad === 1).map(m => m.frame)).toEqual([0, 19200]);
+    const positions = (h.proc as unknown as { lanePositions: Int16Array }).lanePositions;
+    expect(positions[0]).toBe(16); // bar 2, actual source cell 1, not the ordinary cursor
+    expect(positions[1]).toBe(1);
+    const telemetry = h.sent.filter(m => m.t === 'viz').pop();
+    expect((telemetry?.lanes as number[]).length).toBe(16);
+  });
+});
+
+it.each([false, true])('does not replay a fired ordinary slot when enabling after a swing edit (hosted=%s)', hosted => {
+  (globalThis as unknown as { currentFrame: number }).currentFrame = 0;
+  const h = makeDrumProcessor(); const data = makeEmptyPatterns(); data[patIdx(0, 0, 1)] = 1;
+  let hits = 0; (h.proc as unknown as { trigger(p: number, v: number): void }).trigger = () => { hits++; };
+  if (hosted) {
+    h.send({ t: 'host', on: 1 }); h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data, bars: 4, atFrame: 0 });
+  } else {
+    h.send({ t: 'p', k: 'seq.bpm', v: 120 }); h.send({ t: 'seq', data, chain: [0] }); h.send({ t: 'play' });
+  }
+  run(h, 55, 128); expect(hits).toBe(1);
+  h.send(hosted ? { t: 'tempo', bpm: 120, swing: 1, anchor: 0 } : { t: 'p', k: 'seq.swing', v: 1 });
+  const lanes = Array(16).fill(null); lanes[0] = { enabled: true, sourceBar: 0, steps: 15, rotation: 0, timing: { mode: 'grid' } };
+  h.send(hosted ? { t: 'clipupdate', data, bars: 4, rhythm: { v: 1, lanes } } : { t: 'seq', data, chain: [0], rhythm: { v: 1, lanes } });
+  run(h, 35, 128); expect(hits).toBe(1);
 });
