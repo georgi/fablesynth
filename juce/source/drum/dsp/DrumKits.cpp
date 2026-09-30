@@ -603,12 +603,10 @@ Overrides acidCaveParams() {
     set(p, padPid(0, "oscA.tune"), -25.0f); set(p, padPid(0, "penv.amt"), 28.0f); set(p, padPid(0, "penv.dec"), 0.035f);
     set(p, padPid(0, "aenv.dec"), 0.3f); set(p, padPid(0, "aenv.curve"), 0.5f);
     set(p, padPid(0, "lvl"), 0.92f); set(p, padPid(0, "fx.reverb.on"), 0.0f);
-    // Rumble: same THUD an octave under the kick, low-passed and drowned in a
-    // huge per-pad reverb — the classic sub-rumble trick.
+    // Rumble: a long, low-passed THUD envelope without reverb.
     set(p, padPid(1, "oscA.tune"), -25.0f); set(p, padPid(1, "penv.amt"), 8.0f); set(p, padPid(1, "penv.dec"), 0.08f);
     set(p, padPid(1, "aenv.dec"), 2.6f); set(p, padPid(1, "lvl"), 0.55f);
     set(p, padPid(1, "flt.on"), 1.0f); set(p, padPid(1, "flt.type"), 1.0f); set(p, padPid(1, "flt.cut"), 300.0f);
-    set(p, padPid(1, "fx.reverb.size"), 0.85f); set(p, padPid(1, "fx.reverb.mix"), 0.55f);
     set(p, padPid(2, "oscA.table"), 3.0f); set(p, padPid(2, "oscA.tune"), -7.0f);
     set(p, padPid(2, "noise.level"), 0.55f); set(p, padPid(2, "noise.color"), 0.1f); set(p, padPid(2, "aenv.dec"), 0.16f);
     set(p, padPid(3, "oscA.level"), 0.0f); set(p, padPid(3, "oscB.table"), 19.0f); set(p, padPid(3, "oscB.tune"), -3.0f);
@@ -944,6 +942,16 @@ const std::vector<DrumKit>& factoryKits() {
         out.push_back({ "CC0 WAREHOUSE", withPunchFx(cc0WarehouseParams()), kCc0WarehousePads, cc0WarehousePatterns(), { 0, 1, 2, 3 } });
         out.push_back({ "CC0 DEEP HOUSE", withPunchFx(cc0DeepHouseParams()), kCc0DeepHousePads, cc0DeepHousePatterns(), { 0, 1, 2, 3 } });
         out.push_back({ "CC0 BASS RUSH", withPunchFx(cc0BassRushParams()), kCc0BassRushPads, cc0BassRushPatterns(), { 0, 1, 2, 3 } });
+        for (auto& kit : out) {
+            set(kit.params, "fx.reverb.on", 0.0f);
+            set(kit.params, "fx.reverb.mix", 0.0f);
+            for (int i = 0; i < DR_NPADS; ++i) {
+                if (i < 2 || kit.padNames[(size_t)i].rfind("KICK", 0) == 0) {
+                    set(kit.params, padPid(i, "fx.reverb.on"), 0.0f);
+                    set(kit.params, padPid(i, "fx.reverb.mix"), 0.0f);
+                }
+            }
+        }
         return out;
     }();
     return kits;

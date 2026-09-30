@@ -109,7 +109,7 @@ describe('kits', () => {
       expect(acid.params[pad(i, 'mod1.src')]).toBe(1); // MOD ENV
       expect(acid.params[pad(i, 'mod1.dst')]).toBe(4);
     }
-    expect(acid.params[pad(1, 'fx.reverb.mix')]).toBeCloseTo(0.55); // rumble pad
+    expect(acid.params[pad(1, 'fx.reverb.mix')]).toBe(0); // low drum stays dry
 
     // BOOM BAP is sample-forward, lo-fi capped, with a reversed UZU MOD pad.
     const bap = kitToState(byName('BOOM BAP'));
@@ -154,6 +154,20 @@ describe('kits', () => {
   it('keeps every driven factory kit at 20% wet', () => {
     for (const kit of FACTORY_KITS) {
       if (kit.params['fx.drive.on']) expect(kit.params['fx.drive.mix'], kit.name).toBe(0.2);
+    }
+  });
+
+  it('keeps the drum group and every bass drum dry in all factory kits', () => {
+    for (const kit of FACTORY_KITS) {
+      const { params, padNames } = kitToState(kit);
+      expect(params['fx.reverb.on'], kit.name).toBe(0);
+      expect(params['fx.reverb.mix'], kit.name).toBe(0);
+      padNames.forEach((name, i) => {
+        if (i < 2 || name.startsWith('KICK')) {
+          expect(params[pad(i, 'fx.reverb.on')], `${kit.name}: ${name}`).toBe(0);
+          expect(params[pad(i, 'fx.reverb.mix')], `${kit.name}: ${name}`).toBe(0);
+        }
+      });
     }
   });
 

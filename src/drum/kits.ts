@@ -595,12 +595,10 @@ function acidCaveParams(): Partial<ParamValues> {
     [pad(0, 'oscA.tune')]: -25, [pad(0, 'penv.amt')]: 28, [pad(0, 'penv.dec')]: 0.035,
     [pad(0, 'aenv.dec')]: 0.3, [pad(0, 'aenv.curve')]: 0.5,
     [pad(0, 'lvl')]: 0.92, [pad(0, 'fx.reverb.on')]: 0,
-    // Rumble: same THUD an octave under the kick, low-passed and drowned in a
-    // huge per-pad reverb — the classic sub-rumble trick.
+    // Rumble: a long, low-passed THUD envelope without reverb.
     [pad(1, 'oscA.tune')]: -25, [pad(1, 'penv.amt')]: 8, [pad(1, 'penv.dec')]: 0.08,
     [pad(1, 'aenv.dec')]: 2.6, [pad(1, 'lvl')]: 0.55,
     [pad(1, 'flt.on')]: 1, [pad(1, 'flt.type')]: 1, [pad(1, 'flt.cut')]: 300,
-    [pad(1, 'fx.reverb.size')]: 0.85, [pad(1, 'fx.reverb.mix')]: 0.55,
     [pad(2, 'oscA.table')]: 3, [pad(2, 'oscA.tune')]: -7,
     [pad(2, 'noise.level')]: 0.55, [pad(2, 'noise.color')]: 0.1, [pad(2, 'aenv.dec')]: 0.16,
     [pad(3, 'oscA.level')]: 0, [pad(3, 'oscB.table')]: 19, [pad(3, 'oscB.tune')]: -3,
@@ -923,9 +921,20 @@ function withPunchFx(params: Partial<ParamValues>): Partial<ParamValues> {
   return params;
 }
 
-const kit = (name: string, params: Partial<ParamValues>, padNames: string[], patterns: number[], chain: number[]): Kit => ({
-  name, params: withPunchFx(params), padNames, patterns, chain,
-});
+const kit = (name: string, params: Partial<ParamValues>, padNames: string[], patterns: number[], chain: number[]): Kit => {
+  const dry = withPunchFx(params);
+  // Factory drum buses and bass drums stay dry, including extra kick pads in
+  // kits that place them outside the first two slots.
+  dry['fx.reverb.on'] = 0;
+  dry['fx.reverb.mix'] = 0;
+  padNames.forEach((label, i) => {
+    if (i < 2 || label.startsWith('KICK')) {
+      dry[pad(i, 'fx.reverb.on')] = 0;
+      dry[pad(i, 'fx.reverb.mix')] = 0;
+    }
+  });
+  return { name, params: dry, padNames, patterns, chain };
+};
 
 export const FACTORY_KITS: Kit[] = [
   kit('TR-VOID', trVoidParams(), [...PAD_NAMES], [...PATTERNS], [0]),
