@@ -67,6 +67,8 @@ describe('drum click detector', () => {
     p[pad(0, 'aenv.dec')] = 0.2;
     p[pad(0, 'penv.amt')] = 0;
     p[pad(0, 'fx.reverb.on')] = 0; // the envelope's own tail, not the room's
+    // Nor the group bus: its upward OTT lifts the quiet end of the tail.
+    for (const stage of ['ott', 'comp', 'drive']) p[`fx.${stage}.on`] = 0;
     const h = boot(p);
     h.send({ t: 'trig', pad: 0, v: 1 });
     const x = h.render(160).L;

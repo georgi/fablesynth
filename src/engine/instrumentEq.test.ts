@@ -45,7 +45,8 @@ describe.each(['bass', 'drum'] as const)('%s four-band EQ', machine => {
       }
       expect(finite).toBe(true);
       expect(rightPeak).toBeLessThan(1e-8);
-      const normalized = Object.fromEntries(Object.entries(p).map(([k, v]) => [k.startsWith(prefix) ? k.slice(prefix.length) : k, v]));
+      // Drum group keys share the unprefixed fx.eq.* names; read only the pad.
+      const normalized = Object.fromEntries(Object.entries(p).flatMap(([k, v]) => k.startsWith(prefix) ? [[k.slice(prefix.length), v]] : []));
       const response = readEqBands(normalized).reduce((db, b) => db + eqResponseDb(eqCoefficients(b, sr), frequency, sr), 0);
       return { energy, response };
     };

@@ -38,6 +38,8 @@ function bare(): ParamValues {
     p[pad(i, 'fx.chorus.on')] = 0;
     p[pad(i, 'fx.delay.on')] = 0;
   }
+  // The group bus defaults to OTT, compression and drive; bypass it too.
+  for (const stage of ['ott', 'comp', 'drive', 'chorus', 'delay', 'reverb']) p[`fx.${stage}.on`] = 0;
   return p;
 }
 
