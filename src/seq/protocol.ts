@@ -6,6 +6,7 @@
 
 import type { Quant } from './model';
 import { validClipArp, type ClipArp } from './clipArp';
+import { validateAutomation, type AutoLane } from './clipAutomation';
 import type { MasterFxParams } from './masterFx';
 import { validateDrumRhythm, type DrumRhythm } from '../drum/rhythm';
 
@@ -88,6 +89,7 @@ export interface SceneDoc {
 
 export interface ClipDoc {
   arp?: ClipArp;
+  automation?: AutoLane[];
   drumRhythm?: DrumRhythm;
   name: string;
   bars: number; // 1..MAX_BARS
@@ -172,6 +174,10 @@ export function validateSession(doc: SessionDoc): string | null {
         if (doc.tracks[t].machine !== 'DR1') return `scene ${s} track ${t}: rhythm is only valid for DR1 clips`;
         const rhythmError = validateDrumRhythm(c.drumRhythm, c.bars);
         if (rhythmError) return `scene ${s} track ${t}: ${rhythmError}`;
+      }
+      if (c.automation !== undefined) {
+        const autoError = validateAutomation(c.automation, doc.tracks[t].machine);
+        if (autoError) return `scene ${s} track ${t}: ${autoError}`;
       }
       if (!(c.bars >= 1 && c.bars <= MAX_BARS)) return `scene ${s} track ${t}: bars out of range`;
       const bytes = b64ToBytes(c.pattern);

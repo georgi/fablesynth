@@ -3,6 +3,7 @@
 #pragma once
 
 #include "SeqProtocol.h"
+#include "../../dsp/ClipAutomation.h"
 
 #include <array>
 #include <string>
@@ -25,6 +26,7 @@ struct ClipLibraryEntry {
     int root = -1;               // MIDI note, or -1 when not applicable
     std::string scale;
     bool transpose = false;
+    std::vector<AutoLane> automation;
 };
 
 enum class ClipTransformKind {

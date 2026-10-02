@@ -60,11 +60,10 @@ juce::Rectangle<int> WtDeviceBody::colArea(int c0, int span, int y, int h) const
 
 void WtDeviceBody::resized() {
     const int gap = 9;
-    const int row1 = 250, row2 = 206, row3 = 90, row4 = 270;
+    const int row1 = 250, row2 = 206, row3 = 90;
     const int y1 = 36;
     const int y2 = y1 + row1 + gap;
     const int y3 = y2 + row2 + gap;
-    const int y4 = y3 + row3 + gap;
     oscA.setBounds(colArea(0, 5, y1, row1));
     oscB.setBounds(colArea(5, 5, y1, row1));
     util.setBounds(colArea(10, 2, y1, row1));
@@ -86,7 +85,8 @@ void WtDeviceBody::resized() {
     seq.setVisible(showSequencer);
     arp.setVisible(showArp);
     matrix.setBounds(colArea(0, 12, y3, row3));
-    fx.setBounds(colArea(0, 12, y1, y4-y1-gap));
-    seq.setBounds(colArea(0, 12, y1, LH - y1 - 14));
-    arp.setBounds(seq.getBounds());
+    const auto pageBounds = colArea(0, 12, y1, matrix.getBottom() - y1);
+    fx.setBounds(pageBounds);
+    seq.setBounds(pageBounds);
+    arp.setBounds(pageBounds);
 }

@@ -60,6 +60,7 @@ public:
     void togglePassThrough(int s, int t);
     bool updateDrumClip(int scene, const ClipData&);
     void updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int bars);
+    bool updateClipAutomation(int s, int t, const std::vector<AutoLane>& lanes);
     void updateClipArp(int s, int t, const ArpSettings&);
     void createClip(int s, int t);
     // Replace or create exactly one scene cell from a compatible library

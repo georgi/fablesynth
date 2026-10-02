@@ -11,6 +11,7 @@ import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '
 import { useStore } from '../store';
 import { useModsByDest } from '../hooks/useModsByDest';
 import { modLive, modNormOffset, subscribeModLive } from '../engine/modLive';
+import { useAutoLive } from '../seq/autoLive';
 
 const A0 = -135, A1 = 135;
 
@@ -92,6 +93,7 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   const bipolar = (def.min as number) < 0;
   const norm = clamp01(valueToNorm(def, value));
 
+  const autoLive = useAutoLive('WT1', paramId, norm);
   const elRef = useRef<HTMLDivElement>(null);
   const normRef = useRef(norm);
   const draggingRef = useRef(false);
@@ -211,6 +213,8 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
         {myMods.map((m, k) => (
           <ModRing key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} r={38 + k * 3.4} />
         ))}
+        <path ref={autoLive.ring} className="k-auto" d="" style={{ opacity: 0 }} />
+        <circle ref={autoLive.dot} className="k-auto-dot" r="3.2" style={{ opacity: 0 }} />
         <line className="k-ptr" x1="40" y1="40" x2="40" y2="17" transform={`rotate(${deg} 40 40)`} />
         {myMods.length > 0 && (
           <circle ref={liveRef} className="k-live" r="3.4" style={{ color: SOURCE_COLORS[myMods[0].src] }} />

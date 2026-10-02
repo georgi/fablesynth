@@ -189,6 +189,7 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
 // (filters, DC blockers, pink noise, smoothers, ramps) is cleared, and the
 // fixed 48 kHz-reference per-sample coefficients are remapped to sr (Finding 9).
 void Engine::prepare(double sampleRate) {
+    clearAutomation();
     sr_ = std::max(1.0, sampleRate);
     // A comb at the documented 20 Hz minimum needs sr / 20 samples, plus a
     // second fractional-read sample. Allocate here, while the host is
@@ -1480,10 +1481,11 @@ void Engine::render(float* L, float* R, int n) {
             clipHost_.tick(
                 hostFrame_, run,
                 [&](int abs) { clipFireAt(abs); },
-                [&](bool wasPlaying) { if (wasPlaying) seqGateOff(); });
+                [&](bool wasPlaying) { autoPlayer_.swap(); if (wasPlaying) seqGateOff(); });
             for (size_t i = evBefore; i < clipHost_.events.size(); i++)
                 if (clipHost_.events[i].t == HostEvent::T::Stop) seqGateOff();
         }
+        if (hostClipMode_) tickAutomation();
         // Split the run at the next pending note-off so each off lands on its
         // exact sample (worklet seqOffQueue countdown; native is sample-accurate).
         const double earliestOff = seqEarliestOff();

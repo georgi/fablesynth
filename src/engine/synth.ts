@@ -7,6 +7,7 @@
 // EVERY parameter therefore goes to the worklet; what is left on this thread is
 // the scope and spectrum analysers, which tap the worklet's output.
 
+import { guardAudioNavigation } from '../shared/audioNavigationGuard';
 import { generateTables, type GeneratedTable } from './wavetables';
 import { defaultParams, type ParamValues } from '../params';
 // The DSP core runs in the audio render thread. `?url` makes Vite copy it
@@ -171,6 +172,7 @@ export class SynthEngine {
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
+    guardAudioNavigation(ctx);
     if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
     if (this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: true });
     if (this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: true });
@@ -272,5 +274,9 @@ export class SynthEngine {
     if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp });
   }
   scheduleStop(atFrame: number): void { if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame }); }
+  /** Hosted clip automation: absolute-value tables per parameter (SQ-4). */
+  setClipAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'auto', lanes });
+  }
   updateClip(data: Uint8Array, bars: number, arp?: ArpConfig): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp }); }
 }

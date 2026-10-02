@@ -2,17 +2,21 @@
 
 #drum-rack {
   max-width: 1460px;
-  min-width: 1180px;
+  min-width: 900px;
   margin: 0 auto;
   padding: 14px 18px 22px;
 }
 
 .dr-header {
-  gap: 12px;
-  min-height: 78px;
-  padding-block: 7px;
+  gap: 14px;
+  min-height: 0;
+  padding: 8px 14px;
+  align-items: center;
 }
-
+/* One control height across the header. */
+.dr-header .pb-btn { height: 26px; min-width: 26px; font-size: 10px; }
+.dr-header .pb-save { font-size: 8px; }
+.dr-header .hud-cell { height: 34px; }
 .dr-header .brand { flex: none; }
 .dr-kitbar { flex: none; }
 .dr-kitname {
@@ -78,30 +82,53 @@
 .dr-hud { margin-left: auto; }
 .dr-hud .hud-cell { width: 156px; }
 .dr-midi { flex: none; }
-.dr-tempo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.dr-tempo .st-value { min-width: 42px; }
-.dr-tempo > span {
-  color: var(--text-dim);
-  font-size: 7px;
-  letter-spacing: 0.22em;
-}
+/* The scope hides below 1420px; keep the master strip right-aligned. */
+@media (max-width: 1420px) { .dr-midi { margin-left: auto; } }
+.dr-tempo .st-value { min-width: 40px; padding: 4px 6px; }
+.dr-tempo .st-btn { width: 20px; height: 26px; }
+.dr-tempo .st-label { font-size: 7px; letter-spacing: 0.2em; }
+/* Master strip: inline knobs (dial left, label over value right). */
 .dr-master {
   display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  height: 64px;
+  align-items: center;
+  gap: 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+.dr-master .knob {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 6px;
+}
+.dr-master .knob svg { grid-row: 1 / 3; width: 30px; height: 30px; }
+.dr-master .knob .k-label {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  margin: 0;
+  font-size: 7px;
+  letter-spacing: 0.2em;
+}
+.dr-master .knob .k-value {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  min-width: 34px;
+  opacity: 1;
+  color: var(--text);
+  font-size: 9px;
 }
 
 .dr-main {
   display: grid;
-  grid-template-columns: 352px 1fr;
+  /* Compact pad deck: pads stay playable while the editor gets the width. */
+  grid-template-columns: clamp(232px, 22%, 280px) minmax(0, 1fr);
   gap: 9px;
 }
+.dr-right { container: dr-right / inline-size; }
 .dr-left,
 .dr-right {
   display: flex;
@@ -120,8 +147,9 @@
 #dr-fxrack {
   min-width: 0;
 }
-#dr-stepseq,
-#dr-fxrack { margin-top: 9px; }
+#dr-stepseq { margin-top: 9px; }
+.dr-edit-tabs { align-self: flex-start; }
+.dr-edit-tabs button { padding: 5px 16px; font-size: 9px; }
 
 .dr-selbar {
   display: flex;
@@ -196,7 +224,7 @@
 
 #dr-oscrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 196px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(180px, 0.62fr);
   gap: 9px;
 }
 
@@ -326,7 +354,8 @@
 .dr-osc-knobs {
   grid-column: 1 / 3;
   grid-row: 2;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: space-around;
   justify-content: space-between;
   gap: 0;
 }
@@ -799,17 +828,17 @@
 
 .dr-fx-panel .fx-rack {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas: 'eq eq ott comp' 'drive chorus echo reverb' 'routing routing routing routing';
+  /* The rack shares the right column with the pads in the FX tab. COMP's
+     knob row needs a slightly wider cell than OTT and EQ. */
+  grid-template-columns: repeat(8, minmax(0, 1fr)) repeat(4, minmax(0, 1.06fr));
+  grid-template-areas:
+    'eq eq eq eq ott ott ott ott comp comp comp comp'
+    'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb';
   gap: 10px;
 }
 .dr-fx-panel { padding: 8px; }
 .dr-fx-panel .dynamics-curve { height: 144px; aspect-ratio: auto; }
 .dr-fx-panel .fx-rack > .fx-group { grid-area: chorus; }
-.dr-fx-panel .fx-rack > .out-panel { grid-area: routing; }
-@media (max-width: 1150px) {
-  .dr-fx-panel .fx-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'eq eq' 'ott comp' 'echo reverb' 'drive chorus' 'routing routing'; }
-}
 .dr-fx-panel .fx-rack > .panel-dynamics,
 .dr-fx-panel .fx-rack > .panel-echo,
 .dr-fx-panel .fx-rack > .panel-reverb { min-width: 0; padding: 8px; }
@@ -907,62 +936,6 @@
 .dr-fx-panel .dr-ott-knobs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 3px; }
 .dr-ott-bands { margin-left: auto; color: var(--text-dim); font-size: 7px; white-space: nowrap; }
 
-.out-head {
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-.out-head span {
-  color: var(--text-dim);
-  font-size: 6px;
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-}
-.out-routes {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.out-route {
-  display: grid;
-  grid-template-columns: 7px 38px minmax(0, 1fr);
-  align-items: center;
-  gap: 5px;
-  min-height: 13px;
-  color: var(--text-dim);
-  font-size: 6px;
-  letter-spacing: 0.08em;
-}
-.out-route strong {
-  color: var(--text-dim);
-  font-size: 7px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.out-route > span:last-child {
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.out-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #232936;
-  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.7);
-}
-.out-route.main .out-dot {
-  background: var(--ac-a);
-  box-shadow: 0 0 6px rgba(77, 232, 255, 0.7);
-}
-.out-route.main strong { color: var(--text); }
-.out-route.assigned .out-dot {
-  background: var(--ac-b);
-  box-shadow: 0 0 6px rgba(255, 161, 77, 0.68);
-}
-.out-route.assigned strong,
-.out-route.assigned > span:last-child { color: var(--ac-b); }
-
 .mod-select {
   appearance: none;
   -webkit-appearance: none;
@@ -1019,8 +992,7 @@
   .dr-name-input { flex: 1 1 0; min-width: 0; width: 0; overflow: hidden; text-overflow: ellipsis; }
   .dr-mode { order: 4; }
   .dr-midi { display: none; }
-  .dr-tempo { order: 5; margin-left: auto; }
-  .dr-master { order: 6; height: 48px; }
+  .dr-master { order: 5; margin-left: auto; padding-left: 0; border-left: 0; }
 
   .dr-main {
     grid-template-columns: minmax(0, 1fr);
@@ -1067,8 +1039,7 @@
       'drive'
       'chorus'
       'echo'
-      'reverb'
-      'routing';
+      'reverb';
     gap: 8px;
   }
 }
@@ -1315,3 +1286,34 @@
 }
 .dr-stepseq .step.timing-selected { outline: 2px solid var(--ac-a); outline-offset: -2px; }
 .dr-micro-mark { position: absolute; right: 3px; top: 1px; font-size: 10px; color: var(--ac-a); }
+
+/* Width-driven layout: the editor column may be a full page (DR-1) or a slice
+   of the SQ-4 device pane, so rows adapt to their own container. */
+.pad-grid { gap: 5px; }
+.pad { aspect-ratio: 1 / 0.88; border-radius: 8px; }
+.pad-num { top: 4px; left: 6px; font-size: 7px; }
+.pad-led { top: 5px; right: 5px; width: 5px; height: 5px; }
+.pad-meta { right: 4px; bottom: 4px; left: 6px; gap: 0; }
+.pad-name, .pad-name-input { font-size: 8px; line-height: 12px; letter-spacing: 0; }
+.dr-noise-section .panel-head { flex-wrap: wrap; row-gap: 4px; }
+@container dr-right (max-width: 780px) {
+  #dr-oscrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  #dr-oscrow > .dr-noise-section { grid-column: 1 / -1; min-height: 0; }
+  .dr-noise-section .dr-noise-view { height: 64px; }
+  #dr-editrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dr-fx-panel .fx-rack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'eq ott'
+      'comp drive'
+      'chorus echo'
+      'reverb reverb';
+  }
+}
+@container dr-right (max-width: 480px) {
+  #dr-oscrow, #dr-editrow { grid-template-columns: minmax(0, 1fr); }
+  .dr-fx-panel .fx-rack {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'eq' 'ott' 'comp' 'drive' 'chorus' 'echo' 'reverb';
+  }
+}

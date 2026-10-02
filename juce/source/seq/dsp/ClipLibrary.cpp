@@ -112,6 +112,7 @@ bool sqIsKnownClipTag(const std::string& tag) {
 }
 
 std::string validateClipLibraryEntry(const ClipLibraryEntry& entry) {
+    if (!validateAutomation(entry.automation, entry.machine)) return "invalid automation";
     if (!validId(entry.id)) return "invalid id";
     if (entry.name.empty()) return "name is empty";
     if (!validMachine(entry.machine)) return "unknown machine";

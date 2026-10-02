@@ -14,7 +14,7 @@
 
 #sq-rack {
   max-width: 1460px;
-  min-width: 1180px;
+  min-width: 768px;
   margin: 0 auto;
   padding: 14px 18px 22px;
   position: relative;
@@ -36,7 +36,7 @@
 .sq-top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 4px 14px;
   margin-bottom: 9px;
   border: 1px solid var(--line);
@@ -61,12 +61,15 @@
 }
 
 .sq-transport { display: flex; align-items: center; gap: 6px; }
-.sq-session-preset { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
-.sq-session-preset > span { font-size: 6px; letter-spacing: 0.2em; color: var(--text-dim); }
-.sq-session-preset select { height: 20px; border: 1px solid var(--line); border-radius: 4px; background: #11141c; color: var(--ac-b); font: 8px var(--font-mono); letter-spacing: 0.07em; padding: 0 5px; }
+.sq-session-preset { display: flex; align-items: center; gap: 6px; flex: 1 1 230px; max-width: 280px; min-width: 120px; }
+.sq-session-preset > span { font-size: 7px; letter-spacing: 0.2em; color: var(--text-dim); }
+.sq-session-preset select { height: 24px; border: 1px solid var(--line); border-radius: 4px; background: #11141c; color: var(--ac-b); font: 8px var(--font-mono); letter-spacing: 0.07em; padding: 0 5px; flex: 1; min-width: 0; text-overflow: ellipsis; }
 
+.sq-glyph { display: block; }
 .sq-play {
-  height: 26px;
+  display: grid;
+  place-items: center;
+  height: 24px;
   min-width: 36px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
@@ -83,7 +86,7 @@
   box-shadow: 0 0 12px rgba(77, 255, 158, 0.3);
 }
 
-.sq-quant { display: flex; align-items: center; gap: 5px; }
+.sq-quant { display: flex; align-items: center; gap: 5px; flex: none; white-space: nowrap; }
 .sq-quant-tag { font-size: 7px; letter-spacing: 0.2em; color: var(--text-dim); }
 .sq-quant-step {
   width: 15px;
@@ -110,7 +113,7 @@
   padding: 2px 5px;
 }
 
-.sq-clock { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.sq-clock { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; white-space: nowrap; }
 .sq-beats { display: flex; align-items: center; gap: 4px; }
 .sq-beat {
   width: 6px;
@@ -124,10 +127,10 @@
 .sq-clock-line b { color: var(--text); font-weight: 400; }
 .sq-clock-line em { color: var(--ac-b); font-style: normal; }
 
-.sq-top-right { display: flex; gap: 10px; margin-left: auto; }
+.sq-top-right { display: flex; gap: 10px; margin-left: auto; flex: 0 4 150px; min-width: 48px; }
 .sq-scope {
   position: relative;
-  width: 150px;
+  width: 100%;
   height: 24px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -143,7 +146,7 @@
   letter-spacing: 0.2em;
   color: var(--text-dim);
 }
-.sq-master-knobs { display: flex; align-items: center; gap: 6px; }
+.sq-master-knobs { display: flex; align-items: center; gap: 6px; flex: none; }
 .sq-master-knobs .knob svg { width: 24px; height: 24px; }
 .sq-master-knobs .k-label { font-size: 6px; letter-spacing: 0.1em; margin-top: 1px; }
 .sq-master-knobs .k-value { display: none; }
@@ -352,7 +355,9 @@
   border-radius: 8px;
   background: #11141c;
   color: var(--ac-n);
-  font-size: 11px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   cursor: pointer;
 }
 .sq-scene-launch.live {
@@ -824,6 +829,11 @@
 /* Device stylesheets style their own root ids; neutralize page-level sizing
    so the rack renders as an embedded panel, not a full page. */
 .sq-hosted-rack { width: auto; min-height: 0; margin: 0; padding: 12px; }
+/* Each device's id rule sets a standalone min-width; the embedded rack must
+   shrink to the device pane instead. */
+#drum-rack.sq-hosted-rack, #bass-rack.sq-hosted-rack, #rack.sq-hosted-rack {
+  min-width: 0; max-width: none; width: auto; margin: 0; padding: 12px;
+}
 /* The arp is a fluid editor; do not inherit WT-1's standalone rack width. */
 #rack.sq-hosted-rack:has(.arp-panel) { min-width: 0; width: 100%; margin: 0; padding: 12px; }
 #rack.sq-hosted-rack:has(.arp-panel) .panels { grid-template-columns: repeat(12, minmax(0, 1fr)); }
@@ -849,7 +859,7 @@
 }
 
 .sq-clipbar {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap;
   padding: 8px 12px; border-bottom: 1px solid #1a2030;
   background: #0d1119;
 }
@@ -951,17 +961,11 @@
 }
 .sq-sessions-hint { border-top: 1px solid #20283a; }
 .sq-sessions-error { margin: 0; padding: 8px 12px; color: #e8a068; font-size: 9px; letter-spacing: .08em; }
-.sq-sessions-open {
-  flex: none; padding: 6px 9px; border: 1px solid #283147; border-radius: 5px;
-  background: #111725; color: #aeb8cc; font: inherit; font-size: 9px;
-  letter-spacing: .12em; cursor: pointer;
-}
-.sq-sessions-open:hover { border-color: var(--tc); color: var(--tc); }
-.sq-master-fx-toggle {
-  flex: none; height: 25px; padding: 0 9px; border: 1px solid #303a50; border-radius: 5px;
+.sq-sessions-open, .sq-master-fx-toggle {
+  flex: none; height: 24px; padding: 0 9px; white-space: nowrap; border: 1px solid #303a50; border-radius: 5px;
   background: #11141c; color: #8791a5; cursor: pointer; font: 8px var(--font-mono); letter-spacing: .1em;
 }
-.sq-master-fx-toggle:hover, .sq-master-fx-toggle.on {
+.sq-sessions-open:hover, .sq-master-fx-toggle:hover, .sq-master-fx-toggle.on {
   border-color: var(--ac-n); color: var(--ac-n); background: color-mix(in srgb, var(--ac-n) 12%, #11141c);
 }
 
@@ -1084,7 +1088,7 @@
     width: 100%;
     min-width: 0;
   }
-  .sq-session-preset select { width: 100%; height: 36px; }
+  .sq-session-preset select { flex: 1; width: 100%; min-width: 0; height: 36px; }
   .sq-sessions-open { min-height: 36px; }
   .sq-top-right { display: none; }
   .sq-quant { margin-left: auto; }
@@ -1141,4 +1145,27 @@
 
   .ns-head { flex-wrap: wrap; gap: 6px; }
   .ns-hint { order: 10; flex: 1 1 100%; margin-left: 0; white-space: normal; line-height: 1.35; }
+}
+
+/* Clip bar: controls keep their natural width and wrap as a group; only the
+   hint text is allowed to shrink. */
+.sq-clipbar > *, .sq-clipbar button { flex: none; white-space: nowrap; }
+.sq-clipbar > .sq-clipbar-hint, .sq-clipbar > .sq-clipbar-lock { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sq-clipbar .sq-clipbar-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Embedded WT-1/BL-1 oscillator rows wrap instead of clipping when the pane is narrow. */
+.sq-hosted-rack .osc-knobs { flex-wrap: wrap; justify-content: space-around; row-gap: 4px; }
+.sq-hosted-rack .osc-knobs .knob svg { width: 36px; height: 36px; }
+.sq-hosted-rack .osc-knobs .knob .k-label { font-size: 7px; letter-spacing: 0.08em; }
+
+/* Touch screens of any width (tablets above the 700px phone layout): fingertip-sized
+   hit areas for the small controls inside hosted devices. */
+@media (pointer: coarse) {
+  .sq-hosted-rack .st-btn { width: 32px; height: 32px; }
+  .sq-hosted-rack .st-value { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+  .sq-device-patch button, .sq-device-patch select, .sq-drum-fx-toggle { min-height: 36px; }
+  .sq-device-patch button { min-width: 36px; }
+  .sq-clipbar button, .sq-mode-toggle button { min-height: 36px; }
+  .sq-hosted-rack .power-btn { width: 28px; height: 28px; }
+  .sq-hosted-rack select { min-height: 36px; }
+  .sq-hosted-rack .pad { min-height: 52px; }
 }

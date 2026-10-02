@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { normToValue, valueToNorm } from '../../params';
 import { DRUM_PARAMS } from '../params';
 import { useDrumStore } from '../store';
+import { useAutoLive } from '../../seq/autoLive';
 
 const A0 = -135, A1 = 135;
 
@@ -40,6 +41,7 @@ export function DrumKnob({ paramId, size = 'md', accent, label }: DrumKnobProps)
   const bipolar = (def.min as number) < 0;
   const norm = clamp01(valueToNorm(def, value));
 
+  const autoLive = useAutoLive('DR1', paramId, norm);
   const elRef = useRef<HTMLDivElement>(null);
   const normRef = useRef(norm);
   const draggingRef = useRef(false);
@@ -127,6 +129,8 @@ export function DrumKnob({ paramId, size = 'md', accent, label }: DrumKnobProps)
         <circle className="k-body" cx="40" cy="40" r="26" />
         <path className="k-track" d={arcPath(40, 40, 33, A0, A1)} />
         <path className="k-arc" d={arcD} />
+        <path ref={autoLive.ring} className="k-auto" d="" style={{ opacity: 0 }} />
+        <circle ref={autoLive.dot} className="k-auto-dot" r="3.2" style={{ opacity: 0 }} />
         <line className="k-ptr" x1="40" y1="40" x2="40" y2="17" transform={`rotate(${deg} 40 40)`} />
       </svg>
       <div className="k-label">{labelText}</div>

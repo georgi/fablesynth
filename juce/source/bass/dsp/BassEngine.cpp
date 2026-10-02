@@ -90,6 +90,7 @@ static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i
 // voice is killed and every recursive state (SVF, DC blocker, smoothers, sub
 // phase, LFO S&H) cleared; the DC pole is remapped from its 48 kHz reference.
 void BassEngine::prepare(double sampleRate) {
+    clearAutomation();
     sr_ = sampleRate;
     dcR_ = std::pow(BL_DC_R, 48000.0 / sr_);   // Finding 9
     xfLen_ = std::max(8, (int)std::lround(BL_SWITCH_XFADE * sr_));  // Finding J2
@@ -1058,10 +1059,11 @@ void BassEngine::render(float* L, float* R, int n) {
             clipHost_.tick(
                 hostFrame_, run,
                 [&](int abs) { clipFireAt(abs); },
-                [&](bool wasPlaying) { if (wasPlaying) release(); });
+                [&](bool wasPlaying) { autoPlayer_.swap(); if (wasPlaying) release(); });
             for (size_t i = evBefore; i < clipHost_.events.size(); i++)
                 if (clipHost_.events[i].t == HostEvent::T::Stop) release();
         }
+        if (hostClipMode_) tickAutomation();
         if (samplesToGateOff_ >= 0)
             run = std::min(run, std::max(1, (int)std::ceil(samplesToGateOff_)));
 

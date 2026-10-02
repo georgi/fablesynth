@@ -21,6 +21,7 @@ import {
   cycleStep, NPATTERNS, patIdx, randomizePadPattern, STEPS, type Patterns,
 } from './seq';
 import { sequenceChain, sequenceLengthFromChain } from '../sequenceLength';
+import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } from '../seq/clipAutomation';
 import { cloneDrumSequence, drumSourceConflict, updateDrumLane, type DrumRhythm, type DrumLaneRhythm, type DrumSequence } from './rhythm';
 import {
   clearPadRect, copyPadRect, copyPattern, makeHistory, movePadRect, padRectNorm, pastePadRect,
@@ -77,7 +78,15 @@ export type DrumClipboard =
 // Complete sequence history stays outside rendered state. Parameter edits are independent.
 let sequenceGesture = false;
 let gesturePushed = false;
-const patternHistory = makeHistory<DrumSequence>();
+// Snapshots carry the standalone automation lanes so undo restores them too.
+type SequenceSnapshot = DrumSequence & { automation: AutoLane[] };
+const patternHistory = makeHistory<SequenceSnapshot>();
+const snapshot = (st: DrumSequence & { automation: AutoLane[] }): SequenceSnapshot =>
+  ({ ...cloneDrumSequence(st), automation: copyAutomation(st.automation) });
+// Standalone automation plays on the DR-1 transport; hosted clips own theirs.
+function sendAutomation(st: DrumSequence & { automation: AutoLane[]; hosted: boolean }): void {
+  if (!st.hosted) drumEngine.setSequenceAutomation(compileAutomation(st.automation, st.chain.length, st.drumRhythm, 'DR1'));
+}
 
 export interface KitOption {
   value: string;
@@ -129,6 +138,9 @@ export interface DrumStore {
   sequenceError: string | null;
   selectLane: (pad: number) => void;
   commitSequence: (next: DrumSequence, history?: boolean) => boolean;
+  /** Standalone sequence automation lanes (hosted clips keep theirs in SQ-4). */
+  automation: AutoLane[];
+  setAutomation: (lanes: AutoLane[], opts?: { history?: boolean }) => void;
   loadPatternPreset: (index: number) => boolean;
   setLaneEnabled: (pad: number, enabled: boolean) => void;
   updateLaneRhythm: (pad: number, patch: Partial<DrumLaneRhythm>) => void;
@@ -184,6 +196,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   patterns: initialKitState.patterns,
   chain: sequenceChain(sequenceLengthFromChain(initialKitState.chain)),
   drumRhythm: initialKitState.drumRhythm,
+  automation: [],
   editPattern: 0,
   playing: false,
   curStep: -1,
@@ -220,9 +233,18 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       const next = cloneDrumSequence(value, get().hosted ? value.chain.length : 4);
       if (history) get()._pushHistory();
       set({ ...next, kitDirty: true, sequenceError: null });
-      if (!get().hosted) drumEngine.setSequence(next.patterns, next.chain, next.drumRhythm);
+      if (!get().hosted) {
+        drumEngine.setSequence(next.patterns, next.chain, next.drumRhythm);
+        sendAutomation(get());
+      }
       return true;
     } catch (error) { set({ sequenceError: (error as Error).message }); return false; }
+  },
+  setAutomation: (lanes, opts = {}) => {
+    if (get().hosted || validateAutomation(lanes, 'DR1')) return;
+    if (opts.history !== false) get()._pushHistory();
+    set({ automation: copyAutomation(lanes), kitDirty: true });
+    sendAutomation(get());
   },
   loadPatternPreset: (index) => {
     const preset = FACTORY_KITS[index];
@@ -297,7 +319,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   // here first; knob/param changes never touch history.
   _pushHistory: () => {
     if (sequenceGesture && gesturePushed) return;
-    patternHistory.push(cloneDrumSequence(get()));
+    patternHistory.push(snapshot(get()));
     if (sequenceGesture) gesturePushed = true;
   },
   _clearHistory: () => { patternHistory.clear(); sequenceGesture = false; gesturePushed = false; set({ sequenceError: null, sequenceContext: get().sequenceContext + 1 }); },
@@ -485,13 +507,19 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   },
 
   undo: () => {
-    const restored = patternHistory.undo(cloneDrumSequence(get()));
-    if (restored) get().commitSequence(restored, false);
+    const restored = patternHistory.undo(snapshot(get()));
+    if (restored && get().commitSequence(restored, false)) {
+      set({ automation: restored.automation });
+      sendAutomation(get());
+    }
   },
 
   redo: () => {
-    const restored = patternHistory.redo(cloneDrumSequence(get()));
-    if (restored) get().commitSequence(restored, false);
+    const restored = patternHistory.redo(snapshot(get()));
+    if (restored && get().commitSequence(restored, false)) {
+      set({ automation: restored.automation });
+      sendAutomation(get());
+    }
   },
 
   setMode: (mode) => set({ mode }),
@@ -551,6 +579,7 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     drumEngine.params = { ...get().params };
     drumEngine.applyAllParams();
     drumEngine.setSequence(get().patterns, get().chain, get().drumRhythm);
+    sendAutomation(get());
     set({ powered: true });
   },
 

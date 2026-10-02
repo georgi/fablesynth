@@ -6,6 +6,7 @@
 // a different algorithm from the plugin's on every stage. The only node left on
 // this side is the scope analyser.
 
+import { guardAudioNavigation } from '../../shared/audioNavigationGuard';
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { type ParamValues } from '../../params';
 import { defaultBassParams } from '../params';
@@ -138,6 +139,7 @@ export class BassEngine {
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
+    guardAudioNavigation(ctx);
     if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
     if (this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: true });
     if (this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: true });
@@ -220,6 +222,10 @@ export class BassEngine {
     if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame });
   }
 
+  /** Hosted clip automation: absolute-value tables per parameter (SQ-4). */
+  setClipAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'auto', lanes });
+  }
   updateClip(data: Uint8Array, bars: number, arp?: ArpConfig): void {
     if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp });
   }

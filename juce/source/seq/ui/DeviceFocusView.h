@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HostedBassModel.h"
+#include "ClipAutomationPanel.h"
 #include "HostedDrumModel.h"
 #include "HostedWtModel.h"
 #include "../../bass/BassDeviceBody.h"
@@ -37,6 +38,8 @@ public:
     HostedWtModel& wt2ModelForTest() { return wt2Model_; }
     HostedWtModel& wt3ModelForTest() { return wt3Model_; }
 
+    ClipAutomationPanel& automationForTest() { return automation_; }
+    juce::Viewport& deviceViewportForTest() { return deviceViewport_; }
     DrumDeviceBody& drumBodyForTest() { return drumBody_; }
     BassDeviceBody& bassBodyForTest() { return bassBody_; }
     WtDeviceBody& wt2BodyForTest() { return wt2Body_; }
@@ -84,6 +87,9 @@ private:
     void layoutBody(juce::Component&, int logicalWidth, int logicalHeight, int contentTop = 0);
 
     SeqAudioProcessor& proc_;
+    juce::Component deviceCanvas_;
+    juce::Viewport deviceViewport_;
+    ClipAutomationPanel automation_;
     HostedDrumModel drumModel_;
     HostedBassModel bassModel_;
     HostedWtModel wt2Model_;

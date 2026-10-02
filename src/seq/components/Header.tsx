@@ -9,6 +9,7 @@ import { Scope } from './Scope';
 import { SeqKnob } from './SeqKnob';
 import { FACTORY_SESSION_PRESETS } from '../sessionPresets';
 import { SessionLibraryBrowser } from './SessionLibraryBrowser';
+import { TransportGlyph } from './TransportGlyph';
 
 export function Header() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -39,7 +40,7 @@ export function Header() {
           title={playing ? 'Stop sequencer' : 'Start sequencer'}
           aria-label={playing ? 'Stop sequencer' : 'Start sequencer'}
         >
-          {playing ? '■' : '▶'}
+          <TransportGlyph kind={playing ? 'stop' : 'play'} />
         </button>
       </div>
 
@@ -51,7 +52,7 @@ export function Header() {
         </select>
       </label>
 
-      <button className="sq-sessions-open" onClick={() => setSessionsOpen(true)} title="Saved sessions">▦ SESSIONS</button>
+      <button className="sq-sessions-open" onClick={() => setSessionsOpen(true)} title="Saved sessions">SESSIONS</button>
       <button className={`sq-master-fx-toggle${masterFxOpen ? ' on' : ''}`} onClick={() => {
         const st = useSeqStore.getState();
         if (!st.masterFxOpen && st.focus) st.exitFocus();
@@ -80,6 +81,10 @@ export function Header() {
       <div className="sq-top-right">
         <Scope />
       </div>
+      <div className="sq-master-knobs">
+        <SeqKnob value={swing} onChange={setSwing} label="SWING" size="sm" defaultValue={0} />
+        <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" size="sm" defaultValue={0.75} />
+      </div>
       <button
         className="sq-help"
         onClick={startTour}
@@ -89,10 +94,6 @@ export function Header() {
       >
         ?
       </button>
-      <div className="sq-master-knobs">
-        <SeqKnob value={swing} onChange={setSwing} label="SWING" size="sm" defaultValue={0} />
-        <SeqKnob value={masterVol} onChange={setMasterVol} label="VOL" size="sm" defaultValue={0.75} />
-      </div>
     </header>
   );
 }

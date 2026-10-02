@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { WebAgentPanel } from '../agent/WebAgentPanel';
 import { makeDrumAgentHost } from '../agent/drumAgentHost';
 import { AmpEnvPanel } from './components/AmpEnvPanel';
+import { DrumAutomation } from './components/DrumAutomation';
 import { DrumPowerOverlay } from './components/DrumPowerOverlay';
 import { FilterSection } from './components/FilterSection';
 import { FxRack } from './components/FxRack';
 import { Header } from './components/Header';
 import { ModPanel } from './components/ModPanel';
+import { PadEditTabs } from './components/PadEditTabs';
 import { PadGrid } from './components/PadGrid';
 import { PadStrip } from './components/PadStrip';
 import { NoiseSection } from './components/NoiseSection';
@@ -18,10 +20,12 @@ import { StepSeq } from './components/StepSeq';
 import { useDrumKeys } from './hooks/useDrumKeys';
 import { useDrumMidi } from './hooks/useDrumMidi';
 import { drumEngine, useDrumStore } from './store';
+import { useSeqStore } from '../seq/store';
 
 export function DrumApp() {
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentHost] = useState(makeDrumAgentHost);
+  const fxOpen = useSeqStore((s) => s.drumFxOpen);
   useDrumKeys();
   useDrumMidi();
 
@@ -46,21 +50,24 @@ export function DrumApp() {
           </div>
           <div className="dr-right">
             <div id="dr-selbar"><SelBar /></div>
-            <div id="dr-oscrow">
-              <OscSection osc="oscA" />
-              <SampleSection />
-              <NoiseSection />
-            </div>
-            <div id="dr-editrow">
-              <PitchEnvPanel />
-              <AmpEnvPanel />
-              <FilterSection />
-              <ModPanel />
-            </div>
+            <PadEditTabs />
+            {fxOpen ? <div id="dr-fxrack"><FxRack /></div> : <>
+              <div id="dr-oscrow">
+                <OscSection osc="oscA" />
+                <SampleSection />
+                <NoiseSection />
+              </div>
+              <div id="dr-editrow">
+                <PitchEnvPanel />
+                <AmpEnvPanel />
+                <FilterSection />
+                <ModPanel />
+              </div>
+            </>}
           </div>
         </div>
-        <div id="dr-fxrack"><FxRack /></div>
         <div id="dr-stepseq"><StepSeq /></div>
+        <DrumAutomation />
       </main>
       <button className="web-agent-launcher" onClick={() => setAgentOpen(true)}>AGENT</button>
     </>

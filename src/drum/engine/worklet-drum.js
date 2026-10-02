@@ -1077,6 +1077,9 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.clipStopAt = -1;
     this.clipStep = -1; // absolute step within the clip
     this.clipToNext = 0;
+    this.autoHeld = new Map(); // param index -> stored value while automated
+    this.autoLanes = null;
+    this.seqAuto = null; // standalone sequence automation
     this.vizCount = 0;
     // Pad inserts feed their routed buses; a second, same-control group chain
     // follows each physical output sum. Those instances form one logical DR-1
@@ -1168,7 +1171,14 @@ class DrumProcessor extends AudioWorkletProcessor {
           if (Number.isFinite(v)) this.setParam(k, v);
         }
         break;
-      case 'p': if (Number.isFinite(d.v)) this.setParam(d.k, d.v); break;
+      case 'p': {
+        if (!Number.isFinite(d.v)) break;
+        // An automated param keeps the knob edit as its stored value.
+        const i = PARAM_INDEX.get(d.k);
+        if (i !== undefined && this.autoHeld.has(i)) this.autoHeld.set(i, d.v);
+        else this.setParam(d.k, d.v);
+        break;
+      }
       case 'seed': this.rng = new Rng(d.v | 0); break;
       case 'tables':
         this.tables = d.list.map((x) => ({
@@ -1202,6 +1212,7 @@ class DrumProcessor extends AudioWorkletProcessor {
         if (this.hosted) break; // conductor owns the transport
         this.playing = true; this.step = -1; this.chainPos = 0; this.samplesToNext = 0;
         this.resetPoly(currentFrame);
+        this.port.postMessage({ t: 'anchor', frame: this.polyAnchor });
         break;
       case 'stop': this.playing = false; this.step = -1; break;
       case 'sel': this.sel = Math.max(0, Math.min(NPADS - 1, d.pad | 0)); break;
@@ -1239,6 +1250,15 @@ class DrumProcessor extends AudioWorkletProcessor {
         this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), rhythm: normalizeRhythm(d.rhythm ?? d.drumRhythm), at: +d.atFrame || 0 };
         this.clipStopAt = -1;
         break;
+      case 'seqauto': this.seqAuto = this.autoRead(d.lanes); break;
+      case 'auto': {
+        // Follows its clip/clipupdate message: attach to the pending launch,
+        // else to the playing clip.
+        const lanes = this.autoRead(d.lanes);
+        if (this.clipPend) this.clipPend.auto = lanes;
+        else if (this.clip) this.clip.auto = lanes;
+        break;
+      }
       case 'clipstop':
         this.clipPend = null;
         this.clipStopAt = +d.atFrame || 0;
@@ -1251,13 +1271,13 @@ class DrumProcessor extends AudioWorkletProcessor {
         const hasRhythm = Object.prototype.hasOwnProperty.call(d, 'rhythm') || Object.prototype.hasOwnProperty.call(d, 'drumRhythm');
         const rhythm = hasRhythm ? normalizeRhythm(d.rhythm ?? d.drumRhythm) : undefined;
         if (this.clipPend) {
-          this.clipPend = { data, bars, rhythm: rhythm === undefined ? this.clipPend.rhythm : rhythm, at: this.clipPend.at };
+          this.clipPend = { data, bars, rhythm: rhythm === undefined ? this.clipPend.rhythm : rhythm, at: this.clipPend.at, auto: this.clipPend.auto };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars;
           const previousRhythm = this.clip.rhythm;
           if (rhythm !== undefined && !rhythmHasMicro(rhythm)) this.microState[1].ready = false;
           const rhythmChanged = rhythm !== undefined && !rhythmEqual(this.clip.rhythm, rhythm);
-          this.clip = { data, bars, at: this.clip.at, rhythm: rhythm === undefined ? this.clip.rhythm : rhythm };
+          this.clip = { data, bars, at: this.clip.at, rhythm: rhythm === undefined ? this.clip.rhythm : rhythm, auto: this.clip.auto };
           // Re-derive the phase only on a bar-count change (plain modulo can
           // land a grown clip half a cycle off). Same-length edits — every
           // sequencer click — are a pure data swap: touching the phase inside
@@ -1327,6 +1347,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     const oldQuarter = (60 / Math.max(1, oldBpm)) * sampleRate;
     const beat = (frame - this.polyAnchor) / oldQuarter;
     this.polyAnchor = frame - beat * (60 / Math.max(1, newBpm)) * sampleRate;
+    this.port.postMessage({ t: 'anchor', frame: this.polyAnchor });
     if (!rhythmHasEnabledLane(this.rhythm))
       this.syncLegacyStandalone(frame, newBpm, newSwing, legacyNext);
   }
@@ -1434,6 +1455,52 @@ class DrumProcessor extends AudioWorkletProcessor {
       const abs = positiveModulo(gridOrdinal, this.clip.bars * STEPS);
       this.clipStep = abs;
       this.port.postMessage({ t: 'pos', step: abs % STEPS, bar: (abs / STEPS) | 0, hits, frame });
+    }
+  }
+
+  // ---------- automation (SQ-4 clips and the standalone sequence) ----------
+  // Each lane is an absolute-value table {i, table, len, fit, rot} played on
+  // the transport anchor clock: grid lanes cycle every `len` sixteenths, FIT
+  // lanes spread `len` slots over `fit` beats. autoHeld keeps the stored knob
+  // value of every automated param; it returns when the lane leaves the clip.
+  autoRead(list) {
+    const lanes = [];
+    for (const l of Array.isArray(list) ? list : []) {
+      const i = PARAM_INDEX.get(l.k);
+      const len = Math.max(1, l.len | 0);
+      const table = new Float32Array(l.table);
+      if (i === undefined || table.length !== len * 16) continue;
+      lanes.push({ i, table, len, fit: Math.max(0, +l.fit || 0), rot: +l.rot || 0, fx: /(^|\.)fx\./.test(l.k) || l.k === 'master.volume' });
+    }
+    return lanes;
+  }
+
+  autoTick(frame) {
+    const lanes = this.hosted ? (this.clip ? this.clip.auto || null : null)
+      : (this.playing ? this.seqAuto : null);
+    if (lanes !== this.autoLanes) {
+      this.autoLanes = lanes;
+      for (const [i, v] of this.autoHeld) {
+        if (lanes && lanes.some((l) => l.i === i)) continue;
+        this.autoHeld.delete(i);
+        this.pv[i] = v;
+        this.fxDirty = true;
+      }
+    }
+    if (!lanes || !lanes.length) return;
+    const bpm = Math.max(60, Math.min(200, this.hosted ? this.hostBpm || 120 : this.pv[G_BPM] || 126));
+    const anchor = this.hosted ? this.hostAnchor : this.polyAnchor;
+    const steps = Math.max(0, frame - anchor) / ((60 / bpm / 4) * sampleRate);
+    for (let n = 0; n < lanes.length; n++) {
+      const l = lanes[n];
+      let x = ((l.fit ? ((steps / 4) % l.fit) / l.fit * l.len : steps) - l.rot) % l.len;
+      if (x < 0) x += l.len;
+      // A tiny negative remainder can round up to len when adding len.
+      if (x >= l.len) x = 0;
+      const f = x * 16, a = f | 0, b = a + 1 < l.table.length ? a + 1 : 0;
+      if (!this.autoHeld.has(l.i)) this.autoHeld.set(l.i, this.pv[l.i]);
+      this.pv[l.i] = l.table[a] + (l.table[b] - l.table[a]) * (f - a);
+      if (l.fx) this.fxDirty = true;
     }
   }
 
@@ -2185,6 +2252,7 @@ class DrumProcessor extends AudioWorkletProcessor {
           this.clipToNext = 0;
           this.port.postMessage({ t: 'clipstart', frame });
         }
+        this.autoTick(frame);
         if (this.clipStopAt >= 0 && this.clipStopAt < currentFrame + n)
           run = Math.min(run, Math.max(1, Math.ceil(this.clipStopAt - frame)));
         if (this.clipPend && this.clipPend.at < currentFrame + n)
@@ -2201,6 +2269,7 @@ class DrumProcessor extends AudioWorkletProcessor {
           }
         }
       }
+      if (!this.hosted) this.autoTick(frame);
       if (standalonePoly) {
         const polyRun = this.schedulePoly(frame, currentFrame + n, false);
         if (polyRun <= 0) continue;

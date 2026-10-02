@@ -3,6 +3,7 @@
 // (juce::JSON) — the pure model (SeqModel.h) stays JUCE-free.
 #include "SessionCodec.h"
 #include "DrumRhythmCodec.h"
+#include "AutomationCodec.h"
 #include "../ui/ArpCodec.h"
 #include "../dsp/Presets.h"
 #include "../bass/dsp/BassPatches.h"
@@ -125,6 +126,7 @@ juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
                 co->setProperty("name", juce::String(c.name));
                 co->setProperty("bars", c.bars);
                 if (c.hasDrumRhythm) co->setProperty("drumRhythm", drumRhythmToVar(c));
+                if (!c.automation.empty()) co->setProperty("automation", automationToVar(c.automation));
                 if (c.hasArp) co->setProperty("arp", arpToVar(c.arp));
                 co->setProperty("pattern",
                     juce::Base64::toBase64(c.bytes.data(), c.bytes.size()));
@@ -202,6 +204,10 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
                 ClipData cd;
                 cd.name = cv.getProperty("name", "").toString().toStdString();
                 cd.bars = (int)cv.getProperty("bars", 1);
+                if (cv.hasProperty("automation")) {
+                    if (sc.clips.size() >= s.tracks.size() || !automationFromVar(cv["automation"], cd.automation, s.tracks[sc.clips.size()].machine)) return false;
+                    cd.hasAutomation = !cd.automation.empty();
+                }
                 if (cv.hasProperty("drumRhythm") && (sc.clips.size() >= s.tracks.size()
                     || !drumRhythmFromVar(cv["drumRhythm"], cd, s.tracks[sc.clips.size()].machine))) return false;
                 if (cv.hasProperty("arp")) {

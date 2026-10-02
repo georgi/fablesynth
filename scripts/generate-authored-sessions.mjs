@@ -8,6 +8,14 @@ import { build } from 'esbuild';
 // DSP, so authored sessions can carry the same kit treatment in both hosts.
 // Omit bypassed fields from native artifacts; reject active unsupported FX.
 function nativeSession(session) {
+  for (const scene of session.scenes) scene.clips.forEach((clip, t) => {
+    for (const lane of clip?.automation ?? []) {
+      const machine = session.tracks[t].machine;
+      if ((machine !== 'DR1' && lane.target.startsWith('fx.ott.'))
+          || (machine === 'BL1' && lane.target.startsWith('fx.comp.')))
+        throw new Error(`Automation target ${machine} ${lane.target} is not supported by native sessions`);
+    }
+  });
   return { ...session, tracks: session.tracks.map((track) => {
     if (track.patch.kind !== 'inline') return track;
     const params = Object.fromEntries(Object.entries(track.patch.data.params).filter(([id, value]) => {
@@ -57,6 +65,32 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
         if (!clip) return;
         const bytes = b64ToBytes(clip.pattern), empty = emptyClipBytes(s.tracks[t].machine, clip.bars);
         text.push(`            scene.clips[${t}] = { ${quote(clip.name)}, ${clip.bars}, sqEmptyClip(Machine::${s.tracks[t].machine}, ${clip.bars}) };`);
+        // PAD automation resolves against the retained POLY settings.
+        if (clip.drumRhythm) {
+          text.push(`            scene.clips[${t}].hasDrumRhythm = true;`);
+          clip.drumRhythm.lanes.forEach((lane, pad) => {
+            if (!lane) return;
+            const base = `scene.clips[${t}].drumRhythm.lanes[${pad}]`;
+            text.push(`            scene.clips[${t}].drumConfiguredLanes |= (1u << ${pad});`,
+              `            ${base}.enabled = ${lane.enabled}; ${base}.sourceBar = ${lane.sourceBar};`,
+              `            ${base}.steps = ${lane.steps}; ${base}.rotation = ${lane.rotation};`,
+              `            ${base}.mode = DrumRhythmMode::${lane.timing.mode}; ${base}.cycleBeats = ${lane.timing.cycleBeats ?? 4};`);
+            if (lane.delayMs !== undefined || lane.stepDelayMs !== undefined) {
+              text.push(`            ${base}.micro = true; ${base}.delayMs = ${lane.delayMs ?? 0};`);
+              (lane.stepDelayMs ?? []).forEach((delay, step) => {
+                if (delay) text.push(`            ${base}.stepDelayMs[${step}] = ${delay};`);
+              });
+            }
+          });
+        }
+        if (clip.automation?.length) {
+          text.push(`            scene.clips[${t}].hasAutomation = true;`);
+          for (const lane of clip.automation) {
+            const mode = { clip: 'Clip', grid: 'Grid', fit: 'Fit', pad: 'Pad' }[lane.time.mode];
+            const points = lane.points.map(p => `{ ${Number(p.t)}, ${Number(p.v)}, ${Number(p.c ?? 0)}, ${!!p.hold} }`).join(', ');
+            text.push(`            scene.clips[${t}].automation.push_back({ ${quote(lane.target)}, ${lane.enabled}, { AutoTime::${mode}, ${lane.time.steps ?? 16}, ${lane.time.cycleBeats ?? 4} }, { ${points} } });`);
+          }
+        }
         // Sparse byte assignments keep the generated artifact easy to diff.
         bytes.forEach((value, i) => {
           if (value !== empty[i]) text.push(`            scene.clips[${t}].bytes[${i}] = ${value};`);

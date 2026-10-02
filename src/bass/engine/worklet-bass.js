@@ -862,6 +862,8 @@ class BassProcessor extends AudioWorkletProcessor {
     this.clipStopAt = -1;
     this.clipStep = -1;
     this.clipToNext = 0;
+    this.autoHeld = new Map(); // param id -> stored value while automated
+    this.autoLanes = null;
 
     // ---- voice ----
     this.gate = false;
@@ -936,7 +938,9 @@ class BassProcessor extends AudioWorkletProcessor {
         break;
       case 'p':
         if (Number.isFinite(d.v)) {
-          this.p[d.k] = d.v;
+          // An automated param keeps the knob edit as its stored value.
+          if (this.autoHeld.has(d.k)) this.autoHeld.set(d.k, d.v);
+          else this.p[d.k] = d.v;
           if (d.k.startsWith('fx.') || d.k === 'master.volume') this.fxDirty = true;
         }
         break;
@@ -1008,6 +1012,14 @@ class BassProcessor extends AudioWorkletProcessor {
         this.clipPend = null;
         this.clipStopAt = +d.atFrame || 0;
         break;
+      case 'auto': {
+        // Follows its clip/clipupdate message: attach to the pending launch,
+        // else to the playing clip.
+        const lanes = this.autoRead(d.lanes);
+        if (this.clipPend) this.clipPend.auto = lanes;
+        else if (this.clip) this.clip.auto = lanes;
+        break;
+      }
       case 'clipupdate': {
         // Hosted hot-swap (SQ-4): replace pattern bytes in place. Position is
         // derived arithmetic, so a live swap never moves the playhead.
@@ -1015,11 +1027,11 @@ class BassProcessor extends AudioWorkletProcessor {
         const bars = Math.max(1, d.bars | 0);
         const arp = this.readClipArp(d.arp);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at, arp };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp, auto: this.clipPend.auto };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars;
           const rephase = this.clip.arp?.rate !== arp?.rate;
-          this.clip = { data, bars, arp };
+          this.clip = { data, bars, arp, auto: this.clip.auto };
           if (rephase) { this.release(); this.samplesToGateOff = -1; this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; }
           else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i])) { this.release(); this.samplesToGateOff = -1; }
           // Re-derive the phase only on a bar-count change (plain modulo can
@@ -1054,6 +1066,50 @@ class BassProcessor extends AudioWorkletProcessor {
       duration: Math.max(1, Math.min(63, (flags >> 2) & 0x3f)),
       semi: Math.min(11, this.clip.data[o + 1] & ~SLIDE_MASK) + 12 * (Math.min(2, this.clip.data[o + 2]) - 1),
     };
+  }
+
+  // ---------- clip automation (SQ-4) ----------
+  // Each lane is an absolute-value table {i, table, len, fit, rot} played on
+  // the shared anchor clock: grid lanes cycle every `len` sixteenths, FIT
+  // lanes spread `len` slots over `fit` beats. autoHeld keeps the stored knob
+  // value of every automated param; it returns when the lane leaves the clip.
+  autoRead(list) {
+    const lanes = [];
+    for (const l of Array.isArray(list) ? list : []) {
+      const i = typeof l.k === 'string' && l.k in this.p ? l.k : undefined;
+      const len = Math.max(1, l.len | 0);
+      const table = new Float32Array(l.table);
+      if (i === undefined || table.length !== len * 16) continue;
+      lanes.push({ i, table, len, fit: Math.max(0, +l.fit || 0), rot: +l.rot || 0, fx: l.k.startsWith('fx.') || l.k === 'master.volume' });
+    }
+    return lanes;
+  }
+
+  autoTick(frame) {
+    const lanes = this.clip ? this.clip.auto || null : null;
+    if (lanes !== this.autoLanes) {
+      this.autoLanes = lanes;
+      for (const [i, v] of this.autoHeld) {
+        if (lanes && lanes.some((l) => l.i === i)) continue;
+        this.autoHeld.delete(i);
+        this.p[i] = v;
+        this.fxDirty = true;
+      }
+    }
+    if (!lanes || !lanes.length) return;
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const steps = Math.max(0, frame - this.hostAnchor) / ((60 / bpm / 4) * sampleRate);
+    for (let n = 0; n < lanes.length; n++) {
+      const l = lanes[n];
+      let x = ((l.fit ? ((steps / 4) % l.fit) / l.fit * l.len : steps) - l.rot) % l.len;
+      if (x < 0) x += l.len;
+      // A tiny negative remainder can round up to len when adding len.
+      if (x >= l.len) x = 0;
+      const f = x * 16, a = f | 0, b = a + 1 < l.table.length ? a + 1 : 0;
+      if (!this.autoHeld.has(l.i)) this.autoHeld.set(l.i, this.p[l.i]);
+      this.p[l.i] = l.table[a] + (l.table[b] - l.table[a]) * (f - a);
+      if (l.fx) this.fxDirty = true;
+    }
   }
 
   hostTick(n) {
@@ -1777,7 +1833,7 @@ class BassProcessor extends AudioWorkletProcessor {
     const R = out.length > 1 ? out[1] : this.monoR;
     L.fill(0); R.fill(0);
 
-    if (this.hosted) this.hostTick(n);
+    if (this.hosted) { this.hostTick(n); this.autoTick(currentFrame); }
     const standalone = this.playing && !this.hosted;
 
     let pos = 0;

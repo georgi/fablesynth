@@ -32,7 +32,7 @@ std::function<HostTransport()> wtTransport(WtUiModel& model) {
 } // namespace
 
 DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
-    : proc_(proc), drumModel_(proc), bassModel_(proc), wt2Model_(proc, 2), wt3Model_(proc, 3),
+    : proc_(proc), automation_(proc), drumModel_(proc), bassModel_(proc), wt2Model_(proc, 2), wt3Model_(proc, 3),
       drumBody_(drumModel_), bassBody_(bassModel_),
       wt2Body_(wt2Model_, wtTransport(wt2Model_)),
       wt3Body_(wt3Model_, wtTransport(wt3Model_)) {
@@ -41,10 +41,20 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
     wt2Body_.setBounds(0, 0, WtDeviceBody::LW, WtDeviceBody::LH);
     wt3Body_.setBounds(0, 0, WtDeviceBody::LW, WtDeviceBody::LH);
 
-    addChildComponent(drumBody_);
-    addChildComponent(bassBody_);
-    addChildComponent(wt2Body_);
-    addChildComponent(wt3Body_);
+    deviceCanvas_.addChildComponent(drumBody_);
+    deviceCanvas_.addChildComponent(bassBody_);
+    deviceCanvas_.addChildComponent(wt2Body_);
+    deviceCanvas_.addChildComponent(wt3Body_);
+    deviceViewport_.setViewedComponent(&deviceCanvas_,false);
+    deviceViewport_.setScrollBarsShown(true,false);
+    deviceViewport_.setScrollBarThickness(10);
+    addAndMakeVisible(deviceViewport_);
+    addChildComponent(automation_);
+    automation_.onLayoutChanged=[this] {
+        const bool opening=automation_.expanded() && automation_.getParentComponent()!=&deviceCanvas_;
+        resized();
+        if (opening) deviceViewport_.setViewPosition(0,std::max(0,deviceCanvas_.getHeight()-deviceViewport_.getHeight()));
+    };
 
     patchLabel_.setText("PATCH", juce::dontSendNotification);
     patchLabel_.setJustificationType(juce::Justification::centredRight);
@@ -120,6 +130,8 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
 
 DeviceFocusView::~DeviceFocusView() {
     stopTimer();
+    automation_.onLayoutChanged=nullptr;
+    deviceViewport_.setViewedComponent(nullptr,false);
     flushPendingPatches();
 }
 
@@ -180,6 +192,16 @@ void DeviceFocusView::setTarget(int scene, int track) {
         targetScene_ = targetTrack_ = -1;
     }
 
+    ParameterSource source;
+    switch (activeBody_) {
+        case ActiveBody::drum: source=drumModel_.parameters(); break;
+        case ActiveBody::bass: source=bassModel_.parameters(); break;
+        case ActiveBody::wt2: source=wt2Model_.parameters(); break;
+        case ActiveBody::wt3: source=wt3Model_.parameters(); break;
+        case ActiveBody::none: break;
+    }
+    automation_.setTarget(targetScene_,targetTrack_,source,[this]{ return drumModel_.selectedPad(); });
+    deviceViewport_.setViewPosition(0,0);
     updateCreateClipButton();
     refreshPatchSelector();
     refreshClipBrowser(true);
@@ -281,6 +303,8 @@ void DeviceFocusView::retargetModelsAfterLoad() {
     }
     updateCreateClipButton();
     refreshClipMetadata();
+    automation_.refresh();
+    resized();
     repaint();
 }
 
@@ -300,6 +324,7 @@ void DeviceFocusView::saveCurrentClip() {
     const auto base = entry.name;
     while (collides()) entry.name = base + " " + std::to_string(suffix++);
     entry.machine = machine; entry.bars = clip.bars; entry.bytes = clip.bytes;
+    entry.automation = clip.automation;
     entry.family = "experimental"; entry.role = fable::sqClipRoles(machine).front();
     entry.energy = 3; entry.transpose = false;
     juce::String error;
@@ -518,21 +543,32 @@ void DeviceFocusView::refreshPatchSelector() {
 void DeviceFocusView::timerCallback() {
     updateCreateClipButton();
     refreshPatchSelector();
+    automation_.refresh();
+    // Page switches can change the visible device extent without changing lanes.
+    if (isShowing()) {
+        layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
+        layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
+        layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+        layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+    }
 }
 
 void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,
                                  int logicalHeight, int contentTop) {
     if (getWidth() <= 0 || getHeight() <= 0) return;
-    constexpr int selectorHeight = kToolbarHeight;
-    const int contentHeight = logicalHeight - contentTop;
-    const int availableHeight = juce::jmax(1, getHeight() - selectorHeight - kBodyGap);
-    const float scale = std::min(static_cast<float>(getWidth()) / static_cast<float>(logicalWidth),
-                                 static_cast<float>(availableHeight)
-                                     / static_cast<float>(contentHeight));
-    const float dx = (static_cast<float>(getWidth()) - static_cast<float>(logicalWidth) * scale) * 0.5f;
-    const float dy = static_cast<float>(selectorHeight + kBodyGap);
-    body.setTransform(juce::AffineTransform::translation(0.0f, (float)-contentTop)
-                          .scaled(scale).translated(dx, dy));
+    const float scale=static_cast<float>(std::max(1,deviceCanvas_.getWidth()))/static_cast<float>(logicalWidth);
+    body.setTransform(juce::AffineTransform::translation(0.0f,(float)-contentTop).scaled(scale));
+    if (body.isVisible()) {
+        int contentBottom=contentTop;
+        for (int i=0;i<body.getNumChildComponents();++i) {
+            const auto* child=body.getChildComponent(i);
+            if (child->isVisible()) contentBottom=std::max(contentBottom,child->getBottom());
+        }
+        const int bodyHeight=(int)std::ceil((std::min(logicalHeight,contentBottom+8)-contentTop)*scale);
+        const int panelHeight=automation_.isVisible() && automation_.expanded() ? automation_.preferredHeight(deviceCanvas_.getWidth()-16)+8 : 0;
+        deviceCanvas_.setSize(deviceCanvas_.getWidth(),bodyHeight+panelHeight);
+        if (panelHeight) automation_.setBounds(8,bodyHeight+4,deviceCanvas_.getWidth()-16,panelHeight-8);
+    }
 }
 
 void DeviceFocusView::paint(juce::Graphics& g) {
@@ -545,6 +581,16 @@ void DeviceFocusView::paint(juce::Graphics& g) {
 }
 
 void DeviceFocusView::resized() {
+    const bool show=activeHasTargetClip();
+    automation_.setVisible(show);
+    const bool expanded=show && automation_.expanded();
+    if (expanded) { if (automation_.getParentComponent()!=&deviceCanvas_) deviceCanvas_.addAndMakeVisible(automation_); }
+    else if (automation_.getParentComponent()!=this) addChildComponent(automation_);
+    const int strip=show && !expanded ? 48 : 0;
+    deviceViewport_.setBounds(0,kToolbarHeight+kBodyGap,getWidth(),std::max(1,getHeight()-kToolbarHeight-kBodyGap-strip));
+    const int width=std::max(1,getWidth()-10);
+    deviceCanvas_.setSize(width,std::max(1,deviceCanvas_.getHeight()));
+    if (show && !expanded) { automation_.setVisible(true); automation_.setBounds(8,getHeight()-40,width-16,40); }
     layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
     layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
     layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);

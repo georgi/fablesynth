@@ -9,6 +9,7 @@
 // plain C++ so it is driven by the plugin AND exercised by the headless test
 // harness. Host transport lock mirrors DrumEngine::setHostTransport.
 #pragma once
+#include "../../dsp/ClipAutomation.h"
 
 #include "BassParams.h"
 #include "../../dsp/ClipHost.h"
@@ -104,8 +105,13 @@ public:
     // These write the BLOCK TARGETS. The DSP reads a smoothed copy that the
     // render loop advances once per <=128-sample chunk; snapParams() jumps the
     // smoothed copy to the targets (prepare, program load, state restore).
-    void setParam(int id, float v) { target_[(size_t)id] = v; }
-    void setParams(const BassParamArray& p) { target_ = p; }
+    void setParam(int id, float v) { if (autoPlayer_.hold(id, v)) return; target_[(size_t)id] = v; }
+    void setParams(const BassParamArray& p) { target_ = autoPlayer_.protect(p, target_); }
+    bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
+    bool hasClipAutomation() const { return autoPlayer_.active(); }
+    bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
+    void setAutomationTrace(AutoPlayer::Trace trace, void* context) { autoPlayer_.setTrace(trace, context); }
+    size_t automationCapacity() const { return autoPlayer_.capacity(); }
     BassParamArray& params() { return target_; }
     void snapParams() { p_ = ps_ = rampTarget_ = target_; rampPos_ = rampLen_ = 0; }
     const BassParamArray& smoothedParams() const { return p_; }
@@ -160,8 +166,8 @@ public:
         // Reserve the clip host's buffers so no launch/update/tick allocates on
         // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
         // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
-        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
-        else clipHost_.clear();
+        if (on) { autoPlayer_.prepare(); clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock)); }
+        else { clipHost_.clear(); clearAutomation(); }
     }
     void hostTempo(double bpm, double swing, double anchorFrame) {
         setBpmOverride(bpm);
@@ -169,12 +175,14 @@ public:
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
     void setArp(const ArpPattern&);
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}) {
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
+        autoPlayer_.schedule(automation);
         clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
     }
-    void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}) {
+    void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
         if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp)))) { release(); samplesToGateOff_ = -1; }
+        autoPlayer_.update(automation, clipHost_.hasPending());
         clipHost_.updateClip(data, (size_t)bytes, bars, arp);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
@@ -292,6 +300,17 @@ private:
     double   hostFrame_ = 0;
     double   anchorFrame_ = 0;     // shared timebase's beat zero (hostTempo)
     ClipHost clipHost_;
+    AutoPlayer autoPlayer_;
+    bool autoFxDirty_ = false;
+    void writeAutomation(int id, float v) { target_[(size_t)id] = p_[(size_t)id] = ps_[(size_t)id] = rampTarget_[(size_t)id] = v; }
+    void clearAutomation() { autoPlayer_.clear([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); }
+    void tickAutomation() {
+        if (!clipHost_.isPlaying()) {
+            autoPlayer_.stopPlaying([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); return;
+        }
+        autoPlayer_.tick(hostFrame_, anchorFrame_, effectiveBpm(), sr_, target_,
+            [&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_);
+    }
 
     // host transport lock state
     bool   hostPlaying_ = false;

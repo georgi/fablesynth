@@ -11,6 +11,7 @@
 //   {t:'pats', data:Uint8Array} {t:'chain', list} {t:'play'} {t:'stop'}   note sequencer
 //   {t:'host',on} {t:'tempo',bpm,swing,anchor} {t:'clip',data,bars,atFrame}
 //   {t:'clipstop',atFrame}                     hosted clip transport (SQ-4)
+//   {t:'auto',lanes}                           clip automation tables (SQ-4)
 //
 // Modulation is a fixed pool of 16 slots (mat1..mat16), each {src,dst,amt}, read
 // straight from `this.p` — no separate routing message. The per-destination
@@ -1053,7 +1054,7 @@ class Fx {
     this.monoRun = false;
   }
 
-  process(L, R, n) {
+  process(L, R, n, offset = 0) {
     // Gate only when OFF; mix == 0 while ON must keep state accumulation alive.
     // The drive's wet gain being zero — MIX 0 while ON, as well as OFF — means
     // the oversampler's output is multiplied by zero, so it is not run at all.
@@ -1104,7 +1105,7 @@ class Fx {
     // ---- four-band EQ (first FX; shared smoothing/type-crossfade contract) ----
     // Into double scratch, not back into L/R: the whole chain stays in double
     // precision until the final write, as the per-sample loop it replaces did.
-    for (let i = 0; i < n; i++) { FX_EQL[i]=L[i]; FX_EQR[i]=R[i]; }
+    for (let i = 0; i < n; i++) { FX_EQL[i]=L[offset + i]; FX_EQR[i]=R[offset + i]; }
     this.eq.process(FX_EQL, FX_EQR, n);
     this.headroom.eq.process(FX_EQL, FX_EQR, n);
 
@@ -1249,7 +1250,7 @@ class Fx {
 
       // ---- lookahead safety limiter (makeup inside, -1 dBFS ceiling) ----
       this.lim.process(l, r);
-      L[i] = this.lim.outL; R[i] = this.lim.outR;
+      L[offset + i] = this.lim.outL; R[offset + i] = this.lim.outR;
     }
   }
 }
@@ -1313,6 +1314,8 @@ class FableProcessor extends AudioWorkletProcessor {
     // only advances per host block; the split loop (finding W3) needs the
     // chunk's own position for clip scheduling.
     this.frameNow = 0;
+    this.autoHeld = new Map(); // param index -> stored value while automated
+    this.autoLanes = null;
     this.vizCount = 0;
     this.tmpL = new Float32Array(128);
     this.tmpR = new Float32Array(128);
@@ -1374,7 +1377,9 @@ class FableProcessor extends AudioWorkletProcessor {
         // never on the render thread (finding W2).
         const i = PID[d.k];
         if (i !== undefined && Number.isFinite(d.v)) {
-          this.p[i] = d.v;
+          // An automated param keeps the knob edit as its stored value.
+          if (this.autoHeld.has(i)) this.autoHeld.set(i, d.v);
+          else this.p[i] = d.v;
           // The web build has no host transport: while the sequencer is the
           // tempo authority, synced LFOs follow it.
           if (i === SEQ_BPM && !this.hosted) this.bpm = Math.min(1000, Math.max(1, d.v));
@@ -1456,6 +1461,14 @@ class FableProcessor extends AudioWorkletProcessor {
         this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp) };
         this.clipStopAt = -1; // a new launch supersedes a pending stop
         break;
+      case 'auto': {
+        // Follows its clip/clipupdate message: attach to the pending launch,
+        // else to the playing clip.
+        const lanes = this.autoRead(d.lanes);
+        if (this.clipPend) this.clipPend.auto = lanes;
+        else if (this.clip) this.clip.auto = lanes;
+        break;
+      }
       case 'clipstop':
         this.clipPend = null; // a stop cancels a pending launch
         this.clipStopAt = +d.atFrame || 0;
@@ -1467,11 +1480,11 @@ class FableProcessor extends AudioWorkletProcessor {
         const bars = Math.max(1, d.bars | 0);
         const arp = readClipArp(d.arp);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at, arp };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp, auto: this.clipPend.auto };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars;
           const rephase = this.clip.arp?.rate !== arp?.rate;
-          this.clip = { data, bars, arp };
+          this.clip = { data, bars, arp, auto: this.clip.auto };
           if (rephase) { this.seqGateOff(); this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; }
           else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i])) this.seqGateOff();
           // Re-derive the phase only on a bar-count change (plain modulo can
@@ -1529,6 +1542,48 @@ class FableProcessor extends AudioWorkletProcessor {
     this.seqOffQueue.length = w;
     this.seqOffQueue.push({ note, remaining });
     this.seqLastNote = note;
+  }
+
+  // ---------- clip automation (SQ-4) ----------
+  // Each lane is an absolute-value table {i, table, len, fit, rot} played on
+  // the shared anchor clock: grid lanes cycle every `len` sixteenths, FIT
+  // lanes spread `len` slots over `fit` beats. autoHeld keeps the stored knob
+  // value of every automated param; it returns when the lane leaves the clip.
+  autoRead(list) {
+    const lanes = [];
+    for (const l of Array.isArray(list) ? list : []) {
+      const i = PID[l.k];
+      const len = Math.max(1, l.len | 0);
+      const table = new Float32Array(l.table);
+      if (i === undefined || table.length !== len * 16) continue;
+      lanes.push({ i, table, len, fit: Math.max(0, +l.fit || 0), rot: +l.rot || 0 });
+    }
+    return lanes;
+  }
+
+  autoTick(frame) {
+    const lanes = this.clip ? this.clip.auto || null : null;
+    if (lanes !== this.autoLanes) {
+      this.autoLanes = lanes;
+      for (const [i, v] of this.autoHeld) {
+        if (lanes && lanes.some((l) => l.i === i)) continue;
+        this.autoHeld.delete(i);
+        this.p[i] = v;
+      }
+    }
+    if (!lanes || !lanes.length) return;
+    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
+    const steps = Math.max(0, frame - this.hostAnchor) / ((60 / bpm / 4) * sampleRate);
+    for (let n = 0; n < lanes.length; n++) {
+      const l = lanes[n];
+      let x = ((l.fit ? ((steps / 4) % l.fit) / l.fit * l.len : steps) - l.rot) % l.len;
+      if (x < 0) x += l.len;
+      // A tiny negative remainder can round up to len when adding len.
+      if (x >= l.len) x = 0;
+      const f = x * 16, a = f | 0, b = a + 1 < l.table.length ? a + 1 : 0;
+      if (!this.autoHeld.has(l.i)) this.autoHeld.set(l.i, this.p[l.i]);
+      this.p[l.i] = l.table[a] + (l.table[b] - l.table[a]) * (f - a);
+    }
   }
 
   // ---------- hosted clip transport ----------
@@ -2421,12 +2476,16 @@ class FableProcessor extends AudioWorkletProcessor {
       if (eo >= 0) run = Math.min(run, Math.max(1, Math.ceil(eo)));
       // The hosted clip transport resolves its commands per chunk; at the usual
       // 128-sample quantum that is exactly the pre-split behaviour.
-      if (hosted) this.hostTick(run);
+      if (hosted) { this.hostTick(run); this.autoTick(this.frameNow); }
 
       const ppq = hosted
         ? Math.max(0, this.frameNow - this.hostAnchor) * (this.bpm / 60) / sampleRate
         : this.transportBeats;
       this.renderChunk(L, R, off, run, ppq);
+      // FX consume the automation value for this chunk, on the same clock as
+      // the voices. Process in place without allocating channel subarrays.
+      this.fx.setParams(this.p, this.bpm);
+      this.fx.process(L, R, run, off);
       this.transportBeats += (run / sampleRate) * (this.bpm / 60);
       if (!hosted && this.seqPlaying) this.seqToNext -= run;
 
@@ -2445,10 +2504,6 @@ class FableProcessor extends AudioWorkletProcessor {
       }
       off += run;
     }
-    // FX are block-rate parameterised (as in the plugin) and run over the whole
-    // host block, after every sequencer-split chunk has been rendered.
-    this.fx.setParams(this.p, this.bpm);
-    this.fx.process(L, R, n);
     if (this.fx.reverbMetering && this.fx.reverbSamples >= sampleRate / 30) {
       const fx = this.fx, energy = fx.reverbEnergy;
       const rms = index => Math.max(-90, 10 * Math.log10(Math.max(1e-9, energy[index] / fx.reverbSamples)));

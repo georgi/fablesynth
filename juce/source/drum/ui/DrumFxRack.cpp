@@ -4,10 +4,8 @@
 
 // Web layout (src/drum/drum.css), rack-relative px:
 //   #dr-fxrack panel  1424 x 131, .dr-fx-panel padding 8px.
-//   .fx-rack grid: repeat(5, 1fr) 190px, gap 10px.
+//   .fx-rack modules share the row with a 10px gap.
 //   .fx-group padding 8px 9px 7px, radius 8, head min-height 17px + 4px gap.
-//   .out-head margin-bottom 6px; .out-route rows 13px min-height, 2px gap,
-//   grid 7px 38px 1fr with 5px gaps.
 namespace fui {
 
 // ===================== Group =====================
@@ -73,10 +71,6 @@ DrumFxRack::DrumFxRack(DrumUiModel& p, bool routingOnly) : proc(p), routingOnly_
         groupFxButton_.onClick = [this] { groupMode_ = true; groupFxButton_.setToggleState(true, juce::dontSendNotification); padFxButton_.setToggleState(false, juce::dontSendNotification); rebuild(); };
     }
     rebuild();
-    if (!routingOnly_) {
-        lastSig = routeSignature();
-        startTimerHz(1); // full OUT summary reflects live routing + renames
-    }
 }
 
 DrumFxRack::~DrumFxRack() {
@@ -119,7 +113,6 @@ void DrumFxRack::rebuild() {
 
 void DrumFxRack::resized() {
     if (routingOnly_) {
-        outBounds = getLocalBounds();
         auto row = getLocalBounds().reduced(12, 8);
         padTitleArea = row.removeFromLeft(142);
         row.removeFromLeft(8);
@@ -132,112 +125,35 @@ void DrumFxRack::resized() {
     padFxButton_.setBounds(scope.removeFromLeft(58)); scope.removeFromLeft(3);
     groupFxButton_.setBounds(scope.removeFromLeft(66));
     r.removeFromTop(2);
-    const int gap = 10, outW = groupMode_ ? 0 : 190, count = groups.size();
-    const float cw = static_cast<float>(r.getWidth() - outW - gap * count) / static_cast<float>(count);
+    const int gap = 10, count = groups.size();
+    const float cw = static_cast<float>(r.getWidth() - gap * (count - 1)) / static_cast<float>(count);
     for (int i = 0; i < groups.size(); ++i)
         groups[i]->layout({ (int)std::round(static_cast<float>(r.getX())
                                              + static_cast<float>(i) * (cw + static_cast<float>(gap))), r.getY(),
                             (int)std::round(cw), r.getHeight() });
-    outBounds = groupMode_ ? juce::Rectangle<int>{} : juce::Rectangle<int>{ r.getRight() - outW, r.getY(), outW, r.getHeight() };
-}
-
-juce::String DrumFxRack::routeSignature() const {
-    juce::String sig;
-    for (int i = 0; i < fable::DR_NPADS; ++i) {
-        auto* v = proc.parameters().parameter("pad" + juce::String(i) + ".out");
-        sig << (v ? (int)std::lround(v->convertFrom0to1(v->getValue())) : 0) << ':' << proc.padName(i) << ';';
-    }
-    return sig;
-}
-
-void DrumFxRack::timerCallback() {
-    auto sig = routeSignature();
-    if (sig == lastSig) return;
-    lastSig = sig;
-    repaint(outBounds);
 }
 
 void DrumFxRack::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
-    if (routingOnly_) { paintOutPanel(g); return; }
+    if (routingOnly_) { paintOutSelector(g); return; }
     g.setColour(col::acA);
     g.setFont(dispFont(8.0f));
     drawSpaced(g, groupMode_ ? "DRUM GROUP FX" : "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2) + " FX",
                { 145, 2, 120, 12 }, 1.4f);
     for (auto* m : groups) m->paintGroup(g);
-    if (!groupMode_) paintOutPanel(g);
 }
 
-void DrumFxRack::paintOutPanel(juce::Graphics& g) {
-    if (routingOnly_) {
-        auto labels = padTitleArea;
-        auto title = labels.removeFromLeft(38);
-        g.setColour(col::text);
-        g.setFont(dispFont(8.0f));
-        drawSpaced(g, "OUT", title, 1.4f);
-        g.setColour(col::textDim);
-        g.setFont(monoFont(6.5f));
-        drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2)
-                          + " " + proc.padName(proc.selectedPad()),
-                   labels, 0.5f, juce::Justification::centredLeft);
-        return;
-    }
-
-    drawGroupBox(g, outBounds);
-    auto inner = outBounds;
-    inner.removeFromLeft(9);  inner.removeFromRight(9);
-    inner.removeFromTop(8);   inner.removeFromBottom(7);
-
-    // .out-head: OUT title left, routing hint right (space-between).
-    auto head = inner.removeFromTop(17);
+void DrumFxRack::paintOutSelector(juce::Graphics& g) {
+    auto labels = padTitleArea;
+    auto title = labels.removeFromLeft(38);
     g.setColour(col::text);
     g.setFont(dispFont(8.0f));
-    drawSpaced(g, "OUT", head, 1.4f);
+    drawSpaced(g, "OUT", title, 1.4f);
     g.setColour(col::textDim);
     g.setFont(monoFont(6.5f));
-    drawSpaced(g, juce::String::fromUTF8("PAD FX \xe2\x86\x92 OUT"), head, 0.6f,
-               juce::Justification::right);
-    inner.removeFromTop(6);
-
-    // Pad -> output assignments (params are live; the timer diffs for repaint).
-    std::array<juce::StringArray, 5> assigned;
-    for (int i = 0; i < fable::DR_NPADS; ++i) {
-        auto* v = proc.parameters().parameter("pad" + juce::String(i) + ".out");
-        const int out = juce::jlimit(0, 4, v ? (int)std::lround(v->convertFrom0to1(v->getValue())) : 0);
-        assigned[(size_t)out].add(proc.padName(i));
-    }
-
-    for (int o = 0; o < 5; ++o) {
-        auto row = inner.removeFromTop(13);
-        inner.removeFromTop(2);
-        auto dotCell  = row.removeFromLeft(7);  row.removeFromLeft(5);
-        auto nameCell = row.removeFromLeft(38); row.removeFromLeft(5);
-
-        const bool isMain = o == 0;
-        const bool isAssigned = !isMain && !assigned[(size_t)o].isEmpty();
-        const auto dot = dotCell.withSizeKeepingCentre(6, 6).toFloat();
-        if (isMain || isAssigned) {
-            const auto ac = isMain ? col::acA : col::acB;
-            g.setColour(ac.withAlpha(0.35f));       // glow halo
-            g.fillEllipse(dot.expanded(2.0f));
-            g.setColour(ac);
-        } else {
-            g.setColour(juce::Colour(0xff232936));
-        }
-        g.fillEllipse(dot);
-
-        g.setColour(isAssigned ? col::acB : isMain ? col::text : col::textDim);
-        g.setFont(monoFont(7.0f, true));
-        drawSpaced(g, juce::String(fable::OUT_NAMES[(size_t)o]), nameCell, 0.5f);
-
-        const int n = assigned[(size_t)o].size();
-        const juce::String val = isMain ? juce::String(n) + (n == 1 ? " PAD" : " PADS")
-                                 : n > 0 ? assigned[(size_t)o].joinIntoString(", ")
-                                         : juce::String::fromUTF8("\xe2\x80\x94");
-        g.setColour(isAssigned ? col::acB : col::textDim);
-        g.setFont(monoFont(6.5f));
-        g.drawText(val, row, juce::Justification::centredRight, true); // ellipsis
-    }
+    drawSpaced(g, "PAD " + juce::String(proc.selectedPad() + 1).paddedLeft('0', 2)
+                      + " " + proc.padName(proc.selectedPad()),
+               labels, 0.5f, juce::Justification::centredLeft);
 }
 
 } // namespace fui

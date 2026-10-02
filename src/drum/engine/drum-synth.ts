@@ -1,5 +1,6 @@
 // Main-thread DR-1 engine: owns the AudioContext, drum worklet and FX graph.
 
+import { guardAudioNavigation } from '../../shared/audioNavigationGuard';
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { type ParamValues } from '../../params';
 import { defaultDrumParams, OUT_NAMES, PAD_COUNT, pad } from '../params';
@@ -117,6 +118,8 @@ export class DrumEngine {
   // Chain latency reported by the worklet: drive FIR group delay + limiter
   // lookahead (142 samples at 48 kHz), the same figure the plugin reports.
   latencySamples: number;
+  // Standalone transport anchor frame (worklet clock), -1 while stopped.
+  transportAnchor = -1;
 
   constructor() {
     this.params = defaultDrumParams();
@@ -162,6 +165,7 @@ export class DrumEngine {
         if (this.onhit && hits && hits.length) this.onhit(hits);
       }
       if (e.data.t === 'latency') this.latencySamples = e.data.n as number;
+      if (e.data.t === 'anchor') this.transportAnchor = e.data.frame as number;
       if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
       if (e.data.t === 'clipstop' && this.onclipstop) this.onclipstop(e.data.frame as number);
       if (e.data.t === 'dynamics' && (e.data.pad === undefined || e.data.pad === this.meterPad)) this.dynamicsListeners.forEach(listener => listener(e.data as DynamicsMessage));
@@ -170,6 +174,7 @@ export class DrumEngine {
     };
     this.node.port.postMessage({ t: 'init', params: this.params });
     this.ready = true;
+    guardAudioNavigation(ctx);
     if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
     if (this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: true });
     if (this.reverbListeners.size) this.node.port.postMessage({ t: 'reverb', on: true });
@@ -253,6 +258,14 @@ export class DrumEngine {
 
   stop(): void {
     if (this.ready) this.node.port.postMessage({ t: 'stop' });
+    this.transportAnchor = -1;
+  }
+
+  /** Standalone transport position in sixteenth steps, or null while stopped. */
+  transportSteps(bpm: number): number | null {
+    if (!this.ready || this.transportAnchor < 0) return null;
+    const stepFrames = (this.ctx.sampleRate * 60) / Math.max(1, bpm) / 4;
+    return Math.max(0, (this.ctx.currentTime * this.ctx.sampleRate - this.transportAnchor) / stepFrames);
   }
 
   setPatterns(p: Uint8Array): void {
@@ -294,6 +307,15 @@ export class DrumEngine {
     if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame });
   }
 
+  /** Standalone sequence automation: plays while the DR-1 transport runs. */
+  setSequenceAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'seqauto', lanes });
+  }
+
+  /** Hosted clip automation: absolute-value tables per parameter (SQ-4). */
+  setClipAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'auto', lanes });
+  }
   updateClip(data: Uint8Array, bars: number, rhythm?: DrumRhythm): void {
     if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, rhythm: cloneDrumRhythm(rhythm, bars) ?? null });
   }

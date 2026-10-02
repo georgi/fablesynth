@@ -7,6 +7,7 @@ import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rh
 
 import { create } from 'zustand';
 import { compileClipArp, newClipArp, validClipArp, type ClipArp } from './clipArp';
+import { compileClipAutomation, validateAutomation, type AutoLane } from './clipAutomation';
 import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
   b64ToBytes, boundaryFrame, bytesToB64, emptyClipBytes, loadSession,
@@ -70,6 +71,8 @@ export interface SeqStore {
   updateDrumClipSequence: (s: number, t: number, bytes: Uint8Array, bars: number, rhythm: DrumRhythm | null) => string | null;
   updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
   updateClipArp: (s: number, t: number, patch: Partial<ClipArp>) => void;
+  /** Replace a clip's automation lanes. A drag passes `history: false` after its first write. */
+  updateClipAutomation: (s: number, t: number, lanes: AutoLane[], opts?: { history?: boolean; persist?: boolean }) => void;
   createClip: (s: number, t: number) => void;
   deleteClip: (s: number, t: number) => void;
   loadLibraryClip: (s: number, t: number, entry: RuntimeClipLibraryEntry, semitones?: number) => boolean;
@@ -85,6 +88,7 @@ export interface SeqStore {
   setMasterFx: (params: Partial<MasterFxParams>) => void;
   toggleMasterFx: () => void;
   openDrumFx: (scope: 'pad' | 'group') => void;
+  closeDrumFx: () => void;
   toggleTrackFx: () => void;
   setSwing: (v: number) => void;
   loadSessionPreset: (index: number) => void;
@@ -235,7 +239,8 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         clipBytes.set(key, bytes);
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
-        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm);
+        if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm,
+          compileClipAutomation(w.clip, st.session.tracks[w.t].machine));
       }
     }
   };
@@ -264,7 +269,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const a = cur.scenes[s]?.clips[t] ?? null;
         const b = snapshot.scenes[s].clips[t];
         if (a === b) continue;
-        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp) continue;
+        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp && a.automation === b.automation) continue;
         writes.push({ s, t, clip: b });
       }
     }
@@ -389,7 +394,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm);
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine));
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -451,6 +456,18 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       applyGridWrites([{ s, t, clip: { ...clip, arp: JSON.parse(JSON.stringify(arp)) as ClipArp } }], 0);
     },
 
+    updateClipAutomation: (s, t, lanes, opts = {}) => {
+      const st = get();
+      const clip = st.session.scenes[s]?.clips[t];
+      const machine = st.session.tracks[t]?.machine;
+      if (!clip || !machine || validateAutomation(lanes, machine)) return;
+      if (opts.history !== false) pushHistory();
+      const writes = [{ s, t, clip: { ...clip, automation: lanes.length ? lanes : undefined } }];
+      set({ session: applyWrites(st.session, writes) });
+      syncWrites(writes);
+      if (opts.persist !== false) persist();
+    },
+
     updateDrumClipSequence: (s, t, bytes, bars, rhythm) => {
       const st = get();
       const clip = st.session.scenes[s]?.clips[t];
@@ -472,7 +489,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
-      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, bars, undefined, drumRhythm);
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, bars, undefined, drumRhythm, compileClipAutomation(nextClip, 'DR1'));
       return null;
     },
 
@@ -498,7 +515,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm);
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation({ ...clip, bars }, st.session.tracks[t].machine));
       }
     },
 
@@ -548,7 +565,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
-      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded));
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded), undefined, compileClipAutomation(loaded, st.session.tracks[t].machine));
       return true;
     },
 
@@ -620,6 +637,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
 
     toggleMasterFx: () => set((st) => ({ masterFxOpen: !st.masterFxOpen })),
     openDrumFx: (scope) => set({ drumFxOpen: true, drumFxScope: scope }),
+    closeDrumFx: () => set({ drumFxOpen: false }),
     toggleTrackFx: () => set((st) => ({ trackFxOpen: !st.trackFxOpen })),
 
     // Swing is safe to change live: it only shifts intra-step offsets, never

@@ -179,6 +179,7 @@ void DrumEngine::advanceSmoothers(int n) {
     for (int k = 0; k < pl.n; k++) {
         const int id = pl.id[k];
         const float t = p_[(size_t)id];
+        if (autoPlayer_.isHeld(id)) { smCur_[k] = smFrom_[k] = ps_[(size_t)id] = t; continue; }
         const float f = smFrom_[k];
         if (t == f) continue;                       // idle: one compare, no work
         float c;
@@ -230,6 +231,7 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
 // the old rate survives (a trigger resets all recursive pad state anyway), and
 // remap the 48 kHz-reference DC pole to the new rate (Finding 9).
 void DrumEngine::prepare(double sampleRate) {
+    clearAutomation();
     sr_ = sampleRate;
     // The native processor publishes at most DR_NPATTERNS chain entries.
     // Reserve here so its audio-side setChain never grows storage; standalone
@@ -561,12 +563,14 @@ void DrumEngine::hostTempo(double bpm, double swing, double anchorFrame) {
     // Anchor may be fractional; retime at the current integer audio frame.
     clipRhythmScheduler_.retime(std::max(0.0, (hostFrame_ - anchorFrame_) * effectiveBpm() / (60.0 * sr_)), (int64_t)hostFrame_);
 }
-void DrumEngine::hostClip(const uint8_t* data, int bytes, int bars, double at, int tag, const DrumRhythm* rhythm) {
+void DrumEngine::hostClip(const uint8_t* data, int bytes, int bars, double at, int tag, const DrumRhythm* rhythm, const AutoBank* automation) {
+    autoPlayer_.schedule(automation);
     pendingClipRhythm_ = rhythm ? *rhythm : DrumRhythm{}; pendingClipHasRhythm_ = rhythm != nullptr;
     clipHost_.scheduleClip(data, (size_t)bytes, bars, at, tag);
 }
-void DrumEngine::hostClipUpdate(const uint8_t* data, int bytes, int bars, const DrumRhythm* rhythm) {
+void DrumEngine::hostClipUpdate(const uint8_t* data, int bytes, int bars, const DrumRhythm* rhythm, const AutoBank* automation) {
     const bool pending = clipHost_.hasPending();
+    autoPlayer_.update(automation, pending);
     clipHost_.updateClip(data, (size_t)bytes, bars);
     if (pending) { pendingClipRhythm_ = rhythm ? *rhythm : DrumRhythm{}; pendingClipHasRhythm_ = rhythm != nullptr; }
     else if (clipHost_.isPlaying()) {
@@ -599,6 +603,7 @@ void DrumEngine::fireClipRhythm(const DrumRhythmEvent& event) {
 int DrumEngine::renderClipTiming(double frame, int maxRun) {
     // One transport sample first, so a swap/stop is applied before lane hits.
     clipHost_.tick(frame, 1, [&](int abs) { clipFireAt(abs); }, [&](bool) {
+        autoPlayer_.swap();
         clipRhythm_ = pendingClipRhythm_; clipHasRhythm_ = pendingClipHasRhythm_;
         syncClipRhythm(true);
     });
@@ -1405,9 +1410,11 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             // At most one fire per quantum (ClipHost contract). DR-1 pads
             // are one-shot voices with no gate to release on Stop/swap
             // (worklet-drum.js hostTick/clipFire never touch a sounding
-            // pad) — 2-arg tick, no onSwap hook needed.
+            // pad). The timing helper also hands off pending automation.
+            if (autoPlayer_.active()) run = std::min(run, 128 - (int)((int64_t)hostFrame_ % 128));
             run = renderClipTiming(hostFrame_, run);
         }
+        if (hostClipMode_) tickAutomation();
         flushSequencerHits();
         // Finding J1: the chunk length is now known, so move every smoother by
         // exactly this many samples and re-derive the FX coefficients from the

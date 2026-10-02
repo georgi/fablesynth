@@ -6,6 +6,7 @@
 // JUCE-independent on purpose: the engine is a plain C++ object so it can be
 // driven by the plugin AND exercised by a headless test harness.
 #pragma once
+#include "ClipAutomation.h"
 
 #include "ClipHost.h"
 #include "NoteSeq.h"
@@ -204,12 +205,17 @@ public:
     // Direct (snapped) parameter access — preset loads, state restore and the
     // offline harness. Both arrays move together so the smoothers below have
     // nothing to chase.
-    void setParam(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = rampTarget_[(size_t)id] = v; }
-    void setParams(const ParamArray& p) { p_ = ps_ = pt_ = rampTarget_ = p; }
+    void setParam(int id, float v) { if (autoPlayer_.hold(id, v)) return; p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = rampTarget_[(size_t)id] = v; }
+    void setParams(const ParamArray& p) { p_ = ps_ = pt_ = rampTarget_ = autoPlayer_.protect(p, p_); }
     // NOTE: an engine driven by paramTargets() must not also be written through
     // params() — the ramp would pull the direct write back to the last target.
     // Nothing does today: the plugin uses paramTargets() exclusively and SQ-4
     // (which loads whole patches) uses params() exclusively.
+    bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
+    bool hasClipAutomation() const { return autoPlayer_.active(); }
+    bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
+    void setAutomationTrace(AutoPlayer::Trace trace, void* context) { autoPlayer_.setTrace(trace, context); }
+    size_t automationCapacity() const { return autoPlayer_.capacity(); }
     ParamArray& params() { return p_; }
 
     // ---- host-automation smoothing (finding J1) ----
@@ -287,20 +293,22 @@ public:
         // Reserve the clip host's buffers so no launch/update/tick allocates on
         // the audio thread (8192 covers SQ_MAX_BARS of the 8-note WT-1 clip
         // format; the event headroom is sized to maxBlock — see hostMaxEvents).
-        if (on) clipHost_.prepare(SQ_MAX_BARS * 512, hostMaxEvents(maxBlock));
-        else clipHost_.clear();
+        if (on) { autoPlayer_.prepare(); clipHost_.prepare(SQ_MAX_BARS * 512, hostMaxEvents(maxBlock)); }
+        else { clipHost_.clear(); clearAutomation(); }
     }
     void hostTempo(double bpm, double swing, double anchorFrame) {
         setBpm(bpm);
         hostAnchor_ = anchorFrame; // beat zero of the shared timebase (synced-LFO phase)
         clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}) {
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
+        autoPlayer_.schedule(automation);
         clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
     }
-    void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}) {
+    void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
         if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp)))) seqGateOff();
+        autoPlayer_.update(automation, clipHost_.hasPending());
         clipHost_.updateClip(data, (size_t)bytes, bars, arp);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
@@ -471,6 +479,17 @@ private:
     double   hostFrame_ = 0;
     double   hostAnchor_ = 0;         // shared-timebase beat zero (hostTempo)
     ClipHost clipHost_;
+    AutoPlayer autoPlayer_;
+    bool autoFxDirty_ = false;
+    void writeAutomation(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = rampTarget_[(size_t)id] = v; }
+    void clearAutomation() { autoPlayer_.clear([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); }
+    void tickAutomation() {
+        if (!clipHost_.isPlaying()) {
+            autoPlayer_.stopPlaying([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); return;
+        }
+        autoPlayer_.tick(hostFrame_, hostAnchor_, bpm_, sr_, p_,
+            [&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_);
+    }
 
     // host transport lock state (BassEngine scheme)
     bool   seqHostPlaying_ = false;

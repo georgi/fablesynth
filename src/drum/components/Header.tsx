@@ -74,13 +74,12 @@ export function Header() {
       <div className="status dr-midi">
         <div className="status-row"><span className={`led${midiActive ? ' on' : ''}`} />MIDI</div>
       </div>
-      <div className="dr-tempo">
-        <DrumStepper paramId="seq.bpm" accent="a" />
-        <span>SYNC</span>
-      </div>
       <div className="dr-master">
-        <DrumKnob paramId="master.swing" size="md" accent="n" />
-        <DrumKnob paramId="master.volume" size="md" accent="n" />
+        <div className="dr-tempo">
+          <DrumStepper paramId="seq.bpm" accent="a" label="SYNC" />
+        </div>
+        <DrumKnob paramId="master.swing" size="xs" accent="n" />
+        <DrumKnob paramId="master.volume" size="xs" accent="n" />
       </div>
     </header>
   );

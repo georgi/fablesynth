@@ -7,6 +7,7 @@
 import { isTrackAudible, pad2 } from '../model';
 import { STEPS_PER_BAR } from '../protocol';
 import { useSeqStore } from '../store';
+import { TransportGlyph } from './TransportGlyph';
 
 export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) {
   const session = useSeqStore((st) => st.session);
@@ -57,8 +58,9 @@ export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) 
           className={`sq-scene-launch${hot ? ' live' : ''}${queued ? ' queued' : ''}`}
           onClick={(e) => { e.stopPropagation(); launchScene(s); }}
           title="Launch scene"
+          aria-label="Launch scene"
         >
-          ▶
+          <TransportGlyph kind="play" />
         </button>
         <div className="sq-scene-id">
           <div className="sq-scene-name-row">

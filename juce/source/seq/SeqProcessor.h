@@ -231,6 +231,7 @@ private:
         uint32_t gen = 0;                            // Reset: the new generation
         std::shared_ptr<std::vector<uint8_t>> bytes; // Clip / Update
         fable::ArpPattern arp;
+        std::shared_ptr<const fable::AutoBank> autoBank;
         std::shared_ptr<fable::DrumRhythm> drumRhythm;
         std::shared_ptr<std::vector<float>>  params; // Patch (flat engine params)
     };

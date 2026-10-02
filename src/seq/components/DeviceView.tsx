@@ -17,6 +17,7 @@ import { useBassStore } from '../../bass/store';
 import { AmpEnvPanel } from '../../drum/components/AmpEnvPanel';
 import { FilterSection } from '../../drum/components/FilterSection';
 import { FxRack } from '../../drum/components/FxRack';
+import { PadEditTabs } from '../../drum/components/PadEditTabs';
 import { ModPanel } from '../../drum/components/ModPanel';
 import { NoiseSection } from '../../drum/components/NoiseSection';
 import { OscSection } from '../../drum/components/OscSection';
@@ -50,6 +51,7 @@ import { clipToPatterns, patternsToClip } from '../hostBridge';
 import { b64ToBytes, HOSTED_MAX_BARS, type MachineId, wtNoteIdx } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
 import { HostedClipBar, HostedLengthControl } from './HostedClipBar';
+import { AutomationPanel } from './AutomationPanel';
 import { HostedArpEditor, HostedArpModeSwitch } from './HostedArpPanel';
 
 // One uniform handle per machine over the three (differently-typed) stores.
@@ -251,6 +253,7 @@ export function DeviceView() {
         {machine === 'DR1' && <DrumPanels sequenceEditable={editable} />}
         {machine === 'BL1' && <BassPanels bars={clip?.bars} />}
         {machine === 'WT1' && <WtPanels clip={clip} />}
+        {editable && machine !== 'WT1' && <AutomationPanel machine={machine} />}
       </div>
     </section>
   );
@@ -269,12 +272,14 @@ function DrumPanels({ sequenceEditable }: { sequenceEditable: boolean }) {
         </div>
         <div className="dr-right">
           <div id="dr-selbar"><SelBar /></div>
-          <div id="dr-oscrow">
+          {mode === 'edit' && <PadEditTabs />}
+          {!(mode === 'edit' && drumFxOpen) && <div id="dr-oscrow">
             <OscSection osc="oscA" />
             <SampleSection />
             <NoiseSection />
-          </div>
-          {mode === 'edit' && (
+          </div>}
+          {mode === 'edit' && drumFxOpen && <div id="dr-fxrack"><FxRack /></div>}
+          {mode === 'edit' && !drumFxOpen && (
             <div id="dr-editrow">
               <PitchEnvPanel />
               <AmpEnvPanel />
@@ -284,7 +289,6 @@ function DrumPanels({ sequenceEditable }: { sequenceEditable: boolean }) {
           )}
         </div>
       </div>
-      {mode === 'edit' && drumFxOpen && <div id="dr-fxrack"><FxRack /></div>}
       {mode === 'seq' && sequenceEditable && <div id="dr-stepseq"><StepSeq headerExtra={<HostedLengthControl machine="DR1" />} /></div>}
     </div>
   );
@@ -472,6 +476,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           <HostedArpEditor machine="WT1"><SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="WT1" /></>} /></HostedArpEditor>
         )}
       </div>
+      {clip && clip.bars <= HOSTED_MAX_BARS && <AutomationPanel machine="WT1" />}
       {mode === 'seq' && <KeyboardBar />}
     </div>
   );

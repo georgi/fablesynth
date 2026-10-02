@@ -3,7 +3,6 @@ import { drumEngine, useDrumStore } from '../store';
 import { useSeqStore } from '../../seq/store';
 import { OUT_NAMES, pad } from '../params';
 import { DrumKnob } from './DrumKnob';
-import { OutPanel } from './OutPanel';
 import { EqPanel } from '../../components/panels/EqPanel';
 import { DrivePanel } from '../../components/panels/DrivePanel';
 import { ChorusPanel } from '../../components/panels/ChorusPanel';
@@ -56,7 +55,6 @@ export function FxRack() {
         <ChorusPanel adapter={adapter} />
         <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
         <ReverbPanel adapter={{ ...adapter, context: scope === 'pad' ? OUT_NAMES[bus] : 'POST MIX' }} />
-        {scope === 'pad' && <OutPanel />}
       </div>
     </section>
   );

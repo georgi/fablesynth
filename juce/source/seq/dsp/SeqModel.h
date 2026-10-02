@@ -6,6 +6,7 @@
 
 #include "SeqProtocol.h"
 #include "../../dsp/Arp.h"
+#include "../../dsp/ClipAutomation.h"
 #include "../../drum/dsp/DrumRhythm.h"
 #include <algorithm>
 #include <array>
@@ -26,6 +27,8 @@ struct ClipData {
     bool hasDrumRhythm = false;
     DrumRhythm drumRhythm{};
     uint16_t drumConfiguredLanes = 0;
+    bool hasAutomation = false;
+    std::vector<AutoLane> automation;
 };
 
 inline bool validDrumClip(const ClipData& clip, Machine machine) {
@@ -91,6 +94,7 @@ inline std::string validateSession(const SessionData& doc) {
         for (size_t t = 0; t < sc.clips.size(); t++) {
             if (!sc.hasClip[t]) continue;
             const auto& c = sc.clips[t];
+            if (!validateAutomation(c.automation, doc.tracks[t].machine)) return "invalid automation";
             if (!validDrumClip(c, doc.tracks[t].machine)) return "invalid drum rhythm";
             if (c.hasArp && (doc.tracks[t].machine == Machine::DR1 || !validArpSettings(c.arp, true)))
                 return "invalid clip arpeggiator";

@@ -530,7 +530,11 @@ body::before {
 .vs-label { font-size: 8px; letter-spacing: 0.14em; color: var(--text-dim); margin-top: 5px; }
 
 /* ============ util (sub/noise) ============ */
-.panel-util { display: flex; flex-direction: column; gap: 12px; }
+.panel-util { display: flex; flex-direction: column; gap: 12px; container-type: inline-size; }
+/* Header stays on one row when it fits; the shape stepper drops below otherwise. */
+.panel-util .panel-head { flex-wrap: wrap; row-gap: 4px; }
+.panel-util .ph-stepper { margin-left: auto; min-width: 0; max-width: 100%; }
+.panel-util .st-value { min-width: 0; padding: 3px 5px; }
 .util-block { flex: 1; }
 .util-knobs { display: flex; gap: 6px; justify-content: center; }
 
@@ -1769,3 +1773,7 @@ body::before {
   .lfo-tg { width: 38px; height: 30px; }
   select { min-height: 36px; }
 }
+
+/* Live automation: ring from the stored value to the automated value, plus a dot. */
+.k-auto { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; pointer-events: none; filter: drop-shadow(0 0 3px currentColor); }
+.k-auto-dot { fill: currentColor; stroke: #0b0e14; stroke-width: 1.4; pointer-events: none; filter: drop-shadow(0 0 3px currentColor); }

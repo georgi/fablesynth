@@ -1577,7 +1577,10 @@ static void testSessionLibraryMusicality() {
     }
 }
 
+#include "AutomationChecks.h"
+
 int main() {
+    testAutomation();
     runArpEngineChecks([](bool ok, const char* name) {
         if (!ok) { std::printf("FAIL arp: %s\n", name); ++failures; }
     });

@@ -126,7 +126,7 @@ export function PadGrid() {
       </div>
       <label className="dr-pad-output">
         <span>OUTPUT</span>
-        <select aria-label="Selected pad output" value={params[pad(sel, 'out')] | 0}
+        <select className="mod-select" aria-label="Selected pad output" value={params[pad(sel, 'out')] | 0}
           onChange={(e) => setParam(pad(sel, 'out'), Number(e.target.value))}>
           {OUT_NAMES.map((name, index) => <option key={name} value={index}>{name}</option>)}
         </select>

@@ -1,4 +1,5 @@
 #include "ClipLibraryStorage.h"
+#include "AutomationCodec.h"
 #include "dsp/ClipLibrary.gen.h"
 
 #include <set>
@@ -44,6 +45,7 @@ juce::var entryToVar(const ClipLibraryEntry& e) {
     if (e.root >= 0) o->setProperty("root", e.root);
     if (!e.scale.empty()) o->setProperty("scale", juce::String(e.scale));
     o->setProperty("transpose", e.transpose);
+    if (!e.automation.empty()) o->setProperty("automation", automationToVar(e.automation));
     return juce::var(o);
 }
 
@@ -51,7 +53,7 @@ bool entryFromVar(const juce::var& v, ClipLibraryEntry& e, juce::String& error) 
     auto* o = v.getDynamicObject();
     if (o == nullptr) { error = "clip must be an object"; return false; }
     const std::set<juce::String> allowed { "id", "name", "machine", "bars", "pattern",
-        "family", "role", "energy", "tags", "root", "scale", "transpose" };
+        "family", "role", "energy", "tags", "root", "scale", "transpose", "automation" };
     for (const auto& p : o->getProperties())
         if (allowed.count(p.name.toString()) == 0) {
             error = "unknown field " + p.name.toString(); return false;
@@ -104,6 +106,7 @@ bool entryFromVar(const juce::var& v, ClipLibraryEntry& e, juce::String& error) 
     e.scale = o->hasProperty("scale") ? v["scale"].toString().toStdString() : std::string{};
     if (!v["transpose"].isBool()) { error = "transpose must be boolean"; return false; }
     e.transpose = (bool)v["transpose"];
+    if (v.hasProperty("automation") && !automationFromVar(v["automation"], e.automation, e.machine)) { error = "invalid automation"; return false; }
     const auto reason = validateClipLibraryEntry(e);
     if (!reason.empty()) { error = reason; return false; }
     return true;

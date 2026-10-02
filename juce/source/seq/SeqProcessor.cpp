@@ -514,14 +514,17 @@ std::vector<float> SeqAudioProcessor::computeTrackParams(int t, const PatchRef& 
 void SeqAudioProcessor::loadTrackParams(int t, const std::vector<float>& v) {
     if (t == 0) {
         auto& p = drum_.params();
-        for (int i = 0; i < DR_NUM_PARAMS && i < (int)v.size(); ++i) p[(size_t)i] = v[(size_t)i];
+        for (int i = 0; i < DR_NUM_PARAMS && i < (int)v.size(); ++i)
+            if (!drum_.holdAutomatedParam(i, v[(size_t)i])) p[(size_t)i] = v[(size_t)i];
     } else if (t == 1) {
         auto& p = bass_.params();
-        for (int i = 0; i < BL_NUM_PARAMS && i < (int)v.size(); ++i) p[(size_t)i] = v[(size_t)i];
+        for (int i = 0; i < BL_NUM_PARAMS && i < (int)v.size(); ++i)
+            if (!bass_.holdAutomatedParam(i, v[(size_t)i])) p[(size_t)i] = v[(size_t)i];
         bassFx_.setParams(p);
     } else {
         auto& p = wt_[t - 2].params();
-        for (int i = 0; i < NUM_PARAMS && i < (int)v.size(); ++i) p[(size_t)i] = v[(size_t)i];
+        for (int i = 0; i < NUM_PARAMS && i < (int)v.size(); ++i)
+            if (!wt_[t - 2].holdAutomatedParam(i, v[(size_t)i])) p[(size_t)i] = v[(size_t)i];
         wtFx_[t - 2].setParams(p);
     }
 }
@@ -784,9 +787,9 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Clip: {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
-                        case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag, c.drumRhythm.get()); break;
-                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp); break;
-                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp); break;
+                        case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag, c.drumRhythm.get(), c.autoBank.get()); break;
+                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get()); break;
+                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get()); break;
                     }
                 } break;
                 case Cmd::K::Stop:
@@ -799,9 +802,9 @@ void SeqAudioProcessor::drainCmds() {
                 case Cmd::K::Update: {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
-                        case 0: drum_.hostClipUpdate(d, nb, c.bars, c.drumRhythm.get()); break;
-                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp); break;
-                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp); break;
+                        case 0: drum_.hostClipUpdate(d, nb, c.bars, c.drumRhythm.get(), c.autoBank.get()); break;
+                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get()); break;
+                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get()); break;
                     }
                 } break;
                 case Cmd::K::Gain:
@@ -843,6 +846,12 @@ void SeqAudioProcessor::IO::ioScheduleArpClip(int t, const fable::ClipData& clip
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
     if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    if (clip.hasAutomation || !clip.automation.empty()) {
+        auto bank = std::make_shared<fable::AutoBank>();
+        fable::compileAutomation(*bank, clip.automation, clip.bars, clip.hasDrumRhythm ? &clip.drumRhythm : nullptr,
+            p.conductor_->session().tracks[(size_t)t].machine);
+        c.autoBank = std::move(bank);
+    }
     p.pushCmd(std::move(c));
 }
 void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) {
@@ -850,6 +859,12 @@ void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) 
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
     if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    if (clip.hasAutomation || !clip.automation.empty()) {
+        auto bank = std::make_shared<fable::AutoBank>();
+        fable::compileAutomation(*bank, clip.automation, clip.bars, clip.hasDrumRhythm ? &clip.drumRhythm : nullptr,
+            p.conductor_->session().tracks[(size_t)t].machine);
+        c.autoBank = std::move(bank);
+    }
     p.pushCmd(std::move(c));
 }
 void SeqAudioProcessor::IO::ioScheduleClip(int t, const std::vector<uint8_t>& bytes, int bars, double at, int tag) {
@@ -998,6 +1013,7 @@ void SeqAudioProcessor::renderBass(float* L, float* R, int n) {
     bassVizPos_.store(bass_.vizPos, std::memory_order_relaxed);
     bassVizCut_.store(bass_.vizCut, std::memory_order_relaxed);
     bassVizSemi_.store(bass_.vizSemi, std::memory_order_relaxed);
+    if (bass_.takeAutomationFxDirty()) bassFx_.setParams(bass_.params());
     bassFx_.process(L, R, n);
 }
 
@@ -1011,6 +1027,7 @@ void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
     for (int d = 1; d < fable::NUM_MOD_DESTS; ++d)
         wtLiveMod_[(size_t)i][(size_t)d].store((float)wt_[i].vizMod[d], std::memory_order_relaxed);
     wtLiveModAny_[i].store(wt_[i].vizModAny, std::memory_order_relaxed);
+    if (wt_[i].takeAutomationFxDirty()) wtFx_[i].setParams(wt_[i].params());
     wtFx_[i].process(L, R, n);
 }
 
@@ -1047,7 +1064,8 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // would allocate) on the audio thread. drainCmds runs once up top; each
     // engine renders per chunk from its own chunk-start frame; the shared
     // currentFrame is published once for the whole block, as before.
-    const int cap = std::max(1, trackBuf_.getNumSamples());
+    const bool automation = drum_.hasClipAutomation() || bass_.hasClipAutomation() || wt_[0].hasClipAutomation() || wt_[1].hasClipAutomation();
+    const int cap = std::max(1, automation ? std::min(128, trackBuf_.getNumSamples()) : trackBuf_.getNumSamples());
     const double base = frame_;
     // Stamp acks with audioGen_, advanced only by an ordered K::Reset command in
     // drainCmds above — NOT a fresh cmdGen_.load(), which would race a

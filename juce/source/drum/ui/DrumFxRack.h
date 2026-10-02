@@ -4,11 +4,11 @@
 #include "../../ui/Controls.h"
 
 // Two independently recalled FX layers: a selected-pad insert and the
-// post-mix drum-group strip. Both reuse the same module controls; OUT belongs
-// only to the selected-pad layer.
+// post-mix drum-group strip. Both reuse the same module controls. Output
+// routing lives in the pad panel's compact routingOnly instance.
 namespace fui {
 
-class DrumFxRack : public juce::Component, private juce::Timer, private juce::ChangeListener {
+class DrumFxRack : public juce::Component, private juce::ChangeListener {
 public:
     explicit DrumFxRack(DrumUiModel&, bool routingOnly = false);
     ~DrumFxRack() override;
@@ -28,11 +28,9 @@ private:
         void paintGroup(juce::Graphics&);
     };
 
-    void timerCallback() override;          // full OUT summary refresh (sig-diffed)
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void rebuild();
-    juce::String routeSignature() const;    // pad->out assignments + pad names
-    void paintOutPanel(juce::Graphics&);
+    void paintOutSelector(juce::Graphics&);
 
     DrumUiModel& proc;
     bool routingOnly_ = false;
@@ -40,8 +38,6 @@ private:
     juce::TextButton padFxButton_ { "PAD FX" }, groupFxButton_ { "GROUP FX" };
     juce::OwnedArray<Group> groups;         // drive comp ott chorus delay reverb
     std::unique_ptr<Stepper> outSelector;    // compact selected-pad routing control
-    juce::Rectangle<int> outBounds;
-    juce::String lastSig;
     juce::Rectangle<int> padTitleArea;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumFxRack)
 };

@@ -72,7 +72,10 @@ static double renderRms(SeqAudioProcessor& p, juce::AudioBuffer<float>& buf, int
     return std::sqrt(sumSq / (double)std::max(1L, cnt));
 }
 
+#include "../source/seq/DrumRhythmCodec.h"
 #include "render_session.h"
+#include "AutomationHostChecks.h"
+#include "AutomationUiChecks.h"
 #include "SeqOutputChecks.h"
 
 int main(int argc, char** argv) {
@@ -86,6 +89,8 @@ int main(int argc, char** argv) {
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
     SeqOutputTestAccess::run();
+    testAutomationHost();
+    testAutomationUi();
 
     // Hosted DR-1 folds all five processed buses into its one stereo track.
     // Routing a lone pad to AUX must match MAIN, including the group strip.
@@ -1225,7 +1230,11 @@ int main(int argc, char** argv) {
                     if (!webHas) continue;
                     juce::MemoryOutputStream decoded;
                     juce::Base64::convertFromBase64(decoded, webClip.getProperty("pattern", "").toString());
-                    const auto& nativeBytes = mine.session.scenes[(size_t)s].clips[(size_t)t].bytes;
+                    const auto& nativeClip = mine.session.scenes[(size_t)s].clips[(size_t)t];
+                    std::vector<fable::AutoLane> webLanes;
+                    if (webClip.hasProperty("automation") && !fable::automationFromVar(webClip["automation"], webLanes, mine.session.tracks[(size_t)t].machine)) clipsMatch = false;
+                    if (juce::JSON::toString(fable::automationToVar(webLanes)) != juce::JSON::toString(fable::automationToVar(nativeClip.automation))) clipsMatch = false;
+                    const auto& nativeBytes = nativeClip.bytes;
                     if (decoded.getDataSize() != nativeBytes.size()
                         || std::memcmp(decoded.getData(), nativeBytes.data(), nativeBytes.size()) != 0)
                         clipsMatch = false;

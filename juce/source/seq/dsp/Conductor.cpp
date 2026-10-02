@@ -126,10 +126,20 @@ bool Conductor::updateDrumClip(int s, const ClipData& clip) {
     if (s < 0 || s >= (int)session_.scenes.size() || session_.tracks.empty()
         || session_.tracks[0].machine != Machine::DR1 || !session_.scenes[(size_t)s].hasClip[0]
         || clip.bars < 1 || clip.bars > SQ_MAX_BARS || (int)clip.bytes.size() != clip.bars * 256
-        || clip.hasArp || !validDrumClip(clip, Machine::DR1)) return false;
+        || clip.hasArp || !validDrumClip(clip, Machine::DR1) || !validateAutomation(clip.automation, Machine::DR1)) return false;
     session_.scenes[(size_t)s].clips[0] = clip;
     const int q = queueOf(0), target = q != kNone && q != SQ_STOP ? q : ownerOf(0);
     if (target == s) io_.ioUpdateArpClip(0, clip);
+    return true;
+}
+
+bool Conductor::updateClipAutomation(int s, int t, const std::vector<AutoLane>& lanes) {
+    if (s < 0 || s >= (int)session_.scenes.size() || t < 0 || t >= (int)session_.tracks.size()
+        || !session_.scenes[(size_t)s].hasClip[(size_t)t] || !validateAutomation(lanes, session_.tracks[(size_t)t].machine)) return false;
+    auto& clip = session_.scenes[(size_t)s].clips[(size_t)t];
+    clip.automation = lanes; clip.hasAutomation = !lanes.empty();
+    const int q = queueOf(t); const int target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateArpClip(t, clip);
     return true;
 }
 
@@ -187,6 +197,8 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
 
     auto& scene = session_.scenes[(size_t)s];
     scene.clips[(size_t)t] = ClipData { entry.name, entry.bars, bytes };
+    scene.clips[(size_t)t].automation = entry.automation;
+    scene.clips[(size_t)t].hasAutomation = !entry.automation.empty();
     scene.hasClip[(size_t)t] = true;
 
     // Same write target as focused edits: a pending clip wins over the
@@ -224,6 +236,7 @@ bool Conductor::pasteClip(int s, int t, const ClipData& clip) {
     // pattern bytes are machine-specific, so a payload whose byte count does
     // not match this track's machine is rejected (no partial corruption).
     if (!(clip.bars >= 1 && clip.bars <= SQ_MAX_BARS)) return false;
+    if (!validateAutomation(clip.automation, session_.tracks[(size_t)t].machine)) return false;
     if (!validDrumClip(clip, session_.tracks[(size_t)t].machine)) return false;
     if (clip.hasArp && (session_.tracks[(size_t)t].machine == Machine::DR1 || !validArpSettings(clip.arp, true))) return false;
     if ((int)clip.bytes.size() != clip.bars * sqBytesPerBar(session_.tracks[(size_t)t].machine))

@@ -9,6 +9,7 @@
 // Includes the sample-accurate step sequencer (play/stop/patterns/chain/
 // swing/bpm-override) ported from the worklet's process()/fireStep().
 #pragma once
+#include "../../dsp/ClipAutomation.h"
 
 #include "DrumParams.h"
 #include "DrumFx.h"
@@ -77,8 +78,13 @@ public:
     // intra-chunk ramps only softened the edges of. setParam/setParams SNAP the
     // smoothers instead: the direct API is a "set" (kit load, preset, patch,
     // headless test), not an automation move, and must land immediately.
-    void setParam(int id, float v) { p_[(size_t)id] = v; snapSmoother(id); }
-    void setParams(const DrumParamArray& p) { p_ = p; ps_ = p; snapSmoothers(); }
+    void setParam(int id, float v) { if (autoPlayer_.hold(id, v)) return; p_[(size_t)id] = v; snapSmoother(id); }
+    void setParams(const DrumParamArray& p) { p_ = autoPlayer_.protect(p, p_); ps_ = p_; snapSmoothers(); }
+    bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
+    bool hasClipAutomation() const { return autoPlayer_.active(); }
+    bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
+    void setAutomationTrace(AutoPlayer::Trace trace, void* context) { autoPlayer_.setTrace(trace, context); }
+    size_t automationCapacity() const { return autoPlayer_.capacity(); }
     DrumParamArray& params() { return p_; }             // automation target
 
     void trigger(int pad, float vel);               // worklet trigger() incl. choke + phase reset
@@ -126,13 +132,13 @@ public:
         // Reserve the clip host's buffers so no launch/update/tick allocates on
         // the audio thread (4096 = SQ_MAX_BARS * DR1 bytes-per-bar covers every
         // machine; the event headroom is sized to maxBlock — see hostMaxEvents).
-        if (on) clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock));
-        else clipHost_.clear();
+        if (on) { autoPlayer_.prepare(); clipHost_.prepare(SQ_MAX_BARS * 256, hostMaxEvents(maxBlock)); }
+        else { clipHost_.clear(); clearAutomation(); }
     }
     void hostTempo(double bpm, double swing, double anchorFrame);
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, const DrumRhythm* rhythm = nullptr);
-    void hostClipStop(double atFrame) { clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, const DrumRhythm* rhythm = nullptr);
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, const DrumRhythm* rhythm = nullptr, const AutoBank* automation = nullptr);
+    void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, const DrumRhythm* rhythm = nullptr, const AutoBank* automation = nullptr);
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
     // rest for the next call (Finding 3 — the SeqProcessor loops until 0).
@@ -379,6 +385,17 @@ private:
     double   hostFrame_ = 0;
     double   anchorFrame_ = 0;     // shared timebase's beat zero (hostTempo)
     ClipHost clipHost_;
+    AutoPlayer autoPlayer_;
+    bool autoFxDirty_ = false;
+    void writeAutomation(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = v; }
+    void clearAutomation() { autoPlayer_.clear([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); }
+    void tickAutomation() {
+        if (!clipHost_.isPlaying()) {
+            autoPlayer_.stopPlaying([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); return;
+        }
+        autoPlayer_.tick(hostFrame_, anchorFrame_, effectiveBpm(), sr_, p_,
+            [&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_);
+    }
     DrumRhythm clipRhythm_{}, pendingClipRhythm_{};
     bool clipHasRhythm_ = false, pendingClipHasRhythm_ = false, clipRhythmHasNext_ = false;
     DrumRhythmScheduler clipRhythmScheduler_{};
