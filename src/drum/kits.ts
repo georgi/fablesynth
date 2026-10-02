@@ -90,6 +90,22 @@ function trVoidParams(): Partial<ParamValues> {
   return params;
 }
 
+// TR-VOID itself plays the 808 snare and clap one-shots. The derived kits
+// keep the synthesized voices from trVoidParams().
+function trVoidKitParams(): Partial<ParamValues> {
+  const params = trVoidParams();
+  const voices: Array<[number, number, number]> = [[2, 0, 0.5], [3, 1, 0.7]];
+  for (const [padI, sample, decay] of voices) {
+    params[pad(padI, 'oscA.level')] = 0;
+    params[pad(padI, 'noise.level')] = 0;
+    params[pad(padI, 'penv.amt')] = 0;
+    params[pad(padI, 'oscB.table')] = sample;
+    params[pad(padI, 'oscB.level')] = 0.9;
+    params[pad(padI, 'aenv.dec')] = decay;
+  }
+  return params;
+}
+
 function roomOneParams(): Partial<ParamValues> {
   const params = { ...trVoidParams() };
   params['seq.bpm'] = 116;
@@ -937,7 +953,7 @@ const kit = (name: string, params: Partial<ParamValues>, padNames: string[], pat
 };
 
 export const FACTORY_KITS: Kit[] = [
-  kit('TR-VOID', trVoidParams(), [...PAD_NAMES], [...PATTERNS], [0]),
+  kit('TR-VOID', trVoidKitParams(), [...PAD_NAMES], [...PATTERNS], [0]),
   kit('ROOM ONE', roomOneParams(), [...PAD_NAMES], [...PATTERNS], [0]),
   kit('BITCRUSH', bitcrushParams(), [...PAD_NAMES], [...PATTERNS], [0]),
   kit('808 CLASSIC', classic808Params(), [...PAD_NAMES], [...PATTERNS], [0]),

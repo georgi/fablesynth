@@ -169,6 +169,23 @@ Overrides trVoidParams() {
     return p;
 }
 
+// kits.ts trVoidKitParams(): TR-VOID itself plays the 808 snare and clap
+// one-shots. The derived kits keep the synthesized voices from trVoidParams().
+Overrides trVoidKitParams() {
+    Overrides p = trVoidParams();
+    struct Voice { int pad; float sample, decay; };
+    static constexpr Voice voices[] = { { 2, 0, 0.5f }, { 3, 1, 0.7f } };
+    for (const auto& voice : voices) {
+        set(p, padPid(voice.pad, "oscA.level"), 0);
+        set(p, padPid(voice.pad, "noise.level"), 0);
+        set(p, padPid(voice.pad, "penv.amt"), 0);
+        set(p, padPid(voice.pad, "oscB.table"), voice.sample);
+        set(p, padPid(voice.pad, "oscB.level"), 0.9f);
+        set(p, padPid(voice.pad, "aenv.dec"), voice.decay);
+    }
+    return p;
+}
+
 // kits.ts roomOneParams()
 Overrides roomOneParams() {
     Overrides p = trVoidParams();
@@ -919,7 +936,7 @@ const std::vector<DrumKit>& factoryKits() {
     static const std::vector<DrumKit> kits = [] {
         const std::vector<uint8_t> patterns = trVoidPatterns();
         std::vector<DrumKit> out;
-        out.push_back({ "TR-VOID", withPunchFx(trVoidParams()), kPadNames, patterns, { 0 } });
+        out.push_back({ "TR-VOID", withPunchFx(trVoidKitParams()), kPadNames, patterns, { 0 } });
         out.push_back({ "ROOM ONE", withPunchFx(roomOneParams()), kPadNames, patterns, { 0 } });
         out.push_back({ "BITCRUSH", withPunchFx(bitcrushParams()), kPadNames, patterns, { 0 } });
         out.push_back({ "808 CLASSIC", withPunchFx(classic808Params()), kPadNames, patterns, { 0 } });
