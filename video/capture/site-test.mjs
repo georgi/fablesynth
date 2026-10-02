@@ -1,0 +1,31 @@
+import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+await page.goto('http://localhost:5199/');
+await page.waitForTimeout(1500);
+const st = () => page.evaluate(() => { const s = document.querySelector('.stage-screen'); const f = s.querySelector('.stage-film'); const l = s.querySelector('.stage-loop');
+  return { state: s.dataset.state, film: +f.currentTime.toFixed(2), paused: f.paused, muted: f.muted, loopPlaying: !l.paused, cur: [...document.querySelectorAll('.chapter')].findIndex((c) => c.getAttribute('aria-current') === 'true') }; });
+console.log('idle', JSON.stringify(await st()));
+await page.click('.stage-play'); await page.waitForTimeout(2500);
+console.log('after play', JSON.stringify(await st()));
+await page.click('.chapter >> nth=4'); await page.waitForTimeout(1500);
+console.log('chapter 5', JSON.stringify(await st()));
+await page.hover('.stage-screen'); await page.click('.sb-toggle'); await page.waitForTimeout(300);
+console.log('paused', JSON.stringify(await st()));
+await page.click('.sb-toggle'); await page.waitForTimeout(500);
+// scroll to the bass clip and request sound: the film must stop
+await page.locator('#bass .clip').scrollIntoViewIfNeeded(); await page.waitForTimeout(2000);
+await page.click('#bass .clip-sound'); await page.waitForTimeout(1500);
+console.log('bass clip', JSON.stringify(await page.evaluate(() => { const v = document.querySelector('#bass .clip video'); const b = document.querySelector('#bass .clip-sound'); return { t: +v.currentTime.toFixed(2), paused: v.paused, muted: v.muted, pressed: b.getAttribute('aria-pressed'), label: b.textContent.trim() }; })), 'film', JSON.stringify(await st()));
+await page.locator('#drum .clip').scrollIntoViewIfNeeded(); await page.waitForTimeout(1500);
+await page.click('#drum .clip-sound'); await page.waitForTimeout(800);
+console.log('drum claims sound; bass now', JSON.stringify(await page.evaluate(() => ({ bassMuted: document.querySelector('#bass .clip video').muted, bassPressed: document.querySelector('#bass .clip-sound').getAttribute('aria-pressed'), drumMuted: document.querySelector('#drum .clip video').muted, drumT: document.querySelector('#drum .clip video').currentTime.toFixed(2) }))));
+// end card
+await page.evaluate(() => { const f = document.querySelector('.stage-film'); f.currentTime = 58.5; });
+await page.locator('.stage').scrollIntoViewIfNeeded();
+await page.evaluate(() => document.querySelector('.stage-film').play()); await page.waitForTimeout(1500);
+console.log('end', JSON.stringify(await st()));
+await page.screenshot({ path: process.argv[2] });
+console.log('errors', errs);
+await browser.close();

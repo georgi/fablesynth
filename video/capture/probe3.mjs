@@ -1,0 +1,18 @@
+import { launch, boot } from './rec.mjs';
+const S = '/private/tmp/claude-501/-Users-mg-dev-fablesynth/fa60d6d2-e623-4a7c-8473-ddc564ff37cf/scratchpad';
+const { browser, page } = await launch();
+await boot(page, 'seq');
+await page.evaluate(() => document.querySelector('button[aria-label="Close tour"]')?.click());
+const opts = await page.evaluate(() => [...document.querySelectorAll('header select option, .sq-header select option')].map((o) => `${o.value}:${o.textContent}`).join(' | '));
+console.log(opts);
+await page.evaluate(() => { const sel = document.querySelector('header select, .sq-header select'); const o = [...sel.options].find((x) => /PHASE RUNNER/.test(x.textContent)); sel.value = o.value; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+await page.waitForTimeout(1500);
+console.log(await page.evaluate(() => { const s = window.__fableSq.store.getState(); return JSON.stringify({ name: s.session.name, bpm: s.session.bpm ?? s.session.tempo, scenes: s.session.scenes.map((x) => x.name), tracks: s.session.tracks.map((t) => t.name) }); }));
+await page.screenshot({ path: `${S}/sq-phase.png`, scale: 'css' });
+await page.evaluate(() => document.querySelector('button[aria-label="Start sequencer"]')?.click());
+await page.waitForTimeout(2500);
+await page.evaluate(() => window.__fableSq.store.getState().enterFocus(1));
+await page.waitForTimeout(1200);
+console.log(await page.evaluate(() => [...document.querySelectorAll('.sq-auto, .sq-auto button, .sq-auto svg')].slice(0, 12).map((e) => { const b = e.getBoundingClientRect(); return `${e.tagName}.${e.className?.baseVal ?? e.className} "${(e.textContent || '').slice(0, 30)}" ${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}`; }).join('\n')));
+await page.screenshot({ path: `${S}/sq-focus-bl.png`, scale: 'css' });
+await browser.close();
