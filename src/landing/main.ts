@@ -154,3 +154,172 @@ if (canvas && ctx) {
     window.addEventListener('pagehide', () => cancelAnimationFrame(raf));
   }
 }
+
+/* ---------- demo film + chapter clips ----------
+   One 59 s film, recorded from the real instruments. The hero shows a silent
+   highlight loop until the visitor asks for sound; the sections replay their
+   own chapter of the same file. Only one source is audible at a time. */
+
+type Voice = { silence: () => void };
+let audible: Voice | null = null;
+const claimSound = (v: Voice) => {
+  if (audible && audible !== v) audible.silence();
+  audible = v;
+};
+const releaseSound = (v: Voice) => {
+  if (audible === v) audible = null;
+};
+const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+const screen = document.querySelector<HTMLElement>('.stage-screen');
+const film = screen?.querySelector<HTMLVideoElement>('.stage-film') ?? null;
+const loopVid = screen?.querySelector<HTMLVideoElement>('.stage-loop') ?? null;
+
+if (screen && film && loopVid) {
+  const chapters = [...document.querySelectorAll<HTMLButtonElement>('.chapter')];
+  const now = screen.querySelector<HTMLElement>('.sb-now');
+  const muteBtn = screen.querySelector<HTMLButtonElement>('.sb-mute');
+  const toggleBtn = screen.querySelector<HTMLButtonElement>('.sb-toggle');
+  const setState = (s: 'loop' | 'film' | 'paused' | 'ended') => {
+    screen.dataset.state = s;
+    toggleBtn?.setAttribute('aria-label', s === 'paused' ? 'Play' : 'Pause');
+  };
+  const voice: Voice = {
+    silence: () => {
+      if (!film.paused) film.pause();
+    },
+  };
+
+  if (reduceMotion) {
+    loopVid.removeAttribute('autoplay');
+    loopVid.pause();
+  } else {
+    // Hold the silent loop while the stage is off screen.
+    new IntersectionObserver(([e]) => {
+      if (screen.dataset.state !== 'loop') return;
+      if (e.isIntersecting) loopVid.play().catch(() => {});
+      else loopVid.pause();
+    }, { threshold: 0.15 }).observe(screen);
+  }
+
+  const playFrom = (t: number) => {
+    claimSound(voice);
+    loopVid.pause();
+    film.muted = muteBtn?.getAttribute('aria-pressed') === 'true';
+    const go = () => {
+      film.currentTime = t;
+      film.play().catch(() => setState('paused'));
+    };
+    if (film.readyState >= 1) go();
+    else film.addEventListener('loadedmetadata', go, { once: true });
+    if (film.preload === 'none') {
+      film.preload = 'auto';
+      film.load();
+    }
+    setState('film');
+  };
+
+  screen.querySelector('.stage-play')?.addEventListener('click', () => playFrom(0));
+  screen.querySelector('.stage-replay')?.addEventListener('click', () => playFrom(0));
+  chapters.forEach((c) => c.addEventListener('click', () => playFrom(Number(c.dataset.start))));
+
+  toggleBtn?.addEventListener('click', () => {
+    if (film.paused) {
+      claimSound(voice);
+      film.play().catch(() => {});
+    } else film.pause();
+  });
+  film.addEventListener('play', () => setState('film'));
+  film.addEventListener('pause', () => {
+    if (screen.dataset.state === 'film' && !film.ended) setState('paused');
+  });
+  film.addEventListener('ended', () => {
+    setState('ended');
+    releaseSound(voice);
+  });
+  muteBtn?.addEventListener('click', () => {
+    const on = muteBtn.getAttribute('aria-pressed') !== 'true';
+    muteBtn.setAttribute('aria-pressed', String(on));
+    muteBtn.setAttribute('aria-label', on ? 'Unmute' : 'Mute');
+    film.muted = on;
+  });
+  screen.querySelector('.sb-full')?.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else (film.requestFullscreen?.() ?? Promise.resolve()).catch(() => {});
+  });
+  screen.addEventListener('keydown', (e) => {
+    if (screen.dataset.state === 'loop' || (e.target as HTMLElement).closest('button, a')) return;
+    if (e.key === ' ' || e.key === 'k') {
+      e.preventDefault();
+      toggleBtn?.click();
+    }
+  });
+
+  // Chapter rail doubles as the scrubber: each segment fills as it plays.
+  film.addEventListener('timeupdate', () => {
+    const t = film.currentTime;
+    if (now) now.textContent = fmt(t);
+    for (const c of chapters) {
+      const a = Number(c.dataset.start);
+      const b = Number(c.dataset.end);
+      const p = Math.min(1, Math.max(0, (t - a) / (b - a)));
+      c.style.setProperty('--p', p.toFixed(3));
+      c.setAttribute('aria-current', String(t >= a && t < b));
+    }
+  });
+}
+
+// Section clips: lazy-load the 720p film, loop one chapter, sound on request.
+const clips = [...document.querySelectorAll<HTMLElement>('.clip')];
+clips.forEach((fig) => {
+  const v = fig.querySelector('video');
+  const btn = fig.querySelector<HTMLButtonElement>('.clip-sound');
+  if (!v || !btn) return;
+  const start = Number(fig.dataset.start);
+  const end = Number(fig.dataset.end);
+  const label = btn.querySelector('span');
+  const setSound = (on: boolean) => {
+    v.muted = !on;
+    btn.setAttribute('aria-pressed', String(on));
+    if (label) label.textContent = on ? 'Sound on' : 'Hear it';
+    if (!on) releaseSound(voice);
+  };
+  const voice: Voice = {
+    silence: () => {
+      setSound(false);
+      if (reduceMotion) v.pause();
+    },
+  };
+  const ensureSrc = () => {
+    if (v.getAttribute('src')) return;
+    v.src = v.dataset.src ?? '';
+    v.addEventListener('loadedmetadata', () => { v.currentTime = start; }, { once: true });
+  };
+  const play = () => {
+    ensureSrc();
+    v.play().catch(() => {});
+  };
+  v.addEventListener('timeupdate', () => {
+    if (v.currentTime >= end || v.currentTime < start - 0.5) v.currentTime = start;
+  });
+  btn.addEventListener('click', () => {
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    if (on) {
+      claimSound(voice);
+      ensureSrc();
+      if (v.readyState >= 1) v.currentTime = start;
+      setSound(true);
+      play();
+    } else {
+      setSound(false);
+      if (reduceMotion) v.pause();
+    }
+  });
+  new IntersectionObserver(([e]) => {
+    if (e.isIntersecting && !reduceMotion) play();
+    if (!e.isIntersecting) {
+      v.pause();
+      if (btn.getAttribute('aria-pressed') === 'true') setSound(false);
+    }
+  }, { threshold: 0.35 }).observe(fig);
+});

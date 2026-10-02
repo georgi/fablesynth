@@ -23,6 +23,7 @@
     <span>FABLESYNTH</span>
   </a>
   <nav class="nav-links" aria-label="Primary">
+    <a href="#film">Film</a>
     <a href="#session">Session</a>
     <a href="#family">Instruments</a>
     <a href="#engine">Engine</a>
@@ -34,19 +35,20 @@
 
 <main id="top">
 
-  <!-- ============ HERO ============ -->
-  <section class="hero">
+  <!-- ============ HERO + FILM ============ -->
+  <section class="hero" id="film">
     <canvas class="hero-canvas" id="wt-canvas" aria-hidden="true"></canvas>
     <div class="hero-veil" aria-hidden="true"></div>
     <div class="hero-inner">
-      <div class="hero-copy">
+      <div class="hero-head">
         <p class="kicker">PURE WAVETABLE SYNTHESIS · IN THE BROWSER · IN YOUR DAW</p>
-        <h1 class="hero-title">FABLE<span class="title-break">SYNTH</span></h1>
+        <h1 class="hero-title">FABLE<span class="title-syn">SYNTH</span></h1>
+      </div>
+      <div class="hero-sub">
         <p class="hero-lede">
-          Four devices, one wavetable engine: WT-1 synth, DR-1 drums, BL-1
-          acid bass and SQ-4, the session that plays them all. Everything is
-          wavetable synthesis, and every device runs both ways — web UI in
-          your browser, VST instrument in your DAW.
+          Four instruments on one wavetable engine: WT-1 synth, DR-1 drums,
+          BL-1 acid bass and SQ-4, the session that plays them all. In your
+          browser and in your DAW.
         </p>
         <div class="cta-row">
           <a class="btn-start" href="./seq/">
@@ -55,32 +57,100 @@
             </span>
             <span class="start-label">
               <b>START SQ-4</b>
-              <small>play the session in your browser</small>
+              <small>free in your browser, no install</small>
             </span>
           </a>
-          <a class="btn btn-ghost" href="#family">Meet the instruments <span aria-hidden="true">→</span></a>
         </div>
-        <p class="hero-foot">Free on the web, no install, no account. <span class="dot" aria-hidden="true"></span> VST3, AU and Standalone builds of all four in the releases.</p>
       </div>
-      <div class="hero-gallery reveal" aria-label="The instruments">
-        <a class="hg-card" href="./app/" data-accent="a">
-          <img src="./media/wt1-rack.webp" width="1400" height="875" fetchpriority="high"
-               alt="The WT-1 synthesizer web rack: two wavetable oscillator panels, dual filter, envelopes, LFOs, mod matrix, FX and a note sequencer.">
-          <span class="hg-tag">WT-1 · SYNTH</span>
-        </a>
-        <a class="hg-card" href="./drum/" data-accent="b">
-          <img src="./media/dr1-rack.webp" width="1400" height="768" fetchpriority="high"
-               alt="The DR-1 drum machine web rack: a 4×4 pad grid, wavetable and sample editors, per-pad envelopes and FX, and a 16-step sequencer.">
-          <span class="hg-tag">DR-1 · DRUMS</span>
-        </a>
-        <a class="hg-card" href="./bass/" data-accent="f">
-          <img src="./media/bl1-rack.webp" width="1400" height="805" fetchpriority="high"
-               alt="The BL-1 acid bassline web rack: wavetable oscillator, resonant filter, accent and slide controls, keys and a 16-step pitch sequencer.">
-          <span class="hg-tag">BL-1 · ACID BASS</span>
-        </a>
-      </div>
+
+      <figure class="stage" aria-label="FableSynth demo film">
+        <div class="stage-screen" data-state="loop">
+          <video class="stage-loop" autoplay muted loop playsinline preload="auto"
+                 poster="./media/demo-loop-poster.webp" src="./media/demo-loop.mp4" aria-hidden="true"></video>
+          <video class="stage-film" playsinline preload="none" poster="./media/demo-poster.webp"
+                 aria-label="FableSynth demo film, 59 seconds, with sound">
+            <source src="./media/demo-720.mp4" type="video/mp4" media="(max-width: 900px)">
+            <source src="./media/demo-1080.mp4" type="video/mp4">
+          </video>
+
+          <button class="stage-play" type="button">
+            <span class="play-pill">
+              <span class="play-disc" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg></span>
+              <span class="play-label"><b>Play with sound</b><small>0:59 · seven live takes</small></span>
+            </span>
+          </button>
+
+          <div class="stage-end" aria-live="polite">
+            <p>That was all real. Now play it yourself.</p>
+            <div class="stage-end-row">
+              <a class="btn-start compact" href="./seq/">
+                <span class="start-ring" aria-hidden="true">
+                  <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="99 27" stroke-dashoffset="-13.5" stroke-linecap="round"/><line x1="24" y1="6" x2="24" y2="21" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+                </span>
+                <span class="start-label"><b>START SQ-4</b></span>
+              </a>
+              <button class="btn btn-ghost stage-replay" type="button">Watch again</button>
+            </div>
+          </div>
+
+          <div class="stage-bar">
+            <button class="sb-btn sb-toggle" type="button" aria-label="Pause">
+              <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+              <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>
+            </button>
+            <button class="sb-btn sb-mute" type="button" aria-label="Mute" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="i-x" d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <span class="sb-time"><span class="sb-now">0:00</span> / 0:59</span>
+            <button class="sb-btn sb-full" type="button" aria-label="Full screen">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <ol class="chapters" aria-label="Film chapters, each one a live take">
+          <li><button type="button" class="chapter" data-accent="a" data-start="0" data-end="5.71" style="--span:5.71">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">01 · WT-1</span>
+            <span class="ch-title">Morph</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="g" data-start="5.71" data-end="13.33" style="--span:7.62">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">02 · BL-1</span>
+            <span class="ch-title">Sweep</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="f" data-start="13.33" data-end="20.95" style="--span:7.62">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">03 · WT-1</span>
+            <span class="ch-title">Modulate</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="a" data-start="20.95" data-end="28.57" style="--span:7.62">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">04 · WT-1</span>
+            <span class="ch-title">Space</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="b" data-start="28.57" data-end="38.1" style="--span:9.53">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">05 · DR-1</span>
+            <span class="ch-title">Beat</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="g" data-start="38.1" data-end="47.62" style="--span:9.52">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">06 · SQ-4</span>
+            <span class="ch-title">Automate</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="o" data-start="47.62" data-end="59.05" style="--span:11.43">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">07 · SQ-4</span>
+            <span class="ch-title">Launch</span>
+          </button></li>
+        </ol>
+        <figcaption class="stage-note">
+          Every sound in the film is the instrument on screen, recorded in the
+          same take as the picture. Turn a knob, hear the knob.
+        </figcaption>
+      </figure>
     </div>
-    <div class="scroll-hint" aria-hidden="true"><span></span></div>
   </section>
 
   <!-- ============ SQ-4 SESSION ============ -->
@@ -90,10 +160,13 @@
       <h2>The whole track.<br>One page.</h2>
     </div>
 
-    <figure class="drum-shot reveal">
-      <img src="./media/sq4-session.webp" width="1200" loading="lazy"
-           alt="The SQ-4 session launcher: four track columns for DR-1 drums, BL-1 bass and two WT-1 synths, crossed with six scene rows of clip cells. Scene DROP A is live, its four clips glowing teal, green, amber and violet, with a scene rail, transport and SUM scope.">
-      <figcaption>SQ-4 running the NEON TALE factory session — scene DROP A live on all four tracks.</figcaption>
+    <figure class="clip reveal wide" data-accent="o" data-start="48.4" data-end="54.2">
+      <div class="clip-screen">
+        <video muted playsinline loop preload="none" poster="./media/ch-launch.webp" data-src="./media/demo-720.mp4"
+               aria-label="SQ-4 session: a scene launch queues, counts down and lands on the next bar."></video>
+        <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+      </div>
+      <figcaption>PHASE RUNNER, live: queue SECOND WIND from the breakdown and it lands on the downbeat.</figcaption>
     </figure>
 
     <div class="drum-grid">
@@ -130,6 +203,24 @@
         <li><span>FOCUS MODE</span><em>open any device live, the session keeps running</em></li>
       </ul>
     </div>
+
+    <article class="feature feature-auto reveal" data-accent="g">
+      <figure class="clip feature-media" data-accent="g" data-start="38.4" data-end="47.5">
+        <div class="clip-screen">
+          <video muted playsinline loop preload="none" poster="./media/ch-auto.webp" data-src="./media/demo-720.mp4"
+                 aria-label="Painting a filter cutoff curve into an SQ-4 clip; the acid bass follows it."></video>
+          <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+        </div>
+      </figure>
+      <div class="feature-text">
+        <h3>Paint the move</h3>
+        <p class="prose">
+          Every SQ-4 clip carries its own automation lanes. Draw a curve over
+          the clip and the knob follows it on every loop. Pick any parameter of
+          the track's instrument, or hit LEARN and touch the knob you want.
+        </p>
+      </div>
+    </article>
   </section>
 
   <!-- ============ THE INSTRUMENTS ============ -->
@@ -148,6 +239,7 @@
 
     <div class="family-grid">
       <a class="family-card reveal" href="./app/" data-accent="a">
+        <img class="family-shot" src="./media/wt1-rack.webp" width="1400" height="875" loading="lazy" alt="The WT-1 web rack: two wavetable oscillators, dual filter, envelopes, LFOs, mod matrix, FX and a note sequencer.">
         <p class="format-tag">WT-1 · SYNTHESIZER</p>
         <h3>The flagship</h3>
         <p class="prose">
@@ -164,6 +256,7 @@
       </a>
 
       <a class="family-card reveal" href="./drum/" data-accent="b">
+        <img class="family-shot" src="./media/dr1-rack.webp" width="1400" height="768" loading="lazy" alt="The DR-1 web rack: a 4×4 pad grid, wavetable and sample editors, per-pad envelopes and a 16-step sequencer.">
         <p class="format-tag">DR-1 · DRUM MACHINE</p>
         <h3>The rhythm section</h3>
         <p class="prose">
@@ -179,7 +272,8 @@
         <span class="format-go">Launch DR-1 <span aria-hidden="true">→</span></span>
       </a>
 
-      <a class="family-card reveal" href="./bass/" data-accent="f">
+      <a class="family-card reveal" href="./bass/" data-accent="g">
+        <img class="family-shot" src="./media/bl1-rack.webp" width="1400" height="805" loading="lazy" alt="The BL-1 web rack: wavetable oscillator, resonant filter, accent and slide, and a 16-step pitch sequencer.">
         <p class="format-tag">BL-1 · ACID BASSLINE</p>
         <h3>The low end</h3>
         <p class="prose">
@@ -220,9 +314,12 @@
 
     <div class="feature-rows">
       <article class="feature reveal" data-accent="a">
-        <figure class="feature-media">
-          <img src="./media/wavetable-view.png" width="900" loading="lazy"
-               alt="Two 3D wavetable terrains, cyan and amber, each waveform frame drawn in perspective with the playing frame highlighted.">
+        <figure class="clip feature-media" data-accent="a" data-start="0.9" data-end="5.6">
+          <div class="clip-screen">
+            <video muted playsinline loop preload="none" poster="./media/ch-morph.webp" data-src="./media/demo-720.mp4"
+                   aria-label="WT-1: dragging the wavetable position morphs a held chord from sine to supersaw."></video>
+            <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+          </div>
         </figure>
         <div class="feature-text">
           <h3>Wavetables you can watch move</h3>
@@ -272,6 +369,13 @@
       <article class="feature reveal" data-accent="b">
         <div class="feature-pair">
           <div>
+            <figure class="clip pair-media" data-accent="f" data-start="13.6" data-end="20.9">
+              <div class="clip-screen">
+                <video muted playsinline loop preload="none" poster="./media/ch-mod.webp" data-src="./media/demo-720.mp4"
+                       aria-label="WT-1: LFO 1 dragged onto the filter cutoff; the riff starts to wobble."></video>
+                <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+              </div>
+            </figure>
             <h3>Modulate anything</h3>
             <p class="prose">
               Drag an envelope or LFO straight onto a knob and a colored ring
@@ -281,6 +385,13 @@
             </p>
           </div>
           <div>
+            <figure class="clip pair-media" data-accent="a" data-start="21.0" data-end="28.5">
+              <div class="clip-screen">
+                <video muted playsinline loop preload="none" poster="./media/ch-fx.webp" data-src="./media/demo-720.mp4"
+                       aria-label="WT-1: dry plucks, then tape echo and reverb switched on."></video>
+                <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+              </div>
+            </figure>
             <h3>Then finish it</h3>
             <p class="prose">
               A built-in FX rack finishes the patch: drive for warmth, lush
@@ -343,10 +454,13 @@
       <h2>Same engine.<br>Now it hits.</h2>
     </div>
 
-    <figure class="drum-shot reveal">
-      <img src="./media/dr1-editor.png" width="1200" loading="lazy"
-           alt="The DR-1 drum machine: a 4×4 pad grid on the left, dual wavetable oscillator and noise editors with glowing terrain views, pitch and amp envelopes, filter and mod matrix, a 16-step sequencer and a master FX rack.">
-      <figcaption>DR-1: sixteen pads with wavetable synthesis and true 808 one-shots.</figcaption>
+    <figure class="clip reveal wide" data-accent="b" data-start="28.9" data-end="38.0">
+      <div class="clip-screen">
+        <video muted playsinline loop preload="none" poster="./media/ch-beat.webp" data-src="./media/demo-720.mp4"
+               aria-label="DR-1: a beat built step by step, kick, hats, clap, open hat and rim."></video>
+        <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+      </div>
+      <figcaption>Click a step and it plays from the next loop. Kick, hats, clap, done.</figcaption>
     </figure>
 
     <div class="drum-grid">
@@ -379,11 +493,20 @@
   </section>
 
   <!-- ============ BL-1 BASSLINE ============ -->
-  <section class="band bass" id="bass" data-accent="f">
+  <section class="band bass" id="bass" data-accent="g">
     <div class="section-head reveal">
       <p class="kicker">BL-1 · ACID BASSLINE</p>
       <h2>Same engine.<br>Now it squelches.</h2>
     </div>
+
+    <figure class="clip reveal wide" data-accent="g" data-start="6.0" data-end="13.3">
+      <div class="clip-screen">
+        <video muted playsinline loop preload="none" poster="./media/ch-sweep.webp" data-src="./media/demo-720.mp4"
+               aria-label="BL-1: the cutoff knob swept from 70 Hz to 12 kHz while the acid line plays, then resonance up."></video>
+        <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+      </div>
+      <figcaption>Cutoff from 70 Hz to 12 kHz, then resonance. One knob, the whole squelch.</figcaption>
+    </figure>
 
     <div class="drum-grid">
       <div class="drum-copy reveal">
