@@ -264,6 +264,9 @@ public:
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
     void setArp(const ArpPattern&);
     void seqStop();                                 // worklet 'stop'
+    // SEQUENCER tab LED: off keeps the clock (step display, synced LFOs) but
+    // fires no pattern notes. The arp path ignores it.
+    void setSeqEnabled(bool on) { if (!on && seqEnabled_ && !arp_.enabled) seqGateOff(); seqEnabled_ = on; }
     bool seqIsPlaying() const { return seqPlaying_ || seqHostPlaying_; }
     void setSeqPatterns(const uint8_t* data, int n); // n must be SEQ_PATTERN_BYTES; copies
     void setSeqChain(const int* list, int n);        // ignores empty; clamps entries + chainPos
@@ -459,6 +462,7 @@ private:
     // ---- note sequencer state (worklet fields) ----
     std::vector<uint8_t> seqPats_ = makeEmptySeqPatterns();
     ArpPattern arp_;
+    bool seqEnabled_ = true;
     std::vector<int> seqChain_ { 0 };
     int    seqChainPos_ = 0;
     bool   seqPlaying_ = false;       // internal clock running

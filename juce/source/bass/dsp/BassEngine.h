@@ -175,6 +175,8 @@ public:
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
     void setArp(const ArpPattern&);
+    // SEQUENCER tab LED: off keeps the clock but fires no pattern notes.
+    void setSeqEnabled(bool on) { if (!on && seqEnabled_ && !arp_.enabled) { release(); samplesToGateOff_ = -1; } seqEnabled_ = on; }
     void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
         autoPlayer_.schedule(automation);
         clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
@@ -223,6 +225,7 @@ private:
     void noteOn(int semi, bool acc, float vel);
     void arpFire(const ArpPattern&, int step, double interval);
     ArpPattern arp_;
+    bool seqEnabled_ = true;
     void glideTo(int semi, bool acc);
     void release();
     void kill();

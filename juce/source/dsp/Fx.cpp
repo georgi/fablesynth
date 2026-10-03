@@ -393,6 +393,7 @@ void Fx::prepare(double sampleRate) {
     ott_.prepare(sr_); comp_.prepare(sr_);
     headroomInput_.prepare(sr_); headroomEq_.prepare(sr_); headroomOtt_.prepare(sr_);
     headroomComp_.prepare(sr_); headroomDrive_.prepare(sr_); headroomChorus_.prepare(sr_);
+    lab_.prepare(sr_); headroomLab_.prepare(sr_);
     headroomDelay_.prepare(sr_); headroomReverb_.prepare(sr_); delayFeedbackGuard_.prepare(sr_);
 
     // WebAudio's DynamicsCompressor applies spec-defined makeup gain
@@ -421,6 +422,7 @@ void Fx::reset() {
     ott_.reset(); driveColorL_.reset(); driveColorR_.reset(); comp_.reset();
     headroomInput_.reset(); headroomEq_.reset(); headroomOtt_.reset(); headroomComp_.reset();
     headroomDrive_.reset(); headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset();
+    lab_.reset(); headroomLab_.reset();
     delayFeedbackGuard_.reset();
     lim_.reset();
     chPhase_ = 0;
@@ -456,6 +458,19 @@ void Fx::setParams(const ParamArray& p, double tempoBpm) {
 
     // Four-band tone EQ. The original gain ids remain the ramped controls;
     // appended controls add the web band's frequency, Q, type and bypass.
+    LabSettings lab;
+    lab.crushOn = p[FXCRUSH_ON] > 0.5f; lab.crushBits = p[FXCRUSH_BITS]; lab.crushRate = p[FXCRUSH_RATE];
+    lab.crushChaos = p[FXCRUSH_CHAOS]; lab.crushMix = p[FXCRUSH_MIX];
+    lab.resoOn = p[FXRESO_ON] > 0.5f; lab.resoNote = p[FXRESO_NOTE]; lab.resoChord = (int)std::lround(p[FXRESO_CHORD]);
+    lab.resoDecay = p[FXRESO_DECAY]; lab.resoMix = p[FXRESO_MIX];
+    lab.shiftOn = p[FXSHIFT_ON] > 0.5f; lab.shiftHz = p[FXSHIFT_HZ]; lab.shiftFb = p[FXSHIFT_FB];
+    lab.shiftSpread = p[FXSHIFT_SPREAD]; lab.shiftMix = p[FXSHIFT_MIX];
+    lab.sprayOn = p[FXSPRAY_ON] > 0.5f; lab.sprayPitch = p[FXSPRAY_PITCH]; lab.sprayDensity = p[FXSPRAY_DENSITY];
+    lab.sprayScatter = p[FXSPRAY_SCATTER]; lab.sprayMix = p[FXSPRAY_MIX];
+    lab.glitchOn = p[FXGLITCH_ON] > 0.5f; lab.glitchDiv = (int)std::lround(p[FXGLITCH_DIV]);
+    lab.glitchChance = p[FXGLITCH_CHANCE]; lab.glitchDrift = p[FXGLITCH_DRIFT]; lab.glitchMix = p[FXGLITCH_MIX];
+    lab_.setParams(lab, std::isfinite(tempoBpm) && tempoBpm > 0.0 ? tempoBpm : std::max(1.0, (double)p[SEQ_BPM]));
+
     bool eqOn = p[FXEQ_ON] > 0.5f;
     eqLoDb_.setTarget(eqOn && p[FXEQLON] > 0.5f ? p[FXEQ_LOW] : 0.0f);
     eqMidDb_.setTarget(eqOn && p[FXEQMON] > 0.5f ? p[FXEQ_MID] : 0.0f);
@@ -669,6 +684,7 @@ void Fx::process(float* L, float* R, int n) {
     // Shared web headroom stage at the graph input. It also sanitizes a bad
     // host sample before recursive DSP sees it.
     headroomInput_.process(L, R, n);
+    const bool labActive = lab_.active();
 
     // The sample loop runs in kCoefChunk-sample chunks; the ramped EQ / drive /
     // reverb coefficients are rebuilt once per chunk, so automation of those
@@ -723,6 +739,12 @@ void Fx::process(float* L, float* R, int n) {
                 l = dlyL; r = dlyR;
             }
             double gDrive = headroomDrive_.gainFor(l, r); l *= (float)gDrive; r *= (float)gDrive;
+
+            // ---- LAB: crush -> reso -> shift -> spray -> glitch ----
+            if (labActive) {
+                lab_.processSample(l, r);
+                double gLab = headroomLab_.gainFor(l, r); l *= (float)gLab; r *= (float)gLab;
+            }
 
             // ---- chorus (two modulated taps, stereo) ----
             if (!chorusGated_) {

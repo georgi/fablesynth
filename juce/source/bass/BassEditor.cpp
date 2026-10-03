@@ -11,6 +11,8 @@ public:
     fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
     void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
     fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
+    bool seqEnabled() const override { return proc.isSeqEnabled(); }
+    void setSeqEnabled(bool on) override { proc.setSeqEnabled(on); }
     void clearArpKeys() override { proc.clearArpKeys(); }
     void arpKeyInput(int n, bool on) override { if (on) proc.noteOn(n - fable::BL_ROOT_MIDI, .8f); else proc.noteOff(n - fable::BL_ROOT_MIDI); }
     bool programDirty() const override { return proc.isProgramDirty(); }

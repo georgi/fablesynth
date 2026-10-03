@@ -262,12 +262,14 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     engine.setBpm(bpm);
     engine.setTransport(ppq, playing);
     engine.setBpmOverride(synced ? bpm : 0.0);
+    engine.setSeqEnabled(seqEnabled_.load(std::memory_order_relaxed));
     engine.setSeqHostTransport(ppq, synced ? bpm : 120.0,
                                playing && hasPpq && synced);
     // WT-1's synced tape echo follows the same effective tempo as the web
     // worklet: host tempo when available, otherwise seq.bpm.
     const double fxBpm = synced ? bpm : std::max(1.0, (double)p[SEQ_BPM]);
     fx.setParams(p, fxBpm);
+    fx.setTransport(ppq, playing && hasPpq); // LAB GLITCH grid follows the host beat
     hostBpm.store((float)bpm, std::memory_order_relaxed);
     hostPpq.store(ppq, std::memory_order_relaxed);
     hostPlaying.store(playing, std::memory_order_relaxed);
@@ -480,6 +482,7 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     // layout (base64) + the chain + the edit pattern (BL-1 BASS-child scheme).
     juce::ValueTree seq("NOTESEQ");
     seq.setProperty("arp", juce::JSON::toString(arpToVar(arpSettings_), false, 17), nullptr);
+    seq.setProperty("seqOn", isSeqEnabled(), nullptr);
     seq.setProperty("patterns",
         juce::Base64::toBase64(patterns_.data(), patterns_.size()), nullptr);
     juce::StringArray chainStr;
@@ -510,6 +513,7 @@ void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
     ArpSettings restoredArp;
     arpFromVar(juce::JSON::parse(seq.getProperty("arp").toString()), restoredArp);
     setArpSettings(restoredArp);
+    setSeqEnabled((bool)seq.getProperty("seqOn", true));
     // Restore the sequencer session (legacy states without NOTESEQ keep the
     // empty-pattern defaults).
     if (seq.isValid()) {

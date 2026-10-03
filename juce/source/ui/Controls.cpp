@@ -422,10 +422,16 @@ PowerButton::PowerButton(ParameterSource source, const juce::String& paramId, Ac
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
     startTimerHz(20);
 }
-bool PowerButton::isOn() const { return param && param->getValue() > 0.5f; }
+PowerButton::PowerButton(std::function<bool()> get, std::function<void(bool)> set, Accent ac)
+    : get_(std::move(get)), set_(std::move(set)), accent(accentColour(ac)) {
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    startTimerHz(20);
+}
+bool PowerButton::isOn() const { return get_ ? get_() : param && param->getValue() > 0.5f; }
 void PowerButton::timerCallback() { if (isOn() != last) { last = isOn(); repaint(); } }
 void PowerButton::mouseDown(const juce::MouseEvent&) {
-    if (param) param->setValueNotifyingHost(isOn() ? 0.0f : 1.0f);
+    if (set_) set_(!isOn());
+    else if (param) param->setValueNotifyingHost(isOn() ? 0.0f : 1.0f);
     repaint();
 }
 void PowerButton::paint(juce::Graphics& g) {

@@ -34,5 +34,6 @@ private:
     juce::TextButton fxPage_ { "FX CHAIN" };
     juce::TextButton sequencerPage_ { "SEQUENCER" };
     juce::TextButton arpPage_ { "ARP" };
+    fui::PlaybackToggles playback_;
     Page page_ = Page::edit;
 };

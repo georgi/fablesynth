@@ -3,6 +3,7 @@
 // AudioWorklet contract: constructor gets a port, process(inputs, outputs).
 import WT_SRC from './worklet.js?raw';
 import OTT_SRC from './ott-worklet.js?raw';
+import LAB_SRC from './lab-worklet.js?raw';
 import { generateTables } from './wavetables';
 import { defaultParams, type ParamValues } from '../params';
 
@@ -32,6 +33,9 @@ export function makeWtProcessor(sampleRate = 48000): WtHarness {
   // The worklet is an ES module only because of Vite's loader; it has no
   // imports/exports, so Function-evaluating its text is safe and exact.
   new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', OTT_SRC)(
+    sampleRate, AWP, register,
+  );
+  new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', LAB_SRC)(
     sampleRate, AWP, register,
   );
   new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', WT_SRC)(

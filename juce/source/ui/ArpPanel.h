@@ -1,6 +1,7 @@
 #pragma once
 #include "DeviceUiModel.h"
 #include "Theme.h"
+#include "Controls.h"
 
 namespace fui {
 // Shared WT/BL surface; all writes go through the UI model, so hosted edits
@@ -177,5 +178,29 @@ private:
     void select(bool on) { auto a = model.arpSettings(); a.enabled = on; model.setArpSettings(a); timerCallback(); }
     void timerCallback() override { const bool on = model.arpSettings().enabled; sequence.setToggleState(!on, juce::dontSendNotification); arpeggiator.setToggleState(on, juce::dontSendNotification); seq_.setVisible(!on); arp_.setVisible(on); }
     DeviceUiModel& model; juce::Component& seq_; ArpPanel& arp_; juce::TextButton sequence, arpeggiator;
+};
+
+// SEQUENCER / ARP tab LEDs. The modes are exclusive: switching one on
+// switches the other off. Both may be off, so played keys sound directly.
+struct PlaybackToggles {
+    explicit PlaybackToggles(DeviceUiModel& m)
+        : sequencer([&m] { return m.seqEnabled() && !m.arpSettings().enabled; },
+                    [&m](bool on) {
+                        if (auto a = m.arpSettings(); on && a.enabled) { a.enabled = false; m.setArpSettings(a); }
+                        m.setSeqEnabled(on);
+                    }, Accent::A),
+          arpeggiator([&m] { return m.arpSettings().enabled; },
+                      [&m](bool on) {
+                          auto a = m.arpSettings(); a.enabled = on; m.setArpSettings(a);
+                          if (on) m.setSeqEnabled(false);
+                      }, Accent::A) {
+        sequencer.setName("Sequencer on/off"); arpeggiator.setName("Arpeggiator on/off");
+    }
+    // Places each LED inside the right end of its tab button.
+    void place(const juce::Component& seqTab, const juce::Component& arpTab) {
+        sequencer.setBounds(seqTab.getBounds().removeFromRight(24).withSizeKeepingCentre(22, 22));
+        arpeggiator.setBounds(arpTab.getBounds().removeFromRight(24).withSizeKeepingCentre(22, 22));
+    }
+    PowerButton sequencer, arpeggiator;
 };
 }

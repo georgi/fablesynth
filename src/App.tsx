@@ -11,6 +11,7 @@ import { EnvPanel } from './components/panels/EnvPanel';
 import { LfoPanel } from './components/panels/LfoPanel';
 import { MatrixPanel } from './components/panels/MatrixPanel';
 import { FxPanel } from './components/panels/FxPanel';
+import { LabPanel } from './components/panels/LabPanel';
 import { EqPanel } from './components/panels/EqPanel';
 import { DynamicsPanel } from './components/panels/DynamicsPanel';
 import { TapeEchoPanel } from './components/panels/TapeEchoPanel';
@@ -60,6 +61,7 @@ export function App() {
           <TapeEchoPanel />
           <ReverbPanel />
           <FxPanel />
+          <LabPanel />
           <SeqPanel />
         </div>
         <KeyboardBar />

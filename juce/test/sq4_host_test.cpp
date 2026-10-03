@@ -1005,10 +1005,17 @@ int main(int argc, char** argv) {
         auto* arp = findFxComponent<fui::ArpPanel>(*body);
         auto before = p.conductor().session().scenes[2].clips[(size_t)track];
         check(mode && arp, "SQ melodic editors expose dedicated SEQUENCER/ARP tabs", track);
-        if (mode && arp) {
+        auto* arpLed = findFxComponent<fui::PowerButton>(*body, "Arpeggiator on/off");
+        check(arpLed != nullptr, "SQ ARP tab has an on/off LED", track);
+        if (mode && arp && arpLed) {
             mode->onClick();
-            check(arp->isVisible() && p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
-                  "SQ ARP tab enables only the selected clip", track);
+            check(arp->isVisible() && !p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
+                  "SQ ARP tab shows the arp without enabling it", track);
+            const auto at = arpLed->getLocalBounds().getCentre().toFloat();
+            arpLed->mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1, 0, 0, 0, 0,
+                                               arpLed, arpLed, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false));
+            check(p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
+                  "SQ ARP LED enables only the selected clip", track);
             auto* input = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator input");
             check(input && !input->isEnabled(), "SQ arp uses portable stored notes", track);
             auto* rate = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator rate");

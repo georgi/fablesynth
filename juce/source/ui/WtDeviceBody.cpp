@@ -10,12 +10,13 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
       lfos(model.parameters(), transportProvider ? std::move(transportProvider) : [&model] {
           return HostTransport{ model.hostBpm(), 0.0, model.sequencerPlaying() };
       }),
-      matrix(model.parameters()), fx(model, true), seq(model), arp(model, false) {
+      matrix(model.parameters()), fx(model, true), seq(model), arp(model, false), lab(model.parameters()), playback_(model) {
     addAndMakeVisible(oscA); addAndMakeVisible(oscB); addAndMakeVisible(util);
     addAndMakeVisible(filter); addAndMakeVisible(env1); addAndMakeVisible(env2);
     addAndMakeVisible(lfos); addAndMakeVisible(matrix); addAndMakeVisible(fx);
     addAndMakeVisible(seq);
     addAndMakeVisible(arp);
+    addAndMakeVisible(lab);
     const auto configurePage = [this](juce::TextButton& button, Page page) {
         button.setClickingTogglesState(true);
         button.setRadioGroupId(717);
@@ -28,8 +29,11 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
     };
     configurePage(editPage_, Page::edit);
     configurePage(fxPage_, Page::fx);
+    configurePage(labPage_, Page::lab);
     configurePage(sequencerPage_, Page::sequencer);
     configurePage(arpPage_, Page::arp);
+    addAndMakeVisible(playback_.sequencer);
+    addAndMakeVisible(playback_.arpeggiator);
     selectPage(model_.arpSettings().enabled ? Page::arp : Page::edit);
     oscA.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
     oscB.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
@@ -39,14 +43,9 @@ void WtDeviceBody::selectPage(Page page) {
     page_ = page;
     editPage_.setToggleState(page == Page::edit, juce::dontSendNotification);
     fxPage_.setToggleState(page == Page::fx, juce::dontSendNotification);
+    labPage_.setToggleState(page == Page::lab, juce::dontSendNotification);
     sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
     arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
-    auto settings = model_.arpSettings();
-    const bool arpEnabled = page == Page::arp;
-    if (settings.enabled != arpEnabled) {
-        settings.enabled = arpEnabled;
-        model_.setArpSettings(settings);
-    }
     resized();
 }
 
@@ -74,19 +73,23 @@ void WtDeviceBody::resized() {
     auto tabs = juce::Rectangle<int>(14, 2, LW - 28, 26);
     editPage_.setBounds(tabs.removeFromLeft(76)); tabs.removeFromLeft(5);
     fxPage_.setBounds(tabs.removeFromLeft(106)); tabs.removeFromLeft(5);
-    sequencerPage_.setBounds(tabs.removeFromLeft(126)); tabs.removeFromLeft(5);
-    arpPage_.setBounds(tabs.removeFromLeft(70));
+    labPage_.setBounds(tabs.removeFromLeft(70)); tabs.removeFromLeft(5);
+    sequencerPage_.setBounds(tabs.removeFromLeft(146)); tabs.removeFromLeft(5);
+    arpPage_.setBounds(tabs.removeFromLeft(92));
+    playback_.place(sequencerPage_, arpPage_);
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::fx;
     const bool showSequencer = page_ == Page::sequencer;
     const bool showArp = page_ == Page::arp;
     for (auto* c : std::initializer_list<juce::Component*>{&oscA,&oscB,&util,&filter,&env1,&env2,&lfos,&matrix}) c->setVisible(showEdit);
     fx.setVisible(showFx);
+    lab.setVisible(page_ == Page::lab);
     seq.setVisible(showSequencer);
     arp.setVisible(showArp);
     matrix.setBounds(colArea(0, 12, y3, row3));
     const auto pageBounds = colArea(0, 12, y1, matrix.getBottom() - y1);
     fx.setBounds(pageBounds);
+    lab.setBounds(pageBounds);
     seq.setBounds(pageBounds);
     arp.setBounds(pageBounds);
 }

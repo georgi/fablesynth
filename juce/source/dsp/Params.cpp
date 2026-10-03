@@ -159,6 +159,35 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({FXDRIVE_TONE, "fx.drive.tone", "TONE", -1, 1, 0, Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXDRIVE_TYPE, "fx.drive.type", "TYPE", 0, 2, 0, Curve::Int, Kind::Enum, &driveTypes});
 
+    // LAB page. Every stage defaults OFF, so existing patches are unchanged.
+    static const V resoChords { "OCTAVES", "FIFTHS", "MINOR 7", "MAJOR 9", "SUS 4", "TRITONE" };
+    static const V glitchDivs { "1/4", "1/8", "1/16", "1/32", "1/64" };
+    v.push_back({FXCRUSH_ON,      "fx.crush.on",      "ON",      0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXCRUSH_BITS,    "fx.crush.bits",    "BITS",    1, 16, 6, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXCRUSH_RATE,    "fx.crush.rate",    "RATE",    200, 48000, 6000, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXCRUSH_CHAOS,   "fx.crush.chaos",   "CHAOS",   0, 1, 0.2f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXCRUSH_MIX,     "fx.crush.mix",     "MIX",     0, 1, 1, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXRESO_ON,       "fx.reso.on",       "ON",      0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXRESO_NOTE,     "fx.reso.note",     "NOTE",    24, 84, 48, Curve::Int, Kind::Float, nullptr});
+    v.push_back({FXRESO_CHORD,    "fx.reso.chord",    "CHORD",   0, 5, 2, Curve::Int, Kind::Enum, &resoChords});
+    v.push_back({FXRESO_DECAY,    "fx.reso.decay",    "DECAY",   0, 1, 0.7f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXRESO_MIX,      "fx.reso.mix",      "MIX",     0, 1, 0.5f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXSHIFT_ON,      "fx.shift.on",      "ON",      0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXSHIFT_HZ,      "fx.shift.hz",      "SHIFT",   -1000, 1000, 60, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXSHIFT_FB,      "fx.shift.fb",      "SPIRAL",  0, 0.9f, 0.5f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXSHIFT_SPREAD,  "fx.shift.spread",  "SPREAD",  0, 1, 0.5f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXSHIFT_MIX,     "fx.shift.mix",     "MIX",     0, 1, 0.5f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXSPRAY_ON,      "fx.spray.on",      "ON",      0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXSPRAY_PITCH,   "fx.spray.pitch",   "PITCH",   -24, 24, 12, Curve::Int, Kind::Float, nullptr});
+    v.push_back({FXSPRAY_DENSITY, "fx.spray.density", "DENSITY", 1, 40, 12, Curve::Log, Kind::Float, nullptr});
+    v.push_back({FXSPRAY_SCATTER, "fx.spray.scatter", "SCATTER", 0, 1, 0.4f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXSPRAY_MIX,     "fx.spray.mix",     "MIX",     0, 1, 0.45f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXGLITCH_ON,     "fx.glitch.on",     "ON",      0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXGLITCH_DIV,    "fx.glitch.div",    "DIV",     0, 4, 2, Curve::Int, Kind::Enum, &glitchDivs});
+    v.push_back({FXGLITCH_CHANCE, "fx.glitch.chance", "CHANCE",  0, 1, 0.35f, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXGLITCH_DRIFT,  "fx.glitch.drift",  "DRIFT",   -1, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({FXGLITCH_MIX,    "fx.glitch.mix",    "MIX",     0, 1, 1, Curve::Lin, Kind::Float, nullptr});
+
     std::array<ParamInfo, NUM_PARAMS> out{};
     for (auto& info : v) out[(size_t)info.id] = info; // place by id so [Pid] indexing is exact
     return out;

@@ -303,6 +303,33 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'fx.comp.ratio', label: 'RATIO', min: 1, max: 20, def: 4, curve: 'log', fmt: v => v.toFixed(1) + ':1' },
   { id: 'fx.drive.tone', label: 'TONE', min: -1, max: 1, def: 0, curve: 'lin', fmt: v => v === 0 ? 'NEUTRAL' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'DARK' : 'BRIGHT'}` },
   { id: 'fx.drive.type', type: 'enum', options: ['SOFT', 'TAPE', 'HARD'], def: 0 },
+  // LAB page (native LabFx). Stages default off; the web engine does not
+  // render them yet but keeps the values so sessions round-trip.
+  { id: 'fx.crush.on', type: 'bool', def: 0 },
+  { id: 'fx.crush.bits', label: 'BITS', min: 1, max: 16, def: 6, curve: 'lin', fmt: v => v.toFixed(1) },
+  { id: 'fx.crush.rate', label: 'RATE', min: 200, max: 48000, def: 6000, curve: 'log', fmt: fmtHz },
+  { id: 'fx.crush.chaos', label: 'CHAOS', min: 0, max: 1, def: 0.2, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.crush.mix', label: 'MIX', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.reso.on', type: 'bool', def: 0 },
+  { id: 'fx.reso.note', label: 'NOTE', min: 24, max: 84, def: 48, curve: 'int', fmt: fmtNote },
+  { id: 'fx.reso.chord', type: 'enum', options: ['OCTAVES', 'FIFTHS', 'MINOR 7', 'MAJOR 9', 'SUS 4', 'TRITONE'], def: 2 },
+  { id: 'fx.reso.decay', label: 'DECAY', min: 0, max: 1, def: 0.7, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.reso.mix', label: 'MIX', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.shift.on', type: 'bool', def: 0 },
+  { id: 'fx.shift.hz', label: 'SHIFT', min: -1000, max: 1000, def: 60, curve: 'lin', fmt: v => fmtSigned(v) + ' Hz' },
+  { id: 'fx.shift.fb', label: 'SPIRAL', min: 0, max: 0.9, def: 0.5, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.shift.spread', label: 'SPREAD', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.shift.mix', label: 'MIX', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.spray.on', type: 'bool', def: 0 },
+  { id: 'fx.spray.pitch', label: 'PITCH', min: -24, max: 24, def: 12, curve: 'int', fmt: v => fmtSigned(v) + ' st' },
+  { id: 'fx.spray.density', label: 'DENSITY', min: 1, max: 40, def: 12, curve: 'log', fmt: v => v.toFixed(1) + '/s' },
+  { id: 'fx.spray.scatter', label: 'SCATTER', min: 0, max: 1, def: 0.4, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.spray.mix', label: 'MIX', min: 0, max: 1, def: 0.45, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.glitch.on', type: 'bool', def: 0 },
+  { id: 'fx.glitch.div', type: 'enum', options: ['1/4', '1/8', '1/16', '1/32', '1/64'], def: 2 },
+  { id: 'fx.glitch.chance', label: 'CHANCE', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
+  { id: 'fx.glitch.drift', label: 'DRIFT', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
+  { id: 'fx.glitch.mix', label: 'MIX', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
 ];
 
 export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));

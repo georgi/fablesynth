@@ -11,6 +11,7 @@
 #include "../source/dsp/Params.h"
 #include "../source/dsp/UserTables.h"
 #include "../source/dsp/FrameOps.h"
+#include "LabFxChecks.h"
 
 #include <cmath>
 #include <cstdio>
@@ -184,7 +185,10 @@ static double maxDelta(const std::vector<float>& x, int from, int to) {
     return m;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    // engine_test --write-lab-fixture <path>: regenerate the web LAB parity fixture.
+    if (argc == 3 && std::string(argv[1]) == "--write-lab-fixture") return labcheck::writeParityFixture(argv[2]) ? 0 : 1;
+
     const double sr = 48000;
     auto gen = generateTables();
 
@@ -1855,6 +1859,50 @@ int main() {
         check(e.smoothedParam(cutoff) > 1200.0f && e.smoothedParam(cutoff) < 6000.0f,
               "wavetable retarget advances from the prior value");
     }
+
+    printf("\n== 20. LAB stages: finite, bounded, audible, distinct ==\n");
+    {
+        const int len = (int)(sr * 3);
+        std::vector<float> srcL((size_t)len), srcR((size_t)len);
+        uint32_t seed = 1;
+        for (int i = 0; i < len; ++i) { // saw stabs + a little noise
+            seed = seed * 1664525u + 1013904223u;
+            const double t = i / sr, saw = 2.0 * std::fmod(t * 110.0, 1.0) - 1.0;
+            const double gate = std::fmod(t * 2.0, 1.0) < 0.5 ? 1.0 : 0.0;
+            srcL[(size_t)i] = srcR[(size_t)i] = (float)(0.3 * saw * gate + 0.02 * ((seed >> 9) / 4194304.0 - 1.0));
+        }
+        const auto render = [&](int onId, std::vector<float>& L, std::vector<float>& R) {
+            Fx fx; fx.prepare(sr);
+            ParamArray p = defaultParams();
+            if (onId >= 0) p[(size_t)onId] = 1;
+            if (onId == FXGLITCH_ON) p[FXGLITCH_CHANCE] = 1;
+            fx.setParams(p, 120.0);
+            L = srcL; R = srcR;
+            for (int o = 0; o < len; o += 512) fx.process(L.data() + o, R.data() + o, std::min(512, len - o));
+        };
+        std::vector<float> dryL, dryR;
+        render(-1, dryL, dryR);
+        const std::pair<int, const char*> stages[] = {
+            {FXCRUSH_ON, "CRUSH"}, {FXRESO_ON, "RESO"}, {FXSHIFT_ON, "SHIFT"}, {FXSPRAY_ON, "SPRAY"}, {FXGLITCH_ON, "GLITCH"}};
+        for (const auto& [id, name] : stages) {
+            std::vector<float> L, R;
+            render(id, L, R);
+            bool finite = true; double peak = 0, sum = 0, diff = 0;
+            for (int i = 0; i < len; ++i) {
+                finite &= std::isfinite(L[(size_t)i]) && std::isfinite(R[(size_t)i]);
+                peak = std::max(peak, (double)std::max(std::abs(L[(size_t)i]), std::abs(R[(size_t)i])));
+                sum += L[(size_t)i] * L[(size_t)i];
+                diff += std::pow(L[(size_t)i] - dryL[(size_t)i], 2) + std::pow(R[(size_t)i] - dryR[(size_t)i], 2);
+            }
+            const double rmsDb = 10 * std::log10(sum / len + 1e-30), diffDb = 10 * std::log10(diff / (2.0 * len) + 1e-30);
+            check(finite && peak <= 0.9, std::string(name) + " output is finite and under the limiter ceiling", std::to_string(peak));
+            check(rmsDb > -40, std::string(name) + " output is audible", std::to_string(rmsDb) + " dB");
+            check(diffDb > -40, std::string(name) + " changes the signal", std::to_string(diffDb) + " dB");
+        }
+    }
+
+    printf("\n== 21. LAB fidelity: tuning, sidebands, aliasing, splices, images ==\n");
+    labcheck::runFidelityChecks([](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
 
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
     return g_fail == 0 ? 0 : 1;

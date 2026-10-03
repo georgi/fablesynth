@@ -1028,6 +1028,11 @@ void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
         wtLiveMod_[(size_t)i][(size_t)d].store((float)wt_[i].vizMod[d], std::memory_order_relaxed);
     wtLiveModAny_[i].store(wt_[i].vizModAny, std::memory_order_relaxed);
     if (wt_[i].takeAutomationFxDirty()) wtFx_[i].setParams(wt_[i].params());
+    if (audioTempoReady_ && preparedSampleRate_ > 0) {
+        // LAB stages lock to the session clock; the echo keeps its patch tempo.
+        wtFx_[i].setLabTempo(audioBpm_);
+        wtFx_[i].setTransport((frame_ - audioTempoAnchor_) / preparedSampleRate_ * audioBpm_ / 60.0, true);
+    }
     wtFx_[i].process(L, R, n);
 }
 

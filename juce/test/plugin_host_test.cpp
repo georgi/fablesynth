@@ -694,7 +694,15 @@ int main(int argc, char** argv) {
         fable::NoteSeqStep a; a.on = true; a.note = 4;              proc.setSeqStep(0, 2, a);
         fable::NoteSeqStep b; b.on = true; b.note = 7; b.acc = true; proc.setSeqStep(0, 4, b);
         fable::NoteSeqStep c; c.on = true; c.note = 5;              proc.setSeqStep(0, 6, c);
-        if (fed) fed->getRack().noteSeq().setSelection({ 2, 6, 3, 8 });
+        if (fed) {
+            // Show the SEQUENCER page so the snapshot includes the selection.
+            std::function<void(juce::Component&)> openSequencer = [&](juce::Component& c) {
+                if (auto* b = dynamic_cast<juce::TextButton*>(&c); b && b->getButtonText() == "SEQUENCER" && b->onClick) b->onClick();
+                for (auto* child : c.getChildren()) openSequencer(*child);
+            };
+            openSequencer(fed->getRack());
+            fed->getRack().noteSeq().setSelection({ 2, 6, 3, 8 });
+        }
         writePng(ed->createComponentSnapshot(ed->getLocalBounds()),
                  dir.getChildFile("plugin_editor_seqsel.png"));
         for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
@@ -762,6 +770,29 @@ int main(int argc, char** argv) {
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<FableAudioProcessor>("wt", Rack::LW, Rack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++fail;
     if (!runArpProcessorChecks<FableAudioProcessor>("wt", false)) ++fail;
+    {
+        // LAB page: five devices fit the page and their LEDs drive fx.*.on.
+        FableAudioProcessor labProc;
+        labProc.prepareToPlay(48000, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> ed(labProc.createEditor());
+        ed->setVisible(true);
+        auto* tab = findFxComponent<juce::TextButton>(*ed, "LAB");
+        auto* panel = findFxComponent<fui::LabPanel>(*ed);
+        bool ok = tab && panel;
+        if (ok) {
+            tab->onClick();
+            ok &= panel->isVisible() && panel->getNumChildComponents() == 5;
+            for (auto* m : panel->getChildren())
+                ok &= !m->getBounds().isEmpty() && panel->getLocalBounds().contains(m->getBounds());
+            for (auto id : {"fx.crush.on", "fx.reso.on", "fx.shift.on", "fx.spray.on", "fx.glitch.on"})
+                if (auto* prm = labProc.apvts.getParameter(id)) prm->setValueNotifyingHost(1.0f); else ok = false;
+            const auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+            dir.createDirectory();
+            writePng(ed->createComponentSnapshot(ed->getLocalBounds()), dir.getChildFile("wt-lab.png"));
+        }
+        std::printf("  [%s] wt LAB page: tab, five devices, layout, snapshot\n", ok ? "PASS" : "FAIL");
+        if (!ok) ++fail;
+    }
     if (!runAgentProcessorChecks<FableAudioProcessor>("wt", fable::paramInfo().data(), fable::paramInfo().size(), "filter.cutoff", "oscA.oct")) ++fail;
     return fail == 0 ? 0 : 1;
 }

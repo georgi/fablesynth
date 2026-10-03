@@ -515,7 +515,7 @@ void Engine::arpFire(const ArpPattern& a, int s, double interval) {
 }
 void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
     const SeqReadStep st = readSeqStep(seqPats_.data(), pat, s);
-    if (st.on) {
+    if (st.on && seqEnabled_) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
         const int n = root + st.semi;

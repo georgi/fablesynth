@@ -258,6 +258,7 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             if (auto q = pos->getPpqPosition()) { ppq = *q; hasPpq = true; }
         }
     engine.setBpmOverride(synced ? bpm : 0.0);
+    engine.setSeqEnabled(seqEnabled_.load(std::memory_order_relaxed));
     engine.setHostTransport(ppq, synced ? bpm : 120.0,
                             hostRolling && hasPpq && synced);
     hostSynced_.store(synced, std::memory_order_relaxed);
@@ -401,6 +402,7 @@ void BassAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 
     juce::ValueTree bass("BASS");
     bass.setProperty("arp", juce::JSON::toString(arpToVar(arpSettings_), false, 17), nullptr);
+    bass.setProperty("seqOn", isSeqEnabled(), nullptr);
     bass.setProperty("patterns",
         juce::Base64::toBase64(patterns_.data(), patterns_.size()), nullptr);
     juce::StringArray chainStr;
@@ -430,6 +432,7 @@ void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
     auto restoredArp = bassArpDefaults();
     arpFromVar(juce::JSON::parse(bass.getProperty("arp").toString()), restoredArp);
     setArpSettings(restoredArp);
+    setSeqEnabled((bool)bass.getProperty("seqOn", true));
     if (bass.isValid()) {
         juce::MemoryOutputStream raw;
         if (juce::Base64::convertFromBase64(raw, bass.getProperty("patterns", "").toString())

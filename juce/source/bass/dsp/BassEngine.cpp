@@ -380,7 +380,7 @@ void BassEngine::arpFire(const ArpPattern& a, int s, double interval) {
 }
 void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
     const BassStep st = readStep(pats_.data(), pat, s);
-    if (st.on) {
+    if (st.on && seqEnabled_) {
         if (st.slide && gate_) glideTo(st.semi, st.acc);
         else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
         const int sN = (s + 1) % BL_STEPS;

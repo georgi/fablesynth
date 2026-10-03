@@ -15,6 +15,7 @@
 
 #include "Params.h"
 #include "FxTelemetry.h"
+#include "LabFx.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -381,6 +382,10 @@ public:
     void setParams(const ParamArray& p, double tempoBpm = 0.0); // reads fx.* and master.volume
     void process(float* L, float* R, int n);
     void reset();
+    // Host beat position for the LAB's tempo-synced GLITCH (optional).
+    void setTransport(double ppq, bool playing) { lab_.setTransport(ppq, playing); }
+    // Session tempo for the LAB only (SQ-4); the echo keeps its patch tempo.
+    void setLabTempo(double bpm) { lab_.setTempoOverride(bpm); }
     int  latencySamples() const { return kDriveLatency + lim_.latencySamples(); }
 
     // Coefficient-update granularity. process() runs the sample loop in chunks
@@ -459,6 +464,8 @@ private:
     WebCompressor comp_;
     PeakGuard headroomInput_, headroomEq_, headroomOtt_, headroomComp_;
     PeakGuard headroomDrive_, headroomChorus_, headroomDelay_, headroomReverb_;
+    LabFx lab_;            // LAB page, between drive and chorus
+    PeakGuard headroomLab_;
     PeakGuard delayFeedbackGuard_;
     bool compOff_ = false, compGated_ = false;
 

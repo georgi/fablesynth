@@ -39,6 +39,10 @@ public:
     virtual fable::ArpSettings arpSettings() const { return {}; }
     virtual void setArpSettings(const fable::ArpSettings&) {}
     virtual fable::ArpSettings arpLiveSettings() const { return arpSettings(); }
+    // SEQUENCER tab LED. Hosted clips have no separate off state: the
+    // sequencer is on whenever the clip's arp is off.
+    virtual bool seqEnabled() const { return !arpSettings().enabled; }
+    virtual void setSeqEnabled(bool) {}
     virtual void clearArpKeys() {}
     virtual void arpKeyInput(int, bool) {}
     virtual double arpSwing() const { return 0; }

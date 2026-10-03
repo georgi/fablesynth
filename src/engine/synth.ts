@@ -14,6 +14,7 @@ import { defaultParams, type ParamValues } from '../params';
 // verbatim and hand us the served URL for `audioWorklet.addModule`.
 import workletUrl from './worklet.js?url';
 import ottWorkletUrl from './ott-worklet.js?url';
+import labWorkletUrl from './lab-worklet.js?url';
 import type { DynamicsMessage } from './dynamics';
 import type { EchoMessage } from './echo';
 import type { ReverbMessage } from './reverb';
@@ -148,6 +149,7 @@ export class SynthEngine {
     this.ctx = ctx;
     this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(ottWorkletUrl);
+    await ctx.audioWorklet.addModule(labWorkletUrl);
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.procTables = generateTables();

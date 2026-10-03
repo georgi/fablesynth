@@ -119,6 +119,8 @@ class PowerButton : public juce::Component, private juce::Timer {
 public:
     PowerButton(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent);
     PowerButton(ParameterSource, const juce::String& paramId, Accent accent);
+    // Non-parameter state (e.g. the SEQUENCER / ARP tab LEDs).
+    PowerButton(std::function<bool()> get, std::function<void(bool)> set, Accent accent);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     bool isOn() const;
@@ -127,6 +129,8 @@ private:
     ParameterSource parameters;
     juce::String id;
     juce::RangedAudioParameter* param = nullptr;
+    std::function<bool()> get_;
+    std::function<void(bool)> set_;
     juce::Colour accent;
     bool last = false;
 };

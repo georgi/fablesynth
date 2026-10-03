@@ -67,6 +67,8 @@ public:
     void noteOff(int semi);
     void setSeqPlaying(bool on);
     bool isSeqPlaying() const { return seqPlaying_.load(); }
+    bool isSeqEnabled() const { return seqEnabled_.load(); }
+    void setSeqEnabled(bool on) { seqEnabled_.store(on); }
     int  getCurrentStep() const { return curStep_.load(); }      // -1 stopped
     int  getCurrentPattern() const { return curPattern_.load(); }
     int  getCurrentSemi() const { return curSemi_.load(); }      // -100 = idle
@@ -147,6 +149,7 @@ private:
 
     // atomics published from the audio thread
     std::atomic<bool> seqPlaying_{false};
+    std::atomic<bool> seqEnabled_{true};   // SEQUENCER tab LED
     std::atomic<int> curStep_{-1}, curPattern_{0}, curSemi_{-100};
     std::atomic<bool> hostSynced_{false};
     std::atomic<double> hostBpm_{0.0};

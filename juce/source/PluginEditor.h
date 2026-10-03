@@ -14,8 +14,8 @@
 // grid. The editor scales it to the window so the layout stays pixel-faithful.
 class Rack : public juce::Component {
 public:
-    // Compact WT rows plus the NOTE SEQ row, matching the web rack geometry.
-    static constexpr int LW = 1520, LH = 982;
+    // Top bar plus the tabbed device body; every page shares one height.
+    static constexpr int LW = 1520, LH = 89 + WtDeviceBody::LH;
     Rack(fui::WtUiModel&, juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
     void resized() override;
 

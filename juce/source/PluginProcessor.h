@@ -107,6 +107,8 @@ public:
     void clearArpKeys() { pushCmd(CmdArpClear); }
     void arpKeyInput(int note, bool on) { if (note >= 0 && note < 128) pushCmd((on ? CmdArpKeyOn : CmdArpKeyOff) + note); }
     bool isSeqPlaying() const { return seqPlaying_.load(); }
+    bool isSeqEnabled() const { return seqEnabled_.load(); }
+    void setSeqEnabled(bool on) { seqEnabled_.store(on); }
     int  getCurrentStep() const { return curStep_.load(); }      // -1 stopped
     int  getCurrentPattern() const { return curPattern_.load(); }
     bool isHostSynced() const { return hostSynced_.load(); }     // host reported a tempo
@@ -181,6 +183,7 @@ private:
 
     // atomics published from the audio thread
     std::atomic<bool> seqPlaying_{false};
+    std::atomic<bool> seqEnabled_{true};   // SEQUENCER tab LED
     std::atomic<int> curStep_{-1}, curPattern_{0};
     std::atomic<bool> hostSynced_{false};
     std::atomic<double> hostSeqBpm_{0.0};
@@ -198,6 +201,8 @@ public:
     fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
     void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
     fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
+    bool seqEnabled() const override { return proc.isSeqEnabled(); }
+    void setSeqEnabled(bool on) override { proc.setSeqEnabled(on); }
     void clearArpKeys() override { proc.clearArpKeys(); }
     void arpKeyInput(int n, bool on) override { proc.arpKeyInput(n, on); }
     bool programDirty() const override;

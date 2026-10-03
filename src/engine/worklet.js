@@ -159,9 +159,19 @@ for (const band of ['l', 'm', 'm2', 'h']) PARAM_IDS.push(`fx.eq.${band}q`, `fx.e
 PARAM_IDS.push('fx.delay.tone', 'fx.delay.sat', 'fx.delay.wow', 'fx.delay.flutter', 'fx.delay.width', 'fx.delay.mode', 'fx.delay.sync', 'fx.delay.div');
 
 PARAM_IDS.push('fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type');
+// LAB page (lab-worklet.js), in params.ts order.
+const LAB_FIELDS = {
+  crush: ['on', 'bits', 'rate', 'chaos', 'mix'], reso: ['on', 'note', 'chord', 'decay', 'mix'],
+  shift: ['on', 'hz', 'fb', 'spread', 'mix'], spray: ['on', 'pitch', 'density', 'scatter', 'mix'],
+  glitch: ['on', 'div', 'chance', 'drift', 'mix'],
+};
+for (const [stage, fields] of Object.entries(LAB_FIELDS)) for (const f of fields) PARAM_IDS.push(`fx.${stage}.${f}`);
 const NUM_PARAMS = PARAM_IDS.length;
 const PID = Object.create(null);
 for (let i = 0; i < NUM_PARAMS; i++) PID[PARAM_IDS[i]] = i;
+// Settings object keys (LabSettings in LabFx.h) for each LAB parameter index.
+const LAB_KEYS = Object.entries(LAB_FIELDS).flatMap(([stage, fields]) =>
+  fields.map(f => [PID[`fx.${stage}.${f}`], stage + f[0].toUpperCase() + f.slice(1), f === 'on']));
 const EQ_BANDS = [
   ['low', 'lfreq', 'l'], ['mid', 'mfreq', 'm'],
   ['mid2', 'm2freq', 'm2'], ['high', 'hfreq', 'h'],
@@ -856,10 +866,13 @@ class Fx {
   constructor() {
     const scale = sampleRate / 44100;
     this.headroom = {};
-    for (const stage of ['input', 'eq', 'ott', 'comp', 'drive', 'chorus', 'delay', 'reverb']) {
+    for (const stage of ['input', 'eq', 'ott', 'comp', 'drive', 'lab', 'chorus', 'delay', 'reverb']) {
       this.headroom[stage] = new globalThis.FablePeakGuard(sampleRate);
     }
     this.delayFeedbackGuard = new globalThis.FablePeakGuard(sampleRate);
+    // LAB stages between drive and chorus (lab-worklet.js, port of LabFx.h).
+    this.lab = new globalThis.FableLabFx(sampleRate);
+    this.labSettings = { ...this.lab.settings };
     this.combL = []; this.combR = []; this.apL = []; this.apR = [];
     for (let i = 0; i < 8; i++) {
       this.combL.push(new FvComb((FV_COMB_TUNE[i] * scale) | 0));
@@ -964,10 +977,14 @@ class Fx {
     this.chPhase = 0;
     this.monoRun = false;
     this.driveSilenced = this.chorusGated = this.delayGated = this.verbGated = false;
+    this.lab.reset();
   }
 
   setParams(p, bpm = 120) {
     this.eq.setParams((key) => p[PID[key]]);
+    const lab = this.labSettings;
+    for (const [i, key, flag] of LAB_KEYS) lab[key] = flag ? p[i] > 0.5 : (key === 'resoChord' || key === 'glitchDiv' ? Math.round(p[i]) : p[i]);
+    this.lab.setParams(lab, bpm);
 
     const amt = p[FXDRIVE_AMT];
     this.drivePre = 1 + amt * 2;
@@ -1162,12 +1179,20 @@ class Fx {
     }
     this.headroom.drive.process(FX_EQL, FX_EQR, n);
 
+    const lab = this.lab, labActive = lab.active();
     for (let i = 0; i < n; i++) {
       let l = FX_EQL[i], r = FX_EQR[i];
       const guard = (stage) => {
         const gg = this.headroom[stage].gainFor(l, r);
         l *= gg; r *= gg;
       };
+
+      // ---- LAB: crush -> reso -> shift -> spray -> glitch ----
+      if (labActive) {
+        lab.processSample(Math.fround(l), Math.fround(r));
+        l = lab.out[0]; r = lab.out[1];
+        guard('lab');
+      }
 
       // ---- chorus (two modulated taps, stereo) ----
       if (!chorusGate) {
@@ -2485,6 +2510,7 @@ class FableProcessor extends AudioWorkletProcessor {
       // FX consume the automation value for this chunk, on the same clock as
       // the voices. Process in place without allocating channel subarrays.
       this.fx.setParams(this.p, this.bpm);
+      this.fx.lab.setTransport(ppq, true); // the GLITCH grid follows this chunk's beat
       this.fx.process(L, R, run, off);
       this.transportBeats += (run / sampleRate) * (this.bpm / 60);
       if (!hosted && this.seqPlaying) this.seqToNext -= run;

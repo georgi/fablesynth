@@ -84,9 +84,28 @@ bool runArpProcessorChecks(const char* machine, bool bass) {
         auto* mode = findFxComponent<juce::TextButton>(*editor, "ARP");
         auto* arp = findFxComponent<fui::ArpPanel>(*editor);
         check(mode && arp, "native dedicated SEQUENCER/ARP tabs exist");
-        if (mode && arp) {
+        auto* seqLed = findFxComponent<fui::PowerButton>(*editor, "Sequencer on/off");
+        auto* arpLed = findFxComponent<fui::PowerButton>(*editor, "Arpeggiator on/off");
+        check(seqLed && arpLed, "SEQUENCER and ARP tabs have on/off LEDs");
+        if (mode && arp && seqLed && arpLed) {
+            const auto click = [](fui::PowerButton& b) {
+                const juce::Point<float> pos = b.getLocalBounds().getCentre().toFloat();
+                b.mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), pos, {}, 1, 0, 0, 0, 0,
+                                             &b, &b, juce::Time::getCurrentTime(), pos, juce::Time::getCurrentTime(), 1, false));
+            };
             mode->onClick();
-            check(arp->isVisible() && proc->getArpSettings().enabled, "ARP tab selects the live arp editor");
+            check(arp->isVisible() && !proc->getArpSettings().enabled, "ARP tab shows the arp editor without enabling it");
+            click(*arpLed);
+            check(proc->getArpSettings().enabled && arpLed->isOn() && !seqLed->isOn(), "ARP LED enables arp and disables the sequencer");
+            click(*seqLed);
+            check(!proc->getArpSettings().enabled && seqLed->isOn() && proc->isSeqEnabled(), "SEQ LED enables the sequencer and disables arp");
+            click(*seqLed);
+            check(!seqLed->isOn() && !arpLed->isOn() && !proc->isSeqEnabled(), "both modes can be off");
+            juce::MemoryBlock offState; proc->getStateInformation(offState);
+            auto reloaded = std::make_unique<Processor>();
+            reloaded->setStateInformation(offState.getData(), (int)offState.getSize());
+            check(!reloaded->isSeqEnabled(), "plugin state round-trips the sequencer off state");
+            click(*arpLed);
             for (auto* child : arp->getChildren()) if (child->isVisible())
                 check(!child->getBounds().isEmpty() && arp->getLocalBounds().contains(child->getBounds()), "arp controls fit inside editor");
             if (auto* order = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator order")) {

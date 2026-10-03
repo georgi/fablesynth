@@ -5,7 +5,7 @@
 
 BassDeviceBody::BassDeviceBody(fui::BassUiModel& model)
     : model_(model), osc(model), sub(model), filter(model), env(model), lfo(model), accent(model),
-      keys(model), seq(model), fxRack(model, false), arp(model, true) {
+      keys(model), seq(model), fxRack(model, false), arp(model, true), playback_(model) {
     for (auto* component : std::initializer_list<juce::Component*>{
              &osc, &sub, &filter, &env, &lfo, &accent, &keys, &seq, &fxRack })
         addAndMakeVisible(*component);
@@ -24,6 +24,8 @@ BassDeviceBody::BassDeviceBody(fui::BassUiModel& model)
     configurePage(fxPage_, Page::fx);
     configurePage(sequencerPage_, Page::sequencer);
     configurePage(arpPage_, Page::arp);
+    addAndMakeVisible(playback_.sequencer);
+    addAndMakeVisible(playback_.arpeggiator);
     selectPage(model_.arpSettings().enabled ? Page::arp : Page::edit);
 }
 
@@ -33,12 +35,6 @@ void BassDeviceBody::selectPage(Page page) {
     fxPage_.setToggleState(page == Page::fx, juce::dontSendNotification);
     sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
     arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
-    auto settings = model_.arpSettings();
-    const bool arpEnabled = page == Page::arp;
-    if (settings.enabled != arpEnabled) {
-        settings.enabled = arpEnabled;
-        model_.setArpSettings(settings);
-    }
     resized();
 }
 
@@ -73,8 +69,9 @@ void BassDeviceBody::resized() {
     auto tabs = juce::Rectangle<int>(18, 103, fullW, 26);
     editPage_.setBounds(tabs.removeFromLeft(76)); tabs.removeFromLeft(5);
     fxPage_.setBounds(tabs.removeFromLeft(106)); tabs.removeFromLeft(5);
-    sequencerPage_.setBounds(tabs.removeFromLeft(126)); tabs.removeFromLeft(5);
-    arpPage_.setBounds(tabs.removeFromLeft(70));
+    sequencerPage_.setBounds(tabs.removeFromLeft(146)); tabs.removeFromLeft(5);
+    arpPage_.setBounds(tabs.removeFromLeft(92));
+    playback_.place(sequencerPage_, arpPage_);
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::fx;
     const bool showSequencer = page_ == Page::sequencer;
