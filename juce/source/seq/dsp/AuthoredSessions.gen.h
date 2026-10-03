@@ -2,9 +2,12 @@
 #pragma once
 #include "SeqFactory.h"
 namespace fable {
-inline std::vector<SessionPreset> authoredSessionLibrary() {
-    std::vector<SessionPreset> result;
-    {
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline SessionPreset authoredSession0() {
         SessionPreset p;
         p.name = "TIDAL MEMORY"; p.family = "DUB TECHNO";
         p.variation = "AUTHORED"; p.energy = 3;
@@ -12,7 +15,9 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
         p.session.name = p.name; p.session.bpm = 118; p.session.swing = 0.08;
         p.session.quant = Quant::Bar;
         p.session.tracks.push_back({ Machine::DR1, "ROOM", 0xff4de8ffu, 0.600000000f,
-            { false, 9, {
+            { false, 9, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "fx.chorus.depth", 0.400000000f },
                 { "fx.chorus.mix", 0.200000000f },
                 { "fx.chorus.on", 0.000000000f },
@@ -1649,9 +1654,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "pad9.v2l", 0.600000000f },
                 { "pad9.v2m", 0.400000000f },
                 { "seq.bpm", 128.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         p.session.tracks.push_back({ Machine::BL1, "UNDERTOW", 0xff4dff9eu, 0.460000000f,
-            { false, 21, {
+            { false, 21, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "acc.amt", 0.450000000f },
                 { "aenv.att", 0.004000000f },
                 { "aenv.dec", 0.280000000f },
@@ -1720,9 +1730,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "sub.level", 0.850000000f },
                 { "sub.oct", -1.000000000f },
                 { "sub.shape", 0.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         p.session.tracks.push_back({ Machine::WT1, "REFLECTION", 0xffffa14du, 0.580000000f,
-            { false, 56, {
+            { false, 56, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.014000000f },
                 { "env1.d", 0.340000000f },
                 { "env1.r", 0.650000000f },
@@ -1921,9 +1936,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "sub.oct", -1.000000000f },
                 { "sub.on", 0.000000000f },
                 { "sub.shape", 0.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         p.session.tracks.push_back({ Machine::WT1, "SIGNAL", 0xffb18cffu, 0.800000000f,
-            { false, 45, {
+            { false, 45, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.025000000f },
                 { "env1.d", 0.550000000f },
                 { "env1.r", 1.100000000f },
@@ -2122,7 +2142,10 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "sub.oct", -1.000000000f },
                 { "sub.on", 0.000000000f },
                 { "sub.shape", 0.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         {
             SceneData scene; scene.name = "SOUNDINGS";
             scene.clips.resize(4); scene.hasClip = { true, false, true, true };
@@ -2915,9 +2938,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
             scene.clips[3].bytes[890] = 2;
             p.session.scenes.push_back(std::move(scene));
         }
-        result.push_back(std::move(p));
-    }
-    {
+        return p;
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline SessionPreset authoredSession1() {
         SessionPreset p;
         p.name = "PHASE RUNNER"; p.family = "DUB TECHNO";
         p.variation = "AUTHORED"; p.energy = 4;
@@ -2925,7 +2953,9 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
         p.session.name = p.name; p.session.bpm = 126; p.session.swing = 0.06;
         p.session.quant = Quant::Bar;
         p.session.tracks.push_back({ Machine::DR1, "CHASSIS", 0xff4de8ffu, 0.570000000f,
-            { false, 9, {
+            { false, 9, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "fx.chorus.depth", 0.400000000f },
                 { "fx.chorus.mix", 0.200000000f },
                 { "fx.chorus.on", 0.000000000f },
@@ -4562,9 +4592,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "pad9.v2l", 0.600000000f },
                 { "pad9.v2m", 0.400000000f },
                 { "seq.bpm", 128.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         p.session.tracks.push_back({ Machine::BL1, "MOTOR", 0xff4dff9eu, 0.440000000f,
-            { false, 21, {
+            { false, 21, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "acc.amt", 0.500000000f },
                 { "aenv.att", 0.006000000f },
                 { "aenv.dec", 0.220000000f },
@@ -4633,9 +4668,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "sub.level", 0.750000000f },
                 { "sub.oct", -1.000000000f },
                 { "sub.shape", 0.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         p.session.tracks.push_back({ Machine::WT1, "ECHO", 0xffffa14du, 0.580000000f,
-            { false, 56, {
+            { false, 56, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.012000000f },
                 { "env1.d", 0.200000000f },
                 { "env1.r", 0.280000000f },
@@ -4834,9 +4874,14 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "sub.oct", -1.000000000f },
                 { "sub.on", 0.000000000f },
                 { "sub.shape", 0.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         p.session.tracks.push_back({ Machine::WT1, "RELAY", 0xffb18cffu, 0.630000000f,
-            { false, 59, {
+            { false, 59, {} } });
+        {
+            static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.014000000f },
                 { "env1.d", 0.180000000f },
                 { "env1.r", 0.350000000f },
@@ -5035,7 +5080,10 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
                 { "sub.oct", -1.000000000f },
                 { "sub.on", 0.000000000f },
                 { "sub.shape", 0.000000000f },
-            } } });
+            };
+            for (const auto& value : params)
+                p.session.tracks.back().patch.params.emplace(value.first, value.second);
+        }
         {
             SceneData scene; scene.name = "IGNITION";
             scene.clips.resize(4); scene.hasClip = { true, true, true, false };
@@ -5657,8 +5705,13 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
             scene.clips[3].bytes[936] = 5;
             p.session.scenes.push_back(std::move(scene));
         }
-        result.push_back(std::move(p));
-    }
+        return p;
+}
+inline std::vector<SessionPreset> authoredSessionLibrary() {
+    std::vector<SessionPreset> result;
+    result.reserve(2);
+    result.push_back(authoredSession0());
+    result.push_back(authoredSession1());
     return result;
 }
 } // namespace fable
