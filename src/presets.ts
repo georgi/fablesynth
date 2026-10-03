@@ -1244,6 +1244,131 @@ export const FACTORY_PRESETS: Preset[] = [
       'fx.eq.on': 1, 'fx.eq.low': 0, 'fx.eq.mid': -1.5, 'fx.eq.mfreq': 450, 'fx.eq.high': -6,
     },
   },
+
+  // ---- More Serum-style staples ----------------------------------------
+
+  {
+    // Wavetable morph pad: a slow mod env scans both oscillators' positions.
+    name: 'GLASS MORPH',
+    params: {
+      'oscA.table': 1, 'oscA.pos': 0.05, 'oscA.unison': 4, 'oscA.detune': 0.22, 'oscA.spread': 0.9, 'oscA.level': 0.72,
+      'oscB.on': 1, 'oscB.table': 4, 'oscB.pos': 0.2, 'oscB.oct': 1, 'oscB.fine': -7, 'oscB.unison': 2, 'oscB.detune': 0.15, 'oscB.level': 0.28,
+      'filter.type': 1, 'filter.cutoff': 3200, 'filter.res': 0.16, 'filter.key': 0.3,
+      'env1.a': 0.6, 'env1.d': 2, 'env1.s': 0.8, 'env1.r': 2.2,
+      'env2.a': 4, 'env2.d': 3, 'env2.s': 0.7, 'env2.r': 2.5,
+      'lfo1.rate': 0.18,
+      'mat1.src': 3, 'mat1.dst': 1, 'mat1.amt': 0.8,
+      'mat2.src': 3, 'mat2.dst': 2, 'mat2.amt': 0.6,
+      'mat3.src': 1, 'mat3.dst': 3, 'mat3.amt': 0.12,
+      'fx.chorus.on': 1, 'fx.chorus.mix': 0.4,
+      'fx.delay.on': 1, 'fx.delay.sync': 1, 'fx.delay.div': 3, 'fx.delay.fb': 0.38, 'fx.delay.mix': 0.22,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.8, 'fx.reverb.mix': 0.42,
+    },
+  },
+
+  {
+    // Rave hoover: wide PWM stack over a saw octave, pitch scoop and glide.
+    name: 'RAVE HOOVER',
+    params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.24, 'fx.ott.time': 1.1, 'fx.ott.up': 0.6, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.14, 'fx.comp.ratio': 3,
+      'oscA.table': 2, 'oscA.pos': 0.45, 'oscA.unison': 5, 'oscA.detune': 0.45, 'oscA.spread': 0.9, 'oscA.level': 0.7,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': -1, 'oscB.unison': 3, 'oscB.detune': 0.35, 'oscB.spread': 0.8, 'oscB.level': 0.5,
+      'sub.on': 1, 'sub.level': 0.3,
+      'filter.type': 0, 'filter.cutoff': 4200, 'filter.res': 0.15, 'filter.key': 0.3,
+      'env1.a': 0.01, 'env1.d': 0.6, 'env1.s': 0.85, 'env1.r': 0.4,
+      'env2.a': 0.001, 'env2.d': 0.28, 'env2.s': 0, 'env2.r': 0.2,
+      'master.glide': 0.08, 'master.mono': 1,
+      'lfo1.shape': 1, 'lfo1.rate': 0.35,
+      'mat1.src': 3, 'mat1.dst': 4, 'mat1.amt': -0.2,
+      'mat2.src': 1, 'mat2.dst': 1, 'mat2.amt': 0.3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.3, 'fx.drive.mix': 0.2,
+      'fx.chorus.on': 1, 'fx.chorus.rate': 0.8, 'fx.chorus.depth': 0.7, 'fx.chorus.mix': 0.55,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.55, 'fx.reverb.mix': 0.25,
+    },
+  },
+
+  {
+    // Long 808 bass: pure sine, fast pitch punch, tape drive for harmonics.
+    name: 'BOOM 808',
+    params: {
+      'fx.comp.on': 1, 'fx.comp.thr': -18, 'fx.comp.att': 0.01, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3,
+      'oscA.table': 0, 'oscA.pos': 0, 'oscA.level': 0.95,
+      'filter.type': 0, 'filter.cutoff': 1400, 'filter.res': 0.05,
+      'env1.a': 0.001, 'env1.d': 1.6, 'env1.s': 0, 'env1.r': 0.35,
+      'env2.a': 0.001, 'env2.d': 0.05, 'env2.s': 0, 'env2.r': 0.05,
+      'master.glide': 0.09, 'master.mono': 1,
+      'mat1.src': 3, 'mat1.dst': 4, 'mat1.amt': 0.5,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.5, 'fx.drive.mix': 0.2, 'fx.drive.type': 1,
+    },
+  },
+
+  {
+    // Trance-gate supersaw: a synced 1/16 square LFO chops the amp.
+    name: 'GATE PAD',
+    params: {
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 7, 'oscA.detune': 0.3, 'oscA.spread': 1, 'oscA.level': 0.72,
+      'oscB.on': 1, 'oscB.table': 1, 'oscB.pos': 0.5, 'oscB.oct': 1, 'oscB.unison': 3, 'oscB.detune': 0.2, 'oscB.level': 0.3,
+      'filter.type': 1, 'filter.cutoff': 3800, 'filter.res': 0.18, 'filter.key': 0.3,
+      'env1.a': 0.02, 'env1.d': 0.5, 'env1.s': 0.9, 'env1.r': 0.5,
+      'lfo1.shape': 3, 'lfo1.sync': 1, 'lfo1.syncrate': 8,
+      'lfo2.rate': 0.12,
+      'mat1.src': 1, 'mat1.dst': 5, 'mat1.amt': 0.95,
+      'mat2.src': 2, 'mat2.dst': 3, 'mat2.amt': 0.25,
+      'fx.delay.on': 1, 'fx.delay.sync': 1, 'fx.delay.div': 3, 'fx.delay.fb': 0.35, 'fx.delay.mix': 0.25,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.7, 'fx.reverb.mix': 0.35,
+    },
+  },
+
+  {
+    // Laser zap: an octave pitch dive and a resonant filter blip, then echoes.
+    name: 'LASER ZAP',
+    params: {
+      'oscA.table': 2, 'oscA.pos': 0.5, 'oscA.oct': 1, 'oscA.level': 0.75,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': 1, 'oscB.fine': 12, 'oscB.level': 0.4,
+      'filter.type': 0, 'filter.cutoff': 2500, 'filter.res': 0.45, 'filter.env': 0.6,
+      'env1.a': 0.001, 'env1.d': 0.3, 'env1.s': 0, 'env1.r': 0.2,
+      'env2.a': 0.001, 'env2.d': 0.2, 'env2.s': 0, 'env2.r': 0.15,
+      'mat1.src': 3, 'mat1.dst': 4, 'mat1.amt': 1,
+      'fx.delay.on': 1, 'fx.delay.sync': 1, 'fx.delay.div': 3, 'fx.delay.fb': 0.45, 'fx.delay.mix': 0.32,
+      'fx.reverb.on': 1, 'fx.reverb.size': 0.5, 'fx.reverb.mix': 0.25,
+    },
+  },
+
+  {
+    // Glitch bass: a synced S&H LFO jumps the GLITCH table and the cutoff.
+    name: 'GLITCH SHUFFLE',
+    params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.32, 'fx.ott.time': 0.9, 'fx.ott.up': 0.85, 'fx.ott.down': 0.85,
+      'fx.comp.on': 1, 'fx.comp.thr': -22, 'fx.comp.att': 0.015, 'fx.comp.rel': 0.12, 'fx.comp.ratio': 3.5,
+      'oscA.table': 5, 'oscA.pos': 0.4, 'oscA.unison': 2, 'oscA.detune': 0.12, 'oscA.spread': 0.4, 'oscA.level': 0.8,
+      'oscB.on': 1, 'oscB.table': 0, 'oscB.pos': 0.66, 'oscB.oct': -1, 'oscB.level': 0.4,
+      'sub.on': 1, 'sub.level': 0.5, 'sub.oct': -1,
+      'filter.type': 1, 'filter.cutoff': 1100, 'filter.res': 0.35, 'filter.drive': 0.4,
+      'env1.a': 0.003, 'env1.d': 0.3, 'env1.s': 0.9, 'env1.r': 0.12,
+      'lfo1.shape': 4, 'lfo1.sync': 1, 'lfo1.syncrate': 8,
+      'mat1.src': 1, 'mat1.dst': 1, 'mat1.amt': 0.45,
+      'mat2.src': 1, 'mat2.dst': 3, 'mat2.amt': 0.3,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.45, 'fx.drive.mix': 0.2, 'fx.drive.type': 2,
+    },
+  },
+
+  {
+    // Notch-sweep bass: a synced triangle LFO walks a notch through a saw stack.
+    name: 'NOTCH SWEEP',
+    params: {
+      'fx.ott.on': 1, 'fx.ott.depth': 0.28, 'fx.ott.time': 1, 'fx.ott.up': 0.75, 'fx.ott.down': 0.8,
+      'fx.comp.on': 1, 'fx.comp.thr': -20, 'fx.comp.att': 0.02, 'fx.comp.rel': 0.13, 'fx.comp.ratio': 3,
+      'oscA.table': 0, 'oscA.pos': 0.66, 'oscA.unison': 3, 'oscA.detune': 0.18, 'oscA.spread': 0.5, 'oscA.level': 0.82,
+      'sub.on': 1, 'sub.level': 0.45, 'sub.oct': -1,
+      'filter.type': 4, 'filter.cutoff': 700, 'filter.res': 0.55, 'filter.key': 0.4,
+      'filter2.on': 1, 'filter2.type': 1, 'filter2.cutoff': 2400, 'filter2.res': 0.1,
+      'env1.a': 0.004, 'env1.d': 0.4, 'env1.s': 0.9, 'env1.r': 0.15,
+      'lfo1.shape': 1, 'lfo1.sync': 1, 'lfo1.syncrate': 1,
+      'mat1.src': 1, 'mat1.dst': 3, 'mat1.amt': 0.45,
+      'fx.drive.on': 1, 'fx.drive.amt': 0.35, 'fx.drive.mix': 0.2,
+    },
+  },
 ];
 
 

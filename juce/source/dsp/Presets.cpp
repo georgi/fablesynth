@@ -930,6 +930,80 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.reverb.on", 1}, {"fx.reverb.size", 0.6f}, {"fx.reverb.mix", 0.3f},
             {"fx.eq.on", 1}, {"fx.eq.low", 0}, {"fx.eq.mid", -1.5f}, {"fx.eq.mfreq", 450}, {"fx.eq.high", -6.0f},
         }},
+
+        // ---- More Serum-style staples ----
+
+        {"GLASS MORPH", {
+            {"oscA.table", 1}, {"oscA.pos", 0.05f}, {"oscA.unison", 4}, {"oscA.detune", 0.22f}, {"oscA.spread", 0.9f}, {"oscA.level", 0.72f},
+            {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.2f}, {"oscB.oct", 1}, {"oscB.fine", -7}, {"oscB.unison", 2},
+            {"oscB.detune", 0.15f}, {"oscB.level", 0.28f}, {"filter.type", 1}, {"filter.cutoff", 3200}, {"filter.res", 0.16f}, {"filter.key", 0.3f},
+            {"env1.a", 0.6f}, {"env1.d", 2}, {"env1.s", 0.8f}, {"env1.r", 2.2f}, {"env2.a", 4}, {"env2.d", 3},
+            {"env2.s", 0.7f}, {"env2.r", 2.5f}, {"lfo1.rate", 0.18f}, {"mat1.src", 3}, {"mat1.dst", 1}, {"mat1.amt", 0.8f},
+            {"mat2.src", 3}, {"mat2.dst", 2}, {"mat2.amt", 0.6f}, {"mat3.src", 1}, {"mat3.dst", 3}, {"mat3.amt", 0.12f},
+            {"fx.chorus.on", 1}, {"fx.chorus.mix", 0.4f}, {"fx.delay.on", 1}, {"fx.delay.sync", 1}, {"fx.delay.div", 3}, {"fx.delay.fb", 0.38f},
+            {"fx.delay.mix", 0.22f}, {"fx.reverb.on", 1}, {"fx.reverb.size", 0.8f}, {"fx.reverb.mix", 0.42f},
+        }},
+
+        {"RAVE HOOVER", {
+            {"fx.ott.on", 1}, {"fx.ott.depth", 0.24f}, {"fx.ott.time", 1.1f}, {"fx.ott.up", 0.6f}, {"fx.ott.down", 0.8f}, {"fx.comp.on", 1},
+            {"fx.comp.thr", -20}, {"fx.comp.att", 0.02f}, {"fx.comp.rel", 0.14f}, {"fx.comp.ratio", 3}, {"oscA.table", 2}, {"oscA.pos", 0.45f},
+            {"oscA.unison", 5}, {"oscA.detune", 0.45f}, {"oscA.spread", 0.9f}, {"oscA.level", 0.7f}, {"oscB.on", 1}, {"oscB.table", 0},
+            {"oscB.pos", 0.66f}, {"oscB.oct", -1}, {"oscB.unison", 3}, {"oscB.detune", 0.35f}, {"oscB.spread", 0.8f}, {"oscB.level", 0.5f},
+            {"sub.on", 1}, {"sub.level", 0.3f}, {"filter.type", 0}, {"filter.cutoff", 4200}, {"filter.res", 0.15f}, {"filter.key", 0.3f},
+            {"env1.a", 0.01f}, {"env1.d", 0.6f}, {"env1.s", 0.85f}, {"env1.r", 0.4f}, {"env2.a", 0.001f}, {"env2.d", 0.28f},
+            {"env2.s", 0}, {"env2.r", 0.2f}, {"master.glide", 0.08f}, {"lfo1.shape", 1}, {"lfo1.rate", 0.35f}, {"mat1.src", 3},
+            {"mat1.dst", 4}, {"mat1.amt", -0.2f}, {"mat2.src", 1}, {"mat2.dst", 1}, {"mat2.amt", 0.3f}, {"fx.drive.on", 1},
+            {"fx.drive.amt", 0.3f}, {"fx.drive.mix", 0.2f}, {"fx.chorus.on", 1}, {"fx.chorus.rate", 0.8f}, {"fx.chorus.depth", 0.7f}, {"fx.chorus.mix", 0.55f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.55f}, {"fx.reverb.mix", 0.25f},
+        }},
+
+        {"BOOM 808", {
+            {"fx.comp.on", 1}, {"fx.comp.thr", -18}, {"fx.comp.att", 0.01f}, {"fx.comp.rel", 0.12f}, {"fx.comp.ratio", 3}, {"oscA.table", 0},
+            {"oscA.pos", 0}, {"oscA.level", 0.95f}, {"filter.type", 0}, {"filter.cutoff", 1400}, {"filter.res", 0.05f}, {"env1.a", 0.001f},
+            {"env1.d", 1.6f}, {"env1.s", 0}, {"env1.r", 0.35f}, {"env2.a", 0.001f}, {"env2.d", 0.05f}, {"env2.s", 0},
+            {"env2.r", 0.05f}, {"master.glide", 0.09f}, {"mat1.src", 3}, {"mat1.dst", 4}, {"mat1.amt", 0.5f}, {"fx.drive.on", 1},
+            {"fx.drive.amt", 0.5f}, {"fx.drive.mix", 0.2f}, {"fx.drive.type", 1},
+        }},
+
+        {"GATE PAD", {
+            {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 7}, {"oscA.detune", 0.3f}, {"oscA.spread", 1}, {"oscA.level", 0.72f},
+            {"oscB.on", 1}, {"oscB.table", 1}, {"oscB.pos", 0.5f}, {"oscB.oct", 1}, {"oscB.unison", 3}, {"oscB.detune", 0.2f},
+            {"oscB.level", 0.3f}, {"filter.type", 1}, {"filter.cutoff", 3800}, {"filter.res", 0.18f}, {"filter.key", 0.3f}, {"env1.a", 0.02f},
+            {"env1.d", 0.5f}, {"env1.s", 0.9f}, {"env1.r", 0.5f}, {"lfo1.shape", 3}, {"lfo1.sync", 1}, {"lfo1.syncrate", 8},
+            {"lfo2.rate", 0.12f}, {"mat1.src", 1}, {"mat1.dst", 5}, {"mat1.amt", 0.95f}, {"mat2.src", 2}, {"mat2.dst", 3},
+            {"mat2.amt", 0.25f}, {"fx.delay.on", 1}, {"fx.delay.sync", 1}, {"fx.delay.div", 3}, {"fx.delay.fb", 0.35f}, {"fx.delay.mix", 0.25f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.7f}, {"fx.reverb.mix", 0.35f},
+        }},
+
+        {"LASER ZAP", {
+            {"oscA.table", 2}, {"oscA.pos", 0.5f}, {"oscA.oct", 1}, {"oscA.level", 0.75f}, {"oscB.on", 1}, {"oscB.table", 0},
+            {"oscB.pos", 0.66f}, {"oscB.oct", 1}, {"oscB.fine", 12}, {"oscB.level", 0.4f}, {"filter.type", 0}, {"filter.cutoff", 2500},
+            {"filter.res", 0.45f}, {"filter.env", 0.6f}, {"env1.a", 0.001f}, {"env1.d", 0.3f}, {"env1.s", 0}, {"env1.r", 0.2f},
+            {"env2.a", 0.001f}, {"env2.d", 0.2f}, {"env2.s", 0}, {"env2.r", 0.15f}, {"mat1.src", 3}, {"mat1.dst", 4},
+            {"mat1.amt", 1}, {"fx.delay.on", 1}, {"fx.delay.sync", 1}, {"fx.delay.div", 3}, {"fx.delay.fb", 0.45f}, {"fx.delay.mix", 0.32f},
+            {"fx.reverb.on", 1}, {"fx.reverb.size", 0.5f}, {"fx.reverb.mix", 0.25f},
+        }},
+
+        {"GLITCH SHUFFLE", {
+            {"fx.ott.on", 1}, {"fx.ott.depth", 0.32f}, {"fx.ott.time", 0.9f}, {"fx.ott.up", 0.85f}, {"fx.ott.down", 0.85f}, {"fx.comp.on", 1},
+            {"fx.comp.thr", -22}, {"fx.comp.att", 0.015f}, {"fx.comp.rel", 0.12f}, {"fx.comp.ratio", 3.5f}, {"oscA.table", 5}, {"oscA.pos", 0.4f},
+            {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.8f}, {"oscB.on", 1}, {"oscB.table", 0},
+            {"oscB.pos", 0.66f}, {"oscB.oct", -1}, {"oscB.level", 0.4f}, {"sub.on", 1}, {"sub.level", 0.5f}, {"sub.oct", -1},
+            {"filter.type", 1}, {"filter.cutoff", 1100}, {"filter.res", 0.35f}, {"filter.drive", 0.4f}, {"env1.a", 0.003f}, {"env1.d", 0.3f},
+            {"env1.s", 0.9f}, {"env1.r", 0.12f}, {"lfo1.shape", 4}, {"lfo1.sync", 1}, {"lfo1.syncrate", 8}, {"mat1.src", 1},
+            {"mat1.dst", 1}, {"mat1.amt", 0.45f}, {"mat2.src", 1}, {"mat2.dst", 3}, {"mat2.amt", 0.3f}, {"fx.drive.on", 1},
+            {"fx.drive.amt", 0.45f}, {"fx.drive.mix", 0.2f}, {"fx.drive.type", 2},
+        }},
+
+        {"NOTCH SWEEP", {
+            {"fx.ott.on", 1}, {"fx.ott.depth", 0.28f}, {"fx.ott.time", 1}, {"fx.ott.up", 0.75f}, {"fx.ott.down", 0.8f}, {"fx.comp.on", 1},
+            {"fx.comp.thr", -20}, {"fx.comp.att", 0.02f}, {"fx.comp.rel", 0.13f}, {"fx.comp.ratio", 3}, {"oscA.table", 0}, {"oscA.pos", 0.66f},
+            {"oscA.unison", 3}, {"oscA.detune", 0.18f}, {"oscA.spread", 0.5f}, {"oscA.level", 0.82f}, {"sub.on", 1}, {"sub.level", 0.45f},
+            {"sub.oct", -1}, {"filter.type", 4}, {"filter.cutoff", 700}, {"filter.res", 0.55f}, {"filter.key", 0.4f}, {"filter2.on", 1},
+            {"filter2.type", 1}, {"filter2.cutoff", 2400}, {"filter2.res", 0.1f}, {"env1.a", 0.004f}, {"env1.d", 0.4f}, {"env1.s", 0.9f},
+            {"env1.r", 0.15f}, {"lfo1.shape", 1}, {"lfo1.sync", 1}, {"lfo1.syncrate", 1}, {"mat1.src", 1},
+            {"mat1.dst", 3}, {"mat1.amt", 0.45f}, {"fx.drive.on", 1}, {"fx.drive.amt", 0.35f}, {"fx.drive.mix", 0.2f},
+        }},
     };
     return presets;
 }
