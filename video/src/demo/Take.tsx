@@ -12,10 +12,14 @@ import wtFx from '../../public/takes/wt-fx/take.json';
 import drBuild from '../../public/takes/dr-build/take.json';
 import sqAuto from '../../public/takes/sq-auto/take.json';
 import sqLaunch from '../../public/takes/sq-launch/take.json';
+import wtShift from '../../public/takes/wt-shift/take.json';
+import wtGlitch from '../../public/takes/wt-glitch/take.json';
 import vMorph from '../../public/takes/wt-morph/values.json';
 import vSweep from '../../public/takes/bl-sweep/values.json';
 import vMod from '../../public/takes/wt-mod/values.json';
 import vFx from '../../public/takes/wt-fx/values.json';
+import vShift from '../../public/takes/wt-shift/values.json';
+import vGlitch from '../../public/takes/wt-glitch/values.json';
 import sMorph from '../../public/takes/wt-morph/spec.json';
 import sSweep from '../../public/takes/bl-sweep/spec.json';
 import sMod from '../../public/takes/wt-mod/spec.json';
@@ -23,11 +27,13 @@ import sFx from '../../public/takes/wt-fx/spec.json';
 import sDr from '../../public/takes/dr-build/spec.json';
 import sAuto from '../../public/takes/sq-auto/spec.json';
 import sLaunch from '../../public/takes/sq-launch/spec.json';
+import sShift from '../../public/takes/wt-shift/spec.json';
+import sGlitch from '../../public/takes/wt-glitch/spec.json';
 
 type Pt = { t: number; x: number; y: number; d: number };
 type TakeMeta = { dur: number; times: number[]; cursor: Pt[]; marks: Record<string, number> };
 type Spec = { fps: number; bands: number[][]; rms: number[] };
-export type TakeName = 'wt-morph' | 'bl-sweep' | 'wt-mod' | 'wt-fx' | 'dr-build' | 'sq-auto' | 'sq-launch';
+export type TakeName = 'wt-morph' | 'bl-sweep' | 'wt-mod' | 'wt-fx' | 'dr-build' | 'sq-auto' | 'sq-launch' | 'wt-shift' | 'wt-glitch';
 
 export const TAKES: Record<TakeName, TakeMeta> = {
   'wt-morph': wtMorph as TakeMeta,
@@ -37,15 +43,19 @@ export const TAKES: Record<TakeName, TakeMeta> = {
   'dr-build': drBuild as TakeMeta,
   'sq-auto': sqAuto as TakeMeta,
   'sq-launch': sqLaunch as TakeMeta,
+  'wt-shift': wtShift as TakeMeta,
+  'wt-glitch': wtGlitch as TakeMeta,
 };
 export const VALUES: Partial<Record<TakeName, Record<string, string | number | null>[]>> = {
   'wt-morph': vMorph,
   'bl-sweep': vSweep,
   'wt-mod': vMod,
   'wt-fx': vFx,
+  'wt-shift': vShift,
+  'wt-glitch': vGlitch,
 };
 const SPECS: Record<TakeName, Spec> = {
-  'wt-morph': sMorph, 'bl-sweep': sSweep, 'wt-mod': sMod, 'wt-fx': sFx, 'dr-build': sDr, 'sq-auto': sAuto, 'sq-launch': sLaunch,
+  'wt-morph': sMorph, 'bl-sweep': sSweep, 'wt-mod': sMod, 'wt-fx': sFx, 'dr-build': sDr, 'sq-auto': sAuto, 'sq-launch': sLaunch, 'wt-shift': sShift, 'wt-glitch': sGlitch,
 };
 
 /** Take time (ms) at the current frame of a scene that starts at `offsetMs`. */

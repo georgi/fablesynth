@@ -68,7 +68,7 @@
           <video class="stage-loop" autoplay muted loop playsinline preload="auto"
                  poster="./media/demo-loop-poster.webp" src="./media/demo-loop.mp4" aria-hidden="true"></video>
           <video class="stage-film" playsinline preload="none" poster="./media/demo-poster.webp"
-                 aria-label="FableSynth demo film, 59 seconds, with sound">
+                 aria-label="FableSynth demo film, 80 seconds, with sound">
             <source src="./media/demo-720.mp4" type="video/mp4" media="(max-width: 900px)">
             <source src="./media/demo-1080.mp4" type="video/mp4">
           </video>
@@ -76,7 +76,7 @@
           <button class="stage-play" type="button">
             <span class="play-pill">
               <span class="play-disc" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg></span>
-              <span class="play-label"><b>Play with sound</b><small>0:59 · seven live takes</small></span>
+              <span class="play-label"><b>Play with sound</b><small>1:20 · nine live takes</small></span>
             </span>
           </button>
 
@@ -101,7 +101,7 @@
             <button class="sb-btn sb-mute" type="button" aria-label="Mute" aria-pressed="false">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="i-x" d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             </button>
-            <span class="sb-time"><span class="sb-now">0:00</span> / 0:59</span>
+            <span class="sb-time"><span class="sb-now">0:00</span> / 1:20</span>
             <button class="sb-btn sb-full" type="button" aria-label="Full screen">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             </button>
@@ -129,19 +129,29 @@
             <span class="ch-meta">04 · WT-1</span>
             <span class="ch-title">Space</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="b" data-start="28.57" data-end="38.1" style="--span:9.53">
+          <li><button type="button" class="chapter" data-accent="a" data-start="28.57" data-end="40.0" style="--span:11.43">
             <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">05 · DR-1</span>
+            <span class="ch-meta">05 · LAB</span>
+            <span class="ch-title">Spiral</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="o" data-start="40.0" data-end="49.52" style="--span:9.52">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">06 · LAB</span>
+            <span class="ch-title">Glitch</span>
+          </button></li>
+          <li><button type="button" class="chapter" data-accent="b" data-start="49.52" data-end="59.05" style="--span:9.53">
+            <span class="ch-track"><span class="ch-fill"></span></span>
+            <span class="ch-meta">07 · DR-1</span>
             <span class="ch-title">Beat</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="g" data-start="38.1" data-end="47.62" style="--span:9.52">
+          <li><button type="button" class="chapter" data-accent="g" data-start="59.05" data-end="68.57" style="--span:9.52">
             <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">06 · SQ-4</span>
+            <span class="ch-meta">08 · SQ-4</span>
             <span class="ch-title">Automate</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="o" data-start="47.62" data-end="59.05" style="--span:11.43">
+          <li><button type="button" class="chapter" data-accent="o" data-start="68.57" data-end="80.0" style="--span:11.43">
             <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">07 · SQ-4</span>
+            <span class="ch-meta">09 · SQ-4</span>
             <span class="ch-title">Launch</span>
           </button></li>
         </ol>
@@ -160,7 +170,7 @@
       <h2>The whole track.<br>One page.</h2>
     </div>
 
-    <figure class="clip reveal wide" data-accent="o" data-start="48.4" data-end="54.2">
+    <figure class="clip reveal wide" data-accent="o" data-start="69.35" data-end="75.15">
       <div class="clip-screen">
         <video muted playsinline loop preload="none" poster="./media/ch-launch.webp" data-src="./media/demo-720.mp4"
                aria-label="SQ-4 session: a scene launch queues, counts down and lands on the next bar."></video>
@@ -205,7 +215,7 @@
     </div>
 
     <article class="feature feature-auto reveal" data-accent="g">
-      <figure class="clip feature-media" data-accent="g" data-start="38.4" data-end="47.5">
+      <figure class="clip feature-media" data-accent="g" data-start="59.35" data-end="68.45">
         <div class="clip-screen">
           <video muted playsinline loop preload="none" poster="./media/ch-auto.webp" data-src="./media/demo-720.mp4"
                  aria-label="Painting a filter cutoff curve into an SQ-4 clip; the acid bass follows it."></video>
@@ -401,6 +411,41 @@
           </div>
         </div>
       </article>
+
+      <article class="feature reveal" data-accent="a">
+        <div class="feature-pair">
+          <div>
+            <figure class="clip pair-media" data-accent="a" data-start="30.40" data-end="39.90">
+              <div class="clip-screen">
+                <video muted playsinline loop preload="none" poster="./media/ch-shift.webp" data-src="./media/demo-720.mp4"
+                       aria-label="LAB SHIFT: plain plucks, then frequency-shifted echoes that spiral up and down in pitch."></video>
+                <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+              </div>
+            </figure>
+            <h3>Echoes that spiral</h3>
+            <p class="prose">
+              The new LAB row adds five experimental effects to WT-1.
+              SHIFT moves every echo up or down in frequency, so the repeats
+              spiral away from the note. Turn SPIRAL up and they keep climbing.
+            </p>
+          </div>
+          <div>
+            <figure class="clip pair-media" data-accent="o" data-start="41.90" data-end="49.40">
+              <div class="clip-screen">
+                <video muted playsinline loop preload="none" poster="./media/ch-glitch.webp" data-src="./media/demo-720.mp4"
+                       aria-label="LAB GLITCH: a steady arpeggio breaks into tempo-synced repeats, a 1/32 roll and tape drift."></video>
+                <button class="clip-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Hear it</span></button>
+              </div>
+            </figure>
+            <h3>Break it in time</h3>
+            <p class="prose">
+              GLITCH catches slices of the beat and repeats them in time with
+              the tempo. Raise the chance, roll at 1/32, then let DRIFT bend the
+              pitch of the repeats like tape. CRUSH, RESO and SPRAY wait next to it.
+            </p>
+          </div>
+        </div>
+      </article>
     </div>
   </section>
 
@@ -454,7 +499,7 @@
       <h2>Same engine.<br>Now it hits.</h2>
     </div>
 
-    <figure class="clip reveal wide" data-accent="b" data-start="28.9" data-end="38.0">
+    <figure class="clip reveal wide" data-accent="b" data-start="49.85" data-end="58.95">
       <div class="clip-screen">
         <video muted playsinline loop preload="none" poster="./media/ch-beat.webp" data-src="./media/demo-720.mp4"
                aria-label="DR-1: a beat built step by step, kick, hats, clap, open hat and rim."></video>

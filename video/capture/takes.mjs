@@ -267,4 +267,73 @@ if (want('sq-launch')) {
   });
 }
 
+// LAB helpers ---------------------------------------------------------------
+const lab = (name) => `.lab-card[aria-label="${name}"]`;
+async function labScroll() {
+  await wt(() => { const r = document.querySelector('.panel-lab').getBoundingClientRect(); window.scrollTo(0, r.top + scrollY - 380); });
+  await page.waitForTimeout(400);
+}
+
+// ---- H. LAB SHIFT: plain plucks, then spiralling frequency-shifted echoes ---
+if (want('wt-shift')) {
+  await wtSetup('f3', {
+    'fx.delay.on': 0, 'fx.chorus.on': 0, 'fx.reverb.on': 1, 'fx.reverb.size': 0.6, 'fx.reverb.mix': 0.18,
+    'fx.shift.on': 0, 'fx.shift.hz': 40, 'fx.shift.fb': 0.45, 'fx.shift.spread': 0.5, 'fx.shift.mix': 0.55,
+  });
+  await wtNotes([[0, 7, 1], [3, 3, 1], [6, 0, 1], [10, 10, 1]]);
+  await labScroll();
+  const power = await center(page, `${lab('SHIFT')} .panel-head button`);
+  const hz = await knob(lab('SHIFT'), 'SHIFT');
+  const fb = await knob(lab('SHIFT'), 'SPIRAL');
+  await record('wt-shift', async (c) => {
+    c.mark('play');
+    await wt(() => window.__fable.store.getState().seqPlay());
+    await c.move(power.x + 60, power.y + 90, BAR_MS * 0.6);
+    await c.until(BAR_MS * 1.0 - 150);
+    await c.click(power.x, power.y, 150);
+    c.mark('on');
+    await c.until(BAR_MS * 1.6);
+    await c.turn(fb.x, fb.y, [[78, BAR_MS * 0.9]], 350);
+    c.mark('spiral');
+    await c.until(BAR_MS * 3.0);
+    await c.turn(hz.x, hz.y, [[26, BAR_MS * 1.1, linear], [-62, BAR_MS * 1.4, linear]], 400);
+    c.mark('swept');
+    await c.move(hz.x + 80, hz.y + 120, 600);
+    await c.until(BAR_MS * 6.2);
+  }, [['hz', `${lab('SHIFT')} [role=slider][aria-label="SHIFT"]`], ['fb', `${lab('SHIFT')} [role=slider][aria-label="SPIRAL"]`]]);
+}
+
+// ---- I. LAB GLITCH: a steady arp, then beat repeats, rolls and tape drift ---
+if (want('wt-glitch')) {
+  await wtSetup('f3', {
+    'fx.delay.on': 0, 'fx.chorus.on': 0, 'fx.reverb.on': 1, 'fx.reverb.size': 0.4, 'fx.reverb.mix': 0.12,
+    'fx.glitch.on': 0, 'fx.glitch.div': 2, 'fx.glitch.chance': 0.35, 'fx.glitch.drift': 0, 'fx.glitch.mix': 1,
+  });
+  await wtNotes([[0, 0, 1], [2, 12, 1], [3, 7, 1], [4, 3, 1], [6, 10, 1], [7, 7, 1], [8, 0, 1], [10, 15, 1], [11, 12, 1], [12, 7, 1], [14, 10, 1], [15, 3, 1]]);
+  await labScroll();
+  const power = await center(page, `${lab('GLITCH')} .panel-head button`);
+  const next = await center(page, `${lab('GLITCH')} .stepper button[aria-label="next"]`);
+  const chance = await knob(lab('GLITCH'), 'CHANCE');
+  const drift = await knob(lab('GLITCH'), 'DRIFT');
+  await record('wt-glitch', async (c) => {
+    c.mark('play');
+    await wt(() => window.__fable.store.getState().seqPlay());
+    await c.move(power.x + 60, power.y + 90, BAR_MS * 0.6);
+    await c.until(BAR_MS * 1.0 - 150);
+    await c.click(power.x, power.y, 150);
+    c.mark('on');
+    await c.until(BAR_MS * 1.5);
+    await c.turn(chance.x, chance.y, [[110, BAR_MS * 0.9]], 350);
+    c.mark('chance');
+    await c.until(BAR_MS * 3.0 - 150);
+    await c.click(next.x, next.y, 400);
+    c.mark('roll');
+    await c.until(BAR_MS * 3.6);
+    await c.turn(drift.x, drift.y, [[75, BAR_MS * 0.9]], 350);
+    c.mark('drift');
+    await c.move(drift.x + 80, drift.y + 120, 600);
+    await c.until(BAR_MS * 6.2);
+  }, [['chance', `${lab('GLITCH')} [role=slider][aria-label="CHANCE"]`], ['drift', `${lab('GLITCH')} [role=slider][aria-label="DRIFT"]`]]);
+}
+
 await browser.close();

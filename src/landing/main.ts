@@ -156,7 +156,7 @@ if (canvas && ctx) {
 }
 
 /* ---------- demo film + chapter clips ----------
-   One 59 s film, recorded from the real instruments. The hero shows a silent
+   One 80 s film, recorded from the real instruments. The hero shows a silent
    highlight loop until the visitor asks for sound; the sections replay their
    own chapter of the same file. Only one source is audible at a time. */
 

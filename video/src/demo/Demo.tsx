@@ -13,11 +13,13 @@ export const SCENES: Record<string, Scene> = {
   sweep: { name: 'bl-sweep', from: 3, to: 7, offsetMs: 1940 },
   mod: { name: 'wt-mod', from: 7, to: 11, offsetMs: 1940 },
   fx: { name: 'wt-fx', from: 11, to: 15, offsetMs: 35, tail: Math.round(BAR) },
-  beat: { name: 'dr-build', from: 15, to: 20, offsetMs: 35 },
-  auto: { name: 'sq-auto', from: 20, to: 25, offsetMs: 1162 },
-  launch: { name: 'sq-launch', from: 25, to: 31, offsetMs: 950 },
+  shift: { name: 'wt-shift', from: 15, to: 21, offsetMs: 35 },
+  glitch: { name: 'wt-glitch', from: 21, to: 26, offsetMs: 35 },
+  beat: { name: 'dr-build', from: 26, to: 31, offsetMs: 35 },
+  auto: { name: 'sq-auto', from: 31, to: 36, offsetMs: 1162 },
+  launch: { name: 'sq-launch', from: 36, to: 42, offsetMs: 950 },
 };
-export const DEMO_TOTAL = at(31);
+export const DEMO_TOTAL = at(42);
 
 export const PLATE: React.CSSProperties = { padding: '22px 30px', borderRadius: 16, background: 'rgba(6,7,11,0.8)', backdropFilter: 'blur(14px)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' };
 
@@ -202,18 +204,13 @@ const FX_CAM: Cam[] = [
   { t: 6600, x: 1530, y: 610, z: 2.4 },
   { t: 7654, x: 1350, y: 620, z: 1.6 },
 ];
-const FxState: React.FC<{ t: number }> = ({ t }) => {
-  const m = TAKES['wt-fx'].marks;
-  const items: [string, number, string][] = [
-    ['DRY', 0, C.dim],
-    ['+ TAPE ECHO', m.echo, C.cyan],
-    ['+ REVERB', m.reverb, C.violet],
-  ];
+/** Stack of states that light up as the take reaches each mark; the first one is struck through. */
+const StateStack: React.FC<{ t: number; items: [string, number, string][] }> = ({ t, items }) => {
   return (
     <div style={{ position: 'absolute', right: 70, top: 560, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12, ...PLATE }}>
       {items.map(([label, at, col], i) => {
         const on = t >= at;
-        const nextOn = i < 2 && t >= items[i + 1][1];
+        const nextOn = i < items.length - 1 && t >= items[i + 1][1];
         const age = (t - at) / 250;
         const s = on ? Math.min(1, age) : 0;
         return (
@@ -246,14 +243,73 @@ const Fx: React.FC = () => {
       <Spectrum name={s.name} offsetMs={s.offsetMs} color={C.cyan} />
       <Scrim />
       <Caption kicker="WT-1 · STUDIO FX" title={'ADD SPACE.'} color={C.cyan} />
-      <FxState t={t} />
+      <StateStack t={t} items={[['DRY', 0, C.dim], ['+ TAPE ECHO', TAKES[s.name].marks.echo, C.cyan], ['+ REVERB', TAKES[s.name].marks.reverb, C.violet]]} />
       <Readout label="REVERB SIZE" value={valueAt(s.name, 'revsize', t)} color={C.violet} x={70} y={600} show={fadeWindow(t, 5050, 6550)} />
       <Readout label="REVERB MIX" value={valueAt(s.name, 'revmix', t)} color={C.violet} x={70} y={600} show={fadeWindow(t, 6750, 7900)} />
     </AbsoluteFill>
   );
 };
 
-// ------------------------------------------------------------------ 5. DR-1 beat build
+// ------------------------------------------------------------------ 5. LAB SHIFT
+const SHIFT_CAM: Cam[] = [
+  { t: 35, x: 960, y: 600, z: 1.25 },
+  { t: 1500, x: 852, y: 555, z: 2.0 },
+  { t: 4900, x: 850, y: 560, z: 2.05 },
+  { t: 5600, x: 846, y: 570, z: 2.12 },
+  { t: 10300, x: 846, y: 572, z: 2.16 },
+  { t: 11465, x: 900, y: 600, z: 1.5 },
+];
+const Shift: React.FC = () => {
+  const s = SCENES.shift;
+  const t = useTakeMs(s.offsetMs);
+  const m = TAKES[s.name].marks;
+  return (
+    <AbsoluteFill>
+      <TakePlayer name={s.name} offsetMs={s.offsetMs} cam={SHIFT_CAM} accent={C.cyan} audio={false} />
+      <Spectrum name={s.name} offsetMs={s.offsetMs} color={C.cyan} />
+      <Scrim />
+      <Caption kicker="LAB · NEW · FREQUENCY SHIFTER" title={'ECHOES\nTHAT SPIRAL.'} sub="EVERY REPEAT SHIFTS IN PITCH" color={C.cyan} />
+      <StateStack t={t} items={[['DRY', 0, C.dim], ['+ SHIFT', m.on, C.cyan]]} />
+      <Readout label="SPIRAL" value={valueAt(s.name, 'fb', t)} color={C.cyan} x={70} y={600} show={fadeWindow(t, 3300, 5300)} />
+      <Readout label="SHIFT" value={valueAt(s.name, 'hz', t)} color={C.orange} x={70} y={600} show={fadeWindow(t, 5500, 11200)} />
+      {t >= m.on && t < m.on + 400 && <AbsoluteFill style={{ background: C.cyan, opacity: 0.22 * (1 - (t - m.on) / 400), mixBlendMode: 'screen' }} />}
+    </AbsoluteFill>
+  );
+};
+
+// ------------------------------------------------------------------ 6. LAB GLITCH
+const GLITCH_CAM: Cam[] = [
+  { t: 35, x: 1300, y: 600, z: 1.3 },
+  { t: 1500, x: 1463, y: 555, z: 2.0 },
+  { t: 5800, x: 1462, y: 560, z: 2.05 },
+  { t: 6600, x: 1458, y: 570, z: 2.14 },
+  { t: 9560, x: 1458, y: 572, z: 2.18 },
+];
+const Glitch: React.FC = () => {
+  const s = SCENES.glitch;
+  const f = useCurrentFrame();
+  const t = useTakeMs(s.offsetMs);
+  const m = TAKES[s.name].marks;
+  // Small RGB split on the repeats, only while GLITCH is on and the level moves.
+  const on = t >= m.on;
+  const jitter = on ? Math.min(6, Math.max(0, rmsAt(s.name, t) + 34) * (Math.sin(f * 12.9898) * 0.5 + 0.5) * 0.6) : 0;
+  return (
+    <AbsoluteFill>
+      <AbsoluteFill style={{ transform: `translateX(${jitter > 3 ? (f % 2 ? 1 : -1) * jitter : 0}px)` }}>
+        <TakePlayer name={s.name} offsetMs={s.offsetMs} cam={GLITCH_CAM} accent={C.orange} audio={false} />
+      </AbsoluteFill>
+      <Spectrum name={s.name} offsetMs={s.offsetMs} color={C.orange} />
+      <Scrim />
+      <Caption kicker="LAB · NEW · BEAT REPEAT" title={'BREAK IT.\nIN TIME.'} sub="TEMPO-SYNCED STUTTER · TAPE DRIFT" color={C.orange} />
+      <StateStack t={t} items={[['DRY', 0, C.dim], ['+ GLITCH', m.on, C.orange], ['1/32 ROLL', m.roll, C.violet], ['+ TAPE DRIFT', m.drift - 1600, C.cyan]]} />
+      <Readout label="CHANCE" value={valueAt(s.name, 'chance', t)} color={C.orange} x={70} y={600} show={fadeWindow(t, 3300, 5900)} />
+      <Readout label="DRIFT" value={valueAt(s.name, 'drift', t)} color={C.cyan} x={70} y={600} show={fadeWindow(t, 7100, 9500)} />
+      {[m.on, m.roll].map((k) => t >= k && t < k + 400 && <AbsoluteFill key={k} style={{ background: C.orange, opacity: 0.22 * (1 - (t - k) / 400), mixBlendMode: 'screen' }} />)}
+    </AbsoluteFill>
+  );
+};
+
+// ------------------------------------------------------------------ 7. DR-1 beat build
 const BEAT_CAM: Cam[] = [
   { t: 35, x: 1000, y: 820, z: 1.55 },
   { t: 1700, x: 1000, y: 840, z: 1.6 },
@@ -280,7 +336,7 @@ const Beat: React.FC = () => {
   );
 };
 
-// ------------------------------------------------------------------ 6. SQ-4 automation
+// ------------------------------------------------------------------ 8. SQ-4 automation
 const AUTO_CAM: Cam[] = [
   { t: 1162, x: 960, y: 540, z: 1, card: 0.7 },
   { t: 1250, x: 1380, y: 650, z: 1.7 },
@@ -307,7 +363,7 @@ const Auto: React.FC = () => {
   );
 };
 
-// ------------------------------------------------------------------ 7. SQ-4 launch + outro
+// ------------------------------------------------------------------ 9. SQ-4 launch + outro
 const LAUNCH_DROP = 4760;
 const LAUNCH_CAM: Cam[] = [
   { t: 950, x: 760, y: 430, z: 1.55 },
@@ -333,7 +389,7 @@ const Launch: React.FC = () => {
   const outroF = dropF + Math.round(BAR * 1.5);
   const of = f - outroF;
   const dim = of >= 0 ? Math.min(1, of / 18) : 0;
-  const dur = at(31) - at(25);
+  const dur = at(s.to) - at(s.from);
   const end = lerp(f, dur - 30, dur, 1, 0);
   const queued = t > 3081 && t < LAUNCH_DROP;
   return (
@@ -389,6 +445,8 @@ const VIEWS: [Scene, React.FC][] = [
   [SCENES.sweep, Sweep],
   [SCENES.mod, Mod],
   [SCENES.fx, Fx],
+  [SCENES.shift, Shift],
+  [SCENES.glitch, Glitch],
   [SCENES.beat, Beat],
   [SCENES.auto, Auto],
   [SCENES.launch, Launch],
