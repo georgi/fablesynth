@@ -38,7 +38,10 @@ target_include_directories(fable_codeact INTERFACE "${CMAKE_CURRENT_LIST_DIR}/sr
 target_link_libraries(fable_codeact INTERFACE juce::juce_core qjs)
 target_compile_features(fable_codeact INTERFACE cxx_std_17)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Propagate curl to every plugin and test that compiles JUCE networking.
+    find_package(CURL REQUIRED)
     target_compile_definitions(fable_codeact INTERFACE JUCE_USE_CURL=1)
+    target_link_libraries(fable_codeact INTERFACE CURL::libcurl)
 endif()
 
 add_executable(fable_codeact_parser_tests tests/parser_tests.cpp)
