@@ -834,6 +834,9 @@ bool FxModuleView::keyPressed(const juce::KeyPress &k) {
 
 FxChain::FxChain(DeviceUiModel &model, bool tape) : model_(model), tape_(tape) {
     setName("FX chain");
+    labButton_.setClickingTogglesState(true);
+    labButton_.onClick = [this] { labVisible_ = labButton_.getToggleState(); resized(); repaint(); };
+    addAndMakeVisible(labButton_);
     rebuild();
 }
 void FxChain::setPad(int pad, const juce::String &name) {
@@ -847,6 +850,13 @@ void FxChain::setPad(int pad, const juce::String &name) {
 }
 void FxChain::rebuild() {
     modules_.clear();
+    lab_.reset();
+    const auto scope = pad_ < 0 ? juce::String() : "pad" + juce::String(pad_) + ".";
+    if (model_.parameters().parameter(scope + "fx.crush.on")) {
+        lab_ = std::make_unique<LabPanel>(model_.parameters(), scope);
+        addChildComponent(*lab_);
+    }
+    labButton_.setVisible(lab_ != nullptr);
     for (auto kind : {FxModuleView::Eq, FxModuleView::Ott, FxModuleView::Comp, FxModuleView::Drive,
                       FxModuleView::Chorus, FxModuleView::Echo, FxModuleView::Reverb}) {
         addAndMakeVisible(modules_.add(new FxModuleView(
@@ -859,6 +869,7 @@ void FxChain::paint(juce::Graphics &g) {
     g.setFont(monoFont(9));
     g.setColour(col::acN);
     auto head = getLocalBounds().removeFromTop(22);
+    if (lab_) head.removeFromRight(65);
     g.drawText(pad_ < 0 ? (padName_.isNotEmpty() ? padName_ : "CHANNEL STRIP")
                         : "PAD " + juce::String(pad_ + 1).paddedLeft('0', 2) + "  " + padName_,
                head, juce::Justification::centredLeft);
@@ -869,7 +880,10 @@ void FxChain::paint(juce::Graphics &g) {
 }
 void FxChain::resized() {
     auto r = getLocalBounds();
+    labButton_.setBounds(r.getRight() - 60, 0, 60, 22);
     r.removeFromTop(26);
+    if (lab_) { lab_->setBounds(r); lab_->setVisible(labVisible_); }
+    for (auto* module : modules_) module->setVisible(!lab_ || !labVisible_);
     const int gap = 10, topH = (r.getHeight() - gap) / 2;
     auto top = r.removeFromTop(topH);
     r.removeFromTop(gap);

@@ -1422,6 +1422,8 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         // a static patch costs one memcmp per pad per chunk.
         advanceSmoothers(run);
         if (padFxEnabled_) {
+            for (auto& fx : padFx_) fx.setLabTempo(effectiveBpm());
+            for (auto& fx : groupFx_) fx.setLabTempo(effectiveBpm());
             for (int i = 0; i < DR_NPADS; ++i) {
                 const int b = dpid(i, DP_FXDRIVE_ON);
                 if (std::memcmp(&fxSeen_[(size_t)i][0], &ps_[(size_t)b],

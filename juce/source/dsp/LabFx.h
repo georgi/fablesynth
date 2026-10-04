@@ -353,13 +353,15 @@ private:
     struct Comb { lab::Ring ring; double lp = 0, d = 100, target = 100; };
     void reso(double& l, double& r) {
         const double x = 0.5 * (l + r), g = resoFb_.next();
+        // Energy-normalized excitation keeps long resonances audible.
+        const double excitation = std::sqrt(1.0 - g * g);
         std::array<double, 4> out {};
         for (size_t i = 0; i < combs_.size(); ++i) {
             auto& c = combs_[i];
             c.d += (c.target - c.d) * 0.0015;
             const double y = c.ring.hermite((double)c.ring.w - c.d);
             c.lp += kDamp * (y - c.lp);
-            c.ring.write(std::tanh(x * (1.0 - g) + g * c.lp));
+            c.ring.write(std::tanh(x * excitation + g * c.lp));
             out[i] = y;
         }
         l = 0.5 * (out[0] + out[2] + 0.5 * (out[1] + out[3]));

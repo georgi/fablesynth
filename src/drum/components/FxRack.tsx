@@ -2,7 +2,9 @@ import { useLayoutEffect } from 'react';
 import { drumEngine, useDrumStore } from '../store';
 import { useSeqStore } from '../../seq/store';
 import { OUT_NAMES, pad } from '../params';
+import { DrumStepper } from './DrumStepper';
 import { DrumKnob } from './DrumKnob';
+import { LabPanel } from '../../components/panels/LabPanel';
 import { EqPanel } from '../../components/panels/EqPanel';
 import { DrivePanel } from '../../components/panels/DrivePanel';
 import { ChorusPanel } from '../../components/panels/ChorusPanel';
@@ -33,6 +35,7 @@ export function FxRack() {
     prefix: scope === 'pad' ? pad(selectedPad, '') : '',
     renderKnob: (id, key) => <DrumKnob paramId={id} label={id.includes('fx.eq.') ? key?.toUpperCase() : undefined} size="sm" accent="n" />,
     renderPower: (id) => <DrumPower paramId={id} />,
+    renderStepper: (id) => <DrumStepper paramId={id} accent="n" />,
   };
 
   return (
@@ -56,6 +59,7 @@ export function FxRack() {
         <TapeEchoPanel adapter={{ ...adapter, title: 'DELAY', context: 'PING-PONG' }} />
         <ReverbPanel adapter={{ ...adapter, context: scope === 'pad' ? OUT_NAMES[bus] : 'POST MIX' }} />
       </div>
+      <LabPanel adapter={adapter} />
     </section>
   );
 }

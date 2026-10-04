@@ -54,6 +54,31 @@ const maxDelta = (x: Float32Array, a: number, b: number): number => {
   return m;
 };
 
+describe('DR-1 Lab inserts', () => {
+  for (const stage of ['crush', 'reso', 'shift', 'spray', 'glitch']) {
+    it(`${stage} changes the selected pad without affecting another pad`, () => {
+      const p = bare();
+      const render = (params: ParamValues, padIndex: number) => {
+        const h = boot(params);
+        // Repeated hits span GLITCH's capture and playback windows.
+        const samples: number[] = [];
+        for (let hit = 0; hit < 12; hit++) {
+          h.send({ t: 'trig', pad: padIndex, v: 0.4 });
+          samples.push(...h.render(48).L);
+        }
+        return samples;
+      };
+      const wet = { ...p, [pad(0, `fx.${stage}.on`)]: 1,
+        [pad(0, `fx.${stage}.mix`)]: 1, [pad(0, 'fx.glitch.chance')]: 1 };
+      const dry = render(p, 0), actual = render(wet, 0);
+      expect(actual).not.toEqual(dry);
+      expect(actual.every(Number.isFinite)).toBe(true);
+      expect(Math.max(...actual.map(Math.abs))).toBeLessThanOrEqual(0.891251);
+      expect(render(wet, 1)).toEqual(render(p, 1));
+    });
+  }
+});
+
 describe('DR-1 OTT insert', () => {
   it('changes only the enabled pad', () => {
     const p = bare();

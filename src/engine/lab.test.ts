@@ -87,6 +87,28 @@ describe('LAB web/native parity', () => {
   }
 });
 
+describe('RESO excitation level', () => {
+  it('keeps broadband-driven resonances audible at default and maximum decay', () => {
+    for (const decay of [0.7, 1]) {
+      const lab = new LabFx(48000);
+      lab.setParams({ ...DEFAULTS, resoOn: true, resoMix: 1, resoDecay: decay }, 120);
+      let seed = 1, dryEnergy = 0, wetEnergy = 0;
+      for (let i = 0; i < 96000; i++) {
+        seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+        const x = ((seed >>> 0) / 4294967296 * 2 - 1) * 0.1;
+        lab.processSample(x, x);
+        expect(Number.isFinite(lab.out[0])).toBe(true);
+        if (i >= 48000) {
+          dryEnergy += x * x;
+          wetEnergy += lab.out[0] ** 2;
+        }
+      }
+      // Long decay must not starve the resonator of excitation.
+      expect(Math.sqrt(wetEnergy / dryEnergy)).toBeGreaterThan(decay === 1 ? 0.15 : 0.35);
+    }
+  });
+});
+
 describe('LAB in the WT-1 worklet chain', () => {
   const TONE: Partial<ParamValues> = {
     'fx.eq.on': 0, 'fx.drive.on': 0, 'fx.chorus.on': 0, 'fx.delay.on': 0, 'fx.reverb.on': 0,

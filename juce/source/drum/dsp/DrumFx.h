@@ -35,6 +35,7 @@ public:
     // while leaving reverb processing to the shared per-bus network.
     void processInsert(float* L, float* R, float* sendL, float* sendR, int n);
     void reset();
+    void setLabTempo(double bpm) { lab_.setTempoOverride(bpm); }
     int  latencySamples() const { return kDriveLatency; }
     // Finding D8: true while the whole chain is bypassed because its input AND
     // its own output have been below kIdleLevel for kIdleHold. Read by the
@@ -44,6 +45,8 @@ public:
     float reverbSendWeight() const { return verbWet_.target; }
 
 private:
+    LabFx lab_;
+    bool labEnabled_ = false;
     ParametricEq eq_;
     FxMeter meter_;
     void setParamsAt(const DrumParamArray& p, int base);

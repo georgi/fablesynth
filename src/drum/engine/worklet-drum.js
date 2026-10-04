@@ -533,6 +533,7 @@ class Freeverb {
 class PadFx {
   constructor(sr) {
     this.sr = sr;
+    this.lab = new globalThis.FableLabFx(sr);
     this.headroom = {};
     for (const stage of ['input', 'ott', 'comp', 'drive', 'chorus', 'delay']) {
       this.headroom[stage] = new StereoPeakGuard(sr);
@@ -603,13 +604,40 @@ class PadFx {
     this.dlL.reset(); this.dlR.reset(); this.dlDamp.reset();
     this.chPhase = 0;
     this.driveColorL.reset(); this.driveColorR.reset(); this.comp.reset();
-    this.ott.reset(); this.eq.reset();
+    this.ott.reset(); this.eq.reset(); this.lab.reset();
     this.meterInput = 0; this.meterOtt = 0; this.meterCompIn = 0; this.meterCompOut = 0;
     this.meterEchoIn = 0; this.meterEchoL = 0; this.meterEchoR = 0;
   }
 
   setParams(pv, f) {
     this.eq.setParams(k => pv[f[fid(k)]]);
+    const lab = {};
+    lab.crushOn = pv[f[fid('fx.crush.on')]] > 0.5;
+    lab.crushBits = pv[f[fid('fx.crush.bits')]];
+    lab.crushRate = pv[f[fid('fx.crush.rate')]];
+    lab.crushChaos = pv[f[fid('fx.crush.chaos')]];
+    lab.crushMix = pv[f[fid('fx.crush.mix')]];
+    lab.resoOn = pv[f[fid('fx.reso.on')]] > 0.5;
+    lab.resoNote = pv[f[fid('fx.reso.note')]];
+    lab.resoChord = pv[f[fid('fx.reso.chord')]];
+    lab.resoDecay = pv[f[fid('fx.reso.decay')]];
+    lab.resoMix = pv[f[fid('fx.reso.mix')]];
+    lab.shiftOn = pv[f[fid('fx.shift.on')]] > 0.5;
+    lab.shiftHz = pv[f[fid('fx.shift.hz')]];
+    lab.shiftFb = pv[f[fid('fx.shift.fb')]];
+    lab.shiftSpread = pv[f[fid('fx.shift.spread')]];
+    lab.shiftMix = pv[f[fid('fx.shift.mix')]];
+    lab.sprayOn = pv[f[fid('fx.spray.on')]] > 0.5;
+    lab.sprayPitch = pv[f[fid('fx.spray.pitch')]];
+    lab.sprayDensity = pv[f[fid('fx.spray.density')]];
+    lab.sprayScatter = pv[f[fid('fx.spray.scatter')]];
+    lab.sprayMix = pv[f[fid('fx.spray.mix')]];
+    lab.glitchOn = pv[f[fid('fx.glitch.on')]] > 0.5;
+    lab.glitchDiv = pv[f[fid('fx.glitch.div')]];
+    lab.glitchChance = pv[f[fid('fx.glitch.chance')]];
+    lab.glitchDrift = pv[f[fid('fx.glitch.drift')]];
+    lab.glitchMix = pv[f[fid('fx.glitch.mix')]];
+    this.lab.setParams(lab, pv[G_BPM] || 126);
     this.driveColorL.setParams(pv[f[fid('fx.drive.type')]], pv[f[fid('fx.drive.tone')]]);
     this.driveColorR.setParams(pv[f[fid('fx.drive.type')]], pv[f[fid('fx.drive.tone')]]);
     const amt = pv[f[P_FXDRIVE_AMT]];
@@ -656,7 +684,8 @@ class PadFx {
   // Hold-off before the gate may close: one full delay round trip plus
   // GATE_HOLD, so an echo still in flight can never be cut.
   holdSamples() {
-    const extra = this.delayOff ? 0 : this.dlTime.target;
+    const extra = Math.max(this.delayOff ? 0 : this.dlTime.target,
+      Object.entries(this.lab.settings).some(([key, value]) => key.endsWith('On') && value) ? 4 : 0);
     return (GATE_HOLD + extra) * this.sr;
   }
 
@@ -766,6 +795,10 @@ class PadFx {
     }
 
     this.headroom.drive.process(L, R, n);
+    for (let i = 0; i < n; i++) {
+      this.lab.processSample(L[i], R[i]);
+      L[i] = this.lab.out[0]; R[i] = this.lab.out[1];
+    }
 
     // ---- chorus (two modulated taps, stereo) ----
     if (!this.chorusGated) {
@@ -904,6 +937,7 @@ const FIELDS = [
   'fx.ott.on', 'fx.ott.depth', 'fx.ott.time', 'fx.ott.up', 'fx.ott.down', 'fx.ott.gain',
   ...globalThis.FableEqFields,
   'fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type',
+  'fx.crush.on', 'fx.crush.bits', 'fx.crush.rate', 'fx.crush.chaos', 'fx.crush.mix', 'fx.reso.on', 'fx.reso.note', 'fx.reso.chord', 'fx.reso.decay', 'fx.reso.mix', 'fx.shift.on', 'fx.shift.hz', 'fx.shift.fb', 'fx.shift.spread', 'fx.shift.mix', 'fx.spray.on', 'fx.spray.pitch', 'fx.spray.density', 'fx.spray.scatter', 'fx.spray.mix', 'fx.glitch.on', 'fx.glitch.div', 'fx.glitch.chance', 'fx.glitch.drift', 'fx.glitch.mix',
 ];
 const NF = FIELDS.length;
 const fid = (name) => FIELDS.indexOf(name);
@@ -2338,6 +2372,9 @@ class DrumProcessor extends AudioWorkletProcessor {
 
   // Pad FX chains -> bus sums (+ the shared reverb send) -> bus output stage.
   renderFx(outputs, n) {
+    const bpm = this.hostBpm > 0 && this.hosted ? this.hostBpm : (this.pv[G_BPM] || 126);
+    for (const fx of this.padFx) fx.lab.setTempoOverride(bpm);
+    for (const fx of this.groupFx) fx.lab.setTempoOverride(bpm);
     if (this.fxDirty) {
       this.fxDirty = false;
       for (let i = 0; i < NPADS; i++) this.padFx[i].setParams(this.pv, this.padIds[i]);

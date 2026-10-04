@@ -22,6 +22,7 @@ export interface FxPanelAdapter {
   title?: string;
   renderKnob?: (id: string, key?: string) => ReactNode;
   renderPower?: (id: string) => ReactNode;
+  renderStepper?: (id: string) => ReactNode;
 }
 
 export const fxId = (prefix: string | undefined, id: string) => `${prefix ?? ''}${id}`;

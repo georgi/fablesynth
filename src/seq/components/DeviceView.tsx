@@ -32,6 +32,7 @@ import { useDrumStore } from '../../drum/store';
 import { makeEmptyPatterns as wtEmpty } from '../../noteseq';
 import { EnvPanel } from '../../components/panels/EnvPanel';
 import { FilterPanel } from '../../components/panels/FilterPanel';
+import { LabPanel } from '../../components/panels/LabPanel';
 import { FxPanel } from '../../components/panels/FxPanel';
 import { EqPanel } from '../../components/panels/EqPanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
@@ -469,6 +470,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
               <TapeEchoPanel />
               <ReverbPanel />
               <FxPanel />
+              <LabPanel />
             </>}
           </>
         )}

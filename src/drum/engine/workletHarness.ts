@@ -2,6 +2,7 @@
 // source in-process so vitest can drive the real DSP offline. Mirrors the
 // AudioWorklet contract: constructor gets a port, process(inputs, outputs).
 import DRUM_SRC from './worklet-drum.js?raw';
+import LAB_SRC from '../../engine/lab-worklet.js?raw';
 import OTT_SRC from '../../engine/ott-worklet.js?raw';
 
 export interface DrumHarness {
@@ -37,7 +38,7 @@ export function makeDrumProcessor(sampleRate = 48000): DrumHarness {
   const register = (_name: string, cls: new () => DrumHarness['proc']) => { Proc = cls; };
   // Load the shared OTT component before the processor, just as init() does.
   // Both modules have no imports/exports and can be evaluated verbatim.
-  new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', OTT_SRC + '\n' + DRUM_SRC)(
+  new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', OTT_SRC + '\n' + LAB_SRC + '\n' + DRUM_SRC)(
     sampleRate, AWP, register,
   );
   const proc = new Proc!();

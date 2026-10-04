@@ -8,6 +8,7 @@ import { generateDrumTables } from './drumtables';
 import { generateSampledDrumTables } from './sampledtables.gen';
 import { loadDrumOneShots, type DrumOneShot } from './oneshots.gen';
 import workletUrl from './worklet-drum.js?url';
+import labWorkletUrl from '../../engine/lab-worklet.js?url';
 import ottWorkletUrl from '../../engine/ott-worklet.js?url';
 import type { DynamicsMessage } from '../../engine/dynamics';
 import type { EchoMessage } from '../../engine/echo';
@@ -144,6 +145,7 @@ export class DrumEngine {
     this.ctx = ctx;
     this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(ottWorkletUrl);
+    await ctx.audioWorklet.addModule(labWorkletUrl);
     await ctx.audioWorklet.addModule(workletUrl);
 
     this.builtInTables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()];

@@ -855,7 +855,8 @@
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
     'filter filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos'
     'matrix matrix matrix eq eq eq ott ott ott comp comp comp'
-    'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb';
+    'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb'
+    'lab lab lab lab lab lab lab lab lab lab lab lab';
 }
 
 .sq-clipbar {

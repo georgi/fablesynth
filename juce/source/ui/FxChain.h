@@ -1,6 +1,7 @@
 #pragma once
 #include "Controls.h"
 #include "DeviceUiModel.h"
+#include "LabPanel.h"
 #include <deque>
 
 namespace fui {
@@ -74,6 +75,9 @@ class FxChain : public juce::Component {
     int pad_ = -1;
     juce::String padName_;
     juce::OwnedArray<FxModuleView> modules_;
+    std::unique_ptr<LabPanel> lab_;
+    juce::TextButton labButton_ { "LAB" };
+    bool labVisible_ = false;
 };
 
 // Compact, keyboard-operable navigation shared by standalone and hosted bodies.

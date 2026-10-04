@@ -22,6 +22,7 @@ static const int STEREO_SPREAD  = 23;
 void DrumFx::prepare(double sampleRate) {
     meter_.prepare(sampleRate);
     eq_.prepare(sampleRate);
+    lab_.prepare(sampleRate);
     sr_ = sampleRate;
     driveColorL_.prepare(sr_); driveColorR_.prepare(sr_);
     double scale = sr_ / 44100.0;
@@ -69,6 +70,7 @@ void DrumFx::prepare(double sampleRate) {
 void DrumFx::reset() {
     meter_.reset();
     eq_.reset();
+    lab_.reset();
     chDl1_.reset(); chDl2_.reset(); dlL_.reset(); dlR_.reset();
     dryL_.reset(); dryR_.reset();
     for (auto& c : combL_) c.reset();
@@ -81,7 +83,8 @@ void DrumFx::reset() {
     ott_.reset(); driveColorL_.reset(); driveColorR_.reset(); comp_.reset();
     headroomInput_.reset(); headroomOtt_.reset(); headroomComp_.reset(); headroomDrive_.reset();
     headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset(); delayFeedbackGuard_.reset();
-    idle_ = false; idleSilent_ = 0;
+    // Match the web insert: a fresh silent pad must not excite CRUSH chaos.
+    idle_ = true; idleSilent_ = 0;
     chPhase_ = 0;
     driveGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
     // settle smoothers at their targets so no stale ramp survives a re-prepare
@@ -107,6 +110,34 @@ void DrumFx::setGroupParams(const DrumParamArray& p) {
 
 void DrumFx::setParamsAt(const DrumParamArray& p, int b) {
     eq_.setParams(p.data() + b + DP_FXEQ_ON);
+    LabSettings lab;
+    lab.crushOn = p[(size_t)(b + DP_FXCRUSH_ON)] > 0.5f;
+    lab.crushBits = p[(size_t)(b + DP_FXCRUSH_BITS)];
+    lab.crushRate = p[(size_t)(b + DP_FXCRUSH_RATE)];
+    lab.crushChaos = p[(size_t)(b + DP_FXCRUSH_CHAOS)];
+    lab.crushMix = p[(size_t)(b + DP_FXCRUSH_MIX)];
+    lab.resoOn = p[(size_t)(b + DP_FXRESO_ON)] > 0.5f;
+    lab.resoNote = p[(size_t)(b + DP_FXRESO_NOTE)];
+    lab.resoChord = p[(size_t)(b + DP_FXRESO_CHORD)];
+    lab.resoDecay = p[(size_t)(b + DP_FXRESO_DECAY)];
+    lab.resoMix = p[(size_t)(b + DP_FXRESO_MIX)];
+    lab.shiftOn = p[(size_t)(b + DP_FXSHIFT_ON)] > 0.5f;
+    lab.shiftHz = p[(size_t)(b + DP_FXSHIFT_HZ)];
+    lab.shiftFb = p[(size_t)(b + DP_FXSHIFT_FB)];
+    lab.shiftSpread = p[(size_t)(b + DP_FXSHIFT_SPREAD)];
+    lab.shiftMix = p[(size_t)(b + DP_FXSHIFT_MIX)];
+    lab.sprayOn = p[(size_t)(b + DP_FXSPRAY_ON)] > 0.5f;
+    lab.sprayPitch = p[(size_t)(b + DP_FXSPRAY_PITCH)];
+    lab.sprayDensity = p[(size_t)(b + DP_FXSPRAY_DENSITY)];
+    lab.sprayScatter = p[(size_t)(b + DP_FXSPRAY_SCATTER)];
+    lab.sprayMix = p[(size_t)(b + DP_FXSPRAY_MIX)];
+    lab.glitchOn = p[(size_t)(b + DP_FXGLITCH_ON)] > 0.5f;
+    lab.glitchDiv = p[(size_t)(b + DP_FXGLITCH_DIV)];
+    lab.glitchChance = p[(size_t)(b + DP_FXGLITCH_CHANCE)];
+    lab.glitchDrift = p[(size_t)(b + DP_FXGLITCH_DRIFT)];
+    lab.glitchMix = p[(size_t)(b + DP_FXGLITCH_MIX)];
+    labEnabled_ = lab.crushOn || lab.resoOn || lab.shiftOn || lab.sprayOn || lab.glitchOn;
+    lab_.setParams(lab, p[DG_SEQ_BPM]);
     // drive
     float amt = p[(size_t)(b + DP_FXDRIVE_AMT)];
     drivePre_ = 1 + amt * 2;
@@ -196,7 +227,7 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
     // is skipped and its state stays frozen. The output is already the input.
     // Include both ends of a time automation move; never freeze the delay
     // while a repeat can still be travelling through either channel.
-    const double delayHorizon = delayGated_ ? 0 : std::max(dlTime_.cur, dlTime_.target);
+    const double delayHorizon = std::max(labEnabled_ ? 4.0 : 0.0, delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target));
     float delayPk = 0;
     float inPk = 0;
     for (int i = 0; i < n; i++)
@@ -276,6 +307,8 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
             l = dlyL; r = dlyR;
         }
         double gDrive = headroomDrive_.gainFor(l, r); l *= (float)gDrive; r *= (float)gDrive;
+
+        lab_.processSample(l, r);
 
         // ---- chorus (two modulated taps, stereo) ----
         if (!chorusGated_) {

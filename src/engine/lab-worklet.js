@@ -318,13 +318,15 @@ class LabFx {
   // ---- RESO ----
   reso(l, r) {
     const x = 0.5 * (l + r), g = this.resoFb.next();
+    // Energy-normalized excitation keeps long resonances audible.
+    const excitation = Math.sqrt(1 - g * g);
     const o = this.combOut;
     for (let i = 0; i < 4; i++) {
       const c = this.combs[i];
       c.d += (c.target - c.d) * 0.0015;
       const y = c.ring.hermite(c.ring.w - c.d);
       c.lp += LAB_DAMP * (y - c.lp);
-      c.ring.write(Math.tanh(x * (1 - g) + g * c.lp));
+      c.ring.write(Math.tanh(x * excitation + g * c.lp));
       o[i] = y;
     }
     this.out[0] = 0.5 * (o[0] + o[2] + 0.5 * (o[1] + o[3]));

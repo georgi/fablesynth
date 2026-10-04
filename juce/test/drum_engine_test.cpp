@@ -305,7 +305,7 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 99, "99 per-pad fields including dynamics and drive controls");
+    check(DPAD_NFIELDS == 124, "124 per-pad fields including dynamics, drive and Lab controls");
     check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3 + (DPAD_NFIELDS - DP_FXDRIVE_ON),
           "per-pad params plus transport and group-strip globals");
     const auto& info = drumParamInfo();
@@ -545,6 +545,37 @@ int main() {
               "pad inserts and group strip remain independent",
               "other=" + std::to_string(unrelatedDiff) + " pad=" + std::to_string(padDiff)
                 + " group=" + std::to_string(groupDiff));
+    }
+
+    {
+        auto clean = defaultDrumParams();
+        for (int pad = -1; pad < DR_NPADS; ++pad)
+            for (int field : { DP_FXCOMP_ON, DP_FXOTT_ON, DP_FXDRIVE_ON, DP_FXCHORUS_ON, DP_FXDELAY_ON, DP_FXREVERB_ON })
+                clean[(size_t)(pad < 0 ? dgfx(field) : dpid(pad, field))] = 0;
+        const auto run = [&](const DrumParamArray& params) {
+            DrumEngine e; e.prepare(48000); e.enablePadFx(true);
+            e.setTables(allTables()); e.setParams(params); e.trigger(0, 0.4f);
+            return renderMain(e, 8192);
+        };
+        const auto dry = run(clean);
+        for (int field : { DP_FXCRUSH_ON, DP_FXRESO_ON, DP_FXSHIFT_ON, DP_FXSPRAY_ON }) {
+            auto selected = clean, other = clean, group = clean;
+            selected[(size_t)dpid(0, field)] = 1;
+            other[(size_t)dpid(1, field)] = 1;
+            group[(size_t)dgfx(field)] = 1;
+            const auto wet = run(selected), untouched = run(other), summed = run(group);
+            double diff = 0, otherDiff = 0, groupDiff = 0; bool finite = true;
+            for (size_t i = 0; i < dry.size(); ++i) {
+                diff += std::abs((double)dry[i] - wet[i]);
+                otherDiff += std::abs((double)dry[i] - untouched[i]);
+                groupDiff += std::abs((double)dry[i] - summed[i]);
+                finite = finite && std::isfinite(wet[i]) && std::abs(wet[i]) <= 0.891251f;
+            }
+            check(diff > 0.01 && otherDiff < 1e-9 && groupDiff > 0.01 && finite,
+                  "Lab insert changes its pad and group independently: " + std::to_string(field),
+                  "pad=" + std::to_string(diff) + " other=" + std::to_string(otherDiff)
+                    + " group=" + std::to_string(groupDiff) + " finite=" + std::to_string(finite));
+        }
     }
 
     printf("\n== 4. Sequencer ==\n");

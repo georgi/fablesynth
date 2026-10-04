@@ -16,7 +16,7 @@ class LabModule final : public juce::Component, private juce::Timer {
 public:
     enum Kind { Crush, Reso, Shift, Spray, Glitch };
 
-    LabModule(ParameterSource source, Kind kind) : source_(std::move(source)), kind_(kind),
+    LabModule(ParameterSource source, Kind kind, juce::String scope = {}) : source_(std::move(source)), kind_(kind), scope_(std::move(scope)),
         power_(source_, prefix() + ".on", accent()) {
         addAndMakeVisible(power_);
         const auto knob = [this](const char* field) {
@@ -77,7 +77,7 @@ public:
 private:
     juce::String prefix() const {
         static const char* const ids[] = {"fx.crush", "fx.reso", "fx.shift", "fx.spray", "fx.glitch"};
-        return ids[kind_];
+        return scope_ + ids[kind_];
     }
     juce::String title() const {
         static const char* const names[] = {"CRUSH", "RESO", "SHIFT", "SPRAY", "GLITCH"};
@@ -275,6 +275,7 @@ private:
 
     ParameterSource source_;
     Kind kind_;
+    juce::String scope_;
     PowerButton power_;
     juce::OwnedArray<Knob> knobs_;
     std::unique_ptr<Stepper> stepper_;
@@ -285,9 +286,9 @@ private:
 
 class LabPanel final : public juce::Component {
 public:
-    explicit LabPanel(ParameterSource source) {
+    explicit LabPanel(ParameterSource source, juce::String scope = {}) {
         for (int k = 0; k < 5; ++k) {
-            modules_[(size_t)k] = std::make_unique<LabModule>(source, (LabModule::Kind)k);
+            modules_[(size_t)k] = std::make_unique<LabModule>(source, (LabModule::Kind)k, scope);
             addAndMakeVisible(*modules_[(size_t)k]);
         }
     }
