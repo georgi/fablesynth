@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>FableSynth · SQ-4 Session — Play a Whole Track in Your Browser</title>
-<meta name="description" content="Four devices, one wavetable engine: WT-1 synth, DR-1 drums, BL-1 acid bass and the SQ-4 session that plays them all. Every device runs as a web UI in your browser and as a VST3/AU instrument in your DAW.">
+<title>FableSynth · Play in Your Browser, Download the VST3/AU Plugins</title>
+<meta name="description" content="Four devices, one wavetable engine: WT-1 synth, DR-1 drums, BL-1 acid bass and the SQ-4 session that plays them all. Every device runs as a web UI in your browser and as a free VST3/AU plugin for macOS, Windows and Linux.">
 <meta property="og:title" content="FableSynth SQ-4 — Press Start, Play a Whole Track">
-<meta property="og:description" content="WT-1 synth, DR-1 drums, BL-1 acid bass and the SQ-4 session — all pure wavetable synthesis, each one a web UI in your browser and a VST instrument in your DAW.">
+<meta property="og:description" content="WT-1 synth, DR-1 drums, BL-1 acid bass and the SQ-4 session — all pure wavetable synthesis, each one a web UI in your browser and a free VST3/AU plugin for your DAW.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="./media/sq4-session-og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d12'/%3E%3Cpath d='M4 20 Q8 8 12 16 T20 14 T28 18' stroke='%234de8ff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -27,8 +27,8 @@
     <a href="#session">Session</a>
     <a href="#family">Instruments</a>
     <a href="#engine">Engine</a>
-    <a href="#formats">Get it</a>
     <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn btn-get-nav" href="#download"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Download</a>
     <a class="btn btn-launch" href="./seq/">Start SQ-4 <span aria-hidden="true">→</span></a>
   </nav>
 </header>
@@ -60,6 +60,15 @@
               <small>free in your browser, no install</small>
             </span>
           </a>
+          <a class="btn-start btn-get" href="#download">
+            <span class="start-ring" aria-hidden="true">
+              <svg viewBox="0 0 48 48"><path d="M24 8v21M15.5 20.5 24 29l8.5-8.5M11 38h26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="start-label">
+              <b>GET THE PLUGINS</b>
+              <small data-os-pitch>free VST3 · AU for your DAW</small>
+            </span>
+          </a>
         </div>
       </div>
 
@@ -89,6 +98,7 @@
                 </span>
                 <span class="start-label"><b>START SQ-4</b></span>
               </a>
+              <a class="btn btn-ghost" href="#download">Get the plugins</a>
               <button class="btn btn-ghost stage-replay" type="button">Watch again</button>
             </div>
           </div>
@@ -482,7 +492,7 @@
       </p>
       <div class="surfaces-cta">
         <a class="btn btn-primary" href="./app/">Open WT-1 in the browser <span aria-hidden="true">→</span></a>
-        <a class="link-inline" href="#formats">or grab the plugin</a>
+        <a class="btn btn-ghost" href="#download">Download the plugin <span aria-hidden="true">↓</span></a>
       </div>
     </div>
     <figure class="surfaces-shot reveal">
@@ -583,11 +593,85 @@
     </div>
   </section>
 
-  <!-- ============ FORMATS / DOWNLOAD ============ -->
+  <!-- ============ DOWNLOAD ============ -->
+  <section class="band download" id="download" data-os="macOS">
+    <div class="section-head reveal">
+      <p class="kicker">DOWNLOAD · FREE</p>
+      <h2>Take it into<br>your DAW.</h2>
+      <p class="prose">
+        Every device ships as a native VST3 plugin, an AU on macOS and a
+        standalone app. Same controls, same presets, the exact same sound as
+        the browser. No account, no licence key.
+      </p>
+    </div>
+
+    <div class="dl-bar reveal">
+      <div class="dl-os" role="group" aria-label="Platform">
+        <button type="button" data-os="macOS" aria-pressed="true">macOS</button>
+        <button type="button" data-os="Windows" aria-pressed="false">Windows</button>
+        <button type="button" data-os="Linux" aria-pressed="false">Linux</button>
+      </div>
+      <p class="dl-release"><span class="dl-version">Latest release</span> · <span class="dl-formats">VST3 · AU · App</span></p>
+    </div>
+
+    <div class="formats-grid dl-grid">
+      <div class="format-card format-hero reveal" data-accent="b">
+        <div class="format-hero-copy">
+          <p class="format-tag">START HERE · ALL THREE ENGINES INSIDE</p>
+          <h3>SQ-4 session</h3>
+          <p>The clip launcher with WT-1, DR-1 and BL-1 built in. Load one plugin on one track and play the whole song.</p>
+        </div>
+        <a class="btn-dl lg" data-asset="FableSynth-SQ4" href="https://github.com/georgi/fablesynth/releases/latest/download/FableSynth-SQ4-macOS.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download SQ-4</span><small class="dl-size"></small></a>
+      </div>
+
+      <div class="format-card format-feature reveal" data-accent="a">
+        <p class="format-tag">SYNTHESIZER</p>
+        <h3>WT-1</h3>
+        <p>The flagship. Two morphing wavetable oscillators, a dual filter, a mod matrix and a full FX rack.</p>
+        <a class="btn-dl" data-asset="FableSynth" href="https://github.com/georgi/fablesynth/releases/latest/download/FableSynth-macOS.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download WT-1</span><small class="dl-size"></small></a>
+      </div>
+
+      <div class="format-card format-feature reveal" data-accent="b">
+        <p class="format-tag">DRUM MACHINE</p>
+        <h3>DR-1</h3>
+        <p>Sixteen wavetable pads with a 16-step sequencer and a five-bus multi-out for your mixer.</p>
+        <a class="btn-dl" data-asset="FableSynth-DR1" href="https://github.com/georgi/fablesynth/releases/latest/download/FableSynth-DR1-macOS.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download DR-1</span><small class="dl-size"></small></a>
+      </div>
+
+      <div class="format-card format-feature reveal" data-accent="g">
+        <p class="format-tag">ACID BASSLINE</p>
+        <h3>BL-1</h3>
+        <p>One squelchy mono voice with a 16-step pitch sequencer, accents and slides.</p>
+        <a class="btn-dl" data-asset="FableSynth-BL1" href="https://github.com/georgi/fablesynth/releases/latest/download/FableSynth-BL1-macOS.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download BL-1</span><small class="dl-size"></small></a>
+      </div>
+    </div>
+
+    <div class="dl-howto reveal">
+      <div class="dl-install" data-for="macOS">
+        <p class="dl-step"><b>VST3</b><code>~/Library/Audio/Plug-Ins/VST3</code></p>
+        <p class="dl-step"><b>AU</b><code>~/Library/Audio/Plug-Ins/Components</code></p>
+        <p class="dl-step"><b>APP</b><span>Drag it to Applications</span></p>
+        <p class="dl-trust">Universal binary for Apple Silicon and Intel. Signed with a Developer ID and notarized by Apple.</p>
+      </div>
+      <div class="dl-install" data-for="Windows">
+        <p class="dl-step"><b>VST3</b><code>C:\Program Files\Common Files\VST3</code></p>
+        <p class="dl-step"><b>APP</b><span>Run the <code>.exe</code></span></p>
+        <p class="dl-trust">64-bit build. Copy the plugin, then rescan plugins in your DAW.</p>
+      </div>
+      <div class="dl-install" data-for="Linux">
+        <p class="dl-step"><b>VST3</b><code>~/.vst3</code></p>
+        <p class="dl-step"><b>APP</b><span>Run the binary</span></p>
+        <p class="dl-trust">x86-64 build from Ubuntu 22.04. Copy the plugin, then rescan plugins in your DAW.</p>
+      </div>
+      <a class="link-inline dl-all" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Release notes and all builds →</a>
+    </div>
+  </section>
+
+  <!-- ============ PLAY NOW ============ -->
   <section class="band formats" id="formats">
     <div class="section-head reveal">
-      <p class="kicker">GET IT</p>
-      <h2>Runs where you work.</h2>
+      <p class="kicker">PLAY NOW</p>
+      <h2>Or play it right here.</h2>
     </div>
 
     <div class="formats-grid">
@@ -625,31 +709,9 @@
         <p>A mono wavetable acid machine — 16-step pitch sequencer, accents and slides, squelchy filter.</p>
         <span class="format-go">Launch BL-1 <span aria-hidden="true">→</span></span>
       </a>
-
-      <div class="format-card reveal">
-        <p class="format-tag">macOS</p>
-        <h3>VST3 · AU · App</h3>
-        <p>All four devices, native on Apple Silicon and Intel. For Ableton, Logic, Bitwig and friends.</p>
-        <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
-      </div>
-
-      <div class="format-card reveal">
-        <p class="format-tag">Windows</p>
-        <h3>VST3 · App</h3>
-        <p>VST3 plugins and standalone apps for all four devices. Drop them in your VST3 folder and rescan.</p>
-        <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
-      </div>
-
-      <div class="format-card reveal">
-        <p class="format-tag">Linux</p>
-        <h3>VST3 · App</h3>
-        <p>Native VST3 plugins and standalone apps for your distro.</p>
-        <a class="format-go" href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Download <span aria-hidden="true">→</span></a>
-      </div>
     </div>
 
     <p class="formats-note reveal">
-      Every release is built and signed automatically.
       Want to read the code or build it yourself? It's all open source on
       <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">GitHub</a>.
     </p>
@@ -667,7 +729,7 @@
     <a href="./app/">WT-1 synth</a>
     <a href="./drum/">DR-1 drums</a>
     <a href="./bass/">BL-1 bassline</a>
-    <a href="https://github.com/georgi/fablesynth/releases/latest" target="_blank" rel="noopener">Releases</a>
+    <a href="#download">Download plugins</a>
     <a href="https://github.com/georgi/fablesynth" target="_blank" rel="noopener">Source</a>
   </nav>
   <p class="foot-fine">Built with Web Audio, C++ and JUCE.</p>

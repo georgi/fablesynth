@@ -323,3 +323,64 @@ clips.forEach((fig) => {
     }
   }, { threshold: 0.35 }).observe(fig);
 });
+
+/* ---------- download: platform pick + latest release ----------
+   Links point at GitHub's stable /releases/latest/download/<asset> redirect,
+   so they work without this script. The script preselects the visitor's
+   platform and labels each button with the release tag and zip size. */
+
+type Platform = 'macOS' | 'Windows' | 'Linux';
+const LATEST = 'https://github.com/georgi/fablesynth/releases/latest/download/';
+const FORMATS: Record<Platform, string> = {
+  macOS: 'VST3 · AU · App',
+  Windows: 'VST3 · App',
+  Linux: 'VST3 · App',
+};
+const PLUGIN_FORMATS: Record<Platform, string> = { macOS: 'VST3 · AU', Windows: 'VST3', Linux: 'VST3' };
+
+const detectPlatform = (): Platform => {
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/Linux/i.test(ua) && !/Android/i.test(ua)) return 'Linux';
+  return 'macOS';
+};
+
+const dl = document.getElementById('download');
+if (dl) {
+  const osButtons = [...dl.querySelectorAll<HTMLButtonElement>('.dl-os button')];
+  const assetLinks = [...dl.querySelectorAll<HTMLAnchorElement>('.btn-dl')];
+  const formatsLabel = dl.querySelector<HTMLElement>('.dl-formats');
+  const versionLabel = dl.querySelector<HTMLElement>('.dl-version');
+  const pitch = document.querySelector<HTMLElement>('[data-os-pitch]');
+  const sizes = new Map<string, number>();
+
+  const setPlatform = (os: Platform) => {
+    dl.dataset.os = os;
+    osButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.os === os)));
+    if (formatsLabel) formatsLabel.textContent = FORMATS[os];
+    assetLinks.forEach((a) => {
+      const file = `${a.dataset.asset}-${os}.zip`;
+      a.href = LATEST + file;
+      const size = sizes.get(file);
+      const label = a.querySelector('.dl-size');
+      if (label) label.textContent = size ? `${Math.round(size / 1e6)} MB` : '';
+    });
+  };
+
+  const visitor = detectPlatform();
+  if (pitch) pitch.textContent = `free ${PLUGIN_FORMATS[visitor]} for ${visitor}`;
+  setPlatform(visitor);
+  osButtons.forEach((b) => b.addEventListener('click', () => setPlatform(b.dataset.os as Platform)));
+
+  fetch('https://api.github.com/repos/georgi/fablesynth/releases/latest')
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((rel: { tag_name: string; published_at: string; assets: { name: string; size: number }[] }) => {
+      rel.assets.forEach((a) => sizes.set(a.name, a.size));
+      if (versionLabel) {
+        const date = new Date(rel.published_at).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' });
+        versionLabel.textContent = `${rel.tag_name} · ${date}`;
+      }
+      setPlatform(dl.dataset.os as Platform);
+    })
+    .catch(() => {});
+}

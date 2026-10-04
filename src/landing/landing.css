@@ -126,24 +126,25 @@ code {
 /* The SQ-4 start control — the page's main CTA. Reads like the session
    launcher's own power/transport button: amber SQ identity, power-ring glyph. */
 .btn-start {
+  --sc: var(--amber);
   display: inline-flex;
   align-items: center;
   gap: 16px;
   padding: 13px 28px 13px 15px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sc) 55%, transparent);
   background:
-    radial-gradient(130% 170% at 0% 50%, color-mix(in srgb, var(--amber) 20%, transparent), transparent 62%),
+    radial-gradient(130% 170% at 0% 50%, color-mix(in srgb, var(--sc) 20%, transparent), transparent 62%),
     linear-gradient(180deg, var(--panel-hi), var(--panel-lo));
-  box-shadow: 0 18px 50px -18px color-mix(in srgb, var(--amber) 45%, transparent);
+  box-shadow: 0 18px 50px -18px color-mix(in srgb, var(--sc) 45%, transparent);
   transition: transform 0.4s var(--ease), border-color 0.25s, box-shadow 0.4s var(--ease);
   animation: start-pulse 2.8s var(--ease) infinite;
   max-width: 100%;
 }
 .btn-start:hover {
-  border-color: var(--amber);
+  border-color: var(--sc);
   transform: translateY(-2px);
-  box-shadow: 0 20px 60px -14px color-mix(in srgb, var(--amber) 70%, transparent);
+  box-shadow: 0 20px 60px -14px color-mix(in srgb, var(--sc) 70%, transparent);
   animation-play-state: paused;
 }
 .start-ring {
@@ -152,18 +153,18 @@ code {
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  color: var(--amber);
-  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
-  background: color-mix(in srgb, var(--amber) 10%, transparent);
-  box-shadow: 0 0 22px -4px color-mix(in srgb, var(--amber) 55%, transparent),
-    inset 0 0 12px -6px color-mix(in srgb, var(--amber) 70%, transparent);
+  color: var(--sc);
+  border: 1px solid color-mix(in srgb, var(--sc) 45%, transparent);
+  background: color-mix(in srgb, var(--sc) 10%, transparent);
+  box-shadow: 0 0 22px -4px color-mix(in srgb, var(--sc) 55%, transparent),
+    inset 0 0 12px -6px color-mix(in srgb, var(--sc) 70%, transparent);
   transition: box-shadow 0.3s, background 0.3s;
 }
 .start-ring svg { width: 26px; height: 26px; display: block; }
 .btn-start:hover .start-ring {
-  background: color-mix(in srgb, var(--amber) 18%, transparent);
-  box-shadow: 0 0 30px -2px color-mix(in srgb, var(--amber) 75%, transparent),
-    inset 0 0 14px -6px color-mix(in srgb, var(--amber) 85%, transparent);
+  background: color-mix(in srgb, var(--sc) 18%, transparent);
+  box-shadow: 0 0 30px -2px color-mix(in srgb, var(--sc) 75%, transparent),
+    inset 0 0 14px -6px color-mix(in srgb, var(--sc) 85%, transparent);
 }
 .start-label { display: flex; flex-direction: column; gap: 4px; }
 .start-label b {
@@ -186,9 +187,20 @@ code {
 .btn-start.compact .start-ring svg { width: 20px; height: 20px; }
 .btn-start.compact .start-label b { font-size: 13px; }
 @keyframes start-pulse {
-  0%, 100% { box-shadow: 0 18px 50px -18px color-mix(in srgb, var(--amber) 45%, transparent); }
-  50% { box-shadow: 0 18px 58px -12px color-mix(in srgb, var(--amber) 62%, transparent); }
+  0%, 100% { box-shadow: 0 18px 50px -18px color-mix(in srgb, var(--sc) 45%, transparent); }
+  50% { box-shadow: 0 18px 58px -12px color-mix(in srgb, var(--sc) 62%, transparent); }
 }
+
+/* The download CTA: the same control in the plugin's cyan, without the pulse
+   so the SQ-4 start stays the loudest thing on the page. */
+.btn-get {
+  --sc: var(--cyan);
+  animation: none;
+  box-shadow: 0 18px 50px -24px color-mix(in srgb, var(--sc) 40%, transparent);
+}
+.btn-get .start-label b { color: #eafbff; }
+.btn-get:hover .start-ring svg { transform: translateY(2px); }
+.btn-get .start-ring svg { transition: transform 0.4s var(--ease); }
 
 .link-inline {
   color: var(--dim-2);
@@ -243,6 +255,17 @@ code {
 .btn-launch:hover {
   border-color: var(--amber);
   background: color-mix(in srgb, var(--amber) 14%, transparent);
+}
+.btn-get-nav {
+  padding: 9px 16px;
+  font-size: 12px;
+  border-color: color-mix(in srgb, var(--cyan) 45%, transparent);
+  color: #eafbff;
+}
+.btn-get-nav svg { width: 15px; height: 15px; color: var(--cyan); }
+.btn-get-nav:hover {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
 }
 .nav-mobile-only { display: none; }
 
@@ -600,7 +623,9 @@ code {
 .stage-play:focus-visible,
 .chapter:focus-visible,
 .clip-sound:focus-visible,
-.sb-btn:focus-visible {
+.sb-btn:focus-visible,
+.dl-os button:focus-visible,
+.btn-dl:focus-visible {
   outline: 2px solid var(--ac, var(--cyan));
   outline-offset: 3px;
 }
@@ -913,6 +938,98 @@ figcaption {
 .formats-note a { color: var(--dim-2); border-bottom: 1px solid var(--line-2); }
 .formats-note a:hover { color: var(--cyan); border-color: var(--cyan); }
 
+/* ---------- download ---------- */
+
+.download .section-head { max-width: 52ch; }
+.dl-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-bottom: 20px;
+}
+.dl-os {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--well);
+}
+.dl-os button {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--dim-2);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.dl-os button:hover { color: var(--ice); }
+.dl-os button[aria-pressed='true'] {
+  color: #eafbff;
+  background: color-mix(in srgb, var(--cyan) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 50%, transparent);
+}
+.dl-release { margin: 0; font-size: 12px; letter-spacing: 0.1em; color: var(--dim); }
+.dl-version { color: var(--ice); }
+
+/* The cards hold a button rather than being one link, so they stay put. */
+.dl-grid .format-card { min-height: 0; }
+.dl-grid .format-card:hover { transform: none; box-shadow: none; }
+.btn-dl {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 18px 11px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--ac) 50%, transparent);
+  background: color-mix(in srgb, var(--ac) 12%, transparent);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: #f1f5fc;
+  white-space: nowrap;
+  transition: transform 0.4s var(--ease), border-color 0.25s, background 0.25s,
+    box-shadow 0.4s var(--ease);
+}
+.btn-dl svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--ac); transition: transform 0.4s var(--ease); }
+.btn-dl small { font-size: 11px; letter-spacing: 0.06em; color: var(--dim-2); }
+.btn-dl small:empty { display: none; }
+.btn-dl:hover {
+  border-color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 22%, transparent);
+  box-shadow: 0 14px 40px -14px color-mix(in srgb, var(--ac) 60%, transparent);
+  transform: translateY(-2px);
+}
+.btn-dl:hover svg { transform: translateY(2px); }
+.btn-dl.lg { align-self: center; flex-shrink: 0; margin-top: 0; padding: 15px 24px 15px 18px; font-size: 14px; }
+.btn-dl.lg svg { width: 20px; height: 20px; }
+
+.dl-howto {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--well);
+}
+.dl-install { display: none; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px 28px; }
+.download[data-os='macOS'] [data-for='macOS'],
+.download[data-os='Windows'] [data-for='Windows'],
+.download[data-os='Linux'] [data-for='Linux'] { display: grid; }
+.dl-step { margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--dim-2); }
+.dl-step b { font-weight: 400; font-size: 10px; letter-spacing: 0.26em; color: var(--dim); }
+.dl-trust { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--dim-2); }
+.dl-all { align-self: flex-start; font-size: 12px; letter-spacing: 0.06em; }
+
 /* ---------- DR-1 drum machine ---------- */
 
 .drum-shot {
@@ -1022,6 +1139,7 @@ figcaption {
   .formats-grid .format-card { grid-column: span 1; }
   .formats-grid .format-feature, .formats-grid .format-hero { grid-column: 1 / -1; }
   .format-hero { flex-direction: column; align-items: flex-start; }
+  .btn-dl.lg { align-self: flex-start; }
 }
 
 @media (max-width: 480px) {
@@ -1030,6 +1148,7 @@ figcaption {
   .formats-grid .format-card, .formats-grid .format-feature { grid-column: auto; }
   .cta-row { flex-direction: column; align-items: stretch; }
   .cta-row .btn, .cta-row .btn-start { justify-content: center; }
+  .btn-get-nav { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1038,6 +1157,7 @@ figcaption {
   .scroll-hint span { animation: none; }
   .btn, .btn span, .format-go span { transition: none; }
   .btn-start { animation: none; }
+  .btn-dl, .btn-dl svg, .btn-get .start-ring svg { transition: none; }
   .clip-sound[aria-pressed='true'] .i-waves { animation: none; }
   .stage-screen video, .stage-play, .stage-end { transition: none; }
 }
