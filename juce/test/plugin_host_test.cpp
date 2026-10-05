@@ -3,6 +3,7 @@
 // MIDI chord, process blocks — confirming the parameter bridge + MIDI handling
 // + engine + FX all work together through the JUCE plugin surface.
 #include "../source/PluginProcessor.h"
+#include "../source/seq/AutomationCodec.h"
 #include "FxUiChecks.h"
 #include "AgentProcessorChecks.h"
 #include "NoteDrawChecks.h"
@@ -776,8 +777,13 @@ int main(int argc, char** argv) {
         labProc.prepareToPlay(48000, 512);
         std::unique_ptr<juce::AudioProcessorEditor> ed(labProc.createEditor());
         ed->setVisible(true);
-        auto* tab = findFxComponent<juce::TextButton>(*ed, "LAB");
-        auto* panel = findFxComponent<fui::LabPanel>(*ed);
+        // The FX chain also contains LAB controls; target the body page itself.
+        auto* body=findFxComponent<WtDeviceBody>(*ed);
+        juce::TextButton* tab=nullptr; fui::LabPanel* panel=nullptr;
+        if (body) for (auto* child : body->getChildren()) {
+            if (auto* button=dynamic_cast<juce::TextButton*>(child); button && button->getName()=="LAB") tab=button;
+            if (auto* page=dynamic_cast<fui::LabPanel*>(child)) panel=page;
+        }
         bool ok = tab && panel;
         if (ok) {
             tab->onClick();
@@ -791,6 +797,153 @@ int main(int argc, char** argv) {
             writePng(ed->createComponentSnapshot(ed->getLocalBounds()), dir.getChildFile("wt-lab.png"));
         }
         std::printf("  [%s] wt LAB page: tab, five devices, layout, snapshot\n", ok ? "PASS" : "FAIL");
+        if (!ok) ++fail;
+    }
+    {
+        FableAudioProcessor autoProc;
+        autoProc.prepareToPlay(48000,512);
+        StandaloneWtUiModel model(autoProc);
+        Rack rack(model,autoProc.apvts,autoProc);
+        rack.setSize(Rack::LW,Rack::LH); rack.setVisible(true);
+        bool ok=rack.canShowAutomation("filter.cutoff") && !rack.canShowAutomation("seq.bpm");
+        rack.showAutomation("filter.cutoff");
+        ok &= rack.automationForTest().isVisible() && rack.automationForTest().expanded();
+        auto& panel=rack.automationForTest();
+        const auto originalBounds=panel.getBounds();
+        for (int height : {panel.preferredHeight(panel.getWidth()), 550}) {
+            panel.setSize(panel.getWidth(),height);
+            const auto& graph=panel.canvasForTest();
+            ok &= graph.getBottom()==panel.getHeight()-10 && graph.getHeight()>=132;
+        }
+        panel.setBounds(originalBounds);
+        ok &= autoProc.sequenceAutomation().size()==1;
+        rack.showAutomation("filter.cutoff"); // existing lane must not be duplicated
+        ok &= autoProc.sequenceAutomation().size()==1;
+        if (auto* slider=findFxComponent<fui::VSlider>(rack)) {
+            auto* position=autoProc.apvts.getParameter("oscA.pos");
+            const float before=position->getValue();
+            auto at=juce::Point<float>(5,2);
+            juce::MouseEvent click(juce::Desktop::getInstance().getMainMouseSource(),at,
+                juce::ModifierKeys(juce::ModifierKeys::rightButtonModifier),1,0,0,0,0,
+                slider,slider,juce::Time::getCurrentTime(),at,juce::Time::getCurrentTime(),1,false);
+            slider->mouseDown(click); juce::PopupMenu::dismissAllActiveMenus();
+            ok &= position->getValue()==before;
+        } else ok=false;
+        auto lanes=autoProc.sequenceAutomation();
+        lanes[0].points={{0,.2,0,true},{8,.8,0,true}};
+        autoProc.setSequenceAutomation(lanes);
+        autoProc.undoAutomation(); ok &= autoProc.sequenceAutomation()[0].points.empty();
+        autoProc.redoAutomation(); ok &= autoProc.sequenceAutomation()[0].points.size()==2;
+        juce::MemoryBlock state; autoProc.getStateInformation(state);
+        FableAudioProcessor restored;
+        restored.setStateInformation(state.getData(),(int)state.getSize());
+        ok &= juce::JSON::toString(fable::automationToVar(restored.sequenceAutomation()))
+            ==juce::JSON::toString(fable::automationToVar(autoProc.sequenceAutomation()));
+        autoProc.setSeqPlaying(true);
+        juce::AudioBuffer<float> audio(2,512); juce::MidiBuffer midi;
+        autoProc.processBlock(audio,midi); ok &= autoProc.automationSteps()>=0;
+        autoProc.setSeqPlaying(false); autoProc.processBlock(audio,midi);
+        ok &= autoProc.automationSteps()<0;
+        MockPlayHead host; host.reportPpq=true; host.ppq=8; host.bpm=120;
+        autoProc.setPlayHead(&host); autoProc.processBlock(audio,midi);
+        ok &= autoProc.automationSteps()>32;
+        autoProc.setPlayHead(nullptr);
+        const auto dir=juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals"); dir.createDirectory();
+        rack.automationForTest().refresh();
+        writePng(rack.createComponentSnapshot(rack.getLocalBounds()),dir.getChildFile("wt-automation.png"));
+        std::printf("  [%s] wt automation: native tab, lane reuse, undo, state round-trip, transport, snapshot\n",ok ? "PASS" : "FAIL");
+        if (!ok) ++fail;
+    }
+    {
+        auto engine=std::make_unique<fable::Engine>();
+        engine->prepare(48000); engine->setParams(fable::defaultParams());
+        auto bank=std::make_unique<fable::AutoBank>();
+        fable::AutoLane lane {"filter.cutoff",true,{fable::AutoTime::Grid,4,4},{{0,.1,0,true},{2,.7,0,true}}};
+        fable::compileAutomation(*bank,{lane},1,nullptr,fable::Machine::WT1);
+        engine->setSequenceAutomation(bank.get());
+        const int id=fable::idFromString(lane.target); const float stored=engine->params()[(size_t)id];
+        float l[128]{},r[128]{}; engine->render(l,r,128);
+        bool ok=engine->params()[(size_t)id]==stored;
+        engine->seqPlay(); engine->render(l,r,128);
+        ok &= std::abs(engine->params()[(size_t)id]-bank->lanes[0].table[0])<.001f;
+        for (int i=0;i<110;++i) engine->render(l,r,128);
+        ok &= engine->params()[(size_t)id]>bank->lanes[0].table[0]*2;
+        engine->seqStop(); engine->render(l,r,128);
+        ok &= std::abs(engine->params()[(size_t)id]-stored)<.001f;
+        engine->seqPlay(); engine->render(l,r,128);
+        ok &= std::abs(engine->params()[(size_t)id]-bank->lanes[0].table[0])<.001f;
+        std::printf("  [%s] wt automation DSP: stopped, grid playback, restoration, restart\n",ok ? "PASS" : "FAIL");
+        if (!ok) ++fail;
+    }
+    {
+        FableAudioProcessor liveProc;
+        liveProc.prepareToPlay(48000,512);
+        StandaloneWtUiModel model(liveProc);
+        auto source=model.parameters();
+        Rack rack(model,liveProc.apvts,liveProc); rack.setSize(Rack::LW,Rack::LH);
+        fui::Knob control(source,"filter.cutoff",fui::Knob::Lg,fui::Accent::F,true,3);
+        fui::VSlider position(source,"oscA.pos",fui::Accent::A,[&]{ return liveProc.getVizPos(0); },1);
+        control.setSize(90,100); position.setSize(45,140);
+        auto* cutoff=source.parameter("filter.cutoff");
+        const float stored=cutoff->getValue();
+        liveProc.setSequenceAutomation({
+            {"filter.cutoff",true,{fable::AutoTime::Grid,4,4},{{0,.15,0,true},{2,.7,0,true}}},
+            {"oscA.pos",true,{fable::AutoTime::Grid,4,4},{{0,.1,0,true},{2,.8,0,true}}},
+            {"master.volume",true,{fable::AutoTime::Grid,4,4},{{0,.4,0,true}}}
+        });
+        fui::addRoute(source,4,3,.2f); // velocity drives the cutoff
+        juce::Thread::sleep(40);
+        juce::Timer::callPendingTimersSynchronously();
+        liveProc.setSeqPlaying(true);
+        juce::AudioBuffer<float> audio(2,512); juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1,48,.8f),0);
+        liveProc.processBlock(audio,midi); midi.clear();
+        juce::Timer::callPendingTimersSynchronously();
+        bool ok=std::isfinite(liveProc.liveAutomation("filter.cutoff")) &&
+            std::abs(control.automationNorm()-.15f)<.001f &&
+            std::abs(position.automationNorm()-.1f)<.001f;
+        if (auto* header=findFxComponent<fui::TopBar>(rack)) {
+            int liveHeaderKnobs=0;
+            for (auto* child : header->getChildren()) if (auto* knob=dynamic_cast<fui::Knob*>(child))
+                if (knob->automationNorm()>=0) ++liveHeaderKnobs;
+            ok &= liveHeaderKnobs==1; // OUTPUT uses the same live source as the body.
+        } else ok=false;
+        // Graphs must render applied values without rewriting the editable patch.
+        fui::FilterView filterGraph(source,juce::Colours::orange);
+        fui::EnvView envGraph(source,"env1",juce::Colours::orange);
+        filterGraph.setSize(240,80); envGraph.setSize(240,80);
+        const auto firstFilter=filterGraph.createComponentSnapshot(filterGraph.getLocalBounds());
+        ok &= std::isfinite(source.effectiveValue("filter.cutoff")) &&
+              source.effectiveValue("filter.cutoff") == liveProc.liveFilterCut("filter.cutoff");
+        auto graphSource=source;
+        graphSource.setLiveAutomationLookup([](const juce::String& id) {
+            return id == "env1.a" ? 4.0f : std::numeric_limits<float>::quiet_NaN();
+        });
+        fui::EnvView automatedEnv(graphSource,"env1",juce::Colours::orange);
+        automatedEnv.setSize(240,80);
+        auto differs=[](const juce::Image& a,const juce::Image& b) {
+            for(int y=0;y<a.getHeight();++y) for(int x=0;x<a.getWidth();++x)
+                if(a.getPixelAt(x,y)!=b.getPixelAt(x,y)) return true;
+            return false;
+        };
+        ok &= differs(envGraph.createComponentSnapshot(envGraph.getLocalBounds()),
+                      automatedEnv.createComponentSnapshot(automatedEnv.getLocalBounds()));
+        const float first=control.effectiveNorm();
+        ok &= first>control.automationNorm() && cutoff->getValue()==stored;
+        for (int i=0;i<33;++i) liveProc.processBlock(audio,midi);
+        juce::Timer::callPendingTimersSynchronously();
+        ok &= control.effectiveNorm()>first && control.automationNorm()>.6f && cutoff->getValue()==stored;
+        ok &= differs(firstFilter,filterGraph.createComponentSnapshot(filterGraph.getLocalBounds()));
+        const auto dir=juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals"); dir.createDirectory();
+        writePng(filterGraph.createComponentSnapshot(filterGraph.getLocalBounds()),dir.getChildFile("wt-effective-filter.png"));
+        writePng(control.createComponentSnapshot(control.getLocalBounds()),dir.getChildFile("wt-live-control.png"));
+        writePng(position.createComponentSnapshot(position.getLocalBounds()),dir.getChildFile("wt-live-position.png"));
+        liveProc.setSeqPlaying(false); liveProc.processBlock(audio,midi);
+        ok &= !std::isfinite(source.liveAutomation("filter.cutoff")) && control.automationNorm()<0;
+        if (auto* src=source.parameter("mat1.src")) src->setValueNotifyingHost(0);
+        liveProc.processBlock(audio,midi); juce::Timer::callPendingTimersSynchronously();
+        ok &= std::abs(control.effectiveNorm()-stored)<.001f;
+        std::printf("  [%s] wt live controls: automation + modulation, moving values, stored patch preserved, idle restored\n",ok ? "PASS" : "FAIL");
         if (!ok) ++fail;
     }
     if (!runAgentProcessorChecks<FableAudioProcessor>("wt", fable::paramInfo().data(), fable::paramInfo().size(), "filter.cutoff", "oscA.oct")) ++fail;

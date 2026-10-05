@@ -70,8 +70,7 @@ static void layoutKnobRow(juce::Rectangle<int> area, const juce::OwnedArray<Knob
 }
 
 static float rawVal(BassUiModel& proc, const juce::String& id) {
-    auto* v = proc.parameters().parameter(id);
-    return v ? v->convertFrom0to1(v->getValue()) : 0.0f;
+    return proc.parameters().effectiveValue(id);
 }
 
 // ===================== BassTerrainView =====================
@@ -357,10 +356,12 @@ void BassLfoView::paint(juce::Graphics& g) {
     const int rate = (int)std::lround(rawVal(proc, "lfo.rate"));
     const double bpm = proc.hostSynced() ? proc.hostBpm() : rawVal(proc, "seq.bpm");
     const double cpb = fable::lfoDivFactor(rate);
-    const float ph0 = proc.sequencerPlaying()
-        ? (float)std::fmod(((juce::Time::getMillisecondCounter() - t0) / 1000.0)
-                               * (bpm / 60.0) * cpb, 1.0)
-        : 0.0f;
+    const bool playing = proc.sequencerPlaying();
+    if (playing != wasPlaying_) { phaseClock_.reset(); t0 = juce::Time::getMillisecondCounter(); wasPlaying_ = playing; }
+    if (!playing) phaseClock_.reset();
+    const float ph0 = playing ? (float)phaseClock_.phase(
+        (juce::Time::getMillisecondCounter() - t0) / 1000.0, (bpm / 60.0) * cpb) : 0.0f;
+
 
     juce::Path path;
     for (int i = 0; i <= 100; ++i) {

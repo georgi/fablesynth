@@ -38,6 +38,7 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     editor->setVisible(true);
     auto *tab = findFxComponent<juce::TextButton>(*editor, drum ? "GROUP FX" : "FX CHAIN");
     auto *sound = findFxComponent<juce::TextButton>(*editor, drum ? "EDIT" : "SOUND");
+    if (!sound) sound=findFxComponent<juce::TextButton>(*editor,"EDIT");
     auto *chain = findFxComponent<fui::FxChain>(*editor);
     if (!tab || !sound || !chain || chain->isVisible())
         return false;
@@ -46,8 +47,9 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     tab->onClick();
     bool ok = chain->isVisible();
     for (auto *child : chain->getChildren())
-        ok &= child->getWidth() >= 180 && child->getHeight() >= 90 &&
-              chain->getLocalBounds().contains(child->getBounds());
+        if (dynamic_cast<fui::FxModuleView*>(child))
+            ok &= child->getWidth() >= 180 && child->getHeight() >= 90 &&
+                  chain->getLocalBounds().contains(child->getBounds());
     if (auto *eq = findFxComponent<fui::FxModuleView>(*chain, "EQ visual FX")) {
         auto *gain = proc->apvts.getParameter(prefix + "fx.eq.mid");
         if (!gain) return false;

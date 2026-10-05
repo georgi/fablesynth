@@ -26,6 +26,7 @@ class FxModuleView : public juce::Component, private juce::Timer {
   private:
     using Meter = fable::FxTelemetry;
     void timerCallback() override;
+    float displayValue(const juce::String&) const;
     float value(const juce::String &) const;
     void write(const juce::String &, float, bool gesture = true);
     void selectBand(int);

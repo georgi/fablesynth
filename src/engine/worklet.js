@@ -284,6 +284,20 @@ const ADAA_INPUT_LIMIT = 16;
 // Fast deterministic RNG (xorshift32) — replaces Math.random() for noise, unison
 // start phases and S&H (finding W5). Mirrors `Rng` in Engine.h, so a seeded
 // render is reproducible and comparable across the two engines.
+class LfoClock {
+  constructor() { this.ready = false; }
+  reset() { this.ready = false; }
+  update(position, rate) {
+    if (!this.ready || position < this.position) {
+      this.cycles = position * rate;
+      this.ready = true;
+    } else this.cycles += (position - this.position) * this.rate;
+    this.position = position; this.rate = rate;
+    return this.cycles;
+  }
+  phase(position, rate) { const c = this.update(position, rate); return c - Math.floor(c); }
+}
+
 class Rng {
   constructor(seed) { this.s = (seed >>> 0) || 0x9e3779b9; }
   next() {
@@ -349,8 +363,8 @@ class Env {
 }
 
 class LFO {
-  constructor() { this.phase = 0; this.hold = 0; this.elapsed = 0; }
-  reset(rng) { this.phase = 0; this.hold = rng.next() * 2 - 1; this.elapsed = 0; }
+  constructor() { this.clock = new LfoClock(); this.phase = 0; this.hold = 0; this.elapsed = 0; }
+  reset(rng) { this.clock.reset(); this.phase = 0; this.hold = rng.next() * 2 - 1; this.elapsed = 0; }
   // Read the shape at a wrapped phase offset (for the start-phase control).
   valueOff(shape, off) {
     let p = this.phase + off; p -= Math.floor(p);
@@ -1316,6 +1330,8 @@ class FableProcessor extends AudioWorkletProcessor {
     this.clock = 0;
     // ---- note sequencer state ----
     this.seqPlaying = false;
+    this.seqAuto = [];
+    this.seqAnchor = 0;
     this.arp = null;
     this.seqStep = -1;
     this.seqPats = new Uint8Array(SEQ_NPATTERNS * SEQ_STEPS * SEQ_STRIDE);
@@ -1454,6 +1470,8 @@ class FableProcessor extends AudioWorkletProcessor {
         if (this.hosted) break; // conductor owns the transport
         this.seqGateOff(); // restarting must not orphan an old gate
         this.seqPlaying = true;
+        this.seqAnchor = currentFrame;
+        this.port.postMessage({ t: 'anchor', frame: this.seqAnchor });
         this.seqStep = -1;
         this.seqChainPos = 0;
         this.seqToNext = 0;
@@ -1486,6 +1504,7 @@ class FableProcessor extends AudioWorkletProcessor {
         this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp) };
         this.clipStopAt = -1; // a new launch supersedes a pending stop
         break;
+      case 'seqauto': this.seqAuto = this.autoRead(d.lanes); break;
       case 'auto': {
         // Follows its clip/clipupdate message: attach to the pending launch,
         // else to the playing clip.
@@ -1587,7 +1606,8 @@ class FableProcessor extends AudioWorkletProcessor {
   }
 
   autoTick(frame) {
-    const lanes = this.clip ? this.clip.auto || null : null;
+    const lanes = this.hosted ? (this.clip ? this.clip.auto || null : null)
+      : (this.seqPlaying ? this.seqAuto : null);
     if (lanes !== this.autoLanes) {
       this.autoLanes = lanes;
       for (const [i, v] of this.autoHeld) {
@@ -1597,8 +1617,9 @@ class FableProcessor extends AudioWorkletProcessor {
       }
     }
     if (!lanes || !lanes.length) return;
-    const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
-    const steps = Math.max(0, frame - this.hostAnchor) / ((60 / bpm / 4) * sampleRate);
+    const bpm = this.hosted ? Math.max(60, Math.min(200, this.hostBpm || 120)) : this.bpm;
+    const anchor = this.hosted ? this.hostAnchor : this.seqAnchor;
+    const steps = Math.max(0, frame - anchor) / ((60 / bpm / 4) * sampleRate);
     for (let n = 0; n < lanes.length; n++) {
       const l = lanes[n];
       let x = ((l.fit ? ((steps / 4) % l.fit) / l.fit * l.len : steps) - l.rot) % l.len;
@@ -2223,16 +2244,17 @@ class FableProcessor extends AudioWorkletProcessor {
 
   // Free-running global LFO phase, updated once per block. When synced, the
   // phase is derived from the transport position (ppq, in quarter notes) so a
-  // synced LFO cycle starts on the downbeat. Unsynced LFOs free-run at their Hz.
+  // synced LFO starts on the downbeat; rate edits then preserve phase.
+  // Unsynced LFOs free-run at their Hz.
   // (Retrig LFOs are per-voice and note-aligned, so they bypass this.)
   updateGlobalLfo(g, base, ppq, n) {
     if (this.p[base + L_SYNC]) {
       const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[base + L_SYNCRATE] | 0));
-      let ph = ppq * LFO_DIV_F[i];
-      ph -= Math.floor(ph);
+      const ph = g.clock.phase(ppq, LFO_DIV_F[i]);
       if (ph < g.phase) g.hold = this.rng.next() * 2 - 1; // grid wrap -> new S&H value
       g.phase = ph;
     } else {
+      g.clock.reset();
       g.advance(this.p[base + L_RATE], n, this.rng);
     }
   }
@@ -2501,7 +2523,8 @@ class FableProcessor extends AudioWorkletProcessor {
       if (eo >= 0) run = Math.min(run, Math.max(1, Math.ceil(eo)));
       // The hosted clip transport resolves its commands per chunk; at the usual
       // 128-sample quantum that is exactly the pre-split behaviour.
-      if (hosted) { this.hostTick(run); this.autoTick(this.frameNow); }
+      if (hosted) this.hostTick(run);
+      this.autoTick(this.frameNow);
 
       const ppq = hosted
         ? Math.max(0, this.frameNow - this.hostAnchor) * (this.bpm / 60) / sampleRate

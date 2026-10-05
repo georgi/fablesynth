@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassUiModel.h"
+#include "../../dsp/LfoClock.h"
 #include "../../ui/Controls.h"
 
 // BL-1 editor panels — ports of src/bass/components/{OscSection, SubSection,
@@ -67,6 +68,8 @@ public:
 private:
     void timerCallback() override { repaint(); } // free-running, like the web rAF
     BassUiModel& proc;
+    bool wasPlaying_ = false;
+    fable::LfoClock phaseClock_;
     juce::uint32 t0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BassLfoView)
 };

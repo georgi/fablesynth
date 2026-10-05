@@ -1,3 +1,4 @@
+import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } from './seq/clipAutomation';
 // Zustand store — single source of truth for parameter values and transport
 // state. Mirrors the imperative `engine.params` + control-registry wiring of the
 // original vanilla build: every control reads its value from here and writes
@@ -76,6 +77,8 @@ interface SynthStore {
   chain: number[];
   editPattern: number;
   seqPlaying: boolean;
+  automation: AutoLane[];
+  setAutomation: (lanes: AutoLane[], opts?: { history?: boolean }) => void;
   curStep: number;
   curPat: number;
   rectSel: RectSel | null;
@@ -159,7 +162,7 @@ export function factoryTables(): GeneratedTable[] {
 // Bounded undo/redo stack for sequencer editing verbs (module state, mirrors
 // BL-1/DR-1 — see makeHistory in shared/seqEdit.ts). Snapshots capture both
 // patterns and chain since duplicate-bar can extend the sequence length.
-interface SeqSnapshot { patterns: Patterns; chain: number[] }
+interface SeqSnapshot { patterns: Patterns; chain: number[]; automation: AutoLane[] }
 const seqHistory = makeHistory<SeqSnapshot>(50);
 
 export const useStore = create<SynthStore>((set, get) => {
@@ -168,7 +171,11 @@ export const useStore = create<SynthStore>((set, get) => {
     if (hosted) return;
     engine.setArp(arpMode ? { ...arp, notes: arpNotes(arp, arp.input === 'keys' ? arpKeys : arp.notes) } : null);
   };
-  const pushSeqHistory = () => seqHistory.push({ patterns: get().patterns, chain: get().chain });
+  const snapshot = (): SeqSnapshot => ({ patterns: get().patterns, chain: get().chain, automation: copyAutomation(get().automation) });
+  const pushSeqHistory = () => seqHistory.push(snapshot());
+  const syncAutomation = () => {
+    if (!get().hosted) engine.setSequenceAutomation(compileAutomation(get().automation, get().chain.length, undefined, 'WT1'));
+  };
 
   // Worklet->UI telemetry, shared by standalone (powerOn) and hosted
   // (attachHosted, SQ-4 focus mode) engines: modulated wavetable positions for
@@ -218,6 +225,7 @@ export const useStore = create<SynthStore>((set, get) => {
   chain: sequenceChain(sequenceLengthFromChain(initialSeq.chain)),
   editPattern: 0,
   seqPlaying: false,
+  automation: [],
   curStep: -1,
   curPat: 0,
   rectSel: null,
@@ -421,6 +429,7 @@ export const useStore = create<SynthStore>((set, get) => {
     const chain = sequenceChain(length);
     set({ chain });
     engine.setSeqChain(chain);
+    syncAutomation();
     saveSeqState(get().patterns, chain);
   },
 
@@ -582,22 +591,31 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   undoSeq: () => {
-    const prev = seqHistory.undo({ patterns: get().patterns, chain: get().chain });
+    const prev = seqHistory.undo(snapshot());
     if (!prev) return;
-    set({ chain: prev.chain });
+    set({ chain: prev.chain, automation: copyAutomation(prev.automation) });
+    syncAutomation();
     engine.setSeqChain(prev.chain);
     get()._setPatterns(prev.patterns);
   },
 
   redoSeq: () => {
-    const next = seqHistory.redo({ patterns: get().patterns, chain: get().chain });
+    const next = seqHistory.redo(snapshot());
     if (!next) return;
-    set({ chain: next.chain });
+    set({ chain: next.chain, automation: copyAutomation(next.automation) });
+    syncAutomation();
     engine.setSeqChain(next.chain);
     get()._setPatterns(next.patterns);
   },
 
   _clearSeqHistory: () => seqHistory.clear(),
+
+  setAutomation: (lanes, opts = {}) => {
+    if (get().hosted || validateAutomation(lanes, 'WT1')) return;
+    if (opts.history !== false) pushSeqHistory();
+    set({ automation: copyAutomation(lanes) });
+    syncAutomation();
+  },
 
   seqPlay: () => {
     if (get().hosted) return;
@@ -630,6 +648,7 @@ export const useStore = create<SynthStore>((set, get) => {
     engine.onstep = (d) => set({ curStep: d.s, curPat: d.pat });
     engine.setSeqPatterns(get().patterns);
     engine.setSeqChain(get().chain);
+    syncAutomation();
     syncArp();
     set({ powered: true });
   },

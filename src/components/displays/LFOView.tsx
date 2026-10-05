@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { setupCanvas } from './canvas';
+import { LfoClock } from '../../engine/lfoClock';
 
 type LfoFn = (p: number) => number;
 const LFO_FNS: (LfoFn | null)[] = [
@@ -21,8 +22,10 @@ interface LFOViewProps {
 
 export function LFOView({ shape, rate, accent, className }: LFOViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const redraw = useRef<(() => void) | null>(null);
   const propsRef = useRef({ shape, rate, accent });
   propsRef.current = { shape: shape | 0, rate, accent };
+  const clock = useRef(new LfoClock());
   const t0Ref = useRef(performance.now());
 
   useEffect(() => {
@@ -57,7 +60,7 @@ export function LFOView({ shape, rate, accent, className }: LFOViewProps) {
       ctx.globalAlpha = 1;
 
       // phase dot (cosmetic free-run)
-      const phase = ((performance.now() - t0Ref.current) / 1000 * rate) % 1;
+      const phase = clock.current.phase((performance.now() - t0Ref.current) / 1000, rate);
       let y;
       if (shape === 4) {
         const s = Math.floor(phase * 8);
@@ -92,9 +95,14 @@ export function LFOView({ shape, rate, accent, className }: LFOViewProps) {
         raf = requestAnimationFrame(frame);
       }
     };
+    redraw.current = () => { const canvas = canvasRef.current; if (canvas) draw(canvas); };
     start();
     mq.addEventListener('change', start);
-    return () => { stop(); mq.removeEventListener('change', start); };
+    return () => { stop(); redraw.current = null; mq.removeEventListener('change', start); };
+  }, []);
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) redraw.current?.();
   }, [shape, rate, accent]);
 
   return <canvas ref={canvasRef} className={className} />;

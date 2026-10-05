@@ -518,7 +518,7 @@ code {
   margin: 14px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: 5.71fr 7.62fr 7.62fr 7.62fr 11.43fr 9.52fr 9.53fr 9.52fr 11.43fr;
+  grid-template-columns: 23.64fr 14.55fr 14.55fr 14.54fr 23.64fr; /* chapter lengths in seconds */
   gap: 6px;
 }
 .chapter {

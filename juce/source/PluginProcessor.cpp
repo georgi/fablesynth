@@ -1,3 +1,4 @@
+#include "seq/AutomationCodec.h"
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ui/ArpCodec.h"
@@ -73,6 +74,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
 void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     agentOutputMeter_.prepare(sampleRate, getMainBusNumOutputChannels());
     engine.prepare(sampleRate);
+    automationTelemetry_.clear();
     arpInput_.clear(); arpInput_.set(arpSettings_); applyArp();
     rebuildEngineTables();
     fx.prepare(sampleRate);
@@ -84,6 +86,7 @@ void FableAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
     prepared = true;
     // Re-sync sequencer content into the (possibly reset) engine.
     shareSeqState(true, true);
+    shareAutomation();
 }
 
 // ---- note sequencer bridge (message thread) --------------------------------
@@ -94,6 +97,26 @@ void FableAudioProcessor::pushCmd(int type) {
     if (sz1 > 0)      cmds_[(size_t)s1] = type;
     else if (sz2 > 0) cmds_[(size_t)s2] = type;
     cmdFifo_.finishedWrite(sz1 + sz2);
+}
+
+void FableAudioProcessor::shareAutomation() {
+    auto bank=std::make_unique<AutoBank>();
+    compileAutomation(*bank,automation_,(int)chain_.size(),nullptr,Machine::WT1);
+    std::lock_guard<std::mutex> lock(shareMutex_);
+    *automationShared_=*bank; automationDirty_=true;
+}
+void FableAudioProcessor::setSequenceAutomation(const std::vector<AutoLane>& lanes,bool history) {
+    if (!validateAutomation(lanes,Machine::WT1)) return;
+    if (history) pushAutomationUndo();
+    automation_=lanes; shareAutomation();
+}
+void FableAudioProcessor::undoAutomation() {
+    std::vector<AutoLane> restored;
+    if (automationHistory_.undo(automation_,restored)) setSequenceAutomation(restored,false);
+}
+void FableAudioProcessor::redoAutomation() {
+    std::vector<AutoLane> restored;
+    if (automationHistory_.redo(automation_,restored)) setSequenceAutomation(restored,false);
 }
 
 void FableAudioProcessor::setSeqPlaying(bool on) {
@@ -129,6 +152,7 @@ void FableAudioProcessor::setChain(std::vector<int> c) {
     std::iota(chain_.begin(), chain_.end(), 0);
     programDirty_.markEdited();
     shareSeqState(false, true);
+    shareAutomation();
 }
 
 void FableAudioProcessor::setEditPattern(int p) {
@@ -244,7 +268,10 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // the same for its own coefficients, so it still takes the raw targets.
     auto& p = engine.paramTargets();
     for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
-        if (rawParams[i]) p[i] = rawParams[i]->load();
+        if (rawParams[i]) {
+            const float value=rawParams[i]->load();
+            if (!engine.holdAutomatedParam((int)i,value)) p[i]=value;
+        }
     // Push host tempo + transport for LFO sync and downbeat phase-locking
     // (fallbacks when the host provides nothing: 120 BPM, position 0, stopped).
     // Sequencer host sync (BL-1 conventions): a reported tempo overrides
@@ -317,6 +344,9 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
             engine.setSeqChain(chainShared_.data(), (int)chainShared_.size());
             chainDirty_ = false;
         }
+        if (automationDirty_) {
+            engine.setSequenceAutomation(automationShared_.get()); automationDirty_=false;
+        }
         shareMutex_.unlock();
     }
 
@@ -331,10 +361,11 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     int pos = 0;
     auto renderTo = [&](int end) {
         while (pos < end) {
-            const int len = std::min(end - pos, cap);
+            const int len = std::min(end - pos, engine.hasSequenceAutomation() || engine.hasClipAutomation() ? std::min(128,cap) : cap);
             float* l = L + pos;
             float* r = stereo ? R + pos : R; // mono: scratch reused per chunk
             engine.render(l, r, len); // summed (pre-FX) voice mix
+            if (engine.hasSequenceAutomation() || engine.takeAutomationFxDirty()) fx.setParams(engine.params(),fxBpm);
             fx.process(l, r, len);
             if (!stereo) { // mono out: downmix (engine is stereo)
                 juce::FloatVectorOperations::add(l, r, len);
@@ -359,6 +390,9 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     }
     renderTo(n);
 
+    automationTelemetry_.publish(engine);
+    for (int i=0;i<2;++i) liveFilterCut_[(size_t)i].store((float)engine.vizCut[i],std::memory_order_relaxed);
+
     // Publish the live modulated wavetable positions for the editor.
     vizPosA.store((float)engine.vizA, std::memory_order_relaxed);
     vizPosB.store((float)engine.vizB, std::memory_order_relaxed);
@@ -371,6 +405,10 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // Publish sequencer transport feedback for the editor.
     curStep_.store(engine.seqCurrentStep(), std::memory_order_relaxed);
     curPattern_.store(engine.seqCurrentPattern(), std::memory_order_relaxed);
+    const double autoSteps=playing && hasPpq && synced
+        ? std::max(0.0,ppq+n*bpm/(60*currentSr.load(std::memory_order_relaxed)))*4
+        : engine.sequenceAutomationSteps();
+    automationSteps_.store(autoSteps,std::memory_order_relaxed);
     seqPlaying_.store(engine.seqIsPlaying(), std::memory_order_relaxed);
 
     // HUD feeds: voice count, MIDI led decay, and the post-FX scope ring buffer.
@@ -420,7 +458,9 @@ fui::ParameterSource StandaloneWtUiModel::parameters() {
     const auto& info = fable::paramInfo();
     auto source = fui::ParameterSource::fromApvts(proc.apvts, info.data(), info.size());
     // Feed the knob live-mod dots from the processor's per-destination atomics.
+    source.setLiveEffectiveLookup([&p=proc](const juce::String& id){ return p.liveFilterCut(id); });
     source.setLiveModLookup([&p = proc](int dest) { return p.getLiveMod(dest); });
+    source.setLiveAutomationLookup([&p=proc](const juce::String& id){ return p.liveAutomation(id); });
     return source;
 }
 bool StandaloneWtUiModel::programDirty() const { return proc.isProgramDirty(); }
@@ -481,6 +521,7 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     // Note sequencer session: all 4 patterns in the web's packed 3-byte/step
     // layout (base64) + the chain + the edit pattern (BL-1 BASS-child scheme).
     juce::ValueTree seq("NOTESEQ");
+    seq.setProperty("automation",juce::JSON::toString(automationToVar(automation_),false,17),nullptr);
     seq.setProperty("arp", juce::JSON::toString(arpToVar(arpSettings_), false, 17), nullptr);
     seq.setProperty("seqOn", isSeqEnabled(), nullptr);
     seq.setProperty("patterns",
@@ -531,6 +572,9 @@ void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
         editPattern_ = juce::jlimit(0, fable::SEQ_NPATTERNS - 1,
                                     (int)seq.getProperty("editPattern", 0));
     }
+    std::vector<AutoLane> restoredAutomation;
+    automationFromVar(juce::JSON::parse(seq.getProperty("automation").toString()),restoredAutomation,Machine::WT1);
+    automationHistory_.clear(); setSequenceAutomation(restoredAutomation,false);
     shareSeqState(true, true);
     pushCmd(CmdPanic);
 

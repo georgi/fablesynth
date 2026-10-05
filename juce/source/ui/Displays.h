@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "Theme.h"
+#include "../dsp/LfoClock.h"
 #include "ParameterSource.h"
 #include "DeviceUiModel.h"
 
@@ -45,6 +46,8 @@ private:
     juce::String shapeId, rateId, syncId, syncRateId;
     juce::Colour accent;
     std::function<HostTransport()> transport;
+    fable::LfoClock phaseClock_;
+    bool wasSynced_ = false;
     juce::uint32 t0;
 };
 

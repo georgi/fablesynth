@@ -1,0 +1,15 @@
+import { launch, boot } from './rec.mjs';
+const { browser, page } = await launch();
+await boot(page, 'seq');
+await page.evaluate(() => document.querySelector('button[aria-label="Close tour"]')?.click());
+await page.evaluate(() => { const sel = document.querySelector('header select'); sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+await page.waitForTimeout(1200);
+await page.evaluate(() => window.__fableSq.store.getState().enterFocus(2, 2));
+await page.waitForTimeout(900);
+await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'EDIT')?.click());
+await page.waitForTimeout(900);
+console.log(await page.evaluate(() => [...document.querySelectorAll('section.panel, section[id^=panel]')].map((el) => { const r = el.getBoundingClientRect(); return `${el.id || el.className.split(' ').slice(0, 2).join('.')} ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`; }).join('\n')));
+console.log(await page.evaluate(() => { const p = window.__fableSq.wt.getState().params; return Object.entries(p).filter(([k]) => /^(filter\.|lfo1|lfo2|mat[1-4]\.|amp\.|fx\.(delay|reverb|chorus)\.(on|mix)|oscA\.(table|pos))/.test(k)).map(([k, v]) => `${k}=${typeof v === 'number' ? +v.toFixed(3) : v}`).join(' '); }));
+console.log('scroll', await page.evaluate(() => document.documentElement.scrollHeight), 'chips', await page.evaluate(() => [...document.querySelectorAll('.panel-matrix [draggable=true]')].map((e) => e.textContent.trim()).join(',')));
+await page.screenshot({ path: '/private/tmp/claude-501/-Users-mg-dev-fablesynth/d33d8d18-ba75-4da1-94a1-d8922c0291b3/scratchpad/sq-lead-edit.png' });
+await browser.close();

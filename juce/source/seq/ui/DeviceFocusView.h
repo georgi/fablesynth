@@ -17,7 +17,7 @@ namespace fui {
 // Hosts the four native SQ-4 machine surfaces. Models deliberately precede
 // bodies in declaration order because every body retains references into its
 // model and parameter bank.
-class DeviceFocusView final : public juce::Component, private juce::Timer {
+class DeviceFocusView final : public juce::Component, public AutomationMenuHost, private juce::Timer {
 public:
     enum class ActiveBody { none, drum, bass, wt2, wt3 };
 
@@ -52,6 +52,8 @@ public:
     const juce::String clipTargetForTest() const { return clipTargetLabel_.getText(); }
     const juce::String clipMetadataForTest() const { return clipMetadataLabel_.getText(); }
 
+    bool canShowAutomation(const juce::String& id) const override { return automation_.canShowAutomation(id); }
+    void showAutomation(const juce::String& id) override;
     void paint(juce::Graphics&) override;
     void resized() override;
 

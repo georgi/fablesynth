@@ -9,21 +9,27 @@
 #include "ui/WavetableEditor.h"
 #include "ui/WtDeviceBody.h"
 #include "ui/StandaloneTopBar.h"
+#include "seq/ui/ClipAutomationPanel.h"
 
 // The rack: all panels laid out at a fixed logical size matching the web CSS
 // grid. The editor scales it to the window so the layout stays pixel-faithful.
-class Rack : public juce::Component {
+class Rack : public juce::Component, public fui::AutomationMenuHost {
 public:
     // Top bar plus the tabbed device body; every page shares one height.
     static constexpr int LW = 1520, LH = 89 + WtDeviceBody::LH;
     Rack(fui::WtUiModel&, juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
     void resized() override;
+    bool canShowAutomation(const juce::String& id) const override { return automation_.canShowAutomation(id); }
+    void showAutomation(const juce::String& id) override { automation_.showAutomation(id); body.showAutomationPage(); }
+    fui::ClipAutomationPanel& automationForTest() { return automation_; }
 
     // Forwarded from either oscillator panel's ✎ button (arg = osc index).
     std::function<void(int)> onEditTable;
 
     fui::NoteSeqView& noteSeq() { return body.noteSeq(); }   // exposed for the host test
 private:
+    fable::ClipData automationClip_;
+    fui::ClipAutomationPanel automation_;
     fui::TopBar  topBar;
     WtDeviceBody body;
 };

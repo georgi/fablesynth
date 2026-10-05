@@ -91,4 +91,31 @@ static void testAutomationUi() {
     check(drums.clip()->automation[0].target=="pad5.flt.cut" && drums.clip()->automation[0].time.mode==AutoTime::Pad,"DR-1 lane targets the selected pad and supports PAD timing");
     drums.setLaneTarget("fx.reverb.mix"); check(drums.clip()->automation[0].time.mode==AutoTime::Clip,"group target resets incompatible PAD mode");
     drums.setLaneTarget("pad5.flt.cut"); drums.setTime(AutoTime::Fit); drums.setSteps(3); save(drums,"native-automation-drums.png");
+    seq->enterFocus(2,0);
+    const auto laneCount=focus.automationForTest().clip()->automation.size();
+    check(focus.canShowAutomation("fx.delay.mix") && !focus.canShowAutomation("seq.bpm"),"native control menu enables valid automation targets");
+    focus.showAutomation("fx.delay.mix");
+    check(focus.automationForTest().expanded() && focus.automationForTest().selectedLane()==0 &&
+        focus.automationForTest().clip()->automation.size()==laneCount,"show in automation reuses and reveals the existing lane");
+    focus.showAutomation("oscA.level");
+    check(focus.automationForTest().clip()->automation.size()==laneCount+1 &&
+        focus.automationForTest().clip()->automation.back().target=="oscA.level","show in automation creates a missing lane");
+
+    // The hosted sources must expose processor telemetry for every machine.
+    juce::AudioBuffer<float> audio(2,512); juce::MidiBuffer midi;
+    const char* targets[]{"pad5.flt.cut","flt.cut","filter.cutoff"};
+    for (int track=0;track<3;++track) {
+        seq->enterFocus(track,0);
+        if (!p.conductor().session().scenes[0].hasClip[(size_t)track]) p.conductor().createClip(0,track);
+        p.conductor().updateClipAutomation(0,track,{{targets[track],true,{AutoTime::Grid,4,4},{{0,.3,0,true},{2,.7,0,true}}}});
+    }
+    p.processBlock(audio,midi); p.drainAcks(); p.conductor().launchScene(0);
+    p.processBlock(audio,midi); p.drainAcks();
+    fui::ParameterSource sources[]{focus.drumModelForTest().parameters(),focus.bassModelForTest().parameters(),focus.wt2ModelForTest().parameters()};
+    for (int track=0;track<3;++track) {
+        fui::Knob knob(sources[track],targets[track],fui::Knob::Md,fui::Accent::N);
+        check(std::isfinite(sources[track].liveAutomation(targets[track])) && std::abs(knob.automationNorm()-.3f)<.001,
+            "hosted native controls show actual automation for every machine");
+    }
+
 }

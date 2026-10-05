@@ -32,6 +32,8 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
     configurePage(labPage_, Page::lab);
     configurePage(sequencerPage_, Page::sequencer);
     configurePage(arpPage_, Page::arp);
+    configurePage(automationPage_, Page::automation);
+    automationPage_.setVisible(false);
     addAndMakeVisible(playback_.sequencer);
     addAndMakeVisible(playback_.arpeggiator);
     selectPage(model_.arpSettings().enabled ? Page::arp : Page::edit);
@@ -46,6 +48,7 @@ void WtDeviceBody::selectPage(Page page) {
     labPage_.setToggleState(page == Page::lab, juce::dontSendNotification);
     sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
     arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
+    automationPage_.setToggleState(page == Page::automation, juce::dontSendNotification);
     resized();
 }
 
@@ -76,6 +79,7 @@ void WtDeviceBody::resized() {
     labPage_.setBounds(tabs.removeFromLeft(70)); tabs.removeFromLeft(5);
     sequencerPage_.setBounds(tabs.removeFromLeft(146)); tabs.removeFromLeft(5);
     arpPage_.setBounds(tabs.removeFromLeft(92));
+    tabs.removeFromLeft(5); automationPage_.setBounds(tabs.removeFromLeft(138));
     playback_.place(sequencerPage_, arpPage_);
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::fx;
@@ -92,4 +96,5 @@ void WtDeviceBody::resized() {
     lab.setBounds(pageBounds);
     seq.setBounds(pageBounds);
     arp.setBounds(pageBounds);
+    if (automationPanel_) { automationPanel_->setVisible(page_==Page::automation); automationPanel_->setBounds(pageBounds); }
 }

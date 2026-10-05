@@ -9,6 +9,7 @@
 #include "dsp/SeqModel.h"
 #include "dsp/SnapshotHistory.h"
 #include "../dsp/Engine.h"
+#include "../dsp/AutomationTelemetry.h"
 #include "../dsp/Fx.h"
 #include "../dsp/ParametricEq.h"
 #include "../dsp/ClipHost.h"   // fable::HostEvent
@@ -173,6 +174,15 @@ public:
     uint32_t consumeDrumHitFlags() { return drumHitFlags_.exchange(0); }
     int drumLanePosition(int pad) const { return pad >= 0 && pad < 16 ? drumLanePositions_[(size_t)pad].load() - 1 : -1; }
     float drumVizPosition(int oscillator) const;
+    float liveDrumFilter(const juce::String& id) const {
+        const int pid=fable::drumIdFromString(id.toStdString());
+        if (pid<0 || pid>=fable::DG_SEQ_BPM) return std::numeric_limits<float>::quiet_NaN();
+        const int pad=pid/fable::DPAD_NFIELDS, field=pid%fable::DPAD_NFIELDS;
+        const float cut=liveDrumFilter_[(size_t)pad][0].load(std::memory_order_relaxed);
+        if (cut<=0) return std::numeric_limits<float>::quiet_NaN();
+        return field==fable::DP_FLT_CUT ? cut : field==fable::DP_FLT_RES
+            ? liveDrumFilter_[(size_t)pad][1].load(std::memory_order_relaxed) : std::numeric_limits<float>::quiet_NaN();
+    }
     float drumVizEnvelope() const { return drumVizEnv_.load(); }
     float bassVizPosition() const { return bassVizPos_.load(); }
     float bassVizCutoff() const { return bassVizCut_.load(); }
@@ -181,7 +191,9 @@ public:
     int wtVoiceCount(int track) const;
     // Live route sum for a WT track's MOD_DESTS index; NaN while idle so the
     // hosted knob live dots hide (same contract as FableAudioProcessor).
+    float wtLiveFilterCut(int track, const juce::String& id) const;
     float wtLiveMod(int track, int dest) const;
+    float liveAutomation(int track,const juce::String& id) const;
     double preparedSampleRate() const { return preparedSampleRate_; }
 
     // Test hook: snapshot of a track's live audio-thread param array. Used to
@@ -408,12 +420,17 @@ private:
 
     // Audio-thread visual state published atomically for hosted device views.
     std::atomic<uint32_t> drumHitFlags_ { 0 };
+    std::array<std::array<std::atomic<float>,2>,fable::DR_NPADS> liveDrumFilter_{};
     std::atomic<float> drumVizA_ { -1 }, drumVizB_ { -1 }, drumVizEnv_ { 0 };
     std::atomic<float> bassVizPos_ { -1 }, bassVizCut_ { -1 };
     std::atomic<int> bassVizSemi_ { -100 };
     std::atomic<float> wtVizA_[2] {{ -1 }, { -1 }}, wtVizB_[2] {{ -1 }, { -1 }};
     std::atomic<int> wtVoices_[2] {{ 0 }, { 0 }};
     std::array<std::array<std::atomic<float>, fable::NUM_MOD_DESTS>, 2> wtLiveMod_{};
+    fable::AutomationTelemetry<fable::DR_NUM_PARAMS> drumAutoTelemetry_;
+    fable::AutomationTelemetry<fable::BL_NUM_PARAMS> bassAutoTelemetry_;
+    std::array<fable::AutomationTelemetry<fable::NUM_PARAMS>,2> wtAutoTelemetry_;
+    std::array<std::array<std::atomic<float>,2>,2> wtLiveFilterCut_{};
     std::atomic<bool> wtLiveModAny_[2] {{ false }, { false }};
 
     // cached raw params for the message-thread poll (swing / bpm / vol0..3).

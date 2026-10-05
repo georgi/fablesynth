@@ -1,8 +1,20 @@
 #include "PluginEditor.h"
 
 // ---- standalone rack ----
-Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
-    : topBar(s, p), body(model, [&p] { return p.getTransport(); }) {
+Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState&, FableAudioProcessor& p)
+    : topBar(model.parameters(), p), body(model, [&p] { return p.getTransport(); }) {
+    fui::ClipAutomationPanel::Source context;
+    context.machine=fable::Machine::WT1; context.identity="wt1-sequence"; context.unit="SEQ";
+    context.clip=[this,&p]() -> const fable::ClipData* {
+        automationClip_.bars=(int)p.getChain().size(); automationClip_.automation=p.sequenceAutomation(); return &automationClip_;
+    };
+    context.beginEdit=[&p]{ p.pushAutomationUndo(); };
+    context.undo=[&p]{ p.undoAutomation(); };
+    context.redo=[&p]{ p.redoAutomation(); };
+    context.write=[&p](const auto& lanes){ p.setSequenceAutomation(lanes,false); };
+    context.elapsed=[&p]{ return p.automationSteps(); };
+    automation_.setSource(std::move(context),model.parameters());
+    body.setAutomationPanel(automation_);
     addAndMakeVisible(topBar);
     addAndMakeVisible(body);
     body.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };

@@ -102,8 +102,7 @@ private:
         return juce::Colour(c[kind_]);
     }
     float value(const char* field) const {
-        if (auto* p = source_.parameter(prefix() + "." + field)) return p->convertFrom0to1(p->getValue());
-        return 0;
+        return source_.effectiveValue(prefix() + "." + field);
     }
     static juce::String noteName(int n) {
         static const char* const names[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};

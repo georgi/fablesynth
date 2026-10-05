@@ -114,6 +114,15 @@ public:
     // ---- HUD feeds ----
     void  readScope(float* dst, int n) const;         // MAIN post-FX ring buffer
     float getVizPos(int osc) const { return (osc == 0 ? vizA_ : vizB_).load(); }
+    float liveDrumFilter(const juce::String& id) const {
+        const int pid=fable::drumIdFromString(id.toStdString());
+        if (pid<0 || pid>=fable::DG_SEQ_BPM) return std::numeric_limits<float>::quiet_NaN();
+        const int pad=pid/fable::DPAD_NFIELDS, field=pid%fable::DPAD_NFIELDS;
+        const float cut=liveDrumFilter_[(size_t)pad][0].load(std::memory_order_relaxed);
+        if (cut<=0) return std::numeric_limits<float>::quiet_NaN();
+        return field==fable::DP_FLT_CUT ? cut : field==fable::DP_FLT_RES
+            ? liveDrumFilter_[(size_t)pad][1].load(std::memory_order_relaxed) : std::numeric_limits<float>::quiet_NaN();
+    }
     float getVizEnv() const { return vizEnv_.load(); }
     bool  getMidiActive() const { return midiGlow_.load() > 0; }
     double getCurrentSr() const { return currentSr_.load(); }
@@ -179,6 +188,7 @@ private:
     std::atomic<uint32_t> hitFlags_{0};
     std::atomic<bool> hostSynced_{false};
     std::atomic<double> hostBpm_{0.0};
+    std::array<std::array<std::atomic<float>,2>,fable::DR_NPADS> liveDrumFilter_{};
     std::atomic<float> vizA_{-1.0f}, vizB_{-1.0f}, vizEnv_{0.0f};
     std::atomic<int> midiGlow_{0};
     std::atomic<double> currentSr_{48000.0};

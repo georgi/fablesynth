@@ -4,6 +4,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/Engine.h"
+#include "dsp/AutomationTelemetry.h"
 #include "dsp/Fx.h"
 #include "dsp/Params.h"
 #include "dsp/Presets.h"
@@ -11,6 +12,7 @@
 #include "ui/ProgramDirty.h"
 #include "ui/WtUiModel.h"
 #include <limits>
+#include "ui/StepEditOps.h"
 
 // FableSynth VST/AU processor. Owns the JUCE-independent DSP core (Engine + Fx)
 // and bridges the APVTS parameter tree + MIDI to it.
@@ -106,6 +108,18 @@ public:
     fable::ArpSettings getLiveArp() const { arpLiveMailbox_.consume(arpLive_, arpLiveVersion_); return arpLive_; }
     void clearArpKeys() { pushCmd(CmdArpClear); }
     void arpKeyInput(int note, bool on) { if (note >= 0 && note < 128) pushCmd((on ? CmdArpKeyOn : CmdArpKeyOff) + note); }
+    const std::vector<fable::AutoLane>& sequenceAutomation() const { return automation_; }
+    void setSequenceAutomation(const std::vector<fable::AutoLane>&,bool history=true);
+    void pushAutomationUndo() { automationHistory_.push(automation_); }
+    void undoAutomation();
+    void redoAutomation();
+    float liveFilterCut(const juce::String& id) const {
+        const int index = id == "filter.cutoff" ? 0 : id == "filter2.cutoff" ? 1 : -1;
+        const float v = index < 0 ? -1.0f : liveFilterCut_[(size_t)index].load(std::memory_order_relaxed);
+        return v > 0 ? v : std::numeric_limits<float>::quiet_NaN();
+    }
+    float liveAutomation(const juce::String& id) const { return automationTelemetry_.value(fable::idFromString(id.toStdString())); }
+    double automationSteps() const { return automationSteps_.load(std::memory_order_relaxed); }
     bool isSeqPlaying() const { return seqPlaying_.load(); }
     bool isSeqEnabled() const { return seqEnabled_.load(); }
     void setSeqEnabled(bool on) { seqEnabled_.store(on); }
@@ -141,6 +155,7 @@ private:
     std::atomic<int> tablesGen{0};
     std::atomic<float> vizPosA{-1.0f}, vizPosB{-1.0f};
     std::array<std::atomic<float>, fable::NUM_MOD_DESTS> liveMod_{};
+    std::array<std::atomic<float>,2> liveFilterCut_{{-1.0f,-1.0f}};
     std::atomic<bool> liveModAny_{false};
     std::atomic<float> hostBpm{120.0f};
     std::atomic<double> hostPpq{0.0};
@@ -178,7 +193,13 @@ private:
     mutable std::mutex shareMutex_;
     std::vector<uint8_t> patternsShared_ = fable::makeEmptySeqPatterns();
     std::vector<int> chainShared_{0};
-    bool patternsDirty_ = false, chainDirty_ = false;
+    bool patternsDirty_ = false, chainDirty_ = false, automationDirty_=false;
+    std::vector<fable::AutoLane> automation_;
+    fable::StepEditHistory<std::vector<fable::AutoLane>> automationHistory_{50};
+    std::unique_ptr<fable::AutoBank> automationShared_=std::make_unique<fable::AutoBank>();
+    void shareAutomation();
+    std::atomic<double> automationSteps_{-1};
+    fable::AutomationTelemetry<fable::NUM_PARAMS> automationTelemetry_;
     int editPattern_ = 0;
 
     // atomics published from the audio thread

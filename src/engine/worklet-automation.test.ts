@@ -52,19 +52,19 @@ describe.each(Object.entries(machines))('%s clip automation', (_name, { key, boo
   });
 });
 
-describe('DR1 standalone sequence automation', () => {
-  it('plays on the DR-1 transport, reports its anchor, and restores on stop', () => {
-    const h = makeDrumProcessor();
-    h.send({ t: 'init', params: { ...defaultDrumParams(), 'seq.bpm': 120 } });
+describe.each(['WT1', 'DR1'] as const)('%s standalone sequence automation', machine => {
+  it('plays on the standalone transport, reports its anchor, and restores on stop', () => {
+    const h = machine === 'WT1' ? bootWt({ 'seq.bpm': 120 }) : makeDrumProcessor();
+    if (machine === 'DR1') h.send({ t: 'init', params: { ...defaultDrumParams(), 'seq.bpm': 120 } });
     const proc = h.proc as unknown as Proc;
-    const values = proc.pv!;
+    const values = proc.pv ?? proc.p!;
     const outputs = [[new Float32Array(128), new Float32Array(128)]];
     const renderAt = (f: number) => {
       Object.defineProperty(globalThis, 'currentFrame', { configurable: true, value: f });
       h.proc.process([], outputs);
     };
     const table = new Float32Array(64).map((_, i) => 0.1 * (1 + Math.floor(i / 16)));
-    h.send({ t: 'seqauto', lanes: [{ k: 'pad0.lvl', table, len: 4, fit: 0, rot: 0 }] });
+    h.send({ t: 'seqauto', lanes: [{ k: machine === 'WT1' ? 'fx.delay.fb' : 'pad0.lvl', table, len: 4, fit: 0, rot: 0 }] });
     renderAt(0);
     expect(proc.autoHeld.size).toBe(0); // stopped: the lane waits for the transport
 
@@ -73,14 +73,14 @@ describe('DR1 standalone sequence automation', () => {
     expect(h.sent).toContainEqual({ t: 'anchor', frame: 0 });
     renderAt(0);
     const [[slot, stored]] = [...proc.autoHeld];
-    expect(values[slot as number]).toBeCloseTo(0.1);
+    expect((values as Record<string | number, number>)[slot as string]).toBeCloseTo(0.1);
     const step = (60 / 120 / 4) * 48000;
     renderAt(Math.round(step * 6.5));
-    expect(values[slot as number]).toBeCloseTo(0.3);
+    expect((values as Record<string | number, number>)[slot as string]).toBeCloseTo(0.3);
 
     h.send({ t: 'stop' });
     renderAt(Math.round(step * 7.5));
-    expect(values[slot as number]).toBe(stored);
+    expect((values as Record<string | number, number>)[slot as string]).toBe(stored);
     expect(proc.autoHeld.size).toBe(0);
   });
 });

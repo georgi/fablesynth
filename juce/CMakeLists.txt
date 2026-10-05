@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(FableSynth VERSION 1.0.0 LANGUAGES C CXX)
+project(FableSynth VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -99,6 +99,9 @@ if(FABLE_BUILD_PLUGIN)
         COPY_PLUGIN_AFTER_BUILD FALSE)
 
     target_sources(FableSynth PRIVATE
+        source/seq/ui/ClipAutomationPanel.cpp
+        source/bass/dsp/BassParams.cpp
+        source/drum/dsp/DrumParams.cpp
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
         source/ui/WtDeviceBody.cpp
@@ -287,6 +290,7 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/ui/MasterFxView.cpp
         source/seq/ui/DeviceFocusView.cpp
         source/seq/ui/ClipAutomationPanel.cpp
+        source/seq/ui/ClipAutomationPanelSeq.cpp
         source/seq/ui/HostedDrumModel.cpp
         source/seq/ui/HostedBassModel.cpp
         source/seq/ui/HostedWtModel.cpp
@@ -343,6 +347,9 @@ if(FABLE_BUILD_PLUGIN)
     # duplicate-symbol clashes with the plugin's shared-code library.
     juce_add_console_app(plugin_host_test PRODUCT_NAME "plugin_host_test")
     target_sources(plugin_host_test PRIVATE
+        source/seq/ui/ClipAutomationPanel.cpp
+        source/bass/dsp/BassParams.cpp
+        source/drum/dsp/DrumParams.cpp
         test/plugin_host_test.cpp
         source/PluginProcessor.cpp
         source/PluginEditor.cpp

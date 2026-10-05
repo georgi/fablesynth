@@ -8,7 +8,7 @@ namespace fui {
 
 class TopBar : public juce::Component, private juce::Timer {
 public:
-    TopBar(juce::AudioProcessorValueTreeState&, FableAudioProcessor&);
+    TopBar(ParameterSource, FableAudioProcessor&);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:

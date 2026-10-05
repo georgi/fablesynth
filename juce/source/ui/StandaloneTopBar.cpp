@@ -2,7 +2,7 @@
 
 namespace fui {
 
-TopBar::TopBar(juce::AudioProcessorValueTreeState& s, FableAudioProcessor& p)
+TopBar::TopBar(ParameterSource s, FableAudioProcessor& p)
     : proc(p),
       scope([&p](float* out, int n) { p.readScope(out, n); }, col::acA),
       spectrum([&p](float* out, int n) { p.readScope(out, n); },

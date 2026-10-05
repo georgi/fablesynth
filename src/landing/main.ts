@@ -156,9 +156,10 @@ if (canvas && ctx) {
 }
 
 /* ---------- demo film + chapter clips ----------
-   One 80 s film, recorded from the real instruments. The hero shows a silent
-   highlight loop until the visitor asks for sound; the sections replay their
-   own chapter of the same file. Only one source is audible at a time. */
+   The hero film is one live SQ-4 performance of NEON CHASE (91 s). It shows a
+   silent highlight loop until the visitor asks for sound. The sections replay
+   chapters of the earlier demo film (demo-720.mp4). Only one source is
+   audible at a time. */
 
 type Voice = { silence: () => void };
 let audible: Voice | null = null;

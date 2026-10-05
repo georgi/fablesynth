@@ -80,6 +80,7 @@ public:
     // headless test), not an automation move, and must land immediately.
     void setParam(int id, float v) { if (autoPlayer_.hold(id, v)) return; p_[(size_t)id] = v; snapSmoother(id); }
     void setParams(const DrumParamArray& p) { p_ = autoPlayer_.protect(p, p_); ps_ = p_; snapSmoothers(); }
+    float automationValue(int id) const { return autoPlayer_.isHeld(id) ? p_[(size_t)id] : std::numeric_limits<float>::quiet_NaN(); }
     bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
     bool hasClipAutomation() const { return autoPlayer_.active(); }
     bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
@@ -179,6 +180,7 @@ public:
     }
 
     // viz (read by the processor after render, published as atomics)
+    std::array<float, DR_NPADS> vizCut{}, vizRes{};
     float vizA = -1, vizB = -1, vizEnv = 0;
     // pads triggered since last consume (bit i = pad i) — UI LED flashes
     uint32_t consumeHits() { uint32_t h = hits_; hits_ = 0; return h; }

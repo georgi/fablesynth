@@ -144,7 +144,8 @@ export async function take(page, name, perform) {
     wait: (ms) => page.waitForTimeout(ms),
     /** Waits until `ms` since take start (for bar-aligned actions). */
     until: async (ms) => { const d = ms - (Date.now() - T0); if (d > 0) await page.waitForTimeout(d); },
-    move: async (x, y, ms = 450, curve = ease) => {
+    /** `stepMs` spaces the mouse events; raise it for long drags on heavy controls. */
+    move: async (x, y, ms = 450, curve = ease, stepMs = 12) => {
       const a = { ...pos };
       const t0 = Date.now();
       for (;;) {
@@ -154,7 +155,7 @@ export async function take(page, name, perform) {
         await page.mouse.move(pos.x, pos.y);
         log();
         if (u >= 1) break;
-        await page.waitForTimeout(12);
+        await page.waitForTimeout(stepMs);
       }
     },
     down: async () => { down = true; await page.mouse.down(); log(); },

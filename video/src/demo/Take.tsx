@@ -29,11 +29,23 @@ import sAuto from '../../public/takes/sq-auto/spec.json';
 import sLaunch from '../../public/takes/sq-launch/spec.json';
 import sShift from '../../public/takes/wt-shift/spec.json';
 import sGlitch from '../../public/takes/wt-glitch/spec.json';
+import neonIntro from '../../public/takes/neon-intro/take.json';
+import vNeonIntro from '../../public/takes/neon-intro/values.json';
+import sNeonIntro from '../../public/takes/neon-intro/spec.json';
+import neonBuild from '../../public/takes/neon-build/take.json';
+import sNeonBuild from '../../public/takes/neon-build/spec.json';
+import neonDropA from '../../public/takes/neon-dropa/take.json';
+import sNeonDropA from '../../public/takes/neon-dropa/spec.json';
+import neonBreak from '../../public/takes/neon-break/take.json';
+import vNeonBreak from '../../public/takes/neon-break/values.json';
+import sNeonBreak from '../../public/takes/neon-break/spec.json';
+import neonFinal from '../../public/takes/neon-final/take.json';
+import sNeonFinal from '../../public/takes/neon-final/spec.json';
 
 type Pt = { t: number; x: number; y: number; d: number };
 type TakeMeta = { dur: number; times: number[]; cursor: Pt[]; marks: Record<string, number> };
 type Spec = { fps: number; bands: number[][]; rms: number[] };
-export type TakeName = 'wt-morph' | 'bl-sweep' | 'wt-mod' | 'wt-fx' | 'dr-build' | 'sq-auto' | 'sq-launch' | 'wt-shift' | 'wt-glitch';
+export type TakeName = 'wt-morph' | 'bl-sweep' | 'wt-mod' | 'wt-fx' | 'dr-build' | 'sq-auto' | 'sq-launch' | 'wt-shift' | 'wt-glitch' | 'neon-intro' | 'neon-build' | 'neon-dropa' | 'neon-break' | 'neon-final';
 
 export const TAKES: Record<TakeName, TakeMeta> = {
   'wt-morph': wtMorph as TakeMeta,
@@ -45,6 +57,11 @@ export const TAKES: Record<TakeName, TakeMeta> = {
   'sq-launch': sqLaunch as TakeMeta,
   'wt-shift': wtShift as TakeMeta,
   'wt-glitch': wtGlitch as TakeMeta,
+  'neon-intro': neonIntro as TakeMeta,
+  'neon-build': neonBuild as TakeMeta,
+  'neon-dropa': neonDropA as TakeMeta,
+  'neon-break': neonBreak as TakeMeta,
+  'neon-final': neonFinal as TakeMeta,
 };
 export const VALUES: Partial<Record<TakeName, Record<string, string | number | null>[]>> = {
   'wt-morph': vMorph,
@@ -53,9 +70,11 @@ export const VALUES: Partial<Record<TakeName, Record<string, string | number | n
   'wt-fx': vFx,
   'wt-shift': vShift,
   'wt-glitch': vGlitch,
+  'neon-intro': vNeonIntro,
+  'neon-break': vNeonBreak,
 };
 const SPECS: Record<TakeName, Spec> = {
-  'wt-morph': sMorph, 'bl-sweep': sSweep, 'wt-mod': sMod, 'wt-fx': sFx, 'dr-build': sDr, 'sq-auto': sAuto, 'sq-launch': sLaunch, 'wt-shift': sShift, 'wt-glitch': sGlitch,
+  'wt-morph': sMorph, 'bl-sweep': sSweep, 'wt-mod': sMod, 'wt-fx': sFx, 'dr-build': sDr, 'sq-auto': sAuto, 'sq-launch': sLaunch, 'wt-shift': sShift, 'wt-glitch': sGlitch, 'neon-intro': sNeonIntro, 'neon-build': sNeonBuild, 'neon-dropa': sNeonDropA, 'neon-break': sNeonBreak, 'neon-final': sNeonFinal,
 };
 
 /** Take time (ms) at the current frame of a scene that starts at `offsetMs`. */
@@ -163,8 +182,10 @@ export const TakePlayer: React.FC<{
   audioFadeOutFrames?: number;
   hideCursor?: boolean;
   shake?: number;
+  /** Drawn in page space above the UI but below the cursor, e.g. a focus dim. */
+  under?: React.ReactNode;
   children?: React.ReactNode;
-}> = ({ name, offsetMs, cam, accent, audio = true, hideCursor, shake = 0, children }) => {
+}> = ({ name, offsetMs, cam, accent, audio = true, hideCursor, shake = 0, under, children }) => {
   const { fps } = useVideoConfig();
   const t = useTakeMs(offsetMs);
   const meta = TAKES[name];
@@ -204,6 +225,7 @@ export const TakePlayer: React.FC<{
           }}
         >
           <Img src={staticFile(`takes/${name}/${String(idx).padStart(4, '0')}.jpg`)} style={{ width: 1920, height: 1080, display: 'block' }} />
+          {under}
           <Presses name={name} t={t} color={accent} inv={1 / z} />
           {!hideCursor && (
             <div style={{ position: 'absolute', left: cur.x - 3 / z, top: cur.y - 3 / z }}>

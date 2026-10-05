@@ -66,7 +66,9 @@ void HostedWtModel::setTarget(int scene) {
 ParameterSource HostedWtModel::parameters() {
     auto source = parameters_.source();
     // Feed the hosted knob live-mod dots from this track's engine atomics.
+    source.setLiveEffectiveLookup([&p=proc_,t=track_](const juce::String& id){ return p.wtLiveFilterCut(t,id); });
     source.setLiveModLookup([&p = proc_, t = track_](int dest) { return p.wtLiveMod(t, dest); });
+    source.setLiveAutomationLookup([&p=proc_,t=track_](const juce::String& id){ return p.liveAutomation(t,id); });
     return source;
 }
 

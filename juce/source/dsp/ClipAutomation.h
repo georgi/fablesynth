@@ -9,6 +9,7 @@
 #include <cmath>
 #include <bitset>
 #include <memory>
+#include <limits>
 #include <vector>
 
 namespace fable {

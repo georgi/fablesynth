@@ -18,6 +18,7 @@ public:
     using ParameterLookup = std::function<juce::RangedAudioParameter*(const juce::String&)>;
     using InfoLookup = std::function<const fable::ParamInfo*(const juce::String&)>;
     // Live route sum for a MOD_DESTS index, NaN while idle (processor atomics).
+    using LiveAutomationLookup = std::function<float(const juce::String&)>;
     using LiveModLookup = std::function<float(int dest)>;
 
     ParameterSource() = default;
@@ -32,6 +33,13 @@ public:
     // no data, so those controls simply never show a dot.
     void setLiveModLookup(LiveModLookup lookup) { liveModLookup_ = std::move(lookup); }
     float liveMod(int dest) const;
+    void setLiveAutomationLookup(LiveAutomationLookup lookup) { liveAutomationLookup_=std::move(lookup); }
+    // Real parameter value from the processor, NaN when no lane is active.
+    float liveAutomation(const juce::String& id) const;
+
+    // Applied automation plus the live per-voice modulation route, in real units.
+    void setLiveEffectiveLookup(LiveAutomationLookup lookup) { liveEffectiveLookup_=std::move(lookup); }
+    float effectiveValue(const juce::String& id, float fallback = 0.0f) const;
 
     // Convenience adapter for existing standalone processors. The catalog
     // points at one of the canonical, process-lifetime parameter tables.
@@ -43,6 +51,8 @@ private:
     ParameterLookup parameterLookup_;
     InfoLookup infoLookup_;
     LiveModLookup liveModLookup_;
+    LiveAutomationLookup liveAutomationLookup_;
+    LiveAutomationLookup liveEffectiveLookup_;
 };
 
 } // namespace fui

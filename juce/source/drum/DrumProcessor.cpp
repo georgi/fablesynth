@@ -576,6 +576,10 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     hitFlags_.fetch_or(engine.consumeHits(), std::memory_order_relaxed);
     vizA_.store(engine.vizA, std::memory_order_relaxed);
     vizB_.store(engine.vizB, std::memory_order_relaxed);
+    for (int p=0;p<fable::DR_NPADS;++p) {
+        liveDrumFilter_[(size_t)p][0].store(engine.vizCut[(size_t)p],std::memory_order_relaxed);
+        liveDrumFilter_[(size_t)p][1].store(engine.vizRes[(size_t)p],std::memory_order_relaxed);
+    }
     vizEnv_.store(engine.vizEnv, std::memory_order_relaxed);
     if (int g = midiGlow_.load(); g > 0) midiGlow_.store(g - 1);
 

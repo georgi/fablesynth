@@ -92,6 +92,7 @@ export class SynthEngine {
       if (this.ready && !this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: false });
     };
   }
+  transportAnchor = -1;
   params: ParamValues;
   tables: VizTable[] | null; // combined [{name, frames, viz}] kept for visualization
   procTables: GeneratedTable[]; // procedural tables (full mip data)
@@ -163,6 +164,7 @@ export class SynthEngine {
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'viz' && this.onviz) this.onviz(e.data as VizMessage);
       else if (e.data.t === 'mod' && this.onmod) this.onmod((e.data as ModMessage).d);
+      else if (e.data.t === 'anchor') this.transportAnchor = e.data.frame as number;
       else if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);
       else if (e.data.t === 'pos' && this.onpos) this.onpos(e.data as PosMessage);
       else if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);
@@ -265,7 +267,18 @@ export class SynthEngine {
   setArp(config: { notes: number[]; hits: boolean[]; accents: boolean[]; rate: number; gate: number } | null): void {
     if (this.ready) this.node.port.postMessage({ t: 'arp', config });
   }
-  seqStop(): void { if (this.ready) this.node.port.postMessage({ t: 'stop' }); }
+  seqStop(): void {
+    if (this.ready) this.node.port.postMessage({ t: 'stop' });
+    this.transportAnchor = -1;
+  }
+  transportSteps(bpm: number): number | null {
+    if (!this.ready || this.transportAnchor < 0) return null;
+    return Math.max(0, (this.ctx.currentTime * this.ctx.sampleRate - this.transportAnchor)
+      / ((this.ctx.sampleRate * 60) / Math.max(1, bpm) / 4));
+  }
+  setSequenceAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'seqauto', lanes });
+  }
 
   // ---------- hosted clip transport (SQ-4, docs/sq4-clips.md §6) ----------
   setHostMode(on: boolean): void { if (this.ready) this.node.port.postMessage({ t: 'host', on: on ? 1 : 0 }); }

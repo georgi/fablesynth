@@ -26,7 +26,7 @@ void ClipAutomationPanel::Chip::paintButton(juce::Graphics& g,bool over,bool dow
     g.drawFittedText(getButtonText(),20,0,getWidth()-70,getHeight(),juce::Justification::centredLeft,1);
     curve(g,points,len,{(float)getWidth()-46,7,38,12},c);
 }
-ClipAutomationPanel::ClipAutomationPanel(SeqAudioProcessor& p) : proc_(p),canvas_(*this) {
+ClipAutomationPanel::ClipAutomationPanel() : canvas_(*this) {
     setLookAndFeel(&lookAndFeel_);
     setTitle("Clip automation"); setWantsKeyboardFocus(true);
     for (auto* b : {&disclose_,&add_,&learnButton_,&power_,&clear_,&remove_,&stepDown_,&stepUp_}) { style(*b,{}); addAndMakeVisible(*b); }
@@ -65,32 +65,44 @@ void ClipAutomationPanel::style(juce::TextButton& b,const juce::String& tooltip)
 }
 juce::Colour ClipAutomationPanel::color(int i) const { return juce::Colour(colors[(size_t)juce::jlimit(0,7,i)]); }
 const ClipData* ClipAutomationPanel::clip() const {
-    if (scene_<0 || track_<0) return nullptr;
-    const auto& s=proc_.conductor().session();
-    if (scene_<0 || scene_>=(int)s.scenes.size() || track_<0 || track_>=(int)s.tracks.size()) return nullptr;
-    const auto& sc=s.scenes[(size_t)scene_];
-    return sc.hasClip[(size_t)track_] ? &sc.clips[(size_t)track_] : nullptr;
+    return automationSource_.clip ? automationSource_.clip() : nullptr;
 }
 const AutoLane* ClipAutomationPanel::lane() const { const auto* c=clip(); return c && selected_>=0 && selected_<(int)c->automation.size() ? &c->automation[(size_t)selected_] : nullptr; }
 autoedit::Geometry ClipAutomationPanel::geometry() const {
     const auto* c=clip(); const auto* l=lane(); return {l && c ? laneCycle(*l,c->bars,c->hasDrumRhythm ? &c->drumRhythm : nullptr) : AutoCycle{},c ? c->bars*16 : 16};
 }
-void ClipAutomationPanel::setTarget(int scene,int track,ParameterSource source,std::function<int()> pad) {
-    const bool changed=scene_!=scene || track_!=track;
+void ClipAutomationPanel::setSource(Source source,ParameterSource parameters,std::function<int()> pad) {
+    const bool changed=automationSource_.identity!=source.identity;
     if (changed) { canvas_.cancel(); selected_=0; learn_=false; }
-    scene_=scene; track_=track; source_=std::move(source); selectedPad_=std::move(pad); lastPad_=-1;
+    machine_=source.machine; automationSource_=std::move(source);
+    source_=std::move(parameters); selectedPad_=std::move(pad); lastPad_=-1;
     if (changed) open_=clip() && !clip()->automation.empty();
+    times_[0].setButtonText(automationSource_.unit);
     signature_.clear(); refresh(); if (onLayoutChanged) onLayoutChanged();
+}
+bool ClipAutomationPanel::canShowAutomation(const juce::String& target) const {
+    const auto* c=clip();
+    return c && autoParamDef(machine_,target.toStdString()) &&
+        (c->automation.size()<AUTO_MAX_LANES || std::any_of(c->automation.begin(),c->automation.end(),
+            [&](const auto& l){ return l.target==target.toStdString(); }));
+}
+void ClipAutomationPanel::showAutomation(const juce::String& target) {
+    if (!canShowAutomation(target)) return;
+    canvas_.cancel(); auto lanes=clip()->automation;
+    auto it=std::find_if(lanes.begin(),lanes.end(),[&](const auto& l){ return l.target==target.toStdString(); });
+    selected_=(int)std::distance(lanes.begin(),it);
+    if (it==lanes.end()) { lanes.push_back({target.toStdString(),true,{}, {}}); write(std::move(lanes)); }
+    setLearn(false); setExpanded(true); signature_.clear(); refresh();
 }
 void ClipAutomationPanel::setExpanded(bool open) { if (open_==open) return; canvas_.cancel(); open_=open; rebuildControls(); if (onLayoutChanged) onLayoutChanged(); }
 void ClipAutomationPanel::selectLane(int i) { canvas_.cancel(); selected_=i; setLearn(false); signature_.clear(); refresh(); }
 void ClipAutomationPanel::setTool(Tool tool) { canvas_.cancel(); tool_=tool; canvas_.setMouseCursor(tool==Point ? juce::MouseCursor::NormalCursor : juce::MouseCursor::CrosshairCursor); rebuildControls(); }
 void ClipAutomationPanel::setSnap(bool snap) { snap_=snap; rebuildControls(); }
-void ClipAutomationPanel::beginEdit() { proc_.pushUndoSnapshot(); }
+void ClipAutomationPanel::beginEdit() { if (automationSource_.beginEdit) automationSource_.beginEdit(); }
 void ClipAutomationPanel::write(std::vector<AutoLane> lanes,bool history) {
-    if (!clip() || !validateAutomation(lanes,proc_.conductor().session().tracks[(size_t)track_].machine)) return;
+    if (!clip() || !validateAutomation(lanes,machine_)) return;
     if (history) beginEdit();
-    proc_.conductor().updateClipAutomation(scene_,track_,lanes); signature_.clear(); refresh();
+    if (automationSource_.write) automationSource_.write(lanes); signature_.clear(); refresh();
 }
 void ClipAutomationPanel::patchLane(std::function<void(AutoLane&)> edit,bool history) {
     if (!lane()) return; auto lanes=clip()->automation; edit(lanes[(size_t)selected_]); write(std::move(lanes),history);
@@ -98,7 +110,7 @@ void ClipAutomationPanel::patchLane(std::function<void(AutoLane&)> edit,bool his
 void ClipAutomationPanel::writePoints(std::vector<AutoPoint> points) { patchLane([&](auto& l){ l.points=std::move(points); },false); }
 void ClipAutomationPanel::addLane() {
     const auto* c=clip(); if (!c || c->automation.size()>=AUTO_MAX_LANES) return;
-    const auto machine=proc_.conductor().session().tracks[(size_t)track_].machine;
+    const auto machine=machine_;
     const std::string preferred=machine==Machine::WT1 ? "filter.cutoff" : machine==Machine::BL1 ? "flt.cut" : "pad"+std::to_string(selectedPad_ ? selectedPad_() : 0)+".flt.cut";
     auto used=[&](const std::string& id){ return std::any_of(c->automation.begin(),c->automation.end(),[&](const auto& l){ return l.target==id; }); };
     std::string id=preferred; if (used(id)) { id.clear(); for (const auto& t : targets_) if (!used(t.id)) { id=t.id; break; } }
@@ -109,13 +121,13 @@ void ClipAutomationPanel::setLaneTarget(const std::string& id) {
     if (!lane() || lane()->target==id) return;
     const auto& lanes=clip()->automation;
     for (int i=0;i<(int)lanes.size();++i) if (i!=selected_ && lanes[(size_t)i].target==id) return;
-    if (!autoParamDef(proc_.conductor().session().tracks[(size_t)track_].machine,id)) return;
+    if (!autoParamDef(machine_,id)) return;
     canvas_.cancel(); patchLane([&](auto& l){ l.target=id; if (l.time.mode==AutoTime::Pad && autoPadOf(id)<0) l.time.mode=AutoTime::Clip; });
 }
 void ClipAutomationPanel::setTime(AutoTime::Mode mode) {
     if (!lane() || lane()->time.mode==mode) return;
     const int steps=std::min(AUTO_MAX_STEPS,geometry().cycle.len);
-    if (mode==AutoTime::Pad && (track_!=0 || autoPadOf(lane()->target)<0)) return;
+    if (mode==AutoTime::Pad && (machine_!=Machine::DR1 || autoPadOf(lane()->target)<0)) return;
     canvas_.cancel(); patchLane([&](auto& l){
         if (l.time.mode==AutoTime::Fit) lastFit_=l.time.cycleBeats;
         const int n=l.time.mode==AutoTime::Grid || l.time.mode==AutoTime::Fit ? l.time.steps : steps;
@@ -127,7 +139,7 @@ void ClipAutomationPanel::setCycle(int n) { if (lane() && lane()->time.mode==Aut
 void ClipAutomationPanel::setLearn(bool on) {
     learn_=on && lane(); learnValues_.clear();
     if (learn_) {
-        const auto machine=proc_.conductor().session().tracks[(size_t)track_].machine;
+        const auto machine=machine_;
         auto remember=[&](const auto& defs){ for (const auto& d : defs) if (autoParamDef(machine,d.pid)) if (auto* p=source_.parameter(d.pid)) learnValues_[d.pid]=p->getValue(); };
         if (machine==Machine::WT1) remember(paramInfo()); else if (machine==Machine::BL1) remember(bassParamInfo()); else remember(drumParamInfo());
     }
@@ -150,7 +162,7 @@ juce::String ClipAutomationPanel::targetLabel(Machine machine,const std::string&
 }
 void ClipAutomationPanel::rebuildTargets() {
     targets_.clear(); target_.clear(juce::dontSendNotification); if (!clip()) return;
-    const auto machine=proc_.conductor().session().tracks[(size_t)track_].machine; const int pad=selectedPad_ ? selectedPad_() : 0;
+    const auto machine=machine_; const int pad=selectedPad_ ? selectedPad_() : 0;
     int menu=0; juce::String group;
     auto add=[&](const auto& defs){ for (const auto& d : defs) {
         if (!autoParamDef(machine,d.pid)) continue;
@@ -181,7 +193,7 @@ void ClipAutomationPanel::refresh() {
     canvas_.repaint();
 }
 void ClipAutomationPanel::rebuildControls() {
-    refreshing_=true; const auto* c=clip(); const auto* l=lane(); const auto machine=track_==0 ? Machine::DR1 : track_==1 ? Machine::BL1 : Machine::WT1;
+    refreshing_=true; const auto* c=clip(); const auto* l=lane(); const auto machine=machine_;
     const bool editing=open_ && l; const auto accent=color(selected_);
     disclose_.setButtonText(open_ ? "v AUTOMATION" : "> AUTOMATION"); add_.setEnabled(c && c->automation.size()<AUTO_MAX_LANES);
     for (int i=0;i<8;++i) {
@@ -190,7 +202,7 @@ void ClipAutomationPanel::rebuildControls() {
     }
     for (int i=0;i<3;++i) { tools_[(size_t)i].setVisible(open_); tools_[(size_t)i].setToggleState(i==(int)tool_,juce::dontSendNotification); }
     for (int i=0;i<2;++i) { snaps_[(size_t)i].setVisible(open_); snaps_[(size_t)i].setToggleState(i==(snap_ ? 0 : 1),juce::dontSendNotification); cycles_[(size_t)i].setVisible(editing && l->time.mode==AutoTime::Fit); cycles_[(size_t)i].setToggleState(l && l->time.cycleBeats==(i ? 8 : 4),juce::dontSendNotification); }
-    for (int i=0;i<4;++i) { times_[(size_t)i].setVisible(editing && (i<3 || (track_==0 && autoPadOf(l->target)>=0))); times_[(size_t)i].setToggleState(l && i==(int)l->time.mode,juce::dontSendNotification); }
+    for (int i=0;i<4;++i) { times_[(size_t)i].setVisible(editing && (i<3 || (machine_==Machine::DR1 && autoPadOf(l->target)>=0))); times_[(size_t)i].setToggleState(l && i==(int)l->time.mode,juce::dontSendNotification); }
     for (auto* b : {&learnButton_,&power_,&clear_,&remove_}) b->setVisible(editing);
     captions_[0].setVisible(editing); captions_[1].setVisible(editing); captions_[2].setVisible(editing && (l->time.mode==AutoTime::Grid || l->time.mode==AutoTime::Fit)); captions_[3].setVisible(editing && l->time.mode==AutoTime::Fit);
     target_.setVisible(editing); canvas_.setVisible(editing); readout_.setVisible(editing);
@@ -231,7 +243,7 @@ void ClipAutomationPanel::resized() {
     const int count=(int)clip()->automation.size(),per=std::max(1,(getWidth()-16)/210),rows=(count+per-1)/per;
     for (int i=0;i<count;++i) chips_[(size_t)i].setBounds(8+(i%per)*210,40+(i/per)*32,202,26);
     const int y=40+rows*32+layoutInspector(getWidth(),40+rows*32,true);
-    readout_.setBounds(8,y,getWidth()-16,22); canvas_.setBounds(8,y+24,getWidth()-16,132);
+    readout_.setBounds(8,y,getWidth()-16,22); canvas_.setBounds(8,y+24,getWidth()-16,std::max(0,getHeight()-(y+24)-10));
 }
 void ClipAutomationPanel::paint(juce::Graphics& g) {
     auto r=getLocalBounds().toFloat().reduced(.5f); g.setGradientFill(juce::ColourGradient(juce::Colour(0xff0f131b),0,0,juce::Colour(0xff0b0e14),0,(float)getHeight(),false)); g.fillRoundedRectangle(r,9); g.setColour(col::line); g.drawRoundedRectangle(r,9,1);
@@ -242,13 +254,10 @@ void ClipAutomationPanel::paint(juce::Graphics& g) {
 double ClipAutomationPanel::baseline() const {
     if (!lane()) return .5;
     if (auto* p=source_.parameter(lane()->target)) return p->getValue();
-    const auto* d=autoParamDef(proc_.conductor().session().tracks[(size_t)track_].machine,lane()->target);
-    const auto values=proc_.trackParameterValues(track_); auto v=values.find(lane()->target);
-    return d && v!=values.end() ? std::clamp((double)valueToNorm(*d,v->second),0.0,1.0) : .5;
+    return .5;
 }
 double ClipAutomationPanel::elapsed() const {
-    if (!clip() || !proc_.conductor().playing() || proc_.conductor().ownerOf(track_)!=scene_) return -1;
-    return std::max(0.0,proc_.currentFrame.load()-proc_.conductor().anchor())/((proc_.preparedSampleRate()*60)/proc_.conductor().session().bpm/4);
+    return clip() && automationSource_.elapsed ? automationSource_.elapsed() : -1;
 }
 juce::String ClipAutomationPanel::timeReadout() const {
     if (!lane() || !clip()) return {};
@@ -257,14 +266,14 @@ juce::String ClipAutomationPanel::timeReadout() const {
     if (mode==AutoTime::Fit) return juce::String(c.len)+" IN "+juce::String(c.fit/4)+" BAR"+(c.fit>4 ? "S" : "")+"  /  STRAIGHT";
     if (mode==AutoTime::Pad) {
         const int pad=autoPadOf(lane()->target); const bool poly=clip()->hasDrumRhythm && pad>=0 && clip()->drumRhythm.lanes[(size_t)pad].enabled;
-        if (!poly) return "PAD IS NOT POLY  /  FOLLOWS CLIP";
+        if (!poly) return "PAD IS NOT POLY  /  FOLLOWS "+automationSource_.unit;
         return "PAD POLY  /  "+juce::String(c.len)+(c.fit ? " IN "+juce::String(c.fit/4)+" BAR"+(c.fit>4 ? "S" : "") : " STEPS")+(c.rot ? "  /  ROT "+juce::String(c.rot) : "");
     }
-    return "FOLLOWS CLIP  /  "+bars;
+    return "FOLLOWS "+automationSource_.unit+"  /  "+bars;
 }
 juce::String ClipAutomationPanel::valueReadout(double norm) const {
     if (!lane()) return {};
-    const auto* d=autoParamDef(proc_.conductor().session().tracks[(size_t)track_].machine,lane()->target);
+    const auto* d=autoParamDef(machine_,lane()->target);
     const float value=normToValue(*d,(float)norm);
     if (d->curve==Curve::Log && (lane()->target.find("cut")!=std::string::npos || lane()->target.find("freq")!=std::string::npos)) return value>=1000 ? juce::String(value/1000,2)+" kHz" : juce::String(value,1)+" Hz";
     if (lane()->target.find(".att")!=std::string::npos || lane()->target.find(".dec")!=std::string::npos || lane()->target.find(".rel")!=std::string::npos || lane()->target.find(".time")!=std::string::npos) return value<1 ? juce::String(value*1000,1)+" ms" : juce::String(value,2)+" s";
@@ -274,6 +283,10 @@ void ClipAutomationPanel::timerCallback() {
     if (isShowing() || learn_) refresh();
 }
 bool ClipAutomationPanel::keyPressed(const juce::KeyPress& key) {
+    if (key.getModifiers().isCommandDown() && (key.getKeyCode()=='Z' || key.getKeyCode()=='z')) {
+        auto& action=key.getModifiers().isShiftDown() ? automationSource_.redo : automationSource_.undo;
+        if (action) { canvas_.cancel(); action(); signature_.clear(); refresh(); return true; }
+    }
     if (key==juce::KeyPress::escapeKey) { canvas_.cancel(); setLearn(false); return true; }
     // Device panel keys must not launch scenes while editing a lane.
     return key.getKeyCode()>=32 && key.getKeyCode()<127 && !key.getModifiers().isCommandDown();

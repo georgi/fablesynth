@@ -18,6 +18,15 @@ namespace fui {
 using ParamInfoResolver = const fable::ParamInfo* (*)(const std::string&);
 void setParamInfoResolver(ParamInfoResolver);
 
+// Controls find their containing device/clip editor without retaining it in
+// the parameter source. Async menu callbacks guard the component lifetime.
+class AutomationMenuHost {
+public:
+    virtual ~AutomationMenuHost() = default;
+    virtual bool canShowAutomation(const juce::String&) const = 0;
+    virtual void showAutomation(const juce::String&) = 0;
+};
+
 // ---- rotary knob ----------------------------------------------------------
 // modDest > 0 turns the knob into a modulation target: it accepts source-chip
 // drops (juce::DragAndDropTarget), paints one depth ring per slot whose dst ==
@@ -42,6 +51,9 @@ public:
     void itemDragEnter(const SourceDetails&) override;
     void itemDragExit(const SourceDetails&) override;
     void itemDropped(const SourceDetails&) override;
+
+    float automationNorm() const;
+    float effectiveNorm() const;
 
     static int svgPx(Size s) { return s == Lg ? 74 : s == Md ? 56 : s == Sm ? 44 : 34; }
     void setLabelText(const juce::String& text) { label = text; repaint(); }
@@ -80,6 +92,7 @@ private:
     // Route sum x -> normalized arc offset: Lin folds p + x·(hi−lo) so the
     // offset IS x; Log folds p·2^(x·5) so it's x·5/log2(max/min).
     float liveNormPerX_ = 1.0f;
+    float lastAutoNorm_ = -1.0f;
     float lastLiveNorm_ = -1.0f;          // timer change-cache; -1 = hidden
 };
 
@@ -145,6 +158,8 @@ public:
             std::function<float()> ghostProvider, int modDest = 0);
     VSlider(ParameterSource, const juce::String& paramId, Accent accent,
             std::function<float()> ghostProvider, int modDest = 0);
+    float automationNorm() const;
+    float effectiveNorm() const;
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -168,7 +183,7 @@ private:
     juce::RangedAudioParameter* param = nullptr;
     juce::Colour accent;
     std::function<float()> ghost;
-    float lastNorm = -1, lastGhost = -2, lastY = 0;
+    float lastNorm = -1, lastGhost = -2, lastY = 0, lastAutoNorm = -1;
 
     // ---- modulation target state ----
     int  modDest_ = 0;

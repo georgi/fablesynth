@@ -1,3 +1,4 @@
+import { useControlMenu } from './ControlMenu';
 // SVG rotary knob. Drag vertically (shift = fine), scroll wheel, double-click
 // to reset, arrow keys when focused. Bipolar params sweep from 12 o'clock.
 //
@@ -80,6 +81,7 @@ interface KnobProps {
 }
 
 export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
+  const controlMenu = useControlMenu('WT1', paramId);
   const def = PARAMS[paramId];
   const value = useStore((s) => s.params[paramId]);
   const setParam = useStore((s) => s.setParam);
@@ -184,6 +186,7 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   return (
     <div
       ref={elRef}
+      onContextMenu={controlMenu.onContextMenu}
       className={`knob knob-${size}${dest ? ' knob-mod' : ''}${dropActive ? ' mod-target' : ''}${myMods.length ? ' has-mod' : ''}`}
       data-accent={accent}
       tabIndex={0}
@@ -222,6 +225,7 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
       </svg>
       <div className="k-label">{labelText}</div>
       <div className="k-value">{text}</div>
+      {controlMenu.menu}
     </div>
   );
 }

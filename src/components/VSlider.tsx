@@ -1,3 +1,4 @@
+import { useControlMenu } from './ControlMenu';
 // Vertical slider used for wavetable position, with a "ghost" marker that
 // tracks the live modulated position coming back from the DSP thread. It is also
 // a Serum-style mod target: drop a source chip to assign it, and the colored
@@ -36,6 +37,7 @@ function PosModBand({ slotNum, amt, src, baseNorm }: { slotNum: number; amt: num
       className="vs-mod"
       style={{ bottom: `${lo * 100}%`, height: `${(hi - lo) * 100}%`, ['--src' as string]: SOURCE_COLORS[src] }}
       onPointerDown={(e) => {
+        if (e.button !== 0) return;
         e.stopPropagation();
         drag.current = { y: e.clientY, amt };
         elRef.current?.setPointerCapture(e.pointerId);
@@ -56,6 +58,7 @@ function PosModBand({ slotNum, amt, src, baseNorm }: { slotNum: number; amt: num
 }
 
 export function VSlider({ paramId, accent, ghost }: VSliderProps) {
+  const controlMenu = useControlMenu('WT1', paramId);
   const def = PARAMS[paramId];
   const value = useStore((s) => s.params[paramId]);
   const setParam = useStore((s) => s.setParam);
@@ -96,6 +99,7 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
   }, []);
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     draggingRef.current = true;
     elRef.current?.setPointerCapture(e.pointerId);
     moveTo(e.clientY);
@@ -112,6 +116,7 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
   return (
     <div
       ref={elRef}
+      onContextMenu={controlMenu.onContextMenu}
       className={`vslider${dest ? ' vslider-mod' : ''}${dropActive ? ' mod-target' : ''}`}
       data-accent={accent}
       tabIndex={0}
@@ -145,6 +150,7 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
         <div className="vs-handle" style={{ bottom: `${pct}%` }} />
       </div>
       <div className="vs-label">POS</div>
+      {controlMenu.menu}
     </div>
   );
 }

@@ -5,6 +5,29 @@
 
 namespace fui {
 
+namespace {
+AutomationMenuHost* automationHost(juce::Component& control) {
+    for (auto* parent=control.getParentComponent(); parent; parent=parent->getParentComponent())
+        if (auto* host=dynamic_cast<AutomationMenuHost*>(parent)) return host;
+    return nullptr;
+}
+void showControlMenu(juce::Component& control, ParameterSource parameters, const juce::String& id, int dest) {
+    juce::PopupMenu menu, sources;
+    const bool canMod=dest>0 && findFreeSlot(parameters)>0;
+    const char* names[]{"LFO 1","LFO 2","MOD ENV","VELO","NOTE"};
+    for (int i=0;i<5;++i) sources.addItem(i+1,names[i]);
+    menu.addSubMenu("Set modulation source", sources, canMod);
+    auto* host=automationHost(control);
+    menu.addItem(100,"Show in automation",host && host->canShowAutomation(id));
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&control),
+        [safe=juce::Component::SafePointer<juce::Component>(&control),parameters,id,dest](int action) {
+            if (!safe) return;
+            if (action>=1 && action<=5 && dest>0) addRoute(parameters,action,dest);
+            else if (action==100) if (auto* h=automationHost(*safe)) h->showAutomation(id);
+        });
+}
+}
+
 static constexpr double A0 = -135.0, A1 = 135.0; // knob sweep (degrees, 0 = up)
 static float clamp01(float x) { return juce::jlimit(0.0f, 1.0f, x); }
 static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
@@ -75,11 +98,20 @@ Knob::Knob(ParameterSource source, const juce::String& paramId,
 
 // Current MODULATED position on the knob arc (0..1), or -1 when the dot should
 // hide: no active route on this dest, or the live feed is idle (NaN).
+float Knob::automationNorm() const {
+    const float value=parameters.liveAutomation(id);
+    return param && std::isfinite(value) ? clamp01(param->convertTo0to1(value)) : -1;
+}
+float Knob::effectiveNorm() const {
+    const float mod=liveNorm(), automated=automationNorm();
+    return mod>=0 ? mod : automated>=0 ? automated : norm();
+}
 float Knob::liveNorm() const {
     if (rings_.empty()) return -1.0f;
     const float x = parameters.liveMod(modDest_);
     if (!std::isfinite(x)) return -1.0f;
-    return clamp01(norm() + x * liveNormPerX_);
+    const float automated=automationNorm();
+    return clamp01((automated>=0 ? automated : norm()) + x * liveNormPerX_);
 }
 
 // Cheap signature of this dest's active slots (slot + src + quantized amt), so
@@ -113,6 +145,8 @@ void Knob::rebuildRings() {
 void Knob::timerCallback() {
     bool dirty = false;
     if (floatChanged(norm(), lastNorm)) { lastNorm = norm(); dirty = true; }
+    const float an=automationNorm();
+    if (floatChanged(an,lastAutoNorm_)) { lastAutoNorm_=an; dirty=true; }
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
@@ -147,6 +181,8 @@ KnobGeom knobGeom(int w, int h, bool showLabel, int sizePx) {
 }
 
 void Knob::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) { showControlMenu(*this,parameters,id,modDest_); return; }
+    if (!e.mods.isLeftButtonDown()) return;
     grabbedRing_ = -1;
     if (modDest_ > 0 && !rings_.empty()) {
         auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
@@ -176,6 +212,7 @@ void Knob::mouseDown(const juce::MouseEvent& e) {
     lastY = e.position.y;
 }
 void Knob::mouseDrag(const juce::MouseEvent& e) {
+    if (!e.mods.isLeftButtonDown()) return;
     if (grabbedRing_ >= 0 && grabbedRing_ < (int)rings_.size()) {
         float dy = lastY - e.position.y;
         lastY = e.position.y;
@@ -193,7 +230,8 @@ void Knob::mouseDrag(const juce::MouseEvent& e) {
     lastY = e.position.y;
     nudge(dy * (e.mods.isShiftDown() ? 0.0008f : 0.005f));
 }
-void Knob::mouseUp(const juce::MouseEvent&) {
+void Knob::mouseUp(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) return;
     if (grabbedRing_ >= 0) {
         if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
         grabbedRing_ = -1;
@@ -264,7 +302,7 @@ void Knob::paint(juce::Graphics& g) {
     }
 
     // pointer
-    float rad = degToRad(deg);
+    float rad = degToRad(A0+(A1-A0)*effectiveNorm());
     juce::Point<float> tip(cx + ptrLen * std::sin(rad), cy - ptrLen * std::cos(rad));
     g.setColour(col::ptr);
     g.drawLine({ {cx, cy}, tip }, 4 * scale);
@@ -291,6 +329,26 @@ void Knob::paint(juce::Graphics& g) {
             g.strokePath(ringArc, juce::PathStrokeType(ringThk * 0.7f,
                          juce::PathStrokeType::curved, juce::PathStrokeType::butt));
         }
+    }
+
+    // Keep the stored arc visible; a separate amber trace shows the value
+    // actually played by the lane. The pointer follows the combined result.
+    const float automated=automationNorm();
+    if (automated>=0) {
+        const float rr=arcR-5*scale;
+        const float end=degToRad(A0+(A1-A0)*automated);
+        juce::Path path;
+        path.addCentredArc(cx,cy,rr,rr,0,degToRad(deg),end,true);
+        g.setColour(juce::Colour(0xffffdd6b));
+        g.strokePath(path,juce::PathStrokeType(3*scale));
+        g.fillEllipse(cx+rr*std::sin(end)-3*scale,cy-rr*std::cos(end)-3*scale,6*scale,6*scale);
+    }
+    if (modDest_>0 && !rings_.empty() && liveNorm()>=0) {
+        const float base=automated>=0 ? automated : n;
+        juce::Path path;
+        path.addCentredArc(cx,cy,arcR,arcR,0,degToRad(A0+(A1-A0)*base),degToRad(A0+(A1-A0)*liveNorm()),true);
+        g.setColour(modSourceColour(rings_[0].src));
+        g.strokePath(path,juce::PathStrokeType(5*scale,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     }
 
     // live modulation dot: the current MODULATED position (base + the sounding
@@ -491,10 +549,19 @@ void VSlider::rebuildRings() {
             rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]) });
     }
 }
+float VSlider::automationNorm() const {
+    const float value=parameters.liveAutomation(id);
+    return param && std::isfinite(value) ? clamp01(param->convertTo0to1(value)) : -1;
+}
+float VSlider::effectiveNorm() const {
+    const float gh=ghost ? ghost() : -1, automated=automationNorm();
+    return std::isfinite(gh) && gh>=0 ? clamp01(gh) : automated>=0 ? automated : param ? param->getValue() : 0;
+}
 void VSlider::timerCallback() {
     float n = param ? param->getValue() : 0.0f, gh = ghost ? ghost() : -1.0f;
+    const float an=automationNorm();
     bool dirty = false;
-    if (floatChanged(n, lastNorm) || floatChanged(gh, lastGhost)) { lastNorm = n; lastGhost = gh; dirty = true; }
+    if (floatChanged(n, lastNorm) || floatChanged(gh, lastGhost) || floatChanged(an,lastAutoNorm)) { lastNorm = n; lastGhost = gh; lastAutoNorm=an; dirty = true; }
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
@@ -519,6 +586,8 @@ void VSlider::moveTo(float y) {
 namespace { constexpr float kBandGap = 3.0f, kBandThk = 6.0f; }
 
 void VSlider::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) { showControlMenu(*this,parameters,id,modDest_); return; }
+    if (!e.mods.isLeftButtonDown()) return;
     grabbedRing_ = -1;
     if (modDest_ > 0 && !rings_.empty()) {
         auto t = trackArea();
@@ -547,6 +616,7 @@ void VSlider::mouseDown(const juce::MouseEvent& e) {
     moveTo(e.position.y);
 }
 void VSlider::mouseDrag(const juce::MouseEvent& e) {
+    if (!e.mods.isLeftButtonDown()) return;
     if (grabbedRing_ >= 0 && grabbedRing_ < (int)rings_.size()) {
         float dy = lastY - e.position.y; // dedicated last-Y for the band drag
         lastY = e.position.y;
@@ -562,7 +632,8 @@ void VSlider::mouseDrag(const juce::MouseEvent& e) {
     }
     moveTo(e.position.y);
 }
-void VSlider::mouseUp(const juce::MouseEvent&) {
+void VSlider::mouseUp(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) return;
     if (grabbedRing_ >= 0) {
         if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
         grabbedRing_ = -1;
@@ -594,13 +665,22 @@ void VSlider::paint(juce::Graphics& g) {
     }
 
     // handle
-    float hy = t.getBottom() - n * t.getHeight();
+    float hy = t.getBottom() - effectiveNorm() * t.getHeight();
     juce::Rectangle<float> handle(t.getCentreX() - 11, hy - 4.5f, 22, 9);
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff2b3344), handle.getCentreX(), handle.getY(),
                                            juce::Colour(0xff161b25), handle.getCentreX(), handle.getBottom(), false));
     g.fillRoundedRectangle(handle, 3.0f);
     g.setColour(accent.withAlpha(0.55f));
     g.drawRoundedRectangle(handle, 3.0f, 1.0f);
+
+    // Keep this marker inside the slider's left inset and above the handle.
+    const float automated=automationNorm();
+    if (automated>=0) {
+        const float ay=t.getBottom()-automated*t.getHeight(), ax=t.getX()-4;
+        g.setColour(juce::Colour(0xffffdd6b));
+        g.drawLine(ax,fillTop,ax,ay,2);
+        g.fillEllipse(ax-2.5f,ay-2.5f,5,5);
+    }
 
     // modulation depth bands: one vertical band per active slot beside the
     // track, from the current pos to current + amt, source-colored, stacked.

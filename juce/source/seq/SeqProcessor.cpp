@@ -659,6 +659,21 @@ float SeqAudioProcessor::wtVizPosition(int track, int oscillator) const {
 int SeqAudioProcessor::wtVoiceCount(int track) const {
     return wtVoices_[juce::jlimit(0, 1, track - 2)].load();
 }
+float SeqAudioProcessor::liveAutomation(int track,const juce::String& id) const {
+    const auto key=id.toStdString();
+    if (track==0) return drumAutoTelemetry_.value(fable::drumIdFromString(key));
+    if (track==1) return bassAutoTelemetry_.value(fable::bassIdFromString(key));
+    return track==2 || track==3 ? wtAutoTelemetry_[(size_t)(track-2)].value(fable::idFromString(key))
+        : std::numeric_limits<float>::quiet_NaN();
+}
+
+float SeqAudioProcessor::wtLiveFilterCut(int track, const juce::String& id) const {
+    const int f = id == "filter.cutoff" ? 0 : id == "filter2.cutoff" ? 1 : -1;
+    const float v = track < 2 || track > 3 || f < 0 ? -1.0f
+        : wtLiveFilterCut_[(size_t)(track-2)][(size_t)f].load(std::memory_order_relaxed);
+    return v > 0 ? v : std::numeric_limits<float>::quiet_NaN();
+}
+
 float SeqAudioProcessor::wtLiveMod(int track, int dest) const {
     const int i = juce::jlimit(0, 1, track - 2);
     if (dest <= 0 || dest >= fable::NUM_MOD_DESTS
@@ -730,6 +745,8 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 
     frame_ = 0;
     currentFrame.store(0.0);
+    drumAutoTelemetry_.clear(); bassAutoTelemetry_.clear();
+    for (auto& telemetry : wtAutoTelemetry_) telemetry.clear();
     for (int t = 0; t < kTracks; ++t) { trackStep[t].store(-1); trackBar[t].store(0); }
 
     // Hosted mode on before any tempo/clip reaches the engines. Pass the
@@ -1002,6 +1019,10 @@ void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
     }
     drumVizA_.store(drum_.vizA, std::memory_order_relaxed);
     drumVizB_.store(drum_.vizB, std::memory_order_relaxed);
+    for (int p=0;p<fable::DR_NPADS;++p) {
+        liveDrumFilter_[(size_t)p][0].store(drum_.vizCut[(size_t)p],std::memory_order_relaxed);
+        liveDrumFilter_[(size_t)p][1].store(drum_.vizRes[(size_t)p],std::memory_order_relaxed);
+    }
     drumVizEnv_.store(drum_.vizEnv, std::memory_order_relaxed);
     for (int i = 0; i < 16; ++i) drumLanePositions_[(size_t)i].store(drum_.lanePosition(i) + 1, std::memory_order_relaxed);
     drumHitFlags_.fetch_or(drum_.consumeHits(), std::memory_order_relaxed);
@@ -1022,6 +1043,7 @@ void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
     wt_[i].render(L, R, n);
     wtVizA_[i].store((float)wt_[i].vizA, std::memory_order_relaxed);
     wtVizB_[i].store((float)wt_[i].vizB, std::memory_order_relaxed);
+    for (int f=0;f<2;++f) wtLiveFilterCut_[(size_t)i][(size_t)f].store((float)wt_[i].vizCut[f],std::memory_order_relaxed);
     wtVoices_[i].store(wt_[i].vizActive, std::memory_order_relaxed);
     // Live per-destination route sums for the hosted WT-1 knob dots.
     for (int d = 1; d < fable::NUM_MOD_DESTS; ++d)
@@ -1140,6 +1162,9 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             }
         }
     }
+
+    drumAutoTelemetry_.publish(drum_); bassAutoTelemetry_.publish(bass_);
+    for (int i=0;i<2;++i) wtAutoTelemetry_[(size_t)i].publish(wt_[i]);
 
     for (int t = 0; t < kTracks; ++t)
         trackRms[t].store((float)std::sqrt(trackSumSq[t] / (2.0 * (double)n)));

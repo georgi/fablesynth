@@ -14,8 +14,7 @@ namespace fui {
 static bool floatChanged(float a, float b) { return std::isunordered(a, b) || std::islessgreater(a, b); }
 
 static float parameterValue(DrumUiModel& model, const juce::String& id) {
-    auto* p = model.parameters().parameter(id);
-    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
+    return model.parameters().effectiveValue(id);
 }
 
 // ---- shared bits -------------------------------------------------------------

@@ -17,11 +17,15 @@ public:
                           std::function<HostTransport()> transportProvider = {});
     void resized() override;
 
+    void setAutomationPanel(juce::Component& panel) {
+        automationPanel_=&panel; addChildComponent(panel); addAndMakeVisible(automationPage_); resized();
+    }
+    void showAutomationPage() { if (automationPanel_) selectPage(Page::automation); }
     std::function<void(int)> onEditTable;
     fui::NoteSeqView& noteSeq() { return seq; }
 
 private:
-    enum class Page { edit, fx, lab, sequencer, arp };
+    enum class Page { edit, fx, lab, sequencer, arp, automation };
 
     juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
     void selectPage(Page page);
@@ -43,5 +47,7 @@ private:
     juce::TextButton sequencerPage_ { "SEQUENCER" };
     juce::TextButton arpPage_ { "ARP" };
     fui::PlaybackToggles playback_;
+    juce::TextButton automationPage_{"AUTOMATION"};
+    juce::Component* automationPanel_=nullptr;
     Page page_ = Page::edit;
 };

@@ -24,6 +24,9 @@ static void testAutomationHost() {
     loader.processBlock(loaderBlock,loaderMidi);
     const auto* def = autoParamDef(entry.machine,target);
     check(std::abs(loader.debugTrackParams(t)[(size_t)def->id] - normToValue(*def,.55f)) < .01, "automation-only edit reaches the engine");
+    check(std::abs(loader.liveAutomation(t,juce::String(target))-normToValue(*def,.55f))<.01,
+        "native control telemetry reports the applied automation value");
+    check(!std::isfinite(loader.liveAutomation(t,"missing")),"unknown control automation telemetry is idle");
     check(loader.conductor().session().scenes[0].clips[(size_t)t].bytes == originalBytes, "automation edit preserves notes");
     auto updatedPatch = loader.conductor().session().tracks[(size_t)t].patch;
     updatedPatch.factory = false; updatedPatch.params[target] = .12f;

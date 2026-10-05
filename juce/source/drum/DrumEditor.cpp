@@ -6,7 +6,12 @@ class StandaloneDrumUiModel final : public DrumUiModel {
 public:
     explicit StandaloneDrumUiModel(DrumAudioProcessor& p) : proc(p) {}
     fable::FxTelemetry fxTelemetry(int pad, int bus) const override { return proc.fxTelemetry(pad, bus); }
-    ParameterSource parameters() override { const auto& i = fable::drumParamInfo(); return ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
+    ParameterSource parameters() override {
+        const auto& info = fable::drumParamInfo();
+        auto source = ParameterSource::fromApvts(proc.apvts, info.data(), info.size());
+        source.setLiveEffectiveLookup([&p=proc](const juce::String& id) { return p.liveDrumFilter(id); });
+        return source;
+    }
     DeviceUiCapabilities capabilities() const override { return {}; }
     bool programDirty() const override { return proc.isProgramDirty(); }
     int selectedPad() const override { return proc.getSelectedPad(); }

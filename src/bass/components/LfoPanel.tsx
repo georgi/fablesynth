@@ -1,3 +1,4 @@
+import { LfoClock } from '../../engine/lfoClock';
 // LFO panel: bar-locked LFO → cutoff. Waveform display animates in sync with
 // the sequencer tempo while playing.
 
@@ -21,23 +22,28 @@ function shapeValue(shape: number, phase: number): number {
 
 function LfoView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const redraw = useRef<(() => void) | null>(null);
   const shape = useBassStore((s) => s.params['lfo.shape']);
   const rate = useBassStore((s) => s.params['lfo.rate']);
   const bpm = useBassStore((s) => s.params['seq.bpm']);
   const playing = useBassStore((s) => s.playing);
+  const clock = useRef(new LfoClock());
+  const wasPlaying = useRef(false);
+  const t0 = useRef(performance.now());
   const propsRef = useRef({ shape, rate, bpm, playing });
   propsRef.current = { shape, rate, bpm, playing };
 
   useEffect(() => {
     let raf = 0;
-    const t0 = performance.now();
     const draw = (canvas: HTMLCanvasElement) => {
       const { ctx, w, h } = setupCanvas(canvas);
       ctx.clearRect(0, 0, w, h);
       const p = propsRef.current;
       const cpb = LFO_DIV_F[p.rate | 0] || 2;
+      if (p.playing !== wasPlaying.current) { clock.current.reset(); t0.current = performance.now(); wasPlaying.current = p.playing; }
+      if (!p.playing) clock.current.reset();
       const ph0 = p.playing
-        ? (((performance.now() - t0) / 1000) * (p.bpm / 60) * cpb) % 1
+        ? clock.current.phase((performance.now() - t0.current) / 1000, (p.bpm / 60) * cpb)
         : 0;
       ctx.beginPath();
       for (let i = 0; i <= 100; i++) {
@@ -71,6 +77,7 @@ function LfoView() {
         raf = requestAnimationFrame(frame);
       }
     };
+    redraw.current = () => { const canvas = canvasRef.current; if (canvas) draw(canvas); };
     start();
     mq.addEventListener('change', start);
     return () => {
@@ -78,6 +85,10 @@ function LfoView() {
       mq.removeEventListener('change', start);
     };
     // Re-run on param changes so reduced-motion mode still repaints on knob moves.
+  }, []);
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) redraw.current?.();
   }, [shape, rate, bpm, playing]);
 
   return <canvas ref={canvasRef} className="bl-lfo-view" />;

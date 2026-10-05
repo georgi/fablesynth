@@ -6,6 +6,7 @@
 // JUCE-independent on purpose: the engine is a plain C++ object so it can be
 // driven by the plugin AND exercised by a headless test harness.
 #pragma once
+#include "LfoClock.h"
 #include "ClipAutomation.h"
 
 #include "ClipHost.h"
@@ -65,10 +66,11 @@ private:
 
 class Lfo {
 public:
+    LfoClock clock;
     double phase = 0, hold = 0;
     long   elapsed = 0;                 // samples since reset (for rise/fade-in)
     Rng*   rng = nullptr;
-    void   reset() { phase = 0; hold = rng->next() * 2 - 1; elapsed = 0; }
+    void   reset() { clock.reset(); phase = 0; hold = rng->next() * 2 - 1; elapsed = 0; }
     double valueOff(int shape, double off) const;       // reads frac(phase + off)
     double riseGain(double riseSec, double sr) const {
         return riseSec <= 0 ? 1.0 : std::min(1.0, (double)elapsed / (riseSec * sr));
@@ -211,6 +213,7 @@ public:
     // params() — the ramp would pull the direct write back to the last target.
     // Nothing does today: the plugin uses paramTargets() exclusively and SQ-4
     // (which loads whole patches) uses params() exclusively.
+    float automationValue(int id) const { return autoPlayer_.isHeld(id) ? p_[(size_t)id] : std::numeric_limits<float>::quiet_NaN(); }
     bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
     bool hasClipAutomation() const { return autoPlayer_.active(); }
     bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
@@ -261,6 +264,13 @@ public:
     // a per-note off queue (seqScheduleOff), so overlapping notes ring
     // concurrently — matching the web worklet's poly seqOffQueue; accents fire
     // velocity SEQ_ACCENT_VEL vs SEQ_PLAIN_VEL so VELO mod routes respond.
+    void setSequenceAutomation(const AutoBank* bank) {
+        if (!sequenceAuto_) return;
+        if (bank) *sequenceAuto_=*bank; else sequenceAuto_->count=0;
+        if (sequenceAutoRunning_) autoPlayer_.update(sequenceAuto_.get(),false);
+    }
+    bool hasSequenceAutomation() const { return sequenceAuto_ && sequenceAuto_->count>0; }
+    double sequenceAutomationSteps() const { return seqIsPlaying() ? seqSongPos_/((60/seqEffectiveBpm()/4)*sr_) : -1; }
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
     void setArp(const ArpPattern&);
     void seqStop();                                 // worklet 'stop'
@@ -358,6 +368,7 @@ public:
     void render(float* L, float* R, int n);
 
     // Live visualization feedback (modulated wt positions + active voice count).
+    double vizCut[2] = {-1, -1};
     double vizA = -1, vizB = -1; int vizActive = 0;
 
     // Live per-destination modulation feedback for the editor's knob dots
@@ -484,6 +495,8 @@ private:
     double   hostAnchor_ = 0;         // shared-timebase beat zero (hostTempo)
     ClipHost clipHost_;
     AutoPlayer autoPlayer_;
+    std::unique_ptr<AutoBank> sequenceAuto_;
+    bool sequenceAutoRunning_=false;
     bool autoFxDirty_ = false;
     void writeAutomation(int id, float v) { p_[(size_t)id] = ps_[(size_t)id] = pt_[(size_t)id] = rampTarget_[(size_t)id] = v; }
     void clearAutomation() { autoPlayer_.clear([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_); }

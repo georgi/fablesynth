@@ -21,12 +21,12 @@ WavetableView::WavetableView(FableAudioProcessor& p, int oscIndex, juce::Colour 
 
 int WavetableView::tableIndex() const {
     auto* p = model.parameters().parameter(osc == 0 ? "oscA.table" : "oscB.table");
-    return p ? (int)p->convertFrom0to1(p->getValue()) : 0;
+    return p ? (int)model.parameters().effectiveValue(osc == 0 ? "oscA.table" : "oscB.table") : 0;
 }
 
 float WavetableView::knobPos() const {
     auto* p = model.parameters().parameter(osc == 0 ? "oscA.pos" : "oscB.pos");
-    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
+    return p ? model.parameters().effectiveValue(osc == 0 ? "oscA.pos" : "oscB.pos") : 0.0f;
 }
 
 void WavetableView::timerCallback() {

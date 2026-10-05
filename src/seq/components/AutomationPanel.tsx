@@ -1,3 +1,4 @@
+import { registerAutomationFocus } from '../automationFocus';
 // Automation editor (docs/superpowers/specs/2026-09-30-sq4-clip-automation-design.md).
 // Lane chips with miniature curves, a compact inspector for the selected
 // lane, and one large drawing surface. The time axis always shows the clip;
@@ -223,6 +224,25 @@ export function AutomationEditor({ machine, source }: { machine: MachineId; sour
     setSelected(lanes.length);
     expand();
   };
+
+  useEffect(() => registerAutomationFocus(machine, {
+    canShow: target => Boolean(autoParamDef(machine, target)) &&
+      (source.current().some(l => l.target === target) || source.current().length < AUTO_MAX_LANES),
+    show: target => {
+      if (!autoParamDef(machine, target)) return;
+      const now = source.current();
+      let index = now.findIndex(l => l.target === target);
+      if (index < 0) {
+        if (now.length >= AUTO_MAX_LANES) return;
+        index = now.length;
+        source.write([...now, newAutoLane(target)]);
+      }
+      setSelected(index);
+      setLearn(false);
+      setOpen(true);
+      requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: 'nearest' }));
+    },
+  }), [machine, source]);
 
   // LEARN: the next continuous knob moved on this device becomes the target.
   useEffect(() => {

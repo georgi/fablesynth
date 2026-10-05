@@ -1,0 +1,14 @@
+import { launch, boot, center } from './rec.mjs';
+const { browser, page } = await launch();
+await boot(page, 'seq');
+await page.evaluate(() => document.querySelector('button[aria-label="Close tour"]')?.click());
+await page.evaluate(() => { const sel = document.querySelector('header select'); sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+await page.waitForTimeout(1200);
+await page.evaluate(() => window.__fableSq.store.getState().enterFocus(1, 1));
+await page.waitForTimeout(1200);
+console.log(await page.evaluate(() => { const p = window.__fableSq.bl.getState().params; return Object.entries(p).filter(([k]) => /^(flt|osc|env|acc|fx\.(delay|drive|dist))/.test(k)).map(([k, v]) => `${k}=${typeof v === 'number' ? +v.toFixed(3) : v}`).join(' '); }));
+console.log('add', JSON.stringify((await center(page, '.sq-auto-add').catch((e) => ({ box: e.message.slice(0, 80) }))).box));
+const s = await page.evaluate(() => { const st = window.__fableSq.store.getState(); const c = st.session.scenes; return [1, 2].map((i) => c[i].clips[1] === c[1].clips[1]); });
+console.log('shared clip obj build/dropA', s);
+await page.screenshot({ path: '/private/tmp/claude-501/-Users-mg-dev-fablesynth/d33d8d18-ba75-4da1-94a1-d8922c0291b3/scratchpad/sq-bass.png' });
+await browser.close();

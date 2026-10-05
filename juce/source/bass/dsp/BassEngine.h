@@ -107,6 +107,7 @@ public:
     // smoothed copy to the targets (prepare, program load, state restore).
     void setParam(int id, float v) { if (autoPlayer_.hold(id, v)) return; target_[(size_t)id] = v; }
     void setParams(const BassParamArray& p) { target_ = autoPlayer_.protect(p, target_); }
+    float automationValue(int id) const { return autoPlayer_.isHeld(id) ? target_[(size_t)id] : std::numeric_limits<float>::quiet_NaN(); }
     bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
     bool hasClipAutomation() const { return autoPlayer_.active(); }
     bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
@@ -365,6 +366,7 @@ private:
     double fenvVal_ = 0;
     bool   mono_ = false, monoPrev_ = false;   // Finding B8: L == R fast path
     double gainPrev_ = -1;                     // Finding B2: accent gain ramp
+    LfoClock lfoClock_;
     double shVal_ = 0; long shPhase_ = -1;
     double dcxL_ = 0, dcxR_ = 0, dcyL_ = 0, dcyR_ = 0;
     double dcR_ = BL_DC_R;                  // sr-derived DC pole (Finding 9)

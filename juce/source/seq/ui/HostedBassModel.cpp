@@ -62,7 +62,9 @@ void HostedBassModel::flushPendingPatch() {
 }
 
 ParameterSource HostedBassModel::parameters() {
-    return parameterBank_.source();
+    auto source=parameterBank_.source();
+    source.setLiveAutomationLookup([&p=proc_](const juce::String& id){ return p.liveAutomation(1,id); });
+    return source;
 }
 
 DeviceUiCapabilities HostedBassModel::capabilities() const {

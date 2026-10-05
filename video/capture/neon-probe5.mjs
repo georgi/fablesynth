@@ -1,0 +1,18 @@
+import { launch, boot } from './rec.mjs';
+const { browser, page } = await launch();
+await boot(page, 'seq');
+await page.evaluate(() => document.querySelector('button[aria-label="Close tour"]')?.click());
+await page.evaluate(() => { const sel = document.querySelector('header select'); sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+await page.waitForTimeout(1200);
+await page.evaluate(() => { const s = window.__fableSq.store.getState(); s.loadTrackFactoryPatch(0, 12); s.enterFocus(2, 4); });
+await page.waitForTimeout(1200);
+await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'TRACK FX')?.click());
+await page.waitForTimeout(900);
+console.log(await page.evaluate(() => { const p = window.__fableSq.wt.getState().params; return Object.entries(p).filter(([k]) => /^fx\.(delay|shift|reverb|glitch)\./.test(k)).map(([k, v]) => `${k}=${+(+v).toFixed(3)}`).join(' '); }));
+console.log(await page.evaluate(() => [...document.querySelectorAll('.lab-card, [class*=panel-echo], [class*=panel-reverb], .panel-lab, section.panel')].map((el) => { const r = el.getBoundingClientRect(); return `${el.getAttribute('aria-label') || ''} ${el.className.toString().split(' ').slice(0, 3).join('.')} ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`; }).join('\n')));
+const labels = await page.evaluate(() => []);
+console.log(labels.length, labels.filter((l) => /step 1:|step 2:/.test(l)).join(' | '));
+console.log(labels.filter((l) => !/: off|: empty|rest/i.test(l)).slice(0, 60).join(' | '));
+console.log(await page.evaluate(() => [...document.querySelectorAll('section.panel, section[id^=panel], .dr-steps, .step-seq, [class*=step]')].slice(0, 12).map((el) => { const r = el.getBoundingClientRect(); return `${el.id || el.className.toString().split(' ').slice(0, 2).join('.')} ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`; }).join('\n')));
+await page.screenshot({ path: '/private/tmp/claude-501/-Users-mg-dev-fablesynth/d33d8d18-ba75-4da1-94a1-d8922c0291b3/scratchpad/sq-drums.png' });
+await browser.close();

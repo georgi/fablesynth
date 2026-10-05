@@ -1,0 +1,17 @@
+import { launch, boot, center } from './rec.mjs';
+const { browser, page } = await launch();
+await boot(page, 'seq');
+await page.evaluate(() => document.querySelector('button[aria-label="Close tour"]')?.click());
+await page.evaluate(() => { const sel = document.querySelector('header select'); sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+await page.waitForTimeout(1200);
+const st = await page.evaluate(() => { const s = window.__fableSq.store.getState(); return { name: s.session?.name, bpm: s.session?.bpm, keys: Object.keys(s).filter((k) => typeof s[k] !== 'function').join(',') }; });
+console.log(st);
+await page.screenshot({ path: '/private/tmp/claude-501/-Users-mg-dev-fablesynth/d33d8d18-ba75-4da1-94a1-d8922c0291b3/scratchpad/sq-session.png' });
+console.log('heads', await page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => ['M','S'].includes(b.textContent.trim())).length));
+await page.evaluate(() => window.__fableSq.store.getState().enterFocus(3));
+await page.waitForTimeout(1200);
+await page.screenshot({ path: '/private/tmp/claude-501/-Users-mg-dev-fablesynth/d33d8d18-ba75-4da1-94a1-d8922c0291b3/scratchpad/sq-pad.png', fullPage: true });
+console.log('pad', await page.evaluate(() => { const p = window.__fableSq.wt.getState().params; return ['oscA.table', 'oscA.pos', 'oscB.on', 'oscB.table', 'oscB.pos', 'filter.cutoff', 'amp.rel', 'fx.delay.on', 'fx.reverb.on'].map((k) => `${k}=${p[k]}`).join(' '); }));
+console.log('pos', JSON.stringify((await center(page, '#panel-oscA .pos-holder').catch((e) => ({ err: e.message }))).box ?? null));
+console.log('scroll', await page.evaluate(() => document.documentElement.scrollHeight));
+await browser.close();

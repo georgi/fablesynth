@@ -119,6 +119,20 @@ function besselI0(x) {
 // base sample through the 4x drive path instead of 324 (review finding J4).
 // pe[j] = h[2j], po[j] = h[2j+1]; [A,B] is each phase's non-zero index range.
 // Same decomposition as HalfBandFir in juce/source/dsp/Fx.cpp.
+class LfoClock {
+  constructor() { this.ready = false; }
+  reset() { this.ready = false; }
+  update(position, rate) {
+    if (!this.ready || position < this.position) {
+      this.cycles = position * rate;
+      this.ready = true;
+    } else this.cycles += (position - this.position) * this.rate;
+    this.position = position; this.rate = rate;
+    return this.cycles;
+  }
+  phase(position, rate) { const c = this.update(position, rate); return c - Math.floor(c); }
+}
+
 class HalfBand {
   constructor(taps, beta) {
     const h = new Float64Array(taps);
@@ -899,6 +913,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.ftype = 1; this.twoPole = true;
     this.k1 = 0; this.k2 = 0;
     this.accSm = 0; // ramped accent amount (0..1)
+    this.lfoClock = new LfoClock();
     this.shVal = 0; this.shPhase = -1;
     this.rngState = 0x9e3779b9; // seeded xorshift — renders are reproducible
     this.dcR = Math.pow(DC_R, 48000 / sampleRate);
@@ -1254,6 +1269,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.subPhase = 0; this.subIncPrev = -1;
     this.havePrev = false; this.pOff0 = -1; this.pUni = 0;
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
+    this.lfoClock.reset();
     this.shVal = 0; this.shPhase = -1;
     this.rngState = 0x9e3779b9;
   }
@@ -1528,18 +1544,24 @@ class BassProcessor extends AudioWorkletProcessor {
   }
 
   // ---------- LFO (bar-locked while playing) ----------
-  lfoValue() {
+  advanceLfoClock() {
     const p = this.p;
     const bpm = Math.max(60, Math.min(200, (this.hosted ? this.hostBpm : p['seq.bpm']) || 138));
     const cpb = LFO_DIV_F[p['lfo.rate'] | 0] || 2;
-    const phase = ((this.songPos / sampleRate) * (bpm / 60) * cpb) % 1;
+    return this.lfoClock.update(this.songPos / sampleRate, (bpm / 60) * cpb);
+  }
+
+  lfoValue() {
+    const p = this.p;
+    const cycles = this.advanceLfoClock();
+    const phase = cycles - Math.floor(cycles);
     const shape = p['lfo.shape'] | 0;
     switch (shape) {
       case 1: return 1 - 4 * Math.abs(phase - 0.5); // tri
       case 2: return 1 - 2 * phase; // saw (falling)
       case 3: return phase < 0.5 ? 1 : -1; // sqr
       case 4: { // s&h
-        const step = Math.floor((this.songPos / sampleRate) * (bpm / 60) * cpb);
+        const step = Math.floor(cycles);
         if (step !== this.shPhase) { this.shPhase = step; this.shVal = this.rand() * 2 - 1; }
         return this.shVal;
       }
@@ -1846,6 +1868,7 @@ class BassProcessor extends AudioWorkletProcessor {
       if (this.samplesToGateOff >= 0) {
         run = Math.min(run, Math.max(1, Math.ceil(this.samplesToGateOff)));
       }
+      this.advanceLfoClock();
       this.renderVoice(L, R, pos, run);
       if (standalone) this.samplesToNext -= run;
       if (standalone || this.clip) {

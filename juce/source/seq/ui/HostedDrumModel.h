@@ -18,7 +18,12 @@ public:
     void flushPendingPatch();
     void reloadPatchFromSession();
 
-    ParameterSource parameters() override { return bank_.source(); }
+    ParameterSource parameters() override {
+        auto source=bank_.source();
+        source.setLiveEffectiveLookup([&p=proc_](const juce::String& id){ return p.liveDrumFilter(id); });
+        source.setLiveAutomationLookup([&p=proc_](const juce::String& id){ return p.liveAutomation(0,id); });
+        return source;
+    }
     fable::FxTelemetry fxTelemetry(int pad, int bus) const override;
     DeviceUiCapabilities capabilities() const override;
     int selectedPad() const override { return selectedPad_; }

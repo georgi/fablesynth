@@ -23,7 +23,7 @@ export const DEMO_TOTAL = at(42);
 
 export const PLATE: React.CSSProperties = { padding: '22px 30px', borderRadius: 16, background: 'rgba(6,7,11,0.8)', backdropFilter: 'blur(14px)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' };
 
-const Scrim: React.FC<{ strength?: number }> = ({ strength = 1 }) => (
+export const Scrim: React.FC<{ strength?: number }> = ({ strength = 1 }) => (
   <AbsoluteFill
     style={{
       pointerEvents: 'none',
@@ -32,7 +32,7 @@ const Scrim: React.FC<{ strength?: number }> = ({ strength = 1 }) => (
   />
 );
 
-const Caption: React.FC<{ kicker: string; title: string; color: string; sub?: string; delay?: number; out?: number }> = ({ kicker, title, color, sub, delay = 4, out }) => {
+export const Caption: React.FC<{ kicker: string; title: string; color: string; sub?: string; delay?: number; out?: number }> = ({ kicker, title, color, sub, delay = 4, out }) => {
   const f = useCurrentFrame();
   const o = (out !== undefined ? lerp(f, out, out + 10, 1, 0) : 1) * lerp(f, delay + 2, delay + 10, 0, 1);
   return (
@@ -45,7 +45,7 @@ const Caption: React.FC<{ kicker: string; title: string; color: string; sub?: st
 };
 
 /** Pill that pops up when a press happens, e.g. "+ KICK". */
-const PressLabels: React.FC<{ name: TakeName; offsetMs: number; labels: string[]; color: string; cam: (t: number) => { x: number; y: number; z: number } }> = ({ name, offsetMs, labels, color, cam }) => {
+export const PressLabels: React.FC<{ name: TakeName; offsetMs: number; labels: string[]; color: string; cam: (t: number) => { x: number; y: number; z: number } }> = ({ name, offsetMs, labels, color, cam }) => {
   const t = useTakeMs(offsetMs);
   const c = TAKES[name].cursor;
   const presses: { t: number; x: number; y: number }[] = [];
@@ -87,7 +87,7 @@ const PressLabels: React.FC<{ name: TakeName; offsetMs: number; labels: string[]
   );
 };
 
-const camLerp = (keys: Cam[]) => (t: number) => {
+export const camLerp = (keys: Cam[]) => (t: number) => {
   if (t <= keys[0].t) return keys[0];
   for (let i = 0; i < keys.length - 1; i++) {
     const a = keys[i], b = keys[i + 1];

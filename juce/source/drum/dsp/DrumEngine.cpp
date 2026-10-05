@@ -1056,6 +1056,8 @@ void DrumEngine::setupFilter(FilterState& fs, int padI, double mCut, double mRes
     fs.cutSm += (fc - fs.cutSm) * smoothCoef(n, DR_CUT_TAU * sr_);
     fs.cutTarget = fs.cutSm;
     double res = clampd(param(dpid(padI, DP_FLT_RES)) + mRes, 0.0, 0.999);
+    vizCut[(size_t)padI] = (float)fs.cutSm;
+    vizRes[(size_t)padI] = (float)res;
 
     fs.twoPole = ftype == 1;
     fs.k1 = 2 - 1.93 * res;           // a1..a3 recomputed per sub-block in runFilter
@@ -1513,6 +1515,7 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     curTables_ = nullptr;
     renderEpoch_.fetch_add(1, std::memory_order_seq_cst);      // even: out of render
 
+    for (int p=0;p<DR_NPADS;++p) if (!voices_[(size_t)p].active) vizCut[(size_t)p] = -1;
     const PadVoice& v = voices_[(size_t)sel_];
     vizA = v.active ? (float)v.oA.posSm : -1.0f;
     const auto& samples = drumOneShots();

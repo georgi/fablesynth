@@ -123,6 +123,9 @@ FxModuleView::~FxModuleView() {
     stopTimer();
     finishDrag();
 }
+float FxModuleView::displayValue(const juce::String& id) const {
+    return source_.effectiveValue(id);
+}
 float FxModuleView::value(const juce::String &id) const {
     if (auto *p = source_.parameter(id))
         return p->convertFrom0to1(p->getValue());
@@ -291,11 +294,11 @@ void FxModuleView::paint(juce::Graphics &g) {
     if (kind_ == Ott)
         caption = power_.isOn() ? juce::String::fromUTF8("3 BAND         LEVEL / ± GAIN") : "BYPASS";
     if (kind_ == Comp)
-        caption = power_.isOn() ? juce::String(value(prefix_ + "fx.comp.ratio"), 1) + juce::String::fromUTF8(":1 · SOFT KNEE") : "BYPASS";
+        caption = power_.isOn() ? juce::String(displayValue(prefix_ + "fx.comp.ratio"), 1) + juce::String::fromUTF8(":1 · SOFT KNEE") : "BYPASS";
     if (kind_ == Drive)
         caption = power_.isOn() ? "4x SATURATION" : "BYPASS";
     if (kind_ == Chorus)
-        caption = !power_.isOn() ? "BYPASS" : value(prefix_ + "fx.chorus.mix") > 0 ? "STEREO" : "DRY";
+        caption = !power_.isOn() ? "BYPASS" : displayValue(prefix_ + "fx.chorus.mix") > 0 ? "STEREO" : "DRY";
     if (kind_ == Reverb)
         caption = prefix_.isNotEmpty() ? (power_.isOn() ? "PAD SEND" : "SEND OFF")
                   : power_.isOn()      ? "STEREO"
@@ -342,7 +345,7 @@ void FxModuleView::paint(juce::Graphics &g) {
     if (kind_ == Reverb)
         readings = {"L RETURN  " + db(data_[M::verbL]) + " dB", "R RETURN  " + db(data_[M::verbR]) + " dB"};
     if (kind_ == Chorus) {
-        const float excursion = .8f + value(prefix_ + "fx.chorus.depth") * 4.5f;
+        const float excursion = .8f + displayValue(prefix_ + "fx.chorus.depth") * 4.5f;
         readings = {juce::String::fromUTF8("L  12 ± ") + juce::String(excursion, 1) + " ms",
                     juce::String::fromUTF8("R  17 ± ") + juce::String(excursion * .8f, 1) + " ms"};
     }
@@ -364,9 +367,9 @@ void FxModuleView::paint(juce::Graphics &g) {
                    juce::Justification::centred);
     }
     if (kind_ == Eq) {
-        juce::StringArray values{juce::String((int)value(bandKey("freq"))) + " Hz",
-                                 signedDb(value(bandKey("gain"))) + " dB",
-                                 "Q " + juce::String(value(bandKey("q")), 2)};
+        juce::StringArray values{juce::String((int)displayValue(bandKey("freq"))) + " Hz",
+                                 signedDb(displayValue(bandKey("gain"))) + " dB",
+                                 "Q " + juce::String(displayValue(bandKey("q")), 2)};
         for (int i = 0; i < 3; ++i)
             g.drawText(
                 values[i],
@@ -398,7 +401,7 @@ void FxModuleView::paint(juce::Graphics &g) {
 }
 
 void FxModuleView::drawDynamics(juce::Graphics &g, float w, float h) {
-    const bool on = power_.isOn() && (kind_ != Ott || value(prefix_ + "fx.ott.depth") > 0);
+    const bool on = power_.isOn() && (kind_ != Ott || displayValue(prefix_ + "fx.ott.depth") > 0);
     if (kind_ == Ott) {
         const float top = 28, bottom = h - 24, middle = (top + bottom) / 2, col = (w - 20) / 3;
         const char *names[] = {"LOW", "MID", "HIGH"};
@@ -434,7 +437,7 @@ void FxModuleView::drawDynamics(juce::Graphics &g, float w, float h) {
             text(g, juce::String((int)v), left - 6, Y(v) + 3, col::acN, juce::Justification::right, 9);
             line(g, left, Y(v), right, Y(v), .1f);
         }
-        const float thr = Y(value(prefix_ + "fx.comp.thr"));
+        const float thr = Y(displayValue(prefix_ + "fx.comp.thr"));
         for (float x = left; x < right; x += 7)
             line(g, x, thr, juce::jmin(x + 3, right), thr, on ? .6f : .2f);
         text(g, "THR", right, thr - 4, col::acN, juce::Justification::right);
@@ -470,7 +473,7 @@ void FxModuleView::drawEcho(juce::Graphics &g, float w, float h) {
     text(g, "~3 s HISTORY", right, 13, col::acN, juce::Justification::right);
     for (int repeat = 1; (float)repeat * time < 3 && repeat < 16; ++repeat) {
         float x = right - (float)repeat * time / 3 * width;
-        line(g, x, 23, x, h - 29, .08f + std::pow(value(prefix_ + "fx.delay.fb"), (float)repeat) * .14f);
+        line(g, x, 23, x, h - 29, .08f + std::pow(displayValue(prefix_ + "fx.delay.fb"), (float)repeat) * .14f);
         if (repeat < 5 && time > .15f)
             text(g, juce::String::fromUTF8("×") + juce::String(repeat), x, h - 30, col::acN,
                  juce::Justification::centred);
@@ -575,11 +578,11 @@ void FxModuleView::drawReverb(juce::Graphics &g, float w, float h) {
 void FxModuleView::drawDrive(juce::Graphics& g, float w, float h) {
     const float left = 22, right = w - 14, middle = h * .38f, scale = h * .22f;
     const bool on = power_.isOn();
-    const double amount = value(prefix_ + "fx.drive.amt"), pre = 1 + amount * 2, k = 1 + amount * 12;
-    const double mix = value(prefix_ + "fx.drive.mix"), angle = mix * juce::MathConstants<double>::halfPi;
-    const double tone = on ? value(prefix_ + "fx.drive.tone") : 0;
+    const double amount = displayValue(prefix_ + "fx.drive.amt"), pre = 1 + amount * 2, k = 1 + amount * 12;
+    const double mix = displayValue(prefix_ + "fx.drive.mix"), angle = mix * juce::MathConstants<double>::halfPi;
+    const double tone = on ? displayValue(prefix_ + "fx.drive.tone") : 0;
     fable::DriveColor shape;
-    shape.setParams(value(prefix_ + "fx.drive.type"), 0); shape.reset();
+    shape.setParams(displayValue(prefix_ + "fx.drive.type"), 0); shape.reset();
     text(g, "TRANSFER / MIX", left, 14);
     line(g, left, middle, right, middle);
     line(g, (left + right) / 2, middle - scale, (left + right) / 2, middle + scale);
@@ -628,8 +631,8 @@ void FxModuleView::drawChorus(juce::Graphics& g, float w, float h) {
         g.setColour(col::acN.withAlpha(.2f));
         g.drawDashedLine({left, y(ms), right, y(ms)}, dashes, 2, .6f);
     }
-    const double rate = value(prefix_ + "fx.chorus.rate");
-    const double excursion = .8 + value(prefix_ + "fx.chorus.depth") * 4.5;
+    const double rate = displayValue(prefix_ + "fx.chorus.rate");
+    const double excursion = .8 + displayValue(prefix_ + "fx.chorus.depth") * 4.5;
     juce::Path l, r;
     for (int i = 0; i <= 512; ++i) {
         const float x = left + (right - left) * (float)i / 512;
@@ -638,7 +641,7 @@ void FxModuleView::drawChorus(juce::Graphics& g, float w, float h) {
         if (i) { l.lineTo(x, yl); r.lineTo(x, yr); }
         else { l.startNewSubPath(x, yl); r.startNewSubPath(x, yr); }
     }
-    const float alpha = power_.isOn() ? .3f + .7f * value(prefix_ + "fx.chorus.mix") : .24f;
+    const float alpha = power_.isOn() ? .3f + .7f * displayValue(prefix_ + "fx.chorus.mix") : .24f;
     stroke(g, l, col::text.withAlpha(alpha), 1.5f);
     juce::Path dashed;
     juce::PathStrokeType(1.5f).createDashedStroke(dashed, r, dashes, 2);
@@ -671,8 +674,8 @@ void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
     const double sr = juce::jmax(8000.0, data_.sampleRate);
     for (int i = 0; i < 4; ++i) {
         auto key = [&](int j) { return prefix_ + "fx.eq." + juce::String(eqKeys[i][j]); };
-        float f = value(key(0)), gain = value(key(4)) > .5f ? value(key(1)) : 0, q = value(key(2));
-        int type = (int)value(key(3));
+        float f = displayValue(key(0)), gain = displayValue(key(4)) > .5f ? displayValue(key(1)) : 0, q = displayValue(key(2));
+        int type = (int)displayValue(key(3));
         if (type == 0)
             coefs[(size_t)i].lowShelf(f, gain, sr, q);
         else if (type == 1)
@@ -726,9 +729,9 @@ void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
         stroke(g, traces[4], power_.isOn() ? col::text : col::acN.withAlpha(.5f), 1.6f);
     }
     for (int i = 0; i < 4; ++i) {
-        float x = X(value(prefix_ + "fx.eq." + juce::String(eqKeys[i][0]))),
-              y = Y(value(prefix_ + "fx.eq." + juce::String(eqKeys[i][1])));
-        bool selected = i == selected_, on = value(prefix_ + "fx.eq." + juce::String(eqKeys[i][4])) > .5f;
+        float x = X(displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][0]))),
+              y = Y(displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][1])));
+        bool selected = i == selected_, on = displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][4])) > .5f;
         g.setColour(selected && on ? col::acN : juce::Colour(0xff11141c));
         g.fillEllipse(x - 7, y - 7, 14, 14);
         g.setColour(selected ? col::text : col::acN);
@@ -746,8 +749,8 @@ int FxModuleView::hitBand(juce::Point<float> p) const {
     if (kind_ != Eq || !plot_.toFloat().contains(p))
         return -1;
     for (int i = 3; i >= 0; --i) {
-        float f = value(prefix_ + "fx.eq." + juce::String(eqKeys[i][0])),
-              gain = value(prefix_ + "fx.eq." + juce::String(eqKeys[i][1]));
+        float f = displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][0])),
+              gain = displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][1]));
         juce::Point<float> node((float)plot_.getX() + 26 + std::log(f / 20) / std::log(1000.f) * (float)(plot_.getWidth() - 38),
                                 (float)plot_.getY() + 12 + (15 - gain) / 30 * (float)(plot_.getHeight() - 32));
         if (node.getDistanceFrom(p) < 16)

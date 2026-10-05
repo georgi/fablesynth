@@ -1,3 +1,4 @@
+import { useControlMenu } from '../../components/ControlMenu';
 import type * as React from 'react';
 import { useEffect, useRef } from 'react';
 import { normToValue, valueToNorm } from '../../params';
@@ -34,6 +35,7 @@ interface BassKnobProps {
 }
 
 export function BassKnob({ paramId, size = 'md', accent, label }: BassKnobProps) {
+  const controlMenu = useControlMenu('BL1', paramId);
   const def = BASS_PARAMS[paramId];
   const value = useBassStore((s) => s.params[paramId]);
   const setParam = useBassStore((s) => s.setParam);
@@ -109,6 +111,7 @@ export function BassKnob({ paramId, size = 'md', accent, label }: BassKnobProps)
   return (
     <div
       ref={elRef}
+      onContextMenu={controlMenu.onContextMenu}
       className={`knob knob-${size}`}
       data-accent={accent}
       tabIndex={0}
@@ -135,6 +138,7 @@ export function BassKnob({ paramId, size = 'md', accent, label }: BassKnobProps)
       </svg>
       <div className="k-label">{labelText}</div>
       <div className="k-value">{text}</div>
+      {controlMenu.menu}
     </div>
   );
 }

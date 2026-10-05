@@ -189,6 +189,15 @@ int main(int argc, char** argv) {
     // engine_test --write-lab-fixture <path>: regenerate the web LAB parity fixture.
     if (argc == 3 && std::string(argv[1]) == "--write-lab-fixture") return labcheck::writeParityFixture(argv[2]) ? 0 : 1;
 
+    {
+        fable::LfoClock clock;
+        check(std::abs(clock.phase(100.125,2)-.25)<1e-9,"LFO initial clock alignment");
+        for(double rate : {3.,9.,.1,7.})
+            check(std::abs(clock.phase(100.125,rate)-.25)<1e-9,"LFO rate edits preserve phase");
+        check(std::abs(clock.phase(100.175,7)-.6)<1e-9,"LFO advances at edited rate");
+        check(clock.phase(0,7)==0,"LFO transport restart resets phase");
+    }
+
     const double sr = 48000;
     auto gen = generateTables();
 

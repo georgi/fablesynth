@@ -1,3 +1,4 @@
+import { WtAutomation } from './components/WtAutomation';
 import { useEffect, useState } from 'react';
 import { WebAgentPanel } from './agent/WebAgentPanel';
 import { makeWtAgentHost } from './agent/wtAgentHost';
@@ -64,6 +65,7 @@ export function App() {
           <LabPanel />
           <SeqPanel />
         </div>
+        <WtAutomation />
         <KeyboardBar />
       </main>
       <button className="web-agent-launcher" onClick={() => setAgentOpen(true)}>AGENT</button>

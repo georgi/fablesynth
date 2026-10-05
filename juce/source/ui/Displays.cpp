@@ -17,8 +17,7 @@ EnvView::EnvView(juce::AudioProcessorValueTreeState& s, const juce::String& b, j
 EnvView::EnvView(ParameterSource source, const juce::String& b, juce::Colour ac)
     : parameters(std::move(source)), base(b), accent(ac) { startTimerHz(20); }
 float EnvView::p(const char* sfx) const {
-    auto* prm = parameters.parameter(base + sfx);
-    return prm ? prm->convertFrom0to1(prm->getValue()) : 0.0f;
+    return parameters.effectiveValue(base + sfx);
 }
 void EnvView::timerCallback() {
     float v[4] = {p(".a"), p(".d"), p(".s"), p(".r")};
@@ -72,18 +71,18 @@ LfoView::LfoView(ParameterSource source, const juce::String& sh,
 }
 bool LfoView::synced() const {
     auto* syncP = parameters.parameter(syncId);
-    return syncP && syncP->getValue() >= 0.5f;
+    return syncP && parameters.effectiveValue(syncId) >= 0.5f;
 }
 // Effective LFO rate in Hz: synced division * host tempo when sync is on, else
 // the free RATE param. Mirrors Engine::lfoHz so the dot tracks the real speed.
 float LfoView::currentRate(const HostTransport& tr) const {
     if (synced()) {
         auto* srP = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(syncRateId));
-        int idx = srP ? srP->getIndex() : 2;
+        int idx = srP ? (int)parameters.effectiveValue(syncRateId) : 2;
         return (float)((tr.bpm / 60.0) * fable::lfoDivFactor(idx));
     }
     auto* rp = parameters.parameter(rateId);
-    return rp ? rp->convertFrom0to1(rp->getValue()) : 1.0f;
+    return rp ? parameters.effectiveValue(rateId) : 1.0f;
 }
 static float lfoFn(int shape, float p) {
     switch (shape) {
@@ -103,7 +102,7 @@ void LfoView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
     const HostTransport tr = transport ? transport() : HostTransport{};
     auto* sp = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(shapeId));
-    int shape = sp ? sp->getIndex() : 0;
+    int shape = sp ? (int)parameters.effectiveValue(shapeId) : 0;
     float rate = currentRate(tr);
 
     const float w = (float)getWidth(), h = (float)getHeight();
@@ -131,15 +130,12 @@ void LfoView::paint(juce::Graphics& g) {
     // Phase dot: when synced and the host is playing, lock to the transport
     // position so the dot sits on the beat grid (matching the audio downbeat);
     // otherwise free-run at the effective rate.
-    float phase;
-    if (synced() && tr.playing) {
-        auto* srP = dynamic_cast<juce::AudioParameterChoice*>(parameters.parameter(syncRateId));
-        int idx = srP ? srP->getIndex() : 2;
-        double ph = tr.ppq * fable::lfoDivFactor(idx);
-        phase = (float)(ph - std::floor(ph));
-    } else {
-        phase = std::fmod(static_cast<float>(juce::Time::getMillisecondCounter() - t0) / 1000.0f * rate, 1.0f);
-    }
+    const bool locked = synced() && tr.playing;
+    if (locked != wasSynced_) { phaseClock_.reset(); wasSynced_ = locked; }
+    const double position = locked ? tr.ppq
+        : (double)(juce::Time::getMillisecondCounter() - t0) / 1000.0;
+    const double speed = locked ? fable::lfoDivFactor((int)parameters.effectiveValue(syncRateId)) : rate;
+    const float phase = (float)phaseClock_.phase(position, speed);
     float y;
     if (shape == 4) y = mid - shVal((int)std::floor(phase * 8)) * amp * 0.9f;
     else            y = mid - lfoFn(shape, phase) * amp * 0.9f;
@@ -185,7 +181,7 @@ FilterView::FilterView(juce::AudioProcessorValueTreeState& s, juce::Colour ac)
 FilterView::FilterView(ParameterSource source, juce::Colour ac)
     : parameters(std::move(source)), accent(ac) { startTimerHz(20); }
 void FilterView::timerCallback() {
-    auto get = [&](const char* id) { auto* p = parameters.parameter(id); return p ? p->getValue() : 0.0f; };
+    auto get = [&](const char* id) { auto* p = parameters.parameter(id); return p ? p->convertTo0to1(parameters.effectiveValue(id)) : 0.0f; };
     float sum = get("filter.on") + get("filter.type") * 1.7f + get("filter.cutoff") * 3.1f + get("filter.res") * 2.3f
               + get("filter2.on") + get("filter2.type") * 1.1f + get("filter2.cutoff") * 0.7f + get("filter2.res") * 1.9f
               + get("filter.route") * 5.0f;
@@ -193,10 +189,7 @@ void FilterView::timerCallback() {
 }
 void FilterView::paint(juce::Graphics& g) {
     drawDisplayBox(g, getLocalBounds().toFloat());
-    auto val = [&](const char* id) {
-        auto* p = parameters.parameter(id);
-        return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
-    };
+    auto val = [&](const char* id) { return parameters.effectiveValue(id); };
     struct F { int type; double cut, res; bool on; };
     F f0{(int)val("filter.type"), val("filter.cutoff"), val("filter.res"), val("filter.on") > 0.5f};
     F f1{(int)val("filter2.type"), val("filter2.cutoff"), val("filter2.res"), val("filter2.on") > 0.5f};

@@ -625,3 +625,11 @@ void DeviceFocusView::resized() {
 }
 
 } // namespace fui
+
+void fui::DeviceFocusView::showAutomation(const juce::String& id) {
+    automation_.showAutomation(id);
+    resized();
+    const auto bounds=automation_.getBounds();
+    if (automation_.getParentComponent()==&deviceCanvas_)
+        deviceViewport_.setViewPosition(0,std::max(0,bounds.getBottom()-deviceViewport_.getViewHeight()));
+}

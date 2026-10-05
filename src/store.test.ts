@@ -1,3 +1,4 @@
+import { newAutoLane } from './seq/clipAutomation';
 // WT-1 step-sequencer editing verbs: selection, clipboard, undo/redo, DnD
 // (docs/editing-concept.md). Mirrors src/bass/store.test.ts / src/drum/store.test.ts.
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -33,6 +34,7 @@ describe('WT-1 step-sequencer editing', () => {
       chain: [0],
       editPattern: 0,
       seqPlaying: false,
+      automation: [],
       curStep: -1,
       curPat: 0,
       rectSel: null,
@@ -266,6 +268,7 @@ describe('rect selection verbs', () => {
       chain: [0],
       editPattern: 0,
       seqPlaying: false,
+      automation: [],
       curStep: -1,
       curPat: 0,
       rectSel: null,
@@ -391,5 +394,32 @@ describe('rect selection verbs', () => {
     p = useStore.getState().patterns;
     expect(getStep(p, 0, 2).note).toBe(5);
     expect(getStep(p, 0, 10).on).toBe(false);
+  });
+});
+
+
+describe('WT-1 standalone automation', () => {
+  beforeEach(() => {
+    useStore.setState({ hosted: false, automation: [], chain: [0] });
+    useStore.getState()._clearSeqHistory();
+  });
+
+  it('copies lanes, undoes and redoes edits, and rejects invalid targets', () => {
+    const lane = newAutoLane('filter.cutoff');
+    useStore.getState().setAutomation([lane]);
+    lane.enabled = false;
+    expect(useStore.getState().automation[0].enabled).toBe(true);
+    useStore.getState().undoSeq();
+    expect(useStore.getState().automation).toEqual([]);
+    useStore.getState().redoSeq();
+    expect(useStore.getState().automation[0].target).toBe('filter.cutoff');
+    useStore.getState().setAutomation([newAutoLane('missing')]);
+    expect(useStore.getState().automation[0].target).toBe('filter.cutoff');
+  });
+
+  it('leaves standalone lanes alone while hosted clips own automation', () => {
+    useStore.setState({ hosted: true });
+    useStore.getState().setAutomation([newAutoLane('filter.cutoff')]);
+    expect(useStore.getState().automation).toEqual([]);
   });
 });

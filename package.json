@@ -1,6 +1,6 @@
 {
   "name": "fablesynth",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Serum-style wavetable synthesizer that runs entirely in the browser.",
   "type": "module",
   "scripts": {

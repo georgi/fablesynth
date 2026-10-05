@@ -75,17 +75,17 @@
       <figure class="stage" aria-label="FableSynth demo film">
         <div class="stage-screen" data-state="loop">
           <video class="stage-loop" autoplay muted loop playsinline preload="auto"
-                 poster="./media/demo-loop-poster.webp" src="./media/demo-loop.mp4" aria-hidden="true"></video>
-          <video class="stage-film" playsinline preload="none" poster="./media/demo-poster.webp"
-                 aria-label="FableSynth demo film, 80 seconds, with sound">
-            <source src="./media/demo-720.mp4" type="video/mp4" media="(max-width: 900px)">
-            <source src="./media/demo-1080.mp4" type="video/mp4">
+                 poster="./media/neon-loop-poster.webp" src="./media/neon-loop.mp4" aria-hidden="true"></video>
+          <video class="stage-film" playsinline preload="none" poster="./media/neon-poster.webp"
+                 aria-label="FableSynth demo film, 91 seconds, with sound">
+            <source src="./media/neon-720.mp4" type="video/mp4" media="(max-width: 900px)">
+            <source src="./media/neon-1080.mp4" type="video/mp4">
           </video>
 
           <button class="stage-play" type="button">
             <span class="play-pill">
               <span class="play-disc" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg></span>
-              <span class="play-label"><b>Play with sound</b><small>1:20 · nine live takes</small></span>
+              <span class="play-label"><b>Play with sound</b><small>1:31 · one track, played live</small></span>
             </span>
           </button>
 
@@ -111,63 +111,43 @@
             <button class="sb-btn sb-mute" type="button" aria-label="Mute" aria-pressed="false">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="i-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="i-x" d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             </button>
-            <span class="sb-time"><span class="sb-now">0:00</span> / 1:20</span>
+            <span class="sb-time"><span class="sb-now">0:00</span> / 1:31</span>
             <button class="sb-btn sb-full" type="button" aria-label="Full screen">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             </button>
           </div>
         </div>
 
-        <ol class="chapters" aria-label="Film chapters, each one a live take">
-          <li><button type="button" class="chapter" data-accent="a" data-start="0" data-end="5.71" style="--span:5.71">
+        <ol class="chapters" aria-label="Film chapters, one live performance of NEON CHASE">
+          <li><button type="button" class="chapter" data-accent="f" data-start="0" data-end="23.64" style="--span:23.64">
             <span class="ch-track"><span class="ch-fill"></span></span>
             <span class="ch-meta">01 · WT-1</span>
-            <span class="ch-title">Morph</span>
+            <span class="ch-title">Intro</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="g" data-start="5.71" data-end="13.33" style="--span:7.62">
+          <li><button type="button" class="chapter" data-accent="g" data-start="23.64" data-end="38.19" style="--span:14.55">
             <span class="ch-track"><span class="ch-fill"></span></span>
             <span class="ch-meta">02 · BL-1</span>
-            <span class="ch-title">Sweep</span>
+            <span class="ch-title">Build</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="f" data-start="13.33" data-end="20.95" style="--span:7.62">
+          <li><button type="button" class="chapter" data-accent="b" data-start="38.19" data-end="52.74" style="--span:14.55">
             <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">03 · WT-1</span>
-            <span class="ch-title">Modulate</span>
+            <span class="ch-meta">03 · DR-1</span>
+            <span class="ch-title">Drop</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="a" data-start="20.95" data-end="28.57" style="--span:7.62">
+          <li><button type="button" class="chapter" data-accent="a" data-start="52.74" data-end="67.28" style="--span:14.54">
             <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">04 · WT-1</span>
-            <span class="ch-title">Space</span>
+            <span class="ch-meta">04 · LAB</span>
+            <span class="ch-title">Break</span>
           </button></li>
-          <li><button type="button" class="chapter" data-accent="a" data-start="28.57" data-end="40.0" style="--span:11.43">
+          <li><button type="button" class="chapter" data-accent="o" data-start="67.28" data-end="90.92" style="--span:23.64">
             <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">05 · LAB</span>
-            <span class="ch-title">Spiral</span>
-          </button></li>
-          <li><button type="button" class="chapter" data-accent="o" data-start="40.0" data-end="49.52" style="--span:9.52">
-            <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">06 · LAB</span>
-            <span class="ch-title">Glitch</span>
-          </button></li>
-          <li><button type="button" class="chapter" data-accent="b" data-start="49.52" data-end="59.05" style="--span:9.53">
-            <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">07 · DR-1</span>
-            <span class="ch-title">Beat</span>
-          </button></li>
-          <li><button type="button" class="chapter" data-accent="g" data-start="59.05" data-end="68.57" style="--span:9.52">
-            <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">08 · SQ-4</span>
-            <span class="ch-title">Automate</span>
-          </button></li>
-          <li><button type="button" class="chapter" data-accent="o" data-start="68.57" data-end="80.0" style="--span:11.43">
-            <span class="ch-track"><span class="ch-fill"></span></span>
-            <span class="ch-meta">09 · SQ-4</span>
-            <span class="ch-title">Launch</span>
+            <span class="ch-meta">05 · SQ-4</span>
+            <span class="ch-title">Finale</span>
           </button></li>
         </ol>
         <figcaption class="stage-note">
-          Every sound in the film is the instrument on screen, recorded in the
-          same take as the picture. Turn a knob, hear the knob.
+          One track, NEON CHASE, played live in SQ-4. Every sound is the
+          session on screen, recorded with the picture. Turn a knob, hear the knob.
         </figcaption>
       </figure>
     </div>

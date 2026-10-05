@@ -12,6 +12,8 @@ import { SqPowerOverlay } from './components/SqPowerOverlay';
 import { TrackHeads } from './components/TrackHeads';
 import { MasterFxRack } from './components/MasterFxRack';
 import { useSeqStore } from './store';
+import { useStore as useWtStore } from '../store';
+import { useBassStore } from '../bass/store';
 
 export function SeqApp() {
   const [agentOpen, setAgentOpen] = useState(false);
@@ -37,7 +39,7 @@ export function SeqApp() {
 
   // exposed for debugging / automated verification
   useEffect(() => {
-    (window as unknown as { __fableSq: unknown }).__fableSq = { store: useSeqStore };
+    (window as unknown as { __fableSq: unknown }).__fableSq = { store: useSeqStore, wt: useWtStore, bl: useBassStore, dr: useDrumStore };
   }, []);
 
   // focus-mode keys: Esc exits, 1–4 switch devices, ↑/↓ move the scene rail.

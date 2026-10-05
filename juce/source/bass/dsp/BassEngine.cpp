@@ -115,6 +115,7 @@ void BassEngine::prepare(double sampleRate) {
     std::fill(std::begin(phases_), std::end(phases_), 0.0);
     subPhase_ = 0; subIncPrev_ = -1;
     dcxL_ = dcxR_ = dcyL_ = dcyR_ = 0;
+    lfoClock_.reset();
     shVal_ = 0; shPhase_ = -1;
     oscXfPos_ = fltXfPos_ = 1 << 30;
     std::fill(std::begin(svfOld_), std::end(svfOld_), 0.0);
@@ -309,6 +310,7 @@ void BassEngine::keyOff(int semi) {
 
 void BassEngine::play() {
     if (hostPlaying_) return;      // host owns the transport while rolling
+    lfoClock_.reset();
     playing_ = true; step_ = -1; chainPos_ = 0;
     samplesToNext_ = 0; samplesToGateOff_ = -1; songPos_ = 0;
     held_.clear();
@@ -668,7 +670,7 @@ void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double note
 // beats = quarter notes since play (internal) or the host song position.
 double BassEngine::lfoValue(double beats) {
     const double cpb = lfoDivFactor((int)p_[BL_LFO_RATE]);
-    const double cycles = beats * cpb;
+    const double cycles = lfoClock_.update(beats, cpb);
     const double phase = cycles - std::floor(cycles);
     switch ((int)p_[BL_LFO_SHAPE]) {
         case 1: return 1 - 4 * std::fabs(phase - 0.5);   // tri
@@ -1071,6 +1073,7 @@ void BassEngine::render(float* L, float* R, int n) {
                             : hostClipMode_ ? std::max(0.0, hostFrame_ - anchorFrame_) * beatsPerSample
                                             : songPos_ * beatsPerSample;
         advanceParams(run);          // Finding J1/J2: chunk-rate parameter update
+        lfoClock_.update(beats, lfoDivFactor((int)p_[BL_LFO_RATE]));
         renderVoice(L, R, pos, run, beats);
 
         if (internalRun) {

@@ -2,13 +2,26 @@
 #include "AutomationEdit.h"
 #include "../../ui/ParameterSource.h"
 #include "../../ui/LookAndFeel.h"
-#include "../SeqProcessor.h"
+#include "../dsp/SeqModel.h"
+class SeqAudioProcessor;
 
 namespace fui {
 class ClipAutomationPanel final : public juce::Component, private juce::Timer {
 public:
     enum Tool { Draw, Line, Point };
+    struct Source {
+        fable::Machine machine=fable::Machine::WT1;
+        juce::String identity, unit="CLIP";
+        std::function<const fable::ClipData*()> clip;
+        std::function<void(const std::vector<fable::AutoLane>&)> write;
+        std::function<void()> beginEdit,undo,redo;
+        std::function<double()> elapsed;
+    };
+    ClipAutomationPanel();
     explicit ClipAutomationPanel(SeqAudioProcessor&);
+    void setSource(Source,ParameterSource,std::function<int()> selectedPad={});
+    bool canShowAutomation(const juce::String&) const;
+    void showAutomation(const juce::String&);
     ~ClipAutomationPanel() override;
     void setTarget(int scene,int track,ParameterSource source,std::function<int()> selectedPad);
     void refresh();
@@ -91,7 +104,9 @@ private:
             label.setBounds(8,0,std::max(0,box.getWidth()-22),box.getHeight()); label.setFont(monoFont(9));
         }
     } lookAndFeel_;
-    SeqAudioProcessor& proc_;
+    SeqAudioProcessor* proc_=nullptr;
+    Source automationSource_;
+    fable::Machine machine_=fable::Machine::WT1;
     ParameterSource source_;
     std::function<int()> selectedPad_;
     int scene_=-1,track_=-1,selected_=0,lastPad_=-1,lastFit_=4;

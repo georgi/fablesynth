@@ -190,6 +190,9 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
 // fixed 48 kHz-reference per-sample coefficients are remapped to sr (Finding 9).
 void Engine::prepare(double sampleRate) {
     clearAutomation();
+    autoPlayer_.prepare();
+    if (!sequenceAuto_) sequenceAuto_=std::make_unique<AutoBank>();
+    sequenceAutoRunning_=false;
     sr_ = std::max(1.0, sampleRate);
     // A comb at the documented 20 Hz minimum needs sr / 20 samples, plus a
     // second fractional-read sample. Allocate here, while the host is
@@ -241,16 +244,16 @@ double Engine::lfoHz(int base) const {
 
 // Update a free-running global LFO once per block. When synced AND the host is
 // playing, the phase is derived from the transport position so a synced cycle
-// starts on the downbeat (ppq = quarter notes, factor = cycles per beat). When
+// starts on the downbeat; subsequent rate edits preserve phase. When
 // unsynced — or synced but stopped — it free-runs at its Hz so movement
 // continues. (Retrig LFOs are per-voice / note-aligned and skip this.)
 void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
     if (!exactlyZero(p_[slot(base + LFO_SYNC)]) && playing_) {
-        double ph = ppqChunk * lfoDivFactor((int)p_[slot(base + LFO_SYNCRATE)]);
-        ph -= std::floor(ph);
+        double ph = g.clock.phase(ppqChunk, lfoDivFactor((int)p_[slot(base + LFO_SYNCRATE)]));
         if (ph < g.phase) g.hold = rng_.next() * 2 - 1; // grid wrap -> new S&H value
         g.phase = ph;
     } else {
+        g.clock.reset();
         g.advance(lfoHz(base), n, sr_);
     }
 }
@@ -1394,11 +1397,11 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
         // !viz)`: release tails must not yank the indicator off the held note.
         // The live-mod snapshot rides the same selection so the knob dots and
         // the wavetable highlight always describe the same voice.
-        if (v.gate || !vizSet) { vizA = v.oA.posSm; vizB = v.oB.posSm; vizSet = true; snapshotVizMod(); }
+        if (v.gate || !vizSet) { vizA = v.oA.posSm; vizB = v.oB.posSm; vizCut[0] = v.f1.c.cutSm; vizCut[1] = v.f2.c.cutSm; vizSet = true; snapshotVizMod(); }
         act++;
     }
     vizActive = act;
-    if (act == 0) { vizA = -1; vizB = -1; vizModAny = false; } // idle -> hide indicators
+    if (act == 0) { vizCut[0] = vizCut[1] = -1; vizA = -1; vizB = -1; vizModAny = false; } // idle -> hide indicators
     for (int i = 0; i < 2; i++) {
         if (lfoXfRemain_[i] <= 0) continue;
         lfoXfRemain_[i] = std::max(0, lfoXfRemain_[i] - n);
@@ -1486,6 +1489,18 @@ void Engine::render(float* L, float* R, int n) {
                 if (clipHost_.events[i].t == HostEvent::T::Stop) seqGateOff();
         }
         if (hostClipMode_) tickAutomation();
+        else {
+            const bool running=hostRun || internalRun;
+            if (running && !sequenceAutoRunning_) autoPlayer_.update(sequenceAuto_.get(),false);
+            if (!running && sequenceAutoRunning_)
+                autoPlayer_.stopPlaying([&](int id,float v){ writeAutomation(id,v); },autoFxDirty_);
+            sequenceAutoRunning_=running;
+            if (running) {
+                const double bpm=seqEffectiveBpm();
+                const double frame=hostRun ? (seqHostPpq_+off*ppqPerSample)*60/bpm*sr_ : seqSongPos_;
+                autoPlayer_.tick(frame,0,bpm,sr_,p_,[&](int id,float v){ writeAutomation(id,v); },autoFxDirty_);
+            }
+        }
         // Split the run at the next pending note-off so each off lands on its
         // exact sample (worklet seqOffQueue countdown; native is sample-accurate).
         const double earliestOff = seqEarliestOff();
