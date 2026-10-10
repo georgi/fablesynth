@@ -95,9 +95,16 @@ private:
 
     BassUiModel& proc;
     juce::Random rng_;
+    juce::ComboBox patternPreset_;
     // Content signature — everything visible EXCEPT the playhead position, so a
     // plain step advance never triggers a full repaint.
-    juce::uint32 lastSig_ = 0xffffffffu;
+    juce::MemoryBlock lastContentKey_, artworkKey_;
+    juce::MemoryBlock contentKey() const;
+    void paintArtwork(juce::Graphics&, bool cursors, bool panel = true);
+    juce::Image artwork_, composed_, panelBackdrop_;
+    float artworkScale_ = 0;
+    int artworkBuilds_ = 0, overlayBuilds_ = 0;
+    std::array<int, 2> composedCursor_{};
     // Last painted playhead: the drawn cursor column (-1 = no cursor) and the
     // pattern the transport plays (it also lights a bar chip in the header).
     int lastCursorStep_ = -1, lastCursorPattern_ = -1;

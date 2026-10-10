@@ -6,6 +6,7 @@ import { useStore } from './store';
 import { defaultParams } from './params';
 import { getStep, makeEmptyPatterns, NOTE_LANES, STEPS, WT1_LAYOUT } from './noteseq';
 import { copyRect } from './shared/seqEdit';
+import { NOTE_PATTERN_PRESETS, notePresetSequence } from './patternPresets';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -421,5 +422,26 @@ describe('WT-1 standalone automation', () => {
     useStore.setState({ hosted: true });
     useStore.getState().setAutomation([newAutoLane('filter.cutoff')]);
     expect(useStore.getState().automation).toEqual([]);
+  });
+});
+
+describe('WT-1 pattern presets', () => {
+  it('loads a catalog line and its length; undo restores the previous notes', () => {
+    useStore.getState()._clearSeqHistory();
+    useStore.setState({ hosted: false, patterns: makeEmptyPatterns(), chain: [0], editPattern: 2 });
+    const before = useStore.getState().patterns;
+    expect(useStore.getState().loadPatternPreset(0)).toBe(true);
+    const expected = notePresetSequence(NOTE_PATTERN_PRESETS[0]);
+    expect(Array.from(useStore.getState().patterns)).toEqual(Array.from(expected.patterns));
+    expect(useStore.getState().chain).toEqual(expected.chain);
+    expect(useStore.getState().editPattern).toBe(0);
+    useStore.getState().undoSeq();
+    expect(useStore.getState().patterns).toEqual(before);
+  });
+
+  it('stays inert while hosted', () => {
+    useStore.setState({ hosted: true });
+    expect(useStore.getState().loadPatternPreset(0)).toBe(false);
+    useStore.setState({ hosted: false });
   });
 });

@@ -413,8 +413,8 @@ describe('hosted mode', () => {
     const kitValue = useDrumStore.getState().kitValue;
     expect(useDrumStore.getState().loadPatternPreset(14)).toBe(true);
     const s = useDrumStore.getState();
-    expect(Array.from(s.patterns)).toEqual(FACTORY_KITS[14].patterns);
-    expect(s.chain).toEqual(FACTORY_KITS[14].chain);
+    expect(Array.from(s.patterns)).toEqual(PATTERN_PRESETS[14].patterns);
+    expect(s.chain).toEqual(PATTERN_PRESETS[14].chain);
     expect(s.kitValue).toBe(kitValue);
     expect(s.params['seq.bpm']).toBe(111);
   });

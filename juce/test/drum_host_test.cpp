@@ -647,9 +647,17 @@ int main(int argc, char** argv) {
     const int kitBeforePatternPreset = proc2.getCurrentProgram();
     check(proc2.loadFactoryPatternPreset(1), "factory drum pattern preset loads");
     const auto patternPresetSequence = proc2.getSequence();
-    check(patternPresetSequence.steps == fable::factoryKits()[1].patterns
-              && patternPresetSequence.chain == fable::factoryKits()[1].chain,
+    check(patternPresetSequence.steps == fable::factoryPatternPresets()[1].patterns
+              && patternPresetSequence.chain == fable::factoryPatternPresets()[1].chain,
           "pattern preset applies its pattern and chain");
+    {
+        const auto& presets = fable::factoryPatternPresets();
+        bool distinct = true;
+        for (size_t i = 0; i < presets.size(); ++i)
+            for (size_t j = i + 1; j < presets.size(); ++j)
+                distinct = distinct && presets[i].patterns != presets[j].patterns && presets[i].name != presets[j].name;
+        check(presets.size() == 15 && distinct, "pattern presets are distinct grooves");
+    }
     check(proc2.getCurrentProgram() == kitBeforePatternPreset,
           "pattern preset leaves the selected drum kit unchanged");
     check(std::abs(proc2.apvts.getRawParameterValue("seq.bpm")->load() - bpmBeforePatternPreset) < 0.5f,

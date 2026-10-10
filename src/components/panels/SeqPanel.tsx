@@ -1,13 +1,16 @@
+import { SequencePoly } from '../SequencePoly';
 // The WT-1 note sequencer: 12 note lanes per step (tap an empty cell = set
 // note, click a note = select it), draggable note lengths, octave / accent
 // rows, bars 1–4 + sequence length, RAND, transport and ROOT controls.
 
 import type { ReactNode } from 'react';
-import { ArpPanel, ArpModeSwitch } from './WtArpPanel';
+import { ArpPanel } from './WtArpPanel';
 import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
 import { copyRectChain, rectNorm, type RectCells, type RectSel } from '../../shared/seqEdit';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
+import { PatternPresetSelect } from '../PatternPresetSelect';
+import { NOTE_PATTERN_PRESETS } from '../../patternPresets';
 import { SeqSelectionMenu } from '../SeqSelectionMenu';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';

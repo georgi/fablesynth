@@ -87,6 +87,7 @@ export interface BassStore {
   randomize: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
+  loadPatternPreset: (index: number) => boolean;
 
   setRectSel: (sel: RectSel | null) => void;
   selectAllSteps: () => void;

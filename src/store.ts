@@ -5,7 +5,8 @@ import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } 
 // back through `setParam`, which also forwards to the audio engine.
 
 import { create } from 'zustand';
-import { arpNotes, loadArp, type ArpState } from './arp';
+import { NOTE_PATTERN_PRESETS, notePresetSequence } from './patternPresets';
+import { arpCompile, loadArp, type ArpState } from './arp';
 import { SynthEngine } from './engine/synth';
 import { feedModLive } from './engine/modLive';
 import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
@@ -124,6 +125,7 @@ interface SynthStore {
   randomizeSeq: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
+  loadPatternPreset: (index: number) => boolean;
 
   // step-sequencer editing: selection, clipboard, undo/redo, DnD (docs/editing-concept.md)
   setRectSel: (sel: RectSel | null) => void;

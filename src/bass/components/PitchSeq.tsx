@@ -6,9 +6,11 @@
 // from useBassKeys.
 
 import type { ReactNode } from 'react';
-import { BassArpModeSwitch, BassArpPanel } from './BassArpPanel';
+import { BassArpPanel } from './BassArpPanel';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
+import { PatternPresetSelect } from '../../components/PatternPresetSelect';
+import { BASS_PATTERN_PRESETS } from '../patternPresets';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
 import { useSeqGhostPaste } from '../../components/useSeqGhostPaste';
 import { useSeqNoteDraw } from '../../components/useSeqNoteDraw';

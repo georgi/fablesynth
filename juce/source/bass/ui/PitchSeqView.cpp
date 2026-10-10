@@ -1,4 +1,5 @@
 #include "PitchSeqView.h"
+#include "../../dsp/PatternPresetCatalog.h"
 #include "../dsp/BassPatches.h"
 #include <cmath>
 

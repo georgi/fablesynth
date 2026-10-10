@@ -11,9 +11,9 @@ import {
 } from '../engine/usertables';
 import type { GeneratedTable } from '../engine/wavetables';
 import { DrumEngine } from './engine/drum-synth';
-import { FACTORY_KITS, kitToState, loadUserKits, saveUserKit, stateToKit, type Kit } from './kits';
+import { FACTORY_KITS, PATTERN_PRESETS, kitToState, loadUserKits, saveUserKit, stateToKit, type Kit } from './kits';
 import {
-  FACTORY_PATCHES, applyPatchToParams, extractPatch, loadUserPatches,
+  FACTORY_PATCHES, PATCH_FIELDS, applyPatchToParams, extractPatch, loadUserPatches,
   patchOptions, saveUserPatch, type PadPatch,
 } from './patches';
 import { DRUM_TABLE_NAMES, PAD_COUNT, pad } from './params';

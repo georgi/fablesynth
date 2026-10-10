@@ -157,7 +157,7 @@ bool HostedDrumModel::commitSequence(const DrumSequence& state) {
     chain_ = state.chain; editBar_ = std::min(editBar_, next.bars - 1); return true;
 }
 bool HostedDrumModel::loadPatternPreset(int index) {
-    const auto& presets = fable::factoryKits();
+    const auto& presets = fable::factoryPatternPresets();
     if (index < 0 || index >= (int)presets.size() || !hasTargetClip()) return false;
     const auto& preset = presets[(size_t)index];
     if (preset.patterns.size() != 1024 || preset.chain.empty()) return false;

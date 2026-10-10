@@ -26,6 +26,17 @@ struct DrumKit {
 // All 23 kits in the same order as FACTORY_KITS in kits.ts.
 const std::vector<DrumKit>& factoryKits();
 
+// A groove without a kit. Every factory layout keeps the core pad slots,
+// so each preset loads onto any kit.
+struct DrumPatternPreset {
+    std::string name;
+    std::vector<uint8_t> patterns;                        // 4*16*16
+    std::vector<int> chain;
+};
+
+// Distinct grooves in the same order as PATTERN_PRESETS in kits.ts.
+const std::vector<DrumPatternPreset>& factoryPatternPresets();
+
 // defaultDrumParams() + kit overrides (resolved via drumIdFromString).
 DrumParamArray applyKit(const DrumKit& kit);
 

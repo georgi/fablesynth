@@ -165,7 +165,7 @@ void StepSeqView::setupPoly() {
     patternPreset_.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff0d1017));
     patternPreset_.setColour(juce::ComboBox::textColourId, col::textDim);
     patternPreset_.setColour(juce::ComboBox::outlineColourId, col::line);
-    const auto& patternPresets = fable::factoryKits();
+    const auto& patternPresets = fable::factoryPatternPresets();
     for (int i = 0; i < (int)patternPresets.size(); ++i)
         patternPreset_.addItem(juce::String(patternPresets[(size_t)i].name), i + 1);
     patternPreset_.setEnabled(proc.hasTargetClip());

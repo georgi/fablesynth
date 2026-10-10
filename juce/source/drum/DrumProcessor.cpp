@@ -354,9 +354,9 @@ bool DrumAudioProcessor::commitSequence(const fui::DrumSequence& s) {
 }
 
 bool DrumAudioProcessor::loadFactoryPatternPreset(int index) {
-    const auto& kits = factoryKits();
-    if (index < 0 || index >= (int)kits.size()) return false;
-    const auto& preset = kits[(size_t)index];
+    const auto& presets = factoryPatternPresets();
+    if (index < 0 || index >= (int)presets.size()) return false;
+    const auto& preset = presets[(size_t)index];
     if (preset.patterns.size() != patterns_.size() || preset.chain.empty()) return false;
     auto next = getSequence();
     next.steps = preset.patterns;

@@ -1,4 +1,5 @@
 #include "NoteSeqView.h"
+#include "../dsp/PatternPresetCatalog.h"
 #include <cmath>
 
 namespace fui {
@@ -41,6 +42,20 @@ NoteSeqView::NoteSeqView(WtUiModel& m)
     setInterceptsMouseClicks(true, true);
     setWantsKeyboardFocus(true);
     addAndMakeVisible(root_);
+    // Standalone only: a hosted clip takes its notes and length from SQ-4.
+    setupPatternPresetCombo(patternPreset_, fable::notePatternPresets(),
+                            [this](const fable::NotatedPreset& preset) { loadPatternPreset(preset); });
+    addChildComponent(patternPreset_);
+    // Melodic POLY (SequencePoly.tsx) between the head and the grid; its
+    // edits share the note undo history.
+    addChildComponent(poly_);
+    addChildComponent(hScroll_);
+    hScroll_.addListener(this);
+    hScroll_.setAutoHide(false);
+    poly_.onChange = [this](const SeqPolySettings& next) { history_.push(snapshot()); model.setSequencePoly(next); repaint(); };
+    poly_.onUndo = [this] { undoEdit(); };
+    poly_.onRedo = [this] { redoEdit(); };
+    poly_.onOpenChanged = [this] { resized(); repaint(); };
     // params.ts fmtNote: seq.root shows a note name (48 -> C3), not the number.
     root_.nameProvider = [](int v) {
         static const char* const names[12] =
@@ -48,20 +63,54 @@ NoteSeqView::NoteSeqView(WtUiModel& m)
         return juce::String(names[((v % 12) + 12) % 12])
              + juce::String((int)std::floor(v / 12.0) - 1);
     };
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 void NoteSeqView::resized() {
+    poly_.setVisible(model.supportsSequencePoly());
+    poly_.setBounds(kPadX, kBodyY0 - 4, getWidth() - 2 * kPadX - kClockW - kClockGap, poly_.preferredHeight());
+    {   // sideways scroll once the timeline is wider than the grid area
+        const int gx = kPadX + kLegendW + kLegendGap, view = gridViewWidth(), content = timelineWidth();
+        hScroll_.setBounds(gx, juce::jmin(getHeight() - 9, bodyY() + stepNumberY() + 12), view, 8);
+        hScroll_.setRangeLimits(0, juce::jmax(view, content), juce::dontSendNotification);
+        hScroll_.setCurrentRange(scrollX_, view, juce::dontSendNotification);
+        hScroll_.setVisible(content > view);
+        setScrollX(scrollX_);
+    }
     // .ns-clock: ROOT stays with pitch editing; timing lives in the top bar.
     const int x = getWidth() - kPadX - kClockW;
-    root_.setBounds(x, kBodyY, kClockW, 18);
+    root_.setBounds(x, bodyY(), kClockW, 18);
+    patternPreset_.setVisible(!model.capabilities().hosted && model.hasTargetClip());
+    patternPreset_.setBounds(randBounds().getRight() + 8, kHeadY, 148, kHeadH);
+}
+
+// Replaces every bar and the length with a catalog line; the patch stays.
+void NoteSeqView::loadPatternPreset(const fable::NotatedPreset& preset) {
+    history_.push(snapshot());
+    for (int pat = 0; pat < fable::SEQ_NPATTERNS; ++pat) {
+        std::array<fable::NotatedStep, 16> bar {};
+        if (pat < (int)preset.bars.size()) bar = fable::parseNotatedBar(preset.bars[(size_t)pat]);
+        for (int s = 0; s < fable::SEQ_STEPS; ++s) {
+            const auto& n = bar[(size_t)s];
+            fable::NoteSeqStep step;
+            step.on = n.on; step.note = n.note; step.oct = n.oct;
+            step.acc = n.acc; step.duration = n.duration;
+            model.setSequenceStep(pat, s, step);
+        }
+    }
+    std::vector<int> chain;
+    for (int i = 0; i < (int)preset.bars.size(); ++i) chain.push_back(i);
+    model.setChain(std::move(chain));
+    model.setEditPattern(0);
+    clearSelection();
+    repaint();
 }
 
 int NoteSeqView::laneAreaHeight() const {
     // A dedicated sequencer is a canvas, not a compact strip. Two octaves stay
     // usable in a small hosted focus view, while surplus height becomes larger
     // hit targets in the standalone and SQ-4 focus editors.
-    return juce::jmax(360, getHeight() - kBodyY - kControlGutter);
+    return juce::jmax(360, getHeight() - bodyY() - kControlGutter);
 }
 
 int NoteSeqView::laneHeight() const {
