@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FACTORY_PRESETS } from '../presets';
-import { DEFAULT_SESSION_NAME, defaultSession, GENERATED_SESSION_PRESETS } from './sessionPresets';
+// The contract covers the composed presets; the generated mixdowns layer on top.
+import { DEFAULT_SESSION_NAME, defaultSession, BASE_GENERATED_SESSION_PRESETS as GENERATED_SESSION_PRESETS, FACTORY_SESSION_PRESETS } from './sessionPresets';
+import MIXDOWNS from '../../shared/session-mixdowns.json';
 import { b64ToBytes, wtNoteIdx } from './protocol';
 import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
 
@@ -190,5 +192,25 @@ describe('SQ-4 legacy generated session patch contract', () => {
     expect(boot.name).toBe(DEFAULT_SESSION_NAME);
     // A fresh copy each call — the store edits the session in place.
     expect(defaultSession()).not.toBe(boot);
+  });
+});
+
+describe('SQ-4 factory session mixdowns', () => {
+  it('apply the generated table: inline patches on their factory base, gains and the master section', () => {
+    for (const mix of MIXDOWNS.sessions as { name: string; masterVol: number; masterFx: Record<string, number>; tracks: { gain: number; params: Record<string, number> }[] }[]) {
+      const preset = FACTORY_SESSION_PRESETS.find((p) => p.name === mix.name)!;
+      const base = [...GENERATED_SESSION_PRESETS].find((p) => p.name === mix.name);
+      expect(preset, mix.name).toBeDefined();
+      expect(preset.session.masterVol).toBe(mix.masterVol);
+      for (const [id, v] of Object.entries(mix.masterFx)) expect(preset.session.masterFx![id]).toBe(v);
+      preset.session.tracks.forEach((track, t) => {
+        expect(track.gain).toBe(mix.tracks[t].gain);
+        if (!Object.keys(mix.tracks[t].params).length) return;
+        expect(track.patch.kind).toBe('inline');
+        const params = (track.patch as { data: { params: Record<string, number> } }).data.params;
+        for (const [id, v] of Object.entries(mix.tracks[t].params)) expect(params[id]).toBe(v);
+        if (base) expect((track.patch as { base?: number }).base).toBe((base.session.tracks[t].patch as { index: number }).index);
+      });
+    }
   });
 });

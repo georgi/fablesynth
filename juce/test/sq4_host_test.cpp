@@ -626,7 +626,8 @@ int main(int argc, char** argv) {
     bool rigMatches = true;
     for (int t = 0; t < 4; ++t) {
         const auto& patch = p.conductor().session().tracks[(size_t)t].patch;
-        if (!patch.factory || patch.index != neonChase[(size_t)t]) rigMatches = false;
+        // Mixdowns embed the patch inline; `index` keeps the factory base.
+        if (patch.index != neonChase[(size_t)t]) rigMatches = false;
     }
     check(rigMatches, "session library updates all four device patches");
     bool sessionChangedClips = false;

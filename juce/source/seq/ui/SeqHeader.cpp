@@ -114,7 +114,7 @@ void SeqHeader::saveClick() {
         auto* self = safe.getComponent();
         auto file = fc.getResult();
         if (file == juce::File{}) return;
-        file.replaceWithText(self->proc.currentSessionJson());
+        file.replaceWithText(self->proc.exportSessionJson());
     });
 }
 

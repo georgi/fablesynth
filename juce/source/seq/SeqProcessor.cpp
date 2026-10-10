@@ -1421,6 +1421,11 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json, bool withMa
     restoreSurface("quant", static_cast<float>(initialSession_.quant));
     for (int track = 0; track < kTracks; ++track)
         restoreSurface("vol" + juce::String(track), initialSession_.tracks[(size_t)track].gain);
+    // A stored master section (ASSIST) loads with the session, like the web.
+    if (withMaster) {
+        for (const auto& [id, value] : initialSession_.masterFx) restoreSurface(id, value);
+        if (initialSession_.masterVol >= 0.0f) restoreSurface("master", initialSession_.masterVol);
+    }
     if (preparedSampleRate_ > 0.0) {
         // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
         // that lands after this point would otherwise flip an owner in the new
@@ -1464,6 +1469,19 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json, bool withMa
 
 juce::String SeqAudioProcessor::currentSessionJson() const {
     return fable::sessionToJson(conductor_ ? conductor_->session() : initialSession_, true);
+}
+
+juce::String SeqAudioProcessor::exportSessionJson() const {
+    // The master section lives in APVTS; a saved file carries its live values
+    // so it reloads like the web (undo snapshots and plugin state do not need it).
+    auto session = conductor_ ? conductor_->session() : initialSession_;
+    session.masterFx.clear();
+    for (const auto& info : fable::masterFxParamInfo()) {
+        const juce::String id = "master." + juce::String(info.pid);
+        if (auto* p = apvts.getRawParameterValue(id)) session.masterFx[id.toStdString()] = p->load();
+    }
+    if (rawMaster_) session.masterVol = rawMaster_->load();
+    return fable::sessionToJson(session, true);
 }
 
 juce::RangedAudioParameter* SeqAudioProcessor::masterFxParameter(const juce::String& uiId) const {

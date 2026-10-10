@@ -524,13 +524,56 @@ function buildSession(spec: Spec): SessionDoc {
   return session;
 }
 
-export const GENERATED_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
+/** The presets as composed, before the generated mixdowns (for the extractor). */
+export const BASE_GENERATED_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
   ...spec,
-  session: buildSession(spec),
+  // Scored POLY lanes and micro-timing (songs/grooves.ts) for a few sessions.
+  session: applyGroove(buildSession(spec)),
 }));
-
 // Append authored songs to preserve existing host program numbers.
-export const AUTHORED_SESSION_PRESETS: SessionPreset[] = [TIDAL_MEMORY, PHASE_RUNNER];
+export const BASE_AUTHORED_SESSION_PRESETS: SessionPreset[] = [TIDAL_MEMORY, PHASE_RUNNER];
+
+interface Mixdown {
+  name: string;
+  masterVol: number;
+  masterFx: Record<string, number>;
+  tracks: { gain: number; params: Record<string, number> }[];
+}
+
+/**
+ * Applies a session's generated mixdown (auto-EQ, auto-comp and ASSIST
+ * results, shared/session-mixdowns.json): track gains, device EQ/comp
+ * overrides on a fully resolved inline patch (keeping its factory base),
+ * the master section and the master fader. The plugin applies the same
+ * table (SessionMixdowns.gen.h).
+ */
+function applyMixdown(preset: SessionPreset): SessionPreset {
+  const mix = (MIXDOWNS.sessions as Mixdown[]).find((m) => m.name === preset.name);
+  if (!mix) return preset;
+  const session = preset.session;
+  return {
+    ...preset,
+    session: {
+      ...session,
+      masterFx: masterFxParams(mix.masterFx),
+      masterVol: mix.masterVol,
+      tracks: session.tracks.map((track, t) => {
+        const m = mix.tracks[t];
+        if (!m) return track;
+        if (!Object.keys(m.params).length) return { ...track, gain: m.gain };
+        const base = track.patch.kind === 'factory' ? track.patch.index : track.patch.base;
+        const data = track.patch.kind === 'inline' ? track.patch.data as Record<string, unknown> : {};
+        return {
+          ...track, gain: m.gain,
+          patch: { kind: 'inline', base, data: { ...data, params: { ...resolvedPatchParams(track.machine, track.patch), ...m.params } } },
+        };
+      }),
+    },
+  };
+}
+
+export const GENERATED_SESSION_PRESETS: SessionPreset[] = BASE_GENERATED_SESSION_PRESETS.map(applyMixdown);
+export const AUTHORED_SESSION_PRESETS: SessionPreset[] = BASE_AUTHORED_SESSION_PRESETS.map(applyMixdown);
 export const FACTORY_SESSION_PRESETS: SessionPreset[] = [...GENERATED_SESSION_PRESETS, ...AUTHORED_SESSION_PRESETS];
 
 /**

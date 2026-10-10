@@ -13,19 +13,28 @@ import { copyClipArp } from './clipArp';
 import { copyAutomation } from './clipAutomation';
 import { cloneDrumRhythm } from '../drum/rhythm';
 
-function embeddedPatch(machine: SessionDoc['tracks'][number]['machine'], patch: PatchDoc): PatchDoc {
+/**
+ * A patch as a complete parameter map: factory references resolved through
+ * their bank, inline maps filled from the machine defaults. Mirrors the
+ * plugin's resolvedPatchParams (SeqFactory.cpp).
+ */
+export function resolvedPatchParams(machine: SessionDoc['tracks'][number]['machine'], patch: PatchDoc): Record<string, number> {
   if (patch.kind === 'inline') {
     const data = patch.data as { params?: Record<string, number> };
     const defaults = machine === 'DR1' ? defaultDrumParams() : machine === 'BL1' ? defaultBassParams() : defaultParams();
-    return { kind: 'inline', data: { params: { ...defaults, ...data.params } }, base: patch.base };
+    return { ...defaults, ...data.params };
   }
   const index = patch.index;
-  const params = machine === 'DR1'
+  return { ...(machine === 'DR1'
     ? kitToState(FACTORY_KITS[index] ?? FACTORY_KITS[0]).params
     : machine === 'BL1'
       ? patchToState(BASS_PATCHES[index] ?? BASS_PATCHES[0]).params
-      : resolvePresetMods((FACTORY_PRESETS[index] ?? FACTORY_PRESETS[0]).params, (FACTORY_PRESETS[index] ?? FACTORY_PRESETS[0]).mods);
-  return { kind: 'inline', data: { params: { ...params } } };
+      : resolvePresetMods((FACTORY_PRESETS[index] ?? FACTORY_PRESETS[0]).params, (FACTORY_PRESETS[index] ?? FACTORY_PRESETS[0]).mods)) };
+}
+
+function embeddedPatch(machine: SessionDoc['tracks'][number]['machine'], patch: PatchDoc): PatchDoc {
+  const params = resolvedPatchParams(machine, patch);
+  return patch.kind === 'inline' ? { kind: 'inline', data: { params }, base: patch.base } : { kind: 'inline', data: { params } };
 }
 
 /** A self-contained copy suitable for disk/session interchange. */

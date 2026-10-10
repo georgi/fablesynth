@@ -61,6 +61,8 @@ export interface SessionDoc {
   scenes: SceneDoc[];
   /** Optional for v1 compatibility; omitted sessions recall neutral master processing. */
   masterFx?: MasterFxParams;
+  /** Optional master fader (0..1); omitted sessions recall the 0.75 default. */
+  masterVol?: number;
 }
 
 export interface TrackDoc {
@@ -162,6 +164,7 @@ export function validateSession(doc: SessionDoc): string | null {
   if (!(doc.bpm >= 60 && doc.bpm <= 200)) return 'bpm out of range';
   if (!Array.isArray(doc.tracks) || !doc.tracks.length) return 'no tracks';
   if (!Array.isArray(doc.scenes)) return 'no scenes';
+  if (doc.masterVol !== undefined && !(doc.masterVol >= 0 && doc.masterVol <= 1)) return 'masterVol out of range';
   for (let t = 0; t < doc.tracks.length; t++) {
     if (!['DR1', 'BL1', 'WT1'].includes(doc.tracks[t].machine)) return `track ${t}: unknown machine`;
   }

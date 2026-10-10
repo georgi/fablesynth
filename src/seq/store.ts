@@ -298,7 +298,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     solo: {},
     quant: initialSession.quant,
     trackVol: initialSession.tracks.map((t) => t.gain),
-    masterVol: 0.75,
+    masterVol: initialSession.masterVol ?? 0.75,
     masterFx: masterFxParams(initialSession.masterFx),
     masterFxOpen: false,
     drumFxOpen: false,
@@ -634,7 +634,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     },
 
     setMasterVol: (v) => {
-      set({ masterVol: v });
+      set((st) => ({ masterVol: v, session: { ...st.session, masterVol: v } }));
       get().rig?.setMasterGain(gainCurve(v));
     },
 
@@ -688,6 +688,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const anchor = st.rig ? st.rig.now() + 256 : 0;
       st.rig?.sendTempo(session.bpm, session.swing, anchor);
       st.rig?.setMasterFx?.(masterFxParams(session.masterFx));
+      st.rig?.setMasterGain(gainCurve(session.masterVol ?? 0.75));
       clipBytes.clear();
       // Pre-load snapshots would undo the doc but not the rig, desyncing
       // audible vs persisted state — so history resets here.
@@ -695,7 +696,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       redoStack.length = 0;
       set({
         session, masterFx: masterFxParams(session.masterFx), quant: session.quant, swing: session.swing,
-        trackVol: session.tracks.map((track) => track.gain),
+        trackVol: session.tracks.map((track) => track.gain), masterVol: session.masterVol ?? 0.75,
         playing: false, beat: 0, bar: 1, owner: {}, queue: {},
         pos: session.tracks.map(() => null), anchor, focus: null,
         clipLoadRevision: st.clipLoadRevision + 1,
@@ -879,7 +880,7 @@ export function resetSeqStore(session: SessionDoc = defaultSession()): void {
     solo: {},
     quant: '1 BAR',
     trackVol: initialSession.tracks.map((t) => t.gain),
-    masterVol: 0.75,
+    masterVol: initialSession.masterVol ?? 0.75,
     masterFx: masterFxParams(session.masterFx),
     masterFxOpen: false,
     drumFxOpen: false,
