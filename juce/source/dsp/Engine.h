@@ -13,6 +13,7 @@
 #include "NoteSeq.h"
 #include "Params.h"
 #include "Wavetables.h"
+#include "DriveOs.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -86,7 +87,7 @@ struct FilterCore {
     int    ftype = 0; bool twoPole = false;
     double svf[8]  = {0};   // 2 stages x 2 ch x (ic1, ic2)
     double fmt[12] = {0};   // formant: 2 ch x 3 bands x (s1, s2)
-    double satXL = 0, satXR = 0;       // ADAA drive: previous input per channel
+    DriveOs2 osL, osR;                 // 2x drive oversampler + ADAA history per channel
     double drive = 0;                  // ADAA drive amount for this run
     double driveMix = 0, driveMixTarget = 0; // dry <-> ADAA transition state
     double cutSm = 0;

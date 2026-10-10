@@ -59,6 +59,65 @@ function adaaInput(x) {
   return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
 }
 
+// 2x oversampler for the in-voice drive saturator. Only the nonlinearity runs
+// at 2x (interpolate -> ADAA tanh at the high rate -> decimate); the SVF stays
+// at the base rate. Both converters are the polyphase IIR half-band that
+// juce/source/dsp/DriveOs.h documents: allpass branches A0 = {c0, c2, c4} and
+// A1 = {c1, c3}. While the saturator is idle and the stage has faded out, the
+// input is returned unchanged (bit-identical to a voice without the stage); the
+// stage fades in and out over DRIVE_OS_RAMP_SEC with a linear crossfade.
+const DRIVE_OS_COEF = new Float64Array([
+  0.058131122888383423, 0.21191463147606193, 0.4170395803350932,
+  0.63844438482644794, 0.87095859811277021]);
+const DRIVE_OS_RAMP_SEC = 0.004;
+// Allpass state, (x1, y1) pairs: u0 at 0,2,4; u1 at 6,8; d0 at 10,12,14; d1 at 16,18.
+function makeDriveOs() {
+  return {
+    s: new Float64Array(20), dprev: 0,
+    xp: 0,   // previous high-rate ADAA input
+    F: 0,    // kF * lcosh(dg * xp), valid while the saturator is active
+    w: 0,    // stage weight: 0 = bypass, 1 = stage
+  };
+}
+function resetDriveOs(o) { o.s.fill(0); o.dprev = 0; o.xp = 0; o.F = 0; o.w = 0; }
+function copyDriveOs(d, s) { d.s.set(s.s); d.dprev = s.dprev; d.xp = s.xp; d.F = s.F; d.w = s.w; }
+function driveOsAp(s, i, a, x) {
+  const y = a * (x - s[i + 1]) + s[i];
+  s[i] = x; s[i + 1] = y;
+  return y;
+}
+function driveOsSat(o, a, xpv, dg, dcomp, kF) {
+  const dx = a - xpv;
+  const F = kF * lcosh(dg * a);
+  // |dx| tiny -> ADAA is numerically unstable; fall back to midpoint tanh.
+  const r = dx > 1e-5 || dx < -1e-5 ? (F - o.F) / dx : dcomp * Math.tanh(dg * 0.5 * (a + xpv));
+  o.F = F;
+  return r;
+}
+// One base-rate sample. engage: the stage belongs in the path; satOn: the
+// saturator runs with dry/wet mix m.
+function driveOsStep(o, x, engage, satOn, m, wStep, dg, dcomp, kF) {
+  const target = engage ? 1 : 0;
+  if (o.w < target) o.w = Math.min(target, o.w + wStep);
+  else if (o.w > target) o.w = Math.max(target, o.w - wStep);
+  if (o.w <= 0 && !engage) { o.xp = adaaInput(x); return x; }
+  const s = o.s, C = DRIVE_OS_COEF;
+  const u0 = driveOsAp(s, 4, C[4], driveOsAp(s, 2, C[2], driveOsAp(s, 0, C[0], x)));
+  const u1 = driveOsAp(s, 8, C[3], driveOsAp(s, 6, C[1], x));
+  const a0 = adaaInput(u0), a1 = adaaInput(u1);
+  let o0 = a0, o1 = a1;
+  if (satOn) {
+    o0 = a0 + m * (driveOsSat(o, a0, o.xp, dg, dcomp, kF) - a0);
+    o1 = a1 + m * (driveOsSat(o, a1, a0, dg, dcomp, kF) - a1);
+  }
+  o.xp = a1;
+  const da = driveOsAp(s, 14, C[4], driveOsAp(s, 12, C[2], driveOsAp(s, 10, C[0], o0)));
+  const db = driveOsAp(s, 18, C[3], driveOsAp(s, 16, C[1], o1));
+  const y = 0.5 * (da + o.dprev);
+  o.dprev = db;
+  return o.w >= 1 ? y : x + o.w * (y - x);
+}
+
 // One-pole coefficient for n samples at time constant tauSr (in samples).
 function smoothCoef(n, tauSr) {
   return 1 - Math.exp(-n / tauSr);
@@ -763,7 +822,7 @@ class BassFx {
       const og = this.headroom.ott.gainFor(l, r);
       l *= og; r *= og;
       if (this.metering) this.meterEnergy[2] += 0.5 * (l * l + r * r);
-      this.comp.processSample(l, r);
+      this.comp.processSample(l, r, key ? key[i] : 0);
       l = this.comp.l; r = this.comp.r;
       if (this.metering) {
         this.meterEnergy[3] += 0.5 * (l * l + r * r);
@@ -914,6 +973,7 @@ class BassFx {
 class BassProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
+    subSquareTable(); // build the sub-square table now, not on the audio thread
     this.p = Object.create(null);
     this.tables = [];
     this.pats = new Uint8Array(NPATTERNS * STEPS * STEP_STRIDE);
@@ -945,7 +1005,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.semiTarget = 0;
     this.fenvT = 1e9; // samples since (non-slid) trigger
     this.ampStage = 0; // 0 idle · 1 att · 2 dec/sus · 3 rel
-    this.ampLevel = 0;
+    this.ampLevel = 0; this.ampSm = 0;
     this.held = []; // keyboard stack, last = current
 
     // osc state
@@ -966,11 +1026,14 @@ class BassProcessor extends AudioWorkletProcessor {
     // filter state
     this.svf = new Float64Array(8);
     this.cutSm = 0; this.curCut = 0;
-    this.cutTarget = 0; this.cutPrev = -1; // chunk cutoff ramp
-    this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
+    this.cutPrev = -1; // previous chunk's smoothed base cutoff
+    this.cutSub = new Float64Array(8); // per-sub-block cutoff incl. envelope
+    this.nSub = 0;
+    this.osL = makeDriveOs(); this.osR = makeDriveOs(); this.adaaMix = 0;
     this.ftype = 1; this.twoPole = true;
     this.k1 = 0; this.k2 = 0;
     this.accSm = 0; // ramped accent amount (0..1)
+    this.gainSm = -1; // slewed amp gain (-1 = new note from silence)
     this.lfoClock = new LfoClock();
     this.shVal = 0; this.shPhase = -1;
     this.rngState = 0x9e3779b9; // seeded xorshift — renders are reproducible
@@ -1053,6 +1116,7 @@ class BassProcessor extends AudioWorkletProcessor {
       case 'play':
         if (this.hosted) break; // conductor owns the transport
         this.playing = true; this.step = -1; this.chainPos = 0;
+        this.polyK = 0;
         this.samplesToNext = 0; this.samplesToGateOff = -1; this.songPos = 0;
         this.held.length = 0;
         break;
@@ -1208,6 +1272,7 @@ class BassProcessor extends AudioWorkletProcessor {
       // position is derived from the anchor, never restarted at step 0.
       this.clipStep = this.clipPhase(Math.round) - 1;
       this.clipToNext = 0;
+      this.polyClipArm();
       this.songPos = Math.max(0, currentFrame - this.hostAnchor); // bar-locked LFO follows the global clock
       this.port.postMessage({ t: 'clipstart', frame: currentFrame });
     }
@@ -1260,7 +1325,7 @@ class BassProcessor extends AudioWorkletProcessor {
   // ---------- voice control ----------
   clipArpFire() {
     const a = this.clip.arp;
-    const s = (this.clipStep + 1) % STEPS;
+    const s = (this.clipStep + 1) % a.notes.length, r = s % STEPS;
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = 60 / bpm * a.rate * sampleRate;
     const swing = Math.max(0, Math.min(1, this.hostSwing || 0));
@@ -1288,6 +1353,10 @@ class BassProcessor extends AudioWorkletProcessor {
     this.semi = semi;
     this.semiTarget = semi;
     this.fenvT = 0;
+    // A note from silence starts at its own gain. A note over a still-sounding
+    // voice ramps from the old gain — an accent→plain step would otherwise
+    // halve the running waveform in one sample (click).
+    if (this.ampStage === 0) this.gainSm = -1;
     this.ampStage = 1;
     this.accSm = this.acc ? 1 : 0; // a fresh note starts at its accent level
   }
@@ -1318,11 +1387,11 @@ class BassProcessor extends AudioWorkletProcessor {
   // it. Leaving phases, the DC blocker or the ramp history behind makes the
   // first block after a panic depend on what played before it.
   kill() {
-    this.gate = false; this.acc = false; this.ampStage = 0; this.ampLevel = 0;
+    this.gate = false; this.acc = false; this.ampStage = 0; this.ampLevel = 0; this.ampSm = 0;
     this.fenvT = 1e9;
-    this.svf.fill(0); this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
-    this.posSm = -1; this.cutSm = 0; this.cutPrev = -1; this.cutTarget = 0;
-    this.accSm = 0;
+    this.svf.fill(0); resetDriveOs(this.osL); resetDriveOs(this.osR); this.adaaMix = 0;
+    this.posSm = -1; this.cutSm = 0; this.cutPrev = -1;
+    this.accSm = 0; this.gainSm = -1;
     this.phases.fill(0);
     this.subPhase = 0; this.subIncPrev = -1;
     this.havePrev = false; this.pOff0 = -1; this.pUni = 0;
@@ -1370,20 +1439,20 @@ class BassProcessor extends AudioWorkletProcessor {
     const bpm = Math.max(60, Math.min(200, this.p['seq.bpm'] || 138));
     if (this.arp) {
       const a = this.arp;
-      const s = (this.step + 1) % STEPS;
+      const s = (this.step + 1) % a.notes.length, r = s % STEPS;
       const dur = 60 / bpm * a.rate * sampleRate;
       const swing = Math.max(0, Math.min(1, this.p['master.swing'] || 0));
       const interval = dur * (1 + (s % 2 ? -1 : 1) * swing * SWING_MAX);
       let semi = -100, slide = false, acc = false;
-      if (a.hits[s] && a.notes[s] >= 0) {
+      if (a.hits[r] && a.notes[s] >= 0) {
         semi = a.notes[s] - ROOT_MIDI;
-        acc = !!a.accents[s];
-        slide = !!a.slides[s] && this.step >= 0 && this.gate;
+        acc = !!a.accents[r];
+        slide = !!a.slides[r] && this.step >= 0 && this.gate;
         if (slide) this.glideTo(semi, acc);
         else this.noteOn(semi, acc);
-        const next = (s + 1) % STEPS;
+        const next = (s + 1) % a.notes.length;
         // A slide belongs to the destination step, matching BL-1's editor.
-        this.samplesToGateOff = a.hits[next] && a.notes[next] >= 0 && a.slides[next]
+        this.samplesToGateOff = a.hits[next % STEPS] && a.notes[next] >= 0 && a.slides[next % STEPS]
           ? -1 : interval * a.gate;
       } else {
         this.release(); this.samplesToGateOff = -1;
@@ -1640,15 +1709,31 @@ class BassProcessor extends AudioWorkletProcessor {
     const lfo = (this.playing || this.clip) ? this.lfoValue() * Math.min(1, Math.max(0, p['lfo.depth'])) : 0;
     const track = Math.min(1, Math.max(0, p['flt.track']));
     const key = ((noteAbs - KEYTRACK_REF) / 12) * track;
-    const oct = p['flt.env'] * env * FENV_OCT + lfo * LFO_OCT + key;
+    const oct = lfo * LFO_OCT + key;
 
-    let fc = p['flt.cut'] * Math.pow(2, oct);
-    if (!Number.isFinite(fc)) fc = 20;
-    fc = Math.min(sampleRate * 0.45, Math.max(20, fc));
-    if (this.cutSm <= 0) this.cutSm = fc;
-    this.cutSm += (fc - this.cutSm) * smoothCoef(n, CUT_TAU * sampleRate);
-    this.curCut = this.cutSm;
-    this.cutTarget = this.cutSm; // runFilter ramps cutPrev -> cutTarget
+    // The knob / key / LFO part of the cutoff is smoothed per chunk (zipper
+    // protection). The envelope part is NOT: it is evaluated every FLT_SUB
+    // samples and applied after the smoother, so the accent snap keeps its
+    // attack. The ramp end for sub-block j is the envelope at that sub-block's
+    // end, so the cutoff sweep is not a chunk late.
+    let base = p['flt.cut'] * Math.pow(2, oct);
+    if (!Number.isFinite(base) || base <= 0) base = 20;
+    if (this.cutSm <= 0) this.cutSm = base;
+    this.cutSm += (base - this.cutSm) * smoothCoef(n, CUT_TAU * sampleRate);
+    const b0 = this.cutPrev > 0 ? this.cutPrev : this.cutSm;
+    const envOct = p['flt.env'] * FENV_OCT;
+    this.nSub = 0;
+    for (let at = 0; at < n && this.nSub < this.cutSub.length; at += FLT_SUB) {
+      const e = Math.min(FLT_SUB, n - at) + at;
+      const t = this.fenvT + e;
+      let ev = t < att ? t / att : Math.exp(-4.5 * (t - att) / dec);
+      ev *= 1 + accBoost;
+      let fc = (b0 + (this.cutSm - b0) * (e / n)) * Math.pow(2, envOct * ev);
+      if (!Number.isFinite(fc)) fc = 20;
+      this.cutSub[this.nSub++] = Math.min(sampleRate * 0.45, Math.max(20, fc));
+    }
+    this.cutPrev = this.cutSm;
+    this.curCut = this.nSub > 0 ? this.cutSub[this.nSub - 1] : this.cutSm;
     const res = Math.min(0.999, Math.max(0, p['flt.res']));
 
     const ftype = p['flt.type'] | 0;
@@ -1656,7 +1741,7 @@ class BassProcessor extends AudioWorkletProcessor {
       // A type switch changes what the states mean — the LP24 second stage in
       // particular keeps ringing into the new response. Start clean.
       this.svf.fill(0);
-      this.satXL = 0; this.satXR = 0; this.adaaMix = 0;
+      resetDriveOs(this.osL); resetDriveOs(this.osR); this.adaaMix = 0;
     }
     this.ftype = ftype;
     this.twoPole = ftype === 1;
@@ -1734,63 +1819,37 @@ class BassProcessor extends AudioWorkletProcessor {
   // value and the coefficients are recomputed every FLT_SUB samples — holding
   // one cutoff per chunk puts an audible step on every filter-env sweep.
   runFilter(inL, inR, outL, outR, drive, n, mono) {
+    // Drive: 2x oversampled ADAA tanh. The stage is in the path only while the
+    // saturator is active; at drive 0 it is a bit-exact copy.
     const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
     const adaaStart = this.adaaMix;
-    if (adaaTarget > 0 || adaaStart > 1e-6) {
-      const dg = 1 + drive * 7;
-      const dcomp = 1 / Math.pow(dg, 0.55);
-      const kF = dcomp / dg;
-      let xpL = this.satXL;
-      let FpL = kF * lcosh(dg * xpL);
-      if (mono) {
-        for (let i = 0; i < n; i++) {
-          const aL = inL[i];
-          const safeL = adaaInput(aL);
-          const dxL = safeL - xpL;
-          const FL = kF * lcosh(dg * safeL);
-          const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (safeL + xpL));
-          const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
-          outL[i] = aL + m * (satL - aL);
-          xpL = safeL; FpL = FL;
-        }
-        this.satXL = xpL; this.satXR = xpL;
-      } else {
-        let xpR = this.satXR;
-        let FpR = kF * lcosh(dg * xpR);
-        for (let i = 0; i < n; i++) {
-          const aL = inL[i], aR = inR[i];
-          const safeL = adaaInput(aL), safeR = adaaInput(aR);
-          const dxL = safeL - xpL;
-          const FL = kF * lcosh(dg * safeL);
-          const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (safeL + xpL));
-          xpL = safeL; FpL = FL;
-          const dxR = safeR - xpR;
-          const FR = kF * lcosh(dg * safeR);
-          const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (safeR + xpR));
-          const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
-          outL[i] = aL + m * (satL - aL);
-          outR[i] = aR + m * (satR - aR);
-          xpR = safeR; FpR = FR;
-        }
-        this.satXL = xpL; this.satXR = xpR;
-      }
-      this.adaaMix = adaaTarget;
-    } else {
-      for (let i = 0; i < n; i++) outL[i] = inL[i];
-      if (!mono) for (let i = 0; i < n; i++) outR[i] = inR[i];
-      if (n > 0) { this.satXL = inL[n - 1]; this.satXR = mono ? inL[n - 1] : inR[n - 1]; }
+    const active = adaaTarget > 0 || adaaStart > 1e-6;
+    const dg = active ? 1 + drive * 7 : 1;
+    const dcomp = active ? 1 / Math.pow(dg, 0.55) : 1;
+    const kF = dcomp / dg;
+    const osL = this.osL, osR = this.osR;
+    if (active) {
+      osL.F = kF * lcosh(dg * osL.xp);
+      if (!mono) osR.F = kF * lcosh(dg * osR.xp);
     }
+    const wStep = 1 / (DRIVE_OS_RAMP_SEC * sampleRate);
+    for (let i = 0; i < n; i++) {
+      const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
+      outL[i] = driveOsStep(osL, inL[i], active, active, m, wStep, dg, dcomp, kF);
+      if (!mono) outR[i] = driveOsStep(osR, inR[i], active, active, m, wStep, dg, dcomp, kF);
+    }
+    // A mono chunk leaves the right history equal to the left one.
+    if (mono) copyDriveOs(osR, osL);
+    this.adaaMix = active ? adaaTarget : 0;
 
     const ftype = this.ftype;
     const mode = ftype === 1 ? 0 : ftype;
     const k1 = this.k1, k2 = this.k2;
     const F = this.svf;
-    const c1c = this.cutTarget;
-    const c0c = this.cutPrev > 0 ? this.cutPrev : c1c;
     const chans = mono ? 1 : 2;
     for (let at = 0; at < n; at += FLT_SUB) {
       const m = Math.min(FLT_SUB, n - at);
-      const cut = c0c + (c1c - c0c) * ((at + m) / n);
+      const cut = this.cutSub[Math.min((at / FLT_SUB) | 0, this.nSub - 1)];
       const gC = Math.tan((Math.PI * cut) / sampleRate);
       const a1 = 1 / (1 + gC * (gC + k1));
       const a2 = gC * a1, a3 = gC * a2;
@@ -1812,14 +1871,32 @@ class BassProcessor extends AudioWorkletProcessor {
       outR.set(outL.subarray(0, n));
       F[2] = F[0]; F[3] = F[1]; F[6] = F[4]; F[7] = F[5];
     }
-    this.cutPrev = c1c;
   }
 
   // ---------- render ----------
+  // After the amp closes, the DC blocker still holds the negated DC offset of
+  // the last note. Let it ring out on silent input; cutting it at voice end clicked.
+  dcTail(L, R, off, n) {
+    this.ampSm = 0;
+    if (Math.abs(this.dcyL) + Math.abs(this.dcyR) + Math.abs(this.dcxL) + Math.abs(this.dcxR) < 1e-9) {
+      this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
+      return;
+    }
+    for (let i = 0; i < n; i++) {
+      this.dcyL = this.dcR * this.dcyL - this.dcxL; this.dcxL = 0;
+      this.dcyR = this.dcR * this.dcyR - this.dcxR; this.dcxR = 0;
+      L[off + i] += this.dcyL;
+      R[off + i] += this.dcyR;
+    }
+  }
+
   renderVoice(L, R, off, n) {
     const p = this.p;
-    if (this.ampStage === 0 && !this.gate) {
+    // The voice sounds until the slewed amp level is silent too: a release
+    // shorter than AMP_SLEW reaches ampStage 0 while ampSm still lags.
+    if (this.ampStage === 0 && !this.gate && this.ampSm < 1e-4) {
       // still advance the LFO clock
+      this.dcTail(L, R, off, n);
       return;
     }
     const tmpL = this.tmpL, tmpR = this.tmpR;
@@ -1867,9 +1944,11 @@ class BassProcessor extends AudioWorkletProcessor {
     const accAmt = Math.min(1, Math.max(0, p['acc.amt']));
     const gBase = this.vel * 0.9;
     const gAcc = gBase * accAmt * ACC_GAIN;
-    const g0 = gBase + gAcc * acc0;
-    const dG = (gAcc * (this.accSm - acc0)) / n;
+    const g1 = gBase + gAcc * this.accSm;
+    if (this.gainSm < 0) this.gainSm = gBase + gAcc * acc0;
+    const gainK = 1 - Math.exp(-1 / (GAIN_SLEW * sampleRate));
     const dcR = this.dcR;
+    const slewK = 1 - Math.exp(-1 / (AMP_SLEW * sampleRate));
 
     for (let i = 0; i < n; i++) {
       switch (this.ampStage) {
@@ -1886,7 +1965,9 @@ class BassProcessor extends AudioWorkletProcessor {
           break;
         default: this.ampLevel = 0;
       }
-      const amp = this.ampLevel * (g0 + dG * (i + 1));
+      this.ampSm += (this.ampLevel - this.ampSm) * slewK;
+      this.gainSm += (g1 - this.gainSm) * gainK;
+      const amp = this.ampSm * this.gainSm;
       const sl = this.fL[i] * amp, sr = this.fR[i] * amp;
       const yL = sl - this.dcxL + dcR * this.dcyL;
       const yR = sr - this.dcxR + dcR * this.dcyR;

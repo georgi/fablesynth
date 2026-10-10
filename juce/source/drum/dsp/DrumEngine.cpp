@@ -1110,37 +1110,33 @@ void DrumEngine::runFilter(FilterState& fs, const float* inL, const float* inR,
                            float* outL, float* outR, double drive, int n) const {
     const double adaaTarget = clampd(drive / DR_ADAA_FADE_WIDTH, 0.0, 1.0);
     const double adaaStart = fs.adaaMix;
-    if (adaaTarget > 0 || adaaStart > 1e-6) {
-        const double dg = 1 + drive * 7;
-        const double dcomp = 1 / std::pow(dg, 0.55);
-        const double kF = dcomp / dg;
-        double xpL = fs.satXL, xpR = fs.satXR;
-        double FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
-        for (int i = 0; i < n; i++) {
-            const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
-            const double dxL = aL - xpL;
-            const double FL = kF * lcosh(dg * aL);
-            const double satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL
-                                                          : dcomp * std::tanh(dg * 0.5 * (aL + xpL));
-            const double dxR = aR - xpR;
-            const double FR = kF * lcosh(dg * aR);
-            const double satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR
-                                                          : dcomp * std::tanh(dg * 0.5 * (aR + xpR));
-            const double mix = adaaStart + (adaaTarget - adaaStart) * ((double)(i + 1) / std::max(1, n));
-            outL[i] = (float)(aL + mix * (satL - aL));
-            xpL = aL; FpL = FL;
-            outR[i] = (float)(aR + mix * (satR - aR));
-            xpR = aR; FpR = FR;
-        }
-        fs.satXL = xpL; fs.satXR = xpR;
-        fs.adaaMix = adaaTarget;
-    } else {
-        for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) {
-            fs.satXL = adaaInput(inL[n - 1]); fs.satXR = adaaInput(inR[n - 1]);
-        }
-        fs.adaaMix = 0;
+    // The drive stage (2x oversampler, see DriveOs.h) is in the path only while
+    // the saturator is active. At drive 0 with the ramp settled it is a bit-exact
+    // copy, so the drive-off sound is untouched.
+    const bool active = adaaTarget > 0 || adaaStart > 1e-6;
+    double dg = 1, dcomp = 1, kF = 1, FpL = 0, FpR = 0;
+    if (active) {
+        dg = 1 + drive * 7;
+        dcomp = 1 / std::pow(dg, 0.55);
+        kF = dcomp / dg;
+        FpL = kF * lcosh(dg * fs.osL.xp); FpR = kF * lcosh(dg * fs.osR.xp);
     }
+    auto sat = [&](double& Fp, double a, double xpv) {
+        const double dx = a - xpv, F = kF * lcosh(dg * a);
+        const double r = dx > 1e-5 || dx < -1e-5 ? (F - Fp) / dx
+                                                 : dcomp * std::tanh(dg * 0.5 * (a + xpv));
+        Fp = F;
+        return r;
+    };
+    auto satL = [&](double a, double xpv) { return sat(FpL, a, xpv); };
+    auto satR = [&](double a, double xpv) { return sat(FpR, a, xpv); };
+    const double wStep = 1.0 / (kDriveOsRampSec * sr_);
+    for (int i = 0; i < n; i++) {
+        const double mix = adaaStart + (adaaTarget - adaaStart) * ((double)(i + 1) / std::max(1, n));
+        outL[i] = (float)fs.osL.run(inL[i], active, active, mix, wStep, satL);
+        outR[i] = (float)fs.osR.run(inR[i], active, active, mix, wStep, satR);
+    }
+    fs.adaaMix = active ? adaaTarget : 0;
 
     // Finding 7: cutoff ramps from the previous chunk's value; coefficients
     // recomputed per <=32-sample sub-block.

@@ -358,14 +358,17 @@ private:
     // filter state
     double svf_[8] = {0};
     double cutSm_ = 0, curCut_ = 0;
-    double cutTarget_ = 0, cutPrev_ = -1;   // chunk cutoff ramp (Finding 7)
-    double satXL_ = 0, satXR_ = 0;
+    double cutPrev_ = -1;                    // previous chunk's smoothed base cutoff
+    static constexpr int kMaxSub = 8;        // >= ceil(128 / BL_FLT_SUB)
+    double cutSub_[kMaxSub] = {0};           // per-sub-block cutoff incl. envelope
+    int nSub_ = 0;
+    DriveOs2 osL_, osR_;                     // 2x drive oversampler + ADAA history
     double driveMix_ = 0;                    // dry <-> ADAA transition state
     int    ftype_ = 1; bool twoPole_ = true;
     double k1_ = 0, k2_ = 0;
     double fenvVal_ = 0;
     bool   mono_ = false, monoPrev_ = false;   // Finding B8: L == R fast path
-    double gainPrev_ = -1;                     // Finding B2: accent gain ramp
+    double gainSm_ = -1;                       // Finding B2: slewed accent gain (-1 = new note)
     LfoClock lfoClock_;
     double shVal_ = 0; long shPhase_ = -1;
     double dcxL_ = 0, dcxR_ = 0, dcyL_ = 0, dcyR_ = 0;

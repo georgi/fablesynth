@@ -57,24 +57,17 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2 * a)) - LN2;
 }
 
-// Keep ADAA arithmetic finite for malformed automation or an unstable
-// upstream graph. This envelope is well above factory-preset source levels.
-static constexpr double ADAA_INPUT_LIMIT = 16.0;
+// The drive input is clamped to kDriveOsInputLimit (DriveOs.h) to keep ADAA
+// arithmetic finite for malformed automation or an unstable upstream graph.
 static constexpr double ADAA_FADE_WIDTH = 0.1;
-static inline double adaaInput(double x) {
-    return std::isfinite(x) ? std::clamp(x, -ADAA_INPUT_LIMIT, ADAA_INPUT_LIMIT) : 0.0;
-}
-static inline double adaaTanh(double x, double xp, double dg, double dcomp) {
-    const double dx = x - xp;
-    if (std::abs(dx) <= 1.0e-5 / dg)
-        return dcomp * std::tanh(dg * 0.5 * (x + xp));
-    const double kF = dcomp / dg;
-    return (kF * (lcosh(dg * x) - lcosh(dg * xp))) / dx;
-}
 
-// Voice-steal fade length to -80 dB. Chosen so the coefficient at 48 kHz is
-// 0.12007 — the legacy fixed constant to five digits (finding J6).
-static constexpr double STEAL_FADE_SEC = 0.0015;
+// Voice-steal fade length to -80 dB (finding J6). 4 ms: shorter fades leave a
+// step on low, dense material (pads, sines) that a 1 ms attack does not; the
+// added latency of the stolen note is about this long.
+static constexpr double STEAL_FADE_SEC = 0.004;
+// Declick slew on the amp env (s). Rounds the corners of a fast attack,
+// release or steal fade without audibly softening the transient.
+static constexpr double AMP_SLEW_SEC = 0.0003;
 
 // ---------------- Env ----------------
 void Env::set(double a, double d, double sus, double r, double sr) {
@@ -879,23 +872,32 @@ void Engine::runFilter(FilterState& fs, FilterCore& c, bool writeComb,
     const double drive = c.drive;
     const double mix0 = c.driveMix;
     const double mix1 = c.driveMixTarget;
-    if (mix0 > 0.0 || mix1 > 0.0) {
-        double dg = 1 + drive * 7;
-        double dcomp = 1 / std::pow(dg, 0.55);
-        double xpL = c.satXL, xpR = c.satXR;
-        for (int i = 0; i < n; i++) {
-            const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
-            const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
-            const double sL = adaaTanh(aL, xpL, dg, dcomp);
-            const double sR = adaaTanh(aR, xpR, dg, dcomp);
-            outL[i] = (float)(aL + m * (sL - aL));
-            outR[i] = (float)(aR + m * (sR - aR));
-            xpL = aL; xpR = aR;
-        }
-        c.satXL = xpL; c.satXR = xpR;
-    } else {
-        for (int i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-        if (n > 0) { c.satXL = adaaInput(inL[n - 1]); c.satXR = adaaInput(inR[n - 1]); }
+    // The drive stage (2x oversampler, see DriveOs.h) is in the path only while
+    // the saturator is active. At drive 0 with the ramp settled it is a bit-exact
+    // copy, so the drive-off sound is untouched.
+    const bool active = mix0 > 0.0 || mix1 > 0.0;
+    double dg = 1, dcomp = 1, kF = 1, FpL = 0, FpR = 0;
+    if (active) {
+        dg = 1 + drive * 7;
+        dcomp = 1 / std::pow(dg, 0.55);
+        kF = dcomp / dg;
+        FpL = lcosh(dg * c.osL.xp); FpR = lcosh(dg * c.osR.xp);
+    }
+    const double tiny = 1.0e-5 / dg;
+    auto sat = [&](double& Fp, double a, double xpv) {
+        const double dx = a - xpv, Fa = lcosh(dg * a);
+        const double r = std::abs(dx) <= tiny ? dcomp * std::tanh(dg * 0.5 * (a + xpv))
+                                              : (kF * (Fa - Fp)) / dx;
+        Fp = Fa;
+        return r;
+    };
+    auto satL = [&](double a, double xpv) { return sat(FpL, a, xpv); };
+    auto satR = [&](double a, double xpv) { return sat(FpR, a, xpv); };
+    const double wStep = 1.0 / (kDriveOsRampSec * sr_);
+    for (int i = 0; i < n; i++) {
+        const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
+        outL[i] = (float)c.osL.run(inL[i], active, active, m, wStep, satL);
+        outR[i] = (float)c.osR.run(inR[i], active, active, m, wStep, satR);
     }
     c.driveMix = mix1;
 

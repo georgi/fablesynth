@@ -20,6 +20,7 @@
 // Outputs: one stereo bus per OUT_NAMES entry (MAIN, AUX 1..4).
 
 const NPADS = 16;
+const CAPTURE_LEN = 4096;
 const MAXUNI = 7;
 const STEPS = 16;
 const NPATTERNS = 4;
@@ -86,6 +87,65 @@ function lcosh(z) {
 }
 function adaaInput(x) {
   return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
+}
+
+// 2x oversampler for the in-voice drive saturator. Only the nonlinearity runs
+// at 2x (interpolate -> ADAA tanh at the high rate -> decimate); the SVF stays
+// at the base rate. Both converters are the polyphase IIR half-band that
+// juce/source/dsp/DriveOs.h documents: allpass branches A0 = {c0, c2, c4} and
+// A1 = {c1, c3}. While the saturator is idle and the stage has faded out, the
+// input is returned unchanged (bit-identical to a voice without the stage); the
+// stage fades in and out over DRIVE_OS_RAMP_SEC with a linear crossfade.
+const DRIVE_OS_COEF = new Float64Array([
+  0.058131122888383423, 0.21191463147606193, 0.4170395803350932,
+  0.63844438482644794, 0.87095859811277021]);
+const DRIVE_OS_RAMP_SEC = 0.004;
+// Allpass state, (x1, y1) pairs: u0 at 0,2,4; u1 at 6,8; d0 at 10,12,14; d1 at 16,18.
+function makeDriveOs() {
+  return {
+    s: new Float64Array(20), dprev: 0,
+    xp: 0,   // previous high-rate ADAA input
+    F: 0,    // kF * lcosh(dg * xp), valid while the saturator is active
+    w: 0,    // stage weight: 0 = bypass, 1 = stage
+  };
+}
+function resetDriveOs(o) { o.s.fill(0); o.dprev = 0; o.xp = 0; o.F = 0; o.w = 0; }
+function copyDriveOs(d, s) { d.s.set(s.s); d.dprev = s.dprev; d.xp = s.xp; d.F = s.F; d.w = s.w; }
+function driveOsAp(s, i, a, x) {
+  const y = a * (x - s[i + 1]) + s[i];
+  s[i] = x; s[i + 1] = y;
+  return y;
+}
+function driveOsSat(o, a, xpv, dg, dcomp, kF) {
+  const dx = a - xpv;
+  const F = kF * lcosh(dg * a);
+  // |dx| tiny -> ADAA is numerically unstable; fall back to midpoint tanh.
+  const r = dx > 1e-5 || dx < -1e-5 ? (F - o.F) / dx : dcomp * Math.tanh(dg * 0.5 * (a + xpv));
+  o.F = F;
+  return r;
+}
+// One base-rate sample. engage: the stage belongs in the path; satOn: the
+// saturator runs with dry/wet mix m.
+function driveOsStep(o, x, engage, satOn, m, wStep, dg, dcomp, kF) {
+  const target = engage ? 1 : 0;
+  if (o.w < target) o.w = Math.min(target, o.w + wStep);
+  else if (o.w > target) o.w = Math.max(target, o.w - wStep);
+  if (o.w <= 0 && !engage) { o.xp = adaaInput(x); return x; }
+  const s = o.s, C = DRIVE_OS_COEF;
+  const u0 = driveOsAp(s, 4, C[4], driveOsAp(s, 2, C[2], driveOsAp(s, 0, C[0], x)));
+  const u1 = driveOsAp(s, 8, C[3], driveOsAp(s, 6, C[1], x));
+  const a0 = adaaInput(u0), a1 = adaaInput(u1);
+  let o0 = a0, o1 = a1;
+  if (satOn) {
+    o0 = a0 + m * (driveOsSat(o, a0, o.xp, dg, dcomp, kF) - a0);
+    o1 = a1 + m * (driveOsSat(o, a1, a0, dg, dcomp, kF) - a1);
+  }
+  o.xp = a1;
+  const da = driveOsAp(s, 14, C[4], driveOsAp(s, 12, C[2], driveOsAp(s, 10, C[0], o0)));
+  const db = driveOsAp(s, 18, C[3], driveOsAp(s, 16, C[1], o1));
+  const y = 0.5 * (da + o.dprev);
+  o.dprev = db;
+  return o.w >= 1 ? y : x + o.w * (y - x);
 }
 
 // 4-point cubic Hermite, the read JUCE uses. Linear reads left 10–20 dB more
@@ -533,6 +593,7 @@ class Freeverb {
 class PadFx {
   constructor(sr) {
     this.sr = sr;
+    this.keySource = 0; this.keyL = null; this.keyR = null; // COMP side-chain
     this.lab = new globalThis.FableLabFx(sr);
     this.headroom = {};
     for (const stage of ['input', 'ott', 'comp', 'drive', 'chorus', 'delay']) {
@@ -757,7 +818,7 @@ class PadFx {
     if (this.meterSelected) for (let i = 0; i < n; i++) this.meterOtt += 0.5 * (L[i] * L[i] + R[i] * R[i]);
     this.headroom.ott.process(L, R, n);
     if (this.meterSelected) for (let i = 0; i < n; i++) this.meterCompIn += 0.5 * (L[i] * L[i] + R[i] * R[i]);
-    this.comp.process(L, R, n);
+    this.comp.process(L, R, n, this.keyL, this.keyR);
     if (this.meterSelected) for (let i = 0; i < n; i++) this.meterCompOut += 0.5 * (L[i] * L[i] + R[i] * R[i]);
     this.headroom.comp.process(L, R, n);
 
@@ -1021,7 +1082,7 @@ function makeFilterState() {
     ftypeOld: 0, twoPoleOld: false,
     xfLeft: 0, xfLen: 1,
     cutSm: 0,
-    satXL: 0, satXR: 0, adaaMix: 0,
+    osL: makeDriveOs(), osR: makeDriveOs(), adaaMix: 0,
     ftype: 0, twoPole: false,
     a1: 0, a2: 0, a3: 0, k1: 0,
   };
@@ -1032,7 +1093,7 @@ class PadVoice {
     this.active = false;
     this.vel = 1; this.rand = 0;
     this.t = 0;
-    this.ampLevel = 0; this.choking = false;
+    this.ampLevel = 0; this.choking = false; this.chokeSm = 0;
     this.oA = makeOscState(); this.sample = makeSampleState();
     this.f = makeFilterState();
     this.noiseY = 0;
@@ -1049,14 +1110,14 @@ class PadVoice {
     this.oA.pData = null;
     this.sample.pos = -1; this.sample.index = -1; this.sample.done = false;
     this.sample.havePrev = false;
-    this.f.svf.fill(0); this.f.cutSm = 0; this.f.satXL = 0; this.f.satXR = 0; this.f.adaaMix = 0;
+    this.f.svf.fill(0); this.f.cutSm = 0; resetDriveOs(this.f.osL); resetDriveOs(this.f.osR); this.f.adaaMix = 0;
     this.f.xfLeft = 0;
     this.noiseY = 0;
     this.ringPhase = 0.25;
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
   }
 
-  choke() { if (this.active) this.choking = true; }
+  choke() { if (this.active && !this.choking) { this.choking = true; this.chokeSm = this.ampLevel; } }
   kill() {
     this.active = false; this.choking = false; this.ampLevel = 0;
     this.oA.havePrev = false; this.oA.pData = null;
@@ -1638,15 +1699,18 @@ class DrumProcessor extends AudioWorkletProcessor {
       }
     }
     // Retrigger: park the sounding hit on the tail slot with a choke fade and
-    // start the new one on the freed slot. A retrigger faster than the fade
-    // (<3 ms) drops the older tail — bounded, and below the fade's own level.
+    // start the new one on the freed slot. Two hits inside one fade (~3 ms)
+    // would collide; keep whichever tail is louder (a quiet tail replacing a
+    // loud one would cut it, which clicks). Same policy as DrumEngine::trigger.
     const cur = this.voices[padI];
     if (cur.active && cur.ampLevel > 1e-4) {
       const tail = this.tails[padI];
-      tail.kill();
-      this.tails[padI] = cur;
-      cur.choking = true;
-      this.voices[padI] = tail;
+      if (!tail.active || tail.ampLevel <= cur.ampLevel) {
+        tail.kill();
+        this.tails[padI] = cur;
+        cur.choke();
+        this.voices[padI] = tail;
+      }
     }
     const v = this.voices[padI];
     v.trigger(Math.max(0, Math.min(1, Number.isFinite(vel) ? vel : 1)), this.rng.uni());
@@ -1844,16 +1908,29 @@ class DrumProcessor extends AudioWorkletProcessor {
       }
       const step = step0 + dStep * i;
       const speed = Math.abs(step);
-      let value = read(pos);
+      let value;
       if (speed > 1) {
-        const taps = Math.min(8, Math.ceil(speed) + 1);
-        let average = 0, weightSum = 0;
-        for (let k = 0; k < taps; k++) {
-          const u = k / (taps - 1) - .5;
-          const weight = .5 - .5 * Math.cos(2 * Math.PI * (k + 1) / (taps + 1));
-          average += weight * read(pos + u * speed); weightSum += weight;
+        // Band-limited read, blended in over the first 5% above 1 source
+        // sample per output sample so a pitch envelope crossing it does not
+        // switch readers.
+        const sc = Math.min(speed, SINC_MAX_AST);
+        const inv = SINC_RES / sc;
+        const reach = SINC_HALF * sc;
+        const k0 = Math.ceil(pos - reach), k1 = Math.floor(pos + reach);
+        let acc = 0, wsum = 0;
+        for (let k = k0; k <= k1; k++) {
+          const u = Math.abs(k - pos) * inv;
+          const ti = u | 0;
+          const w = SINC_TABLE[ti] + (u - ti) * (SINC_TABLE[ti + 1] - SINC_TABLE[ti]);
+          acc += w * data[k < 0 ? 0 : k > last ? last : k];
+          wsum += w;
         }
-        value += (average / weightSum - value) * Math.max(0, Math.min(1, speed - 1));
+        const kern = acc / wsum;
+        const mix = Math.min((speed - 1) / (SINC_BLEND - 1), 1);
+        if (mix >= 1) value = kern;
+        else { const h = read(pos); value = h + (kern - h) * mix; }
+      } else {
+        value = read(pos);
       }
 
       const fadeSource = Math.min(Math.max(speed, 1) * EDGE_FADE * sampleRate, half);
@@ -1902,34 +1979,23 @@ class DrumProcessor extends AudioWorkletProcessor {
   }
 
   runFilter(fs, inL, inR, outL, outR, drive, off, n) {
+    // Drive: 2x oversampled ADAA tanh. The stage is in the path only while the
+    // saturator is active; at drive 0 it is a bit-exact copy.
     const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
     const adaaStart = fs.adaaMix;
-    if (adaaTarget > 0 || fs.adaaMix > 1e-6) {
-      const dg = 1 + drive * 7;
-      const dcomp = 1 / Math.pow(dg, 0.55);
-      const kF = dcomp / dg;
-      let xpL = fs.satXL, xpR = fs.satXR;
-      let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
-      for (let i = off; i < off + n; i++) {
-        const aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
-        const dxL = aL - xpL;
-        const FL = kF * lcosh(dg * aL);
-        const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
-        xpL = aL; FpL = FL;
-        const dxR = aR - xpR;
-        const FR = kF * lcosh(dg * aR);
-        const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
-        const m = adaaStart + (adaaTarget - adaaStart) * ((i - off + 1) / n);
-        outL[i] = aL + m * (satL - aL);
-        outR[i] = aR + m * (satR - aR);
-        xpR = aR; FpR = FR;
-      }
-      fs.satXL = xpL; fs.satXR = xpR;
-      fs.adaaMix = adaaTarget;
-    } else {
-      for (let i = off; i < off + n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-      if (n > 0) { fs.satXL = inL[off + n - 1]; fs.satXR = inR[off + n - 1]; }
+    const active = adaaTarget > 0 || adaaStart > 1e-6;
+    const dg = active ? 1 + drive * 7 : 1;
+    const dcomp = active ? 1 / Math.pow(dg, 0.55) : 1;
+    const kF = dcomp / dg;
+    const osL = fs.osL, osR = fs.osR;
+    if (active) { osL.F = kF * lcosh(dg * osL.xp); osR.F = kF * lcosh(dg * osR.xp); }
+    const wStep = 1 / (DRIVE_OS_RAMP_SEC * sampleRate);
+    for (let i = off; i < off + n; i++) {
+      const m = adaaStart + (adaaTarget - adaaStart) * ((i - off + 1) / n);
+      outL[i] = driveOsStep(osL, inL[i], active, active, m, wStep, dg, dcomp, kF);
+      outR[i] = driveOsStep(osR, inR[i], active, active, m, wStep, dg, dcomp, kF);
     }
+    fs.adaaMix = active ? adaaTarget : 0;
 
     // While a type switch is fading, the outgoing type runs on `svfOld` over a
     // copy of the same input and the two are mixed sample by sample.
@@ -2087,6 +2153,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     const panL = Math.cos(panA), panR = Math.sin(panA);
     const dcR = this.dcR;
     const chokeC = smoothCoef(1, CHOKE_TAU * sampleRate);
+    const chokeSlew = smoothCoef(1, CHOKE_SLEW * sampleRate);
 
     // Amp envelope constants hoisted out of the sample loop; the exponential
     // segment advances by a recursive multiply instead of a Math.exp per
@@ -2110,7 +2177,8 @@ class DrumProcessor extends AudioWorkletProcessor {
 
       if (v.choking) {
         v.ampLevel *= 1 - chokeC;
-        if (v.ampLevel < 1e-4) {
+        v.chokeSm += (v.ampLevel - v.chokeSm) * chokeSlew;
+        if (v.chokeSm < 1e-4) {
           v.kill();
           break;
         }
@@ -2132,7 +2200,7 @@ class DrumProcessor extends AudioWorkletProcessor {
           v.ampLevel = 0;
         }
       }
-      const amp = v.ampLevel * velGain * (lg0 + dLg * i);
+      const amp = (v.choking ? v.chokeSm : v.ampLevel) * velGain * (lg0 + dLg * i);
       L[off + i] += yL * amp * panL;
       R[off + i] += yR * amp * panR;
     }

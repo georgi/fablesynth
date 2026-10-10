@@ -785,41 +785,41 @@ void BassEngine::runFilter(const float* inL, const float* inR,
     // Fade the ADAA path in from silence over a small drive interval instead
     // of making the old enable threshold a binary transfer-function switch.
     const double mix1 = clampd(drive / kAdaaFadeWidth, 0.0, 1.0);
-    if (mix0 > 0.0 || mix1 > 0.0) {
-        const double dg = 1 + drive * 7;
-        const double dcomp = 1 / std::pow(dg, 0.55);
-        double xpL = satXL_, xpR = satXR_;
-        if (mono) {
-            for (int i = 0; i < n; i++) {
-                const double aL = adaaInput(inL[i]);
-                const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
-                outL[i] = (float)(aL + m * (adaaTanh(aL, xpL, dg, dcomp) - aL));
-                xpL = aL;
-            }
-            satXL_ = satXR_ = xpL;
-        } else {
-            for (int i = 0; i < n; i++) {
-                const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
-                const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
-                outL[i] = (float)(aL + m * (adaaTanh(aL, xpL, dg, dcomp) - aL));
-                outR[i] = (float)(aR + m * (adaaTanh(aR, xpR, dg, dcomp) - aR));
-                xpL = aL; xpR = aR;
-            }
-            satXL_ = xpL; satXR_ = xpR;
-        }
-    } else {
-        for (int i = 0; i < n; i++) outL[i] = inL[i];
-        if (!mono) for (int i = 0; i < n; i++) outR[i] = inR[i];
-        if (n > 0) { satXL_ = adaaInput(inL[n - 1]); satXR_ = mono ? satXL_ : adaaInput(inR[n - 1]); }
+    // The drive stage (2x oversampler, see DriveOs.h) is in the path only while
+    // the saturator is active. At drive 0 with the ramp settled it is a bit-exact
+    // copy, so the drive-off sound is untouched.
+    const bool active = mix0 > 0.0 || mix1 > 0.0;
+    double dg = 1, dcomp = 1, kF = 1, FpL = 0, FpR = 0;
+    if (active) {
+        dg = 1 + drive * 7;
+        dcomp = 1 / std::pow(dg, 0.55);
+        kF = dcomp / dg;
+        FpL = lcosh(dg * osL_.xp);
+        if (!mono) FpR = lcosh(dg * osR_.xp);
     }
+    const double tiny = 1.0e-5 / dg;
+    auto sat = [&](double& Fp, double a, double xpv) {
+        const double dx = a - xpv, Fa = lcosh(dg * a);
+        const double r = std::abs(dx) <= tiny ? dcomp * std::tanh(dg * 0.5 * (a + xpv))
+                                              : kF * (Fa - Fp) / dx;
+        Fp = Fa;
+        return r;
+    };
+    auto satL = [&](double a, double xpv) { return sat(FpL, a, xpv); };
+    auto satR = [&](double a, double xpv) { return sat(FpR, a, xpv); };
+    const double wStep = 1.0 / (kDriveOsRampSec * sr_);
+    for (int i = 0; i < n; i++) {
+        const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
+        outL[i] = (float)osL_.run(inL[i], active, active, m, wStep, satL);
+        if (!mono) outR[i] = (float)osR_.run(inR[i], active, active, m, wStep, satR);
+    }
+    // A mono chunk leaves the right history equal to the left one.
+    if (mono) osR_ = osL_;
     driveMix_ = mix1;
 
 
-    // Finding 7: cutoff ramps from the previous chunk's value; coefficients
-    // recomputed per <=32-sample sub-block.
-    const double c1c = cutTarget_;
-    const double c0c = cutPrev_ > 0 ? cutPrev_ : c1c;
-
+    // Finding 7: coefficients recomputed per <=32-sample sub-block from the
+    // per-sub-block cutoffs setupFilter prepared.
     // Finding J2: while a filter-type switch is fading, the OLD type keeps
     // running on the copy of the SVF state taken at the switch, over the same
     // post-drive signal, and the two are equal-power mixed. Both see the same

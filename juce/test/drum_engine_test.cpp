@@ -12,6 +12,7 @@
 #include "../source/drum/dsp/DrumFx.h"
 #include "../source/drum/dsp/DrumKits.h"
 #include "../source/drum/dsp/DrumPatches.h"
+#include "drive_os_check.h"
 
 #include <cmath>
 #include <cstdio>
@@ -152,6 +153,56 @@ static std::vector<std::vector<float>> renderBuses(DrumEngine& e, int n) {
 }
 static std::vector<float> renderMain(DrumEngine& e, int n) {
     return renderBuses(e, n)[0];   // MAIN L
+}
+
+// Drive: 2x oversampled saturator. Steady PRIME tone on pad 0 with the filter
+// drive stage in the signal path; both checks run through the real engine.
+static std::vector<float> renderDriveTone(double sr, int table, int ftype, float cut, float drive,
+                                          float level, double f0) {
+    DrumEngine e; e.prepare(sr); e.setTables(allTables());
+    auto p = defaultDrumParams();
+    auto S = [&](int f, float v) { p[dpid(0, f)] = v; };
+    S(DP_OSCA_TABLE, (float)table); S(DP_OSCA_POS, table == 4 ? 0.8f : 0.5f);
+    S(DP_OSCA_FINE, 0); S(DP_OSCA_PHASE, 0); S(DP_OSCA_UNISON, 1); S(DP_OSCA_DETUNE, 0);
+    S(DP_OSCA_LEVEL, level); S(DP_OSCB_LEVEL, 0); S(DP_NOISE_LEVEL, 0); S(DP_RING_MIX, 0);
+    S(DP_PENV_AMT, 0); S(DP_AENV_ATT, 0); S(DP_AENV_HOLD, 10); S(DP_LVL, 1); S(DP_PAN, 0);
+    for (int s = 0; s < 4; s++) S(DP_MOD1_SRC + 3 * s, 0);
+    S(DP_FLT_ON, 1); S(DP_FLT_TYPE, (float)ftype); S(DP_FLT_RES, 0.3f);
+    S(DP_FLT_DRIVE, drive); S(DP_FLT_CUT, cut);
+    S(DP_OSCA_TUNE, (float)(69 + 12 * std::log2(f0 / 440.0) - DR_BASE_NOTE));
+    e.setParams(p); e.trigger(0, 1.0f);
+    const int N = 32768, skip = 4096;
+    std::vector<float> out;
+    for (int at = 0; at < N + skip; at += 128) {
+        const auto b = renderMain(e, 128);
+        out.insert(out.end(), b.begin(), b.end());
+    }
+    return std::vector<float>(out.begin() + skip, out.end());
+}
+
+static void checkDriveOversampling() {
+    printf("\n== DR-1 drive: 2x oversampled saturator, aliasing and dry/wet alignment ==\n");
+    // Full drive at 523 Hz: the folded products stay far below the old
+    // first-order ADAA at the base rate (about -58 dB).
+    struct Case { double sr; int table; int ftype; float cut; double limit; const char* name; };
+    for (Case c : {Case{48000.0, 4, 0, 20000.0f, -80.0, "PRIME LP12 open"}, Case{48000.0, 4, 3, 300.0f, -80.0, "PRIME HP12"},
+                   Case{44100.0, 4, 0, 20000.0f, -76.0, "PRIME LP12 open"}, Case{44100.0, 4, 3, 300.0f, -76.0, "PRIME HP12"},
+                   Case{48000.0, 3, 1, 20000.0f, -85.0, "GRIT LP24 open"}}) {
+        const auto y = renderDriveTone(c.sr, c.table, c.ftype, c.cut, 1.0f, 1.0f, 523.25);
+        const double db = driveos_check::inharmonicDb(y.data(), (int)y.size(), c.sr, 523.25);
+        check(db < c.limit, std::string("drive 1 alias < ") + std::to_string((int)c.limit) + " dB, " + c.name
+              + " @ " + std::to_string((int)c.sr) + " Hz", std::to_string(db) + " dB");
+    }
+    // Dry/wet alignment: at a level where tanh is linear, a half-mixed drive
+    // (0.05 = mix 0.5) is a pure gain on the drive-0 signal. A dry path that
+    // missed the oversampler delay would notch every 4 kHz.
+    for (double sr : {48000.0, 44100.0}) {
+        const auto off = renderDriveTone(sr, 4, 0, 20000.0f, 0.0f, 0.02f, 130.81);
+        const auto on = renderDriveTone(sr, 4, 0, 20000.0f, 0.05f, 0.02f, 130.81);
+        const double rip = driveos_check::gainRippleDb(off.data(), on.data(), (int)off.size(), sr, 130.81);
+        check(rip < 0.1, "drive mix 0.5 adds no comb filtering @ " + std::to_string((int)sr) + " Hz",
+              std::to_string(rip) + " dB residual");
+    }
 }
 
 // Review regressions: oscillator owners outlive callback boundaries and fades,

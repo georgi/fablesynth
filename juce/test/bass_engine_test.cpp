@@ -9,6 +9,7 @@
 #include "../source/bass/dsp/BassFx.h"
 #include "../source/bass/dsp/BassPatches.h"
 #include "../source/dsp/Wavetables.h"
+#include "drive_os_check.h"
 
 #include <algorithm>
 #include <cmath>

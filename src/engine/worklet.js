@@ -420,6 +420,65 @@ function adaaInput(x) {
   return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
 }
 
+// 2x oversampler for the in-voice drive saturator. Only the nonlinearity runs
+// at 2x (interpolate -> ADAA tanh at the high rate -> decimate); the SVF stays
+// at the base rate. Both converters are the polyphase IIR half-band that
+// juce/source/dsp/DriveOs.h documents: allpass branches A0 = {c0, c2, c4} and
+// A1 = {c1, c3}. While the saturator is idle and the stage has faded out, the
+// input is returned unchanged (bit-identical to a voice without the stage); the
+// stage fades in and out over DRIVE_OS_RAMP_SEC with a linear crossfade.
+const DRIVE_OS_COEF = new Float64Array([
+  0.058131122888383423, 0.21191463147606193, 0.4170395803350932,
+  0.63844438482644794, 0.87095859811277021]);
+const DRIVE_OS_RAMP_SEC = 0.004;
+// Allpass state, (x1, y1) pairs: u0 at 0,2,4; u1 at 6,8; d0 at 10,12,14; d1 at 16,18.
+function makeDriveOs() {
+  return {
+    s: new Float64Array(20), dprev: 0,
+    xp: 0,   // previous high-rate ADAA input
+    F: 0,    // kF * lcosh(dg * xp), valid while the saturator is active
+    w: 0,    // stage weight: 0 = bypass, 1 = stage
+  };
+}
+function resetDriveOs(o) { o.s.fill(0); o.dprev = 0; o.xp = 0; o.F = 0; o.w = 0; }
+function copyDriveOs(d, s) { d.s.set(s.s); d.dprev = s.dprev; d.xp = s.xp; d.F = s.F; d.w = s.w; }
+function driveOsAp(s, i, a, x) {
+  const y = a * (x - s[i + 1]) + s[i];
+  s[i] = x; s[i + 1] = y;
+  return y;
+}
+function driveOsSat(o, a, xpv, dg, dcomp, kF) {
+  const dx = a - xpv;
+  const F = kF * lcosh(dg * a);
+  // |dx| tiny -> ADAA is numerically unstable; fall back to midpoint tanh.
+  const r = dx > 1e-5 || dx < -1e-5 ? (F - o.F) / dx : dcomp * Math.tanh(dg * 0.5 * (a + xpv));
+  o.F = F;
+  return r;
+}
+// One base-rate sample. engage: the stage belongs in the path; satOn: the
+// saturator runs with dry/wet mix m.
+function driveOsStep(o, x, engage, satOn, m, wStep, dg, dcomp, kF) {
+  const target = engage ? 1 : 0;
+  if (o.w < target) o.w = Math.min(target, o.w + wStep);
+  else if (o.w > target) o.w = Math.max(target, o.w - wStep);
+  if (o.w <= 0 && !engage) { o.xp = adaaInput(x); return x; }
+  const s = o.s, C = DRIVE_OS_COEF;
+  const u0 = driveOsAp(s, 4, C[4], driveOsAp(s, 2, C[2], driveOsAp(s, 0, C[0], x)));
+  const u1 = driveOsAp(s, 8, C[3], driveOsAp(s, 6, C[1], x));
+  const a0 = adaaInput(u0), a1 = adaaInput(u1);
+  let o0 = a0, o1 = a1;
+  if (satOn) {
+    o0 = a0 + m * (driveOsSat(o, a0, o.xp, dg, dcomp, kF) - a0);
+    o1 = a1 + m * (driveOsSat(o, a1, a0, dg, dcomp, kF) - a1);
+  }
+  o.xp = a1;
+  const da = driveOsAp(s, 14, C[4], driveOsAp(s, 12, C[2], driveOsAp(s, 10, C[0], o0)));
+  const db = driveOsAp(s, 18, C[3], driveOsAp(s, 16, C[1], o1));
+  const y = 0.5 * (da + o.dprev);
+  o.dprev = db;
+  return o.w >= 1 ? y : x + o.w * (y - x);
+}
+
 // Finding W1: 4-point cubic Hermite (Catmull-Rom) table read, replacing the
 // linear read. Indices are pre-wrapped by the caller (branchless & mask), `off`
 // selects the frame/mip. Mirrors Engine.cpp's rdH — the interpolation images
@@ -500,7 +559,7 @@ function makeFilterState() {
     combR: new Float32Array(COMB_MAX),
     combW: 0,
     cutSm: 0,
-    satXL: 0, satXR: 0, adaaMix: 0, // ADAA drive: history + smoothed enable mix
+    osL: makeDriveOs(), osR: makeDriveOs(), adaaMix: 0, // drive oversampler + smoothed enable mix
     ftype: 0, twoPole: false,
     k1: 0,                      // SVF damping, stage 1 (a1..a3 ramp per sub-block)
     k2: 0,                      // SVF damping, stage 2 (LP24 only; = k1 elsewhere)
@@ -514,7 +573,7 @@ function makeFilterState() {
 function resetFilterState(fs) {
   fs.svf.fill(0); fs.fmt.fill(0);
   fs.combL.fill(0); fs.combR.fill(0); fs.combW = 0;
-  fs.cutSm = 0; fs.satXL = 0; fs.satXR = 0; fs.adaaMix = 0;
+  fs.cutSm = 0; resetDriveOs(fs.osL); resetDriveOs(fs.osR); fs.adaaMix = 0;
   fs.cutPrev = 0; fs.combLenPrev = 0;
 }
 
@@ -2156,36 +2215,23 @@ class FableProcessor extends AudioWorkletProcessor {
   // Apply one filter (optional ADAA drive + the selected type) to a stereo block,
   // reading in*, writing out*. Stage 1 saturates in -> out, stage 2 filters in place.
   runFilter(fs, inL, inR, outL, outR, drive, n) {
-    // -- drive (anti-aliased tanh via ADAA), or a plain copy when disabled --
+    // -- drive: 2x oversampled anti-aliased tanh (ADAA). The stage is in the path
+    // only while the saturator is active; at drive 0 it is a bit-exact copy. --
     const adaaTarget = Math.max(0, Math.min(1, drive / ADAA_FADE_WIDTH));
     const adaaStart = fs.adaaMix;
-    if (adaaTarget > 0 || fs.adaaMix > 1e-6) {
-      const dg = 1 + drive * 7;
-      const dcomp = 1 / Math.pow(dg, 0.55);
-      const kF = dcomp / dg;
-      let xpL = fs.satXL, xpR = fs.satXR;
-      let FpL = kF * lcosh(dg * xpL), FpR = kF * lcosh(dg * xpR);
-      for (let i = 0; i < n; i++) {
-        const aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
-        const dxL = aL - xpL;
-        const FL = kF * lcosh(dg * aL);
-        // |Δx| tiny → ADAA is numerically unstable; fall back to midpoint tanh.
-        const satL = dxL > 1e-5 || dxL < -1e-5 ? (FL - FpL) / dxL : dcomp * Math.tanh(dg * 0.5 * (aL + xpL));
-        xpL = aL; FpL = FL;
-        const dxR = aR - xpR;
-        const FR = kF * lcosh(dg * aR);
-        const satR = dxR > 1e-5 || dxR < -1e-5 ? (FR - FpR) / dxR : dcomp * Math.tanh(dg * 0.5 * (aR + xpR));
-        const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
-        outL[i] = aL + m * (satL - aL);
-        outR[i] = aR + m * (satR - aR);
-        xpR = aR; FpR = FR;
-      }
-      fs.satXL = xpL; fs.satXR = xpR;
-      fs.adaaMix = adaaTarget;
-    } else {
-      for (let i = 0; i < n; i++) { outL[i] = inL[i]; outR[i] = inR[i]; }
-      if (n > 0) { fs.satXL = inL[n - 1]; fs.satXR = inR[n - 1]; }
+    const active = adaaTarget > 0 || fs.adaaMix > 1e-6;
+    const dg = active ? 1 + drive * 7 : 1;
+    const dcomp = active ? 1 / Math.pow(dg, 0.55) : 1;
+    const kF = dcomp / dg;
+    const osL = fs.osL, osR = fs.osR;
+    if (active) { osL.F = kF * lcosh(dg * osL.xp); osR.F = kF * lcosh(dg * osR.xp); }
+    const wStep = 1 / (DRIVE_OS_RAMP_SEC * sampleRate);
+    for (let i = 0; i < n; i++) {
+      const m = adaaStart + (adaaTarget - adaaStart) * ((i + 1) / n);
+      outL[i] = driveOsStep(osL, inL[i], active, active, m, wStep, dg, dcomp, kF);
+      outR[i] = driveOsStep(osR, inR[i], active, active, m, wStep, dg, dcomp, kF);
     }
+    fs.adaaMix = active ? adaaTarget : 0;
 
     const ftype = fs.ftype;
     if (ftype <= 4) {

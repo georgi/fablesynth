@@ -12,8 +12,11 @@
 #include "../source/dsp/UserTables.h"
 #include "../source/dsp/FrameOps.h"
 #include "LabFxChecks.h"
+#include "drive_os_check.h"
 
+#include <array>
 #include <cmath>
+#include <complex>
 #include <cstdio>
 #include <limits>
 #include <vector>

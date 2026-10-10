@@ -216,7 +216,7 @@ private:
         double svf[8] = {0};       // 2 stages x 2 ch x (ic1, ic2)
         double cutSm = 0;
         double cutTarget = 0, cutPrev = -1;  // chunk cutoff ramp (Finding 7)
-        double satXL = 0, satXR = 0;   // ADAA drive: previous input per channel
+        DriveOs2 osL, osR;             // 2x drive oversampler + ADAA history
         double adaaMix = 0;            // dry -> ADAA transition state
         int    ftype = 0; bool twoPole = false;
         double k1 = 0;
