@@ -372,12 +372,15 @@ void BassEngine::setArp(const ArpPattern& a) {
     arp_ = a;
 }
 void BassEngine::arpFire(const ArpPattern& a, int s, double interval) {
-    if (a.hits[s] && a.notes[s] >= 0) {
-        const int semi = a.notes[s] - BL_ROOT_MIDI;
-        if (a.slides[s] && gate_) glideTo(semi, a.accents[s]);
-        else noteOn(semi, a.accents[s], a.accents[s] ? BL_ACCENT_VEL : BL_PLAIN_VEL);
-        const int next = (s + 1) % 16;
-        samplesToGateOff_ = a.hits[next] && a.notes[next] >= 0 && a.slides[next] ? -1 : interval * a.gate;
+    const int len = std::max(1, a.length);
+    s %= len;
+    const int r = s % 16;
+    if (a.hits[(size_t)r] && a.notes[(size_t)s] >= 0) {
+        const int semi = a.notes[(size_t)s] - BL_ROOT_MIDI;
+        if (a.slides[(size_t)r] && gate_) glideTo(semi, a.accents[(size_t)r]);
+        else noteOn(semi, a.accents[(size_t)r], a.accents[(size_t)r] ? BL_ACCENT_VEL : BL_PLAIN_VEL);
+        const int next = (s + 1) % len, rn = next % 16;
+        samplesToGateOff_ = a.hits[(size_t)rn] && a.notes[(size_t)next] >= 0 && a.slides[(size_t)rn] ? -1 : interval * a.gate;
     } else { release(); samplesToGateOff_ = -1; }
 }
 void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {

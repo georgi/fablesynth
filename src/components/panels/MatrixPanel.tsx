@@ -5,10 +5,16 @@
 
 import type * as React from 'react';
 import { useMemo, useRef } from 'react';
-import { MOD_SOURCES, MOD_DESTS, SOURCE_COLORS, fmtBi } from '../../params';
+import { MOD_SOURCES, MOD_DESTS, SOURCE_COLORS, MACRO_COUNT, fmtBi, routeBipolar, polarityFor, macroSource } from '../../params';
 import { useStore } from '../../store';
 import { MOD_MATRIX_SIZE } from '../../store/slotHelpers';
 import { ModSourceChip } from '../ModSourceChip';
+import { Knob } from '../Knob';
+
+// Header chips for every source without its own panel chip. Macros carry
+// their chip in the macro strip; LFOs and envelopes in their panels too.
+const RAIL_SOURCES = [1, 2, 6, 7, 3, 8, 4, 5, 13, 14, 15];
+const AUX_OPTIONS = ['NO AUX', ...MOD_SOURCES.slice(1)];
 
 const A0 = -135, A1 = 135;
 const clampAmt = (n: number) => Math.min(1, Math.max(-1, n));
@@ -105,11 +111,13 @@ export function MatrixPanel() {
   // source OR a destination set (rowVisible), keyed by its absolute slot number
   // so editing one slot never disturbs another's React state.
   const rows = useMemo(() => {
-    const out: { slot: number; src: number; dst: number; amt: number }[] = [];
+    const out: { slot: number; src: number; dst: number; amt: number; bi: boolean; aux: number }[] = [];
     for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
       const src = params[`mat${s}.src`] | 0;
       const dst = params[`mat${s}.dst`] | 0;
-      if (src !== 0 || dst !== 0) out.push({ slot: s, src, dst, amt: params[`mat${s}.amt`] || 0 });
+      if (src !== 0 || dst !== 0) {
+        out.push({ slot: s, src, dst, amt: params[`mat${s}.amt`] || 0, bi: routeBipolar(src, params[`mat${s}.pol`] | 0), aux: params[`mat${s}.aux`] | 0 });
+      }
     }
     return out;
   }, [params]);
@@ -119,9 +127,22 @@ export function MatrixPanel() {
       <div className="mx-rail">
         <div className="panel-head"><h2>MOD MATRIX</h2></div>
         <div className="mx-sources" aria-label="Modulation sources">
-          {[1, 2, 3, 4, 5].map((s) => <ModSourceChip key={s} src={s} />)}
+          {RAIL_SOURCES.map((s) => <ModSourceChip key={s} src={s} />)}
         </div>
         <button className="mx-add" onClick={() => addRoute(1, 0)}>+ ADD ROUTE</button>
+      </div>
+
+      <div className="mx-macros" aria-label="Macros">
+        {Array.from({ length: MACRO_COUNT }, (_, i) => (
+          <div className="mx-macro" key={i}>
+            <ModSourceChip src={macroSource(i + 1)} compact />
+            <Knob paramId={`macro${i + 1}`} size="sm" accent="n" />
+          </div>
+        ))}
+        <div className="mx-macro">
+          <ModSourceChip src={13} compact />
+          <Knob paramId="perf.modwheel" size="sm" accent="n" />
+        </div>
       </div>
 
       <div className="matrix-rows" aria-label="Modulation routes">
@@ -131,6 +152,11 @@ export function MatrixPanel() {
             <ModSelect value={r.src} options={MOD_SOURCES} label={`Route ${r.slot} source`} onChange={(v) => updateSlot(r.slot, { src: v })} />
             <span className="mx-arrow">▸</span>
             <ModSelect value={r.dst} options={MOD_DESTS} label={`Route ${r.slot} destination`} onChange={(v) => updateSlot(r.slot, { dst: v })} />
+            <span className="mx-arrow" aria-hidden="true">×</span>
+            <ModSelect value={r.aux} options={AUX_OPTIONS} label={`Route ${r.slot} aux source`} onChange={(v) => updateSlot(r.slot, { aux: v })} />
+            <button className={`mx-pol${r.bi ? ' on' : ''}`} aria-pressed={r.bi}
+              aria-label={`Route ${r.slot} polarity`} title="UNI pushes one way, BI swings both ways"
+              onClick={() => updateSlot(r.slot, { pol: polarityFor(r.src, !r.bi) })}>{r.bi ? 'BI' : 'UNI'}</button>
             <button className="mx-del" aria-label={`Remove route ${r.slot}`} title="remove" onClick={() => clearSlot(r.slot)}>×</button>
           </div>
         ))}

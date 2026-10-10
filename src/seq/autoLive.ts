@@ -33,7 +33,7 @@ function arc(r: number, from: number, to: number): string {
 
 /**
  * Refs for the ring path and the dot of one knob. `baseNorm` is the stored
- * knob value; the ring spans from it to the automated value.
+ * knob value; the inner ring spans from it to the automated value.
  */
 export function useAutoLive(machine: MachineId, paramId: string, baseNorm: number): {
   ring: RefObject<SVGPathElement>;
@@ -54,7 +54,8 @@ export function useAutoLive(machine: MachineId, paramId: string, baseNorm: numbe
         return;
       }
       const deg = degOf(v.norm);
-      r.setAttribute('d', arc(38, degOf(base.current), deg));
+      // Inside the value arc, so it never overlaps the outer mod rings.
+      r.setAttribute('d', arc(29, degOf(base.current), deg));
       const [x, y] = polar(33, deg);
       d.setAttribute('cx', x.toFixed(2));
       d.setAttribute('cy', y.toFixed(2));

@@ -6,11 +6,36 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
       oscB(model, 1, "oscB", fui::Accent::B, "OSC B"),
       util(model.parameters()), filter(model.parameters()),
       env1(model.parameters(), "env1", "AMP ENV", juce::Colour(0xffe8edf7), fui::Accent::N),
-      env2(model.parameters(), "env2", "MOD ENV", juce::Colour(0xffb18cff), fui::Accent::F, 3),
+      env2(model.parameters(), "env2", "MOD ENV", juce::Colour(0xffb18cff), fui::Accent::F, 3, "env3", 8),
       lfos(model.parameters(), transportProvider ? std::move(transportProvider) : [&model] {
           return HostTransport{ model.hostBpm(), 0.0, model.sequencerPlaying() };
       }),
-      matrix(model.parameters()), fx(model, true), seq(model), arp(model, false), lab(model.parameters()), playback_(model) {
+      matrix(model.parameters()), fx(model, true), seq(model), arp(model, false), lab(model.parameters()), playback_(model),
+      glide_(model.parameters(), "master.glide", fui::Knob::Xs, fui::Accent::N, false) {
+    {
+        auto toggle = [this](const char* id, juce::Button& b, std::function<void(bool)> changed) {
+            b.setClickingTogglesState(true);
+            auto* parameter = model_.parameters().parameter(id);
+            jassert(parameter != nullptr);
+            auto att = std::make_unique<juce::ParameterAttachment>(*parameter, [&b, changed](float v) {
+                b.setToggleState(v >= 0.5f, juce::dontSendNotification);
+                if (changed) changed(v >= 0.5f);
+            }, nullptr);
+            b.onClick = [a = att.get(), &b] { a->setValueAsCompleteGesture(b.getToggleState() ? 1.0f : 0.0f); };
+            addAndMakeVisible(b);
+            return att;
+        };
+        monoAtt_ = toggle("master.mono", mono_, [this](bool on) { legato_.setEnabled(on); }); // PillButton dims when disabled
+        legatoAtt_ = toggle("master.legato", legato_, nullptr);
+        monoAtt_->sendInitialUpdate();
+        legatoAtt_->sendInitialUpdate();
+        mono_.setTooltip("MONO: one voice, last-note priority");
+        legato_.setTooltip("LEGATO: a mono note change keeps the envelopes running; off retriggers them");
+        glideLabel_.setFont(fui::monoFont(9.0f));
+        glideLabel_.setColour(juce::Label::textColourId, fui::col::textDim);
+        glideLabel_.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(glide_); addAndMakeVisible(glideLabel_);
+    }
     addAndMakeVisible(oscA); addAndMakeVisible(oscB); addAndMakeVisible(util);
     addAndMakeVisible(filter); addAndMakeVisible(env1); addAndMakeVisible(env2);
     addAndMakeVisible(lfos); addAndMakeVisible(matrix); addAndMakeVisible(fx);
@@ -50,6 +75,7 @@ void WtDeviceBody::selectPage(Page page) {
     arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
     automationPage_.setToggleState(page == Page::automation, juce::dontSendNotification);
     resized();
+    fui::refreshVisibleControls(*this);
 }
 
 juce::Rectangle<int> WtDeviceBody::colArea(int c0, int span, int y, int h) const {
@@ -80,6 +106,13 @@ void WtDeviceBody::resized() {
     sequencerPage_.setBounds(tabs.removeFromLeft(146)); tabs.removeFromLeft(5);
     arpPage_.setBounds(tabs.removeFromLeft(92));
     tabs.removeFromLeft(5); automationPage_.setBounds(tabs.removeFromLeft(138));
+    {
+        auto voice = juce::Rectangle<int>(14, 2, LW - 28, 26);
+        legato_.setBounds(voice.removeFromRight(64).withSizeKeepingCentre(64, 22)); voice.removeFromRight(5);
+        mono_.setBounds(voice.removeFromRight(52).withSizeKeepingCentre(52, 22)); voice.removeFromRight(10);
+        glide_.setBounds(voice.removeFromRight(26));
+        glideLabel_.setBounds(voice.removeFromRight(44));
+    }
     playback_.place(sequencerPage_, arpPage_);
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::fx;

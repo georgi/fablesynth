@@ -80,22 +80,48 @@ private:
     juce::Rectangle<int> titleArea;
 };
 
+// Small web-styled toggles (src/index.css):
+//   Segment  .filter-tab   — a tab inside a dark segmented container (the owner paints the container)
+//   Pick     .lfo-pick-btn — a small box; the selected one gets an accent outline
+//   Tag      .lfo-tg / #mono-toggle — a pill; "on" is an accent outline with a soft glow
+class PillButton : public juce::Button {
+public:
+    enum Style { Segment, Pick, Tag };
+    PillButton(juce::String text, Style, juce::Colour accent);
+    void setAccent(juce::Colour c) { accent_ = c; repaint(); }
+    void paintButton(juce::Graphics&, bool highlighted, bool down) override;
+private:
+    Style style_;
+    juce::Colour accent_;
+};
+// Paints the dark container behind a row of Segment buttons.
+void paintSegmentContainer(juce::Graphics&, juce::Rectangle<int>);
+
 class EnvPanel : public juce::Component {
 public:
     // modSrc > 0 adds a draggable ModSourceChip in the header (e.g. MOD ENV = 3);
     // the env's knobs are never mod targets (modDest 0).
+    // base2 adds a second envelope page (e.g. MOD ENV 2 = env3), picked by
+    // header tabs "1" / "2"; modSrc2 is its mod-source index.
     EnvPanel(ParameterSource, juce::String base, juce::String title, juce::Colour viewAccent,
-             Accent knobAccent, int modSrc = 0);
+             Accent knobAccent, int modSrc = 0, juce::String base2 = {}, int modSrc2 = 0);
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
+    struct Page {
+        std::unique_ptr<EnvView> view;
+        juce::OwnedArray<Knob> knobs;
+        std::unique_ptr<ModSourceChip> srcChip;
+    };
+    void showPage(int index);
     juce::String title;
-    EnvView view; juce::OwnedArray<Knob> knobs;
-    std::unique_ptr<ModSourceChip> srcChip;
-    juce::Rectangle<int> titleArea;
+    Page pages[2];
+    int numPages = 1, activePage = 0;
+    std::unique_ptr<PillButton> tabs[2];
+    juce::Rectangle<int> titleArea, tabArea;
 };
 
-class LfoPanel : public juce::Component, private juce::Timer {
+class LfoPanel : public juce::Component, private fui::VisualTimer {
 public:
     LfoPanel(ParameterSource, std::function<HostTransport()> transportProvider);
     ~LfoPanel() override { stopTimer(); }
@@ -112,7 +138,7 @@ private:
         ModSourceChip srcChip;
         Stepper shape;
         LfoView view;
-        juce::TextButton syncBtn{"SYNC"}, retrigBtn{"TRIG"};
+        PillButton syncBtn, retrigBtn;
         std::unique_ptr<juce::ParameterAttachment> syncAtt, retrigAtt;
         Stepper syncRate;
         Knob rate, rise, phase;
@@ -144,10 +170,13 @@ private:
         void resized() override;
         void paint(juce::Graphics&) override; // ▸ arrow between src and dst
         int slot;
-        juce::ComboBox src, dst;
-        std::unique_ptr<juce::ParameterAttachment> srcAtt, dstAtt;
+        juce::ComboBox src, dst, aux;
+        std::unique_ptr<juce::ParameterAttachment> srcAtt, dstAtt, auxAtt;
         std::unique_ptr<Knob> amt;
         juce::TextButton remove{juce::String::fromUTF8("\xc3\x97")}; // ×
+        juce::TextButton polarity{"UNI"};  // toggles the route between UNI and BI
+        ParameterSource parameters;
+        void refreshPolarity();
     };
     ParameterSource parameters;
     // Rows live in a four-route viewport beside a compact source/add rail. The
@@ -156,6 +185,9 @@ private:
     juce::Component rowsHolder;
     juce::OwnedArray<Row> rows;          // indexed [slot-1]; children of rowsHolder
     juce::OwnedArray<ModSourceChip> chips;
+    // Macro 1-4 and MOD WHL knobs, each with its draggable source chip.
+    juce::OwnedArray<Knob> macroKnobs;
+    juce::OwnedArray<ModSourceChip> macroChips;
     juce::TextButton addBtn{"+ ADD ROUTE"};
     std::vector<int> lastVisible;        // cached visible-slot vector (diffed by timer)
     juce::Rectangle<int> titleArea, chipArea, hintArea, addArea, rowsArea;

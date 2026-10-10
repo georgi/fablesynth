@@ -44,8 +44,8 @@ describe('getActiveSlots', () => {
     setMatSlot(p, 7, { src: 2, dst: 0, amt: 0.5 }); // src-only -> not active
     const active = getActiveSlots(p);
     expect(active).toEqual([
-      { slot: 2, src: 1, dst: 3, amt: 0.4 },
-      { slot: 5, src: 4, dst: 1, amt: -0.2 },
+      { slot: 2, src: 1, dst: 3, amt: 0.4, pol: 0 },
+      { slot: 5, src: 4, dst: 1, amt: -0.2, pol: 0 },
     ]);
   });
 });

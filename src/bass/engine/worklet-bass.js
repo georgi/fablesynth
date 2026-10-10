@@ -1333,12 +1333,12 @@ class BassProcessor extends AudioWorkletProcessor {
     const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
     const next = this.hostAnchor + (idx + 1) * dur + ((s + 1) % 2 ? swing * SWING_MAX * dur : 0);
     const interval = Math.max(1, next - currentFrame);
-    if (a.hits[s] && a.notes[s] >= 0) {
+    if (a.hits[r] && a.notes[s] >= 0) {
       const semi = a.notes[s] - ROOT_MIDI;
-      if (a.slides[s] && this.gate) this.glideTo(semi, a.accents[s]);
-      else this.noteOn(semi, a.accents[s]);
-      const nextStep = (s + 1) % STEPS;
-      this.samplesToGateOff = a.hits[nextStep] && a.notes[nextStep] >= 0 && a.slides[nextStep]
+      if (a.slides[r] && this.gate) this.glideTo(semi, a.accents[r]);
+      else this.noteOn(semi, a.accents[r]);
+      const nextStep = (s + 1) % a.notes.length, nr = nextStep % STEPS;
+      this.samplesToGateOff = a.hits[nr] && a.notes[nextStep] >= 0 && a.slides[nr]
         ? -1 : interval * a.gate;
     } else { this.release(); this.samplesToGateOff = -1; }
     this.clipStep = s;

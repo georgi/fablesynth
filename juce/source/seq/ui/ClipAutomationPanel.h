@@ -22,6 +22,8 @@ public:
     void setSource(Source,ParameterSource,std::function<int()> selectedPad={});
     bool canShowAutomation(const juce::String&) const;
     void showAutomation(const juce::String&);
+    bool hasAutomation(const juce::String&) const;
+    void removeAutomation(const juce::String&);
     ~ClipAutomationPanel() override;
     void setTarget(int scene,int track,ParameterSource source,std::function<int()> selectedPad);
     void refresh();

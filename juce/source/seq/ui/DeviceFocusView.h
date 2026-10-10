@@ -54,8 +54,11 @@ public:
 
     bool canShowAutomation(const juce::String& id) const override { return automation_.canShowAutomation(id); }
     void showAutomation(const juce::String& id) override;
+    bool hasAutomation(const juce::String& id) const override { return automation_.hasAutomation(id); }
+    void removeAutomation(const juce::String& id) override { automation_.removeAutomation(id); }
     void paint(juce::Graphics&) override;
     void resized() override;
+    void visibilityChanged() override;
 
 private:
     // DR-1 is taller than the compact focus slot's aspect. Host it on a

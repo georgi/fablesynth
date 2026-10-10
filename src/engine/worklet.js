@@ -166,6 +166,16 @@ const LAB_FIELDS = {
   glitch: ['on', 'div', 'chance', 'drift', 'mix'],
 };
 for (const [stage, fields] of Object.entries(LAB_FIELDS)) for (const f of fields) PARAM_IDS.push(`fx.${stage}.${f}`);
+// Per-route polarity (params.ts MOD_POLARITY), appended after LAB.
+for (let i = 1; i <= MOD_MATRIX_SIZE; i++) PARAM_IDS.push('mat' + i + '.pol');
+// Serum-parity modulators (params.ts), appended after polarity.
+addLfo('lfo3'); addLfo('lfo4');
+PARAM_IDS.push('env3.a', 'env3.d', 'env3.s', 'env3.r');
+PARAM_IDS.push('macro1', 'macro2', 'macro3', 'macro4', 'perf.modwheel', 'perf.aftertouch');
+for (let i = 1; i <= MOD_MATRIX_SIZE; i++) PARAM_IDS.push('mat' + i + '.aux');
+for (let n = 1; n <= 3; n++) PARAM_IDS.push(`env${n}.model`, `env${n}.h`, `env${n}.ac`, `env${n}.dc`, `env${n}.rc`);
+PARAM_IDS.push('master.legato');
+PARAM_IDS.push('fx.comp.sc', 'fx.comp.schp');
 const NUM_PARAMS = PARAM_IDS.length;
 const PID = Object.create(null);
 for (let i = 0; i < NUM_PARAMS; i++) PID[PARAM_IDS[i]] = i;
@@ -188,12 +198,17 @@ const OSCA = PID['oscA.on'], OSCB = PID['oscB.on'];
 const FLT1 = PID['filter.on'], FLT2 = PID['filter2.on'];
 const F1_CUT = FLT1 + F_CUT, F2_CUT = FLT2 + F_CUT;
 const FILTER_ROUTE = PID['filter.route'];
-const LFO1 = PID['lfo1.shape'], LFO2 = PID['lfo2.shape'];
-const MAT1 = PID['mat1.src'];
+const LFO1 = PID['lfo1.shape'], LFO2 = PID['lfo2.shape'], LFO3 = PID['lfo3.shape'], LFO4 = PID['lfo4.shape'];
+const MAT1 = PID['mat1.src'], MATPOL1 = PID['mat1.pol'], MATAUX1 = PID['mat1.aux'];
+const MACRO1 = PID['macro1'], PERF_MW = PID['perf.modwheel'], PERF_AT = PID['perf.aftertouch'];
+// Native source polarity per MOD_SOURCES index (params.ts SOURCE_BIPOLAR).
+const SOURCE_BIPOLAR = [false, true, true, false, false, true, true, true, false, false, false, false, false, false, false, false];
+const NUM_SOURCES = SOURCE_BIPOLAR.length;
 const SUB_ON = PID['sub.on'], SUB_SHAPE = PID['sub.shape'], SUB_OCT = PID['sub.oct'], SUB_LEVEL = PID['sub.level'];
 const NOISE_ON = PID['noise.on'], NOISE_TYPE = PID['noise.type'], NOISE_LEVEL = PID['noise.level'];
-const ENV1_A = PID['env1.a'], ENV2_A = PID['env2.a'];
-const MASTER_GLIDE = PID['master.glide'], MASTER_MONO = PID['master.mono'];
+const ENV1_A = PID['env1.a'], ENV2_A = PID['env2.a'], ENV3_A = PID['env3.a'];
+const ENVX1 = PID['env1.model'], ENVX2 = PID['env2.model'], ENVX3 = PID['env3.model'];
+const MASTER_GLIDE = PID['master.glide'], MASTER_MONO = PID['master.mono'], MASTER_LEGATO = PID['master.legato'];
 const SEQ_BPM = PID['seq.bpm'], SEQ_SWING = PID['seq.swing'], SEQ_ROOT = PID['seq.root'];
 // FX + master param indices (the FX chain moved into the worklet, finding W6).
 const FXEQ_ON = PID['fx.eq.on'];
@@ -2400,8 +2415,15 @@ class FableProcessor extends AudioWorkletProcessor {
     for (let s = 0, b = MAT1; s < MOD_MATRIX_SIZE; s++, b += M_STRIDE) {
       const src = p[b + M_SRC] | 0;
       const dst = p[b + M_DST] | 0;
-      if (!src || !dst || dst >= DST_PIDX.length) continue;
-      const x = srcs[src] * (p[b + M_AMT] || 0);
+      if (!src || !dst || src >= NUM_SOURCES || dst >= DST_PIDX.length) continue;
+      // Polarity: SRC keeps the native range; UNI/BI convert it (params.ts polarize).
+      const pol = p[MATPOL1 + s] | 0, native = SOURCE_BIPOLAR[src];
+      const bi = pol === 1 ? false : pol === 2 ? true : native;
+      const sv = bi === native ? srcs[src] : bi ? srcs[src] * 2 - 1 : (srcs[src] + 1) * 0.5;
+      // Aux source: scale by its unipolar value (params.ts auxScale).
+      const aux = p[MATAUX1 + s] | 0;
+      const ax = aux > 0 && aux < NUM_SOURCES ? (SOURCE_BIPOLAR[aux] ? (srcs[aux] + 1) * 0.5 : srcs[aux]) : 1;
+      const x = sv * (p[b + M_AMT] || 0) * ax;
       const target = DST_PIDX[dst];
       if (target === D_PITCH) mPitch += x;
       else if (target === D_AMP) mAmp += x;

@@ -47,7 +47,37 @@ inline double lfoDivFactor(int i) {
 }
 inline const std::vector<std::string> SUB_SHAPES    = {"SINE", "SQR"};
 inline const std::vector<std::string> NOISE_TYPES   = {"WHITE", "PINK"};
-inline const std::vector<std::string> MOD_SOURCES   = {"—", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE"};
+// Append-only (saved routes store the index); mirrors params.ts MOD_SOURCES.
+inline const std::vector<std::string> MOD_SOURCES   = {"—", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE",
+    "LFO 3", "LFO 4", "MOD ENV 2", "MACRO 1", "MACRO 2", "MACRO 3", "MACRO 4", "MOD WHL", "AFTERTCH", "RANDOM"};
+constexpr int NUM_MOD_SOURCES = 16;
+constexpr int MACRO_COUNT = 4;
+inline const std::vector<std::string> ENV_MODELS = {"CLASSIC", "CURVE"};
+// COMP side-chain sources (src/engine/sidechain.ts SC_SOURCES). The key bus
+// has five mono channels: 0-3 the SQ-4 post-fader tracks, 4 the DR-1 kick
+// (pad 01, dry). Standalone plugins have no key bus, so external keys are silent.
+constexpr int KEY_CHANNELS = 5;
+constexpr int KICK_CHANNEL = 4;
+inline const std::vector<std::string> SC_SOURCES = {"OFF", "KICK", "TRACK 1", "TRACK 2", "TRACK 3", "TRACK 4"};
+// `fx.comp.sc` index -> key channel: 1 KICK -> 4, TRACK n -> n - 1, OFF -> -1.
+inline constexpr int scKeyChannel(int sc) { return sc == 1 ? KICK_CHANNEL : sc >= 2 && sc <= 5 ? sc - 2 : -1; }
+// Per-route polarity: SRC keeps the source's native range, UNI/BI force it.
+inline const std::vector<std::string> MOD_POLARITY  = {"SRC", "UNI", "BI"};
+inline constexpr bool sourceBipolar(int src) { return src == 1 || src == 2 || src == 5 || src == 6 || src == 7; }
+inline constexpr bool routeBipolar(int src, int pol) { return pol == 1 ? false : pol == 2 ? true : sourceBipolar(src); }
+// Mirrors params.ts polarize(): convert a source value to the route's polarity.
+inline constexpr double polarize(double x, int src, int pol) {
+    const bool bi = routeBipolar(src, pol);
+    return bi == sourceBipolar(src) ? x : bi ? x * 2.0 - 1.0 : (x + 1.0) * 0.5;
+}
+// Mirrors params.ts auxScale(): a route's aux source scales it by the aux's
+// unipolar value; aux 0 (none) leaves the route unscaled.
+inline constexpr double auxScale(double x, int aux) {
+    return aux ? (sourceBipolar(aux) ? (x + 1.0) * 0.5 : x) : 1.0;
+}
+// Same cases as the 'route polarity' tests in params.test.ts.
+static_assert(polarize(-0.5, 1, 0) == -0.5 && polarize(-1.0, 1, 1) == 0.0 && polarize(0.0, 4, 2) == -1.0,
+              "route polarity must match params.ts polarize()");
 // Modulation destinations (append-only; indices 0..10 keep their exact meaning so
 // factory presets sound unchanged). dstTarget() below is the canonical map from a
 // dst index to either a flat Pid (per-param dest) or a negative global sentinel.
@@ -132,12 +162,30 @@ enum Pid : int {
     FXSHIFT_ON, FXSHIFT_HZ, FXSHIFT_FB, FXSHIFT_SPREAD, FXSHIFT_MIX,
     FXSPRAY_ON, FXSPRAY_PITCH, FXSPRAY_DENSITY, FXSPRAY_SCATTER, FXSPRAY_MIX,
     FXGLITCH_ON, FXGLITCH_DIV, FXGLITCH_CHANCE, FXGLITCH_DRIFT, FXGLITCH_MIX,
+    // Per-route polarity (mat1.pol .. mat16.pol), appended for stable ids.
+    MATPOL1, MATPOL_LAST = MATPOL1 + MOD_MATRIX_SIZE - 1,
+    // Serum-parity modulators (params.ts), appended for stable ids.
+    LFO3_BASE,
+    LFO4_BASE   = static_cast<int>(LFO3_BASE) + static_cast<int>(LFO_NFIELDS),
+    ENV3_BASE   = static_cast<int>(LFO4_BASE) + static_cast<int>(LFO_NFIELDS), // a,d,s,r
+    MACRO1      = ENV3_BASE + 4, MACRO2, MACRO3, MACRO4,
+    PERF_MODWHEEL, PERF_AFTERTOUCH,
+    MATAUX1, MATAUX_LAST = MATAUX1 + MOD_MATRIX_SIZE - 1,
+    // Envelope model per envelope (params.ts): model, hold, A/D/R curve.
+    ENVX1_BASE, ENVX_LAST = ENVX1_BASE + 3 * 5 - 1,
+    // Mono voice mode (params.ts master.mono / master.legato). The web keeps
+    // master.mono beside master.glide; native appends it for stable ids.
+    MASTER_MONO, MASTER_LEGATO,
+    // COMP side-chain (params.ts fx.comp.sc / fx.comp.schp), appended.
+    FXCOMP_SC, FXCOMP_SCHP,
     NUM_PARAMS
 };
 
 inline constexpr int oscBase(int i)  { return i == 0 ? OSCA_BASE : OSCB_BASE; }
 inline constexpr int fltBase(int i)  { return i == 0 ? FILTER1_BASE : FILTER2_BASE; }
 inline constexpr int matBase(int s)  { return MAT1_BASE + (s - 1) * MAT_NFIELDS; } // s = 1..16
+enum EnvXField { ENVX_MODEL, ENVX_HOLD, ENVX_AC, ENVX_DC, ENVX_RC, ENVX_NFIELDS };
+inline constexpr int envxBase(int n) { return ENVX1_BASE + (n - 1) * ENVX_NFIELDS; } // n = 1..3
 
 // Typed block-offset helpers keep parameter IDs explicit and prevent accidental
 // arithmetic between unrelated field enums. They return the same flat integer

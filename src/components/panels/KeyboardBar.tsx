@@ -17,6 +17,7 @@ export function KeyboardBar() {
         </div>
         <div id="glide-knob"><Knob paramId="master.glide" size="sm" accent="n" /></div>
         <MonoToggle />
+        <LegatoToggle />
       </div>
       <Keyboard low={36} high={84} onNote={playNote} />
     </footer>
@@ -35,6 +36,27 @@ function MonoToggle() {
       onClick={() => setParam('master.mono', on ? 0 : 1)}
     >
       MONO
+    </button>
+  );
+}
+
+// Mono note change: LEGATO keeps the envelopes running; off retriggers them
+// (Serum MONO). Only meaningful in mono, so it dims when MONO is off.
+function LegatoToggle() {
+  const mono = useStore((s) => !!s.params['master.mono']);
+  const on = useStore((s) => !!s.params['master.legato']);
+  const setParam = useStore((s) => s.setParam);
+  return (
+    <button
+      id="legato-toggle"
+      className={on ? 'on' : ''}
+      aria-label="legato"
+      aria-pressed={on}
+      disabled={!mono}
+      title="LEGATO: a mono note change keeps the envelopes running; off retriggers them"
+      onClick={() => setParam('master.legato', on ? 0 : 1)}
+    >
+      LEGATO
     </button>
   );
 }

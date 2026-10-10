@@ -14,6 +14,7 @@ interface ModSourceChipProps {
 
 export function ModSourceChip({ src, compact }: ModSourceChipProps) {
   const setModDrag = useStore((s) => s.setModDrag);
+  const setModFocus = useStore((s) => s.setModFocus);
   const color = SOURCE_COLORS[src];
 
   const onDragStart = (e: React.DragEvent) => {
@@ -29,6 +30,8 @@ export function ModSourceChip({ src, compact }: ModSourceChipProps) {
       style={{ ['--src' as string]: color }}
       onDragStart={onDragStart}
       onDragEnd={() => setModDrag(0)}
+      onPointerEnter={() => setModFocus(src)}
+      onPointerLeave={() => { if (useStore.getState().modFocus === src) setModFocus(0); }}
       title={`drag ${MOD_SOURCES[src]} onto a control`}
     >
       <span className="mod-grip" aria-hidden="true">⠿</span>

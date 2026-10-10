@@ -28,6 +28,17 @@ int  findFreeSlot(const ParameterSource&);                       // hosted/share
 int  addRoute(const ParameterSource&, int src, int dst, float amt = MOD_DEFAULT_AMT);
 void clearSlot(const ParameterSource&, int slot);
 bool isSlotActive(const ParameterSource&, int slot);
+// Effective route polarity (mat<n>.pol resolved against the source's native
+// range). setRouteBipolar stores SRC when the choice matches the source.
+bool routeBipolar(const ParameterSource&, int slot);
+void setRouteBipolar(const ParameterSource&, int slot, bool bipolar);
+// Ring/band label, e.g. "LFO 1 ±30%" (bipolar) or "VELO +30%" (unipolar).
+juce::String routeLabel(int src, float amt, bool bipolar);
+
+// Source chip under the mouse (MOD_SOURCES index, 0 = none). Mod targets
+// emphasise that source's rings so the user sees where it goes. UI thread only.
+int  highlightedModSource();
+void setHighlightedModSource(int src);
 
 // ---- draggable modulation source chip --------------------------------------
 // A pill (grip glyph + optional label) tinted with modSourceColour(src). On a
@@ -39,6 +50,8 @@ public:
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
+    void mouseEnter(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 private:
     int          src_;
     juce::String label_;

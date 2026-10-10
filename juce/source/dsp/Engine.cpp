@@ -362,36 +362,91 @@ void Engine::advanceParamSmoothingForTesting(int n) {
     smoothParams(n);
 }
 
+void Engine::heldRemove(int n) {
+    int w = 0;
+    for (int i = 0; i < heldN_; ++i) if (held_[(size_t)i] != n) held_[(size_t)w++] = held_[(size_t)i];
+    heldN_ = w;
+}
+
+// Track held keys in either mode so a mono <-> poly flip strands no key.
 void Engine::noteOn(int n, double vel) {
+    heldRemove(n);
+    if (heldN_ == (int)held_.size()) heldRemove(held_[0]);
+    held_[(size_t)heldN_++] = n;
+    if (p_[MASTER_MONO] > 0.5f) monoNoteOn(n, vel);
+    else polyNoteOn(n, vel);
+}
+
+void Engine::monoNoteOn(int n, double vel) {
+    // The newest gated voice carries the mono line; release any others (they
+    // can only exist right after a poly -> mono flip).
+    Voice* voice = nullptr;
+    for (auto& v : voices_) {
+        if (!v.gate) continue;
+        if (!voice) { voice = &v; continue; }
+        if (v.age > voice->age) { voice->noteOff(); voice = &v; } else v.noteOff();
+    }
+    if (voice) {
+        // Legato retunes only (renderVoice glides pitch toward note).
+        if (p_[MASTER_LEGATO] > 0.5f) voice->note = n;
+        else voice->retrigger(n, vel, modRng_);
+        lastPitch_ = n;
+        return;
+    }
+    polyNoteOn(n, vel); // from silence: a normal trigger
+}
+
+void Engine::monoNoteOff(int n) {
+    for (auto& v : voices_) {
+        if (v.hasPending && v.pendNote == n) v.hasPending = false;
+        if (v.gate && v.note == n) {
+            if (heldN_ > 0) { // fall back to the held note
+                const int back = held_[(size_t)heldN_ - 1];
+                if (p_[MASTER_LEGATO] > 0.5f) v.note = back; else v.retrigger(back, v.vel, modRng_);
+                lastPitch_ = back;
+            } else v.noteOff();
+        }
+    }
+}
+
+void Engine::polyNoteOn(int n, double vel) {
     Voice* voice = nullptr;
     for (auto& v : voices_) if (v.gate && v.note == n) { voice = &v; break; }
-    if (!voice) for (auto& v : voices_) if (!v.active()) { voice = &v; break; }
+    // Same note already queued behind a steal fade: replace it in place.
+    if (!voice) for (auto& v : voices_) if (v.hasPending && v.pendNote == n) { voice = &v; break; }
+    if (!voice) for (auto& v : voices_) if (!v.active() && !v.hasPending) { voice = &v; break; }
     if (!voice) {
-        Voice* best = nullptr;
+        // Steal order: released, then gated (lowest age each). A voice with a
+        // note already pending is taken only when every voice is pending, so a
+        // burst of notes never overwrites its own queued notes.
+        Voice* rel = nullptr; Voice* gated = nullptr; Voice* pend = nullptr;
         for (auto& v : voices_) {
-            if (!best) { best = &v; continue; }
-            int vRel = v.gate ? 1 : 0, bRel = best->gate ? 1 : 0;
-            if (vRel < bRel || (vRel == bRel && v.age < best->age)) best = &v;
+            if (v.hasPending) { if (!pend || v.pendAge < pend->pendAge) pend = &v; }
+            else if (v.gate) { if (!gated || v.age < gated->age) gated = &v; }
+            else if (!rel || v.age < rel->age) rel = &v;
         }
-        voice = best;
+        voice = rel ? rel : gated ? gated : pend;
     }
     double glide = p_[MASTER_GLIDE];
     double start = glide > 0.001 ? lastPitch_ : n;
     lastPitch_ = n;
-    if (voice->ampEnv.state != 0 && voice->ampEnv.level > 1e-3) {
+    if (voice->hasPending || (voice->active() && std::max(voice->ampEnv.level, voice->ampSm) > 1e-3)) {
         // Steal / same-note retrigger of an audible voice: hard-resetting phases
         // and filter state under a hot envelope clicks. Fade out instead (Env
         // state 5) and start the note once the voice reaches silence.
         voice->pendNote = n; voice->pendVel = vel; voice->pendStart = start;
         voice->hasPending = true;
+        voice->pendAge = clock_++;
         voice->gate = false;
         voice->ampEnv.state = 5;
     } else {
-        voice->noteOn(n, vel, start, clock_++, rng_);
+        voice->noteOn(n, vel, start, clock_++, rng_, modRng_);
     }
 }
 
 void Engine::noteOff(int n) {
+    heldRemove(n);
+    if (p_[MASTER_MONO] > 0.5f) { monoNoteOff(n); return; }
     for (auto& v : voices_) {
         // A note released before its steal fade finished must not start at all.
         if (v.hasPending && v.pendNote == n) v.hasPending = false;
@@ -1094,8 +1149,11 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         int b = matBase(s);
         int src = (int)p_[slot(b + MAT_SRC)];
         int dst = (int)p_[slot(b + MAT_DST)];
-        if (!src || !dst) continue;
-        double x = srcs[src] * p_[slot(b + MAT_AMT)];
+        if (!src || !dst || src >= NUM_MOD_SOURCES) continue;
+        const int pol = (int)p_[slot(MATPOL1 + s - 1)];
+        const int aux = (int)p_[slot(MATAUX1 + s - 1)];
+        const double ax = aux > 0 && aux < NUM_MOD_SOURCES ? auxScale(srcs[aux], aux) : 1.0;
+        double x = polarize(srcs[src], src, pol) * p_[slot(b + MAT_AMT)] * ax;
         int target = dstTarget(dst);
         switch (target) {
             case DST_NONE:  break;

@@ -315,30 +315,126 @@ void FilterPanel::resized() {
     active.layout(r.removeFromTop(60));
 }
 
+// ===================== PillButton =====================
+PillButton::PillButton(juce::String text, Style style, juce::Colour accent)
+    : juce::Button(text), style_(style), accent_(accent) {
+    setButtonText(text);
+    setClickingTogglesState(false);
+}
+
+void paintSegmentContainer(juce::Graphics& g, juce::Rectangle<int> r) {
+    const auto f = r.toFloat();
+    g.setColour(juce::Colour(0xff0a0d13));
+    g.fillRoundedRectangle(f, 5.0f);
+    g.setColour(col::line);
+    g.drawRoundedRectangle(f.reduced(0.5f), 5.0f, 1.0f);
+}
+
+void PillButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
+    const auto r = getLocalBounds().toFloat();
+    const bool on = getToggleState();
+    const float alpha = isEnabled() ? 1.0f : 0.35f;
+    const auto text = getButtonText();
+    switch (style_) {
+        case Segment:
+            if (on) { g.setColour(accent_.withAlpha(0.13f)); g.fillRoundedRectangle(r, 3.0f); }
+            g.setColour((on ? accent_ : (highlighted ? col::text : col::textDim)).withMultipliedAlpha(alpha));
+            g.setFont(monoFont(8.0f, true));
+            drawSpaced(g, text, getLocalBounds(), 1.1f, juce::Justification::centred);
+            break;
+        case Pick:
+            g.setColour(juce::Colour(0xff0a0d13));
+            g.fillRoundedRectangle(r, 3.0f);
+            g.setColour(on ? accent_.withAlpha(0.45f).overlaidWith(col::line.withAlpha(0.55f)) : col::line);
+            g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
+            g.setColour((on ? accent_ : (highlighted ? col::text : col::textDim)).withMultipliedAlpha(alpha));
+            g.setFont(monoFont(8.0f, true));
+            g.drawText(text, getLocalBounds(), juce::Justification::centred);
+            break;
+        case Tag: {
+            if (on) { // soft glow, then the tinted pill
+                g.setColour(accent_.withAlpha(0.12f));
+                g.fillRoundedRectangle(r.expanded(1.5f), 5.0f);
+            }
+            g.setColour(on ? accent_.withAlpha(0.12f).overlaidWith(juce::Colour(0xff11141c).withAlpha(0.88f)) : juce::Colour(0xff11141c));
+            g.fillRoundedRectangle(r.reduced(0.5f), 4.0f);
+            g.setColour((on ? accent_.withAlpha(0.65f) : (highlighted || down ? accent_.withAlpha(0.55f) : col::line)).withMultipliedAlpha(alpha));
+            g.drawRoundedRectangle(r.reduced(1.0f), 4.0f, 1.0f);
+            g.setColour((on || highlighted ? accent_ : col::textDim).withMultipliedAlpha(alpha));
+            // web: .lfo-tg uses the 6px display face; #mono-toggle the 9px mono UI face
+            if (r.getHeight() >= 20) { g.setFont(monoFont(9.0f)); drawSpaced(g, text, getLocalBounds(), 0.72f, juce::Justification::centred); }
+            else { g.setFont(dispFont(6.5f)); drawSpaced(g, text, getLocalBounds(), 0.6f, juce::Justification::centred); }
+            break;
+        }
+    }
+}
+
 // ===================== EnvPanel =====================
-EnvPanel::EnvPanel(ParameterSource s, juce::String base, juce::String t, juce::Colour viewAccent, Accent knobAccent, int modSrc)
-    : title(t), view(s, base, viewAccent) {
-    addAndMakeVisible(view);
+EnvPanel::EnvPanel(ParameterSource s, juce::String base, juce::String t, juce::Colour viewAccent, Accent knobAccent,
+                   int modSrc, juce::String base2, int modSrc2)
+    : title(t) {
+    numPages = base2.isEmpty() ? 1 : 2;
+    const juce::String bases[2] = {base, base2};
+    const int srcs[2] = {modSrc, modSrc2};
     const char* ids[] = {".a", ".d", ".s", ".r"};
-    for (int i = 0; i < 4; ++i) knobs.add(new Knob(s, base + ids[i], Knob::Sm, knobAccent));
-    for (auto* k : knobs) addAndMakeVisible(k);
-    if (modSrc > 0) {
-        srcChip = std::make_unique<ModSourceChip>(modSrc, juce::String(fable::MOD_SOURCES[(size_t)modSrc]), true);
-        addAndMakeVisible(*srcChip);
+    for (int pg = 0; pg < numPages; ++pg) {
+        auto& page = pages[pg];
+        page.view = std::make_unique<EnvView>(s, bases[pg], viewAccent);
+        addChildComponent(*page.view);
+        for (int i = 0; i < 4; ++i) page.knobs.add(new Knob(s, bases[pg] + ids[i], Knob::Sm, knobAccent));
+        for (auto* k : page.knobs) addChildComponent(k);
+        if (srcs[pg] > 0) {
+            page.srcChip = std::make_unique<ModSourceChip>(srcs[pg], juce::String(fable::MOD_SOURCES[(size_t)srcs[pg]]), true);
+            addChildComponent(*page.srcChip);
+        }
+    }
+    if (numPages > 1)
+        for (int i = 0; i < 2; ++i) {
+            tabs[i] = std::make_unique<PillButton>(juce::String(i + 1), PillButton::Segment, accentColour(knobAccent));
+            tabs[i]->onClick = [this, i] { showPage(i); };
+            addAndMakeVisible(*tabs[i]);
+        }
+    showPage(0);
+}
+void EnvPanel::showPage(int index) {
+    activePage = juce::jlimit(0, numPages - 1, index);
+    for (int pg = 0; pg < numPages; ++pg) {
+        const bool on = pg == activePage;
+        pages[pg].view->setVisible(on);
+        for (auto* k : pages[pg].knobs) k->setVisible(on);
+        if (pages[pg].srcChip) pages[pg].srcChip->setVisible(on);
+        if (tabs[pg]) tabs[pg]->setToggleState(on, juce::dontSendNotification);
     }
 }
 void EnvPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
     paintHeaderTitle(g, titleArea, title, col::text);
+    if (numPages > 1) paintSegmentContainer(g, tabArea);
 }
 void EnvPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     titleArea = r.removeFromTop(20);
-    if (srcChip) srcChip->setBounds(titleArea.removeFromRight(22).withSizeKeepingCentre(20, 16));
+    if (numPages > 1) { // web .filter-tabs: two tabs in a padded dark container, right-aligned
+        tabArea = titleArea.removeFromRight(48).withSizeKeepingCentre(48, 22);
+        auto inner = tabArea.reduced(2);
+        tabs[0]->setBounds(inner.removeFromLeft(21));
+        inner.removeFromLeft(2);
+        tabs[1]->setBounds(inner);
+        titleArea.removeFromRight(4);
+    }
+    // web: the source chip leads the panel title
+    const bool hasChip = pages[0].srcChip != nullptr;
+    const auto chipArea = hasChip ? titleArea.removeFromLeft(20).withSizeKeepingCentre(20, 16) : juce::Rectangle<int>();
+    if (hasChip) titleArea.removeFromLeft(6);
     r.removeFromTop(6);
-    view.setBounds(r.removeFromTop(62));
+    const auto viewArea = r.removeFromTop(62);
     r.removeFromTop(8);
-    layoutKnobRow(r.removeFromTop(60), ptrs(knobs));
+    const auto knobArea = r.removeFromTop(60);
+    for (int pg = 0; pg < numPages; ++pg) {
+        if (pages[pg].srcChip) pages[pg].srcChip->setBounds(chipArea);
+        pages[pg].view->setBounds(viewArea);
+        layoutKnobRow(knobArea, ptrs(pages[pg].knobs));
+    }
 }
 
 // ===================== LfoPanel =====================
@@ -348,16 +444,13 @@ LfoPanel::Block::Block(ParameterSource s, juce::String id, juce::String t, Accen
       srcChip(modSrc, juce::String(fable::MOD_SOURCES[(size_t)modSrc]), true),
       shape(s, id + ".shape", Accent::N),
       view(s, id + ".shape", id + ".rate", id + ".sync", id + ".syncrate", accentColour(ac), std::move(transportProvider)),
+      syncBtn("SYNC", PillButton::Tag, accentColour(ac)), retrigBtn("TRIG", PillButton::Tag, accentColour(ac)),
       syncRate(s, id + ".syncrate", ac),
       rate(s, id + ".rate", Knob::Sm, ac),
       rise(s, id + ".rise", Knob::Sm, ac),
       phase(s, id + ".phase", Knob::Sm, ac) {
     syncBtn.setClickingTogglesState(true);
     retrigBtn.setClickingTogglesState(true);
-    for (auto* b : { &syncBtn, &retrigBtn }) {
-        b->setColour(juce::TextButton::buttonOnColourId, accentColour(ac));
-        b->setColour(juce::TextButton::textColourOnId, col::bg);
-    }
     syncAtt   = attachButton(s, id + ".sync", syncBtn);
     retrigAtt = attachButton(s, id + ".retrig", retrigBtn);
 }
@@ -371,11 +464,11 @@ void LfoPanel::Block::applySync(bool sync) {
 void LfoPanel::Block::layout(juce::Rectangle<int> r) {
     auto head = r.removeFromTop(20);
     shape.setBounds(head.removeFromRight(78).withSizeKeepingCentre(78, 18));
-    head.removeFromRight(3);
-    retrigBtn.setBounds(head.removeFromRight(30).withSizeKeepingCentre(30, 18));
+    head.removeFromRight(4);
+    retrigBtn.setBounds(head.removeFromRight(26).withSizeKeepingCentre(26, 18));  // web .lfo-tg 26 x 18
     head.removeFromRight(2);
-    syncBtn.setBounds(head.removeFromRight(30).withSizeKeepingCentre(30, 18));
-    head.removeFromRight(3);
+    syncBtn.setBounds(head.removeFromRight(26).withSizeKeepingCentre(26, 18));
+    head.removeFromRight(4);
     srcChip.setBounds(head.removeFromLeft(20).withSizeKeepingCentre(20, 16));
     head.removeFromLeft(4);
     titleArea = head;
@@ -396,60 +489,115 @@ void LfoPanel::Block::paintTitle(juce::Graphics& g) { paintHeaderTitle(g, titleA
 
 LfoPanel::LfoPanel(ParameterSource s, std::function<HostTransport()> transportProvider)
     : parameters(s),
-      l1(s, "lfo1", "LFO 1", Accent::A, transportProvider, 1),
-      l2(s, "lfo2", "LFO 2", Accent::B, transportProvider, 2) {
-    for (auto* b : { &l1, &l2 }) {
-        addAndMakeVisible(b->srcChip);
-        addAndMakeVisible(b->shape);
-        addAndMakeVisible(b->view);
-        addAndMakeVisible(b->syncBtn);
-        addAndMakeVisible(b->retrigBtn);
-        addAndMakeVisible(b->syncRate);
-        addAndMakeVisible(b->rate);
-        addAndMakeVisible(b->rise);
-        addAndMakeVisible(b->phase);
+      l1(s, "lfo1", "LFO", Accent::A, transportProvider, 1),
+      l2(s, "lfo2", "LFO", Accent::B, transportProvider, 2),
+      l3(s, "lfo3", "LFO", Accent::A, transportProvider, 6),
+      l4(s, "lfo4", "LFO", Accent::B, transportProvider, 7) {
+    for (auto* b : { &l1, &l2, &l3, &l4 }) {
+        addChildComponent(b->srcChip);
+        addChildComponent(b->shape);
+        addChildComponent(b->view);
+        addChildComponent(b->syncBtn);
+        addChildComponent(b->retrigBtn);
+        addChildComponent(b->syncRate);
+        addChildComponent(b->rate);
+        addChildComponent(b->rise);
+        addChildComponent(b->phase);
     }
-    // Initialise swap state from current param values.
-    l1.applySync(s.parameter("lfo1.sync")->getValue() != 0.0f);
-    l2.applySync(s.parameter("lfo2.sync")->getValue() != 0.0f);
-    startTimerHz(15);
+    for (int slot = 0; slot < 2; ++slot)
+        for (int c = 0; c < 2; ++c) {
+            pick[slot][c] = std::make_unique<PillButton>(juce::String(slot + 1 + c * 2), PillButton::Pick,
+                                                         accentColour(slot ? Accent::B : Accent::A));
+            auto& b = *pick[slot][c];
+            b.setTooltip("show LFO " + b.getButtonText() + " in this slot");
+            b.onClick = [this, slot, c] { showLfo(slot, c); };
+            addAndMakeVisible(b);
+        }
+    showLfo(0, 0);
+    showLfo(1, 0);
+    startVisualTimer(*this, 15);
+}
+
+LfoPanel::Block* LfoPanel::shown(int slot) {
+    return slot == 0 ? (choice[0] ? &l3 : &l1) : (choice[1] ? &l4 : &l2);
+}
+
+void LfoPanel::showLfo(int slot, int c) {
+    choice[slot] = c;
+    Block* pair[2] = { slot == 0 ? &l1 : &l2, slot == 0 ? &l3 : &l4 };
+    for (int i = 0; i < 2; ++i) {
+        auto* b = pair[i];
+        const bool on = i == c;
+        for (auto* comp : std::initializer_list<juce::Component*>{ &b->srcChip, &b->shape, &b->view, &b->syncBtn,
+                                                                   &b->retrigBtn, &b->rise, &b->phase })
+            comp->setVisible(on);
+        b->rate.setVisible(false); b->syncRate.setVisible(false);
+        pick[slot][i]->setToggleState(on, juce::dontSendNotification);
+    }
+    auto* b = shown(slot);
+    const int n = slot + 1 + c * 2;
+    b->applySync(parameters.parameter("lfo" + juce::String(n) + ".sync")->getValue() != 0.0f);
+    repaint();
 }
 
 void LfoPanel::timerCallback() {
-    // Poll sync params and re-layout on change.
-    bool s1 = parameters.parameter("lfo1.sync")->getValue() != 0.0f;
-    bool s2 = parameters.parameter("lfo2.sync")->getValue() != 0.0f;
-    if (s1 != l1.lastSync) l1.applySync(s1);
-    if (s2 != l2.lastSync) l2.applySync(s2);
+    // Poll the shown blocks' sync params and re-layout on change.
+    for (int slot = 0; slot < 2; ++slot) {
+        const int n = slot + 1 + choice[slot] * 2;
+        const bool sync = parameters.parameter("lfo" + juce::String(n) + ".sync")->getValue() != 0.0f;
+        if (sync != shown(slot)->lastSync) shown(slot)->applySync(sync);
+    }
 }
 
 void LfoPanel::paint(juce::Graphics& g) {
     paintPanelBg(g, *this);
-    l1.paintTitle(g); l2.paintTitle(g);
+    shown(0)->paintTitle(g);
+    shown(1)->paintTitle(g);
 }
 
 void LfoPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
     auto left = r.removeFromLeft(r.getWidth() / 2);
     left.removeFromRight(7);
-    l1.layout(left);
     r.removeFromLeft(7);
-    l2.layout(r);
+    l1.layout(left); l3.layout(left);
+    l2.layout(r);    l4.layout(r);
+    // The number buttons sit right after the "LFO" title text.
+    for (int slot = 0; slot < 2; ++slot) {
+        auto& b = slot ? l2 : l1;
+        auto area = b.titleArea.withTrimmedLeft(36).withWidth(32).withSizeKeepingCentre(32, 16); // web .lfo-pick 15 x 16
+        pick[slot][0]->setBounds(area.removeFromLeft(15));
+        area.removeFromLeft(2);
+        pick[slot][1]->setBounds(area);
+    }
 }
 
 // ===================== MatrixPanel =====================
-MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl) {
+MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl), parameters(s) {
     juce::String base = "mat" + juce::String(slot);
     for (size_t i = 0; i < fable::MOD_SOURCES.size(); ++i) src.addItem(fable::MOD_SOURCES[i], static_cast<int>(i) + 1);
     for (size_t i = 0; i < fable::MOD_DESTS.size(); ++i) dst.addItem(fable::MOD_DESTS[i], static_cast<int>(i) + 1);
+    aux.addItem("NO AUX", 1);
+    for (size_t i = 1; i < fable::MOD_SOURCES.size(); ++i) aux.addItem(fable::MOD_SOURCES[i], static_cast<int>(i) + 1);
+    aux.setTooltip("aux source: scales this route by its unipolar value");
     srcAtt = attachCombo(s, base + ".src", src);
     dstAtt = attachCombo(s, base + ".dst", dst);
+    auxAtt = attachCombo(s, base + ".aux", aux);
     amt = std::make_unique<Knob>(s, base + ".amt", Knob::Xs, Accent::N, false);
     remove.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     remove.setColour(juce::TextButton::textColourOffId, col::textDim);
     remove.setTooltip("remove route");
     remove.onClick = [s, sl] { fui::clearSlot(s, sl); };
-    addAndMakeVisible(src); addAndMakeVisible(dst); addAndMakeVisible(*amt); addAndMakeVisible(remove);
+    polarity.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
+    polarity.setColour(juce::TextButton::textColourOffId, col::textDim);
+    polarity.setTooltip("route polarity: UNI pushes one way, BI swings both ways");
+    polarity.onClick = [this] { fui::setRouteBipolar(parameters, slot, !fui::routeBipolar(parameters, slot)); refreshPolarity(); };
+    addAndMakeVisible(src); addAndMakeVisible(dst); addAndMakeVisible(aux); addAndMakeVisible(*amt); addAndMakeVisible(remove); addAndMakeVisible(polarity);
+    refreshPolarity();
+}
+void MatrixPanel::Row::refreshPolarity() {
+    const juce::String text = fui::routeBipolar(parameters, slot) ? "BI" : "UNI";
+    if (polarity.getButtonText() != text) polarity.setButtonText(text);
 }
 void MatrixPanel::Row::resized() {
     auto rr = getLocalBounds();
@@ -458,10 +606,14 @@ void MatrixPanel::Row::resized() {
     rr.removeFromLeft(4);
     remove.setBounds(rr.removeFromRight(18).withSizeKeepingCentre(18, juce::jmin(18, rowH)));
     rr.removeFromRight(4);
-    int half = (rr.getWidth() - 14) / 2;
-    src.setBounds(rr.removeFromLeft(half).withSizeKeepingCentre(half, juce::jmin(22, rowH)));
+    polarity.setBounds(rr.removeFromRight(30).withSizeKeepingCentre(30, juce::jmin(18, rowH)));
+    rr.removeFromRight(4);
+    int third = (rr.getWidth() - 28) / 3;
+    src.setBounds(rr.removeFromLeft(third).withSizeKeepingCentre(third, juce::jmin(22, rowH)));
     rr.removeFromLeft(14); // arrow gutter
-    dst.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), juce::jmin(22, rowH)));
+    dst.setBounds(rr.removeFromLeft(third).withSizeKeepingCentre(third, juce::jmin(22, rowH)));
+    rr.removeFromLeft(14); // × gutter
+    aux.setBounds(rr.withSizeKeepingCentre(rr.getWidth(), juce::jmin(22, rowH)));
 }
 void MatrixPanel::Row::paint(juce::Graphics& g) {
     g.setColour(col::textDim);
@@ -469,6 +621,9 @@ void MatrixPanel::Row::paint(juce::Graphics& g) {
     auto sb = src.getBounds();
     g.drawText(juce::String::fromUTF8("\xe2\x96\xb8"), // ▸
                sb.getRight(), sb.getY(), 14, sb.getHeight(), juce::Justification::centred);
+    auto db = dst.getBounds();
+    g.drawText(juce::String::fromUTF8("\xc3\x97"), // ×
+               db.getRight(), db.getY(), 14, db.getHeight(), juce::Justification::centred);
 }
 
 MatrixPanel::MatrixPanel(ParameterSource s) : parameters(s) {
@@ -513,6 +668,7 @@ std::vector<int> MatrixPanel::visibleSlots() const {
 void MatrixPanel::timerCallback() {
     addBtn.setEnabled(fui::findFreeSlot(parameters) > 0); // grey out ADD ROUTE when the 16-slot pool is full
     auto cur = visibleSlots();
+    for (int slot : cur) rows[slot - 1]->refreshPolarity();
     if (cur != lastVisible) {
         lastVisible = cur;
         relayoutRows();

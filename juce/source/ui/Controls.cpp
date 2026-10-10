@@ -2,6 +2,7 @@
 #include "Format.h"
 #include "Modulation.h"
 #include <cmath>
+#include <utility>
 
 namespace fui {
 
@@ -11,19 +12,54 @@ AutomationMenuHost* automationHost(juce::Component& control) {
         if (auto* host=dynamic_cast<AutomationMenuHost*>(parent)) return host;
     return nullptr;
 }
+constexpr int kRemoveRoute=200, kTogglePolarity=400, kRemoveLane=300;
+float realValue(const ParameterSource& parameters, const juce::String& id) {
+    auto* p=parameters.parameter(id);
+    return p ? p->convertFrom0to1(p->getValue()) : 0.0f;
+}
 void showControlMenu(juce::Component& control, ParameterSource parameters, const juce::String& id, int dest) {
     juce::PopupMenu menu, sources;
     const bool canMod=dest>0 && findFreeSlot(parameters)>0;
-    const char* names[]{"LFO 1","LFO 2","MOD ENV","VELO","NOTE"};
-    for (int i=0;i<5;++i) sources.addItem(i+1,names[i]);
+    const int numSources=(int)fable::MOD_SOURCES.size()-1;
+    auto sourceName=[](int src) { return juce::String(fable::MOD_SOURCES[(size_t)src]); };
+    for (int i=1;i<=numSources;++i) sources.addItem(i,sourceName(i));
     menu.addSubMenu("Set modulation source", sources, canMod);
     auto* host=automationHost(control);
     menu.addItem(100,"Show in automation",host && host->canShowAutomation(id));
+    // One remove item per attached source, each in its ring colour.
+    const bool hasLane=host && host->hasAutomation(id);
+    juce::PopupMenu polarity;
+    juce::PopupMenu::Item removes[16];
+    int routes=0;
+    for (int slot=1; dest>0 && slot<=16; ++slot) {
+        const juce::String key="mat"+juce::String(slot);
+        const int src=(int)realValue(parameters,key+".src");
+        if (src<1 || src>numSources || (int)realValue(parameters,key+".dst")!=dest) continue;
+        const bool bi=routeBipolar(parameters,slot);
+        polarity.addColouredItem(kTogglePolarity+slot,sourceName(src)+" bipolar",modSourceColour(src),true,bi);
+        removes[routes++]=juce::PopupMenu::Item("Remove "+routeLabel(src,realValue(parameters,key+".amt"),bi))
+            .setID(kRemoveRoute+slot).setColour(modSourceColour(src));
+    }
+    const bool separated=routes>0;
+    if (separated) {
+        menu.addSubMenu("Route polarity",polarity);
+        menu.addSeparator();
+        for (int i=0;i<routes;++i) menu.addItem(removes[i]);
+    }
+    if (hasLane) {
+        if (!separated) menu.addSeparator();
+        menu.addColouredItem(kRemoveLane,"Remove automation lane",juce::Colour(0xffffdd6b));
+    }
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&control),
         [safe=juce::Component::SafePointer<juce::Component>(&control),parameters,id,dest](int action) {
             if (!safe) return;
-            if (action>=1 && action<=5 && dest>0) addRoute(parameters,action,dest);
-            else if (action==100) if (auto* h=automationHost(*safe)) h->showAutomation(id);
+            if (action>=1 && action<(int)fable::MOD_SOURCES.size() && dest>0) addRoute(parameters,action,dest);
+            else if (action==100) { if (auto* h=automationHost(*safe)) h->showAutomation(id); }
+            else if (action>kRemoveRoute && action<=kRemoveRoute+16) clearSlot(parameters,action-kRemoveRoute);
+            else if (action>kTogglePolarity && action<=kTogglePolarity+16)
+                setRouteBipolar(parameters,action-kTogglePolarity,!routeBipolar(parameters,action-kTogglePolarity));
+            else if (action==kRemoveLane) { if (auto* h=automationHost(*safe)) h->removeAutomation(id); }
+            safe->repaint();
         });
 }
 }
@@ -124,6 +160,7 @@ juce::uint64 Knob::ringSignature() const {
         int dst = (int)matRealValue(matParams_[slot][1]);
         if (src != 0 && dst == modDest_) {
             int amtq = (int)std::lround(matRealValue(matParams_[slot][2]) * 1000.0f);
+            mix((juce::uint64)((int)matRealValue(matParams_[slot][3]) & 0xFF));
             mix((juce::uint64)((slot + 1) & 0xFF));
             mix((juce::uint64)(src & 0xFF));
             mix((juce::uint64)(amtq & 0xFFFF));
@@ -138,7 +175,8 @@ void Knob::rebuildRings() {
         int src = (int)matRealValue(matParams_[slot][0]);
         int dst = (int)matRealValue(matParams_[slot][1]);
         if (src != 0 && dst == modDest_)
-            rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]) });
+            rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]),
+                               fable::routeBipolar(src, (int)matRealValue(matParams_[slot][3])) });
     }
 }
 
@@ -150,6 +188,7 @@ void Knob::timerCallback() {
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
+        if (highlightedModSource() != lastHighlight_) { lastHighlight_ = highlightedModSource(); dirty = true; }
         // Repaint for the live dot only on a meaningful move (~sub-pixel on the
         // arc) or a shown/hidden flip — idle knobs never repaint per tick.
         const float ln = liveNorm();
@@ -161,38 +200,53 @@ void Knob::timerCallback() {
     if (dirty) repaint();
 }
 
+// Accumulate the drag in an unsnapped norm (web Knob normRef parity). Adding
+// small deltas to getValue() never moves a stepped parameter such as sub.oct,
+// because the parameter snaps each write back to the nearest step.
 void Knob::nudge(float d) {
     if (!param) return;
-    param->setValueNotifyingHost(clamp01(param->getValue() + d));
+    if (!dragging) dragNorm_ = param->getValue();
+    dragNorm_ = clamp01(dragNorm_ + d);
+    param->setValueNotifyingHost(dragNorm_);
     repaint();
 }
 
 // Knob body / ring geometry — shared by paint and ring hit-test so the two stay
 // in lockstep. Returns centre, body radius, the ring gap and the per-ring
-// thickness; rings stack outward starting at bodyR + gap.
+// thickness; rings stack outward starting at bodyR + gap, outside the value
+// arc (r 33) so they never cover the base value. Matches the web r = 38 + k·3.4.
 namespace {
 struct KnobGeom { float cx, cy, bodyR, ringGap, ringThk; };
 KnobGeom knobGeom(int w, int h, bool showLabel, int sizePx) {
     const float avail = (float)juce::jmin(w, h - (showLabel ? 13 : 0));
     const float dia = juce::jmin(avail, (float)sizePx);
     const float scale = dia / 80.0f;
-    return { w * 0.5f, dia * 0.5f + 1.0f, 26.0f * scale, 6.0f * scale, 4.0f * scale };
+    return { w * 0.5f, dia * 0.5f + 1.0f, 26.0f * scale, 10.3f * scale, 3.4f * scale };
 }
 }
 
+int Knob::ringAt(juce::Point<float> pos) const {
+    if (modDest_ <= 0 || rings_.empty()) return -1;
+    auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
+    const float dist = pos.getDistanceFrom({ gm.cx, gm.cy });
+    const float inner = gm.bodyR + gm.ringGap;
+    if (dist < inner || dist > inner + (float)rings_.size() * gm.ringThk) return -1;
+    return juce::jlimit(0, (int)rings_.size() - 1, (int)std::floor((dist - inner) / gm.ringThk));
+}
+void Knob::mouseMove(const juce::MouseEvent& e) {
+    const int i = ringAt(e.position);
+    if (i != hoverRing_) { hoverRing_ = i; repaint(); }
+}
+void Knob::mouseExit(const juce::MouseEvent&) {
+    if (hoverRing_ >= 0) { hoverRing_ = -1; repaint(); }
+}
 void Knob::mouseDown(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) { showControlMenu(*this,parameters,id,modDest_); return; }
     if (!e.mods.isLeftButtonDown()) return;
     grabbedRing_ = -1;
-    if (modDest_ > 0 && !rings_.empty()) {
-        auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
-        float dx = e.position.x - gm.cx, dy = e.position.y - gm.cy;
-        float dist = std::sqrt(dx * dx + dy * dy);
-        float inner = gm.bodyR + gm.ringGap;
-        float outer = inner + (float)rings_.size() * gm.ringThk;
-        if (dist >= inner && dist <= outer) {
-            int i = (int)std::floor((dist - inner) / gm.ringThk);
-            i = juce::jlimit(0, (int)rings_.size() - 1, i);
+    {
+        const int i = ringAt(e.position);
+        if (i >= 0) {
             grabbedRing_ = i;
             if (e.mods.isRightButtonDown()) {
                 int slot = rings_[(size_t)i].slot;
@@ -205,11 +259,15 @@ void Knob::mouseDown(const juce::MouseEvent& e) {
             grabbedAmt_ = matParams_[rings_[(size_t)i].slot - 1][2];
             if (grabbedAmt_) grabbedAmt_->beginChangeGesture();
             lastY = e.position.y;
+            repaint();
             return;
         }
     }
     if (param) param->beginChangeGesture();
+    dragging = true;
+    dragNorm_ = param ? param->getValue() : 0.0f;
     lastY = e.position.y;
+    repaint();
 }
 void Knob::mouseDrag(const juce::MouseEvent& e) {
     if (!e.mods.isLeftButtonDown()) return;
@@ -235,15 +293,26 @@ void Knob::mouseUp(const juce::MouseEvent& e) {
     if (grabbedRing_ >= 0) {
         if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
         grabbedRing_ = -1;
+        repaint();
         return;
     }
     if (param) param->endChangeGesture();
+    dragging = false;
+    repaint();
 }
 void Knob::mouseDoubleClick(const juce::MouseEvent&) {
     if (param) param->setValueNotifyingHost(param->getDefaultValue());
 }
 void Knob::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) {
-    nudge((w.deltaY > 0 ? 1.0f : -1.0f) * (e.mods.isShiftDown() ? 0.005f : 0.03f));
+    // A wheel tick moves a stepped parameter by at least one step.
+    float step = e.mods.isShiftDown() ? 0.005f : 0.03f;
+    if (param) {
+        // AudioParameterFloat::getNumSteps() ignores the interval; read the range.
+        const auto& range = param->getNormalisableRange();
+        if (range.interval > 0.0f && range.end > range.start)
+            step = juce::jmax(step, range.interval / (range.end - range.start));
+    }
+    nudge((w.deltaY > 0 ? 1.0f : -1.0f) * step);
 }
 
 // ---- Knob drag-target (mod-source chips) ----
@@ -301,24 +370,30 @@ void Knob::paint(juce::Graphics& g) {
         g.strokePath(arc, juce::PathStrokeType(5 * scale, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // pointer
-    float rad = degToRad(A0+(A1-A0)*effectiveNorm());
+    // pointer: always the stored base value. Modulation and automation only
+    // move their own overlays (rings, inner trace, live dot).
+    float rad = degToRad(A0 + (A1 - A0) * n);
     juce::Point<float> tip(cx + ptrLen * std::sin(rad), cy - ptrLen * std::cos(rad));
     g.setColour(col::ptr);
     g.drawLine({ {cx, cy}, tip }, 4 * scale);
 
     // modulation rings: one arc per active slot whose dst == modDest, from the
     // current value angle to the angle at clamp(currentNorm + amt) (bipolar),
-    // stacked at increasing radii just outside the body. Source-colored.
+    // stacked at increasing radii outside the value arc. Source-colored.
+    const auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
     if (modDest_ > 0) {
-        const float ringGap = 6.0f * scale, ringThk = 4.0f * scale;
+        const float ringGap = gm.ringGap, ringThk = gm.ringThk;
+        const int focus = highlightedModSource();
         for (size_t i = 0; i < rings_.size(); ++i) {
             const auto& ring = rings_[i];
+            // Unipolar: base -> base + amt. Bipolar: base - amt -> base + amt.
             float toNorm = clamp01(n + ring.amt);
-            double dFrom = A0 + (A1 - A0) * n;
+            double dFrom = A0 + (A1 - A0) * (ring.bi ? clamp01(n - ring.amt) : n);
             double dTo   = A0 + (A1 - A0) * toNorm;
             float rr = bodyR + ringGap + (float)i * ringThk + ringThk * 0.5f;
             auto c = modSourceColour(ring.src);
+            if (focus > 0 && focus != ring.src) c = c.withAlpha(0.25f);
+            else if ((int)i == grabbedRing_ || (int)i == hoverRing_ || focus == ring.src) c = c.brighter(0.35f);
             if (std::abs(dTo - dFrom) < 0.01) { // zero-depth: a tick so it's visible
                 dTo = dFrom + (ring.amt >= 0 ? 0.8 : -0.8);
                 c = c.withAlpha(0.4f);
@@ -370,7 +445,7 @@ void Knob::paint(juce::Graphics& g) {
 
     // drop-target highlight while a compatible source chip hovers
     if (dragHover_) {
-        float hr = bodyR + 6.0f * scale + (float)juce::jmax((size_t)1, rings_.size()) * 4.0f * scale;
+        float hr = bodyR + gm.ringGap + (float)juce::jmax((size_t)1, rings_.size()) * gm.ringThk;
         g.setColour(accent.withAlpha(0.7f));
         g.drawEllipse(cx - hr, cy - hr, hr * 2, hr * 2, 1.6f * scale);
     }
@@ -379,7 +454,12 @@ void Knob::paint(juce::Graphics& g) {
     if (showLabel) {
         auto labelArea = juce::Rectangle<int>(0, (int)(dia) - 1, getWidth(), 12);
         g.setFont(monoFont(8.0f));
-        if (dragging) {
+        const int shown = grabbedRing_ >= 0 ? grabbedRing_ : hoverRing_;
+        if (shown >= 0 && shown < (int)rings_.size()) {
+            const auto& ring = rings_[(size_t)shown];
+            g.setColour(modSourceColour(ring.src));
+            g.drawText(routeLabel(ring.src, ring.amt, ring.bi), labelArea, juce::Justification::centred);
+        } else if (dragging) {
             g.setColour(col::text);
             g.drawText(formatParam(id, param ? param->convertFrom0to1(n) : 0.0f), labelArea,
                        juce::Justification::centred);
@@ -533,6 +613,7 @@ juce::uint64 VSlider::ringSignature() const {
         int dst = (int)matRealValue(matParams_[slot][1]);
         if (src != 0 && dst == modDest_) {
             int amtq = (int)std::lround(matRealValue(matParams_[slot][2]) * 1000.0f);
+            mix((juce::uint64)((int)matRealValue(matParams_[slot][3]) & 0xFF));
             mix((juce::uint64)((slot + 1) & 0xFF));
             mix((juce::uint64)(src & 0xFF));
             mix((juce::uint64)(amtq & 0xFFFF));
@@ -546,7 +627,8 @@ void VSlider::rebuildRings() {
         int src = (int)matRealValue(matParams_[slot][0]);
         int dst = (int)matRealValue(matParams_[slot][1]);
         if (src != 0 && dst == modDest_)
-            rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]) });
+            rings_.push_back({ slot + 1, src, matRealValue(matParams_[slot][2]),
+                               fable::routeBipolar(src, (int)matRealValue(matParams_[slot][3])) });
     }
 }
 float VSlider::automationNorm() const {
@@ -565,6 +647,7 @@ void VSlider::timerCallback() {
     if (modDest_ > 0) {
         auto sig = ringSignature();
         if (sig != lastRingSig_) { lastRingSig_ = sig; rebuildRings(); dirty = true; }
+        if (highlightedModSource() != lastHighlight_) { lastHighlight_ = highlightedModSource(); dirty = true; }
     }
     if (dirty) repaint();
 }
@@ -585,18 +668,27 @@ void VSlider::moveTo(float y) {
 // the track, stacked outward. Width matches the ring-thickness idea on the knob.
 namespace { constexpr float kBandGap = 3.0f, kBandThk = 6.0f; }
 
+int VSlider::bandAt(juce::Point<float> pos) const {
+    if (modDest_ <= 0 || rings_.empty()) return -1;
+    auto t = trackArea();
+    const float inner = t.getRight() + kBandGap, outer = inner + (float)rings_.size() * kBandThk;
+    if (pos.x < inner || pos.x > outer || pos.y < t.getY() || pos.y > t.getBottom()) return -1;
+    return juce::jlimit(0, (int)rings_.size() - 1, (int)std::floor((pos.x - inner) / kBandThk));
+}
+void VSlider::mouseMove(const juce::MouseEvent& e) {
+    const int i = bandAt(e.position);
+    if (i != hoverRing_) { hoverRing_ = i; repaint(); }
+}
+void VSlider::mouseExit(const juce::MouseEvent&) {
+    if (hoverRing_ >= 0) { hoverRing_ = -1; repaint(); }
+}
 void VSlider::mouseDown(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) { showControlMenu(*this,parameters,id,modDest_); return; }
     if (!e.mods.isLeftButtonDown()) return;
     grabbedRing_ = -1;
-    if (modDest_ > 0 && !rings_.empty()) {
-        auto t = trackArea();
-        float inner = t.getRight() + kBandGap;
-        float outer = inner + (float)rings_.size() * kBandThk;
-        if (e.position.x >= inner && e.position.x <= outer
-            && e.position.y >= t.getY() && e.position.y <= t.getBottom()) {
-            int i = (int)std::floor((e.position.x - inner) / kBandThk);
-            i = juce::jlimit(0, (int)rings_.size() - 1, i);
+    {
+        const int i = bandAt(e.position);
+        if (i >= 0) {
             grabbedRing_ = i;
             if (e.mods.isRightButtonDown()) {
                 int slot = rings_[(size_t)i].slot;
@@ -609,10 +701,12 @@ void VSlider::mouseDown(const juce::MouseEvent& e) {
             grabbedAmt_ = matParams_[rings_[(size_t)i].slot - 1][2];
             if (grabbedAmt_) grabbedAmt_->beginChangeGesture();
             lastY = e.position.y; // dedicated last-Y for the band drag (lastNorm is the timer's)
+            repaint();
             return;
         }
     }
     if (param) param->beginChangeGesture();
+    dragging_ = true;
     moveTo(e.position.y);
 }
 void VSlider::mouseDrag(const juce::MouseEvent& e) {
@@ -637,9 +731,12 @@ void VSlider::mouseUp(const juce::MouseEvent& e) {
     if (grabbedRing_ >= 0) {
         if (grabbedAmt_) { grabbedAmt_->endChangeGesture(); grabbedAmt_ = nullptr; }
         grabbedRing_ = -1;
+        repaint();
         return;
     }
     if (param) param->endChangeGesture();
+    dragging_ = false;
+    repaint();
 }
 void VSlider::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) {
     if (param) { param->setValueNotifyingHost(clamp01(param->getValue() + (w.deltaY > 0 ? 0.03f : -0.03f))); repaint(); }
@@ -664,8 +761,9 @@ void VSlider::paint(juce::Graphics& g) {
         g.fillRect(t.getX() - 4, gy - 1, t.getWidth() + 8, 2.0f);
     }
 
-    // handle
-    float hy = t.getBottom() - effectiveNorm() * t.getHeight();
+    // handle: always the stored base value; the ghost and automation markers
+    // show the played value.
+    float hy = fillTop;
     juce::Rectangle<float> handle(t.getCentreX() - 11, hy - 4.5f, 22, 9);
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff2b3344), handle.getCentreX(), handle.getY(),
                                            juce::Colour(0xff161b25), handle.getCentreX(), handle.getBottom(), false));
@@ -685,15 +783,17 @@ void VSlider::paint(juce::Graphics& g) {
     // modulation depth bands: one vertical band per active slot beside the
     // track, from the current pos to current + amt, source-colored, stacked.
     if (modDest_ > 0) {
+        const int focus = highlightedModSource();
         for (size_t i = 0; i < rings_.size(); ++i) {
             const auto& ring = rings_[i];
             float toNorm = clamp01(n + ring.amt);
-            float y0 = t.getBottom() - n * t.getHeight();
+            float y0 = t.getBottom() - (ring.bi ? clamp01(n - ring.amt) : n) * t.getHeight();
             float y1 = t.getBottom() - toNorm * t.getHeight();
             float bx = t.getRight() + kBandGap + (float)i * kBandThk;
             auto top = juce::jmin(y0, y1), bot = juce::jmax(y0, y1);
             if (bot - top < 1.5f) { top -= 1.0f; bot += 1.0f; } // visible tick at zero
-            g.setColour(modSourceColour(ring.src).withAlpha(0.85f));
+            const bool lit = (int)i == grabbedRing_ || (int)i == hoverRing_ || focus == ring.src;
+            g.setColour(modSourceColour(ring.src).withAlpha(focus > 0 && !lit ? 0.25f : lit ? 1.0f : 0.85f));
             g.fillRect(juce::Rectangle<float>(bx, top, kBandThk - 1.0f, bot - top));
         }
     }
@@ -704,10 +804,22 @@ void VSlider::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(t.expanded(3.0f), 6.0f, 1.6f);
     }
 
-    // POS label
-    g.setColour(col::textDim);
+    // POS label, or the band / value readout while hovering or dragging.
     g.setFont(monoFont(8.0f));
-    drawSpaced(g, "POS", getLocalBounds().removeFromBottom(12), 1.0f, juce::Justification::centred);
+    const auto labelArea = getLocalBounds().removeFromBottom(12);
+    const int shown = grabbedRing_ >= 0 ? grabbedRing_ : hoverRing_;
+    if (shown >= 0 && shown < (int)rings_.size()) {
+        const auto& ring = rings_[(size_t)shown];
+        g.setColour(modSourceColour(ring.src));
+        g.drawFittedText(routeLabel(ring.src, ring.amt, ring.bi), labelArea, juce::Justification::centred, 1, 0.7f);
+    } else if (dragging_) {
+        g.setColour(col::text);
+        g.drawFittedText(formatParam(id, param ? param->convertFrom0to1(n) : 0.0f), labelArea,
+                         juce::Justification::centred, 1, 0.7f);
+    } else {
+        g.setColour(col::textDim);
+        drawSpaced(g, "POS", labelArea, 1.0f, juce::Justification::centred);
+    }
 }
 
 // ---- VSlider drag-target (mod-source chips) ----
@@ -724,6 +836,15 @@ void VSlider::itemDropped(const SourceDetails& d) {
         lastRingSig_ = ~(juce::uint64)0;
     }
     repaint();
+}
+
+void refreshVisibleControls(juce::Component& component) {
+    if (!isVisibleInHierarchy(component)) return;
+    if (auto* knob = dynamic_cast<Knob*>(&component)) knob->refreshVisualState();
+    else if (auto* stepper = dynamic_cast<Stepper*>(&component)) stepper->refreshVisualState();
+    else if (auto* power = dynamic_cast<PowerButton*>(&component)) power->refreshVisualState();
+    else if (auto* slider = dynamic_cast<VSlider*>(&component)) slider->refreshVisualState();
+    for (auto* child : component.getChildren()) refreshVisibleControls(*child);
 }
 
 } // namespace fui

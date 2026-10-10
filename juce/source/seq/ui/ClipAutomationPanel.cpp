@@ -94,6 +94,21 @@ void ClipAutomationPanel::showAutomation(const juce::String& target) {
     if (it==lanes.end()) { lanes.push_back({target.toStdString(),true,{}, {}}); write(std::move(lanes)); }
     setLearn(false); setExpanded(true); signature_.clear(); refresh();
 }
+bool ClipAutomationPanel::hasAutomation(const juce::String& target) const {
+    const auto* c=clip();
+    return c && std::any_of(c->automation.begin(),c->automation.end(),[&](const auto& l){ return l.target==target.toStdString(); });
+}
+void ClipAutomationPanel::removeAutomation(const juce::String& target) {
+    const auto* c=clip(); if (!c) return;
+    auto lanes=c->automation;
+    auto it=std::find_if(lanes.begin(),lanes.end(),[&](const auto& l){ return l.target==target.toStdString(); });
+    if (it==lanes.end()) return;
+    const int index=(int)std::distance(lanes.begin(),it);
+    canvas_.cancel(); lanes.erase(it);
+    if (selected_>index) --selected_;
+    selected_=std::max(0,std::min(selected_,(int)lanes.size()-1));
+    setLearn(false); write(std::move(lanes));
+}
 void ClipAutomationPanel::setExpanded(bool open) { if (open_==open) return; canvas_.cancel(); open_=open; rebuildControls(); if (onLayoutChanged) onLayoutChanged(); }
 void ClipAutomationPanel::selectLane(int i) { canvas_.cancel(); selected_=i; setLearn(false); signature_.clear(); refresh(); }
 void ClipAutomationPanel::setTool(Tool tool) { canvas_.cancel(); tool_=tool; canvas_.setMouseCursor(tool==Point ? juce::MouseCursor::NormalCursor : juce::MouseCursor::CrosshairCursor); rebuildControls(); }

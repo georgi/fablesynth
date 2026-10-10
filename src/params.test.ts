@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MOD_DESTS, DEST_OF_PARAM, dstTarget, PARAMS, type GlobalDst } from './params';
+import { MOD_DESTS, DEST_OF_PARAM, dstTarget, PARAMS, polarize, polarityFor, routeBipolar, type GlobalDst } from './params';
 
 // Canonical dst index -> target, copied straight from the C++ contract
 // (juce/source/dsp/Params.h dstTarget / MOD_DESTS). This table is the single
@@ -144,5 +144,28 @@ describe('unison + blend (Serum-style unison)', () => {
     expect(dstTarget(27)).toBe('oscB.blend');
     expect(DEST_OF_PARAM['oscA.blend']).toBe(26);
     expect(DEST_OF_PARAM['oscB.blend']).toBe(27);
+  });
+});
+
+// Mirrors fable::polarize in Params.h. SRC (0) must keep legacy routes unchanged.
+describe('route polarity', () => {
+  it('keeps the native range by default', () => {
+    expect(polarize(-0.5, 1, 0)).toBe(-0.5); // LFO 1 is bipolar
+    expect(polarize(0.25, 3, 0)).toBe(0.25); // MOD ENV is unipolar
+  });
+  it('converts between unipolar and bipolar ranges', () => {
+    expect(polarize(-1, 1, 1)).toBe(0);
+    expect(polarize(1, 1, 1)).toBe(1);
+    expect(polarize(0, 4, 2)).toBe(-1); // VELO forced bipolar
+    expect(polarize(1, 4, 2)).toBe(1);
+  });
+  it('stores SRC when the choice matches the source', () => {
+    expect(polarityFor(1, true)).toBe(0);
+    expect(polarityFor(1, false)).toBe(1);
+    expect(polarityFor(3, true)).toBe(2);
+    expect(routeBipolar(3, polarityFor(3, true))).toBe(true);
+  });
+  it('appends one polarity enum per slot', () => {
+    for (let n = 1; n <= 16; n++) expect(PARAMS[`mat${n}.pol`]?.def).toBe(0);
   });
 });

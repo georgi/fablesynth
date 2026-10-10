@@ -409,7 +409,7 @@ body::before {
   height: 11px;
   line-height: 11px;
 }
-.knob:hover .k-value, .knob.dragging .k-value, .knob:focus .k-value { opacity: 1; }
+.knob:hover .k-value, .knob.dragging .k-value, .knob:focus .k-value, .knob.ring-active .k-value { opacity: 1; }
 .knob-xs .k-label { display: none; }
 
 /* ============ steppers ============ */
@@ -528,7 +528,7 @@ body::before {
   opacity: 0;
   transition: opacity 0.2s;
 }
-.vs-label { font-size: 8px; letter-spacing: 0.14em; color: var(--text-dim); margin-top: 5px; }
+.vs-label { font-size: 8px; letter-spacing: 0.14em; color: var(--text-dim); margin-top: 5px; white-space: nowrap; }
 
 /* ============ util (sub/noise) ============ */
 .panel-util { display: flex; flex-direction: column; gap: 12px; container-type: inline-size; }
@@ -606,6 +606,16 @@ body::before {
 }
 .filter-block.off .knob-row { opacity: 0.4; filter: saturate(0.4); }
 .panel-lfos { display: flex; gap: 14px; }
+.lfo-pick { display: inline-flex; gap: 2px; }
+.lfo-pick-btn {
+  width: 15px; height: 16px; padding: 0;
+  border: 1px solid var(--line); border-radius: 3px;
+  background: #0a0d13; color: var(--text-dim);
+  font: 600 8px/1 var(--font-mono); cursor: pointer;
+}
+.lfo-pick-btn[aria-selected='true'] { color: var(--ac); border-color: color-mix(in srgb, var(--ac) 45%, var(--line)); }
+.env-tabs { margin-left: auto; }
+.env-tabs .filter-tab { padding: 0 7px; }
 .lfo-block { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .lfo-curve {
   display: block;
@@ -683,14 +693,17 @@ body::before {
 .panel-fx { min-height: 124px; }
 .panel-matrix {
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: 250px auto minmax(0, 1fr);
   gap: 9px;
   overflow: hidden;
 }
+.mx-macros { display: flex; gap: 2px; align-items: flex-start; padding-top: 2px; }
+.mx-macro { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.mx-macro .mod-chip-compact { height: 14px; }
 .mx-rail { display: flex; min-width: 0; flex-direction: column; }
 .mx-rail .panel-head { margin-bottom: 5px; }
-.mx-sources { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 4px; }
-.mx-sources .mod-chip { height: 16px; padding: 0 5px; font-size: 7px; }
+.mx-sources { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 4px; }
+.mx-sources .mod-chip { height: 15px; padding: 0 4px; font-size: 7px; }
 .matrix-rows {
   display: flex;
   flex-direction: column;
@@ -735,6 +748,18 @@ body::before {
   cursor: pointer;
 }
 .mx-del:hover { color: #ff9b9b; border-color: rgba(255, 90, 90, 0.4); }
+.mx-pol {
+  flex: none;
+  width: 30px; height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #11141c;
+  color: var(--text-dim);
+  font: 8px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.mx-pol.on { color: var(--text); border-color: #9fb4d8; }
 .mx-empty { margin: 0; font-size: 9px; color: var(--text-hint); letter-spacing: 0.08em; }
 .mx-add {
   margin-top: auto;
@@ -801,9 +826,10 @@ body::before {
 
 /* POS-slider depth band + drop affordance */
 .vs-mod {
+  /* Beside the track, so the base handle stays grabbable. */
   position: absolute;
-  left: -3px;
-  right: -3px;
+  left: calc(100% + 3px + var(--lane, 0) * 6px);
+  width: 5px;
   border-radius: 3px;
   background: color-mix(in srgb, var(--src) 38%, transparent);
   border-top: 1px solid var(--src);
@@ -813,6 +839,11 @@ body::before {
   z-index: 3;
 }
 .vslider.mod-target .vs-track { outline: 1px dashed var(--ac); outline-offset: 3px; }
+/* A hovered source chip lights its rings and bands and dims the others. */
+.k-mod:hover, .k-mod-lit { stroke-width: 4; opacity: 1; }
+.k-mod-dim { opacity: 0.25; }
+.vs-mod-lit { background: color-mix(in srgb, var(--src) 70%, transparent); }
+.vs-mod-dim { opacity: 0.25; }
 
 /* ============ fx rack ============ */
 .panel-fx {
@@ -877,7 +908,8 @@ body::before {
 .oct-ctl button:hover { border-color: var(--ac-a); color: var(--ac-a); }
 #oct-label { font-size: 11px; color: var(--ac-a); min-width: 24px; text-align: center; }
 
-#mono-toggle {
+#mono-toggle,
+#legato-toggle {
   font: inherit;
   font-size: 9px;
   letter-spacing: 0.08em;
@@ -888,10 +920,13 @@ body::before {
   color: var(--text-dim);
   cursor: pointer;
 }
-#mono-toggle.on {
+#mono-toggle.on,
+#legato-toggle.on {
   color: var(--ac-n);
   border-color: currentColor;
 }
+
+#legato-toggle:disabled { opacity: 0.35; cursor: default; }
 
 #keyboard {
   flex: 1;
@@ -1778,5 +1813,12 @@ body::before {
 }
 
 /* Live automation: ring from the stored value to the automated value, plus a dot. */
-.k-auto { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; pointer-events: none; filter: drop-shadow(0 0 3px currentColor); }
+.k-auto { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; pointer-events: none; filter: drop-shadow(0 0 3px currentColor); }
 .k-auto-dot { fill: currentColor; stroke: #0b0e14; stroke-width: 1.4; pointer-events: none; filter: drop-shadow(0 0 3px currentColor); }
+
+/* Standalone WT-1 pages stack to one column on phones. */
+@media (max-width: 700px) {
+  .panels[data-page='edit'] { grid-template-areas: 'oscA' 'oscB' 'util' 'filter' 'env1' 'env2' 'lfos' 'matrix'; }
+  .panels[data-page='fx'] { grid-template-areas: 'eq' 'ott' 'comp' 'drive' 'chorus' 'echo' 'reverb'; }
+  .wt-body .device-page { min-height: 0; }
+}

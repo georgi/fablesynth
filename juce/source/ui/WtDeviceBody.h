@@ -50,4 +50,10 @@ private:
     juce::TextButton automationPage_{"AUTOMATION"};
     juce::Component* automationPanel_=nullptr;
     Page page_ = Page::edit;
+    // Voice mode beside the page tabs (web keyboard bar): GLIDE, MONO, and
+    // LEGATO, which only applies in mono. Here so hosted SQ-4 tracks get it too.
+    fui::Knob glide_;
+    juce::Label glideLabel_ { {}, "GLIDE" };
+    fui::PillButton mono_ { "MONO", fui::PillButton::Tag, fui::col::acN }, legato_ { "LEGATO", fui::PillButton::Tag, fui::col::acN };
+    std::unique_ptr<juce::ParameterAttachment> monoAtt_, legatoAtt_;
 };

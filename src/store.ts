@@ -254,6 +254,8 @@ export const useStore = create<SynthStore>((set, get) => {
     if (patch.src !== undefined) get().setParam(`mat${slot}.src`, patch.src);
     if (patch.dst !== undefined) get().setParam(`mat${slot}.dst`, patch.dst);
     if (patch.amt !== undefined) get().setParam(`mat${slot}.amt`, patch.amt);
+    if (patch.pol !== undefined) get().setParam(`mat${slot}.pol`, patch.pol);
+    if (patch.aux !== undefined) get().setParam(`mat${slot}.aux`, patch.aux);
   },
 
   clearSlot: (slot) => {
@@ -262,9 +264,12 @@ export const useStore = create<SynthStore>((set, get) => {
     get().setParam(`mat${slot}.src`, next[`mat${slot}.src`]);
     get().setParam(`mat${slot}.dst`, next[`mat${slot}.dst`]);
     get().setParam(`mat${slot}.amt`, next[`mat${slot}.amt`]);
+    get().setParam(`mat${slot}.pol`, next[`mat${slot}.pol`]);
+    get().setParam(`mat${slot}.aux`, next[`mat${slot}.aux`]);
   },
 
   setModDrag: (src) => set({ modDrag: src }),
+  setModFocus: (src) => set({ modFocus: src }),
 
   applyPreset: (presetParams, presetMods) => {
     const params = resolvePresetMods(presetParams, presetMods);

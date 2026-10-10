@@ -153,3 +153,39 @@ describe('held stack survives mono<->poly flips', () => {
     expect(gated(h)).toHaveLength(0);      // stuck note if held=[57] leaked
   });
 });
+
+describe('mono without legato (Serum MONO)', () => {
+  beforeEach(() => { g.currentFrame = 0; });
+
+  it('a new note retriggers the envelope of the single mono voice', () => {
+    const h = bootWt({ 'master.mono': 1, 'master.legato': 0, 'env1.a': 0.01, 'env1.d': 0.05, 'env1.s': 0.5 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    h.render(200); // 533 ms: past the attack, in sustain
+    h.send({ t: 'on', n: 64, v: 1 });
+    h.render(1);
+    expect(gated(h)).toHaveLength(1);
+    expect(gated(h)[0]!.note).toBe(64);
+    expect(gated(h)[0]!.ampEnv.state).toBe(1);
+  });
+
+  it('releasing the top note retriggers on the held note', () => {
+    const h = bootWt({ 'master.mono': 1, 'master.legato': 0, 'env1.a': 0.001, 'env1.d': 0.05, 'env1.s': 0.5 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    h.send({ t: 'on', n: 64, v: 1 });
+    h.render(100); // settled at sustain
+    h.send({ t: 'off', n: 64 });
+    h.render(1);
+    const v = gated(h)[0]!;
+    expect(v.note).toBe(60);
+    expect(v.ampEnv.state).not.toBe(3); // attack/decay again, not sustain
+  });
+
+  it('legato stays the default: no retrigger', () => {
+    const h = bootWt({ 'master.mono': 1, 'env1.a': 0.001, 'env1.s': 0.5, 'env1.d': 0.05 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    h.render(100);
+    h.send({ t: 'on', n: 64, v: 1 });
+    h.render(1);
+    expect(gated(h)[0]!.ampEnv.state).toBe(3);
+  });
+});
