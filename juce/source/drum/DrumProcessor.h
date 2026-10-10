@@ -133,6 +133,13 @@ public:
 
     // ---- HUD feeds ----
     void  readScope(float* dst, int n) const;         // MAIN post-FX ring buffer
+    // Post-FX output (MAIN for DR-1) as a lock-free stereo stream for
+    // auto-EQ and other message-thread analysis (dsp/AnalysisTap.h).
+    const fable::ProgramTap& outputTap() const { return *outputTap_; }
+    // KIT MIX capture and comp traces: see DrumEngine::padCapture/compTrace.
+    void setPadCapture(bool on) { engine.setPadCapture(on); }
+    const fable::PadCaptureTap& padCapture(int pad) const { return engine.padCapture(pad); }
+    const fable::DetectorTrace& compTrace(int pad, int bus) const { return engine.compTrace(pad, bus); }
     float getVizPos(int osc) const { return (osc == 0 ? vizA_ : vizB_).load(); }
     float liveDrumFilter(const juce::String& id) const {
         const int pid=fable::drumIdFromString(id.toStdString());
@@ -182,7 +189,11 @@ private:
         int chainSize = 1;
         bool hasRhythm = false;
         fable::DrumRhythm rhythm{};
+        fable::AutoBank automation{};
     };
+    std::vector<fable::AutoLane> automation_;
+    fable::StepEditHistory<std::vector<fable::AutoLane>> automationHistory_{50};
+    std::atomic<double> automationSteps_{-1};
     // Single producer (message thread), single consumer (audio). Each owns
     // one slot; exchange hands off the middle slot. The dirty bit coalesces
     // edits while audio is stopped without ever overwriting a reader's slot.
@@ -206,7 +217,7 @@ private:
     std::array<std::atomic<int>, 16> lanePositions_{};
     std::atomic<int> curStep_{-1}, curPattern_{0};
     std::atomic<uint32_t> hitFlags_{0};
-    std::atomic<bool> hostSynced_{false};
+    std::atomic<bool> hostSynced_{false}, hostPlaying_{false};
     std::atomic<double> hostBpm_{0.0};
     std::array<std::array<std::atomic<float>,2>,fable::DR_NPADS> liveDrumFilter_{};
     std::atomic<float> vizA_{-1.0f}, vizB_{-1.0f}, vizEnv_{0.0f};
@@ -215,6 +226,7 @@ private:
 
     static constexpr int kScopeSize = 4096; // power of two
     std::array<float, kScopeSize> scopeBuf_{};
+    std::unique_ptr<fable::ProgramTap> outputTap_ = std::make_unique<fable::ProgramTap>();
     std::atomic<int> scopeW_{0};
 
     juce::AudioBuffer<float> scratch_; // backing for disabled AUX buses

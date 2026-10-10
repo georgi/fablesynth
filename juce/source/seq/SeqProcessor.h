@@ -105,9 +105,26 @@ public:
     // JSON fails validation.
     bool applySessionJson(const juce::String& json);
     juce::String currentSessionJson() const;
+    /** currentSessionJson() plus the live master section, for SAVE. */
+    juce::String exportSessionJson() const;
     juce::RangedAudioParameter* masterFxParameter(const juce::String& uiId) const;
     fable::FxTelemetry masterFxTelemetry() const;
     std::array<float, 3> masterLimiterTelemetry() const;
+
+    // ---- analysis taps (message thread; lock-free, see dsp/AnalysisTap.h) ----
+    // Stereo sample streams for FFT/RMS analysis (ASSIST, auto-EQ):
+    //  trackTap(t)       track t after alignment, fader, mute and solo
+    //  masterInputTap()  the sum of those tracks, before master FX and gain
+    //  masterOutputTap() the final output after master FX, gain and limiters
+    const fable::ProgramTap& trackTap(int t) const { return taps_->track[(size_t)juce::jlimit(0, kTracks - 1, t)]; }
+    const fable::ProgramTap& masterInputTap() const { return taps_->masterIn; }
+    const fable::ProgramTap& masterOutputTap() const { return taps_->masterOut; }
+    // COMP detector traces (auto-comp). track -1 is the master compressor;
+    // track 0 (DR-1) takes pad >= 0 for a pad strip, else the group strip.
+    const fable::DetectorTrace& compTrace(int track, int pad = -1) const;
+    // DR-1 KIT MIX capture of the hosted drum track (DrumEngine::padCapture).
+    void setDrumPadCapture(bool on) { drum_.setPadCapture(on); }
+    const fable::PadCaptureTap& drumPadCapture(int pad) const { return drum_.padCapture(pad); }
 
     // ---- editing undo substrate (message thread) -----------------------------
     // Bounded (50) session-JSON snapshot stack over currentSessionJson()/
@@ -347,7 +364,8 @@ private:
 
     // applySessionJson minus the history clear — the shared restore path used
     // by external loads AND by undo/redo (which must keep their stacks).
-    bool restoreSessionJson(const juce::String& json);
+    // `withMaster` restores a stored master section; undo/redo leave it alone.
+    bool restoreSessionJson(const juce::String& json, bool withMaster = false);
 
     // juce::Timer: the processor's own 30 Hz pump for drainAcks() (see the
     // threading note above) — private since only the processor drives it.
@@ -394,7 +412,7 @@ private:
     double frame_ = 0;
     juce::SmoothedValue<float> trackGain_[4], masterGain_; // ~15 ms ramps
     std::atomic<float>* rawMaster_ = nullptr;
-    std::array<std::atomic<float>*, 33> rawMasterFx_ {};
+    std::array<std::atomic<float>*, fable::MASTER_FX_PARAMS> rawMasterFx_ {};
 
     struct MasterFx {
         fable::ParametricEq eq;

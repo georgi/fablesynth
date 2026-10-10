@@ -1263,6 +1263,9 @@ class DrumProcessor extends AudioWorkletProcessor {
       case 'reverb':
         this.reverbMetering = !!d.on; this.reverbEnergy.fill(0); this.reverbSamples = 0;
         break;
+      case 'padCapture':
+        this.padCapture = !!d.on; this.capFrames = 0; this.capLen.fill(0);
+        break;
       case 'meterPad':
         this.meterPad = Math.max(0, Math.min(NPADS - 1, d.pad | 0));
         this.meterEnergy.fill(0); this.echoEnergy.fill(0); this.reverbEnergy.fill(0);
@@ -2607,6 +2610,7 @@ class DrumProcessor extends AudioWorkletProcessor {
       if (out.length > 1) out[1].set(br.subarray(0, n));
     }
     if (this.metering) this.meterSamples += n;
+    if (this.padCapture) this.capFrames += n;
     if (this.echoMetering) this.echoSamples += n;
     if (this.reverbMetering) this.reverbSamples += n;
   }

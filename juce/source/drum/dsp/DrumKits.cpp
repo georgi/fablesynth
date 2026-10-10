@@ -1,6 +1,7 @@
 // Transcription of src/drum/kits.ts. Derived kits share the same base helpers
 // and rounding/clamps as the web so the factory program banks stay in lockstep.
 #include "DrumKits.h"
+#include "KitLevels.gen.h"
 
 #include <algorithm>
 #include <cmath>

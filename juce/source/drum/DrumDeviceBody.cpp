@@ -6,7 +6,8 @@
 DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& model)
     : model_(model), pads(model), padStrip(model), oscA(model, 0), oscB(model, 1), noise(model),
       pitchEnv(model), ampEnv(model), filter(model), mod(model), selBar(model),
-      stepSeq(model), fxRack(model, false), routing(model, true) {
+      stepSeq(model), kitMix(model), fxRack(model, false), routing(model, true) {
+    fxRack.setGroupPanel(&kitMix, "KIT MIX");
     for (auto* component : std::initializer_list<juce::Component*>{
              &pads, &padStrip, &oscA, &oscB, &noise, &pitchEnv, &ampEnv,
              &filter, &mod, &selBar, &stepSeq, &fxRack, &routing })

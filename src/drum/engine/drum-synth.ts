@@ -42,6 +42,8 @@ export interface DrumVizMessage {
 // runs inside the worklet (review W6, docs/audio-engine-review.md §3). The
 // native graph is only the meter tap and the route to the device.
 const BUS_COUNT = OUT_NAMES.length;
+/** Node output carrying pad 01 (KICK) alone, for SQ-4 side-chain keys. */
+export const KICK_KEY_OUTPUT = BUS_COUNT;
 
 // Hosted-mode options (SQ-4): share an AudioContext and route the engine's
 // output into a provided node instead of ctx.destination. Defaults keep the
@@ -59,10 +61,14 @@ export function fxPadFromParam(id: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/** One block of a pad's post-FX mono signal; `frames` counts samples since capture began. */
+export interface PadAudioMessage { t: 'padAudio'; pad: number; frames: number; data: Float32Array }
+
 export class DrumEngine {
   private dynamicsListeners = new Set<(message: DynamicsMessage) => void>();
   private echoListeners = new Set<(message: EchoMessage) => void>();
   private reverbListeners = new Set<(message: ReverbMessage) => void>();
+  private padAudioListeners = new Set<(message: PadAudioMessage) => void>();
   private meterPad = 0;
   private meterBus = 0;
 
@@ -86,6 +92,15 @@ export class DrumEngine {
     return () => {
       this.echoListeners.delete(listener);
       if (this.ready && !this.echoListeners.size) this.node.port.postMessage({ t: 'echo', on: false });
+    };
+  }
+  /** Streams each live pad's post-FX mono audio for kit auto-mix while subscribed. */
+  subscribePadAudio(listener: (message: PadAudioMessage) => void): () => void {
+    this.padAudioListeners.add(listener);
+    if (this.ready && this.padAudioListeners.size === 1) this.node.port.postMessage({ t: 'padCapture', on: true });
+    return () => {
+      this.padAudioListeners.delete(listener);
+      if (this.ready && !this.padAudioListeners.size) this.node.port.postMessage({ t: 'padCapture', on: false });
     };
   }
   subscribeReverb(listener: (message: ReverbMessage) => void): () => void {
@@ -169,6 +184,7 @@ export class DrumEngine {
         const hits = e.data.hits as number[] | undefined;
         if (this.onhit && hits && hits.length) this.onhit(hits);
       }
+      if (e.data.t === 'padAudio') this.padAudioListeners.forEach(listener => listener(e.data as PadAudioMessage));
       if (e.data.t === 'latency') this.latencySamples = e.data.n as number;
       if (e.data.t === 'anchor') this.transportAnchor = e.data.frame as number;
       if (e.data.t === 'clipstart' && this.onclipstart) this.onclipstart(e.data.frame as number);

@@ -64,13 +64,14 @@ export function FxRack({ scopeSwitch = true }: { scopeSwitch?: boolean } = {}) {
       <div className="dr-fx-head">
         <span className="dr-led dr-led-a" aria-hidden="true" />
         <h2>{scope === 'pad' ? 'PAD FX INSERT' : 'DRUM GROUP CHANNEL STRIP'}</h2>
-        <div className="dr-fx-scope" role="group" aria-label="FX scope">
+        {scopeSwitch && <div className="dr-fx-scope" role="group" aria-label="FX scope">
           <button type="button" className={scope === 'pad' ? 'active' : ''} aria-pressed={scope === 'pad'} onClick={() => openDrumFx('pad')}>PAD FX</button>
           <button type="button" className={scope === 'group' ? 'active' : ''} aria-pressed={scope === 'group'} onClick={() => openDrumFx('group')}>GROUP FX</button>
-        </div>
+        </div>}
         <span className="dr-fx-padname">{scope === 'pad' ? `PAD ${String(selectedPad + 1).padStart(2, '0')}` : 'ALL 16 PADS'}</span>
         <span className="dr-fx-flow" aria-hidden="true">EQ › OTT › COMP › DRIVE › CHORUS › DELAY › REVERB</span>
       </div>
+      {scope === 'group' && <KitMixPanel engine={activeEngine} />}
       <div className="fx-rack">
         <EqPanel key={`${scope}-${selectedPad}`} adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />
