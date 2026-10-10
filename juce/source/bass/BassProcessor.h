@@ -8,6 +8,7 @@
 #include "dsp/BassParams.h"
 #include "dsp/BassPatches.h"
 #include "../ui/ProgramDirty.h"
+#include "../ui/BrowserParams.h"
 
 #include <array>
 #include <atomic>
@@ -61,6 +62,14 @@ public:
 
     // Edited-since-patch-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
+
+    // ---- preset browser (message thread) ----
+    // A patch is params + patterns + chain, so a snapshot restores all of them,
+    // the program index and the dirty flag. restoreSound() also serves VARY.
+    std::vector<float> captureParamValues();
+    void restoreSound(int program, const std::vector<float>& values, const std::vector<uint8_t>& patterns,
+                      int chainBars, int editPattern, bool dirty);
+    bool isHostPlaying() const { return hostPlaying_.load(); }
 
     // ---- audition / transport (message thread -> engine via the command FIFO) ----
     void noteOn(int semi, float vel);             // UI keyboard audition

@@ -10,6 +10,7 @@
 #include "dsp/Presets.h"
 #include "dsp/UserTables.h"
 #include "ui/ProgramDirty.h"
+#include "ui/BrowserParams.h"
 #include "ui/WtUiModel.h"
 #include <limits>
 #include "ui/StepEditOps.h"
@@ -49,7 +50,17 @@ public:
 
     // Edited-since-preset-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
+
+    // ---- preset browser (message thread) ----
+    // Snapshot = every parameter's plain value + the program index + the dirty
+    // flag. restoreSound() also serves VARY (same program, edited values, dirty).
+    std::vector<float> captureParamValues();
+    void restoreSound(int program, const std::vector<float>& values, bool dirty);
+    // Audition note on the lock-free command FIFO; bypasses the arp.
+    void auditionNote(int note, bool on);
+    bool isHostPlaying() const { return hostPlaying.load(); }
     fable::FxTelemetry fxTelemetry() const { return fx.telemetry(); }
+    const fable::DetectorTrace& compTrace() const { return fx.compTrace(); }
 
     // ---- wavetable visualization feed (read on the message thread) ----
     // The live modulated frame position per oscillator is published from the
@@ -87,6 +98,13 @@ public:
     // Add a freshly built table; returns its combined table index (or -1 if full).
     int  addUserTable(fable::UserTable table);
     void deleteUserTable(int poolIndex);
+    // Load an imported preset (serumimport JSON): its tables go into pool
+    // slots reserved for imported presets (reused in place, so the user's own
+    // tables keep their indices), then every parameter is set. key identifies
+    // the preset for the browser; empty on failure with error set.
+    bool loadImportedPreset(const juce::String& key, const std::vector<std::pair<std::string, float>>& params,
+                            const std::vector<fable::UserTable>& presetTables, juce::String& error);
+    const juce::String& loadedImportedKey() const { return importedKey_; }
     void renameUserTable(int poolIndex, std::string name);
     void updateUserTable(int poolIndex, fable::UserTable u); // in-place replace, keeps index
     int  duplicateUserTable(int poolIndex);   // returns new combined index, or -1
@@ -165,17 +183,21 @@ private:
     // HUD feeds
     static constexpr int kScopeSize = 4096; // power of two
     std::array<float, kScopeSize> scopeBuf{};
+    std::unique_ptr<fable::ProgramTap> outputTap_ = std::make_unique<fable::ProgramTap>();
     std::atomic<int> scopeW{0};
     std::atomic<int> voiceCount{0};
     std::atomic<int> midiGlow{0};
     std::atomic<double> currentSr{48000.0};
     std::array<std::atomic<float>*, fable::NUM_PARAMS> rawParams{};
     int currentProgram = 0;
+    std::vector<int> importedSlots_;   // user-table pool slots owned by imported presets
+    juce::String importedKey_;         // imported preset loaded now (empty: a factory program)
     bool prepared = false;
     fui::ProgramDirtyTracker programDirty_{*this};
 
     // ---- note sequencer bridge (BassAudioProcessor scheme) ----
-    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic, CmdArpClear, CmdArpKeyOn = 128, CmdArpKeyOff = 256 };
+    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic, CmdArpClear, CmdArpKeyOn = 128, CmdArpKeyOff = 256,
+                   CmdAuditionOn = 384, CmdAuditionOff = 512 };
     fable::ArpSettings arpSettings_;
     fable::ArpMailbox arpMailbox_;
     fable::ArpInput arpInput_;

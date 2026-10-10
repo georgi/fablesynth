@@ -63,21 +63,34 @@ private:
 //   #bl-keysrow       (18, 918) 1424 x 140  (keyboard last, as on hardware)
 
 // ---- BassRack ----
-BassRack::BassRack(fui::BassUiModel& p) : header(p), body(p) {
+BassRack::BassRack(fui::BassUiModel& p, BassAudioProcessor& proc)
+    : header(p), body(p), browserAdapter_(std::make_unique<fui::BassStandaloneBackend>(proc)), browser_(browserAdapter_) {
     // The body spans the full logical rack, including the otherwise-empty
     // header strip. Keep the header above it so its patch and master controls
     // receive mouse events.
     addAndMakeVisible(body); addAndMakeVisible(header);
+    fui::enableLeafControlCache(*this);
+    addChildComponent(browser_);   // the drawer sits above everything else
+    header.onBrowse = [this] { toggleBrowser(); };
+    browser_.onClose = [this] { header.setBrowseOpen(false); };
+}
+
+void BassRack::toggleBrowser() {
+    if (browser_.isOpen()) { browser_.close(); return; }
+    browser_.open();
+    header.setBrowseOpen(true);
 }
 
 void BassRack::resized() {
     header.setBounds(18, 14, 1424, 80);
     body.setBounds(getLocalBounds());
+    // Drawer below the header, as wide as the header (web .pbr: top calc(100% + 6px)).
+    browser_.setBounds(18, 14 + 80 + 6, 1424, juce::jmin(620, getHeight() - 100 - 10));
 }
 
 // ---- BassEditor ----
 BassEditor::BassEditor(BassAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), model(std::make_unique<StandaloneBassUiModel>(p)), rack(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
+    : juce::AudioProcessorEditor(p), model(std::make_unique<StandaloneBassUiModel>(p)), rack(*model, p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     addAndMakeVisible(agentOverlay);

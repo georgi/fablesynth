@@ -11,6 +11,10 @@ import { HOSTED_MAX_BARS, type MachineId } from '../protocol';
 import { clipPattern, useSeqStore } from '../store';
 import { factoryPatchNames, patchBaseIndex, stepFactoryPatchIndex } from '../devices';
 import { ClipLibraryBrowser } from './ClipLibraryBrowser';
+import { PresetBrowser } from '../../components/presetBrowser/PresetBrowser';
+import { BassPatchBrowser } from '../../bass/components/BassPatchBrowser';
+import { KitBrowser } from '../../drum/components/browser/KitBrowser';
+import { useSessionPatchOps } from '../sessionPatchOps';
 
 const BAR_STORE = {
   DR1: {
@@ -39,7 +43,14 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
   const drumFxScope = useSeqStore((s) => s.drumFxScope);
   const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
   const masterFxOpen = useSeqStore((s) => s.masterFxOpen);
-  const patchSelect = <HostedPatchSelect machine={machine} />;
+  // DR-1 shares one open-drawer slot with its pad-patch browser.
+  const [localBrowsing, setLocalBrowsing] = useState(false);
+  const drumBrowsing = useDrumStore((s) => s.browser === 'kit');
+  const browsing = machine === 'DR1' ? drumBrowsing : localBrowsing;
+  const setBrowsing = (open: boolean) => machine === 'DR1'
+    ? useDrumStore.getState().setBrowser(open ? 'kit' : null) : setLocalBrowsing(open);
+  const patchSelect = <HostedPatchSelect machine={machine} browsing={browsing} onBrowse={() => setBrowsing(!browsing)} />;
+  const browser = browsing && <TrackPresetBrowser machine={machine} onClose={() => setBrowsing(false)} />;
   const modeToggle = <DeviceModeToggle />;
   const fxToggle = machine === 'DR1' ? <div className="sq-drum-fx-scope" role="group" aria-label="DR-1 FX scope"><button className={`sq-drum-fx-toggle${drumFxOpen && drumFxScope === 'pad' ? ' on' : ''}`} aria-pressed={drumFxOpen && drumFxScope === 'pad'} onClick={() => {
     const st = useSeqStore.getState();
@@ -64,6 +75,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
       <>
         <div className="sq-clipbar">
           {patchSelect}
+          {browser}
           {modeToggle}
           {fxToggle}
           {instrumentFxToggle}
@@ -82,6 +94,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
       <>
         <div className="sq-clipbar">
           {patchSelect}
+          {browser}
           {modeToggle}
           {fxToggle}
           {instrumentFxToggle}
@@ -99,6 +112,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
     <>
       <div className="sq-clipbar">
         {patchSelect}
+        {browser}
         {modeToggle}
         {fxToggle}
         {instrumentFxToggle}
@@ -151,7 +165,16 @@ export function HostedLengthControl({ machine }: { machine: MachineId }) {
   );
 }
 
-function HostedPatchSelect({ machine }: { machine: MachineId }) {
+// The focused track's preset browser; it edits the track's session patch.
+function TrackPresetBrowser({ machine, onClose }: { machine: MachineId; onClose: () => void }) {
+  const session = useSessionPatchOps();
+  if (!session) return null;
+  if (machine === 'DR1') return <KitBrowser session={session} onClose={onClose} />;
+  if (machine === 'BL1') return <BassPatchBrowser session={session} onClose={onClose} />;
+  return <PresetBrowser session={session} onClose={onClose} />;
+}
+
+function HostedPatchSelect({ machine, browsing, onBrowse }: { machine: MachineId; browsing: boolean; onBrowse: () => void }) {
   const focus = useSeqStore((s) => s.focus)!;
   const patch = useSeqStore((s) => s.session.tracks[focus.track].patch);
   const names = factoryPatchNames(machine);
@@ -172,6 +195,7 @@ function HostedPatchSelect({ machine }: { machine: MachineId }) {
       </select>
       {dirty && <span className="sq-device-patch-dirty" title="Patch has unsaved edits" aria-label="edited">*</span>}
       <button type="button" onClick={() => step(1)} aria-label="Next factory patch">▸</button>
+      <button type="button" className="sq-device-browse" aria-expanded={browsing} onClick={onBrowse}>BROWSE</button>
     </div>
   );
 }

@@ -9,6 +9,9 @@
 #include "ui/WavetableEditor.h"
 #include "ui/WtDeviceBody.h"
 #include "ui/StandaloneTopBar.h"
+#include "ui/PresetBrowser.h"
+#include "ui/WtBrowserAdapter.h"
+#include "ui/WtStandaloneBackend.h"
 #include "seq/ui/ClipAutomationPanel.h"
 
 // The rack: all panels laid out at a fixed logical size matching the web CSS
@@ -21,17 +24,24 @@ public:
     void resized() override;
     bool canShowAutomation(const juce::String& id) const override { return automation_.canShowAutomation(id); }
     void showAutomation(const juce::String& id) override { automation_.showAutomation(id); body.showAutomationPage(); }
+    bool hasAutomation(const juce::String& id) const override { return automation_.hasAutomation(id); }
+    void removeAutomation(const juce::String& id) override { automation_.removeAutomation(id); }
     fui::ClipAutomationPanel& automationForTest() { return automation_; }
 
     // Forwarded from either oscillator panel's ✎ button (arg = osc index).
     std::function<void(int)> onEditTable;
 
     fui::NoteSeqView& noteSeq() { return body.noteSeq(); }   // exposed for the host test
+    fui::PresetBrowser& presetBrowser() { return browser_; }
+    fui::WtBrowserAdapter& browserAdapter() { return browserAdapter_; }
+    void toggleBrowser();
 private:
     fable::ClipData automationClip_;
     fui::ClipAutomationPanel automation_;
     fui::TopBar  topBar;
     WtDeviceBody body;
+    fui::WtBrowserAdapter browserAdapter_;
+    fui::PresetBrowser browser_;
 };
 
 class FableAudioProcessorEditor : public juce::AudioProcessorEditor,

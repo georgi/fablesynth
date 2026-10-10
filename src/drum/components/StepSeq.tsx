@@ -44,7 +44,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const rhythm = useDrumStore(s => s.drumRhythm);
   const sequenceError = useDrumStore(s => s.sequenceError);
   const hosted = useDrumStore((s) => s.hosted);
-  const playing = useDrumStore((s) => s.playing);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
   // them, so the engine tick never reconciles the whole grid.
   const editPattern = useDrumStore((s) => s.editPattern);
@@ -53,8 +52,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const padNames = useDrumStore((s) => s.padNames);
   const padName = padNames[sel];
   const rectSel = useDrumStore((s) => s.rectSel);
-  const play = useDrumStore((s) => s.play);
-  const stop = useDrumStore((s) => s.stop);
   const toggleStep = useDrumStore((s) => s.toggleStep);
   const setRectSel = useDrumStore((s) => s.setRectSel);
   const moveRectSel = useDrumStore((s) => s.moveRectSel);
@@ -65,6 +62,8 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   const clearStepSel = useDrumStore((s) => s.clearStepSel);
   const randomizePad = useDrumStore((s) => s.randomizePad);
   const loadPatternPreset = useDrumStore((s) => s.loadPatternPreset);
+  const browsing = useDrumStore((s) => s.browser === 'pattern');
+  const setBrowser = useDrumStore((s) => s.setBrowser);
   const selectPad = useDrumStore((s) => s.selectLane);
 
   useEffect(() => setPatternPreset(''), [sequenceContext]);
@@ -187,17 +186,6 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
   return (
     <section className="panel dr-stepseq" data-accent="a">
       <div className="panel-head dr-stepseq-head">
-        {!hosted && (
-          <button
-            className={`pb-btn dr-transport${playing ? ' active' : ''}`}
-            type="button"
-            aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
-            aria-pressed={playing}
-            onClick={playing ? stop : play}
-          >
-            {playing ? '■' : '▶'}
-          </button>
-        )}
         <h2>STEP SEQ</h2>
         <span className="dr-stepseq-target">{padName}</span>
         {!hosted && (
@@ -218,8 +206,12 @@ export function StepSeq({ headerExtra }: { headerExtra?: ReactNode }) {
           }}
         >
           <option value="">PATTERN PRESET</option>
-          {FACTORY_KITS.map((kit, index) => <option key={kit.name} value={index}>{kit.name}</option>)}
+          {PATTERN_PRESETS.map((p, index) => <option key={p.name} value={index}>{p.name}</option>)}
         </select>
+        <button className={`dr-seq-btn dr-pattern-browse${browsing ? ' on' : ''}`} type="button" aria-pressed={browsing}
+          title={`Browse ${PATTERN_LIBRARY.length} patterns by genre and song section`}
+          onClick={() => setBrowser(browsing ? null : 'pattern')}>PATTERNS</button>
+        {browsing && <PatternBrowser onClose={() => setBrowser(null)} />}
         <div className="dr-step-editing">
           <span>TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT</span>
         </div>

@@ -315,6 +315,12 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         auto run = [&](int start, int count) {
             for (int i = 0; i < count; ++i) {
                 const int cmd = cmds_[(size_t)(start + i)];
+                if (cmd >= CmdAuditionOn) {
+                    const bool on = cmd < CmdAuditionOff;
+                    const int note = cmd - (on ? CmdAuditionOn : CmdAuditionOff);
+                    if (on) engine.noteOn(note, .8); else engine.noteOff(note);
+                    continue;
+                }
                 if (cmd >= CmdArpKeyOn) {
                     const bool on = cmd < CmdArpKeyOff;
                     const int note = cmd - (on ? CmdArpKeyOn : CmdArpKeyOff);
@@ -446,6 +452,24 @@ void FableAudioProcessor::setCurrentProgram(int index) {
             param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, norm));
         }
     }
+}
+
+std::vector<float> FableAudioProcessor::captureParamValues() {
+    return fui::readAllParams(apvts, paramInfo());
+}
+
+void FableAudioProcessor::restoreSound(int program, const std::vector<float>& values, bool dirty) {
+    agentStateGeneration_.fetch_add(1);
+    if (program >= 0 && program < (int)factoryPresets().size()) currentProgram = program;
+    {
+        fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
+        fui::writeAllParams(apvts, paramInfo(), values);
+    }
+    programDirty_.setDirty(dirty);
+}
+
+void FableAudioProcessor::auditionNote(int note, bool on) {
+    if (note >= 0 && note < 128) pushCmd((on ? CmdAuditionOn : CmdAuditionOff) + note);
 }
 
 const juce::String FableAudioProcessor::getProgramName(int index) {

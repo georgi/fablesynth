@@ -978,6 +978,243 @@ int main(int argc, char** argv) {
     ed2->enterFocus(1);
     check(ed2->focus() == std::make_pair(1, 4), "re-entering remembers the last focus scene");
 
+    // ---- 12b. Preset browsers inside the focus view (session patches) ----
+    std::printf("\n== SQ-4 preset browsers ==\n");
+    {
+        const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile("build/browser-visuals");
+        vis.createDirectory();
+        const auto favFile = vis.getChildFile("sq4-favorites.settings");
+        favFile.deleteFile();
+        fui::BrowserFavorites::overrideFile() = favFile;
+        auto shoot = [&](const char* name) {
+            juce::Image shot(juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+            { juce::Graphics g(shot); ed->paintEntireComponent(g, true); }
+            juce::File out = vis.getChildFile(name);
+            out.deleteFile();
+            juce::FileOutputStream os(out);
+            juce::PNGImageFormat().writeImageToStream(shot, os);
+            std::printf("  wrote %s (%dx%d)\n", out.getFullPathName().toRawUTF8(), shot.getWidth(), shot.getHeight());
+        };
+        auto samePatch = [](const fable::PatchRef& a, const fable::PatchRef& b) {
+            return a.factory == b.factory && a.index == b.index && a.params == b.params;
+        };
+        auto findButton = [](juce::Component& root, const juce::String& name) {
+            std::function<juce::Button*(juce::Component&)> walk = [&](juce::Component& c) -> juce::Button* {
+                for (int i = 0; i < c.getNumChildComponents(); ++i) {
+                    auto* child = c.getChildComponent(i);
+                    if (auto* b = dynamic_cast<juce::Button*>(child); b && b->getName() == name) return b;
+                    if (auto* n = walk(*child)) return n;
+                }
+                return nullptr;
+            };
+            return walk(root);
+        };
+        auto stopTransport = [&] { p.conductor().stopTransport(); renderRms(p, buf, 40); p.drainAcks(); };
+
+        struct Case { int track; fui::DeviceFocusView::Drawer drawer; bool vary; const char* label; const char* png; };
+        const Case cases[] = {
+            { 0, fui::DeviceFocusView::Drawer::kit,  false, "DR-1 kit",   "sq4-dr1-kit-browser.png" },
+            { 1, fui::DeviceFocusView::Drawer::bass, true,  "BL-1",       "sq4-bl1-browser.png" },
+            { 2, fui::DeviceFocusView::Drawer::wt2,  true,  "WT-1 (T3)",  "sq4-wt1-browser.png" },
+        };
+        for (const auto& cs : cases) {
+            const auto name = [&](const char* m) { static std::string b; b = std::string(cs.label) + ": " + m; return b.c_str(); };
+            stopTransport();
+            ed2->enterFocus(cs.track, 2);
+            focusView.flushPendingPatches();
+            auto& br = focusView.drawer(cs.drawer);
+            auto& ad = focusView.drawerAdapter(cs.drawer);
+            auto& browse = focusView.browseButtonForTest();
+            check(browse.isVisible() && browse.getName() == "BROWSE", name("the focus toolbar shows BROWSE after the PATCH stepper"));
+            check(browse.getX() > focusView.patchSelectorForTest().getRight(), name("BROWSE sits right of the patch selector"));
+            browse.onClick();
+            check(br.isOpen() && browse.getToggleState(), name("BROWSE opens the drawer"));
+            const int n = (int)ad.items().size();
+            int untagged = 0;
+            for (const auto& it : ad.items()) if (it.role.isEmpty()) ++untagged;
+            check(n >= 3 && untagged == 0 && br.visibleCount() == n, name("drawer lists factory items only, all tagged"), n);
+
+            // load a factory item: the track patch becomes that factory index
+            const auto original = p.trackPatch(cs.track);
+            const int item = (original.index + 2) % n;
+            br.selectItem(item);
+            check(p.trackPatch(cs.track).factory && p.trackPatch(cs.track).index == item, name("a row click makes the track patch that factory index"), p.trackPatch(cs.track).index);
+            br.keep();
+            const auto kept = p.trackPatch(cs.track);
+            if (cs.vary) {
+                br.vary();
+                focusView.flushPendingPatches();
+                const auto varied = p.trackPatch(cs.track);
+                check(!varied.factory && varied.index == item && !varied.params.empty(), name("VARY writes an inline patch and keeps the base"), varied.index);
+                check(br.mode() == fui::PresetBrowser::Mode::Variant, name("VARY enters VARIANT"));
+            }
+            br.selectItem((item + 1) % n);
+            br.revert();
+            focusView.flushPendingPatches();
+            check(samePatch(p.trackPatch(cs.track), kept), name("REVERT restores the exact kept patch"));
+            check(br.shownItem() == item, name("the list marks the restored item"), br.shownItem());
+
+            // an inline (edited) patch comes back as the same inline patch, not a factory one
+            std::unordered_map<std::string, float> edit;
+            if (cs.track == 0) edit = p.trackParameterValues(0);
+            else edit = p.trackParameterValues(cs.track);
+            const char* knob = cs.track == 1 ? "flt.cut" : cs.track == 0 ? "pad15.flt.cut" : "filter.cutoff";
+            edit[knob] = edit[knob] * 0.9f;
+            p.setTrackInlineParams(cs.track, edit);
+            focusView.reloadPatchesFromSession();
+            const auto inlineBefore = p.trackPatch(cs.track);
+            br.keep();
+            br.selectItem((item + 2) % n);
+            br.revert();
+            focusView.flushPendingPatches();
+            check(!inlineBefore.factory && samePatch(p.trackPatch(cs.track), inlineBefore), name("REVERT restores an inline patch exactly"));
+
+            // audition: blocked while the SQ-4 transport plays, allowed when stopped
+            br.keep();
+            br.selectItem(item);
+            check(br.pendingAuditionCount() > 0, name("a row click schedules the phrase while stopped"), br.pendingAuditionCount());
+            br.flushAudition();
+            renderRms(p, buf, 4);
+            p.conductor().launchScene(2);
+            check(p.conductor().playing() && ad.auditionBlocked(), name("audition is blocked while the SQ-4 transport plays"));
+            br.selectItem((item + 1) % n);
+            check(br.pendingAuditionCount() == 0, name("no audition while the transport plays"), br.pendingAuditionCount());
+            check(ad.auditionHint(true).startsWith("Stop SQ-4 to hear"), name("the hint says to stop SQ-4"));
+            stopTransport();
+
+            // layout: the drawer fits the device panel and CLOSE stays reachable
+            const auto b = br.getBounds();
+            auto* closeBtn = findButton(br, "CLOSE");
+            check(b.getX() >= 0 && b.getY() >= 0 && b.getRight() <= focusView.getWidth() && b.getBottom() <= focusView.getHeight(),
+                  name("the drawer fits inside the focus view"), b.getBottom());
+            check(closeBtn && closeBtn->isVisible()
+                      && focusView.getLocalArea(&br, closeBtn->getBounds()).getBottom() <= focusView.getHeight(),
+                  name("CLOSE is visible inside the device panel"));
+            br.selectItem(item);
+            shoot(cs.png);
+            if (closeBtn) closeBtn->onClick();
+            check(!br.isOpen() && !browse.getToggleState(), name("CLOSE hides the drawer"));
+            p.setTrackFactoryPatch(cs.track, original.index);   // leave the session as found
+            focusView.reloadPatchesFromSession();
+        }
+
+        // DR-1: pad patches in hosted EDIT mode, one drawer at a time
+        stopTransport();
+        ed2->enterFocus(0, 2);
+        focusView.flushPendingPatches();
+        auto& selBar = focusView.drumBodyForTest().selBarView();
+        check(selBar.browseVisible(), "SQ-4 DR-1 pad bar shows BROWSE in EDIT mode");
+        auto& kitBr = focusView.drawer(fui::DeviceFocusView::Drawer::kit);
+        auto& padBr = focusView.drawer(fui::DeviceFocusView::Drawer::pad);
+        focusView.browseButtonForTest().onClick();
+        check(kitBr.isOpen() && !padBr.isOpen(), "DR-1 patch BROWSE opens the kit drawer only");
+        selBar.onBrowse();
+        check(padBr.isOpen() && !kitBr.isOpen() && focusView.openDrawerCount() == 1, "pad BROWSE closes the kit drawer: one DR-1 drawer at a time");
+        check(!focusView.browseButtonForTest().getToggleState() && selBar.browseOpen(), "BROWSE toggle states follow the open drawer");
+        focusView.browseButtonForTest().onClick();
+        check(kitBr.isOpen() && !padBr.isOpen() && focusView.openDrawerCount() == 1, "kit BROWSE closes the pad drawer");
+        selBar.onBrowse();
+
+        const int pad = focusView.drumModelForTest().selectedPad();
+        const auto readPad = [&] {
+            std::vector<float> v;
+            auto values = p.trackParameterValues(0);
+            for (const auto& d : fable::drumParamInfo())
+                if (d.id / fable::DPAD_NFIELDS == pad && d.id < fable::DG_SEQ_BPM) v.push_back(values[d.pid]);
+            return v;
+        };
+        const auto otherPads = [&] {
+            std::vector<float> v;
+            auto values = p.trackParameterValues(0);
+            for (const auto& d : fable::drumParamInfo())
+                if (d.id / fable::DPAD_NFIELDS != pad || d.id >= fable::DG_SEQ_BPM) v.push_back(values[d.pid]);
+            return v;
+        };
+        auto nearEqual = [](const std::vector<float>& a, const std::vector<float>& b) {
+            if (a.size() != b.size()) return false;
+            for (std::size_t i = 0; i < a.size(); ++i)
+                if (std::abs(a[i] - b[i]) > 1.0e-4f * std::max(1.0f, std::abs(b[i]))) return false;
+            return true;
+        };
+        const auto padBefore = readPad();
+        const auto othersBefore = otherPads();
+        padBr.selectItem(2);
+        focusView.flushPendingPatches();
+        const auto padAfter = readPad();
+        check(!nearEqual(padAfter, padBefore), "a pad patch changes the selected pad's sound through the device parameters");
+        check(nearEqual(otherPads(), othersBefore), "a pad patch leaves every other pad untouched");
+        check(!p.trackPatch(0).factory, "the pad edit reaches the session as an inline patch");
+        padBr.keep();
+        padBr.vary();
+        focusView.flushPendingPatches();
+        padBr.revert();
+        focusView.flushPendingPatches();
+        check(nearEqual(readPad(), padAfter), "REVERT restores the pad patch exactly");
+        p.conductor().launchScene(2);
+        padBr.selectItem(3);
+        check(padBr.pendingAuditionCount() == 0, "no pad audition while the transport plays");
+        stopTransport();
+        shoot("sq4-dr1-pad-browser.png");
+        const auto padBounds = padBr.getBounds();
+        check(padBounds.getBottom() <= focusView.getHeight() && findButton(padBr, "CLOSE") != nullptr, "the pad drawer fits inside the device panel");
+        focusView.closeBrowsers();
+        check(focusView.openDrawerCount() == 0, "closeBrowsers closes every drawer");
+
+        // DR-1 pattern library in hosted EDIT mode: a row rewrites the focused scene's clip.
+        {
+            const int scene = 2;
+            const auto clipNow = [&] { return p.conductor().session().scenes[(size_t)scene].clips[0]; };
+            const auto before = clipNow();
+            const auto patchBefore = p.trackPatch(0);
+            const double bpmBefore = p.conductor().session().bpm;
+            auto& stepSeq = focusView.drumBodyForTest().stepSeqView();
+            if (auto* page = findButton(focusView.drumBodyForTest(), "SEQUENCER"); page && page->onClick) page->onClick();
+            check(stepSeq.patternsButton().isVisible(), "SQ-4 DR-1 step sequencer head shows PATTERNS");
+            auto& patBr = focusView.drawer(fui::DeviceFocusView::Drawer::pattern);
+            focusView.browseButtonForTest().onClick();
+            stepSeq.patternsButton().onClick();
+            check(patBr.isOpen() && focusView.openDrawerCount() == 1 && stepSeq.patternsButton().getToggleState()
+                  && !focusView.browseButtonForTest().getToggleState(), "PATTERNS opens the pattern drawer and closes the kit drawer");
+            const auto& lib = fable::patternLibrary();
+            check(focusView.drawerAdapter(fui::DeviceFocusView::Drawer::pattern).items().size() == lib.size() && lib.size() == 488,
+                  "hosted pattern drawer lists the 488 library patterns", (double)lib.size());
+            p.conductor().launchScene(scene);
+            renderRms(p, buf, 40); p.drainAcks();
+            check(p.conductor().ownerOf(0) == scene, "scene 2 owns the DR-1 track before the load", p.conductor().ownerOf(0));
+            const int item = 8 * 20 + 1;   // BREAKBEAT · VARIATION (four bars)
+            patBr.selectItem(item);
+            renderRms(p, buf, 20); p.drainAcks();
+            auto loaded = clipNow();
+            check(loaded.bars == 4 && std::equal(loaded.bytes.begin(), loaded.bytes.begin() + 1024, lib[(size_t)item].steps.begin())
+                  && !loaded.hasDrumRhythm, "a hosted load writes the library bars into the scene clip");
+            check(samePatch(p.trackPatch(0), patchBefore) && p.conductor().session().bpm == bpmBefore,
+                  "a hosted load keeps the session kit patch and BPM");
+            check(p.conductor().ownerOf(0) == scene, "the playing scene keeps playback ownership after the load", p.conductor().ownerOf(0));
+            check(patBr.pendingAuditionCount() == 0, "hosted: the clip plays the pattern in place, no one-shot audition");
+            patBr.selectItem(item - 1 + 7);   // BREAKBEAT · MINIMAL: one bar
+            renderRms(p, buf, 20); p.drainAcks();
+            check(clipNow().bars == 1 && focusView.drumModelForTest().chain() == std::vector<int>{ 0 },
+                  "a one-bar section sets the hosted clip length to one bar (web sequenceChain rule)", clipNow().bars);
+            patBr.selectItem(item);
+            shoot("sq4-dr1-pattern-browser.png");
+            check(patBr.getBounds().getBottom() <= focusView.getHeight(), "the pattern drawer fits inside the device panel");
+            patBr.revert();
+            renderRms(p, buf, 20); p.drainAcks();
+            const auto reverted = clipNow();
+            check(reverted.bars == before.bars && reverted.bytes == before.bytes && reverted.hasDrumRhythm == before.hasDrumRhythm,
+                  "hosted REVERT restores the scene clip exactly");
+            check(p.conductor().ownerOf(0) == scene, "REVERT keeps playback ownership");
+            stopTransport();
+            if (auto* page = findButton(focusView.drumBodyForTest(), "EDIT"); page && page->onClick) page->onClick();
+            focusView.closeBrowsers();
+            check(!stepSeq.patternsButton().getToggleState() && focusView.openDrawerCount() == 0, "closeBrowsers resets PATTERNS");
+        }
+        p.setTrackFactoryPatch(0, 0);
+        focusView.reloadPatchesFromSession();
+        ed2->exitFocus();
+        fui::BrowserFavorites::overrideFile() = juce::File();
+    }
+
     // create a clip on an empty cell (LEAD / INTRO).
     ed2->enterFocus(2, 0);
     check(ed2->focus() == std::make_pair(2, 0), "enterFocus(2,0) targets the empty LEAD/INTRO cell");
@@ -1794,6 +2031,10 @@ int main(int argc, char** argv) {
         };
         fui::HostedDrumModel drumModel(p);
         checkHostedMirror(drumModel, 0, "pad15.flt.cut");
+        {   // the preset browsers are available inside SQ-4 focus mode
+            DrumDeviceBody hostedBody(drumModel);
+            check(hostedBody.selBarView().browseVisible(), "SQ-4 hosted DR-1 pad bar shows BROWSE");
+        }
         fui::HostedBassModel bassModel(p);
         checkHostedMirror(bassModel, 1, "flt.cut");
 

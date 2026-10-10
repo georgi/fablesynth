@@ -723,50 +723,44 @@ void MatrixPanel::paint(juce::Graphics& g) {
 }
 
 void MatrixPanel::resized() {
+    // Web MatrixPanel layout: source rail | macro strip | route rows.
     auto r = getLocalBounds().reduced(11, 9);
-    // The SOUND page has a wide, shallow matrix rail after moving FX to its
-    // own page. Keep sources and ADD ROUTE above the scrollable route rows.
-    if (getWidth() > 900 && getHeight() < 112) {
-        auto head = r.removeFromTop(22);
-        titleArea = head.removeFromLeft(150);
-        addArea = head.removeFromRight(100);
-        addBtn.setBounds(addArea);
-        for (auto* chip : chips) {
-            chip->setBounds(head.removeFromLeft(82).withSizeKeepingCentre(78, 18));
-        }
-        hintArea = head;
-        r.removeFromTop(5);
-        rowsArea = r;
-        viewport.setBounds(rowsArea);
-        relayoutRows();
-        return;
-    }
-    auto rail = r.removeFromLeft(172);
+    auto rail = r.removeFromLeft(250);
     r.removeFromLeft(9);
-
-    titleArea = rail.removeFromTop(18);
-    rail.removeFromTop(3);
-    chipArea = rail.removeFromTop(38);
-    {
-        auto top = chipArea.removeFromTop(18);
-        auto bottom = chipArea.removeFromBottom(18);
-        const int gap = 3;
-        const int topW = (top.getWidth() - gap * 2) / 3;
-        for (int i = 0; i < 3; ++i) {
-            chips[i]->setBounds(top.removeFromLeft(topW).withSizeKeepingCentre(topW, 16));
-            if (i < 2) top.removeFromLeft(gap);
-        }
-        const int bottomW = (bottom.getWidth() - gap) / 2;
-        chips[3]->setBounds(bottom.removeFromLeft(bottomW).withSizeKeepingCentre(bottomW, 16));
-        bottom.removeFromLeft(gap);
-        chips[4]->setBounds(bottom.withSizeKeepingCentre(bottomW, 16));
-    }
-    rail.removeFromTop(2);
-    hintArea = rail.removeFromTop(15);
-    addArea = rail.removeFromBottom(22);
+    // Rail: title with ADD ROUTE beside it (the strip is shallower than the
+    // web panel), then the source chips wrapping like the web's flex row.
+    auto head = rail.removeFromTop(18);
+    titleArea = head.removeFromLeft(124);
+    addArea = head.removeFromRight(100).withSizeKeepingCentre(100, 18);
     addBtn.setBounds(addArea);
-
-    rowsArea = r.withSizeKeepingCentre(r.getWidth(), juce::jmin(102, r.getHeight()));
+    rail.removeFromTop(5);
+    chipArea = rail;
+    {
+        const int gap = 2, h = 15;
+        int x = chipArea.getX(), y = chipArea.getY();
+        for (auto* chip : chips) {
+            const auto label = juce::String(fable::MOD_SOURCES[(size_t)chip->getProperties()["src"].operator int()]);
+            const int w = juce::roundToInt(juce::GlyphArrangement::getStringWidth(monoFont(8.0f), label.toUpperCase())
+                                           + 0.8f * (float)label.length()) + 26;
+            if (x > chipArea.getX() && x + w > chipArea.getRight()) { x = chipArea.getX(); y += h + gap; }
+            chip->setBounds(x, y, w, h);
+            x += w + gap;
+        }
+    }
+    hintArea = {};
+    // Macro strip: Macro 1-4 and MOD WHL, a grip chip above each knob.
+    {
+        const int cellW = 48;
+        auto macros = r.removeFromLeft(cellW * macroKnobs.size());
+        r.removeFromLeft(9);
+        for (int i = 0; i < macroKnobs.size(); ++i) {
+            auto cell = macros.removeFromLeft(cellW);
+            macroChips[i]->setBounds(cell.removeFromTop(14).withSizeKeepingCentre(22, 14));
+            cell.removeFromTop(2);
+            macroKnobs[i]->setBounds(cell);
+        }
+    }
+    rowsArea = r;
     viewport.setBounds(rowsArea);
     relayoutRows();
 }

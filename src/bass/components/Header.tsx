@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ScopeView } from '../../components/displays/ScopeView';
 import { patchOptions } from '../patches';
 import { bassEngine, useBassStore } from '../store';
+import { BassPatchBrowser } from './BassPatchBrowser';
 import { BassKnob } from './BassKnob';
 import { BassStepper } from './BassStepper';
 
@@ -13,7 +14,12 @@ export function Header() {
   const dirty = useBassStore((s) => s.dirty);
   const stepPatch = useBassStore((s) => s.stepPatch);
   const savePatch = useBassStore((s) => s.savePatch);
+  const playing = useBassStore((s) => s.playing);
+  const hosted = useBassStore((s) => s.hosted);
+  const play = useBassStore((s) => s.play);
+  const stop = useBassStore((s) => s.stop);
 
+  const [browsing, setBrowsing] = useState(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,6 +72,14 @@ export function Header() {
           </span>
         )}
         <button className="pb-btn" aria-label="next patch" onClick={() => stepPatch(1)}>▸</button>
+        {!hosted && (
+          <button
+            className="pb-btn pb-save pb-browse"
+            id="patch-browse"
+            aria-expanded={browsing}
+            onClick={() => setBrowsing(!browsing)}
+          >BROWSE</button>
+        )}
         <button className="pb-btn pb-save" onClick={startNaming}>SAVE</button>
       </div>
       <div className="bl-voicemode">MONO · LAST-NOTE<br />SLIDES RIDE THE ENVS</div>
@@ -75,6 +89,15 @@ export function Header() {
           <span>SCOPE</span>
         </div>
       </div>
+      <button
+        className={`pb-btn bl-transport${playing ? ' active' : ''}`}
+        type="button"
+        aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
+        aria-pressed={playing}
+        onClick={playing ? stop : play}
+      >
+        {playing ? '■' : '▶'}
+      </button>
       <div className="status bl-midi">
         <div className="status-row"><span className={`led${midiActive ? ' on' : ''}`} />MIDI</div>
         <div className="status-row bl-bpm"><BassStepper paramId="seq.bpm" accent="a" />BPM</div>
@@ -83,6 +106,7 @@ export function Header() {
         <BassKnob paramId="master.swing" size="md" accent="n" />
         <BassKnob paramId="master.volume" size="md" accent="n" />
       </div>
+      {browsing && !hosted && <BassPatchBrowser onClose={() => setBrowsing(false)} />}
     </header>
   );
 }

@@ -1,8 +1,11 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassUiModel.h"
+#include "../../ui/BrowserButton.h"
 #include "../../ui/Controls.h"
 #include "../../ui/Theme.h"
+#include "../../ui/TransportButton.h"
 
 // BL-1 header — port of src/bass/components/Header.tsx / bass.css (.bl-header):
 // wordmark (acid-green SYNTH), patch stepper (prev/next drive the host

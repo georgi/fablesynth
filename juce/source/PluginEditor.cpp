@@ -1,8 +1,9 @@
 #include "PluginEditor.h"
+#include "ui/LeafControlCache.h"
 
 // ---- standalone rack ----
 Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState&, FableAudioProcessor& p)
-    : topBar(model.parameters(), p), body(model, [&p] { return p.getTransport(); }) {
+    : topBar(model.parameters(), p), body(model, [&p] { return p.getTransport(); }), browserAdapter_(std::make_unique<fui::WtStandaloneBackend>(p)), browser_(browserAdapter_) {
     fui::ClipAutomationPanel::Source context;
     context.machine=fable::Machine::WT1; context.identity="wt1-sequence"; context.unit="SEQ";
     context.clip=[this,&p]() -> const fable::ClipData* {
@@ -18,12 +19,25 @@ Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState&, FableAudi
     addAndMakeVisible(topBar);
     addAndMakeVisible(body);
     body.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
+    addChildComponent(browser_);
+    topBar.onBrowse = [this] { toggleBrowser(); };
+    browser_.onClose = [this] { topBar.setBrowseOpen(false); };
+    browser_.onChanged = [this] { topBar.refreshProgram(); };
+}
+
+void Rack::toggleBrowser() {
+    if (browser_.isOpen()) { browser_.close(); return; }
+    browser_.open();
+    topBar.setBrowseOpen(true);
 }
 
 void Rack::resized() {
     const int padX = 14, padY = 12, topH = 70, gap = 9;
     topBar.setBounds(padX, padY, LW - padX * 2, topH);
     body.setBounds(0, padY + topH + gap - 2, WtDeviceBody::LW, WtDeviceBody::LH);
+    // Drawer below the top bar, as wide as the bar (web .pbr: top calc(100% + 6px)).
+    const int drawerY = padY + topH + 6;
+    browser_.setBounds(padX, drawerY, LW - padX * 2, juce::jmin(620, LH - drawerY - 10));
 }
 
 // ---- Editor ----

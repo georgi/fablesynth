@@ -8,6 +8,12 @@
 #include "../../bass/BassDeviceBody.h"
 #include "../../drum/DrumDeviceBody.h"
 #include "../../ui/WtDeviceBody.h"
+#include "SessionBrowserBackend.h"
+#include "../../ui/PresetBrowser.h"
+#include "../../ui/WtBrowserAdapter.h"
+#include "../../bass/ui/BassBrowserAdapter.h"
+#include "../../drum/ui/DrumBrowserAdapters.h"
+#include "../../drum/ui/PatternBrowserAdapter.h"
 #include "../dsp/ClipLibrary.h"
 #include "../ClipLibraryStorage.h"
 
@@ -30,6 +36,17 @@ public:
     int targetTrack() const { return targetTrack_; }
     ActiveBody activeBody() const { return activeBody_; }
     void reloadPatchesFromSession();
+
+    // ---- preset browser: the focused track's session patch ----
+    enum class Drawer { kit, pad, bass, wt2, wt3, pattern };
+    void toggleBrowser();      // BROWSE beside the PATCH stepper
+    void togglePadBrowser();   // BROWSE in the DR-1 selected-pad bar
+    void togglePatternBrowser();   // PATTERNS in the DR-1 step sequencer head
+    void closeBrowsers();
+    PresetBrowser& drawer(Drawer);                 // created on first use
+    BrowserAdapter& drawerAdapter(Drawer);
+    int openDrawerCount() const;
+    juce::Button& browseButtonForTest() { return browseButton_; }
     void flushPendingPatches();
     juce::Component* activeBodyComponent();
     const juce::Component* activeBodyComponent() const;
@@ -91,6 +108,11 @@ private:
     juce::String activeProgramName(int index) const;
     void selectActiveProgram(int index);
     void layoutBody(juce::Component&, int logicalWidth, int logicalHeight, int contentTop = 0);
+    void layoutDrawers();
+    void openDrawer(Drawer);
+    void ensureDrawer(Drawer);
+    Drawer patchDrawerForActiveBody() const;
+    int trackForDrawer(Drawer) const;
 
     SeqAudioProcessor& proc_;
     juce::Component deviceCanvas_;
@@ -110,6 +132,9 @@ private:
     juce::TextButton previousPatchButton_ { "<" };
     juce::ComboBox patchSelector_;
     juce::TextButton nextPatchButton_ { ">" };
+    BrowserButton browseButton_ { "BROWSE", BrowserButton::Browse };
+    struct DrawerSlot { std::unique_ptr<BrowserAdapter> adapter; std::unique_ptr<PresetBrowser> browser; };
+    std::array<DrawerSlot, 6> drawers_;
 
     juce::Label clipTargetLabel_;
     juce::ComboBox clipSourceSelector_;

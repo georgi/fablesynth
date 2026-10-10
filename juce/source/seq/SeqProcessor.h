@@ -146,10 +146,21 @@ public:
     void setTrackInlineParams(int t, const std::unordered_map<std::string, float>& values);
     void setTrackFactoryPatch(int t, int program);
     int trackFactoryProgram(int t) const;
+    // Preset browser (message thread): the track's whole session patch, written back
+    // exactly (factory index, or inline params over a factory base), and the flat
+    // engine parameter values a patch resolves to.
+    fable::PatchRef trackPatch(int t) const;
+    void setTrackPatchRef(int t, fable::PatchRef patch);
+    std::vector<float> patchParamValues(int t, const fable::PatchRef& patch) const;
+    // Parameter ids and names of a track's device, in the order patchParamValues() uses.
+    const std::vector<fable::ParamInfo>& trackParamCatalog(int t) const;
 
     // Top-level factory library: each program is a complete SQ-4 session,
     // including clips, device patches, tempo, quantize, and mixer state.
     int currentSessionPreset() const;
+    // Message-thread serialized-document generation, independent of playback.
+    std::uint64_t sessionEditRevision() const;    // content + mixer (preset matching, dirty tracking)
+    std::uint64_t sessionContentRevision() const; // excludes fader moves (scene grid caches)
     void applySessionPreset(int index);
 
     // Clip-library load boundary used by the future browser. Both variants

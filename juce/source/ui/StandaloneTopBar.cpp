@@ -27,10 +27,13 @@ TopBar::TopBar(ParameterSource s, FableAudioProcessor& p)
         proc.setCurrentProgram(i); presets.setSelectedId(i + 1, juce::dontSendNotification);
     };
     addAndMakeVisible(prev); addAndMakeVisible(next);
-    startTimerHz(15);
+    browse.onClick = [this] { if (onBrowse) onBrowse(); };
+    addAndMakeVisible(browse);
+    startVisualTimer(*this, 15);
 }
 
 void TopBar::timerCallback() {
+    if (presets.getSelectedId() != proc.getCurrentProgram() + 1) refreshProgram();   // browser or host changed it
     if (proc.getVoiceCount() != lastVoices || proc.getMidiActive() != lastMidi) {
         lastVoices = proc.getVoiceCount(); lastMidi = proc.getMidiActive();
         repaint(statusArea);

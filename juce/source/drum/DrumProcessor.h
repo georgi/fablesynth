@@ -10,6 +10,8 @@
 #include "ui/DrumUiModel.h"
 #include "../dsp/UserTables.h"
 #include "../ui/ProgramDirty.h"
+#include "../ui/BrowserParams.h"
+#include "../ui/StepEditOps.h"
 
 #include <array>
 #include <atomic>
@@ -61,6 +63,16 @@ public:
 
     // Edited-since-kit-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
+
+    // ---- preset browser (message thread) ----
+    // A kit snapshot restores every parameter, the pad names, the program index
+    // and the dirty flag; the sequence stays. A pad snapshot restores the given
+    // absolute parameter values; pad VARY also goes through restorePadFields().
+    std::vector<float> captureParamValues();
+    void restoreKit(int program, const std::vector<float>& values,
+                    const std::array<juce::String, fable::DR_NPADS>& names, bool dirty);
+    void restorePadFields(const std::vector<std::pair<int, float>>& fields, bool dirty);
+    bool isHostPlaying() const { return hostPlaying_.load(); }
 
     // ---- pads / transport (message thread -> engine via the command FIFO) ----
     void triggerPad(int pad, float vel);              // UI audition

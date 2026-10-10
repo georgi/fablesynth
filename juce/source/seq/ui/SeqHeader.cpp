@@ -172,9 +172,35 @@ void SeqHeader::timerCallback() {
     for (float v : buf) peak = juce::jmax(peak, std::abs(v));
     const bool scopeLive = peak > 1.0e-4f;
 
-    const juce::uint32 sig = paintSignature(scopeLive);
+    const auto& cond = proc.conductor();
+    const auto pos = cond.songPos();
+    const auto clockState = std::make_tuple(cond.playing(), pos.bar, pos.beat,
+                                           (int)std::lround(cond.session().bpm));
+    const bool clockChanged = clockState != lastClockState_;
+    lastClockState_ = clockState;
+    const bool scopeChanged = scopeLive != lastScopeLive_;
+    lastScopeLive_ = scopeLive;
+    const juce::uint32 sig = paintSignature();
+    juce::Rectangle<int> clockDirty;
+    if (clockChanged) {
+        const auto nextDamage = clockDamage();
+        clockDirty = nextDamage.getUnion(lastClockDamage_);
+        lastClockDamage_ = nextDamage;
+    }
     if (sig != lastSig_) { lastSig_ = sig; repaint(); return; }
-    if (scopeLive) repaint(scopeArea);
+    if (clockChanged) repaint(clockDirty);
+    if (scopeLive || scopeChanged) repaint(scopeArea);
+}
+
+juce::Rectangle<int> SeqHeader::clockDamage() const {
+    // Include the dot glow and the actual text width (large bar/BPM values
+    // can extend beyond the nominal clock slot). This also erases old text.
+    const auto text = "BAR " + juce::String(proc.conductor().songPos().bar).paddedLeft('0', 2)
+        + juce::String::fromUTF8(" \xc2\xb7 ")
+        + juce::String((int)std::lround(proc.conductor().session().bpm)) + " BPM";
+    const int width = juce::jmax(clockLineArea.getWidth(),
+        (int)std::ceil(juce::GlyphArrangement::getStringWidth(monoFont(9.0f), text)) + 2);
+    return beatsArea.expanded(2).getUnion(clockLineArea.withWidth(width));
 }
 
 void SeqHeader::quantStep(int d) {

@@ -4,6 +4,7 @@ import { ScopeView } from '../displays/ScopeView';
 import { SpectrumView } from '../displays/SpectrumView';
 import { ACCENTS } from '../../constants';
 import { FACTORY_PRESETS } from '../../presets';
+import { PresetBrowser } from '../presetBrowser/PresetBrowser';
 import { engine, useStore } from '../../store';
 
 export function TopBar() {
@@ -16,8 +17,12 @@ export function TopBar() {
   const loadPresetByValue = useStore((s) => s.loadPresetByValue);
   const stepPreset = useStore((s) => s.stepPreset);
   const savePreset = useStore((s) => s.savePreset);
+  const seqPlaying = useStore((s) => s.seqPlaying);
+  const seqPlay = useStore((s) => s.seqPlay);
+  const seqStop = useStore((s) => s.seqStop);
 
   const [naming, setNaming] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,7 +39,7 @@ export function TopBar() {
   const midiDim = !midiActive && !powered;
 
   return (
-    <header className="top-bar">
+    <header className="top-bar wt-top-bar">
       <div className="brand">FABLE<em>SYNTH</em><small>WT‑1</small></div>
       <div className="preset-bar">
         <button className="pb-btn" id="preset-prev" aria-label="previous preset" onClick={() => stepPreset(-1)} disabled={naming}>◂</button>
@@ -89,9 +94,18 @@ export function TopBar() {
             <button className="pb-btn" onClick={() => setNaming(false)}>✕</button>
           </>
         ) : (
-          <button className="pb-btn pb-save" id="preset-save" onClick={() => setNaming(true)}>SAVE</button>
+          <>
+            <button
+              className="pb-btn pb-save pb-browse"
+              id="preset-browse"
+              aria-expanded={browsing}
+              onClick={() => setBrowsing(!browsing)}
+            >BROWSE</button>
+            <button className="pb-btn pb-save" id="preset-save" onClick={() => setNaming(true)}>SAVE</button>
+          </>
         )}
       </div>
+      {browsing && <PresetBrowser onClose={() => setBrowsing(false)} />}
       <div className="hud">
         <div className="hud-cell">
           <ScopeView analyser={powered ? engine.scopeAnalyser : null} accent={ACCENTS.a} />
@@ -103,6 +117,15 @@ export function TopBar() {
         </div>
       </div>
       <div className="top-clock" aria-label="Sequencer timing">
+        <button
+          className={`pb-btn ns-transport${seqPlaying ? ' active' : ''}`}
+          type="button"
+          aria-label={seqPlaying ? 'Stop sequencer' : 'Play sequencer'}
+          aria-pressed={seqPlaying}
+          onClick={seqPlaying ? seqStop : seqPlay}
+        >
+          {seqPlaying ? '■' : '▶'}
+        </button>
         <Knob paramId="seq.bpm" size="sm" accent="a" />
         <Knob paramId="seq.swing" size="sm" accent="a" />
       </div>

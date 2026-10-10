@@ -94,10 +94,16 @@ interface SynthStore {
   updateSlot: (slot: number, patch: Partial<ModConnection>) => void;
   clearSlot: (slot: number) => void;
   setModDrag: (src: number) => void;
+  setModFocus: (src: number) => void;
   applyPreset: (presetParams: Partial<ParamValues>, mods?: ModConnection[]) => void;
   loadPresetByValue: (val: string) => void;
   stepPreset: (d: number) => void;
   savePreset: (name: string) => void;
+  // Preset browser: capture the current sound, restore it exactly (revert / A-B),
+  // and apply an unsaved variant of the loaded preset.
+  captureSound: () => SoundSnapshot;
+  restoreSound: (snap: SoundSnapshot) => void;
+  applyVariant: (params: ParamValues) => void;
 
   addUserTable: (u: UserTable) => void;
   deleteUserTable: (poolIndex: number) => void;

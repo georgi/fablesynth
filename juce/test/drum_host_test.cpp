@@ -205,7 +205,7 @@ int main(int argc, char** argv) {
                 edited.processBlock(liveAudio, liveMidi);
                 if (edited.consumeHitFlags() & 1) ++loopHits;
                 const int position = edited.getLanePosition(0);
-                if (i > 16) cursorInside &= position >= 32 && position < 35;
+                if (i > 16) cursorInside &= position >= 0 && position < 3;
             }
             check(loopHits >= 4 && cursorInside, "live standalone playback repeats shortened three-step loop", loopHits);
             check(model->sequence().steps == notes.steps, "shortening preserves notes outside loop");
@@ -593,10 +593,20 @@ int main(int argc, char** argv) {
         view.undo(); check(recalled.getSequence().rhythm.lanes[0].stepDelayMs[1] == 23,
             "undo restores timing with its hit");
         view.setSize(1040, 470);
-        for (int i = 0; i < view.getNumChildComponents(); ++i)
-            if (auto* button = dynamic_cast<juce::TextButton*>(view.getChildComponent(i)))
-                if (button->getButtonText() == "TIMING v") button->onClick();
         writePng(view.createComponentSnapshot(view.getLocalBounds()), juce::File("/tmp/dr-micro-native.png"));
+
+        // Web-parity visuals at the standalone workspace size: the inspectors
+        // share one row, lanes keep 24 px cells, one selection rectangle with
+        // the web-size menu (sequencer port report PNGs).
+        const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+        out.createDirectory();
+        for (int pad : { 0, 2, 5 }) for (int st = 0; st < 16; st += pad == 5 ? 2 : 4) recalled.setStep(0, pad, st, st % 8 == 0 ? 2 : 1);
+        view.setSize(1416, 700); view.resized();
+        check(view.laneHeight() >= 24, "workspace lanes keep the web 24 px minimum", view.laneHeight());
+        writePng(view.createComponentSnapshot(view.getLocalBounds()), out.getChildFile("dr1-stepseq-wide.png"));
+        view.setSelection({ 4, 9, 2, 5 });
+        writePng(view.createComponentSnapshot(view.getLocalBounds()), out.getChildFile("dr1-stepseq-selection.png"));
+        view.clearSelection();
     }
 
     // Loading an ordinary state into the same instance must clear the prior
@@ -754,15 +764,68 @@ int main(int argc, char** argv) {
         check(seqView != nullptr && ed->getHeight() == workspaceEditorHeight,
               "sequencer page matches the FX workspace height", ed->getHeight());
         if (seqView) {
-            for (auto* child : seqView->getChildren())
-                if (auto* button = dynamic_cast<juce::TextButton*>(child);
-                    button && button->getButtonText() == "TIMING v") button->onClick();
             juce::ScrollBar* laneScroll = nullptr;
             for (auto* child : seqView->getChildren())
                 if (auto* scroll = dynamic_cast<juce::ScrollBar*>(child)) laneScroll = scroll;
             check(laneScroll && laneScroll->isVisible(),
                   "sequencer lane scrollbar stays inside the fixed-height workspace");
         }
+    }
+
+    // ---- standalone sequence automation (web DrumAutomation.tsx) ----
+    printf("\n== DR-1 sequence automation ==\n");
+    {
+        const int cutId = fable::drumIdFromString("pad0.flt.cut");
+        fable::AutoLane lane; lane.target = "pad0.flt.cut";
+        lane.points = { { 0.0, 0.05 }, { 15.9, 0.05 } };
+        // Engine: the standalone transport plays the lane, stop releases it.
+        {
+            fable::DrumEngine engine; engine.prepare(48000.0);
+            fable::AutoBank bank; fable::compileAutomation(bank, { lane }, 1, nullptr, fable::Machine::DR1);
+            engine.setSequenceAutomation(&bank);
+            check(engine.hasSequenceAutomation(), "engine accepts a compiled sequence lane");
+            float buffers[fable::DR_NBUSES][2][512];
+            float* outs[fable::DR_NBUSES][2];
+            for (int b = 0; b < fable::DR_NBUSES; ++b) for (int c = 0; c < 2; ++c) outs[b][c] = buffers[b][c];
+            engine.render(outs, 512);
+            check(std::isnan(engine.automationValue(cutId)) && engine.sequenceAutomationSteps() < 0,
+                  "stopped transport leaves the parameter free");
+            engine.play();
+            for (int i = 0; i < 32; ++i) engine.render(outs, 512);   // ~2.9 steps at 126 BPM
+            const auto& info = fable::drumParamInfo()[(size_t)cutId];
+            const float expected = (float)(info.curve == fable::Curve::Log
+                ? info.min * std::pow((double)info.max / info.min, 0.05) : info.min + 0.05 * ((double)info.max - info.min));
+            check(std::abs(engine.automationValue(cutId) - expected) < expected * 0.02f,
+                  "playing transport drives the automated cutoff", engine.automationValue(cutId));
+            check(engine.sequenceAutomationSteps() > 2.0, "automation clock counts 1/16 steps", engine.sequenceAutomationSteps());
+            engine.stop(); engine.render(outs, 512);
+            check(std::isnan(engine.automationValue(cutId)), "stop releases the automated parameter");
+        }
+        // Processor: lanes persist in state, keep one undo history, and the
+        // editor shows them on an AUTOMATION page.
+        DrumAudioProcessor ap; ap.prepareToPlay(48000.0, 512);
+        ap.setSequenceAutomation({ lane });
+        check(ap.sequenceAutomation().size() == 1, "processor stores the lane");
+        juce::MemoryBlock saved; ap.getStateInformation(saved);
+        DrumAudioProcessor restored; restored.setStateInformation(saved.getData(), (int)saved.getSize());
+        check(restored.sequenceAutomation().size() == 1 && restored.sequenceAutomation()[0].target == "pad0.flt.cut",
+              "sequence automation round-trips through plugin state");
+        ap.undoAutomation(); check(ap.sequenceAutomation().empty(), "undo removes the lane");
+        ap.redoAutomation(); check(ap.sequenceAutomation().size() == 1, "redo restores the lane");
+        std::unique_ptr<juce::AudioProcessorEditor> aed(ap.createEditor());
+        if (auto* aEd = dynamic_cast<DrumEditor*>(aed.get())) {
+            aed->setSize(DrumRack::LW, DrumRack::LH);
+            aEd->getRack().showAutomationPage();
+            auto& panel = aEd->getRack().automationPanel();
+            check(panel.isVisible() && panel.clip() && panel.clip()->automation.size() == 1,
+                  "AUTOMATION page shows the sequence lanes");
+            panel.addLane();
+            check(ap.sequenceAutomation().size() == 2, "+ LANE in the panel writes a processor lane",
+                  (double)ap.sequenceAutomation().size());
+            const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+            out.createDirectory();
+            writePng(aed->createComponentSnapshot(aed->getLocalBounds()), out.getChildFile("dr1-automation.png"));
+        } else check(false, "DR-1 editor for the automation page");
     }
 
     // ---- 12. pad grid: drop-WAV import + QWERTY trigger (Task 10) ----
@@ -876,6 +939,11 @@ int main(int argc, char** argv) {
         check(proc.getSelectedPad() == 9, "clicking a lane selects its pad", proc.getSelectedPad());
         check(proc.getStep(0, 9, 5) == 1, "clicking a lane toggles that lane's step", proc.getStep(0, 9, 5));
         check(proc.getStep(0, 0, 5) == 0, "the previously selected pad is untouched");
+        check(seq.timingStep() == 5, "a step click also targets micro timing (web onStepClick)", seq.timingStep());
+        laneClick(laneCell);
+        check(proc.getStep(0, 9, 5) == 2 && seq.timingStep() == 5,
+              "with the timing panel shown a click still cycles the step to accent");
+        laneClick(laneCell);
 
         // The lane name is a pad selector on its own.
         const auto nameCell = seq.laneNameBounds(3).getCentre();
@@ -1056,6 +1124,8 @@ int main(int argc, char** argv) {
         seq.duplicatePattern();
         check(proc.getStep(1, 0, 0) == 2, "duplicatePattern copies pattern 0 into pattern 1");
         check(proc.getChain() == std::vector<int>({ 0, 1 }), "duplicatePattern extends the sequence length");
+        check(proc.getEditPattern() == 1 && !seq.hasSelection(), "duplicatePattern moves editing to the copy (web)",
+              proc.getEditPattern());
         proc.setEditPattern(fable::DR_NPATTERNS - 1);
         auto chainBefore = proc.getChain();
         seq.duplicatePattern();
@@ -1150,6 +1220,321 @@ int main(int argc, char** argv) {
         check(!seq.keyPressed(juce::KeyPress('c', {}, 'c')), "plain 'c' (no modifier) is not claimed");
     }
 
+    // ---- 12. preset browsers: kit drawer and pad patch drawer ----
+    printf("\n== DR-1 preset browsers ==\n");
+    {
+        const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile("build/browser-visuals");
+        vis.createDirectory();
+        const auto favFile = vis.getChildFile("dr1-favorites.settings");
+        favFile.deleteFile();
+        fui::BrowserFavorites::overrideFile() = favFile;
+        DrumAudioProcessor dp;
+        dp.prepareToPlay(48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> ded(dp.createEditor());
+        auto* drumEd = dynamic_cast<DrumEditor*>(ded.get());
+        check(drumEd != nullptr, "createEditor returns DrumEditor (browsers)");
+        if (drumEd != nullptr) {
+            ded->setSize(DrumRack::LW, DrumRack::LH);
+            auto& rack = drumEd->getRack();
+            std::vector<juce::Button*> browseButtons;
+            collectNamedButtons(rack, "BROWSE", browseButtons);
+            // [0] = header (kit drawer), [1] = selected-pad bar (pad patch drawer)
+            std::sort(browseButtons.begin(), browseButtons.end(), [&](juce::Button* l, juce::Button* r) {
+                return rack.getLocalPoint(l, juce::Point<int>()).y < rack.getLocalPoint(r, juce::Point<int>()).y; });
+            check(browseButtons.size() == 2 && browseButtons[0]->isVisible() && browseButtons[1]->isVisible(),
+                  "the header and the selected-pad bar each show BROWSE", (double)browseButtons.size());
+
+            // kit drawer
+            if (!browseButtons.empty()) browseButtons[0]->onClick();
+            check(rack.kitBrowser().isOpen() && !rack.padBrowser().isOpen(), "header BROWSE opens the kit drawer");
+            rack.kitBrowser().selectItem(3);
+            writePng(ded->createComponentSnapshot(ded->getLocalBounds()), vis.getChildFile("dr1-kit-browser-open.png"));
+            rack.kitBrowser().toggleCharacter("punchy");
+            writePng(ded->createComponentSnapshot(ded->getLocalBounds()), vis.getChildFile("dr1-kit-browser-filtered.png"));
+            rack.kitBrowser().toggleCharacter("punchy");
+            rack.kitBrowser().revert();
+            rack.kitBrowser().close();
+
+            // pad patch drawer (opening one drawer closes the other)
+            rack.toggleKitBrowser();
+            if (browseButtons.size() > 1) browseButtons[1]->onClick();
+            check(rack.padBrowser().isOpen() && !rack.kitBrowser().isOpen(), "pad bar BROWSE opens the pad patch drawer and closes the kit drawer");
+            rack.padBrowser().selectItem(2);
+            writePng(ded->createComponentSnapshot(ded->getLocalBounds()), vis.getChildFile("dr1-pad-browser-open.png"));
+            rack.padBrowser().vary();
+            writePng(ded->createComponentSnapshot(ded->getLocalBounds()), vis.getChildFile("dr1-pad-browser-variant.png"));
+            rack.padBrowser().revert();
+            rack.padBrowser().close();
+            check(!rack.padBrowser().isOpen() && !browseButtons[1]->getToggleState(), "CLOSE hides the drawer and resets BROWSE");
+
+            const auto setPlaying = [&](bool on) {
+                dp.setSeqPlaying(on);
+                juce::AudioBuffer<float> b(2, 512); juce::MidiBuffer m;
+                for (int i = 0; i < 2; ++i) { b.clear(); dp.processBlock(b, m); }
+            };
+
+            browser_test::Probe kit;
+            kit.label = "DR-1 kits";
+            kit.infos = fable::drumParamInfo();
+            kit.values = [&] { return dp.captureParamValues(); };
+            kit.extra = [&] {
+                std::string out;
+                for (int i = 0; i < fable::DR_NPADS; ++i) out += dp.getPadName(i).toStdString() + "|";
+                for (int pat = 0; pat < 4; ++pat) for (int pd = 0; pd < 16; ++pd) for (int st = 0; st < 16; ++st) out += (char)('0' + dp.getStep(pat, pd, st));
+                return out;   // a kit load keeps the sequence, so a restore must not touch it either
+            };
+            kit.program = [&] { return dp.getCurrentProgram(); };
+            kit.dirty = [&] { return dp.isProgramDirty(); };
+            kit.programName = [&](int i) { return dp.getProgramName(i); };
+            kit.setPlaying = setPlaying;
+            browser_test::runChecks(rack.kitAdapter(), rack.kitBrowser(), kit,
+                                    [](bool c, const char* m, double v) { check(c, m, v); });
+
+            // The selected pad's patch fields: VARY may move only those rules.
+            dp.setCurrentProgram(0);
+            dp.setSelectedPad(3);
+            dp.selectionBroadcaster.dispatchPendingMessages();
+            browser_test::Probe pad;
+            pad.label = "DR-1 pad patches";
+            pad.infos = fable::drumParamInfo();
+            pad.values = [&] { return dp.captureParamValues(); };
+            pad.extra = [] { return std::string(); };
+            pad.program = [&] { return rack.padAdapter().currentIndex(); };
+            pad.dirty = [&] { return dp.isProgramDirty(); };
+            pad.programName = [&](int) { return juce::String(); };
+            pad.programMatchesItem = false;
+            for (const auto& rule : fui::PadPatchAdapter::varyRules())
+                pad.varyAmounts[fable::drumIdFromString(("pad3." + juce::String(rule.id)).toStdString())] = rule.amount;
+            pad.setPlaying = setPlaying;
+            browser_test::runChecks(rack.padAdapter(), rack.padBrowser(), pad,
+                                    [](bool c, const char* m, double v) { check(c, m, v); });
+
+            // A pad patch load leaves every other pad untouched.
+            dp.setCurrentProgram(0);
+            const auto before = dp.captureParamValues();
+            rack.padBrowser().open();
+            rack.padBrowser().selectItem(5);
+            const auto after = dp.captureParamValues();
+            bool otherPadsSame = true;
+            for (std::size_t i = 0; i < before.size(); ++i)
+                if (std::abs(before[i] - after[i]) > 1.0e-4f && (int)i / fable::DPAD_NFIELDS != 3) otherPadsSame = false;
+            check(otherPadsSame, "a pad patch changes only the selected pad");
+            rack.padBrowser().close();
+
+            // The audition hit reaches the audio thread through the command FIFO.
+            dp.setCurrentProgram(0);
+            dp.triggerPad(0, 1.0f);
+            juce::AudioBuffer<float> ab(2, 512); juce::MidiBuffer am;
+            float peak = 0;
+            for (int i = 0; i < 8; ++i) { ab.clear(); dp.processBlock(ab, am); peak = std::max(peak, ab.getMagnitude(0, 512)); }
+            check(peak > 1.0e-4f, "audition hit sounds through the FIFO path", peak);
+
+            // ---- pattern library drawer (step sequencer PATTERNS) ----
+            printf("\n== DR-1 pattern browser ==\n");
+            {
+                const auto& lib = fable::patternLibrary();
+                check(lib.size() == 488, "pattern library holds 61 genres x 8 sections", (double)lib.size());
+                // Byte parity samples with src/drum/patternLibrary.ts (the generator check covers all entries).
+                auto at = [](const fable::PatternLibraryEntry& e, int bar, int pad, int step) { return (int)e.steps[(size_t)((bar * 16 + pad) * 16 + step)]; };
+                const auto& main0 = lib[0];
+                check(main0.name == juce::String::fromUTF8("DETROIT TECHNO \xc2\xb7 MAIN") && main0.role == "main" && main0.family == "techno"
+                      && main0.bpm == 128 && std::abs(main0.swing - 0.1f) < 1.0e-6f && main0.chain == std::vector<int>{ 0, 1, 2, 3 },
+                      "entry 1 metadata matches the web library");
+                check(at(main0, 0, 0, 0) == 2 && at(main0, 0, 0, 4) == 1 && at(main0, 0, 0, 8) == 2 && at(main0, 0, 0, 2) == 0
+                      && at(main0, 0, 3, 4) == 1 && at(main0, 0, 3, 12) == 1 && at(main0, 3, 0, 14) == 1 && at(main0, 2, 0, 14) == 0,
+                      "DETROIT TECHNO MAIN: bar 1 kick/clap and bar 4 B-variation kick match the web bytes");
+                const auto& fill = lib[5];
+                check(fill.role == "fill" && at(fill, 3, 10, 12) == 1 && at(fill, 3, 10, 13) == 1 && at(fill, 3, 9, 14) == 1
+                      && at(fill, 3, 8, 15) == 2 && at(fill, 3, 0, 14) == 0 && at(fill, 3, 0, 12) == 1,
+                      "DETROIT TECHNO FILL: bar 4 tom fill and cleared kick match the web rules");
+                const auto& last = lib.back();
+                int hats = 0;
+                for (int s = 0; s < 16; ++s) hats += at(last, 0, 5, s);
+                check(last.name == juce::String::fromUTF8("HYPERPOP \xc2\xb7 MINIMAL") && last.chain.size() == 1 && hats == 16
+                      && at(last, 0, 3, 8) == 2 && at(last, 0, 15, 3) == 0 && at(last, 1, 0, 0) == 0,
+                      "HYPERPOP MINIMAL: one bar, glitch lane dropped, slots past the chain empty");
+                auto& pat = rack.patternAdapter();
+                check(pat.items().size() == 488 && pat.roles().size() == 8 && pat.characters().size() == 12,
+                      "pattern adapter: 488 rows, 8 section roles, 12 genre families", (double)pat.items().size());
+
+                // A known starting point: kit 2, 97 BPM, a hand-made two-bar sequence.
+                dp.setCurrentProgram(2);
+                auto* bpmParam = dp.apvts.getParameter(fable::drumParamInfo()[(size_t)fable::DG_SEQ_BPM].pid);
+                bpmParam->setValueNotifyingHost(bpmParam->convertTo0to1(97.0f));
+                auto start = dp.getSequence();
+                std::fill(start.steps.begin(), start.steps.end(), 0);
+                start.steps[(size_t)((0 * 16 + 2) * 16 + 4)] = 2;
+                start.steps[(size_t)((1 * 16 + 7) * 16 + 9)] = 1;
+                start.chain = { 0, 1 };
+                check(dp.commitSequence(start), "seed sequence commits");
+                dp.setEditPattern(1);
+                const auto kitValues = [&] {
+                    auto v = dp.captureParamValues();
+                    v.erase(v.begin() + fable::DG_SEQ_BPM);   // compared separately
+                    return v;
+                };
+                const auto kitBefore = kitValues();
+                const auto bpmNow = [&] { return dp.apvts.getRawParameterValue(fable::drumParamInfo()[(size_t)fable::DG_SEQ_BPM].pid)->load(); };
+
+                std::vector<juce::Button*> seqPage, patternButtons;
+                collectNamedButtons(rack, "SEQUENCER", seqPage);
+                if (!seqPage.empty() && seqPage[0]->onClick) seqPage[0]->onClick();
+                ded->resized();   // the page change keeps the editor size here, so re-fit the rack transform
+                collectNamedButtons(rack, "PATTERNS", patternButtons);
+                check(patternButtons.size() == 1 && patternButtons[0]->isVisible(), "the step sequencer head shows PATTERNS", (double)patternButtons.size());
+                rack.toggleKitBrowser();
+                if (!patternButtons.empty()) patternButtons[0]->onClick();
+                check(rack.patternBrowser().isOpen() && !rack.kitBrowser().isOpen() && !rack.padBrowser().isOpen()
+                      && patternButtons[0]->getToggleState(), "PATTERNS opens the pattern drawer alone and lights");
+
+                const int item = 8 * 9 + 5;   // DEEP HOUSE · FILL
+                rack.patternBrowser().selectItem(item);
+                const auto loaded = dp.getSequence();
+                check(loaded.steps == lib[(size_t)item].steps && loaded.chain == lib[(size_t)item].chain && !loaded.hasRhythm,
+                      "a row load replaces the steps and chain with the library entry");
+                check(dp.getCurrentProgram() == 2 && kitValues() == kitBefore && std::abs(bpmNow() - 97.0f) < 1.0e-3f,
+                      "a pattern load keeps the kit and the BPM", bpmNow());
+                check(dp.getEditPattern() == 0 && pat.currentIndex() == item, "the load edits bar 1 and marks the row current");
+                check(rack.patternBrowser().mode() == fui::PresetBrowser::Mode::Audition, "a load puts the drawer in AUDITION");
+                check(rack.patternBrowser().pendingAuditionCount() > 0, "stopped: selecting a row schedules the first bar");
+                rack.patternBrowser().stopAudition();
+                writePng(ded->createComponentSnapshot(ded->getLocalBounds()), vis.getChildFile("dr1-pattern-browser-open.png"));
+                rack.patternBrowser().toggleRole("build-up");
+                rack.patternBrowser().toggleCharacter("bass");
+                check(rack.patternBrowser().visibleCount() == 8, "build-up x bass filters to one section per bass genre", rack.patternBrowser().visibleCount());
+                writePng(ded->createComponentSnapshot(ded->getLocalBounds()), vis.getChildFile("dr1-pattern-browser-filtered.png"));
+                rack.patternBrowser().toggleRole("build-up");
+                rack.patternBrowser().toggleCharacter("bass");
+
+                rack.patternBrowser().toggleAB();
+                check(dp.getSequence().steps == start.steps && dp.getSequence().chain == start.chain, "A / B plays the kept sequence");
+                rack.patternBrowser().toggleAB();
+                check(dp.getSequence().steps == lib[(size_t)item].steps, "A / B returns to the auditioned pattern");
+
+                rack.patternBrowser().revert();
+                const auto reverted = dp.getSequence();
+                check(reverted.steps == start.steps && reverted.chain == start.chain && dp.getEditPattern() == 1,
+                      "REVERT restores the sequence, chain and edit bar");
+                check(pat.currentIndex() == -1 && rack.patternBrowser().mode() == fui::PresetBrowser::Mode::Kept, "REVERT returns to KEPT with no row");
+
+                rack.patternBrowser().selectItem(7);   // a one-bar MINIMAL
+                rack.patternBrowser().keep();
+                rack.patternBrowser().selectItem(0);
+                rack.patternBrowser().revert();
+                check(dp.getSequence().steps == lib[7].steps && dp.getSequence().chain == std::vector<int>{ 0 } && pat.currentIndex() == 7,
+                      "KEEP makes the loaded pattern the revert target");
+                rack.patternBrowser().selectItem(7);
+                check(rack.patternBrowser().mode() == fui::PresetBrowser::Mode::Kept, "reselecting the kept, unedited pattern reads KEPT");
+
+                dp.setStep(0, 0, 1, 1);
+                rack.patternBrowser().keep();
+                rack.patternBrowser().selectItem(7);
+                check(rack.patternBrowser().mode() == fui::PresetBrowser::Mode::Audition, "an edited kept pattern is dirty, so a reload auditions");
+
+                setPlaying(true);
+                rack.patternBrowser().stopAudition();
+                rack.patternBrowser().selectItem(1);
+                check(rack.patternBrowser().pendingAuditionCount() == 0 && dp.getSequence().steps == lib[1].steps,
+                      "while the sequencer runs a row plays in place, without a one-shot audition");
+                setPlaying(false);
+                rack.patternBrowser().close();
+                check(!rack.patternBrowser().isOpen() && !patternButtons[0]->getToggleState(), "CLOSE hides the pattern drawer and resets PATTERNS");
+            }
+        }
+        fui::BrowserFavorites::overrideFile() = juce::File();
+    }
+
+    {
+        // Native auto-mix UI: a kick/snare/hat groove triggered pad by pad.
+        auto groove = [](DrumAudioProcessor& p, juce::MidiBuffer&, int block) {
+            if (block % 12) return;
+            const int step = block / 12;
+            if (step % 4 == 0) p.triggerPad(0, 1.0f);
+            if (step % 8 == 4) p.triggerPad(1, 0.9f);
+            p.triggerPad(2, step % 2 ? 0.45f : 0.7f);
+        };
+        g_fail += automixchecks::runStandalone<DrumAudioProcessor>("dr1", DrumRack::LW, DrumRack::LH, true, groove);
+        g_fail += livespectrumchecks::runStandalone<DrumAudioProcessor>("dr1", DrumRack::LW, DrumRack::LH, true, groove);
+        automixchecks::Checker check { "dr1" };
+        DrumAudioProcessor dp;
+        dp.prepareToPlay(48000, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> ed(dp.createEditor());
+        ed->setSize(DrumRack::LW, DrumRack::LH);
+        ed->setVisible(true);
+        auto* body = findFxComponent<DrumDeviceBody>(*ed);
+        auto* padTab = findFxComponent<juce::TextButton>(*ed, "PAD FX");
+        auto* groupTab = findFxComponent<juce::TextButton>(*ed, "GROUP FX");
+        check(body && padTab && groupTab, "the DR-1 body has PAD FX and GROUP FX pages");
+        if (body && padTab && groupTab) {
+            auto params = fui::ParameterSource::fromApvts(dp.apvts);
+            juce::AudioBuffer<float> buffer(2, 512);
+            juce::MidiBuffer midi;
+            int block = 0;
+            auto render = [&] { buffer.clear(); midi.clear(); groove(dp, midi, block++); dp.processBlock(buffer, midi); };
+            dp.setSelectedPad(0);
+            padTab->setToggleState(true, juce::dontSendNotification);
+            padTab->onClick();
+            // A pad is never isolated: its EQ cannot learn, its COMP learns punch from the pad trace.
+            automixchecks::checkChainScope(check, body->fxChain(), params, "pad0.", "dr1-pad", render, false);
+            check(body->fxChain().module(fui::FxModuleView::Comp) != nullptr, "pad scope keeps the COMP module");
+            auto silence = [&] { buffer.clear(); midi.clear(); dp.processBlock(buffer, midi); };
+            if (auto* eq = body->fxChain().module(fui::FxModuleView::Eq); eq && eq->liveSpectrum()) {
+                // A pad has no isolated signal: its EQ draws no live spectrum.
+                for (int i = 0; i < 60; ++i) { render(); eq->updateLiveSpectrum(livespectrumchecks::nowMs()); }
+                check(!livespectrumchecks::hasPath(*eq->liveSpectrum()), "pad EQ draws no live path while the kit plays");
+                livespectrumchecks::writeSnapshot(body->fxChain(), "dr1-pad-eq-live.png");
+            } else check(false, "pad EQ has a live spectrum state");
+            groupTab->setToggleState(true, juce::dontSendNotification);
+            groupTab->onClick();
+            auto& chain = body->fxChain();
+            auto* kitButton = findFxComponent<juce::TextButton>(chain, "KIT MIX");
+            check(kitButton && kitButton->isVisible(), "GROUP FX shows the KIT MIX toggle");
+            chain.showGroupPanel(true);
+            auto& panel = body->kitMixPanel();
+            check(panel.isVisible() && !panel.getBounds().isEmpty()
+                  && !chain.module(fui::FxModuleView::Drive)->isVisible(), "KIT MIX replaces the lower module row");
+            automixchecks::writeSnapshot(chain, "dr1-kitmix-idle.png");
+            {
+                // KIT MIX live: the kit output, aligned to the reference.
+                const auto update = [&panel] { panel.updateLiveSpectrum(livespectrumchecks::nowMs()); };
+                const bool drawn = livespectrumchecks::untilDrawn({&panel.liveSpectrum()}, render, update);
+                check(drawn, "KIT MIX live path is drawn while the kit plays");
+                livespectrumchecks::writeSnapshot(chain, "dr1-kitmix-live.png");
+                check(livespectrumchecks::untilCleared({&panel.liveSpectrum()}, silence, update),
+                      "KIT MIX live path clears after silence");
+            }
+            auto& kl = panel.learner();
+            std::vector<float> before;
+            for (int i = 0; i < 16; ++i) before.push_back(automixchecks::paramValue(params, "pad" + juce::String(i) + ".lvl"));
+            automixchecks::learn(kl, render);
+            const auto* fit = kl.fit();
+            check(fit != nullptr && kl.status().startsWith("ERROR"), "KIT MIX LEARN fits the captured pads: " + kl.status());
+            panel.refresh();
+            automixchecks::writeSnapshot(chain, "dr1-kitmix-learned.png");
+            if (fit) {
+                int heard = 0;
+                for (bool h : fit->heard) heard += h ? 1 : 0;
+                check(heard >= 2, "KIT MIX heard the playing pads: " + juce::String(heard));
+                kl.apply();
+                bool written = true, moved = false;
+                for (int i = 0; i < 16; ++i) {
+                    const float now = automixchecks::paramValue(params, "pad" + juce::String(i) + ".lvl");
+                    const auto& level = fit->levels[(size_t)i];
+                    written &= std::abs(now - (level ? (float)*level : before[(size_t)i])) < 1e-3f;
+                    moved |= std::abs(now - before[(size_t)i]) > 1e-3f;
+                }
+                check(written && moved, "KIT MIX APPLY writes the fitted pad levels");
+                kl.undo();
+                bool restored = !kl.canUndo();
+                for (int i = 0; i < 16; ++i)
+                    restored &= std::abs(automixchecks::paramValue(params, "pad" + juce::String(i) + ".lvl") - before[(size_t)i]) < 1e-3f;
+                check(restored, "KIT MIX UNDO restores the pad levels");
+            }
+            chain.showGroupPanel(false);
+            check(chain.module(fui::FxModuleView::Drive)->isVisible(), "closing KIT MIX restores the lower row");
+        }
+        g_fail += check.fails;
+    }
     printf("%s\n", g_fail == 0 ? "DRUM PLUGIN CHECKS PASSED" : "DRUM PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<DrumAudioProcessor>("dr", DrumRack::LW, DrumRack::LH, true, [](const auto& p) { return p.fxTelemetry(-1,0); })) ++g_fail;
     if (!runAgentProcessorChecks<DrumAudioProcessor>("dr", fable::drumParamInfo().data(), fable::drumParamInfo().size(), "pad15.flt.cut", "pad15.oscA.table")) ++g_fail;

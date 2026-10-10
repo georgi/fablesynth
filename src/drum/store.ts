@@ -104,6 +104,32 @@ export function kitOptions(userKits: Kit[]): KitOption[] {
   return options;
 }
 
+/** What a kit load changes (patterns stay with the sequencer), for the browser. */
+export interface KitSnapshot {
+  value: string;
+  dirty: boolean;
+  params: ParamValues;
+  padNames: string[];
+  userTables: GeneratedTable[];
+  patchValue: string;
+}
+
+/** The sequence a pattern load replaces, for the pattern browser. */
+export interface PatternSnapshot {
+  value: string;
+  dirty: boolean;
+  sequence: DrumSequence;
+  editPattern: number;
+}
+
+/** One pad's patch fields as absolute ids, tied to the pad it was captured from. */
+export interface PadSnapshot {
+  value: string;
+  dirty: boolean;
+  pad: number;
+  fields: Record<string, number>;
+}
+
 export interface DrumStore {
   params: ParamValues;
   sel: number;
@@ -628,6 +654,45 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       patchValue: '',
       kitDirty: false,
     });
+  },
+
+  setBrowser: (which) => set({ browser: which }),
+
+  captureKit: () => {
+    const st = get();
+    return {
+      value: st.kitValue, dirty: st.kitDirty, params: { ...st.params }, padNames: [...st.padNames],
+      userTables: [...st.userTables], patchValue: st.patchValue,
+    };
+  },
+
+  restoreKit: (snap) => {
+    const params = { ...snap.params };
+    drumEngine.panic(get().hosted);
+    drumEngine.setUserTables(snap.userTables);
+    drumEngine.params = { ...params };
+    drumEngine.applyAllParams();
+    set({
+      params, padNames: [...snap.padNames], userTables: [...snap.userTables],
+      kitValue: snap.value, patchValue: snap.patchValue, kitDirty: snap.dirty,
+    });
+  },
+
+  capturePad: () => {
+    const st = get();
+    const fields: Record<string, number> = {};
+    for (const f of PATCH_FIELDS) fields[pad(st.sel, f)] = st.params[pad(st.sel, f)];
+    return { value: st.patchValue, dirty: st.kitDirty, pad: st.sel, fields };
+  },
+
+  restorePad: (snap) => {
+    for (const [id, v] of Object.entries(snap.fields)) get().setParam(id, v);
+    // patchValue names the selected pad's patch; leave it if the selection moved.
+    set((st) => ({ patchValue: st.sel === snap.pad ? snap.value : st.patchValue, kitDirty: snap.dirty }));
+  },
+
+  applyPadVariant: (entries) => {
+    for (const [id, v] of Object.entries(entries)) get().setParam(id, v);
   },
 
   stepKit: (delta) => {

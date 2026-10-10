@@ -13,53 +13,73 @@ void SeqFooterView::trackStopClick(int t) { proc.conductor().stopTrack(t); }
 
 // ---- timer -------------------------------------------------------------------
 
-juce::uint32 SeqFooterView::paintSignature() const {
+SeqFooterView::PaintState SeqFooterView::paintState() const {
+    PaintState state;
     const auto& cond = proc.conductor();
-    const auto& sess = cond.session();
-
-    juce::uint32 sig = 17;
-    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    auto mixStr = [&mix](const std::string& s) {
-        mix((int)s.size());
-        for (char c : s) mix((int)(unsigned char)c);
-    };
-
-    mix((int)sess.scenes.size());
-    mix((int)sess.tracks.size());
-    for (int s = 0; s < (int)sess.scenes.size(); ++s) {
-        mixStr(sess.scenes[(size_t)s].name);        // live chip text
-        mix(cond.sceneMuted(s) ? 1 : 0);
+    const auto& session = cond.session();
+    auto cr = chipsArea;
+    cr.removeFromLeft(30);
+    int x = cr.getX();
+    for (int scene = 0; scene < (int)session.scenes.size(); ++scene) {
+        bool live = false;
+        for (int t = 0; t < 4; ++t) if (cond.ownerOf(t) == scene) live = true;
+        if (!live) continue;
+        state.anyLive = true;
+        const auto text = juce::String(scene + 1).paddedLeft('0', 2) + " " + juce::String(session.scenes[(size_t)scene].name)
+            + (cond.sceneMuted(scene) ? juce::String::fromUTF8(" \xc2\xb7M") : juce::String());
+        int width = 0;
+        for (const auto& chip : cachedState_.chips)
+            if (chip.text == text) { width = chip.width; break; }
+        if (width == 0) {
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText(monoFont(7.0f), text, 0.0f, 0.0f);
+            width = (int)std::ceil(glyphs.getBoundingBox(0, -1, true).getWidth()) + 10;
+        }
+        if (x + width > cr.getRight()) break;
+        state.chips.push_back({ text, width });
+        x += width + 4;
     }
-    for (int t = 0; t < 4 && t < (int)sess.tracks.size(); ++t) {
+    state.tracks = juce::jmin(4, (int)session.tracks.size());
+    for (int t = 0; t < state.tracks; ++t) {
         const int owner = cond.ownerOf(t);
-        mix(owner);
-        mix(cond.trackAudible(t) ? 1 : 0);
-        mix((int)(sess.tracks[(size_t)t].color & 0xffffu));
-        mix((int)(sess.tracks[(size_t)t].color >> 16));
-        mix(proc.trackBar[t].load());               // NOW bar counter
-        if (owner >= 0 && owner < (int)sess.scenes.size()) {
-            const auto& clip = sess.scenes[(size_t)owner].clips[(size_t)t];
-            mixStr(clip.name);
-            mix(clip.bars);
+        state.live[t] = owner != -2;
+        state.audible[t] = state.live[t] && cond.trackAudible(t);
+        state.colours[t] = session.tracks[(size_t)t].color;
+        state.labels[t] = "-";
+        if (state.live[t] && owner >= 0 && owner < (int)session.scenes.size()) {
+            const auto& sc = session.scenes[(size_t)owner];
+            const auto& clip = sc.clips[(size_t)t];
+            juce::String pos;
+            const int bar = proc.trackBar[t].load();
+            if (bar >= 0 && clip.bars > 0)
+                pos = juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(bar % clip.bars + 1) + "/" + juce::String(clip.bars);
+            state.labels[t] = juce::String(owner + 1).paddedLeft('0', 2) + " " + juce::String(sc.name)
+                + juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(clip.name) + pos;
         }
     }
-    return sig;
+    return state;
 }
 
 // The VU decay must run on every tick, but a settled meter over a static
 // now-playing state has nothing to redraw.
 void SeqFooterView::timerCallback() {
+    if (!isVisibleInHierarchy(*this)) {
+        for (auto& level : vuLevel_) level = 0.0f;
+        return;
+    }
     constexpr float kVuEpsilon = 1.0e-3f;
+    // Match the former 30 Hz release time at the animation cadence.
+    const float decay = std::pow(0.92f, 30.0f / kAnimationHz);
     bool moved = false;
     for (int t = 0; t < 4; ++t) {
         const float rms = proc.trackRms[t].load();
-        float v = juce::jmax(rms, vuLevel_[t] * 0.92f);
+        float v = juce::jmax(rms, vuLevel_[t] * decay);
         if (v < kVuEpsilon) v = 0.0f;   // snap, so the fall terminates
         if (v != vuLevel_[t]) moved = true;
         vuLevel_[t] = v;
     }
-    const juce::uint32 sig = paintSignature();
-    if (sig != lastSig_) { lastSig_ = sig; moved = true; }
+    const auto state = paintState();
+    if (state != lastState_) { lastState_ = state; moved = true; }
     if (moved) repaint();
 }
 
@@ -174,18 +194,10 @@ void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
         drawSpaced(g, "LIVE", tag, 1.6f);
 
         int x = cr.getX();
-        bool any = false;
-        for (int s = 0; s < (int)session.scenes.size(); ++s) {
-            bool live = false;
-            for (int t = 0; t < 4; ++t) if (cond.ownerOf(t) == s) live = true;
-            if (!live) continue;
-            any = true;
-            juce::String txt = juce::String(s + 1).paddedLeft('0', 2) + " " + juce::String(session.scenes[(size_t)s].name)
-                              + (cond.sceneMuted(s) ? juce::String::fromUTF8(" \xc2\xb7M") : juce::String());
+        for (const auto& entry : state.chips) {
+            const auto& txt = entry.text;
+            const int w = entry.width;
             g.setFont(monoFont(7.0f));
-            juce::GlyphArrangement glyphs;
-            glyphs.addLineOfText(g.getCurrentFont(), txt, 0.0f, 0.0f);
-            const int w = (int)std::ceil(glyphs.getBoundingBox(0, -1, true).getWidth()) + 10;
             juce::Rectangle<int> chip(x, cr.getY(), w, cr.getHeight());
             if (chip.getRight() > cr.getRight()) break;
             g.setColour(juce::Colours::white.withAlpha(0.03f));
@@ -196,7 +208,7 @@ void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
             g.drawText(txt, chip, juce::Justification::centred);
             x = chip.getRight() + 4;
         }
-        if (!any) {
+        if (!state.anyLive) {
             // Even the "nothing live" placeholder sits in a chip (web wraps
             // the em-dash in .sq-live-chip).
             juce::Rectangle<int> chip(x, cr.getY(), 18, cr.getHeight());
@@ -210,8 +222,8 @@ void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
     }
 
     // per-track NOW cells
-    for (int t = 0; t < 4 && t < (int)session.tracks.size(); ++t) {
-        const juce::Colour tc { session.tracks[(size_t)t].color };
+    for (int t = 0; t < state.tracks; ++t) {
+        const juce::Colour tc { state.colours[t] };
         auto rf = cellArea[t].toFloat();
         g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
                                                col::panelLo, rf.getX(), rf.getBottom(), false));
@@ -227,9 +239,8 @@ void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
         g.setColour(col::textDim);
         g.fillPath(iconStop(cellStopBtn[t].toFloat().withSizeKeepingCentre(7.0f, 7.0f)));
 
-        const int owner = cond.ownerOf(t);
-        const bool live = owner != -2;
-        const bool audible = live && cond.trackAudible(t);
+        const bool live = state.live[t];
+        const bool audible = state.audible[t];
 
         // The tag/owner pair centers vertically in the cell (web .sq-foot-now
         // is a centered flex column), instead of hugging the top edge.
@@ -240,23 +251,12 @@ void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
         g.setFont(monoFont(7.0f));
         drawSpaced(g, "NOW", na.removeFromTop(10), 1.8f);
 
-        juce::String label = "-";
-        if (live && owner >= 0 && owner < (int)session.scenes.size()) {
-            const auto& sc = session.scenes[(size_t)owner];
-            const auto& clip = sc.clips[(size_t)t];
-            juce::String pos;
-            const int bar = proc.trackBar[t].load();
-            if (bar >= 0 && clip.bars > 0)
-                pos = juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(bar % clip.bars + 1) + "/" + juce::String(clip.bars);
-            label = juce::String(owner + 1).paddedLeft('0', 2) + " " + juce::String(sc.name)
-                  + juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(clip.name) + pos;
-        }
         // A brighter, near-white-tinted owner label when audible so it stands
         // out from an idle track (web parity: .sq-foot-owner.on color 92%).
         g.setColour(audible ? tc.interpolatedWith(juce::Colours::white, 0.12f)
                             : juce::Colour(0xff4a5266));
         g.setFont(monoFont(9.0f, audible));
-        g.drawText(label, na, juce::Justification::centredLeft);
+        g.drawText(state.labels[t], na, juce::Justification::centredLeft);
 
         // VU
         auto vf = vuArea[t].toFloat();
@@ -264,6 +264,13 @@ void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
         g.fillRoundedRectangle(vf, 3.0f);
         g.setColour(juce::Colours::white.withAlpha(0.06f));
         g.drawRoundedRectangle(vf.reduced(0.5f), 3.0f, 1.0f);
+    }
+}
+
+void SeqFooterView::paintMeters(juce::Graphics& g, const PaintState& state) {
+    for (int t = 0; t < state.tracks; ++t) {
+        const auto vf = vuArea[t].toFloat();
+        const juce::Colour tc { state.colours[t] };
         const float frac = juce::jlimit(0.03f, 1.0f, vuLevel_[t] * 3.2f);
         auto lit = vf.withWidth(vf.getWidth() * frac);
         g.setColour(tc);

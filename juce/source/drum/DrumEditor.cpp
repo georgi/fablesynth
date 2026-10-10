@@ -78,8 +78,36 @@ std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor& p) {
 //   #dr-fxrack        (18, 727) 1424 x 131
 
 // ---- DrumRack ----
-DrumRack::DrumRack(fui::DrumUiModel& p) : header(p), body(p) {
+DrumRack::DrumRack(fui::DrumUiModel& p, DrumAudioProcessor& proc)
+    : header(p), body(p), kitAdapter_(std::make_unique<fui::DrumStandaloneBackend>(proc)),
+      padAdapter_(std::make_unique<fui::DrumStandaloneBackend>(proc), [this] { return body.selBarView().patchIndex(); }, [this](int i) { body.selBarView().setPatchIndex(i); }),
+      patternAdapter_(p, { [&proc] {
+                               const auto* bpm = proc.apvts.getRawParameterValue(fable::drumParamInfo()[(size_t)fable::DG_SEQ_BPM].pid);
+                               return bpm ? bpm->load() : 120.0f; },
+                           [&proc] { return proc.isHostPlaying(); },
+                           [this] { body.stepSeqView().repaint(); } }),
+      kitBrowser_(kitAdapter_), padBrowser_(padAdapter_), patternBrowser_(patternAdapter_) {
     addAndMakeVisible(body);
+    {
+        fui::ClipAutomationPanel::Source context;
+        context.machine = fable::Machine::DR1; context.identity = "dr1-sequence"; context.unit = "SEQ";
+        context.clip = [this, &proc]() -> const fable::ClipData* {
+            automationClip_.bars = (int)proc.getChain().size();
+            automationClip_.automation = proc.sequenceAutomation();
+            const auto sequence = proc.getSequence();
+            automationClip_.hasDrumRhythm = sequence.hasRhythm;
+            automationClip_.drumRhythm = sequence.rhythm;
+            automationClip_.drumConfiguredLanes = sequence.configuredLanes;
+            return &automationClip_;
+        };
+        context.beginEdit = [&proc] { proc.pushAutomationUndo(); };
+        context.undo = [&proc] { proc.undoAutomation(); };
+        context.redo = [&proc] { proc.redoAutomation(); };
+        context.write = [&proc](const auto& lanes) { proc.setSequenceAutomation(lanes, false); };
+        context.elapsed = [&proc] { return proc.automationSteps(); };
+        automation_.setSource(std::move(context), p.parameters(), [&p] { return p.selectedPad(); });
+        body.setAutomationPanel(automation_);
+    }
     // The body spans the full logical rack, including the otherwise-empty
     // header strip. Keep the header above it so its program and master
     // controls receive mouse events.
@@ -87,16 +115,62 @@ DrumRack::DrumRack(fui::DrumUiModel& p) : header(p), body(p) {
     body.onPreferredHeightChanged = [this] {
         if (onPreferredHeightChanged) onPreferredHeightChanged();
     };
+    fui::enableLeafControlCache(*this);
+    addChildComponent(kitBrowser_);   // the drawers sit above everything else
+    addChildComponent(padBrowser_);
+    addChildComponent(patternBrowser_);
+    header.onBrowse = [this] { toggleKitBrowser(); };
+    body.selBarView().onBrowse = [this] { togglePadBrowser(); };
+    kitBrowser_.onClose = [this] { header.setBrowseOpen(false); };
+    padBrowser_.onClose = [this] { body.selBarView().setBrowseOpen(false); };
+    body.stepSeqView().onPatterns = [this] { togglePatternBrowser(); };
+    patternBrowser_.onClose = [this] { body.stepSeqView().setPatternsOpen(false); };
+}
+
+void DrumRack::closeDrawers() {
+    for (auto* b : { &kitBrowser_, &padBrowser_, &patternBrowser_ })
+        if (b->isOpen()) b->close();
+}
+
+void DrumRack::togglePatternBrowser() {
+    if (patternBrowser_.isOpen()) { patternBrowser_.close(); return; }
+    closeDrawers();
+    patternBrowser_.open();
+    body.stepSeqView().setPatternsOpen(true);
+}
+
+void DrumRack::toggleKitBrowser() {
+    if (kitBrowser_.isOpen()) { kitBrowser_.close(); return; }
+    if (patternBrowser_.isOpen()) patternBrowser_.close();
+    if (padBrowser_.isOpen()) padBrowser_.close();
+    kitBrowser_.open();
+    header.setBrowseOpen(true);
+}
+
+void DrumRack::togglePadBrowser() {
+    if (padBrowser_.isOpen()) { padBrowser_.close(); return; }
+    if (patternBrowser_.isOpen()) patternBrowser_.close();
+    if (kitBrowser_.isOpen()) kitBrowser_.close();
+    padBrowser_.open();
+    body.selBarView().setBrowseOpen(true);
 }
 
 void DrumRack::resized() {
     header.setBounds(18, 14, 1424, 80);
     body.setBounds(getLocalBounds());
+    // Kit drawer below the header; pad patch drawer below the selected-pad bar
+    // (web .pbr: top calc(100% + 6px) of the bar that owns BROWSE).
+    kitBrowser_.setBounds(18, 14 + 80 + 6, 1424, juce::jmin(620, getHeight() - 100 - 10));
+    const int padY = 139 + 31 + 6;
+    padBrowser_.setBounds(18, padY, 1424, juce::jmin(620, getHeight() - padY - 10));
+    // Pattern drawer below the step sequencer head (sequencer page at y 139, head 9 + 28).
+    const int patternY = 139 + 9 + 28 + 6;
+    patternBrowser_.setBounds(18, patternY, 1424, juce::jmin(620, getHeight() - patternY - 10));
 }
 
 // ---- DrumEditor ----
 DrumEditor::DrumEditor(DrumAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), model(fui::makeStandaloneDrumUiModel(p)), rack(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
+    : juce::AudioProcessorEditor(p), model(fui::makeStandaloneDrumUiModel(p)), rack(*model, p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     setWantsKeyboardFocus(true); // QWERTY pad map (PadGrid key-listens on us)
     addAndMakeVisible(rack);

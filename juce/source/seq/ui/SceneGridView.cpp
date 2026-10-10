@@ -877,59 +877,62 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
             g.fillRect(juce::Rectangle<int>(x, iconArea.getBottom() - h[(size_t)i], 3, h[(size_t)i]));
             x += 4;
         }
-    } else if (stopping) {
+    } else if (!cachePainting_ && stopping) {
         g.setColour(col::acB.withAlpha(0.65f + stopPulse() * 0.35f));
         g.fillPath(iconStop(iconArea.toFloat().withSizeKeepingCentre(8.0f, 8.0f)));
-    } else {
+    } else if (!animationOnly_ && !live && !stopping) {
         g.setColour(juce::Colour(0xff4a5266).withAlpha(bodyAlpha));
         g.fillPath(iconPlay(iconArea.toFloat().withSizeKeepingCentre(7.0f, 9.0f)));
     }
     head.removeFromLeft(6);
 
-    // "{bars}B" chip on the right — a bordered pill like the web .sq-cell-len,
-    // not bare text.
-    {
-        const juce::String chipTxt = clip.hasArp && clip.arp.enabled ? "ARP" : juce::String(clip.bars) + "B";
-        const auto chipFont = monoFont(7.0f);
-        const int w = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 9;
-        auto chip = head.removeFromRight(w).withSizeKeepingCentre(w, 13);
-        g.setColour(juce::Colours::white.withAlpha(0.08f * bodyAlpha));
-        g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
-        g.setColour(col::textDim.withAlpha(bodyAlpha));
-        g.setFont(chipFont);
-        g.drawText(chipTxt, chip, juce::Justification::centred);
-    }
-    head.removeFromRight(6);
-
-    g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
-    g.setFont(monoFontMedium(9.5f));
-    g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
-
-    auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
-    if (!clip.bytes.empty()) {
-        auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
-        if (clip.hasArp && clip.arp.enabled) {
-            const auto arp = fable::compileArp(clip.arp);
-            for (int i = 0; i < 16; ++i)
-                steps[(size_t)i] = { juce::jlimit(4, 19, (int)std::lround(5 + (arp.notes[i] % 24) * .6)), arp.notes[i] >= 0 && arp.hits[i] };
+    if (!animationOnly_) {
+        // "{bars}B" chip on the right — a bordered pill like the web .sq-cell-len,
+        // not bare text.
+        {
+            const juce::String chipTxt = clip.hasArp && clip.arp.enabled ? "ARP" : juce::String(clip.bars) + "B";
+            const auto chipFont = monoFont(7.0f);
+            const int w = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 9;
+            auto chip = head.removeFromRight(w).withSizeKeepingCentre(w, 13);
+            g.setColour(juce::Colours::white.withAlpha(0.08f * bodyAlpha));
+            g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
+            g.setColour(col::textDim.withAlpha(bodyAlpha));
+            g.setFont(chipFont);
+            g.drawText(chipTxt, chip, juce::Justification::centred);
         }
-        const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
-        for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
-            const auto& sb = steps[(size_t)i];
-            // Off steps read as thin flat slots (web .sq-steps span), not bars.
-            const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) : 2.5f;
-            juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
-                                        static_cast<float>(stepsArea.getBottom()) - bh,
-                                        juce::jmax(1.0f, bw - 2.0f), bh);
-            g.setColour(sb.on ? tc.withAlpha(0.6f * bodyAlpha) : juce::Colours::white.withAlpha(0.08f * bodyAlpha));
-            g.fillRoundedRectangle(bar, 1.0f);
+        head.removeFromRight(6);
+
+        g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
+        g.setFont(monoFontMedium(9.5f));
+        g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
+
+        auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
+        if (!clip.bytes.empty()) {
+            auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
+            if (clip.hasArp && clip.arp.enabled) {
+                const auto arp = fable::compileClipArp(clip.arp);
+                for (int i = 0; i < 16; ++i)
+                    steps[(size_t)i] = { juce::jlimit(4, 19, (int)std::lround(5 + (arp.notes[i] % 24) * .6)), arp.notes[i] >= 0 && arp.hits[i] };
+            }
+            const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
+            for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
+                const auto& sb = steps[(size_t)i];
+                // Off steps read as thin flat slots (web .sq-steps span), not bars.
+                const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) : 2.5f;
+                juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
+                                            static_cast<float>(stepsArea.getBottom()) - bh,
+                                            juce::jmax(1.0f, bw - 2.0f), bh);
+                g.setColour(sb.on ? tc.withAlpha(0.6f * bodyAlpha) : juce::Colours::white.withAlpha(0.08f * bodyAlpha));
+                g.fillRoundedRectangle(bar, 1.0f);
+            }
         }
     }
-
     auto progress = juce::Rectangle<int>(full.getX() + 10, full.getY() + 57, full.getWidth() - 20, 4);
-    g.setColour(juce::Colours::white.withAlpha(0.06f));
-    g.fillRoundedRectangle(progress.toFloat(), 1.5f);
-    if (live && clip.bars > 0) {
+    if (!animationOnly_) {
+        g.setColour(juce::Colours::white.withAlpha(0.06f));
+        g.fillRoundedRectangle(progress.toFloat(), 1.5f);
+    }
+    if (!cachePainting_ && live && clip.bars > 0) {
         const int bar = proc.trackBar[t].load();
         const int step = proc.trackStep[t].load();
         if (bar >= 0 && step >= 0) {
@@ -946,19 +949,20 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     }
 
-    // edit / delete chips — hover-revealed, like the web's .sq-cell-tools.
-    if (hoverCellS_ == s && hoverCellT_ == t) {
-        g.setColour(tc.withAlpha(0.90f));
-        g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
-        g.setColour(col::textDim);
-        g.fillPath(iconTrash(trashGlyph[s][t].toFloat().withSizeKeepingCentre(8.0f, 9.0f)));
+    if (!animationOnly_) {
+        // edit / delete chips — hover-revealed, like the web's .sq-cell-tools.
+        if (hoverCellS_ == s && hoverCellT_ == t) {
+            g.setColour(tc.withAlpha(0.90f));
+            g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
+            g.setColour(col::textDim);
+            g.fillPath(iconTrash(trashGlyph[s][t].toFloat().withSizeKeepingCentre(8.0f, 9.0f)));
+        }
     }
-
-    if (queued) {
+    if (!cachePainting_ && queued) {
         g.setColour(tc.withAlpha(qpulse()));
         g.drawRoundedRectangle(rf, 10.0f, 1.4f);
     }
-    if (stopping) {
+    if (!cachePainting_ && stopping) {
         const float pulse = stopPulse();
         const auto inset = rf.reduced(1.0f + pulse * 4.0f);
         juce::Path outline, dashed;
