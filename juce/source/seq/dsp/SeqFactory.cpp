@@ -935,8 +935,12 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 20, 59, 56 }, 2),          // STEPPER ROOT · DEEP TICK / DUB SKANK
             make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 20, 59, 1 }, 3),     // STEPPER ROOT · DEEP TICK / VELVET PAD
         };
+        // Scored POLY lanes and micro-timing for some generated sessions.
+        applySessionGrooves(library);
+        applyChordTracks(library);
         for (auto& authored : authoredSessionLibrary())
             library.push_back(std::move(authored));
+        applyMixdowns(library);
         return library;
     }();
     return presets;

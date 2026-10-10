@@ -1,12 +1,17 @@
+import { copySequenceRhythm } from '../shared/sequenceRhythm';
 // SQ-4 factory sessions: legacy generator plus individually authored songs.
 // Legacy rules mirror SeqFactory.cpp; authored scores are compiled to native
 // data with npm run songs:generate, keeping both libraries in the same order.
 
+import MIXDOWNS from '../../shared/session-mixdowns.json';
+import { resolvedPatchParams } from './sessionExport';
 import { factorySession } from './factory';
-import { copyClipArp } from './clipArp';
+import { chordTrackArp, clipChordOctave, copyClipArp } from './clipArp';
 import { copyAutomation } from './clipAutomation';
 import { TIDAL_MEMORY } from './songs/tidalMemory';
 import { PHASE_RUNNER } from './songs/phaseRunner';
+import { applyGroove } from './songs/grooves';
+import { COMPING_SCENES, SESSION_COMPING, compEntry, withComp } from './songs/comping';
 import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
 import { masterFxParams } from './masterFx';
 import { cloneDrumRhythm } from '../drum/rhythm';

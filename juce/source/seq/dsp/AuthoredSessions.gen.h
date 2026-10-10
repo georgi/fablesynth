@@ -2,6 +2,20 @@
 #pragma once
 #include "SeqFactory.h"
 namespace fable {
+// A chord track stored in a clip arp (src/seq/clipArp.ts chordTrackArp).
+inline ArpSettings sqChordTrackArp(Machine machine, bool enabled, int key, int octave, int bars, bool link, std::initializer_list<ArpChord> chords) {
+    ArpSettings a; a.enabled = enabled; a.chords = true;
+    if (machine == Machine::BL1) { a.count = 4; a.notes[0] = 36; a.notes[1] = 39; a.notes[2] = 43; a.notes[3] = 46; }
+    a.chordKey = key; a.chordOctave = octave; a.chordBars = bars; a.chordLink = link; a.chordCount = 0;
+    for (const auto& c : chords) a.chordList[(size_t)a.chordCount++] = c;
+    return a;
+}
+// COMP style with a library groove (src/seq/songs/comping.ts withComp).
+inline void sqComp(ArpSettings& a, std::array<uint8_t, 16> masks, std::array<bool, 16> ties, std::array<bool, 16> accents,
+                   double rate, double gate, int strum, int strumDir, int voicing) {
+    a.comp = true; a.compMask = masks; a.ties = ties; a.accents = accents;
+    a.rate = rate; a.gate = gate; a.strum = strum; a.strumDir = strumDir; a.voicing = voicing;
+}
 #if defined(_MSC_VER)
 __declspec(noinline)
 #elif defined(__GNUC__)
@@ -14,7 +28,7 @@ inline SessionPreset authoredSession0() {
         p.tags = { "authored", "hypnotic", "deep", "dub techno" };
         p.session.name = p.name; p.session.bpm = 118; p.session.swing = 0.08;
         p.session.quant = Quant::Bar;
-        p.session.tracks.push_back({ Machine::DR1, "ROOM", 0xff4de8ffu, 0.600000000f,
+        p.session.tracks.push_back({ Machine::DR1, "ROOM", 0xff4de8ffu, 0.750000000f,
             { false, 9, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
@@ -22,11 +36,13 @@ inline SessionPreset authoredSession0() {
                 { "fx.chorus.mix", 0.200000000f },
                 { "fx.chorus.on", 0.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
-                { "fx.comp.att", 0.024000000f },
+                { "fx.comp.att", 0.010000000f },
                 { "fx.comp.gain", 2.000000000f },
                 { "fx.comp.on", 1.000000000f },
-                { "fx.comp.ratio", 3.000000000f },
-                { "fx.comp.rel", 0.110000000f },
+                { "fx.comp.ratio", 2.000000000f },
+                { "fx.comp.rel", 0.254000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
                 { "fx.comp.thr", -18.000000000f },
                 { "fx.crush.bits", 6.000000000f },
                 { "fx.crush.chaos", 0.200000000f },
@@ -42,27 +58,27 @@ inline SessionPreset authoredSession0() {
                 { "fx.drive.on", 1.000000000f },
                 { "fx.drive.tone", -0.180000000f },
                 { "fx.drive.type", 1.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
-                { "fx.eq.high", 0.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
+                { "fx.eq.high", -3.500000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", 0.000000000f },
+                { "fx.eq.low", -4.500000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 6300.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 900.000000000f },
-                { "fx.eq.mid", 0.000000000f },
-                { "fx.eq.mid2", 0.000000000f },
+                { "fx.eq.mfreq", 500.000000000f },
+                { "fx.eq.mid", 2.000000000f },
+                { "fx.eq.mid2", -4.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
-                { "fx.eq.on", 0.000000000f },
+                { "fx.eq.on", 1.000000000f },
                 { "fx.glitch.chance", 0.350000000f },
                 { "fx.glitch.div", 2.000000000f },
                 { "fx.glitch.drift", 0.000000000f },
@@ -113,6 +129,8 @@ inline SessionPreset authoredSession0() {
                 { "pad0.fx.comp.on", 0.000000000f },
                 { "pad0.fx.comp.ratio", 3.000000000f },
                 { "pad0.fx.comp.rel", 0.110000000f },
+                { "pad0.fx.comp.sc", 0.000000000f },
+                { "pad0.fx.comp.schp", 20.000000000f },
                 { "pad0.fx.comp.thr", -18.000000000f },
                 { "pad0.fx.crush.bits", 6.000000000f },
                 { "pad0.fx.crush.chaos", 0.200000000f },
@@ -237,6 +255,8 @@ inline SessionPreset authoredSession0() {
                 { "pad1.fx.comp.on", 0.000000000f },
                 { "pad1.fx.comp.ratio", 3.000000000f },
                 { "pad1.fx.comp.rel", 0.110000000f },
+                { "pad1.fx.comp.sc", 0.000000000f },
+                { "pad1.fx.comp.schp", 20.000000000f },
                 { "pad1.fx.comp.thr", -18.000000000f },
                 { "pad1.fx.crush.bits", 6.000000000f },
                 { "pad1.fx.crush.chaos", 0.200000000f },
@@ -361,6 +381,8 @@ inline SessionPreset authoredSession0() {
                 { "pad10.fx.comp.on", 1.000000000f },
                 { "pad10.fx.comp.ratio", 3.000000000f },
                 { "pad10.fx.comp.rel", 0.110000000f },
+                { "pad10.fx.comp.sc", 0.000000000f },
+                { "pad10.fx.comp.schp", 20.000000000f },
                 { "pad10.fx.comp.thr", -18.000000000f },
                 { "pad10.fx.crush.bits", 6.000000000f },
                 { "pad10.fx.crush.chaos", 0.200000000f },
@@ -485,6 +507,8 @@ inline SessionPreset authoredSession0() {
                 { "pad11.fx.comp.on", 1.000000000f },
                 { "pad11.fx.comp.ratio", 4.000000000f },
                 { "pad11.fx.comp.rel", 0.250000000f },
+                { "pad11.fx.comp.sc", 0.000000000f },
+                { "pad11.fx.comp.schp", 20.000000000f },
                 { "pad11.fx.comp.thr", -16.000000000f },
                 { "pad11.fx.crush.bits", 6.000000000f },
                 { "pad11.fx.crush.chaos", 0.200000000f },
@@ -609,6 +633,8 @@ inline SessionPreset authoredSession0() {
                 { "pad12.fx.comp.on", 1.000000000f },
                 { "pad12.fx.comp.ratio", 4.000000000f },
                 { "pad12.fx.comp.rel", 0.250000000f },
+                { "pad12.fx.comp.sc", 0.000000000f },
+                { "pad12.fx.comp.schp", 20.000000000f },
                 { "pad12.fx.comp.thr", -16.000000000f },
                 { "pad12.fx.crush.bits", 6.000000000f },
                 { "pad12.fx.crush.chaos", 0.200000000f },
@@ -733,6 +759,8 @@ inline SessionPreset authoredSession0() {
                 { "pad13.fx.comp.on", 1.000000000f },
                 { "pad13.fx.comp.ratio", 4.000000000f },
                 { "pad13.fx.comp.rel", 0.250000000f },
+                { "pad13.fx.comp.sc", 0.000000000f },
+                { "pad13.fx.comp.schp", 20.000000000f },
                 { "pad13.fx.comp.thr", -16.000000000f },
                 { "pad13.fx.crush.bits", 6.000000000f },
                 { "pad13.fx.crush.chaos", 0.200000000f },
@@ -857,6 +885,8 @@ inline SessionPreset authoredSession0() {
                 { "pad14.fx.comp.on", 1.000000000f },
                 { "pad14.fx.comp.ratio", 4.000000000f },
                 { "pad14.fx.comp.rel", 0.250000000f },
+                { "pad14.fx.comp.sc", 0.000000000f },
+                { "pad14.fx.comp.schp", 20.000000000f },
                 { "pad14.fx.comp.thr", -16.000000000f },
                 { "pad14.fx.crush.bits", 6.000000000f },
                 { "pad14.fx.crush.chaos", 0.200000000f },
@@ -981,6 +1011,8 @@ inline SessionPreset authoredSession0() {
                 { "pad15.fx.comp.on", 1.000000000f },
                 { "pad15.fx.comp.ratio", 4.000000000f },
                 { "pad15.fx.comp.rel", 0.250000000f },
+                { "pad15.fx.comp.sc", 0.000000000f },
+                { "pad15.fx.comp.schp", 20.000000000f },
                 { "pad15.fx.comp.thr", -16.000000000f },
                 { "pad15.fx.crush.bits", 6.000000000f },
                 { "pad15.fx.crush.chaos", 0.200000000f },
@@ -1105,6 +1137,8 @@ inline SessionPreset authoredSession0() {
                 { "pad2.fx.comp.on", 1.000000000f },
                 { "pad2.fx.comp.ratio", 3.000000000f },
                 { "pad2.fx.comp.rel", 0.110000000f },
+                { "pad2.fx.comp.sc", 0.000000000f },
+                { "pad2.fx.comp.schp", 20.000000000f },
                 { "pad2.fx.comp.thr", -18.000000000f },
                 { "pad2.fx.crush.bits", 6.000000000f },
                 { "pad2.fx.crush.chaos", 0.200000000f },
@@ -1229,6 +1263,8 @@ inline SessionPreset authoredSession0() {
                 { "pad3.fx.comp.on", 0.000000000f },
                 { "pad3.fx.comp.ratio", 3.000000000f },
                 { "pad3.fx.comp.rel", 0.110000000f },
+                { "pad3.fx.comp.sc", 0.000000000f },
+                { "pad3.fx.comp.schp", 20.000000000f },
                 { "pad3.fx.comp.thr", -18.000000000f },
                 { "pad3.fx.crush.bits", 6.000000000f },
                 { "pad3.fx.crush.chaos", 0.200000000f },
@@ -1353,6 +1389,8 @@ inline SessionPreset authoredSession0() {
                 { "pad4.fx.comp.on", 1.000000000f },
                 { "pad4.fx.comp.ratio", 4.000000000f },
                 { "pad4.fx.comp.rel", 0.250000000f },
+                { "pad4.fx.comp.sc", 0.000000000f },
+                { "pad4.fx.comp.schp", 20.000000000f },
                 { "pad4.fx.comp.thr", -16.000000000f },
                 { "pad4.fx.crush.bits", 6.000000000f },
                 { "pad4.fx.crush.chaos", 0.200000000f },
@@ -1477,6 +1515,8 @@ inline SessionPreset authoredSession0() {
                 { "pad5.fx.comp.on", 0.000000000f },
                 { "pad5.fx.comp.ratio", 4.000000000f },
                 { "pad5.fx.comp.rel", 0.250000000f },
+                { "pad5.fx.comp.sc", 0.000000000f },
+                { "pad5.fx.comp.schp", 20.000000000f },
                 { "pad5.fx.comp.thr", -16.000000000f },
                 { "pad5.fx.crush.bits", 6.000000000f },
                 { "pad5.fx.crush.chaos", 0.200000000f },
@@ -1601,6 +1641,8 @@ inline SessionPreset authoredSession0() {
                 { "pad6.fx.comp.on", 0.000000000f },
                 { "pad6.fx.comp.ratio", 4.000000000f },
                 { "pad6.fx.comp.rel", 0.250000000f },
+                { "pad6.fx.comp.sc", 0.000000000f },
+                { "pad6.fx.comp.schp", 20.000000000f },
                 { "pad6.fx.comp.thr", -16.000000000f },
                 { "pad6.fx.crush.bits", 6.000000000f },
                 { "pad6.fx.crush.chaos", 0.200000000f },
@@ -1725,6 +1767,8 @@ inline SessionPreset authoredSession0() {
                 { "pad7.fx.comp.on", 1.000000000f },
                 { "pad7.fx.comp.ratio", 4.000000000f },
                 { "pad7.fx.comp.rel", 0.250000000f },
+                { "pad7.fx.comp.sc", 0.000000000f },
+                { "pad7.fx.comp.schp", 20.000000000f },
                 { "pad7.fx.comp.thr", -16.000000000f },
                 { "pad7.fx.crush.bits", 6.000000000f },
                 { "pad7.fx.crush.chaos", 0.200000000f },
@@ -1849,6 +1893,8 @@ inline SessionPreset authoredSession0() {
                 { "pad8.fx.comp.on", 1.000000000f },
                 { "pad8.fx.comp.ratio", 3.000000000f },
                 { "pad8.fx.comp.rel", 0.110000000f },
+                { "pad8.fx.comp.sc", 0.000000000f },
+                { "pad8.fx.comp.schp", 20.000000000f },
                 { "pad8.fx.comp.thr", -18.000000000f },
                 { "pad8.fx.crush.bits", 6.000000000f },
                 { "pad8.fx.crush.chaos", 0.200000000f },
@@ -1973,6 +2019,8 @@ inline SessionPreset authoredSession0() {
                 { "pad9.fx.comp.on", 1.000000000f },
                 { "pad9.fx.comp.ratio", 3.000000000f },
                 { "pad9.fx.comp.rel", 0.110000000f },
+                { "pad9.fx.comp.sc", 0.000000000f },
+                { "pad9.fx.comp.schp", 20.000000000f },
                 { "pad9.fx.comp.thr", -18.000000000f },
                 { "pad9.fx.crush.bits", 6.000000000f },
                 { "pad9.fx.crush.chaos", 0.200000000f },
@@ -2083,7 +2131,7 @@ inline SessionPreset authoredSession0() {
             for (const auto& value : params)
                 p.session.tracks.back().patch.params.emplace(value.first, value.second);
         }
-        p.session.tracks.push_back({ Machine::BL1, "UNDERTOW", 0xff4dff9eu, 0.460000000f,
+        p.session.tracks.push_back({ Machine::BL1, "UNDERTOW", 0xff4dff9eu, 0.575000000f,
             { false, 21, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
@@ -2104,6 +2152,13 @@ inline SessionPreset authoredSession0() {
                 { "fx.chorus.mix", 0.120000000f },
                 { "fx.chorus.on", 0.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
+                { "fx.comp.att", 0.005000000f },
+                { "fx.comp.on", 1.000000000f },
+                { "fx.comp.ratio", 3.000000000f },
+                { "fx.comp.rel", 0.508000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -30.500000000f },
                 { "fx.delay.fb", 0.420000000f },
                 { "fx.delay.mix", 0.180000000f },
                 { "fx.delay.on", 0.000000000f },
@@ -2113,27 +2168,32 @@ inline SessionPreset authoredSession0() {
                 { "fx.drive.on", 1.000000000f },
                 { "fx.drive.tone", 0.000000000f },
                 { "fx.drive.type", 0.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
                 { "fx.eq.high", 0.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", 0.000000000f },
+                { "fx.eq.low", -6.000000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 3175.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 900.000000000f },
-                { "fx.eq.mid", 0.000000000f },
+                { "fx.eq.mfreq", 400.000000000f },
+                { "fx.eq.mid", 2.000000000f },
                 { "fx.eq.mid2", 0.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
-                { "fx.eq.on", 0.000000000f },
+                { "fx.eq.on", 1.000000000f },
+                { "fx.ott.depth", 0.350000000f },
+                { "fx.ott.down", 1.000000000f },
+                { "fx.ott.on", 0.000000000f },
+                { "fx.ott.time", 1.000000000f },
+                { "fx.ott.up", 1.000000000f },
                 { "fx.reverb.mix", 0.100000000f },
                 { "fx.reverb.on", 0.000000000f },
                 { "fx.reverb.size", 0.300000000f },
@@ -2159,18 +2219,37 @@ inline SessionPreset authoredSession0() {
             for (const auto& value : params)
                 p.session.tracks.back().patch.params.emplace(value.first, value.second);
         }
-        p.session.tracks.push_back({ Machine::WT1, "REFLECTION", 0xffffa14du, 0.580000000f,
+        p.session.tracks.push_back({ Machine::WT1, "REFLECTION", 0xffffa14du, 0.725000000f,
             { false, 56, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.014000000f },
+                { "env1.ac", 0.500000000f },
                 { "env1.d", 0.340000000f },
+                { "env1.dc", 0.670000000f },
+                { "env1.h", 0.000000000f },
+                { "env1.model", 0.000000000f },
                 { "env1.r", 0.650000000f },
+                { "env1.rc", 0.670000000f },
                 { "env1.s", 0.000000000f },
                 { "env2.a", 0.002000000f },
+                { "env2.ac", 0.500000000f },
                 { "env2.d", 0.250000000f },
+                { "env2.dc", 0.670000000f },
+                { "env2.h", 0.000000000f },
+                { "env2.model", 0.000000000f },
                 { "env2.r", 0.200000000f },
+                { "env2.rc", 0.670000000f },
                 { "env2.s", 0.000000000f },
+                { "env3.a", 0.010000000f },
+                { "env3.ac", 0.500000000f },
+                { "env3.d", 0.350000000f },
+                { "env3.dc", 0.670000000f },
+                { "env3.h", 0.000000000f },
+                { "env3.model", 0.000000000f },
+                { "env3.r", 0.300000000f },
+                { "env3.rc", 0.670000000f },
+                { "env3.s", 0.000000000f },
                 { "filter.cutoff", 1050.000000000f },
                 { "filter.drive", 0.000000000f },
                 { "filter.env", 0.060000000f },
@@ -2190,12 +2269,14 @@ inline SessionPreset authoredSession0() {
                 { "fx.chorus.mix", 0.300000000f },
                 { "fx.chorus.on", 1.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
-                { "fx.comp.att", 0.003000000f },
+                { "fx.comp.att", 0.010000000f },
                 { "fx.comp.gain", 4.000000000f },
                 { "fx.comp.on", 1.000000000f },
-                { "fx.comp.ratio", 4.000000000f },
-                { "fx.comp.rel", 0.250000000f },
-                { "fx.comp.thr", -18.000000000f },
+                { "fx.comp.ratio", 2.000000000f },
+                { "fx.comp.rel", 0.254000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -33.000000000f },
                 { "fx.crush.bits", 6.000000000f },
                 { "fx.crush.chaos", 0.200000000f },
                 { "fx.crush.mix", 1.000000000f },
@@ -2218,25 +2299,25 @@ inline SessionPreset authoredSession0() {
                 { "fx.drive.on", 0.000000000f },
                 { "fx.drive.tone", 0.000000000f },
                 { "fx.drive.type", 0.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
-                { "fx.eq.high", -6.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
+                { "fx.eq.high", 0.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", -6.000000000f },
+                { "fx.eq.low", 3.000000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 3175.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 700.000000000f },
-                { "fx.eq.mid", 1.000000000f },
+                { "fx.eq.mfreq", 250.000000000f },
+                { "fx.eq.mid", -4.000000000f },
                 { "fx.eq.mid2", 0.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
                 { "fx.eq.on", 1.000000000f },
                 { "fx.glitch.chance", 0.350000000f },
@@ -2244,6 +2325,11 @@ inline SessionPreset authoredSession0() {
                 { "fx.glitch.drift", 0.000000000f },
                 { "fx.glitch.mix", 1.000000000f },
                 { "fx.glitch.on", 0.000000000f },
+                { "fx.ott.depth", 0.350000000f },
+                { "fx.ott.down", 1.000000000f },
+                { "fx.ott.on", 0.000000000f },
+                { "fx.ott.time", 1.000000000f },
+                { "fx.ott.up", 1.000000000f },
                 { "fx.reso.chord", 2.000000000f },
                 { "fx.reso.decay", 0.700000000f },
                 { "fx.reso.mix", 0.500000000f },
@@ -2276,56 +2362,107 @@ inline SessionPreset authoredSession0() {
                 { "lfo2.shape", 0.000000000f },
                 { "lfo2.sync", 0.000000000f },
                 { "lfo2.syncrate", 2.000000000f },
+                { "lfo3.phase", 0.000000000f },
+                { "lfo3.rate", 1.000000000f },
+                { "lfo3.retrig", 1.000000000f },
+                { "lfo3.rise", 0.000000000f },
+                { "lfo3.shape", 0.000000000f },
+                { "lfo3.sync", 0.000000000f },
+                { "lfo3.syncrate", 2.000000000f },
+                { "lfo4.phase", 0.000000000f },
+                { "lfo4.rate", 0.500000000f },
+                { "lfo4.retrig", 1.000000000f },
+                { "lfo4.rise", 0.000000000f },
+                { "lfo4.shape", 0.000000000f },
+                { "lfo4.sync", 0.000000000f },
+                { "lfo4.syncrate", 2.000000000f },
+                { "macro1", 0.000000000f },
+                { "macro2", 0.000000000f },
+                { "macro3", 0.000000000f },
+                { "macro4", 0.000000000f },
                 { "master.glide", 0.000000000f },
+                { "master.legato", 1.000000000f },
                 { "master.mono", 0.000000000f },
                 { "master.volume", 0.750000000f },
                 { "mat1.amt", 0.200000000f },
+                { "mat1.aux", 0.000000000f },
                 { "mat1.dst", 6.000000000f },
+                { "mat1.pol", 0.000000000f },
                 { "mat1.src", 2.000000000f },
                 { "mat10.amt", 0.000000000f },
+                { "mat10.aux", 0.000000000f },
                 { "mat10.dst", 0.000000000f },
+                { "mat10.pol", 0.000000000f },
                 { "mat10.src", 0.000000000f },
                 { "mat11.amt", 0.000000000f },
+                { "mat11.aux", 0.000000000f },
                 { "mat11.dst", 0.000000000f },
+                { "mat11.pol", 0.000000000f },
                 { "mat11.src", 0.000000000f },
                 { "mat12.amt", 0.000000000f },
+                { "mat12.aux", 0.000000000f },
                 { "mat12.dst", 0.000000000f },
+                { "mat12.pol", 0.000000000f },
                 { "mat12.src", 0.000000000f },
                 { "mat13.amt", 0.000000000f },
+                { "mat13.aux", 0.000000000f },
                 { "mat13.dst", 0.000000000f },
+                { "mat13.pol", 0.000000000f },
                 { "mat13.src", 0.000000000f },
                 { "mat14.amt", 0.000000000f },
+                { "mat14.aux", 0.000000000f },
                 { "mat14.dst", 0.000000000f },
+                { "mat14.pol", 0.000000000f },
                 { "mat14.src", 0.000000000f },
                 { "mat15.amt", 0.000000000f },
+                { "mat15.aux", 0.000000000f },
                 { "mat15.dst", 0.000000000f },
+                { "mat15.pol", 0.000000000f },
                 { "mat15.src", 0.000000000f },
                 { "mat16.amt", 0.000000000f },
+                { "mat16.aux", 0.000000000f },
                 { "mat16.dst", 0.000000000f },
+                { "mat16.pol", 0.000000000f },
                 { "mat16.src", 0.000000000f },
                 { "mat2.amt", 0.070000000f },
+                { "mat2.aux", 0.000000000f },
                 { "mat2.dst", 3.000000000f },
+                { "mat2.pol", 0.000000000f },
                 { "mat2.src", 1.000000000f },
                 { "mat3.amt", 0.040000000f },
+                { "mat3.aux", 0.000000000f },
                 { "mat3.dst", 3.000000000f },
+                { "mat3.pol", 0.000000000f },
                 { "mat3.src", 4.000000000f },
                 { "mat4.amt", 0.000000000f },
+                { "mat4.aux", 0.000000000f },
                 { "mat4.dst", 0.000000000f },
+                { "mat4.pol", 0.000000000f },
                 { "mat4.src", 0.000000000f },
                 { "mat5.amt", 0.000000000f },
+                { "mat5.aux", 0.000000000f },
                 { "mat5.dst", 0.000000000f },
+                { "mat5.pol", 0.000000000f },
                 { "mat5.src", 0.000000000f },
                 { "mat6.amt", 0.000000000f },
+                { "mat6.aux", 0.000000000f },
                 { "mat6.dst", 0.000000000f },
+                { "mat6.pol", 0.000000000f },
                 { "mat6.src", 0.000000000f },
                 { "mat7.amt", 0.000000000f },
+                { "mat7.aux", 0.000000000f },
                 { "mat7.dst", 0.000000000f },
+                { "mat7.pol", 0.000000000f },
                 { "mat7.src", 0.000000000f },
                 { "mat8.amt", 0.000000000f },
+                { "mat8.aux", 0.000000000f },
                 { "mat8.dst", 0.000000000f },
+                { "mat8.pol", 0.000000000f },
                 { "mat8.src", 0.000000000f },
                 { "mat9.amt", 0.000000000f },
+                { "mat9.aux", 0.000000000f },
                 { "mat9.dst", 0.000000000f },
+                { "mat9.pol", 0.000000000f },
                 { "mat9.src", 0.000000000f },
                 { "noise.level", 0.250000000f },
                 { "noise.on", 0.000000000f },
@@ -2354,6 +2491,8 @@ inline SessionPreset authoredSession0() {
                 { "oscB.spread", 0.600000000f },
                 { "oscB.table", 0.000000000f },
                 { "oscB.unison", 1.000000000f },
+                { "perf.aftertouch", 0.000000000f },
+                { "perf.modwheel", 0.000000000f },
                 { "seq.bpm", 120.000000000f },
                 { "seq.root", 48.000000000f },
                 { "seq.swing", 0.000000000f },
@@ -2365,18 +2504,37 @@ inline SessionPreset authoredSession0() {
             for (const auto& value : params)
                 p.session.tracks.back().patch.params.emplace(value.first, value.second);
         }
-        p.session.tracks.push_back({ Machine::WT1, "SIGNAL", 0xffb18cffu, 0.800000000f,
+        p.session.tracks.push_back({ Machine::WT1, "SIGNAL", 0xffb18cffu, 1.000000000f,
             { false, 45, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.025000000f },
+                { "env1.ac", 0.500000000f },
                 { "env1.d", 0.550000000f },
+                { "env1.dc", 0.670000000f },
+                { "env1.h", 0.000000000f },
+                { "env1.model", 0.000000000f },
                 { "env1.r", 1.100000000f },
+                { "env1.rc", 0.670000000f },
                 { "env1.s", 0.000000000f },
                 { "env2.a", 0.001000000f },
+                { "env2.ac", 0.500000000f },
                 { "env2.d", 1.200000000f },
+                { "env2.dc", 0.670000000f },
+                { "env2.h", 0.000000000f },
+                { "env2.model", 0.000000000f },
                 { "env2.r", 1.000000000f },
+                { "env2.rc", 0.670000000f },
                 { "env2.s", 0.000000000f },
+                { "env3.a", 0.010000000f },
+                { "env3.ac", 0.500000000f },
+                { "env3.d", 0.350000000f },
+                { "env3.dc", 0.670000000f },
+                { "env3.h", 0.000000000f },
+                { "env3.model", 0.000000000f },
+                { "env3.r", 0.300000000f },
+                { "env3.rc", 0.670000000f },
+                { "env3.s", 0.000000000f },
                 { "filter.cutoff", 1150.000000000f },
                 { "filter.drive", 0.000000000f },
                 { "filter.env", 0.040000000f },
@@ -2396,12 +2554,14 @@ inline SessionPreset authoredSession0() {
                 { "fx.chorus.mix", 0.350000000f },
                 { "fx.chorus.on", 1.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
-                { "fx.comp.att", 0.003000000f },
+                { "fx.comp.att", 0.010000000f },
                 { "fx.comp.gain", 4.000000000f },
                 { "fx.comp.on", 1.000000000f },
-                { "fx.comp.ratio", 4.000000000f },
-                { "fx.comp.rel", 0.250000000f },
-                { "fx.comp.thr", -18.000000000f },
+                { "fx.comp.ratio", 2.000000000f },
+                { "fx.comp.rel", 0.254000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -39.000000000f },
                 { "fx.crush.bits", 6.000000000f },
                 { "fx.crush.chaos", 0.200000000f },
                 { "fx.crush.mix", 1.000000000f },
@@ -2424,25 +2584,25 @@ inline SessionPreset authoredSession0() {
                 { "fx.drive.on", 0.000000000f },
                 { "fx.drive.tone", 0.000000000f },
                 { "fx.drive.type", 0.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
-                { "fx.eq.high", -9.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
+                { "fx.eq.high", 0.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", -9.000000000f },
+                { "fx.eq.low", 0.000000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 1600.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 1800.000000000f },
-                { "fx.eq.mid", -2.000000000f },
-                { "fx.eq.mid2", 0.000000000f },
+                { "fx.eq.mfreq", 250.000000000f },
+                { "fx.eq.mid", 2.000000000f },
+                { "fx.eq.mid2", 2.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
                 { "fx.eq.on", 1.000000000f },
                 { "fx.glitch.chance", 0.350000000f },
@@ -2450,6 +2610,11 @@ inline SessionPreset authoredSession0() {
                 { "fx.glitch.drift", 0.000000000f },
                 { "fx.glitch.mix", 1.000000000f },
                 { "fx.glitch.on", 0.000000000f },
+                { "fx.ott.depth", 0.350000000f },
+                { "fx.ott.down", 1.000000000f },
+                { "fx.ott.on", 0.000000000f },
+                { "fx.ott.time", 1.000000000f },
+                { "fx.ott.up", 1.000000000f },
                 { "fx.reso.chord", 2.000000000f },
                 { "fx.reso.decay", 0.700000000f },
                 { "fx.reso.mix", 0.500000000f },
@@ -2482,56 +2647,107 @@ inline SessionPreset authoredSession0() {
                 { "lfo2.shape", 0.000000000f },
                 { "lfo2.sync", 0.000000000f },
                 { "lfo2.syncrate", 2.000000000f },
+                { "lfo3.phase", 0.000000000f },
+                { "lfo3.rate", 1.000000000f },
+                { "lfo3.retrig", 1.000000000f },
+                { "lfo3.rise", 0.000000000f },
+                { "lfo3.shape", 0.000000000f },
+                { "lfo3.sync", 0.000000000f },
+                { "lfo3.syncrate", 2.000000000f },
+                { "lfo4.phase", 0.000000000f },
+                { "lfo4.rate", 0.500000000f },
+                { "lfo4.retrig", 1.000000000f },
+                { "lfo4.rise", 0.000000000f },
+                { "lfo4.shape", 0.000000000f },
+                { "lfo4.sync", 0.000000000f },
+                { "lfo4.syncrate", 2.000000000f },
+                { "macro1", 0.000000000f },
+                { "macro2", 0.000000000f },
+                { "macro3", 0.000000000f },
+                { "macro4", 0.000000000f },
                 { "master.glide", 0.000000000f },
+                { "master.legato", 1.000000000f },
                 { "master.mono", 0.000000000f },
                 { "master.volume", 0.750000000f },
                 { "mat1.amt", 0.080000000f },
+                { "mat1.aux", 0.000000000f },
                 { "mat1.dst", 7.000000000f },
+                { "mat1.pol", 0.000000000f },
                 { "mat1.src", 3.000000000f },
                 { "mat10.amt", 0.000000000f },
+                { "mat10.aux", 0.000000000f },
                 { "mat10.dst", 0.000000000f },
+                { "mat10.pol", 0.000000000f },
                 { "mat10.src", 0.000000000f },
                 { "mat11.amt", 0.000000000f },
+                { "mat11.aux", 0.000000000f },
                 { "mat11.dst", 0.000000000f },
+                { "mat11.pol", 0.000000000f },
                 { "mat11.src", 0.000000000f },
                 { "mat12.amt", 0.000000000f },
+                { "mat12.aux", 0.000000000f },
                 { "mat12.dst", 0.000000000f },
+                { "mat12.pol", 0.000000000f },
                 { "mat12.src", 0.000000000f },
                 { "mat13.amt", 0.000000000f },
+                { "mat13.aux", 0.000000000f },
                 { "mat13.dst", 0.000000000f },
+                { "mat13.pol", 0.000000000f },
                 { "mat13.src", 0.000000000f },
                 { "mat14.amt", 0.000000000f },
+                { "mat14.aux", 0.000000000f },
                 { "mat14.dst", 0.000000000f },
+                { "mat14.pol", 0.000000000f },
                 { "mat14.src", 0.000000000f },
                 { "mat15.amt", 0.000000000f },
+                { "mat15.aux", 0.000000000f },
                 { "mat15.dst", 0.000000000f },
+                { "mat15.pol", 0.000000000f },
                 { "mat15.src", 0.000000000f },
                 { "mat16.amt", 0.000000000f },
+                { "mat16.aux", 0.000000000f },
                 { "mat16.dst", 0.000000000f },
+                { "mat16.pol", 0.000000000f },
                 { "mat16.src", 0.000000000f },
                 { "mat2.amt", 0.200000000f },
+                { "mat2.aux", 0.000000000f },
                 { "mat2.dst", 6.000000000f },
+                { "mat2.pol", 0.000000000f },
                 { "mat2.src", 1.000000000f },
                 { "mat3.amt", 0.000000000f },
+                { "mat3.aux", 0.000000000f },
                 { "mat3.dst", 0.000000000f },
+                { "mat3.pol", 0.000000000f },
                 { "mat3.src", 0.000000000f },
                 { "mat4.amt", 0.000000000f },
+                { "mat4.aux", 0.000000000f },
                 { "mat4.dst", 0.000000000f },
+                { "mat4.pol", 0.000000000f },
                 { "mat4.src", 0.000000000f },
                 { "mat5.amt", 0.000000000f },
+                { "mat5.aux", 0.000000000f },
                 { "mat5.dst", 0.000000000f },
+                { "mat5.pol", 0.000000000f },
                 { "mat5.src", 0.000000000f },
                 { "mat6.amt", 0.000000000f },
+                { "mat6.aux", 0.000000000f },
                 { "mat6.dst", 0.000000000f },
+                { "mat6.pol", 0.000000000f },
                 { "mat6.src", 0.000000000f },
                 { "mat7.amt", 0.000000000f },
+                { "mat7.aux", 0.000000000f },
                 { "mat7.dst", 0.000000000f },
+                { "mat7.pol", 0.000000000f },
                 { "mat7.src", 0.000000000f },
                 { "mat8.amt", 0.000000000f },
+                { "mat8.aux", 0.000000000f },
                 { "mat8.dst", 0.000000000f },
+                { "mat8.pol", 0.000000000f },
                 { "mat8.src", 0.000000000f },
                 { "mat9.amt", 0.000000000f },
+                { "mat9.aux", 0.000000000f },
                 { "mat9.dst", 0.000000000f },
+                { "mat9.pol", 0.000000000f },
                 { "mat9.src", 0.000000000f },
                 { "noise.level", 0.000000000f },
                 { "noise.on", 0.000000000f },
@@ -2560,6 +2776,8 @@ inline SessionPreset authoredSession0() {
                 { "oscB.spread", 0.800000000f },
                 { "oscB.table", 4.000000000f },
                 { "oscB.unison", 1.000000000f },
+                { "perf.aftertouch", 0.000000000f },
+                { "perf.modwheel", 0.000000000f },
                 { "seq.bpm", 120.000000000f },
                 { "seq.root", 48.000000000f },
                 { "seq.swing", 0.000000000f },
@@ -2576,6 +2794,38 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, false, true, true };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / SOUNDINGS", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[8] = 1;
             scene.clips[0].bytes[86] = 1;
@@ -2591,6 +2841,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[825] = 1;
             scene.clips[0].bytes[854] = 1;
             scene.clips[2] = { "DISTANT CHORD", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[2].bytes[144] = 9;
             scene.clips[2].bytes[145] = 5;
             scene.clips[2].bytes[147] = 9;
@@ -2619,6 +2870,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1306] = 5;
             scene.clips[2].bytes[1307] = 2;
             scene.clips[3] = { "SIGNAL / BEYOND THE WALL", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[3].bytes[1080] = 9;
             scene.clips[3].bytes[1081] = 9;
             scene.clips[3].bytes[1082] = 2;
@@ -2632,6 +2884,38 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, false };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / LOCK IN", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -2671,6 +2955,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[858] = 1;
             scene.clips[0].bytes[874] = 1;
             scene.clips[1] = { "SUB / FINDING THE POCKET", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[1].bytes[0] = 15;
             scene.clips[1].bytes[1] = 2;
             scene.clips[1].bytes[2] = 0;
@@ -2696,6 +2981,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[181] = 4;
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "CHORD / FIRST TRACE", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -2757,6 +3043,38 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / PRESSURE", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -2804,6 +3122,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[909] = 1;
             scene.clips[1] = { "SUB / UNDERTOW", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[1].bytes[0] = 15;
             scene.clips[1].bytes[1] = 2;
             scene.clips[1].bytes[2] = 0;
@@ -2841,6 +3160,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[181] = 4;
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "CHORD / TIDAL MOTIF", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -2914,6 +3234,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1474] = 4;
             scene.clips[2].bytes[1475] = 2;
             scene.clips[3] = { "SIGNAL / TWO LIGHTS", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[3].bytes[312] = 5;
             scene.clips[3].bytes[313] = 9;
             scene.clips[3].bytes[314] = 2;
@@ -2933,6 +3254,38 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / REFRACTION", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -2977,6 +3330,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[854] = 2;
             scene.clips[0].bytes[874] = 1;
             scene.clips[1] = { "SUB / TURNING CURRENT", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 32, 10, 20, 0 }, { 32, 32, 2, 21, 0 } });
             scene.clips[1].bytes[0] = 19;
             scene.clips[1].bytes[1] = 10;
             scene.clips[1].bytes[2] = 0;
@@ -3011,6 +3365,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[187] = 1;
             scene.clips[1].bytes[188] = 0;
             scene.clips[2] = { "CHORD / REFRACTED", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 32, 10, 20, 0 }, { 32, 32, 2, 21, 0 } });
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -3073,6 +3428,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1498] = 4;
             scene.clips[2].bytes[1499] = 2;
             scene.clips[3] = { "SIGNAL / FALLING IMAGE", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 32, 10, 20, 0 }, { 32, 32, 2, 21, 0 } });
             scene.clips[3].bytes[216] = 9;
             scene.clips[3].bytes[217] = 9;
             scene.clips[3].bytes[218] = 2;
@@ -3092,12 +3448,45 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, false, true, true };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / NO FLOOR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[60] = 1;
             scene.clips[0].bytes[342] = 1;
             scene.clips[0].bytes[572] = 1;
             scene.clips[0].bytes[829] = 1;
             scene.clips[0].bytes[854] = 1;
             scene.clips[2] = { "CHORD / EXPOSED", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[2].bytes[144] = 25;
             scene.clips[2].bytes[145] = 5;
             scene.clips[2].bytes[147] = 25;
@@ -3117,6 +3506,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[922] = 4;
             scene.clips[2].bytes[923] = 2;
             scene.clips[3] = { "SIGNAL / WATERLINE", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[3].bytes[72] = 25;
             scene.clips[3].bytes[73] = 9;
             scene.clips[3].bytes[74] = 2;
@@ -3136,6 +3526,38 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / RETURN", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -3184,6 +3606,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[862] = 1;
             scene.clips[0].bytes[874] = 1;
             scene.clips[1] = { "SUB / HOME WITH A SCAR", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 32, 2, 21, 0 }, { 32, 16, 10, 20, 0 }, { 48, 16, 2, 21, 0 } });
             scene.clips[1].bytes[0] = 15;
             scene.clips[1].bytes[1] = 2;
             scene.clips[1].bytes[2] = 0;
@@ -3221,6 +3644,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[181] = 2;
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "CHORD / WIDER RETURN", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 32, 2, 21, 0 }, { 32, 16, 10, 20, 0 }, { 48, 16, 2, 21, 0 } });
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -3293,6 +3717,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1402] = 4;
             scene.clips[2].bytes[1403] = 2;
             scene.clips[3] = { "SIGNAL / ANSWER", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 32, 2, 21, 0 }, { 32, 16, 10, 20, 0 }, { 48, 16, 2, 21, 0 } });
             scene.clips[3].bytes[312] = 9;
             scene.clips[3].bytes[313] = 4;
             scene.clips[3].bytes[314] = 2;
@@ -3312,6 +3737,38 @@ inline SessionPreset authoredSession0() {
             scene.clips.resize(4); scene.hasClip = { true, false, true, true };
             scene.pass = {  };
             scene.clips[0] = { "ROOM / SHORELINE", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 9;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[9] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[13] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[25] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[29] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[41] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[45] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[57] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[61] = -2;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 12;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -3327,6 +3784,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[573] = 1;
             scene.clips[0].bytes[602] = 1;
             scene.clips[2] = { "CHORD / LAST REFLECTION", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[2].bytes[48] = 13;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 13;
@@ -3355,6 +3813,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1114] = 4;
             scene.clips[2].bytes[1115] = 2;
             scene.clips[3] = { "SIGNAL / RECEDED", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
             scene.clips[3].bytes[312] = 13;
             scene.clips[3].bytes[313] = 9;
             scene.clips[3].bytes[314] = 2;
@@ -3377,7 +3836,7 @@ inline SessionPreset authoredSession1() {
         p.tags = { "authored", "driving", "bass-led", "dub techno" };
         p.session.name = p.name; p.session.bpm = 126; p.session.swing = 0.06;
         p.session.quant = Quant::Bar;
-        p.session.tracks.push_back({ Machine::DR1, "CHASSIS", 0xff4de8ffu, 0.570000000f,
+        p.session.tracks.push_back({ Machine::DR1, "CHASSIS", 0xff4de8ffu, 0.752000000f,
             { false, 9, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
@@ -3385,12 +3844,14 @@ inline SessionPreset authoredSession1() {
                 { "fx.chorus.mix", 0.200000000f },
                 { "fx.chorus.on", 0.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
-                { "fx.comp.att", 0.024000000f },
+                { "fx.comp.att", 0.010000000f },
                 { "fx.comp.gain", 2.000000000f },
                 { "fx.comp.on", 1.000000000f },
-                { "fx.comp.ratio", 3.000000000f },
-                { "fx.comp.rel", 0.110000000f },
-                { "fx.comp.thr", -18.000000000f },
+                { "fx.comp.ratio", 2.000000000f },
+                { "fx.comp.rel", 0.238000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -17.500000000f },
                 { "fx.crush.bits", 6.000000000f },
                 { "fx.crush.chaos", 0.200000000f },
                 { "fx.crush.mix", 1.000000000f },
@@ -3405,27 +3866,27 @@ inline SessionPreset authoredSession1() {
                 { "fx.drive.on", 1.000000000f },
                 { "fx.drive.tone", -0.180000000f },
                 { "fx.drive.type", 1.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
-                { "fx.eq.high", 0.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
+                { "fx.eq.high", -3.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", 0.000000000f },
+                { "fx.eq.low", -4.000000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 6300.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 900.000000000f },
-                { "fx.eq.mid", 0.000000000f },
-                { "fx.eq.mid2", 0.000000000f },
+                { "fx.eq.mfreq", 500.000000000f },
+                { "fx.eq.mid", 2.000000000f },
+                { "fx.eq.mid2", -4.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
-                { "fx.eq.on", 0.000000000f },
+                { "fx.eq.on", 1.000000000f },
                 { "fx.glitch.chance", 0.350000000f },
                 { "fx.glitch.div", 2.000000000f },
                 { "fx.glitch.drift", 0.000000000f },
@@ -3476,6 +3937,8 @@ inline SessionPreset authoredSession1() {
                 { "pad0.fx.comp.on", 0.000000000f },
                 { "pad0.fx.comp.ratio", 3.000000000f },
                 { "pad0.fx.comp.rel", 0.110000000f },
+                { "pad0.fx.comp.sc", 0.000000000f },
+                { "pad0.fx.comp.schp", 20.000000000f },
                 { "pad0.fx.comp.thr", -18.000000000f },
                 { "pad0.fx.crush.bits", 6.000000000f },
                 { "pad0.fx.crush.chaos", 0.200000000f },
@@ -3600,6 +4063,8 @@ inline SessionPreset authoredSession1() {
                 { "pad1.fx.comp.on", 0.000000000f },
                 { "pad1.fx.comp.ratio", 3.000000000f },
                 { "pad1.fx.comp.rel", 0.110000000f },
+                { "pad1.fx.comp.sc", 0.000000000f },
+                { "pad1.fx.comp.schp", 20.000000000f },
                 { "pad1.fx.comp.thr", -18.000000000f },
                 { "pad1.fx.crush.bits", 6.000000000f },
                 { "pad1.fx.crush.chaos", 0.200000000f },
@@ -3724,6 +4189,8 @@ inline SessionPreset authoredSession1() {
                 { "pad10.fx.comp.on", 1.000000000f },
                 { "pad10.fx.comp.ratio", 3.000000000f },
                 { "pad10.fx.comp.rel", 0.110000000f },
+                { "pad10.fx.comp.sc", 0.000000000f },
+                { "pad10.fx.comp.schp", 20.000000000f },
                 { "pad10.fx.comp.thr", -18.000000000f },
                 { "pad10.fx.crush.bits", 6.000000000f },
                 { "pad10.fx.crush.chaos", 0.200000000f },
@@ -3848,6 +4315,8 @@ inline SessionPreset authoredSession1() {
                 { "pad11.fx.comp.on", 1.000000000f },
                 { "pad11.fx.comp.ratio", 4.000000000f },
                 { "pad11.fx.comp.rel", 0.250000000f },
+                { "pad11.fx.comp.sc", 0.000000000f },
+                { "pad11.fx.comp.schp", 20.000000000f },
                 { "pad11.fx.comp.thr", -16.000000000f },
                 { "pad11.fx.crush.bits", 6.000000000f },
                 { "pad11.fx.crush.chaos", 0.200000000f },
@@ -3972,6 +4441,8 @@ inline SessionPreset authoredSession1() {
                 { "pad12.fx.comp.on", 1.000000000f },
                 { "pad12.fx.comp.ratio", 4.000000000f },
                 { "pad12.fx.comp.rel", 0.250000000f },
+                { "pad12.fx.comp.sc", 0.000000000f },
+                { "pad12.fx.comp.schp", 20.000000000f },
                 { "pad12.fx.comp.thr", -16.000000000f },
                 { "pad12.fx.crush.bits", 6.000000000f },
                 { "pad12.fx.crush.chaos", 0.200000000f },
@@ -4096,6 +4567,8 @@ inline SessionPreset authoredSession1() {
                 { "pad13.fx.comp.on", 1.000000000f },
                 { "pad13.fx.comp.ratio", 4.000000000f },
                 { "pad13.fx.comp.rel", 0.250000000f },
+                { "pad13.fx.comp.sc", 0.000000000f },
+                { "pad13.fx.comp.schp", 20.000000000f },
                 { "pad13.fx.comp.thr", -16.000000000f },
                 { "pad13.fx.crush.bits", 6.000000000f },
                 { "pad13.fx.crush.chaos", 0.200000000f },
@@ -4220,6 +4693,8 @@ inline SessionPreset authoredSession1() {
                 { "pad14.fx.comp.on", 1.000000000f },
                 { "pad14.fx.comp.ratio", 4.000000000f },
                 { "pad14.fx.comp.rel", 0.250000000f },
+                { "pad14.fx.comp.sc", 0.000000000f },
+                { "pad14.fx.comp.schp", 20.000000000f },
                 { "pad14.fx.comp.thr", -16.000000000f },
                 { "pad14.fx.crush.bits", 6.000000000f },
                 { "pad14.fx.crush.chaos", 0.200000000f },
@@ -4344,6 +4819,8 @@ inline SessionPreset authoredSession1() {
                 { "pad15.fx.comp.on", 1.000000000f },
                 { "pad15.fx.comp.ratio", 4.000000000f },
                 { "pad15.fx.comp.rel", 0.250000000f },
+                { "pad15.fx.comp.sc", 0.000000000f },
+                { "pad15.fx.comp.schp", 20.000000000f },
                 { "pad15.fx.comp.thr", -16.000000000f },
                 { "pad15.fx.crush.bits", 6.000000000f },
                 { "pad15.fx.crush.chaos", 0.200000000f },
@@ -4468,6 +4945,8 @@ inline SessionPreset authoredSession1() {
                 { "pad2.fx.comp.on", 1.000000000f },
                 { "pad2.fx.comp.ratio", 3.000000000f },
                 { "pad2.fx.comp.rel", 0.110000000f },
+                { "pad2.fx.comp.sc", 0.000000000f },
+                { "pad2.fx.comp.schp", 20.000000000f },
                 { "pad2.fx.comp.thr", -18.000000000f },
                 { "pad2.fx.crush.bits", 6.000000000f },
                 { "pad2.fx.crush.chaos", 0.200000000f },
@@ -4592,6 +5071,8 @@ inline SessionPreset authoredSession1() {
                 { "pad3.fx.comp.on", 0.000000000f },
                 { "pad3.fx.comp.ratio", 3.000000000f },
                 { "pad3.fx.comp.rel", 0.110000000f },
+                { "pad3.fx.comp.sc", 0.000000000f },
+                { "pad3.fx.comp.schp", 20.000000000f },
                 { "pad3.fx.comp.thr", -18.000000000f },
                 { "pad3.fx.crush.bits", 6.000000000f },
                 { "pad3.fx.crush.chaos", 0.200000000f },
@@ -4716,6 +5197,8 @@ inline SessionPreset authoredSession1() {
                 { "pad4.fx.comp.on", 1.000000000f },
                 { "pad4.fx.comp.ratio", 4.000000000f },
                 { "pad4.fx.comp.rel", 0.250000000f },
+                { "pad4.fx.comp.sc", 0.000000000f },
+                { "pad4.fx.comp.schp", 20.000000000f },
                 { "pad4.fx.comp.thr", -16.000000000f },
                 { "pad4.fx.crush.bits", 6.000000000f },
                 { "pad4.fx.crush.chaos", 0.200000000f },
@@ -4840,6 +5323,8 @@ inline SessionPreset authoredSession1() {
                 { "pad5.fx.comp.on", 0.000000000f },
                 { "pad5.fx.comp.ratio", 4.000000000f },
                 { "pad5.fx.comp.rel", 0.250000000f },
+                { "pad5.fx.comp.sc", 0.000000000f },
+                { "pad5.fx.comp.schp", 20.000000000f },
                 { "pad5.fx.comp.thr", -16.000000000f },
                 { "pad5.fx.crush.bits", 6.000000000f },
                 { "pad5.fx.crush.chaos", 0.200000000f },
@@ -4964,6 +5449,8 @@ inline SessionPreset authoredSession1() {
                 { "pad6.fx.comp.on", 0.000000000f },
                 { "pad6.fx.comp.ratio", 4.000000000f },
                 { "pad6.fx.comp.rel", 0.250000000f },
+                { "pad6.fx.comp.sc", 0.000000000f },
+                { "pad6.fx.comp.schp", 20.000000000f },
                 { "pad6.fx.comp.thr", -16.000000000f },
                 { "pad6.fx.crush.bits", 6.000000000f },
                 { "pad6.fx.crush.chaos", 0.200000000f },
@@ -5088,6 +5575,8 @@ inline SessionPreset authoredSession1() {
                 { "pad7.fx.comp.on", 1.000000000f },
                 { "pad7.fx.comp.ratio", 4.000000000f },
                 { "pad7.fx.comp.rel", 0.250000000f },
+                { "pad7.fx.comp.sc", 0.000000000f },
+                { "pad7.fx.comp.schp", 20.000000000f },
                 { "pad7.fx.comp.thr", -16.000000000f },
                 { "pad7.fx.crush.bits", 6.000000000f },
                 { "pad7.fx.crush.chaos", 0.200000000f },
@@ -5212,6 +5701,8 @@ inline SessionPreset authoredSession1() {
                 { "pad8.fx.comp.on", 1.000000000f },
                 { "pad8.fx.comp.ratio", 3.000000000f },
                 { "pad8.fx.comp.rel", 0.110000000f },
+                { "pad8.fx.comp.sc", 0.000000000f },
+                { "pad8.fx.comp.schp", 20.000000000f },
                 { "pad8.fx.comp.thr", -18.000000000f },
                 { "pad8.fx.crush.bits", 6.000000000f },
                 { "pad8.fx.crush.chaos", 0.200000000f },
@@ -5336,6 +5827,8 @@ inline SessionPreset authoredSession1() {
                 { "pad9.fx.comp.on", 1.000000000f },
                 { "pad9.fx.comp.ratio", 3.000000000f },
                 { "pad9.fx.comp.rel", 0.110000000f },
+                { "pad9.fx.comp.sc", 0.000000000f },
+                { "pad9.fx.comp.schp", 20.000000000f },
                 { "pad9.fx.comp.thr", -18.000000000f },
                 { "pad9.fx.crush.bits", 6.000000000f },
                 { "pad9.fx.crush.chaos", 0.200000000f },
@@ -5446,7 +5939,7 @@ inline SessionPreset authoredSession1() {
             for (const auto& value : params)
                 p.session.tracks.back().patch.params.emplace(value.first, value.second);
         }
-        p.session.tracks.push_back({ Machine::BL1, "MOTOR", 0xff4dff9eu, 0.440000000f,
+        p.session.tracks.push_back({ Machine::BL1, "MOTOR", 0xff4dff9eu, 0.581000000f,
             { false, 21, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
@@ -5467,6 +5960,13 @@ inline SessionPreset authoredSession1() {
                 { "fx.chorus.mix", 0.120000000f },
                 { "fx.chorus.on", 0.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
+                { "fx.comp.att", 0.005000000f },
+                { "fx.comp.on", 1.000000000f },
+                { "fx.comp.ratio", 3.000000000f },
+                { "fx.comp.rel", 0.476000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -31.500000000f },
                 { "fx.delay.fb", 0.420000000f },
                 { "fx.delay.mix", 0.180000000f },
                 { "fx.delay.on", 0.000000000f },
@@ -5476,27 +5976,32 @@ inline SessionPreset authoredSession1() {
                 { "fx.drive.on", 1.000000000f },
                 { "fx.drive.tone", 0.000000000f },
                 { "fx.drive.type", 0.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
                 { "fx.eq.high", 0.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", 0.000000000f },
+                { "fx.eq.low", -6.000000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 3175.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 900.000000000f },
-                { "fx.eq.mid", 0.000000000f },
+                { "fx.eq.mfreq", 400.000000000f },
+                { "fx.eq.mid", 1.500000000f },
                 { "fx.eq.mid2", 0.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
-                { "fx.eq.on", 0.000000000f },
+                { "fx.eq.on", 1.000000000f },
+                { "fx.ott.depth", 0.350000000f },
+                { "fx.ott.down", 1.000000000f },
+                { "fx.ott.on", 0.000000000f },
+                { "fx.ott.time", 1.000000000f },
+                { "fx.ott.up", 1.000000000f },
                 { "fx.reverb.mix", 0.100000000f },
                 { "fx.reverb.on", 0.000000000f },
                 { "fx.reverb.size", 0.300000000f },
@@ -5522,18 +6027,37 @@ inline SessionPreset authoredSession1() {
             for (const auto& value : params)
                 p.session.tracks.back().patch.params.emplace(value.first, value.second);
         }
-        p.session.tracks.push_back({ Machine::WT1, "ECHO", 0xffffa14du, 0.580000000f,
+        p.session.tracks.push_back({ Machine::WT1, "ECHO", 0xffffa14du, 0.766000000f,
             { false, 56, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.012000000f },
+                { "env1.ac", 0.500000000f },
                 { "env1.d", 0.200000000f },
+                { "env1.dc", 0.670000000f },
+                { "env1.h", 0.000000000f },
+                { "env1.model", 0.000000000f },
                 { "env1.r", 0.280000000f },
+                { "env1.rc", 0.670000000f },
                 { "env1.s", 0.000000000f },
                 { "env2.a", 0.002000000f },
+                { "env2.ac", 0.500000000f },
                 { "env2.d", 0.250000000f },
+                { "env2.dc", 0.670000000f },
+                { "env2.h", 0.000000000f },
+                { "env2.model", 0.000000000f },
                 { "env2.r", 0.200000000f },
+                { "env2.rc", 0.670000000f },
                 { "env2.s", 0.000000000f },
+                { "env3.a", 0.010000000f },
+                { "env3.ac", 0.500000000f },
+                { "env3.d", 0.350000000f },
+                { "env3.dc", 0.670000000f },
+                { "env3.h", 0.000000000f },
+                { "env3.model", 0.000000000f },
+                { "env3.r", 0.300000000f },
+                { "env3.rc", 0.670000000f },
+                { "env3.s", 0.000000000f },
                 { "filter.cutoff", 980.000000000f },
                 { "filter.drive", 0.000000000f },
                 { "filter.env", 0.080000000f },
@@ -5553,12 +6077,14 @@ inline SessionPreset authoredSession1() {
                 { "fx.chorus.mix", 0.300000000f },
                 { "fx.chorus.on", 1.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
-                { "fx.comp.att", 0.003000000f },
+                { "fx.comp.att", 0.010000000f },
                 { "fx.comp.gain", 4.000000000f },
                 { "fx.comp.on", 1.000000000f },
-                { "fx.comp.ratio", 4.000000000f },
-                { "fx.comp.rel", 0.250000000f },
-                { "fx.comp.thr", -18.000000000f },
+                { "fx.comp.ratio", 2.000000000f },
+                { "fx.comp.rel", 0.238000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -29.000000000f },
                 { "fx.crush.bits", 6.000000000f },
                 { "fx.crush.chaos", 0.200000000f },
                 { "fx.crush.mix", 1.000000000f },
@@ -5581,25 +6107,25 @@ inline SessionPreset authoredSession1() {
                 { "fx.drive.on", 0.000000000f },
                 { "fx.drive.tone", 0.000000000f },
                 { "fx.drive.type", 0.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
-                { "fx.eq.high", -7.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
+                { "fx.eq.high", 0.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", -7.000000000f },
+                { "fx.eq.low", 3.000000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 3175.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 700.000000000f },
-                { "fx.eq.mid", 1.000000000f },
+                { "fx.eq.mfreq", 400.000000000f },
+                { "fx.eq.mid", 2.000000000f },
                 { "fx.eq.mid2", 0.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
                 { "fx.eq.on", 1.000000000f },
                 { "fx.glitch.chance", 0.350000000f },
@@ -5607,6 +6133,11 @@ inline SessionPreset authoredSession1() {
                 { "fx.glitch.drift", 0.000000000f },
                 { "fx.glitch.mix", 1.000000000f },
                 { "fx.glitch.on", 0.000000000f },
+                { "fx.ott.depth", 0.350000000f },
+                { "fx.ott.down", 1.000000000f },
+                { "fx.ott.on", 0.000000000f },
+                { "fx.ott.time", 1.000000000f },
+                { "fx.ott.up", 1.000000000f },
                 { "fx.reso.chord", 2.000000000f },
                 { "fx.reso.decay", 0.700000000f },
                 { "fx.reso.mix", 0.500000000f },
@@ -5639,56 +6170,107 @@ inline SessionPreset authoredSession1() {
                 { "lfo2.shape", 0.000000000f },
                 { "lfo2.sync", 0.000000000f },
                 { "lfo2.syncrate", 2.000000000f },
+                { "lfo3.phase", 0.000000000f },
+                { "lfo3.rate", 1.000000000f },
+                { "lfo3.retrig", 1.000000000f },
+                { "lfo3.rise", 0.000000000f },
+                { "lfo3.shape", 0.000000000f },
+                { "lfo3.sync", 0.000000000f },
+                { "lfo3.syncrate", 2.000000000f },
+                { "lfo4.phase", 0.000000000f },
+                { "lfo4.rate", 0.500000000f },
+                { "lfo4.retrig", 1.000000000f },
+                { "lfo4.rise", 0.000000000f },
+                { "lfo4.shape", 0.000000000f },
+                { "lfo4.sync", 0.000000000f },
+                { "lfo4.syncrate", 2.000000000f },
+                { "macro1", 0.000000000f },
+                { "macro2", 0.000000000f },
+                { "macro3", 0.000000000f },
+                { "macro4", 0.000000000f },
                 { "master.glide", 0.000000000f },
+                { "master.legato", 1.000000000f },
                 { "master.mono", 0.000000000f },
                 { "master.volume", 0.750000000f },
                 { "mat1.amt", 0.200000000f },
+                { "mat1.aux", 0.000000000f },
                 { "mat1.dst", 6.000000000f },
+                { "mat1.pol", 0.000000000f },
                 { "mat1.src", 2.000000000f },
                 { "mat10.amt", 0.000000000f },
+                { "mat10.aux", 0.000000000f },
                 { "mat10.dst", 0.000000000f },
+                { "mat10.pol", 0.000000000f },
                 { "mat10.src", 0.000000000f },
                 { "mat11.amt", 0.000000000f },
+                { "mat11.aux", 0.000000000f },
                 { "mat11.dst", 0.000000000f },
+                { "mat11.pol", 0.000000000f },
                 { "mat11.src", 0.000000000f },
                 { "mat12.amt", 0.000000000f },
+                { "mat12.aux", 0.000000000f },
                 { "mat12.dst", 0.000000000f },
+                { "mat12.pol", 0.000000000f },
                 { "mat12.src", 0.000000000f },
                 { "mat13.amt", 0.000000000f },
+                { "mat13.aux", 0.000000000f },
                 { "mat13.dst", 0.000000000f },
+                { "mat13.pol", 0.000000000f },
                 { "mat13.src", 0.000000000f },
                 { "mat14.amt", 0.000000000f },
+                { "mat14.aux", 0.000000000f },
                 { "mat14.dst", 0.000000000f },
+                { "mat14.pol", 0.000000000f },
                 { "mat14.src", 0.000000000f },
                 { "mat15.amt", 0.000000000f },
+                { "mat15.aux", 0.000000000f },
                 { "mat15.dst", 0.000000000f },
+                { "mat15.pol", 0.000000000f },
                 { "mat15.src", 0.000000000f },
                 { "mat16.amt", 0.000000000f },
+                { "mat16.aux", 0.000000000f },
                 { "mat16.dst", 0.000000000f },
+                { "mat16.pol", 0.000000000f },
                 { "mat16.src", 0.000000000f },
                 { "mat2.amt", 0.090000000f },
+                { "mat2.aux", 0.000000000f },
                 { "mat2.dst", 3.000000000f },
+                { "mat2.pol", 0.000000000f },
                 { "mat2.src", 1.000000000f },
                 { "mat3.amt", 0.040000000f },
+                { "mat3.aux", 0.000000000f },
                 { "mat3.dst", 3.000000000f },
+                { "mat3.pol", 0.000000000f },
                 { "mat3.src", 4.000000000f },
                 { "mat4.amt", 0.000000000f },
+                { "mat4.aux", 0.000000000f },
                 { "mat4.dst", 0.000000000f },
+                { "mat4.pol", 0.000000000f },
                 { "mat4.src", 0.000000000f },
                 { "mat5.amt", 0.000000000f },
+                { "mat5.aux", 0.000000000f },
                 { "mat5.dst", 0.000000000f },
+                { "mat5.pol", 0.000000000f },
                 { "mat5.src", 0.000000000f },
                 { "mat6.amt", 0.000000000f },
+                { "mat6.aux", 0.000000000f },
                 { "mat6.dst", 0.000000000f },
+                { "mat6.pol", 0.000000000f },
                 { "mat6.src", 0.000000000f },
                 { "mat7.amt", 0.000000000f },
+                { "mat7.aux", 0.000000000f },
                 { "mat7.dst", 0.000000000f },
+                { "mat7.pol", 0.000000000f },
                 { "mat7.src", 0.000000000f },
                 { "mat8.amt", 0.000000000f },
+                { "mat8.aux", 0.000000000f },
                 { "mat8.dst", 0.000000000f },
+                { "mat8.pol", 0.000000000f },
                 { "mat8.src", 0.000000000f },
                 { "mat9.amt", 0.000000000f },
+                { "mat9.aux", 0.000000000f },
                 { "mat9.dst", 0.000000000f },
+                { "mat9.pol", 0.000000000f },
                 { "mat9.src", 0.000000000f },
                 { "noise.level", 0.250000000f },
                 { "noise.on", 0.000000000f },
@@ -5717,6 +6299,8 @@ inline SessionPreset authoredSession1() {
                 { "oscB.spread", 0.600000000f },
                 { "oscB.table", 0.000000000f },
                 { "oscB.unison", 1.000000000f },
+                { "perf.aftertouch", 0.000000000f },
+                { "perf.modwheel", 0.000000000f },
                 { "seq.bpm", 120.000000000f },
                 { "seq.root", 48.000000000f },
                 { "seq.swing", 0.000000000f },
@@ -5728,18 +6312,37 @@ inline SessionPreset authoredSession1() {
             for (const auto& value : params)
                 p.session.tracks.back().patch.params.emplace(value.first, value.second);
         }
-        p.session.tracks.push_back({ Machine::WT1, "RELAY", 0xffb18cffu, 0.630000000f,
+        p.session.tracks.push_back({ Machine::WT1, "RELAY", 0xffb18cffu, 0.832000000f,
             { false, 59, {} } });
         {
             static constexpr std::pair<const char*, float> params[] {
                 { "env1.a", 0.014000000f },
+                { "env1.ac", 0.500000000f },
                 { "env1.d", 0.180000000f },
+                { "env1.dc", 0.670000000f },
+                { "env1.h", 0.000000000f },
+                { "env1.model", 0.000000000f },
                 { "env1.r", 0.350000000f },
+                { "env1.rc", 0.670000000f },
                 { "env1.s", 0.000000000f },
                 { "env2.a", 0.001000000f },
+                { "env2.ac", 0.500000000f },
                 { "env2.d", 0.090000000f },
+                { "env2.dc", 0.670000000f },
+                { "env2.h", 0.000000000f },
+                { "env2.model", 0.000000000f },
                 { "env2.r", 0.080000000f },
+                { "env2.rc", 0.670000000f },
                 { "env2.s", 0.000000000f },
+                { "env3.a", 0.010000000f },
+                { "env3.ac", 0.500000000f },
+                { "env3.d", 0.350000000f },
+                { "env3.dc", 0.670000000f },
+                { "env3.h", 0.000000000f },
+                { "env3.model", 0.000000000f },
+                { "env3.r", 0.300000000f },
+                { "env3.rc", 0.670000000f },
+                { "env3.s", 0.000000000f },
                 { "filter.cutoff", 820.000000000f },
                 { "filter.drive", 0.000000000f },
                 { "filter.env", 0.100000000f },
@@ -5759,12 +6362,14 @@ inline SessionPreset authoredSession1() {
                 { "fx.chorus.mix", 0.500000000f },
                 { "fx.chorus.on", 0.000000000f },
                 { "fx.chorus.rate", 0.600000000f },
-                { "fx.comp.att", 0.003000000f },
+                { "fx.comp.att", 0.010000000f },
                 { "fx.comp.gain", 4.000000000f },
                 { "fx.comp.on", 1.000000000f },
-                { "fx.comp.ratio", 4.000000000f },
-                { "fx.comp.rel", 0.250000000f },
-                { "fx.comp.thr", -18.000000000f },
+                { "fx.comp.ratio", 2.000000000f },
+                { "fx.comp.rel", 0.238000000f },
+                { "fx.comp.sc", 0.000000000f },
+                { "fx.comp.schp", 20.000000000f },
+                { "fx.comp.thr", -40.000000000f },
                 { "fx.crush.bits", 6.000000000f },
                 { "fx.crush.chaos", 0.200000000f },
                 { "fx.crush.mix", 1.000000000f },
@@ -5787,25 +6392,25 @@ inline SessionPreset authoredSession1() {
                 { "fx.drive.on", 0.000000000f },
                 { "fx.drive.tone", 0.000000000f },
                 { "fx.drive.type", 0.000000000f },
-                { "fx.eq.hfreq", 6000.000000000f },
-                { "fx.eq.high", -8.000000000f },
+                { "fx.eq.hfreq", 9000.000000000f },
+                { "fx.eq.high", 0.000000000f },
                 { "fx.eq.hon", 1.000000000f },
                 { "fx.eq.hq", 0.707106781f },
                 { "fx.eq.htype", 2.000000000f },
-                { "fx.eq.lfreq", 120.000000000f },
+                { "fx.eq.lfreq", 110.000000000f },
                 { "fx.eq.lon", 1.000000000f },
-                { "fx.eq.low", -6.000000000f },
+                { "fx.eq.low", -1.500000000f },
                 { "fx.eq.lq", 0.707106781f },
                 { "fx.eq.ltype", 0.000000000f },
-                { "fx.eq.m2freq", 2500.000000000f },
+                { "fx.eq.m2freq", 3175.000000000f },
                 { "fx.eq.m2on", 1.000000000f },
-                { "fx.eq.m2q", 0.900000000f },
+                { "fx.eq.m2q", 1.100000000f },
                 { "fx.eq.m2type", 1.000000000f },
-                { "fx.eq.mfreq", 420.000000000f },
-                { "fx.eq.mid", -1.000000000f },
+                { "fx.eq.mfreq", 160.000000000f },
+                { "fx.eq.mid", -4.000000000f },
                 { "fx.eq.mid2", 0.000000000f },
                 { "fx.eq.mon", 1.000000000f },
-                { "fx.eq.mq", 0.900000000f },
+                { "fx.eq.mq", 1.100000000f },
                 { "fx.eq.mtype", 1.000000000f },
                 { "fx.eq.on", 1.000000000f },
                 { "fx.glitch.chance", 0.350000000f },
@@ -5813,6 +6418,11 @@ inline SessionPreset authoredSession1() {
                 { "fx.glitch.drift", 0.000000000f },
                 { "fx.glitch.mix", 1.000000000f },
                 { "fx.glitch.on", 0.000000000f },
+                { "fx.ott.depth", 0.350000000f },
+                { "fx.ott.down", 1.000000000f },
+                { "fx.ott.on", 0.000000000f },
+                { "fx.ott.time", 1.000000000f },
+                { "fx.ott.up", 1.000000000f },
                 { "fx.reso.chord", 2.000000000f },
                 { "fx.reso.decay", 0.700000000f },
                 { "fx.reso.mix", 0.500000000f },
@@ -5845,56 +6455,107 @@ inline SessionPreset authoredSession1() {
                 { "lfo2.shape", 0.000000000f },
                 { "lfo2.sync", 0.000000000f },
                 { "lfo2.syncrate", 2.000000000f },
+                { "lfo3.phase", 0.000000000f },
+                { "lfo3.rate", 1.000000000f },
+                { "lfo3.retrig", 1.000000000f },
+                { "lfo3.rise", 0.000000000f },
+                { "lfo3.shape", 0.000000000f },
+                { "lfo3.sync", 0.000000000f },
+                { "lfo3.syncrate", 2.000000000f },
+                { "lfo4.phase", 0.000000000f },
+                { "lfo4.rate", 0.500000000f },
+                { "lfo4.retrig", 1.000000000f },
+                { "lfo4.rise", 0.000000000f },
+                { "lfo4.shape", 0.000000000f },
+                { "lfo4.sync", 0.000000000f },
+                { "lfo4.syncrate", 2.000000000f },
+                { "macro1", 0.000000000f },
+                { "macro2", 0.000000000f },
+                { "macro3", 0.000000000f },
+                { "macro4", 0.000000000f },
                 { "master.glide", 0.000000000f },
+                { "master.legato", 1.000000000f },
                 { "master.mono", 1.000000000f },
                 { "master.volume", 0.750000000f },
                 { "mat1.amt", 0.080000000f },
+                { "mat1.aux", 0.000000000f },
                 { "mat1.dst", 3.000000000f },
+                { "mat1.pol", 0.000000000f },
                 { "mat1.src", 2.000000000f },
                 { "mat10.amt", 0.000000000f },
+                { "mat10.aux", 0.000000000f },
                 { "mat10.dst", 0.000000000f },
+                { "mat10.pol", 0.000000000f },
                 { "mat10.src", 0.000000000f },
                 { "mat11.amt", 0.000000000f },
+                { "mat11.aux", 0.000000000f },
                 { "mat11.dst", 0.000000000f },
+                { "mat11.pol", 0.000000000f },
                 { "mat11.src", 0.000000000f },
                 { "mat12.amt", 0.000000000f },
+                { "mat12.aux", 0.000000000f },
                 { "mat12.dst", 0.000000000f },
+                { "mat12.pol", 0.000000000f },
                 { "mat12.src", 0.000000000f },
                 { "mat13.amt", 0.000000000f },
+                { "mat13.aux", 0.000000000f },
                 { "mat13.dst", 0.000000000f },
+                { "mat13.pol", 0.000000000f },
                 { "mat13.src", 0.000000000f },
                 { "mat14.amt", 0.000000000f },
+                { "mat14.aux", 0.000000000f },
                 { "mat14.dst", 0.000000000f },
+                { "mat14.pol", 0.000000000f },
                 { "mat14.src", 0.000000000f },
                 { "mat15.amt", 0.000000000f },
+                { "mat15.aux", 0.000000000f },
                 { "mat15.dst", 0.000000000f },
+                { "mat15.pol", 0.000000000f },
                 { "mat15.src", 0.000000000f },
                 { "mat16.amt", 0.000000000f },
+                { "mat16.aux", 0.000000000f },
                 { "mat16.dst", 0.000000000f },
+                { "mat16.pol", 0.000000000f },
                 { "mat16.src", 0.000000000f },
                 { "mat2.amt", 0.000000000f },
+                { "mat2.aux", 0.000000000f },
                 { "mat2.dst", 0.000000000f },
+                { "mat2.pol", 0.000000000f },
                 { "mat2.src", 0.000000000f },
                 { "mat3.amt", 0.000000000f },
+                { "mat3.aux", 0.000000000f },
                 { "mat3.dst", 0.000000000f },
+                { "mat3.pol", 0.000000000f },
                 { "mat3.src", 0.000000000f },
                 { "mat4.amt", 0.000000000f },
+                { "mat4.aux", 0.000000000f },
                 { "mat4.dst", 0.000000000f },
+                { "mat4.pol", 0.000000000f },
                 { "mat4.src", 0.000000000f },
                 { "mat5.amt", 0.000000000f },
+                { "mat5.aux", 0.000000000f },
                 { "mat5.dst", 0.000000000f },
+                { "mat5.pol", 0.000000000f },
                 { "mat5.src", 0.000000000f },
                 { "mat6.amt", 0.000000000f },
+                { "mat6.aux", 0.000000000f },
                 { "mat6.dst", 0.000000000f },
+                { "mat6.pol", 0.000000000f },
                 { "mat6.src", 0.000000000f },
                 { "mat7.amt", 0.000000000f },
+                { "mat7.aux", 0.000000000f },
                 { "mat7.dst", 0.000000000f },
+                { "mat7.pol", 0.000000000f },
                 { "mat7.src", 0.000000000f },
                 { "mat8.amt", 0.000000000f },
+                { "mat8.aux", 0.000000000f },
                 { "mat8.dst", 0.000000000f },
+                { "mat8.pol", 0.000000000f },
                 { "mat8.src", 0.000000000f },
                 { "mat9.amt", 0.000000000f },
+                { "mat9.aux", 0.000000000f },
                 { "mat9.dst", 0.000000000f },
+                { "mat9.pol", 0.000000000f },
                 { "mat9.src", 0.000000000f },
                 { "noise.level", 0.250000000f },
                 { "noise.on", 0.000000000f },
@@ -5923,6 +6584,8 @@ inline SessionPreset authoredSession1() {
                 { "oscB.spread", 0.600000000f },
                 { "oscB.table", 0.000000000f },
                 { "oscB.unison", 1.000000000f },
+                { "perf.aftertouch", 0.000000000f },
+                { "perf.modwheel", 0.000000000f },
                 { "seq.bpm", 120.000000000f },
                 { "seq.root", 48.000000000f },
                 { "seq.swing", 0.000000000f },
@@ -5939,6 +6602,17 @@ inline SessionPreset authoredSession1() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, false };
             scene.pass = {  };
             scene.clips[0] = { "CHASSIS / START", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -5968,6 +6642,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[854] = 1;
             scene.clips[0].bytes[858] = 1;
             scene.clips[1] = { "MOTOR / TURNOVER", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 64, 5, 21, 0 } });
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6003,6 +6678,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[187] = 7;
             scene.clips[1].bytes[188] = 0;
             scene.clips[2] = { "ECHO / FIRST SPARK", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 64, 5, 21, 0 } });
             scene.clips[2].bytes[288] = 5;
             scene.clips[2].bytes[291] = 5;
             scene.clips[2].bytes[292] = 3;
@@ -6024,6 +6700,17 @@ inline SessionPreset authoredSession1() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "CHASSIS / LOCKSTEP", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -6074,6 +6761,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[878] = 1;
             scene.clips[0].bytes[905] = 1;
             scene.clips[1] = { "MOTOR / THREE AGAINST FOUR", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 32, 5, 21, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6120,6 +6808,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[187] = 7;
             scene.clips[1].bytes[188] = 0;
             scene.clips[2] = { "ECHO / LOCKSTEP", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 21, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
             scene.clips[2].bytes[0] = 7;
             scene.clips[2].bytes[3] = 7;
             scene.clips[2].bytes[4] = 3;
@@ -6149,6 +6838,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1305] = 5;
             scene.clips[2].bytes[1306] = 8;
             scene.clips[3] = { "RELAY / ANSWER", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 21, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
             scene.clips[3].bytes[360] = 5;
             scene.clips[3].bytes[744] = 5;
             scene.clips[3].bytes[745] = 7;
@@ -6162,6 +6852,21 @@ inline SessionPreset authoredSession1() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "CHASSIS / LATERAL", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = true; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 3; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -6174,6 +6879,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[93] = 1;
             scene.clips[0].bytes[102] = 1;
             scene.clips[0].bytes[141] = 1;
+            scene.clips[0].bytes[144] = 1;
             scene.clips[0].bytes[256] = 1;
             scene.clips[0].bytes[260] = 1;
             scene.clips[0].bytes[264] = 2;
@@ -6209,6 +6915,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[911] = 1;
             scene.clips[1] = { "MOTOR / SIDE ROAD", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 3, 19, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6246,6 +6953,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[178] = 7;
             scene.clips[1].bytes[179] = 0;
             scene.clips[2] = { "ECHO / ACROSS THE BAR", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 3, 19, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
             scene.clips[2].bytes[168] = 5;
             scene.clips[2].bytes[171] = 5;
             scene.clips[2].bytes[172] = 3;
@@ -6276,6 +6984,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1329] = 5;
             scene.clips[2].bytes[1330] = 8;
             scene.clips[3] = { "RELAY / CROSS TALK", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 3, 19, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
             scene.clips[3].bytes[72] = 5;
             scene.clips[3].bytes[73] = 7;
             scene.clips[3].bytes[456] = 5;
@@ -6290,6 +6999,17 @@ inline SessionPreset authoredSession1() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "CHASSIS / SUSPENDED", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
             scene.clips[0].bytes[60] = 1;
             scene.clips[0].bytes[82] = 1;
             scene.clips[0].bytes[90] = 1;
@@ -6302,6 +7022,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[854] = 1;
             scene.clips[0].bytes[909] = 1;
             scene.clips[1] = { "MOTOR / IDLING", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 32, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[1].bytes[6] = 25;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6314,6 +7035,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[175] = 3;
             scene.clips[1].bytes[176] = 0;
             scene.clips[2] = { "ECHO / HANGING WIRE", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[2].bytes[0] = 13;
             scene.clips[2].bytes[3] = 13;
             scene.clips[2].bytes[4] = 3;
@@ -6329,6 +7051,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[777] = 13;
             scene.clips[2].bytes[778] = 8;
             scene.clips[3] = { "RELAY / ALONE", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[3].bytes[264] = 9;
             scene.clips[3].bytes[648] = 9;
             scene.clips[3].bytes[649] = 3;
@@ -6343,6 +7066,21 @@ inline SessionPreset authoredSession1() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "CHASSIS / SECOND WIND", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = true; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 6; scene.clips[0].drumRhythm.lanes[9].rotation = 2;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -6355,6 +7093,8 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[94] = 1;
             scene.clips[0].bytes[102] = 1;
             scene.clips[0].bytes[141] = 1;
+            scene.clips[0].bytes[144] = 1;
+            scene.clips[0].bytes[147] = 2;
             scene.clips[0].bytes[256] = 1;
             scene.clips[0].bytes[260] = 1;
             scene.clips[0].bytes[264] = 2;
@@ -6393,6 +7133,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[878] = 1;
             scene.clips[0].bytes[911] = 1;
             scene.clips[1] = { "MOTOR / SECOND WIND", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6436,6 +7177,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[181] = 5;
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "ECHO / SHIFTED RETURN", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[2].bytes[0] = 7;
             scene.clips[2].bytes[3] = 7;
             scene.clips[2].bytes[4] = 3;
@@ -6472,6 +7214,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1473] = 5;
             scene.clips[2].bytes[1474] = 8;
             scene.clips[3] = { "RELAY / OPEN CIRCUIT", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[3].bytes[312] = 5;
             scene.clips[3].bytes[696] = 5;
             scene.clips[3].bytes[697] = 7;
@@ -6485,6 +7228,17 @@ inline SessionPreset authoredSession1() {
             scene.clips.resize(4); scene.hasClip = { true, true, true, true };
             scene.pass = {  };
             scene.clips[0] = { "CHASSIS / FREEWHEEL", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 7;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
             scene.clips[0].bytes[0] = 2;
             scene.clips[0].bytes[4] = 1;
             scene.clips[0].bytes[8] = 1;
@@ -6510,6 +7264,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[768] = 1;
             scene.clips[0].bytes[854] = 1;
             scene.clips[1] = { "MOTOR / COAST", 4, sqEmptyClip(Machine::BL1, 4) };
+            scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[1].bytes[6] = 9;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6528,6 +7283,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[151] = 5;
             scene.clips[1].bytes[152] = 0;
             scene.clips[2] = { "ECHO / AFTERIMAGE", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[2].bytes[0] = 5;
             scene.clips[2].bytes[3] = 5;
             scene.clips[2].bytes[4] = 3;
@@ -6550,6 +7306,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1065] = 5;
             scene.clips[2].bytes[1066] = 8;
             scene.clips[3] = { "RELAY / FADING", 4, sqEmptyClip(Machine::WT1, 4) };
+            scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
             scene.clips[3].bytes[360] = 5;
             scene.clips[3].bytes[361] = 7;
             scene.clips[3].bytes[936] = 5;
@@ -6563,5 +7320,3012 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
     result.push_back(authoredSession0());
     result.push_back(authoredSession1());
     return result;
+}
+inline void applyChordTracks(std::vector<SessionPreset>& library) {
+    for (auto& p : library) {
+        if (p.name == "NEON TALE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+        }
+        if (p.name == "NEON CHASE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+        }
+        if (p.name == "GLASS CIRCUIT") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+        }
+        if (p.name == "AFTERGLOW") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+        }
+        if (p.name == "WAREHOUSE RAW") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+        }
+        if (p.name == "ACID FLASH") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+        }
+        if (p.name == "STEEL PULSE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+        }
+        if (p.name == "PEAK SIGNAL") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+        }
+        if (p.name == "DEEP FOG") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+        }
+        if (p.name == "GLASS BLOOM") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+        }
+        if (p.name == "FROZEN BELL") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+        }
+        if (p.name == "AIR TEMPLE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+        }
+        if (p.name == "DUST HOUSE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+        }
+        if (p.name == "MIDNIGHT FLOOR") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+        }
+        if (p.name == "TAPE DISCO") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+        }
+        if (p.name == "CLEAN CLUB") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+        }
+        if (p.name == "VHS GARDEN") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+        }
+        if (p.name == "POCKET DUST") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+        }
+        if (p.name == "TOY PARADE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+        }
+        if (p.name == "WORN SIGNAL") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+        }
+        if (p.name == "CHROME CATHEDRAL") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+        }
+        if (p.name == "MACHINE TENSION") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+        }
+        if (p.name == "VOID MARCH") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+        }
+        if (p.name == "FINAL HORIZON") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+        }
+        if (p.name == "GRAY ROOM") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+        }
+        if (p.name == "CLICK FIELD") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+        }
+        if (p.name == "COLD ROTOR") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+        }
+        if (p.name == "NIGHT GRID") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+        }
+        if (p.name == "SUGAR RUSH") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+        }
+        if (p.name == "PASTEL SKY") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+        }
+        if (p.name == "STARBURST") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+        }
+        if (p.name == "HEART WIRE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+        }
+        if (p.name == "VELVET SMOKE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+        }
+        if (p.name == "NIGHT BUS") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+        }
+        if (p.name == "CRACKED LENS") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+        }
+        if (p.name == "STONE GARDEN") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+        }
+        if (p.name == "ECHO CHAMBER") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+        }
+        if (p.name == "KING STEPPER") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+        }
+        if (p.name == "ROOTS RADAR") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+        }
+        if (p.name == "ZION GATE") {
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+        }
+    }
+}
+inline void applySessionGrooves(std::vector<SessionPreset>& library) {
+    for (auto& p : library) {
+        if (p.name == "DUST HOUSE") {
+        {
+            auto& scene = p.session.scenes[0];
+            scene.clips[0] = { "DUST INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[2] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[18] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[34] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[50] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 6;
+            scene.clips[0].bytes[0] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[256] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[512] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[768] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[858] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "DUST BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[2] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[18] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[34] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[50] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 6;
+            scene.clips[0].bytes[0] = 1;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[52] = 1;
+            scene.clips[0].bytes[60] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[98] = 1;
+            scene.clips[0].bytes[102] = 2;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[110] = 2;
+            scene.clips[0].bytes[256] = 1;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[308] = 1;
+            scene.clips[0].bytes[316] = 1;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[354] = 1;
+            scene.clips[0].bytes[358] = 2;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[366] = 2;
+            scene.clips[0].bytes[512] = 1;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[564] = 1;
+            scene.clips[0].bytes[572] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[610] = 1;
+            scene.clips[0].bytes[614] = 2;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[622] = 2;
+            scene.clips[0].bytes[768] = 1;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[820] = 1;
+            scene.clips[0].bytes[828] = 1;
+            scene.clips[0].bytes[829] = 1;
+            scene.clips[0].bytes[830] = 1;
+            scene.clips[0].bytes[831] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[866] = 1;
+            scene.clips[0].bytes[870] = 2;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[878] = 2;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "DUST DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[2] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[18] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[34] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[50] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 6;
+            scene.clips[0].bytes[0] = 1;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[52] = 1;
+            scene.clips[0].bytes[60] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[98] = 1;
+            scene.clips[0].bytes[102] = 2;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[110] = 2;
+            scene.clips[0].bytes[256] = 1;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[308] = 1;
+            scene.clips[0].bytes[316] = 1;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[354] = 1;
+            scene.clips[0].bytes[358] = 2;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[366] = 2;
+            scene.clips[0].bytes[512] = 1;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[564] = 1;
+            scene.clips[0].bytes[572] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[610] = 1;
+            scene.clips[0].bytes[614] = 2;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[622] = 2;
+            scene.clips[0].bytes[768] = 1;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[820] = 1;
+            scene.clips[0].bytes[828] = 1;
+            scene.clips[0].bytes[829] = 1;
+            scene.clips[0].bytes[831] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[866] = 1;
+            scene.clips[0].bytes[870] = 2;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[878] = 2;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "DUST DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[2] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[18] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[34] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[50] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 6;
+            scene.clips[0].bytes[0] = 1;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[52] = 1;
+            scene.clips[0].bytes[60] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[98] = 1;
+            scene.clips[0].bytes[102] = 2;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[110] = 2;
+            scene.clips[0].bytes[256] = 1;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[308] = 1;
+            scene.clips[0].bytes[316] = 1;
+            scene.clips[0].bytes[317] = 1;
+            scene.clips[0].bytes[319] = 2;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[354] = 1;
+            scene.clips[0].bytes[358] = 2;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[366] = 2;
+            scene.clips[0].bytes[512] = 1;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[564] = 1;
+            scene.clips[0].bytes[572] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[610] = 1;
+            scene.clips[0].bytes[614] = 2;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[622] = 2;
+            scene.clips[0].bytes[768] = 1;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[820] = 1;
+            scene.clips[0].bytes[828] = 1;
+            scene.clips[0].bytes[829] = 1;
+            scene.clips[0].bytes[831] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[866] = 1;
+            scene.clips[0].bytes[870] = 2;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[878] = 2;
+        }
+        {
+            auto& scene = p.session.scenes[5];
+            scene.clips[0] = { "DUST TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 3);
+            scene.clips[0].drumRhythm.lanes[3].enabled = false; scene.clips[0].drumRhythm.lanes[3].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[3].steps = 16; scene.clips[0].drumRhythm.lanes[3].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[3].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[3].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[3].micro = true; scene.clips[0].drumRhythm.lanes[3].delayMs = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[2] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[18] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[34] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[50] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 5;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 6;
+            scene.clips[0].bytes[0] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[256] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[512] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[768] = 1;
+            scene.clips[0].bytes[776] = 1;
+        }
+        }
+        if (p.name == "POCKET DUST") {
+        {
+            auto& scene = p.session.scenes[0];
+            scene.clips[0] = { "POCKET INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 0);
+            scene.clips[0].drumRhythm.lanes[0].enabled = false; scene.clips[0].drumRhythm.lanes[0].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[0].steps = 16; scene.clips[0].drumRhythm.lanes[0].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[0].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[0].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[0].micro = true; scene.clips[0].drumRhythm.lanes[0].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[10] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[26] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[42] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[58] = -6;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 14;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[3] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[11] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[19] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[27] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[35] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[43] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[51] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[59] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -3;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[83] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[339] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[595] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[851] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[862] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "POCKET BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 0);
+            scene.clips[0].drumRhythm.lanes[0].enabled = false; scene.clips[0].drumRhythm.lanes[0].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[0].steps = 16; scene.clips[0].drumRhythm.lanes[0].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[0].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[0].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[0].micro = true; scene.clips[0].drumRhythm.lanes[0].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[10] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[26] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[42] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[58] = -6;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 14;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[3] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[11] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[19] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[27] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[35] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[43] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[51] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[59] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -3;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[7] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[110] = 1;
+            scene.clips[0].bytes[134] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[263] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[300] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[366] = 1;
+            scene.clips[0].bytes[390] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[519] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[622] = 1;
+            scene.clips[0].bytes[646] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[775] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[812] = 1;
+            scene.clips[0].bytes[813] = 1;
+            scene.clips[0].bytes[814] = 1;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[878] = 1;
+            scene.clips[0].bytes[902] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "POCKET DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 0);
+            scene.clips[0].drumRhythm.lanes[0].enabled = false; scene.clips[0].drumRhythm.lanes[0].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[0].steps = 16; scene.clips[0].drumRhythm.lanes[0].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[0].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[0].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[0].micro = true; scene.clips[0].drumRhythm.lanes[0].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[10] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[26] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[42] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[58] = -6;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 14;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[3] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[11] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[19] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[27] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[35] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[43] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[51] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[59] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -3;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[7] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[110] = 1;
+            scene.clips[0].bytes[134] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[263] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[300] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[366] = 1;
+            scene.clips[0].bytes[390] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[519] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[622] = 1;
+            scene.clips[0].bytes[646] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[775] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[812] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[878] = 1;
+            scene.clips[0].bytes[902] = 1;
+            scene.clips[0].bytes[911] = 1;
+            scene.clips[0].bytes[925] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "POCKET DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 0);
+            scene.clips[0].drumRhythm.lanes[0].enabled = false; scene.clips[0].drumRhythm.lanes[0].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[0].steps = 16; scene.clips[0].drumRhythm.lanes[0].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[0].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[0].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[0].micro = true; scene.clips[0].drumRhythm.lanes[0].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[10] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[26] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[42] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[58] = -6;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 14;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[3] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[11] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[19] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[27] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[35] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[43] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[51] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[59] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -3;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[7] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[110] = 1;
+            scene.clips[0].bytes[134] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[263] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[300] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[366] = 1;
+            scene.clips[0].bytes[390] = 1;
+            scene.clips[0].bytes[399] = 1;
+            scene.clips[0].bytes[413] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[519] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[622] = 1;
+            scene.clips[0].bytes[646] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[775] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[812] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[878] = 1;
+            scene.clips[0].bytes[902] = 1;
+            scene.clips[0].bytes[911] = 1;
+            scene.clips[0].bytes[925] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[5];
+            scene.clips[0] = { "POCKET TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 0);
+            scene.clips[0].drumRhythm.lanes[0].enabled = false; scene.clips[0].drumRhythm.lanes[0].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[0].steps = 16; scene.clips[0].drumRhythm.lanes[0].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[0].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[0].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[0].micro = true; scene.clips[0].drumRhythm.lanes[0].delayMs = 0;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[10] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[26] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[42] = -6;
+            scene.clips[0].drumRhythm.lanes[0].stepDelayMs[58] = -6;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 14;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[3] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[11] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[19] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[27] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[35] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[43] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -3;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[51] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[59] = 9;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -3;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[134] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[390] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[646] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[902] = 1;
+        }
+        }
+        if (p.name == "CLICK FIELD") {
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "CLICK BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 12);
+            scene.clips[0].drumRhythm.lanes[12].enabled = true; scene.clips[0].drumRhythm.lanes[12].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[12].steps = 7; scene.clips[0].drumRhythm.lanes[12].rotation = 3;
+            scene.clips[0].drumRhythm.lanes[12].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[12].cycleBeats = 4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[68] = 1;
+            scene.clips[0].bytes[76] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[81] = 2;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[83] = 2;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[85] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[87] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[89] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[92] = 1;
+            scene.clips[0].bytes[93] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[95] = 1;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[135] = 1;
+            scene.clips[0].bytes[192] = 2;
+            scene.clips[0].bytes[196] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[324] = 1;
+            scene.clips[0].bytes[332] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[337] = 2;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[339] = 2;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[341] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[343] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[345] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[348] = 1;
+            scene.clips[0].bytes[349] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[351] = 1;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[391] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[580] = 1;
+            scene.clips[0].bytes[588] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[593] = 2;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[595] = 2;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[597] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[599] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[601] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[604] = 1;
+            scene.clips[0].bytes[605] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[607] = 1;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[647] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[836] = 1;
+            scene.clips[0].bytes[844] = 1;
+            scene.clips[0].bytes[845] = 1;
+            scene.clips[0].bytes[846] = 1;
+            scene.clips[0].bytes[847] = 2;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[849] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[851] = 2;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[853] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[855] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[857] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[860] = 1;
+            scene.clips[0].bytes[861] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[863] = 1;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[903] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "CLICK DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = true; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 5; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 12);
+            scene.clips[0].drumRhythm.lanes[12].enabled = true; scene.clips[0].drumRhythm.lanes[12].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[12].steps = 7; scene.clips[0].drumRhythm.lanes[12].rotation = 3;
+            scene.clips[0].drumRhythm.lanes[12].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[12].cycleBeats = 4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[68] = 1;
+            scene.clips[0].bytes[76] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[81] = 2;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[83] = 2;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[85] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[87] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[89] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[92] = 1;
+            scene.clips[0].bytes[93] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[95] = 1;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[135] = 1;
+            scene.clips[0].bytes[144] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[192] = 2;
+            scene.clips[0].bytes[196] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[324] = 1;
+            scene.clips[0].bytes[332] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[337] = 2;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[339] = 2;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[341] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[343] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[345] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[348] = 1;
+            scene.clips[0].bytes[349] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[351] = 1;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[391] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[580] = 1;
+            scene.clips[0].bytes[588] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[593] = 2;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[595] = 2;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[597] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[599] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[601] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[604] = 1;
+            scene.clips[0].bytes[605] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[607] = 1;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[647] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[836] = 1;
+            scene.clips[0].bytes[844] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[849] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[851] = 2;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[853] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[855] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[857] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[860] = 1;
+            scene.clips[0].bytes[861] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[863] = 1;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[903] = 1;
+            scene.clips[0].bytes[908] = 1;
+            scene.clips[0].bytes[910] = 2;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "CLICK DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = true; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 5; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 12);
+            scene.clips[0].drumRhythm.lanes[12].enabled = true; scene.clips[0].drumRhythm.lanes[12].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[12].steps = 7; scene.clips[0].drumRhythm.lanes[12].rotation = 3;
+            scene.clips[0].drumRhythm.lanes[12].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[12].cycleBeats = 4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[68] = 1;
+            scene.clips[0].bytes[76] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[81] = 1;
+            scene.clips[0].bytes[82] = 2;
+            scene.clips[0].bytes[83] = 1;
+            scene.clips[0].bytes[84] = 2;
+            scene.clips[0].bytes[85] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[87] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[89] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[92] = 1;
+            scene.clips[0].bytes[93] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[95] = 1;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[135] = 1;
+            scene.clips[0].bytes[144] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[192] = 2;
+            scene.clips[0].bytes[196] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[324] = 1;
+            scene.clips[0].bytes[332] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[337] = 1;
+            scene.clips[0].bytes[338] = 2;
+            scene.clips[0].bytes[339] = 1;
+            scene.clips[0].bytes[340] = 2;
+            scene.clips[0].bytes[341] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[343] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[345] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[348] = 1;
+            scene.clips[0].bytes[349] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[351] = 1;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[391] = 1;
+            scene.clips[0].bytes[396] = 1;
+            scene.clips[0].bytes[398] = 2;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[580] = 1;
+            scene.clips[0].bytes[588] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[593] = 1;
+            scene.clips[0].bytes[594] = 2;
+            scene.clips[0].bytes[595] = 1;
+            scene.clips[0].bytes[596] = 2;
+            scene.clips[0].bytes[597] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[599] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[601] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[604] = 1;
+            scene.clips[0].bytes[605] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[607] = 1;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[647] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[836] = 1;
+            scene.clips[0].bytes[844] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[849] = 1;
+            scene.clips[0].bytes[850] = 2;
+            scene.clips[0].bytes[851] = 1;
+            scene.clips[0].bytes[852] = 2;
+            scene.clips[0].bytes[853] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[855] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[857] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[860] = 1;
+            scene.clips[0].bytes[861] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[863] = 1;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[903] = 1;
+            scene.clips[0].bytes[908] = 1;
+            scene.clips[0].bytes[910] = 2;
+        }
+        }
+        if (p.name == "COLD ROTOR") {
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "ROTOR BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 12);
+            scene.clips[0].drumRhythm.lanes[12].enabled = true; scene.clips[0].drumRhythm.lanes[12].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[12].steps = 3; scene.clips[0].drumRhythm.lanes[12].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[12].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[12].cycleBeats = 4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[68] = 1;
+            scene.clips[0].bytes[76] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[81] = 1;
+            scene.clips[0].bytes[82] = 2;
+            scene.clips[0].bytes[83] = 1;
+            scene.clips[0].bytes[84] = 2;
+            scene.clips[0].bytes[85] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[87] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[89] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[92] = 1;
+            scene.clips[0].bytes[93] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[95] = 1;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[135] = 1;
+            scene.clips[0].bytes[192] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[324] = 1;
+            scene.clips[0].bytes[332] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[337] = 1;
+            scene.clips[0].bytes[338] = 2;
+            scene.clips[0].bytes[339] = 1;
+            scene.clips[0].bytes[340] = 2;
+            scene.clips[0].bytes[341] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[343] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[345] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[348] = 1;
+            scene.clips[0].bytes[349] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[351] = 1;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[391] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[580] = 1;
+            scene.clips[0].bytes[588] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[593] = 1;
+            scene.clips[0].bytes[594] = 2;
+            scene.clips[0].bytes[595] = 1;
+            scene.clips[0].bytes[596] = 2;
+            scene.clips[0].bytes[597] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[599] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[601] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[604] = 1;
+            scene.clips[0].bytes[605] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[607] = 1;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[647] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[836] = 1;
+            scene.clips[0].bytes[844] = 1;
+            scene.clips[0].bytes[845] = 1;
+            scene.clips[0].bytes[846] = 1;
+            scene.clips[0].bytes[847] = 2;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[849] = 1;
+            scene.clips[0].bytes[850] = 2;
+            scene.clips[0].bytes[851] = 1;
+            scene.clips[0].bytes[852] = 2;
+            scene.clips[0].bytes[853] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[855] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[857] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[860] = 1;
+            scene.clips[0].bytes[861] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[863] = 1;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[903] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "ROTOR DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 10);
+            scene.clips[0].drumRhythm.lanes[10].enabled = true; scene.clips[0].drumRhythm.lanes[10].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[10].steps = 3; scene.clips[0].drumRhythm.lanes[10].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[10].mode = DrumRhythmMode::fit; scene.clips[0].drumRhythm.lanes[10].cycleBeats = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 12);
+            scene.clips[0].drumRhythm.lanes[12].enabled = true; scene.clips[0].drumRhythm.lanes[12].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[12].steps = 3; scene.clips[0].drumRhythm.lanes[12].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[12].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[12].cycleBeats = 4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[43] = 1;
+            scene.clips[0].bytes[68] = 1;
+            scene.clips[0].bytes[76] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[81] = 1;
+            scene.clips[0].bytes[82] = 2;
+            scene.clips[0].bytes[83] = 1;
+            scene.clips[0].bytes[84] = 2;
+            scene.clips[0].bytes[85] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[87] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[89] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[92] = 1;
+            scene.clips[0].bytes[93] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[95] = 1;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[135] = 1;
+            scene.clips[0].bytes[160] = 2;
+            scene.clips[0].bytes[161] = 1;
+            scene.clips[0].bytes[162] = 1;
+            scene.clips[0].bytes[192] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[299] = 1;
+            scene.clips[0].bytes[324] = 1;
+            scene.clips[0].bytes[332] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[337] = 1;
+            scene.clips[0].bytes[338] = 2;
+            scene.clips[0].bytes[339] = 1;
+            scene.clips[0].bytes[340] = 2;
+            scene.clips[0].bytes[341] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[343] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[345] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[348] = 1;
+            scene.clips[0].bytes[349] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[351] = 1;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[391] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[555] = 1;
+            scene.clips[0].bytes[580] = 1;
+            scene.clips[0].bytes[588] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[593] = 1;
+            scene.clips[0].bytes[594] = 2;
+            scene.clips[0].bytes[595] = 1;
+            scene.clips[0].bytes[596] = 2;
+            scene.clips[0].bytes[597] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[599] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[601] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[604] = 1;
+            scene.clips[0].bytes[605] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[607] = 1;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[647] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[811] = 1;
+            scene.clips[0].bytes[836] = 1;
+            scene.clips[0].bytes[844] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[849] = 1;
+            scene.clips[0].bytes[850] = 2;
+            scene.clips[0].bytes[851] = 1;
+            scene.clips[0].bytes[852] = 2;
+            scene.clips[0].bytes[853] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[855] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[857] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[860] = 1;
+            scene.clips[0].bytes[861] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[863] = 1;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[903] = 1;
+            scene.clips[0].bytes[908] = 1;
+            scene.clips[0].bytes[910] = 2;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "ROTOR DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 10);
+            scene.clips[0].drumRhythm.lanes[10].enabled = true; scene.clips[0].drumRhythm.lanes[10].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[10].steps = 3; scene.clips[0].drumRhythm.lanes[10].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[10].mode = DrumRhythmMode::fit; scene.clips[0].drumRhythm.lanes[10].cycleBeats = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 12);
+            scene.clips[0].drumRhythm.lanes[12].enabled = true; scene.clips[0].drumRhythm.lanes[12].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[12].steps = 3; scene.clips[0].drumRhythm.lanes[12].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[12].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[12].cycleBeats = 4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[4] = 1;
+            scene.clips[0].bytes[8] = 1;
+            scene.clips[0].bytes[12] = 1;
+            scene.clips[0].bytes[43] = 1;
+            scene.clips[0].bytes[68] = 1;
+            scene.clips[0].bytes[76] = 1;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[81] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[83] = 2;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[85] = 2;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[87] = 1;
+            scene.clips[0].bytes[88] = 1;
+            scene.clips[0].bytes[89] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[91] = 1;
+            scene.clips[0].bytes[92] = 1;
+            scene.clips[0].bytes[93] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[95] = 1;
+            scene.clips[0].bytes[106] = 1;
+            scene.clips[0].bytes[135] = 1;
+            scene.clips[0].bytes[160] = 2;
+            scene.clips[0].bytes[161] = 1;
+            scene.clips[0].bytes[162] = 1;
+            scene.clips[0].bytes[192] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[260] = 1;
+            scene.clips[0].bytes[264] = 1;
+            scene.clips[0].bytes[268] = 1;
+            scene.clips[0].bytes[299] = 1;
+            scene.clips[0].bytes[324] = 1;
+            scene.clips[0].bytes[332] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[337] = 1;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[339] = 2;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[341] = 2;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[343] = 1;
+            scene.clips[0].bytes[344] = 1;
+            scene.clips[0].bytes[345] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[347] = 1;
+            scene.clips[0].bytes[348] = 1;
+            scene.clips[0].bytes[349] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[351] = 1;
+            scene.clips[0].bytes[362] = 1;
+            scene.clips[0].bytes[391] = 1;
+            scene.clips[0].bytes[396] = 1;
+            scene.clips[0].bytes[398] = 2;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[516] = 1;
+            scene.clips[0].bytes[520] = 1;
+            scene.clips[0].bytes[524] = 1;
+            scene.clips[0].bytes[555] = 1;
+            scene.clips[0].bytes[580] = 1;
+            scene.clips[0].bytes[588] = 1;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[593] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[595] = 2;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[597] = 2;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[599] = 1;
+            scene.clips[0].bytes[600] = 1;
+            scene.clips[0].bytes[601] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[603] = 1;
+            scene.clips[0].bytes[604] = 1;
+            scene.clips[0].bytes[605] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[607] = 1;
+            scene.clips[0].bytes[618] = 1;
+            scene.clips[0].bytes[647] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[772] = 1;
+            scene.clips[0].bytes[776] = 1;
+            scene.clips[0].bytes[780] = 1;
+            scene.clips[0].bytes[811] = 1;
+            scene.clips[0].bytes[836] = 1;
+            scene.clips[0].bytes[844] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[849] = 1;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[851] = 2;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[853] = 2;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[855] = 1;
+            scene.clips[0].bytes[856] = 1;
+            scene.clips[0].bytes[857] = 1;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[859] = 1;
+            scene.clips[0].bytes[860] = 1;
+            scene.clips[0].bytes[861] = 1;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[863] = 1;
+            scene.clips[0].bytes[874] = 1;
+            scene.clips[0].bytes[903] = 1;
+            scene.clips[0].bytes[908] = 1;
+            scene.clips[0].bytes[910] = 2;
+        }
+        }
+        if (p.name == "NIGHT BUS") {
+        {
+            auto& scene = p.session.scenes[0];
+            scene.clips[0] = { "BUS INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 20;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 8;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 10;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[858] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "BUS BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 20;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 8;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 10;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[3] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 2;
+            scene.clips[0].bytes[80] = 2;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[103] = 1;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[259] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[300] = 2;
+            scene.clips[0].bytes[336] = 2;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[359] = 1;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[515] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 2;
+            scene.clips[0].bytes[592] = 2;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[615] = 1;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[771] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[812] = 1;
+            scene.clips[0].bytes[813] = 1;
+            scene.clips[0].bytes[814] = 1;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[848] = 2;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[871] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "BUS DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 20;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 8;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 10;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[3] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 2;
+            scene.clips[0].bytes[80] = 2;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[103] = 1;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[259] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[300] = 2;
+            scene.clips[0].bytes[336] = 2;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[359] = 1;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[515] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 2;
+            scene.clips[0].bytes[592] = 2;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[615] = 1;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[771] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[810] = 1;
+            scene.clips[0].bytes[812] = 2;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[845] = 1;
+            scene.clips[0].bytes[848] = 2;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[871] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "BUS DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 20;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 8;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 10;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[3] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 2;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[94] = 2;
+            scene.clips[0].bytes[103] = 1;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[259] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[298] = 1;
+            scene.clips[0].bytes[300] = 2;
+            scene.clips[0].bytes[303] = 2;
+            scene.clips[0].bytes[333] = 1;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[350] = 2;
+            scene.clips[0].bytes[359] = 1;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[515] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 2;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[606] = 2;
+            scene.clips[0].bytes[615] = 1;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[771] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[810] = 1;
+            scene.clips[0].bytes[812] = 2;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[845] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[862] = 2;
+            scene.clips[0].bytes[871] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[5];
+            scene.clips[0] = { "BUS TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 20;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[10] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[26] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[42] = 8;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 6;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[58] = 8;
+            scene.clips[0].drumConfiguredLanes |= (1u << 6);
+            scene.clips[0].drumRhythm.lanes[6].enabled = false; scene.clips[0].drumRhythm.lanes[6].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[6].steps = 16; scene.clips[0].drumRhythm.lanes[6].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[6].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[6].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[6].micro = true; scene.clips[0].drumRhythm.lanes[6].delayMs = 10;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[907] = 1;
+        }
+        }
+        if (p.name == "CRACKED LENS") {
+        {
+            auto& scene = p.session.scenes[0];
+            scene.clips[0] = { "LENS INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 16;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[811] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[862] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "LENS BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 16;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[3] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[44] = 2;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 2;
+            scene.clips[0].bytes[103] = 1;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[259] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[300] = 2;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 2;
+            scene.clips[0].bytes[359] = 1;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[515] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[556] = 2;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 2;
+            scene.clips[0].bytes[615] = 1;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[771] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[812] = 1;
+            scene.clips[0].bytes[813] = 1;
+            scene.clips[0].bytes[814] = 1;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 2;
+            scene.clips[0].bytes[871] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "LENS DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 16;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = true; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 5; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::fit; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 8;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[3] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[43] = 1;
+            scene.clips[0].bytes[44] = 2;
+            scene.clips[0].bytes[80] = 1;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 2;
+            scene.clips[0].bytes[103] = 1;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[144] = 1;
+            scene.clips[0].bytes[146] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[259] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[299] = 1;
+            scene.clips[0].bytes[300] = 2;
+            scene.clips[0].bytes[336] = 1;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 2;
+            scene.clips[0].bytes[359] = 1;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[515] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[555] = 1;
+            scene.clips[0].bytes[556] = 2;
+            scene.clips[0].bytes[592] = 1;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 2;
+            scene.clips[0].bytes[615] = 1;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[771] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[810] = 1;
+            scene.clips[0].bytes[811] = 1;
+            scene.clips[0].bytes[812] = 2;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[845] = 1;
+            scene.clips[0].bytes[848] = 1;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 2;
+            scene.clips[0].bytes[871] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "LENS DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 16;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = true; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 5; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::fit; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 8;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[3] = 1;
+            scene.clips[0].bytes[10] = 1;
+            scene.clips[0].bytes[36] = 1;
+            scene.clips[0].bytes[43] = 1;
+            scene.clips[0].bytes[44] = 2;
+            scene.clips[0].bytes[80] = 2;
+            scene.clips[0].bytes[84] = 1;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[90] = 2;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[103] = 1;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[144] = 1;
+            scene.clips[0].bytes[146] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[259] = 1;
+            scene.clips[0].bytes[266] = 1;
+            scene.clips[0].bytes[292] = 1;
+            scene.clips[0].bytes[298] = 1;
+            scene.clips[0].bytes[299] = 1;
+            scene.clips[0].bytes[300] = 2;
+            scene.clips[0].bytes[303] = 2;
+            scene.clips[0].bytes[333] = 1;
+            scene.clips[0].bytes[336] = 2;
+            scene.clips[0].bytes[340] = 1;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[346] = 2;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[359] = 1;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[515] = 1;
+            scene.clips[0].bytes[522] = 1;
+            scene.clips[0].bytes[548] = 1;
+            scene.clips[0].bytes[555] = 1;
+            scene.clips[0].bytes[556] = 2;
+            scene.clips[0].bytes[592] = 2;
+            scene.clips[0].bytes[596] = 1;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[602] = 2;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[615] = 1;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[771] = 1;
+            scene.clips[0].bytes[778] = 1;
+            scene.clips[0].bytes[804] = 1;
+            scene.clips[0].bytes[810] = 1;
+            scene.clips[0].bytes[811] = 1;
+            scene.clips[0].bytes[812] = 2;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[845] = 1;
+            scene.clips[0].bytes[848] = 2;
+            scene.clips[0].bytes[852] = 1;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[858] = 2;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[871] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[5];
+            scene.clips[0] = { "LENS TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 2);
+            scene.clips[0].drumRhythm.lanes[2].enabled = false; scene.clips[0].drumRhythm.lanes[2].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[2].steps = 16; scene.clips[0].drumRhythm.lanes[2].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[2].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[2].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[2].micro = true; scene.clips[0].drumRhythm.lanes[2].delayMs = 16;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 5;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = -4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 7;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = -4;
+            scene.clips[0].bytes[0] = 2;
+            scene.clips[0].bytes[139] = 1;
+            scene.clips[0].bytes[256] = 2;
+            scene.clips[0].bytes[395] = 1;
+            scene.clips[0].bytes[512] = 2;
+            scene.clips[0].bytes[651] = 1;
+            scene.clips[0].bytes[768] = 2;
+            scene.clips[0].bytes[811] = 1;
+            scene.clips[0].bytes[907] = 1;
+        }
+        }
+        if (p.name == "KING STEPPER") {
+        {
+            auto& scene = p.session.scenes[0];
+            scene.clips[0] = { "STEPPER INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 10;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = false; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 16; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[9].micro = true; scene.clips[0].drumRhythm.lanes[9].delayMs = 8;
+            scene.clips[0].bytes[8] = 2;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[264] = 2;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[520] = 2;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[776] = 2;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[862] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[1];
+            scene.clips[0] = { "STEPPER BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 10;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = false; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 16; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[9].micro = true; scene.clips[0].drumRhythm.lanes[9].delayMs = 8;
+            scene.clips[0].bytes[8] = 2;
+            scene.clips[0].bytes[40] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 2;
+            scene.clips[0].bytes[108] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[155] = 1;
+            scene.clips[0].bytes[264] = 2;
+            scene.clips[0].bytes[296] = 1;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 2;
+            scene.clips[0].bytes[364] = 1;
+            scene.clips[0].bytes[403] = 1;
+            scene.clips[0].bytes[411] = 1;
+            scene.clips[0].bytes[520] = 2;
+            scene.clips[0].bytes[552] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 2;
+            scene.clips[0].bytes[620] = 1;
+            scene.clips[0].bytes[659] = 1;
+            scene.clips[0].bytes[667] = 1;
+            scene.clips[0].bytes[776] = 2;
+            scene.clips[0].bytes[808] = 1;
+            scene.clips[0].bytes[812] = 1;
+            scene.clips[0].bytes[813] = 1;
+            scene.clips[0].bytes[814] = 1;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 2;
+            scene.clips[0].bytes[876] = 1;
+            scene.clips[0].bytes[915] = 1;
+            scene.clips[0].bytes[923] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[2];
+            scene.clips[0] = { "STEPPER DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 10;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = false; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 16; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[9].micro = true; scene.clips[0].drumRhythm.lanes[9].delayMs = 8;
+            scene.clips[0].bytes[8] = 2;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[40] = 1;
+            scene.clips[0].bytes[82] = 1;
+            scene.clips[0].bytes[86] = 2;
+            scene.clips[0].bytes[90] = 1;
+            scene.clips[0].bytes[94] = 2;
+            scene.clips[0].bytes[108] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[155] = 1;
+            scene.clips[0].bytes[264] = 2;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[296] = 1;
+            scene.clips[0].bytes[338] = 1;
+            scene.clips[0].bytes[342] = 2;
+            scene.clips[0].bytes[346] = 1;
+            scene.clips[0].bytes[350] = 2;
+            scene.clips[0].bytes[364] = 1;
+            scene.clips[0].bytes[403] = 1;
+            scene.clips[0].bytes[411] = 1;
+            scene.clips[0].bytes[520] = 2;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[552] = 1;
+            scene.clips[0].bytes[594] = 1;
+            scene.clips[0].bytes[598] = 2;
+            scene.clips[0].bytes[602] = 1;
+            scene.clips[0].bytes[606] = 2;
+            scene.clips[0].bytes[620] = 1;
+            scene.clips[0].bytes[659] = 1;
+            scene.clips[0].bytes[667] = 1;
+            scene.clips[0].bytes[776] = 2;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[808] = 1;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[850] = 1;
+            scene.clips[0].bytes[854] = 2;
+            scene.clips[0].bytes[858] = 1;
+            scene.clips[0].bytes[862] = 2;
+            scene.clips[0].bytes[876] = 1;
+            scene.clips[0].bytes[909] = 1;
+            scene.clips[0].bytes[915] = 1;
+            scene.clips[0].bytes[923] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[3];
+            scene.clips[0] = { "STEPPER DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 10;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = false; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 16; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[9].micro = true; scene.clips[0].drumRhythm.lanes[9].delayMs = 8;
+            scene.clips[0].bytes[8] = 2;
+            scene.clips[0].bytes[14] = 1;
+            scene.clips[0].bytes[40] = 1;
+            scene.clips[0].bytes[82] = 2;
+            scene.clips[0].bytes[86] = 1;
+            scene.clips[0].bytes[90] = 2;
+            scene.clips[0].bytes[94] = 1;
+            scene.clips[0].bytes[108] = 1;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[155] = 1;
+            scene.clips[0].bytes[264] = 2;
+            scene.clips[0].bytes[270] = 1;
+            scene.clips[0].bytes[296] = 1;
+            scene.clips[0].bytes[303] = 2;
+            scene.clips[0].bytes[338] = 2;
+            scene.clips[0].bytes[342] = 1;
+            scene.clips[0].bytes[346] = 2;
+            scene.clips[0].bytes[350] = 1;
+            scene.clips[0].bytes[364] = 1;
+            scene.clips[0].bytes[397] = 1;
+            scene.clips[0].bytes[403] = 1;
+            scene.clips[0].bytes[411] = 1;
+            scene.clips[0].bytes[520] = 2;
+            scene.clips[0].bytes[526] = 1;
+            scene.clips[0].bytes[552] = 1;
+            scene.clips[0].bytes[594] = 2;
+            scene.clips[0].bytes[598] = 1;
+            scene.clips[0].bytes[602] = 2;
+            scene.clips[0].bytes[606] = 1;
+            scene.clips[0].bytes[620] = 1;
+            scene.clips[0].bytes[659] = 1;
+            scene.clips[0].bytes[667] = 1;
+            scene.clips[0].bytes[776] = 2;
+            scene.clips[0].bytes[782] = 1;
+            scene.clips[0].bytes[808] = 1;
+            scene.clips[0].bytes[815] = 2;
+            scene.clips[0].bytes[850] = 2;
+            scene.clips[0].bytes[854] = 1;
+            scene.clips[0].bytes[858] = 2;
+            scene.clips[0].bytes[862] = 1;
+            scene.clips[0].bytes[876] = 1;
+            scene.clips[0].bytes[909] = 1;
+            scene.clips[0].bytes[915] = 1;
+            scene.clips[0].bytes[923] = 1;
+        }
+        {
+            auto& scene = p.session.scenes[5];
+            scene.clips[0] = { "STEPPER TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
+            scene.clips[0].hasDrumRhythm = true;
+            scene.clips[0].drumConfiguredLanes |= (1u << 5);
+            scene.clips[0].drumRhythm.lanes[5].enabled = false; scene.clips[0].drumRhythm.lanes[5].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[5].steps = 16; scene.clips[0].drumRhythm.lanes[5].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[5].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[5].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[5].micro = true; scene.clips[0].drumRhythm.lanes[5].delayMs = 10;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[6] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[14] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[22] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[30] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[38] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[46] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[54] = 4;
+            scene.clips[0].drumRhythm.lanes[5].stepDelayMs[62] = 4;
+            scene.clips[0].drumConfiguredLanes |= (1u << 9);
+            scene.clips[0].drumRhythm.lanes[9].enabled = false; scene.clips[0].drumRhythm.lanes[9].sourceBar = 0;
+            scene.clips[0].drumRhythm.lanes[9].steps = 16; scene.clips[0].drumRhythm.lanes[9].rotation = 0;
+            scene.clips[0].drumRhythm.lanes[9].mode = DrumRhythmMode::grid; scene.clips[0].drumRhythm.lanes[9].cycleBeats = 4;
+            scene.clips[0].drumRhythm.lanes[9].micro = true; scene.clips[0].drumRhythm.lanes[9].delayMs = 8;
+            scene.clips[0].bytes[8] = 2;
+            scene.clips[0].bytes[147] = 1;
+            scene.clips[0].bytes[155] = 1;
+            scene.clips[0].bytes[264] = 2;
+            scene.clips[0].bytes[403] = 1;
+            scene.clips[0].bytes[411] = 1;
+            scene.clips[0].bytes[520] = 2;
+            scene.clips[0].bytes[659] = 1;
+            scene.clips[0].bytes[667] = 1;
+            scene.clips[0].bytes[776] = 2;
+            scene.clips[0].bytes[915] = 1;
+            scene.clips[0].bytes[923] = 1;
+        }
+        }
+    }
 }
 } // namespace fable

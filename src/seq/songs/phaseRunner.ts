@@ -2,7 +2,8 @@ import { soft808DubKit } from './dubKit';
 // PHASE RUNNER — F minor, 126 BPM. Bass-led dub with interlocking echoes.
 import { FACTORY_PATCHES, patchToState } from '../../bass/patches';
 import type { SessionPreset } from '../sessionPresets';
-import { notes, drums, wtPatch } from './score';
+import { notes, drums, wtPatch, feel, grid, rhythm, harmonize, type Harmony } from './score';
+import type { ClipDoc } from '../protocol';
 
 // The hook leans into beat two, then leaves beat three to the chord's echo.
 // F / Eb / C are its fingerprint; the last bar's G is a pickup, not a cadence.
@@ -47,6 +48,7 @@ const cross = drums('CHASSIS / LATERAL', {
   3:'....x.......X...|....x.......X...|....x.......X...|....x...........',
   6:'......x.........|..............x.|......x.........|..........x.....',
   8:'.............x..|.........x......|.............x..|...............x',
+  9:'x...............|................|................|................',
 });
 const suspension = drums('CHASSIS / SUSPENDED', {
   5:'..x.......x.....|......x.......x.|..x.......x.....|......x.........',
@@ -59,12 +61,31 @@ const secondWind = drums('CHASSIS / SECOND WIND', {
   3:'....x.......X...|....x.......X...|....x.......X...|....x......xX...',
   6:'......x.........|..............x.|......x.........|..............x.',
   8:'.............x..|................|.........x......|...............x',
+  9:'x..X............|................|................|................',
 });
 const coast = drums('CHASSIS / FREEWHEEL', {
   0:'X...x...x...x...|x...x...x...x...|x.......x.......|x...............',
   5:'..x...x...x...x.|..x...x...x.....|..x.......x.....|......x.........',
   3:'....x.......x...|............x...|................|................',
 });
+
+// Hats and clap sit a few ms behind the kick. In CROSSCURRENT a low tom
+// loops three sixteenths (GRID 3): dotted eighths against the four-bar grid,
+// the same pulse as the chord echo. SECOND WIND returns with it doubled to
+// six steps, accented every dotted quarter, and started later in the cycle.
+const RUN_FEEL = { 5: feel(5), 3: feel(7) };
+const TOM_THREE = { ...RUN_FEEL, 9: grid(3) };
+const TOM_SIX = { ...RUN_FEEL, 9: grid(6, 2) };
+
+// The scenes' harmony, as the arp chord track of the MOTOR, ECHO and RELAY
+// clips (ARP off). fm9 is a rootless Fm9, `suspended` an F7sus4, eb9 an Eb9.
+const FM9: Harmony = [[5, 'm9', 16]];
+const LOCKED: Harmony = [[5, 'm9', 8], [5, 'sus7', 4], [5, 'm9', 4]];
+const ACROSS: Harmony = [[5, 'm9', 4], [3, 'dom9', 4], [5, 'sus7', 4], [5, 'm9', 4]];
+const HANGING: Harmony = [[5, 'sus7', 8], [5, 'm9', 8]];
+const SHIFTED: Harmony = [[5, 'm9', 4], [5, 'sus7', 4], [5, 'm9', 8]];
+const harmony = (clips: (ClipDoc | null)[], h: Harmony) =>
+  clips.map((c, t) => c && t ? harmonize(t === 1 ? 'BL1' : 'WT1', c, 5, h) : c);
 
 export const PHASE_RUNNER: SessionPreset = {
   name:'PHASE RUNNER', family:'DUB TECHNO', variation:'AUTHORED', energy:4,
@@ -100,12 +121,12 @@ export const PHASE_RUNNER: SessionPreset = {
       }) },
     ],
     scenes: [
-      { name:'IGNITION', clips:[ignition,ignitionBass,firstChords,null] },
-      { name:'LOCKSTEP', clips:[lock,motorBass,lockChords,pulseA] },
-      { name:'CROSSCURRENT', clips:[cross,crossBass,crossChords,pulseB] },
-      { name:'SUSPENSION', clips:[suspension,suspendedBass,hangingChords,pulseBreak] },
-      { name:'SECOND WIND', clips:[secondWind,secondBass,secondChords,pulseReturn] },
-      { name:'COAST', clips:[coast,coastBass,lastChords,pulseOut] },
+      { name:'IGNITION', clips:harmony([rhythm(ignition, RUN_FEEL),ignitionBass,firstChords,null], FM9) },
+      { name:'LOCKSTEP', clips:harmony([rhythm(lock, RUN_FEEL),motorBass,lockChords,pulseA], LOCKED) },
+      { name:'CROSSCURRENT', clips:harmony([rhythm(cross, TOM_THREE),crossBass,crossChords,pulseB], ACROSS) },
+      { name:'SUSPENSION', clips:harmony([rhythm(suspension, RUN_FEEL),suspendedBass,hangingChords,pulseBreak], HANGING) },
+      { name:'SECOND WIND', clips:harmony([rhythm(secondWind, TOM_SIX),secondBass,secondChords,pulseReturn], SHIFTED) },
+      { name:'COAST', clips:harmony([rhythm(coast, RUN_FEEL),coastBass,lastChords,pulseOut], SHIFTED) },
     ],
   },
 };
