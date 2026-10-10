@@ -75,6 +75,64 @@ function rdH(d, off, im1, i0, i1, i2, f) {
   return ((c3 * f + c2) * f + c1) * f + y0;
 }
 
+// Band-limited square for the SUB oscillator. Mirrors subSquareTable() /
+// subSquareMip() / subSquareRead() in juce/source/dsp/Wavetables.{h,cpp}: odd
+// harmonics 1/k, coarsest mip first (mip m keeps harmonics 1..(1024>>m)), a
+// 4096-point cycle with 1 wrapped guard sample before and 2 after, read with
+// the same mip rule and cubic Hermite as the wavetable oscillators. Built once
+// per worklet scope (constructors call it), never on the audio thread.
+const SUBSQ_SIZE = 4096, SUBSQ_STRIDE = SUBSQ_SIZE + 3, SUBSQ_MIPS = 11;
+let subSquareTbl = null;
+function subSquareTable() {
+  if (subSquareTbl) return subSquareTbl;
+  const lut = new Float64Array(SUBSQ_SIZE), acc = new Float64Array(SUBSQ_SIZE);
+  for (let j = 0; j < SUBSQ_SIZE; j++) lut[j] = Math.sin(2 * Math.PI * j / SUBSQ_SIZE);
+  const out = new Float32Array(SUBSQ_MIPS * SUBSQ_STRIDE);
+  const coef = 4 / Math.PI;
+  let k = 1;
+  for (let m = SUBSQ_MIPS - 1; m >= 0; m--) {
+    const maxHarm = 1024 >> m;
+    for (; k <= maxHarm; k += 2) {
+      const inv = 1 / k;
+      for (let i = 0; i < SUBSQ_SIZE; i++) acc[i] += lut[(k * i) & (SUBSQ_SIZE - 1)] * inv;
+    }
+    const base = m * SUBSQ_STRIDE;
+    for (let i = -1; i < SUBSQ_SIZE + 2; i++)
+      out[base + i + 1] = acc[(i + SUBSQ_SIZE) & (SUBSQ_SIZE - 1)] * coef;
+  }
+  return (subSquareTbl = out);
+}
+// Mip for phase increment `inc` into the reusable `r` {off, offFine, blend}.
+function subSquareMip(r, inc) {
+  const mipF = Math.log2((inc * 1024) / 0.475);
+  let mip = 0; r.blend = 0;
+  if (mipF > 0) {
+    mip = Math.min(SUBSQ_MIPS - 1, Math.ceil(mipF));
+    const over = mipF - (mip - 1);
+    if (over < 0.07) r.blend = 1 - over / 0.07;
+  }
+  r.off = mip * SUBSQ_STRIDE;
+  r.offFine = (mip > 0 ? mip - 1 : 0) * SUBSQ_STRIDE;
+  return r;
+}
+function subSquareReadMip(t, off, ph) {
+  const p = ph * SUBSQ_SIZE;
+  const idx = p | 0;
+  const f = p - idx;
+  const q = off + idx;
+  const ym1 = t[q], y0 = t[q + 1], y1 = t[q + 2], y2 = t[q + 3];
+  const c1 = 0.5 * (y1 - ym1);
+  const c2 = ym1 - 2.5 * y0 + 2 * y1 - 0.5 * y2;
+  const c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+  return ((c3 * f + c2) * f + c1) * f + y0;
+}
+function subSquareRead(t, m, ph) {
+  const sc = subSquareReadMip(t, m.off, ph);
+  if (m.blend < 0.001) return sc;
+  return sc + m.blend * (subSquareReadMip(t, m.offFine, ph) - sc);
+}
+const SUBSQ_MIP = { off: 0, offFine: 0, blend: 0 };
+
 // ---------------------------------------------------------------------------
 // Master FX chain — JS port of juce/source/bass/dsp/BassFx.cpp and the shared
 // primitives in juce/source/dsp/Fx.{h,cpp}. BL-1 used to run this rack as a
@@ -1518,17 +1576,12 @@ class BassProcessor extends AudioWorkletProcessor {
     const square = (p['sub.shape'] | 0) === 1;
     let ph = this.subPhase;
     if (square) {
+      // Band-limited table read (mip chosen from the larger chunk increment).
+      const tbl = subSquareTable();
+      const mip = subSquareMip(SUBSQ_MIP, Math.max(inc0, inc1));
       for (let i = 0; i < n; i++) {
         const inc = inc0 + dInc * i;
-        let s = ph < 0.5 ? 1 : -1;
-        // polyBLEP on both sides of both edges — the post-edge residual alone
-        // is half the correction and half the alias suppression.
-        if (ph < inc) { const t = ph / inc; s += -(t * t) + 2 * t - 1; }
-        else if (ph > 1 - inc) { const t = (ph - 1) / inc; s += t * t + 2 * t + 1; }
-        const h = ph - 0.5;
-        if (h >= 0 && h < inc) { const t = h / inc; s -= -(t * t) + 2 * t - 1; }
-        else if (h < 0 && h > -inc) { const t = h / inc; s -= t * t + 2 * t + 1; }
-        const v = s * gain * 0.8;
+        const v = subSquareRead(tbl, mip, ph) * gain * 0.8;
         tmpL[off + i] += v; tmpR[off + i] += v;
         ph += inc; if (ph >= 1) ph -= 1;
       }

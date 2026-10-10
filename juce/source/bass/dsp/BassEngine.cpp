@@ -622,7 +622,7 @@ void BassEngine::renderOsc(float* tmpL, float* tmpR, int off, int n) {
     havePrev_ = true;
 }
 
-// js:324-354 — sine / polyblep-square sub, -1/-2 oct below the (un-tuned) note
+// js:324-354 — sine / band-limited-square (table) sub, -1/-2 oct below the (un-tuned) note
 void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double noteRootAbs) {
     double level = clampd(p_[BL_SUB_LEVEL], 0.0, 1.0);
     level *= level;

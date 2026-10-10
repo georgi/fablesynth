@@ -866,6 +866,48 @@ void DrumEngine::renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mo
     }
 }
 
+// Finding K1: band-limited decimation for the sample layer. Above 1 source
+// sample per output sample the read is a Kaiser-windowed sinc low-pass whose
+// width and cutoff scale with the read rate, so it removes what a pitched-up
+// one-shot would otherwise fold back below Nyquist. The prototype is unit
+// scale (-6 dB at 0.47 cycles per OUTPUT sample, transition 0.37..0.57, about
+// 70 dB of stopband), stretched by `ast` source samples per output sample and
+// read from a fixed table with linear interpolation. The table is built at
+// load time, so the audio thread neither allocates nor calls sin/exp.
+// src/drum/engine/worklet-drum.js builds the same prototype.
+static const int    DR_SINC_RES   = 256;     // table points per output sample
+static const int    DR_SINC_HALF  = 11;      // prototype half width, output samples
+static const double DR_SINC_CUT   = 0.47;    // cycles per output sample at -6 dB
+static const double DR_SINC_BETA  = 7.0;
+static const double DR_SINC_MAXAST = 5.8;    // wider kernels stop narrowing (<= 64 taps/side)
+static const double DR_SINC_BLEND = 1.05;    // ast where the Hermite read is fully replaced
+
+struct DrSincTable {
+    double t[DR_SINC_HALF * DR_SINC_RES + 2];
+    DrSincTable() {
+        auto i0 = [](double x) {
+            double sum = 1, term = 1;
+            for (int k = 1; k < 60; ++k) {
+                term *= (x / (2 * k)) * (x / (2 * k));
+                sum += term;
+                if (term < 1e-18 * sum) break;
+            }
+            return sum;
+        };
+        const double norm = i0(DR_SINC_BETA);
+        const int n = DR_SINC_HALF * DR_SINC_RES + 2;
+        for (int i = 0; i < n; ++i) {
+            const double x = (double)i / DR_SINC_RES;
+            const double a = 2.0 * DR_SINC_CUT * x;
+            const double sinc = a == 0 ? 1.0 : std::sin(kPi * a) / (kPi * a);
+            const double r = x / DR_SINC_HALF;
+            const double w = r >= 1.0 ? 0.0 : i0(DR_SINC_BETA * std::sqrt(1.0 - r * r)) / norm;
+            t[i] = 2.0 * DR_SINC_CUT * sinc * w;
+        }
+    }
+};
+static const DrSincTable kDrSinc;
+
 // One instance of the sample layer: a slot and region frozen at call time, so
 // the same read path serves both sides of the Finding J2 crossfade.
 struct DrumSampleRun {
@@ -950,9 +992,9 @@ static void runSampleLayer(const DrumSampleRun& c, double& pos, bool& done,
 // Raw PCM16 one-shot player. The legacy oscB parameter slots now select and
 // shape this layer, preserving saved automation and all later flat ids.
 //
-// Finding D4: cubic Hermite reads instead of linear, a Hann-weighted decimation
-// average as the anti-alias pre-filter whenever the read rate exceeds 1
-// source sample per output sample, DR_SAMPLE_FADE edge fades on an interior
+// Finding D4: cubic Hermite reads instead of linear, a band-limited sinc read
+// (Finding K1) whenever the read rate exceeds 1 source sample per output
+// sample, DR_SAMPLE_FADE edge fades on an interior
 // START/END and on the reverse stop, and the read rate ramped per sample the
 // way renderOsc ramps its increments (it used to be held for 16 samples, so the
 // pitch envelope staircased on this layer only).

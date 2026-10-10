@@ -111,7 +111,7 @@ describe('drum voice', () => {
     expect(cropped[48]).toBeGreaterThan(cropped[1]);
   });
 
-  it('blends the native Hann decimation window in continuously above rate one', () => {
+  it('blends the band-limited decimating read in continuously above rate one', () => {
     const p = defaultDrumParams(); p[pad(0, 'oscB.level')] = 1;
     const direct = boot(p);
     const data = Float32Array.from({ length: 512 }, (_, i) => Math.sin(i * 1.91) + .2 * Math.sin(i * .17));

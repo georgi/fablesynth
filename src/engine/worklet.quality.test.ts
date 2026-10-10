@@ -98,6 +98,53 @@ describe('WT-1 oscillator aliasing', () => {
   }
 });
 
+// Inharmonic energy 20 Hz - 16 kHz relative to the fundamental's lobe, in dB.
+// Blackman-Harris window (sidelobes < -92 dB); bins within 8 of a harmonic are
+// masked. Same metric as the native sub-square checks.
+function inharmonicDb(x: Float32Array, sampleRate: number, f0: number): number {
+  const n = x.length;
+  const w = blackmanHarris(n);
+  const re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) re[i] = x[i] * w[i];
+  fft(re, im, false);
+  const half = n >> 1, bin = sampleRate / n;
+  const harm = new Uint8Array(half);
+  for (let h = 1; h * f0 < sampleRate / 2; h++) {
+    const c = Math.round((h * f0) / bin);
+    for (let k = Math.max(0, c - 8); k <= Math.min(half - 1, c + 8); k++) harm[k] = 1;
+  }
+  let lobe = 0, inh = 0;
+  const c1 = Math.round(f0 / bin);
+  for (let k = Math.max(0, c1 - 8); k <= c1 + 8; k++) lobe += re[k] * re[k] + im[k] * im[k];
+  for (let k = Math.ceil(20 / bin); k < half && k * bin <= 16000; k++)
+    if (!harm[k]) inh += re[k] * re[k] + im[k] * im[k];
+  return 10 * Math.log10(Math.max(inh, 1e-30) / lobe);
+}
+
+describe('WT-1 square sub aliasing', () => {
+  // The sub's square used to be a naive square with a 2-point polyBLEP, which
+  // aliased at -51 dB (262 Hz) to -44 dB (2 kHz) at 48 kHz. It now reads a
+  // band-limited mip-mapped table, which sits at the metric floor (< -85 dB).
+  const SUB_SQUARE: Partial<ParamValues> = {
+    ...FX_OFF,
+    'oscA.on': 1, 'oscA.level': 0, 'oscB.on': 0, 'noise.on': 0,
+    'sub.on': 1, 'sub.shape': 1, 'sub.oct': -1, 'sub.level': 1,
+    'filter.on': 0, 'filter2.on': 0,
+    'env1.a': 0.001, 'env1.d': 0.005, 'env1.s': 1, 'env1.r': 0.1,
+  };
+  for (const [note, sr] of [[72, 48000], [108, 48000], [108, 44100], [108, 96000]] as const) {
+    const sub = note - 12;
+    it(`keeps inharmonic energy under -75 dB at a ${Math.round(440 * 2 ** ((sub - 69) / 12))} Hz sub, ${sr} Hz`, () => {
+      const h = bootWt(SUB_SQUARE, sr);
+      h.send({ t: 'on', n: note, v: 1 });
+      const n = 32768;
+      const { L } = h.render(Math.ceil((n + 4096) / 128));
+      const f0 = 440 * 2 ** ((sub - 69) / 12);
+      expect(inharmonicDb(L.subarray(4096, 4096 + n) as Float32Array, sr, f0)).toBeLessThan(-75);
+    });
+  }
+});
+
 // Same patch, same musical result, different host conditions. Both of these
 // used to change the sound: fixed per-block smoothing coefficients made the
 // engine rate-dependent, and block-rate events/holds made it block-size

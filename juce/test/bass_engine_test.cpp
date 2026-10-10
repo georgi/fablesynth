@@ -965,5 +965,75 @@ int main() {
     }
 
     printf("%s\n", g_fail == 0 ? "BASS ENGINE CHECKS PASSED" : "BASS ENGINE CHECKS FAILED");
+    printf("\n== BL-1 square sub is band-limited (table read, no polyBLEP alias) ==\n");
+    {
+        // Square sub alone: osc off, filter open, drive/unison/LFO/glide off.
+        // The old naive square + 2-point polyBLEP measured -51 dB (262 Hz) and
+        // -44 dB (2 kHz) at 48 kHz; the mip-mapped table sits at the metric
+        // floor (about -88 dB).
+        const auto tables = makeTables();
+        struct Case { int semi; double sr; };
+        for (Case c : {Case{36, 48000.0}, Case{72, 48000.0}, Case{72, 44100.0}, Case{72, 96000.0}}) {
+            BassEngine e; e.prepare(c.sr); e.setTables(tables);
+            auto p = defaultBassParams();
+            p[BL_OSC_LEVEL] = 0; p[BL_SUB_LEVEL] = 1; p[BL_SUB_SHAPE] = 1; p[BL_SUB_OCT] = -1;
+            p[BL_FLT_TYPE] = 0; p[BL_FLT_CUT] = 20000; p[BL_FLT_RES] = 0; p[BL_FLT_DRIVE] = 0;
+            p[BL_FLT_ENV] = 0; p[BL_OSC_UNISON] = 1; p[BL_LFO_DEPTH] = 0;
+            p[BL_AENV_ATT] = 0.001f; p[BL_AENV_SUS] = 1;
+            e.setParams(p); e.snapParams();
+            const int N = 32768, skip = 4096;
+            std::vector<float> L((size_t)(N + skip)), R((size_t)(N + skip));
+            e.keyOn(c.semi, 1.0f, false);
+            for (int at = 0; at < N + skip; at += 64) e.render(L.data() + at, R.data() + at, 64);
+            const double f0 = 440.0 * std::pow(2.0, (36 + c.semi - 12 - 69) / 12.0);
+            const double db = inharmonicDb(L.data() + skip, N, c.sr, f0);
+            check(db < -75.0, "square sub inharmonic < -75 dB @ " + std::to_string((int)std::lround(f0))
+                  + " Hz, " + std::to_string((int)c.sr) + " Hz", num(db) + " dB");
+        }
+    }
+
+    printf("\n== BL-1 drive: 2x oversampled saturator, aliasing and dry/wet alignment ==\n");
+    {
+        const auto tables = makeTables();
+        auto renderDrive = [&](double sr, int semi, int ftype, float cut, float drive, float level, int uni) {
+            BassEngine e; e.prepare(sr); e.setTables(tables);
+            auto p = defaultBassParams();
+            p[BL_OSC_TABLE] = 0; p[BL_OSC_POS] = 0.8f; p[BL_OSC_LEVEL] = level; p[BL_SUB_LEVEL] = 0;
+            p[BL_OSC_UNISON] = (float)uni; p[BL_OSC_SPREAD] = 0; p[BL_OSC_DETUNE] = 0;
+            p[BL_FLT_TYPE] = (float)ftype; p[BL_FLT_CUT] = cut; p[BL_FLT_RES] = 0.3f;
+            p[BL_FLT_DRIVE] = drive; p[BL_FLT_ENV] = 0; p[BL_FLT_TRACK] = 0; p[BL_LFO_DEPTH] = 0;
+            p[BL_AENV_ATT] = 0.001f; p[BL_AENV_SUS] = 1;
+            e.setParams(p); e.snapParams();
+            const int N = 32768, skip = 4096;
+            std::vector<float> L((size_t)(N + skip)), R((size_t)(N + skip));
+            e.keyOn(semi, 1.0f, false);
+            for (int at = 0; at < N + skip; at += 64) e.render(L.data() + at, R.data() + at, 64);
+            return std::vector<float>(L.begin() + skip, L.end());
+        };
+        // Full drive at 523 Hz: the folded products stay far below the old
+        // first-order ADAA at the base rate (about -58 dB).
+        struct Case { double sr; int ftype; float cut; int uni; double limit; const char* name; };
+        for (Case c : {Case{48000.0, 0, 20000.0f, 1, -80.0, "LP12 open"}, Case{48000.0, 3, 300.0f, 1, -80.0, "HP12"},
+                       Case{44100.0, 0, 20000.0f, 1, -76.0, "LP12 open"}, Case{44100.0, 3, 300.0f, 1, -76.0, "HP12"},
+                       Case{48000.0, 0, 20000.0f, 5, -68.0, "LP12 open, 5 coherent unison voices"}}) {
+            auto y = renderDrive(c.sr, 36, c.ftype, c.cut, 1.0f, 1.0f, c.uni);
+            const double f0 = 440.0 * std::pow(2.0, (36 + 36 - 69) / 12.0);
+            const double db = driveos_check::inharmonicDb(y.data(), (int)y.size(), c.sr, f0);
+            check(db < c.limit, std::string("drive 1 alias < ") + std::to_string((int)c.limit) + " dB, " + c.name
+                  + " @ " + std::to_string((int)c.sr) + " Hz", num(db) + " dB");
+        }
+        // Dry/wet alignment: at a level where tanh is linear, a half-mixed
+        // drive (0.05 = mix 0.5) is a pure gain on the drive-0 signal. A dry
+        // path that missed the oversampler delay would notch every 4 kHz.
+        for (double sr : {48000.0, 44100.0}) {
+            auto off = renderDrive(sr, 12, 0, 20000.0f, 0.0f, 0.02f, 1);
+            auto on = renderDrive(sr, 12, 0, 20000.0f, 0.05f, 0.02f, 1);
+            const double f0 = 440.0 * std::pow(2.0, (36 + 12 - 69) / 12.0);
+            const double rip = driveos_check::gainRippleDb(off.data(), on.data(), (int)off.size(), sr, f0);
+            check(rip < 0.1, "drive mix 0.5 adds no comb filtering @ " + std::to_string((int)sr) + " Hz",
+                  num(rip) + " dB residual");
+        }
+    }
+
     return g_fail == 0 ? 0 : 1;
 }

@@ -280,7 +280,132 @@ static void checkDrumLongDelayGate() {
     }
 }
 
+// Finding K1: a pitched-up one-shot must not fold energy back below 16 kHz.
+// The pad's sample layer (envelope held flat, device FX off) is compared with
+// an ideal band-limited resampler of the source PCM (Kaiser sinc, 32 zero
+// crossings per side, cutoff 0.4375 of the output rate) times the same linear
+// envelope. Per-bin least-squares gain removes the chain's own linear response,
+// so what remains is energy uncorrelated with the ideal signal: alias.
+static double besselI0(double x) {
+    double sum = 1, term = 1;
+    for (int k = 1; k < 80; ++k) {
+        term *= (x / (2 * k)) * (x / (2 * k));
+        sum += term;
+        if (term < 1e-18 * sum) break;
+    }
+    return sum;
+}
+static std::vector<float> idealOneShot(const DrumOneShot& s, double semis, double sr, int n, int* validLen) {
+    const int last = s.length - 1;
+    const double ast = ((double)s.sampleRate / sr) * std::pow(2.0, semis / 12.0);
+    const double fc = std::min(0.5, 0.4375 / ast), beta = 9.0;
+    const int zc = 32;
+    const double half = zc / (2 * fc), norm = besselI0(beta);
+    std::vector<float> y((size_t)n, 0.0f);
+    int valid = 0;
+    for (int m = 0; m < n; ++m) {
+        const double pos = m * ast;
+        if (pos > last) break;
+        valid = m + 1;
+        double acc = 0, ws = 0;
+        for (int k = (int)std::ceil(pos - half); k <= (int)std::floor(pos + half); ++k) {
+            const double x = (k - pos) * 2 * fc, r = x / zc;
+            if (std::fabs(r) >= 1) continue;
+            const double g = (x == 0 ? 1.0 : std::sin(M_PI * x) / (M_PI * x)) *
+                             besselI0(beta * std::sqrt(1 - r * r)) / norm;
+            acc += g * s.data[std::max(0, std::min(last, k))];
+            ws += g;
+        }
+        y[(size_t)m] = (float)(acc / ws / 32768.0);
+    }
+    *validLen = valid;
+    return y;
+}
+// Worst band energy (250 Hz..16 kHz) and the 250 Hz..1 kHz band of the
+// gain-compensated residual, both in dB re the reference's total energy.
+static void aliasBandsDb(const std::vector<float>& x, const std::vector<float>& ref, double sr,
+                         double& worst, double& low) {
+    const int N = 1024, SB = 2, NS = N / 2 / SB;
+    static const double E[] = {250, 1000, 2000, 4000, 8000, 12000, 16000};
+    std::vector<double> xrR(NS, 0), xrI(NS, 0), rr(NS, 0), xx(NS, 0);
+    double total = 1e-30;
+    const size_t L = std::min(x.size(), ref.size());
+    for (size_t s = 256; s + N <= L - 256; s += N / 2) {
+        std::vector<double> a(N), ai(N, 0), b(N), bi(N, 0);
+        for (int i = 0; i < N; ++i) {
+            const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1));
+            a[i] = x[s + i] * w;
+            b[i] = ref[s + i] * w;
+        }
+        fft(a.data(), ai.data(), N, false);
+        fft(b.data(), bi.data(), N, false);
+        for (int k = 1; k < N / 2; ++k) {
+            const int q = k / SB;
+            xrR[q] += a[k] * b[k] + ai[k] * bi[k];
+            xrI[q] += ai[k] * b[k] - a[k] * bi[k];
+            rr[q] += b[k] * b[k] + bi[k] * bi[k];
+            xx[q] += a[k] * a[k] + ai[k] * ai[k];
+            total += b[k] * b[k] + bi[k] * bi[k];
+        }
+    }
+    double band[6] = {0, 0, 0, 0, 0, 0};
+    for (int q = 0; q < NS; ++q) {
+        const double f = (q * SB + SB / 2) * sr / N;
+        const double res = std::max(0.0, xx[q] - (xrR[q] * xrR[q] + xrI[q] * xrI[q]) / std::max(rr[q], 1e-30));
+        for (int k = 0; k < 6; ++k)
+            if (f >= E[k] && f < E[k + 1]) band[k] += res;
+    }
+    worst = -999;
+    for (int k = 0; k < 6; ++k) worst = std::max(worst, 10 * std::log10(std::max(band[k], 1e-30) / total));
+    low = 10 * std::log10(std::max(band[0], 1e-30) / total);
+}
+static void checkDrumSampleAlias() {
+    const auto& bank = drumOneShots();
+    const int idx = 2;   // 808CH: a bright closed hat, the worst fold-back case
+    check(bank.size() > (size_t)idx && std::string(bank[(size_t)idx].name) == "808CH",
+          "one-shot 2 is the 808CH hat");
+    for (double sr : {44100.0, 48000.0}) {
+        for (double semis : {7.0, 12.0}) {
+            auto p = defaultDrumParams();
+            auto S = [&](int f, float v) { p[(size_t)dpid(0, f)] = v; };
+            S(DP_OSCA_LEVEL, 0); S(DP_NOISE_LEVEL, 0); S(DP_RING_MIX, 0); S(DP_FLT_ON, 0);
+            S(DP_PENV_AMT, 0); S(DP_OSCB_TABLE, (float)idx); S(DP_OSCB_POS, 0);
+            S(DP_OSCB_TUNE, (float)semis); S(DP_OSCB_FINE, 0); S(DP_OSCB_LEVEL, 1);
+            S(DP_OSCB_DETUNE, 1); S(DP_OSCB_PHASE, 0); S(DP_LVL, 1);
+            S(DP_AENV_ATT, 0); S(DP_AENV_HOLD, 0.25f); S(DP_AENV_DEC, 4.0f); S(DP_AENV_CURVE, 0);
+            for (int s = 0; s < 4; ++s) S(DP_MOD1_SRC + 3 * s, 0);
+            for (int f : {DP_FXDRIVE_ON, DP_FXCOMP_ON, DP_FXCHORUS_ON, DP_FXDELAY_ON,
+                          DP_FXREVERB_ON, DP_FXOTT_ON}) {
+                S(f, 0);
+                p[(size_t)dgfx(f)] = 0;
+            }
+            DrumEngine e;
+            e.prepare(sr);
+            e.setTables(allTables());
+            e.setParams(p);
+            e.trigger(0, 1.0f);
+            const int n = (int)(sr * 0.3);
+            const auto out = renderMain(e, n);
+            int valid = 0;
+            auto ref = idealOneShot(bank[(size_t)idx], semis, sr, n, &valid);
+            for (int m = 0; m < n; ++m) {   // the same linear envelope, hold then ramp
+                const double td = m - 1.0 - 0.25 * sr;
+                ref[(size_t)m] *= (float)(m < 1 ? m : (td < 0 ? 1.0 : 1.0 - td / (4.0 * sr)));
+            }
+            const int cap = std::min(valid, n);
+            double worst = 0, low = 0;
+            aliasBandsDb(std::vector<float>(out.begin(), out.begin() + cap),
+                         std::vector<float>(ref.begin(), ref.begin() + cap), sr, worst, low);
+            const std::string tag = std::to_string((int)sr) + " Hz +" + std::to_string((int)semis) + " st";
+            check(worst < -65.0, "808CH " + tag + " alias below -65 dB, 250 Hz-16 kHz", std::to_string(worst));
+            check(low < -65.0, "808CH " + tag + " alias below -65 dB, 250 Hz-1 kHz", std::to_string(low));
+        }
+    }
+}
+
 int main() {
+    checkDrumSampleAlias();
+    checkDriveOversampling();
     checkDrumTableLifetime();
     checkDrumMipSafety();
     checkDrumLongDelayGate();

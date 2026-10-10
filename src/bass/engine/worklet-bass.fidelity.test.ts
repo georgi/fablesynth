@@ -5,7 +5,7 @@
 // filter-type state clear (B8), plus sample-rate invariance and a seeded RNG.
 import { describe, it, expect } from 'vitest';
 import { makeBassProcessor, type BassHarness } from './bassHarness';
-import { generateTables } from '../../engine/wavetables';
+import { generateTables, fft } from '../../engine/wavetables';
 import { defaultBassParams } from '../params';
 import { makeEmptyPatterns, setStep, stepDurSamples } from '../seq';
 import type { ParamValues } from '../../params';
@@ -264,6 +264,71 @@ describe('BL-1 sub oscillator (B4)', () => {
     // One-sided polyBLEP measures -27 dB on this note.
     expect(10 * Math.log10(alias / sig)).toBeLessThan(-38);
   }, 60000);
+});
+
+
+// Inharmonic energy 20 Hz - 16 kHz relative to the fundamental's lobe, in dB.
+// Blackman-Harris window (sidelobes < -92 dB); bins within 8 of a harmonic are
+// masked. Same metric as the native sub-square checks.
+function inharmonicDb(x: Float32Array, sampleRate: number, f0: number): number {
+  const n = x.length;
+  const w = bhWindow(n);
+  const re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) re[i] = x[i] * w[i];
+  fft(re, im, false);
+  const half = n >> 1, bin = sampleRate / n;
+  const harm = new Uint8Array(half);
+  for (let h = 1; h * f0 < sampleRate / 2; h++) {
+    const c = Math.round((h * f0) / bin);
+    for (let k = Math.max(0, c - 8); k <= Math.min(half - 1, c + 8); k++) harm[k] = 1;
+  }
+  let lobe = 0, inh = 0;
+  const c1 = Math.round(f0 / bin);
+  for (let k = Math.max(0, c1 - 8); k <= c1 + 8; k++) lobe += re[k] * re[k] + im[k] * im[k];
+  for (let k = Math.ceil(20 / bin); k < half && k * bin <= 16000; k++)
+    if (!harm[k]) inh += re[k] * re[k] + im[k] * im[k];
+  return 10 * Math.log10(Math.max(inh, 1e-30) / lobe);
+}
+
+function bhWindow(n: number): Float64Array {
+  const w = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = (2 * Math.PI * i) / (n - 1);
+    w[i] = 0.35875 - 0.48829 * Math.cos(t) + 0.14128 * Math.cos(2 * t) - 0.01168 * Math.cos(3 * t);
+  }
+  return w;
+}
+
+describe('BL-1 square sub is band-limited', () => {
+  // Naive square + 2-point polyBLEP measured -49 dB (1 kHz) to -44 dB (2 kHz)
+  // at 48 kHz. The table read sits at the metric floor (< -85 dB).
+  const SUB_SQUARE = (): ParamValues => {
+    const p = defaultBassParams();
+    p['osc.level'] = 0;
+    p['sub.level'] = 1;
+    p['sub.shape'] = 1;
+    p['sub.oct'] = -1;
+    p['flt.cut'] = 20000;
+    p['flt.type'] = 0;
+    p['flt.env'] = 0;
+    p['flt.drive'] = 0;
+    p['flt.res'] = 0;
+    p['aenv.att'] = 0.001;
+    p['aenv.sus'] = 1;
+    return p;
+  };
+  for (const [semi, sr] of [[36, 48000], [72, 48000], [72, 44100], [72, 96000]] as const) {
+    const sub = 36 + semi - 12;
+    it(`keeps inharmonic energy under -75 dB at a ${Math.round(440 * 2 ** ((sub - 69) / 12))} Hz sub, ${sr} Hz`, () => {
+      const h = boot(SUB_SQUARE(), sr);
+      h.send({ t: 'noteon', semi, vel: 1 });
+      const n = 32768;
+      h.render(Math.ceil(4096 / 128));
+      const x = h.render(Math.ceil(n / 128)).L.subarray(0, n) as Float32Array;
+      const f0 = 440 * 2 ** ((sub - 69) / 12);
+      expect(inharmonicDb(x, sr, f0)).toBeLessThan(-75);
+    });
+  }
 });
 
 describe('BL-1 accent (B2)', () => {

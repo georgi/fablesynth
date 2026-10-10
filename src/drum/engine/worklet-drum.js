@@ -1796,8 +1796,8 @@ class DrumProcessor extends AudioWorkletProcessor {
   }
 
   // One-shot sample layer. This deliberately mirrors DrumEngine.cpp's
-  // playback contract: Hermite reads, a Hann-windowed decimation average
-  // blended in between rates 1 and 2, a per-sample rate ramp, and edge fades
+  // playback contract: Hermite reads, a band-limited sinc read above rate 1
+  // (blended in over the first 5%), a per-sample rate ramp, and edge fades
   // measured in output time. A sample's natural attack is not faded in.
   renderSample(st, f, base, pitch0, pitch1, start0, tmpL, tmpR, off, n) {
     if (st.done) return false;

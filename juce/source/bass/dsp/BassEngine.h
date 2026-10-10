@@ -1,6 +1,6 @@
 // BL-1 acid bass voice engine — C++ port of src/bass/engine/worklet-bass.js.
 // One mono last-note-priority voice: wavetable oscillator (band-limited mip
-// playback with crossfade, unison + stereo spread), sine/polyblep-square sub,
+// playback with crossfade, unison + stereo spread), sine / band-limited-square (table) sub,
 // SVF filter with ADAA drive, filter AD env with accent boost, amp ADSR,
 // slide (one-pole glide), bar-locked LFO -> cutoff, and the sample-accurate
 // 16-step pitch sequencer (patterns/chain/swing/accent/slide ties).

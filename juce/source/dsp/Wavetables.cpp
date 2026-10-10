@@ -240,4 +240,30 @@ GeneratedTable buildUserTable(const std::string& name, const std::vector<std::ve
     return g;
 }
 
+// Additive build, coarsest mip first so each finer mip only adds its new odd
+// harmonics (ascending k). Phases come from a SUBSQ_SIZE-entry sine LUT indexed by
+// (k*i) mod SUBSQ_SIZE, which keeps the build deterministic; the web worklets run the
+// identical algorithm.
+const float* subSquareTable() {
+    static const std::vector<float> table = [] {
+        std::vector<double> lut(SUBSQ_SIZE), acc(SUBSQ_SIZE, 0.0);
+        for (int j = 0; j < SUBSQ_SIZE; j++) lut[j] = std::sin(2.0 * PI * j / SUBSQ_SIZE);
+        std::vector<float> out((size_t)MIPS * SUBSQ_STRIDE);
+        const double coef = 4.0 / PI;
+        int k = 1;
+        for (int m = MIPS - 1; m >= 0; m--) {
+            const int maxHarm = 1024 >> m;
+            for (; k <= maxHarm; k += 2) {
+                const double inv = 1.0 / k;
+                for (int i = 0; i < SUBSQ_SIZE; i++) acc[i] += lut[(k * i) & (SUBSQ_SIZE - 1)] * inv;
+            }
+            float* o = &out[(size_t)m * SUBSQ_STRIDE];
+            for (int i = -1; i < SUBSQ_SIZE + 2; i++)
+                o[i + 1] = (float)(acc[(i + SUBSQ_SIZE) & (SUBSQ_SIZE - 1)] * coef);
+        }
+        return out;
+    }();
+    return table.data();
+}
+
 } // namespace fable
