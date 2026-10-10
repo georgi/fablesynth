@@ -1,5 +1,6 @@
 // Main-thread DR-1 engine: owns the AudioContext, drum worklet and FX graph.
 
+import { KEY_CHANNELS } from '../../engine/sidechain';
 import { guardAudioNavigation } from '../../shared/audioNavigationGuard';
 import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { type ParamValues } from '../../params';
@@ -153,9 +154,11 @@ export class DrumEngine {
     this.refreshViz();
 
     this.node = new AudioWorkletNode(ctx, 'fable-dr', {
-      numberOfInputs: 0,
-      numberOfOutputs: BUS_COUNT,
-      outputChannelCount: Array(BUS_COUNT).fill(2),
+      // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
+      numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
+      // One stereo output per bus, plus a mono KICK key (pad 01) at BUS_COUNT.
+      numberOfOutputs: BUS_COUNT + 1,
+      outputChannelCount: [...Array(BUS_COUNT).fill(2), 1],
     });
     this.node.port.onmessage = (e: MessageEvent) => {
       if (e.data.t === 'step' && this.onstep) this.onstep(e.data as StepMessage);

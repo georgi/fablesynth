@@ -1030,6 +1030,7 @@ function mixGate(on, amount, wet) {
 
 class Fx {
   constructor() {
+    this.keyChannel = -1; this.keyIn = null; // COMP side-chain, see setParams
     const scale = sampleRate / 44100;
     this.headroom = {};
     for (const stage of ['input', 'eq', 'ott', 'comp', 'drive', 'lab', 'chorus', 'delay', 'reverb']) {
@@ -1203,6 +1204,10 @@ class Fx {
     this.driveColorL.setParams(p[PID['fx.drive.type']], p[PID['fx.drive.tone']]);
     this.driveColorR.setParams(p[PID['fx.drive.type']], p[PID['fx.drive.tone']]);
     this.comp.setParams(p[FXCOMP_ON] > 0.5, p[FXCOMP_THR], p[PID['fx.comp.att']], p[PID['fx.comp.rel']], p[PID['fx.comp.ratio']]);
+    // Side-chain (src/engine/sidechain.ts): 1 KICK → key channel 4, TRACK n → n-1.
+    const sc = Math.round(p[PID['fx.comp.sc']] || 0);
+    this.keyChannel = sc === 1 ? 4 : sc >= 2 ? sc - 2 : -1;
+    this.comp.setKey(this.keyChannel >= 0, p[PID['fx.comp.schp']]);
     this.ott.setParams(p[FXOTT_ON] > 0.5, p[FXOTT_DEPTH], p[FXOTT_TIME], p[FXOTT_UP], p[FXOTT_DOWN]);
 
     const vol = p[MASTER_VOLUME];
@@ -1298,7 +1303,8 @@ class Fx {
     if (this.metering) this.meterEnergy[1] += stereoEnergy(FX_EQL, FX_EQR, n);
     this.headroom.ott.process(FX_EQL, FX_EQR, n);
     if (this.metering) this.meterEnergy[2] += stereoEnergy(FX_EQL, FX_EQR, n);
-    this.comp.process(FX_EQL, FX_EQR, n);
+    const key = this.keyChannel >= 0 ? this.keyIn?.[this.keyChannel] : null;
+    this.comp.process(FX_EQL, FX_EQR, n, key ? key.subarray(offset, offset + n) : null);
     if (this.metering) {
       this.meterEnergy[3] += stereoEnergy(FX_EQL, FX_EQR, n);
       this.meterSamples += n;
@@ -2798,7 +2804,9 @@ class FableProcessor extends AudioWorkletProcessor {
   // sample host block on the extremes). Mirrors Engine::render's chunk loop:
   // every chunk is at most 128 samples, so the engine also behaves identically
   // at any host block size.
-  process(_inputs, outputs) {
+  process(inputs, outputs) {
+    // The SQ-4 key bus (five mono channels); empty when nothing is connected.
+    this.fx.keyIn = inputs[0]?.length ? inputs[0] : null;
     const out = outputs[0];
     const L = out[0];
     const R = out.length > 1 ? out[1] : out[0];

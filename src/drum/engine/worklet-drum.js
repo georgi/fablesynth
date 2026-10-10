@@ -715,6 +715,10 @@ class PadFx {
 
     // Legacy makeup is retained in saved/native patches, not applied on web.
     this.comp.setParams(pv[f[P_FXCOMP_ON]] > 0.5, pv[f[P_FXCOMP_THR]], pv[f[fid('fx.comp.att')]], pv[f[fid('fx.comp.rel')]], pv[f[fid('fx.comp.ratio')]]);
+    // Side-chain (src/engine/sidechain.ts DRUM_SC_SOURCES): 1..16 a pad of this
+    // kit, 17..19 SQ-4 tracks 2..4. The processor hands in keyL/keyR per block.
+    this.keySource = Math.round(pv[f[fid('fx.comp.sc')]] || 0);
+    this.comp.setKey(this.keySource > 0, pv[f[fid('fx.comp.schp')]]);
     this.ott.setParams(pv[f[P_FXOTT_ON]] > 0.5, pv[f[P_FXOTT_DEPTH]],
       pv[f[P_FXOTT_TIME]], pv[f[P_FXOTT_UP]], pv[f[P_FXOTT_DOWN]]);
 
@@ -999,6 +1003,7 @@ const FIELDS = [
   ...globalThis.FableEqFields,
   'fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type',
   'fx.crush.on', 'fx.crush.bits', 'fx.crush.rate', 'fx.crush.chaos', 'fx.crush.mix', 'fx.reso.on', 'fx.reso.note', 'fx.reso.chord', 'fx.reso.decay', 'fx.reso.mix', 'fx.shift.on', 'fx.shift.hz', 'fx.shift.fb', 'fx.shift.spread', 'fx.shift.mix', 'fx.spray.on', 'fx.spray.pitch', 'fx.spray.density', 'fx.spray.scatter', 'fx.spray.mix', 'fx.glitch.on', 'fx.glitch.div', 'fx.glitch.chance', 'fx.glitch.drift', 'fx.glitch.mix',
+  'fx.comp.sc', 'fx.comp.schp',
 ];
 const NF = FIELDS.length;
 const fid = (name) => FIELDS.indexOf(name);
@@ -1197,6 +1202,13 @@ class DrumProcessor extends AudioWorkletProcessor {
     this.echoMetering = false; this.echoSamples = 0; this.echoEnergy = new Float64Array(3);
     this.reverbMetering = false; this.reverbSamples = 0; this.reverbEnergy = new Float64Array(3);
     this.meterPad = 0; this.meterBus = 0;
+    // Kit auto-mix capture: each live pad's post-FX mono signal, posted in
+    // CAPTURE_LEN blocks with the frame count since capture started.
+    this.keyIn = null;
+    this.keyDryL = []; this.keyDryR = []; // sized in ensureCap
+    this.padCapture = false; this.capFrames = 0;
+    this.capBuf = Array.from({ length: NPADS }, () => new Float32Array(CAPTURE_LEN));
+    this.capLen = new Int32Array(NPADS);
     this.fxDirty = true;
     // Reported the way the plugin does: drive FIR group delay + limiter
     // lookahead. Constant whether a stage is active, bypassed or gated.
@@ -1215,6 +1227,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     if (n <= this.cap) return;
     this.cap = n;
     for (let i = 0; i < NPADS; i++) { this.padL[i] = new Float32Array(n); this.padR[i] = new Float32Array(n); }
+    for (let i = 0; i < NPADS; i++) { this.keyDryL[i] = new Float32Array(n); this.keyDryR[i] = new Float32Array(n); }
     for (let b = 0; b < BUSES; b++) {
       this.busL[b] = new Float32Array(n); this.busR[b] = new Float32Array(n);
       this.verbInL[b] = new Float32Array(n); this.verbInR[b] = new Float32Array(n);
@@ -2320,7 +2333,20 @@ class DrumProcessor extends AudioWorkletProcessor {
     return 0;
   }
 
-  process(_inputs, outputs) {
+  capturePad(i, n) {
+    const l = this.padL[i], r = this.padR[i], buf = this.capBuf[i];
+    for (let k = 0; k < n; k++) {
+      buf[this.capLen[i]++] = 0.5 * (l[k] + r[k]);
+      if (this.capLen[i] === CAPTURE_LEN) {
+        this.port.postMessage({ t: 'padAudio', pad: i, frames: this.capFrames + k, data: buf.slice() });
+        this.capLen[i] = 0;
+      }
+    }
+  }
+
+  process(inputs, outputs) {
+    // The SQ-4 key bus (five mono channels); empty when nothing is connected.
+    this.keyIn = inputs[0]?.length ? inputs[0] : null;
     // One stereo worklet output per OUTPUT BUS. Each pad renders into its own
     // buffer, runs its own FX chain, then sums into the bus its `out` param
     // selects; the main thread only meters what comes back. Missing outputs are
@@ -2439,7 +2465,25 @@ class DrumProcessor extends AudioWorkletProcessor {
   }
 
   // Pad FX chains -> bus sums (+ the shared reverb send) -> bus output stage.
+  /** Points a pad or group strip at its side-chain key for this block. */
+  routeKey(fx, n) {
+    const src = fx.keySource;
+    if (src >= 1 && src <= NPADS) { fx.keyL = this.keyDryL[src - 1]; fx.keyR = this.keyDryR[src - 1]; }
+    else if (src > NPADS) { const ext = this.keyIn?.[src - NPADS] ?? null; fx.keyL = fx.keyR = ext && ext.subarray(0, n); }
+    else fx.keyL = fx.keyR = null;
+  }
+
   renderFx(outputs, n) {
+    // Dry pad copies for side-chain keys, taken before any pad FX run so every
+    // strip hears the same key whatever the pad order.
+    for (let i = 0; i < NPADS; i++) { this.keyDryL[i].set(this.padL[i].subarray(0, n)); this.keyDryR[i].set(this.padR[i].subarray(0, n)); }
+    // The extra output carries pad 01 (KICK) alone, mono, for SQ-4 keys, at
+    // the kit's output gain so a KICK key is as strong as the kick in the mix.
+    const kick = outputs[BUSES];
+    if (kick && kick[0]) {
+      const vol = this.pv[G_VOL], g = 0.5 * vol * vol * 1.6;
+      for (let k = 0; k < n; k++) kick[0][k] = g * (this.padL[0][k] + this.padR[0][k]);
+    }
     const bpm = this.hostBpm > 0 && this.hosted ? this.hostBpm : (this.pv[G_BPM] || 126);
     for (const fx of this.padFx) fx.lab.setTempoOverride(bpm);
     for (const fx of this.groupFx) fx.lab.setTempoOverride(bpm);
@@ -2470,7 +2514,9 @@ class DrumProcessor extends AudioWorkletProcessor {
       const fx = this.padFx[i];
       fx.meterSelected = this.metering || this.echoMetering ? i === this.meterPad : false;
       const live = this.voices[i].active || this.tails[i].active;
+      this.routeKey(fx, n);
       if (!fx.process(this.padL[i], this.padR[i], n, live)) continue;
+      if (this.padCapture) this.capturePad(i, n);
       if (i === this.meterPad) {
         this.meterBus = fx.bus;
         if (this.metering) {
@@ -2527,6 +2573,7 @@ class DrumProcessor extends AudioWorkletProcessor {
       // send, so give this second layer its own final group reverb network.
       const group = this.groupFx[b];
       const bl = busL[b], br = busR[b];
+      this.routeKey(group, n);
       group.process(bl, br, n, true);
       const gvinL = vinL[b], gvinR = vinR[b];
       gvinL.fill(0, 0, n); gvinR.fill(0, 0, n);

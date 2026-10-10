@@ -16,6 +16,8 @@ export const MASTER_FX_DEFAULTS: MasterFxParams = {
   'master.fx.ott.on': 1, 'master.fx.ott.depth': 0.35, 'master.fx.ott.time': 1, 'master.fx.ott.up': 1, 'master.fx.ott.down': 1,
   'master.fx.comp.on': 1, 'master.fx.comp.thr': -16, 'master.fx.comp.att': 0.003, 'master.fx.comp.rel': 0.25, 'master.fx.comp.ratio': 4,
   'master.fx.limiter.on': 1, 'master.fx.limiter.ceiling': -1,
+  // COMP side-chain (src/engine/sidechain.ts SC_SOURCES): off, KICK, TRACK 1..4.
+  'master.fx.comp.sc': 0, 'master.fx.comp.schp': 20,
 };
 
 export function masterFxParams(value?: Partial<MasterFxParams>): MasterFxParams {

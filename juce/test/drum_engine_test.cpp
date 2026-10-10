@@ -481,7 +481,7 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 124, "124 per-pad fields including dynamics, drive and Lab controls");
+    check(DPAD_NFIELDS == 126, "126 per-pad fields including dynamics, drive, Lab and side-chain controls");
     check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3 + (DPAD_NFIELDS - DP_FXDRIVE_ON),
           "per-pad params plus transport and group-strip globals");
     const auto& info = drumParamInfo();
@@ -2131,6 +2131,86 @@ int main() {
               "pad3 out/choke untouched");
         check(pv[dpid(2, DP_OSCA_TUNE)] == 11.0f && pv[dpid(4, DP_AENV_DEC)] == 3.5f,
               "pad 2 / pad 4 untouched");
+    }
+
+    printf("\n== COMP side-chain and KIT MIX capture ==\n");
+    {
+        // Pad 2 holds a tone on MAIN; pad 1 (the kick) plays on AUX 1, so MAIN
+        // only changes when pad 2's compressor is keyed by it.
+        struct Run { float before = 0, during = 0; };
+        auto run = [](int sc, bool kick, const float* extKey = nullptr, bool capture = false,
+                      std::vector<float>* kickOut = nullptr, DrumEngine* keep = nullptr) {
+            auto p = defaultDrumParams();
+            p[(size_t)dpid(1, DP_AENV_HOLD)] = 0.25f;
+            p[(size_t)dpid(1, DP_AENV_DEC)] = 4.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_ON)] = 1.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_THR)] = -40.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_RATIO)] = 20.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_ATT)] = 0.001f;
+            p[(size_t)dpid(1, DP_FXCOMP_REL)] = 0.05f;
+            p[(size_t)dpid(1, DP_FXCOMP_SC)] = (float)sc;
+            p[(size_t)dpid(1, DP_FXREVERB_ON)] = 0.0f;
+            p[(size_t)dpid(0, DP_OUT)] = 1.0f;
+            p[(size_t)dpid(0, DP_LVL)] = 1.0f;
+            p[(size_t)dpid(0, DP_OSCA_LEVEL)] = 1.0f;
+            p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+            DrumEngine local;
+            DrumEngine& e = keep ? *keep : local;
+            e.prepare(48000); e.enablePadFx(true); e.setTables(allTables()); e.setParams(p);
+            e.setPadCapture(capture);
+            auto render = [&](int n) {
+                const float* keys[KEY_CHANNELS] = {nullptr, extKey, nullptr, nullptr, nullptr};
+                std::vector<float> kickBuf((size_t)n, 0.0f);
+                e.setSidechainInput(extKey ? keys : nullptr);
+                e.setKickKeyOutput(kickOut ? kickBuf.data() : nullptr);
+                auto out = renderBuses(e, n)[0];
+                if (kickOut) kickOut->insert(kickOut->end(), kickBuf.begin(), kickBuf.end());
+                return out;
+            };
+            e.trigger(1, 1.0f);
+            Run r;
+            r.before = rms(render(4800));
+            if (kick) e.trigger(0, 1.0f);
+            r.during = rms(render(2400));
+            return r;
+        };
+        const auto plain = run(0, true), keyed = run(1, true), idle = run(1, false);
+        check(plain.during > plain.before * 0.7f, "unkeyed pad ignores the kick on another bus",
+              std::to_string(plain.during / plain.before));
+        check(keyed.during < idle.during * 0.5f, "pad keyed by PAD 01 ducks under the kick",
+              std::to_string(keyed.during / idle.during));
+        check(idle.during > idle.before * 0.7f, "a silent pad key leaves the keyed pad alone",
+              std::to_string(idle.during / idle.before));
+
+        // TRACK 2 (index 17) reads SQ-4 key channel 1; without a key bus it is silent.
+        std::vector<float> loud(4800);
+        for (size_t i = 0; i < loud.size(); ++i) loud[i] = 0.8f * (float)std::sin(2 * M_PI * 200 * (double)i / 48000);
+        const auto external = run(17, false, loud.data()), standalone = run(17, false);
+        check(external.during < standalone.during * 0.5f, "TRACK key ducks the pad through the key bus",
+              std::to_string(external.during / standalone.during));
+        check(standalone.during > standalone.before * 0.7f, "TRACK key without an SQ-4 bus is silent",
+              std::to_string(standalone.during / standalone.before));
+
+        // Kick key output and pad capture taps.
+        std::vector<float> kickOut;
+        auto e = std::make_unique<DrumEngine>();
+        run(1, true, nullptr, true, &kickOut, e.get());
+        check(kickOut.size() == 7200 && rms(kickOut) > 1e-3f, "pad 01 dry signal reaches the kick key output",
+              std::to_string(rms(kickOut)));
+        const auto& tone = e->padCapture(1);
+        std::vector<float> latest(2048);
+        check(tone.frames() == 7200 && e->padCapture(9).frames() == 7200, "every pad capture tap shares one frame count",
+              std::to_string(tone.frames()));
+        check(tone.readLatest(latest.data(), nullptr, 2048) && rms(latest) > 1e-4f,
+              "pad capture delivers the post-FX pad signal");
+        uint64_t cursor = 0, dropped = 0;
+        std::vector<float> pulled(8192);
+        const int got = tone.pull(cursor, pulled.data(), nullptr, 8192, &dropped);
+        check(got == 7200 && dropped == 0 && cursor == 7200, "pad capture pulls continuously from a cursor",
+              std::to_string(got));
+        const auto& trace = e->compTrace(1, 0);
+        check(trace.frames() > 0 && trace.readLatest(latest.data(), nullptr, 2048) && peak(latest) > 0.01f,
+              "keyed pad compressor records its detector trace");
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");

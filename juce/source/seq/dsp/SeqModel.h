@@ -94,6 +94,10 @@ struct SessionData {
     Quant quant = Quant::Bar;
     std::vector<TrackData> tracks;
     std::vector<SceneData> scenes;
+    // Optional master section, keyed like the web ("master.fx.eq.on" …).
+    // Empty / negative means the session does not store it.
+    std::map<std::string, float> masterFx;
+    float masterVol = -1.0f;
 };
 
 // Returns "" when valid, else a human-readable reason. Port of

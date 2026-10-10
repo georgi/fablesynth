@@ -26,7 +26,6 @@ static inline double lcosh(double z) {
 }
 
 static constexpr double DR_ADAA_FADE_WIDTH = 0.1;
-static constexpr double DR_ADAA_INPUT_LIMIT = 16.0;
 
 static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
@@ -43,10 +42,6 @@ static bool sameRhythm(const DrumRhythm& a, const DrumRhythm& b) {
             return false;
     }
     return true;
-}
-
-static inline double adaaInput(double x) {
-    return std::isfinite(x) ? clampd(x, -DR_ADAA_INPUT_LIMIT, DR_ADAA_INPUT_LIMIT) : 0.0;
 }
 
 // Finding 6: chunk-invariant smoothers (see Engine.cpp for the derivation).
@@ -219,7 +214,7 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
     sample.pStep = 0; sample.havePrev = false;
     sample.xfIndex = -1; sample.xfLeft = 0; sample.xfDone = true;
     std::fill(std::begin(f.svf), std::end(f.svf), 0.0);
-    f.cutSm = 0; f.cutPrev = -1; f.satXL = 0; f.satXR = 0; f.adaaMix = 0;
+    f.cutSm = 0; f.cutPrev = -1; f.osL.reset(); f.osR.reset(); f.adaaMix = 0;
     std::fill(std::begin(f.svfOld), std::end(f.svfOld), 0.0);
     f.pFtype = -1; f.xfLeft = 0;
     noiseY = 0; ringPhase = 0.25;
@@ -232,6 +227,8 @@ void DrumEngine::PadVoice::trigger(double v, double rnd) {
 // remap the 48 kHz-reference DC pole to the new rate (Finding 9).
 void DrumEngine::prepare(double sampleRate) {
     clearAutomation();
+    autoPlayer_.prepare();
+    if (!sequenceAuto_) sequenceAuto_ = std::make_unique<AutoBank>();
     sr_ = sampleRate;
     // The native processor publishes at most DR_NPATTERNS chain entries.
     // Reserve here so its audio-side setChain never grows storage; standalone
@@ -329,11 +326,12 @@ void DrumEngine::trigger(int padI, float vel) {
     // so any decay longer than the step spacing clicked on every hit. Move the
     // old voice to the pad's tail slot and let it run the same choke fade while
     // the new hit starts clean on the main slot. Two hits inside one fade
-    // (~1.5 ms) would collide; keep whichever tail is louder.
-    if (v.active && (!tails_[(size_t)padI].active
+    // (~3 ms) would collide; keep whichever tail is louder (a quiet tail
+    // replacing a loud one would cut it, which clicks). Same policy as js.
+    if (v.active && v.ampLevel > 1e-4 && (!tails_[(size_t)padI].active
                      || tails_[(size_t)padI].ampLevel <= v.ampLevel)) {
         tails_[(size_t)padI] = v;
-        tails_[(size_t)padI].choking = true;
+        tails_[(size_t)padI].choke();
     }
     double vv = std::isfinite(vel) ? (double)vel : 1.0;
     v.trigger(clampd(vv, 0.0, 1.0), rng_.next() * 2.0 - 1.0);
@@ -964,23 +962,29 @@ static void runSampleLayer(const DrumSampleRun& c, double& pos, bool& done,
             fade *= fadeOut ? wOut : wIn;
         }
 
-        double value = rd(pos);
+        double value;
         if (ast > 1.0) {
-            // Decimation pre-filter: a short Hann-weighted average across the
-            // source samples this output sample spans, so pitching up folds far
-            // less energy back into the band. Mixed in over the first octave so
-            // a pitch envelope crossing 1 source sample per output sample does
-            // not switch filters. Capped at 8 taps: beyond +3 octaves the window
-            // is undersampled and some fold-back remains.
-            const int taps = std::min(8, (int)std::ceil(ast) + 1);
+            // Band-limited read (Finding K1). Blended in over the first 5% above
+            // 1 source sample per output sample so a pitch envelope crossing it
+            // does not switch readers; below that nothing can fold below 16 kHz.
+            const double sc = std::min(ast, DR_SINC_MAXAST);
+            const double inv = DR_SINC_RES / sc;
+            const double reach = DR_SINC_HALF * sc;
+            const int k0 = (int)std::ceil(pos - reach), k1 = (int)std::floor(pos + reach);
             double acc = 0, wsum = 0;
-            for (int k = 0; k < taps; ++k) {
-                const double u = (double)k / (taps - 1) - 0.5;
-                const double w = 0.5 - 0.5 * std::cos(2.0 * kPi * (k + 1) / (taps + 1));
-                acc += w * rd(pos + u * ast);
+            for (int k = k0; k <= k1; ++k) {
+                const double u = std::fabs((double)k - pos) * inv;
+                const int ti = (int)u;
+                const double* tp = kDrSinc.t + ti;
+                const double w = tp[0] + (u - ti) * (tp[1] - tp[0]);
+                acc += w * d[k < 0 ? 0 : (k > last ? last : k)];
                 wsum += w;
             }
-            value += (acc / wsum - value) * clampd(ast - 1.0, 0.0, 1.0);
+            const double kern = acc / wsum;
+            const double mix = std::min((ast - 1.0) / (DR_SINC_BLEND - 1.0), 1.0);
+            value = mix >= 1.0 ? kern : rd(pos) + (kern - rd(pos)) * mix;
+        } else {
+            value = rd(pos);
         }
         const float out = (float)(value * c.gain * fade);
         tmpL[off + i] += out;
@@ -1322,6 +1326,7 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
     double pan = clampd(param(dpid(padI, DP_PAN)), -1.0, 1.0);
     double panA = ((pan + 1) * kPi) / 4;
     double panL = std::cos(panA), panR = std::sin(panA);
+    const double chokeSlew = 1.0 - std::exp(-1.0 / (DR_CHOKE_SLEW * sr_));
     for (int i = 0; i < n; i++) {
         const double xl = srcL[i], xr = srcR[i];
         const double yL = xl - v.dcxL + dcR_ * v.dcyL;   // per-voice DC block
@@ -1331,14 +1336,15 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
 
         if (v.choking) {
             v.ampLevel *= 1 - chokeCoef_;
-            if (v.ampLevel < 1e-4) {
+            v.chokeSm += (v.ampLevel - v.chokeSm) * chokeSlew;
+            if (v.chokeSm < 1e-4) {
                 v.kill();
                 break;
             }
         } else {
             v.ampLevel = ampEnv(v, padI, i);
         }
-        const double amp = v.ampLevel * (lg0 + dLg * i);
+        const double amp = (v.choking ? v.chokeSm : v.ampLevel) * (lg0 + dLg * i);
         L[off + i] += (float)(yL * amp * panL);
         R[off + i] += (float)(yR * amp * panR);
     }
@@ -1354,6 +1360,19 @@ void DrumEngine::renderPad(PadVoice& v, int padI, float* L, float* R, int off, i
 // ---- rate env matches the worklet's 128-sample process cadence, and    ----
 // ---- additionally splits at step boundaries (samplesToNext) so steps   ----
 // ---- fire sample-accurately regardless of the host buffer size.        ----
+// Points a pad or group strip at its side-chain key for this chunk.
+void DrumEngine::routeKey(DrumFx& fx, int pos) {
+    const int src = fx.keySource();
+    if (src >= 1 && src <= DR_NPADS) {
+        fx.setKey(padDryL_[src - 1], padDryR_[src - 1]);
+    } else if (src > DR_NPADS && src - DR_NPADS < KEY_CHANNELS) {
+        const float* key = extKey_[(size_t)(src - DR_NPADS)];
+        fx.setKey(key ? key + pos : nullptr, key ? key + pos : nullptr);
+    } else {
+        fx.setKey(nullptr, nullptr);
+    }
+}
+
 void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
     for (int b = 0; b < DR_NBUSES; b++)
         for (int c = 0; c < 2; c++)
@@ -1455,6 +1474,15 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             run = renderClipTiming(hostFrame_, run);
         }
         if (hostClipMode_) tickAutomation();
+        else if (sequenceAuto_ && (sequenceAuto_->count > 0 || sequenceAutoRunning_)) {
+            // Standalone lanes: frames since play on the internal clock, or the
+            // host song position when the host transport drives the sequencer.
+            const bool running = (hostRun || internalRun) && sequenceAuto_->count > 0;
+            const double bpm = hostRun ? hostBpm_ : effectiveBpm();
+            const double frame = hostRun ? std::max(0.0, hostPpq_ + pos * ppqPerSample) * 60.0 / bpm * sr_
+                                         : (double)rhythmFrame_ + pos;
+            tickSequenceAutomation(running, frame, bpm);
+        }
         flushSequencerHits();
         // Finding J1: the chunk length is now known, so move every smoother by
         // exactly this many samples and re-derive the FX coefficients from the
@@ -1488,26 +1516,48 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             std::fill(verbInR_[b], verbInR_[b] + run, 0.0f);
         }
 
-        for (int i = 0; i < DR_NPADS; i++) {
-            PadVoice& v = voices_[(size_t)i];
-            PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
-            if (!padFxEnabled_) {
+        if (!padFxEnabled_) {
+            for (int i = 0; i < DR_NPADS; i++) {
+                PadVoice& v = voices_[(size_t)i];
+                PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
                 if (!v.active && !tl.active) continue;
                 const int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
                 if (tl.active) renderPad(tl, i, outs[out][0], outs[out][1], pos, run);
                 if (v.active) renderPad(v, i, outs[out][0], outs[out][1], pos, run);
-                continue;
             }
-            std::fill(padL_, padL_ + run, 0.0f);
-            std::fill(padR_, padR_ + run, 0.0f);
+            if (kickKeyOut_) std::fill(kickKeyOut_ + pos, kickKeyOut_ + pos + run, 0.0f);
+        }
+        // Dry pads first (web renderFx keyDry copies), then the insert chains.
+        for (int i = 0; padFxEnabled_ && i < DR_NPADS; i++) {
+            PadVoice& v = voices_[(size_t)i];
+            PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
+            std::fill(padDryL_[i], padDryL_[i] + run, 0.0f);
+            std::fill(padDryR_[i], padDryR_[i] + run, 0.0f);
+            if (tl.active) renderPad(tl, i, padDryL_[i], padDryR_[i], 0, run);
+            if (v.active) renderPad(v, i, padDryL_[i], padDryR_[i], 0, run);
+        }
+        // Web renderFx: the kit's output gain (master.volume^2 * 1.6) makes a
+        // KICK key as strong as the kick in the drum track.
+        if (padFxEnabled_ && kickKeyOut_) {
+            const float vol = param(DG_MASTER_VOLUME), g = 0.5f * vol * vol * 1.6f;
+            for (int s = 0; s < run; ++s) kickKeyOut_[pos + s] = g * (padDryL_[0][s] + padDryR_[0][s]);
+        }
+        const bool capture = padFxEnabled_ && padCaptureOn_.load(std::memory_order_relaxed);
+        for (int i = 0; padFxEnabled_ && i < DR_NPADS; i++) {
+            std::copy(padDryL_[i], padDryL_[i] + run, padL_);
+            std::copy(padDryR_[i], padDryR_[i] + run, padR_);
             std::fill(verbSendL_, verbSendL_ + run, 0.0f);
             std::fill(verbSendR_, verbSendR_ + run, 0.0f);
-            if (tl.active) renderPad(tl, i, padL_, padR_, 0, run);
-            if (v.active) renderPad(v, i, padL_, padR_, 0, run);
             // Each pad owns a continuous insert chain, including its delay
             // tail. Reverb is sent to the shared network below so pads on the
             // same output bus share one tail.
+            routeKey(padFx_[(size_t)i], pos);
             padFx_[(size_t)i].processInsert(padL_, padR_, verbSendL_, verbSendR_, run);
+            if (capture) {
+                float mono[128];
+                for (int s = 0; s < run; ++s) mono[s] = 0.5f * (padL_[s] + padR_[s]);
+                (*padCapture_)[(size_t)i].write(mono, nullptr, run);
+            }
             int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
             for (int s = 0; s < run; ++s) {
                 outs[out][0][pos + s] += padL_[s];
@@ -1536,8 +1586,10 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         // five independent instances preserve routed MAIN/AUX streams). Then
         // master gain, DC block and the safety limiter run once per bus.
         if (padFxEnabled_)
-            for (int b = 0; b < DR_NBUSES; ++b)
+            for (int b = 0; b < DR_NBUSES; ++b) {
+                routeKey(groupFx_[(size_t)b], pos);
                 groupFx_[(size_t)b].process(outs[b][0] + pos, outs[b][1] + pos, run);
+            }
         if (padFxEnabled_)
             for (int b = 0; b < DR_NBUSES; ++b)
                 busOut_[(size_t)b].process(outs[b][0] + pos, outs[b][1] + pos, run);
@@ -1552,6 +1604,9 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
 
     curTables_ = nullptr;
     renderEpoch_.fetch_add(1, std::memory_order_seq_cst);      // even: out of render
+    // Keys are per call: never keep a caller's pointers past this render.
+    extKey_.fill(nullptr);
+    kickKeyOut_ = nullptr;
 
     for (int p=0;p<DR_NPADS;++p) if (!voices_[(size_t)p].active) vizCut[(size_t)p] = -1;
     const PadVoice& v = voices_[(size_t)sel_];

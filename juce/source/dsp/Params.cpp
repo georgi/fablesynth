@@ -187,6 +187,38 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({FXGLITCH_CHANCE, "fx.glitch.chance", "CHANCE",  0, 1, 0.35f, Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXGLITCH_DRIFT,  "fx.glitch.drift",  "DRIFT",   -1, 1, 0, Curve::Lin, Kind::Float, nullptr});
     v.push_back({FXGLITCH_MIX,    "fx.glitch.mix",    "MIX",     0, 1, 1, Curve::Lin, Kind::Float, nullptr});
+    for (int n = 1; n <= MOD_MATRIX_SIZE; ++n)
+        v.push_back({MATPOL1 + n - 1, "mat" + std::to_string(n) + ".pol", "POL", 0, (float)MOD_POLARITY.size() - 1, 0,
+                     Curve::Int, Kind::Enum, &MOD_POLARITY});
+
+    // Serum-parity modulators, in params.ts order.
+    addLfo("lfo3", LFO3_BASE, 1);
+    addLfo("lfo4", LFO4_BASE, 0.5f);
+    v.push_back({ENV3_BASE + 0, "env3.a", "ATK", 0.001f, 8,  0.01f,  Curve::Log, Kind::Float, nullptr});
+    v.push_back({ENV3_BASE + 1, "env3.d", "DEC", 0.005f, 10, 0.35f,  Curve::Log, Kind::Float, nullptr});
+    v.push_back({ENV3_BASE + 2, "env3.s", "SUS", 0,      1,  0,      Curve::Lin, Kind::Float, nullptr});
+    v.push_back({ENV3_BASE + 3, "env3.r", "REL", 0.005f, 12, 0.3f,   Curve::Log, Kind::Float, nullptr});
+    for (int n = 1; n <= MACRO_COUNT; ++n)
+        v.push_back({MACRO1 + n - 1, "macro" + std::to_string(n), "MACRO " + std::to_string(n), 0, 1, 0,
+                     Curve::Lin, Kind::Float, nullptr});
+    v.push_back({PERF_MODWHEEL,   "perf.modwheel",   "MOD WHL",  0, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    v.push_back({PERF_AFTERTOUCH, "perf.aftertouch", "AFTERTCH", 0, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    for (int n = 1; n <= MOD_MATRIX_SIZE; ++n)
+        v.push_back({MATAUX1 + n - 1, "mat" + std::to_string(n) + ".aux", "AUX", 0, (float)MOD_SOURCES.size() - 1, 0,
+                     Curve::Int, Kind::Enum, &MOD_SOURCES});
+    for (int n = 1; n <= 3; ++n) {
+        const std::string e = "env" + std::to_string(n);
+        const int b = envxBase(n);
+        v.push_back({b + ENVX_MODEL, e + ".model", "MODEL", 0, 1, 0, Curve::Int, Kind::Enum, &ENV_MODELS});
+        v.push_back({b + ENVX_HOLD, e + ".h", "HOLD", 0, 8, 0, Curve::Lin, Kind::Float, nullptr});
+        v.push_back({b + ENVX_AC, e + ".ac", "A CRV", 0, 1, 0.5f, Curve::Lin, Kind::Float, nullptr});
+        v.push_back({b + ENVX_DC, e + ".dc", "D CRV", 0, 1, 0.67f, Curve::Lin, Kind::Float, nullptr});
+        v.push_back({b + ENVX_RC, e + ".rc", "R CRV", 0, 1, 0.67f, Curve::Lin, Kind::Float, nullptr});
+    }
+    v.push_back({MASTER_MONO,   "master.mono",   "MONO",   0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({MASTER_LEGATO, "master.legato", "LEGATO", 0, 1, 1, Curve::Int, Kind::Bool, nullptr});
+    v.push_back({FXCOMP_SC,   "fx.comp.sc",   "KEY",    0, (float)SC_SOURCES.size() - 1, 0, Curve::Int, Kind::Enum, &SC_SOURCES});
+    v.push_back({FXCOMP_SCHP, "fx.comp.schp", "KEY HP", 20, 500, 20, Curve::Log, Kind::Float, nullptr});
 
     std::array<ParamInfo, NUM_PARAMS> out{};
     for (auto& info : v) out[(size_t)info.id] = info; // place by id so [Pid] indexing is exact

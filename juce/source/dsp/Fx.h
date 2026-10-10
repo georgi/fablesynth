@@ -149,9 +149,21 @@ public:
     explicit WebCompressor(double sampleRate = 48000.0) { prepare(sampleRate); }
     void prepare(double sampleRate);
     void setParams(bool on, float thresholdDb, float attack = 0.003f, float release = 0.25f, float ratio = 4);
+    // Side-chain (ott-worklet.js setKey): while keyed the detector reads the
+    // key through a one-pole high-pass at hpHz (20 Hz is effectively flat) and
+    // the automatic makeup is off, or it would undo the ducking.
+    void setKey(bool keyed, float hpHz = 20.0f);
+    bool keyed() const { return keyed_; }
     void reset();
-    void process(float* L, float* R, int n);
-    void processSample(double inL, double inR, double& outL, double& outR);
+    // key: mono key samples for this block (both detector channels), or
+    // null for a silent key. Ignored unless keyed.
+    void process(float* L, float* R, int n, const float* key = nullptr);
+    // keyL/keyR are the key for this sample; they matter only while keyed.
+    void processSample(double inL, double inR, double& outL, double& outR,
+                       double keyL = 0.0, double keyR = 0.0);
+    // Detector input per sample (max |L|,|R|, or the filtered key), recorded
+    // whether or not the stage is on, for auto-comp (web takeTrace()).
+    const DetectorTrace& trace() const { return *trace_; }
     bool wetTarget = false;
     double env = 0, gain = 1;
     AutoGain autoGain;
@@ -161,6 +173,11 @@ private:
     double ratio_ = 4, ratioTarget_ = 4;
     double gainStep_ = 0;
     int tick_ = 0;
+    bool keyed_ = false;
+    double keyCoef_ = 0, keyLpL_ = 0, keyLpR_ = 0;
+    // Heap-held so stack-built engines in tests stay small. Allocated once
+    // at construction, never on the audio thread.
+    std::unique_ptr<DetectorTrace> trace_ = std::make_unique<DetectorTrace>();
 };
 
 // Three-band OTT-style dynamics stage shared by all instrument worklets.
@@ -383,7 +400,13 @@ public:
     FxTelemetry telemetry() const { return meter_.read(); }
     void prepare(double sampleRate);
     void setParams(const ParamArray& p, double tempoBpm = 0.0); // reads fx.* and master.volume
-    void process(float* L, float* R, int n);
+    // key: the side-chain key for these n samples (mono), or null for a silent
+    // key. Only used while fx.comp.sc selects a source.
+    void process(float* L, float* R, int n, const float* key = nullptr);
+    // Key-bus channel the COMP side-chain reads (KICK_CHANNEL, 0-3 = SQ-4
+    // tracks), or -1 when it is off.
+    int keyChannel() const { return keyChannel_; }
+    const DetectorTrace& compTrace() const { return comp_.trace(); }
     void reset();
     // Host beat position for the LAB's tempo-synced GLITCH (optional).
     void setTransport(double ppq, bool playing) { lab_.setTransport(ppq, playing); }
@@ -472,6 +495,7 @@ private:
     PeakGuard headroomLab_;
     PeakGuard delayFeedbackGuard_;
     bool compOff_ = false, compGated_ = false;
+    int keyChannel_ = -1;
 
     // master + limiter
     Smooth masterGain_;

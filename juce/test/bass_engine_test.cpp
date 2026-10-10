@@ -84,6 +84,32 @@ static std::vector<double> bandProfileDb(const std::vector<float>& x, int N, dou
     return band;
 }
 
+// Inharmonic energy 20 Hz - 16 kHz relative to the fundamental's lobe, in dB.
+// Blackman-Harris window (sidelobes < -92 dB); bins within 8 of a harmonic are
+// masked, so only content the oscillator should not contain is counted.
+static double inharmonicDb(const float* x, int N, double sr, double f0) {
+    std::vector<double> re((size_t)N), im((size_t)N, 0.0);
+    for (int i = 0; i < N; i++) {
+        const double t = 2 * M_PI * i / (N - 1);
+        const double w = 0.35875 - 0.48829 * std::cos(t) + 0.14128 * std::cos(2 * t) - 0.01168 * std::cos(3 * t);
+        re[(size_t)i] = x[i] * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    const double bin = sr / N;
+    std::vector<char> harm((size_t)N / 2, 0);
+    for (int h = 1; h * f0 < sr * 0.5; h++) {
+        const int c = (int)std::lround(h * f0 / bin);
+        for (int k = std::max(0, c - 8); k <= c + 8 && k < N / 2; k++) harm[(size_t)k] = 1;
+    }
+    auto p2 = [&](int k) { return re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k]; };
+    double lobe = 0, inh = 0;
+    const int c1 = (int)std::lround(f0 / bin);
+    for (int k = std::max(0, c1 - 8); k <= c1 + 8; k++) lobe += p2(k);
+    for (int k = (int)std::ceil(20 / bin); k < N / 2 && k * bin <= 16000; k++)
+        if (!harm[(size_t)k]) inh += p2(k);
+    return 10 * std::log10(std::max(inh, 1e-30) / lobe);
+}
+
 static const double SR = 48000.0;
 
 static std::vector<TablePtr> makeTables() {
@@ -231,6 +257,32 @@ int main() {
         check(rms(tail, 40000, 48000) < 1e-4, "keyOff releases (0.08 s tail dies)",
               num(rms(tail, 40000, 48000)));
         check(!e.vizGate, "viz gate clears");
+    }
+
+    printf("\n== accent -> plain retrigger is click-free ==\n");
+    {
+        // Retrigger at a waveform peak, where a gain step is loudest. A twin
+        // engine finds the peak; rendering is deterministic.
+        auto start = [&](BassEngine& e) {
+            e.prepare(SR);
+            e.setTables(tables);
+            e.keyOn(0, BL_ACCENT_VEL, true);
+        };
+        BassEngine probe; start(probe);
+        const auto look = render(probe, 9600);
+        int cut = 4800;
+        for (int i = 4800; i < 9600; i++) if (std::abs(look[i]) > std::abs(look[cut])) cut = i;
+        BassEngine e; start(e);
+        auto a = render(e, cut + 1);
+        e.keyOff(0);
+        e.keyOn(0, BL_PLAIN_VEL, false);     // fresh note over a sounding voice
+        auto b = render(e, 2400);
+        // Unramped, the plain gain (0.72 vs ~1.4 accented) halves the peak in
+        // one sample. The ramp leaves only the re-attack slope.
+        const double level = std::abs((double)a.back());
+        const double jump = std::abs((double)b[0] - a.back());
+        check(jump < 0.1 * level, "gain change ramps instead of stepping",
+              num(jump) + " at level " + num(level));
     }
 
     printf("\n== legato slide (last-note priority) ==\n");
@@ -485,6 +537,46 @@ int main() {
         check(rms(L2, 24000, 48000) < 1e-4, "volume 0 mutes", num(rms(L2, 24000, 48000)));
     }
 
+    printf("\n== BL-1 COMP and side-chain ==\n");
+    {
+        check(bassParamInfo()[BL_FXCOMP_SC].pid == "fx.comp.sc" && bassParamInfo()[BL_FXCOMP_SCHP].pid == "fx.comp.schp"
+              && BL_FXCOMP_SCHP == BL_NUM_PARAMS - 1, "side-chain params are appended to BL-1");
+        // Steady tone through OTT -> COMP; everything after it is neutral.
+        auto run = [](bool on, int sc, const float* key) {
+            BassFx fx; fx.prepare(SR);
+            auto p = defaultBassParams();
+            p[BL_FXDRIVE_ON] = 0; p[BL_FXREVERB_ON] = 0;
+            p[BL_FXCOMP_ON] = on ? 1.0f : 0.0f; p[BL_FXCOMP_THR] = -40; p[BL_FXCOMP_RATIO] = 20;
+            p[BL_FXCOMP_SC] = (float)sc;
+            fx.setParams(p); fx.snapRamps();
+            const int n = 24000;
+            std::vector<float> L((size_t)n), R((size_t)n);
+            // Measured over the settled second half.
+            for (int i = 0; i < n; ++i) L[(size_t)i] = R[(size_t)i] = 0.4f * (float)std::sin(2 * M_PI * 110 * i / SR);
+            fx.process(L.data(), R.data(), n, key);
+            return std::make_pair(rms(L, 12000, 24000), fx.compTrace().frames());
+        };
+        std::vector<float> key(24000);
+        for (size_t i = 0; i < key.size(); ++i) key[i] = 0.9f * (float)std::sin(2 * M_PI * 70 * (double)i / SR);
+        const auto off = run(false, 0, nullptr), keyed = run(true, 2, key.data()), silent = run(true, 2, nullptr);
+        check(keyed.first < off.first * 0.3, "BL-1 COMP keyed by TRACK 1 ducks under the key",
+              num(keyed.first / off.first));
+        check(std::abs(silent.first / off.first - 1) < 0.05, "a silent key leaves BL-1 untouched",
+              num(silent.first / off.first));
+        check(keyed.second == 24000, "BL-1 COMP trace records every sample");
+        // Unkeyed COMP still compresses: its makeup matches level, so the
+        // per-sample gain trace (not the output level) shows the reduction.
+        BassFx fx; fx.prepare(SR);
+        auto p = defaultBassParams();
+        p[BL_FXCOMP_ON] = 1; p[BL_FXCOMP_THR] = -40; p[BL_FXCOMP_RATIO] = 20;
+        fx.setParams(p); fx.snapRamps();
+        std::vector<float> L(24000), R(24000);
+        for (size_t i = 0; i < L.size(); ++i) L[i] = R[i] = 0.4f * (float)std::sin(2 * M_PI * 110 * (double)i / SR);
+        fx.process(L.data(), R.data(), (int)L.size());
+        check(fx.telemetry()[FxTelemetry::reduction] > 10, "BL-1 COMP reduces a loud signal natively",
+              num(fx.telemetry()[FxTelemetry::reduction]));
+    }
+
 
     // A patch that exercises the whole voice, used by the checks below.
     auto voicePatch = [] {
@@ -666,8 +758,14 @@ int main() {
         e.render(L.data() + 4096, R.data() + 4096, 8192);
         check(maxDelta(L, 4090, 4400) < natural * 1.5, "no click on release",
               num(maxDelta(L, 4090, 4400)) + " vs " + num(natural));
-        check(rms(L, 10000, 12288) < 1e-4, "release reaches silence",
-              num(rms(L, 10000, 12288)));
+        // Only the DC blocker's subsonic tail remains: no audio-rate content,
+        // and it rings out instead of being cut (cutting it clicked).
+        check(maxDelta(L, 10000, 12288) < 1e-5, "release reaches silence",
+              num(maxDelta(L, 10000, 12288)));
+        std::vector<float> T((size_t)SR), TR((size_t)SR);
+        e.render(T.data(), TR.data(), (int)SR);
+        check(maxDelta(T, 1, (int)SR) < 1e-5 && std::abs(T.back()) < 1e-5,
+              "DC tail decays without a step", num(std::abs(T.back())));
     }
 
     printf("\n== sample-rate and block-size invariance ==\n");

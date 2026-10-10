@@ -1,3 +1,5 @@
+import { KEY_CHANNELS } from './sidechain';
+import type { SequenceRhythm } from '../shared/sequenceRhythm';
 // Main-thread engine: owns the AudioContext and the worklet node.
 //
 // The FX rack used to live here as a graph of native WebAudio nodes
@@ -157,7 +159,8 @@ export class SynthEngine {
     this.refreshViz();
 
     this.node = new AudioWorkletNode(ctx, 'fable-wt', {
-      numberOfInputs: 0,
+      // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
+      numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
       numberOfOutputs: 1,
       outputChannelCount: [2],
     });

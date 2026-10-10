@@ -97,6 +97,32 @@ static double aliasFloorDb(const float* x, int N, double sr, double f0) {
     return 10 * std::log10(alias / harm);
 }
 
+// Inharmonic energy 20 Hz - 16 kHz relative to the fundamental's lobe, in dB.
+// Blackman-Harris window (sidelobes < -92 dB); bins within 8 of a harmonic are
+// masked, so only content the oscillator should not contain is counted.
+static double inharmonicDb(const float* x, int N, double sr, double f0) {
+    std::vector<double> re((size_t)N), im((size_t)N, 0.0);
+    for (int i = 0; i < N; i++) {
+        const double t = 2 * M_PI * i / (N - 1);
+        const double w = 0.35875 - 0.48829 * std::cos(t) + 0.14128 * std::cos(2 * t) - 0.01168 * std::cos(3 * t);
+        re[(size_t)i] = x[i] * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    const double bin = sr / N;
+    std::vector<char> harm((size_t)N / 2, 0);
+    for (int h = 1; h * f0 < sr * 0.5; h++) {
+        const int c = (int)std::lround(h * f0 / bin);
+        for (int k = std::max(0, c - 8); k <= c + 8 && k < N / 2; k++) harm[(size_t)k] = 1;
+    }
+    auto p2 = [&](int k) { return re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k]; };
+    double lobe = 0, inh = 0;
+    const int c1 = (int)std::lround(f0 / bin);
+    for (int k = std::max(0, c1 - 8); k <= c1 + 8; k++) lobe += p2(k);
+    for (int k = (int)std::ceil(20 / bin); k < N / 2 && k * bin <= 16000; k++)
+        if (!harm[(size_t)k]) inh += p2(k);
+    return 10 * std::log10(std::max(inh, 1e-30) / lobe);
+}
+
 // ---- octave-band energy profile, for the invariance checks ----
 // Returns per-band energy in dB relative to the total, for bands that are the
 // same absolute frequencies at every sample rate and block size.
@@ -227,6 +253,37 @@ int main(int argc, char** argv) {
             WebCompressor comp(rate); comp.setParams(true, -24, 0.003f, 0.25f, ratio);
             double g = runComp(comp, 1, 0.5);
             check(g < previous, "higher ratio increases gain reduction"); previous = g;
+        }
+        {
+            // COMP side-chain (ott-worklet.js setKey): the key drives the
+            // detector through a one-pole high-pass; makeup is off while keyed.
+            auto runKeyed = [rate](WebCompressor& comp, double seconds, double in, double keyHz, double keyAmp) {
+                double l = 0, r = 0;
+                for (int i = 0; i < rate * seconds; ++i) {
+                    const double k = keyAmp * std::sin(2 * M_PI * keyHz * i / rate);
+                    comp.processSample(in, -in, l, r, k, k);
+                }
+                return l / in;
+            };
+            WebCompressor ducked(rate), silent(rate), flat(rate), highPassed(rate);
+            for (auto* c : {&ducked, &silent, &flat, &highPassed}) c->setParams(true, -30, 0.003f, 0.25f, 8);
+            ducked.setKey(true, 20); silent.setKey(true, 20); flat.setKey(true, 20); highPassed.setKey(true, 500);
+            check(runKeyed(ducked, 0.5, 0.05, 100, 0.8) < 0.25, "a loud key ducks a quiet signal");
+            check(std::abs(runKeyed(silent, 0.5, 0.5, 100, 0) - 1) < 1e-9,
+                  "a silent key leaves a loud signal untouched (no reduction, no makeup)");
+            runKeyed(flat, 0.5, 0.05, 30, 0.8); runKeyed(highPassed, 0.5, 0.05, 30, 0.8);
+            check(highPassed.gain > 0.8 && flat.gain < 0.2, "KEY HP removes a low key from the detector",
+                  std::to_string(highPassed.gain) + " vs " + std::to_string(flat.gain));
+            WebCompressor unkeyed(rate); unkeyed.setParams(true, -30, 0.003f, 0.25f, 8);
+            double l, r;
+            // -40 dBFS input stays under the threshold; a keyed detector would duck it.
+            for (int i = 0; i < rate * 0.5; ++i) unkeyed.processSample(0.01, 0.01, l, r, 0.8, 0.8);
+            check(std::abs(unkeyed.gain - 1) < 1e-9, "an unkeyed compressor ignores the key input");
+            std::vector<float> trace(1024);
+            const auto& t = ducked.trace();
+            check(t.frames() == (uint64_t)(int)(rate * 0.5) && t.readLatest(trace.data(), nullptr, 1024)
+                  && *std::max_element(trace.begin(), trace.end()) > 0.7f,
+                  "the detector trace records the filtered key per sample");
         }
         DriveColor neutral; neutral.prepare(rate);
         bool legacy = true;
@@ -1557,6 +1614,27 @@ int main(int argc, char** argv) {
 
     }
 
+    printf("\n== 16a. Voice steal burst keeps every note ==\n");
+    {
+        // NVOICES-2 sustained notes, released, then NVOICES-1 new notes in one
+        // block. Voices still in release must each take one new note: a voice
+        // already queued behind a steal fade is not stolen again.
+        Engine e; e.prepare(sr); e.setTables(tables);
+        auto p = invariancePatch();
+        p[ENV1_BASE + 3] = 1.5f;                       // long release: all stay audible
+        e.setParams(p);
+        std::vector<float> L(4096, 0.0f), R(L.size(), 0.0f);
+        const int held = NVOICES - 2, burst = NVOICES - 1;
+        for (int i = 0; i < held; i++) e.noteOn(40 + i * 3, 1.0);
+        for (int i = 0; i < 40; i++) e.render(L.data(), R.data(), 128);
+        for (int i = 0; i < held; i++) e.noteOff(40 + i * 3);
+        e.render(L.data(), R.data(), 128);
+        for (int i = 0; i < burst; i++) e.noteOn(41 + i * 3, 1.0);
+        e.render(L.data(), R.data(), 512);             // ~10 ms at 48 kHz
+        check(e.gatedVoiceCountForTesting() == burst, "all burst notes sound after a steal burst",
+              std::to_string(e.gatedVoiceCountForTesting()) + " of " + std::to_string(burst));
+    }
+
     printf("\n== 16b. Discrete switches are crossfaded (finding J2) ==\n");
     {
         // Every discrete switch used to land in one sample: the filter type and
@@ -1950,6 +2028,266 @@ int main(int argc, char** argv) {
     printf("\n== 21. LAB fidelity: tuning, sidebands, aliasing, splices, images ==\n");
     labcheck::runFidelityChecks([](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
 
+    printf("\n== COMP side-chain params and analysis taps ==\n");
+    {
+        check(paramInfo()[FXCOMP_SC].pid == "fx.comp.sc" && paramInfo()[FXCOMP_SCHP].pid == "fx.comp.schp"
+              && FXCOMP_SCHP == NUM_PARAMS - 1, "side-chain params are appended to WT-1");
+        auto p = defaultParams();
+        Fx fx; fx.prepare(48000);
+        const int expected[] = {-1, KICK_CHANNEL, 0, 1, 2, 3};
+        bool mapped = true;
+        for (int sc = 0; sc < 6; ++sc) { p[FXCOMP_SC] = (float)sc; fx.setParams(p); mapped &= fx.keyChannel() == expected[sc]; }
+        check(mapped, "fx.comp.sc maps OFF/KICK/TRACK 1-4 to key-bus channels");
+        // WT-1 chain: a keyed COMP ducks a steady tone under a loud key.
+        auto tone = [](Fx& chain, const float* key) {
+            std::vector<float> L(9600), R(9600);
+            for (size_t i = 0; i < L.size(); ++i) L[i] = R[i] = 0.1f * (float)std::sin(2 * M_PI * 220 * (double)i / 48000);
+            chain.process(L.data(), R.data(), (int)L.size(), key);
+            double e = 0;
+            for (size_t i = 4800; i < L.size(); ++i) e += (double)L[i] * L[i];
+            return std::sqrt(e / 4800);
+        };
+        p = defaultParams();
+        p[FXCOMP_ON] = 1; p[FXCOMP_THR] = -40; p[FXCOMP_RATIO] = 20; p[FXCOMP_SC] = 2;
+        p[FXREVERB_ON] = 0; p[FXDELAY_ON] = 0; p[FXCHORUS_ON] = 0;
+        std::vector<float> key(9600);
+        for (size_t i = 0; i < key.size(); ++i) key[i] = 0.9f * (float)std::sin(2 * M_PI * 90 * (double)i / 48000);
+        Fx a, b; a.prepare(48000); b.prepare(48000); a.setParams(p); b.setParams(p);
+        const double keyedRms = tone(a, key.data()), openRms = tone(b, nullptr);
+        check(keyedRms < openRms * 0.5, "WT-1 COMP keyed by TRACK 1 ducks under the key",
+              std::to_string(keyedRms / openRms));
+        check(a.compTrace().frames() > 0, "WT-1 COMP trace is readable");
+
+        SampleTap<2, 64> tap;
+        std::vector<float> L(100), R(100), outL(64), outR(64);
+        for (int i = 0; i < 100; ++i) { L[(size_t)i] = (float)i; R[(size_t)i] = -(float)i; }
+        tap.write(L.data(), R.data(), 100);
+        uint64_t end = 0;
+        check(tap.readLatest(outL.data(), outR.data(), 32, &end) && end == 100 && outL[31] == 99 && outR[0] == -68,
+              "tap readLatest returns the newest frames in order");
+        check(tap.readLatest(outL.data(), nullptr, 2) && outL[1] == 0, "tap mono read mixes L and R");
+        uint64_t cursor = 0, dropped = 0;
+        const int got = tap.pull(cursor, outL.data(), outR.data(), 64, &dropped);
+        check(got == 32 && dropped == 68 && cursor == 100 && outL[0] == 68, "tap pull skips overwritten frames");
+        check(tap.pull(cursor, outL.data(), outR.data(), 64) == 0, "tap pull waits for new frames");
+    }
+
     printf("\n%s\n", g_fail == 0 ? "ALL CHECKS PASSED" : (std::to_string(g_fail) + " CHECK(S) FAILED").c_str());
+    printf("\n== WT-1 square sub is band-limited (table read, no polyBLEP alias) ==\n");
+    {
+        // Square sub alone: osc A level 0, filters off, no unison/LFO/glide.
+        // The old naive square + 2-point polyBLEP measured -50 dB (262 Hz) and
+        // -44 dB (2 kHz) at 48 kHz; the mip-mapped table sits at the metric
+        // floor (about -88 dB).
+        struct Case { int note; double sr; };
+        for (Case c : {Case{72, 48000.0}, Case{108, 48000.0}, Case{108, 44100.0}, Case{108, 96000.0}}) {
+            Engine eng; eng.prepare(c.sr); eng.setTables(sharedFactoryTables());
+            auto p = defaultParams();
+            p[OSCA_BASE + OSC_ON] = 1; p[OSCA_BASE + OSC_LEVEL] = 0; p[OSCA_BASE + OSC_UNISON] = 1;
+            p[OSCB_BASE + OSC_ON] = 0; p[NOISE_ON] = 0;
+            p[SUB_ON] = 1; p[SUB_SHAPE] = 1; p[SUB_OCT] = -1; p[SUB_LEVEL] = 1;
+            p[FILTER1_BASE + FLT_ON] = 0; p[FILTER2_BASE + FLT_ON] = 0;
+            for (int s = 1; s <= 16; s++) p[matBase(s) + MAT_SRC] = 0;
+            p[MASTER_GLIDE] = 0;
+            p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f;
+            eng.setParams(p);
+            const int N = 32768, skip = 4096;
+            auto buf = renderNote(eng, c.note, (double)(N + skip) / c.sr, c.sr);
+            const double f0 = 440.0 * std::pow(2.0, (c.note - 12 - 69) / 12.0);
+            const double db = inharmonicDb(buf.data() + (buf.size() - N), N, c.sr, f0);
+            check(db < -75.0, "square sub inharmonic < -75 dB @ " + std::to_string((int)std::lround(f0))
+                  + " Hz, " + std::to_string((int)c.sr) + " Hz", std::to_string(db) + " dB");
+        }
+    }
+
+    printf("\n== WT-1 drive: 2x oversampled saturator, aliasing and dry/wet alignment ==\n");
+    {
+        // The rate converter is a polyphase allpass half-band. Its up+down pair
+        // must be flat in the audio band, reject images, delay low frequencies
+        // by under 2 samples, and have unity DC gain.
+        {
+            DriveOs2 os;
+            std::vector<double> h(4096);
+            for (size_t i = 0; i < h.size(); i++) {
+                os.w = 1.0;
+                h[i] = os.run(i == 0 ? 1.0 : 0.0, true, false, 0.0, 0.0, [](double a, double) { return a; });
+            }
+            auto resp = [&](double f, double sr) {
+                double re = 0, im = 0;
+                for (size_t i = 0; i < h.size(); i++) { re += h[i] * std::cos(2 * M_PI * f / sr * (double)i); im -= h[i] * std::sin(2 * M_PI * f / sr * (double)i); }
+                return std::complex<double>(re, im);
+            };
+            double rip = 0;
+            for (double f = 20; f <= 16000; f += 20) rip = std::max(rip, std::fabs(20 * std::log10(std::abs(resp(f, 48000.0)))));
+            check(rip < 0.01, "drive oversampler passband flat to 16 kHz", std::to_string(rip) + " dB");
+            check(std::fabs(20 * std::log10(std::abs(resp(20000, 44100.0)))) < 0.1, "drive oversampler passband at 20 kHz, 44.1 kHz");
+            const double d = -(std::arg(resp(1010, 48000.0)) - std::arg(resp(990, 48000.0))) / (2 * M_PI * 20.0 / 48000.0);
+            check(d > 2.0 && d < 3.0, "drive oversampler delays low frequencies by under 3 samples", std::to_string(d) + " samples");
+            // Images at 2x (products at 30 kHz of the 96 kHz stream
+            // would fold below 18 kHz): the decimator must reject them.
+            DriveOs2 st; double worst = 0;
+            for (int i = 0; i < 4096; i++) {
+                const double hiA = 0.5 * std::sin(2 * M_PI * 30000.0 / 96000.0 * (2 * i));
+                const double hiB = 0.5 * std::sin(2 * M_PI * 30000.0 / 96000.0 * (2 * i + 1));
+                const double y = st.decimate(hiA, hiB);
+                if (i > 2048) worst = std::max(worst, std::fabs(y));
+            }
+            check(20 * std::log10(worst / 0.5 + 1e-30) < -80, "drive oversampler rejects 30 kHz at the high rate by 80 dB",
+                  std::to_string(20 * std::log10(worst / 0.5 + 1e-30)) + " dB");
+        }
+        // Bypass is bit-exact: with the saturator idle and the stage faded out, the
+        // voice is unchanged.
+        {
+            DriveOs2 os; bool exact = true;
+            for (int i = 0; i < 1000; i++) {
+                const double x = std::sin(0.01 * i) * 0.7;
+                exact = exact && os.run(x, false, false, 0.0, 0.01, [](double a, double) { return a; }) == x;
+            }
+            check(exact, "drive oversampler bypass returns its input exactly");
+        }
+        auto render = [&](double sr, int note, int ftype, float cut, float drive, float level) {
+            Engine eng; eng.prepare(sr); eng.setTables(sharedFactoryTables());
+            auto p = defaultParams();
+            p[OSCA_BASE + OSC_ON] = 1; p[OSCA_BASE + OSC_LEVEL] = level; p[OSCA_BASE + OSC_UNISON] = 1;
+            p[OSCA_BASE + OSC_TABLE] = 0; p[OSCA_BASE + OSC_POS] = 0.8f;
+            p[OSCB_BASE + OSC_ON] = 0; p[NOISE_ON] = 0; p[SUB_ON] = 0;
+            p[FILTER1_BASE + FLT_ON] = 1; p[FILTER1_BASE + FLT_TYPE] = (float)ftype;
+            p[FILTER1_BASE + FLT_CUTOFF] = cut; p[FILTER1_BASE + FLT_RES] = 0.3f;
+            p[FILTER1_BASE + FLT_DRIVE] = drive; p[FILTER1_BASE + FLT_ENV] = 0; p[FILTER1_BASE + FLT_KEY] = 0;
+            p[FILTER2_BASE + FLT_ON] = 0;
+            for (int s = 1; s <= 16; s++) p[matBase(s) + MAT_SRC] = 0;
+            p[MASTER_GLIDE] = 0;
+            p[ENV1_BASE + 0] = 0.001f; p[ENV1_BASE + 2] = 1.0f;
+            eng.setParams(p);
+            const int N = 32768, skip = 4096;
+            auto buf = renderNote(eng, note, (double)(N + skip) / sr, sr);
+            return std::vector<float>(buf.end() - N, buf.end());
+        };
+        // Full drive, filter open (LP12) and HP12: the folded products stay
+        // far below the old first-order ADAA at the base rate (-58 dB).
+        struct Case { double sr; int ftype; float cut; double limit; const char* name; };
+        for (Case c : {Case{48000.0, 0, 20000.0f, -80.0, "LP12 open"}, Case{48000.0, 3, 300.0f, -80.0, "HP12"},
+                       Case{44100.0, 0, 20000.0f, -76.0, "LP12 open"}, Case{44100.0, 3, 300.0f, -76.0, "HP12"}}) {
+            const int note = 72;                                  // C5, 523 Hz
+            auto y = render(c.sr, note, c.ftype, c.cut, 1.0f, 1.0f);
+            const double f0 = 440.0 * std::pow(2.0, (note - 69) / 12.0);
+            const double db = driveos_check::inharmonicDb(y.data(), (int)y.size(), c.sr, f0);
+            check(db < c.limit, std::string("drive 1 alias < ") + std::to_string((int)c.limit) + " dB, " + c.name
+                  + " @ " + std::to_string((int)c.sr) + " Hz", std::to_string(db) + " dB");
+        }
+        // Dry/wet alignment: at a level where tanh is linear, a half-mixed
+        // drive (0.05 = mix 0.5) is a pure gain on the drive-0 signal. A dry
+        // path that missed the oversampler delay would notch every 4 kHz.
+        for (double sr : {48000.0, 44100.0}) {
+            auto off = render(sr, 48, 0, 20000.0f, 0.0f, 0.02f);
+            auto on = render(sr, 48, 0, 20000.0f, 0.05f, 0.02f);
+            const double f0 = 440.0 * std::pow(2.0, (48 - 69) / 12.0);
+            const double rip = driveos_check::gainRippleDb(off.data(), on.data(), (int)off.size(), sr, f0);
+            check(rip < 0.1, "drive mix 0.5 adds no comb filtering @ " + std::to_string((int)sr) + " Hz",
+                  std::to_string(rip) + " dB residual");
+        }
+    }
+
+    printf("\n== WT-1 Serum-parity mod sources (web worklet.mod.test.ts) ==\n");
+    {
+        const int aPos = 1; // MOD_DESTS 'A POS'
+        auto sums = [&](const std::function<void(ParamArray&)>& patch, int chunks) {
+            Engine e; e.prepare(48000); e.setTables(tables);
+            ParamArray p = defaultParams();
+            p[matBase(1) + MAT_DST] = aPos;
+            patch(p);
+            e.setParams(p);
+            e.noteOn(60, 1.0);
+            std::vector<float> L(128), R(128);
+            std::vector<double> out;
+            for (int i = 0; i < chunks; ++i) { e.render(L.data(), R.data(), 128); out.push_back(e.vizMod[aPos]); }
+            return out;
+        };
+        bool ok = true;
+        for (double x : sums([](ParamArray& p) { p[matBase(1) + MAT_SRC] = 9; p[matBase(1) + MAT_AMT] = 0.5f; p[MACRO1] = 0.6f; }, 8))
+            ok = ok && std::abs(x - 0.3) < 1e-6;
+        check(ok, "a macro drives a route by its knob value");
+        ok = true;
+        for (double x : sums([](ParamArray& p) {
+                 p[matBase(1) + MAT_SRC] = 10; p[matBase(1) + MAT_AMT] = 0.5f; p[MACRO2] = 1;
+                 p[MATAUX1] = 13; p[PERF_MODWHEEL] = 0.5f; }, 8))
+            ok = ok && std::abs(x - 0.25) < 1e-6;
+        check(ok, "the aux source scales a route by its unipolar value");
+        auto env = sums([](ParamArray& p) {
+            p[matBase(1) + MAT_SRC] = 8; p[matBase(1) + MAT_AMT] = 0.5f; p[ENV3_BASE] = 0.001f; p[ENV3_BASE + 2] = 1; }, 64);
+        check(std::abs(env.back() - 0.5) < 1e-3, "MOD ENV 2 follows env3", std::to_string(env.back()));
+        auto lfo = sums([](ParamArray& p) {
+            p[matBase(1) + MAT_SRC] = 7; p[matBase(1) + MAT_AMT] = 0.5f; p[paramIndex(LFO4_BASE, LFO_RATE)] = 5; }, 64);
+        const auto [lo, hi] = std::minmax_element(lfo.begin(), lfo.end());
+        check(*hi - *lo > 0.1 && *hi <= 0.5 + 1e-9 && *lo >= -0.5 - 1e-9, "LFO 4 moves within its amount");
+        auto rnd = sums([](ParamArray& p) { p[matBase(1) + MAT_SRC] = 15; p[matBase(1) + MAT_AMT] = 1; }, 8);
+        // 5th draw of modRng_ (gLfo3/4 reset, voice lfo3/4 reset, RANDOM); the web test pins the same value.
+        check(std::abs(rnd.front() - 0.8250203728675842) < 1e-7 && std::all_of(rnd.begin(), rnd.end(), [&](double x) { return x == rnd.front(); }),
+              "RANDOM holds one unipolar value per note");
+    }
+
+    printf("\n== WT-1 CURVE envelope model (web worklet.mod.test.ts) ==\n");
+    {
+        // MOD ENV -> A POS at depth 1: vizMod reads the envelope at the start of
+        // each 128-sample chunk.
+        auto envAt = [&](const std::function<void(ParamArray&)>& patch, int chunks) {
+            Engine e; e.prepare(48000); e.setTables(tables);
+            ParamArray p = defaultParams();
+            p[matBase(1) + MAT_SRC] = 3; p[matBase(1) + MAT_DST] = 1; p[matBase(1) + MAT_AMT] = 1;
+            p[envxBase(2) + ENVX_MODEL] = 1;
+            patch(p);
+            e.setParams(p);
+            e.noteOn(60, 1.0);
+            std::vector<float> L(128), R(128);
+            std::vector<double> out;
+            for (int i = 0; i < chunks; ++i) { e.render(L.data(), R.data(), 128); out.push_back(e.vizMod[1]); }
+            return out;
+        };
+        auto att = envAt([](ParamArray& p) { p[ENV2_BASE] = 1; p[ENV2_BASE + 2] = 1; p[envxBase(2) + ENVX_AC] = 0.5f; }, 200);
+        bool lin = true;
+        for (int k = 1; k < 200; ++k) lin = lin && std::abs(att[k] - k * 128 / 48000.0) < 1e-3;
+        check(lin, "a 50% attack curve is linear and ends at the attack time");
+        const double d = 0.5, pexp = std::pow(2.0, std::abs(0.67f - 0.5) * 100 / 12);
+        auto dec = envAt([](ParamArray& p) { p[ENV2_BASE] = 0.001f; p[ENV2_BASE + 1] = 0.5f; p[ENV2_BASE + 2] = 0; p[envxBase(2) + ENVX_DC] = 0.67f; }, 220);
+        bool ok = true;
+        for (int k = 2; k < 220; ++k) {
+            const double t = k * 128 / 48000.0 - 48 / 48000.0;
+            ok = ok && std::abs(dec[k] - (t >= d ? 0.0 : std::pow(1 - t / d, pexp))) < 0.01;
+        }
+        check(ok, "decay reaches the sustain level exactly at the decay time, bent by the curve");
+    }
+
+    printf("\n== WT-1 mono / legato (web worklet.mono.test.ts) ==\n");
+    {
+        auto make = [&](bool mono, bool legato) {
+            auto e = std::make_unique<Engine>(); e->prepare(48000); e->setTables(tables);
+            ParamArray p = defaultParams();
+            p[MASTER_MONO] = mono ? 1.0f : 0.0f; p[MASTER_LEGATO] = legato ? 1.0f : 0.0f;
+            p[ENV1_BASE] = 0.001f; p[ENV1_BASE + 1] = 0.05f; p[ENV1_BASE + 2] = 0.5f;
+            e->setParams(p);
+            return e;
+        };
+        std::vector<float> L(128), R(128);
+        auto run = [&](Engine& e, int chunks) { for (int i = 0; i < chunks; ++i) e.render(L.data(), R.data(), 128); };
+        auto poly = make(false, true);
+        poly->noteOn(60, 1); poly->noteOn(64, 1); run(*poly, 4);
+        check(poly->gatedVoiceCountForTesting() == 2, "poly default: two held notes gate two voices");
+        auto leg = make(true, true);
+        leg->noteOn(60, 1); run(*leg, 100); leg->noteOn(64, 1); run(*leg, 1);
+        const Voice* v = leg->newestGatedVoiceForTesting();
+        check(leg->gatedVoiceCountForTesting() == 1 && v && v->note == 64 && v->ampEnv.state == 3,
+              "legato retunes the single voice without retrigger");
+        leg->noteOff(64); run(*leg, 1);
+        v = leg->newestGatedVoiceForTesting();
+        check(v && v->note == 60 && v->ampEnv.state == 3, "releasing the top note falls back to the held note");
+        leg->noteOff(60); run(*leg, 1);
+        check(leg->gatedVoiceCountForTesting() == 0, "releasing the last held note releases the voice");
+        auto ret = make(true, false);
+        ret->noteOn(60, 1); run(*ret, 100); ret->noteOn(64, 1); run(*ret, 1);
+        v = ret->newestGatedVoiceForTesting();
+        check(ret->gatedVoiceCountForTesting() == 1 && v && v->note == 64 && v->ampEnv.state != 3,
+              "mono without legato retriggers the envelope");
+    }
+
     return g_fail == 0 ? 0 : 1;
 }

@@ -29,6 +29,10 @@ extern const std::vector<std::string> DMOD_SOURCES;       // —, MOD ENV, VELO,
 extern const std::vector<std::string> DMOD_DESTS;         // —, A POS, B POS, LEVEL, CUTOFF, PITCH, A FINE, B FINE, NOISE LVL, RES
 extern const std::vector<std::string> CHOKE_NAMES;        // —, CHK 1..CHK 4
 extern const std::vector<std::string> OUT_NAMES;          // MAIN, AUX 1..AUX 4
+// fx.comp.sc options (src/engine/sidechain.ts DRUM_SC_SOURCES): OFF, PAD 01..16
+// (that pad's dry signal before pad FX), TRACK 2..4 (SQ-4 key channels 1..3).
+extern const std::vector<std::string> DRUM_SC_SOURCES;
+constexpr int DRUM_SC_FIRST_TRACK = 1 + 16; // index of TRACK 2
 
 // The full TABLE selector option list: the 10 drum table names followed by
 // fixed "USER n" slots, mirroring WT-1's tableSlotNames() so imported tables
@@ -62,6 +66,8 @@ enum DPadField : int {
     DP_FXEQ_ON, DP_FXEQ_LOW, DP_FXEQ_MID, DP_FXEQ_MFREQ, DP_FXEQ_HIGH, DP_FXEQLFREQ, DP_FXEQM2FREQ, DP_FXEQHFREQ, DP_FXEQMID2, DP_FXEQLQ, DP_FXEQLTYPE, DP_FXEQLON, DP_FXEQMQ, DP_FXEQMTYPE, DP_FXEQMON, DP_FXEQM2Q, DP_FXEQM2TYPE, DP_FXEQM2ON, DP_FXEQHQ, DP_FXEQHTYPE, DP_FXEQHON,
     DP_FXCOMP_ATT, DP_FXCOMP_REL, DP_FXCOMP_RATIO, DP_FXDRIVE_TONE, DP_FXDRIVE_TYPE,
     DP_FXCRUSH_ON, DP_FXCRUSH_BITS, DP_FXCRUSH_RATE, DP_FXCRUSH_CHAOS, DP_FXCRUSH_MIX, DP_FXRESO_ON, DP_FXRESO_NOTE, DP_FXRESO_CHORD, DP_FXRESO_DECAY, DP_FXRESO_MIX, DP_FXSHIFT_ON, DP_FXSHIFT_HZ, DP_FXSHIFT_FB, DP_FXSHIFT_SPREAD, DP_FXSHIFT_MIX, DP_FXSPRAY_ON, DP_FXSPRAY_PITCH, DP_FXSPRAY_DENSITY, DP_FXSPRAY_SCATTER, DP_FXSPRAY_MIX, DP_FXGLITCH_ON, DP_FXGLITCH_DIV, DP_FXGLITCH_CHANCE, DP_FXGLITCH_DRIFT, DP_FXGLITCH_MIX,
+    // COMP side-chain (DRUM_SC_SOURCES / KEY HP), appended.
+    DP_FXCOMP_SC, DP_FXCOMP_SCHP,
     DPAD_NFIELDS
 };
 

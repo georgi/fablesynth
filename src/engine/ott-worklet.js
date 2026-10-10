@@ -73,13 +73,25 @@ class Compressor {
     this.wetTarget = on ? 1 : 0;
     this.thresholdTarget = Math.max(-40, Math.min(0, threshold));
   }
+  /** `keyed` selects the key input; `hpHz` high-passes it (20 Hz ≈ flat). */
+  setKey(keyed, hpHz = 20) {
+    if (keyed !== this.keyed) { this.keyLpL = this.keyLpR = 0; this.autoGain.reset(); }
+    this.keyed = !!keyed;
+    this.keyCoef = 1 - Math.exp(-2 * Math.PI * Math.max(10, Math.min(1000, hpHz)) / this.sr);
+  }
   reset() { this.env = 0; this.gain = 1; this.step = 0; this.tick = 0; this.l = 0; this.r = 0; this.autoGain.reset(); }
-  processSample(l, r) {
+  processSample(l, r, kl = 0, kr = kl) {
+    let pk;
+    if (this.keyed) {
+      this.keyLpL += this.keyCoef * (kl - this.keyLpL);
+      this.keyLpR += this.keyCoef * (kr - this.keyLpR);
+      pk = Math.max(Math.abs(kl - this.keyLpL), Math.abs(kr - this.keyLpR));
+    } else pk = Math.max(Math.abs(l), Math.abs(r));
+    if (this.traceLen < this.trace.length) this.trace[this.traceLen++] = pk;
     if (this.wetTarget === 0 && this.wet < 1e-6) {
       if (this.wet !== 0) { this.wet = 0; this.reset(); }
       this.l = l; this.r = r; return;
     }
-    const pk = Math.max(Math.abs(l), Math.abs(r));
     this.env += (pk - this.env) * (pk > this.env ? this.attack : this.release);
     this.threshold += (this.thresholdTarget - this.threshold) * this.smooth;
     this.ratio += (this.ratioTarget - this.ratio) * this.smooth;
@@ -91,13 +103,18 @@ class Compressor {
     }
     this.tick = (this.tick + 1) & 31;
     this.gain += this.step;
-    const g = this.gain * this.autoGain.next(l, r, this.gain * l, this.gain * r);
+    const g = this.keyed ? this.gain : this.gain * this.autoGain.next(l, r, this.gain * l, this.gain * r);
     this.wet += (this.wetTarget - this.wet) * this.smooth;
     this.l = l + this.wet * (g * l - l);
     this.r = r + this.wet * (g * r - r);
   }
-  process(L, R, n) {
-    for (let i = 0; i < n; i++) { this.processSample(L[i], R[i]); L[i] = this.l; R[i] = this.r; }
+  /** `KL`/`KR` are the key for these samples; omitted means no key signal. */
+  process(L, R, n, KL = null, KR = KL) {
+    if (this.keyed && KL) {
+      for (let i = 0; i < n; i++) { this.processSample(L[i], R[i], KL[i] || 0, KR[i] || 0); L[i] = this.l; R[i] = this.r; }
+    } else {
+      for (let i = 0; i < n; i++) { this.processSample(L[i], R[i]); L[i] = this.l; R[i] = this.r; }
+    }
   }
 }
 

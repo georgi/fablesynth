@@ -556,6 +556,7 @@ function mixGate(on, amount, wet) {
 
 class BassFx {
   constructor(sr) {
+    this.keyChannel = -1; this.keyIn = null; // COMP side-chain, see setParams
     this.sr = sr;
     const scale = sr / 44100;
     this.headroom = {};
@@ -692,6 +693,10 @@ class BassFx {
     this.driveColorL.setParams(num('fx.drive.type', 0), num('fx.drive.tone', 0));
     this.driveColorR.setParams(num('fx.drive.type', 0), num('fx.drive.tone', 0));
     this.comp.setParams(num('fx.comp.on', 0) > 0.5, num('fx.comp.thr', -16), num('fx.comp.att', 0.003), num('fx.comp.rel', 0.25), num('fx.comp.ratio', 4));
+    // Side-chain (src/engine/sidechain.ts): 1 KICK → key channel 4, TRACK n → n-1.
+    const sc = Math.round(num('fx.comp.sc', 0));
+    this.keyChannel = sc === 1 ? 4 : sc >= 2 ? sc - 2 : -1;
+    this.comp.setKey(this.keyChannel >= 0, num('fx.comp.schp', 20));
     this.ott.setParams(num('fx.ott.on', 0) > 0.5, num('fx.ott.depth', 0.35),
       num('fx.ott.time', 1), num('fx.ott.up', 1), num('fx.ott.down', 1));
 
@@ -822,6 +827,7 @@ class BassFx {
     // These stages precede the oversampled drive. Process the source arrays
     // first so both the drive's wet segment and latency-aligned dry path see
     // the dynamics-processed signal.
+    const key = this.keyChannel >= 0 ? this.keyIn?.[this.keyChannel] : null;
     for (let i = 0; i < n; i++) {
       if (this.metering) this.meterEnergy[0] += 0.5 * (L[i] * L[i] + R[i] * R[i]);
       this.ott.processSample(L[i], R[i]);
@@ -2098,7 +2104,9 @@ class BassProcessor extends AudioWorkletProcessor {
     }
   }
 
-  process(_inputs, outputs) {
+  process(inputs, outputs) {
+    // The SQ-4 key bus (five mono channels); empty when nothing is connected.
+    this.fx.keyIn = inputs[0]?.length ? inputs[0] : null;
     const out = outputs[0];
     const L = out[0];
     const n = L.length;

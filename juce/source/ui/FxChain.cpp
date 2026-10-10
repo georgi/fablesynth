@@ -345,6 +345,8 @@ float FxModuleView::echoTime() const {
     return value(prefix_ + "fx.delay.time");
 }
 void FxModuleView::timerCallback() {
+    if (sideChain_)
+        sideChain_->poll();
     // Checking ancestor visibility also permits offscreen software snapshots;
     // isShowing() requires an OS peer even when every component is visible.
     for (auto *c = static_cast<juce::Component *>(this); c != nullptr; c = c->getParentComponent())
@@ -458,7 +460,8 @@ void FxModuleView::resized() {
     }
     r.removeFromTop(6);
     {
-        const int bottom = kind_ == Eq ? 112 : kind_ == Ott || kind_ == Comp ? 106 : kind_ == Drive ? 98 : 92;
+        const int bottom = kind_ == Eq ? 112 : kind_ == Comp && sideChain_ ? 130
+                         : kind_ == Ott || kind_ == Comp ? 106 : kind_ == Drive ? 98 : 92;
         plot_ = r.removeFromTop(juce::jmax(72, r.getHeight() - bottom));
         readouts_ = r.removeFromTop(kind_ == Eq ? 28 : 24);
         if (kind_ == Drive) {
@@ -474,23 +477,28 @@ void FxModuleView::resized() {
             shape_.setBounds(tools.removeFromLeft(115));
         }
         controls_ = r.removeFromTop(64);
+        if (sideChain_) {
+            sideChainArea_ = r.removeFromTop(24);
+            sideChain_->setBounds(sideChainArea_.reduced(4, 1));
+        }
         footer_ = r;
+        autoArea_ = (kind_ == Eq ? readouts_ : controls_).getUnion(footer_).reduced(4, 2);
+        if (autoEq_)
+            autoEq_->setBounds(autoArea_);
+        if (autoComp_)
+            autoComp_->setBounds(autoArea_);
     }
     auto controls = controls_;
     if (kind_ == Reverb)
         controls = controls.withTrimmedRight(controls.getWidth() / 3);
-    const int n = knobs_.size();
+    const int n = knobs_.size() + (keyHp_ ? 1 : 0);
     for (int i = 0; i < n; ++i)
-        knobs_[i]->setBounds(controls.getX() + i * controls.getWidth() / n, controls.getY(),
-                             controls.getWidth() / n, juce::jmin(64, controls.getHeight()));
+        (i < knobs_.size() ? knobs_[i] : keyHp_.get())
+            ->setBounds(controls.getX() + i * controls.getWidth() / n, controls.getY(),
+                        controls.getWidth() / n, juce::jmin(64, controls.getHeight()));
 }
 
-void FxModuleView::paint(juce::Graphics &g) {
-    drawPanel(g, getLocalBounds().toFloat(), 9);
-    g.setFont(dispFont(12));
-    g.setColour(col::text);
-    g.drawText(kind_ == Echo && tape_ ? "TAPE ECHO" : titles[kind_], 34, 10, 140, 24,
-               juce::Justification::centredLeft);
+juce::String FxModuleView::headerCaption() const {
     juce::String caption;
     if (kind_ == Ott)
         caption = power_.isOn() ? juce::String::fromUTF8("3 BAND         LEVEL / ± GAIN") : "BYPASS";

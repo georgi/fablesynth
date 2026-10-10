@@ -86,6 +86,7 @@ export const BASS_PARAM_DEFS: ParamDef[] = [
   { id: 'fx.ott.down', label: 'DOWNWARD', min: 0, max: 2, def: 1, curve: 'lin', fmt: fmtPct },
   ...PARAM_DEFS.filter((d) => d.id.startsWith('fx.eq.')),
   ...PARAM_DEFS.filter((d) => ['fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type'].includes(d.id)),
+  ...PARAM_DEFS.filter((d) => d.id === 'fx.comp.sc' || d.id === 'fx.comp.schp'),
 ];
 
 export const BASS_PARAMS: Record<string, ParamDef> = Object.fromEntries(BASS_PARAM_DEFS.map((d) => [d.id, d]));

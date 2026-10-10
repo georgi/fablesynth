@@ -449,6 +449,15 @@ private:
     float xL_[128] = {0}, xR_[128] = {0};
     float yL_[128] = {0}, yR_[128] = {0};
     float padL_[128] = {0}, padR_[128] = {0};
+    // Every pad's dry render for one chunk, rendered before any pad FX so a
+    // strip keyed by a pad hears the same pre-FX signal whatever the order.
+    float padDryL_[DR_NPADS][128] = {{0}}, padDryR_[DR_NPADS][128] = {{0}};
+    std::array<const float*, KEY_CHANNELS> extKey_{};
+    float* kickKeyOut_ = nullptr;
+    void routeKey(DrumFx& fx, int pos);
+    std::atomic<bool> padCaptureOn_{false};
+    std::unique_ptr<std::array<PadCaptureTap, DR_NPADS>> padCapture_ =
+        std::make_unique<std::array<PadCaptureTap, DR_NPADS>>();
     std::array<DrumFx, DR_NPADS> padFx_;
     // One post-mix chain per physical output retains DR-1's separate MAIN/AUX
     // streams while all instances read the single global `fx.*` strip.

@@ -107,12 +107,27 @@ class FxModuleView : public juce::Component, private fui::VisualTimer {
     double lastReceived_ = 0;
     bool dragging_ = false;
     juce::Point<float> dragPoint_;
+    juce::TextButton auto_{"AUTO"};
+    bool autoOpen_ = false, cachedKeyed_ = false;
+    std::unique_ptr<AutoEqStrip> autoEq_;
+    std::unique_ptr<AutoCompStrip> autoComp_;
+    std::unique_ptr<SideChainRow> sideChain_;
+    std::unique_ptr<Knob> keyHp_;   // the fifth COMP knob while keyed
+    juce::Rectangle<int> autoArea_, sideChainArea_;
+    LiveSpectrum live_;
+    std::unique_ptr<VisualTick> liveTick_;
 };
 
 class FxChain : public juce::Component {
   public:
     FxChain(DeviceUiModel &, bool tape);
     void setPad(int pad, const juce::String &name);
+    // An extra panel for the unscoped (group) strip, toggled by its own head
+    // button. DR-1 passes KIT MIX; it replaces the lower module row when on.
+    void setGroupPanel(juce::Component *panel, const juce::String &buttonText);
+    bool groupPanelVisible() const { return groupPanel_ && groupPanelOn_ && pad_ < 0; }
+    void showGroupPanel(bool);
+    FxModuleView *module(FxModuleView::Kind);
     void resized() override;
     void paint(juce::Graphics &) override;
 

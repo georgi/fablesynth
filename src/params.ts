@@ -1,5 +1,6 @@
 // Canonical parameter definitions. Every knob, preset and engine param keys off this.
 // curve: 'lin' | 'log' (geometric min..max) | 'int'
+import { SC_HP_DEF, SC_SOURCES } from './engine/sidechain';
 
 export const fmtHz = (v: number) => (v >= 1000 ? (v / 1000).toFixed(2) + ' kHz' : v.toFixed(v < 100 ? 1 : 0) + ' Hz');
 export const fmtSec = (v: number) => (v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(2) + ' s');

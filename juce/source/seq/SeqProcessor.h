@@ -33,6 +33,9 @@ const std::vector<ParamInfo>& seqParamInfo();
 // Session-bus-only controls. Their UI-facing ids deliberately omit the
 // `master.` storage prefix so the shared FX modules can address `fx.*`.
 const std::vector<ParamInfo>& masterFxParamInfo();
+// masterFxParamInfo().size(): EQ 0-20, OTT 21-25, COMP 26-30, limiter 31-32,
+// COMP side-chain 33 (SC_SOURCES) and 34 (KEY HP), appended.
+constexpr int MASTER_FX_PARAMS = 35;
 } // namespace fable
 // FableSynth SQ-4 (session launcher) processor. Hosts all four FableSynth
 // engines — DR-1 (DrumEngine), BL-1 (BassEngine), and two WT-1 (Engine) — in a
@@ -405,8 +408,10 @@ private:
             eq.prepare(sampleRate); ott.prepare(sampleRate); comp.prepare(sampleRate); meter.prepare(sampleRate);
         }
         void reset() { eq.reset(); ott.reset(); comp.reset(); meter.reset(); }
-        void setParams(const std::array<float, 33>& p);
-        void process(float* l, float* r, int n);
+        int keyChannel = -1; // COMP side-chain key-bus channel, -1 = off
+        void setParams(const std::array<float, fable::MASTER_FX_PARAMS>& p);
+        // key: the aligned mono key for these n samples, or null for silence.
+        void process(float* l, float* r, int n, const float* key = nullptr);
         fable::FxTelemetry telemetry() const { return meter.read(); }
         std::array<float, 3> limiterTelemetry() const {
             return { limiterInDb.load(std::memory_order_relaxed), limiterOutDb.load(std::memory_order_relaxed),
@@ -414,7 +419,32 @@ private:
         }
     } masterFx_;
 
-    void processMaster(float* l, float* r, int n);
+    void processMaster(float* l, float* r, int n, const float* key = nullptr);
+
+    // COMP side-chain key bus (src/seq/rig.ts wireKeyBus): channels 0-3 are
+    // the post-fader tracks, 4 the DR-1 kick (pad 01 dry, after the drum
+    // fader), each mono (L + R) / 2. The master reads it aligned with the
+    // mix. Devices read it exactly kKeyDelay samples late, as the web rig's
+    // one-quantum delay does; processBlock renders in chunks of at most
+    // kKeyDelay while a device key is in use so that frame is always written.
+    static constexpr int kKeyDelay = 128;
+    static constexpr int kKeyRing = 512; // power of two > kKeyDelay + chunk
+    std::array<std::array<float, kKeyRing>, fable::KEY_CHANNELS> keyRing_ {};
+    uint64_t keyFrame_ = 0; // frames written to keyRing_
+    std::array<std::array<float, kKeyDelay>, fable::KEY_CHANNELS> deviceKey_ {};
+    juce::AudioBuffer<float> keyBus_; // this chunk's key bus, sized in prepareToPlay
+    bool deviceKeys_ = false;          // this chunk renders with device keys
+    void readDeviceKeys(int n);
+    const float* deviceKey(int channel) const {
+        return deviceKeys_ && channel >= 0 ? deviceKey_[(size_t)channel].data() : nullptr;
+    }
+
+    // Heap-held analysis taps (about 1.5 MB), allocated with the processor.
+    struct Taps {
+        std::array<fable::ProgramTap, kTracks> track;
+        fable::ProgramTap masterIn, masterOut;
+    };
+    std::unique_ptr<Taps> taps_ = std::make_unique<Taps>();
     fable::LookaheadLimiter outputLimiter_; // unity makeup, after every master gain stage
 
     // Legacy master compressor — retained for existing session sound. The
