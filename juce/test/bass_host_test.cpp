@@ -354,13 +354,41 @@ int main(int argc, char** argv) {
             { "env view",     1240, 200 },
             { "lfo view",      120, 420 },
             { "accent knobs",  420, 430 },
-            { "keys",         1000, 980 },
-            { "seq lanes",     700, 750 },
-            { "seq controls",  400, 665 },
+            { "keys",         1000, 660 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);
             check(img.getPixelAt(p.x, p.y) != bg, p.name, (double)p.x);
+        }
+
+        // All four page tabs share one content height, so switching pages
+        // never changes the BL-1 body extent (standalone or in SQ-4).
+        {
+            BassDeviceBody* body = nullptr;
+            for (auto* c : bassEd->getRack().getChildren())
+                if (auto* b = dynamic_cast<BassDeviceBody*>(c)) body = b;
+            check(body != nullptr, "rack hosts the BL-1 device body");
+            if (body) {
+                std::vector<int> bottoms;
+                int tab = 0;
+                for (auto* c : body->getChildren()) {
+                    auto* button = dynamic_cast<juce::TextButton*>(c);
+                    if (!button || button->getRadioGroupId() == 0) continue;
+                    button->onClick();
+                    int bottom = 0;
+                    for (auto* child : body->getChildren())
+                        if (child->isVisible() && child->getY() > button->getBottom())
+                            bottom = std::max(bottom, child->getBottom());
+                    bottoms.push_back(bottom);
+                    writePng(ed->createComponentSnapshot(ed->getLocalBounds()),
+                             dir.getChildFile("bass_page_" + juce::String(tab++) + ".png"));
+                }
+                bool same = bottoms.size() == 4;
+                for (int b : bottoms) same = same && b == bottoms.front();
+                check(same, "all four BL-1 pages share one height",
+                      bottoms.empty() ? 0.0 : (double)bottoms.front());
+                for (int b : bottoms) printf("    page bottom %d\n", b);
+            }
         }
 
         // ---- 12. pitch seq view: web store semantics ----

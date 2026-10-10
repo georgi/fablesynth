@@ -104,25 +104,11 @@
 #bl-seq,
 #bl-fxrack,
 #bl-keysrow { margin-top: 9px; min-width: 0; }
-
-.bl-led {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #2a3140, #12151d);
-}
-.bl-led-a {
-  border-color: color-mix(in srgb, var(--ac-a) 65%, white);
-  background: radial-gradient(circle at 38% 32%, #e5fff1, var(--ac-a) 38%, #1b8752 76%);
-  box-shadow: 0 0 8px rgba(77, 255, 158, 0.75);
-}
-.bl-led-f {
-  border-color: color-mix(in srgb, var(--ac-f) 65%, white);
-  background: radial-gradient(circle at 38% 32%, #f1e8ff, var(--ac-f) 38%, #5a3d99 76%);
-  box-shadow: 0 0 8px rgba(177, 140, 255, 0.75);
-}
+/* Tabbed pages (BassDeviceBody): the tab row replaces the first row's top
+   margin, and every page keeps one height so switching never jumps. */
+.bl-body { margin-top: 9px; }
+.bl-body .device-tabs { margin-bottom: 0; }
+.bl-body .device-page { min-height: 725px; }
 
 .bl-head-note {
   margin-left: auto;
@@ -753,4 +739,8 @@
       'reverb';
     gap: 8px;
   }
+}
+
+@media (max-width: 700px) {
+  .bl-body .device-page { min-height: 0; }
 }

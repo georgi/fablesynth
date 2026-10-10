@@ -281,7 +281,44 @@ body::before {
 .led.on { background: var(--ac-a); box-shadow: 0 0 8px var(--ac-a); }
 #voice-count { color: var(--ac-b); min-width: 12px; text-align: center; }
 
+/* WT-1 header: one compact row. Knobs sit inline at control height, with the
+   dial on the left and the label and hover value on the right. */
+.wt-top-bar { padding-block: 6px; }
+.wt-top-bar .hud-cell { height: 30px; }
+.wt-top-bar .status-row { margin: 1px 0; }
+.wt-top-bar .ns-transport { margin-right: 10px; }
+.wt-top-bar .knob {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: 1fr 1fr;
+  column-gap: 6px;
+  align-items: center;
+}
+.wt-top-bar .knob svg { grid-row: 1 / 3; width: 30px; height: 30px; }
+.wt-top-bar .k-label { margin-top: 0; align-self: end; }
+.wt-top-bar .k-value { align-self: start; text-align: left; }
+
 /* ============ panel grid ============ */
+/* Standalone WT-1 pages (WtDeviceBody). The bare .panels template below stays
+   for SQ-4's hosted WT-1 view. Every page keeps the EDIT page's height. */
+.wt-body { --wt-page-h: 720px; }
+.wt-body .device-page { min-height: var(--wt-page-h); }
+.panels[data-page] { align-content: start; }
+.panels[data-page='edit'] {
+  grid-template-areas:
+    'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
+    'filter filter filter filter env1 env1 env2 env2 lfos lfos lfos lfos'
+    'matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix matrix';
+}
+.panels[data-page='fx'] {
+  grid-template-areas:
+    'eq eq eq eq ott ott ott ott comp comp comp comp'
+    'drive drive drive chorus chorus chorus echo echo echo reverb reverb reverb';
+  align-content: start;
+}
+.panels[data-page='lab'] { grid-template-areas: 'lab'; grid-template-columns: minmax(0, 1fr); align-content: start; }
+.panels[data-page='seq'] { grid-template-areas: 'seq'; grid-template-columns: minmax(0, 1fr); align-content: start; }
+
 .panels {
   display: grid;
   grid-template-columns: repeat(12, 1fr);

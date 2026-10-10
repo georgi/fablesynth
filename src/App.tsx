@@ -1,23 +1,10 @@
-import { WtAutomation } from './components/WtAutomation';
+import { WtDeviceBody } from './components/WtDeviceBody';
 import { useEffect, useState } from 'react';
 import { WebAgentPanel } from './agent/WebAgentPanel';
 import { makeWtAgentHost } from './agent/wtAgentHost';
 import { PowerOverlay } from './components/PowerOverlay';
 import { WavetableEditor } from './components/WavetableEditor';
 import { TopBar } from './components/panels/TopBar';
-import { OscPanel } from './components/panels/OscPanel';
-import { UtilPanel } from './components/panels/UtilPanel';
-import { FilterPanel } from './components/panels/FilterPanel';
-import { EnvPanel } from './components/panels/EnvPanel';
-import { LfoPanel } from './components/panels/LfoPanel';
-import { MatrixPanel } from './components/panels/MatrixPanel';
-import { FxPanel } from './components/panels/FxPanel';
-import { LabPanel } from './components/panels/LabPanel';
-import { EqPanel } from './components/panels/EqPanel';
-import { DynamicsPanel } from './components/panels/DynamicsPanel';
-import { TapeEchoPanel } from './components/panels/TapeEchoPanel';
-import { ReverbPanel } from './components/panels/ReverbPanel';
-import { SeqPanel } from './components/panels/SeqPanel';
 import { KeyboardBar } from './components/panels/KeyboardBar';
 import { useComputerKeys } from './hooks/useComputerKeys';
 import { useSeqEditKeys } from './hooks/useSeqEditKeys';
@@ -47,25 +34,7 @@ export function App() {
       <WavetableEditor />
       <main id="rack">
         <TopBar />
-        <div className="panels">
-          <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
-          <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
-          <UtilPanel />
-          <FilterPanel />
-          <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
-          <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
-          <LfoPanel />
-          <MatrixPanel />
-          <EqPanel />
-          <DynamicsPanel kind="ott" />
-          <DynamicsPanel kind="comp" />
-          <TapeEchoPanel />
-          <ReverbPanel />
-          <FxPanel />
-          <LabPanel />
-          <SeqPanel />
-        </div>
-        <WtAutomation />
+        <WtDeviceBody />
         <KeyboardBar />
       </main>
       <button className="web-agent-launcher" onClick={() => setAgentOpen(true)}>AGENT</button>

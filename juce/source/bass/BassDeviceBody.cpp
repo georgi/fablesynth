@@ -36,6 +36,7 @@ void BassDeviceBody::selectPage(Page page) {
     sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
     arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
     resized();
+    fui::refreshVisibleControls(*this);
 }
 
 // Keyboard last, the way every hardware and soft synth puts it: KEYS is a
@@ -78,13 +79,16 @@ void BassDeviceBody::resized() {
     const bool showArp = page_ == Page::arp;
     for (auto* c : std::initializer_list<juce::Component*>{&osc,&sub,&filter,&env,&lfo,&accent}) c->setVisible(showEdit);
     fxRack.setVisible(showFx);
-    layRow({ { &osc, 464 }, { &sub, 192 }, { &filter, 355 }, { &env, 386 } }, 139, 243);
-    layRow({ { &lfo, 290 }, { &accent, 250 } }, 391, 140);
+    // Every page fills the same area, so switching tabs never changes the
+    // body height. kPageH is the FX chain's natural height.
+    const juce::Rectangle<int> page(18, kPageTop, fullW, kPageH);
+    layRow({ { &osc, 464 }, { &sub, 192 }, { &filter, 355 }, { &env, 386 } }, kPageTop, 255);
+    layRow({ { &lfo, 290 }, { &accent, 250 } }, kPageTop + 255 + gap, 148);
     keys.setVisible(showEdit);
     seq.setVisible(showSequencer);
     arp.setVisible(showArp);
-    seq.setBounds(18, 139, fullW, 919);
-    arp.setBounds(seq.getBounds());
-    fxRack.setBounds(18, 139, fullW, 581);
-    keys.setBounds(18, 540, fullW, 140);
+    seq.setBounds(page);
+    arp.setBounds(page);
+    fxRack.setBounds(page);
+    keys.setBounds(page.withTop(kPageTop + 255 + gap + 148 + gap));
 }

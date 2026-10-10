@@ -26,6 +26,8 @@ DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& model)
     configurePage(padFxPage_, Page::padFx);
     configurePage(groupFxPage_, Page::groupFx);
     configurePage(sequencerPage_, Page::sequencer);
+    configurePage(automationPage_, Page::automation);
+    automationPage_.setVisible(false);
 
     model_.selectionChanges().addChangeListener(this);
     selectPage(Page::edit);
@@ -46,6 +48,7 @@ void DrumDeviceBody::selectPage(Page page) {
     padFxPage_.setToggleState(page == Page::padFx, juce::dontSendNotification);
     groupFxPage_.setToggleState(page == Page::groupFx, juce::dontSendNotification);
     sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
+    automationPage_.setToggleState(page == Page::automation, juce::dontSendNotification);
 
     if (page == Page::padFx) {
         const auto pad = model_.selectedPad();
@@ -54,6 +57,7 @@ void DrumDeviceBody::selectPage(Page page) {
         fxRack.setPad(-1, "DRUM GROUP");
     }
     resized();
+    fui::refreshVisibleControls(*this);
     if (preferredHeight() != previousHeight && onPreferredHeightChanged)
         onPreferredHeightChanged();
 }
@@ -107,6 +111,8 @@ void DrumDeviceBody::resized() {
     groupFxPage_.setBounds(pageTabs.removeFromLeft(112));
     pageTabs.removeFromLeft(5);
     sequencerPage_.setBounds(pageTabs.removeFromLeft(126));
+    pageTabs.removeFromLeft(5);
+    automationPage_.setBounds(pageTabs.removeFromLeft(138));
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::padFx || page_ == Page::groupFx;
     const bool showSequencer = page_ == Page::sequencer;
@@ -115,6 +121,10 @@ void DrumDeviceBody::resized() {
     for (auto* c : std::initializer_list<juce::Component*>{&selBar,&oscA,&oscB,&noise,&pitchEnv,&ampEnv,&filter,&mod}) c->setVisible(showEdit);
     fxRack.setVisible(showFx);
     stepSeq.setVisible(showSequencer);
+    if (automationPanel_) {
+        automationPanel_->setVisible(page_ == Page::automation);
+        automationPanel_->setBounds(rightX, 139, rightW, 605);
+    }
     selBar.setBounds(rightX, 139, rightW, 31);
     layRow({ { &oscA, 424 }, { &oscB, 425 }, { &noise, 196 } }, 179, 243);
     layRow({ { &pitchEnv, 225 }, { &ampEnv, 259 }, { &filter, 259 }, { &mod, 293 } }, 431, 209);

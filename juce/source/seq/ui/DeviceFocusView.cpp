@@ -543,19 +543,23 @@ void DeviceFocusView::refreshPatchSelector() {
     previousPatchButton_.toFront(false);
     patchSelector_.toFront(false);
     nextPatchButton_.toFront(false);
+    browseButton_.toFront(false);
+}
+
+void DeviceFocusView::visibilityChanged() {
+    refreshVisibleControls(*this);
+    if (isVisibleInHierarchy(*this)) timerCallback();
 }
 
 void DeviceFocusView::timerCallback() {
     updateCreateClipButton();
     refreshPatchSelector();
-    automation_.refresh();
+    if (isVisibleInHierarchy(automation_)) automation_.refresh();
     // Page switches can change the visible device extent without changing lanes.
-    if (isShowing()) {
-        layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
-        layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
-        layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
-        layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
-    }
+    layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
+    layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
+    layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+    layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
 }
 
 void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,

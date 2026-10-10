@@ -14,7 +14,6 @@ export function OscSection() {
   return (
     <section className="panel bl-osc-section" data-accent="a">
       <div className="panel-head">
-        <span className="bl-led bl-led-a" aria-hidden="true" />
         <h2>OSC</h2>
         <div className="bl-osc-stepper">
           <BassStepper paramId="osc.table" accent="a" />
@@ -46,7 +45,6 @@ export function SubSection() {
   return (
     <section className="panel bl-sub-section" data-accent="n">
       <div className="panel-head">
-        <span className="bl-led" aria-hidden="true" />
         <h2>SUB</h2>
       </div>
       <div className="bl-sub-body">

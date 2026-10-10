@@ -11,6 +11,8 @@
 class BassDeviceBody : public juce::Component {
 public:
     explicit BassDeviceBody(fui::BassUiModel&);
+    // Shared content area of the EDIT, FX CHAIN, SEQUENCER and ARP pages.
+    static constexpr int kPageTop = 139, kPageH = 581;
     void resized() override;
     fui::PitchSeqView& pitchSeq() { return seq; }
 
