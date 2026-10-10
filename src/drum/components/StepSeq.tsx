@@ -9,7 +9,9 @@ import { padRectNorm, type RectSel } from '../../shared/seqEdit';
 import { STEPS, patIdx } from '../seq';
 import { PAD_COUNT } from '../params';
 import { useDrumStore } from '../store';
-import { FACTORY_KITS } from '../kits';
+import { PATTERN_PRESETS } from '../kits';
+import { PATTERN_LIBRARY } from '../patternLibrary';
+import { PatternBrowser } from './browser/PatternBrowser';
 import { useDrumGhostPaste } from './useDrumGhostPaste';
 
 /** The bar / sequence-length control, with its own store subscriptions.

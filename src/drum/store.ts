@@ -158,6 +158,21 @@ export interface DrumStore {
   lastCell: { step: number; pad: number } | null;
   clipboard: DrumClipboard;
   kitDirty: boolean;
+  /** The open preset-browser drawer; one at a time. */
+  browser: 'kit' | 'patch' | 'pattern' | null;
+  setBrowser: (which: 'kit' | 'patch' | 'pattern' | null) => void;
+  /** Library value of the last pattern loaded from the pattern browser. */
+  patternValue: string;
+  /** Loads library patterns (kit and BPM unchanged); hosted clips keep their chain length. */
+  loadPatterns: (patterns: Uint8Array, chain: number[], value?: string) => boolean;
+  captureSequence: () => PatternSnapshot;
+  restoreSequence: (snap: PatternSnapshot) => void;
+  captureKit: () => KitSnapshot;
+  restoreKit: (snap: KitSnapshot) => void;
+  capturePad: () => PadSnapshot;
+  restorePad: (snap: PadSnapshot) => void;
+  /** Applies absolute pad-field values (a variant) and marks the kit dirty. */
+  applyPadVariant: (entries: Record<string, number>) => void;
 
   sequenceContext: number;
   lanePositions: number[];
@@ -245,6 +260,8 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
   lastCell: null,
   clipboard: null,
   kitDirty: false,
+  browser: null,
+  patternValue: '',
 
   sequenceContext: 0,
   lanePositions: Array(16).fill(-1),
@@ -273,18 +290,27 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
     sendAutomation(get());
   },
   loadPatternPreset: (index) => {
-    const preset = FACTORY_KITS[index];
-    if (!preset) return false;
-    const chain = get().hosted
-      ? sequenceChain(preset.chain.length)
-      : [...preset.chain];
+    const preset = PATTERN_PRESETS[index];
+    return !!preset && get().loadPatterns(Uint8Array.from(preset.patterns), preset.chain);
+  },
+  loadPatterns: (patterns, chain, value = '') => {
     const loaded = get().commitSequence({
-      patterns: Uint8Array.from(preset.patterns),
-      chain,
+      patterns: Uint8Array.from(patterns),
+      chain: get().hosted ? sequenceChain(chain.length) : [...chain],
       drumRhythm: undefined,
     });
-    if (loaded) set({ editPattern: 0, rectSel: null });
+    if (loaded) set({ editPattern: 0, rectSel: null, patternValue: value });
     return loaded;
+  },
+  captureSequence: () => {
+    const st = get();
+    return {
+      value: st.patternValue, dirty: st.kitDirty, editPattern: st.editPattern,
+      sequence: { patterns: st.patterns.slice(), chain: [...st.chain], ...(st.drumRhythm ? { drumRhythm: st.drumRhythm } : {}) },
+    };
+  },
+  restoreSequence: (snap) => {
+    if (get().commitSequence(snap.sequence, false)) set({ editPattern: snap.editPattern, patternValue: snap.value, kitDirty: snap.dirty, rectSel: null });
   },
   setMicroDelay: (pad, value, step) => {
     const st = get();
