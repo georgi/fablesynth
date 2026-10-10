@@ -293,6 +293,21 @@ describe('WT-1 click detector', () => {
   });
 });
 
+describe('WT-1 steal burst', () => {
+  it('keeps every note of a chord struck over releasing voices', () => {
+    const h = bootWt({ ...PURE, 'env1.a': 0.001, 'env1.s': 0.9, 'env1.r': 1.5 });
+    const voices = (h.proc as unknown as { voices: Array<{ gate: boolean; pending: unknown }> }).voices;
+    const held = voices.length - 2, burst = voices.length - 1;
+    for (let i = 0; i < held; i++) h.send({ t: 'on', n: 40 + i * 3, v: 1 });
+    h.render(40);
+    for (let i = 0; i < held; i++) h.send({ t: 'off', n: 40 + i * 3 });
+    h.render(1);
+    for (let i = 0; i < burst; i++) h.send({ t: 'on', n: 41 + i * 3, v: 1 });
+    h.render(4); // 512 samples: past the steal fade
+    expect(voices.filter((v) => v.gate && !v.pending).length).toBe(burst);
+  });
+});
+
 describe('WT-1 ADAA enable transition', () => {
   it('moves continuously through the former 0.005 hard threshold', () => {
     const h = bootWt({ ...PURE, 'filter.on': 1, 'filter.cut': 12000,

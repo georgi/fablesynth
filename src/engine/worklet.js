@@ -26,12 +26,22 @@
 
 const NVOICES = 8;
 function readClipArp(a) {
-  if (!a || !Array.isArray(a.notes) || a.notes.length !== 16 ||
+  // 16 notes, or a chord-track cycle (a multiple of 16) whose rhythm lanes repeat.
+  if (!a || !Array.isArray(a.notes) || a.notes.length < 16 || a.notes.length > 1024 || a.notes.length % 16 ||
       !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
       !Number.isFinite(a.rate) || !Number.isFinite(a.gate)) return null;
   return { notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
-    hits: a.hits.slice(0, 16), accents: a.accents.slice(0, 16),
+    hits: a.hits.slice(0, 16), accents: a.accents.slice(0, 16), ...readCompStack(a),
     rate: Math.max(.125, Math.min(1, a.rate)), gate: Math.max(.05, Math.min(.95, a.gate)) };
+}
+// Comp style (src/comp.ts): a voicing per step and its length in steps; a
+// length of 0 marks a step a tie holds. Malformed stacks fall back to `notes`.
+function readCompStack(a) {
+  const n = a.notes.length;
+  if (!Array.isArray(a.stack) || !Array.isArray(a.lens) || a.stack.length !== n || a.lens.length !== n) return {};
+  const stack = a.stack.map(s => Array.isArray(s) ? s.filter(x => Number.isInteger(x) && x >= 0 && x <= 127).slice(0, 8) : []);
+  const lens = a.lens.map(l => Number.isInteger(l) && l >= 0 && l <= n ? l : 1);
+  return { stack, lens, strum: Number.isFinite(a.strum) ? Math.max(0, Math.min(60, a.strum)) : 0 };
 }
 const MAXUNI = 16;
 // Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
@@ -1466,12 +1476,14 @@ class FableProcessor extends AudioWorkletProcessor {
     this.seqAnchor = 0;
     this.arp = null;
     this.seqStep = -1;
+    this.sequenceRhythm = null; this.polyK = 0;
     this.seqPats = new Uint8Array(SEQ_NPATTERNS * SEQ_STEPS * SEQ_STRIDE);
     for (let i = 2; i < this.seqPats.length; i += SEQ_STRIDE) this.seqPats[i] = 1; // oct byte: 1 = oct 0
     this.seqChain = [0];
     this.seqChainPos = 0;
     this.seqToNext = 0; // samples until the next step fires
     this.seqOffQueue = []; // { note, remaining } per sounding seq note (poly)
+    this.seqOnQueue = []; // { note, vel, remaining, off } strummed comp notes still to enter
     this.seqLastNote = -1; // most recent fired note (-1 = none), for viz
     // ---- hosted clip transport (SQ-4) ----
     this.hosted = false;
@@ -1864,28 +1876,48 @@ class FableProcessor extends AudioWorkletProcessor {
     const idx = Math.round((this.frameNow - this.hostAnchor - offNow) / dur);
     const next = this.hostAnchor + (idx + 1) * dur + ((s + 1) % 2 ? swing * SEQ_SWING_MAX * dur : 0);
     const interval = Math.max(1, next - this.frameNow);
-    this.seqGateOff();
-    if (a.hits[s] && a.notes[s] >= 0) {
-      this.noteOn(a.notes[s], a.accents[s] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
-      this.seqScheduleOff(a.notes[s], interval * a.gate);
+    if (a.stack) this.compFire(a, s, r, interval);
+    else {
+      this.seqGateOff();
+      if (a.hits[r] && a.notes[s] >= 0) {
+        this.noteOn(a.notes[s], a.accents[r] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+        this.seqScheduleOff(a.notes[s], interval * a.gate);
+      }
     }
     this.clipStep = s;
     this.clipToNext = interval;
     this.port.postMessage({ t: 'pos', step: s, bar: 0 });
   }
 
+  // One comp step: a held (tied) step keeps sounding; any other step ends the
+  // old voicing and strikes its own for `lens` steps, gated on the last one.
+  compFire(a, s, r, interval) {
+    const len = a.lens[s];
+    if (len === 0) return;
+    this.seqGateOff();
+    const vel = a.accents[r] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL, off = (len - 1 + a.gate) * interval;
+    // Strummed notes enter one by one in stack order, all releasing together;
+    // the whole strum spans at most half of the sounding time.
+    const notes = a.stack[s], gap = notes.length > 1 ? Math.min(a.strum * sampleRate / 1000, off * .5 / (notes.length - 1)) : 0;
+    notes.forEach((n, k) => {
+      if (k && gap > 0) this.seqOnQueue.push({ note: n, vel, remaining: k * gap, off: off - k * gap });
+      else { this.noteOn(n, vel); this.seqScheduleOff(n, off); }
+    });
+  }
+
   seqFire() {
     const bpm = Math.max(60, Math.min(200, this.p[SEQ_BPM] || 120));
     if (this.arp) {
       const a = this.arp;
-      const s = (this.seqStep + 1) % 16;
+      const s = (this.seqStep + 1) % a.notes.length, r = s % 16;
       const dur = 60 / bpm * a.rate * sampleRate;
       const swing = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
       const interval = dur * (1 + (s % 2 ? -1 : 1) * swing * SEQ_SWING_MAX);
-      this.seqGateOff();
       const note = a.notes[s];
-      if (a.hits[s] && note >= 0) {
-        this.noteOn(note, a.accents[s] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+      if (a.stack) this.compFire(a, s, r, interval);
+      else this.seqGateOff();
+      if (!a.stack && a.hits[r] && note >= 0) {
+        this.noteOn(note, a.accents[r] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
         this.seqScheduleOff(note, interval * a.gate);
       }
       this.seqStep = s;

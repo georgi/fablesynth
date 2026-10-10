@@ -39,6 +39,7 @@ public:
     void setArpSwing(double) override;
     double arpTempo() const override { return hostBpm(); }
     bool arpQueued() const override;
+    int arpChordLinkPeers() const override;
 
     int currentProgram() const override;
     int numPrograms() const override;

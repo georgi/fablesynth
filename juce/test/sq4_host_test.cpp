@@ -1290,8 +1290,9 @@ int main(int argc, char** argv) {
                                                arpLed, arpLed, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false));
             check(p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
                   "SQ ARP LED enables only the selected clip", track);
-            auto* input = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator input");
-            check(input && !input->isEnabled(), "SQ arp uses portable stored notes", track);
+            auto* input = findFxComponent<fui::arp::Segmented>(*arp, "Arpeggiator input");
+            check(input && input->button(1) && input->button(3) && !input->button(2),
+                  "SQ arp offers portable note lists and chord tracks, not played keys", track);
             auto* rate = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator rate");
             if (rate) rate->setSelectedId(7, juce::sendNotificationSync);
             const auto& clip = p.conductor().session().scenes[2].clips[(size_t)track];
@@ -1305,6 +1306,51 @@ int main(int argc, char** argv) {
             }
         }
         p.conductor().pasteClip(2, track, before);
+    }
+    {
+        // Scene chord linking: BL-1 and the lead share one progression; octave stays per clip.
+        // The factory pad clip carries a linked chord track too (chordTrackArp).
+        auto& c = p.conductor();
+        const auto bassBefore = c.session().scenes[2].clips[1], leadBefore = c.session().scenes[2].clips[2];
+        for (int track : {1, 2}) {
+            auto a = c.session().scenes[2].clips[(size_t)track].arp;
+            a.enabled = true; a.chords = true; a.chordLink = true; a.comp = track == 2; a.chordOctave = track == 1 ? 2 : 3;
+            c.updateClipArp(2, track, a);
+        }
+        auto edit = c.session().scenes[2].clips[1].arp; edit.chordKey = 4; edit.chordBars = 2;
+        c.updateClipArp(2, 1, edit);
+        const auto& lead = c.session().scenes[2].clips[2].arp;
+        check(lead.chordKey == 4 && lead.chordBars == 2 && lead.chordOctave == 3 && c.linkedChordTracks(2, 1) == std::vector<int>{2, 3},
+              "linked chord tracks share key and length within the scene");
+        for (int track : {2, 1}) {
+            ed2->enterFocus(track, 2);
+            auto* body = focusView.activeBodyComponent();
+            if (auto* mode = findFxComponent<juce::TextButton>(*body, "ARP")) mode->onClick();
+            if (auto* arp = findFxComponent<fui::ArpPanel>(*body)) {
+                arp->syncFromModel();
+                auto* link = findFxComponent<juce::Button>(*arp, "Link chord tracks");
+                check(link && link->isVisible() && link->getToggleState(), "SQ chord track shows its scene link", track);
+                for (auto* child : arp->getChildren()) if (child->isVisible())
+                    check(!child->getBounds().isEmpty() && arp->getLocalBounds().contains(child->getBounds()), "SQ chord-track arp controls fit", track);
+            }
+            auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+            if (auto out = dir.getChildFile("sq4-arp-chords-track-" + juce::String(track) + ".png").createOutputStream()) {
+                out->setPosition(0); out->truncate();
+                juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+            }
+            if (auto* arp = findFxComponent<fui::ArpPanel>(*body); arp && track == 2) {
+                auto* browse = findFxComponent<juce::Button>(*arp, "Browse chord progressions");
+                auto* browser = findFxComponent<fui::ProgressionBrowserView>(*arp);
+                if (browse) browse->onClick();
+                check(browse && browser && browser->isVisible(), "chord progression picker opens the browser");
+                if (auto out = dir.getChildFile("sq4-progression-browser.png").createOutputStream()) {
+                    out->setPosition(0); out->truncate();
+                    juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+                }
+                if (browser) browser->setVisible(false);
+            }
+        }
+        c.pasteClip(2, 1, bassBefore); c.pasteClip(2, 2, leadBefore);
     }
     ed2->exitFocus();
 

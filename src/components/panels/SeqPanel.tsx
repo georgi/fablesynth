@@ -90,20 +90,20 @@ export function SeqPanel(props: SeqPanelProps = {}) {
   return arp ? <ArpPanel /> : <NoteSeqPanel {...props} />;
 }
 
-function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra }: SeqPanelProps = {}) {
+export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra, clipKey }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
-  const seqPlaying = useStore((s) => s.seqPlaying);
+  const sequenceRhythm = useStore(s => s.sequenceRhythm);
+  const updateSequenceRhythm = useStore(s => s.updateSequenceRhythm);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
   // them, so the engine tick never reconciles the whole grid.
   const chain = useStore((s) => s.chain);
   const patterns = useStore((s) => s.patterns);
-  const seqPlay = useStore((s) => s.seqPlay);
-  const seqStop = useStore((s) => s.seqStop);
   const toggleCell = useStore((s) => s.toggleCell);
   const cycleStepOct = useStore((s) => s.cycleStepOct);
   const toggleStepAcc = useStore((s) => s.toggleStepAcc);
   const setStepDuration = useStore((s) => s.setStepDuration);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
+  const loadPatternPreset = useStore((s) => s.loadPatternPreset);
   const rectSel = useStore((s) => s.rectSel);
   const setRectSel = useStore((s) => s.setRectSel);
   const moveRectSel = useStore((s) => s.moveRectSel);

@@ -75,4 +75,16 @@ for (const machine of ['WT1', 'BL1'] as const) describe(`${machine} hosted arp`,
     h.send({ t: 'clipupdate', data: h.data, bars: 1 }); h.render(1);
     expect(h.proc.clip?.arp).toBeNull(); expect(h.gated()).toBe(false);
   });
+  it('loops a chord-track clip over its whole chord cycle', () => {
+    const h = boot(machine);
+    const settings = { ...newClipArp(machine).settings, input: 'chords' as const, chordBars: 2, chordOctave: 2,
+      chords: [{ start: 0, length: 16, root: 0, quality: 'maj' as const, inversion: 0 }, { start: 16, length: 16, root: 7, quality: 'maj' as const, inversion: 0 }] };
+    const arp = compileClipArp({ name: 'ARP', bars: 1, pattern: bytesToB64(h.data), arp: { enabled: true, settings } })!;
+    expect(arp.notes).toHaveLength(32);
+    h.send({ t: 'clip', data: h.data, bars: 1, atFrame: 512, arp });
+    h.render(1600);
+    expect(h.events.length).toBeGreaterThan(33);
+    h.events.forEach((e, i) => expect(e.step).toBe(i % 32));
+    expect(arp.notes[16] - arp.notes[0]).toBe(7);
+  });
 });

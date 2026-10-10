@@ -14,6 +14,7 @@ namespace fui {
 double HostedWtModel::arpSwing() const { return proc_.conductor().swing(); }
 bool HostedWtModel::arpQueued() const { return hasTargetClip() && proc_.conductor().queueOf(track_) == scene_; }
 void HostedWtModel::setArpSwing(double v) { proc_.conductor().setSwing(v); }
+int HostedWtModel::arpChordLinkPeers() const { return hasTargetClip() ? (int)proc_.conductor().linkedChordTracks(scene_, track_).size() : 0; }
 void HostedWtModel::setSequencerPlaying(bool on) {
     if (!hasTargetClip()) return;
     if (on) proc_.conductor().launch(track_, scene_); else proc_.conductor().stopTrack(track_);

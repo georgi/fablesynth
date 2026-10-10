@@ -349,10 +349,12 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         if (chainDirty_) {
             engine.setSeqChain(chainShared_.data(), (int)chainShared_.size());
             chainDirty_ = false;
+            applyArp(); // a chord track spans the sequence length
         }
         if (automationDirty_) {
             engine.setSequenceAutomation(automationShared_.get()); automationDirty_=false;
         }
+        if (rhythmDirty_) { engine.setSequenceRhythm(seqRhythmShared_); rhythmDirty_ = false; }
         shareMutex_.unlock();
     }
 

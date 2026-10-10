@@ -112,12 +112,12 @@ bool runArpProcessorChecks(const char* machine, bool bass) {
                 order->setSelectedId(2, juce::sendNotificationSync);
                 check(proc->getArpSettings().order == 1, "arp UI writes settings");
             } else check(false, "arp order selector exists");
-            auto* input = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator input");
+            auto* input = findFxComponent<fui::arp::Segmented>(*arp, "Arpeggiator input");
             if (input) {
                 input->setSelectedId(2, juce::sendNotificationSync); block();
-                juce::TextButton* key = nullptr;
+                juce::Button* key = nullptr;
                 for (auto* child : arp->getChildren())
-                    if (auto* b = dynamic_cast<juce::TextButton*>(child); b && b->getButtonText() == (bass ? "C2" : "C3")) key = b;
+                    if (auto* b = dynamic_cast<juce::Button*>(child); b && b->isVisible() && b->getButtonText() == (bass ? "C2" : "C3")) key = b;
                 check(key != nullptr, "arp on-screen root key exists");
                 if (key) {
                     key->setState(juce::Button::buttonDown); block();
@@ -125,6 +125,40 @@ bool runArpProcessorChecks(const char* machine, bool bass) {
                     check(live.count == 1 && live.notes[0] == (bass ? 36 : 48), "on-screen key enters live arp pool");
                     key->setState(juce::Button::buttonNormal); block();
                     check(proc->getLiveArp().count == 0, "on-screen key release clears unlatched pool");
+                }
+                input->setSelectedId(3, juce::sendNotificationSync); block();
+                auto* track = findFxComponent<fui::ChordTrackView>(*arp);
+                check(proc->getArpSettings().chords && track && track->isVisible(), "CHORD TRACK input shows the chord track");
+                if (track) {
+                    check(arp->getLocalBounds().contains(track->getBounds()), "chord track fits inside the arp panel");
+                    // Draw over the first beat of the default progression.
+                    const auto at = [&](float cell) {
+                        const auto g = track->getLocalBounds();
+                        const juce::Point<float> pos((float)g.getX() + (cell + .5f) / 16.0f * (float)g.getWidth(), (float)g.getHeight() / 2.0f);
+                        return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), pos, {}, 1, 0, 0, 0, 0,
+                                                track, track, juce::Time::getCurrentTime(), pos, juce::Time::getCurrentTime(), 1, false);
+                    };
+                    auto one = proc->getArpSettings(); one.chordCount = 1; one.chordList[0].length = 4; proc->setArpSettings(one);
+                    track->mouseDown(at(9)); track->mouseDrag(at(10)); track->mouseUp(at(11));
+                    const auto drawn = proc->getArpSettings();
+                    check(drawn.chordCount == 2 && drawn.chordList[1].start == 8 && drawn.chordList[1].length == 4,
+                          "dragging on empty track draws a beat-snapped chord");
+                    track->mouseDown(at(3.45f)); track->mouseUp(at(6));
+                    check(proc->getArpSettings().chordList[0].length == 8, "dragging a chord's right edge resizes it");
+                    proc->setChain({0, 1}); block();
+                    proc->setSeqPlaying(true);
+                    const auto playingArp = proc->getArpSettings();
+                    const int cycle = fable::compileArp(playingArp, 2).length;
+                    int maxStep = -1;
+                    const int blocks = (int)((cycle + 4) * playingArp.rate * .5 * 48000 / 128);
+                    for (int i = 0; i < blocks; ++i) { block(); maxStep = std::max(maxStep, proc->getCurrentStep()); }
+                    check(cycle == fable::arpCycle(playingArp.rate, 2) && cycle > 16 && maxStep == cycle - 1,
+                          "a two-bar chord track runs the full arp cycle");
+                    if (auto dir = juce::SystemStats::getEnvironmentVariable("FABLE_ARP_SNAPSHOT", {}); dir.isNotEmpty()) {
+                        juce::File out(dir + (bass ? "/bl1-chords.png" : "/wt1-chords.png")); out.deleteFile();
+                        juce::FileOutputStream os(out); juce::PNGImageFormat().writeImageToStream(editor->createComponentSnapshot(editor->getLocalBounds()), os);
+                    }
+                    proc->setSeqPlaying(false); proc->setChain({0}); block();
                 }
                 input->setSelectedId(1, juce::sendNotificationSync);
             } else check(false, "arp input selector exists");

@@ -6,7 +6,7 @@ import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rh
 // their clipstart/clipstop acks so the grid shows what is audible.
 
 import { create } from 'zustand';
-import { compileClipArp, newClipArp, validClipArp, type ClipArp } from './clipArp';
+import { compileClipArp, linkChordWrites, newClipArp, validClipArp, type ClipArp } from './clipArp';
 import { compileClipAutomation, validateAutomation, type AutoLane } from './clipAutomation';
 import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
@@ -452,8 +452,9 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       if (!clip || !machine || machine === 'DR1') return;
       const arp = { ...(clip.arp ?? newClipArp(machine)), ...patch };
       if (!validClipArp(arp)) return;
+      const { arp: next, others } = linkChordWrites(st.session, s, t, JSON.parse(JSON.stringify(arp)) as ClipArp);
       // The grid's existing history/runtime path preserves notes and queues.
-      applyGridWrites([{ s, t, clip: { ...clip, arp: JSON.parse(JSON.stringify(arp)) as ClipArp } }], 0);
+      applyGridWrites([{ s, t, clip: { ...clip, arp: next } }, ...others.map(o => ({ s, ...o }))], 0);
     },
 
     updateClipAutomation: (s, t, lanes, opts = {}) => {

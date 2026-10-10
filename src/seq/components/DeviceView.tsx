@@ -475,7 +475,7 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           </>
         )}
         {mode === 'seq' && (
-          <HostedArpEditor machine="WT1"><SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="WT1" /></>} /></HostedArpEditor>
+          <HostedArpEditor machine="WT1"><SeqPanel clipKey={clipKey} bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="WT1" /></>} /></HostedArpEditor>
         )}
       </div>
       {clip && clip.bars <= HOSTED_MAX_BARS && <AutomationPanel machine="WT1" />}

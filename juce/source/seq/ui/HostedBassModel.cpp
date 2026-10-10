@@ -11,6 +11,7 @@ namespace fui {
 double HostedBassModel::arpSwing() const { return proc_.conductor().swing(); }
 bool HostedBassModel::arpQueued() const { return hasTargetClip() && proc_.conductor().queueOf(1) == scene_; }
 void HostedBassModel::setArpSwing(double v) { proc_.conductor().setSwing(v); }
+int HostedBassModel::arpChordLinkPeers() const { return hasTargetClip() ? (int)proc_.conductor().linkedChordTracks(scene_, 1).size() : 0; }
 fable::ArpSettings HostedBassModel::arpSettings() const {
     if (!hasTargetClip()) return fable::bassArpDefaults();
     const auto& c = proc_.conductor().session().scenes[(size_t)scene_].clips[1];

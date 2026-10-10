@@ -486,6 +486,11 @@ private:
     struct SeqOff { int note = -1; double remaining = 0.0; };
     SeqOff seqOff_[kSeqOffCap];
     int    seqOffCount_ = 0;
+    // Strummed comp notes still to enter (worklet seqOnQueue).
+    static constexpr int kSeqOnCap = 16;
+    struct SeqOn { int note = -1; double vel = 0.0, remaining = 0.0, off = 0.0; };
+    SeqOn seqOn_[kSeqOnCap];
+    int    seqOnCount_ = 0;
     int    seqLastNote_ = -1;        // most recent fired note (for seqCurrentNote/viz)
     double seqSongPos_ = 0;           // samples since play (virtual transport for synced LFOs)
     double bpmOverride_ = 0;          // > 0: host tempo wins over SEQ_BPM

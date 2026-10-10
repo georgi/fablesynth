@@ -309,7 +309,9 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         if (chainDirty_) {
             engine.setChain(chainShared_.data(), (int)chainShared_.size());
             chainDirty_ = false;
+            applyArp(); // a chord track spans the sequence length
         }
+        if (rhythmDirty_) { engine.setSequenceRhythm(seqRhythmShared_); rhythmDirty_ = false; }
         shareMutex_.unlock();
     }
 

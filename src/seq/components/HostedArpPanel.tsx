@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
+import type { ArpState } from '../../arp';
 import { ArpModeSwitch, ArpPanel } from '../../components/panels/ArpPanel';
-import { newClipArp } from '../clipArp';
+import { clipChordBars, linkedClipTracks, newClipArp } from '../clipArp';
 import type { MachineId } from '../protocol';
 import { useSeqStore } from '../store';
 
@@ -20,12 +21,20 @@ export function HostedArpEditor({ machine, children }: { machine: MachineId; chi
   const current = useSeqStore(s => playing && focus ? s.pos[focus.track]?.step ?? -1 : -1);
   const bpm = useSeqStore(s => s.session.bpm);
   const swing = useSeqStore(s => s.swing);
+  const peers = useSeqStore(s => focus ? linkedClipTracks(s.session, focus.scene, focus.track).length : 0);
   const { launch, stopTrack, updateClipArp, setSwing } = useSeqStore.getState();
   if (!focus || !clip?.arp?.enabled) return <>{children}</>;
   const a = (clip.arp ?? newClipArp(machine)).settings;
+  // Fresh settings per edit: one gesture can send several edits (a progression sets chords, then bars).
+  const edit = (patch: Partial<ArpState>) => {
+    const now = useSeqStore.getState().session.scenes[focus.scene]?.clips[focus.track]?.arp?.settings ?? a;
+    updateClipArp(focus.scene, focus.track, { settings: { ...now, ...patch, input: patch.input === 'keys' ? 'stored' : patch.input ?? now.input, latch: false } });
+  };
   return <ArpPanel key={`${focus.scene}:${focus.track}`} hosted bass={machine === 'BL1'} a={a} keys={[]} playing={playing} queued={queued} current={current}
     bpm={bpm} swing={swing} setParam={(_, value) => setSwing(value)}
     play={() => launch(focus.track, focus.scene)} stop={() => stopTrack(focus.track)} clear={() => {}}
-    update={patch => updateClipArp(focus.scene, focus.track, { settings: { ...a, ...patch, input: 'stored', latch: false } })}
+    bars={clipChordBars(a)} setBars={chordBars => edit({ chordBars })}
+    chordLink={{ on: !!a.chordLink, peers, toggle: () => edit({ chordLink: !a.chordLink }) }}
+    update={edit}
     setMode={enabled => updateClipArp(focus.scene, focus.track, { enabled })} />;
 }

@@ -160,6 +160,18 @@ void playback(const std::vector<fable::TablePtr>& tables, Check check) {
         slide.hits.fill(false); r.engine->setArp(slide); r.render(1);
         check(!r.gated(), "all-rest edit releases a sustained bass slide");
     }
+    if constexpr (!bass) {
+        // Strummed comp notes enter 20 ms (960 samples) apart; stop drops the rest.
+        ArpSettings c; c.enabled = true; c.comp = true; c.strum = 20; c.strumDir = 1;
+        const auto q = compPattern("C - - - . . . . . . . . . . . ."); c.compMask = q.masks; c.ties = q.ties;
+        c.count = 3; c.notes = {{60, 64, 67}};
+        Rig<Engine> r(tables); r.engine->setArp(compileArp(c)); r.play(); r.render(1);
+        check(r.engine->seqPendingOffCount() == 1 && r.pitch() == 67, "a down strum starts on the top note");
+        r.render(1000); check(r.engine->seqPendingOffCount() == 2, "the second strummed note enters after the strum gap");
+        r.render(1000); check(r.engine->seqPendingOffCount() == 3, "every strummed note enters");
+        r.stop(); r.play(); r.render(1); r.stop(); r.render(3000);
+        check(r.engine->seqPendingOffCount() == 0, "stopping drops strummed notes that have not entered");
+    }
 }
 }
 
@@ -175,11 +187,67 @@ template<class Check> void runArpEngineChecks(Check check) {
     a.order = 3; a.octaves = 1; p = compileArp(a);
     check(p.notes[0] == 60 && p.notes[1] == 50 && p.notes[2] == 57, "played order retains insertion order");
     a.order = 4;
-    check(compileArp(a).notes == std::array<int, 16>{{50,50,60,60,57,57,57,60,60,60,50,60,50,50,60,50}},
-          "seeded random order matches the browser LCG sequence");
+    { const auto r = compileArp(a).notes; const std::array<int, 16> want {{50,50,60,60,57,57,57,60,60,60,50,60,50,50,60,50}};
+      check(std::equal(want.begin(), want.end(), r.begin()),
+          "seeded random order matches the browser LCG sequence"); }
     a.count = 0; p = compileArp(a);
     check(std::all_of(p.notes.begin(), p.notes.end(), [](int n) { return n == -1; }), "empty pool compiles to rests");
+    {
+        // Comp parity with web src/comp.test.ts.
+        auto pattern = [](const char* steps) { ArpSettings c; c.comp = true; const auto q = compPattern(steps); c.compMask = q.masks; c.ties = q.ties; return c; };
+        auto stackIs = [](const ArpPattern& cp, int i, std::vector<int> want) {
+            if (cp.stackCount[(size_t)i] != want.size()) return false;
+            for (size_t k = 0; k < want.size(); ++k) if (cp.stack[(size_t)i][k] != want[k]) return false;
+            return true;
+        };
+        auto c = pattern("BC - - . U . . . . . . . . . . -"); c.chords = true; c.chordCount = 1; c.chordList[0] = {0, 16, 0, 0, 0};
+        auto cp = compileArp(c, 1);
+        check(stackIs(cp, 0, {36, 48, 52, 55}) && cp.lens[0] == 3 && cp.lens[1] == 0 && cp.lens[2] == 0 && cp.lens[3] == 1
+              && stackIs(cp, 4, {52, 55}) && stackIs(cp, 15, {}) && cp.lens[15] == 1, "comp strikes voicings and holds ties like the browser");
+        c = pattern("BC - - - - - - - - - - - - - - -"); c.chords = true; c.chordCount = 2; c.chordList[0] = {0, 8, 0, 0, 0}; c.chordList[1] = {8, 4, 7, 0, 0};
+        cp = compileArp(c, 1);
+        check(cp.lens[0] == 8 && stackIs(cp, 8, {43, 55, 59, 62}) && cp.lens[8] == 4 && stackIs(cp, 12, {}), "comp re-strikes a held voicing on a chord change");
+        c = pattern("- . . . . . . . . . . . . . . C"); c.count = 3; c.notes = {{60, 64, 67}};
+        cp = compileArp(c, 1);
+        check(stackIs(cp, 15, {60, 64, 67}) && cp.lens[15] == 2 && cp.lens[0] == 0, "comp wraps a first-step tie to the loop end");
+        c = pattern("B . . . . . . . . . . . . . . ."); c.count = 3; c.notes = {{64, 60, 67}};
+        check(stackIs(compileArp(c, 1), 0, {48}), "comp bass sits an octave below the stored pool");
+        bool library = compLibrary().size() > 400;
+        for (int i = 0; i < (int)compLibrary().size(); ++i) { ArpSettings e; applyCompEntry(e, compLibrary()[(size_t)i]); library = library && compLibraryIndex(e) == i && validArpSettings(e); }
+        check(library, "comp library entries load, validate and identify themselves");
+        int v[] {48, 52, 55, 59};
+        check(spreadVoicing(v, 4, 2) == 4 && v[0] == 36 && v[1] == 43 && v[2] == 52 && v[3] == 59, "drop 2+4 matches the browser voicing");
+        c = pattern("C . C . . . . . . . . . . . . ."); c.count = 3; c.notes = {{60, 64, 67}}; c.strumDir = 2; c.voicing = 1;
+        cp = compileArp(c, 1);
+        check(stackIs(cp, 0, {67, 60, 52}) && stackIs(cp, 2, {52, 60, 67}) && cp.notes[0] == 52, "alternate strokes and drop 2 match the browser");
+    }
+    {
+        // Chord track parity with web src/chords.test.ts.
+        ArpSettings c; c.chords = true; c.chordOctave = 3; c.chordCount = 2;
+        c.chordList[0] = {0, 6, 0, 0, 0}; c.chordList[1] = {8, 8, 7, 0, 0};
+        const auto cp = compileArp(c, 1);
+        const std::array<int, 16> want {{48,52,55,48,52,55,-1,-1,55,59,62,55,59,62,55,59}};
+        check(cp.length == 16 && std::equal(want.begin(), want.end(), cp.notes.begin()),
+              "chord track restarts per chord and rests in gaps like the browser arp");
+        c.chordList[1] = {16, 16, 5, 0, 0}; c.chordList[0].length = 16;
+        check(compileArp(c, 2).length == 32 && compileArp(c, 2).notes[16] == 53, "chord track spans the sequence length");
+        check(arpCycle(.375, 4) == 128 && arpCycle(1.0 / 6, 4) == 96 && arpCycle(.25, 3) == 48, "odd rates realign with the chord track");
+        std::array<int, 6> v {}; ArpChord inv {0, 4, 0, (uint8_t)chordQualityIndex("maj7"), 1};
+        check(chordNotes(inv, 48, v) == 4 && v[0] == 52 && v[3] == 60, "inversions raise the lowest notes an octave");
+        std::array<ArpChord, kMaxArpChords> list {}; int n = 1; list[0] = {0, 16, 0, 0, 0};
+        placeChord(list, n, {4, 4, 7, 0, 0});
+        check(n == 3 && list[0].length == 4 && list[1].root == 7 && list[2].start == 8 && list[2].length == 8, "placing a chord splits overlaps");
+        bool fits = progressions().size() == 26;
+        for (const auto& pr : progressions()) { int count = 0; const int bars = progressionChords(pr, 0, list, count); fits = fits && list[(size_t)count - 1].start + list[(size_t)count - 1].length == bars * 16; }
+        check(fits, "all 26 progression presets fit their bar count");
+        ArpMailbox box; ArpSettings got; uint32_t ver = 0; box.publish(c);
+        check(box.consume(got, ver) && got.chords && got.chordCount == 2 && got.chordList[1].start == 16 && got.chordList[1].root == 5,
+              "arp mailbox carries the chord track");
+    }
     ArpMailbox mailbox; ArpSettings read; uint32_t version = 0;
+    { ArpMailbox box; ArpSettings c, got; uint32_t seen = 0; c.comp = true; c.compMask[7] = 13; c.ties[2] = true; c.strum = 33; c.strumDir = 1; c.voicing = 2;
+      box.publish(c); check(box.consume(got, seen) && got.comp && got.compMask == c.compMask && got.ties == c.ties
+                            && got.strum == 33 && got.strumDir == 1 && got.voicing == 2, "arp mailbox carries the comp style"); }
     mailbox.publish(a); check(mailbox.consume(read, version) && read.count == 0 && read.order == 4,
                              "arp mailbox transfers a complete settings snapshot");
     check(!mailbox.consume(read, version), "unchanged mailbox does not reapply settings");
@@ -189,6 +257,11 @@ template<class Check> void runArpEngineChecks(Check check) {
         check(arpFromVar(juce::JSON::parse(juce::JSON::toString(arpToVar(original))), restored, true)
               && compileArp(original).notes == compileArp(restored).notes,
               "portable arp JSON preserves disabled settings");
+        auto comp = original; comp.comp = true; comp.compMask[3] = 9; comp.ties[5] = true; comp.strum = 14; comp.strumDir = 2; comp.voicing = 3;
+        check(arpFromVar(juce::JSON::parse(juce::JSON::toString(arpToVar(comp))), restored, true)
+              && restored.comp && restored.compMask == comp.compMask && restored.ties == comp.ties
+              && restored.strum == 14 && restored.strumDir == 2 && restored.voicing == 3,
+              "portable arp JSON preserves the comp style");
         for (const auto* key : {"rate", "gate", "octaves", "seed"}) {
             auto v = arpToVar(original);
             v["settings"].getDynamicObject()->setProperty(key, "1");
@@ -198,6 +271,22 @@ template<class Check> void runArpEngineChecks(Check check) {
             auto v = arpToVar(original);
             v["settings"]["notes"].getArray()->set(0, true);
             check(!arpFromVar(v, restored, true), "arp JSON rejects boolean notes");
+        }
+        {
+            auto c = original; c.chords = true; c.chordKey = 2; c.chordCount = 1; c.chordList[0] = {0, 64, 2, (uint8_t)chordQualityIndex("m9"), 2};
+            ArpSettings back;
+            check(arpFromVar(juce::JSON::parse(juce::JSON::toString(arpToVar(c))), back) && back.chords && back.chordKey == 2
+                  && back.chordCount == 1 && back.chordList[0].length == 64 && back.chordList[0].quality == chordQualityIndex("m9")
+                  && back.chordList[0].inversion == 2,
+                  "chord track round-trips standalone state");
+            c.chordBars = 2; c.chordLink = true;
+            check(arpFromVar(juce::JSON::parse(juce::JSON::toString(arpToVar(c))), back, true) && back.chords && back.chordBars == 2 && back.chordLink
+                  && compileClipArp(back).length == 32 && compileClipArp(original).length == 16,
+                  "SQ-4 clips carry a linked chord track that loops over its own bar count");
+            c.chordBars = 5; check(!validArpSettings(c, true), "clip chord tracks span 1-4 bars");
+            auto legacy = arpToVar(original);
+            for (const auto* k : {"chords", "chordKey", "chordOctave"}) legacy["settings"].getDynamicObject()->removeProperty(k);
+            check(arpFromVar(legacy, back, true) && !back.chords && back.chordCount == 4, "states without a chord track keep the defaults");
         }
         auto keys = original; keys.keys = true; keys.latch = true;
         check(arpFromVar(arpToVar(keys), restored) && !arpFromVar(arpToVar(keys), restored, true),

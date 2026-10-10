@@ -500,11 +500,19 @@ function buildSession(spec: Spec): SessionDoc {
     track.gain = gains[t];
   });
   const harmony = harmonyFor(spec);
-  const bass = bassProgression(harmony, spec);
-  const lead = leadProgression(harmony, spec);
-  const pads = padProgression(harmony, spec);
+  // Each note clip carries the song's progression as its arp chord track (ARP
+  // off), in the clip's register. MINIMAL's drone pad keeps its bare fifths.
+  const chordTrack = (machine: 'BL1' | 'WT1', clip: ClipDoc, drone = false): ClipDoc => ({ ...clip,
+    arp: chordTrackArp(machine, harmony.roots.map((root, bar) => ({ start: bar * 16, length: 16, root,
+      quality: drone ? 'five' : harmony.minor[bar] ? 'min' : 'maj', inversion: 0 })), harmony.roots[0]!, clipChordOctave(machine, clip), !drone) });
+  const bass = chordTrack('BL1', bassProgression(harmony, spec));
+  const lead = chordTrack('WT1', leadProgression(harmony, spec));
+  const chordPads = chordTrack('WT1', padProgression(harmony, spec), spec.family === 'MINIMAL');
+  // Some pads comp over the chord track between the intro and the tail (songs/comping.ts).
+  const comping = SESSION_COMPING[spec.name] ? compEntry(SESSION_COMPING[spec.name]!) : null;
   session.scenes.forEach((scene, s) => {
     const drums = drumProgression(spec, s);
+    const pads = comping ? { ...chordPads, arp: withComp(chordPads.arp!, comping, COMPING_SCENES.includes(s)) } : chordPads;
     // Arrange density intentionally; the three tonal parts retain the same
     // progression whenever they enter, so every scene belongs to one song.
     scene.clips = s === 0 ? [drums, null, null, pads]

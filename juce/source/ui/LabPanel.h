@@ -232,7 +232,7 @@ private:
                 g.fillRect(x - width * 0.5f, h - height, width, height);
             }
             g.setColour(c); g.setFont(monoFont(8));
-            g.drawText(noteName(note + chord[i]), (int)xOf(f0) + 3, 4 + 11 * (int)i, 40, 11, juce::Justification::centredLeft);
+            drawPlotLabel(g, i, noteName(note + chord[i]), (int)xOf(f0) + 3, 4 + 11 * (int)i, 40, 11, c);
         }
     }
 

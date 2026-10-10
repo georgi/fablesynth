@@ -558,10 +558,30 @@ void Engine::setArp(const ArpPattern& a) {
     arp_ = a;
 }
 void Engine::arpFire(const ArpPattern& a, int s, double interval) {
+    s %= std::max(1, a.length);
+    if (a.comp) {
+        // Comp (worklet compFire): a tied step keeps sounding; any other step
+        // ends the old voicing and strikes its own, gated on its run's last step.
+        const int len = a.lens[(size_t)s];
+        if (len == 0) return;
+        seqGateOff();
+        const double vel = a.accents[(size_t)(s % 16)] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL, off = (len - 1 + a.gate) * interval;
+        // Strummed notes enter one by one in stack order, all releasing together;
+        // the whole strum spans at most half of the sounding time.
+        const int count = a.stackCount[(size_t)s];
+        const double gap = count > 1 ? std::min(a.strum * sr_ / 1000.0, off * .5 / (count - 1)) : 0.0;
+        for (int i = 0; i < count; ++i) {
+            const int note = a.stack[(size_t)s][(size_t)i];
+            if (i && gap > 0 && seqOnCount_ < kSeqOnCap) seqOn_[seqOnCount_++] = {note, vel, i * gap, off - i * gap};
+            else { noteOn(note, vel); seqScheduleOff(note, off); }
+        }
+        return;
+    }
     seqGateOff();
-    if (a.hits[s] && a.notes[s] >= 0) {
-        noteOn(a.notes[s], a.accents[s] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
-        seqScheduleOff(a.notes[s], interval * a.gate);
+    const int note = a.notes[(size_t)s], r = s % 16;
+    if (a.hits[(size_t)r] && note >= 0) {
+        noteOn(note, a.accents[(size_t)r] ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+        seqScheduleOff(note, interval * a.gate);
     }
 }
 void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
