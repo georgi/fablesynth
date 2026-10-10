@@ -38,6 +38,9 @@ struct Rng {
     inline float next() { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s >> 8) * (1.0f / 16777216.0f); }
 };
 
+// Minimum mod-envelope attack on a mono retrigger (worklet RETRIGGER_SOFT_SEC).
+constexpr double kRetriggerSoftSec = 0.004;
+
 class Env {
 public:
     int    state = 0;
@@ -49,8 +52,18 @@ public:
     // the 48 kHz behaviour is unchanged).
     double cs = 0.12;
     void   set(double a, double d, double sus, double r, double sr);
-    void   trigger() { state = 1; }
-    void   release() { if (state != 0) state = 4; }
+    // CURVE model (worklet Env.setModel); call after set() with the same times.
+    void   setModel(int model, double a, double d, double r, double hold, double ac, double dc, double rc, double sr);
+    void   trigger() { state = 1; x = 0; from = level; caSoft = 0; iaSoft = 0; }
+    // Slows this attack to at least `sec` (worklet Env.softAttack): used on a
+    // mono retrigger under a sounding voice, cleared when the attack ends.
+    void   softAttack(double sec) {
+        if (state != 1) return;
+        const double sr = sr_ > 0 ? sr_ : 48000.0; // the rate of the last set()
+        caSoft = std::min(ca, 1.0 - std::exp(-1.0 / (sec * sr)));
+        iaSoft = std::min(ia, 1.0 / std::max(1.0, sec * sr));
+    }
+    void   release() { if (state != 0) { state = 4; x = 0; from = level; } }
     void   kill()    { state = 0; level = 0; }
     double process();
     // Block advance for block-rate consumers. Idle (0) and sustain (3) are
@@ -62,7 +75,13 @@ public:
         return level;
     }
 private:
+    double processCurve();
     double a_ = -1, d_ = -1, r_ = -1, sr_ = -1; // last-set values (coef cache key)
+    int    model_ = 0;
+    double x = 0, from = 0;            // CURVE segment phase and start level
+    double caSoft = 0, iaSoft = 0;     // per-trigger attack override (softAttack)
+    double ia = 1, ih = 1, id = 1, ir = 1, hold_ = 0;
+    double ac_ = -1, dc_ = -1, rc_ = -1, pa = 1, pd = 1, pr = 1; // -1: compute on first set
 };
 
 class Lfo {
@@ -157,14 +176,17 @@ public:
     // the fading voice reaches silence. Mirrors the worklet's voice.pending.
     bool   hasPending = false;
     int    pendNote = 60; double pendVel = 1, pendStart = 60;
-    Env    ampEnv, modEnv;
-    Lfo    lfo1, lfo2;
+    uint64_t pendAge = 0;              // clock stamp when queued; oldest is replaced first
+    Env    ampEnv, modEnv, modEnv2;
+    Lfo    lfo1, lfo2, lfo3, lfo4;
+    double rand = 0;                   // RANDOM source: one unipolar draw per note
     OscState oA, oB;
     double subPhase = 0, subIncPrev = -1;
     double pb[7] = {0};                // pink noise filter state
     FilterState f1, f2;
     double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
     double ampFacPrev = -1;            // AMP-mod factor ramp start (Finding 7)
+    double ampSm = 0;                  // declick-slewed amp env level (AMP_SLEW_SEC)
 
     // ---- discrete-switch crossfades (finding J2) ----
     // Filter section: the topology actually rendered last chunk, the frozen
@@ -181,10 +203,22 @@ public:
     // Sub oscillator shape (sine <-> square).
     int    subShapePrev = -1, subShapeOld = -1, subXfRemain = 0, subXfLen = 0;
 
-    bool   active() const { return ampEnv.state != 0; }
-    void   noteOn(int n, double v, double startPitch, long a, Rng& rng);
-    void   noteOff() { gate = false; ampEnv.release(); modEnv.release(); }
-    void   kill()    { gate = false; hasPending = false; ampEnv.kill(); modEnv.kill(); }
+    // A voice sounds until its slewed amp level is silent too.
+    bool   active() const { return ampEnv.state != 0 || ampSm > 1e-4; }
+    // modRng feeds LFO 3/4 and RANDOM, separate from rng so the appended
+    // modulators leave every existing patch's random draws unchanged.
+    void   noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng);
+    // Mono note change without legato: restart envelopes, per-note LFOs and
+    // RANDOM; keep oscillator phase and filter state (worklet Voice.retrigger).
+    void   retrigger(int n, double v, Rng& modRng) {
+        note = n; vel = v; velGain = 0.25 + 0.75 * v * v;
+        ampEnv.trigger(); modEnv.trigger(); modEnv2.trigger();
+        // The voice is sounding: restart the mod envelopes over kRetriggerSoftSec.
+        modEnv.softAttack(kRetriggerSoftSec); modEnv2.softAttack(kRetriggerSoftSec);
+        lfo1.reset(); lfo2.reset(); lfo3.reset(); lfo4.reset(); rand = modRng.next();
+    }
+    void   noteOff() { gate = false; ampEnv.release(); modEnv.release(); modEnv2.release(); }
+    void   kill()    { gate = false; hasPending = false; ampEnv.kill(); modEnv.kill(); modEnv2.kill(); ampSm = 0; }
 };
 
 // Engine table view — mirrors the worklet's {frames,mips,size,mask,data}.

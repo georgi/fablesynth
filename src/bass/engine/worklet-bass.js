@@ -33,6 +33,12 @@ const ROOT_MIDI = 36;
 const FENV_OCT = 5;
 const LFO_OCT = 2;
 const ACC_GAIN = 0.7;
+// Declick slew on the amp level (s). Rounds the corners of a fast attack or
+// release without audibly softening the transient.
+const AMP_SLEW = 0.0003;
+// Accent/velocity gain slew (s): time-based, so a gain change never depends
+// on how the render is split into chunks.
+const GAIN_SLEW = 0.001;
 const ACC_DEC_SHORTEN = 0.35;
 const KEYTRACK_REF = 60;
 // DC blocker pole at the 48 kHz reference rate; remapped to the device rate in

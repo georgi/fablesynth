@@ -28,11 +28,14 @@ constexpr int    DR_MAXUNI     = 7;
 constexpr int    DR_NBUSES     = 5;      // 0 = MAIN, 1..4 = AUX
 constexpr float  DR_ACCENT_VEL = 1.0f, DR_PLAIN_VEL = 0.72f;
 constexpr double DR_SWING_MAX  = 0.667;
-// Choke / retrigger fade time constant (Finding D9): 0.12 per sample at
-// 48 kHz expressed as a time, so the fade lasts the same milliseconds at any
-// rate. tau = -1 / (48000 * ln(0.88)) — the 48 kHz coefficient is unchanged.
-constexpr double DR_CHOKE_TAU  = 1.6295076e-4;
+// Choke / retrigger fade time constant (Finding D9, retuned with D2): 0.3 ms
+// is ~2.8 ms to -80 dB at any rate. The original 0.12-per-sample (0.163 ms)
+// fade still clicked on retrigger; this value matches worklet-drum.js.
+constexpr double DR_CHOKE_TAU  = 0.0003;
 constexpr double DR_DC_R       = 0.9998;
+// Declick slew on the choke / retrigger fade (s). Rounds the corner where the
+// fade starts; the hit's own attack transient stays untouched.
+constexpr double DR_CHOKE_SLEW = 0.0003;
 constexpr int    DR_MOD_LOG_D  = 5;      // CUTOFF mod: +/-5 octaves
 constexpr int    DR_BASE_NOTE  = 60;
 // Finding J1: how many per-pad fields carry an automation smoother, and the

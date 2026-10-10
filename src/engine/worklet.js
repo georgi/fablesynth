@@ -280,6 +280,9 @@ for (const id in MOD_PARAM_INFO) {
 // timbre, while the single resonant stage's Q climbs from 14 to ~470 at the top
 // — a filter that sings instead of merely peaking. Identical to Engine.cpp.
 const LP24_K_MIN = 0.002; // Q = 500 damping floor
+// Declick slew on the amp env (s). Rounds the corners of a fast attack,
+// release or steal fade without audibly softening the transient.
+const AMP_SLEW_SEC = 0.0003;
 
 // Longest tuned-comb delay. Match native's sample-rate-aware capacity so the
 // 20 Hz lower cutoff remains representable at 96 kHz and above.
@@ -345,10 +348,24 @@ class Rng {
   }
 }
 
+// CURVE envelope segment shapes (Engine.cpp envCurveExp/envRise/envFall):
+// c = 0.5 is linear and the exponent doubles every 12 % away from it.
+function envCurveExp(c) { return Math.pow(2, Math.abs(c - 0.5) * 100 / 12); }
+function envRise(x, c, p) { return c <= 0.5 ? Math.pow(x, p) : 1 - Math.pow(1 - x, p); }
+function envFall(x, c, p) { return c >= 0.5 ? Math.pow(1 - x, p) : 1 - Math.pow(x, p); }
+
+// Minimum mod-envelope attack on a mono retrigger (Env.softAttack).
+const RETRIGGER_SOFT_SEC = 0.004;
+
 class Env {
   constructor() {
     this.state = 0; this.level = 0; this.s = 0.8;
     this.ca = 0.01; this.cd = 0.001; this.cr = 0.001;
+    this.caSoft = 0; this.iaSoft = 0; // per-trigger attack override, see softAttack
+    // CURVE model: per-sample phase steps, curves, and segment start levels.
+    this.model = 0; this.x = 0; this.from = 0;
+    this.ia = 1; this.ih = 1; this.id = 1; this.ir = 1; this.hold = 0;
+    this.ac = NaN; this.dc = NaN; this.rc = NaN; this.pa = 1; this.pd = 1; this.pr = 1; // NaN: compute on first set
     // Numeric cache key (finding W2): building `a+'|'+d+'|'+r` allocated a
     // cons-string per voice per block on the render thread.
     this._a = NaN; this._d = NaN; this._r = NaN;
@@ -363,14 +380,64 @@ class Env {
       this.cr = 1 - Math.exp(-1 / (Math.max(0.002, r / 4.5) * sampleRate));
     }
   }
-  trigger() { this.state = 1; }
-  release() { if (this.state !== 0) this.state = 4; }
+  // CURVE model settings; call after set() with the same times.
+  setModel(model, a, d, r, hold, ac, dc, rc) {
+    this.model = model | 0;
+    if (!this.model) return;
+    this.ia = 1 / Math.max(1, a * sampleRate); this.id = 1 / Math.max(1, d * sampleRate);
+    this.ir = 1 / Math.max(1, r * sampleRate); this.hold = hold; this.ih = 1 / Math.max(1, hold * sampleRate);
+    if (ac !== this.ac) { this.ac = ac; this.pa = envCurveExp(ac); }
+    if (dc !== this.dc) { this.dc = dc; this.pd = envCurveExp(dc); }
+    if (rc !== this.rc) { this.rc = rc; this.pr = envCurveExp(rc); }
+  }
+  trigger() { this.state = 1; this.x = 0; this.from = this.level; this.caSoft = 0; this.iaSoft = 0; }
+  // Slows this attack to at least `sec` (mono retrigger under a sounding
+  // voice): a 1 ms filter-envelope restart on a loud voice ticks, while a
+  // fresh note's attack is masked by its amp envelope. Cleared when the
+  // attack ends or on the next trigger.
+  softAttack(sec) {
+    if (this.state !== 1) return;
+    this.caSoft = Math.min(this.ca, 1 - Math.exp(-1 / (sec * sampleRate)));
+    this.iaSoft = Math.min(this.ia, 1 / Math.max(1, sec * sampleRate));
+  }
+  release() { if (this.state !== 0) { this.state = 4; this.x = 0; this.from = this.level; } }
   kill() { this.state = 0; this.level = 0; }
+  // CURVE: 1 attack, 6 hold, 2 decay, 3 sustain, 4 release, 5 steal fade.
+  processCurve() {
+    switch (this.state) {
+      case 1:
+        this.x += this.iaSoft || this.ia;
+        if (this.x >= 1) { this.level = 1; this.x = 0; this.iaSoft = 0; this.state = this.hold > 0 ? 6 : 2; }
+        else this.level = this.from + (1 - this.from) * envRise(this.x, this.ac, this.pa);
+        break;
+      case 6:
+        this.x += this.ih; this.level = 1;
+        if (this.x >= 1) { this.x = 0; this.state = 2; }
+        break;
+      case 2:
+        this.x += this.id;
+        if (this.x >= 1) { this.level = this.s; this.state = 3; }
+        else this.level = this.s + (1 - this.s) * envFall(this.x, this.dc, this.pd);
+        break;
+      case 3: this.level = this.s; break;
+      case 4:
+        this.x += this.ir;
+        if (this.x >= 1) { this.level = 0; this.state = 0; }
+        else this.level = this.from * envFall(this.x, this.rc, this.pr);
+        break;
+      case 5:
+        this.level -= this.level * STEAL_C;
+        if (this.level < 1e-4) { this.level = 0; this.state = 0; }
+        break;
+    }
+    return this.level;
+  }
   process() {
+    if (this.model) return this.processCurve();
     switch (this.state) {
       case 1: {
-        this.level += (1.45 - this.level) * this.ca;
-        if (this.level >= 1) { this.level = 1; this.state = 2; }
+        this.level += (1.45 - this.level) * (this.caSoft || this.ca);
+        if (this.level >= 1) { this.level = 1; this.caSoft = 0; this.state = 2; }
         break;
       }
       case 2: {
@@ -633,23 +700,29 @@ class Voice {
   constructor() {
     this.note = 60; this.vel = 1; this.gate = false; this.age = 0;
     this.pitch = 60; this.velGain = 0;
-    this.pending = null; // {n, vel, start} queued behind a steal fade (Env state 5)
-    this.ampEnv = new Env(); this.modEnv = new Env();
-    this.lfo1 = new LFO(); this.lfo2 = new LFO();
+    this.pending = null; // {n, vel, start, age} queued behind a steal fade (Env state 5)
+    this.ampEnv = new Env(); this.modEnv = new Env(); this.modEnv2 = new Env();
+    this.lfo1 = new LFO(); this.lfo2 = new LFO(); this.lfo3 = new LFO(); this.lfo4 = new LFO();
+    this.rand = 0; // RANDOM source: one unipolar draw per note
     this.oA = makeOscState(); this.oB = makeOscState();
     this.subPhase = 0; this.subIncPrev = -1; this.ampFacPrev = -1;
     this.pb = [0, 0, 0, 0, 0, 0, 0]; // pink noise filter state
     this.f1 = makeFilterState(); this.f2 = makeFilterState();
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
+    this.ampSm = 0; // declick-slewed amp env level (AMP_SLEW_SEC)
   }
-  get active() { return this.ampEnv.state !== 0; }
+  // A voice sounds until its slewed amp level is silent too.
+  get active() { return this.ampEnv.state !== 0 || this.ampSm > 1e-4; }
 
-  noteOn(note, vel, startPitch, age, rng, phaseRandA, phaseRandB) {
+  // `modRng` feeds LFO 3/4 and RANDOM. It is separate from `rng` so the
+  // appended modulators leave every existing patch's random draws unchanged.
+  noteOn(note, vel, startPitch, age, rng, phaseRandA, phaseRandB, modRng) {
     this.note = note; this.vel = vel; this.gate = true; this.age = age;
     this.pitch = startPitch;
     this.velGain = 0.25 + 0.75 * vel * vel;
-    this.ampEnv.trigger(); this.modEnv.trigger();
+    this.ampEnv.trigger(); this.modEnv.trigger(); this.modEnv2.trigger();
     this.lfo1.reset(rng); this.lfo2.reset(rng);
+    this.lfo3.reset(modRng); this.lfo4.reset(modRng); this.rand = modRng.next();
     for (let i = 0; i < MAXUNI; i++) {
       // Start phase is in SAMPLES (all tables are 2048 wide): scale the random
       // draw to a full cycle so unison voices (and osc A vs B) decorrelate.
@@ -663,8 +736,18 @@ class Voice {
     resetFilterState(this.f1); resetFilterState(this.f2);
     this.dcxL = this.dcxR = this.dcyL = this.dcyR = 0;
   }
-  noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); }
-  kill() { this.gate = false; this.pending = null; this.ampEnv.kill(); this.modEnv.kill(); }
+  // Mono note change without legato (Engine.cpp Voice::retrigger): restart the
+  // envelopes, per-note LFOs and RANDOM; keep oscillator phase and filter state.
+  retrigger(note, vel, rng, modRng) {
+    this.note = note; this.vel = vel; this.velGain = 0.25 + 0.75 * vel * vel;
+    this.ampEnv.trigger(); this.modEnv.trigger(); this.modEnv2.trigger();
+    // The voice is sounding: restart the mod envelopes over RETRIGGER_SOFT_SEC.
+    this.modEnv.softAttack(RETRIGGER_SOFT_SEC); this.modEnv2.softAttack(RETRIGGER_SOFT_SEC);
+    this.lfo1.reset(rng); this.lfo2.reset(rng);
+    this.lfo3.reset(modRng); this.lfo4.reset(modRng); this.rand = modRng.next();
+  }
+  noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); this.modEnv2.release(); }
+  kill() { this.gate = false; this.pending = null; this.ampEnv.kill(); this.modEnv.kill(); this.modEnv2.kill(); this.ampSm = 0; }
 }
 
 // ---------- FX chain (finding W6) ----------

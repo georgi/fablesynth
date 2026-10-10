@@ -32,6 +32,12 @@ constexpr float  BL_MIDI_ACCENT_VEL = 0.8f;
 constexpr double BL_GATE_FRAC   = 0.55;  // non-tied gates close at this step fraction
 constexpr double BL_SWING_MAX   = 0.667;
 constexpr double BL_DC_R        = 0.9998;
+// Declick slew on the amp level (s). Rounds the corners of a fast attack or
+// release without audibly softening the transient.
+constexpr double BL_AMP_SLEW    = 0.0003;
+// Accent/velocity gain slew (s): time-based, so a gain change never depends
+// on how the host block splits the render.
+constexpr double BL_GAIN_SLEW   = 0.001;
 // Filter env sweep span (octaves at flt.env = +/-100%) and LFO span (octaves
 // at depth = 100%). Accent multiplies the env peak and shortens its decay.
 constexpr double BL_FENV_OCT    = 5;

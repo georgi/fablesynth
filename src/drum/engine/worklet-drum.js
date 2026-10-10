@@ -66,9 +66,44 @@ function rhythmEqual(a, b) {
 const POS_TAU = 0.000774; // was posSm += (pos - posSm) * 0.35 per 16 samples
 const CUT_TAU = 0.003847; // was cutSm += (fc - cutSm) * 0.5 per 128 samples
 const CHOKE_TAU = 0.0003; // ≈2.8 ms to -80 dB; also the retrigger fade (D2)
+// Declick slew on the choke / retrigger fade (s). Rounds the corner where the
+// fade starts; the hit's own attack transient stays untouched.
+const CHOKE_SLEW = 0.0003;
 const DC_R_48 = 0.9998; // DC-blocker pole, quoted at 48 kHz
 const NOISE_SR = 48000; // reference rate for the noise one-pole colour
 const EDGE_FADE = 0.0015; // seconds of fade at a sample's start/end/stop
+// Band-limited one-shot decimation (DrumEngine.cpp Finding K1): above 1 source
+// sample per output sample the read is a Kaiser-windowed sinc low-pass whose
+// width and cutoff scale with the read rate. The prototype is unit scale
+// (-6 dB at 0.47 cycles per output sample, ~70 dB stopband), read from a table.
+const SINC_RES = 256; // table points per output sample
+const SINC_HALF = 11; // prototype half width, output samples
+const SINC_CUT = 0.47;
+const SINC_BETA = 7;
+const SINC_MAX_AST = 5.8; // wider kernels stop narrowing
+const SINC_BLEND = 1.05; // read rate where the Hermite read is fully replaced
+const SINC_TABLE = (() => {
+  const i0 = (x) => {
+    let sum = 1, term = 1;
+    for (let k = 1; k < 60; k++) {
+      term *= (x / (2 * k)) * (x / (2 * k));
+      sum += term;
+      if (term < 1e-18 * sum) break;
+    }
+    return sum;
+  };
+  const norm = i0(SINC_BETA);
+  const t = new Float64Array(SINC_HALF * SINC_RES + 2);
+  for (let i = 0; i < t.length; i++) {
+    const x = i / SINC_RES;
+    const a2 = 2 * SINC_CUT * x;
+    const sinc = a2 === 0 ? 1 : Math.sin(Math.PI * a2) / (Math.PI * a2);
+    const r = x / SINC_HALF;
+    const w = r >= 1 ? 0 : i0(SINC_BETA * Math.sqrt(1 - r * r)) / norm;
+    t[i] = 2 * SINC_CUT * sinc * w;
+  }
+  return t;
+})();
 const TYPE_XFADE = 0.003; // seconds of crossfade on a filter-type switch
 const ADAA_FADE_WIDTH = 0.1;
 const ADAA_INPUT_LIMIT = 16;
