@@ -1,4 +1,5 @@
 #pragma once
+#include "../ui/VisualTimer.h"
 #include "../agent/AgentPanel.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -17,9 +18,9 @@
 // The web's .sq-hint legend line (SeqApp.tsx): tiny contextual key/mouse help
 // under the rack. Text comes from a provider so the quant value stays current;
 // 2 Hz repaint is plenty for copy changes.
-class HintBar : public juce::Component, private juce::Timer {
+class HintBar : public juce::Component, private fui::VisualTimer {
 public:
-    HintBar() { startTimerHz(2); setInterceptsMouseClicks(false, false); }
+    HintBar() { startVisualTimer(*this, 2); setInterceptsMouseClicks(false, false); }
     ~HintBar() override { stopTimer(); }
     void setProvider(std::function<juce::String()> p) { provider_ = std::move(p); repaint(); }
     void paint(juce::Graphics& g) override {

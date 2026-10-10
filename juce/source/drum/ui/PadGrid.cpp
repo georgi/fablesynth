@@ -97,7 +97,7 @@ PadGrid::PadGrid(DrumUiModel& p) : proc(p) {
     formatMgr.registerBasicFormats();
     for (int i = 0; i < fable::DR_NPADS; ++i) lastTag_[(size_t)i] = -1;
     setInterceptsMouseClicks(true, false);
-    startTimerHz(30);
+    startTimerHz(fui::kAnimationHz);
 }
 
 #ifndef FABLE_HOSTED_UI
@@ -106,7 +106,7 @@ PadGrid::PadGrid(DrumAudioProcessor& p)
     formatMgr.registerBasicFormats();
     for (int i = 0; i < fable::DR_NPADS; ++i) lastTag_[(size_t)i] = -1;
     setInterceptsMouseClicks(true, false);
-    startTimerHz(30);
+    startTimerHz(fui::kAnimationHz);
 }
 #endif
 
@@ -327,6 +327,8 @@ void PadGrid::timerCallback() {
     for (auto it = heldKeys_.begin(); it != heldKeys_.end();)
         it = juce::KeyPress::isKeyCurrentlyDown(*it) ? std::next(it) : heldKeys_.erase(it);
 
+    if (!isVisibleInHierarchy(*this)) return;
+
     // Repaint only when something visible changed (LED window, tag, selection).
     juce::uint32 lit = 0;
     bool tagChanged = false;
@@ -347,7 +349,7 @@ void PadGrid::timerCallback() {
 }
 
 // ---- paint -------------------------------------------------------------------
-void PadGrid::paint(juce::Graphics& g) {
+void PadGrid::paintPanel(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
     // .panel-head: h2 "PADS" (accent a), right-aligned dim hint
@@ -363,67 +365,170 @@ void PadGrid::paint(juce::Graphics& g) {
     // ASCII arrows avoid the default mono font's fallback box for U+2192.
     drawSpaced(g, "DROP WAV · RIGHT-CLICK SOURCE", head, 1.0f, juce::Justification::right);
 
+}
+
+void PadGrid::paintPadUnder(juce::Graphics& g, int i, int sel, int drag) {
+    const auto t = tileBounds(i).toFloat();
+    // .pad body: vertical gradient #1c212d -> #10131b, radius 10
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff1c212d), t.getX(), t.getY(),
+                                           juce::Colour(0xff10131b), t.getX(), t.getBottom(),
+                                           false));
+    g.fillRoundedRectangle(t, 10.0f);
+
+    if (i == sel) {          // .pad.sel: cyan border + halo
+        g.setColour(col::acA.withAlpha(0.3f));
+        g.drawRoundedRectangle(t.expanded(1.0f), 11.0f, 2.0f);
+        g.setColour(col::acA);
+        g.drawRoundedRectangle(t.reduced(0.5f), 10.0f, 1.0f);
+    } else if (i == drag) {  // .pad.drag-over: amber
+        g.setColour(col::acB.withAlpha(0.35f));
+        g.drawRoundedRectangle(t.expanded(1.0f), 11.0f, 2.0f);
+        g.setColour(col::acB);
+        g.drawRoundedRectangle(t.reduced(0.5f), 10.0f, 1.0f);
+    } else {
+        g.setColour(col::line);
+        g.drawRoundedRectangle(t.reduced(0.5f), 10.0f, 1.0f);
+    }
+
+    // .pad-num top-left
+    g.setColour(col::textDim);
+    g.setFont(monoFont(9.0f));
+    auto numArea = t.toNearestInt().withTrimmedLeft(8).withTrimmedTop(7);
+    drawSpaced(g, juce::String(i + 1).paddedLeft('0', 2), numArea.withHeight(10), 1.0f);
+
+}
+
+void PadGrid::paintPadOver(juce::Graphics& g, int i, const juce::String& name, int choke, int out) {
+    const auto t = tileBounds(i).toFloat();
+    // .pad-meta: name over choke/out tag, anchored bottom-left
+    const auto meta = t.toNearestInt().reduced(7, 0).withTrimmedBottom(7);
+    g.setColour(col::text);
+    g.setFont(monoFont(9.0f));
+    g.drawText(name, meta.withTop(meta.getBottom() - 29).withHeight(16),
+               juce::Justification::centredLeft, true);
+
+    const auto& names = choke > 0 ? fable::CHOKE_NAMES : fable::OUT_NAMES;
+    const int nameIdx = juce::jlimit(0, (int)names.size() - 1, choke > 0 ? choke : out);
+    g.setColour(col::textDim);
+    g.setFont(monoFont(7.0f));
+    drawSpaced(g, juce::String(names[(size_t)nameIdx]),
+               meta.withTop(meta.getBottom() - 9), 0.9f);
+}
+
+void PadGrid::paintPadLed(juce::Graphics& g, int i, juce::uint32 now) {
+    const auto t = tileBounds(i).toFloat();
+    // .pad-led top-right, 7px, lit for 180 ms after a hit
+    const bool litNow = now - hitMs_[(size_t)i] < (juce::uint32)kLitMs;
+    juce::Rectangle<float> led(t.getRight() - 8.0f - 7.0f, t.getY() + 8.0f, 7.0f, 7.0f);
+    if (litNow) {
+        g.setColour(col::acA.withAlpha(0.5f));
+        g.fillEllipse(led.expanded(2.5f));
+        g.setColour(col::acA);
+    } else {
+        g.setColour(juce::Colour(0xff232936));
+    }
+    g.fillEllipse(led);
+
+}
+
+void PadGrid::paintDirect(juce::Graphics& g) {
+    paintPanel(g);
+    const auto now = juce::Time::getMillisecondCounter();
+    for (int i = 0; i < fable::DR_NPADS; ++i) {
+        paintPadUnder(g, i, proc.selectedPad(), dragOver_);
+        paintPadLed(g, i, now);
+        const auto pre = "pad" + juce::String(i) + ".";
+        paintPadOver(g, i, proc.padName(i),
+            (int)std::lround(parameterValue(proc, pre + "choke")),
+            (int)std::lround(parameterValue(proc, pre + "out")));
+    }
+}
+
+void PadGrid::paint(juce::Graphics& g) {
+    if (getWidth() <= 0 || getHeight() <= 0 || !g.clipRegionIntersects(getLocalBounds())) return;
+    const float physicalScale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float scale = std::isfinite(physicalScale) && physicalScale > 0.0f ? physicalScale : 1.0f;
+    // The Graphics API exposes physical scale but not the current device
+    // translation. A cached raster would lose the subpixel phase of hosted
+    // layouts (and shift glyph/rounded-edge coverage). Keep JUCE's original
+    // vector paint whenever that phase cannot be represented exactly.
+    bool aligned = scale == std::floor(scale);
+    for (juce::Component* component = this; aligned && component != nullptr; component = component->getParentComponent()) {
+        const auto transform = component->getTransform();
+        aligned = transform.mat00 == std::floor(transform.mat00)
+            && transform.mat11 == std::floor(transform.mat11)
+            && transform.mat01 == 0.0f && transform.mat10 == 0.0f
+            && transform.mat02 == std::floor(transform.mat02)
+            && transform.mat12 == std::floor(transform.mat12);
+    }
+    if (!aligned) {
+        paintDirect(g);
+        return;
+    }
+    const bool geometryChanged = cacheSize_ != getLocalBounds() || cacheScale_ != scale;
+    if (geometryChanged) {
+        cacheSize_ = getLocalBounds();
+        cacheScale_ = scale;
+        panelLayer_ = {};
+        for (auto& pad : padLayers_) { pad.under = {}; pad.over = {}; }
+    }
+    // Tile layer origins are snapped in physical pixels, retaining the same
+    // raster phase as the component-wide panel, including fractional scales.
+    auto build = [&](juce::Image& image, juce::Rectangle<int> region, auto&& draw) {
+        const int x = (int)std::floor(region.getX() * scale);
+        const int y = (int)std::floor(region.getY() * scale);
+        const int right = (int)std::ceil(region.getRight() * scale);
+        const int bottom = (int)std::ceil(region.getBottom() * scale);
+        image = juce::Image(juce::Image::ARGB, juce::jmax(1, right - x), juce::jmax(1, bottom - y), true);
+        juce::Graphics cached(image);
+        cached.addTransform(juce::AffineTransform::scale(scale).translated((float)-x, (float)-y));
+        cached.reduceClipRegion(getLocalBounds());
+        draw(cached);
+        ++cacheBuildCount_;
+    };
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    auto blit = [&](const juce::Image& image, juce::Rectangle<int> region) {
+        g.setColour(juce::Colours::white);
+        const float x = std::floor(region.getX() * scale) / scale;
+        const float y = std::floor(region.getY() * scale) / scale;
+        g.drawImageTransformed(image, juce::AffineTransform::scale(1.0f / scale).translated(x, y));
+    };
+    if (!panelLayer_.isValid()) build(panelLayer_, getLocalBounds(), [&](auto& cached) { paintPanel(cached); });
+    blit(panelLayer_, getLocalBounds());
     const auto now = juce::Time::getMillisecondCounter();
     const int sel = proc.selectedPad();
-
     for (int i = 0; i < fable::DR_NPADS; ++i) {
-        const auto t = tileBounds(i).toFloat();
-
-        // .pad body: vertical gradient #1c212d -> #10131b, radius 10
-        g.setGradientFill(juce::ColourGradient(juce::Colour(0xff1c212d), t.getX(), t.getY(),
-                                               juce::Colour(0xff10131b), t.getX(), t.getBottom(),
-                                               false));
-        g.fillRoundedRectangle(t, 10.0f);
-
-        if (i == sel) {          // .pad.sel: cyan border + halo
-            g.setColour(col::acA.withAlpha(0.3f));
-            g.drawRoundedRectangle(t.expanded(1.0f), 11.0f, 2.0f);
-            g.setColour(col::acA);
-            g.drawRoundedRectangle(t.reduced(0.5f), 10.0f, 1.0f);
-        } else if (i == dragOver_) {  // .pad.drag-over: amber
-            g.setColour(col::acB.withAlpha(0.35f));
-            g.drawRoundedRectangle(t.expanded(1.0f), 11.0f, 2.0f);
-            g.setColour(col::acB);
-            g.drawRoundedRectangle(t.reduced(0.5f), 10.0f, 1.0f);
-        } else {
-            g.setColour(col::line);
-            g.drawRoundedRectangle(t.reduced(0.5f), 10.0f, 1.0f);
+        // Halo extends two logical pixels beyond the tile. Keep a spare pixel
+        // for antialiasing, and rebuild clipped tiles fully rather than baking
+        // the caller's partial repaint into the image.
+        const auto tile = tileBounds(i);
+        const auto meta = tile.reduced(7, 0).withTrimmedBottom(7);
+        const auto region = tile.expanded(3)
+            .getUnion(tile.withTrimmedLeft(8).withTrimmedTop(7).withHeight(10).withWidth(32))
+            .getUnion(meta.withTop(meta.getBottom() - 29).withHeight(16))
+            .getUnion(meta.withTop(meta.getBottom() - 9).withWidth(64))
+            .getUnion(juce::Rectangle<float>((float)tile.getRight() - 15.0f, (float)tile.getY() + 8.0f, 7.0f, 7.0f).expanded(2.5f).getSmallestIntegerContainer())
+            .expanded(1)
+            .getIntersection(getLocalBounds());
+        if (region.isEmpty() || !g.clipRegionIntersects(region)) continue;
+        auto& pad = padLayers_[(size_t)i];
+        const int border = i == sel ? 1 : i == dragOver_ ? 2 : 0;
+        if (!pad.under.isValid() || pad.border != border) {
+            pad.border = border;
+            build(pad.under, region, [&](auto& cached) { paintPadUnder(cached, i, sel, dragOver_); });
         }
-
-        // .pad-num top-left
-        g.setColour(col::textDim);
-        g.setFont(monoFont(9.0f));
-        auto numArea = t.toNearestInt().withTrimmedLeft(8).withTrimmedTop(7);
-        drawSpaced(g, juce::String(i + 1).paddedLeft('0', 2), numArea.withHeight(10), 1.0f);
-
-        // .pad-led top-right, 7px, lit for 180 ms after a hit
-        const bool litNow = now - hitMs_[(size_t)i] < (juce::uint32)kLitMs;
-        juce::Rectangle<float> led(t.getRight() - 8.0f - 7.0f, t.getY() + 8.0f, 7.0f, 7.0f);
-        if (litNow) {
-            g.setColour(col::acA.withAlpha(0.5f));
-            g.fillEllipse(led.expanded(2.5f));
-            g.setColour(col::acA);
-        } else {
-            g.setColour(juce::Colour(0xff232936));
-        }
-        g.fillEllipse(led);
-
-        // .pad-meta: name over choke/out tag, anchored bottom-left
-        const auto meta = t.toNearestInt().reduced(7, 0).withTrimmedBottom(7);
-        g.setColour(col::text);
-        g.setFont(monoFont(9.0f));
-        g.drawText(proc.padName(i), meta.withTop(meta.getBottom() - 29).withHeight(16),
-                   juce::Justification::centredLeft, true);
-
+        blit(pad.under, region);
+        paintPadLed(g, i, now);
         const auto pre = "pad" + juce::String(i) + ".";
         const int choke = (int)std::lround(parameterValue(proc, pre + "choke"));
-        const int out   = (int)std::lround(parameterValue(proc, pre + "out"));
-        const auto& names = choke > 0 ? fable::CHOKE_NAMES : fable::OUT_NAMES;
-        const int nameIdx = juce::jlimit(0, (int)names.size() - 1, choke > 0 ? choke : out);
-        g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
-        drawSpaced(g, juce::String(names[(size_t)nameIdx]),
-                   meta.withTop(meta.getBottom() - 9), 0.9f);
+        const int out = (int)std::lround(parameterValue(proc, pre + "out"));
+        const auto name = proc.padName(i);
+        if (!pad.over.isValid() || pad.name != name || pad.choke != choke || pad.out != out) {
+            pad.name = name; pad.choke = choke; pad.out = out;
+            build(pad.over, region, [&](auto& cached) { paintPadOver(cached, i, name, choke, out); });
+        }
+        blit(pad.over, region);
     }
 }
 

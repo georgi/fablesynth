@@ -228,14 +228,17 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
     // Include both ends of a time automation move; never freeze the delay
     // while a repeat can still be travelling through either channel.
     const double delayHorizon = std::max(labEnabled_ ? 4.0 : 0.0, delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target));
-    float delayPk = 0;
+    float tailPk = 0;
     float inPk = 0;
     for (int i = 0; i < n; i++)
         inPk = std::max(inPk, std::max(std::abs(L[i]), std::abs(R[i])));
-    if (idle_) {
-        if (inPk <= kIdleLevel) return;
-        idle_ = false;
-        idleSilent_ = 0;
+    const bool inLoud = !(inPk <= ActivityGate::kIdleLevel);
+    double skipped;
+    if (gate_.begin(inLoud, n, skipped)) return;
+    if (skipped > 0) {
+        // Free-running clocks keep their phase across the skipped span.
+        if (!chorusGated_) chPhase_ = std::fmod(chPhase_ + chRate_ / sr_ * skipped, 1.0);
+        lab_.advanceClock(skipped);
     }
 
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive.

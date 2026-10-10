@@ -223,6 +223,19 @@ public:
 
 private:
     friend struct SeqOutputTestAccess;
+    friend struct SeqSessionCacheTestAccess;
+    // Host program queries may overlap UI polling. This lock protects only
+    // reader memoization; SessionData edits retain their existing message-thread
+    // contract and must not run concurrently with document reads. No DSP lock.
+    mutable juce::CriticalSection sessionPresetCacheLock_;
+    std::uint64_t sessionEpoch_ = 0; // guarded by sessionPresetCacheLock_
+    void bumpSessionEpoch();         // call AFTER the session/conductor swap
+    mutable std::uint64_t observedSessionEpoch_ = 0, observedDocumentRevision_ = 0;
+    mutable std::uint64_t sessionEditRevision_ = 0;
+    mutable std::uint64_t observedContentEpoch_ = 0, observedContentRevision_ = 0, sessionContentRevision_ = 0;
+    mutable std::uint64_t cachedPresetRevision_ = 0, presetMatchEvaluations_ = 0;
+    mutable bool presetMatchValid_ = false;
+    mutable int cachedSessionPreset_ = -1;
     std::array<std::atomic<std::uint64_t>, 4> trackPatchRevision_ {};
     std::uint64_t agentEditRevision_ = 0;
     fable::AudioMeter agentOutputMeter_;

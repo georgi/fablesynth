@@ -13,28 +13,6 @@ static bool floatChanged(float a, float b) { return std::isunordered(a, b) || st
 
 // ---- shared bits (drum panel styling, accent-A aware) ------------------------
 
-static void drawBlLed(juce::Graphics& g, juce::Rectangle<float> r, juce::Colour ac) {
-    g.setColour(ac.withAlpha(0.55f));
-    g.fillEllipse(r.expanded(2.5f));
-    g.setGradientFill(juce::ColourGradient(ac.brighter(0.8f), r.getX() + r.getWidth() * 0.38f,
-                                           r.getY() + r.getHeight() * 0.32f,
-                                           ac.darker(0.4f), r.getRight(), r.getBottom(), true));
-    g.fillEllipse(r);
-    g.setColour(ac.brighter(0.4f).withAlpha(0.8f));
-    g.drawEllipse(r, 1.0f);
-}
-
-// Dim idle LED (.bl-led without an accent class — the SUB panel).
-static void drawIdleLed(juce::Graphics& g, juce::Rectangle<float> r) {
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff2a3140),
-                                           r.getX() + r.getWidth() * 0.4f,
-                                           r.getY() + r.getHeight() * 0.35f,
-                                           juce::Colour(0xff12151d), r.getRight(), r.getBottom(), true));
-    g.fillEllipse(r);
-    g.setColour(col::line);
-    g.drawEllipse(r, 1.0f);
-}
-
 static void drawHeadTitle(juce::Graphics& g, juce::Rectangle<int> area,
                           const juce::String& t, juce::Colour c) {
     g.setColour(c);
@@ -75,7 +53,7 @@ static float rawVal(BassUiModel& proc, const juce::String& id) {
 
 // ===================== BassTerrainView =====================
 BassTerrainView::BassTerrainView(BassUiModel& p) : proc(p) {
-    startTimerHz(30); // animation cadence (matches the web rAF throttle)
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 int BassTerrainView::tableIndex() const { return (int)rawVal(proc, "osc.table"); }
@@ -186,7 +164,7 @@ static double bassFltMag(int type, double cutoff, double res, double f) {
     return type == 1 ? m * m : m;
 }
 
-BassFilterView::BassFilterView(BassUiModel& p) : proc(p) { startTimerHz(30); }
+BassFilterView::BassFilterView(BassUiModel& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 
 void BassFilterView::timerCallback() {
     const float vc = proc.vizCutoff();
@@ -240,7 +218,7 @@ void BassFilterView::paint(juce::Graphics& g) {
 // many seconds so knob moves read as proportional changes.
 static constexpr float kEnvWindowS = 2.5f;
 
-BassEnvView::BassEnvView(BassUiModel& p) : proc(p) { startTimerHz(30); }
+BassEnvView::BassEnvView(BassUiModel& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 
 float BassEnvView::val(const char* id) const { return rawVal(proc, id); }
 
@@ -341,7 +319,7 @@ static float lfoShapeValue(int shape, float phase) {
 
 BassLfoView::BassLfoView(BassUiModel& p)
     : proc(p), t0(juce::Time::getMillisecondCounter()) {
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 void BassLfoView::paint(juce::Graphics& g) {
@@ -412,10 +390,12 @@ void BassOscPanel::resized() {
 }
 
 void BassOscPanel::paint(juce::Graphics& g) {
+    artwork_.paint(*this, g, [&](auto& cg) { paintDirectForTesting(cg); });
+}
+
+void BassOscPanel::paintDirectForTesting(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
-    drawBlLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), accentA());
-    head.removeFromLeft(8);
     drawHeadTitle(g, head, "OSC", accentA());
 }
 
@@ -454,10 +434,12 @@ void BassSubPanel::resized() {
 }
 
 void BassSubPanel::paint(juce::Graphics& g) {
+    artwork_.paint(*this, g, [&](auto& cg) { paintDirectForTesting(cg); });
+}
+
+void BassSubPanel::paintDirectForTesting(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
-    drawIdleLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
-    head.removeFromLeft(8);
     drawHeadTitle(g, head, "SUB", col::text);
     // .bl-sub-body inset well: dark background + hairline, so the SHAPE/OCT/
     // LEVEL cluster reads as one grouped control rather than floating labels.
@@ -494,10 +476,12 @@ void BassFilterPanel::resized() {
 }
 
 void BassFilterPanel::paint(juce::Graphics& g) {
+    artwork_.paint(*this, g, [&](auto& cg) { paintDirectForTesting(cg); });
+}
+
+void BassFilterPanel::paintDirectForTesting(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
-    drawBlLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), col::acF);
-    head.removeFromLeft(8);
     drawHeadTitle(g, head, "FILTER", col::acF);
 }
 
@@ -527,6 +511,10 @@ void BassEnvPanel::resized() {
 }
 
 void BassEnvPanel::paint(juce::Graphics& g) {
+    artwork_.paint(*this, g, [&](auto& cg) { paintDirectForTesting(cg); });
+}
+
+void BassEnvPanel::paintDirectForTesting(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
     // web "FILTER AD · AMP ADSR" — ASCII middle dot substitute
@@ -563,6 +551,10 @@ void BassLfoPanel::resized() {
 }
 
 void BassLfoPanel::paint(juce::Graphics& g) {
+    artwork_.paint(*this, g, [&](auto& cg) { paintDirectForTesting(cg); });
+}
+
+void BassLfoPanel::paintDirectForTesting(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
     drawHeadNote(g, head.removeFromRight(140), "-> CUTOFF - BAR-LOCKED");
@@ -592,15 +584,43 @@ void BassAccentPanel::resized() {
 }
 
 void BassAccentPanel::paint(juce::Graphics& g) {
+    artwork_.paint(*this, g, [&](auto& cg) { paintDirectForTesting(cg); });
+}
+
+void BassAccentPanel::paintDirectForTesting(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
-    drawBlLed(g, head.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat(), accentA());
-    head.removeFromLeft(8);
     drawHeadTitle(g, head, "ACCENT - SLIDE", accentA());
     g.setColour(col::textHint);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "ONE KNOB - LEVEL + ENV + DECAY", hintArea, 1.2f,
                juce::Justification::horizontallyCentred);
+}
+
+void BassPanelArtwork::paint(juce::Component& owner, juce::Graphics& g,
+                             const std::function<void(juce::Graphics&)>& direct) {
+    if (owner.getWidth() <= 0 || owner.getHeight() <= 0) return;
+    const float physical = g.getInternalContext().getPhysicalPixelScaleFactor();
+    bool aligned = std::isfinite(physical) && physical > 0 && physical == std::floor(physical);
+    for (auto* c = &owner; aligned && c; c = c->getParentComponent()) {
+        const auto t = c->getTransform();
+        aligned = t.mat00 == std::floor(t.mat00) && t.mat11 == std::floor(t.mat11)
+            && t.mat01 == 0 && t.mat10 == 0
+            && t.mat02 == std::floor(t.mat02) && t.mat12 == std::floor(t.mat12);
+    }
+    if (!aligned) { direct(g); return; }
+    if (!image.isValid() || size != owner.getLocalBounds() || scale != physical || accent != accentA()) {
+        size = owner.getLocalBounds(); scale = physical; accent = accentA();
+        image = juce::Image(juce::Image::ARGB, (int)(size.getWidth() * scale),
+                            (int)(size.getHeight() * scale), true);
+        juce::Graphics cg(image);
+        cg.addTransform(juce::AffineTransform::scale(scale));
+        direct(cg); ++builds;
+    }
+    juce::Graphics::ScopedSaveState save(g);
+    g.setColour(juce::Colours::white);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.drawImageTransformed(image, juce::AffineTransform::scale(1.0f / scale));
 }
 
 // ===================== BassKeysPanel =====================
@@ -619,7 +639,7 @@ static int whiteIndex(int pc) {
     return idx[pc];
 }
 
-BassKeysPanel::BassKeysPanel(BassUiModel& p) : proc(p) { startTimerHz(20); }
+BassKeysPanel::BassKeysPanel(BassUiModel& p) : proc(p) { startVisualTimer(*this, 20); }
 
 juce::Rectangle<float> BassKeysPanel::keyBounds(int semi) const {
     const auto area = keysArea.toFloat();
@@ -682,7 +702,7 @@ void BassKeysPanel::resized() {
     keysArea = r;
 }
 
-void BassKeysPanel::paint(juce::Graphics& g) {
+void BassKeysPanel::paintChrome(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
     auto head = headArea;
     const auto arp = proc.arpSettings();
@@ -691,43 +711,98 @@ void BassKeysPanel::paint(juce::Graphics& g) {
         : "AUDITION WHEN STOPPED - LEGATO = SLIDE");
     drawHeadTitle(g, head, "KEYS", col::text);
 
-    const int hot = hotKey();
-    const juce::Colour green = accentA();
+}
 
-    // whites first, blacks on top (web z-order)
+void BassKeysPanel::paintKey(juce::Graphics& g, int s, bool isHot) {
+    const bool black = keyIsBlack(s % 12);
+    const auto green = accentA();
+    const auto b = keyBounds(s);
+
+    if (black) {
+        g.setGradientFill(juce::ColourGradient(
+            isHot ? juce::Colour(0xff2fbf76) : juce::Colour(0xff222835),
+            b.getX(), b.getY(),
+            isHot ? juce::Colour(0xff14522f) : juce::Colour(0xff0c0f15),
+            b.getX(), b.getBottom(), false));
+        g.fillRoundedRectangle(b, 3.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.7f));
+        g.drawRoundedRectangle(b.reduced(0.5f), 3.0f, 1.0f);
+        if (isHot) {
+            g.setColour(green.withAlpha(0.5f));
+            g.drawRoundedRectangle(b.expanded(1.0f), 4.0f, 2.0f);
+        }
+    } else {
+        g.setGradientFill(juce::ColourGradient(
+            isHot ? juce::Colour(0xff7dffb8) : juce::Colour(0xffd7dee9),
+            b.getX(), b.getY(),
+            isHot ? juce::Colour(0xff2fbf76) : juce::Colour(0xffa9b3c4),
+            b.getX(), b.getBottom(), false));
+        g.fillRoundedRectangle(b, 4.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.1f));
+        g.drawRoundedRectangle(b.reduced(0.5f), 4.0f, 1.0f);
+        if (isHot) {
+            g.setColour(green.withAlpha(0.6f));
+            g.drawRoundedRectangle(b.expanded(1.0f), 5.0f, 2.0f);
+        }
+    }
+}
+
+void BassKeysPanel::paintDirectForTesting(juce::Graphics& g) {
+    paintChrome(g);
+    const int hot = hotKey();
+    for (int pass = 0; pass < 2; ++pass)
+        for (int s = 0; s < fable::BL_KEY_COUNT; ++s)
+            if ((pass == 1) == keyIsBlack(s % 12)) paintKey(g, s, s == hot);
+}
+
+void BassKeysPanel::paint(juce::Graphics& g) {
+    if (getWidth() <= 0 || getHeight() <= 0 || !g.clipRegionIntersects(getLocalBounds())) return;
+    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    bool aligned = std::isfinite(scale) && scale > 0 && scale == std::floor(scale);
+    for (juce::Component* c = this; aligned && c; c = c->getParentComponent()) {
+        const auto t = c->getTransform();
+        aligned = t.mat00 == std::floor(t.mat00) && t.mat11 == std::floor(t.mat11)
+            && t.mat01 == 0 && t.mat10 == 0
+            && t.mat02 == std::floor(t.mat02) && t.mat12 == std::floor(t.mat12);
+    }
+    if (!aligned) { paintDirectForTesting(g); return; }
+    if (cacheSize_ != getLocalBounds() || cacheScale_ != scale) {
+        cacheSize_ = getLocalBounds(); cacheScale_ = scale;
+        chrome_ = {};
+        for (auto& key : keyLayers_) key = {};
+    }
+    const auto arp = proc.arpSettings();
+    const int headMode = arp.enabled ? (arp.keys ? 2 : 1) : 0;
+    if (headMode != cacheHeadMode_) { chrome_ = {}; cacheHeadMode_ = headMode; }
+    auto build = [&](juce::Image& image, juce::Rectangle<int> region, auto&& draw) {
+        image = juce::Image(juce::Image::ARGB, juce::jmax(1, (int)(region.getWidth() * scale)),
+                            juce::jmax(1, (int)(region.getHeight() * scale)), true);
+        juce::Graphics cg(image);
+        cg.addTransform(juce::AffineTransform::scale(scale).translated(-region.getX() * scale, -region.getY() * scale));
+        cg.reduceClipRegion(getLocalBounds());
+        draw(cg);
+        ++cacheBuildCount_;
+    };
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    auto blit = [&](const juce::Image& image, juce::Rectangle<int> region) {
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(image, juce::AffineTransform::scale(1.0f / scale)
+            .translated((float)region.getX(), (float)region.getY()));
+    };
+    if (!chrome_.isValid()) build(chrome_, getLocalBounds(), [&](auto& cg) { paintChrome(cg); });
+    blit(chrome_, getLocalBounds());
+    const int hot = hotKey();
     for (int pass = 0; pass < 2; ++pass) {
         for (int s = 0; s < fable::BL_KEY_COUNT; ++s) {
-            const bool black = keyIsBlack(s % 12);
-            if ((pass == 1) != black) continue;
-            const auto b = keyBounds(s);
-            const bool isHot = s == hot;
-            if (black) {
-                g.setGradientFill(juce::ColourGradient(
-                    isHot ? juce::Colour(0xff2fbf76) : juce::Colour(0xff222835),
-                    b.getX(), b.getY(),
-                    isHot ? juce::Colour(0xff14522f) : juce::Colour(0xff0c0f15),
-                    b.getX(), b.getBottom(), false));
-                g.fillRoundedRectangle(b, 3.0f);
-                g.setColour(juce::Colours::black.withAlpha(0.7f));
-                g.drawRoundedRectangle(b.reduced(0.5f), 3.0f, 1.0f);
-                if (isHot) {
-                    g.setColour(green.withAlpha(0.5f));
-                    g.drawRoundedRectangle(b.expanded(1.0f), 4.0f, 2.0f);
-                }
-            } else {
-                g.setGradientFill(juce::ColourGradient(
-                    isHot ? juce::Colour(0xff7dffb8) : juce::Colour(0xffd7dee9),
-                    b.getX(), b.getY(),
-                    isHot ? juce::Colour(0xff2fbf76) : juce::Colour(0xffa9b3c4),
-                    b.getX(), b.getBottom(), false));
-                g.fillRoundedRectangle(b, 4.0f);
-                g.setColour(juce::Colours::white.withAlpha(0.1f));
-                g.drawRoundedRectangle(b.reduced(0.5f), 4.0f, 1.0f);
-                if (isHot) {
-                    g.setColour(green.withAlpha(0.6f));
-                    g.drawRoundedRectangle(b.expanded(1.0f), 5.0f, 2.0f);
-                }
-            }
+            if ((pass == 1) != keyIsBlack(s % 12)) continue;
+            if (s == hot) { paintKey(g, s, true); continue; }
+            // Separate cold keys preserve the original white/black z-order,
+            // without painting a cold translucent border below the live key.
+            const auto region = keyBounds(s).expanded(2).getSmallestIntegerContainer();
+            auto& layer = keyLayers_[(size_t)s];
+            if (!layer.isValid()) build(layer, region, [&](auto& cg) { paintKey(cg, s, false); });
+            blit(layer, region);
         }
     }
 }

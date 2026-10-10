@@ -49,13 +49,20 @@ using DrStepSnapshot = DrumSequence;
 // useDrumGhostPaste). Shift-drag sweeps a rectangle; a drag from inside it moves
 // the whole block (Alt copies); the floating CUT/COPY/DUP/DEL menu drives ghost
 // paste; verbs mirror the web store. Standalone editing plus SQ-4 hosted clips.
-class StepSeqView : public juce::Component, private juce::Timer, private juce::ScrollBar::Listener {
+class StepSeqView : public juce::Component, private fui::VisualTimer, private juce::ScrollBar::Listener {
 public:
     explicit StepSeqView(DrumUiModel&);
     explicit StepSeqView(DrumAudioProcessor&); // standalone-test compatibility
     ~StepSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintUncachedForTesting(juce::Graphics& g) { paintArtwork(g, true); }
+    int cacheBuildCountForTesting() const { return artworkBuilds_; }
+    int overlayBuildCountForTesting() const { return overlayBuilds_; }
+    // PATTERNS opens the pattern library drawer (standalone rack and SQ-4 EDIT mode).
+    std::function<void()> onPatterns;
+    void setPatternsOpen(bool open) { patternsBtn_.setToggleState(open, juce::dontSendNotification); }
+    BrowserButton& patternsButton() { return patternsBtn_; }
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;

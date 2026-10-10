@@ -1,7 +1,9 @@
 #include "DeviceFocusView.h"
+#include "../../ui/LeafControlCache.h"
 #include "../dsp/ClipLibrary.gen.h"
 
 #include <algorithm>
+#include <array>
 
 namespace fui {
 namespace {
@@ -45,6 +47,9 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
     deviceCanvas_.addChildComponent(bassBody_);
     deviceCanvas_.addChildComponent(wt2Body_);
     deviceCanvas_.addChildComponent(wt3Body_);
+    for (auto* body : std::initializer_list<juce::Component*> {
+             &drumBody_, &bassBody_, &wt2Body_, &wt3Body_ })
+        enableLeafControlCache(*body);
     deviceViewport_.setViewedComponent(&deviceCanvas_,false);
     deviceViewport_.setScrollBarsShown(true,false);
     deviceViewport_.setScrollBarThickness(10);
@@ -125,7 +130,7 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
     previousPatchButton_.setColour(juce::TextButton::textColourOffId, col::textDim);
     nextPatchButton_.setColour(juce::TextButton::textColourOffId, col::textDim);
 
-    startTimerHz(10);
+    startVisualTimer(*this, 10);
 }
 
 DeviceFocusView::~DeviceFocusView() {

@@ -1,9 +1,11 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../SeqProcessor.h"
 #include "../../ui/Theme.h"
 
 #include <functional>
+#include <tuple>
 
 // SQ-4 top bar — port of src/seq/components/Header.tsx + Scope.tsx: logo,
 // combined play/stop transport, launch quantize stepper,
@@ -14,7 +16,7 @@
 // small drag/click target.
 namespace fui {
 
-class SeqHeader : public juce::Component, private juce::Timer {
+class SeqHeader : public juce::Component, private fui::VisualTimer {
 public:
     explicit SeqHeader(SeqAudioProcessor&);
     ~SeqHeader() override { stopTimer(); library_.setLookAndFeel(nullptr); }
@@ -49,17 +51,33 @@ public:
     std::function<void()> onMasterFxToggle;
     juce::ComboBox& libraryForTest() { return library_; }
     void syncLibraryForTest() { refreshLibrarySelection(); }
+    int cacheBuildCountForTesting() const { return cacheBuildCount_; }
+    int clockBuildCountForTesting() const { return clockBuildCount_; }
+    juce::Rectangle<int> clockPixelBoundsForTesting() const { return clockPixelBounds_; }
+    int scopeLabelBuildCountForTesting() const { return scopeLabelBuildCount_; }
 
 private:
     void timerCallback() override;
     void refreshLibrarySelection();
-    // Hash of everything paint() reads apart from the scope trace, which has
-    // its own repaint path (it is the only continuously moving element here).
-    juce::uint32 paintSignature(bool scopeLive) const;
+    // Stationary artwork, clock, and scope have independent damage paths.
+    juce::uint32 paintSignature() const;
+    juce::Rectangle<int> clockDamage() const;
 
     float swingValue() const;                  // 0..1, from the conductor
     float volValue() const;                    // 0..1, from the "master" APVTS param
     juce::RangedAudioParameter* volParam() const;
+
+    void paintHeader(juce::Graphics&);
+    void paintHeaderForeground(juce::Graphics&);
+    void paintScopeLabel(juce::Graphics&);
+    juce::Image headerLayer_, headerForegroundLayer_, clockLayer_, composedHeaderLayer_, scopeLabelLayer_;
+    float headerScale_ = 0, clockScale_ = 0, scopeLabelScale_ = 0;
+    juce::Colour headerAccent_;
+    std::tuple<bool, int, float, float> cachedState_;
+    std::tuple<bool, int, int, int> lastClockState_, cachedClockState_;
+    bool lastScopeLive_ = false;
+    juce::Rectangle<int> lastClockDamage_, clockPixelBounds_;
+    int cacheBuildCount_ = 0, clockBuildCount_ = 0, scopeLabelBuildCount_ = 0;
 
     void paintButtons(juce::Graphics&);
     void paintQuant(juce::Graphics&);
@@ -75,6 +93,7 @@ private:
 
     juce::ComboBox library_;
     int shownLibrarySession_ = -2;
+    int libraryPollTick_ = 0;
 
     std::unique_ptr<juce::FileChooser> chooser_;
 

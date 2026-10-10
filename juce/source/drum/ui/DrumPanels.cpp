@@ -1,4 +1,5 @@
 #include "DrumPanels.h"
+#include "../../ui/LeafControlCache.h"
 #include "../../ui/Format.h"
 #include "../../dsp/Wavetables.h"
 #include "../dsp/OneShotSamples.gen.h"
@@ -77,7 +78,7 @@ DrumTerrainView::DrumTerrainView(DrumUiModel& p, int pad, int oscIndex, juce::Co
     const auto pre = "pad" + juce::String(pad) + (osc == 0 ? ".oscA" : ".oscB");
     tableId = pre + ".table";
     posId   = pre + ".pos";
-    startTimerHz(30); // animation cadence (matches the web rAF throttle)
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 int DrumTerrainView::tableIndex() const {
@@ -216,7 +217,7 @@ static float noiseRand(uint32_t& s) {
 
 DrumNoiseView::DrumNoiseView(DrumUiModel& p, int pad) : proc(p) {
     colorId = "pad" + juce::String(pad) + ".noise.color";
-    startTimerHz(15); // web reseeds the walk every 66 ms
+    startVisualTimer(*this, 15); // web reseeds the walk every 66 ms
 }
 
 void DrumNoiseView::paint(juce::Graphics& g) {
@@ -254,7 +255,7 @@ void DrumNoiseView::paint(juce::Graphics& g) {
 // ===================== DrumEnvView =====================
 DrumEnvView::DrumEnvView(DrumUiModel& p, int pad, Mode m, juce::Colour acc)
     : proc(p), base("pad" + juce::String(pad) + "."), mode(m), accent(acc) {
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 float DrumEnvView::val(const juce::String& id) const {
@@ -396,7 +397,7 @@ static double drumFltMag(int type, double cutoff, double res, double f) {
 
 DrumFilterView::DrumFilterView(DrumUiModel& p, int pad)
     : proc(p), base("pad" + juce::String(pad) + ".flt.") {
-    startTimerHz(20);
+    startVisualTimer(*this, 20);
 }
 
 void DrumFilterView::timerCallback() {
@@ -463,6 +464,7 @@ juce::String PadBoundPanel::pid(const char* field) const {
 
 void PadBoundPanel::changeListenerCallback(juce::ChangeBroadcaster*) {
     rebuild();   // new pad selected -> recreate every child with the new ids
+    refreshLeafControlCache(*this);
     resized();
     repaint();
 }
@@ -629,7 +631,7 @@ void DrumAmpEnvPanel::paint(juce::Graphics& g) {
 // ===================== DrumFilterPanel =====================
 DrumFilterPanel::DrumFilterPanel(DrumUiModel& p) : PadBoundPanel(p) {
     rebuild();
-    startTimerHz(10);
+    startVisualTimer(*this, 10);
 }
 
 void DrumFilterPanel::rebuild() {
@@ -699,7 +701,7 @@ void DrumFilterPanel::paint(juce::Graphics& g) {
 // ===================== DrumModPanel =====================
 DrumModPanel::DrumModPanel(DrumUiModel& p) : PadBoundPanel(p) {
     rebuild();
-    startTimerHz(10);
+    startVisualTimer(*this, 10);
 }
 
 void DrumModPanel::rebuild() {

@@ -92,14 +92,14 @@ static ParameterSource legacySource(juce::AudioProcessorValueTreeState& apvts) {
     };
 }
 
-// Cache the 48 mat src/dst/amt RangedAudioParameters into a [16][3] table so a
+// Cache the 64 mat src/dst/amt/pol RangedAudioParameters into a [16][4] table so a
 // mod-target control can read active slots every timer tick without string
 // lookups. Shared by Knob and VSlider.
 static void cacheMatParams(const ParameterSource& s,
-                           juce::RangedAudioParameter* (&table)[16][3]) {
-    const char* fields[] = {".src", ".dst", ".amt"};
+                           juce::RangedAudioParameter* (&table)[16][4]) {
+    const char* fields[] = {".src", ".dst", ".amt", ".pol"};
     for (int slot = 0; slot < 16; ++slot)
-        for (int f = 0; f < 3; ++f)
+        for (int f = 0; f < 4; ++f)
             table[slot][f] = s.parameter("mat" + juce::String(slot + 1) + fields[f]);
 }
 static float matRealValue(juce::RangedAudioParameter* p) {
@@ -129,7 +129,7 @@ Knob::Knob(ParameterSource source, const juce::String& paramId,
         if (info.curve == fable::Curve::Log && info.min > 0.0f && info.max > info.min)
             liveNormPerX_ = 5.0f / std::log2(info.max / info.min);
     }
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 // Current MODULATED position on the knob arc (0..1), or -1 when the dot should
@@ -487,7 +487,7 @@ Stepper::Stepper(ParameterSource source, const juce::String& paramId, Accent ac)
     };
     styleBtn(prev, -1);
     styleBtn(next, +1);
-    startTimerHz(20);
+    startVisualTimer(*this, 20);
 }
 int Stepper::choiceCount() const {
     if (countProvider) return juce::jmax(1, countProvider());
@@ -558,15 +558,17 @@ PowerButton::PowerButton(ParameterSource source, const juce::String& paramId, Ac
     : parameters(std::move(source)), id(paramId), accent(accentColour(ac)) {
     param = parameters.parameter(id);
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    startTimerHz(20);
+    startVisualTimer(*this, 20);
 }
 PowerButton::PowerButton(std::function<bool()> get, std::function<void(bool)> set, Accent ac)
     : get_(std::move(get)), set_(std::move(set)), accent(accentColour(ac)) {
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    startTimerHz(20);
+    startVisualTimer(*this, 20);
 }
 bool PowerButton::isOn() const { return get_ ? get_() : param && param->getValue() > 0.5f; }
-void PowerButton::timerCallback() { if (isOn() != last) { last = isOn(); repaint(); } }
+void PowerButton::timerCallback() {
+    if (isOn() != last) { last = isOn(); repaint(); }
+}
 void PowerButton::mouseDown(const juce::MouseEvent&) {
     if (set_) set_(!isOn());
     else if (param) param->setValueNotifyingHost(isOn() ? 0.0f : 1.0f);
@@ -603,7 +605,7 @@ VSlider::VSlider(ParameterSource source, const juce::String& paramId, Accent ac,
     param = parameters.parameter(id);
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     if (modDest_ > 0) cacheMatParams(parameters, matParams_);
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 juce::uint64 VSlider::ringSignature() const {
     juce::uint64 h = 1469598103934665603ull;

@@ -61,10 +61,7 @@ private:
     // is never truncated: the criterion is the measured output level, not
     // whether the pad was triggered. Gating freezes the recursive state instead
     // of clearing it, so re-engaging cannot step by more than kIdleLevel.
-    static constexpr float  kIdleLevel = 1.0e-5f;
-    static constexpr double kIdleHold  = 0.25;
-    bool   idle_ = false;
-    double idleSilent_ = 0;      // samples since input+output were last audible
+    ActivityGate gate_;
 
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;

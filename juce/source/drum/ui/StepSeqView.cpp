@@ -21,7 +21,9 @@ SelBarView::SelBarView(DrumUiModel& p) : proc(p) {
     };
     styleBtn(prevBtn, -1);
     styleBtn(nextBtn, +1);
-    startTimerHz(10);
+    browseBtn_.onClick = [this] { if (onBrowse) onBrowse(); };
+    addAndMakeVisible(browseBtn_);
+    startVisualTimer(*this, 10);
 }
 
 void SelBarView::timerCallback() {
@@ -144,7 +146,7 @@ StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
     setInterceptsMouseClicks(true, true);
     setupPoly();
     setWantsKeyboardFocus(true);   // verbs on keyPressed, modifier combos only
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 #ifndef FABLE_HOSTED_UI
@@ -153,7 +155,7 @@ StepSeqView::StepSeqView(DrumAudioProcessor& p)
     setInterceptsMouseClicks(true, true);
     setupPoly();
     setWantsKeyboardFocus(true);
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 #endif
 

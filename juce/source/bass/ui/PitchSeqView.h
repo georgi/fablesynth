@@ -12,11 +12,15 @@
 // Pattern/chain semantics mirror src/bass/store.ts exactly.
 namespace fui {
 
-class PitchSeqView : public juce::Component, private juce::Timer {
+class PitchSeqView : public juce::Component, private fui::VisualTimer, private juce::ScrollBar::Listener {
 public:
     explicit PitchSeqView(BassUiModel&);
+    void resized() override;
     ~PitchSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
+    void paintUncachedForTesting(juce::Graphics& g) { paintArtwork(g, true); }
+    int cacheBuildCountForTesting() const { return artworkBuilds_; }
+    int overlayBuildCountForTesting() const { return overlayBuilds_; }
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -24,7 +28,9 @@ public:
     bool keyPressed(const juce::KeyPress&) override;
 
     // Web store handlers — public so the host test drives the exact code
-    // paths a mouse click takes.
+    // paths a mouse click takes. Steps are absolute timeline steps: the view
+    // shows every bar of the chain (hosted: of the clip) side by side, and
+    // step b*16+s is step s of the pattern chain[b] (PitchSeq.tsx).
     void toggleCell(int step, int note);    // store.toggleCell
     void cycleStepOct(int step);            // store.cycleStepOct
     void toggleStepAcc(int step);           // store.toggleStepAcc
@@ -63,7 +69,6 @@ public:
     bool ghostActive() const { return ghost_; }
 
     // Hit-test geometry (public for the host test).
-    juce::Rectangle<int> transportBounds() const;
     juce::Rectangle<int> patternBounds(int i) const;
     juce::Rectangle<int> sequenceLengthBounds() const;
     juce::Rectangle<int> randBounds() const;

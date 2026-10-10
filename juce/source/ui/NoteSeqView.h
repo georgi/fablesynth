@@ -15,7 +15,7 @@
 // SWING live in the WT-1 top bar. Pattern/chain semantics mirror src/store.ts.
 namespace fui {
 
-class NoteSeqView : public juce::Component, private juce::Timer {
+class NoteSeqView : public juce::Component, private fui::VisualTimer, private juce::ScrollBar::Listener {
 public:
     explicit NoteSeqView(WtUiModel&);
     ~NoteSeqView() override { stopTimer(); }

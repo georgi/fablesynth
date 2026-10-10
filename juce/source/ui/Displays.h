@@ -1,4 +1,5 @@
 #pragma once
+#include "VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include "Theme.h"
@@ -11,7 +12,7 @@
 namespace fui {
 
 // ADSR envelope shape.
-class EnvView : public juce::Component, private juce::Timer {
+class EnvView : public juce::Component, private fui::VisualTimer {
 public:
     EnvView(juce::AudioProcessorValueTreeState&, const juce::String& base, juce::Colour accent);
     EnvView(ParameterSource, const juce::String& base, juce::Colour accent);
@@ -27,7 +28,7 @@ private:
 
 // LFO waveform + free-running phase dot. The dot animates at the LFO's actual
 // speed: the host-tempo-synced division when sync is on, else the free RATE.
-class LfoView : public juce::Component, private juce::Timer {
+class LfoView : public juce::Component, private fui::VisualTimer {
 public:
     LfoView(juce::AudioProcessorValueTreeState&, const juce::String& shapeId,
             const juce::String& rateId, const juce::String& syncId,
@@ -52,7 +53,7 @@ private:
 };
 
 // Combined filter response for the two per-voice filters + routing.
-class FilterView : public juce::Component, private juce::Timer {
+class FilterView : public juce::Component, private fui::VisualTimer {
 public:
     FilterView(juce::AudioProcessorValueTreeState&, juce::Colour accent);
     FilterView(ParameterSource, juce::Colour accent);
@@ -65,7 +66,7 @@ private:
 };
 
 // Oscilloscope (post-FX time domain).
-class ScopeView : public juce::Component, private juce::Timer {
+class ScopeView : public juce::Component, private fui::VisualTimer {
 public:
     ScopeView(std::function<void(float*, int)> reader, juce::Colour accent);
     void paint(juce::Graphics&) override;
@@ -77,7 +78,7 @@ private:
 };
 
 // Spectrum analyser (post-FX, FFT with smoothing).
-class SpectrumView : public juce::Component, private juce::Timer {
+class SpectrumView : public juce::Component, private fui::VisualTimer {
 public:
     SpectrumView(std::function<void(float*, int)> reader,
                  std::function<double()> sampleRateProvider,

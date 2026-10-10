@@ -29,6 +29,9 @@ public:
     ~PadGrid() override;
 
     void paint(juce::Graphics&) override;
+    int cacheBuildCountForTesting() const noexcept { return cacheBuildCount_; }
+    void paintDirectForTesting(juce::Graphics& g) { paintDirect(g); }
+    void flashForTesting(int pad) { flash(pad); }
     void mouseDown(const juce::MouseEvent&) override;
 
     // juce::FileDragAndDropTarget
@@ -47,6 +50,22 @@ public:
     int padAt(juce::Point<int>) const;                    // -1 off-tile
 
 private:
+    void paintDirect(juce::Graphics&);
+    void paintPanel(juce::Graphics&);
+    void paintPadUnder(juce::Graphics&, int pad, int selection, int drag);
+    void paintPadOver(juce::Graphics&, int pad, const juce::String& name, int choke, int out);
+    void paintPadLed(juce::Graphics&, int pad, juce::uint32 now);
+    struct PadLayers {
+        juce::Image under, over;
+        juce::String name;
+        int border = -1, choke = -1, out = -1;
+    };
+    juce::Image panelLayer_;
+    std::array<PadLayers, fable::DR_NPADS> padLayers_;
+    juce::Rectangle<int> cacheSize_;
+    float cacheScale_ = 0.0f;
+    int cacheBuildCount_ = 0;
+
     void timerCallback() override;
     void parentHierarchyChanged() override;
     bool importFile(const juce::File&, int padIndex);

@@ -576,19 +576,90 @@ void SeqAudioProcessor::setTrackFactoryPatch(int t, int program) {
     applyTrackPatch(t);
 }
 
+fable::PatchRef SeqAudioProcessor::trackPatch(int t) const {
+    if (t < 0 || t >= kTracks || !conductor_) return {};
+    return conductor_->session().tracks[(size_t)t].patch;
+}
+
+void SeqAudioProcessor::setTrackPatchRef(int t, PatchRef patch) {
+    if (t < 0 || t >= kTracks || !conductor_) return;
+    conductor_->setTrackPatch(t, std::move(patch));
+    applyTrackPatch(t);
+}
+
+std::vector<float> SeqAudioProcessor::patchParamValues(int t, const PatchRef& patch) const {
+    if (t < 0 || t >= kTracks) return {};
+    return computeTrackParams(t, patch);
+}
+
+const std::vector<fable::ParamInfo>& SeqAudioProcessor::trackParamCatalog(int t) const {
+    static const std::vector<fable::ParamInfo> wt(fable::paramInfo().begin(), fable::paramInfo().end());
+    if (t == 0) return fable::drumParamInfo();
+    if (t == 1) return fable::bassParamInfo();
+    return wt;
+}
+
 int SeqAudioProcessor::trackFactoryProgram(int t) const {
     if (t < 0 || t >= kTracks || !conductor_) return -1;
     const auto& patch = conductor_->session().tracks[(size_t)t].patch;
     return patch.factory ? patch.index : -1;
 }
 
+void SeqAudioProcessor::bumpSessionEpoch() {
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    ++sessionEpoch_;
+    presetMatchValid_ = false;
+}
+
+std::uint64_t SeqAudioProcessor::sessionContentRevision() const {
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    const auto document = conductor_ ? conductor_->documentRevision() : 0;
+    if (observedContentEpoch_ != sessionEpoch_ || observedContentRevision_ != document) {
+        observedContentEpoch_ = sessionEpoch_;
+        observedContentRevision_ = document;
+        ++sessionContentRevision_;
+    }
+    return sessionContentRevision_;
+}
+
+std::uint64_t SeqAudioProcessor::sessionEditRevision() const {
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    const auto document = conductor_ ? conductor_->editRevision() : 0;
+    if (observedSessionEpoch_ != sessionEpoch_ || observedDocumentRevision_ != document) {
+        observedSessionEpoch_ = sessionEpoch_;
+        observedDocumentRevision_ = document;
+        ++sessionEditRevision_;
+    }
+    return sessionEditRevision_;
+}
+
 int SeqAudioProcessor::currentSessionPreset() const {
+    // CriticalSection is recursive: the revision getter shares this lock.
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    const auto revision = sessionEditRevision();
+    if (presetMatchValid_ && cachedPresetRevision_ == revision) return cachedSessionPreset_;
+    ++presetMatchEvaluations_;
     const auto& session = conductor_ ? conductor_->session() : initialSession_;
     const auto current = fable::sessionToJson(session);
-    const auto& library = factorySessionLibrary();
-    for (int i = 0; i < (int)library.size(); ++i) {
-        if (current == fable::sessionToJson(library[(size_t)i].session)) return i;
+    // The factory library is immutable, so serialize it once. The header polls
+    // this regularly; re-serializing every library session per tick cost a
+    // whole CPU core once the authored bank carried full inline patches.
+    static const std::vector<juce::String> libraryJson = [] {
+        std::vector<juce::String> out;
+        for (const auto& preset : factorySessionLibrary()) out.push_back(fable::sessionToJson(preset.session));
+        return out;
+    }();
+    for (int i = 0; i < (int)libraryJson.size(); ++i) {
+        if (current == libraryJson[(size_t)i]) {
+            cachedSessionPreset_ = i;
+            cachedPresetRevision_ = revision;
+            presetMatchValid_ = true;
+            return i;
+        }
     }
+    cachedSessionPreset_ = -1;
+    cachedPresetRevision_ = revision;
+    presetMatchValid_ = true;
     return -1;
 }
 
@@ -1324,6 +1395,9 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
         lastBpm_   = rawBpm_->load();
         for (int t = 0; t < kTracks; ++t) lastVol_[t] = rawVol_[t]->load();
     }
+    // After the session/conductor swap, so a reader cannot cache the old
+    // session's preset under the new epoch.
+    bumpSessionEpoch();
     return true;
 }
 

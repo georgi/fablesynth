@@ -1,4 +1,5 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumUiModel.h"
 #include "../../ui/Controls.h"
@@ -17,7 +18,7 @@ namespace fui {
 // perspective drawing, but that class is hard-bound to FableAudioProcessor —
 // this one reads DrumAudioProcessor::tableAt() via the pad's table param and
 // highlights the live frame from getVizPos(osc) (POS param when idle).
-class DrumTerrainView : public juce::Component, private juce::Timer {
+class DrumTerrainView : public juce::Component, private fui::VisualTimer {
 public:
     DrumTerrainView(DrumUiModel&, int pad, int osc, juce::Colour accent);
     void paint(juce::Graphics&) override;
@@ -38,7 +39,7 @@ private:
 
 // Animated noise tilt-response curve — port of NoiseView.tsx (seeded random
 // walk reseeded every 66 ms, smoothing from the COLOR param).
-class DrumNoiseView : public juce::Component, private juce::Timer {
+class DrumNoiseView : public juce::Component, private fui::VisualTimer {
 public:
     DrumNoiseView(DrumUiModel&, int pad);
     void paint(juce::Graphics&) override;
@@ -52,7 +53,7 @@ private:
 // Pitch (exp sweep around a zero line) / AHD envelope shape — port of
 // DrumEnvView.tsx, plus a hit pulse from the processor's env viz atomic
 // (getVizEnv): the trace glows and the AHD view shows the live level line.
-class DrumEnvView : public juce::Component, private juce::Timer {
+class DrumEnvView : public juce::Component, private fui::VisualTimer {
 public:
     enum Mode { Pitch, Ahd };
     DrumEnvView(DrumUiModel&, int pad, Mode, juce::Colour accent);
@@ -71,7 +72,7 @@ private:
 // Single-filter magnitude response — the drum FilterSection feeds the shared
 // web FilterView one filter + route 0; same analog-prototype math (types 0-4
 // = LP12/LP24/BP12/HP12/NOTCH, FilterView.tsx magFor).
-class DrumFilterView : public juce::Component, private juce::Timer {
+class DrumFilterView : public juce::Component, private fui::VisualTimer {
 public:
     DrumFilterView(DrumUiModel&, int pad);
     void paint(juce::Graphics&) override;
@@ -163,7 +164,7 @@ private:
 
 // FILTER: LED + title + power + type stepper, response view, CUT/RES/DRIVE
 // knobs. While off, the view + knobs dim to 40% (web .panel.off).
-class DrumFilterPanel : public PadBoundPanel, private juce::Timer {
+class DrumFilterPanel : public PadBoundPanel, private fui::VisualTimer {
 public:
     explicit DrumFilterPanel(DrumUiModel&);
     void paint(juce::Graphics&) override;
@@ -181,7 +182,7 @@ private:
 
 // MOD: 4 src ▸ dst + amount rows (web <select>s become steppers) and the
 // MOD ENV DEC knob + readout in the head.
-class DrumModPanel : public PadBoundPanel, private juce::Timer {
+class DrumModPanel : public PadBoundPanel, private fui::VisualTimer {
 public:
     explicit DrumModPanel(DrumUiModel&);
     void paint(juce::Graphics&) override;

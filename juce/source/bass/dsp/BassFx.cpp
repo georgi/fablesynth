@@ -217,7 +217,20 @@ float BassFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, Ha
     return (float)d1.decimate(c0, c1);
 }
 
-void BassFx::process(float* L, float* R, int n) {
+void BassFx::process(float* L, float* R, int n, const float* key) {
+    // Chain-level activity gate (see Fx::process): skip the frozen chain once
+    // input, output and echo have been below kIdleLevel for the hold horizon.
+    const double delayHorizon = delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target);
+    const bool inLoud = ActivityGate::loud(L, R, n);
+    double skipped;
+    if (gate_.begin(inLoud, n, skipped)) return;
+    if (skipped > 0) {
+        // Free-running clocks keep their phase across the skipped span, so a
+        // chain that wakes sounds as if it had run the whole time.
+        if (!chorusGated_) chPhase_ = std::fmod(chPhase_ + chRate_ / sr_ * skipped, 1.0);
+    }
+    float outPk = 0, tailPk = 0;
+
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive.
     bool driveGate = driveOff_ && driveWet_.target == 0.0f && std::abs(driveWet_.cur) < 1.0e-6f;
     bool chorusGate = chorusOff_ && chWet_.target == 0.0f && std::abs(chWet_.cur) < 1.0e-6f;

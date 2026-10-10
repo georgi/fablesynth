@@ -1,4 +1,5 @@
 #include "TrackHeadsView.h"
+#include <algorithm>
 #include "../../ui/Controls.h"
 #include "../../drum/dsp/DrumKits.h"
 #include "../../bass/dsp/BassPatches.h"
@@ -49,7 +50,7 @@ const char* machineChip(fable::Machine m) {
 
 } // namespace
 
-TrackHeadsView::TrackHeadsView(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
+TrackHeadsView::TrackHeadsView(SeqAudioProcessor& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 
 // ---- actions (also the test handles) ---------------------------------------
 
@@ -72,7 +73,8 @@ void TrackHeadsView::patchStep(int t, int d) {
     const auto& tr = tracks[(size_t)t];
     const int count = factoryPatchCount(tr.machine);
     if (count <= 0) return;
-    const int base = tr.patch.factory ? tr.patch.index : 0;
+    // An inline patch keeps its factory base in `index`; step from there.
+    const int base = std::clamp(tr.patch.index, 0, count - 1);
     const int next = ((base + d) % count + count) % count;
     proc.conductor().setTrackPatch(t, fable::PatchRef { true, next, {} });
     proc.applyTrackPatch(t);
@@ -91,42 +93,27 @@ float TrackHeadsView::volValue(int t) const {
 
 // ---- animation ---------------------------------------------------------------
 
-juce::uint32 TrackHeadsView::paintSignature() const {
+TrackHeadsView::PaintState TrackHeadsView::paintState() const {
     const auto& cond = proc.conductor();
-    const auto& sess = cond.session();
-
-    juce::uint32 sig = 17;
-    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    auto mixStr = [&mix](const std::string& s) {
-        mix((int)s.size());
-        for (char c : s) mix((int)(unsigned char)c);
-    };
-
-    mix(focusTrack_);
-    mix(hoverTrack_);
-    mix((int)sess.scenes.size());     // the SCENES card prints both counts
-    mix((int)sess.tracks.size());
-
-    for (int t = 0; t < 4 && t < (int)sess.tracks.size(); ++t) {
-        const auto& tr = sess.tracks[(size_t)t];
-        mixStr(tr.name);
-        mix((int)tr.machine);
-        mix((int)(tr.color & 0xffffu));
-        mix((int)(tr.color >> 16));
-        mix(tr.patch.factory ? 1 : 0);
-        mix(tr.patch.index);
-        mix(cond.ownerOf(t));         // LED
-        mix(cond.trackMuted(t) ? 1 : 0);
-        mix(cond.soloed(t) ? 1 : 0);
-        mix((int)std::lround(volValue(t) * 10000.0f));
+    const auto& tracks = cond.session().tracks;
+    std::vector<TrackPaintState> states;
+    states.reserve(juce::jmin(4, (int)tracks.size()));
+    for (int t = 0; t < 4 && t < (int)tracks.size(); ++t) {
+        const auto& tr = tracks[(size_t)t];
+        // CUSTOM renders the same subtitle for every inline patch. Compare
+        // only paint inputs; copying its full parameter map every frame would
+        // add allocation work without changing the artwork.
+        states.emplace_back(tr.name, (int)tr.machine, tr.color, tr.patch.factory,
+                            tr.patch.index, patchName(tr.machine, tr.patch),
+                            cond.ownerOf(t), cond.trackMuted(t), cond.soloed(t), volValue(t));
     }
-    return sig;
+    return { focusTrack_, hoverTrack_, std::move(states) };
 }
 
 void TrackHeadsView::timerCallback() {
-    const juce::uint32 sig = paintSignature();
-    if (sig == lastSig_) return;
-    lastSig_ = sig;
+    const auto state = paintState();
+    if (state == lastState_) return;
+    lastState_ = state;
     repaint();
 }
 
@@ -245,8 +232,38 @@ void TrackHeadsView::resized() {
 // ---- paint -----------------------------------------------------------------
 
 void TrackHeadsView::paint(juce::Graphics& g) {
+    if (getWidth() <= 0 || getHeight() <= 0 || !g.clipRegionIntersects(getLocalBounds())) return;
+    const float physicalScale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float scale = std::isfinite(physicalScale) && physicalScale > 0.0f ? physicalScale : 1.0f;
+    const int w = (int)std::ceil(getWidth() * scale);
+    const int h = (int)std::ceil(getHeight() * scale);
+    const auto state = paintState();
+    if (!rowLayer_.isValid() || rowLayer_.getWidth() != w || rowLayer_.getHeight() != h
+        || rowScale_ != scale || rowWidth_ != getWidth() || rowHeight_ != getHeight()
+        || cachedState_ != state) {
+        cachedState_ = state;
+        rowScale_ = scale;
+        rowWidth_ = getWidth();
+        rowHeight_ = getHeight();
+        rowLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics cached(rowLayer_);
+        cached.addTransform(juce::AffineTransform::scale(scale));
+        cached.reduceClipRegion(getLocalBounds());
+        paintRow(cached);
+        ++cacheBuildCount_;
+    }
+    // Cache at the actual physical scale and avoid filtering the glyph edges
+    // twice when an ancestor places the strip at a fractional device origin.
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.setColour(juce::Colours::white);
+    g.drawImageTransformed(rowLayer_, juce::AffineTransform::scale(1.0f / scale));
+}
+
+void TrackHeadsView::paintRow(juce::Graphics& g) {
     paintScenesCard(g);
-    for (int t = 0; t < 4; ++t) paintTrack(g, t);
+    for (int t = 0; t < 4; ++t)
+        if (g.clipRegionIntersects(trackHead[t])) paintTrack(g, t);
 }
 
 void TrackHeadsView::paintScenesCard(juce::Graphics& g) {

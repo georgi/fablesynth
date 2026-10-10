@@ -116,22 +116,16 @@ PolyLanePanel::PolyLanePanel(DrumUiModel& m) : model(m) {
     }
     steps.onChange = [this](int n) { edit([n](auto&, auto& lane) { lane.steps = n; lane.rotation %= n; }); };
     rotation.onChange = [this](int n) { edit([n](auto&, auto& lane) { lane.rotation = n; }); };
-    for (int i = 0; i < 4; ++i) {
-        source[(size_t)i].setTitle("Source bar " + juce::String(i + 1));
-        source[(size_t)i].onClick = [this, i] { edit([i](auto&, auto& lane) { lane.sourceBar = i; }); };
-    }
-    view.onClick = [this] {
-        const auto s = model.sequence(); const int p = model.selectedPad();
-        if (s.configuredLanes & (1 << p)) model.setEditPattern(s.rhythm.lanes[(size_t)p].sourceBar);
-    };
-    refresh(); startTimerHz(30);
+    refresh(); startVisualTimer(*this, fui::kAnimationHz);
 }
 void PolyLanePanel::edit(const std::function<void(DrumSequence&, fable::DrumLaneRhythm&)>& action, bool activate) {
     auto s = model.sequence(); const int p = model.selectedPad();
     auto& lane = s.rhythm.lanes[(size_t)p];
-    if (!(s.configuredLanes & (1 << p))) { lane = {}; lane.sourceBar = model.editPattern(); }
+    if (!(s.configuredLanes & (1 << p))) lane = {};   // web defaultDrumLane(0)
     if (activate) lane.enabled = true;
-    action(s, lane); s.hasRhythm = true; s.configuredLanes |= (uint16_t)(1 << p);
+    action(s, lane);
+    if (lane.enabled) lane.sourceBar = 0;
+    s.hasRhythm = true; s.configuredLanes |= (uint16_t)(1 << p);
     if (!gesture || !gestureSaved) { if (beforeEdit) beforeEdit(); gestureSaved = true; }
     model.commitSequence(s); refresh();
 }

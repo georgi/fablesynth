@@ -30,6 +30,7 @@ public:
 private:
     ParametricEq eq_;
     FxMeter meter_;
+    ActivityGate gate_;
     double sr_ = 48000;
 
     // Finding J1: AMT / chorus RATE+DEPTH / reverb SIZE reach the FX as block

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 
 #include "HostedBassModel.h"
 #include "ClipAutomationPanel.h"
@@ -17,7 +18,7 @@ namespace fui {
 // Hosts the four native SQ-4 machine surfaces. Models deliberately precede
 // bodies in declaration order because every body retains references into its
 // model and parameter bank.
-class DeviceFocusView final : public juce::Component, public AutomationMenuHost, private juce::Timer {
+class DeviceFocusView final : public juce::Component, public AutomationMenuHost, private fui::VisualTimer {
 public:
     enum class ActiveBody { none, drum, bass, wt2, wt3 };
 

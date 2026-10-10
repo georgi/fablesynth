@@ -1,4 +1,5 @@
 #pragma once
+#include "VisualTimer.h"
 #include "Controls.h"
 #include "Theme.h"
 #include "../dsp/LabFx.h"
@@ -12,9 +13,10 @@ namespace fui {
 // LAB page: the five experimental stages in signal order (see dsp/LabFx.h).
 // Each card draws an animated, parameter-driven picture of what its stage
 // does; nothing here reads audio, so the pictures never claim live data.
-class LabModule final : public juce::Component, private juce::Timer {
+class LabModule final : public juce::Component, private fui::VisualTimer {
 public:
     enum Kind { Crush, Reso, Shift, Spray, Glitch };
+    friend struct LabModuleTestAccess;
 
     LabModule(ParameterSource source, Kind kind, juce::String scope = {}) : source_(std::move(source)), kind_(kind), scope_(std::move(scope)),
         power_(source_, prefix() + ".on", accent()) {
@@ -34,10 +36,11 @@ public:
             case Spray:  knob("pitch"); knob("density"); knob("scatter"); knob("mix"); break;
             case Glitch: stepper("div"); knob("chance"); knob("drift"); knob("mix"); break;
         }
-        startTimerHz(30);
+        startVisualTimer(*this, fui::kAnimationHz);
     }
 
     void resized() override {
+        staticCache_ = {};
         auto r = getLocalBounds().reduced(12, 10);
         auto head = r.removeFromTop(24);
         power_.setBounds(head.removeFromLeft(18).withSizeKeepingCentre(18, 18));
@@ -51,15 +54,25 @@ public:
     }
 
     void paint(juce::Graphics& g) override {
-        drawPanel(g, getLocalBounds().toFloat(), 9);
-        g.setFont(dispFont(12)); g.setColour(col::text);
-        g.drawText(title(), 34, 10, 160, 24, juce::Justification::centredLeft);
-        g.setFont(monoFont(8)); g.setColour(col::acN);
-        g.drawText(power_.isOn() ? caption() : juce::String("BYPASS"), getWidth() - 140, 10, 128, 24,
-                   juce::Justification::centredRight);
-        g.setColour(col::textHint);
-        g.drawText(tagline(), 12, 34, getWidth() - 24, 18, juce::Justification::centredLeft);
-        drawDisplayBox(g, plot_.toFloat());
+        // Cache chrome at the current device scale; animated plot stays independent.
+        const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        const auto label = power_.isOn() ? caption() : juce::String("BYPASS");
+        if (!staticCache_.isValid() || scale != cacheScale_ || label != cachedCaption_) {
+            cacheScale_ = scale;
+            cachedCaption_ = label;
+            if (getWidth() <= 0 || getHeight() <= 0) return;
+            staticCache_ = juce::Image(juce::Image::ARGB,
+                (int)std::ceil(getWidth() * scale), (int)std::ceil(getHeight() * scale), true);
+            juce::Graphics cacheGraphics(staticCache_);
+            cacheGraphics.addTransform(juce::AffineTransform::scale(scale));
+            drawStatic(cacheGraphics, label);
+        }
+        {
+            juce::Graphics::ScopedSaveState cacheState(g);
+            g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+            g.setColour(juce::Colours::white);
+            g.drawImageTransformed(staticCache_, juce::AffineTransform::scale(1.0f / scale));
+        }
         juce::Graphics::ScopedSaveState save(g);
         g.reduceClipRegion(plot_.reduced(1));
         g.addTransform(juce::AffineTransform::translation((float)plot_.getX(), (float)plot_.getY()));
@@ -75,6 +88,48 @@ public:
     }
 
 private:
+    void drawStatic(juce::Graphics& g, const juce::String& label) const {
+        drawPanel(g, getLocalBounds().toFloat(), 9);
+        g.setFont(dispFont(12)); g.setColour(col::text);
+        g.drawText(title(), 34, 10, 160, 24, juce::Justification::centredLeft);
+        g.setFont(monoFont(8)); g.setColour(col::acN);
+        g.drawText(label, getWidth() - 140, 10, 128, 24,
+                   juce::Justification::centredRight);
+        g.setColour(col::textHint);
+        g.drawText(tagline(), 12, 34, getWidth() - 24, 18, juce::Justification::centredLeft);
+        drawDisplayBox(g, plot_.toFloat());
+    }
+
+    struct PlotLabelCache {
+        juce::Image image;
+        juce::String text;
+        juce::Colour colour;
+        float scale = 0;
+        int width = 0, height = 0, justification = 0;
+    };
+    // Keep labels at their original positions in the draw order (RESO labels
+    // interleave with combs), while avoiding glyph shaping on animated frames.
+    void drawPlotLabel(juce::Graphics& g, size_t slot, const juce::String& text,
+                       int x, int y, int w, int h, juce::Colour colour,
+                       int justification = juce::Justification::centredLeft) const {
+        auto& cache = plotLabels_[slot];
+        const auto scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        if (!cache.image.isValid() || cache.scale != scale || cache.text != text || cache.colour != colour
+            || cache.width != w || cache.height != h || cache.justification != justification) {
+            cache.scale = scale; cache.text = text; cache.colour = colour;
+            cache.width = w; cache.height = h; cache.justification = justification;
+            cache.image = juce::Image(juce::Image::ARGB, (int)std::ceil(w * scale), (int)std::ceil(h * scale), true);
+            juce::Graphics labels(cache.image);
+            labels.addTransform(juce::AffineTransform::scale(scale));
+            labels.setFont(monoFont(8)); labels.setColour(colour);
+            labels.drawText(text, 0, 0, w, h, justification);
+        }
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(cache.image, juce::AffineTransform::scale(1.0f / scale).translated((float)x, (float)y));
+    }
+
     juce::String prefix() const {
         static const char* const ids[] = {"fx.crush", "fx.reso", "fx.shift", "fx.spray", "fx.glitch"};
         return scope_ + ids[kind_];
@@ -208,9 +263,9 @@ private:
         trace(hz * (1 - 2 * spread), col::acB);
         trace(hz, ink());
         g.setColour(col::textHint); g.setFont(monoFont(8));
-        g.drawText("L", 4, 2, 20, 12, juce::Justification::centredLeft);
-        g.setColour(col::acB); g.drawText("R", 16, 2, 20, 12, juce::Justification::centredLeft);
-        g.drawText("TIME (1/16) >", (int)w - 90, (int)h - 14, 86, 12, juce::Justification::centredRight);
+        drawPlotLabel(g, 0, "L", 4, 2, 20, 12, col::textHint);
+        g.setColour(col::acB); drawPlotLabel(g, 1, "R", 16, 2, 20, 12, col::acB);
+        drawPlotLabel(g, 2, "TIME (1/16) >", (int)w - 90, (int)h - 14, 86, 12, col::acB, juce::Justification::centredRight);
     }
 
     void drawSpray(juce::Graphics& g, float w, float h) const {
@@ -262,14 +317,41 @@ private:
         }
         g.setColour(col::text.withAlpha(0.7f)); g.drawVerticalLine((int)play, 0, h);
         g.setColour(col::textHint); g.setFont(monoFont(8));
-        g.drawText("1/2 BAR WINDOWS", 4, 2, 120, 12, juce::Justification::centredLeft);
+        drawPlotLabel(g, 0, "1/2 BAR WINDOWS", 4, 2, 120, 12, col::textHint);
     }
 
+    std::array<float, 4> plotParameters() const {
+        static const char* const fields[5][4] = {
+            {"bits", "rate", "chaos", "mix"}, {"chord", "note", "decay", "mix"},
+            {"hz", "fb", "spread", "mix"}, {"pitch", "density", "scatter", "mix"},
+            {"div", "chance", "drift", "mix"}
+        };
+        std::array<float, 4> result {};
+        for (size_t i = 0; i < result.size(); ++i) result[i] = value(fields[kind_][i]);
+        return result;
+    }
+
+    int advanceVisualState() {
+        if (!isVisibleInHierarchy(*this)) { wasVisible_ = false; return 0; }
+        const bool on = power_.isOn();
+        // Effective values also catch host automation and modulation while bypassed.
+        const auto parameters = plotParameters();
+        const auto label = on ? caption() : juce::String("BYPASS");
+        const int dirty = (!wasVisible_ || on != lastOn_ || label != cachedCaption_) ? 2
+            : (on || parameters != lastParameters_ ? 1 : 0);
+        if (on) phase_ += 1.0f / (float)fui::kAnimationHz;
+        lastOn_ = on;
+        lastParameters_ = parameters;
+        wasVisible_ = true;
+        return dirty;
+    }
+    void visualVisibilityChanged(bool visible) override {
+        if (!visible) wasVisible_ = false;
+    }
     void timerCallback() override {
-        if (!isShowing()) return;
-        phase_ += power_.isOn() ? 1.0f / 30.0f : 0.0f;
-        repaint(plot_);
-        if (power_.isOn() != lastOn_) { lastOn_ = power_.isOn(); repaint(); }
+        const int dirty = advanceVisualState();
+        if (dirty == 2) repaint();
+        else if (dirty == 1) repaint(plot_);
     }
 
     ParameterSource source_;
@@ -281,6 +363,12 @@ private:
     juce::Rectangle<int> plot_;
     float phase_ = 0;
     bool lastOn_ = false;
+    bool wasVisible_ = false;
+    std::array<float, 4> lastParameters_ {};
+    juce::Image staticCache_;
+    float cacheScale_ = 0;
+    juce::String cachedCaption_;
+    mutable std::array<PlotLabelCache, 6> plotLabels_;
 };
 
 class LabPanel final : public juce::Component {

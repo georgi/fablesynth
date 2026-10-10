@@ -32,6 +32,7 @@ FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
       model(std::make_unique<StandaloneWtUiModel>(p)), rack(*model, p.apvts, p), wtEditor(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
+    fui::enableLeafControlCache(rack);
     addAndMakeVisible(agentOverlay);
     rack.setBounds(0, 0, Rack::LW, Rack::LH);
     addChildComponent(wtEditor);

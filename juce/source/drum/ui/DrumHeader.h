@@ -13,7 +13,7 @@ namespace fui {
 
 // Post-FX oscilloscope fed by DrumAudioProcessor::readScope. Same drawing as
 // the WT-1 ScopeView (Displays.cpp), which is hard-bound to FableAudioProcessor.
-class DrumScopeView : public juce::Component, private juce::Timer {
+class DrumScopeView : public juce::Component, private fui::VisualTimer {
 public:
     explicit DrumScopeView(DrumUiModel&);
     void paint(juce::Graphics&) override;
@@ -26,7 +26,7 @@ private:
 // BPM readout — drag-to-edit integer bound to seq.bpm (web shows a stepper;
 // the plan swaps it for a drag box). While the host reports a tempo it
 // displays getHostBpm() and ignores edits; DrumHeader lights the SYNC tag.
-class BpmReadout : public juce::Component, private juce::Timer {
+class BpmReadout : public juce::Component, private fui::VisualTimer {
 public:
     explicit BpmReadout(DrumUiModel&);
     void paint(juce::Graphics&) override;
@@ -37,6 +37,13 @@ public:
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 private:
     void timerCallback() override;
+    void paintReadout(juce::Graphics&);
+    juce::Image readoutLayer_;
+    float readoutScale_ = 0;
+    juce::Colour readoutAccent_;
+    int cachedShown_ = -1;
+    bool cachedSync_ = false;
+
     int  shown() const;                    // host bpm when synced, else the param
     void nudge(float deltaNorm);
     DrumUiModel& proc;
@@ -46,18 +53,29 @@ private:
     bool  lastSync = false;
 };
 
-class DrumHeader : public juce::Component, private juce::Timer {
+class DrumHeader : public juce::Component, private fui::VisualTimer {
 public:
     explicit DrumHeader(DrumUiModel&);
     ~DrumHeader() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
+    // BROWSE opens the kit drawer; the rack owns the drawer and shows its state here.
+    std::function<void()> onBrowse;
+    void setBrowseOpen(bool open) { browseBtn.setToggleState(open, juce::dontSendNotification); }
 private:
     void timerCallback() override;
+    void paintHeader(juce::Graphics&);
+    juce::Image headerLayer_;
+    float headerScale_ = 0;
+    juce::Colour headerAccent_;
+    juce::String cachedName_;
+    bool cachedMidi_ = false, cachedSync_ = false, cachedDirty_ = false;
     DrumUiModel& proc;
     juce::TextButton prevBtn{"<"}, nextBtn{">"};
+    BrowserButton browseBtn{"BROWSE", BrowserButton::Browse};
     DrumScopeView scope;
     BpmReadout bpm;
+    TransportButton transport;
     Knob swing, vol;
     juce::Rectangle<int> brandArea, kitLabelArea, kitNameArea, scopeBox, midiArea, syncArea;
     bool lastMidi = false, lastSync = false, lastDirty = false;

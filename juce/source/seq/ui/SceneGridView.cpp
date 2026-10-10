@@ -22,7 +22,7 @@ float stopPulse() {
 }
 } // namespace
 
-SceneGridView::SceneGridView(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
+SceneGridView::SceneGridView(SeqAudioProcessor& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 
 // ---- actions (also the test handles) ---------------------------------------
 
@@ -517,11 +517,10 @@ juce::uint32 SceneGridView::paintSignature(juce::RectangleList<int>& animate) co
     const auto& sess = cond.session();
 
     juce::uint32 sig = 17;
-    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    auto mixStr = [&mix](const std::string& s) {
-        mix((int)s.size());
-        for (char c : s) mix((int)(unsigned char)c);
-    };
+    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)v + 2u; };
+    const auto revision = proc.sessionContentRevision();
+    mix((int)(revision & 0xffffffffu));
+    mix((int)(revision >> 32));
 
     mix(singleRow_ ? 1 : 0); mix(singleRowScene_); mix(focusTrack_);
     mix(hoverCellS_); mix(hoverCellT_);
@@ -548,28 +547,12 @@ juce::uint32 SceneGridView::paintSignature(juce::RectangleList<int>& animate) co
 
     for (int s = 0; s < nScenes; ++s) {
         const auto& sc = sess.scenes[(size_t)s];
-        mixStr(sc.name);
         mix(cond.sceneMuted(s) ? 1 : 0);
         bool cardPulse = false;
         for (int t = 0; t < nTracks; ++t) {
             const bool has = t < (int)sc.hasClip.size() && sc.hasClip[(size_t)t];
             mix(has ? 1 : 0);
             mix(isPassThrough(s, t) ? 1 : 0);
-            if (has) {
-                const auto& clip = sc.clips[(size_t)t];
-                mixStr(clip.name);
-                mix(clip.bars);
-                mix(clip.hasArp && clip.arp.enabled ? 1 : 0);
-                if (clip.hasArp && clip.arp.enabled) {
-                    const auto arp = fable::compileArp(clip.arp);
-                    for (int i = 0; i < 16; ++i) { mix(arp.notes[i]); mix(arp.hits[i] ? 1 : 0); }
-                }
-                // The step preview reads the clip's first bar only.
-                const int n = juce::jmin((int)clip.bytes.size(),
-                                         fable::sqBytesPerBar(sess.tracks[(size_t)t].machine));
-                mix(n);
-                for (int i = 0; i < n; ++i) mix((int)clip.bytes[(size_t)i]);
-            }
             const bool live = cond.ownerOf(t) == s;
             const bool queued = cond.queueOf(t) == s;
             if (queued) cardPulse = true;             // the card's launch icon pulses
@@ -595,12 +578,74 @@ void SceneGridView::timerCallback() {
 void SceneGridView::paint(juce::Graphics& g) {
     if (singleRow_) { paintFocusStrip(g); return; }
     for (int s = 0; s < kScenes; ++s) {
-        paintSceneCard(g, s);
-        for (int t = 0; t < kTracks; ++t) paintCell(g, s, t);
+        if (g.clipRegionIntersects(sceneCardR[s])) paintSceneCard(g, s);
+        for (int t = 0; t < kTracks; ++t)
+            if (g.clipRegionIntersects(cellR[s][t].expanded(4))) paintCell(g, s, t);
     }
 }
 
+// The document revision covers clip names, lengths, bytes, arp settings,
+// scene names, colours and machine changes without decoding notes each frame.
+// Launcher state remains separate because transport does not edit the document.
+std::array<int, 20> SceneGridView::cacheKey(int s, int t) const {
+    const auto& cond = proc.conductor();
+    const auto revision = proc.sessionContentRevision();
+    std::array<int, 20> key { (int)(revision & 0xffffffffu), (int)(revision >> 32),
+                              (int)cond.sceneMuted(s) };
+    size_t next = 3;
+    auto track = [&](int i) {
+        key[next++] = cond.ownerOf(i) == s;
+        key[next++] = cond.queueOf(i) == s;
+        key[next++] = cellStopping(s, i);
+        key[next++] = cellAudible(s, i);
+    };
+    if (t < 0) {
+        for (int i = 0; i < kTracks; ++i) track(i);
+    } else {
+        track(t);
+        key[next++] = hoverCellS_ == s && hoverCellT_ == t;
+    }
+    return key;
+}
+
+void SceneGridView::paintCached(juce::Graphics& g, PaintCache& cache,
+                               juce::Rectangle<int> bounds, int s, int t) {
+    const float physicalScale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float scale = std::isfinite(physicalScale) && physicalScale > 0.0f ? physicalScale : 1.0f;
+    auto key = cacheKey(s, t);
+    if (!cache.image.isValid() || cache.bounds != bounds || cache.scale != scale || cache.key != key) {
+        cache.key = std::move(key);
+        cache.bounds = bounds;
+        cache.scale = scale;
+        cache.image = juce::Image(juce::Image::ARGB, juce::jmax(1, (int)std::ceil(bounds.getWidth() * scale)),
+                                  juce::jmax(1, (int)std::ceil(bounds.getHeight() * scale)), true);
+        juce::Graphics layer(cache.image);
+        layer.addTransform(juce::AffineTransform::translation(-(float)bounds.getX(), -(float)bounds.getY()).scaled(scale));
+        cachePainting_ = true;
+        if (t < 0) paintSceneCardBody(layer, s);
+        else if (proc.conductor().session().scenes[(size_t)s].hasClip[(size_t)t]) paintFilledCell(layer, s, t);
+        else paintEmptyCell(layer, s, t);
+        cachePainting_ = false;
+        ++cacheBuildCount_;
+    }
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.setColour(juce::Colours::white);
+    g.drawImageTransformed(cache.image, juce::AffineTransform::scale(1.0f / scale).translated((float)bounds.getX(), (float)bounds.getY()));
+}
+
 void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
+    paintCached(g, cardCache_[s], sceneCardR[s], s, -1);
+    for (int t = 0; t < kTracks; ++t) {
+        if (proc.conductor().queueOf(t) == s) {
+            g.setColour(col::text.withAlpha(qpulse()));
+            g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
+            break;
+        }
+    }
+}
+
+void SceneGridView::paintSceneCardBody(juce::Graphics& g, int s) {
     const auto& cond = proc.conductor();
     const auto& scenes = cond.session().scenes;
     const auto& tracks = cond.session().tracks;
@@ -635,7 +680,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
     g.setColour(anyOwner ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colours::white.withAlpha(0.1f));
     g.drawRoundedRectangle(lb.reduced(0.5f), 8.0f, 1.0f);
     g.setColour(queued ? col::text.withAlpha(qpulse()) : anyOwner ? juce::Colour(0xff4dff9e) : col::acN);
-    g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
+    if (!queued) g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
 
     // num + name / status
     auto id = idArea[s];
@@ -700,8 +745,14 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
 
 void SceneGridView::paintCell(juce::Graphics& g, int s, int t) {
     const auto& scenes = proc.conductor().session().scenes;
-    if (scenes[(size_t)s].hasClip[(size_t)t]) paintFilledCell(g, s, t);
-    else paintEmptyCell(g, s, t);
+    // The 1.5px live border extends beyond the cell's half-pixel inset.
+    // Keep its antialiasing fringe inside the image without changing layout.
+    paintCached(g, cellCache_[s][t], cellR[s][t].expanded(1), s, t);
+    if (scenes[(size_t)s].hasClip[(size_t)t]) {
+        animationOnly_ = true;
+        paintFilledCell(g, s, t);
+        animationOnly_ = false;
+    }
 
     auto rf = cellR[s][t].toFloat().reduced(0.5f);
     // Compatible drop target during a drag: soft fill + violet ring.
@@ -782,28 +833,31 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     auto full = cellR[s][t];
     auto rf = full.toFloat().reduced(0.5f);
-    if (live && !stopping) {
-        g.setGradientFill(juce::ColourGradient(tc.withAlpha(0.09f), rf.getX(), rf.getY(),
-                                               juce::Colours::transparentBlack, rf.getX(), rf.getY() + rf.getHeight() * 0.46f, false));
+    if (!animationOnly_) {
+        if (live && !stopping) {
+            g.setGradientFill(juce::ColourGradient(tc.withAlpha(0.09f), rf.getX(), rf.getY(),
+                                                   juce::Colours::transparentBlack, rf.getX(), rf.getY() + rf.getHeight() * 0.46f, false));
+            g.fillRoundedRectangle(rf, 10.0f);
+        }
+        g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
+                                               col::panelLo, rf.getX(), rf.getBottom(), false));
         g.fillRoundedRectangle(rf, 10.0f);
     }
-    g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
-                                           col::panelLo, rf.getX(), rf.getBottom(), false));
-    g.fillRoundedRectangle(rf, 10.0f);
     // A playing clip should be unmistakable at a glance: a brighter track-color
     // border plus a soft, gently-breathing outer glow (web parity: .sq-cell.live
     // border 85% + sq-live-pulse). Stopping cells keep the plain border so the
     // amber stop ring reads instead.
-    if (live && !stopping) {
+    if (!cachePainting_ && live && !stopping) {
         const float pulse = 0.5f + 0.5f * qpulse(); // 0.6..1.0-ish, slow breathe
         for (int ring = 2; ring >= 1; --ring) {
             g.setColour(tc.withAlpha(0.10f * pulse / (float)ring));
             g.drawRoundedRectangle(rf.expanded((float)ring * 1.5f), 11.0f, 1.5f);
         }
     }
-    g.setColour(live ? tc.withAlpha(0.85f) : juce::Colours::white.withAlpha(0.08f));
-    g.drawRoundedRectangle(rf, 10.0f, live ? 1.5f : 1.0f);
-
+    if ((!animationOnly_ && (!live || stopping)) || (!cachePainting_ && live && !stopping)) {
+        g.setColour(live ? tc.withAlpha(0.85f) : juce::Colours::white.withAlpha(0.08f));
+        g.drawRoundedRectangle(rf, 10.0f, live ? 1.5f : 1.0f);
+    }
     const float bodyAlpha = muted ? 0.32f : live ? 1.0f : 0.72f;
 
     // Cell internals (web ClipCell, cell-relative): head row y 9..24, steps
@@ -812,7 +866,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     // eq / idle icon
     auto iconArea = head.removeFromLeft(16);
-    if (live && !stopping) {
+    if (!cachePainting_ && live && !stopping) {
         const int step = proc.trackStep[t].load();
         const int phase = step >= 0 ? step % 4 : 0;
         static const int heights[4][3] = { {6, 10, 8}, {4, 7, 5}, {6, 4, 10}, {8, 10, 6} };
@@ -917,7 +971,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         g.drawText("STOPPING", full.reduced(9, 7).removeFromBottom(12),
                    juce::Justification::centredRight);
     }
-    if (muted) {
+    if (!animationOnly_ && muted) {
         g.setColour(col::acB);
         g.setFont(monoFont(6.5f));
         drawSpaced(g, "MUTED", { full.getRight() - 60, full.getY() + 5, 40, 10 }, 1.4f, juce::Justification::right);
@@ -962,6 +1016,7 @@ void SceneGridView::paintRail(juce::Graphics& g) {
     for (int s = 0; s < kScenes; ++s) {
         // The same card the session grid draws — one painter, so the two
         // views cannot drift.
+        if (!g.clipRegionIntersects(sceneCardR[s])) continue;
         paintSceneCard(g, s);
 
         auto r = sceneCardR[s].toFloat();

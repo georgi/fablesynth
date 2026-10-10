@@ -1,4 +1,5 @@
 #pragma once
+#include "VisualTimer.h"
 #include "Controls.h"
 #include "Displays.h"
 #include "Modulation.h"
@@ -48,7 +49,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
-    struct TabButton : public juce::Button, private juce::Timer {
+    struct TabButton : public juce::Button, private fui::VisualTimer {
         TabButton(ParameterSource, juce::String onId, juce::String label);
         ~TabButton() override { stopTimer(); }
         void paintButton(juce::Graphics&, bool highlighted, bool down) override;
@@ -148,11 +149,17 @@ private:
         void paintTitle(juce::Graphics&);
         void applySync(bool sync);                // toggle rate/syncRate visibility
     };
+    // Two slots; each shows one of two LFOs (left 1|3, right 2|4), picked by
+    // the number buttons beside the slot's "LFO" title.
+    void showLfo(int slot, int choice);
+    Block* shown(int slot);
     ParameterSource parameters;
-    Block l1, l2;
+    Block l1, l2, l3, l4;
+    int choice[2] = {0, 0};
+    std::unique_ptr<PillButton> pick[2][2];
 };
 
-class MatrixPanel : public juce::Component, private juce::Timer {
+class MatrixPanel : public juce::Component, private fui::VisualTimer {
 public:
     explicit MatrixPanel(ParameterSource);
     ~MatrixPanel() override { stopTimer(); }

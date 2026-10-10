@@ -1,3 +1,6 @@
+#include "SeqFooterCacheChecks.h"
+#include "SeqHeaderCacheChecks.h"
+#include "VisualTimerChecks.h"
 // SQ-4 plugin-boundary verification: instantiates the real SeqAudioProcessor
 // and drives it the way a DAW + the editor timer would — the conductor
 // (message thread) issues launches/stops/mutes, the audio thread renders and
@@ -26,12 +29,24 @@
 #include "../source/bass/dsp/BassParams.h"
 #include "../source/bass/dsp/BassPatches.h"
 #include "../source/drum/dsp/DrumKits.h"
+#include "../source/drum/dsp/PatternLibrary.h"
 #include "../source/drum/dsp/DrumPatches.h"
 #include "../source/dsp/NoteSeq.h"
 #include "../source/seq/ui/HostedDrumModel.h"
+#include "../source/drum/DrumDeviceBody.h"
 #include "../source/seq/ui/HostedBassModel.h"
 #include "../source/seq/ui/HostedWtModel.h"
+#include "../source/bass/ui/PitchSeqView.h"
+#include "../source/ui/NoteSeqView.h"
+#include "../source/ui/SequencePolyStrip.h"
 #include "FxUiChecks.h"
+#include "AutoMixSeqChecks.h"
+#include "LeafControlCacheChecks.h"
+#include "HiddenVisualPollingChecks.h"
+#include "LabUiCacheChecks.h"
+#include "TrackHeadsCacheChecks.h"
+#include "SceneGridCacheChecks.h"
+#include "SeqSessionCacheChecks.h"
 #include "../source/ui/ArpPanel.h"
 #include "../source/ui/Theme.h"
 
@@ -88,9 +103,31 @@ int main(int argc, char** argv) {
         return renderSessionFile(juce::File(argv[2]), juce::File(argv[3]));
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
+    check(checkVisualTimers(), "Shared visual clock rates, visibility, reparenting and lifetime");
+    check(runLeafControlCacheChecks(), "Leaf cache refreshes changed parameters and rebuilt pad/FX controls");
+    check(runHiddenVisualPollingChecks(), "Hidden visuals skip polling and refresh immediately on reveal");
+    check(runLabUiCacheChecks(), "LAB cache preserves state, bypass, visibility, scale and animation speed");
+    check(runSeqHeaderCacheChecks(), "Header clock changes preserve static cache and visible pixels");
+    {
+        auto footerProcessor = std::make_unique<SeqAudioProcessor>();
+        footerProcessor->setCurrentProgram(40);
+        footerProcessor->prepareToPlay(48000, 128);
+        fui::SeqFooterView footer(*footerProcessor);
+        check(checkSeqFooterCache(footer, *footerProcessor), "Footer static cache preserves live meters, state and scale");
+    }
+    check(runTrackHeadsCacheChecks(), "Track header cache refreshes visible state and scale");
+    check(runSeqSessionCacheChecks(), "Session match cache invalidates on document edits only");
+    {
+        auto cacheProcessor = std::make_unique<SeqAudioProcessor>();
+        cacheProcessor->setCurrentProgram(40);
+        cacheProcessor->prepareToPlay(48000, 128);
+        fui::SceneGridView cacheGrid(*cacheProcessor);
+        check(checkSceneGridCache(cacheGrid, *cacheProcessor), "Scene cache preserves live overlays, edits and clip rejection");
+    }
     SeqOutputTestAccess::run();
     testAutomationHost();
     testAutomationUi();
+    failures += runSeqAutoMixChecks();
 
     // Hosted DR-1 folds all five processed buses into its one stereo track.
     // Routing a lone pad to AUX must match MAIN, including the group strip.

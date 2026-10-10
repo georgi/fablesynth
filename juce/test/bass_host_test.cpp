@@ -59,8 +59,19 @@ static void writePng(const juce::Image& img, const juce::File& out) {
     }
 }
 
+static juce::Button* findNamedButton(juce::Component& root, const juce::String& name) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        auto* child = root.getChildComponent(i);
+        if (auto* button = dynamic_cast<juce::Button*>(child); button != nullptr && button->getName() == name) return button;
+        if (auto* nested = findNamedButton(*child, name)) return nested;
+    }
+    return nullptr;
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI juceInit; // message manager for the processor
+    check(runBassSeqCacheChecks(), "bass sequencer cache parity and invalidation");
+    check(runBassKeysCacheChecks(), "bass keys and panels cache parity and invalidation");
 
     BassAudioProcessor proc;
     const double sr = 48000;

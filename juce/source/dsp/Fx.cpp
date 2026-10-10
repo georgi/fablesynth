@@ -626,10 +626,27 @@ float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBa
     return (float)d1.decimate(c0, c1);
 }
 
-void Fx::process(float* L, float* R, int n) {
+void Fx::process(float* L, float* R, int n, const float* key) {
     // The ramp owns a sample-clocked duration established at prepare(). Keep
     // the coefficient clock across callbacks: a single 32-sample callback and
     // thirty-two 1-sample callbacks must consume the same trajectory.
+
+    // Chain-level activity gate (see ActivityGate.h): the whole chain is skipped
+    // and its state frozen while idle; the output is the (silent) input. Any
+    // audible or non-finite input sample wakes it.
+    const double delayHorizon = std::max(lab_.active() ? 4.0 : 0.0,
+        delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target));
+    const bool inLoud = ActivityGate::loud(L, R, n);
+    double skipped;
+    if (gate_.begin(inLoud, n, skipped)) return;
+    if (skipped > 0) {
+        // Free-running clocks keep their phase across the skipped span, so a
+        // chain that wakes sounds as if it had run the whole time.
+        if (!chorusGated_) chPhase_ = std::fmod(chPhase_ + chRate_ / sr_ * skipped, 1.0);
+        if (!delayGated_) tapeClock_ += skipped;
+        lab_.advanceClock(skipped);
+    }
+    float outPk = 0, tailPk = 0;
 
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive —
     // every stage below has a tail or a feedback loop that has to keep running.

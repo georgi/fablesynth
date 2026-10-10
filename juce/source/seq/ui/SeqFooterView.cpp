@@ -1,9 +1,10 @@
 #include "SeqFooterView.h"
 #include "../../ui/Controls.h"
+#include <cmath>
 
 namespace fui {
 
-SeqFooterView::SeqFooterView(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
+SeqFooterView::SeqFooterView(SeqAudioProcessor& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 
 // ---- actions (also the test handles) ---------------------------------------
 
@@ -106,9 +107,35 @@ void SeqFooterView::resized() {
 // ---- paint -----------------------------------------------------------------
 
 void SeqFooterView::paint(juce::Graphics& g) {
-    const auto& cond = proc.conductor();
-    const auto& session = cond.session();
+    if (getWidth() <= 0 || getHeight() <= 0 || !g.clipRegionIntersects(getLocalBounds())) return;
+    const float physicalScale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float scale = std::isfinite(physicalScale) && physicalScale > 0.0f ? physicalScale : 1.0f;
+    const int width = (int)std::ceil(getWidth() * scale), height = (int)std::ceil(getHeight() * scale);
+    const auto state = paintState();
+    if (!artwork_.isValid() || artwork_.getWidth() != width || artwork_.getHeight() != height
+        || artworkScale_ != scale || artworkWidth_ != getWidth() || artworkHeight_ != getHeight()
+        || cachedState_ != state) {
+        cachedState_ = state;
+        artworkScale_ = scale;
+        artworkWidth_ = getWidth();
+        artworkHeight_ = getHeight();
+        artwork_ = juce::Image(juce::Image::ARGB, width, height, true);
+        juce::Graphics layer(artwork_);
+        layer.addTransform(juce::AffineTransform::scale(scale));
+        layer.reduceClipRegion(getLocalBounds());
+        paintArtwork(layer, state);
+        ++cacheBuildCount_;
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(artwork_, juce::AffineTransform::scale(1.0f / scale));
+    }
+    paintMeters(g, state);
+}
 
+void SeqFooterView::paintArtwork(juce::Graphics& g, const PaintState& state) {
     // master: STOP ALL + live scene chips
     {
         auto rf = masterArea.toFloat();

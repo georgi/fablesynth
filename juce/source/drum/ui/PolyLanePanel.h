@@ -1,4 +1,5 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include "DrumUiModel.h"
 #include "../../ui/Theme.h"
 #include <functional>

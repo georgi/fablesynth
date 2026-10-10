@@ -1,10 +1,13 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../SeqProcessor.h"
 #include "../../ui/Theme.h"
 
 #include <functional>
+#include <tuple>
+#include <vector>
 
 // SQ-4 track header row — port of src/seq/components/TrackHeads.tsx + seq.css
 // (scenes card + one card per track: live LED, name, machine chip, patch
@@ -32,7 +35,7 @@
 // param and conductor silently disagreeing on host automation).
 namespace fui {
 
-class TrackHeadsView : public juce::Component, private juce::Timer {
+class TrackHeadsView : public juce::Component, private fui::VisualTimer {
 public:
     explicit TrackHeadsView(SeqAudioProcessor&);
     ~TrackHeadsView() override { stopTimer(); }
@@ -60,12 +63,16 @@ public:
     // Which track is open in focus mode (-1 in session mode). Drives the
     // active ring only; clicking any head still switches focus.
     void setFocusTrack(int t);
+    int cacheBuildCountForTesting() const { return cacheBuildCount_; }
 
 private:
     void timerCallback() override;
-    // Hash of everything paint() reads; nothing here animates, so the row
-    // repaints only when this moves.
-    juce::uint32 paintSignature() const;
+    using TrackPaintState = std::tuple<std::string, int, uint32_t, bool, int,
+                                      juce::String,
+                                      int, bool, bool, float>;
+    using PaintState = std::tuple<int, int, std::vector<TrackPaintState>>;
+    PaintState paintState() const;
+    void paintRow(juce::Graphics&);
 
     juce::RangedAudioParameter* volParam(int t) const;
     float volValue(int t) const;
@@ -90,7 +97,11 @@ private:
     int dragTrack_ = -1;
     float lastY_ = 0;
 
-    juce::uint32 lastSig_ = 0;
+    PaintState lastState_, cachedState_;
+    juce::Image rowLayer_;
+    float rowScale_ = 0.0f;
+    int rowWidth_ = -1, rowHeight_ = -1;
+    int cacheBuildCount_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackHeadsView)
 };

@@ -1,9 +1,11 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../SeqProcessor.h"
 #include "../ClipClipboardCodec.h"
 #include "../../ui/Theme.h"
 
+#include <array>
 #include <functional>
 
 // SQ-4 launcher grid — port of src/seq/components/SceneRow.tsx + seq.css.
@@ -17,12 +19,13 @@
 // x=218+9+t*(250+9) w=250.
 namespace fui {
 
-class SceneGridView : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
+class SceneGridView : public juce::Component, public juce::DragAndDropTarget, private fui::VisualTimer {
 public:
     explicit SceneGridView(SeqAudioProcessor&);
     ~SceneGridView() override { stopTimer(); }
 
     void paint(juce::Graphics&) override;
+    int cacheBuildCountForTesting() const { return cacheBuildCount_; }
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -128,6 +131,18 @@ private:
     void layoutRow(int s);
     void layoutFocusStrip();
 
+    struct PaintCache {
+        juce::Image image;
+        std::array<int, 20> key {};
+        juce::Rectangle<int> bounds;
+        float scale = 0.0f;
+    };
+    PaintCache cardCache_[kScenes], cellCache_[kScenes][kTracks];
+    int cacheBuildCount_ = 0;
+    bool cachePainting_ = false, animationOnly_ = false;
+    std::array<int, 20> cacheKey(int s, int t) const;
+    void paintCached(juce::Graphics&, PaintCache&, juce::Rectangle<int>, int s, int t);
+    void paintSceneCardBody(juce::Graphics&, int s);
     void paintSceneCard(juce::Graphics&, int s);
     void paintCell(juce::Graphics&, int s, int t);
     void paintEmptyCell(juce::Graphics&, int s, int t);

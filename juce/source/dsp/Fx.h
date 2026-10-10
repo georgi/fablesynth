@@ -396,6 +396,7 @@ public:
 
 private:
     FxMeter meter_;
+    ActivityGate gate_;
     double sr_ = 48000;
     double tempoBpm_ = 120.0;
 

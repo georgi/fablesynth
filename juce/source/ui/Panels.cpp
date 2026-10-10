@@ -210,7 +210,7 @@ FilterPanel::TabButton::TabButton(ParameterSource s, juce::String id,
     setDescription("Shows the " + label + " controls. Use left and right arrow keys to switch filters.");
     setTooltip("Show " + label + " controls");
     if (auto* p = parameters.parameter(onId)) lastOn = p->getValue() >= 0.5f;
-    startTimerHz(8);
+    startVisualTimer(*this, 8);
 }
 
 void FilterPanel::TabButton::paintButton(juce::Graphics& g, bool highlighted, bool down) {
@@ -638,18 +638,30 @@ MatrixPanel::MatrixPanel(ParameterSource s) : parameters(s) {
     viewport.setViewedComponent(&rowsHolder, false);
     viewport.setScrollBarsShown(true, false); // vertical only
     addAndMakeVisible(viewport);
-    // Header source chips: LFO1=1, LFO2=2, MOD ENV=3, VELO=4, NOTE=5.
-    for (int srcIdx = 1; srcIdx <= 5; ++srcIdx) {
+    // Header source chips (web MatrixPanel RAIL_SOURCES): LFO 1-4, MOD ENV 1-2,
+    // VELO, NOTE, MOD WHL, AFTERTCH, RANDOM. Macros carry chips by their knobs.
+    for (int srcIdx : { 1, 2, 6, 7, 3, 8, 4, 5, 13, 14, 15 }) {
         auto* chip = new ModSourceChip(srcIdx, juce::String(fable::MOD_SOURCES[(size_t)srcIdx]), false);
+        chip->getProperties().set("src", srcIdx);   // read back for the chip's label width
         chips.add(chip);
         addAndMakeVisible(chip);
+    }
+    for (int i = 0; i < fable::MACRO_COUNT + 1; ++i) {
+        const bool wheel = i == fable::MACRO_COUNT;
+        const int srcIdx = wheel ? 13 : 9 + i;
+        auto* chip = new ModSourceChip(srcIdx, juce::String(fable::MOD_SOURCES[(size_t)srcIdx]), true);
+        macroChips.add(chip);
+        addAndMakeVisible(chip);
+        auto* knob = new Knob(s, wheel ? juce::String("perf.modwheel") : "macro" + juce::String(i + 1), Knob::Xs, Accent::N);
+        macroKnobs.add(knob);
+        addAndMakeVisible(knob);
     }
     addBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff11141c));
     addBtn.setColour(juce::TextButton::textColourOffId, col::text);
     addBtn.onClick = [this] { fui::addRoute(parameters, 1, 0); }; // src=LFO 1, dst=— (inactive)
     addAndMakeVisible(addBtn);
     lastVisible = visibleSlots();
-    startTimerHz(3); // low rate: diff visible slots before rebuilding to avoid flicker
+    startVisualTimer(*this, 3); // low rate: diff visible slots before rebuilding to avoid flicker
 }
 
 std::vector<int> MatrixPanel::visibleSlots() const {

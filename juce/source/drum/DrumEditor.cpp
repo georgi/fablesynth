@@ -1,4 +1,5 @@
 #include "DrumEditor.h"
+#include "../ui/LeafControlCache.h"
 #include "dsp/DrumParams.h"
 
 namespace fui {

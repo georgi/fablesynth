@@ -5,9 +5,17 @@
 // AudioPlayHead. Modeled on plugin_host_test.cpp.
 #include "../source/drum/DrumProcessor.h"
 #include "FxUiChecks.h"
+#include "AutoMixUiChecks.h"
+#include "LiveSpectrumChecks.h"
+#include "PadGridCacheChecks.h"
+#include "DrumSeqCacheChecks.h"
+#include "FxReadoutCacheChecks.h"
 #include "AgentProcessorChecks.h"
+#include "BrowserChecks.h"
 #include "../source/drum/DrumEditor.h"
 #include "../source/drum/ui/RemoteSampleSources.h"
+#include "../source/drum/dsp/PatternLibrary.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -77,8 +85,19 @@ static void writePng(const juce::Image& img, const juce::File& out) {
     }
 }
 
+static void collectNamedButtons(juce::Component& root, const juce::String& name, std::vector<juce::Button*>& out) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        auto* child = root.getChildComponent(i);
+        if (auto* button = dynamic_cast<juce::Button*>(child); button != nullptr && button->getName() == name) out.push_back(button);
+        collectNamedButtons(*child, name, out);
+    }
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI juceInit; // message manager for the processor
+    check(runPadGridCacheChecks(), "pad grid cached artwork parity and invalidation");
+    check(runDrumSeqCacheChecks(), "drum sequencer cached artwork parity and invalidation");
+    check(runFxReadoutCacheChecks(), "FX readout cached text parity and invalidation");
 
     DrumAudioProcessor proc;
     const double sr = 48000;

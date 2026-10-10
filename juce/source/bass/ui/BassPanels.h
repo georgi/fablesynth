@@ -1,6 +1,10 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassUiModel.h"
+#include "../dsp/BassParams.h"
+#include <array>
+#include <functional>
 #include "../../dsp/LfoClock.h"
 #include "../../ui/Controls.h"
 
@@ -10,12 +14,22 @@
 // no pad rebinding like DR-1).
 namespace fui {
 
+// Static panel artwork; child plots and controls retain their own live paint.
+struct BassPanelArtwork {
+    juce::Image image;
+    juce::Rectangle<int> size;
+    float scale = 0;
+    int builds = 0;
+    juce::Colour accent;
+    void paint(juce::Component&, juce::Graphics&, const std::function<void(juce::Graphics&)>&);
+};
+
 // ---- live views -------------------------------------------------------------
 
 // 3D wavetable terrain for the single BL-1 oscillator — same perspective
 // drawing as DrumTerrainView, reading BassAudioProcessor::tableAt() and
 // highlighting the live frame from getVizPos() (POS param when idle).
-class BassTerrainView : public juce::Component, private juce::Timer {
+class BassTerrainView : public juce::Component, private fui::VisualTimer {
 public:
     explicit BassTerrainView(BassUiModel&);
     void paint(juce::Graphics&) override;
@@ -34,7 +48,7 @@ private:
 // Filter magnitude response that tracks the worklet's swept cutoff while the
 // voice is sounding — port of FilterSection.tsx FilterView (q = 0.7 + res*9
 // prototype, LP24 = squared slope, live vizCut).
-class BassFilterView : public juce::Component, private juce::Timer {
+class BassFilterView : public juce::Component, private fui::VisualTimer {
 public:
     explicit BassFilterView(BassUiModel&);
     void paint(juce::Graphics&) override;
@@ -47,7 +61,7 @@ private:
 
 // Both envelopes in one display — port of EnvPanel.tsx EnvView: filter AD
 // (green) with its accent-shortened ghost (dashed amber), amp ADSR (pale).
-class BassEnvView : public juce::Component, private juce::Timer {
+class BassEnvView : public juce::Component, private fui::VisualTimer {
 public:
     explicit BassEnvView(BassUiModel&);
     void paint(juce::Graphics&) override;
@@ -61,7 +75,7 @@ private:
 
 // LFO waveform preview — port of LfoPanel.tsx LfoView; animates in sync with
 // the sequencer tempo while playing.
-class BassLfoView : public juce::Component, private juce::Timer {
+class BassLfoView : public juce::Component, private fui::VisualTimer {
 public:
     explicit BassLfoView(BassUiModel&);
     void paint(juce::Graphics&) override;
@@ -76,14 +90,17 @@ private:
 
 // ---- panels -----------------------------------------------------------------
 
-// OSC: LED + title + table stepper head, terrain view with live POS, vertical
+// OSC: title + table stepper head, terrain view with live POS, vertical
 // POS slider, TUNE/FINE/UNI/DET/SPRD/LVL knobs.
 class BassOscPanel : public juce::Component {
 public:
     explicit BassOscPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return artwork_.builds; }
 private:
+    BassPanelArtwork artwork_;
     Stepper table;
     BassTerrainView wt;
     VSlider pos;
@@ -97,20 +114,26 @@ public:
     explicit BassSubPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return artwork_.builds; }
 private:
+    BassPanelArtwork artwork_;
     Stepper shape, oct;
     Knob level;
     juce::Rectangle<int> headArea, bodyArea, shapeLabel, octLabel;
 };
 
-// FILTER: LED + title + type stepper, live response view, CUT/RES/DRIVE/ENV/
+// FILTER: title + type stepper, live response view, CUT/RES/DRIVE/ENV/
 // TRACK knobs.
 class BassFilterPanel : public juce::Component {
 public:
     explicit BassFilterPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return artwork_.builds; }
 private:
+    BassPanelArtwork artwork_;
     Stepper type;
     BassFilterView view;
     juce::OwnedArray<Knob> knobs;      // cut res drive env track
@@ -123,7 +146,10 @@ public:
     explicit BassEnvPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return artwork_.builds; }
 private:
+    BassPanelArtwork artwork_;
     BassEnvView view;
     juce::OwnedArray<Knob> knobs;      // fenv.att fenv.dec aenv.att/dec/sus/rel
     juce::Rectangle<int> headArea;
@@ -135,7 +161,10 @@ public:
     explicit BassLfoPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return artwork_.builds; }
 private:
+    BassPanelArtwork artwork_;
     BassLfoView view;
     Stepper rate, shape;
     Knob depth;
@@ -148,7 +177,10 @@ public:
     explicit BassAccentPanel(BassUiModel&);
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return artwork_.builds; }
 private:
+    BassPanelArtwork artwork_;
     Knob acc, slide;
     juce::Rectangle<int> headArea, hintArea;
 };
@@ -156,7 +188,7 @@ private:
 // KEYS: two-octave audition keyboard. Click plays when the sequencer is
 // stopped; overlapping presses are legato = slide. While playing it just
 // mirrors the sequenced note (port of KeysPanel.tsx).
-class BassKeysPanel : public juce::Component, private juce::Timer {
+class BassKeysPanel : public juce::Component, private fui::VisualTimer {
 public:
     explicit BassKeysPanel(BassUiModel&);
     ~BassKeysPanel() override { stopTimer(); }
@@ -167,9 +199,18 @@ public:
 
     juce::Rectangle<float> keyBounds(int semi) const;  // public for the host test
     int hitKey(juce::Point<float>) const;              // -1 = none
+    void paintDirectForTesting(juce::Graphics&);
+    int cacheBuildCountForTesting() const noexcept { return cacheBuildCount_; }
 private:
     void timerCallback() override;
     int  hotKey() const;                               // -100 = none
+    void paintChrome(juce::Graphics&);
+    void paintKey(juce::Graphics&, int, bool);
+    juce::Image chrome_;
+    std::array<juce::Image, fable::BL_KEY_COUNT> keyLayers_;
+    juce::Rectangle<int> cacheSize_;
+    float cacheScale_ = 0;
+    int cacheHeadMode_ = -1, cacheBuildCount_ = 0;
     BassUiModel& proc;
     juce::Rectangle<int> headArea, keysArea;
     int pressed_ = -1;                                 // key held by the mouse

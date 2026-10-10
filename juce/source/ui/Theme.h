@@ -7,6 +7,16 @@
 // custom properties (src/index.css :root) and the machined-dark panel styling.
 namespace fui {
 
+// Target cadence for continuous visual animation; model/layout polling is separate.
+inline constexpr int kAnimationHz = 60;
+
+// Unlike isShowing(), this also permits visible offscreen snapshot trees.
+inline bool isVisibleInHierarchy(const juce::Component& component) {
+    for (auto* c = &component; c != nullptr; c = c->getParentComponent())
+        if (!c->isVisible()) return false;
+    return true;
+}
+
 namespace col {
     const juce::Colour bg       {0xff06070b};
     const juce::Colour panelHi  {0xff181c26};

@@ -1,4 +1,5 @@
 #include "BassEditor.h"
+#include "../ui/LeafControlCache.h"
 #include "dsp/BassParams.h"
 
 namespace {

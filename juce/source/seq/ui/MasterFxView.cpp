@@ -9,7 +9,7 @@ MasterLimiterView::MasterLimiterView(MasterFxUiModel& model)
     addAndMakeVisible(power_);
     addAndMakeVisible(ceiling_);
     ceiling_.setLabelText("CEILING");
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 void MasterLimiterView::resized() {

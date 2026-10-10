@@ -1,6 +1,15 @@
 #pragma once
 #include "../source/ui/FxChain.h"
 
+// Offscreen editors have no native VBlank source. Advance one deterministic
+// display frame while still servicing any nonvisual JUCE timers.
+inline void dispatchHeadlessUiFrame() {
+    static double frameSeconds = 0.0;
+    frameSeconds += 1.0 / 60.0;
+    juce::Timer::callPendingTimersSynchronously();
+    fui::VisualTimer::tickForTesting(frameSeconds);
+}
+
 // Exercise the shipping editor and real processor together. Captures live FX,
 // checks tab navigation, parameter gestures, and stopped-audio meter clearing.
 template <class T> T *findFxComponent(juce::Component &root, const juce::String &name = {}) {
@@ -106,6 +115,47 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     set(prefix + "fx.chorus.rate", .6f);
     set(prefix + "fx.chorus.depth", 1);
     ok &= chorusPlotHash(*chorus) != preview;
+    // Warm the panel raster, change a state-dependent caption, then compare
+    // the reused cache against an explicitly regenerated raster. Exercise the
+    // physical-scale key too; snapshots do not need a native window peer.
+    auto imageHash = [](const juce::Image& image) {
+        uint64_t hash = 1469598103934665603ull;
+        for (int y = 0; y < image.getHeight(); ++y)
+            for (int x = 0; x < image.getWidth(); ++x)
+                hash = (hash ^ image.getPixelAt(x, y).getARGB()) * 1099511628211ull;
+        return hash;
+    };
+    auto headerHash = [&](fui::FxModuleView& module, float scale) {
+        return imageHash(module.createComponentSnapshot({30, 8, module.getWidth() - 42, 27}, true, scale));
+    };
+    auto* compRatio = proc->apvts.getParameter(prefix + "fx.comp.ratio");
+    auto* compOn = proc->apvts.getParameter(prefix + "fx.comp.on");
+    if (!compRatio || !compOn) return false;
+    const auto savedRatio = compRatio->getValue(), savedOn = compOn->getValue();
+    for (float scale : {.75f, 1.f, 2.f}) {
+        set(prefix + "fx.comp.on", 1);
+        set(prefix + "fx.comp.ratio", 2);
+        const auto warm = headerHash(*comp, scale);
+        ok &= headerHash(*comp, scale) == warm;
+        set(prefix + "fx.comp.ratio", 8);
+        const auto changed = headerHash(*comp, scale);
+        ok &= changed != warm;
+        comp->resized();
+        ok &= headerHash(*comp, scale) == changed;
+        set(prefix + "fx.comp.on", 0);
+        const auto bypass = headerHash(*comp, scale);
+        ok &= bypass != changed;
+        comp->resized();
+        ok &= headerHash(*comp, scale) == bypass;
+        set(prefix + "fx.comp.on", 1);
+        comp->setSize(comp->getWidth() + 17, comp->getHeight() + 9);
+        const auto resized = headerHash(*comp, scale);
+        comp->resized();
+        ok &= headerHash(*comp, scale) == resized;
+        chain->resized();
+    }
+    compRatio->setValueNotifyingHost(savedRatio);
+    compOn->setValueNotifyingHost(savedOn);
     auto* hard = findFxComponent<juce::TextButton>(*drive, "HARD");
     if (!hard) return false;
     hard->onClick();
@@ -153,7 +203,7 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
         for (auto v : meter.values)
             ok &= std::isfinite(v);
         juce::Thread::sleep(34);
-        juce::Timer::callPendingTimersSynchronously();
+        dispatchHeadlessUiFrame();
     }
     ok &= received && echo && tail;
     if (!received || !echo || !tail)
@@ -174,7 +224,7 @@ bool runFxUiChecks(const juce::String &machine, int width, int height, bool drum
     };
     save("-fx-live");
     juce::Thread::sleep(400);
-    juce::Timer::callPendingTimersSynchronously();
+    dispatchHeadlessUiFrame();
     save("-fx-stopped");
     tab->setToggleState(false, juce::dontSendNotification);
     sound->setToggleState(true, juce::dontSendNotification);

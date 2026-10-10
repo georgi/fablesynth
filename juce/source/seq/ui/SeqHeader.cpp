@@ -73,7 +73,7 @@ SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
     library_.setLookAndFeel(&sessionComboLNF());
     addAndMakeVisible(library_);
     refreshLibrarySelection();
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 // ---- actions (also the test handles) ---------------------------------------
@@ -282,6 +282,11 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 // the web-derived table (only y/height move, and the knob circles/logo
 // shrink to match the web's smaller right-side controls).
 void SeqHeader::resized() {
+    headerLayer_ = {};
+    headerForegroundLayer_ = {};
+    clockLayer_ = {};
+    composedHeaderLayer_ = {};
+    scopeLabelLayer_ = {};
     logoArea = { 17, 12, 175, 20 };
 
     playBtn = { 216, 9, 36, 26 };
@@ -324,6 +329,93 @@ void SeqHeader::resized() {
 // ---- paint -----------------------------------------------------------------
 
 void SeqHeader::paint(juce::Graphics& g) {
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int w = juce::roundToInt(getWidth() * scale), h = juce::roundToInt(getHeight() * scale);
+    if (w <= 0 || h <= 0) return;
+    const auto& cond = proc.conductor();
+    const auto state = std::make_tuple(cond.playing(), (int)cond.quant(), swingValue(), volValue());
+    const bool headerChanged = headerLayer_.getWidth() != w || headerLayer_.getHeight() != h
+        || headerScale_ != scale || cachedState_ != state || headerAccent_ != accentA();
+    if (headerChanged) {
+        ++cacheBuildCount_;
+        cachedState_ = state;
+        headerAccent_ = accentA();
+        headerScale_ = scale;
+        headerLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics hg(headerLayer_);
+        hg.addTransform(juce::AffineTransform::scale(scale));
+        paintHeader(hg);
+        headerForegroundLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics fg(headerForegroundLayer_);
+        fg.addTransform(juce::AffineTransform::scale(scale));
+        paintHeaderForeground(fg);
+    }
+    const auto pos = cond.songPos();
+    const auto clockState = std::make_tuple(cond.playing(), pos.bar, pos.beat,
+                                           (int)std::lround(cond.session().bpm));
+    const auto oldClockPixelBounds = clockPixelBounds_;
+    const bool clockChanged = !clockLayer_.isValid() || clockScale_ != scale || cachedClockState_ != clockState;
+    if (clockChanged) {
+        ++clockBuildCount_;
+        cachedClockState_ = clockState;
+        clockScale_ = scale;
+        // Crop on physical pixel boundaries, not logical ones: at fractional
+        // scale the clock keeps exactly the same raster phase as the panel.
+        const auto bounds = clockDamage().getIntersection(getLocalBounds());
+        const int left = (int)std::floor(bounds.getX() * scale);
+        const int top = (int)std::floor(bounds.getY() * scale);
+        const int right = (int)std::ceil(bounds.getRight() * scale);
+        const int bottom = (int)std::ceil(bounds.getBottom() * scale);
+        clockPixelBounds_ = { left, top, right - left, bottom - top };
+        clockLayer_ = juce::Image(juce::Image::ARGB, juce::jmax(1, right - left),
+                                  juce::jmax(1, bottom - top), true);
+        juce::Graphics cg(clockLayer_);
+        cg.addTransform(juce::AffineTransform::scale(scale).translated((float)-left, (float)-top));
+        cg.reduceClipRegion(getLocalBounds());
+        paintClock(cg);
+    }
+    if (headerChanged || clockChanged || !composedHeaderLayer_.isValid()) {
+        const bool rebuild = headerChanged || composedHeaderLayer_.getWidth() != w
+            || composedHeaderLayer_.getHeight() != h;
+        if (rebuild) composedHeaderLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        const auto damage = oldClockPixelBounds.getUnion(clockPixelBounds_);
+        if (!rebuild) composedHeaderLayer_.clear(damage, juce::Colours::transparentBlack);
+        juce::Graphics composed(composedHeaderLayer_);
+        if (!rebuild) composed.reduceClipRegion(damage);
+        composed.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        composed.setColour(juce::Colours::white);
+        // Replace clock damage with its stationary background, then restore
+        // the original clock-before-session/knobs order. All coordinates here
+        // are physical pixels, so no extra resampling changes the raster.
+        composed.drawImageAt(headerLayer_, 0, 0);
+        composed.drawImageAt(clockLayer_, clockPixelBounds_.getX(), clockPixelBounds_.getY());
+        composed.drawImageAt(headerForegroundLayer_, 0, 0);
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(composedHeaderLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
+    paintScope(g);
+    if (scopeLabelLayer_.getWidth() != w || scopeLabelLayer_.getHeight() != h
+        || scopeLabelScale_ != scale) {
+        ++scopeLabelBuildCount_;
+        scopeLabelScale_ = scale;
+        scopeLabelLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics lg(scopeLabelLayer_);
+        lg.addTransform(juce::AffineTransform::scale(scale));
+        paintScopeLabel(lg);
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(scopeLabelLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
+}
+
+void SeqHeader::paintHeader(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
     // logo: FABLE (white) SEQ (amber) SQ-4 (dim tag) -- web .sq-logo. FABLE+SEQ
@@ -354,9 +446,9 @@ void SeqHeader::paint(juce::Graphics& g) {
 
     paintButtons(g);
     paintQuant(g);
-    paintClock(g);
-    paintScope(g);
+}
 
+void SeqHeader::paintHeaderForeground(juce::Graphics& g) {
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SESSION", libraryLabelArea, 1.4f);
@@ -476,6 +568,9 @@ void SeqHeader::paintScope(juce::Graphics& g) {
     g.setColour(accentA().withAlpha(0.9f));
     g.strokePath(path, juce::PathStrokeType(1.2f));
 
+}
+
+void SeqHeader::paintScopeLabel(juce::Graphics& g) {
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SUM", scopeArea.reduced(6, 3).removeFromTop(10), 2.0f,
