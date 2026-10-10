@@ -28,7 +28,16 @@ export const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
 export const SYNC_BPM = 120;
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
-export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
+// Append-only: saved routes store the index. 6.. are the Serum-parity sources.
+// MOD WHL and AFTERTCH read the perf.* params; RANDOM is a per-note value.
+export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE',
+  'LFO 3', 'LFO 4', 'MOD ENV 2', 'MACRO 1', 'MACRO 2', 'MACRO 3', 'MACRO 4', 'MOD WHL', 'AFTERTCH', 'RANDOM'];
+export const MACRO_COUNT = 4;
+export const ENV_MODELS = ['CLASSIC', 'CURVE'];
+/** MOD_SOURCES index of LFO n (1..4). */
+export const lfoSource = (n: number) => (n <= 2 ? n : n + 3);
+/** MOD_SOURCES index of macro n (1..4). */
+export const macroSource = (n: number) => 8 + n;
 // Log-curve modulation depth: a full route swings a Log param ×2^(x·D), i.e.
 // ±D octaves. Mirrors MOD_LOG_D in engine/worklet.js — keep the two in sync.
 export const MOD_LOG_D = 5;

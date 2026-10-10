@@ -407,6 +407,10 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         }
         else if (m.isAllNotesOff() || m.isAllSoundOff()) { engine.panic(); arpInput_.clear(); applyArp(); }
         else if (m.isPitchWheel()) { engine.pitchBend((m.getPitchWheelValue() - 8192) / 8192.0 * 2.0); midiGlow.store(20); }
+        // MOD WHL / AFTERTCH sources are parameters (Serum style): write the
+        // raw value so the next block's parameter pull keeps it.
+        else if (m.isController() && m.getControllerNumber() == 1) setPerformanceParam(PERF_MODWHEEL, (float)m.getControllerValue() / 127.0f);
+        else if (m.isChannelPressure()) setPerformanceParam(PERF_AFTERTOUCH, (float)m.getChannelPressureValue() / 127.0f);
     }
     renderTo(n);
 
