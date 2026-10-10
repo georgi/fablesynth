@@ -16,7 +16,17 @@
     "standalone:build": "cmake --build juce/build --target FableSynth_Standalone FableDrum_Standalone FableBass_Standalone FableSeq_Standalone -j4",
     "vst:install": "bash scripts/install-vst.sh",
     "songs:generate": "node scripts/generate-authored-sessions.mjs",
-    "songs:check": "node scripts/generate-authored-sessions.mjs --check"
+    "songs:check": "node scripts/generate-authored-sessions.mjs --check",
+    "tags:generate": "node scripts/generate-browser-tags.mjs",
+    "tags:check": "node scripts/generate-browser-tags.mjs --check",
+    "comp:generate": "node scripts/generate-comp-library.mjs",
+    "comp:check": "node scripts/generate-comp-library.mjs --check",
+    "mixdowns:generate": "node scripts/generate-session-mixdowns.mjs",
+    "mixdowns:check": "node scripts/generate-session-mixdowns.mjs --check",
+    "patterns:generate": "node scripts/generate-pattern-library.mjs",
+    "patterns:check": "node scripts/generate-pattern-library.mjs --check",
+    "kits:levels": "KIT_LEVELS=write vitest run src/drum/kitLevels.generate.test.ts",
+    "kits:levels:check": "KIT_LEVELS=check vitest run src/drum/kitLevels.generate.test.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
