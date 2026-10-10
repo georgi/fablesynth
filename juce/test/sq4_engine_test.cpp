@@ -1507,7 +1507,7 @@ static void testDrumMetadataCodec() {
     clip.bars = 2; clip.bytes = sqEmptyClip(Machine::DR1, 2);
     clip.hasDrumRhythm = true; clip.drumConfiguredLanes = (1u << 0) | (1u << 15);
     auto& lane = clip.drumRhythm.lanes[0]; lane.enabled = true; lane.steps = 5; lane.rotation = 2;
-    lane.sourceBar = 1; lane.mode = DrumRhythmMode::fit; lane.cycleBeats = 8;
+    lane.sourceBar = 0; lane.mode = DrumRhythmMode::fit; lane.cycleBeats = 8;
     lane.micro = true; lane.delayMs = -12; lane.stepDelayMs[31] = 23;
     clip.drumRhythm.lanes[15].steps = 7; // retained OFF settings
     const auto json = sessionToJson(session); SessionData back;
@@ -1520,6 +1520,13 @@ static void testDrumMetadataCodec() {
     ClipClipboardData copied; copied.machines = {Machine::DR1}; copied.cells = {{clip}}; copied.hasCell = {{true}};
     ClipClipboardData pasted; CHECK(clipClipboardFromJson(clipClipboardToJson(copied), pasted));
     CHECK(pasted.cells[0][0].drumRhythm.lanes[0].stepDelayMs[31] == 23);
+    // Web cloneDrumRhythm: an active lane's in-range source decodes as bar one;
+    // a disabled lane keeps its retained source.
+    auto legacy = session; legacy.scenes[0].clips[0].drumRhythm.lanes[0].sourceBar = 1;
+    legacy.scenes[0].clips[0].drumRhythm.lanes[15].sourceBar = 1;
+    { SessionData normalized; CHECK(sessionFromJson(sessionToJson(legacy), normalized));
+      CHECK(normalized.scenes[0].clips[0].drumRhythm.lanes[0].sourceBar == 0);
+      CHECK(normalized.scenes[0].clips[0].drumRhythm.lanes[15].sourceBar == 1); }
     auto bad = session; bad.scenes[0].clips[0].drumRhythm.lanes[0].sourceBar = 2;
     CHECK(!sessionFromJson(sessionToJson(bad), back));
     bad = session; bad.scenes[0].clips[0].drumRhythm.lanes[0].delayMs = 51;
@@ -1577,6 +1584,54 @@ static void testSessionLibraryMusicality() {
     }
 }
 
+// Melodic POLY clock: grid N loops N 16ths, fit N spaces N steps over cycleBeats,
+// rotation shifts the source step, a disabled rhythm keeps the legacy 16-step times.
+static void testClipHostSequenceRhythm() {
+    using namespace fable;
+    constexpr double sr = 48000, bpm = 120, sixteenth = 60.0 / bpm * sr / 4.0;
+    struct Fire { double frame; int src; };
+    auto run = [&](const SequenceRhythm& r, double swing, int blocks) {
+        ClipHost h; std::vector<uint8_t> bytes(384, 0);
+        h.setTempo(bpm, swing, sr, 0);
+        h.scheduleClip(bytes.data(), bytes.size(), 1, 0, 0, {}, r);
+        std::vector<Fire> out;
+        for (int b = 0; b < blocks; ++b) {
+            const double frame = b * 64.0;
+            h.tick(frame, 64, [&](int) {});
+        }
+        for (const auto& e : h.events) if (e.t == HostEvent::T::Pos) out.push_back({ e.frame, e.step });
+        return out;
+    };
+    const int blocks = 2000; // 128000 frames
+    { // grid N=5: sources 0..4 repeat every 5 sixteenths
+        const auto f = run({ true, false, 5, 0, 4 }, 0, blocks);
+        bool ok = f.size() > 20;
+        for (size_t i = 0; i < f.size() && ok; ++i)
+            ok = f[i].src == (int)(i % 5) && std::abs(f[i].frame - (double)i * sixteenth) <= 64.01;
+        CHECK(ok);
+    }
+    { // fit N=5 over 4 beats: step spacing 16/5 sixteenths
+        const auto f = run({ true, true, 5, 0, 4 }, 0, blocks);
+        const double spacing = sixteenth * 16.0 / 5.0;
+        bool ok = f.size() > 6;
+        for (size_t i = 0; i < f.size() && ok; ++i)
+            ok = f[i].src == (int)(i % 5) && std::abs(f[i].frame - (double)i * spacing) <= 64.01;
+        CHECK(ok);
+    }
+    { // rotation 2 on grid N=5: first fired source is (0 - 2) mod 5 = 3
+        const auto f = run({ true, false, 5, 2, 4 }, 0, blocks);
+        CHECK(f.size() > 6 && f[0].src == 3 && f[1].src == 4 && f[2].src == 0);
+    }
+    { // disabled rhythm (even with odd steps) is the legacy 16-step clock
+        const auto f = run({ false, false, 5, 2, 4 }, 0.3, blocks);
+        bool ok = f.size() > 20;
+        for (size_t i = 0; i < f.size() && ok; ++i)
+            ok = f[i].src == (int)(i % 16)
+              && std::abs(f[i].frame - ((double)i * sixteenth + (i % 2 ? 0.3 * SQ_SWING_MAX * sixteenth : 0.0))) <= 64.01;
+        CHECK(ok);
+    }
+}
+
 #include "AutomationChecks.h"
 
 int main() {
@@ -1588,6 +1643,7 @@ int main() {
     testProtocol();
     testModelAndFactory();
     testClipHost();
+    testClipHostSequenceRhythm();
     testHostEventLossless();
     testWt1Hosted();
     testWt1HostedSyncedLfoAnchorLock();

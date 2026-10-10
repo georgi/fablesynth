@@ -1,3 +1,11 @@
+// Melodic POLY web prototype; mirrored in shared/sequenceRhythm.ts.
+function readSequenceRhythm(r) {
+  if (!r || r.v !== 1 || typeof r.enabled !== 'boolean' || !['grid', 'fit'].includes(r.mode)
+    || !Number.isInteger(r.steps) || r.steps < 1 || r.steps > 16
+    || !Number.isInteger(r.rotation) || r.rotation < 0 || r.rotation >= r.steps
+    || ![4, 8].includes(r.cycleBeats)) return null;
+  return { v: 1, enabled: r.enabled, mode: r.mode, steps: r.steps, rotation: r.rotation, cycleBeats: r.cycleBeats };
+}
 // FableSynth DSP core — runs in the AudioWorklet thread. Self-contained (no imports).
 // Protocol (port messages in):
 //   {t:'init', params:{id:value,...}}
@@ -296,13 +304,15 @@ const F_AMPS = [1, 0.55, 0.32];
 // time constant instead of being a fixed per-block/per-sample number, so the
 // smoothing TIME is the same at 44.1, 48 and 96 kHz. The taus below are chosen
 // to reproduce the legacy constants exactly at the 48 kHz reference:
-//   POS   0.35 per 128 samples, CUT 0.5 per 128 samples, steal fade 0.12/sample.
+//   POS   0.35 per 128 samples, CUT 0.5 per 128 samples.
 // Mirrors Engine.cpp's smoothCoef/POS_TAU/CUT_TAU.
 function smoothCoef(n, tauSr) { return 1 - Math.exp(-n / tauSr); }
 const POS_TAU = 128 / (48000 * 0.4307829160924542); // -ln(0.65)
 const CUT_TAU = 128 / (48000 * Math.LN2);
-const STEAL_TAU = 1 / (48000 * 0.1278333715098849); // -ln(0.88)
-const STEAL_C = smoothCoef(1, STEAL_TAU * sampleRate);
+// Voice-steal fade length to -80 dB (finding J6); mirrors STEAL_FADE_SEC in
+// Engine.cpp: ln(1e-4) = -9.2103 over the fade, sample-rate invariant.
+const STEAL_FADE_SEC = 0.004;
+const STEAL_C = 1 - Math.exp(-9.210340371976184 / (STEAL_FADE_SEC * sampleRate));
 const ADAA_FADE_WIDTH = 0.1;
 const ADAA_INPUT_LIMIT = 16;
 
@@ -375,8 +385,8 @@ class Env {
         break;
       }
       case 5: {
-        // steal fade: ~2 ms to silence at any sample rate, then the voice is
-        // free for its pending note
+        // steal fade: STEAL_FADE_SEC to silence at any sample rate, then the
+        // voice is free for its pending note
         this.level -= this.level * STEAL_C;
         if (this.level < 1e-4) { this.level = 0; this.state = 0; }
         break;
@@ -1439,9 +1449,11 @@ class Fx {
 class FableProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
+    subSquareTable(); // build the sub-square table now, not on the audio thread
     // Flat parameter store (finding W2): p[index], never p['some.string'].
     this.p = new Float64Array(NUM_PARAMS);
     this.rng = new Rng(0x9e3779b9);
+    this.modRng = new Rng(0x85ebca6b); // LFO 3/4 + RANDOM (Engine.h modRng_)
     // Sample-rate-mapped one-pole coefficients (finding W1): the same analog
     // pole at any rate is p' = p^(48k/sr); the pink filter's input gains are
     // rescaled to hold each stage's low-frequency gain, so the pink spectrum
@@ -1467,6 +1479,8 @@ class FableProcessor extends AudioWorkletProcessor {
     this.transportBeats = 0;
     this.gLfo1 = new LFO(); this.gLfo1.reset(this.rng);
     this.gLfo2 = new LFO(); this.gLfo2.reset(this.rng);
+    this.gLfo3 = new LFO(); this.gLfo3.reset(this.modRng);
+    this.gLfo4 = new LFO(); this.gLfo4.reset(this.modRng);
     this.lastPitch = 60;
     this.held = []; // press-order stack of held note numbers, newest last, tracked mode-independently
     this.clock = 0;
@@ -1516,7 +1530,7 @@ class FableProcessor extends AudioWorkletProcessor {
     // modulated params overwritten, so every read is a plain array index.
     this._modAccum = new Float64Array(NUM_PARAMS);
     this._pm = new Float64Array(NUM_PARAMS);
-    this._srcs = new Float64Array(6);
+    this._srcs = new Float64Array(NUM_SOURCES);
     // Live-mod telemetry: the viz voice's route sums per MOD_DESTS index,
     // re-snapshotted every block, sent at the viz cadence. modIdleSent starts
     // true — the UI's default state is already "idle", no terminator needed.
@@ -1590,15 +1604,41 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'bend': this.bend = d.s; break;
       case 'bpm': this.bpm = d.v > 1 ? Math.min(d.v, 1000) : 120; break;
       case 'pats': this.seqPats = new Uint8Array(d.data); break;
+      case 'sequenceRhythm': {
+        if (this.hosted) break;
+        const r = readSequenceRhythm(d.rhythm);
+        if (d.rhythm != null && !r) break;
+        const old = this.sequenceRhythm;
+        this.sequenceRhythm = r;
+        if (!!old?.enabled !== !!r?.enabled || (r?.enabled && (old?.mode !== r.mode || old?.cycleBeats !== r.cycleBeats || (r.mode === 'fit' && old?.steps !== r.steps)))) {
+          this.seqGateOff();
+          if (r?.enabled) {
+            const dur = this.polyDuration(r, this.p[SEQ_BPM] || 120);
+            const sw = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
+            this.polyK = this.polyPhase(r, Math.max(0, currentFrame - this.seqAnchor), dur, sw, Math.ceil);
+            this.seqToNext = this.polyFrame(r, this.polyK, dur, sw) - Math.max(0, currentFrame - this.seqAnchor);
+          } else {
+            const grid = { mode: 'grid' }, dur = this.polyDuration(grid, this.p[SEQ_BPM] || 120);
+            const elapsed = Math.max(0, currentFrame - this.seqAnchor), sw = this.p[SEQ_SWING] || 0;
+            const k = this.polyPhase(grid, elapsed, dur, sw, Math.ceil);
+            this.seqStep = k % 16 - 1;
+            this.seqChainPos = Math.floor(k / 16) % this.seqChain.length;
+            this.seqToNext = this.polyFrame(grid, k, dur, sw) - elapsed;
+          }
+        }
+        break;
+      }
       case 'arp': {
         if (this.hosted) break;
         const a = d.config;
-        if (a && (!Array.isArray(a.notes) || a.notes.length !== 16 ||
+        // 16 notes, or a chord-track cycle (a multiple of 16) whose rhythm
+        // lanes repeat every 16 steps.
+        if (a && (!Array.isArray(a.notes) || a.notes.length < 16 || a.notes.length > 1024 || a.notes.length % 16 ||
           !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
           !Number.isFinite(a.rate) || !Number.isFinite(a.gate))) break;
         const changedMode = !!a !== !!this.arp;
         this.arp = a ? { notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
-          hits: a.hits.slice(0, 16), accents: a.accents.slice(0, 16),
+          hits: a.hits.slice(0, 16), accents: a.accents.slice(0, 16), ...readCompStack(a),
           rate: Math.max(.125, Math.min(1, a.rate)), gate: Math.max(.05, Math.min(.95, a.gate)) } : null;
         if (changedMode || (a && !a.notes.some(n => n >= 0))) this.seqGateOff();
         if (changedMode) { this.seqStep = -1; this.seqChainPos = 0; this.seqToNext = 0; }
@@ -1614,6 +1654,7 @@ class FableProcessor extends AudioWorkletProcessor {
         if (this.hosted) break; // conductor owns the transport
         this.seqGateOff(); // restarting must not orphan an old gate
         this.seqPlaying = true;
+        this.polyK = 0;
         this.seqAnchor = currentFrame;
         this.port.postMessage({ t: 'anchor', frame: this.seqAnchor });
         this.seqStep = -1;
@@ -1628,6 +1669,7 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'panic':
         for (const v of this.voices) v.kill();
         this.seqOffQueue.length = 0;
+        this.seqOnQueue.length = 0;
         this.held.length = 0;
         this.seqLastNote = -1;
         if (!d.preserveTransport) {
@@ -1642,10 +1684,12 @@ class FableProcessor extends AudioWorkletProcessor {
       case 'tempo':
         if (Number.isFinite(d.bpm)) { this.hostBpm = d.bpm; this.bpm = Math.min(1000, Math.max(1, d.bpm)); }
         if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
+        const anchorMoved = Number.isFinite(d.anchor) && d.anchor !== this.hostAnchor;
         if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
+        if (anchorMoved) { this.frameNow = currentFrame; this.polyClipArm(); } else this.polyClipRetime();
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp) };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp), sequenceRhythm: readSequenceRhythm(d.sequenceRhythm) };
         this.clipStopAt = -1; // a new launch supersedes a pending stop
         break;
       case 'seqauto': this.seqAuto = this.autoRead(d.lanes); break;
@@ -1667,14 +1711,18 @@ class FableProcessor extends AudioWorkletProcessor {
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
         const arp = readClipArp(d.arp);
+        const sequenceRhythm = readSequenceRhythm(d.sequenceRhythm);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at, arp, auto: this.clipPend.auto };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp, sequenceRhythm, auto: this.clipPend.auto };
         } else if (this.clip) {
-          const resized = bars !== this.clip.bars;
-          const rephase = this.clip.arp?.rate !== arp?.rate;
-          this.clip = { data, bars, arp, auto: this.clip.auto };
-          if (rephase) { this.seqGateOff(); this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; }
-          else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i])) this.seqGateOff();
+          const resized = bars !== this.clip.bars || this.clip.arp?.notes.length !== arp?.notes.length;
+          const oldRhythm = this.clip.sequenceRhythm;
+          const rephase = this.clip.arp?.rate !== arp?.rate || !!oldRhythm?.enabled !== !!sequenceRhythm?.enabled
+            || (sequenceRhythm?.enabled && (oldRhythm?.mode !== sequenceRhythm.mode || oldRhythm?.cycleBeats !== sequenceRhythm.cycleBeats
+              || (sequenceRhythm.mode === 'fit' && oldRhythm?.steps !== sequenceRhythm.steps)));
+          this.clip = { data, bars, arp, sequenceRhythm, auto: this.clip.auto };
+          if (rephase) { this.seqGateOff(); this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; this.polyClipArm(); }
+          else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i % 16])) this.seqGateOff();
           // Re-derive the phase only on a bar-count change (plain modulo can
           // land a grown clip half a cycle off). Same-length edits — every
           // sequencer click — are a pure data swap: touching the phase inside
@@ -1712,6 +1760,7 @@ class FableProcessor extends AudioWorkletProcessor {
   seqGateOff() {
     for (const e of this.seqOffQueue) this.noteOff(e.note);
     this.seqOffQueue.length = 0;
+    this.seqOnQueue.length = 0;
     this.seqLastNote = -1;
   }
 
@@ -1776,6 +1825,73 @@ class FableProcessor extends AudioWorkletProcessor {
     }
   }
 
+
+  polyDuration(r, bpm) {
+    return 60 / Math.max(60, Math.min(200, bpm || 120)) * sampleRate * (r.mode === 'fit' ? r.cycleBeats / r.steps : .25);
+  }
+  polyFrame(r, k, dur, swing) {
+    return k * dur + (r.mode === 'grid' && k % 2 ? Math.min(1, Math.max(0, swing || 0)) * SEQ_SWING_MAX * dur : 0);
+  }
+  polyPhase(r, elapsed, dur, swing, quantize) {
+    let k = Math.max(0, Math.floor(elapsed / dur));
+    if (this.polyFrame(r, k, dur, swing) > elapsed + 1e-6) k = Math.max(0, k - 1);
+    if (quantize === Math.floor) return k;
+    if (quantize === Math.ceil) return this.polyFrame(r, k, dur, swing) >= elapsed - 1e-6 ? k : k + 1;
+    return elapsed - this.polyFrame(r, k, dur, swing) < this.polyFrame(r, k + 1, dur, swing) - elapsed ? k : k + 1;
+  }
+  polySource(r, k) { return ((k - r.rotation) % r.steps + r.steps) % r.steps; }
+  polyClipArm() {
+    const r = this.clip?.sequenceRhythm;
+    if (!r?.enabled || this.clip.arp) return;
+    const dur = this.polyDuration(r, this.hostBpm);
+    const elapsed = Math.max(0, this.frameNow - this.hostAnchor);
+    const k = this.polyPhase(r, elapsed, dur, this.hostSwing, Math.ceil);
+    this.clipStep = k - 1;
+    this.clipToNext = this.hostAnchor + this.polyFrame(r, k, dur, this.hostSwing) - this.frameNow;
+  }
+  // Tempo/swing change: keep the last fired step and only re-time the next one,
+  // so a boundary that already fired can never fire again. Messages land between
+  // quanta, so currentFrame is the right "now" here (frameNow would be stale).
+  polyClipRetime() {
+    const r = this.clip?.sequenceRhythm;
+    if (!r?.enabled || this.clip.arp) return;
+    if (this.clipStep < 0) { this.polyClipArm(); return; }
+    const dur = this.polyDuration(r, this.hostBpm);
+    this.clipToNext = this.hostAnchor + this.polyFrame(r, this.clipStep + 1, dur, this.hostSwing) - currentFrame;
+  }
+  polyClipFire() {
+    const r = this.clip.sequenceRhythm, k = this.clipStep + 1;
+    const dur = this.polyDuration(r, this.hostBpm);
+    const s = this.polySource(r, k);
+    this.polyEmit(r, k, dur, true);
+    this.clipStep = k;
+    this.clipToNext = this.hostAnchor + this.polyFrame(r, k + 1, dur, this.hostSwing) - this.frameNow;
+    this.port.postMessage({ t: 'pos', step: s, bar: 0 });
+  }
+  polyFire(bpm) {
+    const r = this.sequenceRhythm, k = this.polyK++;
+    const dur = this.polyDuration(r, bpm);
+    const s = this.polySource(r, k);
+    const event = this.polyEmit(r, k, dur, false);
+    this.seqStep = s;
+    const sw = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
+    this.seqToNext += this.polyFrame(r, k + 1, dur, sw) - this.polyFrame(r, k, dur, sw);
+    this.port.postMessage({ t: 'step', s, pat: 0, ...event });
+  }
+  polyEmit(r, k, dur, hosted) {
+    const s = this.polySource(r, k);
+    const chord = hosted ? Array.from({ length: WT_POLY_LANES }, (_, lane) => this.clipRead(s, lane)).filter(st => st.on)
+      : [this.seqRead(0, s)].filter(st => st.on);
+    if (this.p[MASTER_MONO] && chord.length > 1) chord.length = 1;
+    const root = (this.p[SEQ_ROOT] | 0) || 48;
+    for (const st of chord) {
+      const note = root + st.semi;
+      this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+      this.seqScheduleOff(note, st.duration * dur);
+    }
+    return {};
+  }
+
   // ---------- hosted clip transport ----------
   // A clip is bars*16 steps of the same 3-byte layout, bar-major. Pending
   // commands execute in the render quantum containing their atFrame — every
@@ -1812,6 +1928,7 @@ class FableProcessor extends AudioWorkletProcessor {
       // position is derived from the anchor, never restarted at step 0.
       this.clipStep = this.clipPhase(Math.round) - 1;
       this.clipToNext = 0;
+      this.polyClipArm();
       this.seqGateOff(); // the old clip's tail note ends where the new clip starts
       this.port.postMessage({ t: 'clipstart', frame: this.frameNow });
     }
@@ -1825,15 +1942,21 @@ class FableProcessor extends AudioWorkletProcessor {
   // rounds (atFrame sits at a boundary, block-quantized slightly early);
   // mid-flight resizes floor (the last fired step).
   clipPhase(quantize) {
+    const r = this.clip.sequenceRhythm;
+    if (r?.enabled && !this.clip.arp) {
+      const dur = this.polyDuration(r, this.hostBpm);
+      return this.polyPhase(r, Math.max(0, this.frameNow - this.hostAnchor), dur, this.hostSwing, quantize);
+    }
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm) * (this.clip.arp?.rate ?? .25) * sampleRate;
-    const total = this.clip.arp ? SEQ_STEPS : this.clip.bars * SEQ_STEPS;
+    const total = this.clip.arp ? this.clip.arp.notes.length : this.clip.bars * SEQ_STEPS;
     const idx = quantize(Math.max(0, this.frameNow - this.hostAnchor) / dur);
     return ((idx % total) + total) % total;
   }
 
   clipFire() {
     if (this.clip.arp) { this.clipArpFire(); return; }
+    if (this.clip.sequenceRhythm?.enabled) { this.polyClipFire(); return; }
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
@@ -1868,7 +1991,7 @@ class FableProcessor extends AudioWorkletProcessor {
 
   clipArpFire() {
     const a = this.clip.arp;
-    const s = (this.clipStep + 1) % 16;
+    const s = (this.clipStep + 1) % a.notes.length, r = s % 16;
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = 60 / bpm * a.rate * sampleRate;
     const swing = Math.max(0, Math.min(1, this.hostSwing || 0));
@@ -1925,6 +2048,7 @@ class FableProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ t: 'step', s, pat: 0 });
       return;
     }
+    if (this.sequenceRhythm?.enabled) { this.polyFire(bpm); return; }
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = Math.min(1, Math.max(0, this.p[SEQ_SWING] || 0));
     if (this.seqStep + 1 >= SEQ_STEPS) {
@@ -1978,7 +2102,8 @@ class FableProcessor extends AudioWorkletProcessor {
     if (voice) {
       // Legato: retune only — renderVoice glides v.pitch toward v.note, and
       // not calling Voice.noteOn is what keeps the envelopes running.
-      voice.note = n;
+      if (this.p[MASTER_LEGATO]) voice.note = n;
+      else voice.retrigger(n, vel, this.rng, this.modRng);
       this.lastPitch = n;
       return;
     }
@@ -1990,7 +2115,10 @@ class FableProcessor extends AudioWorkletProcessor {
       if (v.pending && v.pending.n === n) v.pending = null;
       if (v.gate && v.note === n) {
         const back = this.held[this.held.length - 1];
-        if (back !== undefined) { v.note = back; this.lastPitch = back; } // fall back to the held note, no retrigger
+        if (back !== undefined) { // fall back to the held note
+          if (this.p[MASTER_LEGATO]) v.note = back; else v.retrigger(back, v.vel, this.rng, this.modRng);
+          this.lastPitch = back;
+        }
         else v.noteOff();
       }
     }
@@ -1998,29 +2126,33 @@ class FableProcessor extends AudioWorkletProcessor {
 
   polyNoteOn(n, vel) {
     let voice = this.voices.find((v) => v.gate && v.note === n);
-    if (!voice) voice = this.voices.find((v) => !v.active);
+    // Same note already queued behind a steal fade: replace it in place.
+    if (!voice) voice = this.voices.find((v) => v.pending && v.pending.n === n);
+    if (!voice) voice = this.voices.find((v) => !v.active && !v.pending);
     if (!voice) {
-      // steal: prefer released voices, else oldest
-      let best = null;
+      // Steal order: released, then gated (lowest age each). A voice with a
+      // note already pending is taken only when every voice is pending, so a
+      // burst of notes never overwrites its own queued notes.
+      let rel = null, gated = null, pend = null;
       for (const v of this.voices) {
-        if (!best) { best = v; continue; }
-        const vRel = v.gate ? 1 : 0, bRel = best.gate ? 1 : 0;
-        if (vRel < bRel || (vRel === bRel && v.age < best.age)) best = v;
+        if (v.pending) { if (!pend || v.pending.age < pend.pending.age) pend = v; }
+        else if (v.gate) { if (!gated || v.age < gated.age) gated = v; }
+        else if (!rel || v.age < rel.age) rel = v;
       }
-      voice = best;
+      voice = rel || gated || pend;
     }
     const glide = this.p[MASTER_GLIDE] || 0;
     const start = glide > 0.001 ? this.lastPitch : n;
     this.lastPitch = n;
-    if (voice.ampEnv.state !== 0 && voice.ampEnv.level > 1e-3) {
+    if (voice.pending || (voice.active && Math.max(voice.ampEnv.level, voice.ampSm) > 1e-3)) {
       // Steal / same-note retrigger of an audible voice: hard-resetting phases
       // and filter state under a hot envelope clicks. Fade out instead (Env
       // state 5) and start the note once the voice reaches silence.
-      voice.pending = { n, vel, start };
+      voice.pending = { n, vel, start, age: this.clock++ };
       voice.gate = false;
       voice.ampEnv.state = 5;
     } else {
-      voice.noteOn(n, vel, start, this.clock++, this.rng, 1, 1);
+      voice.noteOn(n, vel, start, this.clock++, this.rng, 1, 1, this.modRng);
     }
   }
 
@@ -2398,15 +2530,15 @@ class FableProcessor extends AudioWorkletProcessor {
   // synced LFO starts on the downbeat; rate edits then preserve phase.
   // Unsynced LFOs free-run at their Hz.
   // (Retrig LFOs are per-voice and note-aligned, so they bypass this.)
-  updateGlobalLfo(g, base, ppq, n) {
+  updateGlobalLfo(g, base, ppq, n, rng = this.rng) {
     if (this.p[base + L_SYNC]) {
       const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[base + L_SYNCRATE] | 0));
       const ph = g.clock.phase(ppq, LFO_DIV_F[i]);
-      if (ph < g.phase) g.hold = this.rng.next() * 2 - 1; // grid wrap -> new S&H value
+      if (ph < g.phase) g.hold = rng.next() * 2 - 1; // grid wrap -> new S&H value
       g.phase = ph;
     } else {
       g.clock.reset();
-      g.advance(this.p[base + L_RATE], n, this.rng);
+      g.advance(this.p[base + L_RATE], n, rng);
     }
   }
 
@@ -2418,6 +2550,10 @@ class FableProcessor extends AudioWorkletProcessor {
 
     v.ampEnv.set(p[ENV1_A], p[ENV1_A + 1], p[ENV1_A + 2], p[ENV1_A + 3]);
     v.modEnv.set(p[ENV2_A], p[ENV2_A + 1], p[ENV2_A + 2], p[ENV2_A + 3]);
+    v.modEnv2.set(p[ENV3_A], p[ENV3_A + 1], p[ENV3_A + 2], p[ENV3_A + 3]);
+    v.ampEnv.setModel(p[ENVX1], p[ENV1_A], p[ENV1_A + 1], p[ENV1_A + 3], p[ENVX1 + 1], p[ENVX1 + 2], p[ENVX1 + 3], p[ENVX1 + 4]);
+    v.modEnv.setModel(p[ENVX2], p[ENV2_A], p[ENV2_A + 1], p[ENV2_A + 3], p[ENVX2 + 1], p[ENVX2 + 2], p[ENVX2 + 3], p[ENVX2 + 4]);
+    v.modEnv2.setModel(p[ENVX3], p[ENV3_A], p[ENV3_A + 1], p[ENV3_A + 3], p[ENVX3 + 1], p[ENVX3 + 2], p[ENVX3 + 3], p[ENVX3 + 4]);
 
     // glide
     const gl = p[MASTER_GLIDE] || 0;
@@ -2430,9 +2566,15 @@ class FableProcessor extends AudioWorkletProcessor {
     const rt1 = !!p[LFO1 + L_RETRIG], rt2 = !!p[LFO2 + L_RETRIG];
     const l1 = (rt1 ? v.lfo1 : this.gLfo1).valueOff(p[LFO1 + L_SHAPE], p[LFO1 + L_PHASE]) * v.lfo1.riseGain(p[LFO1 + L_RISE]);
     const l2 = (rt2 ? v.lfo2 : this.gLfo2).valueOff(p[LFO2 + L_SHAPE], p[LFO2 + L_PHASE]) * v.lfo2.riseGain(p[LFO2 + L_RISE]);
+    const rt3 = !!p[LFO3 + L_RETRIG], rt4 = !!p[LFO4 + L_RETRIG];
+    const l3 = (rt3 ? v.lfo3 : this.gLfo3).valueOff(p[LFO3 + L_SHAPE], p[LFO3 + L_PHASE]) * v.lfo3.riseGain(p[LFO3 + L_RISE]);
+    const l4 = (rt4 ? v.lfo4 : this.gLfo4).valueOff(p[LFO4 + L_SHAPE], p[LFO4 + L_PHASE]) * v.lfo4.riseGain(p[LFO4 + L_RISE]);
     const e2 = v.modEnv.level;
     const srcs = this._srcs;
     srcs[1] = l1; srcs[2] = l2; srcs[3] = e2; srcs[4] = v.vel; srcs[5] = (v.note - 60) / 24;
+    srcs[6] = l3; srcs[7] = l4; srcs[8] = v.modEnv2.level;
+    srcs[9] = p[MACRO1]; srcs[10] = p[MACRO1 + 1]; srcs[11] = p[MACRO1 + 2]; srcs[12] = p[MACRO1 + 3];
+    srcs[13] = p[PERF_MW]; srcs[14] = p[PERF_AT]; srcs[15] = v.rand;
 
     // modulation destinations — sum every active slot assigned to each target.
     // The 16 fixed slots live in the flat store at MAT1 + (s-1)*M_STRIDE.
@@ -2607,6 +2749,7 @@ class FableProcessor extends AudioWorkletProcessor {
     const af0 = v.ampFacPrev >= 0 ? v.ampFacPrev : ampFactor;
     const dAf = (ampFactor - af0) / n;
     const dcR = this.dcR;
+    const slewK = 1 - Math.exp(-1 / (AMP_SLEW_SEC * sampleRate));
     for (let i = 0; i < n; i++) {
       const sl = oL[i], sr = oR[i];
       // Per-voice DC blocker (1-pole highpass, ~3.5 Hz) — removes DC before
@@ -2615,7 +2758,8 @@ class FableProcessor extends AudioWorkletProcessor {
       const yR = sr - v.dcxR + dcR * v.dcyR;
       v.dcxL = sl; v.dcyL = yL;
       v.dcxR = sr; v.dcyR = yR;
-      const amp = v.ampEnv.process() * v.velGain * (af0 + dAf * i);
+      v.ampSm += (v.ampEnv.process() - v.ampSm) * slewK;
+      const amp = v.ampSm * v.velGain * (af0 + dAf * i);
       L[lo + i] += yL * amp;
       R[lo + i] += yR * amp;
     }
@@ -2624,7 +2768,10 @@ class FableProcessor extends AudioWorkletProcessor {
     // advance chunk-rate modulators
     v.lfo1.advance(this.lfoHz(LFO1), n, this.rng);
     v.lfo2.advance(this.lfoHz(LFO2), n, this.rng);
+    v.lfo3.advance(this.lfoHz(LFO3), n, this.modRng);
+    v.lfo4.advance(this.lfoHz(LFO4), n, this.modRng);
     v.modEnv.processBlock(n);
+    v.modEnv2.processBlock(n);
 
     this._modAny = anyRoute;
     return { posA: v.oA.posSm, posB: v.oB.posSm };
@@ -2675,6 +2822,7 @@ class FableProcessor extends AudioWorkletProcessor {
       // lands on its own sample (gate-off before the next step's trigger).
       const eo = this.earliestSeqOff();
       if (eo >= 0) run = Math.min(run, Math.max(1, Math.ceil(eo)));
+      for (const e of this.seqOnQueue) run = Math.min(run, Math.max(1, Math.ceil(e.remaining)));
       // The hosted clip transport resolves its commands per chunk; at the usual
       // 128-sample quantum that is exactly the pre-split behaviour.
       if (hosted) this.hostTick(run);
@@ -2704,6 +2852,16 @@ class FableProcessor extends AudioWorkletProcessor {
         }
         this.seqOffQueue.length = w;
         this.seqLastNote = w ? this.seqOffQueue[w - 1].note : -1;
+      }
+      if (this.seqOnQueue.length) {
+        let w = 0;
+        for (let i = 0; i < this.seqOnQueue.length; i++) {
+          const e = this.seqOnQueue[i];
+          e.remaining -= run;
+          if (e.remaining <= 0) { this.noteOn(e.note, e.vel); this.seqScheduleOff(e.note, e.off); }
+          else this.seqOnQueue[w++] = e;
+        }
+        this.seqOnQueue.length = w;
       }
       off += run;
     }
@@ -2763,6 +2921,8 @@ class FableProcessor extends AudioWorkletProcessor {
     // it joined the song.
     this.updateGlobalLfo(this.gLfo1, LFO1, ppq, n);
     this.updateGlobalLfo(this.gLfo2, LFO2, ppq, n);
+    this.updateGlobalLfo(this.gLfo3, LFO3, ppq, n, this.modRng);
+    this.updateGlobalLfo(this.gLfo4, LFO4, ppq, n, this.modRng);
 
     let act = 0;
     let viz = null;
@@ -2771,7 +2931,7 @@ class FableProcessor extends AudioWorkletProcessor {
       if (!v.active && v.pending) {
         const pd = v.pending;
         v.pending = null;
-        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, this.rng, 1, 1);
+        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, this.rng, 1, 1, this.modRng);
       }
       if (!v.active) continue;
       const r = this.renderVoice(v, L, R, off, n);

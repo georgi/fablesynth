@@ -85,11 +85,57 @@ void Env::set(double a, double d, double sus, double r, double sr) {
         cr = 1 - std::exp(-1 / (std::max(0.002, r / 4.5) * sr));
     }
 }
-double Env::process() {
+// CURVE segment shapes (worklet envCurveExp/envRise/envFall): c = 0.5 is
+// linear and the exponent doubles every 12 % away from it.
+static double envCurveExp(double c) { return std::pow(2.0, std::abs(c - 0.5) * 100.0 / 12.0); }
+static double envRise(double x, double c, double p) { return c <= 0.5 ? std::pow(x, p) : 1 - std::pow(1 - x, p); }
+static double envFall(double x, double c, double p) { return c >= 0.5 ? std::pow(1 - x, p) : 1 - std::pow(x, p); }
+
+void Env::setModel(int model, double a, double d, double r, double hold, double ac, double dc, double rc, double sr) {
+    model_ = model;
+    if (!model_) return;
+    ia = 1 / std::max(1.0, a * sr); id = 1 / std::max(1.0, d * sr);
+    ir = 1 / std::max(1.0, r * sr); hold_ = hold; ih = 1 / std::max(1.0, hold * sr);
+    if (!exactlyEqual(ac, ac_)) { ac_ = ac; pa = envCurveExp(ac); }
+    if (!exactlyEqual(dc, dc_)) { dc_ = dc; pd = envCurveExp(dc); }
+    if (!exactlyEqual(rc, rc_)) { rc_ = rc; pr = envCurveExp(rc); }
+}
+// CURVE states: 1 attack, 6 hold, 2 decay, 3 sustain, 4 release, 5 steal fade.
+double Env::processCurve() {
     switch (state) {
         case 1:
-            level += (1.45 - level) * ca;
-            if (level >= 1) { level = 1; state = 2; }
+            x += iaSoft > 0 ? iaSoft : ia;
+            if (x >= 1) { level = 1; x = 0; iaSoft = 0; state = hold_ > 0 ? 6 : 2; }
+            else level = from + (1 - from) * envRise(x, ac_, pa);
+            break;
+        case 6:
+            x += ih; level = 1;
+            if (x >= 1) { x = 0; state = 2; }
+            break;
+        case 2:
+            x += id;
+            if (x >= 1) { level = s; state = 3; }
+            else level = s + (1 - s) * envFall(x, dc_, pd);
+            break;
+        case 3: level = s; break;
+        case 4:
+            x += ir;
+            if (x >= 1) { level = 0; state = 0; }
+            else level = from * envFall(x, rc_, pr);
+            break;
+        case 5:
+            level -= level * cs;
+            if (level < 1e-4) { level = 0; state = 0; }
+            break;
+    }
+    return level;
+}
+double Env::process() {
+    if (model_) return processCurve();
+    switch (state) {
+        case 1:
+            level += (1.45 - level) * (caSoft > 0 ? caSoft : ca);
+            if (level >= 1) { level = 1; caSoft = 0; state = 2; }
             break;
         case 2:
             level += (s - level) * cd;
@@ -136,7 +182,7 @@ void FilterCore::reset() {
     for (auto& x : svf) x = 0;
     for (auto& x : fmt) x = 0;
     combW = 0;
-    cutSm = 0; satXL = 0; satXR = 0;
+    cutSm = 0; osL.reset(); osR.reset();
     driveMix = driveMixTarget = 0;
     cutPrev = -1; combLenPrev = -1;
 }
@@ -153,12 +199,15 @@ void FilterState::reset() {
 }
 
 // ---------------- Voice ----------------
-void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
+void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng) {
     note = n; vel = v; gate = true; age = a; pitch = startPitch;
     velGain = 0.25 + 0.75 * v * v;
-    ampEnv.trigger(); modEnv.trigger();
+    ampEnv.trigger(); modEnv.trigger(); modEnv2.trigger();
     lfo1.rng = &rng; lfo2.rng = &rng;
     lfo1.reset(); lfo2.reset();
+    lfo3.rng = &modRng; lfo4.rng = &modRng;
+    lfo3.reset(); lfo4.reset();
+    rand = modRng.next();
     // Start phase is in SAMPLES (0..SIZE): scale the random draw to a full
     // cycle so unison voices (and osc A vs B) decorrelate at note start.
     for (int i = 0; i < MAXUNI; i++) { oA.phases[i] = rng.next() * SIZE; oB.phases[i] = rng.next() * SIZE; }
@@ -183,6 +232,7 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng) {
 // fixed 48 kHz-reference per-sample coefficients are remapped to sr (Finding 9).
 void Engine::prepare(double sampleRate) {
     clearAutomation();
+    subSquareTable();   // build the sub-square table off the audio thread
     autoPlayer_.prepare();
     if (!sequenceAuto_) sequenceAuto_=std::make_unique<AutoBank>();
     sequenceAutoRunning_=false;
@@ -215,10 +265,13 @@ void Engine::prepare(double sampleRate) {
         v.oldA.tableOwner.reset(); v.oldB.tableOwner.reset();
         v.oA.data = v.oB.data = v.oldA.data = v.oldB.data = nullptr;
         v.lfo1.rng = &rng_; v.lfo2.rng = &rng_;
+        v.lfo3.rng = &modRng_; v.lfo4.rng = &modRng_;
     }
     gLfo1_.rng = &rng_; gLfo2_.rng = &rng_;
     gLfo1_.reset(); gLfo2_.reset();
-    for (int i = 0; i < 2; i++) { lfoShapePrev_[i] = -1; lfoXfRemain_[i] = 0; lfoXfLen_[i] = 0; }
+    gLfo3_.rng = &modRng_; gLfo4_.rng = &modRng_;
+    gLfo3_.reset(); gLfo4_.reset();
+    for (int i = 0; i < 4; i++) { lfoShapePrev_[i] = -1; lfoXfRemain_[i] = 0; lfoXfLen_[i] = 0; }
     // No automation ramp across a re-prepare. Which array is the source of
     // truth depends on the path in use: paramTargets() for a host-automated
     // plugin, params()/setParams() for a preset load or the offline harness.
@@ -243,7 +296,7 @@ double Engine::lfoHz(int base) const {
 void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
     if (!exactlyZero(p_[slot(base + LFO_SYNC)]) && playing_) {
         double ph = g.clock.phase(ppqChunk, lfoDivFactor((int)p_[slot(base + LFO_SYNCRATE)]));
-        if (ph < g.phase) g.hold = rng_.next() * 2 - 1; // grid wrap -> new S&H value
+        if (ph < g.phase) g.hold = g.rng->next() * 2 - 1; // grid wrap -> new S&H value
         g.phase = ph;
     } else {
         g.clock.reset();
@@ -465,6 +518,71 @@ void Engine::seqPlay() {
     seqChainPos_ = 0;
     seqToNext_ = 0;
     seqSongPos_ = 0;
+    polyK_ = 0;
+}
+
+// ---------------- melodic POLY (worklet.js) ----------------
+
+double Engine::polyDuration(const SequenceRhythm& r, double bpm) const {
+    return 60.0 / std::max(60.0, std::min(200.0, bpm > 0 ? bpm : 120.0)) * sr_
+         * (r.fit ? (double)r.cycleBeats / r.steps : .25);
+}
+
+double Engine::polyFrame(const SequenceRhythm& r, long k, double dur, double swing) {
+    return (double)k * dur + (!r.fit && (k & 1) ? std::min(1.0, std::max(0.0, swing)) * SEQ_SWING_MAX * dur : 0.0);
+}
+
+// polyPhase(..., Math.ceil): the first boundary at or after `elapsed`.
+long Engine::polyPhaseCeil(const SequenceRhythm& r, double elapsed, double dur, double swing) {
+    long k = std::max(0L, (long)std::floor(elapsed / dur));
+    if (polyFrame(r, k, dur, swing) > elapsed + 1e-6) k = std::max(0L, k - 1);
+    return polyFrame(r, k, dur, swing) >= elapsed - 1e-6 ? k : k + 1;
+}
+
+void Engine::setSequenceRhythm(const SequenceRhythm& r) {
+    if (hostClipMode_ || !validSequenceRhythm(r)) return;
+    const SequenceRhythm old = seqRhythm_;
+    seqRhythm_ = r;
+    const bool rephase = old.enabled != r.enabled
+        || (r.enabled && (old.fit != r.fit || old.cycleBeats != r.cycleBeats || (r.fit && old.steps != r.steps)));
+    if (!rephase) return;
+    seqGateOff();
+    seqHostSynced_ = false;                    // the host lock re-derives its next boundary
+    const double bpm = seqEffectiveBpm();
+    const double sw = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
+    if (r.enabled) {
+        const double dur = polyDuration(r, bpm);
+        polyK_ = polyPhaseCeil(r, seqSongPos_, dur, sw);
+        seqToNext_ = polyFrame(r, polyK_, dur, sw) - seqSongPos_;
+    } else {
+        SequenceRhythm grid; grid.fit = false;
+        const double dur = polyDuration(grid, bpm);
+        const long k = polyPhaseCeil(grid, seqSongPos_, dur, sw);
+        seqStep_ = (int)(k % SEQ_STEPS) - 1;
+        seqChainPos_ = (int)((k / SEQ_STEPS) % (long)seqChain_.size());
+        seqToNext_ = polyFrame(grid, k, dur, sw) - seqSongPos_;
+    }
+}
+
+// polyEmit: the source cell of bar one gates for its own duration.
+void Engine::polyEmit(long k, double dur) {
+    const SeqReadStep st = readSeqStep(seqPats_.data(), 0, polySource(seqRhythm_, k));
+    if (!st.on || !seqEnabled_) return;
+    int root = (int)p_[SEQ_ROOT];
+    if (root == 0) root = 48;
+    const int n = root + st.semi;
+    noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
+    seqScheduleOff(n, st.duration * dur);
+}
+
+void Engine::polyFire(double bpm) {
+    const long k = polyK_++;
+    const double dur = polyDuration(seqRhythm_, bpm);
+    polyEmit(k, dur);
+    seqStep_ = polySource(seqRhythm_, k);
+    seqChainPos_ = 0;                          // POLY plays bar one
+    const double sw = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
+    seqToNext_ += polyFrame(seqRhythm_, k + 1, dur, sw) - polyFrame(seqRhythm_, k, dur, sw);
 }
 
 void Engine::seqStop() {
@@ -513,6 +631,7 @@ Engine::SeqReadStep Engine::readSeqStep(const uint8_t* pats, int pat, int s) {
 void Engine::seqGateOff() {
     for (int i = 0; i < seqOffCount_; ++i) noteOff(seqOff_[i].note);
     seqOffCount_ = 0;
+    seqOnCount_ = 0;
     seqLastNote_ = -1;
 }
 
@@ -618,11 +737,15 @@ void Engine::clipFireAt(int abs) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
         const double bpm = std::max(60.0, std::min(200.0, bpm_));
-        const double dur = sqSamplesPerStep(bpm, sr_);
+        // Melodic POLY fires with the source step as `abs`; notes scale by its step length.
+        const double dur = clipHost_.polyActive() ? clipHost_.polyDuration() : sqSamplesPerStep(bpm, sr_);
+        // Mono: the melody lives in the first active lane (worklet clipFire).
+        const bool mono = p_[MASTER_MONO] > 0.5f;
         for (const auto& st : chord) if (st.on) {
             const int n = root + st.semi;
             noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
             seqScheduleOff(n, st.duration * dur);
+            if (mono) break;
         }
     }
 }
@@ -632,10 +755,11 @@ void Engine::clipFireAt(int abs) {
 void Engine::seqFire() {
     const double bpm = seqEffectiveBpm();
     if (arp_.enabled) {
-        const int s = (seqStep_ + 1) % 16;
+        const int s = (seqStep_ + 1) % arp_.length;
         const double interval = 60.0 / bpm * arp_.rate * sr_ * (1 + (s % 2 ? -1 : 1) * std::clamp((double)p_[SEQ_SWING], 0.0, 1.0) * SEQ_SWING_MAX);
         arpFire(arp_, s, interval); seqStep_ = s; seqChainPos_ = 0; seqToNext_ += interval; return;
     }
+    if (seqRhythm_.enabled) { polyFire(bpm); return; }
     const double dur = (60.0 / bpm / 4.0) * sr_;
     const double swing = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
     if (seqStep_ + 1 >= SEQ_STEPS) {               // bar wrap advances the chain
@@ -680,12 +804,18 @@ void Engine::setSeqHostTransport(double ppq, double bpm, bool playing) {
 
 double Engine::seqHostStepPpq(long k) const {
     const double swing = std::min(1.0, std::max(0.0, (double)p_[SEQ_SWING]));
+    if (polyOn()) {                            // POLY on the host clock: same boundaries, in beats
+        const double beats = seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25;
+        return (double)k * beats + (!seqRhythm_.fit && (k & 1) ? swing * SEQ_SWING_MAX * beats : 0.0);
+    }
     const double rate = arp_.enabled ? arp_.rate : .25;
     return (double)k * rate + ((k & 1) ? swing * SEQ_SWING_MAX * rate : 0.0);
 }
 
 void Engine::seqHostResync() {
-    long k = (long)std::floor(seqHostPpq_ / (arp_.enabled ? arp_.rate : .25)) - 1;
+    const double unit = polyOn() ? (seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25)
+                      : arp_.enabled ? arp_.rate : .25;
+    long k = (long)std::floor(seqHostPpq_ / unit) - 1;
     if (k < 0) k = 0;
     while (seqHostStepPpq(k) < seqHostPpq_ - 1e-9) k++;
     seqHostNextK_ = k;
@@ -695,8 +825,13 @@ void Engine::seqHostResync() {
 void Engine::seqFireHostStep(long k) {
     const int  s   = (int)(k % SEQ_STEPS);
     if (arp_.enabled) {
-        arpFire(arp_, s, (seqHostStepPpq(k + 1) - seqHostStepPpq(k)) * 60.0 / seqHostBpm_ * sr_);
-        seqStep_ = s; seqChainPos_ = 0; return;
+        const int as = (int)(k % arp_.length);
+        arpFire(arp_, as, (seqHostStepPpq(k + 1) - seqHostStepPpq(k)) * 60.0 / seqHostBpm_ * sr_);
+        seqStep_ = as; seqChainPos_ = 0; return;
+    }
+    if (polyOn()) {
+        polyEmit(k, polyDuration(seqRhythm_, seqHostBpm_));
+        seqStep_ = polySource(seqRhythm_, k); seqChainPos_ = 0; return;
     }
     const long bar = k / SEQ_STEPS;
     seqChainPos_ = (int)(bar % (long)seqChain_.size());
@@ -1142,6 +1277,16 @@ double Engine::lfoShapeValue(int idx, const Lfo& l, int base) const {
 void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     v.ampEnv.set(p_[ENV1_BASE + 0], p_[ENV1_BASE + 1], p_[ENV1_BASE + 2], p_[ENV1_BASE + 3], sr_);
     v.modEnv.set(p_[ENV2_BASE + 0], p_[ENV2_BASE + 1], p_[ENV2_BASE + 2], p_[ENV2_BASE + 3], sr_);
+    v.modEnv2.set(p_[ENV3_BASE + 0], p_[ENV3_BASE + 1], p_[ENV3_BASE + 2], p_[ENV3_BASE + 3], sr_);
+    {
+        Env* envs[3] = { &v.ampEnv, &v.modEnv, &v.modEnv2 };
+        const int bases[3] = { ENV1_BASE, ENV2_BASE, ENV3_BASE };
+        for (int k = 0; k < 3; ++k) {
+            const int x = envxBase(k + 1);
+            envs[k]->setModel((int)p_[slot(x + ENVX_MODEL)], p_[slot(bases[k])], p_[slot(bases[k] + 1)], p_[slot(bases[k] + 3)],
+                              p_[slot(x + ENVX_HOLD)], p_[slot(x + ENVX_AC)], p_[slot(x + ENVX_DC)], p_[slot(x + ENVX_RC)], sr_);
+        }
+    }
 
     double gl = p_[MASTER_GLIDE];
     if (gl > 0.001) {
@@ -1155,8 +1300,17 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
                 * v.lfo1.riseGain(p_[(size_t)paramIndex(LFO1_BASE, LFO_RISE)], sr_);
     double l2 = lfoShapeValue(1, rt2 ? v.lfo2 : gLfo2_, LFO2_BASE)
                 * v.lfo2.riseGain(p_[(size_t)paramIndex(LFO2_BASE, LFO_RISE)], sr_);
+    bool   rt3 = !exactlyZero(p_[(size_t)paramIndex(LFO3_BASE, LFO_RETRIG)]),
+           rt4 = !exactlyZero(p_[(size_t)paramIndex(LFO4_BASE, LFO_RETRIG)]);
+    double l3 = lfoShapeValue(2, rt3 ? v.lfo3 : gLfo3_, LFO3_BASE)
+                * v.lfo3.riseGain(p_[(size_t)paramIndex(LFO3_BASE, LFO_RISE)], sr_);
+    double l4 = lfoShapeValue(3, rt4 ? v.lfo4 : gLfo4_, LFO4_BASE)
+                * v.lfo4.riseGain(p_[(size_t)paramIndex(LFO4_BASE, LFO_RISE)], sr_);
     double e2 = v.modEnv.level;
-    double srcs[6] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0};
+    const double srcs[NUM_MOD_SOURCES] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0,
+        l3, l4, v.modEnv2.level,
+        p_[slot(MACRO1)], p_[slot(MACRO2)], p_[slot(MACRO3)], p_[slot(MACRO4)],
+        p_[slot(PERF_MODWHEEL)], p_[slot(PERF_AFTERTOUCH)], v.rand};
 
     // Accumulate routes: globals (pitch/amp/pan) stay as direct offsets with their
     // existing math; per-param dests sum into modAccum[targetPid] and are folded
@@ -1307,22 +1461,16 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
                     dGN = (std::sin(t1 * PI * 0.5) - gN) / n;
                     dGO = (std::cos(t1 * PI * 0.5) - gO) / n;
                 }
-                // polyBLEP square (both edges) — hoisted so the fade can mix it
-                // with the sine without duplicating the residual maths.
-                auto sqr = [](double ph_, double inc_) {
-                    double s = ph_ < 0.5 ? 1 : -1;
-                    if (ph_ < inc_) { double t = ph_ / inc_; s += -(t * t) + 2 * t - 1; }
-                    else if (ph_ > 1 - inc_) { double t = (ph_ - 1) / inc_; s += t * t + 2 * t + 1; }
-                    double h = ph_ - 0.5;
-                    if (h >= 0 && h < inc_) { double t = h / inc_; s -= -(t * t) + 2 * t - 1; }
-                    else if (h < 0 && h > -inc_) { double t = h / inc_; s -= t * t + 2 * t + 1; }
-                    return s * 0.7;
-                };
+                // Band-limited square table read (mip from the larger chunk
+                // increment) — shared by the fade so it can mix with the sine.
+                const float* sqTbl = subSquareTable();
+                const SubSquareMip sqMip = subSquareMip(std::max(inc0, inc1));
+                auto sqr = [&](double ph_) { return subSquareRead(sqTbl, sqMip, ph_) * 0.7; };
                 for (int i = 0; i < n; i++) {
                     double inc = inc0 + dInc * i;
-                    double s = shape == 1 ? sqr(ph, inc) : std::sin(2 * PI * ph);
+                    double s = shape == 1 ? sqr(ph) : std::sin(2 * PI * ph);
                     if (fade) {
-                        const double sOld = shapeOld == 1 ? sqr(ph, inc) : std::sin(2 * PI * ph);
+                        const double sOld = shapeOld == 1 ? sqr(ph) : std::sin(2 * PI * ph);
                         s = s * (gN + dGN * i) + sOld * (gO + dGO * i);
                     }
                     float o = (float)(s * lvl);
@@ -1422,13 +1570,15 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     double ampFactor = std::min(2.0, std::max(0.0, 1 + mAmp));
     double af0 = v.ampFacPrev >= 0 ? v.ampFacPrev : ampFactor;
     double dAf = (ampFactor - af0) / n;
+    const double slewK = 1 - std::exp(-1.0 / (AMP_SLEW_SEC * sr_));
     for (int i = 0; i < n; i++) {
         double sl = oL[i], sr = oR[i];
         double yL = sl - v.dcxL + dcR_ * v.dcyL;
         double yR = sr - v.dcxR + dcR_ * v.dcyR;
         v.dcxL = sl; v.dcyL = yL;
         v.dcxR = sr; v.dcyR = yR;
-        double amp = v.ampEnv.process() * v.velGain * (af0 + dAf * i);
+        v.ampSm += (v.ampEnv.process() - v.ampSm) * slewK;
+        double amp = v.ampSm * v.velGain * (af0 + dAf * i);
         L[i] += (float)(yL * amp);
         R[i] += (float)(yR * amp);
     }
@@ -1436,7 +1586,10 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
 
     v.lfo1.advance(lfoHz(LFO1_BASE), n, sr_);
     v.lfo2.advance(lfoHz(LFO2_BASE), n, sr_);
+    v.lfo3.advance(lfoHz(LFO3_BASE), n, sr_);
+    v.lfo4.advance(lfoHz(LFO4_BASE), n, sr_);
     v.modEnv.processBlock(n);
+    v.modEnv2.processBlock(n);
 }
 
 void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
@@ -1446,11 +1599,13 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     // Update the global (free-run / transport-locked) LFOs before voices read them.
     updateGlobalLfo(gLfo1_, LFO1_BASE, ppqChunk, n);
     updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n);
+    updateGlobalLfo(gLfo3_, LFO3_BASE, ppqChunk, n);
+    updateGlobalLfo(gLfo4_, LFO4_BASE, ppqChunk, n);
 
     // Finding J2: an LFO SHAPE change jumps the modulation value. Start a fade
     // so lfoShapeValue() glides from the old shape to the new one instead.
-    static const int lfoBase[2] = {LFO1_BASE, LFO2_BASE};
-    for (int i = 0; i < 2; i++) {
+    static const int lfoBase[4] = {LFO1_BASE, LFO2_BASE, LFO3_BASE, LFO4_BASE};
+    for (int i = 0; i < 4; i++) {
         if (lfoXfRemain_[i] > 0) continue;          // a fade owns lfoShapePrev_
         const int shape = (int)p_[slot(lfoBase[i] + LFO_SHAPE)];
         if (lfoShapePrev_[i] >= 0 && shape != lfoShapePrev_[i])
@@ -1464,7 +1619,7 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     for (auto& v : voices_) {
         if (!v.active() && v.hasPending) {
             v.hasPending = false;
-            v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_);
+            v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_, modRng_);
         }
         if (!v.active()) {
             v.oA.tableOwner.reset(); v.oB.tableOwner.reset();
@@ -1482,7 +1637,7 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     }
     vizActive = act;
     if (act == 0) { vizCut[0] = vizCut[1] = -1; vizA = -1; vizB = -1; vizModAny = false; } // idle -> hide indicators
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 4; i++) {
         if (lfoXfRemain_[i] <= 0) continue;
         lfoXfRemain_[i] = std::max(0, lfoXfRemain_[i] - n);
         if (lfoXfRemain_[i] == 0)                   // fade done: adopt the new shape
@@ -1586,6 +1741,7 @@ void Engine::render(float* L, float* R, int n) {
         const double earliestOff = seqEarliestOff();
         if (earliestOff >= 0)
             run = std::min(run, std::max(1, (int)std::ceil(earliestOff)));
+        for (int i = 0; i < seqOnCount_; ++i) run = std::min(run, std::max(1, (int)std::ceil(seqOn_[i].remaining)));
 
         // Hosted, hostFrame_ is this chunk's absolute start frame (advanced
         // per chunk below), and the anchor is beat zero — the same timebase
@@ -1613,6 +1769,16 @@ void Engine::render(float* L, float* R, int n) {
             }
             seqOffCount_ = w;
             seqLastNote_ = w > 0 ? seqOff_[w - 1].note : -1;
+        }
+        if (seqOnCount_ > 0) {
+            int w = 0;
+            for (int i = 0; i < seqOnCount_; ++i) {
+                auto e = seqOn_[i];
+                e.remaining -= run;
+                if (e.remaining <= 0.0) { noteOn(e.note, e.vel); seqScheduleOff(e.note, e.off); }
+                else seqOn_[w++] = e;
+            }
+            seqOnCount_ = w;
         }
         off += run;
     }

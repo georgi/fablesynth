@@ -332,3 +332,23 @@ describe('clip phase lock', () => {
     expect(p.clipStep).toBe(0); // pure data swap — the transport is untouched
   });
 });
+
+describe('hosted POLY tempo/swing change', () => {
+  it('never re-fires an already fired step when swing changes', () => {
+    g.currentFrame = 0;
+    const h = makeBassProcessor();
+    h.send({ t: 'host', on: 1 });
+    // 112.5 BPM: a 1/16 step is 6400 frames, exactly 50 quanta.
+    h.send({ t: 'tempo', bpm: 112.5, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(48), bars: 1, atFrame: 0,
+      sequenceRhythm: { v: 1, enabled: true, mode: 'grid', steps: 16, rotation: 0, cycleBeats: 4 } });
+    runBlocks(h, 51); // steps 0 and 1 have fired
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBe(1);
+    h.send({ t: 'tempo', bpm: 112.5, swing: 1, anchor: 0 }); // moves step 1 later than "now"
+    expect(p.clipStep).toBe(1);
+    runBlocks(h, 120);
+    const steps = h.sent.filter((m) => m.t === 'pos').map((m) => m.step as number);
+    expect(steps.slice(0, 3)).toEqual([0, 1, 2]);
+  });
+});

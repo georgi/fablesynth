@@ -1,8 +1,12 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassUiModel.h"
+#include "../../ui/PatternPresetCombo.h"
+#include "../../ui/SequencePolyStrip.h"
 #include "../../ui/StepEditOps.h"
 #include "../../ui/Theme.h"
+#include <array>
 #include <limits>
 
 // The 16-step pitch sequencer — port of src/bass/components/PitchSeq.tsx
@@ -81,12 +85,37 @@ public:
     juce::Rectangle<int> gridBounds() const;
     juce::Rectangle<int> selMenuBounds() const;
     juce::Rectangle<int> selMenuButton(int i) const;
+    int timelineSteps() const;              // bars on screen × 16
+    int scrollX() const { return scrollX_; }
+    void scrollToStep(int abs);             // bring a timeline column into view
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
-    void timerCallback() override;          // 30 Hz playhead / state watcher
-    void pushHistory() { history_.push(proc.patternBytes()); }
-    int stepAt(int x) const;                // inverse of colBounds (clamped 0..STEPS-1)
+    void visualVisibilityChanged(bool showing) override { if (showing) timerCallback(); }
+    void timerCallback() override;          // 60 Hz playhead / state watcher
+    void pushHistory() { history_.push(historySnapshot()); }
+    std::vector<uint8_t> historySnapshot() const;
+    void restoreHistory(std::vector<uint8_t>);
+    int bodyY() const;                      // grid top: below the head and the POLY strip
+    int timelineBars() const;
+    std::vector<int> timelineChain() const; // bar -> pattern (hosted: identity)
+    int patternOfAbs(int abs) const;
+    fable::BassSeqStep stepAbs(int abs) const;
+    void setStepAbs(int abs, const fable::BassSeqStep&);
+    int cursorColumn() const;               // playhead column, or -1
+    float colWidth() const;
+    int timelineWidth() const;              // all columns, px
+    int gridViewWidth() const;              // visible grid area, px
+    void setScrollX(int);
+    void scrollBarMoved(juce::ScrollBar*, double) override;
+    juce::ScrollBar hScroll_{false};
+    int scrollX_ = 0, lastTimelineSteps_ = -1;
+    SequencePolyStrip poly_;
+    void loadPatternPreset(const fable::NotatedPreset&);
+    int stepAt(int x) const;                // inverse of colBounds (clamped to the timeline)
     int noteAt(int y) const;                // inverse of cellBounds' lane math
+    int lanesH() const;                     // note-lane height: fills the view
+    int octY() const; int accY() const; int sldY() const; int numY() const;
     int patternIndexAt(juce::Point<int>) const; // which bar chip, or -1
     bool inRect(int step, int note) const;
     int grabNoteAt(int step, int note) const;

@@ -260,6 +260,64 @@ int main() {
         e.keyOff(0);
     }
 
+    printf("\n== melodic POLY (standalone, worklet-bass.js polyFire) ==\n");
+    {
+        // Records the step sequence at each step boundary over `samples`.
+        auto stepsOver = [&](BassEngine& e, int samples) {
+            std::vector<int> seen; int last = -2;
+            std::vector<float> l(64), r(64);
+            for (int done = 0; done < samples; done += 64) {
+                e.render(l.data(), r.data(), 64);
+                if (e.currentStep() != last) { last = e.currentStep(); seen.push_back(last); }
+            }
+            return seen;
+        };
+        BassEngine e;
+        e.prepare(SR);
+        e.setTables(tables);
+        auto pats = makeEmptyBassPatterns();
+        for (int st = 0; st < 3; ++st) { BassSeqStep s; s.on = true; s.note = st; setBassStep(pats.data(), 0, st, s); }
+        e.setPatterns(pats.data(), (int)pats.size());
+        int chain[] = { 0, 1 };
+        e.setChain(chain, 2);
+        e.params()[BL_MASTER_SWING] = 0;
+        SequenceRhythm grid; grid.enabled = true; grid.steps = 3;
+        e.setSequenceRhythm(grid);
+        e.play();
+        const double dur = (60.0 / 138.0 / 4.0) * SR;
+        const auto loop = stepsOver(e, (int)(dur * 7));
+        check(loop.size() >= 7 && loop[0] == 0 && loop[1] == 1 && loop[2] == 2 && loop[3] == 0 && loop[6] == 0,
+              "GRID 3 loops the first three cells of bar one", num((double)loop.size()));
+        check(e.currentPattern() == 0, "POLY plays bar one regardless of the chain");
+        // FIT 3 in one bar: three straight slots of 4/3 beats each.
+        BassEngine f;
+        f.prepare(SR); f.setTables(tables);
+        f.setPatterns(pats.data(), (int)pats.size()); f.setChain(chain, 1);
+        f.params()[BL_MASTER_SWING] = 0;
+        SequenceRhythm fit = grid; fit.fit = true; fit.cycleBeats = 4;
+        f.setSequenceRhythm(fit);
+        f.play();
+        const double slot = 60.0 / 138.0 * SR * 4.0 / 3.0;
+        const auto fitSteps = stepsOver(f, (int)(slot * 1.5));
+        check(fitSteps.size() == 2 && fitSteps[0] == 0 && fitSteps[1] == 1,
+              "FIT 3 / 1 bar fires its second slot after 4/3 beats", num((double)fitSteps.size()));
+        // Rotation shifts the source cells, not the clock.
+        BassEngine g;
+        g.prepare(SR); g.setTables(tables);
+        g.setPatterns(pats.data(), (int)pats.size()); g.setChain(chain, 1);
+        g.params()[BL_MASTER_SWING] = 0;
+        SequenceRhythm rot = grid; rot.rotation = 1;
+        g.setSequenceRhythm(rot);
+        g.play();
+        const auto rotSteps = stepsOver(g, (int)(dur * 2.5));
+        check(rotSteps.size() >= 3 && rotSteps[0] == 2 && rotSteps[1] == 0 && rotSteps[2] == 1,
+              "ROTATE 1 starts the loop on its last cell");
+        // Turning POLY off mid-play re-phases onto the ordinary grid.
+        e.setSequenceRhythm({});
+        const auto back = stepsOver(e, (int)(dur * 3));
+        check(!back.empty() && back.back() >= 0, "POLY off returns to the bar grid");
+    }
+
     printf("\n== sequencer: step timing, gate frac, swing ==\n");
     {
         BassEngine e;

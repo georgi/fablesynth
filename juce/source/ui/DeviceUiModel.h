@@ -13,6 +13,22 @@ struct HostTransport {
 
 namespace fui {
 
+// Melodic sequence POLY (src/shared/sequenceRhythm.ts): one clock plays the
+// first `steps` cells of bar one, on the 1/16 grid with swing or FIT into
+// `cycleBeats` straight slots. UI-side mirror of fable::SequenceRhythm.
+struct SeqPolySettings {
+    bool enabled = false;
+    bool fit = false;
+    int steps = 16;          // 1..16
+    int rotation = 0;        // 0..steps-1
+    int cycleBeats = 4;      // 4 or 8
+    bool operator==(const SeqPolySettings& o) const {
+        return enabled == o.enabled && fit == o.fit && steps == o.steps
+            && rotation == o.rotation && cycleBeats == o.cycleBeats;
+    }
+    bool operator!=(const SeqPolySettings& o) const { return !(*this == o); }
+};
+
 struct DeviceUiCapabilities {
     bool hosted = false;
     bool ownsTransport = true;

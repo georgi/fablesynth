@@ -72,6 +72,7 @@ export interface SeqRectOps {
 }
 
 interface SeqPanelProps {
+  clipKey?: string;
   /** Hosted SQ-4 clips have up to eight WT voices per step; standalone patterns do not. */
   polySteps?: SeqStep[][];
   bars?: number;
@@ -192,24 +193,17 @@ export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDur
   return (
     <section className="panel ns-section" style={{ gridArea: 'seq' }} data-accent="a">
       <div className="panel-head ns-head">
-        {!hosted && (
-          <button
-            className={`pb-btn ns-transport${seqPlaying ? ' active' : ''}`}
-            type="button"
-            aria-label={seqPlaying ? 'Stop sequencer' : 'Play sequencer'}
-            aria-pressed={seqPlaying}
-            onClick={seqPlaying ? seqStop : seqPlay}
-          >
-            {seqPlaying ? '■' : '▶'}
-          </button>
-        )}
         <h2>NOTE SEQ</h2>
-        {!hosted && <ArpModeSwitch />}
         {!hosted && <SeqLength />}
         {headerExtra}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
+        {!hosted && <PatternPresetSelect names={NOTE_PATTERN_PRESETS.map((p) => p.name)} onLoad={loadPatternPreset} />}
         <span className="ns-hint">DRAG EMPTY = DRAW · CLICK NOTE = SELECT · SHIFT-DRAG = RECT</span>
       </div>
+
+      <SequencePoly rhythm={sequenceRhythm} clipKey={clipKey} onChange={updateSequenceRhythm}
+        onUndo={useStore.getState().undoSeq}
+        onRedo={useStore.getState().redoSeq} />
 
       <div className="ns-body">
         <div className="ns-legend">
@@ -224,7 +218,7 @@ export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDur
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               const voices = polySteps?.[absoluteStep]?.length ? polySteps[absoluteStep] : [s];
               return (
-                <div className={`ns-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
+                <div className={`ns-col${sequenceRhythm.enabled && (pattern !== 0 || step >= sequenceRhythm.steps) ? ' sequence-poly-outside' : ''}${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
                   <div className="ns-lanes">
                     {Array.from({ length: NOTE_LANES }, (_, r) => {
                       const note = NOTE_LANES - 1 - r;

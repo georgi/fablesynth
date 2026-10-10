@@ -152,6 +152,9 @@ public:
     void setSeqStep(int pattern, int step, const fable::NoteSeqStep& s);
     const std::vector<int>& getChain() const { return chain_; }
     void setChain(std::vector<int> c);
+    // Melodic POLY (web store sequenceRhythm): persisted with the sequence.
+    fable::SequenceRhythm getSequenceRhythm() const { return seqRhythm_; }
+    void setSequenceRhythm(const fable::SequenceRhythm&, bool markEdited = true);
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
 
@@ -205,7 +208,12 @@ private:
     fable::ArpMailbox arpLiveMailbox_;
     mutable fable::ArpSettings arpLive_;
     mutable uint32_t arpLiveVersion_ = 0;
-    void applyArp() { engine.setArp(arpInput_.pattern()); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    void applyArp() { engine.setArp(arpInput_.pattern(engine.seqChainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    // Audio thread: a MIDI performance controller sets its source parameter.
+    void setPerformanceParam(int pid, float v) {
+        if (auto* raw = rawParams[(size_t)pid]) raw->store(v);
+        engine.paramTargets()[(size_t)pid] = v;
+    }
     juce::AbstractFifo cmdFifo_{64};
     std::array<int, 64> cmds_{};
 
@@ -215,7 +223,8 @@ private:
     mutable std::mutex shareMutex_;
     std::vector<uint8_t> patternsShared_ = fable::makeEmptySeqPatterns();
     std::vector<int> chainShared_{0};
-    bool patternsDirty_ = false, chainDirty_ = false, automationDirty_=false;
+    bool patternsDirty_ = false, chainDirty_ = false, automationDirty_=false, rhythmDirty_ = false;
+    fable::SequenceRhythm seqRhythm_{}, seqRhythmShared_{};
     std::vector<fable::AutoLane> automation_;
     fable::StepEditHistory<std::vector<fable::AutoLane>> automationHistory_{50};
     std::unique_ptr<fable::AutoBank> automationShared_=std::make_unique<fable::AutoBank>();

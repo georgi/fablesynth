@@ -72,7 +72,9 @@ SequenceNumberInput::SequenceNumberInput(const juce::String& name) : caption(nam
 }
 void SequenceNumberInput::commit() {
     const auto draft = input.getText().trim();
-    if (draft.isEmpty() || !draft.containsOnly("0123456789") || draft.getIntValue() < minimum || draft.getIntValue() > maximum) {
+    // Web /^[+-]?\d+$/: one optional sign (micro timing is signed), then digits.
+    const auto digits = draft.startsWithChar('+') || draft.startsWithChar('-') ? draft.substring(1) : draft;
+    if (digits.isEmpty() || !digits.containsOnly("0123456789") || draft.getIntValue() < minimum || draft.getIntValue() > maximum) {
         if (onError) onError(caption + ": enter " + juce::String(minimum) + " to " + juce::String(maximum));
         return;
     }
@@ -92,15 +94,16 @@ void SequenceNumberInput::resized() {
 
 PolyLanePanel::PolyLanePanel(DrumUiModel& m) : model(m) {
     setWantsKeyboardFocus(true);
-    for (auto* c : std::initializer_list<juce::Component*>{ &error, &undo, &redo, &enabled, &grid, &fit, &one, &two, &view, &steps, &rotation }) addAndMakeVisible(c);
-    for (auto& b : source) addAndMakeVisible(b);
+    // No SOURCE / VIEW SOURCE: an active web POLY lane always plays bar one
+    // (rhythm.ts updateDrumLane forces sourceBar 0), so the panel offers none.
+    for (auto* c : std::initializer_list<juce::Component*>{ &error, &undo, &redo, &enabled, &grid, &fit, &one, &two, &steps, &rotation }) addAndMakeVisible(c);
     error.setFont(monoFont(8)); error.setColour(juce::Label::textColourId, col::acB);
-    grid.first = one.first = source[0].first = undo.first = true;
-    fit.last = two.last = source[3].last = redo.last = true;
+    grid.first = one.first = undo.first = true;
+    fit.last = two.last = redo.last = true;
     grid.setRadioGroupId(810); fit.setRadioGroupId(810); one.setRadioGroupId(811); two.setRadioGroupId(811);
     grid.setTitle("GRID timing mode"); fit.setTitle("FIT timing mode"); enabled.setTitle("Enable lane POLY");
     one.setTitle("FIT cycle one bar"); two.setTitle("FIT cycle two bars");
-    undo.setTitle("Undo sequence edit"); redo.setTitle("Redo sequence edit"); view.setTitle("View source bar");
+    undo.setTitle("Undo sequence edit"); redo.setTitle("Redo sequence edit");
     undo.onClick = [this] { if (onUndo) onUndo(); refresh(); };
     redo.onClick = [this] { if (onRedo) onRedo(); refresh(); };
     enabled.onClick = [this] { edit([](auto&, auto& lane) { lane.enabled = !lane.enabled; }, false); };
@@ -133,7 +136,7 @@ void PolyLanePanel::refresh() {
     refreshing = true;
     const auto s = model.sequence(); const int p = model.selectedPad();
     auto lane = s.rhythm.lanes[(size_t)p];
-    if (!(s.configuredLanes & (1 << p))) { lane = {}; lane.sourceBar = model.editPattern(); }
+    if (!(s.configuredLanes & (1 << p))) lane = {};
     if (lastPad != p) { error.setText({}, juce::dontSendNotification); lastPad = p; }
     on = lane.enabled; fitMode = lane.mode == fable::DrumRhythmMode::fit;
     laneSteps = lane.steps; sourceBar = lane.sourceBar; cycleBeats = lane.cycleBeats; selectedPad = p;
@@ -142,17 +145,12 @@ void PolyLanePanel::refresh() {
     one.setVisible(fitMode); two.setVisible(fitMode);
     one.setToggleState(cycleBeats == 4, juce::dontSendNotification); two.setToggleState(cycleBeats == 8, juce::dontSendNotification);
     steps.setValue(lane.steps, 16); rotation.setValue(lane.rotation, lane.steps - 1);
-    const int bars = juce::jlimit(1, 4, model.capabilities().hosted ? model.clipBars() : 4);
-    for (int i = 0; i < 4; ++i) { source[(size_t)i].setVisible(i < bars); source[(size_t)i].setToggleState(i == lane.sourceBar, juce::dontSendNotification); }
-    view.setEnabled(model.editPattern() != lane.sourceBar);
-    for (auto* button : { &grid, &fit, &one, &two, &view })
+    for (auto* button : { &grid, &fit, &one, &two })
         button->setAlpha(on ? 1.0f : .6f);
     steps.setAlpha(on ? 1.0f : .6f); rotation.setAlpha(on ? 1.0f : .6f);
-    for (auto& button : source) button.setAlpha(on ? 1.0f : .6f);
-    view.setAlpha((model.editPattern() == lane.sourceBar ? .35f : 1.0f) * (on ? 1.0f : .6f));
     resized(); repaint(); refreshing = false;
 }
-void PolyLanePanel::timerCallback() { if (isShowing()) refresh(); }
+void PolyLanePanel::timerCallback() { refresh(); }
 void PolyLanePanel::paint(juce::Graphics& g) {
     auto r = getLocalBounds().toFloat();
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff0f131b), 0, 0, juce::Colour(0xff0b0e14), 0, r.getBottom(), false));
@@ -189,41 +187,50 @@ void PolyLanePanel::paint(juce::Graphics& g) {
     };
     segmentWell(grid.getBounds(), fit.getBounds());
     if (fitMode) segmentWell(one.getBounds(), two.getBounds());
-    segmentWell(source[0].getBounds(), source[(size_t)juce::jlimit(0, 3, model.hasTargetClip() ? model.clipBars() - 1 : 3)].getBounds());
     miniLabel(g, "MODE", modeLabel); miniLabel(g, "STEPS", stepsLabel);
     if (fitMode) miniLabel(g, "CYCLE", cycleLabel);
-    miniLabel(g, "ROTATE", rotationLabel); miniLabel(g, "SOURCE", sourceLabel);
+    miniLabel(g, "ROTATE", rotationLabel);
 }
+// .dr-poly-controls is a wrapping flex row: MODE · STEPS · (CYCLE) · ROTATE.
+// Item widths include their caption; rows are 42 px apart.
+static int controlRows(int width, bool fitMode) {
+    const int right = width - 12;
+    int x = 12, rows = 1;
+    for (int item : { 136, 146, fitMode ? 166 : 0, 153 }) {
+        if (item == 0) continue;
+        if (x > 12 && x + item > right) { x = 12; ++rows; }
+        x += item + 18;
+    }
+    return rows;
+}
+int PolyLanePanel::preferredHeight(int width) { return 118 + (controlRows(width, true) - 1) * 42; }
 void PolyLanePanel::resized() {
     const int w = getWidth(), right = w - 12;
     titleBounds = {12, 11, 53, 30}; padBounds = {76, 11, 125, 30};
     enabled.setBounds(205, 13, 56, 24);
     undo.setBounds(right - 56, 13, 28, 24); redo.setBounds(right - 28, 13, 28, 24);
-    readoutBounds = { right - 56 - 183, 13, 175, 24 };
-    const int meterRight = readoutBounds.getX() - 10;
+    // Narrow heads drop the readout before the meter shrinks under 60 px.
+    const bool readout = w >= 600;
+    readoutBounds = readout ? juce::Rectangle<int>{ right - 56 - 183, 13, 175, 24 } : juce::Rectangle<int>{};
+    const int meterRight = (readout ? readoutBounds.getX() : right - 56) - 10;
     const int meterWidth = juce::jmin(260, laneSteps * 16 + 14, juce::jmax(60, meterRight - 274));
     meterBounds = { meterRight - meterWidth, 13, meterWidth, 24 };
-    const int bars = juce::jlimit(1, 4, model.capabilities().hosted ? model.clipBars() : 4);
-    const int sourceWidth = bars * 31;
-    auto place = [this](int& x, int y, juce::Rectangle<int>& label, int lw, juce::Component& control, int cw) {
+    int x = 12, y = 67;
+    auto flow = [&](int item) { if (x > 12 && x + item > right) { x = 12; y += 42; } };
+    auto place = [&](juce::Rectangle<int>& label, int lw, juce::Component& control, int cw) {
+        flow(lw + 7 + cw);
         label = { x, y, lw, 30 }; x += lw + 7; control.setBounds(x, y, cw, 30); x += cw + 18;
     };
-    int x = 12, y = 67;
-    if (w < 740) { y = 64; }
+    flow(136);
     modeLabel = {x, y, 31, 30}; x += 38;
     grid.setBounds(x, y, 52, 30); fit.setBounds(x + 52, y, 46, 30); x += 98 + 18;
-    place(x, y, stepsLabel, 39, steps, 100);
+    place(stepsLabel, 39, steps, 100);
     if (fitMode) {
-        if (w < 740 && x + 155 > right) { x = 12; y += 42; }
+        flow(166);
         cycleLabel = {x, y, 37, 30}; x += 44;
         one.setBounds(x, y, 57, 30); two.setBounds(x + 57, y, 65, 30); x += 122 + 18;
     } else cycleLabel = {};
-    if (x + 158 > right) { x = 12; y += 42; }
-    place(x, y, rotationLabel, 46, rotation, 100);
-    if (x + 50 + sourceWidth + 8 + 96 > right) { x = 12; y += 42; }
-    sourceLabel = {x, y, 43, 30}; x += 50;
-    for (int i = 0; i < 4; ++i) source[(size_t)i].setBounds(x + i * 31, y, 31, 30);
-    x += sourceWidth + 8; view.setBounds(x, y, 96, 30);
+    place(rotationLabel, 46, rotation, 100);
     error.setBounds(12, getHeight() - 18, getWidth() - 24, 16);
 }
 }

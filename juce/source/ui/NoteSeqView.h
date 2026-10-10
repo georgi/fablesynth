@@ -1,9 +1,12 @@
 #pragma once
+#include "VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Controls.h"
 #include "Theme.h"
 #include "WtUiModel.h"
 #include "StepEditOps.h"
+#include "PatternPresetCombo.h"
+#include "SequencePolyStrip.h"
 #include "../dsp/NoteSeq.h"
 
 // The WT-1 16-step note sequencer panel — port of
@@ -28,7 +31,9 @@ public:
     bool keyPressed(const juce::KeyPress&) override;
 
     // Web store handlers — public so the host test drives the exact code
-    // paths a mouse click takes.
+    // paths a mouse click takes. Steps are absolute timeline steps: the view
+    // shows every bar of the chain (hosted: of the clip) side by side, and
+    // step b*16+s is step s of the pattern chain[b] (SeqPanel.tsx).
     void toggleCell(int step, int note);    // store.toggleCell
     void cycleStepOct(int step);            // store.cycleStepOct
     void toggleStepAcc(int step);           // store.toggleStepAcc
@@ -70,7 +75,6 @@ public:
     bool ghostActive() const { return ghost_; }
 
     // Hit-test geometry (public for the host test).
-    juce::Rectangle<int> transportBounds() const;
     juce::Rectangle<int> patternBounds(int i) const;
     juce::Rectangle<int> sequenceLengthBounds() const;
     juce::Rectangle<int> randBounds() const;
@@ -80,21 +84,46 @@ public:
     juce::Rectangle<int> accBounds(int step) const;
     juce::Rectangle<int> resizeBounds(int step) const;
     juce::Rectangle<int> stepNumBounds(int step) const;  // the .ns-step-num label strip
-    juce::Rectangle<int> gridBounds() const;             // the whole 16×12 lane area
+    juce::Rectangle<int> gridBounds() const;             // the visible note-lane area
     juce::Rectangle<int> selMenuBounds() const;          // floating CUT/COPY/DUP/DEL/✕ toolbar
     juce::Rectangle<int> selMenuButton(int i) const;     // one of the 5 menu buttons
+    int timelineSteps() const;              // bars on screen × 16
+    int scrollX() const { return scrollX_; }
+    void scrollToStep(int abs);             // bring a timeline column into view
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
-    void timerCallback() override;          // 30 Hz playhead / state watcher
+    void refreshClipIdentity();
+    void visualVisibilityChanged(bool visible) override {
+        if (visible) refreshClipIdentity();
+    }
+    void timerCallback() override;          // shared-frame playhead / state watcher
 
     // Full pattern-buffer snapshot/restore (StepEditOps operates on packed
     // byte blocks; the model only exposes per-step get/set, so every verb
     // round-trips the whole 4-pattern block through these helpers).
-    struct SeqSnapshot { std::vector<uint8_t> patterns; std::vector<int> chain; };
+    struct SeqSnapshot { std::vector<uint8_t> patterns; std::vector<int> chain; bool hasPoly = false; SeqPolySettings poly; };
+    int bodyY() const;                      // grid top: below the head and the POLY strip
+    int timelineBars() const;
+    std::vector<int> timelineChain() const; // bar -> pattern (hosted: identity)
+    int patternOfAbs(int abs) const;
+    fable::NoteSeqStep stepAbs(int abs) const;
+    void setStepAbs(int abs, const fable::NoteSeqStep&);
+    int cursorColumn() const;               // playhead column, or -1
+    float colWidth() const;
+    int timelineWidth() const;
+    int gridViewWidth() const;
+    void setScrollX(int);
+    void scrollBarMoved(juce::ScrollBar*, double) override;
+    juce::ScrollBar hScroll_{false};
+    int scrollX_ = 0, lastTimelineSteps_ = -1;
+    SequencePolyStrip poly_;
     std::vector<uint8_t> snapshotAllPatterns() const;
     void applyAllPatterns(const std::vector<uint8_t>&);
     SeqSnapshot snapshot() const;
     void restore(const SeqSnapshot&);
+    void loadPatternPreset(const fable::NotatedPreset&);
+    juce::ComboBox patternPreset_;
 
     int stepAtX(int x) const;               // inverse of colBounds, for drag hit-testing
     int noteAtY(int y) const;               // data note for legacy selection gestures (0..11)

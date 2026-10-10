@@ -298,7 +298,26 @@ void DrumAudioProcessor::shareSeqState() {
     std::copy(chain_.begin(), chain_.end(), snapshot.chain.begin());
     snapshot.hasRhythm = hasRhythm_;
     snapshot.rhythm = rhythm_;
+    // Lanes compile against the current length and POLY rhythm (FIT lanes).
+    fable::compileAutomation(snapshot.automation, automation_, (int)chain_.size(),
+                             hasRhythm_ ? &rhythm_ : nullptr, fable::Machine::DR1);
     seqWrite_ = seqMiddle_.exchange(seqWrite_ | kSeqDirty, std::memory_order_acq_rel) & ~kSeqDirty;
+}
+
+void DrumAudioProcessor::setSequenceAutomation(const std::vector<fable::AutoLane>& lanes, bool history) {
+    if (!fable::validateAutomation(lanes, fable::Machine::DR1)) return;
+    if (history) pushAutomationUndo();
+    automation_ = lanes;
+    programDirty_.markEdited();
+    shareSeqState();
+}
+void DrumAudioProcessor::undoAutomation() {
+    std::vector<fable::AutoLane> restored;
+    if (automationHistory_.undo(automation_, restored)) setSequenceAutomation(restored, false);
+}
+void DrumAudioProcessor::redoAutomation() {
+    std::vector<fable::AutoLane> restored;
+    if (automationHistory_.redo(automation_, restored)) setSequenceAutomation(restored, false);
 }
 
 uint8_t DrumAudioProcessor::getStep(int pattern, int pad, int step) const {

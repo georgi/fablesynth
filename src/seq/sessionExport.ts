@@ -1,3 +1,4 @@
+import { copySequenceRhythm } from '../shared/sequenceRhythm';
 // Portable SQ-4 session serialization. Factory-bank positions are convenient
 // in the UI, but exports must not rely on an identical bank being installed.
 
@@ -33,6 +34,7 @@ export function embedSessionPatches(session: SessionDoc): SessionDoc {
     ...session,
     tracks: session.tracks.map((track) => ({ ...track, patch: embeddedPatch(track.machine, track.patch) })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip,
+      ...(clip.sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(clip.sequenceRhythm) } : {}),
       ...(clip.arp ? { arp: copyClipArp(clip.arp) } : {}),
       ...(clip.automation ? { automation: copyAutomation(clip.automation) } : {}),
       ...(clip.drumRhythm ? { drumRhythm: cloneDrumRhythm(clip.drumRhythm, clip.bars) } : {}),

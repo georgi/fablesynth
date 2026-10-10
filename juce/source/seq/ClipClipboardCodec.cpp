@@ -3,6 +3,7 @@
 #include "ClipClipboardCodec.h"
 #include "DrumRhythmCodec.h"
 #include "AutomationCodec.h"
+#include "SequenceRhythmCodec.h"
 #include "../ui/ArpCodec.h"
 
 namespace fable {
@@ -38,6 +39,7 @@ juce::String clipClipboardToJson(const ClipClipboardData& data) {
                 if (clip.hasDrumRhythm) co->setProperty("drumRhythm", drumRhythmToVar(clip));
                 if (!clip.automation.empty()) co->setProperty("automation", automationToVar(clip.automation));
                 if (clip.hasArp) co->setProperty("arp", arpToVar(clip.arp));
+                if (clip.hasSequenceRhythm) co->setProperty("sequenceRhythm", sequenceRhythmToVar(clip.sequenceRhythm));
                 co->setProperty("pattern",
                     juce::Base64::toBase64(clip.bytes.data(), clip.bytes.size()));
                 row.add(juce::var(co));
@@ -88,6 +90,10 @@ bool clipClipboardFromJson(const juce::String& json, ClipClipboardData& out) {
                 if (cv.hasProperty("arp")) {
                     cd.hasArp = true;
                     if (d.machines[(size_t)c] == Machine::DR1 || !arpFromVar(cv["arp"], cd.arp, true)) return false;
+                }
+                if (cv.hasProperty("sequenceRhythm")) {
+                    if (d.machines[(size_t)c] == Machine::DR1 || !sequenceRhythmFromVar(cv["sequenceRhythm"], cd.sequenceRhythm)) return false;
+                    cd.hasSequenceRhythm = true;
                 }
                 if (!(cd.bars >= 1 && cd.bars <= SQ_MAX_BARS)) return false;
                 juce::MemoryOutputStream raw;

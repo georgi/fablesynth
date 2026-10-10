@@ -128,8 +128,9 @@ bool Conductor::updateDrumClip(int s, const ClipData& clip) {
     if (s < 0 || s >= (int)session_.scenes.size() || session_.tracks.empty()
         || session_.tracks[0].machine != Machine::DR1 || !session_.scenes[(size_t)s].hasClip[0]
         || clip.bars < 1 || clip.bars > SQ_MAX_BARS || (int)clip.bytes.size() != clip.bars * 256
-        || clip.hasArp || !validDrumClip(clip, Machine::DR1) || !validateAutomation(clip.automation, Machine::DR1)) return false;
+        || clip.hasArp || clip.hasSequenceRhythm || !validDrumClip(clip, Machine::DR1) || !validateAutomation(clip.automation, Machine::DR1)) return false;
     session_.scenes[(size_t)s].clips[0] = clip;
+    ++documentRevision_;
     const int q = queueOf(0), target = q != kNone && q != SQ_STOP ? q : ownerOf(0);
     if (target == s) io_.ioUpdateArpClip(0, clip);
     return true;
@@ -140,6 +141,26 @@ bool Conductor::updateClipAutomation(int s, int t, const std::vector<AutoLane>& 
         || !session_.scenes[(size_t)s].hasClip[(size_t)t] || !validateAutomation(lanes, session_.tracks[(size_t)t].machine)) return false;
     auto& clip = session_.scenes[(size_t)s].clips[(size_t)t];
     clip.automation = lanes; clip.hasAutomation = !lanes.empty();
+    ++documentRevision_;
+    const int q = queueOf(t); const int target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateArpClip(t, clip);
+    return true;
+}
+
+bool Conductor::updateClipRhythm(int s, int t, const SequenceRhythm& r) {
+    if (s < 0 || s >= (int)session_.scenes.size() || t < 0 || t >= (int)session_.tracks.size()
+        || session_.tracks[(size_t)t].machine == Machine::DR1 || !session_.scenes[(size_t)s].hasClip[(size_t)t]
+        || !validSequenceRhythm(r)) return false;
+    auto& clip = session_.scenes[(size_t)s].clips[(size_t)t];
+    const SequenceRhythm none{};
+    const auto same = [](const SequenceRhythm& a, const SequenceRhythm& b) {
+        return a.enabled == b.enabled && a.fit == b.fit && a.steps == b.steps
+            && a.rotation == b.rotation && a.cycleBeats == b.cycleBeats;
+    };
+    if (!clip.hasSequenceRhythm && same(r, none)) return true;
+    if (clip.hasSequenceRhythm && same(r, clip.sequenceRhythm)) return true;
+    clip.hasSequenceRhythm = true; clip.sequenceRhythm = r;
+    ++documentRevision_;
     const int q = queueOf(t); const int target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
     if (target == s) io_.ioUpdateArpClip(t, clip);
     return true;
@@ -270,12 +291,14 @@ bool Conductor::pasteClip(int s, int t, const ClipData& clip) {
     if (!validateAutomation(clip.automation, session_.tracks[(size_t)t].machine)) return false;
     if (!validDrumClip(clip, session_.tracks[(size_t)t].machine)) return false;
     if (clip.hasArp && (session_.tracks[(size_t)t].machine == Machine::DR1 || !validArpSettings(clip.arp, true))) return false;
+    if (clip.hasSequenceRhythm && (session_.tracks[(size_t)t].machine == Machine::DR1 || !validSequenceRhythm(clip.sequenceRhythm))) return false;
     if ((int)clip.bytes.size() != clip.bars * sqBytesPerBar(session_.tracks[(size_t)t].machine))
         return false;
 
     auto& scene = session_.scenes[(size_t)s];
     scene.clips[(size_t)t] = clip;
     scene.hasClip[(size_t)t] = true;
+    ++documentRevision_;
 
     // Same write target as loadLibraryClip: a pending clip wins over the
     // outgoing live owner because ClipHost has only one pending slot.

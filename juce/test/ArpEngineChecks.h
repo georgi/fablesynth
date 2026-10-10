@@ -317,6 +317,29 @@ template<class Check> void runArpEngineChecks(Check check) {
               "legacy SQ sessions without arp still load");
         session.scenes[2].clips[0].hasArp = true;
         check(!sessionFromJson(sessionToJson(session), recalled), "SQ rejects arp on drum clips");
+        {
+            auto poly = factorySession();
+            auto& pc = poly.scenes[2].clips[1];
+            pc.hasSequenceRhythm = true; pc.sequenceRhythm = {true, true, 5, 3, 8};
+            SessionData back;
+            const auto pj = juce::JSON::parse(sessionToJson(poly));
+            const auto rj = pj["scenes"][2]["clips"][1]["sequenceRhythm"];
+            check(sessionFromJson(sessionToJson(poly), back) && back.scenes[2].clips[1].hasSequenceRhythm
+                  && back.scenes[2].clips[1].sequenceRhythm.fit && back.scenes[2].clips[1].sequenceRhythm.steps == 5
+                  && back.scenes[2].clips[1].sequenceRhythm.rotation == 3 && back.scenes[2].clips[1].sequenceRhythm.cycleBeats == 8
+                  && (int)rj["v"] == 1 && rj["mode"].toString() == "fit",
+                  "SQ session round-trips melodic POLY rhythm");
+            check(sessionFromJson(sessionToJson(factorySession()), back) && !back.scenes[2].clips[1].hasSequenceRhythm
+                  && !juce::JSON::parse(sessionToJson(factorySession()))["scenes"][2]["clips"][1].hasProperty("sequenceRhythm"),
+                  "absent melodic POLY rhythm stays absent");
+            ClipClipboardData cb {{Machine::BL1}, {{pc}}, {{true}}}, cbBack;
+            check(clipClipboardFromJson(clipClipboardToJson(cb), cbBack) && cbBack.cells[0][0].hasSequenceRhythm
+                  && cbBack.cells[0][0].sequenceRhythm.rotation == 3, "SQ clipboard preserves melodic POLY rhythm");
+            pc.sequenceRhythm.rotation = 5; // rotation must be < steps
+            check(!sessionFromJson(sessionToJson(poly), back), "SQ rejects invalid melodic POLY rhythm");
+            pc.sequenceRhythm.rotation = 3; poly.scenes[2].clips[0].hasSequenceRhythm = true;
+            check(!sessionFromJson(sessionToJson(poly), back), "SQ rejects melodic POLY rhythm on drum clips");
+        }
     }
 #endif
     std::vector<TablePtr> tables;

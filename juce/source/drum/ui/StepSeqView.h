@@ -141,16 +141,22 @@ public:
     static int laneOfPad(int pad);
     int laneHeight() const;
     static int padOfLane(int lane);
+    // Micro-timing target: the selected pad's step a plain click last touched.
+    int timingStep() const { return timingStep_; }
 
 private:
     void setupPoly();
     void refreshTiming();
     void setMicroDelay(int value, bool step);
-    juce::TextButton timingDisclosure_{"TIMING v"};
     juce::ComboBox patternPreset_;
+    BrowserButton patternsBtn_{"PATTERNS", BrowserButton::Browse};
+    // MICRO TIMING inspector (web .dr-timing-panel): always shown beside or
+    // above POLY. Its four columns are context | LANE OFFSET | STEP NN |
+    // COMBINED OFFSET; timingColumn(i) returns them in view coordinates.
     juce::Component timingPanel_;
-    juce::Slider laneDelay_, stepDelay_;
+    SequenceNumberInput laneDelay_{"LANE OFFSET"}, stepDelay_{"STEP"};
     juce::Label laneDelayLabel_, stepDelayLabel_;
+    juce::Rectangle<int> timingColumn(int i) const;
     int timingStep_ = 0;
     bool refreshingTiming_ = false;
     bool timingGesture_ = false, timingGestureSaved_ = false;

@@ -933,7 +933,8 @@ void SeqAudioProcessor::IO::ioScheduleArpClip(int t, const fable::ClipData& clip
     Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = clip.bars; c.at = at; c.tag = tag;
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
-    if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    if (clip.hasArp) c.arp = fable::compileClipArp(clip.arp);
+    if (clip.hasSequenceRhythm) c.rhythm = clip.sequenceRhythm;
     if (clip.hasAutomation || !clip.automation.empty()) {
         auto bank = std::make_shared<fable::AutoBank>();
         fable::compileAutomation(*bank, clip.automation, clip.bars, clip.hasDrumRhythm ? &clip.drumRhythm : nullptr,
@@ -946,7 +947,8 @@ void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) 
     Cmd c; c.k = Cmd::K::Update; c.t = t; c.bars = clip.bars;
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
-    if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    if (clip.hasArp) c.arp = fable::compileClipArp(clip.arp);
+    if (clip.hasSequenceRhythm) c.rhythm = clip.sequenceRhythm;
     if (clip.hasAutomation || !clip.automation.empty()) {
         auto bank = std::make_shared<fable::AutoBank>();
         fable::compileAutomation(*bank, clip.automation, clip.bars, clip.hasDrumRhythm ? &clip.drumRhythm : nullptr,

@@ -55,6 +55,9 @@ export function SeqApp() {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && st.session.tracks[st.focus.track].machine === 'DR1') {
           e.preventDefault(); if (e.shiftKey) useDrumStore.getState().redo(); else useDrumStore.getState().undo(); return;
         }
+        // Arp is seq-store state. Melodic note edits and POLY rhythm share the device undo
+        // (its snapshot includes the rhythm; the write-back keeps the clip in sync), which
+        // the hosted editors' key hooks handle, so POLY clips must not be claimed here.
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && st.session.scenes[st.focus.scene]?.clips[st.focus.track]?.arp) {
           e.preventDefault(); if (e.shiftKey) st.redo(); else st.undo(); return;
         }

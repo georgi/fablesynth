@@ -181,13 +181,13 @@ int main(int argc, char** argv) {
             if (inspector) for (auto* c : inspector->getChildren()) if (auto* b = dynamic_cast<juce::TextButton*>(c))
                 if (b->getTitle() == "Enable lane POLY") b->onClick();
             const auto initial = model->sequence().rhythm.lanes[0];
-            check(initial.enabled && initial.sourceBar == 2 && initial.steps == 16 && initial.rotation == 0
-                && initial.mode == fable::DrumRhythmMode::grid, "native first-enable defaults to edited source bar");
+            check(initial.enabled && initial.sourceBar == 0 && initial.steps == 16 && initial.rotation == 0
+                && initial.mode == fable::DrumRhythmMode::grid, "first enable plays bar one (web updateDrumLane)");
             initialView.undo(); check(!model->sequence().hasRhythm, "first enable is one complete undo entry");
             // Exercise the actual numeric control while the standalone processor
             // is running. A length edit must activate the lane without an ON click.
             auto notes = model->sequence(); notes.steps.assign(1024, 0); notes.chain = {2};
-            notes.steps[(2 * 16) * 16] = 1; notes.steps[(2 * 16) * 16 + 15] = 2;
+            notes.steps[0] = 1; notes.steps[15] = 2;   // active POLY lanes loop bar one
             model->commitSequence(notes);
             juce::AudioBuffer<float> liveAudio(10, block); juce::MidiBuffer liveMidi;
             edited.setSeqPlaying(true); edited.processBlock(liveAudio, liveMidi); edited.consumeHitFlags();

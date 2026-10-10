@@ -1,8 +1,10 @@
+import { copySequenceRhythm, updateSequenceRhythm, type SequenceRhythm } from '../shared/sequenceRhythm';
 // Zustand store for BL-1. Parameter and sequencer state live here and every
 // mutation is mirrored to the imperative audio engine.
 
 import { create } from 'zustand';
-import { arpNotes, loadArp, newArp, type ArpState } from '../arp';
+import { BASS_PATTERN_PRESETS, bassPresetSequence } from './patternPresets';
+import { arpSequence, loadArp, newArp, type ArpState } from '../arp';
 import { ROOT_MIDI } from './params';
 import type { ParamValues } from '../params';
 import { BassEngine } from './engine/bass-synth';
@@ -30,7 +32,8 @@ export type SeqClipboard =
 // Module-level undo/redo stack over the full patterns buffer, pushed by every
 // mutation that goes through `_setPatterns`. Not store state — mirrors
 // `bassEngine` living outside the reactive slice.
-const history = makeHistory<Patterns>();
+interface BassSeqSnapshot { patterns: Patterns; sequenceRhythm: SequenceRhythm }
+const history = makeHistory<BassSeqSnapshot>();
 
 // Continuous note-length drags fire setStepDuration once per column crossed;
 // a whole gesture must cost ONE undo entry, not one per column. While the
@@ -38,6 +41,17 @@ const history = makeHistory<Patterns>();
 // only the first change pushes history; any other mutation (or undo/redo)
 // ends the run.
 let durationGestureKey: string | null = null;
+
+/** Everything loadPatchByValue replaces, for the patch browser's KEEP / REVERT / A-B. */
+export interface BassSoundSnapshot {
+  patchValue: string;
+  dirty: boolean;
+  params: ParamValues;
+  patterns: Patterns;
+  chain: number[];
+  sequenceRhythm: SequenceRhythm;
+  editPattern: number;
+}
 
 export interface BassStore {
   arp: ArpState;
@@ -47,6 +61,8 @@ export interface BassStore {
   updateArp: (patch: Partial<ArpState>) => void;
   clearArpKeys: () => void;
   params: ParamValues;
+  sequenceRhythm: SequenceRhythm;
+  updateSequenceRhythm: (patch: Partial<SequenceRhythm>) => void;
   patterns: Patterns;
   chain: number[];
   editPattern: number;
@@ -110,16 +126,20 @@ export interface BassStore {
   powerOn: () => Promise<void>;
   savePatch: (name: string) => void;
   loadPatchByValue: (value: string) => void;
+  captureSound: () => BassSoundSnapshot;
+  restoreSound: (snap: BassSoundSnapshot) => void;
+  applyVariant: (params: ParamValues) => void;
   stepPatch: (delta: number) => void;
 }
 
 export const useBassStore = create<BassStore>((set, get) => {
+  const snapshot = (): BassSeqSnapshot => ({ patterns: get().patterns, sequenceRhythm: copySequenceRhythm(get().sequenceRhythm) });
   const syncArp = () => {
     const { arp, arpMode, arpKeys, hosted } = get();
-    if (!hosted) bassEngine.setArp(arpMode ? { ...arp, notes: arpNotes(arp, arp.input === 'keys' ? arpKeys : arp.notes) } : null);
+    if (!hosted) bassEngine.setArp(arpMode ? { ...arp, notes: arpSequence(arp, arp.input === 'keys' ? arpKeys : arp.notes, get().chain.length) } : null);
   };
   return {
-  arp: loadArp('bl1-arp-v1', { ...newArp(), notes: [36, 39, 43, 46], slides: Array(16).fill(false) }),
+  arp: loadArp('bl1-arp-v1', { ...newArp(), notes: [36, 39, 43, 46], slides: Array(16).fill(false), chordOctave: 2 }),
   arpMode: false, arpKeys: [],
   setArpMode: (on) => {
     if (get().hosted || get().arpMode === on) return;
@@ -138,6 +158,7 @@ export const useBassStore = create<BassStore>((set, get) => {
   },
   clearArpKeys: () => { set({ arpKeys: [], heldSemis: [] }); syncArp(); },
   params: initialState.params,
+  sequenceRhythm: copySequenceRhythm(initialState.sequenceRhythm),
   patterns: initialState.patterns,
   chain: sequenceChain(sequenceLengthFromChain(initialState.chain)),
   editPattern: 0,
@@ -205,9 +226,16 @@ export const useBassStore = create<BassStore>((set, get) => {
   // Also the one place that feeds the undo/redo history: every edit verb
   // (toggle, randomize, cut/paste/duplicate/delete, pattern move) routes
   // through here, so undo covers them all uniformly.
+  updateSequenceRhythm: (patch) => {
+    const sequenceRhythm = updateSequenceRhythm(get().sequenceRhythm, patch);
+    durationGestureKey = null;
+    history.push(snapshot());
+    set({ sequenceRhythm, dirty: true });
+    if (!get().hosted) bassEngine.setSequenceRhythm(sequenceRhythm);
+  },
   _setPatterns(next: Patterns) {
     durationGestureKey = null;
-    history.push(get().patterns);
+    history.push(snapshot());
     set({ patterns: next, dirty: true });
     bassEngine.setPatterns(next);
   },
@@ -267,7 +295,7 @@ export const useBassStore = create<BassStore>((set, get) => {
     const cur = getStep(patterns, pat, step);
     if (!cur.on || cur.duration === duration) return;
     const key = `${pat}:${step}`;
-    if (durationGestureKey !== key) history.push(patterns);
+    if (durationGestureKey !== key) history.push(snapshot());
     durationGestureKey = key;
     const next = setStep(patterns, pat, step, { duration });
     set({ patterns: next, dirty: true });
@@ -440,24 +468,39 @@ export const useBassStore = create<BassStore>((set, get) => {
 
   undo: () => {
     durationGestureKey = null;
-    const prev = history.undo(get().patterns);
+    const prev = history.undo(snapshot());
     if (!prev) return;
-    set({ patterns: prev });
-    bassEngine.setPatterns(prev);
+    set({ patterns: prev.patterns, sequenceRhythm: copySequenceRhythm(prev.sequenceRhythm), dirty: true });
+    bassEngine.setPatterns(prev.patterns);
+    if (!get().hosted) bassEngine.setSequenceRhythm(get().sequenceRhythm);
   },
 
   redo: () => {
     durationGestureKey = null;
-    const next = history.redo(get().patterns);
+    const next = history.redo(snapshot());
     if (!next) return;
-    set({ patterns: next });
-    bassEngine.setPatterns(next);
+    set({ patterns: next.patterns, sequenceRhythm: copySequenceRhythm(next.sequenceRhythm), dirty: true });
+    bassEngine.setPatterns(next.patterns);
+    if (!get().hosted) bassEngine.setSequenceRhythm(get().sequenceRhythm);
   },
 
   setSequenceLength: (length) => {
     const chain = sequenceChain(length);
     set({ chain, dirty: true });
     bassEngine.setChain(chain);
+    syncArp();
+  },
+
+  // Replaces the notes and length with a catalog line; the sound stays.
+  loadPatternPreset: (index) => {
+    const preset = BASS_PATTERN_PRESETS[index];
+    if (!preset || get().hosted) return false;
+    const { patterns, chain } = bassPresetSequence(preset);
+    get()._setPatterns(patterns);
+    set({ chain, editPattern: 0, rectSel: null });
+    bassEngine.setChain(chain);
+    syncArp();
+    return true;
   },
 
   setMidiActive: (on) => set({ midiActive: on }),
@@ -505,13 +548,14 @@ export const useBassStore = create<BassStore>((set, get) => {
     bassEngine.applyAllParams();
     bassEngine.setPatterns(get().patterns);
     bassEngine.setChain(get().chain);
+    bassEngine.setSequenceRhythm(get().sequenceRhythm);
     syncArp();
     set({ powered: true });
   },
 
   savePatch: (name) => {
     const state = get();
-    const patch = stateToPatch(name, state.params, state.patterns, state.chain);
+    const patch = stateToPatch(name, state.params, state.patterns, state.chain, state.sequenceRhythm);
     const userPatches = saveUserPatch(name, patch);
     const savedIndex = userPatches.findIndex((entry) => entry.name === name);
     set({ userPatches, patchValue: savedIndex >= 0 ? `u${savedIndex}` : state.patchValue, dirty: false });
@@ -537,16 +581,62 @@ export const useBassStore = create<BassStore>((set, get) => {
     bassEngine.params = { ...state.params };
     bassEngine.applyAllParams();
     bassEngine.setPatterns(state.patterns);
+    bassEngine.setSequenceRhythm(state.sequenceRhythm);
     const chain = sequenceChain(sequenceLengthFromChain(state.chain));
     bassEngine.setChain(chain);
     set({
       params: state.params,
+      sequenceRhythm: copySequenceRhythm(state.sequenceRhythm),
       patterns: state.patterns,
       chain,
       editPattern: 0,
       patchValue: value,
       dirty: false,
     });
+  },
+
+  captureSound: () => {
+    const { patchValue, dirty, params, patterns, chain, sequenceRhythm, editPattern } = get();
+    return {
+      patchValue, dirty, editPattern,
+      params: { ...params },
+      patterns: Uint8Array.from(patterns),
+      chain: [...chain],
+      sequenceRhythm: copySequenceRhythm(sequenceRhythm),
+    };
+  },
+
+  restoreSound: (snap) => {
+    get()._clearHistory();
+    set({ rectSel: null, lastCell: null, clipboard: null });
+    bassEngine.panic(get().hosted);
+    bassEngine.params = { ...snap.params };
+    bassEngine.applyAllParams();
+    if (get().hosted) {
+      set({ params: { ...snap.params }, patchValue: snap.patchValue, dirty: snap.dirty });
+      return;
+    }
+    const patterns = Uint8Array.from(snap.patterns);
+    const sequenceRhythm = copySequenceRhythm(snap.sequenceRhythm);
+    bassEngine.setPatterns(patterns);
+    bassEngine.setSequenceRhythm(sequenceRhythm);
+    bassEngine.setChain(snap.chain);
+    set({
+      params: { ...snap.params },
+      patterns,
+      chain: [...snap.chain],
+      sequenceRhythm,
+      editPattern: snap.editPattern,
+      patchValue: snap.patchValue,
+      dirty: snap.dirty,
+    });
+    syncArp();
+  },
+
+  applyVariant: (params) => {
+    bassEngine.params = { ...params };
+    bassEngine.applyAllParams();
+    set({ params: { ...params }, dirty: true });
   },
 
   stepPatch: (delta) => {

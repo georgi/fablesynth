@@ -34,7 +34,7 @@ private:
     int value = 0, maximum = 16;
 };
 
-class PolyLanePanel : public juce::Component, private juce::Timer {
+class PolyLanePanel : public juce::Component, private fui::VisualTimer {
 public:
     explicit PolyLanePanel(DrumUiModel&);
     ~PolyLanePanel() override { stopTimer(); }
@@ -43,9 +43,9 @@ public:
     void paint(juce::Graphics&) override;
     void updateFromModel() { refresh(); }
     bool keyPressed(const juce::KeyPress&) override { return true; }
-    // SOURCE wraps below ROTATE under 1000 px; very narrow panels need a
-    // fourth row when FIT's CYCLE group is visible.
-    static int preferredHeight(int width) { return width < 500 ? 232 : width < 1000 ? 190 : 118; }
+    // One control row when MODE · STEPS · CYCLE · ROTATE fit the width, else
+    // one more 42 px row per wrap (sized for FIT so the panel never jumps).
+    static int preferredHeight(int width);
 private:
     void timerCallback() override;
     void refresh();
@@ -55,15 +55,12 @@ private:
     PolyButton undo{juce::String::fromUTF8("\xe2\x86\xb6"), PolyButton::Style::history}, redo{juce::String::fromUTF8("\xe2\x86\xb7"), PolyButton::Style::history};
     PolyButton enabled{"OFF", PolyButton::Style::power}, grid{"GRID", PolyButton::Style::segment}, fit{"FIT", PolyButton::Style::segment};
     PolyButton one{"1 BAR", PolyButton::Style::segment}, two{"2 BARS", PolyButton::Style::segment};
-    PolyButton view{"VIEW SOURCE", PolyButton::Style::view};
-    std::array<PolyButton, 4> source{{ {"1", PolyButton::Style::segment}, {"2", PolyButton::Style::segment},
-                                        {"3", PolyButton::Style::segment}, {"4", PolyButton::Style::segment} }};
     SequenceNumberInput steps{"STEPS"}, rotation{"ROTATE"};
     bool refreshing = false, gesture = false, gestureSaved = false;
     int lastPad = -1;
     bool on = false, fitMode = false;
     int laneSteps = 16, sourceBar = 0, cycleBeats = 4, selectedPad = 0;
     juce::Rectangle<int> meterBounds, readoutBounds, titleBounds, padBounds;
-    juce::Rectangle<int> modeLabel, stepsLabel, cycleLabel, rotationLabel, sourceLabel;
+    juce::Rectangle<int> modeLabel, stepsLabel, cycleLabel, rotationLabel;
 };
 }

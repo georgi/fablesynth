@@ -5,6 +5,7 @@
 // entry derived from the shared anchor. Header-only, JUCE-free.
 #pragma once
 
+#include "../seq/dsp/SeqModel.h"
 #include "../seq/dsp/SeqProtocol.h"
 #include "Arp.h"
 #include <algorithm>
@@ -32,7 +33,13 @@ public:
     std::vector<HostEvent> events; // drained by the embedding engine per block
 
     void setTempo(double bpm, double swing, double sr, double anchor) {
+        const bool anchorMoved = anchor != anchor_;
         bpm_ = bpm; swing_ = swing; sr_ = sr; anchor_ = anchor;
+        // Melodic POLY (worklet polyClipArm/polyClipRetime): a moved anchor
+        // re-arms the clock; a tempo/swing change only re-times the next step.
+        if (!playing_ || !polyActive()) return;
+        if (anchorMoved || clipStep_ < 0) polyArm(lastEnd_);
+        else toNext_ = anchor_ + polyFrame(clipStep_ + 1) - lastEnd_;
     }
 
     // Reserve steady-state capacity so nothing here allocates on the audio
@@ -56,9 +63,9 @@ public:
     // before the boundary re-targets; docs §6 rule 1). `tag` is the clip's
     // launch identity (scene index), carried through to the Start ack so the
     // conductor attributes it correctly (Finding 1).
-    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0, ArpPattern arp = {}) {
+    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0, ArpPattern arp = {}, SequenceRhythm rhythm = {}) {
         pend_.assign(d, d + n); pendBars_ = bars; pendAt_ = at; hasPend_ = true;
-        pendArp_ = arp;
+        pendArp_ = arp; pendRhythm_ = rhythm;
         pendTag_ = tag;
         hasStop_ = false;
     }
@@ -70,18 +77,31 @@ public:
     // Hot-swap bytes: pending slot when one exists, else the live clip.
     // Position is derived arithmetic, so the playhead never moves; a bars
     // change re-derives the entry under floor() (mid-flight resize).
-    void updateClip(const uint8_t* d, size_t n, int bars, ArpPattern arp = {}) {
-        if (hasPend_) { pend_.assign(d, d + n); pendBars_ = bars; pendArp_ = arp; return; }
+    void updateClip(const uint8_t* d, size_t n, int bars, ArpPattern arp = {}, SequenceRhythm rhythm = {}) {
+        if (hasPend_) { pend_.assign(d, d + n); pendBars_ = bars; pendArp_ = arp; pendRhythm_ = rhythm; return; }
         if (!playing_) return;
-        const bool rephase = arp.enabled != arp_.enabled || (arp.enabled && arp.rate != arp_.rate);
-        arp_ = arp;
+        const bool rephase = arp.enabled != arp_.enabled || (arp.enabled && arp.rate != arp_.rate) || rhythmRephases(rhythm);
+        const bool resized = bars != clipBars_ || (arp.enabled && arp.length != arp_.length);
+        arp_ = arp; rhythm_ = rhythm;
         clip_.assign(d, d + n);
-        const bool resized = bars != clipBars_;
         clipBars_ = bars;
         if (rephase) rephase_ = true;
         else if (resized && clipStep_ >= 0)
             clipStep_ = phaseStep(lastFrame_, totalSteps(), /*roundNearest*/ false);
     }
+
+    // True when swapping in `r` would re-phase the live POLY clock (worklet
+    // clipupdate: enabled flag, mode, cycleBeats, or steps in fit mode).
+    bool rhythmRephases(const SequenceRhythm& r) const {
+        return rhythm_.enabled != r.enabled
+            || (r.enabled && (rhythm_.fit != r.fit || rhythm_.cycleBeats != r.cycleBeats || (r.fit && rhythm_.steps != r.steps)));
+    }
+    // Melodic POLY clock active for the live clip (the arp keeps its own clock).
+    bool polyActive() const { return rhythm_.enabled && !arp_.enabled; }
+    // Samples per POLY step — the unit written note durations scale by.
+    double polyDuration() const { return stepDuration(); }
+    // Source step (0..steps-1) the NEXT POLY fire will read, for tie/slide lookahead.
+    int polyNextSource() const { return polySource(clipStep_ + 1); }
 
     void clear() { playing_ = false; hasPend_ = false; hasStop_ = false; clipStep_ = -1; }
 
@@ -151,13 +171,14 @@ public:
             // clip_ and pend_ retain their reserved buffers — pend_ inherits
             // the outgoing clip's storage for the next scheduleClip's assign().
             std::swap(clip_, pend_); clipBars_ = pendBars_; clipTag_ = pendTag_;
-            arp_ = pendArp_;
+            arp_ = pendArp_; rhythm_ = pendRhythm_;
             playing_ = true;
             rephase_ = false;
             // Phase-locked entry: enter at the global grid position, -1 so
             // the immediate fire below lands ON that step (worklet clipPhase).
             clipStep_ = phaseStep(frame, totalSteps(), true) - 1;
             toNext_ = 0;
+            if (polyActive()) polyArm(frame);
             onSwap(wasPlaying);
             pushEvent({ HostEvent::T::Start, frame, 0, 0, clipTag_ });
         }
@@ -165,6 +186,7 @@ public:
             if (rephase_) {
                 clipStep_ = phaseStep(frame, totalSteps(), false) - 1;
                 toNext_ = 0; rephase_ = false;
+                if (polyActive()) polyArm(frame);
             }
             // A large host quantum (offline render, high bpm) can leave more
             // than one grid step already due as of this block's start.
@@ -188,6 +210,7 @@ public:
             }
             toNext_ = due - end;
         }
+        lastEnd_ = end;
     }
 
 private:
@@ -204,15 +227,54 @@ private:
 
     double clampBpm() const { return std::max(60.0, std::min(200.0, bpm_)); }
     double clampSwing() const { return std::max(0.0, std::min(1.0, swing_)); }
-    double stepDuration() const { return 60.0 / clampBpm() * (arp_.enabled ? arp_.rate : .25) * sr_; }
-    int totalSteps() const { return arp_.enabled ? 16 : clipBars_ * SQ_STEPS_PER_BAR; }
+    double stepDuration() const {
+        if (polyActive()) return 60.0 / clampBpm() * sr_ * (rhythm_.fit ? (double)rhythm_.cycleBeats / rhythm_.steps : .25);
+        return 60.0 / clampBpm() * (arp_.enabled ? arp_.rate : .25) * sr_;
+    }
+    int totalSteps() const { return arp_.enabled ? std::max(16, arp_.length) : clipBars_ * SQ_STEPS_PER_BAR; }
 
     // round: activation snaps to the boundary step; floor: mid-flight resize.
     int phaseStep(double frame, int total, bool roundNearest) const {
+        if (polyActive()) return (int)polyPhase(std::max(0.0, frame - anchor_), roundNearest ? Quant::Round : Quant::Floor);
         const double dur = stepDuration();
         const double pos = std::max(0.0, frame - anchor_) / dur;
         const long idx = roundNearest ? (long)std::lround(pos) : (long)std::floor(pos);
         return (int)(((idx % total) + total) % total);
+    }
+
+    // ---- Melodic POLY clock (worklet polyDuration/polyFrame/polyPhase/polySource).
+    // clipStep_ is the unwrapped POLY step count k; the source step read from
+    // the clip is (k - rotation) mod steps. Grid mode swings odd k.
+    enum class Quant { Floor, Ceil, Round };
+    double polyFrame(long k) const {
+        const double dur = stepDuration();
+        return (double)k * dur + (!rhythm_.fit && (k & 1) ? clampSwing() * SQ_SWING_MAX * dur : 0.0);
+    }
+    long polyPhase(double elapsed, Quant q) const {
+        const double dur = stepDuration();
+        long k = std::max(0L, (long)std::floor(elapsed / dur));
+        if (polyFrame(k) > elapsed + 1e-6) k = std::max(0L, k - 1);
+        if (q == Quant::Floor) return k;
+        if (q == Quant::Ceil) return polyFrame(k) >= elapsed - 1e-6 ? k : k + 1;
+        return elapsed - polyFrame(k) < polyFrame(k + 1) - elapsed ? k : k + 1;
+    }
+    int polySource(long k) const {
+        const long m = (k - rhythm_.rotation) % rhythm_.steps;
+        return (int)(m < 0 ? m + rhythm_.steps : m);
+    }
+    void polyArm(double now) {
+        const long k = polyPhase(std::max(0.0, now - anchor_), Quant::Ceil);
+        clipStep_ = (int)(k - 1);
+        toNext_ = anchor_ + polyFrame(k) - now;
+    }
+    template <typename FireFn>
+    void polyFireStep(double frame, FireFn&& fire) {
+        const long k = (long)clipStep_ + 1;
+        const int s = polySource(k);
+        clipStep_ = (int)k;
+        fire(s);
+        toNext_ = anchor_ + polyFrame(k + 1) - frame;
+        pushEvent({ HostEvent::T::Pos, frame, s, 0, clipTag_ });
     }
 
     // Advances clipStep_, fires it, and reschedules the NEXT step at its
@@ -223,6 +285,7 @@ private:
     // times (docs/sq4-clips.md §6 rule 2; worklet.js clipFire).
     template <typename FireFn>
     void fireStep(double frame, FireFn&& fire) {
+        if (polyActive()) { polyFireStep(frame, fire); return; }
         const double dur = stepDuration();
         const double sw = clampSwing();
         const int total = totalSteps();
@@ -242,9 +305,10 @@ private:
     double bpm_ = 120, swing_ = 0, sr_ = 48000, anchor_ = 0;
     std::vector<uint8_t> clip_, pend_;
     ArpPattern arp_, pendArp_;
+    SequenceRhythm rhythm_, pendRhythm_;
     int clipBars_ = 0, pendBars_ = 0;
     int clipTag_ = 0, pendTag_ = 0; // launch identity (scene) of live/pending clip
-    double pendAt_ = -1, stopAt_ = -1, toNext_ = 0, lastFrame_ = 0;
+    double pendAt_ = -1, stopAt_ = -1, toNext_ = 0, lastFrame_ = 0, lastEnd_ = 0;
     bool hasPend_ = false, hasStop_ = false, playing_ = false, rephase_ = false;
     int clipStep_ = -1;
     size_t maxEvents_ = 0; // reserved event headroom, 0 until prepare() (see pushEvent)

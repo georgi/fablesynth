@@ -1,3 +1,11 @@
+// Melodic POLY web prototype; mirrored in shared/sequenceRhythm.ts.
+function readSequenceRhythm(r) {
+  if (!r || r.v !== 1 || typeof r.enabled !== 'boolean' || !['grid', 'fit'].includes(r.mode)
+    || !Number.isInteger(r.steps) || r.steps < 1 || r.steps > 16
+    || !Number.isInteger(r.rotation) || r.rotation < 0 || r.rotation >= r.steps
+    || ![4, 8].includes(r.cycleBeats)) return null;
+  return { v: 1, enabled: r.enabled, mode: r.mode, steps: r.steps, rotation: r.rotation, cycleBeats: r.cycleBeats };
+}
 // FableSynth BL-1 DSP core — AudioWorklet thread. Self-contained (no imports).
 // One mono last-note-priority acid voice + sample-accurate pitch sequencer.
 // See worklet.js / worklet-drum.js for the reference implementations of the
@@ -981,6 +989,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.playing = false;
     this.arp = null;
     this.step = -1;
+    this.sequenceRhythm = null; this.polyK = 0;
     this.samplesToNext = 0;
     this.samplesToGateOff = -1;
     this.songPos = 0; // samples since play, for the bar-locked LFO
@@ -1088,10 +1097,36 @@ class BassProcessor extends AudioWorkletProcessor {
         this.havePrev = false; // new offsets — nothing to ramp from
         break;
       case 'pats': this.pats = new Uint8Array(d.data.slice(0)); break;
+      case 'sequenceRhythm': {
+        if (this.hosted) break;
+        const r = readSequenceRhythm(d.rhythm);
+        if (d.rhythm != null && !r) break;
+        const old = this.sequenceRhythm;
+        this.sequenceRhythm = r;
+        if (!!old?.enabled !== !!r?.enabled || (r?.enabled && (old?.mode !== r.mode || old?.cycleBeats !== r.cycleBeats || (r.mode === 'fit' && old?.steps !== r.steps)))) {
+          this.release(); this.samplesToGateOff = -1;
+          if (r?.enabled) {
+            const dur = this.polyDuration(r, this.p['seq.bpm'] || 138);
+            const sw = Math.min(1, Math.max(0, this.p['master.swing'] || 0));
+            this.polyK = this.polyPhase(r, this.songPos, dur, sw, Math.ceil);
+            this.samplesToNext = this.polyFrame(r, this.polyK, dur, sw) - this.songPos;
+          } else {
+            const grid = { mode: 'grid' }, dur = this.polyDuration(grid, this.p['seq.bpm'] || 138);
+            const elapsed = this.songPos, sw = this.p['master.swing'] || 0;
+            const k = this.polyPhase(grid, elapsed, dur, sw, Math.ceil);
+            this.step = k % 16 - 1;
+            this.chainPos = Math.floor(k / 16) % this.chain.length;
+            this.samplesToNext = this.polyFrame(grid, k, dur, sw) - elapsed;
+          }
+        }
+        break;
+      }
       case 'arp': {
         if (this.hosted) break;
         const a = d.config;
-        if (a && (!Array.isArray(a.notes) || a.notes.length !== STEPS ||
+        // STEPS notes, or a chord-track cycle (a multiple of STEPS) whose
+        // rhythm lanes repeat every STEPS steps.
+        if (a && (!Array.isArray(a.notes) || a.notes.length < STEPS || a.notes.length > 1024 || a.notes.length % STEPS ||
           !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
           !Number.isFinite(a.rate) || !Number.isFinite(a.gate))) break;
         const changedMode = !!a !== !!this.arp;
@@ -1139,10 +1174,12 @@ class BassProcessor extends AudioWorkletProcessor {
       case 'tempo':
         if (Number.isFinite(d.bpm)) { this.hostBpm = d.bpm; this.p['seq.bpm'] = d.bpm; } // bar-locked LFO follows
         if (Number.isFinite(d.swing)) this.hostSwing = d.swing;
+        const anchorMoved = Number.isFinite(d.anchor) && d.anchor !== this.hostAnchor;
         if (Number.isFinite(d.anchor)) this.hostAnchor = d.anchor;
+        if (anchorMoved) this.polyClipArm(); else this.polyClipRetime();
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: this.readClipArp(d.arp) };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: this.readClipArp(d.arp), sequenceRhythm: readSequenceRhythm(d.sequenceRhythm) };
         this.clipStopAt = -1;
         break;
       case 'clipstop':
@@ -1163,14 +1200,18 @@ class BassProcessor extends AudioWorkletProcessor {
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
         const arp = this.readClipArp(d.arp);
+        const sequenceRhythm = readSequenceRhythm(d.sequenceRhythm);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at, arp, auto: this.clipPend.auto };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp, sequenceRhythm, auto: this.clipPend.auto };
         } else if (this.clip) {
-          const resized = bars !== this.clip.bars;
-          const rephase = this.clip.arp?.rate !== arp?.rate;
-          this.clip = { data, bars, arp, auto: this.clip.auto };
-          if (rephase) { this.release(); this.samplesToGateOff = -1; this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; }
-          else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i])) { this.release(); this.samplesToGateOff = -1; }
+          const resized = bars !== this.clip.bars || this.clip.arp?.notes.length !== arp?.notes.length;
+          const oldRhythm = this.clip.sequenceRhythm;
+          const rephase = this.clip.arp?.rate !== arp?.rate || !!oldRhythm?.enabled !== !!sequenceRhythm?.enabled
+            || (sequenceRhythm?.enabled && (oldRhythm?.mode !== sequenceRhythm.mode || oldRhythm?.cycleBeats !== sequenceRhythm.cycleBeats
+              || (sequenceRhythm.mode === 'fit' && oldRhythm?.steps !== sequenceRhythm.steps)));
+          this.clip = { data, bars, arp, sequenceRhythm, auto: this.clip.auto };
+          if (rephase) { this.release(); this.samplesToGateOff = -1; this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; this.polyClipArm(); }
+          else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i % STEPS])) { this.release(); this.samplesToGateOff = -1; }
           // Re-derive the phase only on a bar-count change (plain modulo can
           // land a grown clip half a cycle off). Same-length edits — every
           // sequencer click — are a pure data swap: touching the phase inside
@@ -1182,9 +1223,81 @@ class BassProcessor extends AudioWorkletProcessor {
     }
   }
 
+
+  polyDuration(r, bpm) {
+    return 60 / Math.max(60, Math.min(200, bpm || 120)) * sampleRate * (r.mode === 'fit' ? r.cycleBeats / r.steps : .25);
+  }
+  polyFrame(r, k, dur, swing) {
+    return k * dur + (r.mode === 'grid' && k % 2 ? Math.min(1, Math.max(0, swing || 0)) * SWING_MAX * dur : 0);
+  }
+  polyPhase(r, elapsed, dur, swing, quantize) {
+    let k = Math.max(0, Math.floor(elapsed / dur));
+    if (this.polyFrame(r, k, dur, swing) > elapsed + 1e-6) k = Math.max(0, k - 1);
+    if (quantize === Math.floor) return k;
+    if (quantize === Math.ceil) return this.polyFrame(r, k, dur, swing) >= elapsed - 1e-6 ? k : k + 1;
+    return elapsed - this.polyFrame(r, k, dur, swing) < this.polyFrame(r, k + 1, dur, swing) - elapsed ? k : k + 1;
+  }
+  polySource(r, k) { return ((k - r.rotation) % r.steps + r.steps) % r.steps; }
+  polyClipArm() {
+    const r = this.clip?.sequenceRhythm;
+    if (!r?.enabled || this.clip.arp) return;
+    const dur = this.polyDuration(r, this.hostBpm);
+    const elapsed = Math.max(0, currentFrame - this.hostAnchor);
+    const k = this.polyPhase(r, elapsed, dur, this.hostSwing, Math.ceil);
+    this.clipStep = k - 1;
+    this.clipToNext = this.hostAnchor + this.polyFrame(r, k, dur, this.hostSwing) - currentFrame;
+  }
+  // Tempo/swing change: keep the last fired step and only re-time the next one,
+  // so a boundary that already fired can never fire again. Messages land between
+  // quanta, so currentFrame is the right "now" here (frameNow would be stale).
+  polyClipRetime() {
+    const r = this.clip?.sequenceRhythm;
+    if (!r?.enabled || this.clip.arp) return;
+    if (this.clipStep < 0) { this.polyClipArm(); return; }
+    const dur = this.polyDuration(r, this.hostBpm);
+    this.clipToNext = this.hostAnchor + this.polyFrame(r, this.clipStep + 1, dur, this.hostSwing) - currentFrame;
+  }
+  polyClipFire() {
+    const r = this.clip.sequenceRhythm, k = this.clipStep + 1;
+    const dur = this.polyDuration(r, this.hostBpm);
+    const s = this.polySource(r, k);
+    this.polyEmit(r, k, dur, true);
+    this.clipStep = k;
+    this.clipToNext = this.hostAnchor + this.polyFrame(r, k + 1, dur, this.hostSwing) - currentFrame;
+    this.port.postMessage({ t: 'pos', step: s, bar: 0 });
+  }
+  polyFire(bpm) {
+    const r = this.sequenceRhythm, k = this.polyK++;
+    const dur = this.polyDuration(r, bpm);
+    const s = this.polySource(r, k);
+    const event = this.polyEmit(r, k, dur, false);
+    this.step = s;
+    const sw = Math.min(1, Math.max(0, this.p['master.swing'] || 0));
+    this.samplesToNext += this.polyFrame(r, k + 1, dur, sw) - this.polyFrame(r, k, dur, sw);
+    this.port.postMessage({ t: 'step', s, pat: 0, ...event });
+  }
+  polyEmit(r, k, dur, hosted) {
+    const s = this.polySource(r, k);
+    const st = hosted ? this.clipRead(s) : this.readStep(0, s);
+    let semi = -100;
+    if (st.on) {
+      semi = st.semi;
+      if (st.slide && this.gate) this.glideTo(semi, st.acc);
+      else this.noteOn(semi, st.acc);
+      const nextS = this.polySource(r, k + 1);
+      const next = hosted ? this.clipRead(nextS) : this.readStep(0, nextS);
+      this.samplesToGateOff = next.on && next.slide ? -1 : st.duration * dur;
+    } else if (this.samplesToGateOff < 0) {
+      // A rest breaks a held slide; written note durations may span rests.
+      this.release();
+    }
+    return { semi, acc: st.on && st.acc, slide: st.on && st.slide };
+  }
+
   // ---------- hosted clip transport ----------
   readClipArp(a) {
-    if (!a || !Array.isArray(a.notes) || a.notes.length !== STEPS ||
+    // 16 notes, or a chord-track cycle (a multiple of 16) whose rhythm lanes repeat.
+    if (!a || !Array.isArray(a.notes) || a.notes.length < STEPS || a.notes.length > 1024 || a.notes.length % STEPS ||
       !Array.isArray(a.hits) || !Array.isArray(a.accents) ||
       !Number.isFinite(a.rate) || !Number.isFinite(a.gate)) return null;
     return { notes: a.notes.map(n => Number.isInteger(n) && n >= 0 && n <= 127 ? n : -1),
@@ -1286,15 +1399,21 @@ class BassProcessor extends AudioWorkletProcessor {
   // rounds (atFrame sits at a boundary, block-quantized slightly early);
   // mid-flight resizes floor (the last fired step).
   clipPhase(quantize) {
+    const r = this.clip.sequenceRhythm;
+    if (r?.enabled && !this.clip.arp) {
+      const dur = this.polyDuration(r, this.hostBpm);
+      return this.polyPhase(r, Math.max(0, currentFrame - this.hostAnchor), dur, this.hostSwing, quantize);
+    }
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm) * (this.clip.arp?.rate ?? .25) * sampleRate;
-    const total = this.clip.arp ? STEPS : this.clip.bars * STEPS;
+    const total = this.clip.arp ? this.clip.arp.notes.length : this.clip.bars * STEPS;
     const idx = quantize(Math.max(0, currentFrame - this.hostAnchor) / dur);
     return ((idx % total) + total) % total;
   }
 
   clipFire() {
     if (this.clip.arp) { this.clipArpFire(); return; }
+    if (this.clip.sequenceRhythm?.enabled) { this.polyClipFire(); return; }
     const bpm = Math.max(60, Math.min(200, this.hostBpm || 120));
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = Math.min(1, Math.max(0, this.hostSwing || 0));
@@ -1462,6 +1581,7 @@ class BassProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ t: 'step', s, pat: 0, semi, acc, slide });
       return;
     }
+    if (this.sequenceRhythm?.enabled) { this.polyFire(bpm); return; }
     const dur = (60 / bpm / 4) * sampleRate;
     const swing = this.p['master.swing'] || 0;
     const next = this.step + 1;

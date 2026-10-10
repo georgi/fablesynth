@@ -276,4 +276,22 @@ void HostedWtModel::auditionNoteOff(int midiNote) {
     proc_.auditionWtOff(track_, midiNote);
 }
 
+SeqPolySettings HostedWtModel::sequencePoly() const {
+    SeqPolySettings out;
+    if (!hasTargetClip()) return out;
+    const auto& clip = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)track_];
+    if (!clip.hasSequenceRhythm) return out;
+    const auto& r = clip.sequenceRhythm;
+    out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+    out.rotation = r.rotation; out.cycleBeats = r.cycleBeats;
+    return out;
+}
+
+void HostedWtModel::setSequencePoly(const SeqPolySettings& p) {
+    if (!hasTargetClip()) return;
+    fable::SequenceRhythm r;
+    r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps; r.rotation = p.rotation; r.cycleBeats = p.cycleBeats;
+    proc_.conductor().updateClipRhythm(scene_, track_, r);
+}
+
 } // namespace fui

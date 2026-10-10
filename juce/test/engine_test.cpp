@@ -1206,6 +1206,40 @@ int main(int argc, char** argv) {
             return L;
         };
 
+        // -- melodic POLY (worklet.js polyFire): GRID 3 loops cells 0-2 of bar one --
+        {
+            auto pats = makeEmptySeqPatterns();
+            for (int st = 0; st < 3; ++st) { NoteSeqStep n; n.on = true; n.note = st; setNoteSeqStep(pats.data(), 0, st, n); }
+            Engine e; e.prepare(sr); e.setTables(tables);
+            e.setParams(seqParams());
+            e.setSeqPatterns(pats.data(), (int)pats.size());
+            int chain[] = { 0, 1 };
+            e.setSeqChain(chain, 2);
+            SequenceRhythm grid; grid.enabled = true; grid.steps = 3;
+            e.setSequenceRhythm(grid);
+            e.seqPlay();
+            std::vector<int> seen; int last = -2;
+            std::vector<float> L(64), R(64);
+            for (int done = 0; done < (int)(stepDur * 7); done += 64) {
+                e.render(L.data(), R.data(), 64);
+                if (e.seqCurrentStep() != last) { last = e.seqCurrentStep(); seen.push_back(last); }
+            }
+            check(seen.size() >= 7 && seen[0] == 0 && seen[1] == 1 && seen[2] == 2 && seen[3] == 0 && seen[6] == 0
+                      && e.seqCurrentPattern() == 0,
+                  "WT-1 POLY GRID 3 loops the first three cells of bar one", std::to_string(seen.size()));
+            SequenceRhythm fit = grid; fit.fit = true; fit.cycleBeats = 4;
+            Engine f; f.prepare(sr); f.setTables(tables); f.setParams(seqParams());
+            f.setSeqPatterns(pats.data(), (int)pats.size());
+            f.setSequenceRhythm(fit); f.seqPlay();
+            seen.clear(); last = -2;
+            for (int done = 0; done < (int)(stepDur * 8); done += 64) {
+                f.render(L.data(), R.data(), 64);
+                if (f.seqCurrentStep() != last) { last = f.seqCurrentStep(); seen.push_back(last); }
+            }
+            check(seen.size() == 2 && seen[1] == 1, "WT-1 POLY FIT 3 / 1 bar: second slot after 4/3 beats",
+                  std::to_string(seen.size()));
+        }
+
         // -- (a) steps fire at the right sample positions for a given BPM --
         {
             auto pats = makeEmptySeqPatterns();

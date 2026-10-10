@@ -82,6 +82,10 @@ public:
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;
+    // The edited clip's melodic POLY (Conductor::updateClipRhythm).
+    bool supportsSequencePoly() const override { return hasTargetClip(); }
+    SeqPolySettings sequencePoly() const override;
+    void setSequencePoly(const SeqPolySettings&) override;
     int clipIdentity() const override { return scene_; }
 
     // Kept available for a future hosted keyboard component. These always use

@@ -244,6 +244,17 @@ public:
     float smoothedParam(int id) const { return p_[(size_t)id]; }
     void advanceParamSmoothingForTesting(int n);
     int paramRampPositionForTesting() const { return rampPos_; }
+    // Voices holding a started, gated note (queued steal notes not counted).
+    const Voice* newestGatedVoiceForTesting() const {
+        const Voice* best = nullptr;
+        for (const auto& v : voices_) if (v.gate && (!best || v.age > best->age)) best = &v;
+        return best;
+    }
+    int gatedVoiceCountForTesting() const {
+        int c = 0;
+        for (const auto& v : voices_) if (v.gate && !v.hasPending) c++;
+        return c;
+    }
 
     void noteOn(int note, double vel);
     void noteOff(int note);
@@ -257,7 +268,7 @@ public:
     // free-run LFO derives its phase from ppq so it lines up with the downbeat.
     // ppq is sanitised so a non-finite host position can't latch a NaN phase.
     void setTransport(double ppq, bool playing) { ppq_ = std::isfinite(ppq) ? ppq : 0.0; playing_ = playing; }
-    void panic() { for (auto& v : voices_) v.kill(); seqOffCount_ = 0; seqLastNote_ = -1; }
+    void panic() { for (auto& v : voices_) v.kill(); seqOffCount_ = 0; seqOnCount_ = 0; seqLastNote_ = -1; heldN_ = 0; }
 
     // ---- note sequencer (port of worklet.js seqRead/seqGateOff/seqFire).
     // 16 steps x 4 chained patterns firing noteOn/noteOff into the polyphonic
@@ -274,6 +285,11 @@ public:
     double sequenceAutomationSteps() const { return seqIsPlaying() ? seqSongPos_/((60/seqEffectiveBpm()/4)*sr_) : -1; }
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
     void setArp(const ArpPattern&);
+    // Standalone melodic POLY (worklet.js 'sequenceRhythm'): one clock plays the
+    // first `steps` cells of bar one, on the swung 1/16 grid or FIT into
+    // `cycleBeats` straight slots. A timing-mode change re-phases from the song
+    // position; ignored while a hosted clip owns the transport.
+    void setSequenceRhythm(const SequenceRhythm&);
     void seqStop();                                 // worklet 'stop'
     // SEQUENCER tab LED: off keeps the clock (step display, synced LFOs) but
     // fires no pattern notes. The arp path ignores it.
@@ -283,6 +299,7 @@ public:
     void setSeqChain(const int* list, int n);        // ignores empty; clamps entries + chainPos
     void setBpmOverride(double bpm);                 // host tempo wins over SEQ_BPM; <= 0 clears
     int  seqCurrentStep() const { return seqStep_; } // -1 when stopped
+    int  seqChainLength() const { return (int)seqChain_.size(); }
     int  seqCurrentPattern() const { return seqChain_[(size_t)seqChainPos_]; }
     // The most recent MIDI note the sequencer (standalone or hosted-clip) fired
     // while any seq note is still sounding, -1 when none — backed by the
@@ -315,15 +332,16 @@ public:
         hostAnchor_ = anchorFrame; // beat zero of the shared timebase (synced-LFO phase)
         clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}) {
         autoPlayer_.schedule(automation);
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp, rhythm);
     }
     void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
-        if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp)))) seqGateOff();
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}) {
+        if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp))
+            || (clipHost_.isPlaying() && clipHost_.rhythmRephases(rhythm)))) seqGateOff();
         autoPlayer_.update(automation, clipHost_.hasPending());
-        clipHost_.updateClip(data, (size_t)bytes, bars, arp);
+        clipHost_.updateClip(data, (size_t)bytes, bars, arp, rhythm);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max` events, then erase ONLY the copied
@@ -421,6 +439,16 @@ private:
     double seqHostStepPpq(long k) const;
     void   seqHostResync();
     void   seqFireHostStep(long k);
+    // melodic POLY helpers (worklet.js polyDuration/polyFrame/polyPhase/polyFire)
+    SequenceRhythm seqRhythm_{};
+    long   polyK_ = 0;
+    bool   polyOn() const { return seqRhythm_.enabled && !arp_.enabled; }
+    double polyDuration(const SequenceRhythm&, double bpm) const;
+    static double polyFrame(const SequenceRhythm&, long k, double dur, double swing);
+    static long polyPhaseCeil(const SequenceRhythm&, double elapsed, double dur, double swing);
+    static int polySource(const SequenceRhythm& r, long k) { return (int)(((k - r.rotation) % r.steps + r.steps) % r.steps); }
+    void   polyEmit(long k, double dur);
+    void   polyFire(double bpm);
 
     ParamArray p_ = defaultParams();   // smoothed values the DSP reads
     ParamArray pt_ = defaultParams();  // automation targets (finding J1)
@@ -451,8 +479,8 @@ private:
     const TableSet* curTables_ = nullptr;  // render-call snapshot (audio thread only)
 
     // LFO shape-switch crossfade state (finding J2), one entry per global LFO.
-    int lfoShapePrev_[2] = {-1, -1};
-    int lfoXfRemain_[2] = {0, 0}, lfoXfLen_[2] = {0, 0};
+    int lfoShapePrev_[4] = {-1, -1, -1, -1};
+    int lfoXfRemain_[4] = {0, 0, 0, 0}, lfoXfLen_[4] = {0, 0, 0, 0};
     std::array<Voice, NVOICES> voices_;
     double sr_ = 48000;
     int    combCapacity_ = COMB_MIN_CAPACITY;
@@ -464,9 +492,17 @@ private:
     double pinkG_[6] = {0.0555179, 0.0750759, 0.153852, 0.3104856, 0.5329522, 0.016898};
     double bend_ = 0;
     double lastPitch_ = 60;
+    // Held keys, oldest first (worklet `held`); the newest is the mono line.
+    std::array<int, 128> held_ {};
+    int    heldN_ = 0;
+    void   heldRemove(int n);
+    void   polyNoteOn(int n, double vel);
+    void   monoNoteOn(int n, double vel);
+    void   monoNoteOff(int n);
     long   clock_ = 0;
     Rng    rng_;
-    Lfo    gLfo1_, gLfo2_;             // free-running (retrig=0) global LFO phases
+    Rng    modRng_{0x85ebca6bu};      // LFO 3/4 + RANDOM (worklet modRng)
+    Lfo    gLfo1_, gLfo2_, gLfo3_, gLfo4_; // free-running (retrig=0) global LFO phases
     double bpm_ = 120;
     double ppq_ = 0;                  // host transport position (quarter notes)
     bool   playing_ = false;          // host transport running

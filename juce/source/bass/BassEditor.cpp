@@ -17,6 +17,16 @@ public:
     void clearArpKeys() override { proc.clearArpKeys(); }
     void arpKeyInput(int n, bool on) override { if (on) proc.noteOn(n - fable::BL_ROOT_MIDI, .8f); else proc.noteOff(n - fable::BL_ROOT_MIDI); }
     bool programDirty() const override { return proc.isProgramDirty(); }
+    bool supportsSequencePoly() const override { return true; }
+    fui::SeqPolySettings sequencePoly() const override {
+        const auto r = proc.getSequenceRhythm();
+        fui::SeqPolySettings out; out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+        out.rotation = r.rotation; out.cycleBeats = r.cycleBeats; return out;
+    }
+    void setSequencePoly(const fui::SeqPolySettings& p) override {
+        fable::SequenceRhythm r; r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps;
+        r.rotation = p.rotation; r.cycleBeats = p.cycleBeats; proc.setSequenceRhythm(r);
+    }
     int currentProgram() const override { return proc.getCurrentProgram(); }
     int numPrograms() const override { return proc.getNumPrograms(); }
     juce::String programName(int i) const override { return proc.getProgramName(i); }

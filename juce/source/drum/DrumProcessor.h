@@ -95,6 +95,14 @@ public:
     bool loadFactoryPatternPreset(int index);
     int getLanePosition(int pad) const { return lanePositions_[(size_t)pad].load(std::memory_order_relaxed) - 1; }
     void setDrumRhythm(const fable::DrumRhythm& rhythm);
+    // Standalone sequence automation (web DrumAutomation.tsx): lanes span the
+    // chain, follow POLY lanes, play on the DR-1 transport and persist in state.
+    const std::vector<fable::AutoLane>& sequenceAutomation() const { return automation_; }
+    void setSequenceAutomation(const std::vector<fable::AutoLane>&, bool history = true);
+    void pushAutomationUndo() { automationHistory_.push(automation_); }
+    void undoAutomation();
+    void redoAutomation();
+    double automationSteps() const { return automationSteps_.load(std::memory_order_relaxed); }
     void clearDrumRhythm();
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);

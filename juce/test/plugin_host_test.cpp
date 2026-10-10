@@ -720,6 +720,50 @@ int main(int argc, char** argv) {
         }
         writePng(ed->createComponentSnapshot(ed->getLocalBounds()),
                  dir.getChildFile("plugin_editor_seqsel.png"));
+        if (fed) {
+            // SeqPanel.tsx timeline: every chained bar on screen; a selection
+            // spans the bar line and a note may run into the next bar.
+            auto& seq = fed->getRack().noteSeq();
+            seq.clearSelection();
+            proc.setChain({ 0, 1, 2 });
+            for (int pat = 0; pat < 3; ++pat) for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(pat, i, {});
+            proc.setSeqStep(0, 14, a); proc.setSeqStep(1, 1, b);
+            check(seq.timelineSteps() == 48, "three chained bars give a 48-step WT-1 timeline", seq.timelineSteps());
+            seq.setSelection({ 14, 17, 0, fable::SEQ_NOTE_LANES - 1 });
+            seq.commitBlockMove(+16, 0, false);
+            check(proc.getSeqStep(1, 14).on && proc.getSeqStep(2, 1).on && !proc.getSeqStep(0, 14).on,
+                  "a block move crosses bar lines (bar 1 -> 2, bar 2 -> 3)", 0);
+            seq.toggleCell(36, 9);
+            seq.resizeStep(36, 20);
+            check(proc.getSeqStep(2, 4).on && proc.getSeqStep(2, 4).duration == 12,
+                  "timeline step 36 is bar 3 step 5; length clamps at the timeline end",
+                  proc.getSeqStep(2, 4).duration);
+            seq.resized();
+            seq.patternClick(2);
+            check(seq.colBounds(32).getX() == seq.gridBounds().getX() || seq.scrollX() > 0,
+                  "a bar chip scrolls its bar to the left edge", seq.scrollX());
+            writePng(ed->createComponentSnapshot(ed->getLocalBounds()), dir.getChildFile("plugin_editor_timeline.png"));
+            const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+            out.createDirectory();
+            writePng(seq.createComponentSnapshot(seq.getLocalBounds()), out.getChildFile("wt1-timeline-3bars.png"));
+            proc.setChain({ 0 });
+            for (int pat = 0; pat < 3; ++pat) for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(pat, i, {});
+            // Standalone melodic POLY: strip -> processor -> plugin state.
+            fui::SequencePolyStrip* strip = nullptr;
+            for (auto* c : seq.getChildren()) if (auto* p = dynamic_cast<fui::SequencePolyStrip*>(c)) strip = p;
+            check(strip && strip->isVisible(), "standalone WT-1 shows the POLY strip", 0);
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                strip->press(fui::SequencePolyStrip::fit);
+                juce::MemoryBlock saved; proc.getStateInformation(saved);
+                FableAudioProcessor fresh; fresh.setStateInformation(saved.getData(), (int)saved.getSize());
+                check(fresh.getSequenceRhythm().enabled && fresh.getSequenceRhythm().fit,
+                      "standalone WT-1 POLY round-trips through plugin state", 0);
+                seq.undoEdit(); seq.undoEdit();
+                check(!proc.getSequenceRhythm().enabled, "WT-1 undo restores POLY OFF", 0);
+            }
+        }
         for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
     }
 

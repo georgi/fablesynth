@@ -27,7 +27,7 @@ static constexpr int kMaxNote = fable::SEQ_NOTE_LANES - 1; // top lane (paste cl
 // acc 4+14, step number 4+10.
 
 static constexpr int kPadX = 12, kHeadY = 8, kHeadH = 24;
-static constexpr int kBodyY = kHeadY + kHeadH + 10;
+static constexpr int kBodyY0 = kHeadY + kHeadH + 10;  // body top without the POLY strip
 static constexpr int kLegendW = 36, kLegendGap = 8;
 static constexpr int kVisibleOctaves = 2;
 static constexpr int kVisibleLanes = 12 * kVisibleOctaves;
@@ -128,12 +128,8 @@ int NoteSeqView::displayLane(const NoteSeqStep& step) const {
     return step.note + (step.oct > 0 ? 12 : 0);
 }
 
-juce::Rectangle<int> NoteSeqView::transportBounds() const {
-    return { kPadX, kHeadY, 34, kHeadH };             // .ns-transport 34x24
-}
-
 juce::Rectangle<int> NoteSeqView::patternBounds(int i) const {
-    const int x0 = kPadX + 34 + 12 + 96 + 12;         // transport, gap, title, gap
+    const int x0 = kPadX + 96 + 12;                   // title, gap
     return { x0 + i * (26 + 5), kHeadY, 26, kHeadH }; // .ns-pattern 26x24, gap 5
 }
 
@@ -145,12 +141,76 @@ juce::Rectangle<int> NoteSeqView::randBounds() const {
     return { sequenceLengthBounds().getRight() + 12, kHeadY, 52, kHeadH };
 }
 
+// ---- timeline (SeqPanel.tsx): every bar of the chain (hosted: the clip's
+// bars) side by side; steps are absolute, bar b plays pattern chain[b]. ----
+int NoteSeqView::timelineBars() const {
+    const int bars = model.capabilities().hosted ? model.clipBars() : (int)model.chain().size();
+    return juce::jlimit(1, fable::SEQ_NPATTERNS, bars);
+}
+int NoteSeqView::timelineSteps() const { return timelineBars() * fable::SEQ_STEPS; }
+std::vector<int> NoteSeqView::timelineChain() const {
+    std::vector<int> chain;
+    if (model.capabilities().hosted) for (int b = 0; b < timelineBars(); ++b) chain.push_back(b);
+    else { chain = model.chain(); chain.resize((size_t)timelineBars(), 0); }
+    return chain;
+}
+int NoteSeqView::patternOfAbs(int abs) const {
+    const auto chain = timelineChain();
+    return chain[(size_t)juce::jlimit(0, (int)chain.size() - 1, abs / fable::SEQ_STEPS)];
+}
+NoteSeqStep NoteSeqView::stepAbs(int abs) const {
+    return model.sequenceStep(patternOfAbs(abs), abs % fable::SEQ_STEPS);
+}
+void NoteSeqView::setStepAbs(int abs, const NoteSeqStep& st) {
+    model.setSequenceStep(patternOfAbs(abs), abs % fable::SEQ_STEPS, st);
+}
+int NoteSeqView::cursorColumn() const {
+    if (!model.sequencerPlaying()) return -1;
+    const int pat = model.currentPattern(), step = model.currentStep();
+    if (step < 0 || step >= fable::SEQ_STEPS) return -1;
+    const auto chain = timelineChain();
+    for (int b = 0; b < (int)chain.size(); ++b)
+        if (chain[(size_t)b] == pat) return b * fable::SEQ_STEPS + step;
+    return -1;
+}
+
+// Columns share the grid width; below the web's 32 px column pitch
+// (.ns-grid min-width: steps * 32px) the timeline scrolls sideways.
+static constexpr float kMinColW = 27.0f;
+int NoteSeqView::gridViewWidth() const {
+    return getWidth() - kPadX - kClockW - kClockGap - kLegendGap - (kPadX + kLegendW + kLegendGap);
+}
+float NoteSeqView::colWidth() const {
+    const int n = timelineSteps();
+    return juce::jmax(kMinColW, ((float)gridViewWidth() - (float)(n - 1) * kColGap) / (float)n);
+}
+int NoteSeqView::timelineWidth() const {
+    const int n = timelineSteps();
+    return (int)std::ceil(colWidth() * (float)n + kColGap * (float)(n - 1));
+}
+void NoteSeqView::setScrollX(int x) {
+    x = juce::jlimit(0, juce::jmax(0, timelineWidth() - gridViewWidth()), x);
+    if (x != scrollX_) { scrollX_ = x; repaint(); }
+    hScroll_.setCurrentRangeStart(scrollX_, juce::dontSendNotification);
+}
+void NoteSeqView::scrollBarMoved(juce::ScrollBar*, double start) { setScrollX((int)start); }
+void NoteSeqView::scrollToStep(int abs) {
+    const auto c = colBounds(abs);
+    const int gx = kPadX + kLegendW + kLegendGap, right = gx + gridViewWidth();
+    if (c.getX() < gx) setScrollX(scrollX_ - (gx - c.getX()));
+    else if (c.getRight() > right) setScrollX(scrollX_ + (c.getRight() - right));
+}
+void NoteSeqView::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& d) {
+    if (timelineWidth() <= gridViewWidth()) { Component::mouseWheelMove(e, d); return; }
+    const float delta = std::abs(d.deltaX) > std::abs(d.deltaY) ? d.deltaX : d.deltaY;
+    setScrollX(scrollX_ - (int)std::round(delta * 240.0f));
+}
+
 juce::Rectangle<int> NoteSeqView::colBounds(int step) const {
     const int gx = kPadX + kLegendW + kLegendGap;
-    const int gw = getWidth() - kPadX - kClockW - kClockGap - kLegendGap - gx;
-    const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
-    const float x = static_cast<float>(gx) + static_cast<float>(step) * (w + kColGap);
-    return juce::Rectangle<float>(x, (float)kBodyY, w,
+    const float w = colWidth();
+    const float x = static_cast<float>(gx - scrollX_) + static_cast<float>(step) * (w + kColGap);
+    return juce::Rectangle<float>(x, (float)bodyY(), w,
                                   (float)(stepNumberY() + 10)).toNearestInt();
 }
 
@@ -184,18 +244,17 @@ juce::Rectangle<int> NoteSeqView::stepNumBounds(int step) const {
 // in, clamped to the grid (drags can wander past its edges).
 int NoteSeqView::stepAtX(int x) const {
     const int gx = kPadX + kLegendW + kLegendGap;
-    const int gw = getWidth() - kPadX - kClockW - kClockGap - kLegendGap - gx;
-    const float w = ((float)gw - 15.0f * kColGap) / 16.0f;
+    const float w = colWidth();
     if (w <= 0.0f) return 0;
-    const float rel = (float)(x - gx) / (w + kColGap);
-    return juce::jlimit(0, fable::SEQ_STEPS - 1, (int)std::floor(rel));
+    const float rel = (float)(x + scrollX_ - gx) / (w + kColGap);
+    return juce::jlimit(0, timelineSteps() - 1, (int)std::floor(rel));
 }
 
 // Inverse of cellBounds' lane math: note 11 sits on top, C at the bottom.
 // Clamped to the lane range since drags wander past the grid edges.
 int NoteSeqView::visualLaneAtY(int y) const {
     const float ch = (float)laneHeight();
-    const float rel = (float)(y - kBodyY) / (ch + 1.0f);
+    const float rel = (float)(y - bodyY()) / (ch + 1.0f);
     const int row = juce::jlimit(0, kVisibleLanes - 1, (int)std::floor(rel));
     return kVisibleLanes - 1 - row;
 }
@@ -205,9 +264,9 @@ int NoteSeqView::noteAtY(int y) const {
 }
 
 // The whole 16×12 note-lane area (excludes the oct / acc / step-number rows).
+// The visible part of the note-lane timeline (columns scrolled out excluded).
 juce::Rectangle<int> NoteSeqView::gridBounds() const {
-    const auto a = colBounds(0), b = colBounds(fable::SEQ_STEPS - 1);
-    return { a.getX(), kBodyY, b.getRight() - a.getX(), laneAreaHeight() };
+    return { kPadX + kLegendW + kLegendGap, bodyY(), juce::jmin(gridViewWidth(), timelineWidth()), laneAreaHeight() };
 }
 
 // Floating CUT · COPY · DUP · DEL · ✕ toolbar centered over the selected
@@ -216,12 +275,12 @@ juce::Rectangle<int> NoteSeqView::selMenuBounds() const {
     constexpr int bw = 46, gap = 3, n = 5, h = 22;
     constexpr int w = n * bw + (n - 1) * gap;
     const auto nrm = fable::rectNorm(rect_);
-    const auto lo = colBounds(juce::jlimit(0, fable::SEQ_STEPS - 1, nrm.stepLo));
-    const auto hi = colBounds(juce::jlimit(0, fable::SEQ_STEPS - 1, nrm.stepHi));
+    const auto lo = colBounds(juce::jlimit(0, timelineSteps() - 1, nrm.stepLo));
+    const auto hi = colBounds(juce::jlimit(0, timelineSteps() - 1, nrm.stepHi));
     const int cx = (lo.getX() + hi.getRight()) / 2;
     const auto grid = gridBounds();
     const int x = juce::jlimit(grid.getX(), juce::jmax(grid.getX(), grid.getRight() - w), cx - w / 2);
-    return { x, kBodyY + 1, w, h };
+    return { x, bodyY() + 1, w, h };
 }
 
 juce::Rectangle<int> NoteSeqView::selMenuButton(int i) const {
@@ -246,83 +305,83 @@ bool NoteSeqView::inRect(int step, int note) const {
 // else a longer note whose painted body covers this column (useSeqNoteDrag's
 // long-note-body grab). Returns -1 if no note is grabbable here.
 int NoteSeqView::grabNoteAt(int step, int note) const {
-    const int pat = model.editPattern();
-    const auto here = model.sequenceStep(pat, step);
+    const auto here = stepAbs(step);
     if (here.on && displayLane(here) == note) return step;
-    for (int c = step - 1; c >= 0; --c) {
-        const auto v = model.sequenceStep(pat, c);
+    for (int c = step - 1; c >= step - step % fable::SEQ_STEPS; --c) {   // within its own bar
+        const auto v = stepAbs(c);
         if (v.on && displayLane(v) == note && c + v.duration > step) return c;
     }
     return -1;
 }
 
 juce::Rectangle<int> NoteSeqView::resizeBounds(int step) const {
-    const auto st = model.sequenceStep(model.editPattern(), step);
+    const auto st = stepAbs(step);
     if (!st.on) return {};
     auto cell = cellBounds(step, displayLane(st));
-    const int w = colBounds(step).getWidth() * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
-    const int gridRight = getWidth() - kPadX - kClockW - kClockGap;
-    cell.setWidth(juce::jmax(1, juce::jmin(w, gridRight - cell.getX())));
+    const int last = juce::jmin(timelineSteps() - 1, step + (int)st.duration - 1);
+    cell.setRight(juce::jmax(cell.getX() + 1, cellBounds(last, displayLane(st)).getRight()));
     return cell.removeFromRight(6).expanded(2, 2);
 }
 
 // ---- store handlers ----------------------------------------------------------
 
 void NoteSeqView::toggleCell(int step, int note) {
-    const int pat = model.editPattern();
-    NoteSeqStep cur = model.sequenceStep(pat, step);
+    if (step < 0 || step >= timelineSteps()) return;
+    NoteSeqStep cur = stepAbs(step);
     if (cur.on && cur.note == note) {              // tap again = rest
         cur.on = false; cur.acc = false; cur.duration = 1;
     } else {
         cur.on = true; cur.note = note;
     }
-    model.setSequenceStep(pat, step, cur);
+    setStepAbs(step, cur);
     repaint();
 }
 
 void NoteSeqView::toggleVisualCell(int step, int visualLane) {
-    const int pat = model.editPattern();
+    if (step < 0 || step >= timelineSteps()) return;
     const int note = visualLane % 12;
     const int oct = visualLane >= 12 ? 1 : 0;
-    NoteSeqStep cur = model.sequenceStep(pat, step);
+    NoteSeqStep cur = stepAbs(step);
     if (cur.on && cur.note == note && cur.oct == oct) {
         cur.on = false; cur.acc = false; cur.duration = 1;
     } else {
         cur.on = true; cur.note = note; cur.oct = oct;
     }
-    model.setSequenceStep(pat, step, cur);
+    setStepAbs(step, cur);
     repaint();
 }
 
 void NoteSeqView::cycleStepOct(int step) {
-    const int pat = model.editPattern();
-    NoteSeqStep cur = model.sequenceStep(pat, step);
+    if (step < 0 || step >= timelineSteps()) return;
+    NoteSeqStep cur = stepAbs(step);
     cur.oct = cur.oct >= fable::SEQ_OCT_MAX ? fable::SEQ_OCT_MIN : cur.oct + 1; // noteseq.ts cycleOct
-    model.setSequenceStep(pat, step, cur);
+    setStepAbs(step, cur);
     repaint();
 }
 
 void NoteSeqView::toggleStepAcc(int step) {
-    const int pat = model.editPattern();
-    NoteSeqStep cur = model.sequenceStep(pat, step);
+    if (step < 0 || step >= timelineSteps()) return;
+    NoteSeqStep cur = stepAbs(step);
     if (!cur.on) return;
     cur.acc = !cur.acc;
-    model.setSequenceStep(pat, step, cur);
+    setStepAbs(step, cur);
     repaint();
 }
 
+// NoteLengthHandle: a note may run across bar lines up to the timeline end,
+// and stops before the next note of the same pitch.
 void NoteSeqView::resizeStep(int step, int duration) {
-    auto cur = model.sequenceStep(model.editPattern(), step);
+    if (step < 0 || step >= timelineSteps()) return;
+    auto cur = stepAbs(step);
     if (!cur.on) return;
-    const int bars = model.capabilities().hosted ? model.clipBars() : (int)model.chain().size();
-    const int absolute = model.editPattern() * fable::SEQ_STEPS + step;
-    int limit = juce::jmin(fable::SEQ_MAX_NOTE_STEPS, bars * fable::SEQ_STEPS - absolute);
-    for (int a = absolute + 1; a < bars * fable::SEQ_STEPS; ++a) {
-        const auto other = model.sequenceStep(a / fable::SEQ_STEPS, a % fable::SEQ_STEPS);
-        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = a - absolute; break; }
+    const int total = timelineSteps();
+    int limit = juce::jmin(fable::SEQ_MAX_NOTE_STEPS, total - step);
+    for (int a = step + 1; a < total; ++a) {
+        const auto other = stepAbs(a);
+        if (other.on && other.note == cur.note && other.oct == cur.oct) { limit = a - step; break; }
     }
     cur.duration = juce::jlimit(1, limit, duration);
-    model.setSequenceStep(model.editPattern(), step, cur);
+    setStepAbs(step, cur);
     repaint();
 }
 
@@ -343,8 +402,16 @@ void NoteSeqView::randomize() {
     repaint();
 }
 
+// Bar chip: choose the bar RAND / Cmd-D / pattern paste act on, and bring
+// its first played column into view.
 void NoteSeqView::patternClick(int i) {
     model.setEditPattern(i);
+    const auto chain = timelineChain();
+    for (int b = 0; b < (int)chain.size(); ++b)
+        if (chain[(size_t)b] == i) {           // the bar's first column at the left edge
+            setScrollX(scrollX_ + colBounds(b * fable::SEQ_STEPS).getX() - (kPadX + kLegendW + kLegendGap));
+            break;
+        }
     repaint();
 }
 
@@ -378,12 +445,18 @@ void NoteSeqView::applyAllPatterns(const std::vector<uint8_t>& buf) {
 }
 
 NoteSeqView::SeqSnapshot NoteSeqView::snapshot() const {
-    return { snapshotAllPatterns(), model.chain() };
+    const bool poly = model.supportsSequencePoly();
+    return { snapshotAllPatterns(), model.chain(), poly, poly ? model.sequencePoly() : SeqPolySettings{} };
 }
 
 void NoteSeqView::restore(const SeqSnapshot& snap) {
+    if (snap.hasPoly) model.setSequencePoly(snap.poly);
     model.setChain(snap.chain);
     applyAllPatterns(snap.patterns);
+}
+
+int NoteSeqView::bodyY() const {
+    return kBodyY0 + (poly_.isVisible() ? poly_.preferredHeight() + 2 : 0);
 }
 
 void NoteSeqView::setSelection(const fable::RectSel& r) {
@@ -395,7 +468,7 @@ void NoteSeqView::setSelection(const fable::RectSel& r) {
 }
 
 void NoteSeqView::selectAllCells() {
-    setSelection({ 0, fable::SEQ_STEPS - 1, 0, fable::SEQ_NOTE_LANES - 1 });
+    setSelection({ 0, timelineSteps() - 1, 0, fable::SEQ_NOTE_LANES - 1 });
 }
 
 void NoteSeqView::clearSelection() { hasRect_ = false; repaint(); }
@@ -413,20 +486,21 @@ void NoteSeqView::copySel() {
     clip_.valid = true;
     if (hasRect_) {
         clip_.isPattern = false;
-        clip_.rect = fable::copyRect(buf, kNoteLayout, pat, rect_);
+        clip_.rect = fable::copyRectChain(buf, kNoteLayout, timelineChain(), rect_);
     } else {
         clip_.isPattern = true;
         clip_.pattern = fable::copyPattern(buf, kNoteLayout, pat);
     }
 }
 
-// Cmd-X: copy, then clear the rect's in-band lit cells in the same undo entry.
-// With no rect it behaves like copy (nothing to clear).
+// Cmd-X: copy, then clear what was copied in the same undo entry — the
+// rect's in-band lit cells, or with no rect the whole edit bar (store.ts).
 void NoteSeqView::cutSel() {
     copySel();
-    if (!hasRect_) return;
     const auto before = snapshot();
-    auto next = fable::clearRect(before.patterns, kNoteLayout, model.editPattern(), rect_, kEmptyStep);
+    auto next = hasRect_
+        ? fable::clearRectChain(before.patterns, kNoteLayout, timelineChain(), rect_, kEmptyStep)
+        : fable::clearRange(before.patterns, kNoteLayout, model.editPattern(), 0, fable::SEQ_STEPS - 1, kEmptyStep);
     history_.push(before);
     applyAllPatterns(next);
 }
@@ -449,7 +523,7 @@ void NoteSeqView::pasteSel() {
     else if (hasLastCell_)   { atStep = lastCellStep_; atNote = lastCellNote_; }
     else                     { atStep = 0; atNote = clip_.rect.noteHi; }
     const int dNote = atNote - clip_.rect.noteHi;
-    next = fable::pasteRect(before.patterns, kNoteLayout, pat, atStep, dNote, clip_.rect, kMaxNote);
+    next = fable::pasteRectChain(before.patterns, kNoteLayout, timelineChain(), atStep, dNote, clip_.rect, kMaxNote);
     history_.push(before);
     applyAllPatterns(next);
     // Re-select the pasted rectangle (SeqPanel re-anchors rectSel post-paste).
@@ -465,10 +539,11 @@ void NoteSeqView::duplicateSel() {
     const int pat = model.editPattern();
     if (hasRect_) {
         const auto n = fable::rectNorm(rect_);
-        if (n.stepHi + 1 >= fable::SEQ_STEPS) return;
+        if (n.stepHi + 1 >= timelineSteps()) return;
         const auto before = snapshot();
-        const auto data = fable::copyRect(before.patterns, kNoteLayout, pat, rect_);
-        auto next = fable::pasteRect(before.patterns, kNoteLayout, pat, n.stepHi + 1, 0, data, kMaxNote);
+        const auto chain = timelineChain();
+        const auto data = fable::copyRectChain(before.patterns, kNoteLayout, chain, rect_);
+        auto next = fable::pasteRectChain(before.patterns, kNoteLayout, chain, n.stepHi + 1, 0, data, kMaxNote);
         history_.push(before);
         applyAllPatterns(next);
         const int w = n.stepHi - n.stepLo + 1;
@@ -489,7 +564,7 @@ void NoteSeqView::duplicateSel() {
 void NoteSeqView::deleteSel() {
     if (!hasRect_) return;
     const auto before = snapshot();
-    auto next = fable::clearRect(before.patterns, kNoteLayout, model.editPattern(), rect_, kEmptyStep);
+    auto next = fable::clearRectChain(before.patterns, kNoteLayout, timelineChain(), rect_, kEmptyStep);
     history_.push(before);
     applyAllPatterns(next);
 }
@@ -508,15 +583,17 @@ void NoteSeqView::redoEdit() {
 
 // Note drag release (useSeqNoteDrag): move one note, transposing pitch and
 // shifting time, committed once. Alt copies. Selects the dropped cell.
+// useSeqNoteDrag: a note moves within its own bar (same pattern only).
 void NoteSeqView::commitNoteMove(int srcStep, int srcNote, int destStep, int destNote, bool copy) {
-    destStep = juce::jlimit(0, fable::SEQ_STEPS - 1, destStep);
+    const int barStart = srcStep - srcStep % fable::SEQ_STEPS;
+    destStep = juce::jlimit(barStart, barStart + fable::SEQ_STEPS - 1, destStep);
     destNote = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, destNote);
     if (srcStep == destStep && srcNote == destNote) return;
     const auto before = snapshot();
     const fable::RectSel one { srcStep, srcStep, srcNote, srcNote };
     fable::RectMoveOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep; opts.maxNote = kMaxNote;
-    auto next = fable::moveRect(before.patterns, kNoteLayout, model.editPattern(), one,
-                                destStep - srcStep, destNote - srcNote, opts);
+    auto next = fable::moveRectChain(before.patterns, kNoteLayout, timelineChain(), one,
+                                     destStep - srcStep, destNote - srcNote, opts);
     history_.push(before);
     applyAllPatterns(next);
     rect_ = { destStep, destStep, destNote, destNote }; hasRect_ = true;
@@ -529,12 +606,12 @@ void NoteSeqView::commitNoteMove(int srcStep, int srcNote, int destStep, int des
 void NoteSeqView::commitBlockMove(int dStep, int dNote, bool copy) {
     if (!hasRect_) return;
     const auto n = fable::rectNorm(rect_);
-    dStep = juce::jlimit(-n.stepLo, (fable::SEQ_STEPS - 1) - n.stepHi, dStep);
+    dStep = juce::jlimit(-n.stepLo, (timelineSteps() - 1) - n.stepHi, dStep);
     dNote = juce::jlimit(-n.noteLo, (fable::SEQ_NOTE_LANES - 1) - n.noteHi, dNote);
     if (dStep == 0 && dNote == 0) return; // no movement: full no-op, no history
     const auto before = snapshot();
     fable::RectMoveOpts opts; opts.copy = copy; opts.emptyStep = kEmptyStep; opts.maxNote = kMaxNote;
-    auto next = fable::moveRect(before.patterns, kNoteLayout, model.editPattern(), rect_, dStep, dNote, opts);
+    auto next = fable::moveRectChain(before.patterns, kNoteLayout, timelineChain(), rect_, dStep, dNote, opts);
     history_.push(before);
     applyAllPatterns(next);
     rect_ = { n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote }; hasRect_ = true;
@@ -546,7 +623,7 @@ void NoteSeqView::commitBlockMove(int dStep, int dNote, bool copy) {
 void NoteSeqView::beginGhostPaste(bool cut) {
     if (!hasRect_) return;
     const auto buf = snapshotAllPatterns();
-    ghostData_ = fable::copyRect(buf, kNoteLayout, model.editPattern(), rect_);
+    ghostData_ = fable::copyRectChain(buf, kNoteLayout, timelineChain(), rect_);
     if (ghostData_.cells.empty()) return;
     clip_.valid = true; clip_.isPattern = false; clip_.rect = ghostData_; // keep Cmd-V in sync
     ghost_ = true; ghostCut_ = cut; ghostSrc_ = rect_; ghostHasHover_ = false;
@@ -560,12 +637,12 @@ void NoteSeqView::beginGhostPaste(bool cut) {
 void NoteSeqView::dropGhost(int atStep, int atNote) {
     if (!ghost_) return;
     const auto before = snapshot();
-    const int pat = model.editPattern();
+    const auto chain = timelineChain();
     const int dNote = atNote - ghostData_.noteHi;
     std::vector<uint8_t> base = ghostCut_
-        ? fable::clearRect(before.patterns, kNoteLayout, pat, ghostSrc_, kEmptyStep)
+        ? fable::clearRectChain(before.patterns, kNoteLayout, chain, ghostSrc_, kEmptyStep)
         : before.patterns;
-    auto next = fable::pasteRect(base, kNoteLayout, pat, atStep, dNote, ghostData_, kMaxNote);
+    auto next = fable::pasteRectChain(base, kNoteLayout, chain, atStep, dNote, ghostData_, kMaxNote);
     history_.push(before);
     applyAllPatterns(next);
     rect_ = { atStep, atStep + ghostData_.wSteps - 1,
@@ -625,11 +702,6 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
         }
     }
 
-    if (caps.ownsTransport && transportBounds().contains(pos)) {       // play/stop
-        model.setSequencerPlaying(!model.sequencerPlaying());
-        repaint();
-        return;
-    }
     for (int i = 0; i < juce::jmin(fable::SEQ_NPATTERNS, model.clipBars()); ++i)
         if (patternBounds(i).contains(pos)) {
             // Bar-chip drag (decision 6): standalone only, mirroring
@@ -647,8 +719,8 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
     if (randBounds().contains(pos)) { randomize(); return; }
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) if (resizeBounds(s).contains(pos)) {
-        resizeStep_ = s; resizeStartDuration_ = model.sequenceStep(model.editPattern(), s).duration; return;
+    for (int s = 0; s < timelineSteps(); ++s) if (gridBounds().contains(pos) && resizeBounds(s).contains(pos)) {
+        resizeStep_ = s; resizeStartDuration_ = stepAbs(s).duration; return;
     }
 
     // ---- note lanes: Shift-sweep / block-move / note-drag / deferred toggle ----
@@ -686,7 +758,8 @@ void NoteSeqView::mouseDown(const juce::MouseEvent& e) {
     }
 
     // oct / accent rows (the step-number strip below is a plain label now).
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) {
+    if (pos.x < kPadX + kLegendW + kLegendGap || pos.x >= kPadX + kLegendW + kLegendGap + gridViewWidth()) return;
+    for (int s = 0; s < timelineSteps(); ++s) {
         if (!colBounds(s).contains(pos)) continue;
         if (octBounds(s).contains(pos)) { cycleStepOct(s); return; }
         if (accBounds(s).contains(pos)) { toggleStepAcc(s); return; }
@@ -744,12 +817,12 @@ void NoteSeqView::mouseUp(const juce::MouseEvent& e) {
         mouseDrag(e);
         drawingNote_ = false;
         history_.push(snapshot());
-        auto note = model.sequenceStep(model.editPattern(), downStep_);
+        auto note = stepAbs(downStep_);
         note.on = true;
         note.note = downVisualLane_ % fable::SEQ_NOTE_LANES;
         note.oct = downVisualLane_ >= fable::SEQ_NOTE_LANES ? 1 : 0;
-        note.duration = drawDuration_;
-        model.setSequenceStep(model.editPattern(), downStep_, note);
+        note.duration = juce::jlimit(1, juce::jmin(fable::SEQ_MAX_NOTE_STEPS, timelineSteps() - downStep_), drawDuration_);
+        setStepAbs(downStep_, note);
         hasLastCell_ = true; lastCellStep_ = downStep_; lastCellNote_ = downNote_;
         downStep_ = downNote_ = downVisualLane_ = -1;
         repaint();
@@ -857,7 +930,7 @@ bool NoteSeqView::keyPressed(const juce::KeyPress& k) {
 
 // Repaint only when something visible changed: transport/playhead, edit
 // pattern, chain, chaining mode, host sync, or the pattern content itself.
-void NoteSeqView::timerCallback() {
+void NoteSeqView::refreshClipIdentity() {
     // SQ-4 focus can retarget this same view onto a different hosted clip;
     // stale selection/clipboard/undo history must not carry across (decision
     // 6/7 — the web's cross-clip undo corruption hazard applies identically).
@@ -875,6 +948,16 @@ void NoteSeqView::timerCallback() {
         history_.clear();
     }
 
+}
+
+void NoteSeqView::timerCallback() {
+    refreshClipIdentity();
+    if (poly_.isVisible() != model.supportsSequencePoly() || timelineSteps() != lastTimelineSteps_) {
+        lastTimelineSteps_ = timelineSteps();
+        resized(); repaint();
+    }
+    if (model.supportsSequencePoly()) poly_.setSettings(model.sequencePoly(), model.clipIdentity());
+
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
     const bool playing = model.sequencerPlaying();
@@ -883,18 +966,21 @@ void NoteSeqView::timerCallback() {
     mix(edit);
     mix(model.hostSynced() ? 1 : 0);
     mix((int)std::lround(model.hostBpm()));
+    const auto poly = model.supportsSequencePoly() ? model.sequencePoly() : SeqPolySettings{};
+    mix(poly_.isVisible() ? 1 : 0); mix(poly_.isOpen() ? 1 : 0); mix(poly.enabled ? poly.steps : 0);
     const auto& chain = model.chain();
     mix((int)chain.size());
     for (int p : chain) mix(p);
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) {
-        const NoteSeqStep st = model.sequenceStep(edit, s);
+    mix(timelineSteps()); mix(scrollX_);
+    for (int s = 0; s < timelineSteps(); ++s) {
+        const NoteSeqStep st = stepAbs(s);
         mix((st.on ? 1 : 0) | (st.acc ? 2 : 0));
         mix(st.duration);
         mix(st.note); mix(st.oct);
     }
     // The cursor only exists while the transport plays the pattern on screen.
     const int curPat = playing ? model.currentPattern() : -1;   // matches the painted bar chip
-    const int curStep = curPat == edit ? model.currentStep() : -1;
+    const int curStep = cursorColumn();
 
     if (sig != lastSig_) {
         lastSig_ = sig;
@@ -962,29 +1048,10 @@ void NoteSeqView::paint(juce::Graphics& g) {
         return;
     }
 
-    // ---- head: transport (.ns-transport — cyan-tinted well) ----
-    if (caps.ownsTransport) {
-        const auto tb = transportBounds().toFloat();
-        g.setColour(juce::Colour(0xff0c2a33));
-        g.fillRoundedRectangle(tb, 5.0f);
-        g.setColour(cyan.withAlpha(playing ? 0.9f : 0.55f));
-        g.drawRoundedRectangle(tb.reduced(0.5f), 5.0f, 1.0f);
-        g.setColour(cyan);
-        if (playing) g.fillRect(juce::Rectangle<float>(8.0f, 8.0f).withCentre(tb.getCentre()));
-        else {
-            juce::Path p;
-            p.addTriangle(tb.getCentreX() - 3.5f, tb.getCentreY() - 5.0f,
-                          tb.getCentreX() - 3.5f, tb.getCentreY() + 5.0f,
-                          tb.getCentreX() + 5.5f, tb.getCentreY());
-            g.fillPath(p);
-        }
-    }
-
     // ---- head: title ----
     g.setColour(cyan);
     g.setFont(dispFont(10.0f));
-    drawSpaced(g, "NOTE SEQ", { caps.ownsTransport ? transportBounds().getRight() + 12 : kPadX,
-                                 kHeadY, 96, kHeadH }, 2.2f);
+    drawSpaced(g, "NOTE SEQ", { kPadX, kHeadY, 96, kHeadH }, 2.2f);
 
     // ---- head: bar buttons + sequence length + RAND ----
     const int bars = caps.hosted ? model.clipBars()
@@ -1035,7 +1102,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
 
     // ---- legend column (.ns-legend) ----
     {
-        const juce::Rectangle<int> legend(kPadX, kBodyY, kLegendW, stepNumberY() + 10);
+        const juce::Rectangle<int> legend(kPadX, bodyY(), kLegendW, stepNumberY() + 10);
         g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
         g.drawText("PITCH", legend.withHeight(10).translated(0, laneAreaHeight() / 2 - 5), juce::Justification::centredRight);
@@ -1052,7 +1119,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
     {
         const int cx = getWidth() - kPadX - kClockW - kClockGap;
         g.setColour(col::line);
-        g.drawVerticalLine(cx, (float)kBodyY, (float)(kBodyY + stepNumberY() + 10));
+        g.drawVerticalLine(cx, (float)bodyY(), (float)(bodyY() + stepNumberY() + 10));
         // ROOT label under the stepper (the web Stepper renders its own label)
         g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
@@ -1060,13 +1127,23 @@ void NoteSeqView::paint(juce::Graphics& g) {
                    juce::Justification::centred);
     }
 
-    // ---- step columns ----
-    const int curStep = model.currentStep(), curPat = model.currentPattern();
-    NoteSeqStep steps[fable::SEQ_STEPS];
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) steps[s] = model.sequenceStep(edit, s);
+    // ---- step columns: the whole timeline, clipped to the scrolled view ----
+    const int total = timelineSteps();
+    const int cursorCol = cursorColumn();
+    std::vector<NoteSeqStep> steps((size_t)total);
+    for (int s = 0; s < total; ++s) steps[(size_t)s] = stepAbs(s);
+    juce::Graphics::ScopedSaveState columnClip(g);
+    g.reduceClipRegion(kPadX + kLegendW + kLegendGap - 3, 0, gridViewWidth() + 6, getHeight());
 
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) {
-        const NoteSeqStep& st = steps[s];
+    for (int s = 0; s < total; ++s) {
+        const NoteSeqStep& st = steps[(size_t)s];
+        if (!g.clipRegionIntersects(colBounds(s).expanded(4, 4))) continue;
+        // .ns-col.bar-start::before: an accent rule ahead of each new bar.
+        if (s > 0 && s % fable::SEQ_STEPS == 0) {
+            const auto c = colBounds(s);
+            g.setColour(cyan.withAlpha(0.5f));
+            g.fillRect((float)c.getX() - kColGap * 0.5f - 0.5f, (float)c.getY() - 2.0f, 1.0f, (float)c.getHeight() - 8.0f);
+        }
 
         // note lanes (.ns-cell / .ns-cell.on / .ns-cell.on.acc) with the web's
         // piano-style shading (SHARP_LANE in SeqPanel.tsx): the root lane is
@@ -1100,7 +1177,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
         // A stronger octave seam gives the 24 chromatic lanes a quick musical
         // read without adding a second control strip.
         g.setColour(cyan.withAlpha(0.24f));
-        g.drawHorizontalLine(kBodyY + laneAreaHeight() / 2 - 1,
+        g.drawHorizontalLine(bodyY() + laneAreaHeight() / 2 - 1,
                              (float)cellBounds(s, 0).getX(), (float)cellBounds(s, 0).getRight());
 
         // octave button (.ns-oct-btn)
@@ -1138,11 +1215,13 @@ void NoteSeqView::paint(juce::Graphics& g) {
         const auto c = colBounds(s);
         g.setColour(col::textDim);
         g.setFont(monoFont(7.0f));
-        g.drawText(juce::String(s + 1), c.withY(c.getY() + stepNumberY()).withHeight(10),
+        g.drawText(s % fable::SEQ_STEPS == 0 ? "BAR " + juce::String(s / fable::SEQ_STEPS + 1)
+                                             : juce::String(s % fable::SEQ_STEPS + 1),
+                   c.withY(c.getY() + stepNumberY()).withHeight(10).expanded(6, 0),
                    juce::Justification::centredTop, false);
 
         // playhead cursor (.ns-step-cursor)
-        if (playing && curStep == s && curPat == edit) {
+        if (cursorCol == s) {
             const auto cf = juce::Rectangle<float>((float)c.getX() - 2, (float)c.getY() - 2,
                                                    (float)c.getWidth() + 4, (float)(accentY() + kAccH) + 4);
             g.setColour(cyan.withAlpha(0.85f));
@@ -1154,14 +1233,12 @@ void NoteSeqView::paint(juce::Graphics& g) {
 
     // Painted piano-roll layer: each trigger owns a horizontal duration block.
     // The final 5px is a bright grab handle for right-edge resizing.
-    const int gridRight = getWidth() - kPadX - kClockW - kClockGap;
-    for (int s = 0; s < fable::SEQ_STEPS; ++s) {
-        const auto& st = steps[s];
+    for (int s = 0; s < total; ++s) {
+        const auto& st = steps[(size_t)s];
         if (!st.on) continue;
         const auto start = cellBounds(s, displayLane(st));
-        const int pitch = colBounds(s).getWidth();
-        const int width = pitch * st.duration + (int)std::round(kColGap * (float)(st.duration - 1));
-        auto block = start.withWidth(juce::jmax(pitch, juce::jmin(width, gridRight - start.getX()))).reduced(1, 1);
+        const int last = juce::jmin(total - 1, s + (int)st.duration - 1);
+        auto block = start.withRight(cellBounds(last, displayLane(st)).getRight()).reduced(1, 1);
         const auto bf = block.toFloat();
         g.setColour((st.acc ? juce::Colour(0xffaef2ff) : cyan).withAlpha(0.78f));
         g.fillRoundedRectangle(bf, 3.0f);
@@ -1170,12 +1247,25 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
     }
 
+    // ---- melodic POLY: lanes outside the loop (bar 1, first N cells) fade
+    // to 45 % (.sequence-poly-outside .ns-lanes) ----
+    if (model.supportsSequencePoly()) {
+        const auto poly = model.sequencePoly();
+        if (poly.enabled)
+            for (int s = 0; s < total; ++s) {
+                if (patternOfAbs(s) == 0 && s % fable::SEQ_STEPS < poly.steps) continue;
+                const auto c = colBounds(s);
+                g.setColour(col::panelLo.withAlpha(0.55f));
+                g.fillRect(c.getX() - 1, bodyY() - 1, c.getWidth() + 2, laneAreaHeight() + 2);
+            }
+    }
+
     // ---- selection / drag / ghost overlays (SeqPanel.tsx .ns-sel-rect etc.) ----
     // Given a normalized rect, the covering pixel box: note lanes run top-down
     // with the highest note on top, so noteHi maps to the top-left cell.
     auto rectPixels = [&](const fable::RectNorm& n) {
-        const int sLo = juce::jlimit(0, fable::SEQ_STEPS - 1, n.stepLo);
-        const int sHi = juce::jlimit(0, fable::SEQ_STEPS - 1, n.stepHi);
+        const int sLo = juce::jlimit(0, total - 1, n.stepLo);
+        const int sHi = juce::jlimit(0, total - 1, n.stepHi);
         const int nLo = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, n.noteLo);
         const int nHi = juce::jlimit(0, fable::SEQ_NOTE_LANES - 1, n.noteHi);
         const auto tl = cellBounds(sLo, nHi);
@@ -1208,18 +1298,19 @@ void NoteSeqView::paint(juce::Graphics& g) {
     if (noteDragActive_) {
         // The dragged note previews at its landing spot with its real length,
         // and the note it left behind is dimmed (.ns-note-preview / .drag-src).
-        const int dur = juce::jmax(1, (int)model.sequenceStep(model.editPattern(), ndSrcStep_).duration);
-        const auto noteRect = [this](int step, int note, int len) {
+        const int dur = juce::jmax(1, (int)stepAbs(ndSrcStep_).duration);
+        const auto noteRect = [this, total](int step, int note, int len) {
             auto r = cellBounds(step, note).toFloat();
-            r.setRight(cellBounds(juce::jmin(fable::SEQ_STEPS - 1, step + len - 1), note).toFloat().getRight());
+            r.setRight(cellBounds(juce::jmin(total - 1, step + len - 1), note).toFloat().getRight());
             return r;
         };
         g.setColour(juce::Colours::black.withAlpha(0.4f));
         g.fillRoundedRectangle(noteRect(ndSrcStep_, ndSrcNote_, dur), 2.0f);
         const int offset = ndGrabStep_ - ndSrcStep_;
-        const int dest = juce::jmax(0, ndOverStep_ - offset);
+        const int barStart = ndSrcStep_ - ndSrcStep_ % fable::SEQ_STEPS;
+        const int dest = juce::jlimit(barStart, barStart + fable::SEQ_STEPS - 1, ndOverStep_ - offset);
         // Snap target: a faint outline where the note lands on release.
-        const auto snap = noteRect(dest, ndOverNote_, juce::jmin(dur, fable::SEQ_STEPS - dest));
+        const auto snap = noteRect(dest, ndOverNote_, juce::jmin(dur, total - dest));
         g.setColour(cyan.withAlpha(0.35f));
         g.drawRoundedRectangle(snap.reduced(0.5f), 3.0f, 1.0f);
         // The note body itself rides the pointer at pixel resolution.
@@ -1241,7 +1332,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
     // Block-move preview: the rectangle outlined at its dragged destination.
     if (moving_) {
         const auto n = fable::rectNorm(rect_);
-        const int dStep = juce::jlimit(-n.stepLo, (fable::SEQ_STEPS - 1) - n.stepHi, moveHoverStep_ - moveOriginStep_);
+        const int dStep = juce::jlimit(-n.stepLo, (total - 1) - n.stepHi, moveHoverStep_ - moveOriginStep_);
         const int dNote = juce::jlimit(-n.noteLo, (fable::SEQ_NOTE_LANES - 1) - n.noteHi, moveHoverNote_ - moveOriginNote_);
         // Snap target: a faint outline where the block lands on release.
         const auto r = rectPixels({ n.stepLo + dStep, n.stepHi + dStep, n.noteLo + dNote, n.noteHi + dNote });
@@ -1263,7 +1354,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
             const auto sn = fable::rectNorm(ghostSrc_);
             for (const auto& cCell : ghostData_.cells) {
                 const int s = sn.stepLo + cCell.dStep, note = cCell.bytes[1] & 0x7f;
-                if (s < 0 || s >= fable::SEQ_STEPS) continue;
+                if (s < 0 || s >= total) continue;
                 g.setColour(juce::Colours::black.withAlpha(0.45f));
                 g.fillRoundedRectangle(cellBounds(s, note).toFloat(), 2.0f);
             }
@@ -1273,7 +1364,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
             for (const auto& cCell : ghostData_.cells) {
                 const int s = ghostHoverStep_ + cCell.dStep;
                 const int note = (cCell.bytes[1] & 0x7f) + dNote;
-                if (s < 0 || s >= fable::SEQ_STEPS || note < 0 || note > kMaxNote) continue;
+                if (s < 0 || s >= total || note < 0 || note > kMaxNote) continue;
                 const auto b = cellBounds(s, note).toFloat();
                 g.setColour(cyan.withAlpha(0.38f));
                 g.fillRoundedRectangle(b, 2.0f);

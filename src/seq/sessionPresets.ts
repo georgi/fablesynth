@@ -554,6 +554,7 @@ export function copySession(session: SessionDoc): SessionDoc {
     tracks: session.tracks.map((track) => ({ ...track, patch: track.patch.kind === 'inline'
       ? { ...track.patch, data: structuredClone(track.patch.data) } : { ...track.patch } })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip,
+      ...(clip.sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(clip.sequenceRhythm) } : {}),
       ...(clip.arp ? { arp: copyClipArp(clip.arp) } : {}),
       ...(clip.automation ? { automation: copyAutomation(clip.automation) } : {}),
       ...(clip.drumRhythm ? { drumRhythm: cloneDrumRhythm(clip.drumRhythm, clip.bars) } : {}),

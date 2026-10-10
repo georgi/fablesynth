@@ -1,3 +1,4 @@
+import { SequencePoly } from '../../components/SequencePoly';
 // The 16-step pitch sequencer: 12 note lanes per step (tap an empty cell = set note,
 // click a note = select it), draggable note lengths, octave / accent / slide rows,
 // bars 1–4 and sequence length. Shift-drag a cell to sweep a step ×
@@ -56,27 +57,29 @@ function SeqLength() {
   );
 }
 
-export function PitchSeq(props: { bars?: number; headerExtra?: ReactNode } = {}) {
+interface PitchSeqProps { bars?: number; headerExtra?: ReactNode; clipKey?: string }
+
+export function PitchSeq(props: PitchSeqProps = {}) {
   const arp = useBassStore(s => s.arpMode && !s.hosted);
   return arp ? <BassArpPanel /> : <PitchSeqGrid {...props} />;
 }
 
-function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: ReactNode } = {}) {
+export function PitchSeqGrid({ bars, headerExtra, clipKey }: PitchSeqProps = {}) {
   const hosted = useBassStore((s) => s.hosted);
-  const playing = useBassStore((s) => s.playing);
+  const sequenceRhythm = useBassStore(s => s.sequenceRhythm);
+  const updateSequenceRhythm = useBassStore(s => s.updateSequenceRhythm);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
   // them, so the engine tick never reconciles the whole grid.
   const chain = useBassStore((s) => s.chain);
   const patterns = useBassStore((s) => s.patterns);
   const rectSel = useBassStore((s) => s.rectSel);
-  const play = useBassStore((s) => s.play);
-  const stop = useBassStore((s) => s.stop);
   const toggleCell = useBassStore((s) => s.toggleCell);
   const cycleStepOct = useBassStore((s) => s.cycleStepOct);
   const toggleStepAcc = useBassStore((s) => s.toggleStepAcc);
   const toggleStepSlide = useBassStore((s) => s.toggleStepSlide);
   const setStepDuration = useBassStore((s) => s.setStepDuration);
   const randomize = useBassStore((s) => s.randomize);
+  const loadPatternPreset = useBassStore((s) => s.loadPatternPreset);
   const setRectSel = useBassStore((s) => s.setRectSel);
   const moveRectSel = useBassStore((s) => s.moveRectSel);
   const moveStepNote = useBassStore((s) => s.moveStepNote);
@@ -147,24 +150,17 @@ function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: Reac
   return (
     <section className="panel bl-seq-section" data-accent="a">
       <div className="panel-head bl-seq-head">
-        {!hosted && (
-          <button
-            className={`pb-btn bl-transport${playing ? ' active' : ''}`}
-            type="button"
-            aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
-            aria-pressed={playing}
-            onClick={playing ? stop : play}
-          >
-            {playing ? '■' : '▶'}
-          </button>
-        )}
         <h2>PITCH SEQ</h2>
-        {!hosted && <BassArpModeSwitch />}
         {!hosted && <SeqLength />}
         {headerExtra}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
+        {!hosted && <PatternPresetSelect names={BASS_PATTERN_PRESETS.map((p) => p.name)} onLoad={loadPatternPreset} />}
         <span className="bl-seq-hint">DRAG EMPTY = DRAW · DRAG NOTE = MOVE · EDGE = LENGTH</span>
       </div>
+
+      <SequencePoly rhythm={sequenceRhythm} clipKey={clipKey} onChange={updateSequenceRhythm}
+        onUndo={useBassStore.getState().undo}
+        onRedo={useBassStore.getState().redo} />
 
       <div className="bl-seq-body">
         <div className="bl-seq-legend">
@@ -180,7 +176,7 @@ function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: Reac
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               return (
                 <div
-                  className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}`}
+                  className={`bl-seq-col${sequenceRhythm.enabled && (pattern !== 0 || step >= sequenceRhythm.steps) ? ' sequence-poly-outside' : ''}${step === 0 && bar > 0 ? ' bar-start' : ''}`}
                   key={absoluteStep}
                 >
                   <div className="bl-seq-lanes">

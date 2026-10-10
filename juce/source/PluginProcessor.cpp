@@ -1,4 +1,5 @@
 #include "seq/AutomationCodec.h"
+#include "seq/SequenceRhythmCodec.h"
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ui/ArpCodec.h"
@@ -132,6 +133,14 @@ void FableAudioProcessor::shareSeqState(bool patterns, bool chain) {
     if (chain)    { chainShared_ = chain_;       chainDirty_ = true; }
 }
 
+void FableAudioProcessor::setSequenceRhythm(const fable::SequenceRhythm& r, bool markEdited) {
+    if (!fable::validSequenceRhythm(r)) return;
+    if (markEdited) programDirty_.markEdited();
+    seqRhythm_ = r;
+    std::lock_guard<std::mutex> lk(shareMutex_);
+    seqRhythmShared_ = r; rhythmDirty_ = true;
+}
+
 fable::NoteSeqStep FableAudioProcessor::getSeqStep(int pattern, int step) const {
     if (pattern < 0 || pattern >= fable::SEQ_NPATTERNS || step < 0 || step >= fable::SEQ_STEPS)
         return {};
@@ -199,6 +208,9 @@ int FableAudioProcessor::addUserTable(fable::UserTable table) {
 void FableAudioProcessor::deleteUserTable(int poolIndex) {
     if (poolIndex < 0 || poolIndex >= (int)userTables.size()) return;
     userTables.erase(userTables.begin() + poolIndex);
+    // Imported-preset slots shift with the pool.
+    importedSlots_.erase(std::remove(importedSlots_.begin(), importedSlots_.end(), poolIndex), importedSlots_.end());
+    for (auto& s : importedSlots_) if (s > poolIndex) --s;
     rebuildEngineTables();
     // Repair oscillator TABLE references around the removed slot (mirrors the web).
     const int removed = (int)tables.size() + poolIndex;
@@ -429,6 +441,7 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         for (int i = 0; i < n; ++i)
             scopeBuf[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
         scopeW.store(w + n, std::memory_order_relaxed);
+        outputTap_->write(l0, r0, n);
     }
     // Fixed-window measurement of the actual final output. No allocation or locking.
     const float* meterChannels[2] { buffer.getNumChannels() > 0 ? buffer.getReadPointer(0) : nullptr,
@@ -437,10 +450,51 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
 }
 
+bool FableAudioProcessor::loadImportedPreset(const juce::String& key, const std::vector<std::pair<std::string, float>>& params,
+                                             const std::vector<fable::UserTable>& presetTables, juce::String& error) {
+    // Reserve enough pool slots: reuse this feature's slots, then append.
+    const int spare = fable::MAX_USER_TABLES - (int)userTables.size();
+    const int missing = (int)presetTables.size() - (int)importedSlots_.size();
+    if (missing > spare) {
+        error = "The user wavetable pool is full. Delete " + juce::String(missing - spare) + " user table(s) first.";
+        return false;
+    }
+    for (size_t k = 0; k < presetTables.size(); ++k) {
+        if (k < importedSlots_.size()) updateUserTable(importedSlots_[k], presetTables[k]);
+        else importedSlots_.push_back(addUserTable(presetTables[k]) - (int)tables.size());
+    }
+    agentStateGeneration_.fetch_add(1);
+    fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
+    ParamArray pv = defaultParams();
+    for (const auto& [id, value] : params) {
+        const int i = idFromString(id);
+        if (i < 0) continue;
+        float v = value;
+        // Preset table k (index 6 + k) -> its pool slot.
+        if ((i == paramIndex(OSCA_BASE, OSC_TABLE) || i == paramIndex(OSCB_BASE, OSC_TABLE)) && v >= (float)tables.size()) {
+            const auto k = (size_t)std::lround(v) - tables.size();
+            v = k < presetTables.size() ? (float)(tables.size() + (size_t)importedSlots_[k]) : 0.0f;
+        }
+        pv[(size_t)i] = v;
+    }
+    const auto& info = paramInfo();
+    for (size_t i = 0; i < (size_t)NUM_PARAMS; ++i)
+        if (auto* param = apvts.getParameter(info[i].pid)) {
+            const auto& d = info[i];
+            const float norm = (d.kind == Kind::Bool) ? (pv[i] != 0.0f ? 1.0f : 0.0f)
+                             : (d.kind == Kind::Enum) ? param->convertTo0to1(pv[i])
+                             : valueToNorm(d, pv[i]);
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, norm));
+        }
+    importedKey_ = key;
+    return true;
+}
+
 void FableAudioProcessor::setCurrentProgram(int index) {
     agentStateGeneration_.fetch_add(1);
     if (index < 0 || index >= (int)factoryPresets().size()) return;
     currentProgram = index;
+    importedKey_.clear();
     fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
     // Apply preset values onto the APVTS so the host + UI reflect them.
     ParamArray pv = applyPreset(factoryPresets()[(size_t)index]);
@@ -556,6 +610,7 @@ void FableAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     for (int c : chain_) chainStr.add(juce::String(c));
     seq.setProperty("chain", chainStr.joinIntoString(","), nullptr);
     seq.setProperty("editPattern", editPattern_, nullptr);
+    seq.setProperty("sequenceRhythm", juce::JSON::toString(fable::sequenceRhythmToVar(seqRhythm_), true), nullptr);
     root.appendChild(seq, nullptr);
 
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
@@ -601,6 +656,12 @@ void FableAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
     std::vector<AutoLane> restoredAutomation;
     automationFromVar(juce::JSON::parse(seq.getProperty("automation").toString()),restoredAutomation,Machine::WT1);
     automationHistory_.clear(); setSequenceAutomation(restoredAutomation,false);
+    {   // melodic POLY (absent in older states = off)
+        fable::SequenceRhythm restoredRhythm;
+        if (seq.isValid() && seq.hasProperty("sequenceRhythm"))
+            fable::sequenceRhythmFromVar(juce::JSON::parse(seq.getProperty("sequenceRhythm").toString()), restoredRhythm);
+        setSequenceRhythm(restoredRhythm, false);
+    }
     shareSeqState(true, true);
     pushCmd(CmdPanic);
 

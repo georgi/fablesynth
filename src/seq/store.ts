@@ -1,3 +1,4 @@
+import { copySequenceRhythm, defaultSequenceRhythm, validSequenceRhythm, type SequenceRhythm } from '../shared/sequenceRhythm';
 import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rhythm';
 // The SQ-4 conductor (docs/sq4-clips.md §9). Owns all musical decisions:
 // the owner/queue launcher state, quantize boundary scheduling against the
@@ -69,7 +70,7 @@ export interface SeqStore {
   stopScene: (s: number) => void;
   togglePassThrough: (s: number, t: number) => void;
   updateDrumClipSequence: (s: number, t: number, bytes: Uint8Array, bars: number, rhythm: DrumRhythm | null) => string | null;
-  updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
+  updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number, sequenceRhythm?: SequenceRhythm) => void;
   updateClipArp: (s: number, t: number, patch: Partial<ClipArp>) => void;
   /** Replace a clip's automation lanes. A drag passes `history: false` after its first write. */
   updateClipAutomation: (s: number, t: number, lanes: AutoLane[], opts?: { history?: boolean; persist?: boolean }) => void;
@@ -240,7 +241,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
         if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm,
-          compileClipAutomation(w.clip, st.session.tracks[w.t].machine));
+          compileClipAutomation(w.clip, st.session.tracks[w.t].machine), w.clip.sequenceRhythm);
       }
     }
   };
@@ -269,7 +270,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const a = cur.scenes[s]?.clips[t] ?? null;
         const b = snapshot.scenes[s].clips[t];
         if (a === b) continue;
-        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp && a.automation === b.automation) continue;
+        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp && a.automation === b.automation && a.drumRhythm === b.drumRhythm && a.sequenceRhythm === b.sequenceRhythm) continue;
         writes.push({ s, t, clip: b });
       }
     }
@@ -277,7 +278,8 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       ...cur,
       scenes: cur.scenes.map((sc, s) => (snapshot.scenes[s] ? { ...sc, clips: snapshot.scenes[s].clips } : sc)),
     };
-    set({ session: next });
+    set({ session: next, ...(writes.some(w => cur.scenes[w.s]?.clips[w.t]?.sequenceRhythm !== w.clip?.sequenceRhythm)
+      ? { clipLoadRevision: get().clipLoadRevision + 1 } : {}) });
     syncWrites(writes);
     persist();
   };
@@ -394,7 +396,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine));
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine), clip.sequenceRhythm);
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -494,18 +496,25 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       return null;
     },
 
-    updateClipBytes: (s, t, bytes, bars) => {
+    updateClipBytes: (s, t, bytes, bars, sequenceRhythm) => {
       const st = get();
       const clip = st.session.scenes[s]?.clips[t];
       if (!clip) return;
+      if (sequenceRhythm !== undefined && !validSequenceRhythm(sequenceRhythm)) return;
       if (st.session.tracks[t]?.machine === 'DR1') {
         get().updateDrumClipSequence(s, t, bytes, bars, clip.drumRhythm ?? null);
         return;
       }
+      // The hosted editors always report a rhythm; a default one on a clip that never had POLY is absence.
+      const rhythm = sequenceRhythm && (clip.sequenceRhythm || JSON.stringify(sequenceRhythm) !== JSON.stringify(defaultSequenceRhythm()))
+        ? copySequenceRhythm(sequenceRhythm) : undefined;
+      const nextClip = { ...clip, bars, pattern: bytesToB64(bytes), ...(rhythm ? { sequenceRhythm: rhythm } : {}) };
+      // Only a rhythm change is seq-store history; note edits stay with the device undo.
+      if (JSON.stringify(nextClip.sequenceRhythm) !== JSON.stringify(clip.sequenceRhythm)) pushHistory();
       const scenes = st.session.scenes.map((sc, i) => {
         if (i !== s) return sc;
         const clips = sc.clips.slice();
-        clips[t] = { ...clip, bars, pattern: bytesToB64(bytes) };
+        clips[t] = nextClip;
         return { ...sc, clips };
       });
       set({ session: { ...st.session, scenes } });
@@ -516,7 +525,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation({ ...clip, bars }, st.session.tracks[t].machine));
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation(nextClip, st.session.tracks[t].machine), nextClip.sequenceRhythm);
       }
     },
 

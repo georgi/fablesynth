@@ -88,6 +88,7 @@ static double renderRms(SeqAudioProcessor& p, juce::AudioBuffer<float>& buf, int
 }
 
 #include "../source/seq/DrumRhythmCodec.h"
+#include "../source/ui/ArpCodec.h"
 #include "render_session.h"
 #include "AutomationHostChecks.h"
 #include "AutomationUiChecks.h"
@@ -1273,6 +1274,10 @@ int main(int argc, char** argv) {
         }
     }
     for (int track = 1; track < 4; ++track) {
+        // NEON TALE's pad comps in this scene; the tab checks start from a switched-off arp.
+        if (auto off = p.conductor().session().scenes[2].clips[(size_t)track].arp; off.enabled) {
+            off.enabled = false; p.conductor().updateClipArp(2, track, off);
+        }
         ed2->enterFocus(track, 2);
         auto* body = focusView.activeBodyComponent();
         auto* mode = findFxComponent<juce::TextButton>(*body, "ARP");
@@ -1535,12 +1540,19 @@ int main(int argc, char** argv) {
                 if (!factory) {
                     const auto params = webPatch.getProperty("data", {}).getProperty("params", {});
                     const auto* object = params.getDynamicObject();
-                    if (object == nullptr || object->getProperties().size() != (int)nativeTrack.patch.params.size())
+                    // Report the first difference so a parity break is easy to find.
+                    static int reported = 0;
+                    const auto miss = [&](const char* why, const std::string& id) {
+                        if (reported++ < 40) std::printf("  fixture mismatch: %s track %d %s %s\n", mine.name.c_str(), t, why, id.c_str());
                         metaMatches = false;
+                    };
                     for (const auto& [id, value] : nativeTrack.patch.params)
-                        if (!params.hasProperty(juce::Identifier(id))
-                            || std::abs((double)params.getProperty(juce::Identifier(id), 0) - value) > 1e-4)
-                            metaMatches = false;
+                        if (!params.hasProperty(juce::Identifier(id)))
+                            miss("missing on web", id);
+                        else if (std::abs((double)params.getProperty(juce::Identifier(id), 0) - value) > 1e-4)
+                            miss("value", id + " web " + params.getProperty(juce::Identifier(id), 0).toString().toStdString() + " native " + std::to_string(value));
+                    if (object == nullptr || object->getProperties().size() != (int)nativeTrack.patch.params.size())
+                        miss("param count", std::to_string(object ? object->getProperties().size() : -1) + " web vs " + std::to_string(nativeTrack.patch.params.size()) + " native");
                 }
                 if ((int)webPatch.getProperty(factory ? "index" : "base", -1) != nativeTrack.patch.index
                     || std::abs((double)webTrack.getProperty("gain", -1.0) - (double)nativeTrack.gain) > 1e-6)
@@ -1561,6 +1573,26 @@ int main(int argc, char** argv) {
                     std::vector<fable::AutoLane> webLanes;
                     if (webClip.hasProperty("automation") && !fable::automationFromVar(webClip["automation"], webLanes, mine.session.tracks[(size_t)t].machine)) clipsMatch = false;
                     if (juce::JSON::toString(fable::automationToVar(webLanes)) != juce::JSON::toString(fable::automationToVar(nativeClip.automation))) clipsMatch = false;
+                    // Chord-track arps (clipArp.ts chordTrackArp).
+                    {
+                        fable::ArpSettings webArp;
+                        const bool webHasArp = webClip.hasProperty("arp");
+                        if (webHasArp && !fable::arpFromVar(webClip["arp"], webArp, true)) clipsMatch = false;
+                        if (webHasArp != nativeClip.hasArp
+                            || (webHasArp && juce::JSON::toString(fable::arpToVar(webArp)) != juce::JSON::toString(fable::arpToVar(nativeClip.arp)))) {
+                            std::printf("  fixture mismatch: %s scene %d track %d arp\n", mine.name.c_str(), s, t);
+                            clipsMatch = false;
+                        }
+                    }
+                    // POLY lanes and micro-timing (songs/grooves.ts, authored songs).
+                    fable::ClipData webRhythm;
+                    if (webClip.hasProperty("drumRhythm")
+                        && !fable::drumRhythmFromVar(webClip["drumRhythm"], webRhythm, mine.session.tracks[(size_t)t].machine)) clipsMatch = false;
+                    if (webRhythm.hasDrumRhythm != nativeClip.hasDrumRhythm
+                        || juce::JSON::toString(fable::drumRhythmToVar(webRhythm)) != juce::JSON::toString(fable::drumRhythmToVar(nativeClip))) {
+                        std::printf("  fixture mismatch: %s scene %d track %d drumRhythm\n", mine.name.c_str(), s, t);
+                        clipsMatch = false;
+                    }
                     const auto& nativeBytes = nativeClip.bytes;
                     if (decoded.getDataSize() != nativeBytes.size()
                         || std::memcmp(decoded.getData(), nativeBytes.data(), nativeBytes.size()) != 0)
@@ -2162,6 +2194,90 @@ int main(int argc, char** argv) {
         measuredProcessor.releaseResources();
         check(!static_cast<bool>(codeact::get(agent.snapshot().audio, "available")),
               "SQ released resources invalidate output measurements");
+    }
+
+    {
+        // Melodic sequence POLY (web SequencePoly.tsx) in the hosted BL-1 and
+        // WT-1 editors: the strip edits the focused clip's rhythm, shares the
+        // note undo history, and the session JSON carries it.
+        std::printf("\n== hosted melodic POLY strip ==\n");
+        SeqAudioProcessor p;
+        p.prepareToPlay(48000.0, 128);
+        p.applySessionJson(fable::sessionToJson(fable::factorySession()));
+        auto& conductor = p.conductor();
+        for (int t : { 1, 2, 3 }) if (!conductor.session().scenes[0].hasClip[(size_t)t]) conductor.createClip(0, t);
+        auto findStrip = [](juce::Component& view) -> fui::SequencePolyStrip* {
+            for (auto* child : view.getChildren())
+                if (auto* strip = dynamic_cast<fui::SequencePolyStrip*>(child)) return strip;
+            return nullptr;
+        };
+        const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+        out.createDirectory();
+        auto writeView = [&](juce::Component& view, const char* name) {
+            const auto image = view.createComponentSnapshot(view.getLocalBounds());
+            const auto file = out.getChildFile(name);
+            file.deleteFile();
+            if (auto stream = file.createOutputStream()) juce::PNGImageFormat().writeImageToStream(image, *stream);
+        };
+        {
+            fui::HostedBassModel model(p);
+            model.setTargetScene(0);
+            fui::PitchSeqView view(model);
+            view.setBounds(0, 0, 1180, 420);
+            auto* strip = findStrip(view);
+            check(strip && strip->isVisible() && !strip->isOpen(), "BL-1 hosted editor shows a closed POLY disclosure");
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                strip->press(fui::SequencePolyStrip::fit);
+                for (int i = 0; i < 4; ++i) strip->press(fui::SequencePolyStrip::stepsDown);
+                strip->press(fui::SequencePolyStrip::rotateDown);
+                const auto& clip = conductor.session().scenes[0].clips[1];
+                check(clip.hasSequenceRhythm && clip.sequenceRhythm.enabled && clip.sequenceRhythm.fit
+                          && clip.sequenceRhythm.steps == 12 && clip.sequenceRhythm.rotation == 11,
+                      "BL-1 strip writes the clip's POLY (ON, FIT, 12 steps, rotate wraps to 11)");
+                fable::SessionData back;
+                check(fable::sessionFromJson(fable::sessionToJson(conductor.session()), back)
+                          && back.scenes[0].clips[1].sequenceRhythm.steps == 12,
+                      "BL-1 clip POLY round-trips through the session JSON");
+                view.resized();
+                writeView(view, "bl1-hosted-poly-fit.png");
+                view.undoEdit();
+                check(conductor.session().scenes[0].clips[1].sequenceRhythm.rotation == 0,
+                      "BL-1 undo steps back one POLY edit");
+                for (int i = 0; i < 6; ++i) view.undoEdit();
+                check(!conductor.session().scenes[0].clips[1].sequenceRhythm.enabled,
+                      "BL-1 undo restores POLY OFF (clip keeps a rhythm once it had one, web parity)");
+                view.redoEdit();
+                check(conductor.session().scenes[0].clips[1].sequenceRhythm.enabled, "BL-1 redo re-enables POLY");
+            }
+        }
+        {
+            fui::HostedWtModel model(p, 2);
+            model.setTarget(0);
+            fui::NoteSeqView view(model);
+            view.setBounds(0, 0, 1180, 520);
+            auto* strip = findStrip(view);
+            check(strip && strip->isVisible(), "WT-1 hosted editor shows the POLY strip");
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                for (int i = 0; i < 9; ++i) strip->press(fui::SequencePolyStrip::stepsDown);
+                const auto& clip = conductor.session().scenes[0].clips[2];
+                check(clip.hasSequenceRhythm && clip.sequenceRhythm.enabled && !clip.sequenceRhythm.fit
+                          && clip.sequenceRhythm.steps == 7, "WT-1 strip writes a GRID 7 POLY");
+                check(strip->summary() == "GRID 7", "WT-1 disclosure summary reads GRID 7");
+                view.resized();
+                writeView(view, "wt1-hosted-poly-grid.png");
+                view.undoEdit();
+                check(conductor.session().scenes[0].clips[2].sequenceRhythm.steps == 8, "WT-1 undo steps back one POLY edit");
+            }
+            fable::SequenceRhythm untouched;
+            check(conductor.updateClipRhythm(0, 3, untouched)
+                      && !conductor.session().scenes[0].clips[3].hasSequenceRhythm,
+                  "a default POLY on a clip that never had one stays absent");
+            check(!conductor.updateClipRhythm(0, 0, untouched), "DR-1 clips reject melodic POLY");
+        }
     }
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);

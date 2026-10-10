@@ -77,6 +77,10 @@ public:
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;
+    // The edited clip's melodic POLY (Conductor::updateClipRhythm).
+    bool supportsSequencePoly() const override { return hasTargetClip(); }
+    SeqPolySettings sequencePoly() const override;
+    void setSequencePoly(const SeqPolySettings&) override;
 
 private:
     static constexpr int kTrack = 1;
