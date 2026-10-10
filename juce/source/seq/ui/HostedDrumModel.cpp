@@ -10,6 +10,23 @@
 namespace fui {
 
 fable::FxTelemetry HostedDrumModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(0, pad, bus); }
+static std::vector<std::string> sessionTrackNames(SeqAudioProcessor& proc) {
+    std::vector<std::string> names;
+    if (proc.preparedSampleRate() <= 0) return names;   // no conductor before prepareToPlay
+    for (const auto& t : proc.conductor().session().tracks) names.push_back(t.name);
+    return names;
+}
+AutoEqSource HostedDrumModel::autoEqSource(int pad) const { return drumAutoEqSource(pad, &proc_.trackTap(0)); }
+AutoCompSource HostedDrumModel::autoCompSource(int pad) const {
+    return { &proc_.compTrace(0, pad), pad < 0 ? "glue" : "punch", {} };
+}
+SideChainInfo HostedDrumModel::sideChain() const { return drumSideChain(*this, true, sessionTrackNames(proc_)); }
+std::optional<double> HostedDrumModel::analysisTempo() const {
+    return proc_.preparedSampleRate() > 0 ? std::optional<double>(hostBpm()) : std::nullopt;
+}
+double HostedDrumModel::analysisSampleRate() const { return proc_.preparedSampleRate() > 0 ? proc_.preparedSampleRate() : 48000; }
+void HostedDrumModel::setPadCapture(bool on) { proc_.setDrumPadCapture(on); }
+const fable::PadCaptureTap* HostedDrumModel::padCapture(int pad) const { return &proc_.drumPadCapture(pad); }
 
 HostedDrumModel::HostedDrumModel(SeqAudioProcessor& proc)
     : proc_(proc),

@@ -2893,7 +2893,7 @@ class FableProcessor extends AudioWorkletProcessor {
           gains: Array.from(ott.gain, (value, i) => ottActive && ott.env[i] > 1e-7 ? db(value) : 0),
           makeup: ottActive ? db(ott.autoGain.gain) : 0,
         },
-        comp: { input: rms(2), output: rms(3), reduction: fx.meterReduction,
+        comp: { input: rms(2), output: rms(3), reduction: fx.meterReduction, trace: comp.takeTrace(),
           makeup: comp.wetTarget ? db(comp.autoGain.gain) : 0 },
       });
       fx.meterEnergy.fill(0); fx.meterSamples = 0; fx.meterReduction = 0;

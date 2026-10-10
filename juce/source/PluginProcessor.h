@@ -117,6 +117,9 @@ public:
     double getCurrentSr()  const { return currentSr.load(); }
     // Copy the most recent n post-FX mono samples (oldest -> newest) into dst.
     void   readScope(float* dst, int n) const;
+    // Post-FX output (MAIN for DR-1) as a lock-free stereo stream for
+    // auto-EQ and other message-thread analysis (dsp/AnalysisTap.h).
+    const fable::ProgramTap& outputTap() const { return *outputTap_; }
 
     // ---- note sequencer (BL-1 conventions) --------------------------------
     // Transport: message thread -> engine via a lock-free command FIFO.
@@ -250,11 +253,27 @@ public:
     fui::ParameterSource parameters() override;
     fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    fui::AutoEqSource autoEqSource(int) const override { return { &proc.outputTap(), false, "lead", {} }; }
+    fui::AutoCompSource autoCompSource(int) const override { return { &proc.compTrace(), "level", {} }; }
+    double analysisSampleRate() const override { return proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000; }
+    std::optional<double> analysisTempo() const override {
+        return hostSynced() ? std::optional<double>(hostBpm()) : std::nullopt;
+    }
     fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
     void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
     fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
     bool seqEnabled() const override { return proc.isSeqEnabled(); }
     void setSeqEnabled(bool on) override { proc.setSeqEnabled(on); }
+    bool supportsSequencePoly() const override { return true; }
+    fui::SeqPolySettings sequencePoly() const override {
+        const auto r = proc.getSequenceRhythm();
+        fui::SeqPolySettings out; out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+        out.rotation = r.rotation; out.cycleBeats = r.cycleBeats; return out;
+    }
+    void setSequencePoly(const fui::SeqPolySettings& p) override {
+        fable::SequenceRhythm r; r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps;
+        r.rotation = p.rotation; r.cycleBeats = p.cycleBeats; proc.setSequenceRhythm(r);
+    }
     void clearArpKeys() override { proc.clearArpKeys(); }
     void arpKeyInput(int n, bool on) override { proc.arpKeyInput(n, on); }
     bool programDirty() const override;

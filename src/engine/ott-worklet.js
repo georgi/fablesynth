@@ -55,8 +55,17 @@ class Compressor {
     this.autoGain = new AutoGain(sr);
     this.sr = sr; this.ratio = this.ratioTarget = 4;
     this.wet = 0; this.threshold = -16;
+    // Detector input (max |L|,|R| per sample) since the last telemetry block,
+    // so auto-comp can run this exact detector on the material. Bounded: an
+    // undrained trace stops filling.
+    this.trace = new Float32Array(Math.ceil(sr / 10)); this.traceLen = 0;
+    // Side-chain: an external key drives the detector through a one-pole
+    // high-pass. Automatic makeup is off while keyed, or it would undo the
+    // ducking the key asks for.
+    this.keyed = false; this.keyCoef = 0; this.keyLpL = 0; this.keyLpR = 0;
     this.setParams(false, -16); this.reset();
   }
+  takeTrace() { const t = this.trace.slice(0, this.traceLen); this.traceLen = 0; return t; }
   setParams(on, threshold, attack = 0.003, release = 0.25, ratio = 4) {
     this.attack = 1 - Math.exp(-1 / (Math.max(0.0001, Math.min(0.1, attack)) * this.sr));
     this.release = 1 - Math.exp(-1 / (Math.max(0.01, Math.min(2, release)) * this.sr));

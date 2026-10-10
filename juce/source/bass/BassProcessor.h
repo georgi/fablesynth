@@ -110,6 +110,9 @@ public:
 
     // ---- HUD feeds ----
     void  readScope(float* dst, int n) const;         // post-FX ring buffer
+    // Post-FX output (MAIN for DR-1) as a lock-free stereo stream for
+    // auto-EQ and other message-thread analysis (dsp/AnalysisTap.h).
+    const fable::ProgramTap& outputTap() const { return *outputTap_; }
     float getVizPos() const { return vizPos_.load(); }
     float getVizEnv() const { return vizEnv_.load(); }
     float getVizFenv() const { return vizFenv_.load(); }

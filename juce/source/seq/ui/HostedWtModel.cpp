@@ -28,6 +28,21 @@ void HostedWtModel::setArpSettings(const fable::ArpSettings& a) {
 }
 
 fable::FxTelemetry HostedWtModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(track_, pad, bus); }
+static std::vector<std::string> sessionTrackNames(SeqAudioProcessor& proc) {
+    std::vector<std::string> names;
+    if (proc.preparedSampleRate() <= 0) return names;   // no conductor before prepareToPlay
+    for (const auto& t : proc.conductor().session().tracks) names.push_back(t.name);
+    return names;
+}
+AutoEqSource HostedWtModel::autoEqSource(int) const { return { &proc_.trackTap(track_), false, "lead", {} }; }
+AutoCompSource HostedWtModel::autoCompSource(int) const { return { &proc_.compTrace(track_), "level", {} }; }
+SideChainInfo HostedWtModel::sideChain() const {
+    return { fable::SC_SOURCES, true, trackKeyLabels(sessionTrackNames(proc_)) };
+}
+std::optional<double> HostedWtModel::analysisTempo() const {
+    return proc_.preparedSampleRate() > 0 ? std::optional<double>(hostBpm()) : std::nullopt;
+}
+double HostedWtModel::analysisSampleRate() const { return proc_.preparedSampleRate() > 0 ? proc_.preparedSampleRate() : 48000; }
 namespace {
 
 const std::vector<fable::UserTable>& noUserTables() {

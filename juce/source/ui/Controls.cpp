@@ -401,29 +401,23 @@ void Knob::paint(juce::Graphics& g) {
             juce::Path ringArc;
             ringArc.addCentredArc(cx, cy, rr, rr, 0, degToRad(dFrom), degToRad(dTo), true);
             g.setColour(c);
-            g.strokePath(ringArc, juce::PathStrokeType(ringThk * 0.7f,
+            const bool lit = (int)i == grabbedRing_ || (int)i == hoverRing_ || focus == ring.src;
+            g.strokePath(ringArc, juce::PathStrokeType(ringThk * (lit ? 1.0f : 0.9f),
                          juce::PathStrokeType::curved, juce::PathStrokeType::butt));
         }
     }
 
-    // Keep the stored arc visible; a separate amber trace shows the value
-    // actually played by the lane. The pointer follows the combined result.
+    // Keep the stored arc visible; a separate amber trace inside it shows the
+    // value actually played by the lane.
     const float automated=automationNorm();
     if (automated>=0) {
-        const float rr=arcR-5*scale;
+        const float rr=29*scale;
         const float end=degToRad(A0+(A1-A0)*automated);
         juce::Path path;
         path.addCentredArc(cx,cy,rr,rr,0,degToRad(deg),end,true);
         g.setColour(juce::Colour(0xffffdd6b));
-        g.strokePath(path,juce::PathStrokeType(3*scale));
+        g.strokePath(path,juce::PathStrokeType(2.4f*scale));
         g.fillEllipse(cx+rr*std::sin(end)-3*scale,cy-rr*std::cos(end)-3*scale,6*scale,6*scale);
-    }
-    if (modDest_>0 && !rings_.empty() && liveNorm()>=0) {
-        const float base=automated>=0 ? automated : n;
-        juce::Path path;
-        path.addCentredArc(cx,cy,arcR,arcR,0,degToRad(A0+(A1-A0)*base),degToRad(A0+(A1-A0)*liveNorm()),true);
-        g.setColour(modSourceColour(rings_[0].src));
-        g.strokePath(path,juce::PathStrokeType(5*scale,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     }
 
     // live modulation dot: the current MODULATED position (base + the sounding

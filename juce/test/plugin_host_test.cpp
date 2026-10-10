@@ -826,8 +826,40 @@ int main(int argc, char** argv) {
         check(std::isnan(proc.getLiveMod(3)), "live-mod feed idles (NaN) after release", 0);
     }
 
+    {
+        // Stepped knobs (sub.oct: -2 / -1) must move with a drag and a wheel
+        // tick. Small deltas used to snap back to the stored step every write.
+        FableAudioProcessor stepProc;
+        auto* oct = stepProc.apvts.getParameter("sub.oct");
+        fui::Knob knob(stepProc.apvts, "sub.oct", fui::Knob::Sm, fui::Accent::N);
+        knob.setSize(52, 58);
+        auto mouse = [&](float y) {
+            return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), {26.0f, y},
+                juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, &knob, &knob,
+                juce::Time::getCurrentTime(), {26.0f, 20.0f}, juce::Time::getCurrentTime(), 1, false);
+        };
+        const float before = oct ? oct->getValue() : -1.0f;
+        knob.mouseDown(mouse(20));
+        for (int i = 1; i <= 30; ++i) knob.mouseDrag(mouse(20.0f + (float)i * 5.0f));
+        knob.mouseUp(mouse(170));
+        const float dragged = oct ? oct->getValue() : -1.0f;
+        juce::MouseWheelDetails wheel; wheel.deltaY = .1f;
+        knob.mouseWheelMove(mouse(20), wheel);
+        check(oct && before == 1.0f && dragged == 0.0f && oct->getValue() == 1.0f,
+              "stepped sub.oct knob moves with a drag and one wheel tick", dragged);
+    }
+
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<FableAudioProcessor>("wt", Rack::LW, Rack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++fail;
+    const auto pluck = [](auto&, juce::MidiBuffer& midi, int block) {
+        // A plucked line: 48/55/60/55, a note every 24 blocks (~256 ms), held ~150 ms.
+        static const int notes[] = {48, 55, 60, 55};
+        const int note = notes[(block / 24) % 4];
+        if (block % 24 == 0) midi.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)(block % 48 ? 80 : 120)), 0);
+        if (block % 24 == 14) midi.addEvent(juce::MidiMessage::noteOff(1, note), 0);
+    };
+    fail += automixchecks::runStandalone<FableAudioProcessor>("wt1", Rack::LW, Rack::LH, false, pluck);
+    fail += livespectrumchecks::runStandalone<FableAudioProcessor>("wt1", Rack::LW, Rack::LH, false, pluck);
     if (!runArpProcessorChecks<FableAudioProcessor>("wt", false)) ++fail;
     {
         // LAB page: five devices fit the page and their LEDs drive fx.*.on.

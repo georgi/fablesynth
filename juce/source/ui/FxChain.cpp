@@ -213,7 +213,76 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
         addAndMakeVisible(division_);
         addAndMakeVisible(sync_);
     }
-    startTimerHz(30);
+    if (kind == Eq || kind == Comp) {
+        auto_.setClickingTogglesState(true);
+        auto_.setTitle(kind == Eq ? "Auto-EQ: match the spectrum to a reference"
+                                  : "Auto-comp: learn the input level and set the compressor");
+        auto_.setColour(juce::TextButton::buttonOnColourId, col::acN.withAlpha(.18f));
+        auto_.setColour(juce::TextButton::textColourOnId, col::text);
+        auto_.onClick = [this] { setAutoOpen(auto_.getToggleState()); };
+        addAndMakeVisible(auto_);
+    }
+    if (kind == Comp && source_.parameter(prefix_ + "fx.comp.sc")) {
+        sideChain_ = std::make_unique<SideChainRow>(source_, prefix_, model_.sideChain());
+        sideChain_->onValueChanged = [this](int sc) {
+            keyHp_.reset();
+            if (sc > 0) {
+                keyHp_ = std::make_unique<Knob>(source_, prefix_ + "fx.comp.schp", Knob::Sm, Accent::N);
+                keyHp_->setLabelText("KEY HP");
+                addChildComponent(*keyHp_);
+            }
+            applyAutoVisibility();
+            resized();
+            repaint();
+        };
+        sideChain_->onValueChanged(sideChain_->value());
+        addAndMakeVisible(*sideChain_);
+    }
+    startVisualTimer(*this, fui::kAnimationHz);
+    if (kind == Eq)
+        liveTick_ = std::make_unique<VisualTick>(*this, LiveSpectrum::kHz,
+            [this] { updateLiveSpectrum(juce::Time::getMillisecondCounterHiRes()); },
+            [this] { live_.clear(); });
+}
+// Live spectrum of the device output (or the host's choice), ~30 Hz while visible.
+void FxModuleView::updateLiveSpectrum(double nowMs) {
+    if (live_.update(model_.liveSpectrumTap(scopePad()), model_.analysisSampleRate(), nowMs))
+        repaint(plot_);
+}
+void FxModuleView::setAutoOpen(bool open) {
+    autoOpen_ = open;
+    auto_.setToggleState(open, juce::dontSendNotification);
+    autoEq_.reset();
+    autoComp_.reset();
+    if (open && kind_ == Eq) {
+        autoEq_ = std::make_unique<AutoEqStrip>(model_.autoEqSource(scopePad()), source_, prefix_,
+                                                model_.analysisSampleRate());
+        autoEq_->onFitChanged = [this] { repaint(); };
+        addAndMakeVisible(*autoEq_);
+    }
+    if (open && kind_ == Comp) {
+        auto *model = &model_;
+        autoComp_ = std::make_unique<AutoCompStrip>(model_.autoCompSource(scopePad()), source_, prefix_,
+                                                    model_.analysisSampleRate(),
+                                                    [model] { return model->analysisTempo(); });
+        addAndMakeVisible(*autoComp_);
+    }
+    staticLayerDirty_ = true;
+    previewStateValid_ = false;
+    applyAutoVisibility();
+    resized();
+    repaint();
+}
+void FxModuleView::applyAutoVisibility() {
+    for (auto *k : knobs_)
+        k->setVisible(!autoOpen_);
+    if (kind_ == Eq)
+        for (auto *c : std::initializer_list<juce::Component *>{&bandOn_, &reset_, &shape_})
+            c->setVisible(!autoOpen_);
+    if (sideChain_)
+        sideChain_->setVisible(!autoOpen_);
+    if (keyHp_)
+        keyHp_->setVisible(!autoOpen_);
 }
 FxModuleView::~FxModuleView() {
     stopTimer();
@@ -904,6 +973,26 @@ void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
                 stroke(g, traces[(size_t)i], col::acN.withAlpha(.16f), .8f);
         }
         stroke(g, traces[4], power_.isOn() ? col::text : col::acN.withAlpha(.5f), 1.6f);
+        // Correction that would match the reference exactly, over the bands with energy.
+        if (const auto *fit = autoEq_ ? autoEq_->learner().fit() : nullptr) {
+            juce::Path match;
+            bool started = false;
+            for (size_t i = 0; i < fable::automix::NUM_BANDS; ++i) {
+                if (!fit->present[i])
+                    continue;
+                const float x = X((float)fable::automix::BAND_HZ[i]), y = Y(clamp((float)-fit->deviation[i], -15, 15));
+                if (started)
+                    match.lineTo(x, y);
+                else
+                    match.startNewSubPath(x, y);
+                started = true;
+            }
+            juce::Path dashed;
+            const float dash[] = {3, 3};
+            juce::PathStrokeType(1.2f).createDashedStroke(dashed, match, dash, 2);
+            g.setColour(col::acN.withAlpha(.8f));
+            g.fillPath(dashed);
+        }
     }
     for (int i = 0; i < 4; ++i) {
         float x = X(displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][0]))),

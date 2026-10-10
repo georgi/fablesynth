@@ -14,6 +14,10 @@ import { MasterFxRack } from './components/MasterFxRack';
 import { useSeqStore } from './store';
 import { useStore as useWtStore } from '../store';
 import { useBassStore } from '../bass/store';
+import { setTempoProvider } from '../engine/autoComp';
+
+// Auto-comp release times follow the session tempo inside SQ-4.
+setTempoProvider(() => useSeqStore.getState().session.bpm);
 
 export function SeqApp() {
   const [agentOpen, setAgentOpen] = useState(false);

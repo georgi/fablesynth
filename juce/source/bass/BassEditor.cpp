@@ -9,6 +9,12 @@ public:
     fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::ParameterSource parameters() override { const auto& i = fable::bassParamInfo(); return fui::ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    fui::AutoEqSource autoEqSource(int) const override { return { &proc.outputTap(), false, "bass", {} }; }
+    fui::AutoCompSource autoCompSource(int) const override { return { &proc.compTrace(), "level", {} }; }
+    double analysisSampleRate() const override { return proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000; }
+    std::optional<double> analysisTempo() const override {
+        return proc.isHostSynced() ? std::optional<double>(proc.getHostBpm()) : std::nullopt;
+    }
     fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
     void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
     fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }

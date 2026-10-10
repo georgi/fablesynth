@@ -22,6 +22,8 @@ export interface SeqRig {
   panic(): void;
   /** Per-track post-fader analysers (scope traces + VU), null in fakes. */
   trackAnalysers: AnalyserNode[] | null;
+  /** Pre-FX master sum and final output analysers for the mix assistant. */
+  masterTaps?: { input: AnalyserNode; output: AnalyserNode } | null;
 }
 
 export class WebAudioRig implements SeqRig {
@@ -43,9 +45,15 @@ export class WebAudioRig implements SeqRig {
     await ctx.audioWorklet.addModule(sharedFxWorkletUrl);
     await ctx.audioWorklet.addModule(masterWorkletUrl);
     this.masterBus = new AudioWorkletNode(ctx, 'fable-sq-master', {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+      // Input 1 is the side-chain key bus. Five discrete channels: the browser's
+      // speaker layouts would otherwise remix it and drop channel 4 (KICK).
+      numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2],
+      channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
     });
     this.masterBus.connect(ctx.destination);
+    const tap = () => Object.assign(ctx.createAnalyser(), { fftSize: 8192, smoothingTimeConstant: 0 });
+    this.masterTaps = { input: tap(), output: tap() };
+    this.masterBus.connect(this.masterTaps.output);
     this.setMasterFx(masterFxParams(session.masterFx));
 
     this.trackAnalysers = [];
@@ -64,6 +72,7 @@ export class WebAudioRig implements SeqRig {
       deviceOutputs.push(deviceOutput);
       gain.connect(this.masterBus);
       gain.connect(analyser);
+      gain.connect(this.masterTaps.input);
       inits.push(device.init(ctx, deviceOutput).then(() => device.applyPatch(track.patch)));
     }
     await Promise.all(inits);

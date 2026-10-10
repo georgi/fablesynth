@@ -144,25 +144,21 @@ void SeqHeader::refreshLibrarySelection() {
         onLibrarySessionChanged();
 }
 
-juce::uint32 SeqHeader::paintSignature(bool scopeLive) const {
+juce::uint32 SeqHeader::paintSignature() const {
     const auto& cond = proc.conductor();
-    const auto pos = cond.songPos();
-
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
     mix(cond.playing() ? 1 : 0);
     mix((int)cond.quant());
-    mix(pos.bar);
-    mix(pos.beat);
-    mix((int)std::lround(cond.session().bpm));
     mix((int)std::lround(swingValue() * 10000.0f));
     mix((int)std::lround(volValue() * 10000.0f));
-    mix(scopeLive ? 1 : 0);   // the trace's last frame must land when it dies
     return sig;
 }
 
 void SeqHeader::timerCallback() {
-    refreshLibrarySelection();   // drives the library combo box, not the paint
+    // Drives the library combo box, not the paint. The match serializes the
+    // whole session, so keep it at ~5 Hz independently of animation cadence.
+    if (++libraryPollTick_ >= kAnimationHz / 5) { libraryPollTick_ = 0; refreshLibrarySelection(); }
 
     // paintScope reads the newest 512 scope samples; a silent window means the
     // trace is a flat line that does not need redrawing.

@@ -1,8 +1,11 @@
 #pragma once
 
+#include "AutoMixSources.h"
 #include "ParameterSource.h"
 #include "../dsp/FxTelemetry.h"
 #include "../dsp/Arp.h"
+
+#include <optional>
 
 // Host transport snapshot used by tempo-synchronised device displays.
 struct HostTransport {
@@ -65,6 +68,28 @@ public:
     virtual void setArpSwing(double) {}
     virtual double arpTempo() const { return 120; }
     virtual bool arpQueued() const { return false; }
+    // SQ-4 chord linking: the scene's other linked chord tracks, or -1 where
+    // the device cannot link (standalone).
+    virtual int arpChordLinkPeers() const { return -1; }
+    // Melodic sequence POLY for the edited clip. Only models whose engine
+    // plays it (SQ-4 hosted WT-1/BL-1 clips) report support.
+    virtual bool supportsSequencePoly() const { return false; }
+    virtual SeqPolySettings sequencePoly() const { return {}; }
+    virtual void setSequencePoly(const SeqPolySettings&) {}
+
+    // Auto-mix analysis (AutoMix.h). `pad` is the DR-1 pad scope, -1 for the
+    // unscoped strip (WT-1, BL-1, the DR-1 group). Defaults: nothing to tap.
+    virtual AutoEqSource autoEqSource(int /*pad*/) const { return {}; }
+    virtual AutoCompSource autoCompSource(int /*pad*/) const { return {}; }
+    virtual SideChainInfo sideChain() const { return { fable::SC_SOURCES, false, {} }; }
+    // Live EQ spectrum: the device output, or null where no isolated signal exists.
+    virtual const fable::ProgramTap* liveSpectrumTap(int pad) const { return autoEqSource(pad).tap; }
+    virtual double analysisSampleRate() const { return 48000; }
+    // Session or host tempo when known; empty lets auto-comp estimate it.
+    virtual std::optional<double> analysisTempo() const { return std::nullopt; }
+    // DR-1 KIT MIX: post-FX capture of every pad. Null where unsupported.
+    virtual void setPadCapture(bool) {}
+    virtual const fable::PadCaptureTap* padCapture(int /*pad*/) const { return nullptr; }
 };
 
 } // namespace fui

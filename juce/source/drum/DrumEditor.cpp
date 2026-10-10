@@ -14,6 +14,15 @@ public:
         return source;
     }
     DeviceUiCapabilities capabilities() const override { return {}; }
+    AutoEqSource autoEqSource(int pad) const override { return drumAutoEqSource(pad, &proc.outputTap()); }
+    AutoCompSource autoCompSource(int pad) const override { return { &proc.compTrace(pad, 0), pad < 0 ? "glue" : "punch", {} }; }
+    SideChainInfo sideChain() const override { return drumSideChain(*this, false, {}); }
+    double analysisSampleRate() const override { return proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000; }
+    std::optional<double> analysisTempo() const override {
+        return proc.isHostSynced() ? std::optional<double>(proc.getHostBpm()) : std::nullopt;
+    }
+    void setPadCapture(bool on) override { proc.setPadCapture(on); }
+    const fable::PadCaptureTap* padCapture(int pad) const override { return &proc.padCapture(pad); }
     bool programDirty() const override { return proc.isProgramDirty(); }
     int selectedPad() const override { return proc.getSelectedPad(); }
     void selectPad(int i) override { proc.setSelectedPad(i); }

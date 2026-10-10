@@ -32,6 +32,11 @@ public:
 
     ParameterSource parameters() override;
     fable::FxTelemetry fxTelemetry(int pad, int bus) const override;
+    AutoEqSource autoEqSource(int pad) const override;
+    AutoCompSource autoCompSource(int pad) const override;
+    SideChainInfo sideChain() const override;
+    double analysisSampleRate() const override;
+    std::optional<double> analysisTempo() const override;
     DeviceUiCapabilities capabilities() const override;
     fable::ArpSettings arpSettings() const override;
     void setArpSettings(const fable::ArpSettings&) override;

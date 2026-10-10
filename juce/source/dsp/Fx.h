@@ -16,8 +16,11 @@
 #include "Params.h"
 #include "FxTelemetry.h"
 #include "LabFx.h"
+#include "ActivityGate.h"
+#include "AnalysisTap.h"
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <cmath>
 #include <vector>
 

@@ -66,14 +66,23 @@ function LimiterPanel() {
 
 export function MasterFxRack() {
   const params = useSeqStore(s => s.masterFx), setMasterFx = useSeqStore(s => s.setMasterFx);
+  const rig = useSeqStore(s => s.rig);
+  const tracks = useSeqStore(s => s.session.tracks);
   const adapter: FxPanelAdapter = {
     engine: silentTelemetry, params, setParam: (id, value) => setMasterFx({ [id]: value }), prefix: 'master.',
-    renderKnob: (id, label) => <MasterKnob id={id} label={label?.toUpperCase()} />,
+    analysis: { source: rig?.masterTaps?.input ?? null, preEq: true, reference: 'mix', note: 'POWER ON TO LEARN' },
+    // The master EQ shows what leaves the chain, not the pre-FX sum it learns from.
+    liveSpectrum: rig?.masterTaps?.output ?? null,
+    // No master telemetry: learn from the pre-FX sum (before EQ and OTT).
+    compTap: { source: rig?.masterTaps?.input ?? null, style: 'glue', note: 'POWER ON TO LEARN' },
+    renderKnob: (id, label) => <MasterKnob id={id} label={id.endsWith('.schp') ? 'KEY HP' : label?.toUpperCase()} />,
     renderPower: (id) => <MasterPower id={id} />,
+    sidechain: { sources: SC_SOURCES, hosted: true, labels: trackKeyLabels(tracks) },
   };
   return <section className="sq-master-fx" aria-label="SQ-4 master effects chain">
     <div className="sq-master-fx-title"><span aria-hidden="true" /><h1>MASTER FX</h1><p>POST-FADER · EQ › OTT › COMP › LIMITER</p></div>
     <div className="sq-master-fx-rack">
+      <MixAssistPanel />
       <EqPanel adapter={adapter} />
       <DynamicsPanel kind="ott" adapter={adapter} />
       <DynamicsPanel kind="comp" adapter={adapter} />

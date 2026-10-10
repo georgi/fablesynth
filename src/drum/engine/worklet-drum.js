@@ -2415,7 +2415,7 @@ class DrumProcessor extends AudioWorkletProcessor {
       const active = ott.depthTarget > 0;
       this.port.postMessage({ t: 'dynamics', pad: this.meterPad,
         ott: { input: rms(0), output: rms(1), levels: Array.from(ott.env, v => active ? db(v) : -90), gains: Array.from(ott.gain, (v, i) => active && ott.env[i] > 1e-7 ? db(v) : 0), makeup: active ? db(ott.autoGain.gain) : 0 },
-        comp: { input: rms(2), output: rms(3), reduction: this.meterReduction, makeup: comp.wetTarget ? db(comp.autoGain.gain) : 0 },
+        comp: { input: rms(2), output: rms(3), reduction: this.meterReduction, trace: comp.takeTrace(), makeup: comp.wetTarget ? db(comp.autoGain.gain) : 0 },
       });
       e.fill(0); this.meterSamples = 0; this.meterReduction = 0;
     }

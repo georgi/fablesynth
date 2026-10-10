@@ -22,6 +22,21 @@ void HostedBassModel::setArpSettings(const fable::ArpSettings& a) {
 }
 
 fable::FxTelemetry HostedBassModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(1, pad, bus); }
+static std::vector<std::string> sessionTrackNames(SeqAudioProcessor& proc) {
+    std::vector<std::string> names;
+    if (proc.preparedSampleRate() <= 0) return names;   // no conductor before prepareToPlay
+    for (const auto& t : proc.conductor().session().tracks) names.push_back(t.name);
+    return names;
+}
+AutoEqSource HostedBassModel::autoEqSource(int) const { return { &proc_.trackTap(1), false, "bass", {} }; }
+AutoCompSource HostedBassModel::autoCompSource(int) const { return { &proc_.compTrace(1), "level", {} }; }
+SideChainInfo HostedBassModel::sideChain() const {
+    return { fable::SC_SOURCES, true, trackKeyLabels(sessionTrackNames(proc_)) };
+}
+std::optional<double> HostedBassModel::analysisTempo() const {
+    return proc_.preparedSampleRate() > 0 ? std::optional<double>(hostBpm()) : std::nullopt;
+}
+double HostedBassModel::analysisSampleRate() const { return proc_.preparedSampleRate() > 0 ? proc_.preparedSampleRate() : 48000; }
 
 namespace {
 

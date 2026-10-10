@@ -83,6 +83,8 @@ class FxModuleView : public juce::Component, private fui::VisualTimer {
     void drawChorus(juce::Graphics &, float w, float h);
     void drawEcho(juce::Graphics &, float w, float h);
     void drawReverb(juce::Graphics &, float w, float h);
+    void applyAutoVisibility();
+    int scopePad() const { return prefix_.isEmpty() ? -1 : pad_; }
     int hitBand(juce::Point<float>) const;
     juce::String bandKey(const char *field) const;
     float echoTime() const;
@@ -124,6 +126,9 @@ class FxChain : public juce::Component {
     std::unique_ptr<LabPanel> lab_;
     juce::TextButton labButton_ { "LAB" };
     bool labVisible_ = false;
+    juce::Component *groupPanel_ = nullptr;
+    juce::TextButton groupButton_;
+    bool groupPanelOn_ = false;
 };
 
 // Compact, keyboard-operable navigation shared by standalone and hosted bodies.
