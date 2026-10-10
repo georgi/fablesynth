@@ -53,3 +53,24 @@
 .eq-control { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 .eq-control .k-value { display: none; }
 .eq-control output { font: 9px var(--font-mono); color: var(--ac-n); white-space: nowrap; margin-top: 3px; }
+
+/* Auto-EQ */
+.eq-auto-toggle { margin-left: auto; min-height: 22px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; background: #0a0d14; color: var(--text-dim); font: 8px var(--font-mono); letter-spacing: .1em; cursor: pointer; }
+.eq-auto-toggle.on { border-color: var(--ac-n); color: var(--text); background: color-mix(in srgb, var(--ac-n) 18%, #0a0d14); }
+.eq-auto-toggle + .eq-bands { margin-left: 0; }
+.eq-auto-match { fill: none; stroke: var(--ac-n); stroke-width: 1.2; stroke-dasharray: 3 3; opacity: .8; }
+.eq-auto { display: grid; gap: 6px; margin: 8px 0 5px; }
+.eq-auto-row { display: flex; align-items: center; gap: 6px; }
+.eq-auto select, .eq-auto button { min-height: 24px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; background: #0a0d14; color: var(--text); font: 8px var(--font-mono); letter-spacing: .08em; }
+.eq-auto select { flex: 1; min-width: 0; }
+.eq-auto button { flex: 1; cursor: pointer; }
+.eq-auto button:disabled { opacity: .35; cursor: default; }
+.eq-auto-learn { background: linear-gradient(90deg, color-mix(in srgb, var(--ac-n) 30%, #0a0d14) calc(var(--p, 0) * 100%), #0a0d14 0) !important; }
+.eq-auto-learn.on { border-color: var(--ac-n) !important; }
+.eq-auto-amount { display: flex; align-items: center; gap: 4px; width: 42%; }
+.eq-auto-amount input { flex: 1; min-width: 0; accent-color: var(--ac-n); }
+.eq-auto-amount output { width: 28px; text-align: right; color: var(--text-dim); font: 8px var(--font-mono); }
+.eq-auto-status { margin: 0; color: var(--text-dim); font: 8px var(--font-mono); letter-spacing: .1em; }
+
+/* Live output spectrum behind the curve (EQ-analyser tilt, +4.5 dB/oct). */
+.eq-live { fill: color-mix(in srgb, var(--text, #e8eef7) 8%, transparent); stroke: color-mix(in srgb, var(--text, #e8eef7) 32%, transparent); stroke-width: 1; }

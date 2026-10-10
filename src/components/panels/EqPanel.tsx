@@ -1,3 +1,4 @@
+import { tiltedLevels, useLiveSpectrum } from './useLiveSpectrum';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Knob } from '../Knob';
 import { PowerButton } from '../PowerButton';
@@ -125,9 +126,11 @@ export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
           <text x={X(freq)} y="120" textAnchor={freq === 20 ? 'start' : freq === 20000 ? 'end' : 'middle'}>{freq >= 1000 ? `${freq / 1000}k` : freq}</text>
         </g>)}
         <g clipPath={`url(#${id}-clip)`}>
+          <path ref={live} className="eq-live" d="" aria-hidden="true" />
           <path d={`${paths[selected]} L${RIGHT},${Y(0)} L${LEFT},${Y(0)} Z`} fill={`url(#${id}-fill)`} />
           {paths.slice(0, 4).map((d, i) => <path key={i} d={d} className={`eq-band-curve${selected === i ? ' selected' : ''}`} />)}
           <path d={on ? paths[4] : `M${LEFT},${Y(0)} H${RIGHT}`} className="eq-sum" />
+          {autoOpen && matchPath && <path d={matchPath} className="eq-auto-match"><title>Correction that would match the reference exactly</title></path>}
         </g>
         {bands.map((b, i) => <g key={i} className={`eq-node${selected === i ? ' selected' : ''}${b.on ? '' : ' disabled'}`}
           transform={`translate(${X(b.freq)}, ${Y(b.gain)})`} data-eq-band={i} tabIndex={0} role="button"

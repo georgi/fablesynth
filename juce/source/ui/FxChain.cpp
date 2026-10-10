@@ -963,6 +963,10 @@ void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
     {
         juce::Graphics::ScopedSaveState save(g);
         g.reduceClipRegion(juce::Rectangle<int>(25, 11, (int)width - 36, (int)height - 30));
+        // Live spectrum behind the curve, EQ-analyser tilt on the ±15 dB scale.
+        LiveSpectrum::draw(g, LiveSpectrum::path(LiveSpectrum::tilted(live_.levels()), X,
+                                                 [&](double d) { return Y((float)d); }, bottom),
+                           col::text, .08f, .32f);
         auto fill = traces[(size_t)selected_];
         fill.lineTo(right, Y(0));
         fill.lineTo(26, Y(0));
