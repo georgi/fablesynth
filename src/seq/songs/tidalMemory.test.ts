@@ -28,8 +28,10 @@ describe('authored SQ-4 pilot', () => {
   it('appends the pilot without moving existing host programs', () => {
     expect(FACTORY_SESSION_PRESETS).toHaveLength(42);
     expect(FACTORY_SESSION_PRESETS.slice(0, 40)).toEqual(GENERATED_SESSION_PRESETS);
-    expect(FACTORY_SESSION_PRESETS[40]).toBe(TIDAL_MEMORY);
-    expect(AUTHORED_SESSION_PRESETS).toEqual([TIDAL_MEMORY, PHASE_RUNNER]);
+    expect(FACTORY_SESSION_PRESETS[40]).toBe(AUTHORED_SESSION_PRESETS[0]);
+    // Program order follows the authored list; mixdowns only change sound.
+    expect(AUTHORED_SESSION_PRESETS.map((p) => p.name)).toEqual([TIDAL_MEMORY.name, PHASE_RUNNER.name]);
+    expect(AUTHORED_SESSION_PRESETS.map((p) => p.session.scenes)).toEqual([TIDAL_MEMORY.session.scenes, PHASE_RUNNER.session.scenes]);
   });
 
   it.each([...AUTHORED_SESSION_PRESETS, { name: LATE_CHECKOUT.name, session: LATE_CHECKOUT }])('round-trips $name with its custom sounds', ({ session }) => {

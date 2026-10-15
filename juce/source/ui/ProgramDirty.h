@@ -17,6 +17,8 @@ public:
 
     bool isDirty() const { return dirty_.load(); }
     void markEdited() { if (!loading_.load()) dirty_.store(true); }
+    // Preset browser restores: put the flag back to what a snapshot captured.
+    void setDirty(bool d) { dirty_.store(d); }
 
     // RAII guard around applying a program / restoring state.
     class LoadScope {

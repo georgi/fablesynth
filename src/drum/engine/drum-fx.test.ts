@@ -613,3 +613,29 @@ describe('DR-1 pad compressor', () => {
     }
   });
 });
+
+describe('DR-1 COMP side-chain', () => {
+  // Pad 03 sustains under a hard compressor keyed by another pad. The
+  // captured pad 03 signal drops while pad 01 hits; a key from a pad that
+  // does not play leaves it as if the compressor were off (no auto gain).
+  function padEnergy(source: number, comp = true) {
+    const p = bare();
+    p[pad(2, 'aenv.dec')] = 2; p[pad(2, 'aenv.sus')] = 1;
+    p[pad(2, 'fx.comp.on')] = comp ? 1 : 0; p[pad(2, 'fx.comp.thr')] = -40; p[pad(2, 'fx.comp.ratio')] = 20; p[pad(2, 'fx.comp.att')] = 0.0005;
+    p[pad(2, 'fx.comp.sc')] = source;
+    const h = boot(p);
+    h.send({ t: 'padCapture', on: true });
+    h.send({ t: 'trig', pad: 2, v: 1 }); h.send({ t: 'trig', pad: 0, v: 1 });
+    h.render(40);
+    let e = 0;
+    for (const m of h.sent) if (m.t === 'padAudio' && m.pad === 2) for (const v of m.data as Float32Array) e += v * v;
+    return e;
+  }
+
+  it('ducks a pad by another pad of the kit', () => {
+    const off = padEnergy(0, false);
+    expect(off).toBeGreaterThan(0);
+    expect(padEnergy(1)).toBeLessThan(off * 0.5);
+    expect(padEnergy(5) / off).toBeCloseTo(1, 1);
+  });
+});

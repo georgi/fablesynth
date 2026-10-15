@@ -1,8 +1,67 @@
 #include "FxChain.h"
+#include "LeafControlCache.h"
 #include "../dsp/Fx.h"
 #include <complex>
+#include <map>
 
 namespace fui {
+void FxReadoutCache::draw(juce::Graphics& g, const juce::String& text,
+                         const juce::Font& font, juce::Colour colour,
+                         juce::Rectangle<float> bounds, juce::Justification alignment,
+                         const juce::Component* owner) {
+    if (bounds.isEmpty()) return;
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    // Hosted editors can translate this component by a fractional physical
+    // pixel after scaling. Graphics exposes scale but not that ancestor phase;
+    // an image rendered on a local grid would shift glyphs and change their AA.
+    // Let the original text renderer retain its complete transform in this case.
+    bool integerGrid = scale == std::floor(scale);
+    for (auto* component = owner; component && integerGrid; component = component->getParentComponent()) {
+        const auto transform = component->getTransform();
+        integerGrid = transform.mat01 == 0 && transform.mat10 == 0
+            && transform.mat00 >= 1 && transform.mat11 >= 1
+            && transform.mat00 == std::floor(transform.mat00)
+            && transform.mat11 == std::floor(transform.mat11)
+            && transform.mat02 == std::floor(transform.mat02)
+            && transform.mat12 == std::floor(transform.mat12);
+    }
+    if (!integerGrid) {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setFont(font);
+        g.setColour(colour);
+        g.drawText(text, bounds, alignment);
+        return;
+    }
+    if (image_.isNull() || text_ != text || font_ != font || colour_ != colour
+        || bounds_ != bounds || scale_ != scale || alignment_ != alignment.getFlags()) {
+        // Keep the original fractional pixel phase rather than centring text
+        // in a rounded raster width. Blit on the same local physical grid.
+        const float x = std::floor(bounds.getX() * scale);
+        const float y = std::floor(bounds.getY() * scale);
+        origin_ = { x / scale, y / scale };
+        image_ = juce::Image(juce::Image::ARGB,
+                            juce::jmax(1, (int)(std::ceil(bounds.getRight() * scale) - x)),
+                            juce::jmax(1, (int)(std::ceil(bounds.getBottom() * scale) - y)), true);
+        juce::Graphics cached(image_);
+        cached.addTransform(juce::AffineTransform::scale(scale));
+        cached.setFont(font);
+        cached.setColour(colour);
+        cached.drawText(text, bounds.translated(-origin_.x, -origin_.y), alignment);
+        text_ = text;
+        font_ = font;
+        colour_ = colour;
+        bounds_ = bounds;
+        scale_ = scale;
+        alignment_ = alignment.getFlags();
+        ++builds_;
+    }
+    juce::Graphics::ScopedSaveState save(g);
+    g.setColour(juce::Colours::white);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.drawImageTransformed(image_, juce::AffineTransform::scale(1.0f / scale)
+                                       .translated(origin_.x, origin_.y));
+}
+
 namespace {
 using M = fable::FxTelemetry;
 float clamp(float v, float lo, float hi) { return juce::jlimit(lo, hi, v); }
@@ -13,12 +72,49 @@ juce::String signedDb(float v) {
 }
 void text(juce::Graphics &g, const juce::String &s, float x, float y, juce::Colour c = col::acN,
           juce::Justification align = juce::Justification::left, float size = 8) {
-    g.setFont(monoFont(size));
-    g.setColour(c);
+    // Plot legends recur across every animation frame. Bound the shared cache
+    // so changing numerical labels cannot accumulate indefinitely. Colour and
+    // physical scale are part of the key; no DSP or telemetry state is cached.
+    struct LabelRaster { juce::Image image; uint64_t used = 0; };
+    static std::map<juce::String, LabelRaster> labels;
+    static uint64_t use = 0;
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const auto key = s + "|" + juce::String(size, 6) + "|" + juce::String(c.getARGB())
+        + "|" + juce::String(align.getFlags()) + "|" + juce::String(scale, 6);
+    auto found = labels.find(key);
+    if (found == labels.end()) {
+        if (labels.size() >= 256) {
+            auto oldest = labels.begin();
+            for (auto it = labels.begin(); it != labels.end(); ++it)
+                if (it->second.used < oldest->second.used) oldest = it;
+            labels.erase(oldest);
+        }
+        LabelRaster raster;
+        raster.image = juce::Image(juce::Image::ARGB, (int)std::ceil(220 * scale),
+                                  (int)std::ceil(14 * scale), true);
+        juce::Graphics cached(raster.image);
+        cached.addTransform(juce::AffineTransform::scale(scale));
+        cached.setFont(monoFont(size));
+        cached.setColour(c);
+        cached.drawText(s, juce::Rectangle<float>(0, 0, 220, 14), align, false);
+        found = labels.emplace(key, std::move(raster)).first;
+    }
+    found->second.used = ++use;
     const float offset = align == juce::Justification::right     ? 220.0f
                          : align == juce::Justification::centred ? 110.0f
                                                                  : 0.0f;
-    g.drawText(s, juce::Rectangle<float>(x - offset, y - 10, 220, 14), align, false);
+    // Image blits inherit Graphics opacity; the cached pixels already contain
+    // the intended label alpha. Restore the legacy helper's font/colour state
+    // afterwards because plot callers also draw directly into this Graphics.
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setColour(juce::Colours::white);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.drawImageTransformed(found->second.image,
+            juce::AffineTransform::scale(1.0f / scale).translated(x - offset, y - 10));
+    }
+    g.setFont(monoFont(size));
+    g.setColour(c);
 }
 void line(juce::Graphics &g, float x, float y, float xx, float yy, float alpha = 0.15f,
           juce::Colour c = col::acN) {
@@ -117,7 +213,76 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
         addAndMakeVisible(division_);
         addAndMakeVisible(sync_);
     }
-    startTimerHz(30);
+    if (kind == Eq || kind == Comp) {
+        auto_.setClickingTogglesState(true);
+        auto_.setTitle(kind == Eq ? "Auto-EQ: match the spectrum to a reference"
+                                  : "Auto-comp: learn the input level and set the compressor");
+        auto_.setColour(juce::TextButton::buttonOnColourId, col::acN.withAlpha(.18f));
+        auto_.setColour(juce::TextButton::textColourOnId, col::text);
+        auto_.onClick = [this] { setAutoOpen(auto_.getToggleState()); };
+        addAndMakeVisible(auto_);
+    }
+    if (kind == Comp && source_.parameter(prefix_ + "fx.comp.sc")) {
+        sideChain_ = std::make_unique<SideChainRow>(source_, prefix_, model_.sideChain());
+        sideChain_->onValueChanged = [this](int sc) {
+            keyHp_.reset();
+            if (sc > 0) {
+                keyHp_ = std::make_unique<Knob>(source_, prefix_ + "fx.comp.schp", Knob::Sm, Accent::N);
+                keyHp_->setLabelText("KEY HP");
+                addChildComponent(*keyHp_);
+            }
+            applyAutoVisibility();
+            resized();
+            repaint();
+        };
+        sideChain_->onValueChanged(sideChain_->value());
+        addAndMakeVisible(*sideChain_);
+    }
+    startVisualTimer(*this, fui::kAnimationHz);
+    if (kind == Eq)
+        liveTick_ = std::make_unique<VisualTick>(*this, LiveSpectrum::kHz,
+            [this] { updateLiveSpectrum(juce::Time::getMillisecondCounterHiRes()); },
+            [this] { live_.clear(); });
+}
+// Live spectrum of the device output (or the host's choice), ~30 Hz while visible.
+void FxModuleView::updateLiveSpectrum(double nowMs) {
+    if (live_.update(model_.liveSpectrumTap(scopePad()), model_.analysisSampleRate(), nowMs))
+        repaint(plot_);
+}
+void FxModuleView::setAutoOpen(bool open) {
+    autoOpen_ = open;
+    auto_.setToggleState(open, juce::dontSendNotification);
+    autoEq_.reset();
+    autoComp_.reset();
+    if (open && kind_ == Eq) {
+        autoEq_ = std::make_unique<AutoEqStrip>(model_.autoEqSource(scopePad()), source_, prefix_,
+                                                model_.analysisSampleRate());
+        autoEq_->onFitChanged = [this] { repaint(); };
+        addAndMakeVisible(*autoEq_);
+    }
+    if (open && kind_ == Comp) {
+        auto *model = &model_;
+        autoComp_ = std::make_unique<AutoCompStrip>(model_.autoCompSource(scopePad()), source_, prefix_,
+                                                    model_.analysisSampleRate(),
+                                                    [model] { return model->analysisTempo(); });
+        addAndMakeVisible(*autoComp_);
+    }
+    staticLayerDirty_ = true;
+    previewStateValid_ = false;
+    applyAutoVisibility();
+    resized();
+    repaint();
+}
+void FxModuleView::applyAutoVisibility() {
+    for (auto *k : knobs_)
+        k->setVisible(!autoOpen_);
+    if (kind_ == Eq)
+        for (auto *c : std::initializer_list<juce::Component *>{&bandOn_, &reset_, &shape_})
+            c->setVisible(!autoOpen_);
+    if (sideChain_)
+        sideChain_->setVisible(!autoOpen_);
+    if (keyHp_)
+        keyHp_->setVisible(!autoOpen_);
 }
 FxModuleView::~FxModuleView() {
     stopTimer();
@@ -157,6 +322,7 @@ void FxModuleView::selectBand(int band) {
     for (int i = 0; i < 4; ++i)
         bands_[(size_t)i].setToggleState(i == selected_, juce::dontSendNotification);
     bandOn_.setButtonText("BAND " + juce::String(band + 1));
+    applyAutoVisibility();
     resized();
     repaint();
 }
@@ -179,6 +345,8 @@ float FxModuleView::echoTime() const {
     return value(prefix_ + "fx.delay.time");
 }
 void FxModuleView::timerCallback() {
+    if (sideChain_)
+        sideChain_->poll();
     // Checking ancestor visibility also permits offscreen software snapshots;
     // isShowing() requires an OS peer even when every component is visible.
     for (auto *c = static_cast<juce::Component *>(this); c != nullptr; c = c->getParentComponent())
@@ -206,6 +374,7 @@ void FxModuleView::timerCallback() {
         if (!history_.empty() && data_.seconds < history_.back().seconds)
             history_.clear();
         history_.push_back(data_);
+        // Telemetry still publishes at 30 Hz; polling faster does not add samples.
         while (history_.size() > 90)
             history_.pop_front();
     } else if (lastReceived_ > 0 && now - lastReceived_ > 350) {
@@ -233,10 +402,38 @@ void FxModuleView::timerCallback() {
     for (int i = 0; i < knobs_.size(); ++i)
         if (!(kind_ == Echo && tape_ && i == 0))
             knobs_[i]->setAlpha(power_.isOn() ? 1.f : .55f);
+    if (keyHp_)
+        keyHp_->setAlpha(power_.isOn() ? 1.f : .55f);
+    // EQ, drive and chorus are parameter previews, not animated telemetry.
+    // Continue polling live effective values at 60 Hz, but avoid repainting an
+    // identical curve merely because an unrelated meter published a sample.
+    if (kind_ == Eq || kind_ == Drive || kind_ == Chorus) {
+        std::array<float, 24> state{};
+        state[0] = power_.isOn() ? 1.f : 0.f;
+        state[1] = (float)data_.sampleRate;
+        state[2] = (float)selected_;
+        size_t index = 3;
+        if (kind_ == Eq) {
+            for (const auto& band : eqKeys)
+                for (const auto* field : band)
+                    state[index++] = displayValue(prefix_ + "fx.eq." + field);
+        } else if (kind_ == Drive) {
+            for (const auto* field : {"amt", "mix", "tone", "type"})
+                state[index++] = displayValue(prefix_ + "fx.drive." + field);
+        } else {
+            for (const auto* field : {"rate", "depth", "mix"})
+                state[index++] = displayValue(prefix_ + "fx.chorus." + field);
+        }
+        if (previewStateValid_ && state == lastPreviewState_)
+            return;
+        lastPreviewState_ = state;
+        previewStateValid_ = true;
+    }
     repaint();
 }
 
 void FxModuleView::resized() {
+    staticLayerDirty_ = true;
     auto r = getLocalBounds().reduced(12, 10);
     auto head = r.removeFromTop(24);
     power_.setBounds(head.removeFromLeft(18).withSizeKeepingCentre(14, 14));
@@ -248,6 +445,12 @@ void FxModuleView::resized() {
             tabs.removeFromLeft(4);
         }
     }
+    if (kind_ == Eq || kind_ == Comp) {
+        head.removeFromRight(6);
+        auto_.setBounds(head.removeFromRight(44).withSizeKeepingCentre(44, 18));
+        head.removeFromRight(6);
+        caption_ = head.withTrimmedLeft(80);
+    }
     if (kind_ == Echo && tape_) {
         division_.setBounds(head.removeFromRight(72));
         head.removeFromRight(5);
@@ -257,7 +460,8 @@ void FxModuleView::resized() {
     }
     r.removeFromTop(6);
     {
-        const int bottom = kind_ == Eq ? 112 : kind_ == Ott || kind_ == Comp ? 106 : kind_ == Drive ? 98 : 92;
+        const int bottom = kind_ == Eq ? 112 : kind_ == Comp && sideChain_ ? 130
+                         : kind_ == Ott || kind_ == Comp ? 106 : kind_ == Drive ? 98 : 92;
         plot_ = r.removeFromTop(juce::jmax(72, r.getHeight() - bottom));
         readouts_ = r.removeFromTop(kind_ == Eq ? 28 : 24);
         if (kind_ == Drive) {
@@ -273,23 +477,28 @@ void FxModuleView::resized() {
             shape_.setBounds(tools.removeFromLeft(115));
         }
         controls_ = r.removeFromTop(64);
+        if (sideChain_) {
+            sideChainArea_ = r.removeFromTop(24);
+            sideChain_->setBounds(sideChainArea_.reduced(4, 1));
+        }
         footer_ = r;
+        autoArea_ = (kind_ == Eq ? readouts_ : controls_).getUnion(footer_).reduced(4, 2);
+        if (autoEq_)
+            autoEq_->setBounds(autoArea_);
+        if (autoComp_)
+            autoComp_->setBounds(autoArea_);
     }
     auto controls = controls_;
     if (kind_ == Reverb)
         controls = controls.withTrimmedRight(controls.getWidth() / 3);
-    const int n = knobs_.size();
+    const int n = knobs_.size() + (keyHp_ ? 1 : 0);
     for (int i = 0; i < n; ++i)
-        knobs_[i]->setBounds(controls.getX() + i * controls.getWidth() / n, controls.getY(),
-                             controls.getWidth() / n, juce::jmin(64, controls.getHeight()));
+        (i < knobs_.size() ? knobs_[i] : keyHp_.get())
+            ->setBounds(controls.getX() + i * controls.getWidth() / n, controls.getY(),
+                        controls.getWidth() / n, juce::jmin(64, controls.getHeight()));
 }
 
-void FxModuleView::paint(juce::Graphics &g) {
-    drawPanel(g, getLocalBounds().toFloat(), 9);
-    g.setFont(dispFont(12));
-    g.setColour(col::text);
-    g.drawText(kind_ == Echo && tape_ ? "TAPE ECHO" : titles[kind_], 34, 10, 140, 24,
-               juce::Justification::centredLeft);
+juce::String FxModuleView::headerCaption() const {
     juce::String caption;
     if (kind_ == Ott)
         caption = power_.isOn() ? juce::String::fromUTF8("3 BAND         LEVEL / ± GAIN") : "BYPASS";
@@ -303,11 +512,72 @@ void FxModuleView::paint(juce::Graphics &g) {
         caption = prefix_.isNotEmpty() ? (power_.isOn() ? "PAD SEND" : "SEND OFF")
                   : power_.isOn()      ? "STEREO"
                                        : "BYPASS";
+    return caption;
+}
+
+void FxModuleView::drawStaticLayer(juce::Graphics &g, const juce::String& caption) {
+    drawPanel(g, getLocalBounds().toFloat(), 9);
+    g.setFont(dispFont(12));
+    g.setColour(col::text);
+    g.drawText(kind_ == Echo && tape_ ? "TAPE ECHO" : titles[kind_], 34, 10, 140, 24,
+               juce::Justification::centredLeft);
     g.setFont(monoFont(8));
     g.setColour(col::acN);
     g.drawText(caption, caption_, juce::Justification::centredRight);
+    if (!plot_.isEmpty()) drawDisplayBox(g, plot_.toFloat());
+    g.setFont(monoFont(8));
+    if (kind_ == Comp && !autoOpen_) {
+        g.setColour(col::acN);
+        g.drawText(cachedKeyed_ ? juce::String::fromUTF8("KEYED · NO AUTO GAIN · GR FROM KEY")
+                                : juce::String::fromUTF8("AUTO GAIN · GR BEFORE AUTO · ~3 s HISTORY"),
+                   footer_, juce::Justification::centred);
+    }
+    if (kind_ == Ott) {
+        g.setColour(col::acN);
+        g.drawText(juce::String::fromUTF8("120 Hz / 2.5 kHz · WET GAIN BEFORE AUTO · ±24 dB VIEW"), footer_,
+                   juce::Justification::centred);
+    }
+    if (kind_ == Reverb) {
+        auto c = controls_.withTrimmedLeft(controls_.getWidth() * 2 / 3).reduced(8, 0);
+        g.setColour(col::acN);
+        g.drawText("CORRELATION", c.removeFromTop(15), juce::Justification::centred);
+        c.removeFromTop(18);
+        const float y = (float)c.getY() + 4;
+        line(g, (float)c.getX(), y, (float)c.getRight(), y, .3f);
+        line(g, (float)c.getCentreX(), y - 3, (float)c.getCentreX(), y + 3, .4f);
+        g.setColour(col::acN);
+        g.drawText(juce::String::fromUTF8("−1          0          +1"), c.withTrimmedTop(10), juce::Justification::centred);
+        if (prefix_.isNotEmpty())
+            g.drawText(juce::String::fromUTF8("SHARED BUS RETURN · CONTROLS APPLY TO THIS PAD"), footer_, juce::Justification::centred);
+    }
+}
+
+void FxModuleView::paint(juce::Graphics &g) {
+    const auto caption = headerCaption();
+    if (const bool keyed = sideChain_ && sideChain_->value() > 0; keyed != cachedKeyed_) {
+        cachedKeyed_ = keyed;
+        staticLayerDirty_ = true;
+    }
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int pixelWidth = juce::jmax(1, (int)std::ceil(getWidth() * scale));
+    const int pixelHeight = juce::jmax(1, (int)std::ceil(getHeight() * scale));
+    if (staticLayerDirty_ || caption != cachedCaption_ || staticScale_ != scale
+        || staticLayer_.getWidth() != pixelWidth || staticLayer_.getHeight() != pixelHeight) {
+        staticLayer_ = juce::Image(juce::Image::ARGB, pixelWidth, pixelHeight, true);
+        juce::Graphics cached(staticLayer_);
+        cached.addTransform(juce::AffineTransform::scale(scale));
+        drawStaticLayer(cached, caption);
+        cachedCaption_ = caption;
+        staticScale_ = scale;
+        staticLayerDirty_ = false;
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setColour(juce::Colours::white);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.drawImageTransformed(staticLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
     if (!plot_.isEmpty()) {
-        drawDisplayBox(g, plot_.toFloat());
         juce::Graphics::ScopedSaveState save(g);
         g.reduceClipRegion(plot_.reduced(1));
         g.addTransform(juce::AffineTransform::translation((float)plot_.getX(), (float)plot_.getY()));
@@ -352,51 +622,33 @@ void FxModuleView::paint(juce::Graphics &g) {
     g.setFont(monoFont(8));
     g.setColour(col::text);
     for (int i = 0; i < readings.size(); ++i)
-        g.drawText(readings[i],
+        readoutCaches_[(size_t)i].draw(g, readings[i], monoFont(8), col::text,
                    readouts_.withX(readouts_.getX() + i * readouts_.getWidth() / readings.size())
-                       .withWidth(readouts_.getWidth() / readings.size()),
-                   juce::Justification::centred);
-    if (kind_ == Comp) {
-        g.setColour(col::acN);
-        g.drawText(juce::String::fromUTF8("AUTO GAIN · GR BEFORE AUTO · ~3 s HISTORY"), footer_,
-                   juce::Justification::centred);
-    }
-    if (kind_ == Ott) {
-        g.setColour(col::acN);
-        g.drawText(juce::String::fromUTF8("120 Hz / 2.5 kHz · WET GAIN BEFORE AUTO · ±24 dB VIEW"), footer_,
-                   juce::Justification::centred);
-    }
-    if (kind_ == Eq) {
+                       .withWidth(readouts_.getWidth() / readings.size()).toFloat(),
+                   juce::Justification::centred, this);
+    if (kind_ == Eq && !autoOpen_) {
         juce::StringArray values{juce::String((int)displayValue(bandKey("freq"))) + " Hz",
                                  signedDb(displayValue(bandKey("gain"))) + " dB",
                                  "Q " + juce::String(displayValue(bandKey("q")), 2)};
         for (int i = 0; i < 3; ++i)
-            g.drawText(
-                values[i],
-                footer_.withX(footer_.getX() + i * footer_.getWidth() / 3).withWidth(footer_.getWidth() / 3),
-                juce::Justification::centred);
+            eqValueCaches_[(size_t)i].draw(
+                g, values[i], monoFont(8), col::text,
+                footer_.withX(footer_.getX() + i * footer_.getWidth() / 3).withWidth(footer_.getWidth() / 3).toFloat(),
+                juce::Justification::centred, this);
     }
     if (kind_ == Reverb) {
         auto c = controls_.withTrimmedLeft(controls_.getWidth() * 2 / 3).reduced(8, 0);
         g.setColour(col::acN);
-        g.drawText("CORRELATION", c.removeFromTop(15), juce::Justification::centred);
+        c.removeFromTop(15);
         const bool silent = data_[M::verbL] <= -89 && data_[M::verbR] <= -89;
         g.setColour(col::text);
-        g.drawText(silent ? juce::String::fromUTF8("—") : juce::String(data_[M::correlation], 2),
-                   c.removeFromTop(18), juce::Justification::centred);
+        correlationCache_.draw(g, silent ? juce::String::fromUTF8("—") : juce::String(data_[M::correlation], 2),
+                   monoFont(8), col::text, c.removeFromTop(18).toFloat(), juce::Justification::centred, this);
         const float y = (float)c.getY() + 4;
-        line(g, (float)c.getX(), y, (float)c.getRight(), y, .3f);
-        line(g, (float)c.getCentreX(), y - 3, (float)c.getCentreX(), y + 3, .4f);
         if (!silent) {
             const float x = (float)c.getX() + (data_[M::correlation] + 1) * .5f * (float)c.getWidth();
             line(g, x, y - 3, x, y + 3, 1, col::text);
         }
-        g.setColour(col::acN);
-        g.drawText(juce::String::fromUTF8("−1          0          +1"), c.withTrimmedTop(10),
-                   juce::Justification::centred);
-        if (prefix_.isNotEmpty())
-            g.drawText(juce::String::fromUTF8("SHARED BUS RETURN · CONTROLS APPLY TO THIS PAD"), footer_,
-                       juce::Justification::centred);
     }
 }
 
@@ -434,7 +686,9 @@ void FxModuleView::drawDynamics(juce::Graphics &g, float w, float h) {
         const float left = 29, right = w - 12, top = 16, bottom = h - 43;
         const auto Y = [&](float v) { return top + (1 - clamp((v + 60) / 60, 0, 1)) * (bottom - top); };
         for (float v : {0.f, -24.f, -48.f}) {
-            text(g, juce::String((int)v), left - 6, Y(v) + 3, col::acN, juce::Justification::right, 9);
+            // A short plot (COMP with its side-chain row) keeps only the outer labels.
+            if (v > -1 || v < -25 || Y(-48) - Y(0) >= 36)
+                text(g, juce::String((int)v), left - 6, Y(v) + 3, col::acN, juce::Justification::right, 9);
             line(g, left, Y(v), right, Y(v), .1f);
         }
         const float thr = Y(displayValue(prefix_ + "fx.comp.thr"));
@@ -709,6 +963,10 @@ void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
     {
         juce::Graphics::ScopedSaveState save(g);
         g.reduceClipRegion(juce::Rectangle<int>(25, 11, (int)width - 36, (int)height - 30));
+        // Live spectrum behind the curve, EQ-analyser tilt on the ±15 dB scale.
+        LiveSpectrum::draw(g, LiveSpectrum::path(LiveSpectrum::tilted(live_.levels()), X,
+                                                 [&](double d) { return Y((float)d); }, bottom),
+                           col::text, .08f, .32f);
         auto fill = traces[(size_t)selected_];
         fill.lineTo(right, Y(0));
         fill.lineTo(26, Y(0));
@@ -727,6 +985,26 @@ void FxModuleView::drawEq(juce::Graphics &g, float width, float height) {
                 stroke(g, traces[(size_t)i], col::acN.withAlpha(.16f), .8f);
         }
         stroke(g, traces[4], power_.isOn() ? col::text : col::acN.withAlpha(.5f), 1.6f);
+        // Correction that would match the reference exactly, over the bands with energy.
+        if (const auto *fit = autoEq_ ? autoEq_->learner().fit() : nullptr) {
+            juce::Path match;
+            bool started = false;
+            for (size_t i = 0; i < fable::automix::NUM_BANDS; ++i) {
+                if (!fit->present[i])
+                    continue;
+                const float x = X((float)fable::automix::BAND_HZ[i]), y = Y(clamp((float)-fit->deviation[i], -15, 15));
+                if (started)
+                    match.lineTo(x, y);
+                else
+                    match.startNewSubPath(x, y);
+                started = true;
+            }
+            juce::Path dashed;
+            const float dash[] = {3, 3};
+            juce::PathStrokeType(1.2f).createDashedStroke(dashed, match, dash, 2);
+            g.setColour(col::acN.withAlpha(.8f));
+            g.fillPath(dashed);
+        }
     }
     for (int i = 0; i < 4; ++i) {
         float x = X(displayValue(prefix_ + "fx.eq." + juce::String(eqKeys[i][0]))),
@@ -842,6 +1120,29 @@ FxChain::FxChain(DeviceUiModel &model, bool tape) : model_(model), tape_(tape) {
     addAndMakeVisible(labButton_);
     rebuild();
 }
+void FxChain::setGroupPanel(juce::Component *panel, const juce::String &buttonText) {
+    groupPanel_ = panel;
+    if (panel)
+        addChildComponent(panel);
+    groupButton_.setButtonText(buttonText);
+    groupButton_.setName(buttonText);
+    groupButton_.setClickingTogglesState(true);
+    groupButton_.onClick = [this] { showGroupPanel(groupButton_.getToggleState()); };
+    addChildComponent(groupButton_);
+    resized();
+}
+void FxChain::showGroupPanel(bool on) {
+    groupPanelOn_ = on;
+    groupButton_.setToggleState(on, juce::dontSendNotification);
+    resized();
+    repaint();
+}
+FxModuleView *FxChain::module(FxModuleView::Kind kind) {
+    for (auto *m : modules_)
+        if (m->kind() == kind)
+            return m;
+    return nullptr;
+}
 void FxChain::setPad(int pad, const juce::String &name) {
     padName_ = name;
     if (pad == pad_) {
@@ -866,6 +1167,7 @@ void FxChain::rebuild() {
             model_, kind, tape_, pad_ < 0 ? juce::String() : "pad" + juce::String(pad_) + ".",
             juce::jmax(0, pad_))));
     }
+    refreshLeafControlCache(*this);
     resized();
 }
 void FxChain::paint(juce::Graphics &g) {
@@ -873,6 +1175,7 @@ void FxChain::paint(juce::Graphics &g) {
     g.setColour(col::acN);
     auto head = getLocalBounds().removeFromTop(22);
     if (lab_) head.removeFromRight(65);
+    if (groupPanel_ && pad_ < 0) head.removeFromRight(86);
     g.drawText(pad_ < 0 ? (padName_.isNotEmpty() ? padName_ : "CHANNEL STRIP")
                         : "PAD " + juce::String(pad_ + 1).paddedLeft('0', 2) + "  " + padName_,
                head, juce::Justification::centredLeft);
@@ -884,9 +1187,14 @@ void FxChain::paint(juce::Graphics &g) {
 void FxChain::resized() {
     auto r = getLocalBounds();
     labButton_.setBounds(r.getRight() - 60, 0, 60, 22);
+    groupButton_.setBounds(r.getRight() - (lab_ ? 65 : 0) - 80, 0, 80, 22);
+    groupButton_.setVisible(groupPanel_ != nullptr && pad_ < 0);
     r.removeFromTop(26);
     if (lab_) { lab_->setBounds(r); lab_->setVisible(labVisible_); }
-    for (auto* module : modules_) module->setVisible(!lab_ || !labVisible_);
+    const bool modulesShown = !lab_ || !labVisible_, panelShown = modulesShown && groupPanelVisible();
+    for (auto* module : modules_)
+        module->setVisible(modulesShown && !(panelShown && module->kind() >= FxModuleView::Drive));
+    if (groupPanel_) groupPanel_->setVisible(panelShown);
     const int gap = 10, topH = (r.getHeight() - gap) / 2;
     auto top = r.removeFromTop(topH);
     r.removeFromTop(gap);
@@ -915,6 +1223,7 @@ void FxChain::resized() {
     place(FxModuleView::Echo, bottom.removeFromLeft(available - 3 * moduleWidth));
     bottom.removeFromLeft(gap);
     place(FxModuleView::Reverb, bottom);
+    if (groupPanel_) groupPanel_->setBounds(r);
 }
 DevicePageTabs::DevicePageTabs() {
     setName("Device pages");

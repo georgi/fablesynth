@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.22)
+project(s1host VERSION 0.1)
+add_subdirectory(/Users/mg/dev/fablesynth/juce/build/_deps/juce-src ${CMAKE_BINARY_DIR}/JUCE)
+juce_add_console_app(s1host PRODUCT_NAME "s1host")
+target_sources(s1host PRIVATE main.cpp)
+target_compile_definitions(s1host PRIVATE JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(s1host PRIVATE juce::juce_audio_processors juce::juce_audio_utils)

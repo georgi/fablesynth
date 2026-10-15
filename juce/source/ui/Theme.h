@@ -1,11 +1,22 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <unordered_map>
 #include <vector>
 #include "../dsp/Params.h"
 
 // Shared palette + drawing helpers — a 1:1 transcription of the web app's CSS
 // custom properties (src/index.css :root) and the machined-dark panel styling.
 namespace fui {
+
+// Target cadence for continuous visual animation; model/layout polling is separate.
+inline constexpr int kAnimationHz = 60;
+
+// Unlike isShowing(), this also permits visible offscreen snapshot trees.
+inline bool isVisibleInHierarchy(const juce::Component& component) {
+    for (auto* c = &component; c != nullptr; c = c->getParentComponent())
+        if (!c->isVisible()) return false;
+    return true;
+}
 
 namespace col {
     const juce::Colour bg       {0xff06070b};
@@ -35,6 +46,21 @@ enum class Accent { A, B, F, N };
 // their cyan stays byte-identical.
 inline juce::Colour& accentA() { static juce::Colour c = col::acA; return c; }
 
+// Navigation accent (the web's --nav): page tabs, back, view toggles, and
+// browser exits. It follows accent A unless a binary overrides it; SQ-4 sets
+// its logo amber so hosted devices navigate in one colour.
+inline juce::Colour& navAccentOverride() { static juce::Colour c; return c; }
+inline juce::Colour navAccent() { const auto& o = navAccentOverride(); return o.isTransparent() ? accentA() : o; }
+// Marks a TextButton as navigation: the look-and-feel rings it in navAccent().
+inline void styleNavButton(juce::TextButton& b, float onFill = 0.18f) {
+    const auto nav = navAccent();
+    b.setColour(juce::TextButton::buttonColourId, col::panelHi);
+    b.setColour(juce::TextButton::buttonOnColourId, nav.withAlpha(onFill));
+    b.setColour(juce::TextButton::textColourOffId, nav.interpolatedWith(col::textDim, 0.45f));
+    b.setColour(juce::TextButton::textColourOnId, nav);
+    b.getProperties().set("nav", true);
+}
+
 inline juce::Colour accentColour(Accent a) {
     switch (a) { case Accent::A: return accentA(); case Accent::B: return col::acB;
                  case Accent::F: return col::acF; case Accent::N: return col::acN; }
@@ -52,6 +78,13 @@ inline juce::Colour modSourceColour(int srcIndex) {
         case 3:  return juce::Colour(0xffb18cff);
         case 4:  return juce::Colour(0xff9fb4d8);
         case 5:  return juce::Colour(0xff9fb4d8);
+        case 6:  return juce::Colour(0xff6ff2a6);   // LFO 3
+        case 7:  return juce::Colour(0xffff7ab6);   // LFO 4
+        case 8:  return juce::Colour(0xffd58cff);   // MOD ENV 2
+        case 9: case 10: case 11: case 12:
+                 return juce::Colour(0xffffd24d);   // MACRO 1-4
+        case 13: case 14: case 15:
+                 return juce::Colour(0xff9fb4d8);   // MOD WHL, AFTERTCH, RANDOM
         default: return juce::Colours::transparentBlack;
     }
 }
@@ -112,23 +145,48 @@ inline void drawDisplayBox(juce::Graphics& g, juce::Rectangle<float> r, float ra
 
 // Text with manual letter-spacing (the web uses CSS letter-spacing on the
 // Michroma display font; JUCE has no native tracking, so we advance per glyph).
+// Shaping each glyph separately is expensive and labels repaint at 30 Hz, so
+// the laid-out arrangement is cached per label (relative to the area origin;
+// the area is integral, so the per-glyph rounding matches a direct layout).
 inline void drawSpaced(juce::Graphics& g, const juce::String& s, juce::Rectangle<int> area,
                        float tracking, juce::Justification just = juce::Justification::centredLeft) {
+    if (s.isEmpty()) return;
     const auto f = g.getCurrentFont();
-    float total = 0;
-    for (int i = 0; i < s.length(); ++i)
-        total += juce::GlyphArrangement::getStringWidth(f, s.substring(i, i + 1)) + tracking;
-    total -= tracking;
-    float x = (float)area.getX();
-    const float areaWidth = (float)area.getWidth();
-    if (just.testFlags(juce::Justification::horizontallyCentred)) x += (areaWidth - total) * 0.5f;
-    else if (just.testFlags(juce::Justification::right))          x += areaWidth - total;
-    for (int i = 0; i < s.length(); ++i) {
-        auto ch = s.substring(i, i + 1);
-        g.drawText(ch, juce::Rectangle<float>(x, (float)area.getY(), 40.0f, (float)area.getHeight()).toNearestInt(),
-                   juce::Justification::centredLeft, false);
-        x += juce::GlyphArrangement::getStringWidth(f, ch) + tracking;
+    const juce::String key = f.toString() + "|" + juce::String(f.getHorizontalScale()) + "|"
+        + juce::String(f.getExtraKerningFactor()) + "|" + juce::String(tracking) + "|"
+        + juce::String(area.getWidth()) + "x" + juce::String(area.getHeight()) + "|"
+        + juce::String(just.getFlags()) + "|" + s;
+    struct Entry { juce::GlyphArrangement glyphs; juce::Rectangle<float> bounds; };
+    static std::unordered_map<juce::String, Entry> cache;
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        if (cache.size() > 2048) cache.clear(); // bound memory; labels are a small fixed set
+        Entry e;
+        float total = 0;
+        for (int i = 0; i < s.length(); ++i)
+            total += juce::GlyphArrangement::getStringWidth(f, s.substring(i, i + 1)) + tracking;
+        total -= tracking;
+        float x = 0;
+        const float areaWidth = (float)area.getWidth();
+        if (just.testFlags(juce::Justification::horizontallyCentred)) x += (areaWidth - total) * 0.5f;
+        else if (just.testFlags(juce::Justification::right))          x += areaWidth - total;
+        for (int i = 0; i < s.length(); ++i) {
+            auto ch = s.substring(i, i + 1);
+            // Same layout as Graphics::drawText(ch, rect, centredLeft, false).
+            const auto r = juce::Rectangle<float>(x, 0.0f, 40.0f, (float)area.getHeight()).toNearestInt().toFloat();
+            juce::GlyphArrangement one;
+            one.addCurtailedLineOfText(f, ch, 0.0f, 0.0f, r.getWidth(), false);
+            one.justifyGlyphs(0, one.getNumGlyphs(), r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                              juce::Justification::centredLeft);
+            e.glyphs.addGlyphArrangement(one);
+            x += juce::GlyphArrangement::getStringWidth(f, ch) + tracking;
+        }
+        e.bounds = e.glyphs.getBoundingBox(0, -1, true);
+        it = cache.emplace(key, std::move(e)).first;
     }
+    const auto at = juce::AffineTransform::translation((float)area.getX(), (float)area.getY());
+    if (!g.clipRegionIntersects(it->second.bounds.transformedBy(at).getSmallestIntegerContainer().expanded(1))) return;
+    it->second.glyphs.draw(g, at);
 }
 
 // Embedded typefaces (FableFonts binary data, visual-parity spec §1): the
@@ -168,6 +226,10 @@ inline juce::Font monoFontMedium(float h) {
         return juce::Font(juce::FontOptions(tf).withPointHeight(h));
     return monoFont(h);
 }
+// Sequencer, arp and chord views: dense grids of small labels, set about
+// 2 pt above the rack captions so step numbers and chord names stay legible.
+inline float seqText(float h) { return h < 12.0f ? h + 2.0f : h + 1.0f; }
+inline juce::Font seqFont(float h, bool bold = false) { return monoFont(seqText(h), bold); }
 inline juce::Font dispFont(float h) {
     if (auto tf = detail::michroma())
         return juce::Font(juce::FontOptions(tf).withPointHeight(h));

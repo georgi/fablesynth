@@ -1,3 +1,4 @@
+import { tiltedLevels, useLiveSpectrum } from './useLiveSpectrum';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Knob } from '../Knob';
 import { PowerButton } from '../PowerButton';
@@ -5,6 +6,8 @@ import { engine, useStore } from '../../store';
 import { PARAMS, fmtDb, fmtHz } from '../../params';
 import { EQ_BANDS, eqCoefficients, eqResponseDb, eqValue, readEqBands } from '../../engine/eqResponse';
 import type { FxPanelAdapter } from './fxAdapter';
+import { AutoEqStrip } from './AutoEqStrip';
+import { BAND_HZ, type EqFit } from '../../engine/autoEq';
 import './eq.css';
 
 const W = 360, H = 126, LEFT = 26, RIGHT = 348, TOP = 12, BOTTOM = 106;
@@ -31,6 +34,22 @@ export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
   const bands = readEqBands(params), keys = EQ_BANDS[selected], band = bands[selected];
   const on = params['fx.eq.on'] > 0.5;
   const sampleRate = (adapter?.engine ?? engine).ctx?.sampleRate ?? 48000;
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [fit, setFit] = useState<EqFit | null>(null);
+  // WT-1 has no adapter; its finished output is the scope tap.
+  const analysis = adapter ? adapter.analysis ?? { source: null, note: 'NO SIGNAL TAP' } : { source: engine.scopeAnalyser ?? null, reference: 'lead' };
+  // Live spectrum behind the curve (EQ-analyser tilt), from the device output
+  // or whatever the host names; nothing where no isolated signal exists.
+  const liveSource = adapter?.liveSpectrum !== undefined ? adapter.liveSpectrum : analysis.source;
+  const live = useLiveSpectrum(liveSource ?? null, (levels) => {
+    const pts = tiltedLevels(levels).map((l, i) => `${i ? 'L' : 'M'}${X(BAND_HZ[i]).toFixed(1)} ${Y(l).toFixed(1)}`).join('');
+    return `${pts}L${X(BAND_HZ[BAND_HZ.length - 1]).toFixed(1)} ${BOTTOM}L${X(BAND_HZ[0]).toFixed(1)} ${BOTTOM}Z`;
+  });
+  const matchPath = useMemo(() => {
+    if (!fit) return '';
+    const pts = BAND_HZ.map((f, i) => [f, -fit.deviation[i]] as const).filter((_, i) => fit.present[i]);
+    return pts.map(([f, d], i) => `${i ? 'L' : 'M'}${X(f).toFixed(1)},${Y(clamp(d, -15, 15)).toFixed(1)}`).join(' ');
+  }, [fit]);
   useEffect(() => {
     const el = svg.current;
     if (!el) return;
@@ -71,6 +90,8 @@ export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
         {adapter?.renderPower?.(prefix + "fx.eq.on") ?? <PowerButton paramId="fx.eq.on" />}
         <h2>EQ</h2>
         <span className="eq-caption">{on ? '4 BAND' : 'BYPASS'}</span>
+        <button type="button" className={`eq-auto-toggle${autoOpen ? ' on' : ''}`} aria-pressed={autoOpen}
+          title="Auto-EQ: match the spectrum to a reference" onClick={() => setAutoOpen(o => !o)}>AUTO</button>
         <div className="eq-bands" role="group" aria-label="Select EQ band">
           {bands.map((b, i) => <button key={i} type="button" aria-label={`Select EQ band ${i + 1}`}
             aria-pressed={selected === i} className={b.on ? '' : 'band-off'} onClick={() => select(i)}>{i + 1}</button>)}
@@ -105,9 +126,11 @@ export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
           <text x={X(freq)} y="120" textAnchor={freq === 20 ? 'start' : freq === 20000 ? 'end' : 'middle'}>{freq >= 1000 ? `${freq / 1000}k` : freq}</text>
         </g>)}
         <g clipPath={`url(#${id}-clip)`}>
+          <path ref={live} className="eq-live" d="" aria-hidden="true" />
           <path d={`${paths[selected]} L${RIGHT},${Y(0)} L${LEFT},${Y(0)} Z`} fill={`url(#${id}-fill)`} />
           {paths.slice(0, 4).map((d, i) => <path key={i} d={d} className={`eq-band-curve${selected === i ? ' selected' : ''}`} />)}
           <path d={on ? paths[4] : `M${LEFT},${Y(0)} H${RIGHT}`} className="eq-sum" />
+          {autoOpen && matchPath && <path d={matchPath} className="eq-auto-match"><title>Correction that would match the reference exactly</title></path>}
         </g>
         {bands.map((b, i) => <g key={i} className={`eq-node${selected === i ? ' selected' : ''}${b.on ? '' : ' disabled'}`}
           transform={`translate(${X(b.freq)}, ${Y(b.gain)})`} data-eq-band={i} tabIndex={0} role="button"
@@ -135,6 +158,7 @@ export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
           <text textAnchor="middle" dy="3">{i + 1}</text>
         </g>)}
       </svg>
+      {autoOpen ? <AutoEqStrip analysis={analysis} params={params} setParam={setParam} sampleRate={sampleRate} onFit={setFit} /> : <>
       <div className="eq-band-tools">
         <button className="eq-enable" aria-label={`Enable EQ band ${selected + 1}`} aria-pressed={band.on}
           onClick={() => setParam(keys.on, band.on ? 0 : 1)}><span />BAND {selected + 1}</button>
@@ -149,6 +173,7 @@ export function EqPanel({ adapter }: { adapter?: FxPanelAdapter }) {
           <output>{PARAMS[keys[key]].fmt!(eqValue(params, keys[key]))}</output>
         </div>)}
       </div>
+      </>}
     </section>
   );
 }

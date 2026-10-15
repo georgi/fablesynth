@@ -126,6 +126,8 @@ void WebCompressor::prepare(double sampleRate) {
     wetTarget = false;
     threshold_ = thresholdTarget_ = -16.0;
     ratio_ = ratioTarget_ = 4;
+    keyed_ = false;
+    setKey(false);
     reset();
 }
 
@@ -137,17 +139,33 @@ void WebCompressor::setParams(bool on, float thresholdDb, float attack, float re
     thresholdTarget_ = std::max(-40.0, std::min(0.0, (double)thresholdDb));
 }
 
+void WebCompressor::setKey(bool keyed, float hpHz) {
+    if (keyed != keyed_) { keyLpL_ = keyLpR_ = 0.0; autoGain.reset(); }
+    keyed_ = keyed;
+    keyCoef_ = 1.0 - std::exp(-2.0 * PI * std::clamp((double)hpHz, 10.0, 1000.0) / sr_);
+}
+
 void WebCompressor::reset() {
     env = 0.0; gain = 1.0; gainStep_ = 0.0; tick_ = 0;
     wet_ = 0.0; autoGain.reset();
+    keyLpL_ = keyLpR_ = 0.0;
 }
 
-void WebCompressor::processSample(double inL, double inR, double& outL, double& outR) {
+void WebCompressor::processSample(double inL, double inR, double& outL, double& outR,
+                                  double keyL, double keyR) {
+    double peak;
+    if (keyed_) {
+        keyLpL_ += keyCoef_ * (keyL - keyLpL_);
+        keyLpR_ += keyCoef_ * (keyR - keyLpR_);
+        peak = std::max(std::abs(keyL - keyLpL_), std::abs(keyR - keyLpR_));
+    } else {
+        peak = std::max(std::abs(inL), std::abs(inR));
+    }
+    trace_->push((float)peak);
     if (!wetTarget && wet_ < 1.0e-6) {
         if (wet_ != 0.0) { wet_ = 0.0; reset(); }
         outL = inL; outR = inR; return;
     }
-    const double peak = std::max(std::abs(inL), std::abs(inR));
     env += (peak - env) * (peak > env ? attack_ : release_);
     threshold_ += (thresholdTarget_ - threshold_) * smooth_;
     ratio_ += (ratioTarget_ - ratio_) * smooth_;
@@ -158,15 +176,16 @@ void WebCompressor::processSample(double inL, double inR, double& outL, double& 
     }
     tick_ = (tick_ + 1) & 31;
     gain += gainStep_;
-    const double g = gain * autoGain.next(inL, inR, gain * inL, gain * inR);
+    const double g = keyed_ ? gain : gain * autoGain.next(inL, inR, gain * inL, gain * inR);
     wet_ += ((wetTarget ? 1.0 : 0.0) - wet_) * smooth_;
     outL = inL + wet_ * (g * inL - inL);
     outR = inR + wet_ * (g * inR - inR);
 }
 
-void WebCompressor::process(float* L, float* R, int n) {
+void WebCompressor::process(float* L, float* R, int n, const float* key) {
     for (int i = 0; i < n; ++i) {
-        double l, r; processSample(L[i], R[i], l, r);
+        const double k = key ? key[i] : 0.0;
+        double l, r; processSample(L[i], R[i], l, r, k, k);
         L[i] = (float)l; R[i] = (float)r;
     }
 }
@@ -427,6 +446,7 @@ void Fx::reset() {
     lim_.reset();
     chPhase_ = 0;
     driveSilent_ = chorusGated_ = delayGated_ = verbGated_ = compGated_ = false;
+    gate_.reset();
     // settle smoothers at their targets so no stale ramp survives a re-prepare
     driveWet_.snap(driveWet_.target); driveDry_.snap(driveDry_.target);
     chWet_.snap(chWet_.target); chDry_.snap(chDry_.target);
@@ -539,6 +559,8 @@ void Fx::setParams(const ParamArray& p, double tempoBpm) {
     driveColorL_.setParams(p[FXDRIVE_TYPE], p[FXDRIVE_TONE]);
     driveColorR_.setParams(p[FXDRIVE_TYPE], p[FXDRIVE_TONE]);
     comp_.setParams(!compOff_, p[FXCOMP_THR], p[FXCOMP_ATT], p[FXCOMP_REL], p[FXCOMP_RATIO]);
+    keyChannel_ = scKeyChannel((int)std::lround(p[FXCOMP_SC]));
+    comp_.setKey(keyChannel_ >= 0, p[FXCOMP_SCHP]);
     ott_.setParams(p[FXOTT_ON] > 0.5f, p[FXOTT_DEPTH], p[FXOTT_TIME], p[FXOTT_UP], p[FXOTT_DOWN]);
 
     float vol = p[MASTER_VOLUME];
@@ -626,10 +648,27 @@ float Fx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, HalfBa
     return (float)d1.decimate(c0, c1);
 }
 
-void Fx::process(float* L, float* R, int n) {
+void Fx::process(float* L, float* R, int n, const float* key) {
     // The ramp owns a sample-clocked duration established at prepare(). Keep
     // the coefficient clock across callbacks: a single 32-sample callback and
     // thirty-two 1-sample callbacks must consume the same trajectory.
+
+    // Chain-level activity gate (see ActivityGate.h): the whole chain is skipped
+    // and its state frozen while idle; the output is the (silent) input. Any
+    // audible or non-finite input sample wakes it.
+    const double delayHorizon = std::max(lab_.active() ? 4.0 : 0.0,
+        delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target));
+    const bool inLoud = ActivityGate::loud(L, R, n);
+    double skipped;
+    if (gate_.begin(inLoud, n, skipped)) return;
+    if (skipped > 0) {
+        // Free-running clocks keep their phase across the skipped span, so a
+        // chain that wakes sounds as if it had run the whole time.
+        if (!chorusGated_) chPhase_ = std::fmod(chPhase_ + chRate_ / sr_ * skipped, 1.0);
+        if (!delayGated_) tapeClock_ += skipped;
+        lab_.advanceClock(skipped);
+    }
+    float outPk = 0, tailPk = 0;
 
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive —
     // every stage below has a tail or a feedback loop that has to keep running.
@@ -718,7 +757,8 @@ void Fx::process(float* L, float* R, int n) {
             double gOtt = headroomOtt_.gainFor(l, r); l *= (float)gOtt; r *= (float)gOtt;
             double compL, compR;
             meter_.level(FxTelemetry::compIn, l, r);
-            comp_.processSample(l, r, compL, compR);
+            const double k = key ? key[i] : 0.0;
+            comp_.processSample(l, r, compL, compR, k, k);
             meter_.level(FxTelemetry::compOut, compL, compR); l = (float)compL; r = (float)compR;
             double gComp = headroomComp_.gainFor(l, r); l *= (float)gComp; r *= (float)gComp;
 
@@ -778,6 +818,7 @@ void Fx::process(float* L, float* R, int n) {
                 tapeClock_ += 1.0;
                 float dL = dlL_.readHermite(std::max(0.005, dt + dlDriftL_) * sr_);
                 float dR = dlR_.readHermite(std::max(0.005, dt + dlDriftR_) * sr_);
+                tailPk = std::max(tailPk, std::max(std::abs(dL), std::abs(dR)));
                 float mono = 0.5f * (l + r);
                 float mode = dlMode_.next(), sat = dlSat_.next(), k = 1.0f + sat * 4.0f;
                 float recL = mono + mode * (l - mono) + fb * (dR + mode * (dL - dR));
@@ -802,6 +843,8 @@ void Fx::process(float* L, float* R, int n) {
                 float outL = 0, outR = 0;
                 for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
                 for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+                // Idle criterion sees the tank itself, so a tail hidden behind mix 0 is never frozen.
+                tailPk = std::max(tailPk, std::max(std::abs(outL), std::abs(outR)));
                 float wet = verbWet_.next(), dry = verbDry_.next();
                 meter_.stereo(FxTelemetry::verbL, wet * outL, wet * outR);
                 l = dry * l + wet * outL;
@@ -822,10 +865,13 @@ void Fx::process(float* L, float* R, int n) {
             lim_.process(l, r);
 
               L[i] = l; R[i] = r;
+            outPk = std::max(outPk, std::max(std::abs(l), std::abs(r)));
         }
         coefSamples_ -= end - off;
         off = end;
     }
+
+    gate_.end(inLoud, outPk, tailPk, n, delayHorizon, sr_);
 }
 
 } // namespace fable

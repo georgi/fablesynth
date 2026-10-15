@@ -1,13 +1,18 @@
+import { SequencePoly } from '../SequencePoly';
+import { scaleCellClass, ScaleStrip, type ScaleBinding } from '../ScaleStrip';
+import { scaleStepMasks } from '../../scales';
 // The WT-1 note sequencer: 12 note lanes per step (tap an empty cell = set
 // note, click a note = select it), draggable note lengths, octave / accent
 // rows, bars 1–4 + sequence length, RAND, transport and ROOT controls.
 
 import type { ReactNode } from 'react';
-import { ArpPanel, ArpModeSwitch } from './WtArpPanel';
+import { ArpPanel } from './WtArpPanel';
 import { getStep, NOTE_LANES, STEPS, WT1_LAYOUT, type SeqStep } from '../../noteseq';
 import { copyRectChain, rectNorm, type RectCells, type RectSel } from '../../shared/seqEdit';
 import { useStore } from '../../store';
 import { NoteLengthHandle } from '../NoteLengthHandle';
+import { PatternPresetSelect } from '../PatternPresetSelect';
+import { NOTE_PATTERN_PRESETS } from '../../patternPresets';
 import { SeqSelectionMenu } from '../SeqSelectionMenu';
 import { SequenceLengthControl } from '../SequenceLengthControl';
 import { Stepper } from '../Stepper';
@@ -69,6 +74,7 @@ export interface SeqRectOps {
 }
 
 interface SeqPanelProps {
+  clipKey?: string;
   /** Hosted SQ-4 clips have up to eight WT voices per step; standalone patterns do not. */
   polySteps?: SeqStep[][];
   bars?: number;
@@ -80,27 +86,41 @@ interface SeqPanelProps {
   onMoveChordNote?: (from: number, to: number, note: number, srcNote: number, copy: boolean, pattern: number) => void;
   /** Hosted-only: extra control rendered in the panel head (bar/length). */
   headerExtra?: ReactNode;
+  /** Hosted-only: the clip's scale settings and its playhead in sixteenths; standalone uses the device arp. */
+  scale?: ScaleBinding;
+  scaleStep?: number;
+}
+
+/** Standalone scale strip: highlights the chord under the playhead. */
+function StandaloneScaleStrip({ scale }: { scale: ScaleBinding }) {
+  const step = useStore((s) => s.seqPlaying && s.curStep >= 0 ? Math.max(0, s.chain.indexOf(s.curPat)) * STEPS + s.curStep : -1);
+  return <ScaleStrip scale={scale} step={step} />;
 }
 
 export function SeqPanel(props: SeqPanelProps = {}) {
   const arp = useStore(s => s.arpMode && !s.hosted);
-  return arp ? <ArpPanel /> : <NoteSeqPanel {...props} />;
+  const chords = useStore(s => s.arp.style === 'comp');
+  return arp ? <ArpPanel mode={chords ? 'chords' : 'arp'} /> : <NoteSeqPanel {...props} />;
 }
 
-function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra }: SeqPanelProps = {}) {
+export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra, clipKey, scale, scaleStep }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
-  const seqPlaying = useStore((s) => s.seqPlaying);
+  const deviceArp = useStore((s) => s.arp);
+  const updateArp = useStore((s) => s.updateArp);
+  const setSequenceLength = useStore((s) => s.setSequenceLength);
+  const root = useStore((s) => s.params['seq.root'] ?? 48);
+  const sequenceRhythm = useStore(s => s.sequenceRhythm);
+  const updateSequenceRhythm = useStore(s => s.updateSequenceRhythm);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
   // them, so the engine tick never reconciles the whole grid.
   const chain = useStore((s) => s.chain);
   const patterns = useStore((s) => s.patterns);
-  const seqPlay = useStore((s) => s.seqPlay);
-  const seqStop = useStore((s) => s.seqStop);
   const toggleCell = useStore((s) => s.toggleCell);
   const cycleStepOct = useStore((s) => s.cycleStepOct);
   const toggleStepAcc = useStore((s) => s.toggleStepAcc);
   const setStepDuration = useStore((s) => s.setStepDuration);
   const randomizeSeq = useStore((s) => s.randomizeSeq);
+  const loadPatternPreset = useStore((s) => s.loadPatternPreset);
   const rectSel = useStore((s) => s.rectSel);
   const setRectSel = useStore((s) => s.setRectSel);
   const moveRectSel = useStore((s) => s.moveRectSel);
@@ -179,6 +199,8 @@ function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, 
 
   const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
   const totalSteps = barCount * STEPS;
+  const scaleBinding: ScaleBinding = scale ?? { a: deviceArp, update: updateArp, bars: chain.length, setBars: setSequenceLength };
+  const masks = scaleStepMasks(scaleBinding.a, scaleBinding.bars, totalSteps);
   const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
     const bar = Math.floor(absoluteStep / STEPS);
     const step = absoluteStep % STEPS;
@@ -189,24 +211,19 @@ function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, 
   return (
     <section className="panel ns-section" style={{ gridArea: 'seq' }} data-accent="a">
       <div className="panel-head ns-head">
-        {!hosted && (
-          <button
-            className={`pb-btn ns-transport${seqPlaying ? ' active' : ''}`}
-            type="button"
-            aria-label={seqPlaying ? 'Stop sequencer' : 'Play sequencer'}
-            aria-pressed={seqPlaying}
-            onClick={seqPlaying ? seqStop : seqPlay}
-          >
-            {seqPlaying ? '■' : '▶'}
-          </button>
-        )}
         <h2>NOTE SEQ</h2>
-        {!hosted && <ArpModeSwitch />}
         {!hosted && <SeqLength />}
         {headerExtra}
         <button className="ns-btn" type="button" onClick={randomizeSeq}>RAND</button>
+        {!hosted && <PatternPresetSelect names={NOTE_PATTERN_PRESETS.map((p) => p.name)} onLoad={loadPatternPreset} />}
         <span className="ns-hint">DRAG EMPTY = DRAW · CLICK NOTE = SELECT · SHIFT-DRAG = RECT</span>
       </div>
+
+      <SequencePoly rhythm={sequenceRhythm} clipKey={clipKey} onChange={updateSequenceRhythm}
+        onUndo={useStore.getState().undoSeq}
+        onRedo={useStore.getState().redoSeq} />
+
+      {scale ? <ScaleStrip scale={scale} step={scaleStep} /> : !hosted && <StandaloneScaleStrip scale={scaleBinding} />}
 
       <div className="ns-body">
         <div className="ns-legend">
@@ -221,7 +238,7 @@ function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, 
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               const voices = polySteps?.[absoluteStep]?.length ? polySteps[absoluteStep] : [s];
               return (
-                <div className={`ns-col${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
+                <div className={`ns-col${sequenceRhythm.enabled && (pattern !== 0 || step >= sequenceRhythm.steps) ? ' sequence-poly-outside' : ''}${step === 0 && bar > 0 ? ' bar-start' : ''}`} key={absoluteStep}>
                   <div className="ns-lanes">
                     {Array.from({ length: NOTE_LANES }, (_, r) => {
                       const note = NOTE_LANES - 1 - r;
@@ -253,7 +270,7 @@ function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, 
                             data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + scaleCellClass(masks?.[absoluteStep], root + note) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {

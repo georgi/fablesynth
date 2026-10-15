@@ -3,8 +3,8 @@
 // Friend access injects fixtures at the real processor's summing/master
 // boundaries; production uses exactly these methods, with no test DSP path.
 struct SeqOutputTestAccess {
-    static std::array<float, 33> masterParams() {
-        std::array<float, 33> values {};
+    static std::array<float, fable::MASTER_FX_PARAMS> masterParams() {
+        std::array<float, fable::MASTER_FX_PARAMS> values {};
         for (const auto& p : fable::masterFxParamInfo()) values[(size_t)p.id] = p.def;
         values[21] = values[26] = 0; // leave only the legacy master compressor
         return values;
@@ -217,5 +217,64 @@ struct SeqOutputTestAccess {
               "tail bound is available before prepare and rate independent");
     }
 
-    static void run() { safetyAndLegacy(); alignment(); mono(); tail(); }
+    // COMP side-chain key bus and analysis taps through the real processBlock.
+    // BL-1 holds a note; master or BL-1 COMP is keyed by TRACK 2 (BL-1
+    // itself) or by the silent TRACK 3.
+    static void sidechainAndTaps() {
+        struct Result { double rms = 0; uint64_t frames = 0; double trackRms[4] {}; double inRms = 0, outRms = 0;
+                        uint64_t masterTrace = 0, bassTrace = 0; };
+        auto render = [](int masterSc, int bassSc) {
+            SeqAudioProcessor p;
+            p.prepareToPlay(48000, 128);
+            auto fxSet = [&](const char* id, float value) {
+                auto* param = p.masterFxParameter(id);
+                param->setValueNotifyingHost(param->convertTo0to1(value));
+            };
+            fxSet("fx.eq.on", 0); fxSet("fx.ott.on", 0);
+            fxSet("fx.comp.on", masterSc > 0 ? 1.f : 0.f); fxSet("fx.comp.thr", -40); fxSet("fx.comp.ratio", 20);
+            fxSet("fx.comp.sc", (float)masterSc);
+            p.setTrackFactoryPatch(1, 0);
+            auto values = p.trackParameterValues(1);
+            values["fx.comp.on"] = bassSc > 0 ? 1.f : 0.f; values["fx.comp.thr"] = -40; values["fx.comp.ratio"] = 20;
+            values["fx.comp.sc"] = (float)bassSc;
+            p.setTrackInlineParams(1, values);
+            p.auditionBassOn(0, .7f);
+            juce::AudioBuffer<float> buffer(2, 256); // larger than the prepared 128
+            juce::MidiBuffer midi;
+            Result r;
+            double e = 0; int count = 0;
+            for (int b = 0; b < 60; ++b) {
+                p.processBlock(buffer, midi);
+                if (b < 30) continue;
+                for (int i = 0; i < buffer.getNumSamples(); ++i, ++count) e += buffer.getSample(0, i) * buffer.getSample(0, i);
+            }
+            r.rms = std::sqrt(e / count);
+            r.frames = p.masterOutputTap().frames();
+            std::vector<float> l(8192), rr(8192);
+            auto tapRms = [&](const fable::ProgramTap& tap) {
+                if (!tap.readLatest(l.data(), rr.data(), 8192)) return -1.0;
+                double sum = 0;
+                for (size_t i = 0; i < l.size(); ++i) sum += l[i] * l[i] + rr[i] * rr[i];
+                return std::sqrt(sum / (2.0 * l.size()));
+            };
+            for (int t = 0; t < 4; ++t) r.trackRms[t] = tapRms(p.trackTap(t));
+            r.inRms = tapRms(p.masterInputTap()); r.outRms = tapRms(p.masterOutputTap());
+            r.masterTrace = p.compTrace(-1).frames(); r.bassTrace = p.compTrace(1).frames();
+            return r;
+        };
+        const auto masterSelf = render(3, 0), masterSilent = render(4, 0);
+        check(masterSelf.rms < masterSilent.rms * .5 && masterSilent.rms > 1.e-4,
+              "master COMP keyed by a track ducks; a silent key track does not", masterSelf.rms / masterSilent.rms);
+        const auto bassSelf = render(0, 3), bassSilent = render(0, 4);
+        check(bassSelf.rms < bassSilent.rms * .5 && bassSilent.rms > 1.e-4,
+              "BL-1 COMP reads the SQ-4 key bus one block late", bassSelf.rms / bassSilent.rms);
+        check(masterSilent.frames == 60 * 256, "master output tap advances with every rendered frame", (double)masterSilent.frames);
+        check(masterSilent.trackRms[1] > 1.e-4 && masterSilent.trackRms[2] == 0 && masterSilent.inRms > 1.e-4
+              && masterSilent.outRms > 1.e-4, "track and master taps deliver the post-fader and master streams",
+              masterSilent.trackRms[1]);
+        check(masterSilent.masterTrace == 60 * 256 && bassSelf.bassTrace > 0, "master and track COMP traces are readable",
+              (double)masterSilent.masterTrace);
+    }
+
+    static void run() { safetyAndLegacy(); alignment(); mono(); tail(); sidechainAndTaps(); }
 };

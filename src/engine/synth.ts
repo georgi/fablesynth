@@ -1,3 +1,5 @@
+import { KEY_CHANNELS } from './sidechain';
+import type { SequenceRhythm } from '../shared/sequenceRhythm';
 // Main-thread engine: owns the AudioContext and the worklet node.
 //
 // The FX rack used to live here as a graph of native WebAudio nodes
@@ -157,7 +159,8 @@ export class SynthEngine {
     this.refreshViz();
 
     this.node = new AudioWorkletNode(ctx, 'fable-wt', {
-      numberOfInputs: 0,
+      // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
+      numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
       numberOfOutputs: 1,
       outputChannelCount: [2],
     });
@@ -285,13 +288,21 @@ export class SynthEngine {
   setTempo(bpm: number, swing: number, anchor: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
   }
-  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp });
+  /** Standalone scale mode: the sequencer's scale map (src/scales.ts), or none. */
+  setScale(map?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'scale', map: map ?? null });
+  }
+  setSequenceRhythm(rhythm?: SequenceRhythm): void {
+    if (this.ready) this.node.port.postMessage({ t: 'sequenceRhythm', rhythm: rhythm ?? null });
+  }
+
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm, scale?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp, sequenceRhythm, scale });
   }
   scheduleStop(atFrame: number): void { if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame }); }
   /** Hosted clip automation: absolute-value tables per parameter (SQ-4). */
   setClipAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
     if (this.ready) this.node.port.postMessage({ t: 'auto', lanes });
   }
-  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp }); }
+  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm, scale?: number[][]): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp, sequenceRhythm, scale }); }
 }

@@ -1,5 +1,7 @@
 #include "BassEditor.h"
+#include "../ui/LeafControlCache.h"
 #include "dsp/BassParams.h"
+#include "../ui/EditorSize.h"
 
 namespace {
 class StandaloneBassUiModel final : public fui::BassUiModel {
@@ -8,6 +10,12 @@ public:
     fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::ParameterSource parameters() override { const auto& i = fable::bassParamInfo(); return fui::ParameterSource::fromApvts(proc.apvts, i.data(), i.size()); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    fui::AutoEqSource autoEqSource(int) const override { return { &proc.outputTap(), false, "bass", {} }; }
+    fui::AutoCompSource autoCompSource(int) const override { return { &proc.compTrace(), "level", {} }; }
+    double analysisSampleRate() const override { return proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000; }
+    std::optional<double> analysisTempo() const override {
+        return proc.isHostSynced() ? std::optional<double>(proc.getHostBpm()) : std::nullopt;
+    }
     fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
     void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
     fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
@@ -16,6 +24,16 @@ public:
     void clearArpKeys() override { proc.clearArpKeys(); }
     void arpKeyInput(int n, bool on) override { if (on) proc.noteOn(n - fable::BL_ROOT_MIDI, .8f); else proc.noteOff(n - fable::BL_ROOT_MIDI); }
     bool programDirty() const override { return proc.isProgramDirty(); }
+    bool supportsSequencePoly() const override { return true; }
+    fui::SeqPolySettings sequencePoly() const override {
+        const auto r = proc.getSequenceRhythm();
+        fui::SeqPolySettings out; out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+        out.rotation = r.rotation; out.cycleBeats = r.cycleBeats; return out;
+    }
+    void setSequencePoly(const fui::SeqPolySettings& p) override {
+        fable::SequenceRhythm r; r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps;
+        r.rotation = p.rotation; r.cycleBeats = p.cycleBeats; proc.setSequenceRhythm(r);
+    }
     int currentProgram() const override { return proc.getCurrentProgram(); }
     int numPrograms() const override { return proc.getNumPrograms(); }
     juce::String programName(int i) const override { return proc.getProgramName(i); }
@@ -62,21 +80,34 @@ private:
 //   #bl-keysrow       (18, 918) 1424 x 140  (keyboard last, as on hardware)
 
 // ---- BassRack ----
-BassRack::BassRack(fui::BassUiModel& p) : header(p), body(p) {
+BassRack::BassRack(fui::BassUiModel& p, BassAudioProcessor& proc)
+    : header(p), body(p), browserAdapter_(std::make_unique<fui::BassStandaloneBackend>(proc)), browser_(browserAdapter_) {
     // The body spans the full logical rack, including the otherwise-empty
     // header strip. Keep the header above it so its patch and master controls
     // receive mouse events.
     addAndMakeVisible(body); addAndMakeVisible(header);
+    fui::enableLeafControlCache(*this);
+    addChildComponent(browser_);   // the drawer sits above everything else
+    header.onBrowse = [this] { toggleBrowser(); };
+    browser_.onClose = [this] { header.setBrowseOpen(false); };
+}
+
+void BassRack::toggleBrowser() {
+    if (browser_.isOpen()) { browser_.close(); return; }
+    browser_.open();
+    header.setBrowseOpen(true);
 }
 
 void BassRack::resized() {
     header.setBounds(18, 14, 1424, 80);
     body.setBounds(getLocalBounds());
+    // Drawer below the header, as wide as the header (web .pbr: top calc(100% + 6px)).
+    browser_.setBounds(18, 14 + 80 + 6, 1424, juce::jmin(620, getHeight() - 100 - 10));
 }
 
 // ---- BassEditor ----
 BassEditor::BassEditor(BassAudioProcessor& p)
-    : juce::AudioProcessorEditor(p), model(std::make_unique<StandaloneBassUiModel>(p)), rack(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
+    : juce::AudioProcessorEditor(p), model(std::make_unique<StandaloneBassUiModel>(p)), rack(*model, p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     addAndMakeVisible(agentOverlay);
@@ -87,7 +118,8 @@ BassEditor::BassEditor(BassAudioProcessor& p)
         c->setFixedAspectRatio((double)BassRack::LW / BassRack::LH);
     setResizeLimits(840, (int)(840 * (double)BassRack::LH / BassRack::LW),
                     2100, (int)(2100 * (double)BassRack::LH / BassRack::LW));
-    setSize(1200, (int)(1200 * (double)BassRack::LH / BassRack::LW));
+    const int width = fui::defaultEditorWidth(1200, (double)BassRack::LH / BassRack::LW);
+    setSize(width, (int)(width * (double)BassRack::LH / BassRack::LW));
 }
 
 BassEditor::~BassEditor() { setLookAndFeel(nullptr); }

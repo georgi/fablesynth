@@ -111,7 +111,7 @@ describe('drum voice', () => {
     expect(cropped[48]).toBeGreaterThan(cropped[1]);
   });
 
-  it('blends the native Hann decimation window in continuously above rate one', () => {
+  it('blends the band-limited decimating read in continuously above rate one', () => {
     const p = defaultDrumParams(); p[pad(0, 'oscB.level')] = 1;
     const direct = boot(p);
     const data = Float32Array.from({ length: 512 }, (_, i) => Math.sin(i * 1.91) + .2 * Math.sin(i * .17));
@@ -197,6 +197,66 @@ describe('drum voice', () => {
     expect(delta / dry.length).toBeGreaterThan(0.005);
     expect(finite(wet)).toBe(true);
     expect(peak(wet)).toBeLessThan(2);
+  });
+
+  // Retrigger collision: hits 2 and 3 land inside one choke fade and the
+  // parked tail is still louder than hit 2. Hit 3 must fade hit 2 out, not
+  // restart it in place. Low holding tone, 1 ms attack, no filter; phase 0.25 so
+  // the restart is not hidden at a zero crossing.
+  const holdParams = () => {
+    const p = defaultDrumParams();
+    p[pad(0, 'aenv.att')] = 0.001; p[pad(0, 'aenv.hold')] = 0.25; p[pad(0, 'aenv.dec')] = 2;
+    p[pad(0, 'flt.on')] = 0; p[pad(0, 'oscA.phase')] = 0.25; p[pad(0, 'oscA.tune')] = -24;
+    return p;
+  };
+  const maxStep = (x: Float32Array, a = 1, b = x.length) => {
+    let m = 0;
+    for (let i = Math.max(1, a); i < b; i++) m = Math.max(m, Math.abs(x[i] - x[i - 1]));
+    return m;
+  };
+  const cat = (...xs: Float32Array[]) => {
+    const out = new Float32Array(xs.reduce((n, x) => n + x.length, 0));
+    let o = 0;
+    for (const x of xs) { out.set(x, o); o += x.length; }
+    return out;
+  };
+
+  // Three hits within 0.25 ms. The reference omits hit 3: an accepted,
+  // click-free retrigger whose own choke fade sets the step bound.
+  const collide = (third: boolean) => {
+    const hr = boot(holdParams());
+    hr.send({ t: 'trig', pad: 0, v: 1 });
+    const before = hr.render(500, 24).L;          // 0.25 s: attack done, holding
+    hr.send({ t: 'trig', pad: 0, v: 1 });          // hit 2: hit 1 → tail slot
+    const gap = hr.render(1, 12).L;               // tail still louder than hit 2
+    if (third) hr.send({ t: 'trig', pad: 0, v: 1 }); // hit 3: collides with the fade
+    const after = hr.render(200, 24).L;
+    return maxStep(cat(before.slice(-8), gap, after));
+  };
+
+  it('retrigger collision inside one choke fade does not click', () => {
+    const single = collide(false);
+    const atHit = collide(true);
+    expect(single).toBeGreaterThan(1e-5);
+    // Restarting hit 2 in place stepped ~9x the reference; the fade slot
+    // keeps the collision inside the reference retrigger's own fade.
+    expect(atHit).toBeLessThanOrEqual(single * 1.1);
+  });
+
+  it('normal retriggers render bit-identical to the pre-collision-fix engine', () => {
+    // FNV-1a over the float bits; pinned before the collision fade slot was
+    // added. Spacings 30 ms and 250 ms never put two hits inside one fade.
+    const hr = boot(holdParams());
+    const parts: Float32Array[] = [];
+    for (const blocks of [500, 60, 10]) {
+      hr.send({ t: 'trig', pad: 0, v: 1 });
+      const o = hr.render(blocks, 24);
+      parts.push(o.L, o.R);
+    }
+    const bits = new Uint32Array(cat(...parts).buffer);
+    let hsh = 0x811c9dc5;
+    for (const b of bits) { hsh ^= b; hsh = Math.imul(hsh, 0x01000193) >>> 0; }
+    expect(hsh.toString(16)).toBe('8c54ac34');
   });
 });
 

@@ -1,6 +1,7 @@
 // Canonical DR-1 parameter definitions. Per-pad params are namespaced
 // `pad<i>.<field>`; every knob, kit, and worklet message keys off this table
 // (same params-as-truth discipline as WT-1's src/params.ts).
+import { DRUM_SC_SOURCES, SC_HP_DEF } from '../engine/sidechain';
 
 import {
   PARAM_DEFS, fmtHz, fmtSec, fmtPct, fmtPan, fmtBi,
@@ -75,6 +76,9 @@ export const FX_DEFS: ParamDef[] = [
   ...PARAM_DEFS.filter((d) => d.id.startsWith('fx.eq.')),
   ...PARAM_DEFS.filter((d) => ['fx.comp.att', 'fx.comp.rel', 'fx.comp.ratio', 'fx.drive.tone', 'fx.drive.type'].includes(d.id)),
   ...PARAM_DEFS.filter((d) => /^fx\.(crush|reso|shift|spray|glitch)\./.test(d.id)),
+  // COMP side-chain: another pad of this kit, or another SQ-4 track.
+  { id: 'fx.comp.sc', type: 'enum', options: DRUM_SC_SOURCES, def: 0 },
+  { id: 'fx.comp.schp', ...SC_HP_DEF },
 ];
 
 // The post-mix drum group starts with the reference strip: firm OTT and

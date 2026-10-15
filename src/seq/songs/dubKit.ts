@@ -1,11 +1,11 @@
-import { FACTORY_KITS, kitToState } from '../../drum/kits';
+import { FACTORY_KIT_BASES, kitToState } from '../../drum/kits';
 import type { PatchDoc } from '../protocol';
 
 // MINIMAL's tuned TINE rim sounds like a cowbell. Use a real clap on pad 3:
 // soften its top end and shorten the envelope while retaining the clap flams.
 export function dubKit(overrides: Record<string, number> = {}): PatchDoc {
   return { kind: 'inline', base: 9, data: { params: {
-    ...kitToState(FACTORY_KITS[9]).params,
+    ...kitToState(FACTORY_KIT_BASES[9]).params,
     // Firm, dry kick: a faster pitch drop and less flattened saturation.
     'pad0.aenv.att': 0.0005, 'pad0.aenv.hold': 0.012,
     'pad0.aenv.dec': 0.19, 'pad0.aenv.curve': 0.45,

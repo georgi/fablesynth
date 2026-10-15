@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Theme.h"
+#include "VisualTimer.h"
 #include "ParameterSource.h"
 #include <functional>
 
@@ -25,14 +26,19 @@ public:
     virtual ~AutomationMenuHost() = default;
     virtual bool canShowAutomation(const juce::String&) const = 0;
     virtual void showAutomation(const juce::String&) = 0;
+    // True when the focused clip has a lane that targets this parameter.
+    virtual bool hasAutomation(const juce::String&) const { return false; }
+    virtual void removeAutomation(const juce::String&) {}
 };
 
 // ---- rotary knob ----------------------------------------------------------
 // modDest > 0 turns the knob into a modulation target: it accepts source-chip
 // drops (juce::DragAndDropTarget), paints one depth ring per slot whose dst ==
 // modDest, and lets the rings be depth-dragged / right-click-cleared.
-class Knob : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
+class Knob : public juce::Component, public juce::DragAndDropTarget, private fui::VisualTimer {
 public:
+    // Synchronise cached visual state before a revealed page is painted.
+    void refreshVisualState() { if (isVisibleInHierarchy(*this)) timerCallback(); }
     enum Size { Lg, Md, Sm, Xs };
     Knob(juce::AudioProcessorValueTreeState& s, const juce::String& paramId,
          Size sz, Accent accent, bool showLabel = true, int modDest = 0);
@@ -45,6 +51,8 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
     // juce::DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails&) override;
@@ -65,6 +73,7 @@ private:
     void  rebuildRings();                 // refresh rings_ from active slots
     juce::uint64 ringSignature() const;   // cheap hash of this dest's active slots
     float liveNorm() const;               // modulated arc position, -1 = dot hidden
+    int   ringAt(juce::Point<float>) const; // ring index under a point, -1 = none
 
     ParameterSource parameters;
     juce::String id;
@@ -77,17 +86,21 @@ private:
     juce::String label;
     bool  dragging = false;
     float lastY = 0, lastNorm = -1;
+    float dragNorm_ = 0;                  // unsnapped drag position (stepped params)
 
     // ---- modulation target state ----
     int  modDest_ = 0;
     bool dragHover_ = false;
-    struct Ring { int slot, src; float amt; };
+    // bi: the route swings both ways (base ± amt) instead of base → base + amt.
+    struct Ring { int slot, src; float amt; bool bi; };
     std::vector<Ring> rings_;
     int  grabbedRing_ = -1;
+    int  hoverRing_ = -1;                 // ring under the mouse; its label replaces the name
+    int  lastHighlight_ = 0;              // highlighted source chip at the last paint
     juce::RangedAudioParameter* grabbedAmt_ = nullptr; // amt param being depth-dragged
     juce::uint64 lastRingSig_ = ~(juce::uint64)0;
-    // Cached mat src/dst/amt params (16 slots x 3 = 48), indexed [slot-1][field].
-    juce::RangedAudioParameter* matParams_[16][3] = {};
+    // Cached mat src/dst/amt/pol params (16 slots x 4), indexed [slot-1][field].
+    juce::RangedAudioParameter* matParams_[16][4] = {};
     // ---- live modulation dot (web Knob .k-live parity) ----
     // Route sum x -> normalized arc offset: Lin folds p + x·(hi−lo) so the
     // offset IS x; Log folds p·2^(x·5) so it's x·5/log2(max/min).
@@ -97,8 +110,10 @@ private:
 };
 
 // ---- enum stepper  (◂ VALUE ▸) -------------------------------------------
-class Stepper : public juce::Component, private juce::Timer {
+class Stepper : public juce::Component, private fui::VisualTimer {
 public:
+    // Synchronise cached visual state before a revealed page is painted.
+    void refreshVisualState() { if (isVisibleInHierarchy(*this)) timerCallback(); }
     Stepper(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent);
     Stepper(ParameterSource, const juce::String& paramId, Accent accent);
     void paint(juce::Graphics&) override;
@@ -128,8 +143,10 @@ private:
 };
 
 // ---- power LED toggle -----------------------------------------------------
-class PowerButton : public juce::Component, private juce::Timer {
+class PowerButton : public juce::Component, private fui::VisualTimer {
 public:
+    // Synchronise cached visual state before a revealed page is painted.
+    void refreshVisualState() { if (isVisibleInHierarchy(*this)) timerCallback(); }
     PowerButton(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent);
     PowerButton(ParameterSource, const juce::String& paramId, Accent accent);
     // Non-parameter state (e.g. the SEQUENCER / ARP tab LEDs).
@@ -152,8 +169,10 @@ private:
 // modDest > 0 turns the slider into a modulation target: it accepts source-chip
 // drops, paints a side depth band per slot whose dst == modDest, and lets each
 // band be depth-dragged / right-click-cleared.
-class VSlider : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
+class VSlider : public juce::Component, public juce::DragAndDropTarget, private fui::VisualTimer {
 public:
+    // Synchronise cached visual state before a revealed page is painted.
+    void refreshVisualState() { if (isVisibleInHierarchy(*this)) timerCallback(); }
     VSlider(juce::AudioProcessorValueTreeState&, const juce::String& paramId, Accent accent,
             std::function<float()> ghostProvider, int modDest = 0);
     VSlider(ParameterSource, const juce::String& paramId, Accent accent,
@@ -174,6 +193,9 @@ public:
 private:
     void timerCallback() override;
     void moveTo(float y);
+    int  bandAt(juce::Point<float>) const; // band index under a point, -1 = none
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
     juce::Rectangle<float> trackArea() const;
     void rebuildRings();
     juce::uint64 ringSignature() const;
@@ -188,12 +210,18 @@ private:
     // ---- modulation target state ----
     int  modDest_ = 0;
     bool dragHover_ = false;
-    struct Ring { int slot, src; float amt; };
+    struct Ring { int slot, src; float amt; bool bi; };
     std::vector<Ring> rings_;
     int  grabbedRing_ = -1;
+    int  hoverRing_ = -1;
+    int  lastHighlight_ = 0;
+    bool dragging_ = false;               // base handle drag: the label shows the value
     juce::RangedAudioParameter* grabbedAmt_ = nullptr; // amt param being depth-dragged
     juce::uint64 lastRingSig_ = ~(juce::uint64)0;
-    juce::RangedAudioParameter* matParams_[16][3] = {};
+    juce::RangedAudioParameter* matParams_[16][4] = {};
 };
+
+// Refresh only visible leaves; call after focus/page changes, never per tick.
+void refreshVisibleControls(juce::Component&);
 
 } // namespace fui

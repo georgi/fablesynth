@@ -19,8 +19,11 @@ Chrome directly, then use chromectl for eval/screenshot on the same port):
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless=new --remote-debugging-port=9223 --remote-allow-origins='*' \
   --user-data-dir=<scratch>/chrome-profile --no-first-run \
-  --autoplay-policy=no-user-gesture-required --window-size=2000,1100 &
+  --autoplay-policy=no-user-gesture-required --mute-audio --window-size=2000,1100 &
 ```
+
+`--mute-audio` keeps the speakers silent. Web Audio still renders, so
+analysers, meters, and worklet telemetry work as usual. Always pass it.
 
 ## Drive (SQ-4 at /seq/)
 

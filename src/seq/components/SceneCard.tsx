@@ -4,9 +4,11 @@
 // column (SeqApp). Focus mode adds two things on top of the session card: the
 // body retargets the editor, and the focused scene is ringed.
 
+import { compileClipArp } from '../clipArp';
 import { isTrackAudible, pad2 } from '../model';
 import { STEPS_PER_BAR } from '../protocol';
 import { useSeqStore } from '../store';
+import { SceneChordChip } from './SceneChordChip';
 import { TransportGlyph } from './TransportGlyph';
 
 export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) {
@@ -44,7 +46,7 @@ export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) 
   const playingClip = focus && focusState && owner[focusState.track] === s
     ? sc.clips[focusState.track] : null;
   const progress = pos && playingClip
-    ? playingClip.arp?.enabled ? (pos.step + 1) / STEPS_PER_BAR : Math.min(1, (pos.bar * STEPS_PER_BAR + pos.step + 1) / (playingClip.bars * STEPS_PER_BAR))
+    ? playingClip.arp?.enabled ? (pos.step + 1) / (compileClipArp(playingClip)?.notes.length ?? STEPS_PER_BAR) : Math.min(1, (pos.bar * STEPS_PER_BAR + pos.step + 1) / (playingClip.bars * STEPS_PER_BAR))
     : null;
 
   return (
@@ -104,6 +106,7 @@ export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) 
           {clipTracks.length} {clipTracks.length === 1 ? 'CLIP' : 'CLIPS'}
         </span>
       </div>
+      <SceneChordChip s={s} />
       {progress !== null && (
         <span className="sq-scene-progress" style={{ transform: `scaleX(${progress})` }} />
       )}

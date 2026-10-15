@@ -1,12 +1,14 @@
 // SQ-4's post-fader bus uses the same full-control modules as the instruments.
 // It has its own session parameter namespace, so opening this rack never edits
 // an individual device patch.
+import { SC_SOURCES, trackKeyLabels } from '../../engine/sidechain';
 import { EqPanel } from '../../components/panels/EqPanel';
 import { DynamicsPanel } from '../../components/panels/DynamicsPanel';
 import type { FxPanelAdapter, FxTelemetryEngine } from '../../components/panels/fxAdapter';
 import { fmtDb, fmtHz, fmtPct, fmtSec } from '../../params';
 import { useSeqStore } from '../store';
 import { SeqKnob } from './SeqKnob';
+import { MixAssistPanel } from './MixAssistPanel';
 
 type Spec = { min: number; max: number; def: number; log?: boolean; fmt: (v: number) => string };
 const SPECS: Record<string, Spec> = {
@@ -19,6 +21,7 @@ const SPECS: Record<string, Spec> = {
   'ott.depth': { min: 0, max: 1, def: .35, fmt: fmtPct }, 'ott.time': { min: .01, max: 10, def: 1, log: true, fmt: fmtSec },
   'ott.up': { min: 0, max: 2, def: 1, fmt: v => `${v.toFixed(2)}×` }, 'ott.down': { min: 0, max: 2, def: 1, fmt: v => `${v.toFixed(2)}×` },
   'comp.thr': { min: -40, max: 0, def: -16, fmt: fmtDb }, 'comp.att': { min: .0001, max: .1, def: .003, log: true, fmt: fmtSec },
+  'comp.schp': { min: 20, max: 500, def: 20, log: true, fmt: fmtHz },
   'comp.rel': { min: .01, max: 2, def: .25, log: true, fmt: fmtSec }, 'comp.ratio': { min: 1, max: 20, def: 4, fmt: v => `${v.toFixed(1)}:1` },
   'limiter.ceiling': { min: -12, max: -.1, def: -1, fmt: fmtDb },
 };
@@ -66,14 +69,23 @@ function LimiterPanel() {
 
 export function MasterFxRack() {
   const params = useSeqStore(s => s.masterFx), setMasterFx = useSeqStore(s => s.setMasterFx);
+  const rig = useSeqStore(s => s.rig);
+  const tracks = useSeqStore(s => s.session.tracks);
   const adapter: FxPanelAdapter = {
     engine: silentTelemetry, params, setParam: (id, value) => setMasterFx({ [id]: value }), prefix: 'master.',
-    renderKnob: (id, label) => <MasterKnob id={id} label={label?.toUpperCase()} />,
+    analysis: { source: rig?.masterTaps?.input ?? null, preEq: true, reference: 'mix', note: 'POWER ON TO LEARN' },
+    // The master EQ shows what leaves the chain, not the pre-FX sum it learns from.
+    liveSpectrum: rig?.masterTaps?.output ?? null,
+    // No master telemetry: learn from the pre-FX sum (before EQ and OTT).
+    compTap: { source: rig?.masterTaps?.input ?? null, style: 'glue', note: 'POWER ON TO LEARN' },
+    renderKnob: (id, label) => <MasterKnob id={id} label={id.endsWith('.schp') ? 'KEY HP' : label?.toUpperCase()} />,
     renderPower: (id) => <MasterPower id={id} />,
+    sidechain: { sources: SC_SOURCES, hosted: true, labels: trackKeyLabels(tracks) },
   };
   return <section className="sq-master-fx" aria-label="SQ-4 master effects chain">
     <div className="sq-master-fx-title"><span aria-hidden="true" /><h1>MASTER FX</h1><p>POST-FADER · EQ › OTT › COMP › LIMITER</p></div>
     <div className="sq-master-fx-rack">
+      <MixAssistPanel />
       <EqPanel adapter={adapter} />
       <DynamicsPanel kind="ott" adapter={adapter} />
       <DynamicsPanel kind="comp" adapter={adapter} />

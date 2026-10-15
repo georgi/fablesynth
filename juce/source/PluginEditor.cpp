@@ -1,8 +1,10 @@
 #include "PluginEditor.h"
+#include "ui/LeafControlCache.h"
+#include "ui/EditorSize.h"
 
 // ---- standalone rack ----
 Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState&, FableAudioProcessor& p)
-    : topBar(model.parameters(), p), body(model, [&p] { return p.getTransport(); }) {
+    : topBar(model.parameters(), p), body(model, [&p] { return p.getTransport(); }), browserAdapter_(std::make_unique<fui::WtStandaloneBackend>(p)), browser_(browserAdapter_) {
     fui::ClipAutomationPanel::Source context;
     context.machine=fable::Machine::WT1; context.identity="wt1-sequence"; context.unit="SEQ";
     context.clip=[this,&p]() -> const fable::ClipData* {
@@ -18,12 +20,25 @@ Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState&, FableAudi
     addAndMakeVisible(topBar);
     addAndMakeVisible(body);
     body.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
+    addChildComponent(browser_);
+    topBar.onBrowse = [this] { toggleBrowser(); };
+    browser_.onClose = [this] { topBar.setBrowseOpen(false); };
+    browser_.onChanged = [this] { topBar.refreshProgram(); };
+}
+
+void Rack::toggleBrowser() {
+    if (browser_.isOpen()) { browser_.close(); return; }
+    browser_.open();
+    topBar.setBrowseOpen(true);
 }
 
 void Rack::resized() {
     const int padX = 14, padY = 12, topH = 70, gap = 9;
     topBar.setBounds(padX, padY, LW - padX * 2, topH);
     body.setBounds(0, padY + topH + gap - 2, WtDeviceBody::LW, WtDeviceBody::LH);
+    // Drawer below the top bar, as wide as the bar (web .pbr: top calc(100% + 6px)).
+    const int drawerY = padY + topH + 6;
+    browser_.setBounds(padX, drawerY, LW - padX * 2, juce::jmin(620, LH - drawerY - 10));
 }
 
 // ---- Editor ----
@@ -32,6 +47,7 @@ FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
       model(std::make_unique<StandaloneWtUiModel>(p)), rack(*model, p.apvts, p), wtEditor(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
+    fui::enableLeafControlCache(rack);
     addAndMakeVisible(agentOverlay);
     rack.setBounds(0, 0, Rack::LW, Rack::LH);
     addChildComponent(wtEditor);
@@ -40,7 +56,8 @@ FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
     if (auto* c = getConstrainer())
         c->setFixedAspectRatio((double)Rack::LW / Rack::LH);
     setResizeLimits(840, (int)(840 * (double)Rack::LH / Rack::LW), 2100, (int)(2100 * (double)Rack::LH / Rack::LW));
-    setSize(1200, (int)(1200 * (double)Rack::LH / Rack::LW));
+    const int width = fui::defaultEditorWidth(1200, (double)Rack::LH / Rack::LW);
+    setSize(width, (int)(width * (double)Rack::LH / Rack::LW));
 }
 
 FableAudioProcessorEditor::~FableAudioProcessorEditor() { setLookAndFeel(nullptr); }

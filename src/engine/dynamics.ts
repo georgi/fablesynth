@@ -6,7 +6,8 @@ export interface DynamicsMessage {
   /** Present for per-pad instruments; absent on WT-1. */
   pad?: number;
   ott: { input: number; output: number; levels: number[]; gains: number[]; makeup: number };
-  comp: { input: number; output: number; reduction: number; makeup: number };
+  /** `trace` is the compressor's detector input (max |L|,|R|) for this block, one value per sample. */
+  comp: { input: number; output: number; reduction: number; makeup: number; trace?: Float32Array };
 }
 
 export const idleDynamics = (): DynamicsMessage => ({

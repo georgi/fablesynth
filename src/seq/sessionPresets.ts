@@ -1,12 +1,18 @@
+import { copySequenceRhythm } from '../shared/sequenceRhythm';
 // SQ-4 factory sessions: legacy generator plus individually authored songs.
 // Legacy rules mirror SeqFactory.cpp; authored scores are compiled to native
 // data with npm run songs:generate, keeping both libraries in the same order.
 
+import MIXDOWNS from '../../shared/session-mixdowns.json';
+import { resolvedPatchParams } from './sessionExport';
 import { factorySession } from './factory';
-import { copyClipArp } from './clipArp';
+import { chordTrackArp, clipChordOctave, copyClipArp, followClip } from './clipArp';
 import { copyAutomation } from './clipAutomation';
 import { TIDAL_MEMORY } from './songs/tidalMemory';
 import { PHASE_RUNNER } from './songs/phaseRunner';
+import { applyGroove } from './songs/grooves';
+import { COMPING_SCENES, PAD_HOLD, PAD_HOLD_FEEL, SESSION_COMPING, SESSION_COMP_SOUNDS, compEntry, withComp } from './songs/comping';
+import { wtPatch } from './songs/score';
 import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
 import { masterFxParams } from './masterFx';
 import { cloneDrumRhythm } from '../drum/rhythm';
@@ -499,12 +505,26 @@ function buildSession(spec: Spec): SessionDoc {
     track.patch = { kind: 'factory', index: spec.programs[t] };
     track.gain = gains[t];
   });
+  const compSound = SESSION_COMP_SOUNDS[spec.name];
+  if (compSound) session.tracks[3]!.patch = wtPatch(spec.programs[3], compSound);
   const harmony = harmonyFor(spec);
-  const bass = bassProgression(harmony, spec);
-  const lead = leadProgression(harmony, spec);
-  const pads = padProgression(harmony, spec);
+  // Each note clip carries the song's progression as its arp chord track (ARP
+  // off), in the clip's register. MINIMAL's drone pad keeps its bare fifths.
+  const chordTrack = (machine: 'BL1' | 'WT1', clip: ClipDoc, drone = false): ClipDoc => ({ ...clip,
+    arp: chordTrackArp(machine, harmony.roots.map((root, bar) => ({ start: bar * 16, length: 16, root,
+      quality: drone ? 'five' : harmony.minor[bar] ? 'min' : 'maj', inversion: 0 })), harmony.roots[0]!, clipChordOctave(machine, clip), !drone) });
+  // Bass and lead FOLLOW the chord track, so a new scene progression moves them too.
+  const bass = followClip(chordTrack('BL1', bassProgression(harmony, spec)));
+  const lead = followClip(chordTrack('WT1', leadProgression(harmony, spec)));
+  const chordPads = chordTrack('WT1', padProgression(harmony, spec), spec.family === 'MINIMAL');
+  // Pads play the chord track in CHORDS mode: held chords, and in some
+  // sessions a comp groove between the intro and the tail (songs/comping.ts).
+  const comping = SESSION_COMPING[spec.name] ? compEntry(SESSION_COMPING[spec.name]!) : null;
+  const held = { ...chordPads, arp: withComp(chordPads.arp!, compEntry(PAD_HOLD), true, PAD_HOLD_FEEL) };
+  const comped = comping && { ...chordPads, arp: withComp(chordPads.arp!, comping, true) };
   session.scenes.forEach((scene, s) => {
     const drums = drumProgression(spec, s);
+    const pads = comped && COMPING_SCENES.includes(s) ? comped : held;
     // Arrange density intentionally; the three tonal parts retain the same
     // progression whenever they enter, so every scene belongs to one song.
     scene.clips = s === 0 ? [drums, null, null, pads]
@@ -516,13 +536,56 @@ function buildSession(spec: Spec): SessionDoc {
   return session;
 }
 
-export const GENERATED_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
+/** The presets as composed, before the generated mixdowns (for the extractor). */
+export const BASE_GENERATED_SESSION_PRESETS: SessionPreset[] = specs.map((spec) => ({
   ...spec,
-  session: buildSession(spec),
+  // Scored POLY lanes and micro-timing (songs/grooves.ts) for a few sessions.
+  session: applyGroove(buildSession(spec)),
 }));
-
 // Append authored songs to preserve existing host program numbers.
-export const AUTHORED_SESSION_PRESETS: SessionPreset[] = [TIDAL_MEMORY, PHASE_RUNNER];
+export const BASE_AUTHORED_SESSION_PRESETS: SessionPreset[] = [TIDAL_MEMORY, PHASE_RUNNER];
+
+interface Mixdown {
+  name: string;
+  masterVol: number;
+  masterFx: Record<string, number>;
+  tracks: { gain: number; params: Record<string, number> }[];
+}
+
+/**
+ * Applies a session's generated mixdown (auto-EQ, auto-comp and ASSIST
+ * results, shared/session-mixdowns.json): track gains, device EQ/comp
+ * overrides on a fully resolved inline patch (keeping its factory base),
+ * the master section and the master fader. The plugin applies the same
+ * table (SessionMixdowns.gen.h).
+ */
+function applyMixdown(preset: SessionPreset): SessionPreset {
+  const mix = (MIXDOWNS.sessions as Mixdown[]).find((m) => m.name === preset.name);
+  if (!mix) return preset;
+  const session = preset.session;
+  return {
+    ...preset,
+    session: {
+      ...session,
+      masterFx: masterFxParams(mix.masterFx),
+      masterVol: mix.masterVol,
+      tracks: session.tracks.map((track, t) => {
+        const m = mix.tracks[t];
+        if (!m) return track;
+        if (!Object.keys(m.params).length) return { ...track, gain: m.gain };
+        const base = track.patch.kind === 'factory' ? track.patch.index : track.patch.base;
+        const data = track.patch.kind === 'inline' ? track.patch.data as Record<string, unknown> : {};
+        return {
+          ...track, gain: m.gain,
+          patch: { kind: 'inline', base, data: { ...data, params: { ...resolvedPatchParams(track.machine, track.patch), ...m.params } } },
+        };
+      }),
+    },
+  };
+}
+
+export const GENERATED_SESSION_PRESETS: SessionPreset[] = BASE_GENERATED_SESSION_PRESETS.map(applyMixdown);
+export const AUTHORED_SESSION_PRESETS: SessionPreset[] = BASE_AUTHORED_SESSION_PRESETS.map(applyMixdown);
 export const FACTORY_SESSION_PRESETS: SessionPreset[] = [...GENERATED_SESSION_PRESETS, ...AUTHORED_SESSION_PRESETS];
 
 /**
@@ -546,6 +609,7 @@ export function copySession(session: SessionDoc): SessionDoc {
     tracks: session.tracks.map((track) => ({ ...track, patch: track.patch.kind === 'inline'
       ? { ...track.patch, data: structuredClone(track.patch.data) } : { ...track.patch } })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip,
+      ...(clip.sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(clip.sequenceRhythm) } : {}),
       ...(clip.arp ? { arp: copyClipArp(clip.arp) } : {}),
       ...(clip.automation ? { automation: copyAutomation(clip.automation) } : {}),
       ...(clip.drumRhythm ? { drumRhythm: cloneDrumRhythm(clip.drumRhythm, clip.bars) } : {}),

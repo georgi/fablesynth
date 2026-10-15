@@ -1,3 +1,4 @@
+import { validSequenceRhythm, type SequenceRhythm } from '../shared/sequenceRhythm';
 // SQ-4 clip & session protocol — the single source of truth for the design
 // in docs/sq4-clips.md: session document schema, clip payload layouts, the
 // shared-timebase boundary math and the base64 codec used to embed pattern
@@ -60,6 +61,8 @@ export interface SessionDoc {
   scenes: SceneDoc[];
   /** Optional for v1 compatibility; omitted sessions recall neutral master processing. */
   masterFx?: MasterFxParams;
+  /** Optional master fader (0..1); omitted sessions recall the 0.75 default. */
+  masterVol?: number;
 }
 
 export interface TrackDoc {
@@ -91,6 +94,7 @@ export interface ClipDoc {
   arp?: ClipArp;
   automation?: AutoLane[];
   drumRhythm?: DrumRhythm;
+  sequenceRhythm?: SequenceRhythm; // Web melodic POLY prototype; native playback not implemented.
   name: string;
   bars: number; // 1..MAX_BARS
   pattern: string; // base64 of the machine's packed clip bytes
@@ -160,6 +164,7 @@ export function validateSession(doc: SessionDoc): string | null {
   if (!(doc.bpm >= 60 && doc.bpm <= 200)) return 'bpm out of range';
   if (!Array.isArray(doc.tracks) || !doc.tracks.length) return 'no tracks';
   if (!Array.isArray(doc.scenes)) return 'no scenes';
+  if (doc.masterVol !== undefined && !(doc.masterVol >= 0 && doc.masterVol <= 1)) return 'masterVol out of range';
   for (let t = 0; t < doc.tracks.length; t++) {
     if (!['DR1', 'BL1', 'WT1'].includes(doc.tracks[t].machine)) return `track ${t}: unknown machine`;
   }
@@ -170,6 +175,7 @@ export function validateSession(doc: SessionDoc): string | null {
       const c = sc.clips[t];
       if (!c) continue;
       if (c.arp !== undefined && (doc.tracks[t].machine === 'DR1' || !validClipArp(c.arp))) return `scene ${s} track ${t}: invalid arpeggiator`;
+      if (c.sequenceRhythm !== undefined && (doc.tracks[t].machine === 'DR1' || !validSequenceRhythm(c.sequenceRhythm))) return `scene ${s} track ${t}: invalid melodic rhythm`;
       if (c.drumRhythm !== undefined) {
         if (doc.tracks[t].machine !== 'DR1') return `scene ${s} track ${t}: rhythm is only valid for DR1 clips`;
         const rhythmError = validateDrumRhythm(c.drumRhythm, c.bars);

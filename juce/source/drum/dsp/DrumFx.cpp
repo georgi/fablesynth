@@ -84,7 +84,7 @@ void DrumFx::reset() {
     headroomInput_.reset(); headroomOtt_.reset(); headroomComp_.reset(); headroomDrive_.reset();
     headroomChorus_.reset(); headroomDelay_.reset(); headroomReverb_.reset(); delayFeedbackGuard_.reset();
     // Match the web insert: a fresh silent pad must not excite CRUSH chaos.
-    idle_ = true; idleSilent_ = 0;
+    gate_.reset(true);
     chPhase_ = 0;
     driveGated_ = chorusGated_ = delayGated_ = verbGated_ = false;
     // settle smoothers at their targets so no stale ramp survives a re-prepare
@@ -154,6 +154,10 @@ void DrumFx::setParamsAt(const DrumParamArray& p, int b) {
     driveColorL_.setParams(p[(size_t)(b + DP_FXDRIVE_TYPE)], p[(size_t)(b + DP_FXDRIVE_TONE)]);
     driveColorR_.setParams(p[(size_t)(b + DP_FXDRIVE_TYPE)], p[(size_t)(b + DP_FXDRIVE_TONE)]);
     comp_.setParams(!compOff_, p[(size_t)(b + DP_FXCOMP_THR)], p[(size_t)(b + DP_FXCOMP_ATT)], p[(size_t)(b + DP_FXCOMP_REL)], p[(size_t)(b + DP_FXCOMP_RATIO)]);
+    // Side-chain (DRUM_SC_SOURCES): 1..16 a pad of this kit, 17..19 SQ-4
+    // tracks 2..4. The engine hands in the key per block (setKey).
+    keySource_ = std::clamp((int)std::lround(p[(size_t)(b + DP_FXCOMP_SC)]), 0, (int)DRUM_SC_SOURCES.size() - 1);
+    comp_.setKey(keySource_ > 0, p[(size_t)(b + DP_FXCOMP_SCHP)]);
     ott_.setParams(p[(size_t)(b + DP_FXOTT_ON)] > 0.5f,
                    p[(size_t)(b + DP_FXOTT_DEPTH)], p[(size_t)(b + DP_FXOTT_TIME)],
                    p[(size_t)(b + DP_FXOTT_UP)], p[(size_t)(b + DP_FXOTT_DOWN)]);
@@ -228,14 +232,17 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
     // Include both ends of a time automation move; never freeze the delay
     // while a repeat can still be travelling through either channel.
     const double delayHorizon = std::max(labEnabled_ ? 4.0 : 0.0, delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target));
-    float delayPk = 0;
+    float tailPk = 0;
     float inPk = 0;
     for (int i = 0; i < n; i++)
         inPk = std::max(inPk, std::max(std::abs(L[i]), std::abs(R[i])));
-    if (idle_) {
-        if (inPk <= kIdleLevel) return;
-        idle_ = false;
-        idleSilent_ = 0;
+    const bool inLoud = !(inPk <= ActivityGate::kIdleLevel);
+    double skipped;
+    if (gate_.begin(inLoud, n, skipped)) return;
+    if (skipped > 0) {
+        // Free-running clocks keep their phase across the skipped span.
+        if (!chorusGated_) chPhase_ = std::fmod(chPhase_ + chRate_ / sr_ * skipped, 1.0);
+        lab_.advanceClock(skipped);
     }
 
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive.
@@ -286,7 +293,7 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
         double gOtt = headroomOtt_.gainFor(l, r); l *= (float)gOtt; r *= (float)gOtt;
         double compL, compR;
         meter_.level(FxTelemetry::compIn, l, r);
-            comp_.processSample(l, r, compL, compR);
+            comp_.processSample(l, r, compL, compR, keyL_ ? keyL_[i] : 0.0, keyR_ ? keyR_[i] : 0.0);
             meter_.level(FxTelemetry::compOut, compL, compR); l = (float)compL; r = (float)compR;
         double gComp = headroomComp_.gainFor(l, r); l *= (float)gComp; r *= (float)gComp;
 
@@ -335,7 +342,7 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
             float fb = dlFb_.next();
             float dL = dlL_.readHermite(dt);
             float dR = dlR_.readHermite(dt);
-            delayPk = std::max(delayPk, std::max(std::abs(dL), std::abs(dR)));
+            tailPk = std::max(tailPk, std::max(std::abs(dL), std::abs(dR)));
             float mono = 0.5f * (l + r);
             float feedbackL = mono + fb * dR;
             float feedbackR = (float)dlDamp_.process(fb * dL);
@@ -359,6 +366,8 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
             float outL = 0, outR = 0;
             for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
             for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+            // Idle criterion sees the tank itself, so a tail hidden behind mix 0 is never frozen.
+            tailPk = std::max(tailPk, std::max(std::abs(outL), std::abs(outR)));
             float wet = verbWet_.next(), dry = verbDry_.next();
             meter_.stereo(FxTelemetry::verbL, wet * outL, wet * outR);
                 l = dry * l + wet * outL;
@@ -376,9 +385,7 @@ void DrumFx::processImpl(float* L, float* R, float* sendL, float* sendR, int n) 
     // Finding D8: the chain may only be gated once its own OUTPUT has gone
     // quiet as well — that is what makes a seconds-long reverb tail safe. The
     // hold just stops the gate from chattering around the threshold.
-    if (inPk <= kIdleLevel && outPk <= kIdleLevel && delayPk <= kIdleLevel) idleSilent_ += n;
-    else idleSilent_ = 0;
-    if (idleSilent_ >= (kIdleHold + delayHorizon) * sr_) idle_ = true;
+    gate_.end(inLoud, outPk, tailPk, n, delayHorizon, sr_);
 }
 
 // ---------------- shared drum reverb ---------------------------------------

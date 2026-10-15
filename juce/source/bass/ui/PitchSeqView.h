@@ -1,8 +1,14 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "BassUiModel.h"
+#include "../../ui/PatternPresetCombo.h"
+#include "../../ui/SequencePolyStrip.h"
+#include "../../ui/ScaleStrip.h"
+#include "../../ui/ProgressionBrowserView.h"
 #include "../../ui/StepEditOps.h"
 #include "../../ui/Theme.h"
+#include <array>
 #include <limits>
 
 // The 16-step pitch sequencer — port of src/bass/components/PitchSeq.tsx
@@ -12,11 +18,15 @@
 // Pattern/chain semantics mirror src/bass/store.ts exactly.
 namespace fui {
 
-class PitchSeqView : public juce::Component, private juce::Timer {
+class PitchSeqView : public juce::Component, private fui::VisualTimer, private juce::ScrollBar::Listener {
 public:
     explicit PitchSeqView(BassUiModel&);
+    void resized() override;
     ~PitchSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
+    void paintUncachedForTesting(juce::Graphics& g) { paintArtwork(g, true); }
+    int cacheBuildCountForTesting() const { return artworkBuilds_; }
+    int overlayBuildCountForTesting() const { return overlayBuilds_; }
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -24,7 +34,9 @@ public:
     bool keyPressed(const juce::KeyPress&) override;
 
     // Web store handlers — public so the host test drives the exact code
-    // paths a mouse click takes.
+    // paths a mouse click takes. Steps are absolute timeline steps: the view
+    // shows every bar of the chain (hosted: of the clip) side by side, and
+    // step b*16+s is step s of the pattern chain[b] (PitchSeq.tsx).
     void toggleCell(int step, int note);    // store.toggleCell
     void cycleStepOct(int step);            // store.cycleStepOct
     void toggleStepAcc(int step);           // store.toggleStepAcc
@@ -63,7 +75,6 @@ public:
     bool ghostActive() const { return ghost_; }
 
     // Hit-test geometry (public for the host test).
-    juce::Rectangle<int> transportBounds() const;
     juce::Rectangle<int> patternBounds(int i) const;
     juce::Rectangle<int> sequenceLengthBounds() const;
     juce::Rectangle<int> randBounds() const;
@@ -76,12 +87,42 @@ public:
     juce::Rectangle<int> gridBounds() const;
     juce::Rectangle<int> selMenuBounds() const;
     juce::Rectangle<int> selMenuButton(int i) const;
+    int timelineSteps() const;              // bars on screen × 16
+    int scrollX() const { return scrollX_; }
+    void scrollToStep(int abs);             // bring a timeline column into view
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
-    void timerCallback() override;          // 30 Hz playhead / state watcher
-    void pushHistory() { history_.push(proc.patternBytes()); }
-    int stepAt(int x) const;                // inverse of colBounds (clamped 0..STEPS-1)
+    void visualVisibilityChanged(bool showing) override { if (showing) timerCallback(); }
+    void timerCallback() override;          // 60 Hz playhead / state watcher
+    void pushHistory() { history_.push(historySnapshot()); }
+    std::vector<uint8_t> historySnapshot() const;
+    void restoreHistory(std::vector<uint8_t>);
+    int bodyY() const;                      // grid top: below the head and the POLY strip
+    int timelineBars() const;
+    std::vector<int> timelineChain() const; // bar -> pattern (hosted: identity)
+    int patternOfAbs(int abs) const;
+    fable::BassSeqStep stepAbs(int abs) const;
+    void setStepAbs(int abs, const fable::BassSeqStep&);
+    int cursorColumn() const;               // playhead column, or -1
+    float colWidth() const;
+    int timelineWidth() const;              // all columns, px
+    int gridViewWidth() const;              // visible grid area, px
+    void setScrollX(int);
+    void scrollBarMoved(juce::ScrollBar*, double) override;
+    juce::ScrollBar hScroll_{false};
+    int scrollX_ = 0, lastTimelineSteps_ = -1;
+    SequencePolyStrip poly_;
+    ScalePanel scale_ { juce::Colour(0xff4dff9e) };   // scale mode (ScaleStrip.tsx) under the POLY strip
+    ProgressionBrowserView progressions_ { juce::Colour(0xff4dff9e) };
+    void setScaleBars(int bars);
+    int scaleBars() const;                  // chord-track bars: the clip's, or the chain length
+    int scaleY() const;
+    void loadPatternPreset(const fable::NotatedPreset&);
+    int stepAt(int x) const;                // inverse of colBounds (clamped to the timeline)
     int noteAt(int y) const;                // inverse of cellBounds' lane math
+    int lanesH() const;                     // note-lane height: fills the view
+    int octY() const; int accY() const; int sldY() const; int numY() const;
     int patternIndexAt(juce::Point<int>) const; // which bar chip, or -1
     bool inRect(int step, int note) const;
     int grabNoteAt(int step, int note) const;
@@ -90,9 +131,16 @@ private:
 
     BassUiModel& proc;
     juce::Random rng_;
+    juce::ComboBox patternPreset_;
     // Content signature — everything visible EXCEPT the playhead position, so a
     // plain step advance never triggers a full repaint.
-    juce::uint32 lastSig_ = 0xffffffffu;
+    juce::MemoryBlock lastContentKey_, artworkKey_;
+    juce::MemoryBlock contentKey() const;
+    void paintArtwork(juce::Graphics&, bool cursors, bool panel = true);
+    juce::Image artwork_, composed_, panelBackdrop_;
+    float artworkScale_ = 0;
+    int artworkBuilds_ = 0, overlayBuilds_ = 0;
+    std::array<int, 2> composedCursor_{};
     // Last painted playhead: the drawn cursor column (-1 = no cursor) and the
     // pattern the transport plays (it also lights a bar chip in the header).
     int lastCursorStep_ = -1, lastCursorPattern_ = -1;

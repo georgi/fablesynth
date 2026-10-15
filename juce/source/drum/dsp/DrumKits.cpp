@@ -1,6 +1,7 @@
 // Transcription of src/drum/kits.ts. Derived kits share the same base helpers
 // and rounding/clamps as the web so the factory program banks stay in lockstep.
 #include "DrumKits.h"
+#include "KitLevels.gen.h"
 
 #include <algorithm>
 #include <cmath>
@@ -969,9 +970,54 @@ const std::vector<DrumKit>& factoryKits() {
                 }
             }
         }
+        // kits.ts FACTORY_KITS: generated KIT MIX level trims (KitLevels.gen.h).
+        for (auto& kit : out)
+            for (const auto& trim : kitLevelTrims())
+                if (kit.name == trim.kit) {
+                    for (const auto& [i, v] : trim.levels) set(kit.params, padPid(i, "lvl"), v);
+                    if (trim.volume >= 0.0f) set(kit.params, "master.volume", trim.volume);
+                }
         return out;
     }();
     return kits;
+}
+
+// kits.ts PATTERN_PRESETS: one entry per distinct groove, named by style.
+const std::vector<DrumPatternPreset>& factoryPatternPresets() {
+    static const std::vector<DrumPatternPreset> presets = [] {
+        std::vector<DrumPatternPreset> out;
+        out.push_back({ "FOUR ON FLOOR", trVoidPatterns(), { 0 } });
+        out.push_back({ "DEEP HOUSE", cc0DeepHousePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "WAREHOUSE", cc0WarehousePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "DUB TECHNO", buildPatterns(
+            { { 0, { 0, 4, 8, 12 }, { 0 } }, { 3, { 12 }, {} }, { 5, { 2, 6, 10, 14 }, { 6, 14 } }, { 6, { 10 }, {} }, { 8, { 7 }, {} }, { 12, { 3, 13 }, {} } },
+            { { 0, { 0, 4, 8, 12 }, { 0 } }, { 3, { 4, 12 }, {} }, { 5, { 2, 6, 10, 14 }, { 6, 14 } }, { 6, { 10, 14 }, {} }, { 8, { 7, 15 }, {} }, { 12, { 3, 9, 13 }, {} } }), { 0, 1, 2, 3 } });
+        out.push_back({ "MINIMAL", buildPatterns(
+            { { 0, { 0, 4, 8, 12 }, { 0 } }, { 4, { 3, 9, 14 }, {} }, { 5, { 2, 10 }, {} }, { 12, { 6 }, {} }, { 13, { 13 }, {} } },
+            { { 0, { 0, 4, 8, 12 }, { 0 } }, { 3, { 12 }, {} }, { 4, { 3, 6, 9, 14 }, {} }, { 5, { 2, 10, 15 }, {} }, { 12, { 6, 11 }, {} }, { 13, { 13 }, {} } }), { 0, 1, 2, 3 } });
+        out.push_back({ "DISCO", buildPatterns(
+            { { 0, { 0, 4, 8, 12 }, { 0 } }, { 2, { 4, 12 }, {} }, { 3, { 4, 12 }, { 12 } }, { 5, { 0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15 }, { 0, 4, 8, 12 } }, { 6, { 2, 6, 10, 14 }, { 2, 6, 10, 14 } } },
+            { { 0, { 0, 4, 8, 12 }, { 0 } }, { 2, { 4, 12, 13, 14, 15 }, { 12, 15 } }, { 3, { 4 }, {} }, { 5, { 0, 1, 3, 4, 5, 7, 8, 9, 11 }, { 0, 4, 8 } }, { 6, { 2, 6, 10 }, { 2, 6, 10 } }, { 10, { 9 }, {} }, { 9, { 10 }, {} }, { 8, { 11 }, {} } }), { 0, 1, 2, 3 } });
+        out.push_back({ "ACID TECHNO", acidCavePatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "SYNTHWAVE", neonGridPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "ELECTRO", buildPatterns(
+            { { 0, { 0, 6, 10 }, { 0 } }, { 2, { 4, 12 }, { 4, 12 } }, { 3, { 12 }, {} }, { 5, { 0, 2, 4, 6, 8, 10, 12, 14, 15 }, { 2, 6, 10, 14 } }, { 8, { 14 }, {} } },
+            { { 0, { 0, 6, 10, 11 }, { 0 } }, { 2, { 4, 12, 15 }, { 4, 12 } }, { 3, { 12 }, {} }, { 5, { 0, 2, 4, 6, 8, 10 }, { 2, 6 } }, { 10, { 9 }, {} }, { 9, { 11 }, {} }, { 8, { 13, 14 }, {} } }), { 0, 1, 2, 3 } });
+        out.push_back({ "UK GARAGE", pirateRadioPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "BASSLINE", cc0BassRushPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "BREAKBEAT", buildPatterns(
+            { { 0, { 0, 2, 10 }, { 0 } }, { 2, { 4, 7, 9, 12, 15 }, { 4, 12 } }, { 5, { 0, 2, 4, 6, 8, 10, 12, 14 }, { 4, 12 } }, { 6, { 14 }, {} } },
+            { { 0, { 0, 2, 10, 11 }, { 0 } }, { 2, { 4, 7, 9, 12, 13, 14, 15 }, { 4, 12, 15 } }, { 5, { 0, 2, 4, 6, 8, 10 }, { 4 } }, { 11, { 0 }, {} } }), { 0, 1, 2, 3 } });
+        out.push_back({ "BOOM BAP", boomBapPatterns(), { 0, 1, 2, 3 } });
+        out.push_back({ "TRAP", buildPatterns(
+            { { 0, { 0, 10 }, { 0 } }, { 1, { 0, 10 }, {} }, { 3, { 8 }, { 8 } }, { 2, { 8 }, {} }, { 5, { 0, 2, 4, 6, 8, 10, 12, 13, 14, 15 }, { 0, 8 } }, { 6, { 6 }, {} } },
+            { { 0, { 0, 3, 10, 14 }, { 0 } }, { 1, { 0, 3, 10, 14 }, {} }, { 3, { 8 }, { 8 } }, { 2, { 8, 15 }, {} }, { 5, { 0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15 }, { 0, 8, 12 } }, { 6, { 6 }, {} } }), { 0, 1, 2, 3 } });
+        out.push_back({ "DEMBOW", buildPatterns(
+            { { 0, { 0, 4, 8, 12 }, { 0, 8 } }, { 2, { 3, 6, 11, 14 }, { 6, 14 } }, { 5, { 0, 2, 4, 6, 8, 10, 12, 14 }, {} }, { 4, { 7 }, {} } },
+            { { 0, { 0, 4, 8, 12 }, { 0, 8 } }, { 2, { 3, 6, 11, 13, 14, 15 }, { 6, 14 } }, { 5, { 0, 2, 4, 6, 8, 10 }, {} }, { 4, { 7, 15 }, {} }, { 9, { 12 }, {} }, { 8, { 13 }, {} } }), { 0, 1, 2, 3 } });
+        return out;
+    }();
+    return presets;
 }
 
 DrumParamArray applyKit(const DrumKit& kit) {
@@ -983,6 +1029,14 @@ DrumParamArray applyKit(const DrumKit& kit) {
         } else if (const int field = legacyDrumFxField(pid); field >= 0) {
             for (int pad = 0; pad < DR_NPADS; ++pad) p[(size_t)dpid(pad, field)] = v;
         }
+    }
+    // kits.ts kitToState: a group FX value the kit leaves unset falls back to
+    // pad 01's (older pad-only kits had no group rack). Never fan out the other way.
+    for (const auto& [pid, v] : kit.params) {
+        if (pid.rfind("pad0.fx.", 0) != 0) continue;
+        const std::string group = pid.substr(5);
+        const int id = drumIdFromString(group);
+        if (id >= 0 && !has(kit.params, group)) p[(size_t)id] = v;
     }
     return p;
 }

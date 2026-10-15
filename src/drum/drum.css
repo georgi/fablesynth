@@ -129,6 +129,8 @@
   gap: 9px;
 }
 .dr-right { container: dr-right / inline-size; }
+/* GROUP FX and SEQ hide the pads: the right column takes the full width. */
+.dr-main.no-pads { grid-template-columns: minmax(0, 1fr); }
 .dr-left,
 .dr-right {
   display: flex;
@@ -148,8 +150,13 @@
   min-width: 0;
 }
 #dr-stepseq { margin-top: 9px; }
+/* Anchors the pad-patch browser drawer below the pad bar. */
+#dr-selbar { position: relative; }
+.dr-body .device-tabs { margin-bottom: 0; }
+.dr-body[data-page='seq'] .dr-main { align-items: end; }
 .dr-edit-tabs { align-self: flex-start; }
-.dr-edit-tabs button { padding: 5px 16px; font-size: 9px; }
+.dr-edit-tabs button { padding: 5px 16px; font-size: 9px; color: color-mix(in srgb, var(--nav) 55%, var(--text-dim)); }
+.dr-edit-tabs button.active { background: color-mix(in srgb, var(--nav) 16%, transparent); color: var(--nav); box-shadow: inset 0 0 0 1px var(--nav); }
 
 .dr-selbar {
   display: flex;
@@ -735,9 +742,11 @@
 
 .dr-stepseq { padding: 9px 12px 11px; }
 .dr-stepseq-head {
+  position: relative; /* anchors the pattern browser drawer */
   min-height: 28px;
   margin-bottom: 10px;
 }
+.dr-pattern-browse.on { color: var(--text); border-color: var(--ac-a); }
 /* The pad being edited, tied directly to the STEP SEQ nameplate in the
    pad's own accent color instead of sitting disconnected on the far right. */
 .dr-stepseq-target {
@@ -1317,3 +1326,37 @@
     grid-template-areas: 'eq' 'ott' 'comp' 'drive' 'chorus' 'echo' 'reverb';
   }
 }
+
+/* SEQUENCER keeps the tabs over the editor column; on phones the column
+   stacks, so drop the empty pad-column spacer. */
+@media (max-width: 700px) {
+  .dr-body[data-page='seq'] .dr-main > div:empty { display: none; }
+}
+
+/* Kit auto-mix (group scope): controls, kit spectrum vs reference, pad moves. */
+.dr-kitmix { margin-bottom: 10px; }
+.dr-kitmix .panel-head { display: flex; align-items: baseline; gap: 10px; }
+.dr-kitmix-status { color: var(--text-dim); font: 8px var(--font-mono); letter-spacing: .1em; }
+.dr-kitmix-body { display: grid; grid-template-columns: 170px minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.dr-kitmix-side { display: grid; gap: 6px; }
+.dr-kitmix-side select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: #0a0d14; color: var(--text); font: 8px var(--font-mono); letter-spacing: .1em; }
+.dr-kitmix-amount { display: grid; grid-template-columns: 1fr 32px; align-items: center; gap: 6px; color: var(--text); font: 8px var(--font-mono); }
+.dr-kitmix-amount input { accent-color: var(--ac-n, #4de8ff); }
+.dr-kitmix-amount output { text-align: right; }
+.dr-kitmix-actions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 4px; }
+.dr-kitmix-actions button { padding: 6px 2px; border: 1px solid var(--line); border-radius: 6px; background: #0a0d14; color: var(--text); font: 8px var(--font-mono); letter-spacing: .08em; cursor: pointer; }
+.dr-kitmix-actions button:disabled { opacity: .35; cursor: default; }
+.dr-kitmix-learn { background: linear-gradient(90deg, color-mix(in srgb, var(--ac-n, #4de8ff) 30%, #0a0d14) calc(var(--p, 0) * 100%), #0a0d14 0) !important; }
+.dr-kitmix-plot { display: block; width: 100%; height: 110px; border: 1px solid var(--line); border-radius: 8px; background: #07090e; }
+.dr-kitmix-plot .grid path { stroke: var(--text-dim); stroke-opacity: .15; }
+.dr-kitmix-plot .grid text { fill: var(--text-dim); font: 6px var(--font-mono); }
+.dr-kitmix-plot .target { fill: var(--ac-n, #4de8ff); fill-opacity: .1; stroke: var(--ac-n, #4de8ff); stroke-opacity: .35; stroke-dasharray: 2 3; }
+.dr-kitmix-plot .live { fill: color-mix(in srgb, var(--text) 9%, transparent); stroke: color-mix(in srgb, var(--text) 35%, transparent); stroke-width: 1; }
+.dr-kitmix-plot .before { fill: none; stroke: var(--text); stroke-width: 1.3; }
+.dr-kitmix-plot .after { fill: none; stroke: var(--ac-n, #4de8ff); stroke-width: 1.3; stroke-dasharray: 4 3; }
+.dr-kitmix-pads { margin: 0; padding: 4px 6px; max-height: 110px; overflow: auto; list-style: none; border: 1px solid var(--line); border-radius: 8px; background: #0a0d14; }
+.dr-kitmix-pads li { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 2px 0; font: 8px var(--font-mono); color: var(--text-dim); }
+.dr-kitmix-pads li i { position: absolute; left: 0; bottom: 0; height: 1px; background: var(--text-dim); opacity: .5; }
+.dr-kitmix-pads b { color: var(--ac-n, #4de8ff); font-weight: normal; }
+.dr-kitmix-pads b.hold { color: var(--text-dim); }
+@media (max-width: 900px) { .dr-kitmix-body { grid-template-columns: 1fr; } }

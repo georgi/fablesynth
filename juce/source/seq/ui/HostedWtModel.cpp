@@ -14,6 +14,7 @@ namespace fui {
 double HostedWtModel::arpSwing() const { return proc_.conductor().swing(); }
 bool HostedWtModel::arpQueued() const { return hasTargetClip() && proc_.conductor().queueOf(track_) == scene_; }
 void HostedWtModel::setArpSwing(double v) { proc_.conductor().setSwing(v); }
+int HostedWtModel::arpChordLinkPeers() const { return hasTargetClip() ? (int)proc_.conductor().linkedChordTracks(scene_, track_).size() : 0; }
 void HostedWtModel::setSequencerPlaying(bool on) {
     if (!hasTargetClip()) return;
     if (on) proc_.conductor().launch(track_, scene_); else proc_.conductor().stopTrack(track_);
@@ -27,6 +28,21 @@ void HostedWtModel::setArpSettings(const fable::ArpSettings& a) {
 }
 
 fable::FxTelemetry HostedWtModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(track_, pad, bus); }
+static std::vector<std::string> sessionTrackNames(SeqAudioProcessor& proc) {
+    std::vector<std::string> names;
+    if (proc.preparedSampleRate() <= 0) return names;   // no conductor before prepareToPlay
+    for (const auto& t : proc.conductor().session().tracks) names.push_back(t.name);
+    return names;
+}
+AutoEqSource HostedWtModel::autoEqSource(int) const { return { &proc_.trackTap(track_), false, "lead", {} }; }
+AutoCompSource HostedWtModel::autoCompSource(int) const { return { &proc_.compTrace(track_), "level", {} }; }
+SideChainInfo HostedWtModel::sideChain() const {
+    return { fable::SC_SOURCES, true, trackKeyLabels(sessionTrackNames(proc_)) };
+}
+std::optional<double> HostedWtModel::analysisTempo() const {
+    return proc_.preparedSampleRate() > 0 ? std::optional<double>(hostBpm()) : std::nullopt;
+}
+double HostedWtModel::analysisSampleRate() const { return proc_.preparedSampleRate() > 0 ? proc_.preparedSampleRate() : 48000; }
 namespace {
 
 const std::vector<fable::UserTable>& noUserTables() {
@@ -273,6 +289,24 @@ void HostedWtModel::auditionNoteOn(int midiNote, float velocity) {
 
 void HostedWtModel::auditionNoteOff(int midiNote) {
     proc_.auditionWtOff(track_, midiNote);
+}
+
+SeqPolySettings HostedWtModel::sequencePoly() const {
+    SeqPolySettings out;
+    if (!hasTargetClip()) return out;
+    const auto& clip = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)track_];
+    if (!clip.hasSequenceRhythm) return out;
+    const auto& r = clip.sequenceRhythm;
+    out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+    out.rotation = r.rotation; out.cycleBeats = r.cycleBeats;
+    return out;
+}
+
+void HostedWtModel::setSequencePoly(const SeqPolySettings& p) {
+    if (!hasTargetClip()) return;
+    fable::SequenceRhythm r;
+    r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps; r.rotation = p.rotation; r.cycleBeats = p.cycleBeats;
+    proc_.conductor().updateClipRhythm(scene_, track_, r);
 }
 
 } // namespace fui

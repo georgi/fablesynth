@@ -1,3 +1,5 @@
+import { KEY_CHANNELS } from '../../engine/sidechain';
+import type { SequenceRhythm } from '../../shared/sequenceRhythm';
 // Main-thread BL-1 engine: owns the AudioContext and the bass worklet.
 //
 // The master FX rack (drive, compressor, OTT, chorus, ping-pong delay, reverb, master gain, DC
@@ -123,7 +125,8 @@ export class BassEngine {
     this.tables = this.builtInTables.map((t) => ({ name: t.name, frames: t.frames, viz: t.viz }));
 
     this.node = new AudioWorkletNode(ctx, 'fable-bl', {
-      numberOfInputs: 0,
+      // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
+      numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
       numberOfOutputs: 1,
       outputChannelCount: [2],
     });
@@ -214,8 +217,16 @@ export class BassEngine {
     if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
   }
 
-  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp });
+  /** Standalone scale mode: the sequencer's scale map (src/scales.ts), or none. */
+  setScale(map?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'scale', map: map ?? null });
+  }
+  setSequenceRhythm(rhythm?: SequenceRhythm): void {
+    if (this.ready) this.node.port.postMessage({ t: 'sequenceRhythm', rhythm: rhythm ?? null });
+  }
+
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm, scale?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp, sequenceRhythm, scale });
   }
 
   scheduleStop(atFrame: number): void {
@@ -226,7 +237,7 @@ export class BassEngine {
   setClipAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
     if (this.ready) this.node.port.postMessage({ t: 'auto', lanes });
   }
-  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp });
+  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm, scale?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp, sequenceRhythm, scale });
   }
 }

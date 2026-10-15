@@ -145,6 +145,9 @@ const std::vector<ParamInfo>& masterFxParamInfo() {
         add("fx.comp.on", 0, 1, 1); add("fx.comp.thr", -40, 0, -16); add("fx.comp.att", .0001f, .1f, .003f, Curve::Log);
         add("fx.comp.rel", .01f, 2, .25f, Curve::Log); add("fx.comp.ratio", 1, 20, 4);
         add("fx.limiter.on", 0, 1, 1); add("fx.limiter.ceiling", -12, -.1f, -1);
+        // COMP side-chain (masterFx.ts): SC_SOURCES index and KEY HP.
+        add("fx.comp.sc", 0, (float)SC_SOURCES.size() - 1, 0, Curve::Int); add("fx.comp.schp", 20, 500, 20, Curve::Log);
+        jassert((int)p.size() == MASTER_FX_PARAMS);
         return p;
     }();
     return v;
@@ -328,15 +331,17 @@ void SeqAudioProcessor::Limiter::process(float& l, float& r) {
     r = (float)(r * g);
 }
 
-void SeqAudioProcessor::MasterFx::setParams(const std::array<float, 33>& p) {
+void SeqAudioProcessor::MasterFx::setParams(const std::array<float, fable::MASTER_FX_PARAMS>& p) {
     eq.setParams(p.data());
     ott.setParams(p[21] > .5f, p[22], p[23], p[24], p[25]);
     comp.setParams(p[26] > .5f, p[27], p[28], p[29], p[30]);
+    keyChannel = fable::scKeyChannel((int)std::lround(p[33]));
+    comp.setKey(keyChannel >= 0, p[34]);
     limiterOn = p[31] > .5f;
     ceiling = std::pow(10.0f, p[32] / 20.0f);
 }
 
-void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n) {
+void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n, const float* key) {
     eq.process(l, r, n);
     for (int i = 0; i < n; ++i) {
         meter.level(fable::FxTelemetry::ottIn, l[i], r[i]);
@@ -346,7 +351,8 @@ void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n) {
 
         double compL, compR;
         meter.level(fable::FxTelemetry::compIn, ottL, ottR);
-        comp.processSample(ottL, ottR, compL, compR);
+        const double k = key ? key[i] : 0.0;
+        comp.processSample(ottL, ottR, compL, compR, k, k);
         meter.level(fable::FxTelemetry::compOut, compL, compR);
 
         const float inPeak = juce::jmax(std::abs((float)compL), std::abs((float)compR));
@@ -362,8 +368,8 @@ void SeqAudioProcessor::MasterFx::process(float* l, float* r, int n) {
     }
 }
 
-void SeqAudioProcessor::processMaster(float* l, float* r, int n) {
-    masterFx_.process(l, r, n);
+void SeqAudioProcessor::processMaster(float* l, float* r, int n, const float* key) {
+    masterFx_.process(l, r, n, key);
     float inputPeak = 0, outputPeak = 0;
     double minimumGain = 1.0;
     const double ceiling = masterFx_.limiterOn ? masterFx_.ceiling : fable::LookaheadLimiter::kCeiling;
@@ -576,19 +582,90 @@ void SeqAudioProcessor::setTrackFactoryPatch(int t, int program) {
     applyTrackPatch(t);
 }
 
+fable::PatchRef SeqAudioProcessor::trackPatch(int t) const {
+    if (t < 0 || t >= kTracks || !conductor_) return {};
+    return conductor_->session().tracks[(size_t)t].patch;
+}
+
+void SeqAudioProcessor::setTrackPatchRef(int t, PatchRef patch) {
+    if (t < 0 || t >= kTracks || !conductor_) return;
+    conductor_->setTrackPatch(t, std::move(patch));
+    applyTrackPatch(t);
+}
+
+std::vector<float> SeqAudioProcessor::patchParamValues(int t, const PatchRef& patch) const {
+    if (t < 0 || t >= kTracks) return {};
+    return computeTrackParams(t, patch);
+}
+
+const std::vector<fable::ParamInfo>& SeqAudioProcessor::trackParamCatalog(int t) const {
+    static const std::vector<fable::ParamInfo> wt(fable::paramInfo().begin(), fable::paramInfo().end());
+    if (t == 0) return fable::drumParamInfo();
+    if (t == 1) return fable::bassParamInfo();
+    return wt;
+}
+
 int SeqAudioProcessor::trackFactoryProgram(int t) const {
     if (t < 0 || t >= kTracks || !conductor_) return -1;
     const auto& patch = conductor_->session().tracks[(size_t)t].patch;
     return patch.factory ? patch.index : -1;
 }
 
+void SeqAudioProcessor::bumpSessionEpoch() {
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    ++sessionEpoch_;
+    presetMatchValid_ = false;
+}
+
+std::uint64_t SeqAudioProcessor::sessionContentRevision() const {
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    const auto document = conductor_ ? conductor_->documentRevision() : 0;
+    if (observedContentEpoch_ != sessionEpoch_ || observedContentRevision_ != document) {
+        observedContentEpoch_ = sessionEpoch_;
+        observedContentRevision_ = document;
+        ++sessionContentRevision_;
+    }
+    return sessionContentRevision_;
+}
+
+std::uint64_t SeqAudioProcessor::sessionEditRevision() const {
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    const auto document = conductor_ ? conductor_->editRevision() : 0;
+    if (observedSessionEpoch_ != sessionEpoch_ || observedDocumentRevision_ != document) {
+        observedSessionEpoch_ = sessionEpoch_;
+        observedDocumentRevision_ = document;
+        ++sessionEditRevision_;
+    }
+    return sessionEditRevision_;
+}
+
 int SeqAudioProcessor::currentSessionPreset() const {
+    // CriticalSection is recursive: the revision getter shares this lock.
+    const juce::ScopedLock lock(sessionPresetCacheLock_);
+    const auto revision = sessionEditRevision();
+    if (presetMatchValid_ && cachedPresetRevision_ == revision) return cachedSessionPreset_;
+    ++presetMatchEvaluations_;
     const auto& session = conductor_ ? conductor_->session() : initialSession_;
     const auto current = fable::sessionToJson(session);
-    const auto& library = factorySessionLibrary();
-    for (int i = 0; i < (int)library.size(); ++i) {
-        if (current == fable::sessionToJson(library[(size_t)i].session)) return i;
+    // The factory library is immutable, so serialize it once. The header polls
+    // this regularly; re-serializing every library session per tick cost a
+    // whole CPU core once the authored bank carried full inline patches.
+    static const std::vector<juce::String> libraryJson = [] {
+        std::vector<juce::String> out;
+        for (const auto& preset : factorySessionLibrary()) out.push_back(fable::sessionToJson(preset.session));
+        return out;
+    }();
+    for (int i = 0; i < (int)libraryJson.size(); ++i) {
+        if (current == libraryJson[(size_t)i]) {
+            cachedSessionPreset_ = i;
+            cachedPresetRevision_ = revision;
+            presetMatchValid_ = true;
+            return i;
+        }
     }
+    cachedSessionPreset_ = -1;
+    cachedPresetRevision_ = revision;
+    presetMatchValid_ = true;
     return -1;
 }
 
@@ -724,6 +801,10 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     drumAux_.setSize(2 * (DR_NBUSES - 1), capacity);
     limiter_.prepare(sampleRate);
     masterFx_.prepare(sampleRate);
+    for (auto& channel : keyRing_) channel.fill(0.0f);
+    keyFrame_ = 0;
+    keyBus_.setSize(fable::KEY_CHANNELS, capacity);
+    keyBus_.clear();
     outputLimiter_.prepare(sampleRate, 1.0);
 
     const std::array<int, kTracks> latencies {{ drum_.latencySamples(), bassFx_.latencySamples(),
@@ -759,6 +840,7 @@ void SeqAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     for (int i = 0; i < 2; ++i) wt_[i].setHostClipMode(true, samplesPerBlock);
 
     conductor_ = std::make_unique<Conductor>(liveSession, io_, sampleRate);
+    bumpSessionEpoch();
     conductor_->powerOn(); // anchor = 256; enqueues tempo + gain commands
 
     // Also stamp the initial stopped-transport tempo directly (safe here —
@@ -805,8 +887,8 @@ void SeqAudioProcessor::drainCmds() {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
                         case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag, c.drumRhythm.get(), c.autoBank.get()); break;
-                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get()); break;
-                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get()); break;
+                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
+                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
                     }
                 } break;
                 case Cmd::K::Stop:
@@ -820,8 +902,8 @@ void SeqAudioProcessor::drainCmds() {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
                         case 0: drum_.hostClipUpdate(d, nb, c.bars, c.drumRhythm.get(), c.autoBank.get()); break;
-                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get()); break;
-                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get()); break;
+                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
+                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
                     }
                 } break;
                 case Cmd::K::Gain:
@@ -862,7 +944,9 @@ void SeqAudioProcessor::IO::ioScheduleArpClip(int t, const fable::ClipData& clip
     Cmd c; c.k = Cmd::K::Clip; c.t = t; c.bars = clip.bars; c.at = at; c.tag = tag;
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
-    if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    if (clip.hasArp) c.arp = fable::compileClipArp(clip.arp);
+    c.scale = fable::compileClipScale(clip.hasArp, clip.arp);
+    if (clip.hasSequenceRhythm) c.rhythm = clip.sequenceRhythm;
     if (clip.hasAutomation || !clip.automation.empty()) {
         auto bank = std::make_shared<fable::AutoBank>();
         fable::compileAutomation(*bank, clip.automation, clip.bars, clip.hasDrumRhythm ? &clip.drumRhythm : nullptr,
@@ -875,7 +959,9 @@ void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) 
     Cmd c; c.k = Cmd::K::Update; c.t = t; c.bars = clip.bars;
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
-    if (clip.hasArp) c.arp = fable::compileArp(clip.arp);
+    if (clip.hasArp) c.arp = fable::compileClipArp(clip.arp);
+    c.scale = fable::compileClipScale(clip.hasArp, clip.arp);
+    if (clip.hasSequenceRhythm) c.rhythm = clip.sequenceRhythm;
     if (clip.hasAutomation || !clip.automation.empty()) {
         auto bank = std::make_shared<fable::AutoBank>();
         fable::compileAutomation(*bank, clip.automation, clip.bars, clip.hasDrumRhythm ? &clip.drumRhythm : nullptr,
@@ -1005,6 +1091,12 @@ void SeqAudioProcessor::renderDrum(float* L, float* R, int n) {
         outs[b][0] = drumAux_.getWritePointer(2 * (b - 1));
         outs[b][1] = drumAux_.getWritePointer(2 * (b - 1) + 1);
     }
+    drum_.setKickKeyOutput(keyBus_.getWritePointer(fable::KICK_CHANNEL));
+    if (deviceKeys_) {
+        const float* keys[fable::KEY_CHANNELS];
+        for (int c = 0; c < fable::KEY_CHANNELS; ++c) keys[c] = deviceKey_[(size_t)c].data();
+        drum_.setSidechainInput(keys);
+    }
     drum_.render(outs, n);         // zero-fills all buses, pads accumulate
     // Hosted DR-1 has one stereo track: fold every processed output into it.
     // Unity summing preserves MAIN-only levels and the track/master safety
@@ -1035,7 +1127,7 @@ void SeqAudioProcessor::renderBass(float* L, float* R, int n) {
     bassVizCut_.store(bass_.vizCut, std::memory_order_relaxed);
     bassVizSemi_.store(bass_.vizSemi, std::memory_order_relaxed);
     if (bass_.takeAutomationFxDirty()) bassFx_.setParams(bass_.params());
-    bassFx_.process(L, R, n);
+    bassFx_.process(L, R, n, deviceKey(bassFx_.keyChannel()));
 }
 
 void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
@@ -1055,7 +1147,26 @@ void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
         wtFx_[i].setLabTempo(audioBpm_);
         wtFx_[i].setTransport((frame_ - audioTempoAnchor_) / preparedSampleRate_ * audioBpm_ / 60.0, true);
     }
-    wtFx_[i].process(L, R, n);
+    wtFx_[i].process(L, R, n, deviceKey(wtFx_[i].keyChannel()));
+}
+
+// The key bus kKeyDelay frames before this chunk (web rig: one quantum late).
+// Only called with n <= kKeyDelay, so every frame read is already written.
+void SeqAudioProcessor::readDeviceKeys(int n) {
+    jassert(n <= kKeyDelay);
+    for (int ch = 0; ch < fable::KEY_CHANNELS; ++ch)
+        for (int i = 0; i < n; ++i)
+            deviceKey_[(size_t)ch][(size_t)i] = keyRing_[(size_t)ch][(size_t)(
+                (keyFrame_ + (uint64_t)(kKeyRing - kKeyDelay + i)) & (uint64_t)(kKeyRing - 1))];
+}
+
+const fable::DetectorTrace& SeqAudioProcessor::compTrace(int track, int pad) const {
+    switch (track) {
+        case 0: return drum_.compTrace(pad, 0);
+        case 1: return bassFx_.compTrace();
+        case 2: case 3: return wtFx_[track - 2].compTrace();
+        default: return masterFx_.comp.trace();
+    }
 }
 
 int SeqAudioProcessor::takeEvents(int t, HostEvent* out, int max) {
@@ -1074,7 +1185,7 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     drainCmds();
     applyMusicalParams(snapshotMusicalParams());
-    std::array<float, 33> masterFxValues {};
+    std::array<float, fable::MASTER_FX_PARAMS> masterFxValues {};
     for (size_t i = 0; i < masterFxValues.size(); ++i)
         masterFxValues[i] = rawMasterFx_[i] ? rawMasterFx_[i]->load(std::memory_order_relaxed)
                                             : fable::masterFxParamInfo()[i].def;
@@ -1092,7 +1203,12 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // engine renders per chunk from its own chunk-start frame; the shared
     // currentFrame is published once for the whole block, as before.
     const bool automation = drum_.hasClipAutomation() || bass_.hasClipAutomation() || wt_[0].hasClipAutomation() || wt_[1].hasClipAutomation();
-    const int cap = std::max(1, automation ? std::min(128, trackBuf_.getNumSamples()) : trackBuf_.getNumSamples());
+    // A device keyed by the key bus reads it kKeyDelay frames late, so its
+    // chunks may not exceed that delay (see keyRing_).
+    const bool deviceKeys = drum_.wantsSidechainInput() || bassFx_.keyChannel() >= 0
+        || wtFx_[0].keyChannel() >= 0 || wtFx_[1].keyChannel() >= 0;
+    const int cap = std::max(1, automation || deviceKeys ? std::min(deviceKeys ? kKeyDelay : 128, trackBuf_.getNumSamples())
+                                                         : trackBuf_.getNumSamples());
     const double base = frame_;
     // Stamp acks with audioGen_, advanced only by an ordered K::Reset command in
     // drainCmds above — NOT a fresh cmdGen_.load(), which would race a
@@ -1112,6 +1228,9 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         float* oL = masterBuf_.getWritePointer(0);
         float* oR = masterBuf_.getWritePointer(1);
 
+        deviceKeys_ = deviceKeys;
+        if (deviceKeys) readDeviceKeys(c);
+        float* kick = keyBus_.getWritePointer(fable::KICK_CHANNEL);
         for (int t = 0; t < kTracks; ++t) {
             switch (t) {
                 case 0: renderDrum(tl, tr, c); break;
@@ -1120,18 +1239,33 @@ void SeqAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             }
             alignTrack(t, tl, tr, c);
             double sumSq = 0.0;
+            float* key = keyBus_.getWritePointer(t);
             for (int i = 0; i < c; ++i) {
                 const float g = trackGain_[t].getNextValue();
                 const float l = tl[i] * g, r = tr[i] * g;
                 oL[i] += l; oR[i] += r;
                 sumSq += (double)l * l + (double)r * r;
+                tl[i] = l; tr[i] = r;
+                key[i] = 0.5f * (l + r);
+                // The kick key follows the drum fader and mute like the others.
+                if (t == 0) kick[i] *= g;
             }
+            taps_->track[(size_t)t].write(tl, tr, c);
             trackSumSq[t] += sumSq;
         }
+        taps_->masterIn.write(oL, oR, c);
+        for (int ch = 0; ch < fable::KEY_CHANNELS; ++ch) {
+            const float* key = keyBus_.getReadPointer(ch);
+            auto& history = keyRing_[(size_t)ch];
+            for (int i = 0; i < c; ++i)
+                history[(size_t)((keyFrame_ + (uint64_t)i) & (uint64_t)(kKeyRing - 1))] = key[i];
+        }
+        keyFrame_ += (uint64_t)c;
 
         // Preserve stereo through all master FX and linked limiting. Averaging
         // these bounded channels also bounds mono without changing FX behavior.
-        processMaster(oL, oR, c);
+        processMaster(oL, oR, c, masterFx_.keyChannel >= 0 ? keyBus_.getReadPointer(masterFx_.keyChannel) : nullptr);
+        taps_->masterOut.write(oL, oR, c);
         for (int i = 0; i < c; ++i) {
             const float l = oL[i], r = oR[i];
             outL[off + i] = stereo ? l : 0.5f * (l + r);
@@ -1236,7 +1370,7 @@ juce::AudioProcessorEditor* SeqAudioProcessor::createEditor() {
 // ---- session import/export (message thread) --------------------------------
 
 bool SeqAudioProcessor::applySessionJson(const juce::String& json) {
-    if (!restoreSessionJson(json)) return false;
+    if (!restoreSessionJson(json, true)) return false;
     // An external load replaced the document wholesale — old edit snapshots
     // would restore a different session, so drop them (editing-concept:
     // history cleared on session load / preset apply, both of which funnel
@@ -1257,7 +1391,7 @@ bool SeqAudioProcessor::redo() {
     return restoreSessionJson(*snap);
 }
 
-bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
+bool SeqAudioProcessor::restoreSessionJson(const juce::String& json, bool withMaster) {
     SessionData restored;
     if (!fable::sessionFromJson(json, restored)) return false;
     if (!sqLayoutMatches(restored)) return false; // reject: not the fixed {DR1,BL1,WT1,WT1} rig
@@ -1289,6 +1423,11 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
     restoreSurface("quant", static_cast<float>(initialSession_.quant));
     for (int track = 0; track < kTracks; ++track)
         restoreSurface("vol" + juce::String(track), initialSession_.tracks[(size_t)track].gain);
+    // A stored master section (ASSIST) loads with the session, like the web.
+    if (withMaster) {
+        for (const auto& [id, value] : initialSession_.masterFx) restoreSurface(id, value);
+        if (initialSession_.masterVol >= 0.0f) restoreSurface("master", initialSession_.masterVol);
+    }
     if (preparedSampleRate_ > 0.0) {
         // Invalidate any in-flight acks BEFORE the swap: a pre-swap Start ack
         // that lands after this point would otherwise flip an owner in the new
@@ -1324,11 +1463,27 @@ bool SeqAudioProcessor::restoreSessionJson(const juce::String& json) {
         lastBpm_   = rawBpm_->load();
         for (int t = 0; t < kTracks; ++t) lastVol_[t] = rawVol_[t]->load();
     }
+    // After the session/conductor swap, so a reader cannot cache the old
+    // session's preset under the new epoch.
+    bumpSessionEpoch();
     return true;
 }
 
 juce::String SeqAudioProcessor::currentSessionJson() const {
     return fable::sessionToJson(conductor_ ? conductor_->session() : initialSession_, true);
+}
+
+juce::String SeqAudioProcessor::exportSessionJson() const {
+    // The master section lives in APVTS; a saved file carries its live values
+    // so it reloads like the web (undo snapshots and plugin state do not need it).
+    auto session = conductor_ ? conductor_->session() : initialSession_;
+    session.masterFx.clear();
+    for (const auto& info : fable::masterFxParamInfo()) {
+        const juce::String id = "master." + juce::String(info.pid);
+        if (auto* p = apvts.getRawParameterValue(id)) session.masterFx[id.toStdString()] = p->load();
+    }
+    if (rawMaster_) session.masterVol = rawMaster_->load();
+    return fable::sessionToJson(session, true);
 }
 
 juce::RangedAudioParameter* SeqAudioProcessor::masterFxParameter(const juce::String& uiId) const {

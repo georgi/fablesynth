@@ -1,6 +1,7 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { patchOptions } from '../patches';
 import { useDrumStore } from '../store';
+import { PadPatchBrowser } from './browser/PadPatchBrowser';
 
 export function SelBar() {
   const sel = useDrumStore((s) => s.sel);
@@ -9,9 +10,16 @@ export function SelBar() {
   const userPatches = useDrumStore((s) => s.userPatches);
   const stepPatch = useDrumStore((s) => s.stepPatch);
   const savePatch = useDrumStore((s) => s.savePatch);
+  const browsing = useDrumStore((s) => s.browser === 'patch');
+  const setBrowser = useDrumStore((s) => s.setBrowser);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState('');
   const cancelled = useRef(false);
+
+  // The drawer belongs to this bar; leaving the edit page closes it.
+  useEffect(() => () => {
+    if (useDrumStore.getState().browser === 'patch') useDrumStore.getState().setBrowser(null);
+  }, []);
 
   const currentPatch = patchOptions(userPatches).find((option) => option.value === patchValue)?.name ?? '—';
 
@@ -58,9 +66,18 @@ export function SelBar() {
             aria-label="Patch name"
           />
         ) : (
-          <button className="pb-btn pb-save" onClick={beginSave}>SAVE</button>
+          <>
+            <button
+              className="pb-btn pb-save pb-browse"
+              id="patch-browse"
+              aria-expanded={browsing}
+              onClick={() => setBrowser(browsing ? null : 'patch')}
+            >BROWSE</button>
+            <button className="pb-btn pb-save" onClick={beginSave}>SAVE</button>
+          </>
         )}
       </div>
+      {browsing && <PadPatchBrowser onClose={() => setBrowser(null)} />}
     </div>
   );
 }

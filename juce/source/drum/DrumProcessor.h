@@ -10,6 +10,8 @@
 #include "ui/DrumUiModel.h"
 #include "../dsp/UserTables.h"
 #include "../ui/ProgramDirty.h"
+#include "../ui/BrowserParams.h"
+#include "../ui/StepEditOps.h"
 
 #include <array>
 #include <atomic>
@@ -62,6 +64,16 @@ public:
     // Edited-since-kit-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
 
+    // ---- preset browser (message thread) ----
+    // A kit snapshot restores every parameter, the pad names, the program index
+    // and the dirty flag; the sequence stays. A pad snapshot restores the given
+    // absolute parameter values; pad VARY also goes through restorePadFields().
+    std::vector<float> captureParamValues();
+    void restoreKit(int program, const std::vector<float>& values,
+                    const std::array<juce::String, fable::DR_NPADS>& names, bool dirty);
+    void restorePadFields(const std::vector<std::pair<int, float>>& fields, bool dirty);
+    bool isHostPlaying() const { return hostPlaying_.load(); }
+
     // ---- pads / transport (message thread -> engine via the command FIFO) ----
     void triggerPad(int pad, float vel);              // UI audition
     void setSeqPlaying(bool on);
@@ -83,6 +95,14 @@ public:
     bool loadFactoryPatternPreset(int index);
     int getLanePosition(int pad) const { return lanePositions_[(size_t)pad].load(std::memory_order_relaxed) - 1; }
     void setDrumRhythm(const fable::DrumRhythm& rhythm);
+    // Standalone sequence automation (web DrumAutomation.tsx): lanes span the
+    // chain, follow POLY lanes, play on the DR-1 transport and persist in state.
+    const std::vector<fable::AutoLane>& sequenceAutomation() const { return automation_; }
+    void setSequenceAutomation(const std::vector<fable::AutoLane>&, bool history = true);
+    void pushAutomationUndo() { automationHistory_.push(automation_); }
+    void undoAutomation();
+    void redoAutomation();
+    double automationSteps() const { return automationSteps_.load(std::memory_order_relaxed); }
     void clearDrumRhythm();
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
@@ -113,6 +133,13 @@ public:
 
     // ---- HUD feeds ----
     void  readScope(float* dst, int n) const;         // MAIN post-FX ring buffer
+    // Post-FX output (MAIN for DR-1) as a lock-free stereo stream for
+    // auto-EQ and other message-thread analysis (dsp/AnalysisTap.h).
+    const fable::ProgramTap& outputTap() const { return *outputTap_; }
+    // KIT MIX capture and comp traces: see DrumEngine::padCapture/compTrace.
+    void setPadCapture(bool on) { engine.setPadCapture(on); }
+    const fable::PadCaptureTap& padCapture(int pad) const { return engine.padCapture(pad); }
+    const fable::DetectorTrace& compTrace(int pad, int bus) const { return engine.compTrace(pad, bus); }
     float getVizPos(int osc) const { return (osc == 0 ? vizA_ : vizB_).load(); }
     float liveDrumFilter(const juce::String& id) const {
         const int pid=fable::drumIdFromString(id.toStdString());
@@ -162,7 +189,11 @@ private:
         int chainSize = 1;
         bool hasRhythm = false;
         fable::DrumRhythm rhythm{};
+        fable::AutoBank automation{};
     };
+    std::vector<fable::AutoLane> automation_;
+    fable::StepEditHistory<std::vector<fable::AutoLane>> automationHistory_{50};
+    std::atomic<double> automationSteps_{-1};
     // Single producer (message thread), single consumer (audio). Each owns
     // one slot; exchange hands off the middle slot. The dirty bit coalesces
     // edits while audio is stopped without ever overwriting a reader's slot.
@@ -186,7 +217,7 @@ private:
     std::array<std::atomic<int>, 16> lanePositions_{};
     std::atomic<int> curStep_{-1}, curPattern_{0};
     std::atomic<uint32_t> hitFlags_{0};
-    std::atomic<bool> hostSynced_{false};
+    std::atomic<bool> hostSynced_{false}, hostPlaying_{false};
     std::atomic<double> hostBpm_{0.0};
     std::array<std::array<std::atomic<float>,2>,fable::DR_NPADS> liveDrumFilter_{};
     std::atomic<float> vizA_{-1.0f}, vizB_{-1.0f}, vizEnv_{0.0f};
@@ -195,6 +226,7 @@ private:
 
     static constexpr int kScopeSize = 4096; // power of two
     std::array<float, kScopeSize> scopeBuf_{};
+    std::unique_ptr<fable::ProgramTap> outputTap_ = std::make_unique<fable::ProgramTap>();
     std::atomic<int> scopeW_{0};
 
     juce::AudioBuffer<float> scratch_; // backing for disabled AUX buses

@@ -1,6 +1,6 @@
 import { updateDrumLane } from './rhythm';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FACTORY_KITS, loadUserKits, saveUserKit, kitToState, stateToKit, type Kit } from './kits';
+import { FACTORY_KITS, PATTERN_PRESETS, loadUserKits, saveUserKit, kitToState, stateToKit, type Kit } from './kits';
 import { DRUM_PARAMS, defaultDrumParams, pad, PAD_COUNT } from './params';
 import { NPATTERNS, STEPS, patIdx } from './seq';
 
@@ -137,6 +137,17 @@ describe('kits', () => {
       expect(slot(3), name).not.toEqual(slot(0));
       expect(kit.chain, name).toEqual([0, 1, 2, 3]);
       expect(kit.padNames, name).toHaveLength(PAD_COUNT);
+    }
+  });
+
+  it('offers distinct, named pattern presets', () => {
+    const names = PATTERN_PRESETS.map((p) => p.name);
+    expect(new Set(names).size).toBe(names.length);
+    const grooves = PATTERN_PRESETS.map((p) => p.patterns.join(''));
+    expect(new Set(grooves).size).toBe(grooves.length);
+    for (const p of PATTERN_PRESETS) {
+      expect(p.patterns).toHaveLength(NPATTERNS * PAD_COUNT * STEPS);
+      expect(p.chain.length).toBeGreaterThan(0);
     }
   });
 

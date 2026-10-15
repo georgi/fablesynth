@@ -20,7 +20,10 @@ public:
     FxTelemetry telemetry() const { return meter_.read(); }
     void prepare(double sampleRate);
     void setParams(const BassParamArray& p); // reads BL_FX* and BL_MASTER_VOLUME
-    void process(float* L, float* R, int n); // in-place, stereo
+    // in-place, stereo; key = mono side-chain key for these n samples or null
+    void process(float* L, float* R, int n, const float* key = nullptr);
+    int keyChannel() const { return keyChannel_; } // see Fx::keyChannel()
+    const DetectorTrace& compTrace() const { return comp_.trace(); }
     void reset();
     // Jump every ramped coefficient to its target (prepare / patch load), so a
     // fresh start is not a 15 ms glide up from silence.
@@ -30,6 +33,7 @@ public:
 private:
     ParametricEq eq_;
     FxMeter meter_;
+    ActivityGate gate_;
     double sr_ = 48000;
 
     // Finding J1: AMT / chorus RATE+DEPTH / reverb SIZE reach the FX as block
@@ -79,6 +83,7 @@ private:
     PeakGuard headroomInput_, headroomOtt_, headroomComp_, headroomDrive_;
     PeakGuard headroomChorus_, headroomDelay_, headroomReverb_, delayFeedbackGuard_;
     bool compOff_ = true, compGated_ = false;
+    int keyChannel_ = -1;
 
     // master + limiter
     Smooth masterGain_;

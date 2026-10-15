@@ -28,18 +28,7 @@ static inline double lcosh(double z) {
     return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
 }
 
-constexpr double kAdaaInputLimit = 16.0;
 constexpr double kAdaaFadeWidth = 0.1;
-static inline double adaaInput(double x) {
-    return std::isfinite(x) ? std::clamp(x, -kAdaaInputLimit, kAdaaInputLimit) : 0.0;
-}
-static inline double adaaTanh(double x, double xp, double dg, double dcomp) {
-    const double dx = x - xp;
-    if (std::abs(dx) <= 1.0e-5 / dg)
-        return dcomp * std::tanh(dg * 0.5 * (x + xp));
-    const double kF = dcomp / dg;
-    return kF * (lcosh(dg * x) - lcosh(dg * xp)) / dx;
-}
 
 static inline double clampd(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
@@ -49,6 +38,7 @@ static inline double clampd(double v, double lo, double hi) {
 // BL-1's pos smoothing legacy cadence was 0.35 per 16-sample sub-block; cutoff
 // was 0.5 per 128-sample chunk, both at 48 kHz.
 static const double BL_POS_TAU = 16.0 / (48000.0 * 0.4307829160924542);
+constexpr int BL_FLT_SUB = 32;   // filter envelope / coefficient update interval
 static const double BL_CUT_TAU = 128.0 / (48000.0 * kLn2);
 static inline double smoothCoef(int n, double tauSr) { return 1 - std::exp(-(double)n / tauSr); }
 
@@ -91,6 +81,7 @@ static inline double rdH(const float* d, int off, int im1, int i0, int i1, int i
 // phase, LFO S&H) cleared; the DC pole is remapped from its 48 kHz reference.
 void BassEngine::prepare(double sampleRate) {
     clearAutomation();
+    subSquareTable();                          // build the sub-square table off the audio thread
     sr_ = sampleRate;
     dcR_ = std::pow(BL_DC_R, 48000.0 / sr_);   // Finding 9
     xfLen_ = std::max(8, (int)std::lround(BL_SWITCH_XFADE * sr_));  // Finding J2
@@ -253,8 +244,11 @@ void BassEngine::noteOn(int semi, bool acc, float vel) {
     semi_ = semi;
     semiTarget_ = semi;
     fenvT_ = 0;
+    // Finding B2: a note from silence starts at its own gain. A note over a
+    // still-sounding voice ramps from the old gain — an accent→plain step
+    // would otherwise halve the running waveform in one sample (click).
+    if (ampStage_ == 0) gainSm_ = -1;
     ampStage_ = 1;
-    gainPrev_ = -1;                // Finding B2: a fresh note starts at its own gain
 }
 
 void BassEngine::glideTo(int semi, bool acc) {
@@ -269,14 +263,14 @@ void BassEngine::release() {
 }
 
 void BassEngine::kill() {
-    gate_ = false; ampStage_ = 0; ampLevel_ = 0;
+    gate_ = false; ampStage_ = 0; ampLevel_ = 0; ampSm_ = 0;
     fenvT_ = 1e9;
     std::fill(std::begin(svf_), std::end(svf_), 0.0);
-    satXL_ = 0; satXR_ = 0;
+    osL_.reset(); osR_.reset();
     driveMix_ = 0;
     posSm_ = -1; cutSm_ = 0; cutPrev_ = -1;
     havePrev_ = false; subIncPrev_ = -1;
-    monoPrev_ = false; gainPrev_ = -1;
+    monoPrev_ = false; gainSm_ = -1;
     // Finding J2: a fade in flight must not survive into the next note — its
     // old-configuration oscillator state belongs to a voice that is gone.
     oscXfPos_ = fltXfPos_ = 1 << 30;
@@ -312,8 +306,79 @@ void BassEngine::play() {
     if (hostPlaying_) return;      // host owns the transport while rolling
     lfoClock_.reset();
     playing_ = true; step_ = -1; chainPos_ = 0;
+    polyK_ = 0;
     samplesToNext_ = 0; samplesToGateOff_ = -1; songPos_ = 0;
     held_.clear();
+}
+
+// ---------- melodic POLY (worklet-bass.js) ----------
+
+double BassEngine::polyDuration(const SequenceRhythm& r, double bpm) const {
+    return 60.0 / std::max(60.0, std::min(200.0, bpm > 0 ? bpm : 120.0)) * sr_
+         * (r.fit ? (double)r.cycleBeats / r.steps : .25);
+}
+
+double BassEngine::polyFrame(const SequenceRhythm& r, long k, double dur, double swing) {
+    return (double)k * dur + (!r.fit && (k & 1) ? std::min(1.0, std::max(0.0, swing)) * BL_SWING_MAX * dur : 0.0);
+}
+
+// polyPhase(..., Math.ceil): the first boundary at or after `elapsed`.
+long BassEngine::polyPhaseCeil(const SequenceRhythm& r, double elapsed, double dur, double swing) {
+    long k = std::max(0L, (long)std::floor(elapsed / dur));
+    if (polyFrame(r, k, dur, swing) > elapsed + 1e-6) k = std::max(0L, k - 1);
+    return polyFrame(r, k, dur, swing) >= elapsed - 1e-6 ? k : k + 1;
+}
+
+void BassEngine::setSequenceRhythm(const SequenceRhythm& r) {
+    if (hostClipMode_ || !validSequenceRhythm(r)) return;
+    const SequenceRhythm old = seqRhythm_;
+    seqRhythm_ = r;
+    const bool rephase = old.enabled != r.enabled
+        || (r.enabled && (old.fit != r.fit || old.cycleBeats != r.cycleBeats || (r.fit && old.steps != r.steps)));
+    if (!rephase) return;
+    release(); samplesToGateOff_ = -1;
+    hostSynced_ = false;                       // the host lock re-derives its next boundary
+    const double bpm = effectiveBpm();
+    const double sw = std::min(1.0, std::max(0.0, (double)p_[BL_MASTER_SWING]));
+    if (r.enabled) {
+        const double dur = polyDuration(r, bpm);
+        polyK_ = polyPhaseCeil(r, songPos_, dur, sw);
+        samplesToNext_ = polyFrame(r, polyK_, dur, sw) - songPos_;
+    } else {
+        SequenceRhythm grid; grid.fit = false;
+        const double dur = polyDuration(grid, bpm);
+        const long k = polyPhaseCeil(grid, songPos_, dur, sw);
+        step_ = (int)(k % BL_STEPS) - 1;
+        chainPos_ = (int)((k / BL_STEPS) % chainLen_);
+        samplesToNext_ = polyFrame(grid, k, dur, sw) - songPos_;
+    }
+}
+
+// polyEmit: the source cell of bar one; its slide lookahead is the next
+// source cell, and a rest breaks a held slide.
+void BassEngine::polyEmit(long k, double dur) {
+    BassStep st = readStep(pats_.data(), 0, polySource(seqRhythm_, k));
+    if (st.on && seqEnabled_) {
+        // Scale position: the step's sixteenth on the straight grid (worklet polyEmit).
+        const double beats = seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25;
+        st.semi = scaleNote(seqScale_, (long)std::floor((double)k * beats * 4 + .1), BL_ROOT_MIDI + st.semi) - BL_ROOT_MIDI;
+        if (st.slide && gate_) glideTo(st.semi, st.acc);
+        else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
+        const BassStep next = readStep(pats_.data(), 0, polySource(seqRhythm_, k + 1));
+        samplesToGateOff_ = next.on && next.slide ? -1 : st.duration * dur;
+    } else if (!st.on && samplesToGateOff_ < 0) {
+        release();
+    }
+}
+
+void BassEngine::polyFire(double bpm) {
+    const long k = polyK_++;
+    const double dur = polyDuration(seqRhythm_, bpm);
+    polyEmit(k, dur);
+    step_ = polySource(seqRhythm_, k);
+    chainPos_ = 0;                             // POLY plays bar one
+    const double sw = std::min(1.0, std::max(0.0, (double)p_[BL_MASTER_SWING]));
+    samplesToNext_ += polyFrame(seqRhythm_, k + 1, dur, sw) - polyFrame(seqRhythm_, k, dur, sw);
 }
 
 void BassEngine::stop() {
@@ -372,17 +437,21 @@ void BassEngine::setArp(const ArpPattern& a) {
     arp_ = a;
 }
 void BassEngine::arpFire(const ArpPattern& a, int s, double interval) {
-    if (a.hits[s] && a.notes[s] >= 0) {
-        const int semi = a.notes[s] - BL_ROOT_MIDI;
-        if (a.slides[s] && gate_) glideTo(semi, a.accents[s]);
-        else noteOn(semi, a.accents[s], a.accents[s] ? BL_ACCENT_VEL : BL_PLAIN_VEL);
-        const int next = (s + 1) % 16;
-        samplesToGateOff_ = a.hits[next] && a.notes[next] >= 0 && a.slides[next] ? -1 : interval * a.gate;
+    const int len = std::max(1, a.length);
+    s %= len;
+    const int r = s % 16;
+    if (a.hits[(size_t)r] && a.notes[(size_t)s] >= 0) {
+        const int semi = a.notes[(size_t)s] - BL_ROOT_MIDI;
+        if (a.slides[(size_t)r] && gate_) glideTo(semi, a.accents[(size_t)r]);
+        else noteOn(semi, a.accents[(size_t)r], a.accents[(size_t)r] ? BL_ACCENT_VEL : BL_PLAIN_VEL);
+        const int next = (s + 1) % len, rn = next % 16;
+        samplesToGateOff_ = a.hits[(size_t)rn] && a.notes[(size_t)next] >= 0 && a.slides[(size_t)rn] ? -1 : interval * a.gate;
     } else { release(); samplesToGateOff_ = -1; }
 }
 void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
-    const BassStep st = readStep(pats_.data(), pat, s);
+    BassStep st = readStep(pats_.data(), pat, s);
     if (st.on && seqEnabled_) {
+        st.semi = scaleNote(seqScale_, (long)chainPos_ * BL_STEPS + s, BL_ROOT_MIDI + st.semi) - BL_ROOT_MIDI;
         if (st.slide && gate_) glideTo(st.semi, st.acc);
         else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
         const int sN = (s + 1) % BL_STEPS;
@@ -402,16 +471,22 @@ void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
 void BassEngine::clipFireAt(int abs) {
     if (clipHost_.arp().enabled) { arpFire(clipHost_.arp(), abs, clipHost_.stepInterval(abs)); return; }
     const uint8_t* clip = clipHost_.clipData();
+    // Melodic POLY fires with the source step as `abs` (bar 0); its lookahead
+    // is the next source step and notes scale by the POLY step length.
+    const bool poly = clipHost_.polyActive();
     const int total = std::max(1, clipHost_.clipBars() * BL_STEPS);
     const int s = abs % BL_STEPS;
-    const BassStep st = readStep(clip, abs / BL_STEPS, s);
+    BassStep st = readStep(clip, abs / BL_STEPS, s);
     if (st.on) {
+        st.semi = clipHost_.scaleNote(BL_ROOT_MIDI + st.semi) - BL_ROOT_MIDI;
         if (st.slide && gate_) glideTo(st.semi, st.acc);
         else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
-        const int absN = (abs + 1) % total;
+        const int absN = poly ? clipHost_.polyNextSource() : (abs + 1) % total;
         const BassStep stN = readStep(clip, absN / BL_STEPS, absN % BL_STEPS);
-        const double dur = sqSamplesPerStep(effectiveBpm(), sr_);
+        const double dur = poly ? clipHost_.polyDuration() : sqSamplesPerStep(effectiveBpm(), sr_);
         samplesToGateOff_ = (stN.on && stN.slide) ? -1 : st.duration * dur;
+    } else if (poly && samplesToGateOff_ < 0) {
+        release(); // a rest breaks a held slide (worklet polyEmit)
     }
 }
 
@@ -419,10 +494,11 @@ void BassEngine::clipFireAt(int abs) {
 void BassEngine::fireStep() {
     const double bpm = effectiveBpm();
     if (arp_.enabled) {
-        const int s = (step_ + 1) % 16;
+        const int s = (step_ + 1) % arp_.length;
         const double interval = 60.0 / bpm * arp_.rate * sr_ * (1 + (s % 2 ? -1 : 1) * std::clamp((double)p_[BL_MASTER_SWING], 0.0, 1.0) * BL_SWING_MAX);
         arpFire(arp_, s, interval); step_ = s; chainPos_ = 0; samplesToNext_ += interval; return;
     }
+    if (seqRhythm_.enabled) { polyFire(bpm); return; }
     const double dur = (60.0 / bpm / 4.0) * sr_;
     const double swing = p_[BL_MASTER_SWING];
     if (step_ + 1 >= BL_STEPS) {                   // bar wrap advances the chain
@@ -469,12 +545,18 @@ void BassEngine::setHostTransport(double ppq, double bpm, bool playing) {
 
 double BassEngine::hostStepPpq(long k) const {
     double swing = clampd((double)p_[BL_MASTER_SWING], 0.0, 1.0);
+    if (polyOn()) {                            // POLY on the host clock: same boundaries, in beats
+        const double beats = seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25;
+        return (double)k * beats + (!seqRhythm_.fit && (k & 1) ? swing * BL_SWING_MAX * beats : 0.0);
+    }
     const double rate = arp_.enabled ? arp_.rate : .25;
     return (double)k * rate + ((k & 1) ? swing * BL_SWING_MAX * rate : 0.0);
 }
 
 void BassEngine::hostResync() {
-    long k = (long)std::floor(hostPpq_ / (arp_.enabled ? arp_.rate : .25)) - 1;
+    const double unit = polyOn() ? (seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25)
+                      : arp_.enabled ? arp_.rate : .25;
+    long k = (long)std::floor(hostPpq_ / unit) - 1;
     if (k < 0) k = 0;
     while (hostStepPpq(k) < hostPpq_ - 1e-9) k++;
     hostNextK_ = k;
@@ -484,8 +566,13 @@ void BassEngine::hostResync() {
 void BassEngine::fireHostStep(long k) {
     const int  s   = (int)(k % BL_STEPS);
     if (arp_.enabled) {
-        arpFire(arp_, s, (hostStepPpq(k + 1) - hostStepPpq(k)) * 60.0 / hostBpm_ * sr_);
-        step_ = s; chainPos_ = 0; return;
+        const int as = (int)(k % arp_.length);
+        arpFire(arp_, as, (hostStepPpq(k + 1) - hostStepPpq(k)) * 60.0 / hostBpm_ * sr_);
+        step_ = as; chainPos_ = 0; return;
+    }
+    if (polyOn()) {
+        polyEmit(k, polyDuration(seqRhythm_, hostBpm_));
+        step_ = polySource(seqRhythm_, k); chainPos_ = 0; return;
     }
     const long bar = k / BL_STEPS;
     chainPos_ = (int)(bar % (long)chainLen_);
@@ -622,7 +709,7 @@ void BassEngine::renderOsc(float* tmpL, float* tmpR, int off, int n) {
     havePrev_ = true;
 }
 
-// js:324-354 — sine / polyblep-square sub, -1/-2 oct below the (un-tuned) note
+// js:324-354 — sine / band-limited-square (table) sub, -1/-2 oct below the (un-tuned) note
 void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double noteRootAbs) {
     double level = clampd(p_[BL_SUB_LEVEL], 0.0, 1.0);
     level *= level;
@@ -640,18 +727,12 @@ void BassEngine::renderSub(float* tmpL, float* tmpR, int off, int n, double note
     const bool square = (int)p_[BL_SUB_SHAPE] == 1;
     double ph = subPhase_;
     if (square) {
+        // Band-limited table read (mip chosen from the larger chunk increment).
+        const float* tbl = subSquareTable();
+        const SubSquareMip mip = subSquareMip(std::max(inc0, inc1));
         for (int i = 0; i < n; i++) {
             const double inc = inc0 + dInc * i;
-            double s = ph < 0.5 ? 1.0 : -1.0;
-            // Finding B4: polyBLEP on BOTH sides of each edge — the pre-edge
-            // (t+1)^2 term was missing, so only half the correction was
-            // applied. Identical form to WT-1's sub (Engine.cpp).
-            if (ph < inc) { const double t = ph / inc; s += -(t * t) + 2 * t - 1; }
-            else if (ph > 1 - inc) { const double t = (ph - 1) / inc; s += t * t + 2 * t + 1; }
-            const double h = ph - 0.5;
-            if (h >= 0 && h < inc) { const double t = h / inc; s -= -(t * t) + 2 * t - 1; }
-            else if (h < 0 && h > -inc) { const double t = h / inc; s -= t * t + 2 * t + 1; }
-            const float v = (float)(s * gain * 0.8);
+            const float v = (float)(subSquareRead(tbl, mip, ph) * gain * 0.8);
             tmpL[off + i] += v; tmpR[off + i] += v;
             ph += inc; if (ph >= 1) ph -= 1;
         }
@@ -702,15 +783,31 @@ void BassEngine::setupFilter(double noteAbs, double beats, int n) {
     const double lfo = isPlaying() ? lfoValue(beats) * clampd(p_[BL_LFO_DEPTH], 0.0, 1.0) : 0.0;
     const double track = clampd(p_[BL_FLT_TRACK], 0.0, 1.0);
     const double key = ((noteAbs - BL_KEYTRACK_REF) / 12.0) * track;
-    const double oct = p_[BL_FLT_ENV] * env * BL_FENV_OCT + lfo * BL_LFO_OCT + key;
+    const double oct = lfo * BL_LFO_OCT + key;
 
-    double fc = p_[BL_FLT_CUT] * std::pow(2.0, oct);
-    if (!std::isfinite(fc)) fc = 20;
-    fc = clampd(fc, 20.0, sr_ * 0.45);
-    if (cutSm_ <= 0) cutSm_ = fc;
-    cutSm_ += (fc - cutSm_) * smoothCoef(n, BL_CUT_TAU * sr_);
-    curCut_ = cutSm_;
-    cutTarget_ = cutSm_;              // runFilter ramps cutPrev_ -> cutTarget_
+    // The knob / key / LFO part of the cutoff is smoothed per chunk (zipper
+    // protection). The envelope part is NOT: it is evaluated every FLT_SUB
+    // samples and applied after the smoother, so the accent snap keeps its
+    // attack. The ramp end for sub-block j is the envelope at that sub-block's
+    // end, so the cutoff sweep is not a chunk late.
+    double base = p_[BL_FLT_CUT] * std::pow(2.0, oct);
+    if (!std::isfinite(base) || base <= 0) base = 20;
+    if (cutSm_ <= 0) cutSm_ = base;
+    cutSm_ += (base - cutSm_) * smoothCoef(n, BL_CUT_TAU * sr_);
+    const double b0 = cutPrev_ > 0 ? cutPrev_ : cutSm_;
+    const double envOct = p_[BL_FLT_ENV] * BL_FENV_OCT;
+    nSub_ = 0;
+    for (int at = 0; at < n && nSub_ < kMaxSub; at += BL_FLT_SUB) {
+        const int e = std::min(BL_FLT_SUB, n - at) + at;
+        const double t = fenvT_ + e;
+        double ev = t < att ? t / att : std::exp(-4.5 * (t - att) / dec);
+        ev *= 1 + accBoost;
+        double fc = (b0 + (cutSm_ - b0) * ((double)e / n)) * std::pow(2.0, envOct * ev);
+        if (!std::isfinite(fc)) fc = 20;
+        cutSub_[nSub_++] = clampd(fc, 20.0, sr_ * 0.45);
+    }
+    cutPrev_ = cutSm_;
+    curCut_ = nSub_ > 0 ? cutSub_[nSub_ - 1] : cutSm_;
     const double res = clampd(p_[BL_FLT_RES], 0.0, 0.999);
 
     const int ftype = (int)p_[BL_FLT_TYPE];
@@ -785,41 +882,41 @@ void BassEngine::runFilter(const float* inL, const float* inR,
     // Fade the ADAA path in from silence over a small drive interval instead
     // of making the old enable threshold a binary transfer-function switch.
     const double mix1 = clampd(drive / kAdaaFadeWidth, 0.0, 1.0);
-    if (mix0 > 0.0 || mix1 > 0.0) {
-        const double dg = 1 + drive * 7;
-        const double dcomp = 1 / std::pow(dg, 0.55);
-        double xpL = satXL_, xpR = satXR_;
-        if (mono) {
-            for (int i = 0; i < n; i++) {
-                const double aL = adaaInput(inL[i]);
-                const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
-                outL[i] = (float)(aL + m * (adaaTanh(aL, xpL, dg, dcomp) - aL));
-                xpL = aL;
-            }
-            satXL_ = satXR_ = xpL;
-        } else {
-            for (int i = 0; i < n; i++) {
-                const double aL = adaaInput(inL[i]), aR = adaaInput(inR[i]);
-                const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
-                outL[i] = (float)(aL + m * (adaaTanh(aL, xpL, dg, dcomp) - aL));
-                outR[i] = (float)(aR + m * (adaaTanh(aR, xpR, dg, dcomp) - aR));
-                xpL = aL; xpR = aR;
-            }
-            satXL_ = xpL; satXR_ = xpR;
-        }
-    } else {
-        for (int i = 0; i < n; i++) outL[i] = inL[i];
-        if (!mono) for (int i = 0; i < n; i++) outR[i] = inR[i];
-        if (n > 0) { satXL_ = adaaInput(inL[n - 1]); satXR_ = mono ? satXL_ : adaaInput(inR[n - 1]); }
+    // The drive stage (2x oversampler, see DriveOs.h) is in the path only while
+    // the saturator is active. At drive 0 with the ramp settled it is a bit-exact
+    // copy, so the drive-off sound is untouched.
+    const bool active = mix0 > 0.0 || mix1 > 0.0;
+    double dg = 1, dcomp = 1, kF = 1, FpL = 0, FpR = 0;
+    if (active) {
+        dg = 1 + drive * 7;
+        dcomp = 1 / std::pow(dg, 0.55);
+        kF = dcomp / dg;
+        FpL = lcosh(dg * osL_.xp);
+        if (!mono) FpR = lcosh(dg * osR_.xp);
     }
+    const double tiny = 1.0e-5 / dg;
+    auto sat = [&](double& Fp, double a, double xpv) {
+        const double dx = a - xpv, Fa = lcosh(dg * a);
+        const double r = std::abs(dx) <= tiny ? dcomp * std::tanh(dg * 0.5 * (a + xpv))
+                                              : kF * (Fa - Fp) / dx;
+        Fp = Fa;
+        return r;
+    };
+    auto satL = [&](double a, double xpv) { return sat(FpL, a, xpv); };
+    auto satR = [&](double a, double xpv) { return sat(FpR, a, xpv); };
+    const double wStep = 1.0 / (kDriveOsRampSec * sr_);
+    for (int i = 0; i < n; i++) {
+        const double m = mix0 + (mix1 - mix0) * ((double)(i + 1) / n);
+        outL[i] = (float)osL_.run(inL[i], active, active, m, wStep, satL);
+        if (!mono) outR[i] = (float)osR_.run(inR[i], active, active, m, wStep, satR);
+    }
+    // A mono chunk leaves the right history equal to the left one.
+    if (mono) osR_ = osL_;
     driveMix_ = mix1;
 
 
-    // Finding 7: cutoff ramps from the previous chunk's value; coefficients
-    // recomputed per <=32-sample sub-block.
-    const double c1c = cutTarget_;
-    const double c0c = cutPrev_ > 0 ? cutPrev_ : c1c;
-
+    // Finding 7: coefficients recomputed per <=32-sample sub-block from the
+    // per-sub-block cutoffs setupFilter prepared.
     // Finding J2: while a filter-type switch is fading, the OLD type keeps
     // running on the copy of the SVF state taken at the switch, over the same
     // post-drive signal, and the two are equal-power mixed. Both see the same
@@ -830,12 +927,12 @@ void BassEngine::runFilter(const float* inL, const float* inR,
         if (!mono) std::copy(outR, outR + n, fxR_);
     }
 
-    svfChain(outL, outR, n, c0c, c1c, ftype_, twoPole_, k1_, k2_, svf_, mono);
+    svfChain(outL, outR, n, ftype_, twoPole_, k1_, k2_, svf_, mono);
 
     if (fade) {
         double ok1 = 0, ok2 = 0;
         resToK(clampd(p_[BL_FLT_RES], 0.0, 0.999), twoPoleOld_, ok1, ok2);
-        svfChain(fxL_, fxR_, n, c0c, c1c, ftypeOld_, twoPoleOld_, ok1, ok2, svfOld_, mono);
+        svfChain(fxL_, fxR_, n, ftypeOld_, twoPoleOld_, ok1, ok2, svfOld_, mono);
         for (int i = 0; i < n; i++) {
             const double w = std::min(1.0, (double)(fltXfPos_ + i) / xfLen_);
             const double gOld = std::cos(w * kPi * 0.5), gNew = std::sin(w * kPi * 0.5);
@@ -844,16 +941,15 @@ void BassEngine::runFilter(const float* inL, const float* inR,
         }
         fltXfPos_ += n;
     }
-    cutPrev_ = c1c;
 }
 
 // One filter pass over `n` samples with its own state block F[8].
-void BassEngine::svfChain(float* bufL, float* bufR, int n, double c0c, double c1c,
+void BassEngine::svfChain(float* bufL, float* bufR, int n,
                           int ftype, bool twoPole, double k1, double k2,
                           double* F, bool mono) const {
-    for (int at = 0; at < n; at += 32) {
-        const int m = std::min(32, n - at);
-        const double cut = c0c + (c1c - c0c) * ((double)(at + m) / n);
+    for (int at = 0; at < n; at += BL_FLT_SUB) {
+        const int m = std::min(BL_FLT_SUB, n - at);
+        const double cut = cutSub_[std::min(at / BL_FLT_SUB, nSub_ - 1)];
         const double gC = std::tan((kPi * cut) / sr_);
         const double a1 = 1 / (1 + gC * (gC + k1));
         const double a2 = gC * a1, a3 = gC * a2;
@@ -929,7 +1025,9 @@ void BassEngine::restoreOsc(const OscSnap& s) {
 
 // ---------- render voice (js:482-543) ----------
 void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
-    if (ampStage_ == 0 && !gate_) return;          // LFO clock advances outside
+    // The voice sounds until the slewed amp level is silent too: a release
+    // shorter than BL_AMP_SLEW reaches ampStage_ 0 while ampSm_ still lags.
+    if (ampStage_ == 0 && !gate_ && ampSm_ < 1e-4) { dcTail(L, R, off, n); return; } // LFO clock advances outside
     float* tmpL = tmpL_;
     float* tmpR = tmpR_;
 
@@ -968,14 +1066,14 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
     const double decK = 1 - std::exp(-4.5 / std::max(1.0, p_[BL_AENV_DEC] * sr_));
     const double relK = 1 - std::exp(-4.5 / std::max(1.0, p_[BL_AENV_REL] * sr_));
     const double accAmt = clampd(p_[BL_ACC_AMT], 0.0, 1.0);
-    // Finding B2: an accented slide target flips acc_ on the RUNNING voice, so
-    // this gain jumped by up to +3.5 dB at a chunk boundary. Ramp it across the
-    // chunk instead. gainPrev_ < 0 means "new note": start at the target, so a
-    // note-on is not softened by the previous note's level.
+    const double slewK = 1 - std::exp(-1.0 / (BL_AMP_SLEW * sr_));
+    // Finding B2: an accented slide target flips acc_ on the RUNNING voice,
+    // and an accent→plain retrigger drops the gain by half. Either step was a
+    // click. Slew the gain per sample instead. gainSm_ < 0 means "new note
+    // from silence": start at the target, so the attack keeps its level.
     const double gain1 = vel_ * (1 + (acc_ ? accAmt * BL_ACC_GAIN : 0)) * 0.9;
-    const double gain0 = gainPrev_ >= 0 ? gainPrev_ : gain1;
-    const double dGain = (gain1 - gain0) / n;
-    gainPrev_ = gain1;
+    if (gainSm_ < 0) gainSm_ = gain1;
+    const double gainK = 1 - std::exp(-1.0 / (BL_GAIN_SLEW * sr_));
 
     for (int i = 0; i < n; i++) {
         switch (ampStage_) {
@@ -992,7 +1090,9 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
                 break;
             default: ampLevel_ = 0;
         }
-        const double amp = ampLevel_ * (gain0 + dGain * (i + 1));
+        ampSm_ += (ampLevel_ - ampSm_) * slewK;
+        gainSm_ += (gain1 - gainSm_) * gainK;
+        const double amp = ampSm_ * gainSm_;
         const double sl = fL_[i] * amp, sr = fR_[i] * amp;
         const double yL = sl - dcxL_ + dcR_ * dcyL_;
         const double yR = sr - dcxR_ + dcR_ * dcyR_;
@@ -1000,6 +1100,22 @@ void BassEngine::renderVoice(float* L, float* R, int off, int n, double beats) {
         dcxR_ = sr; dcyR_ = yR;
         L[off + i] += (float)yL;
         R[off + i] += (float)yR;
+    }
+}
+
+// After the amp closes, the DC blocker still holds the negated DC offset of the
+// last note. Let it ring out on silent input; cutting it at voice end clicked.
+void BassEngine::dcTail(float* L, float* R, int off, int n) {
+    ampSm_ = 0;
+    if (std::abs(dcyL_) + std::abs(dcyR_) + std::abs(dcxL_) + std::abs(dcxR_) < 1e-9) {
+        dcxL_ = dcxR_ = dcyL_ = dcyR_ = 0;
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        dcyL_ = dcR_ * dcyL_ - dcxL_; dcxL_ = 0;
+        dcyR_ = dcR_ * dcyR_ - dcxR_; dcxR_ = 0;
+        L[off + i] += (float)dcyL_;
+        R[off + i] += (float)dcyR_;
     }
 }
 

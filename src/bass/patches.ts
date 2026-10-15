@@ -1,3 +1,4 @@
+import { copySequenceRhythm, type SequenceRhythm } from '../shared/sequenceRhythm';
 // BL-1 factory and user patches. A patch is the whole machine state — sound
 // params + the four pitch patterns + chain (same "kit" model as DR-1, since a
 // 303 line is inseparable from its pattern). Factory entries contain only
@@ -8,6 +9,7 @@ import { defaultBassParams } from './params';
 import { makeEmptyPatterns, writePattern, type Patterns, type Step } from './seq';
 
 export interface BassPatch {
+  sequenceRhythm?: SequenceRhythm;
   name: string;
   params: Partial<ParamValues>;
   patterns: number[];
@@ -454,11 +456,13 @@ export const FACTORY_PATCHES: BassPatch[] = FACTORY_PATCHES_RAW.map((patch) => (
 
 
 export function patchToState(patch: BassPatch): {
+  sequenceRhythm?: SequenceRhythm;
   params: ParamValues;
   patterns: Patterns;
   chain: number[];
 } {
   return {
+    ...(patch.sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(patch.sequenceRhythm) } : {}),
     params: { ...defaultBassParams(), ...patch.params } as ParamValues,
     patterns: Uint8Array.from(patch.patterns),
     chain: patch.chain.length ? [...patch.chain] : [0],
@@ -470,8 +474,9 @@ export function stateToPatch(
   params: ParamValues,
   patterns: Patterns,
   chain: number[],
+  sequenceRhythm?: SequenceRhythm,
 ): BassPatch {
-  return { name, params: { ...params }, patterns: Array.from(patterns), chain: [...chain] };
+  return { name, ...(sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(sequenceRhythm) } : {}), params: { ...params }, patterns: Array.from(patterns), chain: [...chain] };
 }
 
 export interface PatchOption {

@@ -24,6 +24,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"ACID LINE", {
+            {"master.mono", 1},
             { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.65f }, { "fx.ott.down", 0.8f },
             { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.018f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.level", 0.85f},
@@ -180,6 +181,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"SCREECH LEAD", {
+            {"master.mono", 1},
             { "fx.ott.on", 1 }, { "fx.ott.depth", 0.24f }, { "fx.ott.time", 1.1f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.9f },
             { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.02f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 2}, {"oscA.pos", 0.7f}, {"oscA.unison", 3}, {"oscA.detune", 0.3f}, {"oscA.spread", 0.7f}, {"oscA.level", 0.78f},
@@ -243,6 +245,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"8-BIT LEAD", {
+            {"master.mono", 1},
             {"oscA.table", 2}, {"oscA.pos", 0}, {"oscA.level", 0.8f},
             {"filter.on", 0},
             {"env1.a", 0.001f}, {"env1.d", 0.1f}, {"env1.s", 0.7f}, {"env1.r", 0.05f},
@@ -287,6 +290,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"GLIDE LEAD", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.oct", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.4f}, {"oscA.level", 0.82f},
             {"oscB.on", 1}, {"oscB.table", 2}, {"oscB.pos", 0.4f}, {"oscB.oct", 1}, {"oscB.semi", -12}, {"oscB.level", 0.4f},
             {"filter.type", 1}, {"filter.cutoff", 1600}, {"filter.res", 0.4f}, {"filter.env", 0.5f}, {"filter.key", 0.4f},
@@ -610,6 +614,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"MINI LEAD", {
+            {"master.mono", 1},
             { "fx.ott.on", 1 }, { "fx.ott.depth", 0.18f }, { "fx.ott.time", 1.2f }, { "fx.ott.up", 0.5f }, { "fx.ott.down", 0.7f },
             { "fx.comp.on", 1 }, { "fx.comp.thr", -18 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.12f }, { "fx.comp.ratio", 2.5f },
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.unison", 2}, {"oscA.detune", 0.12f}, {"oscA.spread", 0.2f}, {"oscA.level", 0.85f},
@@ -628,7 +633,6 @@ const std::vector<Preset>& factoryPresets() {
 
         {"JUNO DREAM", {
             {"oscA.table", 2}, {"oscA.pos", 0.35f}, {"oscA.unison", 3}, {"oscA.detune", 0.15f}, {"oscA.spread", 0.7f}, {"oscA.level", 0.75f},
-            {"sub.on", 1}, {"sub.shape", 1}, {"sub.level", 0.45f}, {"sub.oct", -1},
             {"filter.type", 1}, {"filter.cutoff", 2000}, {"filter.res", 0.12f}, {"filter.env", 0.25f}, {"filter.key", 0.25f},
             {"env1.a", 0.4f}, {"env1.d", 1}, {"env1.s", 0.8f}, {"env1.r", 1.4f},
             {"lfo1.rate", 0.4f}, {"lfo2.rate", 0.17f},
@@ -688,6 +692,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"TAURUS PEDAL", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.66f}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 1}, {"oscB.oct", -1}, {"oscB.level", 0.5f},
             {"sub.on", 1}, {"sub.level", 0.7f}, {"sub.oct", -1},
@@ -715,6 +720,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"FUNKY WORM", {
+            {"master.mono", 1},
             { "fx.ott.on", 1 }, { "fx.ott.depth", 0.22f }, { "fx.ott.time", 1.2f }, { "fx.ott.up", 0.6f }, { "fx.ott.down", 0.75f },
             { "fx.comp.on", 1 }, { "fx.comp.thr", -20 }, { "fx.comp.att", 0.025f }, { "fx.comp.rel", 0.1f }, { "fx.comp.ratio", 3 },
             {"oscA.table", 0}, {"oscA.pos", 0}, {"oscA.oct", 1}, {"oscA.level", 0.9f},
@@ -766,6 +772,7 @@ const std::vector<Preset>& factoryPresets() {
         // Copied verbatim from src/presets.ts; all stay "clean" (no drive).
 
         {"FOG LIGHT", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.02f}, {"oscA.level", 0.8f},
             {"sub.on", 1}, {"sub.shape", 0}, {"sub.oct", -1}, {"sub.level", 0.45f},
             {"filter.type", 1}, {"filter.cutoff", 1100}, {"filter.res", 0.08f}, {"filter.env", 0.15f}, {"filter.key", 0.3f},
@@ -782,6 +789,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"GLASS RIBBON", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.0f}, {"oscA.level", 0.75f},
             {"oscB.on", 1}, {"oscB.table", 4}, {"oscB.pos", 0.2f}, {"oscB.oct", 1}, {"oscB.level", 0.22f},
             {"filter.type", 0}, {"filter.cutoff", 3500}, {"filter.res", 0.1f},
@@ -798,6 +806,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"NORTH WIRE", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.0f}, {"oscA.oct", 1}, {"oscA.unison", 2}, {"oscA.detune", 0.06f}, {"oscA.spread", 0.3f}, {"oscA.level", 0.8f},
             {"filter.type", 0}, {"filter.cutoff", 6000}, {"filter.res", 0.05f},
             {"env1.a", 0.06f}, {"env1.d", 1.0f}, {"env1.s", 0.75f}, {"env1.r", 1.8f},
@@ -810,6 +819,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"TEMPLE BREATH", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.05f}, {"oscA.level", 0.78f},
             {"noise.on", 1}, {"noise.type", 1}, {"noise.level", 0.12f},
             {"filter.type", 0}, {"filter.cutoff", 2400}, {"filter.res", 0.12f}, {"filter.key", 0.3f},
@@ -829,6 +839,7 @@ const std::vector<Preset>& factoryPresets() {
         // session presets (SQ-4 references these by index — append only).
 
         {"MELODICA", {
+            {"master.mono", 1},
             {"oscA.table", 3}, {"oscA.pos", 0.3f}, {"oscA.level", 0.82f},
             {"noise.on", 1}, {"noise.type", 1}, {"noise.level", 0.08f},
             {"filter.type", 1}, {"filter.cutoff", 1900}, {"filter.res", 0.14f}, {"filter.env", 0.2f}, {"filter.key", 0.35f},
@@ -857,6 +868,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"BLEEP TECH", {
+            {"master.mono", 1},
             {"oscA.table", 2}, {"oscA.pos", 0.12f}, {"oscA.oct", 1}, {"oscA.level", 0.8f},
             {"filter.type", 1}, {"filter.cutoff", 3200}, {"filter.res", 0.22f}, {"filter.env", 0.3f}, {"filter.key", 0.5f},
             {"env1.a", 0.001f}, {"env1.d", 0.14f}, {"env1.s", 0}, {"env1.r", 0.1f},
@@ -873,6 +885,7 @@ const std::vector<Preset>& factoryPresets() {
         // bar, so it can carry a melody, but it sustains flat: whole and half
         // notes hold their level instead of decaying like the plucked leads do.
         {"CINEMA LEAD", {
+            {"master.mono", 1},
             {"oscA.table", 1}, {"oscA.pos", 0.42f}, {"oscA.unison", 4}, {"oscA.detune", 0.16f},
             {"oscA.spread", 0.55f}, {"oscA.level", 0.8f},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.5f}, {"oscB.oct", -1}, {"oscB.level", 0.3f},
@@ -897,6 +910,7 @@ const std::vector<Preset>& factoryPresets() {
         // the groove comes from the echoes rather than from the notes. Delay
         // times target 124-133 BPM: 0.36 s = 3/16, 0.24 s = 1/8.
         {"DEEP TICK", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.08f}, {"oscA.level", 1},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.05f}, {"oscB.oct", -1}, {"oscB.level", 0.45f},
             {"filter.type", 1}, {"filter.cutoff", 780}, {"filter.res", 0.24f}, {"filter.env", 0.35f}, {"filter.key", 0.3f},
@@ -908,6 +922,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.eq.on", 1}, {"fx.eq.low", 1.0f}, {"fx.eq.mid", -1.0f}, {"fx.eq.mfreq", 420}, {"fx.eq.high", -6.0f},
         }},
         {"ROOM KNOCK", {
+            {"master.mono", 1},
             {"oscA.table", 1}, {"oscA.pos", 0.2f}, {"oscA.level", 1},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.1f}, {"oscB.oct", -1}, {"oscB.level", 0.6f},
             {"filter.type", 1}, {"filter.cutoff", 680}, {"filter.res", 0.3f}, {"filter.env", 0.4f}, {"filter.key", 0.25f},
@@ -919,6 +934,7 @@ const std::vector<Preset>& factoryPresets() {
             {"fx.eq.on", 1}, {"fx.eq.low", 2.0f}, {"fx.eq.mid", -2.0f}, {"fx.eq.mfreq", 380}, {"fx.eq.high", -6.0f},
         }},
         {"CELLAR BLIP", {
+            {"master.mono", 1},
             {"oscA.table", 0}, {"oscA.pos", 0.12f}, {"oscA.level", 1},
             {"oscB.on", 1}, {"oscB.table", 0}, {"oscB.pos", 0.08f}, {"oscB.oct", -1}, {"oscB.level", 0.5f},
             {"filter.type", 1}, {"filter.cutoff", 820}, {"filter.res", 0.28f}, {"filter.env", 0.3f}, {"filter.key", 0.35f},
@@ -945,6 +961,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"RAVE HOOVER", {
+            {"master.mono", 1},
             {"fx.ott.on", 1}, {"fx.ott.depth", 0.24f}, {"fx.ott.time", 1.1f}, {"fx.ott.up", 0.6f}, {"fx.ott.down", 0.8f}, {"fx.comp.on", 1},
             {"fx.comp.thr", -20}, {"fx.comp.att", 0.02f}, {"fx.comp.rel", 0.14f}, {"fx.comp.ratio", 3}, {"oscA.table", 2}, {"oscA.pos", 0.45f},
             {"oscA.unison", 5}, {"oscA.detune", 0.45f}, {"oscA.spread", 0.9f}, {"oscA.level", 0.7f}, {"oscB.on", 1}, {"oscB.table", 0},
@@ -958,6 +975,7 @@ const std::vector<Preset>& factoryPresets() {
         }},
 
         {"BOOM 808", {
+            {"master.mono", 1},
             {"fx.comp.on", 1}, {"fx.comp.thr", -18}, {"fx.comp.att", 0.01f}, {"fx.comp.rel", 0.12f}, {"fx.comp.ratio", 3}, {"oscA.table", 0},
             {"oscA.pos", 0}, {"oscA.level", 0.95f}, {"filter.type", 0}, {"filter.cutoff", 1400}, {"filter.res", 0.05f}, {"env1.a", 0.001f},
             {"env1.d", 1.6f}, {"env1.s", 0}, {"env1.r", 0.35f}, {"env2.a", 0.001f}, {"env2.d", 0.05f}, {"env2.s", 0},

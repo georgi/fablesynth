@@ -4,6 +4,7 @@
 #include "SessionCodec.h"
 #include "DrumRhythmCodec.h"
 #include "AutomationCodec.h"
+#include "SequenceRhythmCodec.h"
 #include "../ui/ArpCodec.h"
 #include "../dsp/Presets.h"
 #include "../bass/dsp/BassPatches.h"
@@ -113,6 +114,12 @@ juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
         tracks.add(juce::var(to));
     }
     root->setProperty("tracks", tracks);
+    if (!s.masterFx.empty()) {
+        auto* fx = new juce::DynamicObject();
+        for (const auto& [id, value] : s.masterFx) fx->setProperty(juce::Identifier(id), value);
+        root->setProperty("masterFx", juce::var(fx));
+    }
+    if (s.masterVol >= 0.0f) root->setProperty("masterVol", s.masterVol);
 
     juce::Array<juce::var> scenes;
     for (const auto& sc : s.scenes) {
@@ -128,6 +135,7 @@ juce::String sessionToJson(const SessionData& s, bool embedFactoryPatches) {
                 if (c.hasDrumRhythm) co->setProperty("drumRhythm", drumRhythmToVar(c));
                 if (!c.automation.empty()) co->setProperty("automation", automationToVar(c.automation));
                 if (c.hasArp) co->setProperty("arp", arpToVar(c.arp));
+                if (c.hasSequenceRhythm) co->setProperty("sequenceRhythm", sequenceRhythmToVar(c.sequenceRhythm));
                 co->setProperty("pattern",
                     juce::Base64::toBase64(c.bytes.data(), c.bytes.size()));
                 clips.add(juce::var(co));
@@ -192,6 +200,11 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
         s.tracks.push_back(std::move(td));
     }
 
+    if (auto* fx = v.getProperty("masterFx", juce::var()).getDynamicObject())
+        for (const auto& prop : fx->getProperties())
+            s.masterFx[prop.name.toString().toStdString()] = (float)prop.value;
+    if (v.hasProperty("masterVol")) s.masterVol = juce::jlimit(0.0f, 1.0f, (float)v.getProperty("masterVol", 0.75));
+
     const juce::var& scenes = v.getProperty("scenes", juce::var());
     if (!scenes.isArray()) return false;
     for (const auto& scv : *scenes.getArray()) {
@@ -214,6 +227,11 @@ bool sessionFromJson(const juce::String& json, SessionData& out) {
                     cd.hasArp = true;
                     if (!arpFromVar(cv["arp"], cd.arp, true)) return false;
                     if (sc.clips.size() >= s.tracks.size() || s.tracks[sc.clips.size()].machine == Machine::DR1) return false;
+                }
+                if (cv.hasProperty("sequenceRhythm")) {
+                    if (sc.clips.size() >= s.tracks.size() || s.tracks[sc.clips.size()].machine == Machine::DR1
+                        || !sequenceRhythmFromVar(cv["sequenceRhythm"], cd.sequenceRhythm)) return false;
+                    cd.hasSequenceRhythm = true;
                 }
                 juce::MemoryOutputStream raw;
                 juce::Base64::convertFromBase64(raw, cv.getProperty("pattern", "").toString());

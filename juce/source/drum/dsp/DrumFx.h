@@ -40,7 +40,12 @@ public:
     // Finding D8: true while the whole chain is bypassed because its input AND
     // its own output have been below kIdleLevel for kIdleHold. Read by the
     // tests (and DrumEngine::activeFxChains) to prove the gate engages.
-    bool isIdle() const { return idle_; }
+    bool isIdle() const { return gate_.idle; }
+    // fx.comp.sc of this strip (DRUM_SC_SOURCES index, 0 = OFF).
+    int keySource() const { return keySource_; }
+    // Key for the next process call (n samples each), or null for silence.
+    void setKey(const float* L, const float* R) { keyL_ = L; keyR_ = R; }
+    const DetectorTrace& compTrace() const { return comp_.trace(); }
     float reverbSize() const { return verbSize_; }
     float reverbSendWeight() const { return verbWet_.target; }
 
@@ -61,10 +66,7 @@ private:
     // is never truncated: the criterion is the measured output level, not
     // whether the pad was triggered. Gating freezes the recursive state instead
     // of clearing it, so re-engaging cannot step by more than kIdleLevel.
-    static constexpr float  kIdleLevel = 1.0e-5f;
-    static constexpr double kIdleHold  = 0.25;
-    bool   idle_ = false;
-    double idleSilent_ = 0;      // samples since input+output were last audible
+    ActivityGate gate_;
 
     // drive
     float driveK_ = 1, drivePre_ = 1, driveNorm_ = 1.0f;
@@ -81,6 +83,9 @@ private:
     PeakGuard headroomInput_, headroomOtt_, headroomComp_, headroomDrive_;
     PeakGuard headroomChorus_, headroomDelay_, headroomReverb_, delayFeedbackGuard_;
     bool compOff_ = true;
+    int keySource_ = 0;
+    const float* keyL_ = nullptr;
+    const float* keyR_ = nullptr;
     // chorus
     double chPhase_ = 0;
     float  chRate_ = 0.6f, chDepth_ = 0.5f;

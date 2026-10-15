@@ -30,3 +30,13 @@
 }
 .control-menu button:disabled { opacity: .45; cursor: default; }
 .control-menu .control-menu-source { padding-left: 24px; }
+.control-menu-sep { height: 1px; margin: 4px 2px; background: #394255; }
+.control-menu .control-menu-remove { display: flex; align-items: center; gap: 8px; }
+.control-menu .control-menu-remove::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--src, #ffdd6b);
+}

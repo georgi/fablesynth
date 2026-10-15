@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { arpNotes, newArp } from '../arp';
+import { arpCompile, arpNotes, newArp } from '../arp';
+import { parseCompSteps } from '../comp';
 import { bootWt, type WtHarness } from './workletHarness';
 
 const state = (h: WtHarness) => h.proc as unknown as { voices: { gate: boolean; note: number }[]; seqPlaying: boolean };
@@ -53,5 +54,41 @@ describe('WT-1 arpeggiator', () => {
     h.send({ t: 'arp', config: config() }); h.send({ t: 'play' }); h.render(10);
     expect(steps(h)).toHaveLength(0);
     expect(state(h).voices.some(v => v.gate)).toBe(false);
+  });
+});
+
+describe('WT-1 chord comping', () => {
+  it('strikes a voicing, holds it through ties and releases it at the end of the run', () => {
+    const h = bootWt({ 'seq.bpm': 120 });
+    const a = { ...newArp(), style: 'comp' as const, gate: .5, ...parseCompSteps('BC - . . . . . . . . . . . . . .') };
+    h.send({ t: 'arp', config: { ...a, ...arpCompile(a, [60, 64, 67], 1) } }); h.send({ t: 'play' });
+    const gated = () => state(h).voices.filter(v => v.gate).map(v => v.note).sort((x, y) => x - y);
+    h.render(20); expect(gated()).toEqual([48, 60, 64, 67]);
+    h.render(50); expect(gated()).toEqual([48, 60, 64, 67]); // 6400 samples: inside the tied step
+    h.render(30); expect(gated()).toEqual([]); // past 1.5 steps
+  });
+  it('strums notes in stack order and clears pending notes on stop', () => {
+    const h = bootWt({ 'seq.bpm': 120 });
+    const a = { ...newArp(), style: 'comp' as const, strum: 20, strumDir: 'down' as const, ...parseCompSteps('C - - - . . . . . . . . . . . .') };
+    h.send({ t: 'arp', config: { ...a, ...arpCompile(a, [60, 64, 67], 1) } }); h.send({ t: 'play' });
+    const gated = () => state(h).voices.filter(v => v.gate).map(v => v.note);
+    h.render(1); expect(gated()).toEqual([67]);
+    h.render(8); expect(gated()).toEqual([67, 64]); // 20 ms = 960 samples per note
+    h.render(8); expect(gated().sort()).toEqual([60, 64, 67]);
+    h.send({ t: 'stop' }); h.send({ t: 'play' }); h.render(1);
+    h.send({ t: 'stop' }); h.render(20);
+    expect(gated()).toEqual([]);
+  });
+});
+
+describe('WT-1 chord-track arp cycle', () => {
+  it('plays a cycle longer than 16 steps with 16-step rhythm lanes', () => {
+    const h = bootWt({ 'seq.bpm': 120 });
+    const notes = Array.from({ length: 32 }, (_, i) => 48 + (i >> 4) * 5);
+    h.send({ t: 'arp', config: { ...newArp(), notes } }); h.send({ t: 'play' });
+    h.render(Math.ceil(48000 * 2.04 / 128));
+    expect(state(h).voices.filter(v => v.gate).map(v => v.note)).toEqual([53]);
+    h.render(Math.ceil(48000 * 2.2 / 128));
+    expect(steps(h).slice(0, 34)).toEqual(Array.from({ length: 34 }, (_, i) => i % 32));
   });
 });

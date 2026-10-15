@@ -119,7 +119,6 @@ export function AccentPanel() {
   return (
     <section className="panel bl-acc-section" data-accent="a">
       <div className="panel-head">
-        <span className="bl-led bl-led-a" aria-hidden="true" />
         <h2>ACCENT · SLIDE</h2>
       </div>
       <div className="knob-row bl-acc-knobs">

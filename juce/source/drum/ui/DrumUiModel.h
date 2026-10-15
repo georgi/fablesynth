@@ -92,4 +92,13 @@ public:
 
 std::unique_ptr<DrumUiModel> makeStandaloneDrumUiModel(DrumAudioProcessor&);
 
+// Auto-EQ: a single pad is never isolated, so only the group strip learns
+// (from the kit output).
+inline AutoEqSource drumAutoEqSource(int pad, const fable::ProgramTap* kitOutput) {
+    if (pad >= 0) return { nullptr, false, "drums", "USE GROUP FX TO LEARN" };
+    return { kitOutput, false, "drums", {} };
+}
+// COMP keys: the kit's own pads by name ("01 KICK"), and in SQ-4 the other tracks.
+SideChainInfo drumSideChain(const DrumUiModel&, bool hosted, const std::vector<std::string>& trackNames);
+
 } // namespace fui

@@ -1,4 +1,5 @@
 #pragma once
+#include "../ui/VisualTimer.h"
 #include "../agent/AgentPanel.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -9,6 +10,7 @@
 #include "ui/SeqFooterView.h"
 #include "ui/DeviceFocusView.h"
 #include "ui/MasterFxView.h"
+#include "ui/SceneChordsOverlay.h"
 #include "../ui/LookAndFeel.h"
 
 #include <functional>
@@ -17,9 +19,9 @@
 // The web's .sq-hint legend line (SeqApp.tsx): tiny contextual key/mouse help
 // under the rack. Text comes from a provider so the quant value stays current;
 // 2 Hz repaint is plenty for copy changes.
-class HintBar : public juce::Component, private juce::Timer {
+class HintBar : public juce::Component, private fui::VisualTimer {
 public:
-    HintBar() { startTimerHz(2); setInterceptsMouseClicks(false, false); }
+    HintBar() { startVisualTimer(*this, 2); setInterceptsMouseClicks(false, false); }
     ~HintBar() override { stopTimer(); }
     void setProvider(std::function<juce::String()> p) { provider_ = std::move(p); repaint(); }
     void paint(juce::Graphics& g) override {
@@ -53,30 +55,15 @@ private:
 // focus enter/exit animation either.
 class SeqRack : public juce::Component {
 public:
+    // One logical height for both views, so opening a device never resizes
+    // the window: the session grid's height (six 73 px rows). Top to bottom
+    // (see applyLayout()): header 14 + 44; heads row 67 + 60; content top 136;
+    // content 550 (taller device bodies such as BASS scroll); gap 8; hint 14;
+    // margin 14. 136 + 550 + 8 + 14 + 14 = 722.
     static constexpr int LW = 1290, LH = 722;
-    // Focus-mode logical height. The web rack auto-grows to viewport height
-    // in focus mode (SeqApp.tsx); the JUCE analogue grows the editor window
-    // instead (see SeqEditor::enterFocus/exitFocus). Derivation, top to
-    // bottom of the focus rack (see SeqRack::applyLayout()'s focus geometry):
-    //   header            14 + 44           = 58  (bottom)
-    //   heads row         67 + 60           = 127 (bottom; kept in focus so
-    //                                                the row can switch
-    //                                                instruments)
-    //   content top                         = 136
-    //   DeviceFocusView                     + 800 (38 toolbar + content, sized
-    //                                                so BASS -- 1290x931
-    //                                                logical, the tallest
-    //                                                hosted body -- renders
-    //                                                at ~0.92 scale, near-1:1)
-    //   gap                                 + 8
-    //   hint line                           + 14
-    //   bottom margin                       + 14
-    //   ----------------------------------------------
-    //   136 + 800 + 8 + 14 + 14             = 972
-    static constexpr int LHF = 972;
     explicit SeqRack(SeqAudioProcessor&);
     void resized() override;
-    int logicalHeight() const { return focusMode_ ? LHF : LH; }
+    int logicalHeight() const { return LH; }
 
     fui::SeqHeader& getHeader() { return header; }
     fui::TrackHeadsView& getHeads() { return trackHeads; }
@@ -84,11 +71,13 @@ public:
     fui::SeqFooterView& getFooter() { return footer; }
     fui::DeviceFocusView& getDeviceFocus() { return deviceFocus; }
     HintBar& getHint() { return hint; }
+    fui::SceneChordsOverlay& getSceneChords() { return sceneChords; }
 
     void enterFocus(int track, int scene);
     void exitFocus();
     void setFocusScene(int scene);
     void toggleMasterFx();
+    bool masterFxOpen() const { return masterFxMode_; }
 
 private:
     fui::SeqHeader header;
@@ -98,6 +87,7 @@ private:
     fui::DeviceFocusView deviceFocus;
     fui::MasterFxView masterFx;
     HintBar hint;
+    fui::SceneChordsOverlay sceneChords; // scene progression picker, over the whole rack
 
     void applyLayout();
 
@@ -132,8 +122,6 @@ public:
 
 private:
     int clampScene(int s) const;
-    void growToFocusSize();
-    void shrinkToSessionSize();
 
     fui::DarkLNF lnf;
     SeqAudioProcessor& proc_;

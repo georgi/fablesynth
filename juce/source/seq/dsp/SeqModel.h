@@ -18,12 +18,27 @@
 
 namespace fable {
 
+// Web melodic POLY settings (src/shared/sequenceRhythm.ts). Played by the hosted WT-1 / BL-1 clip clock (ClipHost).
+struct SequenceRhythm {
+    bool enabled = false;
+    bool fit = false;       // false = "grid", true = "fit"
+    int steps = 16;         // 1..16
+    int rotation = 0;       // 0..steps-1
+    int cycleBeats = 4;     // 4 or 8
+};
+inline bool validSequenceRhythm(const SequenceRhythm& r) {
+    return r.steps >= 1 && r.steps <= 16 && r.rotation >= 0 && r.rotation < r.steps
+        && (r.cycleBeats == 4 || r.cycleBeats == 8);
+}
+
 struct ClipData {
     std::string name;
     int bars = 1;
     std::vector<uint8_t> bytes;
     bool hasArp = false;
     ArpSettings arp;
+    bool hasSequenceRhythm = false;
+    SequenceRhythm sequenceRhythm{};
     bool hasDrumRhythm = false;
     DrumRhythm drumRhythm{};
     uint16_t drumConfiguredLanes = 0;
@@ -79,6 +94,10 @@ struct SessionData {
     Quant quant = Quant::Bar;
     std::vector<TrackData> tracks;
     std::vector<SceneData> scenes;
+    // Optional master section, keyed like the web ("master.fx.eq.on" …).
+    // Empty / negative means the session does not store it.
+    std::map<std::string, float> masterFx;
+    float masterVol = -1.0f;
 };
 
 // Returns "" when valid, else a human-readable reason. Port of
@@ -98,6 +117,8 @@ inline std::string validateSession(const SessionData& doc) {
             if (!validDrumClip(c, doc.tracks[t].machine)) return "invalid drum rhythm";
             if (c.hasArp && (doc.tracks[t].machine == Machine::DR1 || !validArpSettings(c.arp, true)))
                 return "invalid clip arpeggiator";
+            if (c.hasSequenceRhythm && (doc.tracks[t].machine == Machine::DR1 || !validSequenceRhythm(c.sequenceRhythm)))
+                return "invalid melodic rhythm";
             if (!(c.bars >= 1 && c.bars <= SQ_MAX_BARS))
                 return "scene " + std::to_string(s) + " track " + std::to_string(t) + ": bars out of range";
             const int want = c.bars * sqBytesPerBar(doc.tracks[t].machine);

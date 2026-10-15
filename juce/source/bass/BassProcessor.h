@@ -8,6 +8,7 @@
 #include "dsp/BassParams.h"
 #include "dsp/BassPatches.h"
 #include "../ui/ProgramDirty.h"
+#include "../ui/BrowserParams.h"
 
 #include <array>
 #include <atomic>
@@ -62,6 +63,14 @@ public:
     // Edited-since-patch-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
 
+    // ---- preset browser (message thread) ----
+    // A patch is params + patterns + chain, so a snapshot restores all of them,
+    // the program index and the dirty flag. restoreSound() also serves VARY.
+    std::vector<float> captureParamValues();
+    void restoreSound(int program, const std::vector<float>& values, const std::vector<uint8_t>& patterns,
+                      int chainBars, int editPattern, bool dirty);
+    bool isHostPlaying() const { return hostPlaying_.load(); }
+
     // ---- audition / transport (message thread -> engine via the command FIFO) ----
     void noteOn(int semi, float vel);             // UI keyboard audition
     void noteOff(int semi);
@@ -80,6 +89,9 @@ public:
     void setSeqStep(int pattern, int step, const fable::BassSeqStep& s);
     const std::vector<int>& getChain() const { return chain_; }
     void setChain(std::vector<int> c);
+    // Melodic POLY (web store sequenceRhythm): persisted with the sequence.
+    fable::SequenceRhythm getSequenceRhythm() const { return seqRhythm_; }
+    void setSequenceRhythm(const fable::SequenceRhythm&);
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
     fable::ArpSettings getArpSettings() const { return arpSettings_; }
@@ -98,6 +110,9 @@ public:
 
     // ---- HUD feeds ----
     void  readScope(float* dst, int n) const;         // post-FX ring buffer
+    // Post-FX output (MAIN for DR-1) as a lock-free stereo stream for
+    // auto-EQ and other message-thread analysis (dsp/AnalysisTap.h).
+    const fable::ProgramTap& outputTap() const { return *outputTap_; }
     float getVizPos() const { return vizPos_.load(); }
     float getVizEnv() const { return vizEnv_.load(); }
     float getVizFenv() const { return vizFenv_.load(); }
@@ -106,6 +121,7 @@ public:
     bool  getMidiActive() const { return midiGlow_.load() > 0; }
     double getCurrentSr() const { return currentSr_.load(); }
     fable::FxTelemetry fxTelemetry() const { return fx.telemetry(); }
+    const fable::DetectorTrace& compTrace() const { return fx.compTrace(); }
 
 private:
     fable::AudioMeter agentOutputMeter_;
@@ -123,7 +139,7 @@ private:
     fable::ArpMailbox arpLiveMailbox_;
     mutable fable::ArpSettings arpLive_ = fable::bassArpDefaults();
     mutable uint32_t arpLiveVersion_ = 0;
-    void applyArp() { engine.setArp(arpInput_.pattern()); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    void applyArp() { engine.setArp(arpInput_.pattern(engine.chainLength())); engine.setSeqScale(arpInput_.settings.enabled ? fable::ScaleMap {} : fable::scaleMap(arpInput_.settings, engine.chainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
     fable::BassFx fx;
     std::vector<fable::TablePtr> tables_;
 
@@ -141,7 +157,9 @@ private:
     mutable std::mutex shareMutex_;
     std::array<uint8_t, fable::BL_PATTERN_BYTES> patternsShared_{};
     std::vector<int> chainShared_{0};
-    bool patternsDirty_ = false, chainDirty_ = false;
+    bool patternsDirty_ = false, chainDirty_ = false, rhythmDirty_ = false;
+    fable::SequenceRhythm seqRhythm_{}, seqRhythmShared_{};
+    void publishSequenceRhythm(const fable::SequenceRhythm&);
 
     int editPattern_ = 0;
     int currentProgram_ = 0;
@@ -151,7 +169,7 @@ private:
     std::atomic<bool> seqPlaying_{false};
     std::atomic<bool> seqEnabled_{true};   // SEQUENCER tab LED
     std::atomic<int> curStep_{-1}, curPattern_{0}, curSemi_{-100};
-    std::atomic<bool> hostSynced_{false};
+    std::atomic<bool> hostSynced_{false}, hostPlaying_{false};
     std::atomic<double> hostBpm_{0.0};
     std::atomic<float> vizPos_{-1.0f}, vizEnv_{0.0f}, vizFenv_{0.0f}, vizCut_{-1.0f};
     std::atomic<bool> vizGate_{false};
@@ -160,6 +178,7 @@ private:
 
     static constexpr int kScopeSize = 4096; // power of two
     std::array<float, kScopeSize> scopeBuf_{};
+    std::unique_ptr<fable::ProgramTap> outputTap_ = std::make_unique<fable::ProgramTap>();
     std::atomic<int> scopeW_{0};
 
     juce::AudioBuffer<float> scratch_; // R backing when the host gives us mono

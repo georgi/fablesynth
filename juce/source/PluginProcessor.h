@@ -10,6 +10,7 @@
 #include "dsp/Presets.h"
 #include "dsp/UserTables.h"
 #include "ui/ProgramDirty.h"
+#include "ui/BrowserParams.h"
 #include "ui/WtUiModel.h"
 #include <limits>
 #include "ui/StepEditOps.h"
@@ -49,7 +50,17 @@ public:
 
     // Edited-since-preset-load flag for the header's dirty dot.
     bool isProgramDirty() const { return programDirty_.isDirty(); }
+
+    // ---- preset browser (message thread) ----
+    // Snapshot = every parameter's plain value + the program index + the dirty
+    // flag. restoreSound() also serves VARY (same program, edited values, dirty).
+    std::vector<float> captureParamValues();
+    void restoreSound(int program, const std::vector<float>& values, bool dirty);
+    // Audition note on the lock-free command FIFO; bypasses the arp.
+    void auditionNote(int note, bool on);
+    bool isHostPlaying() const { return hostPlaying.load(); }
     fable::FxTelemetry fxTelemetry() const { return fx.telemetry(); }
+    const fable::DetectorTrace& compTrace() const { return fx.compTrace(); }
 
     // ---- wavetable visualization feed (read on the message thread) ----
     // The live modulated frame position per oscillator is published from the
@@ -87,6 +98,13 @@ public:
     // Add a freshly built table; returns its combined table index (or -1 if full).
     int  addUserTable(fable::UserTable table);
     void deleteUserTable(int poolIndex);
+    // Load an imported preset (serumimport JSON): its tables go into pool
+    // slots reserved for imported presets (reused in place, so the user's own
+    // tables keep their indices), then every parameter is set. key identifies
+    // the preset for the browser; empty on failure with error set.
+    bool loadImportedPreset(const juce::String& key, const std::vector<std::pair<std::string, float>>& params,
+                            const std::vector<fable::UserTable>& presetTables, juce::String& error);
+    const juce::String& loadedImportedKey() const { return importedKey_; }
     void renameUserTable(int poolIndex, std::string name);
     void updateUserTable(int poolIndex, fable::UserTable u); // in-place replace, keeps index
     int  duplicateUserTable(int poolIndex);   // returns new combined index, or -1
@@ -99,6 +117,9 @@ public:
     double getCurrentSr()  const { return currentSr.load(); }
     // Copy the most recent n post-FX mono samples (oldest -> newest) into dst.
     void   readScope(float* dst, int n) const;
+    // Post-FX output (MAIN for DR-1) as a lock-free stereo stream for
+    // auto-EQ and other message-thread analysis (dsp/AnalysisTap.h).
+    const fable::ProgramTap& outputTap() const { return *outputTap_; }
 
     // ---- note sequencer (BL-1 conventions) --------------------------------
     // Transport: message thread -> engine via a lock-free command FIFO.
@@ -134,6 +155,9 @@ public:
     void setSeqStep(int pattern, int step, const fable::NoteSeqStep& s);
     const std::vector<int>& getChain() const { return chain_; }
     void setChain(std::vector<int> c);
+    // Melodic POLY (web store sequenceRhythm): persisted with the sequence.
+    fable::SequenceRhythm getSequenceRhythm() const { return seqRhythm_; }
+    void setSequenceRhythm(const fable::SequenceRhythm&, bool markEdited = true);
     int  getEditPattern() const { return editPattern_; }
     void setEditPattern(int p);
 
@@ -165,17 +189,21 @@ private:
     // HUD feeds
     static constexpr int kScopeSize = 4096; // power of two
     std::array<float, kScopeSize> scopeBuf{};
+    std::unique_ptr<fable::ProgramTap> outputTap_ = std::make_unique<fable::ProgramTap>();
     std::atomic<int> scopeW{0};
     std::atomic<int> voiceCount{0};
     std::atomic<int> midiGlow{0};
     std::atomic<double> currentSr{48000.0};
     std::array<std::atomic<float>*, fable::NUM_PARAMS> rawParams{};
     int currentProgram = 0;
+    std::vector<int> importedSlots_;   // user-table pool slots owned by imported presets
+    juce::String importedKey_;         // imported preset loaded now (empty: a factory program)
     bool prepared = false;
     fui::ProgramDirtyTracker programDirty_{*this};
 
     // ---- note sequencer bridge (BassAudioProcessor scheme) ----
-    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic, CmdArpClear, CmdArpKeyOn = 128, CmdArpKeyOff = 256 };
+    enum CmdType { CmdPlay = 0, CmdStop, CmdPanic, CmdArpClear, CmdArpKeyOn = 128, CmdArpKeyOff = 256,
+                   CmdAuditionOn = 384, CmdAuditionOff = 512 };
     fable::ArpSettings arpSettings_;
     fable::ArpMailbox arpMailbox_;
     fable::ArpInput arpInput_;
@@ -183,7 +211,12 @@ private:
     fable::ArpMailbox arpLiveMailbox_;
     mutable fable::ArpSettings arpLive_;
     mutable uint32_t arpLiveVersion_ = 0;
-    void applyArp() { engine.setArp(arpInput_.pattern()); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    void applyArp() { engine.setArp(arpInput_.pattern(engine.seqChainLength())); engine.setSeqScale(arpInput_.settings.enabled ? fable::ScaleMap {} : fable::scaleMap(arpInput_.settings, engine.seqChainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    // Audio thread: a MIDI performance controller sets its source parameter.
+    void setPerformanceParam(int pid, float v) {
+        if (auto* raw = rawParams[(size_t)pid]) raw->store(v);
+        engine.paramTargets()[(size_t)pid] = v;
+    }
     juce::AbstractFifo cmdFifo_{64};
     std::array<int, 64> cmds_{};
 
@@ -193,7 +226,8 @@ private:
     mutable std::mutex shareMutex_;
     std::vector<uint8_t> patternsShared_ = fable::makeEmptySeqPatterns();
     std::vector<int> chainShared_{0};
-    bool patternsDirty_ = false, chainDirty_ = false, automationDirty_=false;
+    bool patternsDirty_ = false, chainDirty_ = false, automationDirty_=false, rhythmDirty_ = false;
+    fable::SequenceRhythm seqRhythm_{}, seqRhythmShared_{};
     std::vector<fable::AutoLane> automation_;
     fable::StepEditHistory<std::vector<fable::AutoLane>> automationHistory_{50};
     std::unique_ptr<fable::AutoBank> automationShared_=std::make_unique<fable::AutoBank>();
@@ -219,11 +253,27 @@ public:
     fui::ParameterSource parameters() override;
     fable::FxTelemetry fxTelemetry(int, int) const override { return proc.fxTelemetry(); }
     fui::DeviceUiCapabilities capabilities() const override { return {}; }
+    fui::AutoEqSource autoEqSource(int) const override { return { &proc.outputTap(), false, "lead", {} }; }
+    fui::AutoCompSource autoCompSource(int) const override { return { &proc.compTrace(), "level", {} }; }
+    double analysisSampleRate() const override { return proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000; }
+    std::optional<double> analysisTempo() const override {
+        return hostSynced() ? std::optional<double>(hostBpm()) : std::nullopt;
+    }
     fable::ArpSettings arpSettings() const override { return proc.getArpSettings(); }
     void setArpSettings(const fable::ArpSettings& a) override { proc.setArpSettings(a); }
     fable::ArpSettings arpLiveSettings() const override { return proc.getLiveArp(); }
     bool seqEnabled() const override { return proc.isSeqEnabled(); }
     void setSeqEnabled(bool on) override { proc.setSeqEnabled(on); }
+    bool supportsSequencePoly() const override { return true; }
+    fui::SeqPolySettings sequencePoly() const override {
+        const auto r = proc.getSequenceRhythm();
+        fui::SeqPolySettings out; out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+        out.rotation = r.rotation; out.cycleBeats = r.cycleBeats; return out;
+    }
+    void setSequencePoly(const fui::SeqPolySettings& p) override {
+        fable::SequenceRhythm r; r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps;
+        r.rotation = p.rotation; r.cycleBeats = p.cycleBeats; proc.setSequenceRhythm(r);
+    }
     void clearArpKeys() override { proc.clearArpKeys(); }
     void arpKeyInput(int n, bool on) override { proc.arpKeyInput(n, on); }
     bool programDirty() const override;

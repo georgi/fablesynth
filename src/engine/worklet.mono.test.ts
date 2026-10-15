@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { bootWt, type WtHarness } from './workletHarness';
+import { scaleMask, scaleRemap } from '../scales';
 
 const g = globalThis as unknown as { currentFrame: number };
 const peak = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
@@ -151,5 +152,69 @@ describe('held stack survives mono<->poly flips', () => {
     h.send({ t: 'off', n: 64 });           // no keys held anywhere
     h.render(200);
     expect(gated(h)).toHaveLength(0);      // stuck note if held=[57] leaked
+  });
+});
+
+describe('mono without legato (Serum MONO)', () => {
+  beforeEach(() => { g.currentFrame = 0; });
+
+  it('a new note retriggers the envelope of the single mono voice', () => {
+    const h = bootWt({ 'master.mono': 1, 'master.legato': 0, 'env1.a': 0.01, 'env1.d': 0.05, 'env1.s': 0.5 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    h.render(200); // 533 ms: past the attack, in sustain
+    h.send({ t: 'on', n: 64, v: 1 });
+    h.render(1);
+    expect(gated(h)).toHaveLength(1);
+    expect(gated(h)[0]!.note).toBe(64);
+    expect(gated(h)[0]!.ampEnv.state).toBe(1);
+  });
+
+  it('releasing the top note retriggers on the held note', () => {
+    const h = bootWt({ 'master.mono': 1, 'master.legato': 0, 'env1.a': 0.001, 'env1.d': 0.05, 'env1.s': 0.5 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    h.send({ t: 'on', n: 64, v: 1 });
+    h.render(100); // settled at sustain
+    h.send({ t: 'off', n: 64 });
+    h.render(1);
+    const v = gated(h)[0]!;
+    expect(v.note).toBe(60);
+    expect(v.ampEnv.state).not.toBe(3); // attack/decay again, not sustain
+  });
+
+  it('legato stays the default: no retrigger', () => {
+    const h = bootWt({ 'master.mono': 1, 'env1.a': 0.001, 'env1.s': 0.5, 'env1.d': 0.05 });
+    h.send({ t: 'on', n: 60, v: 1 });
+    h.render(100);
+    h.send({ t: 'on', n: 64, v: 1 });
+    h.render(1);
+    expect(gated(h)[0]!.ampEnv.state).toBe(3);
+  });
+});
+
+describe('hosted clip scale mode', () => {
+  const clip = (semis: number[]) => {
+    const data = new Uint8Array(16 * 8 * 3);
+    semis.forEach((semi, step) => { const o = step * 8 * 3; data[o] = 1 | (1 << 2); data[o + 1] = semi; data[o + 2] = 1; });
+    return data;
+  };
+  const play = (scale?: number[][]) => {
+    g.currentFrame = 0;
+    const h = bootWt();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: clip([6, 6]).buffer, bars: 1, atFrame: 0, scale });
+    h.render(4);
+    const first = gated(h).map(v => v.note);
+    h.render(47); // 6000-frame steps: step 1 fires inside this span
+    return [first, gated(h).map(v => v.note)];
+  };
+  it('plays written notes unchanged without a map', () => {
+    expect(play()).toEqual([[54], [54]]);
+  });
+  it('snaps notes to the scale the map holds at each sixteenth', () => {
+    const cMajor = scaleRemap(scaleMask(0, 'major'));
+    const gMajor = scaleRemap(scaleMask(7, 'major'));
+    expect(play([cMajor])).toEqual([[53], [53]]); // F♯ → F
+    expect(play([cMajor, gMajor])).toEqual([[53], [54]]); // the second sixteenth allows F♯
   });
 });

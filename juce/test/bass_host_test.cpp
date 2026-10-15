@@ -5,10 +5,17 @@
 // headless editor render. Modeled on drum_host_test.cpp.
 #include "../source/bass/BassProcessor.h"
 #include "FxUiChecks.h"
+#include "AutoMixUiChecks.h"
+#include "LiveSpectrumChecks.h"
+#include "BassSeqCacheChecks.h"
+#include "BassKeysCacheChecks.h"
 #include "AgentProcessorChecks.h"
 #include "NoteDrawChecks.h"
 #include "ArpProcessorChecks.h"
+#include "BrowserChecks.h"
 #include "../source/bass/BassEditor.h"
+#include "../source/ui/SequencePolyStrip.h"
+#include "../source/bass/ui/BassStandaloneBackend.h"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -59,8 +66,19 @@ static void writePng(const juce::Image& img, const juce::File& out) {
     }
 }
 
+static juce::Button* findNamedButton(juce::Component& root, const juce::String& name) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        auto* child = root.getChildComponent(i);
+        if (auto* button = dynamic_cast<juce::Button*>(child); button != nullptr && button->getName() == name) return button;
+        if (auto* nested = findNamedButton(*child, name)) return nested;
+    }
+    return nullptr;
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI juceInit; // message manager for the processor
+    check(runBassSeqCacheChecks(), "bass sequencer cache parity and invalidation");
+    check(runBassKeysCacheChecks(), "bass keys and panels cache parity and invalidation");
 
     BassAudioProcessor proc;
     const double sr = 48000;
@@ -317,7 +335,7 @@ int main(int argc, char** argv) {
         ed->setSize(BassRack::LW, BassRack::LH); // logical rack size — 1:1 render
         juce::Image img = ed->createComponentSnapshot(ed->getLocalBounds());
         check(img.isValid() && img.getWidth() == BassRack::LW && img.getHeight() == BassRack::LH,
-              "snapshot rendered at 1460x931", img.getWidth());
+              "snapshot rendered at the logical rack size", img.getWidth());
         // The full-rack device body also occupies the header's coordinates.
         // The header must remain above it or the patch stepper cannot be clicked.
         const int programBeforeClick = proc.getCurrentProgram();
@@ -343,13 +361,41 @@ int main(int argc, char** argv) {
             { "env view",     1240, 200 },
             { "lfo view",      120, 420 },
             { "accent knobs",  420, 430 },
-            { "keys",         1000, 980 },
-            { "seq lanes",     700, 750 },
-            { "seq controls",  400, 665 },
+            { "keys",         1000, 660 },
         };
         for (const auto& p : probes) {
             const juce::Colour bg = img.getPixelAt(8, p.y);
             check(img.getPixelAt(p.x, p.y) != bg, p.name, (double)p.x);
+        }
+
+        // All four page tabs share one content height, so switching pages
+        // never changes the BL-1 body extent (standalone or in SQ-4).
+        {
+            BassDeviceBody* body = nullptr;
+            for (auto* c : bassEd->getRack().getChildren())
+                if (auto* b = dynamic_cast<BassDeviceBody*>(c)) body = b;
+            check(body != nullptr, "rack hosts the BL-1 device body");
+            if (body) {
+                std::vector<int> bottoms;
+                int tab = 0;
+                for (auto* c : body->getChildren()) {
+                    auto* button = dynamic_cast<juce::TextButton*>(c);
+                    if (!button || button->getRadioGroupId() == 0) continue;
+                    button->onClick();
+                    int bottom = 0;
+                    for (auto* child : body->getChildren())
+                        if (child->isVisible() && child->getY() > button->getBottom())
+                            bottom = std::max(bottom, child->getBottom());
+                    bottoms.push_back(bottom);
+                    writePng(ed->createComponentSnapshot(ed->getLocalBounds()),
+                             dir.getChildFile("bass_page_" + juce::String(tab++) + ".png"));
+                }
+                bool same = bottoms.size() == 4;
+                for (int b : bottoms) same = same && b == bottoms.front();
+                check(same, "all four BL-1 pages share one height",
+                      bottoms.empty() ? 0.0 : (double)bottoms.front());
+                for (int b : bottoms) printf("    page bottom %d\n", b);
+            }
         }
 
         // ---- 12. pitch seq view: web store semantics ----
@@ -359,6 +405,24 @@ int main(int argc, char** argv) {
         proc.setChain({ 0 });
 
         check(checkNoteDrawing(seq, proc), "empty-grid draw: length, pitch, cancel, undo, tap, bounds", 0);
+
+        // PATTERN PRESET: the catalog's first line (ACID ROLLER) fills all
+        // four bars and sets the length; the combo returns to its prompt.
+        {
+            juce::ComboBox* presets = nullptr;
+            for (auto* c : seq.getChildren()) if (auto* b = dynamic_cast<juce::ComboBox*>(c)) presets = b;
+            check(presets != nullptr && presets->isVisible(), "pitch seq offers a pattern preset catalog");
+            if (presets) {
+                const int programBefore = proc.getCurrentProgram();
+                presets->setSelectedId(1, juce::sendNotificationSync);
+                const auto first = proc.getSeqStep(0, 0);
+                check(first.on && first.note == 0 && first.acc && proc.getChain().size() == 4,
+                      "pattern preset loads its notes and length", (double)proc.getChain().size());
+                check(proc.getCurrentProgram() == programBefore && presets->getSelectedId() == 0,
+                      "pattern preset keeps the patch and resets the prompt");
+                proc.setChain({ 0 });
+            }
+        }
 
         // toggleCell: tap = set note, tap same lane again = rest
         fable::BassSeqStep offStep;
@@ -448,13 +512,16 @@ int main(int argc, char** argv) {
         srcStep.slide = true; srcStep.duration = 2;
         proc.setSeqStep(2, 0, srcStep);
         const int allLanes = fable::BL_NOTE_LANES - 1;
-        auto selCols = [&](int a, int b) { seq.setSelection({ a, b, 0, allLanes }); };
+        // The grid is one timeline of every chained bar (PitchSeq.tsx): with
+        // the chain at {0, 1, 2}, pattern 2 is bar 3 and starts at step 32.
+        const int B2 = 2 * fable::BL_STEPS;
+        auto selCols = [&](int a, int b) { seq.setSelection({ B2 + a, B2 + b, 0, allLanes }); };
 
         check(!seq.hasSelection(), "no selection by default");
         selCols(0, 0);
         {
             const auto r = seq.selection();
-            check(seq.hasSelection() && r.stepLo == 0 && r.stepHi == 0 && r.noteLo == 0 && r.noteHi == allLanes,
+            check(seq.hasSelection() && r.stepLo == B2 && r.stepHi == B2 && r.noteLo == 0 && r.noteHi == allLanes,
                   "setSelection stores a step-by-note rectangle");
         }
         seq.setSelection({ 3, 0, 9, 4 }); // anchor/head unnormalized
@@ -466,8 +533,8 @@ int main(int argc, char** argv) {
         seq.selectAllCells();
         {
             const auto r = seq.selection();
-            check(r.stepLo == 0 && r.stepHi == fable::BL_STEPS - 1 && r.noteLo == 0 && r.noteHi == allLanes,
-                  "Cmd-A selects the whole grid");
+            check(r.stepLo == 0 && r.stepHi == seq.timelineSteps() - 1 && r.noteLo == 0 && r.noteHi == allLanes,
+                  "Cmd-A selects the whole timeline");
         }
         seq.clearSelection();
         check(!seq.hasSelection(), "Esc/clearSelection drops the selection");
@@ -517,7 +584,7 @@ int main(int argc, char** argv) {
         seq.duplicateSel();
         check(stepsEqual(proc.getSeqStep(2, 10), d0) && stepsEqual(proc.getSeqStep(2, 11), d1),
               "duplicate copies the rect right after the range");
-        check(seq.selection().stepLo == 10 && seq.selection().stepHi == 11,
+        check(seq.selection().stepLo == B2 + 10 && seq.selection().stepHi == B2 + 11,
               "duplicate moves the selection onto the copy");
 
         // -- duplicate with no selection: copy pattern to next bar, extending
@@ -561,20 +628,23 @@ int main(int argc, char** argv) {
               "block move lands the range at the destination");
         check(!proc.getSeqStep(2, 2).on && !proc.getSeqStep(2, 3).on,
               "block move vacates the source range");
-        check(seq.selection().stepLo == 10 && seq.selection().stepHi == 11,
+        check(seq.selection().stepLo == B2 + 10 && seq.selection().stepHi == B2 + 11,
               "selection follows the moved range");
 
-        seq.commitBlockMove(+8, 0, false); // overshoot: delta clamps so the range ends flush
-        check(stepsEqual(proc.getSeqStep(2, 14), sa) && stepsEqual(proc.getSeqStep(2, 15), sb),
-              "block move clamps so the whole range lands flush with the end");
-        check(seq.selection().stepLo == 14 && seq.selection().stepHi == 15,
+        // Overshoot: the delta clamps so the range ends flush with the
+        // timeline end, crossing the bar line into pattern 3.
+        const int lastStep = seq.timelineSteps() - 1;
+        seq.commitBlockMove(+100, 0, false);
+        check(stepsEqual(proc.getSeqStep(3, 14), sa) && stepsEqual(proc.getSeqStep(3, 15), sb),
+              "block move crosses bars and clamps flush with the timeline end");
+        check(seq.selection().stepLo == lastStep - 1 && seq.selection().stepHi == lastStep,
               "block move clamp keeps content and selection in agreement");
 
         seq.clearSelection();
-        selCols(14, 14);
-        seq.commitBlockMove(-14, 0, true); // Alt = copy to step 0
+        seq.setSelection({ lastStep - 1, lastStep - 1, 0, allLanes });
+        seq.commitBlockMove(B2 - (lastStep - 1), 0, true); // Alt = copy back to pattern 2, step 0
         check(stepsEqual(proc.getSeqStep(2, 0), sa), "block copy writes the destination");
-        check(stepsEqual(proc.getSeqStep(2, 14), sa), "block copy preserves the source");
+        check(stepsEqual(proc.getSeqStep(3, 14), sa), "block copy preserves the source");
 
         seq.clearSelection();
         selCols(0, 0);
@@ -586,7 +656,7 @@ int main(int argc, char** argv) {
         proc.setEditPattern(2);
         for (int i = 0; i < fable::BL_STEPS; ++i) proc.setSeqStep(2, i, {});
         { fable::BassSeqStep n; n.on = true; n.note = 4; n.slide = true; n.acc = true; n.duration = 2; proc.setSeqStep(2, 5, n); }
-        seq.commitNoteMove(5, 4, 8, 7, false);
+        seq.commitNoteMove(B2 + 5, 4, B2 + 8, 7, false);
         check(!proc.getSeqStep(2, 5).on, "note drag clears the source step");
         {
             const auto d = proc.getSeqStep(2, 8);
@@ -597,11 +667,11 @@ int main(int argc, char** argv) {
         // -- ghost paste (CUT): source clears only on drop, one undo entry --
         for (int i = 0; i < fable::BL_STEPS; ++i) proc.setSeqStep(2, i, {});
         { fable::BassSeqStep n; n.on = true; n.note = 5; n.slide = true; proc.setSeqStep(2, 4, n); }
-        seq.setSelection({ 4, 4, 5, 5 });
+        seq.setSelection({ B2 + 4, B2 + 4, 5, 5 });
         seq.beginGhostPaste(true);
         check(seq.ghostActive() && !seq.hasSelection(), "CUT begins a ghost and closes the selection");
         check(proc.getSeqStep(2, 4).on, "CUT ghost leaves the source until drop");
-        seq.dropGhost(9, 5);
+        seq.dropGhost(B2 + 9, 5);
         check(!seq.ghostActive() && !proc.getSeqStep(2, 4).on
               && proc.getSeqStep(2, 9).on && proc.getSeqStep(2, 9).slide,
               "CUT ghost clears the source and lands the moved cell (slide kept) on drop");
@@ -640,8 +710,8 @@ int main(int argc, char** argv) {
 
         check(seq.keyPressed(juce::KeyPress('A', juce::ModifierKeys(juce::ModifierKeys::commandModifier), 'A')),
               "Cmd-A handled");
-        check(seq.selection().stepLo == 0 && seq.selection().stepHi == fable::BL_STEPS - 1,
-              "Cmd-A (via keyPressed) selects the whole grid");
+        check(seq.selection().stepLo == 0 && seq.selection().stepHi == seq.timelineSteps() - 1,
+              "Cmd-A (via keyPressed) selects the whole timeline");
         check(seq.keyPressed(juce::KeyPress(juce::KeyPress::escapeKey, juce::ModifierKeys(), 0)),
               "Esc handled");
         check(!seq.hasSelection(), "Esc (via keyPressed) clears the selection");
@@ -668,10 +738,154 @@ int main(int argc, char** argv) {
         check(!proc.getSeqStep(2, 11).on, "redo (via keyPressed) re-applies the delete");
         check(!seq.keyPressed(juce::KeyPress('Q', juce::ModifierKeys(), 'q')),
               "an unclaimed plain key falls through unhandled");
+
+        // -- timeline: every chained bar on screen, selections span bar lines --
+        {
+            proc.setChain({ 0, 1, 2, 3 });
+            for (int pat = 0; pat < 4; ++pat) for (int i = 0; i < fable::BL_STEPS; ++i) proc.setSeqStep(pat, i, {});
+            fable::BassSeqStep a; a.on = true; a.note = 2; a.acc = true;
+            fable::BassSeqStep b; b.on = true; b.note = 5; b.slide = true;
+            proc.setSeqStep(0, 15, a); proc.setSeqStep(1, 0, b);
+            check(seq.timelineSteps() == 64, "four chained bars give a 64-step timeline", seq.timelineSteps());
+            seq.setSelection({ 15, 16, 0, allLanes });
+            seq.duplicateSel();
+            check(stepsEqual(proc.getSeqStep(1, 1), a) && stepsEqual(proc.getSeqStep(1, 2), b),
+                  "a selection across the bar line duplicates both cells");
+            seq.toggleCell(40, 7);
+            check(proc.getSeqStep(2, 8).on && proc.getSeqStep(2, 8).note == 7, "timeline step 40 edits bar 3, step 9");
+            seq.resizeStep(40, 12);
+            check(proc.getSeqStep(2, 8).duration == 12, "a note may run across the bar line", proc.getSeqStep(2, 8).duration);
+            seq.setSize(1180, seq.getHeight()); seq.resized();
+            const int colW = seq.colBounds(1).getX() - seq.colBounds(0).getX();
+            check(colW >= 32, "64 columns keep the web 32 px pitch", colW);
+            seq.patternClick(3);
+            check(seq.scrollX() > 0 && seq.colBounds(48).getX() >= seq.gridBounds().getX(),
+                  "a bar chip scrolls its bar into view", seq.scrollX());
+            const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+            vis.createDirectory();
+            seq.patternClick(0);
+            writePng(seq.createComponentSnapshot(seq.getLocalBounds()), vis.getChildFile("bl1-timeline-4bars.png"));
+            proc.setChain({ 0 });
+        }
+
+        // -- standalone melodic POLY: the strip edits the processor's rhythm,
+        //    shares the note undo history and persists in plugin state --
+        {
+            fui::SequencePolyStrip* strip = nullptr;
+            for (auto* c : seq.getChildren()) if (auto* p = dynamic_cast<fui::SequencePolyStrip*>(c)) strip = p;
+            check(strip && strip->isVisible(), "standalone BL-1 shows the POLY strip");
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                strip->press(fui::SequencePolyStrip::stepsDown);
+                check(proc.getSequenceRhythm().enabled && proc.getSequenceRhythm().steps == 15,
+                      "strip writes the standalone POLY (ON, 15 steps)");
+                juce::MemoryBlock saved; proc.getStateInformation(saved);
+                BassAudioProcessor fresh; fresh.setStateInformation(saved.getData(), (int)saved.getSize());
+                check(fresh.getSequenceRhythm().enabled && fresh.getSequenceRhythm().steps == 15,
+                      "standalone POLY round-trips through plugin state");
+                // Preset browser snapshot (web captureSound/restoreSound) keeps POLY.
+                fui::BassStandaloneBackend backend(proc);
+                const auto snap = backend.capture();
+                proc.setSequenceRhythm({});
+                backend.restore(*snap);
+                check(proc.getSequenceRhythm().enabled && proc.getSequenceRhythm().steps == 15,
+                      "browser snapshot restores the POLY rhythm");
+                seq.undoEdit(); seq.undoEdit();
+                check(!proc.getSequenceRhythm().enabled, "undo restores POLY OFF");
+            }
+        }
+    }
+
+    // ---- 12. preset browser: drawer, snapshots (params + patterns + chain), VARY, audition ----
+    printf("\n== BL-1 preset browser ==\n");
+    {
+        const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile("build/browser-visuals");
+        vis.createDirectory();
+        const auto favFile = vis.getChildFile("bl1-favorites.settings");
+        favFile.deleteFile();
+        fui::BrowserFavorites::overrideFile() = favFile;
+        BassAudioProcessor bp;
+        bp.prepareToPlay(48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> bed(bp.createEditor());
+        auto* bassEd = dynamic_cast<BassEditor*>(bed.get());
+        check(bassEd != nullptr, "createEditor returns BassEditor (browser)");
+        if (bassEd != nullptr) {
+            bed->setSize(BassRack::LW, BassRack::LH);
+            auto& rack = bassEd->getRack();
+            auto* browseBtn = findNamedButton(rack, "BROWSE");
+            check(browseBtn != nullptr && browseBtn->isVisible(), "the header shows BROWSE");
+            if (browseBtn) browseBtn->onClick();
+            check(rack.presetBrowser().isOpen() && browseBtn && browseBtn->getToggleState(), "BROWSE opens the drawer");
+            rack.presetBrowser().selectItem(2);
+            writePng(bed->createComponentSnapshot(bed->getLocalBounds()), vis.getChildFile("bl1-browser-open.png"));
+            rack.presetBrowser().vary();
+            rack.presetBrowser().toggleCharacter("gritty");
+            writePng(bed->createComponentSnapshot(bed->getLocalBounds()), vis.getChildFile("bl1-browser-variant-filtered.png"));
+            rack.presetBrowser().toggleCharacter("gritty");
+            rack.presetBrowser().revert();
+            rack.presetBrowser().close();
+            check(!rack.presetBrowser().isOpen() && !browseBtn->getToggleState(), "CLOSE hides the drawer and resets BROWSE");
+
+            browser_test::Probe probe;
+            probe.label = "BL-1";
+            probe.infos = fable::bassParamInfo();
+            probe.values = [&] { return bp.captureParamValues(); };
+            probe.extra = [&] {
+                const auto bytes = bp.getPatternBytes();
+                std::string out(bytes.begin(), bytes.end());
+                out += "|" + std::to_string(bp.getChain().size()) + "|" + std::to_string(bp.getEditPattern());
+                return out;
+            };
+            probe.program = [&] { return bp.getCurrentProgram(); };
+            probe.dirty = [&] { return bp.isProgramDirty(); };
+            probe.programName = [&](int i) { return bp.getProgramName(i); };
+            for (const auto& rule : fui::BassBrowserAdapter::varyRules()) probe.varyAmounts[fable::bassIdFromString(rule.id)] = rule.amount;
+            probe.setPlaying = [&](bool on) {
+                bp.setSeqPlaying(on);
+                juce::AudioBuffer<float> b(2, 512); juce::MidiBuffer m;
+                for (int i = 0; i < 2; ++i) { b.clear(); bp.processBlock(b, m); }
+            };
+            browser_test::runChecks(rack.browserAdapter(), rack.presetBrowser(), probe,
+                                    [](bool c, const char* m, double v) { check(c, m, v); });
+
+            // A patch is params + patterns: REVERT undoes a pattern edit made after KEEP.
+            auto& br = rack.presetBrowser();
+            br.open();
+            br.selectItem(1);
+            br.keep();
+            const auto keptPatterns = bp.getPatternBytes();
+            auto step = bp.getSeqStep(0, 5);
+            step.on = !step.on;
+            bp.setSeqStep(0, 5, step);
+            check(bp.getPatternBytes() != keptPatterns && bp.isProgramDirty(), "a pattern edit marks the patch edited");
+            br.revert();
+            check(bp.getPatternBytes() == keptPatterns && !bp.isProgramDirty(), "REVERT restores the patch patterns and clears the dirty flag");
+            br.close();
+
+            // The audition note reaches the audio thread through the command FIFO.
+            bp.setCurrentProgram(0);
+            bp.noteOn(0, 1.0f);
+            juce::AudioBuffer<float> ab(2, 512); juce::MidiBuffer am;
+            float peak = 0;
+            for (int i = 0; i < 8; ++i) { ab.clear(); bp.processBlock(ab, am); peak = std::max(peak, ab.getMagnitude(0, 512)); }
+            check(peak > 1.0e-4f, "audition note sounds through the FIFO path", peak);
+            bp.noteOff(0);
+        }
+        fui::BrowserFavorites::overrideFile() = juce::File();
     }
 
     printf("%s\n", g_fail == 0 ? "BASS PLUGIN CHECKS PASSED" : "BASS PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<BassAudioProcessor>("bl", BassRack::LW, BassRack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++g_fail;
+    const auto pluck = [](auto&, juce::MidiBuffer& midi, int block) {
+        // A plucked line: 48/55/60/55, a note every 24 blocks (~256 ms), held ~150 ms.
+        static const int notes[] = {48, 55, 60, 55};
+        const int note = notes[(block / 24) % 4];
+        if (block % 24 == 0) midi.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)(block % 48 ? 80 : 120)), 0);
+        if (block % 24 == 14) midi.addEvent(juce::MidiMessage::noteOff(1, note), 0);
+    };
+    g_fail += automixchecks::runStandalone<BassAudioProcessor>("bl1", BassRack::LW, BassRack::LH, false, pluck);
+    g_fail += livespectrumchecks::runStandalone<BassAudioProcessor>("bl1", BassRack::LW, BassRack::LH, false, pluck);
     if (!runArpProcessorChecks<BassAudioProcessor>("bl", true)) ++g_fail;
     if (!runAgentProcessorChecks<BassAudioProcessor>("bl", fable::bassParamInfo().data(), fable::bassParamInfo().size(), "flt.cut", "osc.tune")) ++g_fail;
     return g_fail == 0 ? 0 : 1;

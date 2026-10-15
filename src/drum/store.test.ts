@@ -5,7 +5,8 @@ import { DrumEngine } from './engine/drum-synth';
 import { patIdx, STEPS } from './seq';
 import { defaultDrumParams, PAD_COUNT } from './params';
 import { FACTORY_PATCHES, PATCH_FIELDS, patchOptions } from './patches';
-import { FACTORY_KITS } from './kits';
+import { PATTERN_LIBRARY } from './patternLibrary';
+import { PATTERN_PRESETS } from './kits';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -370,10 +371,25 @@ describe('step editing verbs', () => {
     const kitValue = useDrumStore.getState().kitValue;
     expect(useDrumStore.getState().loadPatternPreset(1)).toBe(true);
     const after = useDrumStore.getState();
-    expect(Array.from(after.patterns)).toEqual(FACTORY_KITS[1].patterns);
-    expect(after.chain).toEqual(FACTORY_KITS[1].chain);
+    expect(Array.from(after.patterns)).toEqual(PATTERN_PRESETS[1].patterns);
+    expect(after.chain).toEqual(PATTERN_PRESETS[1].chain);
     expect(after.kitValue).toBe(kitValue);
     expect(after.params['seq.bpm']).toBe(109);
+  });
+
+  it('library patterns load, and the browser snapshot restores the sequence', () => {
+    const before = useDrumStore.getState().captureSequence();
+    const entry = PATTERN_LIBRARY.find((e) => e.role === 'fill')!;
+    expect(useDrumStore.getState().loadPatterns(entry.patterns, entry.chain, entry.value)).toBe(true);
+    let st = useDrumStore.getState();
+    expect(Array.from(st.patterns)).toEqual(Array.from(entry.patterns));
+    expect(st.chain).toEqual(entry.chain);
+    expect(st.patternValue).toBe(entry.value);
+    st.restoreSequence(before);
+    st = useDrumStore.getState();
+    expect(Array.from(st.patterns)).toEqual(Array.from(before.sequence.patterns));
+    expect(st.chain).toEqual(before.sequence.chain);
+    expect(st.patternValue).toBe(before.value);
   });
 });
 
@@ -413,8 +429,8 @@ describe('hosted mode', () => {
     const kitValue = useDrumStore.getState().kitValue;
     expect(useDrumStore.getState().loadPatternPreset(14)).toBe(true);
     const s = useDrumStore.getState();
-    expect(Array.from(s.patterns)).toEqual(FACTORY_KITS[14].patterns);
-    expect(s.chain).toEqual(FACTORY_KITS[14].chain);
+    expect(Array.from(s.patterns)).toEqual(PATTERN_PRESETS[14].patterns);
+    expect(s.chain).toEqual(PATTERN_PRESETS[14].chain);
     expect(s.kitValue).toBe(kitValue);
     expect(s.params['seq.bpm']).toBe(111);
   });

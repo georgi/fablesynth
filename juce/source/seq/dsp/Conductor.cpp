@@ -104,6 +104,7 @@ void Conductor::togglePassThrough(int s, int t) {
     auto it = std::find(pass.begin(), pass.end(), t);
     if (it != pass.end()) pass.erase(it);
     else pass.push_back(t);
+    ++documentRevision_;
 }
 
 void Conductor::updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int bars) {
@@ -113,6 +114,7 @@ void Conductor::updateClipBytes(int s, int t, std::vector<uint8_t> bytes, int ba
     if (!validDrumClip(candidate, session_.tracks[(size_t)t].machine)) return;
     sc.clips[(size_t)t].bars = bars;
     sc.clips[(size_t)t].bytes = bytes;
+    ++documentRevision_;
     // The worklet applies clipupdate to its pending clip when one exists,
     // else the live clip — send only when the edited scene is that target.
     auto qit = queue_.find(t);
@@ -126,8 +128,9 @@ bool Conductor::updateDrumClip(int s, const ClipData& clip) {
     if (s < 0 || s >= (int)session_.scenes.size() || session_.tracks.empty()
         || session_.tracks[0].machine != Machine::DR1 || !session_.scenes[(size_t)s].hasClip[0]
         || clip.bars < 1 || clip.bars > SQ_MAX_BARS || (int)clip.bytes.size() != clip.bars * 256
-        || clip.hasArp || !validDrumClip(clip, Machine::DR1) || !validateAutomation(clip.automation, Machine::DR1)) return false;
+        || clip.hasArp || clip.hasSequenceRhythm || !validDrumClip(clip, Machine::DR1) || !validateAutomation(clip.automation, Machine::DR1)) return false;
     session_.scenes[(size_t)s].clips[0] = clip;
+    ++documentRevision_;
     const int q = queueOf(0), target = q != kNone && q != SQ_STOP ? q : ownerOf(0);
     if (target == s) io_.ioUpdateArpClip(0, clip);
     return true;
@@ -138,6 +141,26 @@ bool Conductor::updateClipAutomation(int s, int t, const std::vector<AutoLane>& 
         || !session_.scenes[(size_t)s].hasClip[(size_t)t] || !validateAutomation(lanes, session_.tracks[(size_t)t].machine)) return false;
     auto& clip = session_.scenes[(size_t)s].clips[(size_t)t];
     clip.automation = lanes; clip.hasAutomation = !lanes.empty();
+    ++documentRevision_;
+    const int q = queueOf(t); const int target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
+    if (target == s) io_.ioUpdateArpClip(t, clip);
+    return true;
+}
+
+bool Conductor::updateClipRhythm(int s, int t, const SequenceRhythm& r) {
+    if (s < 0 || s >= (int)session_.scenes.size() || t < 0 || t >= (int)session_.tracks.size()
+        || session_.tracks[(size_t)t].machine == Machine::DR1 || !session_.scenes[(size_t)s].hasClip[(size_t)t]
+        || !validSequenceRhythm(r)) return false;
+    auto& clip = session_.scenes[(size_t)s].clips[(size_t)t];
+    const SequenceRhythm none{};
+    const auto same = [](const SequenceRhythm& a, const SequenceRhythm& b) {
+        return a.enabled == b.enabled && a.fit == b.fit && a.steps == b.steps
+            && a.rotation == b.rotation && a.cycleBeats == b.cycleBeats;
+    };
+    if (!clip.hasSequenceRhythm && same(r, none)) return true;
+    if (clip.hasSequenceRhythm && same(r, clip.sequenceRhythm)) return true;
+    clip.hasSequenceRhythm = true; clip.sequenceRhythm = r;
+    ++documentRevision_;
     const int q = queueOf(t); const int target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
     if (target == s) io_.ioUpdateArpClip(t, clip);
     return true;
@@ -148,9 +171,46 @@ void Conductor::updateClipArp(int s, int t, const ArpSettings& a) {
     if (s < 0 || s >= (int)session_.scenes.size() || t < 0 || t >= (int)session_.tracks.size()
         || session_.tracks[(size_t)t].machine == Machine::DR1 || !session_.scenes[(size_t)s].hasClip[(size_t)t]) return;
     auto& c = session_.scenes[(size_t)s].clips[(size_t)t];
+    const bool wasLinked = c.hasArp && c.arp.chords && c.arp.chordLink;
     c.hasArp = true; c.arp = a; c.arp.keys = false; c.arp.latch = false;
-    const int q = queueOf(t), target = q != kNone && q != SQ_STOP ? q : ownerOf(t);
-    if (target == s) io_.ioUpdateArpClip(t, c);
+    // Scene chord linking (web linkChordWrites): a clip that joins adopts the
+    // scene's linked progression; an edit to a linked clip reaches the others.
+    // Octave and rhythm stay per clip.
+    std::vector<int> touched;
+    if (c.arp.chords && c.arp.chordLink) {
+        const auto peers = linkedChordTracks(s, t);
+        auto share = [](const ArpSettings& from, ArpSettings& to) {
+            to.chordList = from.chordList; to.chordCount = from.chordCount; to.chordKey = from.chordKey; to.chordBars = from.chordBars;
+        };
+        if (!peers.empty() && !wasLinked) share(session_.scenes[(size_t)s].clips[(size_t)peers[0]].arp, c.arp);
+        else for (int p : peers) { share(c.arp, session_.scenes[(size_t)s].clips[(size_t)p].arp); touched.push_back(p); }
+    }
+    ++documentRevision_;
+    touched.push_back(t);
+    for (int k : touched) {
+        const int q = queueOf(k), target = q != kNone && q != SQ_STOP ? q : ownerOf(k);
+        if (target == s) io_.ioUpdateArpClip(k, session_.scenes[(size_t)s].clips[(size_t)k]);
+    }
+}
+
+std::vector<int> Conductor::linkedChordTracks(int s, int t) const {
+    std::vector<int> out;
+    if (s < 0 || s >= (int)session_.scenes.size()) return out;
+    const auto& sc = session_.scenes[(size_t)s];
+    for (int i = 0; i < (int)session_.tracks.size(); ++i)
+        if (i != t && sc.hasClip[(size_t)i] && sc.clips[(size_t)i].hasArp && sc.clips[(size_t)i].arp.chords && sc.clips[(size_t)i].arp.chordLink) out.push_back(i);
+    return out;
+}
+
+bool Conductor::setSceneChords(int s, const std::array<ArpChord, kMaxArpChords>& chords, int count, int key, int bars) {
+    const auto tracks = sceneChordTracks(s);
+    if (tracks.empty()) return false;
+    // One write to a linked clip reaches the others (updateClipArp's link).
+    auto a = session_.scenes[(size_t)s].clips[(size_t)tracks[0]].arp;
+    a.chordList = chords; a.chordCount = std::clamp(count, 0, kMaxArpChords);
+    a.chordKey = ((key % 12) + 12) % 12; a.chordBars = std::clamp(bars, 1, 4);
+    updateClipArp(s, tracks[0], a);
+    return true;
 }
 
 void Conductor::createClip(int s, int t) {
@@ -159,6 +219,7 @@ void Conductor::createClip(int s, int t) {
     auto bytes = sqEmptyClip(session_.tracks[(size_t)t].machine, 1);
     sc.clips[(size_t)t] = ClipData{"NEW", 1, bytes};
     sc.hasClip[(size_t)t] = true;
+    ++documentRevision_;
 }
 
 bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
@@ -200,6 +261,7 @@ bool Conductor::loadLibraryClip(int s, int t, const ClipLibraryEntry& entry,
     scene.clips[(size_t)t].automation = entry.automation;
     scene.clips[(size_t)t].hasAutomation = !entry.automation.empty();
     scene.hasClip[(size_t)t] = true;
+    ++documentRevision_;
 
     // Same write target as focused edits: a pending clip wins over the
     // outgoing live owner because ClipHost has only one pending slot.
@@ -225,6 +287,7 @@ bool Conductor::deleteClip(int s, int t) {
     }
     sc.clips[(size_t)t] = ClipData{};
     sc.hasClip[(size_t)t] = false;
+    ++documentRevision_;
     return true;
 }
 
@@ -239,12 +302,14 @@ bool Conductor::pasteClip(int s, int t, const ClipData& clip) {
     if (!validateAutomation(clip.automation, session_.tracks[(size_t)t].machine)) return false;
     if (!validDrumClip(clip, session_.tracks[(size_t)t].machine)) return false;
     if (clip.hasArp && (session_.tracks[(size_t)t].machine == Machine::DR1 || !validArpSettings(clip.arp, true))) return false;
+    if (clip.hasSequenceRhythm && (session_.tracks[(size_t)t].machine == Machine::DR1 || !validSequenceRhythm(clip.sequenceRhythm))) return false;
     if ((int)clip.bytes.size() != clip.bars * sqBytesPerBar(session_.tracks[(size_t)t].machine))
         return false;
 
     auto& scene = session_.scenes[(size_t)s];
     scene.clips[(size_t)t] = clip;
     scene.hasClip[(size_t)t] = true;
+    ++documentRevision_;
 
     // Same write target as loadLibraryClip: a pending clip wins over the
     // outgoing live owner because ClipHost has only one pending slot.
@@ -272,6 +337,7 @@ bool Conductor::moveClip(int fromS, int fromT, int toS, int toT, bool copy) {
 
 void Conductor::setTrackPatch(int t, PatchRef patch) {
     session_.tracks[(size_t)t].patch = std::move(patch);
+    ++documentRevision_;
 }
 
 void Conductor::toggleSceneMute(int s) {
@@ -295,11 +361,13 @@ void Conductor::cycleQuant(int d) {
     for (int i = 0; i < 3; i++) if (kOrder[i] == quant_) { ix = i; break; }
     ix = ((ix + d) % 3 + 3) % 3;
     quant_ = kOrder[ix];
+    if (session_.quant != quant_) ++documentRevision_;
     session_.quant = quant_;
 }
 
 void Conductor::setTrackVol(int t, float v) {
     trackVol_[(size_t)t] = v;
+    if (session_.tracks[(size_t)t].gain != v) ++mixRevision_;
     session_.tracks[(size_t)t].gain = v;
     applyGains();
 }
@@ -308,12 +376,14 @@ void Conductor::setTrackVol(int t, float v) {
 // anchor math (docs §3/§6).
 void Conductor::setSwing(double v) {
     swing_ = v;
+    if (session_.swing != v) ++documentRevision_;
     session_.swing = v;
     io_.ioSendTempo(session_.bpm, swing_, anchor_);
 }
 
 bool Conductor::setBpm(double bpm) {
     if (!owner_.empty() || !queue_.empty()) return false;
+    if (session_.bpm != bpm) ++documentRevision_;
     session_.bpm = bpm;
     anchor_ = io_.now() + 256;
     io_.ioSendTempo(session_.bpm, swing_, anchor_);

@@ -82,6 +82,7 @@ void BassFx::prepare(double sampleRate) {
 
 void BassFx::reset() {
     meter_.reset();
+    gate_.reset();
     eq_.reset();
     chDl1_.reset(); chDl2_.reset(); dlL_.reset(); dlR_.reset();
     dryL_.reset(); dryR_.reset();
@@ -124,6 +125,8 @@ void BassFx::setParams(const BassParamArray& p) {
     driveColorL_.setParams(p[BL_FXDRIVE_TYPE], p[BL_FXDRIVE_TONE]);
     driveColorR_.setParams(p[BL_FXDRIVE_TYPE], p[BL_FXDRIVE_TONE]);
     comp_.setParams(!compOff_, p[BL_FXCOMP_THR], p[BL_FXCOMP_ATT], p[BL_FXCOMP_REL], p[BL_FXCOMP_RATIO]);
+    keyChannel_ = scKeyChannel((int)std::lround(p[BL_FXCOMP_SC]));
+    comp_.setKey(keyChannel_ >= 0, p[BL_FXCOMP_SCHP]);
     ott_.setParams(p[BL_FXOTT_ON] > 0.5f, p[BL_FXOTT_DEPTH], p[BL_FXOTT_TIME], p[BL_FXOTT_UP], p[BL_FXOTT_DOWN]);
 
     // drive — AMT ramps; the shaper gains are rebuilt in updateCoefs.
@@ -217,7 +220,20 @@ float BassFx::driveChannel(HalfBandFir& u1, HalfBandFir& u2, HalfBandFir& d2, Ha
     return (float)d1.decimate(c0, c1);
 }
 
-void BassFx::process(float* L, float* R, int n) {
+void BassFx::process(float* L, float* R, int n, const float* key) {
+    // Chain-level activity gate (see Fx::process): skip the frozen chain once
+    // input, output and echo have been below kIdleLevel for the hold horizon.
+    const double delayHorizon = delayGated_ ? 0.0 : (double)std::max(dlTime_.cur, dlTime_.target);
+    const bool inLoud = ActivityGate::loud(L, R, n);
+    double skipped;
+    if (gate_.begin(inLoud, n, skipped)) return;
+    if (skipped > 0) {
+        // Free-running clocks keep their phase across the skipped span, so a
+        // chain that wakes sounds as if it had run the whole time.
+        if (!chorusGated_) chPhase_ = std::fmod(chPhase_ + chRate_ / sr_ * skipped, 1.0);
+    }
+    float outPk = 0, tailPk = 0;
+
     // Gate only when OFF; mix==0 while ON must keep state accumulation alive.
     bool driveGate = driveOff_ && driveWet_.target == 0.0f && std::abs(driveWet_.cur) < 1.0e-6f;
     bool chorusGate = chorusOff_ && chWet_.target == 0.0f && std::abs(chWet_.cur) < 1.0e-6f;
@@ -270,7 +286,8 @@ void BassFx::process(float* L, float* R, int n) {
         double gOtt = headroomOtt_.gainFor(l, r); l *= (float)gOtt; r *= (float)gOtt;
         double compL, compR;
         meter_.level(FxTelemetry::compIn, l, r);
-            comp_.processSample(l, r, compL, compR);
+            const double k = key ? key[i] : 0.0;
+            comp_.processSample(l, r, compL, compR, k, k);
             meter_.level(FxTelemetry::compOut, compL, compR); l = (float)compL; r = (float)compR;
         double gComp = headroomComp_.gainFor(l, r); l *= (float)gComp; r *= (float)gComp;
 
@@ -317,6 +334,7 @@ void BassFx::process(float* L, float* R, int n) {
             float fb = dlFb_.next();
             float dL = dlL_.readHermite(dt);
             float dR = dlR_.readHermite(dt);
+            tailPk = std::max(tailPk, std::max(std::abs(dL), std::abs(dR)));
             float mono = 0.5f * (l + r);
             float feedbackL = mono + fb * dR;
             float feedbackR = (float)dlDamp_.process(fb * dL);
@@ -336,6 +354,8 @@ void BassFx::process(float* L, float* R, int n) {
             float outL = 0, outR = 0;
             for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
             for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+            // Idle criterion sees the tank itself, so a tail hidden behind mix 0 is never frozen.
+            tailPk = std::max(tailPk, std::max(std::abs(outL), std::abs(outR)));
             float wet = verbWet_.next(), dry = verbDry_.next();
             meter_.stereo(FxTelemetry::verbL, wet * outL, wet * outR);
                 l = dry * l + wet * outL;
@@ -356,7 +376,10 @@ void BassFx::process(float* L, float* R, int n) {
         lim_.process(l, r);
 
         L[i] = l; R[i] = r;
+        outPk = std::max(outPk, std::max(std::abs(l), std::abs(r)));
     }
+
+    gate_.end(inLoud, outPk, tailPk, n, delayHorizon, sr_);
 }
 
 } // namespace fable

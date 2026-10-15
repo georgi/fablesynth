@@ -1,6 +1,6 @@
 // BL-1 acid bass voice engine — C++ port of src/bass/engine/worklet-bass.js.
 // One mono last-note-priority voice: wavetable oscillator (band-limited mip
-// playback with crossfade, unison + stereo spread), sine/polyblep-square sub,
+// playback with crossfade, unison + stereo spread), sine / band-limited-square (table) sub,
 // SVF filter with ADAA drive, filter AD env with accent boost, amp ADSR,
 // slide (one-pole glide), bar-locked LFO -> cutoff, and the sample-accurate
 // 16-step pitch sequencer (patterns/chain/swing/accent/slide ties).
@@ -32,6 +32,12 @@ constexpr float  BL_MIDI_ACCENT_VEL = 0.8f;
 constexpr double BL_GATE_FRAC   = 0.55;  // non-tied gates close at this step fraction
 constexpr double BL_SWING_MAX   = 0.667;
 constexpr double BL_DC_R        = 0.9998;
+// Declick slew on the amp level (s). Rounds the corners of a fast attack or
+// release without audibly softening the transient.
+constexpr double BL_AMP_SLEW    = 0.0003;
+// Accent/velocity gain slew (s): time-based, so a gain change never depends
+// on how the host block splits the render.
+constexpr double BL_GAIN_SLEW   = 0.001;
 // Filter env sweep span (octaves at flt.env = +/-100%) and LFO span (octaves
 // at depth = 100%). Accent multiplies the env peak and shortens its decay.
 constexpr double BL_FENV_OCT    = 5;
@@ -176,17 +182,26 @@ public:
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
     void setArp(const ArpPattern&);
+    // Standalone scale mode (worklet 'scale'): written notes snap to this map
+    // at chainPos * 16 + step; length 0 = OFF.
+    void setSeqScale(const ScaleMap& m) { seqScale_ = m; }
+    // Standalone melodic POLY (worklet-bass.js 'sequenceRhythm'): one clock
+    // plays the first `steps` cells of bar one, on the swung 1/16 grid or FIT
+    // into `cycleBeats` straight slots. A timing-mode change re-phases from the
+    // song position; ignored while a hosted clip owns the transport.
+    void setSequenceRhythm(const SequenceRhythm&);
     // SEQUENCER tab LED: off keeps the clock but fires no pattern notes.
     void setSeqEnabled(bool on) { if (!on && seqEnabled_ && !arp_.enabled) { release(); samplesToGateOff_ = -1; } seqEnabled_ = on; }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
         autoPlayer_.schedule(automation);
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp);
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp, rhythm, scale);
     }
     void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr) {
-        if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp)))) { release(); samplesToGateOff_ = -1; }
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
+        if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp))
+            || (clipHost_.isPlaying() && clipHost_.rhythmRephases(rhythm)))) { release(); samplesToGateOff_ = -1; }
         autoPlayer_.update(automation, clipHost_.hasPending());
-        clipHost_.updateClip(data, (size_t)bytes, bars, arp);
+        clipHost_.updateClip(data, (size_t)bytes, bars, arp, rhythm, scale);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
@@ -226,6 +241,7 @@ private:
     void noteOn(int semi, bool acc, float vel);
     void arpFire(const ArpPattern&, int step, double interval);
     ArpPattern arp_;
+    ScaleMap seqScale_;
     bool seqEnabled_ = true;
     void glideTo(int semi, bool acc);
     void release();
@@ -241,6 +257,16 @@ private:
     void   fireHostStep(long k);
     void   fireStepAt(int s, int pat, int patNext, double dur);  // shared step-fire body
     void   clipFireAt(int abs);   // hosted twin of fireStepAt; byte source is clipHost_'s clip
+    // melodic POLY helpers (worklet-bass.js polyDuration/polyFrame/polyPhase/polyFire)
+    SequenceRhythm seqRhythm_{};
+    long   polyK_ = 0;
+    bool   polyOn() const { return seqRhythm_.enabled && !arp_.enabled; }
+    double polyDuration(const SequenceRhythm&, double bpm) const;
+    static double polyFrame(const SequenceRhythm&, long k, double dur, double swing);
+    static long polyPhaseCeil(const SequenceRhythm&, double elapsed, double dur, double swing);
+    static int polySource(const SequenceRhythm& r, long k) { return (int)(((k - r.rotation) % r.steps + r.steps) % r.steps); }
+    void   polyEmit(long k, double dur);
+    void   polyFire(double bpm);
 
     // ---- render internals (worklet setupOsc/renderOsc/renderSub/
     //      lfoValue/setupFilter/runFilter/renderVoice) ----
@@ -252,6 +278,7 @@ private:
     void runFilter(const float* inL, const float* inR,
                    float* outL, float* outR, double drive, int n);
     void renderVoice(float* L, float* R, int off, int n, double beats);
+    void dcTail(float* L, float* R, int off, int n);
 
     // Finding J1/J2: advance the smoothed parameter copy by one chunk and arm
     // a crossfade for any discrete parameter that changed with it.
@@ -271,7 +298,7 @@ private:
     void oscPass(float* dstL, float* dstR, int n);   // the sub-block osc+sub loop
     // One SVF pass (drive output -> filter output) over `n` samples with its
     // own state block, so the old filter type can run beside the new one.
-    void svfChain(float* bufL, float* bufR, int n, double c0c, double c1c,
+    void svfChain(float* bufL, float* bufR, int n,
                   int ftype, bool twoPole, double k1, double k2,
                   double* F, bool mono) const;
 
@@ -333,6 +360,7 @@ private:
     double fenvT_ = 1e9;           // samples since (non-slid) trigger
     int    ampStage_ = 0;          // 0 idle · 1 att · 2 dec/sus · 3 rel
     double ampLevel_ = 0;
+    double ampSm_ = 0;                         // slewed ampLevel_ (BL_AMP_SLEW)
     // Finding B6: reserved in prepare() so the MIDI path never allocates.
     std::vector<int> held_;        // keyboard stack, last = current
 
@@ -358,14 +386,17 @@ private:
     // filter state
     double svf_[8] = {0};
     double cutSm_ = 0, curCut_ = 0;
-    double cutTarget_ = 0, cutPrev_ = -1;   // chunk cutoff ramp (Finding 7)
-    double satXL_ = 0, satXR_ = 0;
+    double cutPrev_ = -1;                    // previous chunk's smoothed base cutoff
+    static constexpr int kMaxSub = 8;        // >= ceil(128 / BL_FLT_SUB)
+    double cutSub_[kMaxSub] = {0};           // per-sub-block cutoff incl. envelope
+    int nSub_ = 0;
+    DriveOs2 osL_, osR_;                     // 2x drive oversampler + ADAA history
     double driveMix_ = 0;                    // dry <-> ADAA transition state
     int    ftype_ = 1; bool twoPole_ = true;
     double k1_ = 0, k2_ = 0;
     double fenvVal_ = 0;
     bool   mono_ = false, monoPrev_ = false;   // Finding B8: L == R fast path
-    double gainPrev_ = -1;                     // Finding B2: accent gain ramp
+    double gainSm_ = -1;                       // Finding B2: slewed accent gain (-1 = new note)
     LfoClock lfoClock_;
     double shVal_ = 0; long shPhase_ = -1;
     double dcxL_ = 0, dcxR_ = 0, dcyL_ = 0, dcyR_ = 0;

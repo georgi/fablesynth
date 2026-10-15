@@ -1,3 +1,4 @@
+import { copySequenceRhythm, updateSequenceRhythm, type SequenceRhythm } from './shared/sequenceRhythm';
 import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } from './seq/clipAutomation';
 // Zustand store — single source of truth for parameter values and transport
 // state. Mirrors the imperative `engine.params` + control-registry wiring of the
@@ -5,7 +6,9 @@ import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } 
 // back through `setParam`, which also forwards to the audio engine.
 
 import { create } from 'zustand';
-import { arpNotes, loadArp, type ArpState } from './arp';
+import { NOTE_PATTERN_PRESETS, notePresetSequence } from './patternPresets';
+import { arpCompile, loadArp, type ArpState } from './arp';
+import { scaleMap } from './scales';
 import { SynthEngine } from './engine/synth';
 import { feedModLive } from './engine/modLive';
 import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
@@ -41,6 +44,13 @@ export type SeqClipboard =
   | { kind: 'pattern'; data: Uint8Array }
   | null;
 
+export interface SoundSnapshot {
+  presetValue: string;
+  params: ParamValues;
+  dirty: boolean;
+  userTables: UserTable[];
+}
+
 export function presetOptions(userPresets: Preset[]): PresetOption[] {
   const opts: PresetOption[] = FACTORY_PRESETS.map((p, i) => ({ value: 'f' + i, name: p.name, group: 'FACTORY' as const }));
   userPresets.forEach((p, i) => opts.push({ value: 'u' + i, name: p.name, group: 'USER' }));
@@ -56,6 +66,7 @@ interface SynthStore {
   clearArpKeys: () => void;
   params: ParamValues;
   modDrag: number; // source being dragged (MOD_SOURCES index), 0 = none
+  modFocus: number; // source chip under the pointer; its rings light up, 0 = none
   powered: boolean;
   hosted: boolean;
   voiceCount: number;
@@ -73,6 +84,8 @@ interface SynthStore {
   editorOsc: 'oscA' | 'oscB' | null;
 
   // note sequencer
+  sequenceRhythm: SequenceRhythm;
+  updateSequenceRhythm: (patch: Partial<SequenceRhythm>) => void;
   patterns: Patterns;
   chain: number[];
   editPattern: number;
@@ -94,10 +107,16 @@ interface SynthStore {
   updateSlot: (slot: number, patch: Partial<ModConnection>) => void;
   clearSlot: (slot: number) => void;
   setModDrag: (src: number) => void;
+  setModFocus: (src: number) => void;
   applyPreset: (presetParams: Partial<ParamValues>, mods?: ModConnection[]) => void;
   loadPresetByValue: (val: string) => void;
   stepPreset: (d: number) => void;
   savePreset: (name: string) => void;
+  // Preset browser: capture the current sound, restore it exactly (revert / A-B),
+  // and apply an unsaved variant of the loaded preset.
+  captureSound: () => SoundSnapshot;
+  restoreSound: (snap: SoundSnapshot) => void;
+  applyVariant: (params: ParamValues) => void;
 
   addUserTable: (u: UserTable) => void;
   deleteUserTable: (poolIndex: number) => void;
@@ -118,6 +137,7 @@ interface SynthStore {
   randomizeSeq: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
+  loadPatternPreset: (index: number) => boolean;
 
   // step-sequencer editing: selection, clipboard, undo/redo, DnD (docs/editing-concept.md)
   setRectSel: (sel: RectSel | null) => void;
@@ -162,16 +182,17 @@ export function factoryTables(): GeneratedTable[] {
 // Bounded undo/redo stack for sequencer editing verbs (module state, mirrors
 // BL-1/DR-1 — see makeHistory in shared/seqEdit.ts). Snapshots capture both
 // patterns and chain since duplicate-bar can extend the sequence length.
-interface SeqSnapshot { patterns: Patterns; chain: number[]; automation: AutoLane[] }
+interface SeqSnapshot { sequenceRhythm: SequenceRhythm; patterns: Patterns; chain: number[]; automation: AutoLane[] }
 const seqHistory = makeHistory<SeqSnapshot>(50);
 
 export const useStore = create<SynthStore>((set, get) => {
   const syncArp = () => {
     const { arp, arpMode, arpKeys, hosted } = get();
     if (hosted) return;
-    engine.setArp(arpMode ? { ...arp, notes: arpNotes(arp, arp.input === 'keys' ? arpKeys : arp.notes) } : null);
+    engine.setArp(arpMode ? { ...arp, ...arpCompile(arp, arp.input === 'keys' ? arpKeys : arp.notes, get().chain.length) } : null);
+    engine.setScale(arpMode ? undefined : scaleMap(arp, get().chain.length));
   };
-  const snapshot = (): SeqSnapshot => ({ patterns: get().patterns, chain: get().chain, automation: copyAutomation(get().automation) });
+  const snapshot = (): SeqSnapshot => ({ sequenceRhythm: copySequenceRhythm(get().sequenceRhythm), patterns: get().patterns, chain: get().chain, automation: copyAutomation(get().automation) });
   const pushSeqHistory = () => seqHistory.push(snapshot());
   const syncAutomation = () => {
     if (!get().hosted) engine.setSequenceAutomation(compileAutomation(get().automation, get().chain.length, undefined, 'WT1'));
@@ -208,6 +229,7 @@ export const useStore = create<SynthStore>((set, get) => {
   clearArpKeys: () => { set({ arpKeys: [], activeNotes: new Set() }); syncArp(); },
   params: defaultParams(),
   modDrag: 0,
+  modFocus: 0,
   powered: false,
   hosted: false,
   voiceCount: 0,
@@ -221,6 +243,7 @@ export const useStore = create<SynthStore>((set, get) => {
   dirty: false,
   userTables: loadUserTablePool(),
   editorOsc: null,
+  sequenceRhythm: copySequenceRhythm(initialSeq.sequenceRhythm),
   patterns: initialSeq.patterns,
   chain: sequenceChain(sequenceLengthFromChain(initialSeq.chain)),
   editPattern: 0,
@@ -254,6 +277,8 @@ export const useStore = create<SynthStore>((set, get) => {
     if (patch.src !== undefined) get().setParam(`mat${slot}.src`, patch.src);
     if (patch.dst !== undefined) get().setParam(`mat${slot}.dst`, patch.dst);
     if (patch.amt !== undefined) get().setParam(`mat${slot}.amt`, patch.amt);
+    if (patch.pol !== undefined) get().setParam(`mat${slot}.pol`, patch.pol);
+    if (patch.aux !== undefined) get().setParam(`mat${slot}.aux`, patch.aux);
   },
 
   clearSlot: (slot) => {
@@ -262,9 +287,12 @@ export const useStore = create<SynthStore>((set, get) => {
     get().setParam(`mat${slot}.src`, next[`mat${slot}.src`]);
     get().setParam(`mat${slot}.dst`, next[`mat${slot}.dst`]);
     get().setParam(`mat${slot}.amt`, next[`mat${slot}.amt`]);
+    get().setParam(`mat${slot}.pol`, next[`mat${slot}.pol`]);
+    get().setParam(`mat${slot}.aux`, next[`mat${slot}.aux`]);
   },
 
   setModDrag: (src) => set({ modDrag: src }),
+  setModFocus: (src) => set({ modFocus: src }),
 
   applyPreset: (presetParams, presetMods) => {
     const params = resolvePresetMods(presetParams, presetMods);
@@ -304,6 +332,26 @@ export const useStore = create<SynthStore>((set, get) => {
     // USER only: a factory preset with the same name sorts first in opts.
     const found = opts.find((o) => o.group === 'USER' && o.name === name);
     set({ userPresets, presetValue: found ? found.value : get().presetValue, dirty: false });
+  },
+
+  captureSound: () => {
+    const { presetValue, params, dirty, userTables } = get();
+    return { presetValue, params: { ...params }, dirty, userTables };
+  },
+
+  restoreSound: (snap) => {
+    if (snap.userTables !== get().userTables) {
+      if (!get().hosted) saveUserTablePool(snap.userTables);
+      engine.setUserTables(snap.userTables.map((t) => t.table));
+      set({ userTables: snap.userTables });
+    }
+    get().applyPreset(snap.params);
+    set({ presetValue: snap.presetValue, dirty: snap.dirty });
+  },
+
+  applyVariant: (params) => {
+    get().applyPreset(params);
+    set({ dirty: true });
   },
 
   addUserTable: (u) => {
@@ -366,13 +414,22 @@ export const useStore = create<SynthStore>((set, get) => {
   openEditor: (osc) => set({ editorOsc: osc }),
   closeEditor: () => set({ editorOsc: null }),
 
+  updateSequenceRhythm: (patch) => {
+    const sequenceRhythm = updateSequenceRhythm(get().sequenceRhythm, patch);
+    pushSeqHistory();
+    set({ sequenceRhythm });
+    if (!get().hosted) {
+      engine.setSequenceRhythm(sequenceRhythm);
+      saveSeqState(get().patterns, get().chain, sequenceRhythm);
+    }
+  },
   // ---------- note sequencer ----------
   // Every pattern mutation writes the store, pushes to the worklet and
   // persists to localStorage in one place.
   _setPatterns(next: Patterns) {
     set({ patterns: next });
     engine.setSeqPatterns(next);
-    if (!get().hosted) saveSeqState(next, get().chain);
+    if (!get().hosted) saveSeqState(next, get().chain, get().sequenceRhythm);
   },
 
   drawNote: (step, note, duration, pattern) => {
@@ -428,9 +485,25 @@ export const useStore = create<SynthStore>((set, get) => {
   setSequenceLength: (length) => {
     const chain = sequenceChain(length);
     set({ chain });
+    syncArp();
     engine.setSeqChain(chain);
     syncAutomation();
-    saveSeqState(get().patterns, chain);
+    saveSeqState(get().patterns, chain, get().sequenceRhythm);
+  },
+
+  // Replaces the notes and length with a catalog line; the patch stays.
+  loadPatternPreset: (index) => {
+    const preset = NOTE_PATTERN_PRESETS[index];
+    if (!preset || get().hosted) return false;
+    pushSeqHistory();
+    const { patterns, chain } = notePresetSequence(preset);
+    set({ patterns, chain, editPattern: 0, rectSel: null });
+    engine.setSeqPatterns(patterns);
+    engine.setSeqChain(chain);
+    syncArp();
+    syncAutomation();
+    saveSeqState(patterns, chain, get().sequenceRhythm);
+    return true;
   },
 
   // ---------- step-sequencer editing (docs/editing-concept.md) ----------
@@ -593,19 +666,25 @@ export const useStore = create<SynthStore>((set, get) => {
   undoSeq: () => {
     const prev = seqHistory.undo(snapshot());
     if (!prev) return;
-    set({ chain: prev.chain, automation: copyAutomation(prev.automation) });
+    set({ patterns: prev.patterns, sequenceRhythm: copySequenceRhythm(prev.sequenceRhythm), chain: prev.chain, automation: copyAutomation(prev.automation) });
     syncAutomation();
     engine.setSeqChain(prev.chain);
-    get()._setPatterns(prev.patterns);
+    syncArp();
+    if (!get().hosted) engine.setSequenceRhythm(get().sequenceRhythm);
+    engine.setSeqPatterns(prev.patterns);
+    if (!get().hosted) saveSeqState(prev.patterns, prev.chain, get().sequenceRhythm);
   },
 
   redoSeq: () => {
     const next = seqHistory.redo(snapshot());
     if (!next) return;
-    set({ chain: next.chain, automation: copyAutomation(next.automation) });
+    set({ patterns: next.patterns, sequenceRhythm: copySequenceRhythm(next.sequenceRhythm), chain: next.chain, automation: copyAutomation(next.automation) });
     syncAutomation();
     engine.setSeqChain(next.chain);
-    get()._setPatterns(next.patterns);
+    syncArp();
+    if (!get().hosted) engine.setSequenceRhythm(get().sequenceRhythm);
+    engine.setSeqPatterns(next.patterns);
+    if (!get().hosted) saveSeqState(next.patterns, next.chain, get().sequenceRhythm);
   },
 
   _clearSeqHistory: () => seqHistory.clear(),
@@ -648,6 +727,7 @@ export const useStore = create<SynthStore>((set, get) => {
     engine.onstep = (d) => set({ curStep: d.s, curPat: d.pat });
     engine.setSeqPatterns(get().patterns);
     engine.setSeqChain(get().chain);
+    engine.setSequenceRhythm(get().sequenceRhythm);
     syncAutomation();
     syncArp();
     set({ powered: true });

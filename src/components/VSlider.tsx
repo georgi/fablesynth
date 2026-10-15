@@ -5,8 +5,8 @@ import { useControlMenu } from './ControlMenu';
 // depth band it grows can be dragged (right-click to remove).
 
 import type * as React from 'react';
-import { useEffect, useRef } from 'react';
-import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm } from '../params';
+import { useEffect, useRef, useState } from 'react';
+import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm, routeBipolar, routeLabel } from '../params';
 import { useStore } from '../store';
 import { useModsByDest } from '../hooks/useModsByDest';
 
@@ -19,27 +19,35 @@ interface VSliderProps {
   ghost: number; // live modulated position 0..1, -1 = hidden
 }
 
-// A draggable modulation-depth band rising from the current value. `slotNum` is
+// A draggable modulation-depth band beside the track, rising from the current value. `slotNum` is
 // the absolute slot (1..16) the band edits in the fixed mod pool.
-function PosModBand({ slotNum, amt, src, baseNorm }: { slotNum: number; amt: number; src: number; baseNorm: number }) {
+function PosModBand({ slotNum, amt, src, bi, baseNorm, lane, focus, onActive }: {
+  slotNum: number; amt: number; src: number; bi: boolean; baseNorm: number; lane: number;
+  focus: number; onActive: (slot: number | null) => void;
+}) {
   const updateSlot = useStore((s) => s.updateSlot);
   const clearSlot = useStore((s) => s.clearSlot);
   const elRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; amt: number } | null>(null);
 
   const top = clamp01(baseNorm + amt);
-  const lo = Math.min(baseNorm, top);
-  const hi = Math.max(baseNorm, top);
+  const from = bi ? clamp01(baseNorm - amt) : baseNorm;
+  const lo = Math.min(from, top);
+  const hi = Math.max(from, top);
+  const state = focus === 0 ? '' : focus === src ? ' vs-mod-lit' : ' vs-mod-dim';
 
   return (
     <div
       ref={elRef}
-      className="vs-mod"
-      style={{ bottom: `${lo * 100}%`, height: `${(hi - lo) * 100}%`, ['--src' as string]: SOURCE_COLORS[src] }}
+      className={`vs-mod${state}`}
+      style={{ bottom: `${lo * 100}%`, height: `max(2px, ${(hi - lo) * 100}%)`, ['--src' as string]: SOURCE_COLORS[src], ['--lane' as string]: lane }}
+      onPointerEnter={() => onActive(slotNum)}
+      onPointerLeave={() => { if (!drag.current) onActive(null); }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
         drag.current = { y: e.clientY, amt };
+        onActive(slotNum);
         elRef.current?.setPointerCapture(e.pointerId);
       }}
       onPointerMove={(e) => {
@@ -69,6 +77,9 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
   const modDrag = useStore((s) => s.modDrag);
   const myMods = useModsByDest(dest);
   const dropActive = dest && modDrag > 0;
+  const modFocus = useStore((s) => s.modFocus);
+  const [activeBand, setActiveBand] = useState<number | null>(null);
+  const band = myMods.find((m) => m.slot === activeBand);
 
   const elRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -140,8 +151,9 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
     >
       <div className="vs-track" ref={trackRef}>
         <div className="vs-fill" style={{ height: `${pct}%` }} />
-        {myMods.map((m) => (
-          <PosModBand key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} baseNorm={norm} />
+        {myMods.map((m, k) => (
+          <PosModBand key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} bi={routeBipolar(m.src, m.pol)}
+            baseNorm={norm} lane={k} focus={modFocus} onActive={setActiveBand} />
         ))}
         <div
           className="vs-ghost"
@@ -149,7 +161,9 @@ export function VSlider({ paramId, accent, ghost }: VSliderProps) {
         />
         <div className="vs-handle" style={{ bottom: `${pct}%` }} />
       </div>
-      <div className="vs-label">POS</div>
+      <div className="vs-label" style={band ? { color: SOURCE_COLORS[band.src] } : undefined}>
+        {band ? routeLabel(band.src, band.amt, routeBipolar(band.src, band.pol)) : 'POS'}
+      </div>
       {controlMenu.menu}
     </div>
   );

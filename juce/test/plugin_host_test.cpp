@@ -5,12 +5,18 @@
 #include "../source/PluginProcessor.h"
 #include "../source/seq/AutomationCodec.h"
 #include "FxUiChecks.h"
+#include "AutoMixUiChecks.h"
+#include "LiveSpectrumChecks.h"
 #include "AgentProcessorChecks.h"
 #include "NoteDrawChecks.h"
 #include "ArpProcessorChecks.h"
+#include "BrowserChecks.h"
+#include "../source/ui/WtBrowserAdapter.h"
+#include "../source/ui/WtStandaloneBackend.h"
 #include "../source/PluginEditor.h"
 #include "../source/WavetableView.h"
 #include "../source/ui/WavetableEditor.h"
+#include "../source/ui/SequencePolyStrip.h"
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -51,6 +57,7 @@ static void writePng(const juce::Image& img, const juce::File& out) {
 // panel) to a PNG via JUCE's headless software renderer.
 static void snapshotEditor(FableAudioProcessor& proc, const juce::File& out) {
     std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    ed->setVisible(true);
     ed->setSize(Rack::LW, Rack::LH); // logical rack size — full-resolution render
     writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
 }
@@ -71,6 +78,7 @@ static juce::Button* findButtonNamed(juce::Component& root, const juce::String& 
 // without relying on JUCE's invalidated-descendant repaint behaviour.
 static bool selectEditorFilter2(FableAudioProcessor& proc) {
     std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+    ed->setVisible(true);
     ed->setSize(Rack::LW, Rack::LH);
     auto* f2 = findButtonNamed(*ed, "F2");
     if (f2 != nullptr && f2->onClick) f2->onClick();
@@ -102,6 +110,10 @@ static void snapshotWavetableEditor(FableAudioProcessor& proc, const juce::File&
 
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI juceInit; // message manager for the processor
+    // Browser checks must not see the user's imported presets: an empty library.
+    const auto noImports = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("fable-no-imports");
+    noImports.deleteRecursively();
+    setenv("FABLE_IMPORTED_DIR", noImports.getFullPathName().toRawUTF8(), 1);
 
     FableAudioProcessor proc;
     const double sr = 48000;
@@ -498,6 +510,7 @@ int main(int argc, char** argv) {
     printf("\n== Note seq view ==\n");
     {
         std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        ed->setVisible(true);
         auto* fed = dynamic_cast<FableAudioProcessorEditor*>(ed.get());
         check(fed != nullptr, "createEditor returns FableAudioProcessorEditor", 0);
         auto& seq = fed->getRack().noteSeq();
@@ -688,6 +701,7 @@ int main(int argc, char** argv) {
     // NOTE SEQ rectangle selection + floating CUT/COPY/DUP/DEL/X menu overlay.
     {
         std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        ed->setVisible(true);
         ed->setSize(Rack::LW, Rack::LH);
         auto* fed = dynamic_cast<FableAudioProcessorEditor*>(ed.get());
         proc.setEditPattern(0); proc.setChain({ 0 });
@@ -706,6 +720,50 @@ int main(int argc, char** argv) {
         }
         writePng(ed->createComponentSnapshot(ed->getLocalBounds()),
                  dir.getChildFile("plugin_editor_seqsel.png"));
+        if (fed) {
+            // SeqPanel.tsx timeline: every chained bar on screen; a selection
+            // spans the bar line and a note may run into the next bar.
+            auto& seq = fed->getRack().noteSeq();
+            seq.clearSelection();
+            proc.setChain({ 0, 1, 2 });
+            for (int pat = 0; pat < 3; ++pat) for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(pat, i, {});
+            proc.setSeqStep(0, 14, a); proc.setSeqStep(1, 1, b);
+            check(seq.timelineSteps() == 48, "three chained bars give a 48-step WT-1 timeline", seq.timelineSteps());
+            seq.setSelection({ 14, 17, 0, fable::SEQ_NOTE_LANES - 1 });
+            seq.commitBlockMove(+16, 0, false);
+            check(proc.getSeqStep(1, 14).on && proc.getSeqStep(2, 1).on && !proc.getSeqStep(0, 14).on,
+                  "a block move crosses bar lines (bar 1 -> 2, bar 2 -> 3)", 0);
+            seq.toggleCell(36, 9);
+            seq.resizeStep(36, 20);
+            check(proc.getSeqStep(2, 4).on && proc.getSeqStep(2, 4).duration == 12,
+                  "timeline step 36 is bar 3 step 5; length clamps at the timeline end",
+                  proc.getSeqStep(2, 4).duration);
+            seq.resized();
+            seq.patternClick(2);
+            check(seq.colBounds(32).getX() == seq.gridBounds().getX() || seq.scrollX() > 0,
+                  "a bar chip scrolls its bar to the left edge", seq.scrollX());
+            writePng(ed->createComponentSnapshot(ed->getLocalBounds()), dir.getChildFile("plugin_editor_timeline.png"));
+            const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+            out.createDirectory();
+            writePng(seq.createComponentSnapshot(seq.getLocalBounds()), out.getChildFile("wt1-timeline-3bars.png"));
+            proc.setChain({ 0 });
+            for (int pat = 0; pat < 3; ++pat) for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(pat, i, {});
+            // Standalone melodic POLY: strip -> processor -> plugin state.
+            fui::SequencePolyStrip* strip = nullptr;
+            for (auto* c : seq.getChildren()) if (auto* p = dynamic_cast<fui::SequencePolyStrip*>(c)) strip = p;
+            check(strip && strip->isVisible(), "standalone WT-1 shows the POLY strip", 0);
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                strip->press(fui::SequencePolyStrip::fit);
+                juce::MemoryBlock saved; proc.getStateInformation(saved);
+                FableAudioProcessor fresh; fresh.setStateInformation(saved.getData(), (int)saved.getSize());
+                check(fresh.getSequenceRhythm().enabled && fresh.getSequenceRhythm().fit,
+                      "standalone WT-1 POLY round-trips through plugin state", 0);
+                seq.undoEdit(); seq.undoEdit();
+                check(!proc.getSequenceRhythm().enabled, "WT-1 undo restores POLY OFF", 0);
+            }
+        }
         for (int i = 0; i < fable::SEQ_STEPS; ++i) proc.setSeqStep(0, i, {});
     }
 
@@ -734,13 +792,13 @@ int main(int argc, char** argv) {
                 proc.processBlock(buf, empty);
             }
         };
-        // Snapshot with the message loop pumped first so the knob timers tick
-        // (rings_ rebuild there); the dot itself paints from the live atomics.
+        // Refresh one headless display frame before the snapshot so modulation
+        // rings rebuild; the dot itself paints from the live atomics.
         auto snapshotLive = [&](const juce::File& out) {
             std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+            ed->setVisible(true);
             ed->setSize(Rack::LW, Rack::LH);
-            juce::Thread::sleep(60); // let the 30 Hz control timers become due...
-            juce::Timer::callPendingTimersSynchronously(); // ...then run them headlessly
+            dispatchHeadlessUiFrame();
             writePng(ed->createComponentSnapshot(ed->getLocalBounds()), out);
         };
         {
@@ -768,8 +826,40 @@ int main(int argc, char** argv) {
         check(std::isnan(proc.getLiveMod(3)), "live-mod feed idles (NaN) after release", 0);
     }
 
+    {
+        // Stepped knobs (sub.oct: -2 / -1) must move with a drag and a wheel
+        // tick. Small deltas used to snap back to the stored step every write.
+        FableAudioProcessor stepProc;
+        auto* oct = stepProc.apvts.getParameter("sub.oct");
+        fui::Knob knob(stepProc.apvts, "sub.oct", fui::Knob::Sm, fui::Accent::N);
+        knob.setSize(52, 58);
+        auto mouse = [&](float y) {
+            return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), {26.0f, y},
+                juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, &knob, &knob,
+                juce::Time::getCurrentTime(), {26.0f, 20.0f}, juce::Time::getCurrentTime(), 1, false);
+        };
+        const float before = oct ? oct->getValue() : -1.0f;
+        knob.mouseDown(mouse(20));
+        for (int i = 1; i <= 30; ++i) knob.mouseDrag(mouse(20.0f + (float)i * 5.0f));
+        knob.mouseUp(mouse(170));
+        const float dragged = oct ? oct->getValue() : -1.0f;
+        juce::MouseWheelDetails wheel; wheel.deltaY = .1f;
+        knob.mouseWheelMove(mouse(20), wheel);
+        check(oct && before == 1.0f && dragged == 0.0f && oct->getValue() == 1.0f,
+              "stepped sub.oct knob moves with a drag and one wheel tick", dragged);
+    }
+
     printf("%s\n", fail == 0 ? "PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED");
     if (!runFxUiChecks<FableAudioProcessor>("wt", Rack::LW, Rack::LH, false, [](const auto& p) { return p.fxTelemetry(); })) ++fail;
+    const auto pluck = [](auto&, juce::MidiBuffer& midi, int block) {
+        // A plucked line: 48/55/60/55, a note every 24 blocks (~256 ms), held ~150 ms.
+        static const int notes[] = {48, 55, 60, 55};
+        const int note = notes[(block / 24) % 4];
+        if (block % 24 == 0) midi.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)(block % 48 ? 80 : 120)), 0);
+        if (block % 24 == 14) midi.addEvent(juce::MidiMessage::noteOff(1, note), 0);
+    };
+    fail += automixchecks::runStandalone<FableAudioProcessor>("wt1", Rack::LW, Rack::LH, false, pluck);
+    fail += livespectrumchecks::runStandalone<FableAudioProcessor>("wt1", Rack::LW, Rack::LH, false, pluck);
     if (!runArpProcessorChecks<FableAudioProcessor>("wt", false)) ++fail;
     {
         // LAB page: five devices fit the page and their LEDs drive fx.*.on.
@@ -880,10 +970,11 @@ int main(int argc, char** argv) {
         liveProc.prepareToPlay(48000,512);
         StandaloneWtUiModel model(liveProc);
         auto source=model.parameters();
-        Rack rack(model,liveProc.apvts,liveProc); rack.setSize(Rack::LW,Rack::LH);
+        Rack rack(model,liveProc.apvts,liveProc); rack.setSize(Rack::LW,Rack::LH); rack.setVisible(true);
         fui::Knob control(source,"filter.cutoff",fui::Knob::Lg,fui::Accent::F,true,3);
         fui::VSlider position(source,"oscA.pos",fui::Accent::A,[&]{ return liveProc.getVizPos(0); },1);
         control.setSize(90,100); position.setSize(45,140);
+        control.setVisible(true); position.setVisible(true);
         auto* cutoff=source.parameter("filter.cutoff");
         const float stored=cutoff->getValue();
         liveProc.setSequenceAutomation({
@@ -893,12 +984,12 @@ int main(int argc, char** argv) {
         });
         fui::addRoute(source,4,3,.2f); // velocity drives the cutoff
         juce::Thread::sleep(40);
-        juce::Timer::callPendingTimersSynchronously();
+        dispatchHeadlessUiFrame();
         liveProc.setSeqPlaying(true);
         juce::AudioBuffer<float> audio(2,512); juce::MidiBuffer midi;
         midi.addEvent(juce::MidiMessage::noteOn(1,48,.8f),0);
         liveProc.processBlock(audio,midi); midi.clear();
-        juce::Timer::callPendingTimersSynchronously();
+        dispatchHeadlessUiFrame();
         bool ok=std::isfinite(liveProc.liveAutomation("filter.cutoff")) &&
             std::abs(control.automationNorm()-.15f)<.001f &&
             std::abs(position.automationNorm()-.1f)<.001f;
@@ -931,7 +1022,7 @@ int main(int argc, char** argv) {
         const float first=control.effectiveNorm();
         ok &= first>control.automationNorm() && cutoff->getValue()==stored;
         for (int i=0;i<33;++i) liveProc.processBlock(audio,midi);
-        juce::Timer::callPendingTimersSynchronously();
+        dispatchHeadlessUiFrame();
         ok &= control.effectiveNorm()>first && control.automationNorm()>.6f && cutoff->getValue()==stored;
         ok &= differs(firstFilter,filterGraph.createComponentSnapshot(filterGraph.getLocalBounds()));
         const auto dir=juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals"); dir.createDirectory();
@@ -941,10 +1032,129 @@ int main(int argc, char** argv) {
         liveProc.setSeqPlaying(false); liveProc.processBlock(audio,midi);
         ok &= !std::isfinite(source.liveAutomation("filter.cutoff")) && control.automationNorm()<0;
         if (auto* src=source.parameter("mat1.src")) src->setValueNotifyingHost(0);
-        liveProc.processBlock(audio,midi); juce::Timer::callPendingTimersSynchronously();
+        liveProc.processBlock(audio,midi); dispatchHeadlessUiFrame();
         ok &= std::abs(control.effectiveNorm()-stored)<.001f;
         std::printf("  [%s] wt live controls: automation + modulation, moving values, stored patch preserved, idle restored\n",ok ? "PASS" : "FAIL");
         if (!ok) ++fail;
+    }
+    {   // ---- preset browser: drawer, snapshots, VARY, audition hand-off ----
+        printf("\n== WT-1 preset browser ==\n");
+        const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile("build/browser-visuals");
+        vis.createDirectory();
+        const auto favFile = vis.getChildFile("wt1-favorites.settings");
+        favFile.deleteFile();
+        fui::BrowserFavorites::overrideFile() = favFile;
+        FableAudioProcessor bp;
+        bp.prepareToPlay(sr, block);
+        std::unique_ptr<juce::AudioProcessorEditor> bed(bp.createEditor());
+        auto* wtEd = dynamic_cast<FableAudioProcessorEditor*>(bed.get());
+        check(wtEd != nullptr, "createEditor returns the WT-1 editor", 0);
+        if (wtEd != nullptr) {
+            bed->setSize(Rack::LW, Rack::LH);
+            auto& rack = wtEd->getRack();
+            auto* browseBtn = findButtonNamed(rack, "BROWSE");
+            check(browseBtn != nullptr && browseBtn->isVisible(), "the top bar shows BROWSE", 0);
+            if (browseBtn) browseBtn->onClick();
+            check(rack.presetBrowser().isOpen() && browseBtn && browseBtn->getToggleState(), "BROWSE opens the drawer", 0);
+            rack.presetBrowser().selectItem(4);
+            writePng(bed->createComponentSnapshot(bed->getLocalBounds()), vis.getChildFile("wt1-browser-open.png"));
+            rack.presetBrowser().vary();
+            rack.presetBrowser().toggleRole("pad");
+            writePng(bed->createComponentSnapshot(bed->getLocalBounds()), vis.getChildFile("wt1-browser-variant-filtered.png"));
+            rack.presetBrowser().toggleRole("pad");
+            rack.presetBrowser().revert();
+            rack.presetBrowser().close();
+            check(!rack.presetBrowser().isOpen() && !browseBtn->getToggleState(), "CLOSE hides the drawer and resets BROWSE", 0);
+
+            browser_test::Probe probe;
+            probe.label = "WT-1";
+            probe.infos.assign(fable::paramInfo().begin(), fable::paramInfo().end());
+            probe.values = [&] { return bp.captureParamValues(); };
+            probe.extra = [] { return std::string(); };
+            probe.program = [&] { return bp.getCurrentProgram(); };
+            probe.dirty = [&] { return bp.isProgramDirty(); };
+            probe.programName = [&](int i) { return bp.getProgramName(i); };
+            for (const auto& rule : fui::WtBrowserAdapter::varyRules()) probe.varyAmounts[fable::idFromString(rule.id)] = rule.amount;
+            for (int slot = 1; slot <= fable::MOD_MATRIX_SIZE; ++slot)
+                probe.varyAmounts[fable::paramIndex((fable::Pid)fable::matBase(slot), fable::MAT_AMT)] = 0.05f;
+            probe.setPlaying = [&](bool on) {
+                bp.setSeqPlaying(on);
+                juce::AudioBuffer<float> b(2, block); juce::MidiBuffer m;
+                for (int i = 0; i < 2; ++i) { b.clear(); bp.processBlock(b, m); }
+            };
+            browser_test::runChecks(rack.browserAdapter(), rack.presetBrowser(), probe,
+                                    [&](bool c, const char* msg, double v) { check(c, msg, v); });
+
+            // The audition note reaches the audio thread through the command FIFO.
+            bp.setCurrentProgram(0);
+            bp.auditionNote(60, true);
+            juce::AudioBuffer<float> ab(2, block); juce::MidiBuffer am;
+            float auditionPeak = 0;
+            for (int i = 0; i < 8; ++i) { ab.clear(); bp.processBlock(ab, am); auditionPeak = std::max(auditionPeak, ab.getMagnitude(0, block)); }
+            check(auditionPeak > 1.0e-4f, "audition note sounds through the FIFO path", auditionPeak);
+            bp.auditionNote(60, false);
+        }
+        fui::BrowserFavorites::overrideFile() = juce::File();
+    }
+    {   // ---- imported presets (FableSerumImport output): browser rows, load, table slots ----
+        auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("fable-imported-test");
+        dir.deleteRecursively();
+        auto write = [&](const char* name, const char* category, float pos, float level) {
+            serumimport::ImportedPreset p;
+            p.name = name; p.category = category;
+            p.params = { {"oscA.on", 1}, {"oscA.table", 6}, {"oscA.pos", pos}, {"oscA.level", level}, {"master.mono", 1} };
+            serumimport::Table t; t.name = std::string(name) + " A"; t.frames = 1; t.wave.resize(fable::SIZE);
+            for (int i = 0; i < fable::SIZE; ++i) t.wave[(size_t)i] = 1.0f - 2.0f * (float)i / fable::SIZE;
+            p.tables.push_back(t);
+            auto f = dir.getChildFile(category).getChildFile(juce::String(name) + ".json");
+            f.getParentDirectory().createDirectory();
+            f.replaceWithText(juce::JSON::toString(serumimport::toJson(p), true));
+            return serumimport::ImportedEntry{ name, category, f, p.params };
+        };
+        const auto e1 = write("TEST BASS", "Bass", 0.25f, 0.6f), e2 = write("TEST LEAD", "Leads", 0.5f, 0.7f);
+        serumimport::updateIndex(dir, { e1, e2 });
+        setenv("FABLE_IMPORTED_DIR", dir.getFullPathName().toRawUTF8(), 1);
+        FableAudioProcessor ip;
+        fui::WtBrowserAdapter adapter(std::make_unique<fui::WtStandaloneBackend>(ip));
+        const int nf = adapter.factoryCount();
+        const auto& items = adapter.items();
+        check((int)items.size() == nf + 2 && items[(size_t)nf].badge == "IMP" && items[(size_t)nf].role == "bass"
+                  && items[(size_t)nf + 1].role == "lead" && items[(size_t)nf].tags.isEmpty(),
+              "imported presets list after the factory items with their role", (float)items.size());
+        check(serumimport::tagForCategory("Bass (Hard)") == "hard" && serumimport::tagForCategory("Seq") == "seq"
+                  && serumimport::tagForCategory("Leads").isEmpty() && serumimport::roleForCategory("Plucked") == "pluck",
+              "source categories map to a role plus an extra tag", 0);
+        const int poolBefore = (int)ip.getUserTables().size();
+        adapter.load(nf);
+        auto value = [&](const char* id) { auto* p = dynamic_cast<juce::RangedAudioParameter*>(ip.apvts.getParameter(id)); return p->convertFrom0to1(p->getValue()); };
+        const int slot = (int)std::lround(value("oscA.table")) - ip.numTables() + (int)ip.getUserTables().size();
+        check((int)ip.getUserTables().size() == poolBefore + 1 && slot == poolBefore && ip.getUserTables().back().name == "TEST BASS A",
+              "loading an imported preset adds its table and points osc A at it", value("oscA.table"));
+        check(std::abs(value("oscA.pos") - 0.25f) < 1e-3f && value("master.mono") > 0.5f && adapter.currentIndex() == nf,
+              "imported parameters apply and the browser marks the row", value("oscA.pos"));
+        adapter.load(nf + 1);
+        check((int)ip.getUserTables().size() == poolBefore + 1 && ip.getUserTables().back().name == "TEST LEAD A" && adapter.currentIndex() == nf + 1,
+              "the next imported preset reuses the same table slot", (float)ip.getUserTables().size());
+        adapter.load(0);
+        check(adapter.currentIndex() == 0 && ip.loadedImportedKey().isEmpty(), "a factory preset clears the imported state", 0);
+        {   // the editor's browser lists them too, with the import button
+            ip.prepareToPlay(sr, block);
+            std::unique_ptr<juce::AudioProcessorEditor> ied(ip.createEditor());
+            if (auto* ed = dynamic_cast<FableAudioProcessorEditor*>(ied.get())) {
+                ied->setSize(Rack::LW, Rack::LH);
+                auto& rack = ed->getRack();
+                if (auto* browse = findButtonNamed(rack, "BROWSE")) browse->onClick();
+                rack.presetBrowser().toggleRole("bass");
+                const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile("build/browser-visuals");
+                vis.createDirectory();
+                writePng(ied->createComponentSnapshot(ied->getLocalBounds()), vis.getChildFile("wt1-browser-imported.png"));
+                check(findButtonNamed(rack, juce::String::fromUTF8("IMPORT FROM SERUM\xe2\x80\xa6")) != nullptr,
+                      "the WT-1 browser offers IMPORT FROM SERUM", 0);
+                rack.presetBrowser().close();
+            }
+        }
+        setenv("FABLE_IMPORTED_DIR", noImports.getFullPathName().toRawUTF8(), 1);
+        dir.deleteRecursively();
     }
     if (!runAgentProcessorChecks<FableAudioProcessor>("wt", fable::paramInfo().data(), fable::paramInfo().size(), "filter.cutoff", "oscA.oct")) ++fail;
     return fail == 0 ? 0 : 1;

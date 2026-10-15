@@ -6,6 +6,7 @@ import { useStore } from '../store';
 export function useMidi() {
   const playNote = useStore((s) => s.playNote);
   const bend = useStore((s) => s.bend);
+  const setParam = useStore((s) => s.setParam);
   const setMidiActive = useStore((s) => s.setMidiActive);
 
   useEffect(() => {
@@ -55,6 +56,9 @@ export function useMidi() {
               if (!isHeld(d1)) playNote(d1, 0);
             }
             else if (cmd === 0xe0) { bend((((d2 << 7) | d1) - 8192) / 8192 * 2); }
+            // MOD WHL / AFTERTCH mod sources are parameters, as in Serum.
+            else if (cmd === 0xb0 && d1 === 1) setParam('perf.modwheel', d2 / 127);
+            else if (cmd === 0xd0) setParam('perf.aftertouch', d1 / 127);
           };
         }
         for (const input of [...held.keys()]) if (!connected.has(input)) flush(input);
@@ -73,5 +77,5 @@ export function useMidi() {
       }
       setMidiActive(false);
     };
-  }, [playNote, bend, setMidiActive]);
+  }, [playNote, bend, setParam, setMidiActive]);
 }

@@ -4,6 +4,7 @@ import { getStep, LAYOUT, makeEmptyPatterns, NOTE_LANES, STEPS } from './seq';
 import { copyRect } from '../shared/seqEdit';
 import { defaultBassParams } from './params';
 import { FACTORY_PATCHES } from './patches';
+import { BASS_PATTERN_PRESETS, bassPresetSequence } from './patternPresets';
 
 if (typeof localStorage === 'undefined') {
   const store = new Map<string, string>();
@@ -454,5 +455,18 @@ describe('bass store', () => {
       s.moveStepNote(7, 9, 4);
       expect(useBassStore.getState().patterns).toBe(before);
     });
+  });
+});
+
+describe('BL-1 pattern presets', () => {
+  it('loads a catalog line and its length without changing the sound', () => {
+    useBassStore.setState({ hosted: false, params: defaultBassParams(), patterns: makeEmptyPatterns(), chain: [0], editPattern: 1 });
+    const params = useBassStore.getState().params;
+    expect(useBassStore.getState().loadPatternPreset(1)).toBe(true);
+    const expected = bassPresetSequence(BASS_PATTERN_PRESETS[1]);
+    expect(Array.from(useBassStore.getState().patterns)).toEqual(Array.from(expected.patterns));
+    expect(useBassStore.getState().chain).toEqual(expected.chain);
+    expect(useBassStore.getState().editPattern).toBe(0);
+    expect(useBassStore.getState().params).toEqual(params);
   });
 });

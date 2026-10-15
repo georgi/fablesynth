@@ -5,6 +5,8 @@ import { OUT_NAMES, pad } from '../params';
 import { DrumStepper } from './DrumStepper';
 import { DrumKnob } from './DrumKnob';
 import { LabPanel } from '../../components/panels/LabPanel';
+import { KitMixPanel } from './KitMixPanel';
+import { DRUM_SC_SOURCES, trackKeyLabels } from '../../engine/sidechain';
 import { EqPanel } from '../../components/panels/EqPanel';
 import { DrivePanel } from '../../components/panels/DrivePanel';
 import { ChorusPanel } from '../../components/panels/ChorusPanel';
@@ -19,13 +21,23 @@ function DrumPower({ paramId }: { paramId: string }) {
   return <button className={`power-btn fx-power${on ? ' on' : ''}`} type="button" aria-label={`${paramId} power`} aria-pressed={on} onClick={() => setParam(paramId, on ? 0 : 1)} />;
 }
 
-export function FxRack() {
+// `scopeSwitch` is off in the tabbed standalone body, where the PAD FX and
+// GROUP FX tabs pick the scope.
+export function FxRack({ scopeSwitch = true }: { scopeSwitch?: boolean } = {}) {
   const selectedPad = useDrumStore((s) => s.sel);
   const scope = useSeqStore((s) => s.drumFxScope);
   const openDrumFx = useSeqStore((s) => s.openDrumFx);
   const params = useDrumStore(s => s.params);
   const setParam = useDrumStore(s => s.setParam);
   const activeEngine = drumEngine;
+  const hosted = useDrumStore((s) => s.hosted);
+  const padNames = useDrumStore((s) => s.padNames);
+  const seqTracks = useSeqStore((s) => s.session.tracks);
+  // Pads by name; in SQ-4 the other tracks by name too.
+  const scLabels = {
+    ...Object.fromEntries(padNames.map((n, i) => [`PAD ${String(i + 1).padStart(2, '0')}`, `${String(i + 1).padStart(2, '0')} ${n}`])),
+    ...(hosted ? trackKeyLabels(seqTracks) : {}),
+  };
   const bus = Math.max(0, Math.min(OUT_NAMES.length - 1, params[pad(selectedPad, 'out')] | 0));
   useLayoutEffect(() => { activeEngine.setMeterPad(selectedPad); }, [activeEngine, selectedPad, bus]);
   const adapter: FxPanelAdapter = {
@@ -33,6 +45,15 @@ export function FxRack() {
     params,
     setParam,
     prefix: scope === 'pad' ? pad(selectedPad, '') : '',
+    // The kit leaves the worklet as finished buses, so only the group EQ has
+    // a signal to learn from; a single pad is never isolated.
+    analysis: scope === 'pad'
+      ? { source: null, note: 'USE GROUP FX TO LEARN' }
+      : { source: activeEngine.scopeAnalyser ?? null, reference: 'drums' },
+    // Pad comps report their input level; the group comp is learned from the
+    // kit output with the group comp briefly bypassed.
+    compTap: scope === 'pad' ? { source: null, style: 'punch' } : { source: activeEngine.scopeAnalyser ?? null, postComp: true, style: 'glue' },
+    sidechain: { sources: DRUM_SC_SOURCES, hosted, labels: scLabels },
     renderKnob: (id, key) => <DrumKnob paramId={id} label={id.includes('fx.eq.') ? key?.toUpperCase() : undefined} size="sm" accent="n" />,
     renderPower: (id) => <DrumPower paramId={id} />,
     renderStepper: (id) => <DrumStepper paramId={id} accent="n" />,
@@ -43,13 +64,14 @@ export function FxRack() {
       <div className="dr-fx-head">
         <span className="dr-led dr-led-a" aria-hidden="true" />
         <h2>{scope === 'pad' ? 'PAD FX INSERT' : 'DRUM GROUP CHANNEL STRIP'}</h2>
-        <div className="dr-fx-scope" role="group" aria-label="FX scope">
+        {scopeSwitch && <div className="dr-fx-scope" role="group" aria-label="FX scope">
           <button type="button" className={scope === 'pad' ? 'active' : ''} aria-pressed={scope === 'pad'} onClick={() => openDrumFx('pad')}>PAD FX</button>
           <button type="button" className={scope === 'group' ? 'active' : ''} aria-pressed={scope === 'group'} onClick={() => openDrumFx('group')}>GROUP FX</button>
-        </div>
+        </div>}
         <span className="dr-fx-padname">{scope === 'pad' ? `PAD ${String(selectedPad + 1).padStart(2, '0')}` : 'ALL 16 PADS'}</span>
         <span className="dr-fx-flow" aria-hidden="true">EQ › OTT › COMP › DRIVE › CHORUS › DELAY › REVERB</span>
       </div>
+      {scope === 'group' && <KitMixPanel engine={activeEngine} />}
       <div className="fx-rack">
         <EqPanel key={`${scope}-${selectedPad}`} adapter={adapter} />
         <DynamicsPanel kind="ott" adapter={adapter} />

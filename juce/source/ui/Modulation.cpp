@@ -1,5 +1,6 @@
 #include "Modulation.h"
 #include "../dsp/Params.h"
+#include <cmath>
 
 namespace fui {
 
@@ -44,7 +45,31 @@ void clearSlot(const ParameterSource& s, int slot) {
     setMatReal(s, slot, ".src", 0.0f);
     setMatReal(s, slot, ".dst", 0.0f);
     setMatReal(s, slot, ".amt", 0.0f);
+    setMatReal(s, slot, ".pol", 0.0f);
+    setMatReal(s, slot, ".aux", 0.0f);
 }
+
+bool routeBipolar(const ParameterSource& s, int slot) {
+    return fable::routeBipolar((int)matReal(s, slot, ".src"), (int)matReal(s, slot, ".pol"));
+}
+
+void setRouteBipolar(const ParameterSource& s, int slot, bool bipolar) {
+    if (slot < 1 || slot > fable::MOD_MATRIX_SIZE) return;
+    const bool native = fable::sourceBipolar((int)matReal(s, slot, ".src"));
+    setMatReal(s, slot, ".pol", bipolar == native ? 0.0f : bipolar ? 2.0f : 1.0f);
+}
+
+juce::String routeLabel(int src, float amt, bool bipolar) {
+    const auto name = src > 0 && src < (int)fable::MOD_SOURCES.size()
+        ? juce::String(fable::MOD_SOURCES[(size_t)src]) : juce::String("MOD");
+    const int pct = (int)std::lround(amt * 100.0f);
+    const auto sign = bipolar ? juce::String::fromUTF8("\xc2\xb1") : juce::String(pct < 0 ? "" : "+");
+    return name + " " + sign + juce::String(bipolar ? std::abs(pct) : pct) + "%";
+}
+
+static int g_highlightedSource = 0;
+int highlightedModSource() { return g_highlightedSource; }
+void setHighlightedModSource(int src) { g_highlightedSource = src; }
 
 bool isSlotActive(const ParameterSource& s, int slot) {
     if (slot < 1 || slot > fable::MOD_MATRIX_SIZE) return false;
@@ -65,6 +90,10 @@ ModSourceChip::ModSourceChip(int src, juce::String label, bool compact)
 }
 
 void ModSourceChip::mouseDown(const juce::MouseEvent&) {}
+void ModSourceChip::mouseEnter(const juce::MouseEvent&) { setHighlightedModSource(src_); }
+void ModSourceChip::mouseExit(const juce::MouseEvent&) {
+    if (highlightedModSource() == src_) setHighlightedModSource(0);
+}
 
 void ModSourceChip::mouseDrag(const juce::MouseEvent&) {
     if (auto* c = juce::DragAndDropContainer::findParentDragContainerFor(this))

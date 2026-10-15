@@ -272,7 +272,13 @@ public:
 
     // Host beat position at the start of the next process() call. Without
     // it GLITCH runs a free clock at the set tempo.
-    void setTransport(double ppq, bool playing) { if (playing && std::isfinite(ppq)) beat_ = ppq; }
+    void setTransport(double ppq, bool playing) {
+        synced_ = playing && std::isfinite(ppq);
+        if (synced_) beat_ = ppq;
+    }
+    // Advance the free-running GLITCH clock across samples the owner skipped
+    // while idle. A host-synced clock is set from the transport instead.
+    void advanceClock(double samples) { if (!synced_) beat_ += bpm_ / 60.0 / sr_ * samples; }
     // A session tempo (SQ-4) that wins over the patch tempo; <= 0 clears.
     void setTempoOverride(double bpm) {
         const double next = std::isfinite(bpm) && bpm > 1 ? bpm : 0.0;
@@ -512,6 +518,7 @@ private:
     }
 
     double sr_ = 48000, bpm_ = 120, beat_ = 0, patchBpm_ = 120, tempoOverride_ = 0;
+    bool synced_ = false; // beat_ follows the host transport
     double dcCoef_ = 0.997, fade_ = 96, gateStep_ = 0.003;
     LabSettings settings_;
     lab::Rng rng_;

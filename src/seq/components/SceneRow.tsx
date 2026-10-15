@@ -134,7 +134,7 @@ function ClipCell({ s, t }: { s: number; t: number }) {
 
   const bytes = clipPattern(session, s, t);
   const arp = compileClipArp(clip);
-  const steps = arp ? arp.notes.map((n, i) => ({ on: n >= 0 && arp.hits[i], h: Math.max(4, Math.min(19, 5 + (n % 24) * .6)) })) : bytes ? previewSteps(tr.machine, bytes, clip.bars) : [];
+  const steps = arp ? arp.notes.slice(0, 16).map((n, i) => ({ on: n >= 0 && arp.hits[i], h: Math.max(4, Math.min(19, 5 + (n % 24) * .6)) })) : bytes ? previewSteps(tr.machine, bytes, clip.bars) : [];
 
   const cls = ['sq-cell'];
   if (live) cls.push('live');

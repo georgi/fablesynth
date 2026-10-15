@@ -9,6 +9,7 @@
 #include "../source/bass/dsp/BassFx.h"
 #include "../source/bass/dsp/BassPatches.h"
 #include "../source/dsp/Wavetables.h"
+#include "drive_os_check.h"
 
 #include <algorithm>
 #include <cmath>
@@ -81,6 +82,32 @@ static std::vector<double> bandProfileDb(const std::vector<float>& x, int N, dou
     }
     for (auto& v : band) v = 10 * std::log10(std::max(v, 1e-30) / total);
     return band;
+}
+
+// Inharmonic energy 20 Hz - 16 kHz relative to the fundamental's lobe, in dB.
+// Blackman-Harris window (sidelobes < -92 dB); bins within 8 of a harmonic are
+// masked, so only content the oscillator should not contain is counted.
+static double inharmonicDb(const float* x, int N, double sr, double f0) {
+    std::vector<double> re((size_t)N), im((size_t)N, 0.0);
+    for (int i = 0; i < N; i++) {
+        const double t = 2 * M_PI * i / (N - 1);
+        const double w = 0.35875 - 0.48829 * std::cos(t) + 0.14128 * std::cos(2 * t) - 0.01168 * std::cos(3 * t);
+        re[(size_t)i] = x[i] * w;
+    }
+    fft(re.data(), im.data(), N, false);
+    const double bin = sr / N;
+    std::vector<char> harm((size_t)N / 2, 0);
+    for (int h = 1; h * f0 < sr * 0.5; h++) {
+        const int c = (int)std::lround(h * f0 / bin);
+        for (int k = std::max(0, c - 8); k <= c + 8 && k < N / 2; k++) harm[(size_t)k] = 1;
+    }
+    auto p2 = [&](int k) { return re[(size_t)k] * re[(size_t)k] + im[(size_t)k] * im[(size_t)k]; };
+    double lobe = 0, inh = 0;
+    const int c1 = (int)std::lround(f0 / bin);
+    for (int k = std::max(0, c1 - 8); k <= c1 + 8; k++) lobe += p2(k);
+    for (int k = (int)std::ceil(20 / bin); k < N / 2 && k * bin <= 16000; k++)
+        if (!harm[(size_t)k]) inh += p2(k);
+    return 10 * std::log10(std::max(inh, 1e-30) / lobe);
 }
 
 static const double SR = 48000.0;
@@ -232,6 +259,32 @@ int main() {
         check(!e.vizGate, "viz gate clears");
     }
 
+    printf("\n== accent -> plain retrigger is click-free ==\n");
+    {
+        // Retrigger at a waveform peak, where a gain step is loudest. A twin
+        // engine finds the peak; rendering is deterministic.
+        auto start = [&](BassEngine& e) {
+            e.prepare(SR);
+            e.setTables(tables);
+            e.keyOn(0, BL_ACCENT_VEL, true);
+        };
+        BassEngine probe; start(probe);
+        const auto look = render(probe, 9600);
+        int cut = 4800;
+        for (int i = 4800; i < 9600; i++) if (std::abs(look[i]) > std::abs(look[cut])) cut = i;
+        BassEngine e; start(e);
+        auto a = render(e, cut + 1);
+        e.keyOff(0);
+        e.keyOn(0, BL_PLAIN_VEL, false);     // fresh note over a sounding voice
+        auto b = render(e, 2400);
+        // Unramped, the plain gain (0.72 vs ~1.4 accented) halves the peak in
+        // one sample. The ramp leaves only the re-attack slope.
+        const double level = std::abs((double)a.back());
+        const double jump = std::abs((double)b[0] - a.back());
+        check(jump < 0.1 * level, "gain change ramps instead of stepping",
+              num(jump) + " at level " + num(level));
+    }
+
     printf("\n== legato slide (last-note priority) ==\n");
     {
         BassEngine e;
@@ -257,6 +310,64 @@ int main() {
         check(c2 < c1, "release of the top key slides back to the held note",
               num(c1) + " -> " + num(c2));
         e.keyOff(0);
+    }
+
+    printf("\n== melodic POLY (standalone, worklet-bass.js polyFire) ==\n");
+    {
+        // Records the step sequence at each step boundary over `samples`.
+        auto stepsOver = [&](BassEngine& e, int samples) {
+            std::vector<int> seen; int last = -2;
+            std::vector<float> l(64), r(64);
+            for (int done = 0; done < samples; done += 64) {
+                e.render(l.data(), r.data(), 64);
+                if (e.currentStep() != last) { last = e.currentStep(); seen.push_back(last); }
+            }
+            return seen;
+        };
+        BassEngine e;
+        e.prepare(SR);
+        e.setTables(tables);
+        auto pats = makeEmptyBassPatterns();
+        for (int st = 0; st < 3; ++st) { BassSeqStep s; s.on = true; s.note = st; setBassStep(pats.data(), 0, st, s); }
+        e.setPatterns(pats.data(), (int)pats.size());
+        int chain[] = { 0, 1 };
+        e.setChain(chain, 2);
+        e.params()[BL_MASTER_SWING] = 0;
+        SequenceRhythm grid; grid.enabled = true; grid.steps = 3;
+        e.setSequenceRhythm(grid);
+        e.play();
+        const double dur = (60.0 / 138.0 / 4.0) * SR;
+        const auto loop = stepsOver(e, (int)(dur * 7));
+        check(loop.size() >= 7 && loop[0] == 0 && loop[1] == 1 && loop[2] == 2 && loop[3] == 0 && loop[6] == 0,
+              "GRID 3 loops the first three cells of bar one", num((double)loop.size()));
+        check(e.currentPattern() == 0, "POLY plays bar one regardless of the chain");
+        // FIT 3 in one bar: three straight slots of 4/3 beats each.
+        BassEngine f;
+        f.prepare(SR); f.setTables(tables);
+        f.setPatterns(pats.data(), (int)pats.size()); f.setChain(chain, 1);
+        f.params()[BL_MASTER_SWING] = 0;
+        SequenceRhythm fit = grid; fit.fit = true; fit.cycleBeats = 4;
+        f.setSequenceRhythm(fit);
+        f.play();
+        const double slot = 60.0 / 138.0 * SR * 4.0 / 3.0;
+        const auto fitSteps = stepsOver(f, (int)(slot * 1.5));
+        check(fitSteps.size() == 2 && fitSteps[0] == 0 && fitSteps[1] == 1,
+              "FIT 3 / 1 bar fires its second slot after 4/3 beats", num((double)fitSteps.size()));
+        // Rotation shifts the source cells, not the clock.
+        BassEngine g;
+        g.prepare(SR); g.setTables(tables);
+        g.setPatterns(pats.data(), (int)pats.size()); g.setChain(chain, 1);
+        g.params()[BL_MASTER_SWING] = 0;
+        SequenceRhythm rot = grid; rot.rotation = 1;
+        g.setSequenceRhythm(rot);
+        g.play();
+        const auto rotSteps = stepsOver(g, (int)(dur * 2.5));
+        check(rotSteps.size() >= 3 && rotSteps[0] == 2 && rotSteps[1] == 0 && rotSteps[2] == 1,
+              "ROTATE 1 starts the loop on its last cell");
+        // Turning POLY off mid-play re-phases onto the ordinary grid.
+        e.setSequenceRhythm({});
+        const auto back = stepsOver(e, (int)(dur * 3));
+        check(!back.empty() && back.back() >= 0, "POLY off returns to the bar grid");
     }
 
     printf("\n== sequencer: step timing, gate frac, swing ==\n");
@@ -424,6 +535,46 @@ int main() {
         std::vector<float> L2((size_t)n, 0.25f), R2((size_t)n, 0.25f);
         fx.process(L2.data(), R2.data(), n);
         check(rms(L2, 24000, 48000) < 1e-4, "volume 0 mutes", num(rms(L2, 24000, 48000)));
+    }
+
+    printf("\n== BL-1 COMP and side-chain ==\n");
+    {
+        check(bassParamInfo()[BL_FXCOMP_SC].pid == "fx.comp.sc" && bassParamInfo()[BL_FXCOMP_SCHP].pid == "fx.comp.schp"
+              && BL_FXCOMP_SCHP == BL_NUM_PARAMS - 1, "side-chain params are appended to BL-1");
+        // Steady tone through OTT -> COMP; everything after it is neutral.
+        auto run = [](bool on, int sc, const float* key) {
+            BassFx fx; fx.prepare(SR);
+            auto p = defaultBassParams();
+            p[BL_FXDRIVE_ON] = 0; p[BL_FXREVERB_ON] = 0;
+            p[BL_FXCOMP_ON] = on ? 1.0f : 0.0f; p[BL_FXCOMP_THR] = -40; p[BL_FXCOMP_RATIO] = 20;
+            p[BL_FXCOMP_SC] = (float)sc;
+            fx.setParams(p); fx.snapRamps();
+            const int n = 24000;
+            std::vector<float> L((size_t)n), R((size_t)n);
+            // Measured over the settled second half.
+            for (int i = 0; i < n; ++i) L[(size_t)i] = R[(size_t)i] = 0.4f * (float)std::sin(2 * M_PI * 110 * i / SR);
+            fx.process(L.data(), R.data(), n, key);
+            return std::make_pair(rms(L, 12000, 24000), fx.compTrace().frames());
+        };
+        std::vector<float> key(24000);
+        for (size_t i = 0; i < key.size(); ++i) key[i] = 0.9f * (float)std::sin(2 * M_PI * 70 * (double)i / SR);
+        const auto off = run(false, 0, nullptr), keyed = run(true, 2, key.data()), silent = run(true, 2, nullptr);
+        check(keyed.first < off.first * 0.3, "BL-1 COMP keyed by TRACK 1 ducks under the key",
+              num(keyed.first / off.first));
+        check(std::abs(silent.first / off.first - 1) < 0.05, "a silent key leaves BL-1 untouched",
+              num(silent.first / off.first));
+        check(keyed.second == 24000, "BL-1 COMP trace records every sample");
+        // Unkeyed COMP still compresses: its makeup matches level, so the
+        // per-sample gain trace (not the output level) shows the reduction.
+        BassFx fx; fx.prepare(SR);
+        auto p = defaultBassParams();
+        p[BL_FXCOMP_ON] = 1; p[BL_FXCOMP_THR] = -40; p[BL_FXCOMP_RATIO] = 20;
+        fx.setParams(p); fx.snapRamps();
+        std::vector<float> L(24000), R(24000);
+        for (size_t i = 0; i < L.size(); ++i) L[i] = R[i] = 0.4f * (float)std::sin(2 * M_PI * 110 * (double)i / SR);
+        fx.process(L.data(), R.data(), (int)L.size());
+        check(fx.telemetry()[FxTelemetry::reduction] > 10, "BL-1 COMP reduces a loud signal natively",
+              num(fx.telemetry()[FxTelemetry::reduction]));
     }
 
 
@@ -607,8 +758,14 @@ int main() {
         e.render(L.data() + 4096, R.data() + 4096, 8192);
         check(maxDelta(L, 4090, 4400) < natural * 1.5, "no click on release",
               num(maxDelta(L, 4090, 4400)) + " vs " + num(natural));
-        check(rms(L, 10000, 12288) < 1e-4, "release reaches silence",
-              num(rms(L, 10000, 12288)));
+        // Only the DC blocker's subsonic tail remains: no audio-rate content,
+        // and it rings out instead of being cut (cutting it clicked).
+        check(maxDelta(L, 10000, 12288) < 1e-5, "release reaches silence",
+              num(maxDelta(L, 10000, 12288)));
+        std::vector<float> T((size_t)SR), TR((size_t)SR);
+        e.render(T.data(), TR.data(), (int)SR);
+        check(maxDelta(T, 1, (int)SR) < 1e-5 && std::abs(T.back()) < 1e-5,
+              "DC tail decays without a step", num(std::abs(T.back())));
     }
 
     printf("\n== sample-rate and block-size invariance ==\n");
@@ -965,5 +1122,75 @@ int main() {
     }
 
     printf("%s\n", g_fail == 0 ? "BASS ENGINE CHECKS PASSED" : "BASS ENGINE CHECKS FAILED");
+    printf("\n== BL-1 square sub is band-limited (table read, no polyBLEP alias) ==\n");
+    {
+        // Square sub alone: osc off, filter open, drive/unison/LFO/glide off.
+        // The old naive square + 2-point polyBLEP measured -51 dB (262 Hz) and
+        // -44 dB (2 kHz) at 48 kHz; the mip-mapped table sits at the metric
+        // floor (about -88 dB).
+        const auto tables = makeTables();
+        struct Case { int semi; double sr; };
+        for (Case c : {Case{36, 48000.0}, Case{72, 48000.0}, Case{72, 44100.0}, Case{72, 96000.0}}) {
+            BassEngine e; e.prepare(c.sr); e.setTables(tables);
+            auto p = defaultBassParams();
+            p[BL_OSC_LEVEL] = 0; p[BL_SUB_LEVEL] = 1; p[BL_SUB_SHAPE] = 1; p[BL_SUB_OCT] = -1;
+            p[BL_FLT_TYPE] = 0; p[BL_FLT_CUT] = 20000; p[BL_FLT_RES] = 0; p[BL_FLT_DRIVE] = 0;
+            p[BL_FLT_ENV] = 0; p[BL_OSC_UNISON] = 1; p[BL_LFO_DEPTH] = 0;
+            p[BL_AENV_ATT] = 0.001f; p[BL_AENV_SUS] = 1;
+            e.setParams(p); e.snapParams();
+            const int N = 32768, skip = 4096;
+            std::vector<float> L((size_t)(N + skip)), R((size_t)(N + skip));
+            e.keyOn(c.semi, 1.0f, false);
+            for (int at = 0; at < N + skip; at += 64) e.render(L.data() + at, R.data() + at, 64);
+            const double f0 = 440.0 * std::pow(2.0, (36 + c.semi - 12 - 69) / 12.0);
+            const double db = inharmonicDb(L.data() + skip, N, c.sr, f0);
+            check(db < -75.0, "square sub inharmonic < -75 dB @ " + std::to_string((int)std::lround(f0))
+                  + " Hz, " + std::to_string((int)c.sr) + " Hz", num(db) + " dB");
+        }
+    }
+
+    printf("\n== BL-1 drive: 2x oversampled saturator, aliasing and dry/wet alignment ==\n");
+    {
+        const auto tables = makeTables();
+        auto renderDrive = [&](double sr, int semi, int ftype, float cut, float drive, float level, int uni) {
+            BassEngine e; e.prepare(sr); e.setTables(tables);
+            auto p = defaultBassParams();
+            p[BL_OSC_TABLE] = 0; p[BL_OSC_POS] = 0.8f; p[BL_OSC_LEVEL] = level; p[BL_SUB_LEVEL] = 0;
+            p[BL_OSC_UNISON] = (float)uni; p[BL_OSC_SPREAD] = 0; p[BL_OSC_DETUNE] = 0;
+            p[BL_FLT_TYPE] = (float)ftype; p[BL_FLT_CUT] = cut; p[BL_FLT_RES] = 0.3f;
+            p[BL_FLT_DRIVE] = drive; p[BL_FLT_ENV] = 0; p[BL_FLT_TRACK] = 0; p[BL_LFO_DEPTH] = 0;
+            p[BL_AENV_ATT] = 0.001f; p[BL_AENV_SUS] = 1;
+            e.setParams(p); e.snapParams();
+            const int N = 32768, skip = 4096;
+            std::vector<float> L((size_t)(N + skip)), R((size_t)(N + skip));
+            e.keyOn(semi, 1.0f, false);
+            for (int at = 0; at < N + skip; at += 64) e.render(L.data() + at, R.data() + at, 64);
+            return std::vector<float>(L.begin() + skip, L.end());
+        };
+        // Full drive at 523 Hz: the folded products stay far below the old
+        // first-order ADAA at the base rate (about -58 dB).
+        struct Case { double sr; int ftype; float cut; int uni; double limit; const char* name; };
+        for (Case c : {Case{48000.0, 0, 20000.0f, 1, -80.0, "LP12 open"}, Case{48000.0, 3, 300.0f, 1, -80.0, "HP12"},
+                       Case{44100.0, 0, 20000.0f, 1, -76.0, "LP12 open"}, Case{44100.0, 3, 300.0f, 1, -76.0, "HP12"},
+                       Case{48000.0, 0, 20000.0f, 5, -68.0, "LP12 open, 5 coherent unison voices"}}) {
+            auto y = renderDrive(c.sr, 36, c.ftype, c.cut, 1.0f, 1.0f, c.uni);
+            const double f0 = 440.0 * std::pow(2.0, (36 + 36 - 69) / 12.0);
+            const double db = driveos_check::inharmonicDb(y.data(), (int)y.size(), c.sr, f0);
+            check(db < c.limit, std::string("drive 1 alias < ") + std::to_string((int)c.limit) + " dB, " + c.name
+                  + " @ " + std::to_string((int)c.sr) + " Hz", num(db) + " dB");
+        }
+        // Dry/wet alignment: at a level where tanh is linear, a half-mixed
+        // drive (0.05 = mix 0.5) is a pure gain on the drive-0 signal. A dry
+        // path that missed the oversampler delay would notch every 4 kHz.
+        for (double sr : {48000.0, 44100.0}) {
+            auto off = renderDrive(sr, 12, 0, 20000.0f, 0.0f, 0.02f, 1);
+            auto on = renderDrive(sr, 12, 0, 20000.0f, 0.05f, 0.02f, 1);
+            const double f0 = 440.0 * std::pow(2.0, (36 + 12 - 69) / 12.0);
+            const double rip = driveos_check::gainRippleDb(off.data(), on.data(), (int)off.size(), sr, f0);
+            check(rip < 0.1, "drive mix 0.5 adds no comb filtering @ " + std::to_string((int)sr) + " Hz",
+                  num(rip) + " dB residual");
+        }
+    }
+
     return g_fail == 0 ? 0 : 1;
 }

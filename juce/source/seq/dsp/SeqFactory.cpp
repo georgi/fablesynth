@@ -9,6 +9,10 @@
 // 6 OH HAT · 8..10 TOMS · 12/13 PERC.
 #include "SeqFactory.h"
 #include "ClipLibrary.gen.h"
+#include "SessionMixdowns.gen.h"
+#include "../../dsp/Presets.h"
+#include "../../bass/dsp/BassPatches.h"
+#include "../../drum/dsp/DrumKits.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -696,6 +700,62 @@ SessionData factorySession() {
     return s;
 }
 
+namespace {
+template <typename Values, typename Info>
+void putParams(std::map<std::string, float>& out, const Values& values, const Info& info) {
+    for (size_t i = 0; i < values.size(); ++i) out[info[i].pid] = (float)values[i];
+}
+
+// A patch as a complete parameter map, resolved like SessionCodec's export
+// and the web's resolvedPatchParams (sessionExport.ts).
+std::map<std::string, float> resolvedPatchParams(Machine machine, const PatchRef& patch) {
+    std::map<std::string, float> out;
+    if (!patch.factory) {
+        switch (machine) {
+            case Machine::DR1: putParams(out, defaultDrumParams(), drumParamInfo()); break;
+            case Machine::BL1: putParams(out, defaultBassParams(), bassParamInfo()); break;
+            case Machine::WT1: putParams(out, defaultParams(), paramInfo()); break;
+        }
+        for (const auto& [id, value] : patch.params) out[id] = value;
+        return out;
+    }
+    const auto pick = [&](const auto& bank) -> const auto& {
+        return bank[(size_t)(patch.index >= 0 && patch.index < (int)bank.size() ? patch.index : 0)];
+    };
+    switch (machine) {
+        case Machine::DR1: putParams(out, applyKit(pick(factoryKits())), drumParamInfo()); break;
+        case Machine::BL1: putParams(out, applyBassPatch(pick(bassFactoryPatches())), bassParamInfo()); break;
+        case Machine::WT1: putParams(out, applyPreset(pick(factoryPresets())), paramInfo()); break;
+    }
+    return out;
+}
+
+// sessionPresets.ts applyMixdown(): the generated ASSIST / auto-EQ / auto-comp
+// results. Values are absolute, so applying twice changes nothing.
+void applyMixdowns(std::vector<SessionPreset>& library) {
+    for (auto& preset : library) {
+        for (const auto& mix : sessionMixdowns()) {
+            if (preset.name != mix.name) continue;
+            auto& session = preset.session;
+            for (size_t t = 0; t < mix.tracks.size() && t < session.tracks.size(); ++t) {
+                auto& track = session.tracks[t];
+                track.gain = mix.tracks[t].gain;
+                if (mix.tracks[t].params.empty()) continue;
+                auto params = resolvedPatchParams(track.machine, track.patch);
+                for (const auto& [id, value] : mix.tracks[t].params) params[id] = value;
+                // WT-1's host-compatibility seq.gate, which web patches lack.
+                if (track.machine == Machine::WT1) params.erase("seq.gate");
+                track.patch.params = std::move(params);
+                track.patch.factory = false;
+            }
+            session.masterFx.clear();
+            for (const auto& [id, value] : mix.masterFx) session.masterFx[id] = value;
+            session.masterVol = mix.masterVol;
+        }
+    }
+}
+} // namespace
+
 const std::vector<SessionPreset>& factorySessionLibrary() {
     static const std::vector<SessionPreset> presets = [] {
         auto make = [](const char* name, const char* family, const char* variation,
@@ -875,8 +935,20 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
             make("ROOTS RADAR",  "DUB", "RADAR",   2, { "heavy", "hazy", "wide" }, { 4, 20, 59, 56 }, 2),          // STEPPER ROOT · DEEP TICK / DUB SKANK
             make("ZION GATE",    "DUB", "GATE",    3, { "uplifting", "rootsy", "wide" }, { 4, 20, 59, 1 }, 3),     // STEPPER ROOT · DEEP TICK / VELVET PAD
         };
+        // Scored POLY lanes and micro-timing for some generated sessions.
+        applySessionGrooves(library);
+        applyChordTracks(library);
+        // Comping pads get a sound written for their groove.
+        applyCompSounds(library, [](TrackData& track, std::initializer_list<std::pair<const char*, float>> edits) {
+            auto params = resolvedPatchParams(track.machine, track.patch);
+            for (const auto& [id, value] : edits) params[id] = value;
+            if (track.machine == Machine::WT1) params.erase("seq.gate");
+            track.patch.params = std::move(params);
+            track.patch.factory = false;
+        });
         for (auto& authored : authoredSessionLibrary())
             library.push_back(std::move(authored));
+        applyMixdowns(library);
         return library;
     }();
     return presets;

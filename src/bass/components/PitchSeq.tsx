@@ -1,3 +1,4 @@
+import { SequencePoly } from '../../components/SequencePoly';
 // The 16-step pitch sequencer: 12 note lanes per step (tap an empty cell = set note,
 // click a note = select it), draggable note lengths, octave / accent / slide rows,
 // bars 1–4 and sequence length. Shift-drag a cell to sweep a step ×
@@ -5,10 +6,14 @@
 // (Alt = copy). Cmd-A/Esc/Cmd-C/X/V/D/Delete work the clipboard verbs
 // from useBassKeys.
 
+import { scaleCellClass, ScaleStrip, type ScaleBinding } from '../../components/ScaleStrip';
+import { scaleStepMasks } from '../../scales';
 import type { ReactNode } from 'react';
-import { BassArpModeSwitch, BassArpPanel } from './BassArpPanel';
+import { BassArpPanel } from './BassArpPanel';
 import { SequenceLengthControl } from '../../components/SequenceLengthControl';
 import { NoteLengthHandle } from '../../components/NoteLengthHandle';
+import { PatternPresetSelect } from '../../components/PatternPresetSelect';
+import { BASS_PATTERN_PRESETS } from '../patternPresets';
 import { SeqSelectionMenu } from '../../components/SeqSelectionMenu';
 import { useSeqGhostPaste } from '../../components/useSeqGhostPaste';
 import { useSeqNoteDraw } from '../../components/useSeqNoteDraw';
@@ -54,27 +59,42 @@ function SeqLength() {
   );
 }
 
-export function PitchSeq(props: { bars?: number; headerExtra?: ReactNode } = {}) {
+interface PitchSeqProps {
+  bars?: number; headerExtra?: ReactNode; clipKey?: string;
+  /** Hosted-only: the clip's scale settings and its playhead in sixteenths; standalone uses the device arp. */
+  scale?: ScaleBinding; scaleStep?: number;
+}
+
+/** Standalone scale strip: highlights the chord under the playhead. */
+function StandaloneScaleStrip({ scale }: { scale: ScaleBinding }) {
+  const step = useBassStore((s) => s.playing && s.curStep >= 0 ? Math.max(0, s.chain.indexOf(s.curPat)) * STEPS + s.curStep : -1);
+  return <ScaleStrip scale={scale} step={step} />;
+}
+
+export function PitchSeq(props: PitchSeqProps = {}) {
   const arp = useBassStore(s => s.arpMode && !s.hosted);
   return arp ? <BassArpPanel /> : <PitchSeqGrid {...props} />;
 }
 
-function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: ReactNode } = {}) {
+export function PitchSeqGrid({ bars, headerExtra, clipKey, scale, scaleStep }: PitchSeqProps = {}) {
   const hosted = useBassStore((s) => s.hosted);
-  const playing = useBassStore((s) => s.playing);
+  const deviceArp = useBassStore((s) => s.arp);
+  const updateArp = useBassStore((s) => s.updateArp);
+  const setSequenceLength = useBassStore((s) => s.setSequenceLength);
+  const sequenceRhythm = useBassStore(s => s.sequenceRhythm);
+  const updateSequenceRhythm = useBassStore(s => s.updateSequenceRhythm);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
   // them, so the engine tick never reconciles the whole grid.
   const chain = useBassStore((s) => s.chain);
   const patterns = useBassStore((s) => s.patterns);
   const rectSel = useBassStore((s) => s.rectSel);
-  const play = useBassStore((s) => s.play);
-  const stop = useBassStore((s) => s.stop);
   const toggleCell = useBassStore((s) => s.toggleCell);
   const cycleStepOct = useBassStore((s) => s.cycleStepOct);
   const toggleStepAcc = useBassStore((s) => s.toggleStepAcc);
   const toggleStepSlide = useBassStore((s) => s.toggleStepSlide);
   const setStepDuration = useBassStore((s) => s.setStepDuration);
   const randomize = useBassStore((s) => s.randomize);
+  const loadPatternPreset = useBassStore((s) => s.loadPatternPreset);
   const setRectSel = useBassStore((s) => s.setRectSel);
   const moveRectSel = useBassStore((s) => s.moveRectSel);
   const moveStepNote = useBassStore((s) => s.moveStepNote);
@@ -135,6 +155,8 @@ function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: Reac
 
   const barCount = Math.max(1, Math.min(4, bars ?? chain.length));
   const totalSteps = barCount * STEPS;
+  const scaleBinding: ScaleBinding = scale ?? { a: deviceArp, update: updateArp, bars: chain.length, setBars: setSequenceLength };
+  const masks = scaleStepMasks(scaleBinding.a, scaleBinding.bars, totalSteps);
   const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
     const bar = Math.floor(absoluteStep / STEPS);
     const step = absoluteStep % STEPS;
@@ -145,24 +167,19 @@ function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: Reac
   return (
     <section className="panel bl-seq-section" data-accent="a">
       <div className="panel-head bl-seq-head">
-        {!hosted && (
-          <button
-            className={`pb-btn bl-transport${playing ? ' active' : ''}`}
-            type="button"
-            aria-label={playing ? 'Stop sequencer' : 'Play sequencer'}
-            aria-pressed={playing}
-            onClick={playing ? stop : play}
-          >
-            {playing ? '■' : '▶'}
-          </button>
-        )}
         <h2>PITCH SEQ</h2>
-        {!hosted && <BassArpModeSwitch />}
         {!hosted && <SeqLength />}
         {headerExtra}
         <button className="bl-seq-btn" type="button" onClick={randomize}>RAND</button>
+        {!hosted && <PatternPresetSelect names={BASS_PATTERN_PRESETS.map((p) => p.name)} onLoad={loadPatternPreset} />}
         <span className="bl-seq-hint">DRAG EMPTY = DRAW · DRAG NOTE = MOVE · EDGE = LENGTH</span>
       </div>
+
+      <SequencePoly rhythm={sequenceRhythm} clipKey={clipKey} onChange={updateSequenceRhythm}
+        onUndo={useBassStore.getState().undo}
+        onRedo={useBassStore.getState().redo} />
+
+      {scale ? <ScaleStrip scale={scale} step={scaleStep} /> : !hosted && <StandaloneScaleStrip scale={scaleBinding} />}
 
       <div className="bl-seq-body">
         <div className="bl-seq-legend">
@@ -178,7 +195,7 @@ function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: Reac
             {steps.map(({ absoluteStep, bar, step, pattern, value: s }) => {
               return (
                 <div
-                  className={`bl-seq-col${step === 0 && bar > 0 ? ' bar-start' : ''}`}
+                  className={`bl-seq-col${sequenceRhythm.enabled && (pattern !== 0 || step >= sequenceRhythm.steps) ? ' sequence-poly-outside' : ''}${step === 0 && bar > 0 ? ' bar-start' : ''}`}
                   key={absoluteStep}
                 >
                   <div className="bl-seq-lanes">
@@ -208,7 +225,7 @@ function PitchSeqGrid({ bars, headerExtra }: { bars?: number; headerExtra?: Reac
                             data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'bl-cell' + (note === 0 ? ' root' : '') + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
+                            className={'bl-cell' + (note === 0 ? ' root' : '') + scaleCellClass(masks?.[absoluteStep], note) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {

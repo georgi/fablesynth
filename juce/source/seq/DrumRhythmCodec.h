@@ -43,7 +43,8 @@ inline bool drumRhythmFromVar(const juce::var& value, ClipData& clip, Machine ma
         if (!obj.isObject() || !obj["enabled"].isBool() || !integer(obj["sourceBar"], 0, clip.bars - 1)
             || !integer(obj["steps"], 1, 16) || !integer(obj["rotation"], 0, (int)obj["steps"] - 1)) return false;
         auto& lane = next.drumRhythm.lanes[(size_t)i]; next.drumConfiguredLanes |= (uint16_t)(1u << i);
-        lane.enabled = (bool)obj["enabled"]; lane.sourceBar = (int)obj["sourceBar"];
+        // Web cloneDrumRhythm: an active POLY lane always plays bar one.
+        lane.enabled = (bool)obj["enabled"]; lane.sourceBar = lane.enabled ? 0 : (int)obj["sourceBar"];
         lane.steps = (int)obj["steps"]; lane.rotation = (int)obj["rotation"];
         const auto timing = obj["timing"]; if (!timing.isObject()) return false;
         if (timing["mode"].toString() == "fit") {

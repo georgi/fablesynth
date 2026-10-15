@@ -29,7 +29,9 @@ describe('WT-1 dynamics metering', () => {
     expect(last.comp.reduction).toBeGreaterThan(1);
     expect(last.comp.makeup).toBeGreaterThan(1);
     for (const m of data) {
-      expect([...Object.values(m.comp), m.ott.input, m.ott.output, m.ott.makeup,
+      const { trace, ...comp } = m.comp;
+      expect(trace?.length).toBeGreaterThan(0);
+      expect([...Object.values(comp), m.ott.input, m.ott.output, m.ott.makeup,
         ...m.ott.levels, ...m.ott.gains].every(Number.isFinite)).toBe(true);
     }
     metered.send({ t: 'dynamics', on: false }); metered.render(30);

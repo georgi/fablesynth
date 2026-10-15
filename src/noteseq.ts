@@ -1,3 +1,4 @@
+import { copySequenceRhythm, type SequenceRhythm } from './shared/sequenceRhythm';
 // Pure WT-1 note-sequencer data model + timing math. A step is
 // { on, note (0..11 within the lane octave), oct (-1/0/+1), acc, duration }.
 // patterns are packed 3 bytes per step so they cross the worklet port as one
@@ -121,6 +122,7 @@ export function randomPattern(rng: () => number = Math.random): Array<Partial<Se
 const LS_KEY = 'fable.noteseq.v1';
 
 export interface SeqState {
+  sequenceRhythm?: SequenceRhythm;
   patterns: Patterns;
   chain: number[];
 }
@@ -131,21 +133,21 @@ export function loadSeqState(): SeqState {
     if (typeof localStorage === 'undefined') return fallback;
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return fallback;
-    const j = JSON.parse(raw) as { pats?: number[]; chain?: number[] };
+    const j = JSON.parse(raw) as { pats?: number[]; chain?: number[]; sequenceRhythm?: SequenceRhythm };
     if (!Array.isArray(j.pats) || j.pats.length !== NPATTERNS * STEPS * STEP_STRIDE) return fallback;
     const chain = Array.isArray(j.chain) && j.chain.length
       ? j.chain.map((x) => Math.min(NPATTERNS - 1, Math.max(0, x | 0)))
       : [0];
-    return { patterns: Uint8Array.from(j.pats.map((x) => x & 0xff)), chain };
+    return { sequenceRhythm: copySequenceRhythm(j.sequenceRhythm), patterns: Uint8Array.from(j.pats.map((x) => x & 0xff)), chain };
   } catch {
     return fallback;
   }
 }
 
-export function saveSeqState(patterns: Patterns, chain: number[]): void {
+export function saveSeqState(patterns: Patterns, chain: number[], sequenceRhythm?: SequenceRhythm): void {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(LS_KEY, JSON.stringify({ pats: Array.from(patterns), chain }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ pats: Array.from(patterns), chain, ...(sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(sequenceRhythm) } : {}) }));
   } catch {
     /* quota / private mode — sequencer still works, just not persisted */
   }

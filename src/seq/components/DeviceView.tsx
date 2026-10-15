@@ -1,9 +1,10 @@
+import { copySequenceRhythm, type SequenceRhythm } from '../../shared/sequenceRhythm';
 import { cloneDrumRhythm, type DrumRhythm } from '../../drum/rhythm';
 // Hosted device view (focus mode): attaches the focused track's running
 // engine to that machine's standalone store, keeps the target clip and the
 // track patch in sync with the session doc, and renders the device panels.
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type ComponentProps } from 'react';
 import type * as React from 'react';
 import { EnvPanel as BassEnvPanel } from '../../bass/components/EnvPanel';
 import { BassFxRack } from '../../bass/components/BassFxRack';
@@ -53,13 +54,14 @@ import { b64ToBytes, HOSTED_MAX_BARS, type MachineId, wtNoteIdx } from '../proto
 import { clipPattern, useSeqStore } from '../store';
 import { HostedClipBar, HostedLengthControl } from './HostedClipBar';
 import { AutomationPanel } from './AutomationPanel';
-import { HostedArpEditor, HostedArpModeSwitch } from './HostedArpPanel';
+import { HostedArpEditor, useHostedScale } from './HostedArpPanel';
 
 // One uniform handle per machine over the three (differently-typed) stores.
 interface HostedStore {
   attach: (engine: unknown) => void;
   getPatterns: () => Uint8Array;
-  setPatterns: (p: Uint8Array, bars: number, rhythm?: DrumRhythm) => void;
+  setPatterns: (p: Uint8Array, bars: number, rhythm?: DrumRhythm, sequenceRhythm?: SequenceRhythm) => void;
+  getSequenceRhythm?: () => SequenceRhythm;
   getParams: () => Record<string, number>;
   setPos: (step: number, bar: number, playing: boolean) => void;
   subscribe: (fn: () => void) => () => void;
@@ -89,25 +91,27 @@ const HOSTS: Record<MachineId, HostedStore> = {
     // chain mirrors the clip's bars as the identity [0..bars-1] so the
     // absolute-timeline rect verbs map bar b onto pattern b (hosted stores
     // are bar-major; _setPatterns skips persistence while hosted).
-    setPatterns: (p, bars) => {
+    setPatterns: (p, bars, _rhythm, sequenceRhythm) => {
       useBassStore.getState()._clearHistory();
-      useBassStore.setState({ patterns: p, editPattern: 0, rectSel: null, chain: Array.from({ length: bars }, (_, i) => i) });
+      useBassStore.setState({ sequenceRhythm: copySequenceRhythm(sequenceRhythm), patterns: p, editPattern: 0, rectSel: null, chain: Array.from({ length: bars }, (_, i) => i) });
     },
     getParams: () => useBassStore.getState().params,
     setPos: (step, bar, playing) => useBassStore.setState({ curStep: step, curPat: bar, playing }),
     subscribe: (fn) => useBassStore.subscribe(fn),
+    getSequenceRhythm: () => useBassStore.getState().sequenceRhythm,
     empty: bassEmpty,
   },
   WT1: {
     attach: (e) => useWtStore.getState().attachHosted(e as never),
     getPatterns: () => useWtStore.getState().patterns,
-    setPatterns: (p, bars) => {
+    setPatterns: (p, bars, _rhythm, sequenceRhythm) => {
       useWtStore.getState()._clearSeqHistory();
-      useWtStore.setState({ patterns: p, editPattern: 0, rectSel: null, chain: Array.from({ length: bars }, (_, i) => i) });
+      useWtStore.setState({ sequenceRhythm: copySequenceRhythm(sequenceRhythm), patterns: p, editPattern: 0, rectSel: null, chain: Array.from({ length: bars }, (_, i) => i) });
     },
     getParams: () => useWtStore.getState().params,
     setPos: (step, bar, playing) => useWtStore.setState({ curStep: step, curPat: bar, seqPlaying: playing }),
     subscribe: (fn) => useWtStore.subscribe(fn),
+    getSequenceRhythm: () => useWtStore.getState().sequenceRhythm,
     empty: wtEmpty,
   },
 };
@@ -145,7 +149,7 @@ export function DeviceView() {
     syncing.current = true;
     const bytes = clipPattern(session, focus.scene, focus.track);
     const bars = Math.max(1, Math.min(HOSTED_MAX_BARS, clip?.bars ?? 1));
-    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty(), bars, editable ? clip?.drumRhythm : undefined);
+    host.setPatterns(bytes ? clipToPatterns(machine, bytes, host.empty()) : host.empty(), bars, editable ? clip?.drumRhythm : undefined, editable ? clip?.sequenceRhythm : undefined);
     syncing.current = false;
     // Intentionally NOT keyed on the pattern string: our own write-backs must
     // not reload (they'd reset editPattern); createClip flips `!!clip`.
@@ -155,12 +159,15 @@ export function DeviceView() {
   useEffect(() => {
     if (!focus || !host || !machine || !editable) return;
     let prev = host.getPatterns();
+    let prevSequenceRhythm = host.getSequenceRhythm?.();
     let prevRhythm = useDrumStore.getState().drumRhythm;
     let prevChain = useDrumStore.getState().chain;
     return host.subscribe(() => {
       const next = host.getPatterns();
       const drum = useDrumStore.getState();
-      const changed = next !== prev || (machine === 'DR1' && (drum.drumRhythm !== prevRhythm || drum.chain !== prevChain));
+      const sequenceRhythm = host.getSequenceRhythm?.();
+      const changed = sequenceRhythm !== prevSequenceRhythm || next !== prev || (machine === 'DR1' && (drum.drumRhythm !== prevRhythm || drum.chain !== prevChain));
+      prevSequenceRhythm = sequenceRhythm;
       prev = next; prevRhythm = drum.drumRhythm; prevChain = drum.chain;
       if (!changed || syncing.current) return;
       const st = useSeqStore.getState();
@@ -169,7 +176,7 @@ export function DeviceView() {
       const base = clipPattern(st.session, focus.scene, focus.track) ?? undefined;
       if (machine === 'DR1') {
         st.updateDrumClipSequence(focus.scene, focus.track, patternsToClip(machine, next, drum.chain.length, base), drum.chain.length, drum.drumRhythm ?? null);
-      } else st.updateClipBytes(focus.scene, focus.track, patternsToClip(machine, next, cur.bars, base), cur.bars);
+      } else st.updateClipBytes(focus.scene, focus.track, patternsToClip(machine, next, cur.bars, base), cur.bars, sequenceRhythm);
     });
   }, [focus?.scene, focus?.track, host, machine, editable]);
 
@@ -263,18 +270,20 @@ export function DeviceView() {
 function DrumPanels({ sequenceEditable }: { sequenceEditable: boolean }) {
   const mode = useSeqStore((s) => s.deviceMode);
   const drumFxOpen = useSeqStore((s) => s.drumFxOpen);
+  const groupFx = useSeqStore((s) => s.drumFxOpen && s.drumFxScope === 'group');
+  // EDIT and PAD FX show the pads; GROUP FX and SEQ take the full width.
+  const pads = mode === 'edit' && !groupFx;
   return (
     <div id="drum-rack" className="sq-hosted-rack" data-mode={mode}>
-      <div className={`dr-main${mode === 'seq' ? ' fit-pads' : ''}`}>
-        <div className="dr-left">
+      <div className={`dr-main${pads ? '' : ' no-pads'}`}>
+        {pads && <div className="dr-left">
           <div id="dr-pads"><PadGrid /></div>
-          {/* SEQ mode drops the pad strip only — the pads stay for playing. */}
-          {mode !== 'seq' && <div id="dr-padstrip"><PadStrip /></div>}
-        </div>
+          <div id="dr-padstrip"><PadStrip /></div>
+        </div>}
         <div className="dr-right">
           <div id="dr-selbar"><SelBar /></div>
           {mode === 'edit' && <PadEditTabs />}
-          {!(mode === 'edit' && drumFxOpen) && <div id="dr-oscrow">
+          {mode === 'edit' && !drumFxOpen && <div id="dr-oscrow">
             <OscSection osc="oscA" />
             <SampleSection />
             <NoiseSection />
@@ -296,23 +305,24 @@ function DrumPanels({ sequenceEditable }: { sequenceEditable: boolean }) {
 }
 
 function BassPanels({ bars }: { bars?: number }) {
+  const clipKey = useSeqStore((s) => s.focus ? `${s.focus.scene}:${s.focus.track}` : undefined);
   const mode = useSeqStore((s) => s.deviceMode);
   const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
   return (
     <div id="bass-rack" className="sq-hosted-rack" data-mode={mode}>
-      <div id="bl-editrow">
+      {mode === 'edit' && <div id="bl-editrow">
         <BassOscSection />
         <SubSection />
-        {mode === 'edit' && <BassFilterSection />}
-        {mode === 'edit' && <BassEnvPanel />}
-      </div>
+        <BassFilterSection />
+        <BassEnvPanel />
+      </div>}
       {mode === 'edit' && (
         <div id="bl-modrow">
           <BassLfoPanel />
           <AccentPanel />
         </div>
       )}
-      {mode === 'seq' && <div id="bl-seq"><HostedArpEditor machine="BL1"><PitchSeq bars={bars} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="BL1" /></>} /></HostedArpEditor></div>}
+      {mode === 'seq' && <div id="bl-seq"><HostedArpEditor machine="BL1"><ScaledPitchSeq clipKey={clipKey} bars={bars} headerExtra={<HostedLengthControl machine="BL1" />} /></HostedArpEditor></div>}
       {mode === 'edit' && trackFxOpen && <div id="bl-fxrack"><BassFxRack /></div>}
       {/* Keyboard last, where a synth's keys belong. */}
       {mode === 'seq' && <div id="bl-keysrow"><KeysPanel /></div>}
@@ -321,6 +331,7 @@ function BassPanels({ bars }: { bars?: number }) {
 }
 
 function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) {
+  const clipKey = useSeqStore((s) => s.focus ? `${s.focus.scene}:${s.focus.track}` : undefined);
   const focus = useSeqStore((s) => s.focus);
   const mode = useSeqStore((s) => s.deviceMode);
   const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
@@ -453,11 +464,11 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
   return (
     <div id="rack" className="sq-hosted-rack" data-mode={mode}>
       <div className="panels">
-        <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
-        <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
-        <UtilPanel />
         {mode === 'edit' && (
           <>
+            <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
+            <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
+            <UtilPanel />
             <FilterPanel />
             <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
             <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
@@ -475,11 +486,19 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           </>
         )}
         {mode === 'seq' && (
-          <HostedArpEditor machine="WT1"><SeqPanel bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="WT1" /></>} /></HostedArpEditor>
+          <HostedArpEditor machine="WT1"><ScaledSeqPanel clipKey={clipKey} bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<HostedLengthControl machine="WT1" />} /></HostedArpEditor>
         )}
       </div>
       {clip && clip.bars <= HOSTED_MAX_BARS && <AutomationPanel machine="WT1" />}
       {mode === 'seq' && <KeyboardBar />}
     </div>
   );
+}
+
+/** The hosted note sequencers with the focused clip's scale mode. */
+function ScaledPitchSeq(props: ComponentProps<typeof PitchSeq>) {
+  return <PitchSeq {...props} {...useHostedScale('BL1')} />;
+}
+function ScaledSeqPanel(props: ComponentProps<typeof SeqPanel>) {
+  return <SeqPanel {...props} {...useHostedScale('WT1')} />;
 }

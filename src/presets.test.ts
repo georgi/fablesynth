@@ -77,6 +77,19 @@ describe('resolvePresetMods', () => {
       expect(merged[`mat${s}.amt`]).toBe(0);
     }
   });
+
+  it('carries explicit pol and aux through to the slot params', () => {
+    const mods: ModConnection[] = [
+      { src: 1, dst: 3, amt: 0.4, pol: 2, aux: 5 },
+      { src: 2, dst: 1, amt: -0.2 },
+    ];
+    const merged = resolvePresetMods({}, mods);
+    expect(merged['mat1.pol']).toBe(2);
+    expect(merged['mat1.aux']).toBe(5);
+    expect(merged['mat2.pol']).toBe(0);
+    expect(merged['mat2.aux']).toBe(0);
+    expect(merged['mat3.aux']).toBe(0);
+  });
 });
 
 describe('mono leads', () => {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(FableSynth VERSION 1.1.0 LANGUAGES C CXX)
+project(FableSynth VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -108,7 +108,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/StandaloneTopBar.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
-        source/ui/FxChain.cpp
+        source/ui/FxChain.cpp source/ui/AutoMix.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
@@ -116,12 +116,18 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/NoteSeqView.cpp
         source/ui/Panels.cpp
         source/ui/WavetableEditor.cpp
+        source/ui/PresetBrowser.cpp
+        source/ui/BrowserGlyphs.cpp
+        source/ui/WtBrowserAdapter.cpp
+        source/serumimport/ImportedLibrary.cpp
+        source/serumimport/SerumPatch.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp
         source/dsp/Params.cpp
         source/dsp/Presets.cpp
-        source/dsp/UserTables.cpp)
+        source/dsp/UserTables.cpp
+        source/dsp/automix/AutoEq.cpp source/dsp/automix/AutoComp.cpp source/dsp/automix/MixAssistant.cpp source/dsp/automix/KitMix.cpp)
 
     target_compile_definitions(FableSynth PUBLIC
         JUCE_WEB_BROWSER=0
@@ -160,15 +166,20 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/DrumEditor.cpp
         source/drum/DrumDeviceBody.cpp
         source/drum/ui/DrumHeader.cpp
+        source/drum/ui/DrumBrowserAdapters.cpp
+        source/drum/ui/PatternBrowserAdapter.cpp
+        source/ui/PresetBrowser.cpp
+        source/ui/BrowserGlyphs.cpp
         source/drum/ui/PadGrid.cpp
         source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp
         source/drum/ui/DrumPanels.cpp
         source/drum/ui/PolyLanePanel.cpp
         source/drum/ui/StepSeqView.cpp
-        source/drum/ui/DrumFxRack.cpp
+        source/seq/ui/ClipAutomationPanel.cpp source/bass/dsp/BassParams.cpp
+        source/drum/ui/DrumFxRack.cpp source/drum/ui/KitMixPanel.cpp
         source/ui/Controls.cpp
-        source/ui/FxChain.cpp
+        source/ui/FxChain.cpp source/ui/AutoMix.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
@@ -183,7 +194,8 @@ if(FABLE_BUILD_PLUGIN)
         source/dsp/Wavetables.cpp
         source/dsp/Params.cpp
         source/dsp/UserTables.cpp
-        source/dsp/Fx.cpp)
+        source/dsp/Fx.cpp
+        source/dsp/automix/AutoEq.cpp source/dsp/automix/AutoComp.cpp source/dsp/automix/MixAssistant.cpp source/dsp/automix/KitMix.cpp)
 
     target_sources(FableDrum PRIVATE ${FABLE_DRUM_SOURCES})
 
@@ -224,11 +236,14 @@ if(FABLE_BUILD_PLUGIN)
         source/bass/BassEditor.cpp
         source/bass/BassDeviceBody.cpp
         source/bass/ui/BassHeader.cpp
+        source/bass/ui/BassBrowserAdapter.cpp
+        source/ui/PresetBrowser.cpp
+        source/ui/BrowserGlyphs.cpp
         source/bass/ui/BassPanels.cpp
         source/bass/ui/PitchSeqView.cpp
         source/bass/ui/BassFxRack.cpp
         source/ui/Controls.cpp
-        source/ui/FxChain.cpp
+        source/ui/FxChain.cpp source/ui/AutoMix.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Modulation.cpp
@@ -239,7 +254,8 @@ if(FABLE_BUILD_PLUGIN)
         source/dsp/Wavetables.cpp
         source/dsp/Params.cpp
         source/dsp/UserTables.cpp
-        source/dsp/Fx.cpp)
+        source/dsp/Fx.cpp
+        source/dsp/automix/AutoEq.cpp source/dsp/automix/AutoComp.cpp source/dsp/automix/MixAssistant.cpp source/dsp/automix/KitMix.cpp)
 
     target_sources(FableBass PRIVATE ${FABLE_BASS_SOURCES})
 
@@ -287,18 +303,27 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/ui/TrackHeadsView.cpp
         source/seq/ui/SceneGridView.cpp
         source/seq/ui/SeqFooterView.cpp
-        source/seq/ui/MasterFxView.cpp
+        source/seq/ui/MasterFxView.cpp source/seq/ui/MixAssistPanel.cpp
         source/seq/ui/DeviceFocusView.cpp
         source/seq/ui/ClipAutomationPanel.cpp
         source/seq/ui/ClipAutomationPanelSeq.cpp
         source/seq/ui/HostedDrumModel.cpp
         source/seq/ui/HostedBassModel.cpp
         source/seq/ui/HostedWtModel.cpp
+        source/seq/ui/SessionBrowserBackend.cpp
+        source/ui/PresetBrowser.cpp
+        source/ui/BrowserGlyphs.cpp
+        source/ui/WtBrowserAdapter.cpp
+        source/serumimport/ImportedLibrary.cpp
+        source/serumimport/SerumPatch.cpp
+        source/bass/ui/BassBrowserAdapter.cpp
+        source/drum/ui/DrumBrowserAdapters.cpp
+        source/drum/ui/PatternBrowserAdapter.cpp
         source/drum/DrumDeviceBody.cpp
         source/drum/ui/PadGrid.cpp source/drum/ui/RemoteAudioDownload.cpp
         source/drum/ui/PadStrip.cpp source/drum/ui/DrumPanels.cpp
         source/drum/ui/PolyLanePanel.cpp
-        source/drum/ui/StepSeqView.cpp source/drum/ui/DrumFxRack.cpp
+        source/drum/ui/StepSeqView.cpp source/drum/ui/DrumFxRack.cpp source/drum/ui/KitMixPanel.cpp
         source/bass/BassDeviceBody.cpp
         source/bass/ui/BassPanels.cpp source/bass/ui/PitchSeqView.cpp source/bass/ui/BassFxRack.cpp
         source/ui/WtDeviceBody.cpp source/WavetableView.cpp source/ui/Displays.cpp
@@ -307,7 +332,7 @@ if(FABLE_BUILD_PLUGIN)
         source/seq/dsp/SeqFactory.cpp
         source/seq/dsp/Conductor.cpp
         source/ui/Controls.cpp source/ui/ParameterSource.cpp source/ui/DeviceParameterBank.cpp
-        source/ui/FxChain.cpp
+        source/ui/FxChain.cpp source/ui/AutoMix.cpp
         source/ui/Modulation.cpp
         # all three machines' DSP (each list already exists above):
         source/dsp/Engine.cpp source/dsp/Presets.cpp
@@ -317,7 +342,8 @@ if(FABLE_BUILD_PLUGIN)
         source/drum/dsp/DrumFx.cpp source/drum/dsp/DrumKits.cpp source/drum/dsp/DrumPatches.cpp
         source/bass/dsp/BassParams.cpp source/bass/dsp/BassEngine.cpp
         source/bass/dsp/BassFx.cpp source/bass/dsp/BassPatches.cpp
-        source/dsp/Wavetables.cpp source/dsp/Params.cpp source/dsp/UserTables.cpp source/dsp/Fx.cpp)
+        source/dsp/Wavetables.cpp source/dsp/Params.cpp source/dsp/UserTables.cpp source/dsp/Fx.cpp
+        source/dsp/automix/AutoEq.cpp source/dsp/automix/AutoComp.cpp source/dsp/automix/MixAssistant.cpp source/dsp/automix/KitMix.cpp)
 
     target_sources(FableSeq PRIVATE ${FABLE_SEQ_SOURCES})
     target_compile_definitions(FableSeq PUBLIC FABLE_HOSTED_UI=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL} JUCE_VST3_CAN_REPLACE_VST2=0)
@@ -357,7 +383,7 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/StandaloneTopBar.cpp
         source/WavetableView.cpp
         source/ui/Controls.cpp
-        source/ui/FxChain.cpp
+        source/ui/FxChain.cpp source/ui/AutoMix.cpp
         source/ui/ParameterSource.cpp
         source/ui/DeviceParameterBank.cpp
         source/ui/Displays.cpp
@@ -365,12 +391,18 @@ if(FABLE_BUILD_PLUGIN)
         source/ui/NoteSeqView.cpp
         source/ui/Panels.cpp
         source/ui/WavetableEditor.cpp
+        source/ui/PresetBrowser.cpp
+        source/ui/BrowserGlyphs.cpp
+        source/ui/WtBrowserAdapter.cpp
+        source/serumimport/ImportedLibrary.cpp
+        source/serumimport/SerumPatch.cpp
         source/dsp/Engine.cpp
         source/dsp/Wavetables.cpp
         source/dsp/Fx.cpp
         source/dsp/Params.cpp
         source/dsp/Presets.cpp
-        source/dsp/UserTables.cpp)
+        source/dsp/UserTables.cpp
+        source/dsp/automix/AutoEq.cpp source/dsp/automix/AutoComp.cpp source/dsp/automix/MixAssistant.cpp source/dsp/automix/KitMix.cpp)
     target_compile_definitions(plugin_host_test PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=${FABLE_JUCE_USE_CURL})
     target_link_libraries(plugin_host_test PRIVATE
@@ -429,6 +461,46 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     add_test(NAME sq4_host_test COMMAND sq4_host_test)
+
+    # ---- Serum 1 preset import (runs the user's own Serum; ships no Serum content) ----
+    juce_add_console_app(FableSerumImport PRODUCT_NAME "FableSerumImport")
+    target_sources(FableSerumImport PRIVATE
+        source/serumimport/ImportMain.cpp
+        source/serumimport/ImportedLibrary.cpp
+        source/serumimport/SerumHost.cpp
+        source/serumimport/SerumPatch.cpp)
+    target_compile_definitions(FableSerumImport PRIVATE
+        JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(FableSerumImport PRIVATE
+        juce::juce_audio_processors
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+
+    # Ship the helper inside each WT-1 bundle (Contents/Resources); the browser's
+    # IMPORT FROM SERUM... button launches it from there.
+    foreach(fmt IN ITEMS VST3 AU Standalone)
+        if(TARGET FableSynth_${fmt})
+            add_dependencies(FableSynth_${fmt} FableSerumImport)
+            add_custom_command(TARGET FableSynth_${fmt} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:FableSynth_${fmt}>/Resources"
+                COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:FableSerumImport>"
+                        "$<TARGET_BUNDLE_CONTENT_DIR:FableSynth_${fmt}>/Resources/FableSerumImport"
+                VERBATIM)
+        endif()
+    endforeach()
+
+    # Converter tests on synthetic .fxp data (no Serum needed, no Serum content).
+    juce_add_console_app(serum_import_test PRODUCT_NAME "serum_import_test")
+    target_sources(serum_import_test PRIVATE
+        test/serum_import_test.cpp
+        source/serumimport/ImportedLibrary.cpp
+        source/serumimport/SerumPatch.cpp)
+    target_compile_definitions(serum_import_test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(serum_import_test PRIVATE
+        juce::juce_core
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME serum_import_test COMMAND serum_import_test)
 
     juce_add_console_app(fable_agent_test PRODUCT_NAME "fable_agent_test")
     target_sources(fable_agent_test PRIVATE test/fable_agent_test.cpp)
@@ -510,6 +582,30 @@ add_executable(bass_engine_test
     source/dsp/Wavetables.cpp
     source/dsp/UserTables.cpp)
 target_compile_features(bass_engine_test PRIVATE cxx_std_17)
+
+# ---- Declick regression: click metric over every WT-1 / DR-1 / BL-1 factory preset (no JUCE) ----
+add_executable(declick_test
+    test/declick_test.cpp
+    source/dsp/Engine.cpp
+    source/dsp/Fx.cpp
+    source/dsp/Params.cpp
+    source/dsp/Presets.cpp
+    source/dsp/Wavetables.cpp
+    source/dsp/UserTables.cpp
+    source/drum/dsp/DrumParams.cpp
+    source/drum/dsp/DrumTables.cpp
+    source/drum/dsp/SampledTables.gen.cpp
+    source/drum/dsp/OneShotSamples.gen.cpp
+    source/drum/dsp/DrumEngine.cpp
+    source/drum/dsp/DrumRhythm.cpp
+    source/drum/dsp/DrumFx.cpp
+    source/drum/dsp/DrumKits.cpp
+    source/drum/dsp/DrumPatches.cpp
+    source/bass/dsp/BassParams.cpp
+    source/bass/dsp/BassEngine.cpp
+    source/bass/dsp/BassFx.cpp
+    source/bass/dsp/BassPatches.cpp)
+target_compile_features(declick_test PRIVATE cxx_std_17)
 
 # ---- SQ-4 headless DSP verification harness (no JUCE) ----
 add_executable(sq4_engine_test
@@ -597,5 +693,12 @@ add_test(NAME drum_engine_test COMMAND drum_engine_test)
 add_test(NAME drum_rhythm_test COMMAND drum_rhythm_test)
 add_test(NAME bass_engine_test COMMAND bass_engine_test)
 add_test(NAME sq4_engine_test COMMAND sq4_engine_test)
+add_test(NAME declick_test COMMAND declick_test)
 add_test(NAME step_edit_ops_test COMMAND step_edit_ops_test)
 add_test(NAME audio_meter_test COMMAND audio_meter_test)
+
+# ---- Auto-mix core parity against web vectors (no JUCE) ----
+add_executable(automix_test test/automix_test.cpp source/dsp/Wavetables.cpp
+    source/dsp/automix/AutoEq.cpp source/dsp/automix/AutoComp.cpp source/dsp/automix/MixAssistant.cpp source/dsp/automix/KitMix.cpp)
+target_compile_features(automix_test PRIVATE cxx_std_17)
+add_test(NAME automix_test COMMAND automix_test)

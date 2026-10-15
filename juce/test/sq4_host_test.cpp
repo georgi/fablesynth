@@ -1,3 +1,6 @@
+#include "SeqFooterCacheChecks.h"
+#include "SeqHeaderCacheChecks.h"
+#include "VisualTimerChecks.h"
 // SQ-4 plugin-boundary verification: instantiates the real SeqAudioProcessor
 // and drives it the way a DAW + the editor timer would — the conductor
 // (message thread) issues launches/stops/mutes, the audio thread renders and
@@ -26,12 +29,24 @@
 #include "../source/bass/dsp/BassParams.h"
 #include "../source/bass/dsp/BassPatches.h"
 #include "../source/drum/dsp/DrumKits.h"
+#include "../source/drum/dsp/PatternLibrary.h"
 #include "../source/drum/dsp/DrumPatches.h"
 #include "../source/dsp/NoteSeq.h"
 #include "../source/seq/ui/HostedDrumModel.h"
+#include "../source/drum/DrumDeviceBody.h"
 #include "../source/seq/ui/HostedBassModel.h"
 #include "../source/seq/ui/HostedWtModel.h"
+#include "../source/bass/ui/PitchSeqView.h"
+#include "../source/ui/NoteSeqView.h"
+#include "../source/ui/SequencePolyStrip.h"
 #include "FxUiChecks.h"
+#include "AutoMixSeqChecks.h"
+#include "LeafControlCacheChecks.h"
+#include "HiddenVisualPollingChecks.h"
+#include "LabUiCacheChecks.h"
+#include "TrackHeadsCacheChecks.h"
+#include "SceneGridCacheChecks.h"
+#include "SeqSessionCacheChecks.h"
 #include "../source/ui/ArpPanel.h"
 #include "../source/ui/Theme.h"
 
@@ -73,6 +88,7 @@ static double renderRms(SeqAudioProcessor& p, juce::AudioBuffer<float>& buf, int
 }
 
 #include "../source/seq/DrumRhythmCodec.h"
+#include "../source/ui/ArpCodec.h"
 #include "render_session.h"
 #include "AutomationHostChecks.h"
 #include "AutomationUiChecks.h"
@@ -88,9 +104,31 @@ int main(int argc, char** argv) {
         return renderSessionFile(juce::File(argv[2]), juce::File(argv[3]));
 
     std::printf("\n== SQ-4 plugin-boundary test (SeqAudioProcessor) ==\n");
+    check(checkVisualTimers(), "Shared visual clock rates, visibility, reparenting and lifetime");
+    check(runLeafControlCacheChecks(), "Leaf cache refreshes changed parameters and rebuilt pad/FX controls");
+    check(runHiddenVisualPollingChecks(), "Hidden visuals skip polling and refresh immediately on reveal");
+    check(runLabUiCacheChecks(), "LAB cache preserves state, bypass, visibility, scale and animation speed");
+    check(runSeqHeaderCacheChecks(), "Header clock changes preserve static cache and visible pixels");
+    {
+        auto footerProcessor = std::make_unique<SeqAudioProcessor>();
+        footerProcessor->setCurrentProgram(40);
+        footerProcessor->prepareToPlay(48000, 128);
+        fui::SeqFooterView footer(*footerProcessor);
+        check(checkSeqFooterCache(footer, *footerProcessor), "Footer static cache preserves live meters, state and scale");
+    }
+    check(runTrackHeadsCacheChecks(), "Track header cache refreshes visible state and scale");
+    check(runSeqSessionCacheChecks(), "Session match cache invalidates on document edits only");
+    {
+        auto cacheProcessor = std::make_unique<SeqAudioProcessor>();
+        cacheProcessor->setCurrentProgram(40);
+        cacheProcessor->prepareToPlay(48000, 128);
+        fui::SceneGridView cacheGrid(*cacheProcessor);
+        check(checkSceneGridCache(cacheGrid, *cacheProcessor), "Scene cache preserves live overlays, edits and clip rejection");
+    }
     SeqOutputTestAccess::run();
     testAutomationHost();
     testAutomationUi();
+    failures += runSeqAutoMixChecks();
 
     // Hosted DR-1 folds all five processed buses into its one stereo track.
     // Routing a lone pad to AUX must match MAIN, including the group strip.
@@ -512,13 +550,21 @@ int main(int argc, char** argv) {
     // ---- 8. Editor: correct logical size, paints without crashing, snapshot PNG. ----
     auto* ed = p.createEditor();
     check(ed != nullptr, "createEditor returns non-null");
-    ed->setSize(SeqRack::LW, SeqRack::LH); // 1290 x 722 compact native session rack
+    ed->setSize(SeqRack::LW, SeqRack::LH); // 1290 x 722 native rack (both views)
     juce::Image img(juce::Image::ARGB, SeqRack::LW, SeqRack::LH, true);
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
+    {
+        auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+        dir.createDirectory();
+        if (auto out = dir.getChildFile("sq4-session.png").createOutputStream()) {
+            out->setPosition(0); out->truncate();
+            juce::PNGImageFormat().writeImageToStream(img, *out);
+        }
+    }
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
-    // (4, 718): just inside the re-pitched 722-tall rack, below the footer.
-    check(img.getPixelAt(4, 718).getAlpha() == 255, "editor background pixel opaque",
-          img.getPixelAt(4, 718).getAlpha());
+    // (4, LH - 4): just inside the rack, below the footer.
+    check(img.getPixelAt(4, SeqRack::LH - 4).getAlpha() == 255, "editor background pixel opaque",
+          img.getPixelAt(4, SeqRack::LH - 4).getAlpha());
 
     // ---- 9. Header interactions drive the conductor. ----
     std::printf("\n== header ==\n");
@@ -588,7 +634,8 @@ int main(int argc, char** argv) {
     bool rigMatches = true;
     for (int t = 0; t < 4; ++t) {
         const auto& patch = p.conductor().session().tracks[(size_t)t].patch;
-        if (!patch.factory || patch.index != neonChase[(size_t)t]) rigMatches = false;
+        // Mixdowns embed the patch inline; `index` keeps the factory base.
+        if (patch.index != neonChase[(size_t)t]) rigMatches = false;
     }
     check(rigMatches, "session library updates all four device patches");
     bool sessionChangedClips = false;
@@ -941,6 +988,243 @@ int main(int argc, char** argv) {
     ed2->enterFocus(1);
     check(ed2->focus() == std::make_pair(1, 4), "re-entering remembers the last focus scene");
 
+    // ---- 12b. Preset browsers inside the focus view (session patches) ----
+    std::printf("\n== SQ-4 preset browsers ==\n");
+    {
+        const auto vis = juce::File::getCurrentWorkingDirectory().getChildFile("build/browser-visuals");
+        vis.createDirectory();
+        const auto favFile = vis.getChildFile("sq4-favorites.settings");
+        favFile.deleteFile();
+        fui::BrowserFavorites::overrideFile() = favFile;
+        auto shoot = [&](const char* name) {
+            juce::Image shot(juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+            { juce::Graphics g(shot); ed->paintEntireComponent(g, true); }
+            juce::File out = vis.getChildFile(name);
+            out.deleteFile();
+            juce::FileOutputStream os(out);
+            juce::PNGImageFormat().writeImageToStream(shot, os);
+            std::printf("  wrote %s (%dx%d)\n", out.getFullPathName().toRawUTF8(), shot.getWidth(), shot.getHeight());
+        };
+        auto samePatch = [](const fable::PatchRef& a, const fable::PatchRef& b) {
+            return a.factory == b.factory && a.index == b.index && a.params == b.params;
+        };
+        auto findButton = [](juce::Component& root, const juce::String& name) {
+            std::function<juce::Button*(juce::Component&)> walk = [&](juce::Component& c) -> juce::Button* {
+                for (int i = 0; i < c.getNumChildComponents(); ++i) {
+                    auto* child = c.getChildComponent(i);
+                    if (auto* b = dynamic_cast<juce::Button*>(child); b && b->getName() == name) return b;
+                    if (auto* n = walk(*child)) return n;
+                }
+                return nullptr;
+            };
+            return walk(root);
+        };
+        auto stopTransport = [&] { p.conductor().stopTransport(); renderRms(p, buf, 40); p.drainAcks(); };
+
+        struct Case { int track; fui::DeviceFocusView::Drawer drawer; bool vary; const char* label; const char* png; };
+        const Case cases[] = {
+            { 0, fui::DeviceFocusView::Drawer::kit,  false, "DR-1 kit",   "sq4-dr1-kit-browser.png" },
+            { 1, fui::DeviceFocusView::Drawer::bass, true,  "BL-1",       "sq4-bl1-browser.png" },
+            { 2, fui::DeviceFocusView::Drawer::wt2,  true,  "WT-1 (T3)",  "sq4-wt1-browser.png" },
+        };
+        for (const auto& cs : cases) {
+            const auto name = [&](const char* m) { static std::string b; b = std::string(cs.label) + ": " + m; return b.c_str(); };
+            stopTransport();
+            ed2->enterFocus(cs.track, 2);
+            focusView.flushPendingPatches();
+            auto& br = focusView.drawer(cs.drawer);
+            auto& ad = focusView.drawerAdapter(cs.drawer);
+            auto& browse = focusView.browseButtonForTest();
+            check(browse.isVisible() && browse.getName() == "BROWSE", name("the focus toolbar shows BROWSE after the PATCH stepper"));
+            check(browse.getX() > focusView.patchSelectorForTest().getRight(), name("BROWSE sits right of the patch selector"));
+            browse.onClick();
+            check(br.isOpen() && browse.getToggleState(), name("BROWSE opens the drawer"));
+            const int n = (int)ad.items().size();
+            int untagged = 0;
+            for (const auto& it : ad.items()) if (it.role.isEmpty()) ++untagged;
+            check(n >= 3 && untagged == 0 && br.visibleCount() == n, name("drawer lists factory items only, all tagged"), n);
+
+            // load a factory item: the track patch becomes that factory index
+            const auto original = p.trackPatch(cs.track);
+            const int item = (original.index + 2) % n;
+            br.selectItem(item);
+            check(p.trackPatch(cs.track).factory && p.trackPatch(cs.track).index == item, name("a row click makes the track patch that factory index"), p.trackPatch(cs.track).index);
+            br.keep();
+            const auto kept = p.trackPatch(cs.track);
+            if (cs.vary) {
+                br.vary();
+                focusView.flushPendingPatches();
+                const auto varied = p.trackPatch(cs.track);
+                check(!varied.factory && varied.index == item && !varied.params.empty(), name("VARY writes an inline patch and keeps the base"), varied.index);
+                check(br.mode() == fui::PresetBrowser::Mode::Variant, name("VARY enters VARIANT"));
+            }
+            br.selectItem((item + 1) % n);
+            br.revert();
+            focusView.flushPendingPatches();
+            check(samePatch(p.trackPatch(cs.track), kept), name("REVERT restores the exact kept patch"));
+            check(br.shownItem() == item, name("the list marks the restored item"), br.shownItem());
+
+            // an inline (edited) patch comes back as the same inline patch, not a factory one
+            std::unordered_map<std::string, float> edit;
+            if (cs.track == 0) edit = p.trackParameterValues(0);
+            else edit = p.trackParameterValues(cs.track);
+            const char* knob = cs.track == 1 ? "flt.cut" : cs.track == 0 ? "pad15.flt.cut" : "filter.cutoff";
+            edit[knob] = edit[knob] * 0.9f;
+            p.setTrackInlineParams(cs.track, edit);
+            focusView.reloadPatchesFromSession();
+            const auto inlineBefore = p.trackPatch(cs.track);
+            br.keep();
+            br.selectItem((item + 2) % n);
+            br.revert();
+            focusView.flushPendingPatches();
+            check(!inlineBefore.factory && samePatch(p.trackPatch(cs.track), inlineBefore), name("REVERT restores an inline patch exactly"));
+
+            // audition: blocked while the SQ-4 transport plays, allowed when stopped
+            br.keep();
+            br.selectItem(item);
+            check(br.pendingAuditionCount() > 0, name("a row click schedules the phrase while stopped"), br.pendingAuditionCount());
+            br.flushAudition();
+            renderRms(p, buf, 4);
+            p.conductor().launchScene(2);
+            check(p.conductor().playing() && ad.auditionBlocked(), name("audition is blocked while the SQ-4 transport plays"));
+            br.selectItem((item + 1) % n);
+            check(br.pendingAuditionCount() == 0, name("no audition while the transport plays"), br.pendingAuditionCount());
+            check(ad.auditionHint(true).startsWith("Stop SQ-4 to hear"), name("the hint says to stop SQ-4"));
+            stopTransport();
+
+            // layout: the drawer fits the device panel and CLOSE stays reachable
+            const auto b = br.getBounds();
+            auto* closeBtn = findButton(br, "CLOSE");
+            check(b.getX() >= 0 && b.getY() >= 0 && b.getRight() <= focusView.getWidth() && b.getBottom() <= focusView.getHeight(),
+                  name("the drawer fits inside the focus view"), b.getBottom());
+            check(closeBtn && closeBtn->isVisible()
+                      && focusView.getLocalArea(&br, closeBtn->getBounds()).getBottom() <= focusView.getHeight(),
+                  name("CLOSE is visible inside the device panel"));
+            br.selectItem(item);
+            shoot(cs.png);
+            if (closeBtn) closeBtn->onClick();
+            check(!br.isOpen() && !browse.getToggleState(), name("CLOSE hides the drawer"));
+            p.setTrackFactoryPatch(cs.track, original.index);   // leave the session as found
+            focusView.reloadPatchesFromSession();
+        }
+
+        // DR-1: pad patches in hosted EDIT mode, one drawer at a time
+        stopTransport();
+        ed2->enterFocus(0, 2);
+        focusView.flushPendingPatches();
+        auto& selBar = focusView.drumBodyForTest().selBarView();
+        check(selBar.browseVisible(), "SQ-4 DR-1 pad bar shows BROWSE in EDIT mode");
+        auto& kitBr = focusView.drawer(fui::DeviceFocusView::Drawer::kit);
+        auto& padBr = focusView.drawer(fui::DeviceFocusView::Drawer::pad);
+        focusView.browseButtonForTest().onClick();
+        check(kitBr.isOpen() && !padBr.isOpen(), "DR-1 patch BROWSE opens the kit drawer only");
+        selBar.onBrowse();
+        check(padBr.isOpen() && !kitBr.isOpen() && focusView.openDrawerCount() == 1, "pad BROWSE closes the kit drawer: one DR-1 drawer at a time");
+        check(!focusView.browseButtonForTest().getToggleState() && selBar.browseOpen(), "BROWSE toggle states follow the open drawer");
+        focusView.browseButtonForTest().onClick();
+        check(kitBr.isOpen() && !padBr.isOpen() && focusView.openDrawerCount() == 1, "kit BROWSE closes the pad drawer");
+        selBar.onBrowse();
+
+        const int pad = focusView.drumModelForTest().selectedPad();
+        const auto readPad = [&] {
+            std::vector<float> v;
+            auto values = p.trackParameterValues(0);
+            for (const auto& d : fable::drumParamInfo())
+                if (d.id / fable::DPAD_NFIELDS == pad && d.id < fable::DG_SEQ_BPM) v.push_back(values[d.pid]);
+            return v;
+        };
+        const auto otherPads = [&] {
+            std::vector<float> v;
+            auto values = p.trackParameterValues(0);
+            for (const auto& d : fable::drumParamInfo())
+                if (d.id / fable::DPAD_NFIELDS != pad || d.id >= fable::DG_SEQ_BPM) v.push_back(values[d.pid]);
+            return v;
+        };
+        auto nearEqual = [](const std::vector<float>& a, const std::vector<float>& b) {
+            if (a.size() != b.size()) return false;
+            for (std::size_t i = 0; i < a.size(); ++i)
+                if (std::abs(a[i] - b[i]) > 1.0e-4f * std::max(1.0f, std::abs(b[i]))) return false;
+            return true;
+        };
+        const auto padBefore = readPad();
+        const auto othersBefore = otherPads();
+        padBr.selectItem(2);
+        focusView.flushPendingPatches();
+        const auto padAfter = readPad();
+        check(!nearEqual(padAfter, padBefore), "a pad patch changes the selected pad's sound through the device parameters");
+        check(nearEqual(otherPads(), othersBefore), "a pad patch leaves every other pad untouched");
+        check(!p.trackPatch(0).factory, "the pad edit reaches the session as an inline patch");
+        padBr.keep();
+        padBr.vary();
+        focusView.flushPendingPatches();
+        padBr.revert();
+        focusView.flushPendingPatches();
+        check(nearEqual(readPad(), padAfter), "REVERT restores the pad patch exactly");
+        p.conductor().launchScene(2);
+        padBr.selectItem(3);
+        check(padBr.pendingAuditionCount() == 0, "no pad audition while the transport plays");
+        stopTransport();
+        shoot("sq4-dr1-pad-browser.png");
+        const auto padBounds = padBr.getBounds();
+        check(padBounds.getBottom() <= focusView.getHeight() && findButton(padBr, "CLOSE") != nullptr, "the pad drawer fits inside the device panel");
+        focusView.closeBrowsers();
+        check(focusView.openDrawerCount() == 0, "closeBrowsers closes every drawer");
+
+        // DR-1 pattern library in hosted EDIT mode: a row rewrites the focused scene's clip.
+        {
+            const int scene = 2;
+            const auto clipNow = [&] { return p.conductor().session().scenes[(size_t)scene].clips[0]; };
+            const auto before = clipNow();
+            const auto patchBefore = p.trackPatch(0);
+            const double bpmBefore = p.conductor().session().bpm;
+            auto& stepSeq = focusView.drumBodyForTest().stepSeqView();
+            if (auto* page = findButton(focusView.drumBodyForTest(), "SEQUENCER"); page && page->onClick) page->onClick();
+            check(stepSeq.patternsButton().isVisible(), "SQ-4 DR-1 step sequencer head shows PATTERNS");
+            auto& patBr = focusView.drawer(fui::DeviceFocusView::Drawer::pattern);
+            focusView.browseButtonForTest().onClick();
+            stepSeq.patternsButton().onClick();
+            check(patBr.isOpen() && focusView.openDrawerCount() == 1 && stepSeq.patternsButton().getToggleState()
+                  && !focusView.browseButtonForTest().getToggleState(), "PATTERNS opens the pattern drawer and closes the kit drawer");
+            const auto& lib = fable::patternLibrary();
+            check(focusView.drawerAdapter(fui::DeviceFocusView::Drawer::pattern).items().size() == lib.size() && lib.size() == 488,
+                  "hosted pattern drawer lists the 488 library patterns", (double)lib.size());
+            p.conductor().launchScene(scene);
+            renderRms(p, buf, 40); p.drainAcks();
+            check(p.conductor().ownerOf(0) == scene, "scene 2 owns the DR-1 track before the load", p.conductor().ownerOf(0));
+            const int item = 8 * 20 + 1;   // BREAKBEAT · VARIATION (four bars)
+            patBr.selectItem(item);
+            renderRms(p, buf, 20); p.drainAcks();
+            auto loaded = clipNow();
+            check(loaded.bars == 4 && std::equal(loaded.bytes.begin(), loaded.bytes.begin() + 1024, lib[(size_t)item].steps.begin())
+                  && !loaded.hasDrumRhythm, "a hosted load writes the library bars into the scene clip");
+            check(samePatch(p.trackPatch(0), patchBefore) && p.conductor().session().bpm == bpmBefore,
+                  "a hosted load keeps the session kit patch and BPM");
+            check(p.conductor().ownerOf(0) == scene, "the playing scene keeps playback ownership after the load", p.conductor().ownerOf(0));
+            check(patBr.pendingAuditionCount() == 0, "hosted: the clip plays the pattern in place, no one-shot audition");
+            patBr.selectItem(item - 1 + 7);   // BREAKBEAT · MINIMAL: one bar
+            renderRms(p, buf, 20); p.drainAcks();
+            check(clipNow().bars == 1 && focusView.drumModelForTest().chain() == std::vector<int>{ 0 },
+                  "a one-bar section sets the hosted clip length to one bar (web sequenceChain rule)", clipNow().bars);
+            patBr.selectItem(item);
+            shoot("sq4-dr1-pattern-browser.png");
+            check(patBr.getBounds().getBottom() <= focusView.getHeight(), "the pattern drawer fits inside the device panel");
+            patBr.revert();
+            renderRms(p, buf, 20); p.drainAcks();
+            const auto reverted = clipNow();
+            check(reverted.bars == before.bars && reverted.bytes == before.bytes && reverted.hasDrumRhythm == before.hasDrumRhythm,
+                  "hosted REVERT restores the scene clip exactly");
+            check(p.conductor().ownerOf(0) == scene, "REVERT keeps playback ownership");
+            stopTransport();
+            if (auto* page = findButton(focusView.drumBodyForTest(), "EDIT"); page && page->onClick) page->onClick();
+            focusView.closeBrowsers();
+            check(!stepSeq.patternsButton().getToggleState() && focusView.openDrawerCount() == 0, "closeBrowsers resets PATTERNS");
+        }
+        p.setTrackFactoryPatch(0, 0);
+        focusView.reloadPatchesFromSession();
+        ed2->exitFocus();
+        fui::BrowserFavorites::overrideFile() = juce::File();
+    }
+
     // create a clip on an empty cell (LEAD / INTRO).
     ed2->enterFocus(2, 0);
     check(ed2->focus() == std::make_pair(2, 0), "enterFocus(2,0) targets the empty LEAD/INTRO cell");
@@ -999,6 +1283,10 @@ int main(int argc, char** argv) {
         }
     }
     for (int track = 1; track < 4; ++track) {
+        // NEON TALE's pad comps in this scene; the tab checks start from a switched-off arp.
+        if (auto off = p.conductor().session().scenes[2].clips[(size_t)track].arp; off.enabled) {
+            off.enabled = false; p.conductor().updateClipArp(2, track, off);
+        }
         ed2->enterFocus(track, 2);
         auto* body = focusView.activeBodyComponent();
         auto* mode = findFxComponent<juce::TextButton>(*body, "ARP");
@@ -1016,8 +1304,9 @@ int main(int argc, char** argv) {
                                                arpLed, arpLed, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false));
             check(p.conductor().session().scenes[2].clips[(size_t)track].arp.enabled,
                   "SQ ARP LED enables only the selected clip", track);
-            auto* input = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator input");
-            check(input && !input->isEnabled(), "SQ arp uses portable stored notes", track);
+            auto* input = findFxComponent<fui::arp::Segmented>(*arp, "Arpeggiator input");
+            check(input && input->button(1) && input->button(3) && !input->button(2),
+                  "SQ arp offers portable note lists and chord tracks, not played keys", track);
             auto* rate = findFxComponent<juce::ComboBox>(*arp, "Arpeggiator rate");
             if (rate) rate->setSelectedId(7, juce::sendNotificationSync);
             const auto& clip = p.conductor().session().scenes[2].clips[(size_t)track];
@@ -1025,12 +1314,103 @@ int main(int argc, char** argv) {
                   "SQ arp rate edits preserve written pattern bytes", track);
             auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
             dir.createDirectory();
+            focusView.resized(); // the app's visual timer applies the page height
             if (auto out = dir.getChildFile("sq4-arp-track-" + juce::String(track) + ".png").createOutputStream()) {
                 out->setPosition(0); out->truncate();
                 juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
             }
         }
         p.conductor().pasteClip(2, track, before);
+    }
+    {
+        // Scene chord linking: BL-1 and the lead share one progression; octave stays per clip.
+        // The factory pad clip carries a linked chord track too (chordTrackArp).
+        auto& c = p.conductor();
+        const auto bassBefore = c.session().scenes[2].clips[1], leadBefore = c.session().scenes[2].clips[2];
+        for (int track : {1, 2}) {
+            auto a = c.session().scenes[2].clips[(size_t)track].arp;
+            a.enabled = true; a.chords = true; a.chordLink = true; a.comp = track == 2; a.chordOctave = track == 1 ? 2 : 3;
+            c.updateClipArp(2, track, a);
+        }
+        auto edit = c.session().scenes[2].clips[1].arp; edit.chordKey = 4; edit.chordBars = 2;
+        c.updateClipArp(2, 1, edit);
+        const auto& lead = c.session().scenes[2].clips[2].arp;
+        check(lead.chordKey == 4 && lead.chordBars == 2 && lead.chordOctave == 3 && c.linkedChordTracks(2, 1) == std::vector<int>{2, 3},
+              "linked chord tracks share key and length within the scene");
+        for (int track : {2, 1}) {
+            ed2->enterFocus(track, 2);
+            auto* body = focusView.activeBodyComponent();
+            if (auto* mode = findFxComponent<juce::TextButton>(*body, "ARP")) mode->onClick();
+            if (auto* arp = findFxComponent<fui::ArpPanel>(*body)) {
+                arp->syncFromModel();
+                auto* link = findFxComponent<juce::Button>(*arp, "Link chord tracks");
+                check(link && link->isVisible() && link->getToggleState(), "SQ chord track shows its scene link", track);
+                for (auto* child : arp->getChildren()) if (child->isVisible())
+                    check(!child->getBounds().isEmpty() && arp->getLocalBounds().contains(child->getBounds()), "SQ chord-track arp controls fit", track);
+            }
+            auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+            focusView.resized(); // the app's visual timer applies the page height
+            if (auto out = dir.getChildFile("sq4-arp-chords-track-" + juce::String(track) + ".png").createOutputStream()) {
+                out->setPosition(0); out->truncate();
+                juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+            }
+            if (auto* arp = findFxComponent<fui::ArpPanel>(*body); arp && track == 2) {
+                auto* browse = findFxComponent<juce::Button>(*arp, "Browse chord progressions");
+                auto* browser = findFxComponent<fui::ProgressionBrowserView>(*arp);
+                if (browse) browse->onClick();
+                check(browse && browser && browser->isVisible(), "chord progression picker opens the browser");
+                if (auto out = dir.getChildFile("sq4-progression-browser.png").createOutputStream()) {
+                    out->setPosition(0); out->truncate();
+                    juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+                }
+                if (browser) browser->setVisible(false);
+            }
+        }
+        {
+            // Scene chord chip (web SceneChordChip): the scene browser writes every linked clip.
+            ed2->exitFocus();
+            auto& grid = ed2->grid();
+            auto& overlay = ed2->getRack().getSceneChords();
+            check(!grid.sceneChordsR(2).isEmpty(), "a scene with linked chord tracks shows the chords chip");
+            bool chipless = true;
+            for (int s = 0; s < (int)c.session().scenes.size(); ++s)
+                if (c.sceneChordTracks(s).empty()) chipless = chipless && grid.sceneChordsR(s).isEmpty();
+            check(chipless, "a scene without linked chord tracks shows no chip");
+            grid.sceneChordsClick(2);
+            auto& browser = overlay.getBrowser();
+            check(overlay.isOpen() && overlay.scene() == 2 && browser.titleText
+                  && browser.titleText().endsWith("3 LINKED TRACKS"), "the chip opens the scene progression browser");
+            const int index = 5;
+            browser.load(index);
+            std::array<fable::ArpChord, fable::kMaxArpChords> want {}; int count = 0;
+            const int bars = fable::progressionChords(fable::progressions()[(size_t)index], 4, want, count);
+            bool all = true;
+            for (int t : {1, 2, 3}) {
+                const auto& a = c.session().scenes[2].clips[(size_t)t].arp;
+                all = all && a.chordKey == 4 && a.chordBars == bars && a.chordCount == count
+                    && fable::progressionIndex(a.chordList, a.chordCount, a.chordKey) == index;
+            }
+            check(all, "loading a scene progression writes every linked clip in the scene key");
+            auto* keyBox = findFxComponent<juce::ComboBox>(browser, "Scene key");
+            check(keyBox && keyBox->isVisible() && keyBox->getSelectedId() == 5, "the scene browser shows the scene KEY");
+            if (keyBox) keyBox->setSelectedId(8, juce::sendNotificationSync);
+            bool moved = true;
+            for (int t : {1, 2, 3}) {
+                const auto& a = c.session().scenes[2].clips[(size_t)t].arp;
+                moved = moved && a.chordKey == 7 && a.chordList[0].root == (want[0].root + 3) % 12;
+            }
+            check(moved, "changing the scene key rotates the linked chord roots");
+            ed2->setSize(ed2->getWidth(), ed2->getHeight());
+            if (auto out = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals/sq4-scene-chords.png").createOutputStream()) {
+                out->setPosition(0); out->truncate();
+                juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+            }
+            overlay.close();
+            // Undo rebuilds the conductor: re-fetch it.
+            check(p.undo() && p.conductor().session().scenes[2].clips[2].arp.chordKey == 4,
+                  "one undo restores the scene chords from before the browser opened");
+        }
+        p.conductor().pasteClip(2, 1, bassBefore); p.conductor().pasteClip(2, 2, leadBefore);
     }
     ed2->exitFocus();
 
@@ -1215,12 +1595,19 @@ int main(int argc, char** argv) {
                 if (!factory) {
                     const auto params = webPatch.getProperty("data", {}).getProperty("params", {});
                     const auto* object = params.getDynamicObject();
-                    if (object == nullptr || object->getProperties().size() != (int)nativeTrack.patch.params.size())
+                    // Report the first difference so a parity break is easy to find.
+                    static int reported = 0;
+                    const auto miss = [&](const char* why, const std::string& id) {
+                        if (reported++ < 40) std::printf("  fixture mismatch: %s track %d %s %s\n", mine.name.c_str(), t, why, id.c_str());
                         metaMatches = false;
+                    };
                     for (const auto& [id, value] : nativeTrack.patch.params)
-                        if (!params.hasProperty(juce::Identifier(id))
-                            || std::abs((double)params.getProperty(juce::Identifier(id), 0) - value) > 1e-4)
-                            metaMatches = false;
+                        if (!params.hasProperty(juce::Identifier(id)))
+                            miss("missing on web", id);
+                        else if (std::abs((double)params.getProperty(juce::Identifier(id), 0) - value) > 1e-4)
+                            miss("value", id + " web " + params.getProperty(juce::Identifier(id), 0).toString().toStdString() + " native " + std::to_string(value));
+                    if (object == nullptr || object->getProperties().size() != (int)nativeTrack.patch.params.size())
+                        miss("param count", std::to_string(object ? object->getProperties().size() : -1) + " web vs " + std::to_string(nativeTrack.patch.params.size()) + " native");
                 }
                 if ((int)webPatch.getProperty(factory ? "index" : "base", -1) != nativeTrack.patch.index
                     || std::abs((double)webTrack.getProperty("gain", -1.0) - (double)nativeTrack.gain) > 1e-6)
@@ -1241,6 +1628,26 @@ int main(int argc, char** argv) {
                     std::vector<fable::AutoLane> webLanes;
                     if (webClip.hasProperty("automation") && !fable::automationFromVar(webClip["automation"], webLanes, mine.session.tracks[(size_t)t].machine)) clipsMatch = false;
                     if (juce::JSON::toString(fable::automationToVar(webLanes)) != juce::JSON::toString(fable::automationToVar(nativeClip.automation))) clipsMatch = false;
+                    // Chord-track arps (clipArp.ts chordTrackArp).
+                    {
+                        fable::ArpSettings webArp;
+                        const bool webHasArp = webClip.hasProperty("arp");
+                        if (webHasArp && !fable::arpFromVar(webClip["arp"], webArp, true)) clipsMatch = false;
+                        if (webHasArp != nativeClip.hasArp
+                            || (webHasArp && juce::JSON::toString(fable::arpToVar(webArp)) != juce::JSON::toString(fable::arpToVar(nativeClip.arp)))) {
+                            std::printf("  fixture mismatch: %s scene %d track %d arp\n", mine.name.c_str(), s, t);
+                            clipsMatch = false;
+                        }
+                    }
+                    // POLY lanes and micro-timing (songs/grooves.ts, authored songs).
+                    fable::ClipData webRhythm;
+                    if (webClip.hasProperty("drumRhythm")
+                        && !fable::drumRhythmFromVar(webClip["drumRhythm"], webRhythm, mine.session.tracks[(size_t)t].machine)) clipsMatch = false;
+                    if (webRhythm.hasDrumRhythm != nativeClip.hasDrumRhythm
+                        || juce::JSON::toString(fable::drumRhythmToVar(webRhythm)) != juce::JSON::toString(fable::drumRhythmToVar(nativeClip))) {
+                        std::printf("  fixture mismatch: %s scene %d track %d drumRhythm\n", mine.name.c_str(), s, t);
+                        clipsMatch = false;
+                    }
                     const auto& nativeBytes = nativeClip.bytes;
                     if (decoded.getDataSize() != nativeBytes.size()
                         || std::memcmp(decoded.getData(), nativeBytes.data(), nativeBytes.size()) != 0)
@@ -1757,6 +2164,10 @@ int main(int argc, char** argv) {
         };
         fui::HostedDrumModel drumModel(p);
         checkHostedMirror(drumModel, 0, "pad15.flt.cut");
+        {   // the preset browsers are available inside SQ-4 focus mode
+            DrumDeviceBody hostedBody(drumModel);
+            check(hostedBody.selBarView().browseVisible(), "SQ-4 hosted DR-1 pad bar shows BROWSE");
+        }
         fui::HostedBassModel bassModel(p);
         checkHostedMirror(bassModel, 1, "flt.cut");
 
@@ -1838,6 +2249,90 @@ int main(int argc, char** argv) {
         measuredProcessor.releaseResources();
         check(!static_cast<bool>(codeact::get(agent.snapshot().audio, "available")),
               "SQ released resources invalidate output measurements");
+    }
+
+    {
+        // Melodic sequence POLY (web SequencePoly.tsx) in the hosted BL-1 and
+        // WT-1 editors: the strip edits the focused clip's rhythm, shares the
+        // note undo history, and the session JSON carries it.
+        std::printf("\n== hosted melodic POLY strip ==\n");
+        SeqAudioProcessor p;
+        p.prepareToPlay(48000.0, 128);
+        p.applySessionJson(fable::sessionToJson(fable::factorySession()));
+        auto& conductor = p.conductor();
+        for (int t : { 1, 2, 3 }) if (!conductor.session().scenes[0].hasClip[(size_t)t]) conductor.createClip(0, t);
+        auto findStrip = [](juce::Component& view) -> fui::SequencePolyStrip* {
+            for (auto* child : view.getChildren())
+                if (auto* strip = dynamic_cast<fui::SequencePolyStrip*>(child)) return strip;
+            return nullptr;
+        };
+        const auto out = juce::File::getCurrentWorkingDirectory().getChildFile(".superpowers/sdd/port-sequencer");
+        out.createDirectory();
+        auto writeView = [&](juce::Component& view, const char* name) {
+            const auto image = view.createComponentSnapshot(view.getLocalBounds());
+            const auto file = out.getChildFile(name);
+            file.deleteFile();
+            if (auto stream = file.createOutputStream()) juce::PNGImageFormat().writeImageToStream(image, *stream);
+        };
+        {
+            fui::HostedBassModel model(p);
+            model.setTargetScene(0);
+            fui::PitchSeqView view(model);
+            view.setBounds(0, 0, 1180, 420);
+            auto* strip = findStrip(view);
+            check(strip && strip->isVisible() && !strip->isOpen(), "BL-1 hosted editor shows a closed POLY disclosure");
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                strip->press(fui::SequencePolyStrip::fit);
+                for (int i = 0; i < 4; ++i) strip->press(fui::SequencePolyStrip::stepsDown);
+                strip->press(fui::SequencePolyStrip::rotateDown);
+                const auto& clip = conductor.session().scenes[0].clips[1];
+                check(clip.hasSequenceRhythm && clip.sequenceRhythm.enabled && clip.sequenceRhythm.fit
+                          && clip.sequenceRhythm.steps == 12 && clip.sequenceRhythm.rotation == 11,
+                      "BL-1 strip writes the clip's POLY (ON, FIT, 12 steps, rotate wraps to 11)");
+                fable::SessionData back;
+                check(fable::sessionFromJson(fable::sessionToJson(conductor.session()), back)
+                          && back.scenes[0].clips[1].sequenceRhythm.steps == 12,
+                      "BL-1 clip POLY round-trips through the session JSON");
+                view.resized();
+                writeView(view, "bl1-hosted-poly-fit.png");
+                view.undoEdit();
+                check(conductor.session().scenes[0].clips[1].sequenceRhythm.rotation == 0,
+                      "BL-1 undo steps back one POLY edit");
+                for (int i = 0; i < 6; ++i) view.undoEdit();
+                check(!conductor.session().scenes[0].clips[1].sequenceRhythm.enabled,
+                      "BL-1 undo restores POLY OFF (clip keeps a rhythm once it had one, web parity)");
+                view.redoEdit();
+                check(conductor.session().scenes[0].clips[1].sequenceRhythm.enabled, "BL-1 redo re-enables POLY");
+            }
+        }
+        {
+            fui::HostedWtModel model(p, 2);
+            model.setTarget(0);
+            fui::NoteSeqView view(model);
+            view.setBounds(0, 0, 1180, 520);
+            auto* strip = findStrip(view);
+            check(strip && strip->isVisible(), "WT-1 hosted editor shows the POLY strip");
+            if (strip) {
+                strip->press(fui::SequencePolyStrip::disclosure);
+                strip->press(fui::SequencePolyStrip::power);
+                for (int i = 0; i < 9; ++i) strip->press(fui::SequencePolyStrip::stepsDown);
+                const auto& clip = conductor.session().scenes[0].clips[2];
+                check(clip.hasSequenceRhythm && clip.sequenceRhythm.enabled && !clip.sequenceRhythm.fit
+                          && clip.sequenceRhythm.steps == 7, "WT-1 strip writes a GRID 7 POLY");
+                check(strip->summary() == "GRID 7", "WT-1 disclosure summary reads GRID 7");
+                view.resized();
+                writeView(view, "wt1-hosted-poly-grid.png");
+                view.undoEdit();
+                check(conductor.session().scenes[0].clips[2].sequenceRhythm.steps == 8, "WT-1 undo steps back one POLY edit");
+            }
+            fable::SequenceRhythm untouched;
+            check(conductor.updateClipRhythm(0, 3, untouched)
+                      && !conductor.session().scenes[0].clips[3].hasSequenceRhythm,
+                  "a default POLY on a clip that never had one stays absent");
+            check(!conductor.updateClipRhythm(0, 0, untouched), "DR-1 clips reject melodic POLY");
+        }
     }
 
     std::printf(failures ? "\n%d FAILURES\n" : "\nALL PASS\n", failures);

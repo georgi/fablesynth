@@ -20,6 +20,7 @@ const MASTER_DEFAULTS = {
   'master.fx.comp.on': 1, 'master.fx.comp.thr': -16, 'master.fx.comp.att': .003,
   'master.fx.comp.rel': .25, 'master.fx.comp.ratio': 4,
   'master.fx.limiter.on': 1, 'master.fx.limiter.ceiling': -1,
+  'master.fx.comp.sc': 0, 'master.fx.comp.schp': 20,
 };
 
 const SAFETY_CEILING = 0.8912509381337456; // -1 dBFS, sample peak
@@ -122,12 +123,18 @@ class MasterProcessor extends AudioWorkletProcessor {
       p['master.fx.ott.time'], p['master.fx.ott.up'], p['master.fx.ott.down']);
     this.comp.setParams(p['master.fx.comp.on'] > .5, p['master.fx.comp.thr'],
       p['master.fx.comp.att'], p['master.fx.comp.rel'], p['master.fx.comp.ratio']);
+    // Side-chain: 1 KICK → key channel 4, TRACK n → n-1 (src/engine/sidechain.ts).
+    const sc = Math.round(p['master.fx.comp.sc'] || 0);
+    this.keyChannel = sc === 1 ? 4 : sc >= 2 ? sc - 2 : -1;
+    this.comp.setKey(this.keyChannel >= 0, p['master.fx.comp.schp']);
     this.ceiling.target = Math.pow(10, Math.max(-24, Math.min(0, p['master.fx.limiter.ceiling'])) / 20);
     this.ceilingMix.target = p['master.fx.limiter.on'] > .5 ? 1 : 0;
   }
 
   process(inputs, outputs) {
     const input = inputs[0], output = outputs[0];
+    // Input 1 is the key bus (five mono channels), aligned with the mix.
+    const key = this.keyChannel >= 0 ? inputs[1]?.[this.keyChannel] : null;
     const sourceL = input[0] ?? [], sourceR = input[1] ?? sourceL;
     const left = output[0], right = output[1] ?? left;
     const n = left.length;
@@ -136,7 +143,7 @@ class MasterProcessor extends AudioWorkletProcessor {
     this.eq.process(left, right, n);
     for (let i = 0; i < n; i++) {
       this.ott.processSample(left[i], right[i]);
-      this.comp.processSample(this.ott.l, this.ott.r);
+      this.comp.processSample(this.ott.l, this.ott.r, key ? key[i] : 0);
       let l = this.comp.l, r = this.comp.r;
 
       const ceiling = this.ceiling.next();

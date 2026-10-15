@@ -20,7 +20,7 @@ static const bool g_bassThemeInstalled = [] {
 }();
 
 // ===================== BassScopeView =====================
-BassScopeView::BassScopeView(BassUiModel& p) : proc(p) { startTimerHz(30); }
+BassScopeView::BassScopeView(BassUiModel& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 void BassScopeView::timerCallback() {
     std::array<float, 2048> buf;
     proc.readScope(buf.data(), (int)buf.size());
@@ -62,7 +62,7 @@ void BassScopeView::paint(juce::Graphics& g) {
 BassBpmReadout::BassBpmReadout(BassUiModel& p) : proc(p) {
     param = p.parameters().parameter("seq.bpm");
     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-    startTimerHz(10);
+    startVisualTimer(*this, 10);
 }
 int BassBpmReadout::shown() const {
     if (proc.hostSynced()) return (int)std::lround(proc.hostBpm());
@@ -105,6 +105,27 @@ void BassBpmReadout::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWh
     nudge((w.deltaY > 0 ? 1.0f : -1.0f) / 140.0f); // one BPM per notch (range 60-200)
 }
 void BassBpmReadout::paint(juce::Graphics& g) {
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int w = juce::roundToInt(getWidth() * scale), h = juce::roundToInt(getHeight() * scale);
+    if (w <= 0 || h <= 0) return;
+    const int value = shown(); const bool sync = proc.hostSynced();
+    if (readoutLayer_.getWidth() != w || readoutLayer_.getHeight() != h || readoutScale_ != scale || cachedShown_ != value || cachedSync_ != sync || readoutAccent_ != accentA()) {
+        cachedShown_ = value; cachedSync_ = sync; readoutAccent_ = accentA();
+        readoutScale_ = scale;
+        readoutLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics cg(readoutLayer_);
+        cg.addTransform(juce::AffineTransform::scale(scale));
+        paintReadout(cg);
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(readoutLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
+}
+
+void BassBpmReadout::paintReadout(juce::Graphics& g) {
     auto r = getLocalBounds().toFloat();
     g.setColour(juce::Colour(0xff0c0f16));
     g.fillRoundedRectangle(r, 6.0f);
@@ -112,12 +133,14 @@ void BassBpmReadout::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 1.0f);
     g.setColour(accentA());
     g.setFont(monoFont(11.0f));
-    g.drawText(juce::String(shown()), getLocalBounds(), juce::Justification::centred);
+    g.drawText(juce::String(cachedShown_), getLocalBounds(), juce::Justification::centred);
 }
 
 // ===================== BassHeader =====================
 BassHeader::BassHeader(BassUiModel& p)
     : proc(p), scope(p), bpm(p),
+      transport([&p] { return p.sequencerPlaying(); }, [&p](bool on) { p.setSequencerPlaying(on); },
+                juce::Colour(0xff0e3122)),
       swing(p.parameters(), "master.swing", Knob::Md, Accent::N),
       vol(p.parameters(), "master.volume", Knob::Md, Accent::N) {
     auto styleBtn = [this](juce::TextButton& b, int dir) {
@@ -132,11 +155,14 @@ BassHeader::BassHeader(BassUiModel& p)
     };
     styleBtn(prevBtn, -1);
     styleBtn(nextBtn, +1);
+    browseBtn.onClick = [this] { if (onBrowse) onBrowse(); };
+    addAndMakeVisible(browseBtn);
     addAndMakeVisible(scope);
     addAndMakeVisible(bpm);
+    addAndMakeVisible(transport);
     addAndMakeVisible(swing);
     addAndMakeVisible(vol);
-    startTimerHz(10);
+    startVisualTimer(*this, 10);
 }
 
 void BassHeader::timerCallback() {
@@ -153,6 +179,28 @@ void BassHeader::timerCallback() {
 }
 
 void BassHeader::paint(juce::Graphics& g) {
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int w = juce::roundToInt(getWidth() * scale), h = juce::roundToInt(getHeight() * scale);
+    if (w <= 0 || h <= 0) return;
+    const auto name = proc.programName(proc.currentProgram());
+    const bool midi = proc.midiActive(), sync = proc.hostSynced(), dirty = proc.programDirty();
+    if (headerLayer_.getWidth() != w || headerLayer_.getHeight() != h || headerScale_ != scale || cachedName_ != name || cachedMidi_ != midi || cachedSync_ != sync || cachedDirty_ != dirty || headerAccent_ != accentA()) {
+        cachedName_ = name; cachedMidi_ = midi; cachedSync_ = sync; cachedDirty_ = dirty; headerAccent_ = accentA();
+        headerScale_ = scale;
+        headerLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics cg(headerLayer_);
+        cg.addTransform(juce::AffineTransform::scale(scale));
+        paintHeader(cg);
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(headerLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
+}
+
+void BassHeader::paintHeader(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
     // Use measured tracked segments so the model mark never crosses SYNTH.
@@ -190,11 +238,11 @@ void BassHeader::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(patchNameArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
     g.setColour(accentA());
     g.setFont(monoFont(10.0f));
-    drawSpaced(g, proc.programName(proc.currentProgram()),
+    drawSpaced(g, cachedName_,
                patchNameArea.reduced(10, 0), 0.8f, juce::Justification::centred);
     // Dirty dot (.bl-patch-dirty): acid green, lit once the patch has unsaved
     // edits.
-    if (proc.programDirty()) {
+    if (cachedDirty_) {
         const auto dot = patchNameArea.withTrimmedLeft(patchNameArea.getWidth() - 14)
                              .withSizeKeepingCentre(5, 5).toFloat();
         g.setColour(accentA().withAlpha(0.4f));
@@ -221,20 +269,21 @@ void BassHeader::paint(juce::Graphics& g) {
     // MIDI activity LED (.bl-midi)
     auto midiRow = midiArea;
     auto led = midiRow.removeFromLeft(13).withSizeKeepingCentre(7, 7).toFloat();
-    g.setColour(proc.midiActive() ? accentA() : juce::Colour(0xff232936));
+    g.setColour(cachedMidi_ ? accentA() : juce::Colour(0xff232936));
     g.fillEllipse(led);
-    if (proc.midiActive()) { g.setColour(accentA().withAlpha(0.5f)); g.fillEllipse(led.expanded(2)); }
+    if (cachedMidi_) { g.setColour(accentA().withAlpha(0.5f)); g.fillEllipse(led.expanded(2)); }
     g.setColour(col::textDim);
     g.setFont(monoFont(9.0f));
     g.drawText("MIDI", midiRow, juce::Justification::centredLeft);
 
     // SYNC tag under the BPM box — dim normally, lit while the host owns tempo
-    g.setColour(proc.hostSynced() ? accentA() : col::textDim);
+    g.setColour(cachedSync_ ? accentA() : col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SYNC", syncArea, 1.6f, juce::Justification::horizontallyCentred);
 }
 
 void BassHeader::resized() {
+    headerLayer_ = {};
     // Web .bl-header: content box 1424x80, padding 7px 16px; items left-to-
     // right with 14px gaps, HUD block pushed right by margin-left:auto.
     auto r = getLocalBounds().reduced(16, 7);
@@ -249,10 +298,12 @@ void BassHeader::resized() {
     pb.removeFromRight(6);
     patchNameArea = pb;
 
+    r.removeFromLeft(8);
+    browseBtn.setBounds(r.removeFromLeft(66).withSizeKeepingCentre(66, 28));
     r.removeFromLeft(14);
     voiceModeArea = r.removeFromLeft(140).withSizeKeepingCentre(140, 24);
 
-    // right-aligned cluster: [scope 168x46] 12 [midi 42] 12 [tempo 86] 12 [knobs 117]
+    // right-aligned cluster: [scope 168x46] 12 [midi 42] 12 [play 34] 8 [tempo 86] 12 [knobs 117]
     auto master = r.removeFromRight(117).withSizeKeepingCentre(117, 64);
     swing.setBounds(master.removeFromLeft(56));
     vol.setBounds(master.removeFromRight(56));
@@ -261,6 +312,8 @@ void BassHeader::resized() {
     bpm.setBounds(tempo.removeFromTop(26));
     tempo.removeFromTop(4);
     syncArea = tempo;
+    r.removeFromRight(8);
+    transport.setBounds(r.removeFromRight(34).withSizeKeepingCentre(34, 28));
     r.removeFromRight(12);
     midiArea = r.removeFromRight(42).withSizeKeepingCentre(42, 17);
     r.removeFromRight(12);

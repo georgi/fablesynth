@@ -8,6 +8,8 @@ import type { SessionDoc } from './protocol';
 import { masterFxParams, type MasterFxParams } from './masterFx';
 import masterWorkletUrl from './master-worklet.js?url';
 import sharedFxWorkletUrl from '../engine/ott-worklet.js?url';
+import { KEY_CHANNELS, KICK_CHANNEL } from '../engine/sidechain';
+import { DrumEngine, KICK_KEY_OUTPUT } from '../drum/engine/drum-synth';
 
 export interface SeqRig {
   sampleRate: number;
@@ -22,6 +24,8 @@ export interface SeqRig {
   panic(): void;
   /** Per-track post-fader analysers (scope traces + VU), null in fakes. */
   trackAnalysers: AnalyserNode[] | null;
+  /** Pre-FX master sum and final output analysers for the mix assistant. */
+  masterTaps?: { input: AnalyserNode; output: AnalyserNode } | null;
 }
 
 export class WebAudioRig implements SeqRig {
@@ -29,8 +33,13 @@ export class WebAudioRig implements SeqRig {
   devices: SeqDevice[] = [];
   trackGains: GainNode[] = [];
   trackAnalysers: AnalyserNode[] | null = null;
+  masterTaps: { input: AnalyserNode; output: AnalyserNode } | null = null;
   masterBus!: AudioWorkletNode;
   trackDelays: DelayNode[] = [];
+  kickKeyGain: GainNode | null = null;
+  /** The five-channel side-chain key bus (see wireKeyBus). */
+  keyBus: ChannelMergerNode | null = null;
+  kickKeyTrack = -1;
   sampleRate = 48000;
 
   async init(session: SessionDoc): Promise<void> {
@@ -43,9 +52,15 @@ export class WebAudioRig implements SeqRig {
     await ctx.audioWorklet.addModule(sharedFxWorkletUrl);
     await ctx.audioWorklet.addModule(masterWorkletUrl);
     this.masterBus = new AudioWorkletNode(ctx, 'fable-sq-master', {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+      // Input 1 is the side-chain key bus. Five discrete channels: the browser's
+      // speaker layouts would otherwise remix it and drop channel 4 (KICK).
+      numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2],
+      channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
     });
     this.masterBus.connect(ctx.destination);
+    const tap = () => Object.assign(ctx.createAnalyser(), { fftSize: 8192, smoothingTimeConstant: 0 });
+    this.masterTaps = { input: tap(), output: tap() };
+    this.masterBus.connect(this.masterTaps.output);
     this.setMasterFx(masterFxParams(session.masterFx));
 
     this.trackAnalysers = [];
@@ -64,6 +79,7 @@ export class WebAudioRig implements SeqRig {
       deviceOutputs.push(deviceOutput);
       gain.connect(this.masterBus);
       gain.connect(analyser);
+      gain.connect(this.masterTaps.input);
       inits.push(device.init(ctx, deviceOutput).then(() => device.applyPatch(track.patch)));
     }
     await Promise.all(inits);
@@ -84,6 +100,37 @@ export class WebAudioRig implements SeqRig {
       delay.connect(this.trackGains[i]);
       this.trackDelays.push(delay);
     }
+    this.wireKeyBus(ctx);
+  }
+
+  /**
+   * Side-chain key bus (src/engine/sidechain.ts): the post-fader track
+   * outputs and DR-1's kick-only output, one mono channel each. The master
+   * reads it directly, aligned with the mix. Devices read it through a
+   * one-quantum delay, which the feedback loop (a device keyed by a track
+   * it feeds) needs in Web Audio; their keys arrive ~3 ms late.
+   */
+  private wireKeyBus(ctx: AudioContext): void {
+    const merger = ctx.createChannelMerger(KEY_CHANNELS);
+    this.keyBus = merger;
+    this.trackGains.forEach((gain, t) => { if (t < KICK_CHANNEL) gain.connect(merger, 0, t); });
+    const drum = this.devices.findIndex((d) => d.engine instanceof DrumEngine);
+    const drumNode = drum >= 0 ? (this.devices[drum].engine as DrumEngine).node : null;
+    if (drumNode) {
+      this.kickKeyGain = ctx.createGain();
+      this.kickKeyGain.gain.value = this.trackGains[drum].gain.value;
+      this.kickKeyTrack = drum;
+      drumNode.connect(this.kickKeyGain, KICK_KEY_OUTPUT);
+      this.kickKeyGain.connect(merger, 0, KICK_CHANNEL);
+    }
+    merger.connect(this.masterBus, 0, 1);
+    const late = ctx.createDelay(0.01);
+    late.delayTime.value = 128 / ctx.sampleRate;
+    merger.connect(late);
+    for (const d of this.devices) {
+      const node = (d.engine as { node?: AudioWorkletNode } | undefined)?.node;
+      if (node && node.numberOfInputs > 0) late.connect(node);
+    }
   }
 
   now(): number {
@@ -93,6 +140,8 @@ export class WebAudioRig implements SeqRig {
   setTrackGain(t: number, gain: number): void {
     const g = this.trackGains[t];
     if (g) g.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.015);
+    // The kick key follows the drum fader and mute like the other keys.
+    if (t === this.kickKeyTrack) this.kickKeyGain?.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.015);
   }
 
   setMasterGain(gain: number): void {

@@ -5,6 +5,9 @@
 #include "BassProcessor.h"
 #include "BassDeviceBody.h"
 #include "ui/BassHeader.h"
+#include "ui/BassBrowserAdapter.h"
+#include "ui/BassStandaloneBackend.h"
+#include "../ui/PresetBrowser.h"
 #include "../ui/LookAndFeel.h"
 
 // The BL-1 rack: all sections laid out at a fixed logical size matching the
@@ -12,17 +15,22 @@
 // layout stays pixel-faithful — same scheme as the WT-1/DR-1 racks.
 class BassRack : public juce::Component {
 public:
-    // 1080 (was 931) since KEYS became a full-width bottom row rather than a
-    // third column of the mod row — see BassDeviceBody::resized().
-    static constexpr int LW = 1460, LH = 1080;
-    explicit BassRack(fui::BassUiModel&);
+    // The shared page area plus the 22px lower margin — every tab has the
+    // same height (see BassDeviceBody::resized()).
+    static constexpr int LW = 1460, LH = BassDeviceBody::kPageTop + BassDeviceBody::kPageH + 22;
+    BassRack(fui::BassUiModel&, BassAudioProcessor&);
     void resized() override;
 
     fui::PitchSeqView& pitchSeq() { return body.pitchSeq(); }   // for the host test
+    fui::PresetBrowser& presetBrowser() { return browser_; }
+    fui::BassBrowserAdapter& browserAdapter() { return browserAdapter_; }
+    void toggleBrowser();
 
 private:
     fui::BassHeader header;
     BassDeviceBody body;
+    fui::BassBrowserAdapter browserAdapter_;
+    fui::PresetBrowser browser_;
 };
 
 class BassEditor : public juce::AudioProcessorEditor {

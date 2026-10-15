@@ -103,7 +103,6 @@ export function FilterSection() {
   return (
     <section className="panel bl-filter-section" data-accent="f">
       <div className="panel-head">
-        <span className="bl-led bl-led-f" aria-hidden="true" />
         <h2>FILTER</h2>
         <div className="bl-filter-stepper">
           <BassStepper paramId="flt.type" accent="f" />

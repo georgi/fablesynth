@@ -1,5 +1,6 @@
 // Canonical parameter definitions. Every knob, preset and engine param keys off this.
 // curve: 'lin' | 'log' (geometric min..max) | 'int'
+import { SC_HP_DEF, SC_SOURCES } from './engine/sidechain';
 
 export const fmtHz = (v: number) => (v >= 1000 ? (v / 1000).toFixed(2) + ' kHz' : v.toFixed(v < 100 ? 1 : 0) + ' Hz');
 export const fmtSec = (v: number) => (v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(2) + ' s');
@@ -28,7 +29,16 @@ export const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
 export const SYNC_BPM = 120;
 export const SUB_SHAPES = ['SINE', 'SQR'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
-export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE'];
+// Append-only: saved routes store the index. 6.. are the Serum-parity sources.
+// MOD WHL and AFTERTCH read the perf.* params; RANDOM is a per-note value.
+export const MOD_SOURCES = ['—', 'LFO 1', 'LFO 2', 'MOD ENV', 'VELO', 'NOTE',
+  'LFO 3', 'LFO 4', 'MOD ENV 2', 'MACRO 1', 'MACRO 2', 'MACRO 3', 'MACRO 4', 'MOD WHL', 'AFTERTCH', 'RANDOM'];
+export const MACRO_COUNT = 4;
+export const ENV_MODELS = ['CLASSIC', 'CURVE'];
+/** MOD_SOURCES index of LFO n (1..4). */
+export const lfoSource = (n: number) => (n <= 2 ? n : n + 3);
+/** MOD_SOURCES index of macro n (1..4). */
+export const macroSource = (n: number) => 8 + n;
 // Log-curve modulation depth: a full route swings a Log param ×2^(x·D), i.e.
 // ±D octaves. Mirrors MOD_LOG_D in engine/worklet.js — keep the two in sync.
 export const MOD_LOG_D = 5;
@@ -92,12 +102,42 @@ export interface ModConnection {
   src: number;
   dst: number;
   amt: number;
+  pol?: number; // MOD_POLARITY index, 0 = source native
+  aux?: number; // MOD_SOURCES index of the aux scale, 0 = none
+}
+
+// Per-route polarity. SRC keeps the source's native range (LFOs and NOTE are
+// bipolar, MOD ENV and VELO are unipolar); UNI and BI force it. Mirrors
+// polarize() in the C++ Params.h.
+export const MOD_POLARITY = ['SRC', 'UNI', 'BI'];
+const SOURCE_BIPOLAR = [false, true, true, false, false, true, true, true, false, false, false, false, false, false, false, false];
+export function routeBipolar(src: number, pol: number): boolean {
+  return pol === 1 ? false : pol === 2 ? true : SOURCE_BIPOLAR[src] ?? false;
+}
+/** Polarity value that stores `bipolar` for this source (SRC when it is native). */
+export function polarityFor(src: number, bipolar: boolean): number {
+  return bipolar === (SOURCE_BIPOLAR[src] ?? false) ? 0 : bipolar ? 2 : 1;
+}
+/** Ring readout, e.g. "LFO 1 ±30%" (bipolar) or "VELO +30%" (unipolar). */
+export function routeLabel(src: number, amt: number, bipolar: boolean): string {
+  const pct = Math.round(amt * 100);
+  return `${MOD_SOURCES[src] ?? 'MOD'} ${bipolar ? `±${Math.abs(pct)}` : pct < 0 ? pct : `+${pct}`}%`;
+}
+/** Aux-source scale for a route: the aux's unipolar value, or 1 with no aux. */
+export function auxScale(x: number, aux: number): number {
+  return aux ? (SOURCE_BIPOLAR[aux] ? (x + 1) * 0.5 : x) : 1;
+}
+export function polarize(x: number, src: number, pol: number): number {
+  const native = SOURCE_BIPOLAR[src] ?? false;
+  const bi = routeBipolar(src, pol);
+  return bi === native ? x : bi ? x * 2 - 1 : (x + 1) * 0.5;
 }
 
 // Tint per MOD_SOURCES index. Each source reuses the accent of the panel it
 // lives in (LFO 1 cyan, LFO 2 amber, MOD ENV violet, velocity/note slate) so a
 // mod ring's color tells you where the movement comes from at a glance.
-export const SOURCE_COLORS = ['', '#4de8ff', '#ffa14d', '#b18cff', '#9fb4d8', '#9fb4d8'];
+export const SOURCE_COLORS = ['', '#4de8ff', '#ffa14d', '#b18cff', '#9fb4d8', '#9fb4d8',
+  '#6ff2a6', '#ff7ab6', '#d58cff', '#ffd24d', '#ffd24d', '#ffd24d', '#ffd24d', '#9fb4d8', '#9fb4d8', '#9fb4d8'];
 
 // Which MOD_DESTS slot a given knob/slider drives — used for drag-to-assign and
 // the on-control modulation rings. Pitch/amp/pan are global (no single control)
@@ -330,6 +370,43 @@ export const PARAM_DEFS: ParamDef[] = [
   { id: 'fx.glitch.chance', label: 'CHANCE', min: 0, max: 1, def: 0.35, curve: 'lin', fmt: fmtPct },
   { id: 'fx.glitch.drift', label: 'DRIFT', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi },
   { id: 'fx.glitch.mix', label: 'MIX', min: 0, max: 1, def: 1, curve: 'lin', fmt: fmtPct },
+
+  // Per-route polarity, appended so established parameter indices stay stable.
+  ...Array.from({ length: 16 }, (_, i): ParamDef =>
+    ({ id: `mat${i + 1}.pol`, type: 'enum', options: MOD_POLARITY, def: 0 })),
+
+  // Serum-parity modulators, appended for stable indices: LFO 3/4, a second
+  // mod envelope, four macros, performance controls, and a per-route aux
+  // source that scales the route by the aux's unipolar value (0 = none).
+  ...lfoParams('lfo3', 1),
+  ...lfoParams('lfo4', 0.5),
+  { id: 'env3.a', label: 'ATK', min: 0.001, max: 8, def: 0.01, curve: 'log', fmt: fmtSec },
+  { id: 'env3.d', label: 'DEC', min: 0.005, max: 10, def: 0.35, curve: 'log', fmt: fmtSec },
+  { id: 'env3.s', label: 'SUS', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  { id: 'env3.r', label: 'REL', min: 0.005, max: 12, def: 0.3, curve: 'log', fmt: fmtSec },
+  ...Array.from({ length: MACRO_COUNT }, (_, i): ParamDef =>
+    ({ id: `macro${i + 1}`, label: `MACRO ${i + 1}`, min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct })),
+  { id: 'perf.modwheel', label: 'MOD WHL', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  { id: 'perf.aftertouch', label: 'AFTERTCH', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  ...Array.from({ length: 16 }, (_, i): ParamDef =>
+    ({ id: `mat${i + 1}.aux`, type: 'enum', options: MOD_SOURCES, def: 0 })),
+
+  // Envelope model per envelope (appended). CLASSIC is the original RC shape.
+  // CURVE ends each segment exactly at its time, adds HOLD, and bends each
+  // segment by a power curve: 50% is linear, the exponent doubles every 12%.
+  ...[1, 2, 3].flatMap((n): ParamDef[] => [
+    { id: `env${n}.model`, type: 'enum', options: ENV_MODELS, def: 0 },
+    { id: `env${n}.h`, label: 'HOLD', min: 0, max: 8, def: 0, curve: 'lin', fmt: fmtSec },
+    { id: `env${n}.ac`, label: 'A CRV', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
+    { id: `env${n}.dc`, label: 'D CRV', min: 0, max: 1, def: 0.67, curve: 'lin', fmt: fmtPct },
+    { id: `env${n}.rc`, label: 'R CRV', min: 0, max: 1, def: 0.67, curve: 'lin', fmt: fmtPct },
+  ]),
+  // Mono note change: LEGATO keeps the envelopes running (the original WT-1
+  // mono); off retriggers envelopes, per-note LFOs and RANDOM (Serum MONO).
+  { id: 'master.legato', type: 'bool', def: 1 },
+  // COMP side-chain (src/engine/sidechain.ts), appended to keep positions.
+  { id: 'fx.comp.sc', type: 'enum', options: SC_SOURCES, def: 0 },
+  { id: 'fx.comp.schp', ...SC_HP_DEF },
 ];
 
 export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));

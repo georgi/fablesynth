@@ -4,6 +4,7 @@
 // app under src/drum/ (params.ts, worklet-drum.js, drumtables.ts, kits.ts).
 //
 // Exits non-zero if any check fails.
+#include <cstring>
 #include "../source/drum/dsp/DrumParams.h"
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
@@ -12,6 +13,7 @@
 #include "../source/drum/dsp/DrumFx.h"
 #include "../source/drum/dsp/DrumKits.h"
 #include "../source/drum/dsp/DrumPatches.h"
+#include "drive_os_check.h"
 
 #include <cmath>
 #include <cstdio>
@@ -154,6 +156,56 @@ static std::vector<float> renderMain(DrumEngine& e, int n) {
     return renderBuses(e, n)[0];   // MAIN L
 }
 
+// Drive: 2x oversampled saturator. Steady PRIME tone on pad 0 with the filter
+// drive stage in the signal path; both checks run through the real engine.
+static std::vector<float> renderDriveTone(double sr, int table, int ftype, float cut, float drive,
+                                          float level, double f0) {
+    DrumEngine e; e.prepare(sr); e.setTables(allTables());
+    auto p = defaultDrumParams();
+    auto S = [&](int f, float v) { p[dpid(0, f)] = v; };
+    S(DP_OSCA_TABLE, (float)table); S(DP_OSCA_POS, table == 4 ? 0.8f : 0.5f);
+    S(DP_OSCA_FINE, 0); S(DP_OSCA_PHASE, 0); S(DP_OSCA_UNISON, 1); S(DP_OSCA_DETUNE, 0);
+    S(DP_OSCA_LEVEL, level); S(DP_OSCB_LEVEL, 0); S(DP_NOISE_LEVEL, 0); S(DP_RING_MIX, 0);
+    S(DP_PENV_AMT, 0); S(DP_AENV_ATT, 0); S(DP_AENV_HOLD, 10); S(DP_LVL, 1); S(DP_PAN, 0);
+    for (int s = 0; s < 4; s++) S(DP_MOD1_SRC + 3 * s, 0);
+    S(DP_FLT_ON, 1); S(DP_FLT_TYPE, (float)ftype); S(DP_FLT_RES, 0.3f);
+    S(DP_FLT_DRIVE, drive); S(DP_FLT_CUT, cut);
+    S(DP_OSCA_TUNE, (float)(69 + 12 * std::log2(f0 / 440.0) - DR_BASE_NOTE));
+    e.setParams(p); e.trigger(0, 1.0f);
+    const int N = 32768, skip = 4096;
+    std::vector<float> out;
+    for (int at = 0; at < N + skip; at += 128) {
+        const auto b = renderMain(e, 128);
+        out.insert(out.end(), b.begin(), b.end());
+    }
+    return std::vector<float>(out.begin() + skip, out.end());
+}
+
+static void checkDriveOversampling() {
+    printf("\n== DR-1 drive: 2x oversampled saturator, aliasing and dry/wet alignment ==\n");
+    // Full drive at 523 Hz: the folded products stay far below the old
+    // first-order ADAA at the base rate (about -58 dB).
+    struct Case { double sr; int table; int ftype; float cut; double limit; const char* name; };
+    for (Case c : {Case{48000.0, 4, 0, 20000.0f, -80.0, "PRIME LP12 open"}, Case{48000.0, 4, 3, 300.0f, -80.0, "PRIME HP12"},
+                   Case{44100.0, 4, 0, 20000.0f, -76.0, "PRIME LP12 open"}, Case{44100.0, 4, 3, 300.0f, -76.0, "PRIME HP12"},
+                   Case{48000.0, 3, 1, 20000.0f, -85.0, "GRIT LP24 open"}}) {
+        const auto y = renderDriveTone(c.sr, c.table, c.ftype, c.cut, 1.0f, 1.0f, 523.25);
+        const double db = driveos_check::inharmonicDb(y.data(), (int)y.size(), c.sr, 523.25);
+        check(db < c.limit, std::string("drive 1 alias < ") + std::to_string((int)c.limit) + " dB, " + c.name
+              + " @ " + std::to_string((int)c.sr) + " Hz", std::to_string(db) + " dB");
+    }
+    // Dry/wet alignment: at a level where tanh is linear, a half-mixed drive
+    // (0.05 = mix 0.5) is a pure gain on the drive-0 signal. A dry path that
+    // missed the oversampler delay would notch every 4 kHz.
+    for (double sr : {48000.0, 44100.0}) {
+        const auto off = renderDriveTone(sr, 4, 0, 20000.0f, 0.0f, 0.02f, 130.81);
+        const auto on = renderDriveTone(sr, 4, 0, 20000.0f, 0.05f, 0.02f, 130.81);
+        const double rip = driveos_check::gainRippleDb(off.data(), on.data(), (int)off.size(), sr, 130.81);
+        check(rip < 0.1, "drive mix 0.5 adds no comb filtering @ " + std::to_string((int)sr) + " Hz",
+              std::to_string(rip) + " dB residual");
+    }
+}
+
 // Review regressions: oscillator owners outlive callback boundaries and fades,
 // including retrigger tails, and the final destruction stays off audio.
 static void checkDrumTableLifetime() {
@@ -280,7 +332,132 @@ static void checkDrumLongDelayGate() {
     }
 }
 
+// Finding K1: a pitched-up one-shot must not fold energy back below 16 kHz.
+// The pad's sample layer (envelope held flat, device FX off) is compared with
+// an ideal band-limited resampler of the source PCM (Kaiser sinc, 32 zero
+// crossings per side, cutoff 0.4375 of the output rate) times the same linear
+// envelope. Per-bin least-squares gain removes the chain's own linear response,
+// so what remains is energy uncorrelated with the ideal signal: alias.
+static double besselI0(double x) {
+    double sum = 1, term = 1;
+    for (int k = 1; k < 80; ++k) {
+        term *= (x / (2 * k)) * (x / (2 * k));
+        sum += term;
+        if (term < 1e-18 * sum) break;
+    }
+    return sum;
+}
+static std::vector<float> idealOneShot(const DrumOneShot& s, double semis, double sr, int n, int* validLen) {
+    const int last = s.length - 1;
+    const double ast = ((double)s.sampleRate / sr) * std::pow(2.0, semis / 12.0);
+    const double fc = std::min(0.5, 0.4375 / ast), beta = 9.0;
+    const int zc = 32;
+    const double half = zc / (2 * fc), norm = besselI0(beta);
+    std::vector<float> y((size_t)n, 0.0f);
+    int valid = 0;
+    for (int m = 0; m < n; ++m) {
+        const double pos = m * ast;
+        if (pos > last) break;
+        valid = m + 1;
+        double acc = 0, ws = 0;
+        for (int k = (int)std::ceil(pos - half); k <= (int)std::floor(pos + half); ++k) {
+            const double x = (k - pos) * 2 * fc, r = x / zc;
+            if (std::fabs(r) >= 1) continue;
+            const double g = (x == 0 ? 1.0 : std::sin(M_PI * x) / (M_PI * x)) *
+                             besselI0(beta * std::sqrt(1 - r * r)) / norm;
+            acc += g * s.data[std::max(0, std::min(last, k))];
+            ws += g;
+        }
+        y[(size_t)m] = (float)(acc / ws / 32768.0);
+    }
+    *validLen = valid;
+    return y;
+}
+// Worst band energy (250 Hz..16 kHz) and the 250 Hz..1 kHz band of the
+// gain-compensated residual, both in dB re the reference's total energy.
+static void aliasBandsDb(const std::vector<float>& x, const std::vector<float>& ref, double sr,
+                         double& worst, double& low) {
+    const int N = 1024, SB = 2, NS = N / 2 / SB;
+    static const double E[] = {250, 1000, 2000, 4000, 8000, 12000, 16000};
+    std::vector<double> xrR(NS, 0), xrI(NS, 0), rr(NS, 0), xx(NS, 0);
+    double total = 1e-30;
+    const size_t L = std::min(x.size(), ref.size());
+    for (size_t s = 256; s + N <= L - 256; s += N / 2) {
+        std::vector<double> a(N), ai(N, 0), b(N), bi(N, 0);
+        for (int i = 0; i < N; ++i) {
+            const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (N - 1));
+            a[i] = x[s + i] * w;
+            b[i] = ref[s + i] * w;
+        }
+        fft(a.data(), ai.data(), N, false);
+        fft(b.data(), bi.data(), N, false);
+        for (int k = 1; k < N / 2; ++k) {
+            const int q = k / SB;
+            xrR[q] += a[k] * b[k] + ai[k] * bi[k];
+            xrI[q] += ai[k] * b[k] - a[k] * bi[k];
+            rr[q] += b[k] * b[k] + bi[k] * bi[k];
+            xx[q] += a[k] * a[k] + ai[k] * ai[k];
+            total += b[k] * b[k] + bi[k] * bi[k];
+        }
+    }
+    double band[6] = {0, 0, 0, 0, 0, 0};
+    for (int q = 0; q < NS; ++q) {
+        const double f = (q * SB + SB / 2) * sr / N;
+        const double res = std::max(0.0, xx[q] - (xrR[q] * xrR[q] + xrI[q] * xrI[q]) / std::max(rr[q], 1e-30));
+        for (int k = 0; k < 6; ++k)
+            if (f >= E[k] && f < E[k + 1]) band[k] += res;
+    }
+    worst = -999;
+    for (int k = 0; k < 6; ++k) worst = std::max(worst, 10 * std::log10(std::max(band[k], 1e-30) / total));
+    low = 10 * std::log10(std::max(band[0], 1e-30) / total);
+}
+static void checkDrumSampleAlias() {
+    const auto& bank = drumOneShots();
+    const int idx = 2;   // 808CH: a bright closed hat, the worst fold-back case
+    check(bank.size() > (size_t)idx && std::string(bank[(size_t)idx].name) == "808CH",
+          "one-shot 2 is the 808CH hat");
+    for (double sr : {44100.0, 48000.0}) {
+        for (double semis : {7.0, 12.0}) {
+            auto p = defaultDrumParams();
+            auto S = [&](int f, float v) { p[(size_t)dpid(0, f)] = v; };
+            S(DP_OSCA_LEVEL, 0); S(DP_NOISE_LEVEL, 0); S(DP_RING_MIX, 0); S(DP_FLT_ON, 0);
+            S(DP_PENV_AMT, 0); S(DP_OSCB_TABLE, (float)idx); S(DP_OSCB_POS, 0);
+            S(DP_OSCB_TUNE, (float)semis); S(DP_OSCB_FINE, 0); S(DP_OSCB_LEVEL, 1);
+            S(DP_OSCB_DETUNE, 1); S(DP_OSCB_PHASE, 0); S(DP_LVL, 1);
+            S(DP_AENV_ATT, 0); S(DP_AENV_HOLD, 0.25f); S(DP_AENV_DEC, 4.0f); S(DP_AENV_CURVE, 0);
+            for (int s = 0; s < 4; ++s) S(DP_MOD1_SRC + 3 * s, 0);
+            for (int f : {DP_FXDRIVE_ON, DP_FXCOMP_ON, DP_FXCHORUS_ON, DP_FXDELAY_ON,
+                          DP_FXREVERB_ON, DP_FXOTT_ON}) {
+                S(f, 0);
+                p[(size_t)dgfx(f)] = 0;
+            }
+            DrumEngine e;
+            e.prepare(sr);
+            e.setTables(allTables());
+            e.setParams(p);
+            e.trigger(0, 1.0f);
+            const int n = (int)(sr * 0.3);
+            const auto out = renderMain(e, n);
+            int valid = 0;
+            auto ref = idealOneShot(bank[(size_t)idx], semis, sr, n, &valid);
+            for (int m = 0; m < n; ++m) {   // the same linear envelope, hold then ramp
+                const double td = m - 1.0 - 0.25 * sr;
+                ref[(size_t)m] *= (float)(m < 1 ? m : (td < 0 ? 1.0 : 1.0 - td / (4.0 * sr)));
+            }
+            const int cap = std::min(valid, n);
+            double worst = 0, low = 0;
+            aliasBandsDb(std::vector<float>(out.begin(), out.begin() + cap),
+                         std::vector<float>(ref.begin(), ref.begin() + cap), sr, worst, low);
+            const std::string tag = std::to_string((int)sr) + " Hz +" + std::to_string((int)semis) + " st";
+            check(worst < -65.0, "808CH " + tag + " alias below -65 dB, 250 Hz-16 kHz", std::to_string(worst));
+            check(low < -65.0, "808CH " + tag + " alias below -65 dB, 250 Hz-1 kHz", std::to_string(low));
+        }
+    }
+}
+
 int main() {
+    checkDrumSampleAlias();
+    checkDriveOversampling();
     checkDrumTableLifetime();
     checkDrumMipSafety();
     checkDrumLongDelayGate();
@@ -305,7 +482,7 @@ int main() {
     (void)static_cast<float (*)(const std::vector<float>&)>(&peak);
 
     printf("\n== 1. DrumParams ==\n");
-    check(DPAD_NFIELDS == 124, "124 per-pad fields including dynamics, drive and Lab controls");
+    check(DPAD_NFIELDS == 126, "126 per-pad fields including dynamics, drive, Lab and side-chain controls");
     check(DR_NUM_PARAMS == DR_NPADS * DPAD_NFIELDS + 3 + (DPAD_NFIELDS - DP_FXDRIVE_ON),
           "per-pad params plus transport and group-strip globals");
     const auto& info = drumParamInfo();
@@ -1188,6 +1365,54 @@ int main() {
               "step=" + std::to_string(atHit) + " baseline=" + std::to_string(base));
     }
     {
+        // Retrigger collision: hits 2 and 3 land inside one choke fade and the
+        // parked tail is still louder than hit 2. Hit 3 must fade hit 2 out,
+        // not restart it in place. The reference omits hit 3: an accepted
+        // retrigger whose own choke fade sets the step bound. Same scenario as
+        // worklet-drum.test.ts.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.001f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.25f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 2.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+        p[(size_t)dpid(0, DP_OSCA_PHASE)] = 0.25f;
+        p[(size_t)dpid(0, DP_OSCA_TUNE)] = -24.0f;
+        auto collide = [&](bool third) {
+            DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+            e.trigger(0, 1.0f);
+            auto join = renderMain(e, 12000);            // 0.25 s: holding
+            join.erase(join.begin(), join.end() - 8);
+            e.trigger(0, 1.0f);                          // hit 2: hit 1 -> tail slot
+            auto gap = renderMain(e, 12);                // tail still louder than hit 2
+            if (third) e.trigger(0, 1.0f);               // hit 3: collides with the fade
+            auto after = renderMain(e, 4800);
+            join.insert(join.end(), gap.begin(), gap.end());
+            join.insert(join.end(), after.begin(), after.end());
+            return maxStep(join, 1, (int)join.size());
+        };
+        const double single = collide(false), atHit = collide(true);
+        check(single > 1e-5 && atHit <= single * 1.1,
+              "retrigger collision inside one fade does not click",
+              "step=" + std::to_string(atHit) + " reference=" + std::to_string(single));
+
+        // Normal retriggers (30 ms and 250 ms apart) never use the collision
+        // fade slot: FNV-1a over the float bits, pinned before it was added.
+        DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+        uint32_t h = 0x811c9dc5u;
+        for (int n : {12000, 1440, 240}) {
+            e.trigger(0, 1.0f);
+            auto b = renderBuses(e, n);
+            for (int c = 0; c < 2; c++)
+                for (float x : b[(size_t)c]) {
+                    uint32_t u; std::memcpy(&u, &x, sizeof u);
+                    h = (h ^ u) * 0x01000193u;
+                }
+        }
+        char hex[16]; snprintf(hex, sizeof hex, "%08x", h);
+        check(h == 0x9a3886b1u, "normal retriggers bit-identical to pre-fix engine",
+              std::string("hash=") + hex);
+    }
+    {
         // D3: the amp envelope has to reach 0, not stop at e^-4.5 (-40 dB).
         // Fully exponential curve, no filter, so the decay end is the only
         // candidate discontinuity in the buffer.
@@ -1955,6 +2180,86 @@ int main() {
               "pad3 out/choke untouched");
         check(pv[dpid(2, DP_OSCA_TUNE)] == 11.0f && pv[dpid(4, DP_AENV_DEC)] == 3.5f,
               "pad 2 / pad 4 untouched");
+    }
+
+    printf("\n== COMP side-chain and KIT MIX capture ==\n");
+    {
+        // Pad 2 holds a tone on MAIN; pad 1 (the kick) plays on AUX 1, so MAIN
+        // only changes when pad 2's compressor is keyed by it.
+        struct Run { float before = 0, during = 0; };
+        auto run = [](int sc, bool kick, const float* extKey = nullptr, bool capture = false,
+                      std::vector<float>* kickOut = nullptr, DrumEngine* keep = nullptr) {
+            auto p = defaultDrumParams();
+            p[(size_t)dpid(1, DP_AENV_HOLD)] = 0.25f;
+            p[(size_t)dpid(1, DP_AENV_DEC)] = 4.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_ON)] = 1.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_THR)] = -40.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_RATIO)] = 20.0f;
+            p[(size_t)dpid(1, DP_FXCOMP_ATT)] = 0.001f;
+            p[(size_t)dpid(1, DP_FXCOMP_REL)] = 0.05f;
+            p[(size_t)dpid(1, DP_FXCOMP_SC)] = (float)sc;
+            p[(size_t)dpid(1, DP_FXREVERB_ON)] = 0.0f;
+            p[(size_t)dpid(0, DP_OUT)] = 1.0f;
+            p[(size_t)dpid(0, DP_LVL)] = 1.0f;
+            p[(size_t)dpid(0, DP_OSCA_LEVEL)] = 1.0f;
+            p[(size_t)dpid(0, DP_AENV_DEC)] = 1.0f;
+            DrumEngine local;
+            DrumEngine& e = keep ? *keep : local;
+            e.prepare(48000); e.enablePadFx(true); e.setTables(allTables()); e.setParams(p);
+            e.setPadCapture(capture);
+            auto render = [&](int n) {
+                const float* keys[KEY_CHANNELS] = {nullptr, extKey, nullptr, nullptr, nullptr};
+                std::vector<float> kickBuf((size_t)n, 0.0f);
+                e.setSidechainInput(extKey ? keys : nullptr);
+                e.setKickKeyOutput(kickOut ? kickBuf.data() : nullptr);
+                auto out = renderBuses(e, n)[0];
+                if (kickOut) kickOut->insert(kickOut->end(), kickBuf.begin(), kickBuf.end());
+                return out;
+            };
+            e.trigger(1, 1.0f);
+            Run r;
+            r.before = rms(render(4800));
+            if (kick) e.trigger(0, 1.0f);
+            r.during = rms(render(2400));
+            return r;
+        };
+        const auto plain = run(0, true), keyed = run(1, true), idle = run(1, false);
+        check(plain.during > plain.before * 0.7f, "unkeyed pad ignores the kick on another bus",
+              std::to_string(plain.during / plain.before));
+        check(keyed.during < idle.during * 0.5f, "pad keyed by PAD 01 ducks under the kick",
+              std::to_string(keyed.during / idle.during));
+        check(idle.during > idle.before * 0.7f, "a silent pad key leaves the keyed pad alone",
+              std::to_string(idle.during / idle.before));
+
+        // TRACK 2 (index 17) reads SQ-4 key channel 1; without a key bus it is silent.
+        std::vector<float> loud(4800);
+        for (size_t i = 0; i < loud.size(); ++i) loud[i] = 0.8f * (float)std::sin(2 * M_PI * 200 * (double)i / 48000);
+        const auto external = run(17, false, loud.data()), standalone = run(17, false);
+        check(external.during < standalone.during * 0.5f, "TRACK key ducks the pad through the key bus",
+              std::to_string(external.during / standalone.during));
+        check(standalone.during > standalone.before * 0.7f, "TRACK key without an SQ-4 bus is silent",
+              std::to_string(standalone.during / standalone.before));
+
+        // Kick key output and pad capture taps.
+        std::vector<float> kickOut;
+        auto e = std::make_unique<DrumEngine>();
+        run(1, true, nullptr, true, &kickOut, e.get());
+        check(kickOut.size() == 7200 && rms(kickOut) > 1e-3f, "pad 01 dry signal reaches the kick key output",
+              std::to_string(rms(kickOut)));
+        const auto& tone = e->padCapture(1);
+        std::vector<float> latest(2048);
+        check(tone.frames() == 7200 && e->padCapture(9).frames() == 7200, "every pad capture tap shares one frame count",
+              std::to_string(tone.frames()));
+        check(tone.readLatest(latest.data(), nullptr, 2048) && rms(latest) > 1e-4f,
+              "pad capture delivers the post-FX pad signal");
+        uint64_t cursor = 0, dropped = 0;
+        std::vector<float> pulled(8192);
+        const int got = tone.pull(cursor, pulled.data(), nullptr, 8192, &dropped);
+        check(got == 7200 && dropped == 0 && cursor == 7200, "pad capture pulls continuously from a cursor",
+              std::to_string(got));
+        const auto& trace = e->compTrace(1, 0);
+        check(trace.frames() > 0 && trace.readLatest(latest.data(), nullptr, 2048) && peak(latest) > 0.01f,
+              "keyed pad compressor records its detector trace");
     }
 
     printf("\n%s\n", g_fail ? "FAILED" : "ALL PASS");

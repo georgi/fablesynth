@@ -27,6 +27,11 @@ public:
 
     ParameterSource parameters() override;
     fable::FxTelemetry fxTelemetry(int pad, int bus) const override;
+    AutoEqSource autoEqSource(int pad) const override;
+    AutoCompSource autoCompSource(int pad) const override;
+    SideChainInfo sideChain() const override;
+    double analysisSampleRate() const override;
+    std::optional<double> analysisTempo() const override;
     DeviceUiCapabilities capabilities() const override;
     fable::ArpSettings arpSettings() const override;
     void setArpSettings(const fable::ArpSettings&) override;
@@ -34,6 +39,7 @@ public:
     void setArpSwing(double) override;
     double arpTempo() const override { return hostBpm(); }
     bool arpQueued() const override;
+    int arpChordLinkPeers() const override;
 
     int currentProgram() const override;
     int numPrograms() const override;
@@ -76,6 +82,10 @@ public:
     bool hasTargetClip() const override;
     void createTargetClip() override;
     int clipBars() const override;
+    // The edited clip's melodic POLY (Conductor::updateClipRhythm).
+    bool supportsSequencePoly() const override { return hasTargetClip(); }
+    SeqPolySettings sequencePoly() const override;
+    void setSequencePoly(const SeqPolySettings&) override;
 
 private:
     static constexpr int kTrack = 1;

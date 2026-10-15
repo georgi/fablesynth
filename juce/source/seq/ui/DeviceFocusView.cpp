@@ -1,7 +1,9 @@
 #include "DeviceFocusView.h"
+#include "../../ui/LeafControlCache.h"
 #include "../dsp/ClipLibrary.gen.h"
 
 #include <algorithm>
+#include <array>
 
 namespace fui {
 namespace {
@@ -45,6 +47,9 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
     deviceCanvas_.addChildComponent(bassBody_);
     deviceCanvas_.addChildComponent(wt2Body_);
     deviceCanvas_.addChildComponent(wt3Body_);
+    for (auto* body : std::initializer_list<juce::Component*> {
+             &drumBody_, &bassBody_, &wt2Body_, &wt3Body_ })
+        enableLeafControlCache(*body);
     deviceViewport_.setViewedComponent(&deviceCanvas_,false);
     deviceViewport_.setScrollBarsShown(true,false);
     deviceViewport_.setScrollBarThickness(10);
@@ -76,6 +81,10 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
         refreshPatchSelector();
     };
     addChildComponent(patchSelector_);
+    browseButton_.onClick = [this] { toggleBrowser(); };
+    addChildComponent(browseButton_);
+    drumBody_.selBarView().onBrowse = [this] { togglePadBrowser(); };
+    drumBody_.stepSeqView().onPatterns = [this] { togglePatternBrowser(); };
 
     clipTargetLabel_.setJustificationType(juce::Justification::centredRight);
     clipTargetLabel_.setColour(juce::Label::textColourId, col::textDim);
@@ -125,7 +134,7 @@ DeviceFocusView::DeviceFocusView(SeqAudioProcessor& proc)
     previousPatchButton_.setColour(juce::TextButton::textColourOffId, col::textDim);
     nextPatchButton_.setColour(juce::TextButton::textColourOffId, col::textDim);
 
-    startTimerHz(10);
+    startVisualTimer(*this, 10);
 }
 
 DeviceFocusView::~DeviceFocusView() {
@@ -153,6 +162,9 @@ void DeviceFocusView::reloadPatchesFromSession() {
 
 void DeviceFocusView::setTarget(int scene, int track) {
     flushActiveModel();
+    if (track != targetTrack_ || scene < 0) closeBrowsers();
+    // A pattern snapshot belongs to one scene's clip; KEEP / REVERT must not cross scenes.
+    else if (auto& p = drawers_[(std::size_t)Drawer::pattern].browser; scene != targetScene_ && p && p->isOpen()) p->close();
 
     for (auto* body : std::initializer_list<juce::Component*> {
              &drumBody_, &bassBody_, &wt2Body_, &wt3Body_ })
@@ -206,6 +218,7 @@ void DeviceFocusView::setTarget(int scene, int track) {
     refreshPatchSelector();
     refreshClipBrowser(true);
     resized();
+    refreshVisibleControls(*this);
     repaint();
 }
 
@@ -516,6 +529,7 @@ void DeviceFocusView::refreshPatchSelector() {
     previousPatchButton_.setVisible(visible);
     patchSelector_.setVisible(visible);
     nextPatchButton_.setVisible(visible);
+    browseButton_.setVisible(visible);
     if (!visible) return;
 
     const int program = activeCurrentProgram();
@@ -538,18 +552,33 @@ void DeviceFocusView::refreshPatchSelector() {
     previousPatchButton_.toFront(false);
     patchSelector_.toFront(false);
     nextPatchButton_.toFront(false);
+    browseButton_.toFront(false);
+}
+
+void DeviceFocusView::visibilityChanged() {
+    refreshVisibleControls(*this);
+    if (isVisibleInHierarchy(*this)) timerCallback();
 }
 
 void DeviceFocusView::timerCallback() {
     updateCreateClipButton();
     refreshPatchSelector();
-    automation_.refresh();
+    if (isVisibleInHierarchy(automation_)) automation_.refresh();
     // Page switches can change the visible device extent without changing lanes.
-    if (isShowing()) {
-        layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
-        layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
-        layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
-        layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+    layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
+    layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
+    layoutWtBodies();
+}
+
+// Lets the WT-1 ARP page fill the visible height; an open automation panel keeps the fixed page.
+void DeviceFocusView::layoutWtBodies() {
+    const float scale=static_cast<float>(std::max(1,deviceCanvas_.getWidth()))/static_cast<float>(WtDeviceBody::LW);
+    const bool panelOpen=automation_.isVisible() && automation_.expanded();
+    for (auto* wt : {&wt2Body_, &wt3Body_}) {
+        wt->setHostedPageBottom(panelOpen ? 0 : (int)((float)deviceViewport_.getHeight()/scale) - 14);
+        // Match the DR-1/BL-1 tab rows, which render on ~1297 px logical canvases.
+        wt->setHostedChromeScale((float)WtDeviceBody::LW / (0.5f * (float)(kDrumWidth + kBassWidth)));
+        layoutBody(*wt, WtDeviceBody::LW, wt->getHeight());
     }
 }
 
@@ -593,8 +622,7 @@ void DeviceFocusView::resized() {
     if (show && !expanded) { automation_.setVisible(true); automation_.setBounds(8,getHeight()-40,width-16,40); }
     layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
     layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
-    layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
-    layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+    layoutWtBodies();
 
     constexpr int controlHeight = 28, patchWidth = 170, patchButtonWidth = 26;
     auto toolbar = juce::Rectangle<int>(12, 5, juce::jmax(0, getWidth() - 24), controlHeight);
@@ -605,6 +633,8 @@ void DeviceFocusView::resized() {
     patchSelector_.setBounds(toolbar.removeFromLeft(patchWidth));
     toolbar.removeFromLeft(6);
     nextPatchButton_.setBounds(toolbar.removeFromLeft(patchButtonWidth));
+    toolbar.removeFromLeft(8);
+    browseButton_.setBounds(toolbar.removeFromLeft(66));
     toolbar.removeFromLeft(16);
 
     clipTargetLabel_.setBounds(toolbar.removeFromLeft(120));
@@ -622,6 +652,7 @@ void DeviceFocusView::resized() {
                                 (getHeight() - buttonHeight) / 2,
                                 buttonWidth, buttonHeight);
     if (createClipButton_.isVisible()) createClipButton_.toFront(false);
+    layoutDrawers();
 }
 
 } // namespace fui
@@ -633,3 +664,160 @@ void fui::DeviceFocusView::showAutomation(const juce::String& id) {
     if (automation_.getParentComponent()==&deviceCanvas_)
         deviceViewport_.setViewPosition(0,std::max(0,bounds.getBottom()-deviceViewport_.getViewHeight()));
 }
+
+// ---- preset browser: the focused track's session patch -------------------------
+
+namespace fui {
+
+int DeviceFocusView::trackForDrawer(Drawer d) const {
+    switch (d) {
+        case Drawer::kit: case Drawer::pad: case Drawer::pattern: return 0;
+        case Drawer::bass: return 1;
+        case Drawer::wt2: return 2;
+        case Drawer::wt3: return 3;
+    }
+    return 0;
+}
+
+DeviceFocusView::Drawer DeviceFocusView::patchDrawerForActiveBody() const {
+    switch (activeBody_) {
+        case ActiveBody::bass: return Drawer::bass;
+        case ActiveBody::wt2:  return Drawer::wt2;
+        case ActiveBody::wt3:  return Drawer::wt3;
+        default:               return Drawer::kit;
+    }
+}
+
+void DeviceFocusView::ensureDrawer(Drawer d) {
+    auto& slot = drawers_[(std::size_t)d];
+    if (slot.browser) return;
+    if (d == Drawer::pattern) {
+        // Patterns replace the focused scene's DR-1 clip through the hosted model;
+        // the session patch (kit) and the session BPM stay as they are.
+        slot.adapter = std::make_unique<PatternBrowserAdapter>(drumModel_, PatternBrowserAdapter::Hooks {
+            [this] { return (float)drumModel_.hostBpm(); }, nullptr, [this] { drumBody_.stepSeqView().repaint(); } });
+        slot.browser = std::make_unique<PresetBrowser>(*slot.adapter);
+        slot.browser->onClose = [this] { drumBody_.stepSeqView().setPatternsOpen(false); };
+        addChildComponent(*slot.browser);
+        layoutDrawers();
+        return;
+    }
+    const int track = trackForDrawer(d);
+    SessionBrowserBackend::Hooks hooks;
+    auto after = [this] { shownPatchProgram_ = -2; refreshPatchSelector(); };
+    switch (d) {
+        case Drawer::kit: case Drawer::pad:
+            hooks.flush = [this] { drumModel_.flushPendingPatch(); };
+            hooks.reload = [this, after] { drumModel_.reloadPatchFromSession(); after(); };
+            break;
+        case Drawer::bass:
+            hooks.flush = [this] { bassModel_.flushPendingPatch(); };
+            hooks.reload = [this, after] { bassModel_.reloadPatchFromSession(); after(); };
+            break;
+        case Drawer::wt2:
+            hooks.flush = [this] { wt2Model_.flushPendingPatch(); };
+            hooks.reload = [this, after] { wt2Model_.reloadPatchFromSession(); after(); };
+            break;
+        case Drawer::wt3:
+            hooks.flush = [this] { wt3Model_.flushPendingPatch(); };
+            hooks.reload = [this, after] { wt3Model_.reloadPatchFromSession(); after(); };
+            break;
+        case Drawer::pattern: break;
+    }
+    if (d == Drawer::pad) {
+        // Pad patches take the normal device parameter path; the model writes them into the session patch.
+        hooks.selectedPad = [this] { return drumModel_.selectedPad(); };
+        hooks.loadPadPatch = [this](int item) { drumModel_.applyFactoryPadPatch(item); };
+        hooks.writeFields = [this](const std::vector<std::pair<int, float>>& fields) {
+            auto source = drumModel_.parameters();
+            const auto& info = fable::drumParamInfo();
+            for (const auto& [id, v] : fields)
+                if (id >= 0 && id < (int)info.size())
+                    if (auto* parameter = source.parameter(info[(std::size_t)id].pid))
+                        parameter->setValueNotifyingHost(parameter->convertTo0to1(v));
+        };
+    }
+    auto backend = std::make_unique<SessionBrowserBackend>(proc_, track, std::move(hooks));
+    switch (d) {
+        case Drawer::kit:  slot.adapter = std::make_unique<KitBrowserAdapter>(std::move(backend)); break;
+        case Drawer::pad:
+            slot.adapter = std::make_unique<PadPatchAdapter>(std::move(backend),
+                [this] { return drumBody_.selBarView().patchIndex(); },
+                [this](int i) { drumBody_.selBarView().setPatchIndex(i); });
+            break;
+        case Drawer::bass: slot.adapter = std::make_unique<BassBrowserAdapter>(std::move(backend)); break;
+        case Drawer::wt2: case Drawer::wt3: slot.adapter = std::make_unique<WtBrowserAdapter>(std::move(backend)); break;
+        case Drawer::pattern: break;   // built above
+    }
+    slot.browser = std::make_unique<PresetBrowser>(*slot.adapter);
+    slot.browser->onClose = [this, d] {
+        if (d == Drawer::pad) drumBody_.selBarView().setBrowseOpen(false);
+        else browseButton_.setToggleState(false, juce::dontSendNotification);
+    };
+    slot.browser->onChanged = [this] { shownPatchProgram_ = -2; refreshPatchSelector(); };
+    addChildComponent(*slot.browser);
+    layoutDrawers();
+}
+
+PresetBrowser& DeviceFocusView::drawer(Drawer d) { ensureDrawer(d); return *drawers_[(std::size_t)d].browser; }
+BrowserAdapter& DeviceFocusView::drawerAdapter(Drawer d) { ensureDrawer(d); return *drawers_[(std::size_t)d].adapter; }
+
+int DeviceFocusView::openDrawerCount() const {
+    int n = 0;
+    for (const auto& s : drawers_) if (s.browser && s.browser->isOpen()) ++n;
+    return n;
+}
+
+void DeviceFocusView::closeBrowsers() {
+    for (auto& s : drawers_) if (s.browser && s.browser->isOpen()) s.browser->close();
+    browseButton_.setToggleState(false, juce::dontSendNotification);
+    drumBody_.selBarView().setBrowseOpen(false);
+    drumBody_.stepSeqView().setPatternsOpen(false);
+}
+
+void DeviceFocusView::openDrawer(Drawer d) {
+    flushActiveModel();
+    closeBrowsers();   // one drawer at a time, including the DR-1 kit and pad drawers
+    ensureDrawer(d);
+    auto& browser = *drawers_[(std::size_t)d].browser;
+    const auto& tracks = proc_.conductor().session().tracks;
+    const int track = trackForDrawer(d);
+    if (track < (int)tracks.size())
+        browser.setAccent(juce::Colour((juce::uint32)tracks[(std::size_t)track].color).withAlpha(1.0f));
+    layoutDrawers();
+    browser.open();
+    if (d == Drawer::pad) drumBody_.selBarView().setBrowseOpen(true);
+    else if (d == Drawer::pattern) drumBody_.stepSeqView().setPatternsOpen(true);
+    else browseButton_.setToggleState(true, juce::dontSendNotification);
+}
+
+void DeviceFocusView::togglePatternBrowser() {
+    if (activeBody_ != ActiveBody::drum) return;
+    const auto& slot = drawers_[(std::size_t)Drawer::pattern];
+    if (slot.browser && slot.browser->isOpen()) closeBrowsers();
+    else openDrawer(Drawer::pattern);
+}
+
+void DeviceFocusView::toggleBrowser() {
+    if (activeBody_ == ActiveBody::none) return;
+    const auto d = patchDrawerForActiveBody();
+    if (drawers_[(std::size_t)d].browser && drawers_[(std::size_t)d].browser->isOpen()) closeBrowsers();
+    else openDrawer(d);
+}
+
+void DeviceFocusView::togglePadBrowser() {
+    if (activeBody_ != ActiveBody::drum) return;
+    const auto& slot = drawers_[(std::size_t)Drawer::pad];
+    if (slot.browser && slot.browser->isOpen()) closeBrowsers();
+    else openDrawer(Drawer::pad);
+}
+
+void DeviceFocusView::layoutDrawers() {
+    // Inside the device panel, below the toolbar (web: .sq-device .pbr height min(540px, ...)).
+    const int y = kToolbarHeight + kBodyGap;
+    const int h = std::max(1, std::min(540, getHeight() - y - 8));
+    for (auto& s : drawers_)
+        if (s.browser) { s.browser->setBounds(12, y, std::max(1, getWidth() - 24), h); s.browser->toFront(false); }
+}
+
+} // namespace fui

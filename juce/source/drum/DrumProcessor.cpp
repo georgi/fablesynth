@@ -1,3 +1,4 @@
+#include "../seq/AutomationCodec.h"
 #include "DrumProcessor.h"
 #include "DrumEditor.h"
 #include "dsp/DrumPatches.h"
@@ -139,7 +140,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     auto make = [](const ParamInfo& d) -> std::unique_ptr<juce::RangedAudioParameter> {
         const bool groupFx = d.id >= DG_FX_BASE;
         const int field = groupFx ? DP_FXDRIVE_ON + d.id - DG_FX_BASE : d.id % DPAD_NFIELDS;
-        const int version = groupFx ? 5 : field >= DP_FXCOMP_ATT ? 4 : field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
+        const int version = field >= DP_FXCOMP_SC ? 6 : groupFx ? 5 : field >= DP_FXCOMP_ATT ? 4 : field >= DP_FXEQ_ON ? 3 : field >= DP_FXOTT_ON ? 2 : 1;
         juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique (all 16 pads share short labels);
         // derive it from the id like WT-1 does.
@@ -183,14 +184,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumAudioProcessor::createLa
     for (int pad = 0; pad < DR_NPADS; ++pad) {
         auto color = std::make_unique<juce::AudioProcessorParameterGroup>(
             "padColor" + juce::String(pad), "PAD " + juce::String(pad + 1) + " DYNAMICS / DRIVE", " | ");
-        for (int f = DP_FXCOMP_ATT; f < DPAD_NFIELDS; ++f)
+        for (int f = DP_FXCOMP_ATT; f < DP_FXCOMP_SC; ++f)
             color->addChild(make(info[(size_t)dpid(pad, f)]));
         layout.add(std::move(color));
     }
     auto groupFx = std::make_unique<juce::AudioProcessorParameterGroup>("groupFx", "DRUM GROUP CHANNEL STRIP", " | ");
-    for (int field = DP_FXDRIVE_ON; field < DPAD_NFIELDS; ++field)
+    for (int field = DP_FXDRIVE_ON; field < DP_FXCOMP_SC; ++field)
         groupFx->addChild(make(info[(size_t)dgfx(field)]));
     layout.add(std::move(groupFx));
+    // COMP side-chain fields come last so every earlier host position holds.
+    auto keys = std::make_unique<juce::AudioProcessorParameterGroup>("sidechain", "COMP SIDE-CHAIN", " | ");
+    for (int pad = 0; pad < DR_NPADS; ++pad)
+        for (int f = DP_FXCOMP_SC; f < DPAD_NFIELDS; ++f)
+            keys->addChild(make(info[(size_t)dpid(pad, f)]));
+    for (int field = DP_FXCOMP_SC; field < DPAD_NFIELDS; ++field)
+        keys->addChild(make(info[(size_t)dgfx(field)]));
+    layout.add(std::move(keys));
     return layout;
 }
 
@@ -298,7 +307,26 @@ void DrumAudioProcessor::shareSeqState() {
     std::copy(chain_.begin(), chain_.end(), snapshot.chain.begin());
     snapshot.hasRhythm = hasRhythm_;
     snapshot.rhythm = rhythm_;
+    // Lanes compile against the current length and POLY rhythm (FIT lanes).
+    fable::compileAutomation(snapshot.automation, automation_, (int)chain_.size(),
+                             hasRhythm_ ? &rhythm_ : nullptr, fable::Machine::DR1);
     seqWrite_ = seqMiddle_.exchange(seqWrite_ | kSeqDirty, std::memory_order_acq_rel) & ~kSeqDirty;
+}
+
+void DrumAudioProcessor::setSequenceAutomation(const std::vector<fable::AutoLane>& lanes, bool history) {
+    if (!fable::validateAutomation(lanes, fable::Machine::DR1)) return;
+    if (history) pushAutomationUndo();
+    automation_ = lanes;
+    programDirty_.markEdited();
+    shareSeqState();
+}
+void DrumAudioProcessor::undoAutomation() {
+    std::vector<fable::AutoLane> restored;
+    if (automationHistory_.undo(automation_, restored)) setSequenceAutomation(restored, false);
+}
+void DrumAudioProcessor::redoAutomation() {
+    std::vector<fable::AutoLane> restored;
+    if (automationHistory_.redo(automation_, restored)) setSequenceAutomation(restored, false);
 }
 
 uint8_t DrumAudioProcessor::getStep(int pattern, int pad, int step) const {
@@ -354,9 +382,9 @@ bool DrumAudioProcessor::commitSequence(const fui::DrumSequence& s) {
 }
 
 bool DrumAudioProcessor::loadFactoryPatternPreset(int index) {
-    const auto& kits = factoryKits();
-    if (index < 0 || index >= (int)kits.size()) return false;
-    const auto& preset = kits[(size_t)index];
+    const auto& presets = factoryPatternPresets();
+    if (index < 0 || index >= (int)presets.size()) return false;
+    const auto& preset = presets[(size_t)index];
     if (preset.patterns.size() != patterns_.size() || preset.chain.empty()) return false;
     auto next = getSequence();
     next.steps = preset.patterns;
@@ -445,6 +473,31 @@ void DrumAudioProcessor::applyFactoryPatch(int index) {
     }
 }
 
+std::vector<float> DrumAudioProcessor::captureParamValues() {
+    return fui::readAllParams(apvts, drumParamInfo());
+}
+
+void DrumAudioProcessor::restoreKit(int program, const std::vector<float>& values,
+                                    const std::array<juce::String, DR_NPADS>& names, bool dirty) {
+    agentStateGeneration_.fetch_add(1);
+    patchContextRevision_.fetch_add(1, std::memory_order_relaxed);
+    if (program >= 0 && program < (int)factoryKits().size()) currentProgram_ = program;
+    {
+        fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
+        fui::writeAllParams(apvts, drumParamInfo(), values);
+    }
+    padNames_ = names;
+    selectionBroadcaster.sendChangeMessage();
+    programDirty_.setDirty(dirty);
+}
+
+void DrumAudioProcessor::restorePadFields(const std::vector<std::pair<int, float>>& fields, bool dirty) {
+    const auto& info = drumParamInfo();
+    for (const auto& [id, v] : fields)
+        if (id >= 0 && id < (int)info.size()) fui::writeParamPlain(apvts, info[(size_t)id], v);
+    programDirty_.setDirty(dirty);
+}
+
 const juce::String DrumAudioProcessor::getProgramName(int index) {
     const auto& kits = factoryKits();
     if (index < 0 || index >= (int)kits.size()) return {};
@@ -462,8 +515,10 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     // else is published through these atomics, so the ordering buys nothing.
     auto& p = engine.params();
     for (int i = 0; i < DR_NUM_PARAMS; ++i)
-        if (rawParams_[(size_t)i])
-            p[(size_t)i] = rawParams_[(size_t)i]->load(std::memory_order_relaxed);
+        if (rawParams_[(size_t)i]) {
+            const float value = rawParams_[(size_t)i]->load(std::memory_order_relaxed);
+            if (!engine.holdAutomatedParam(i, value)) p[(size_t)i] = value;  // automated ids keep their lane
+        }
 
     // Host sync. A reported tempo overrides seq.bpm; a rolling transport that
     // also reports song position slaves the whole sequencer to the host
@@ -481,6 +536,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     engine.setHostTransport(ppq, synced ? bpm : 120.0,
                             hostRolling && hasPpq && synced);
     hostSynced_.store(synced, std::memory_order_relaxed);
+    hostPlaying_.store(hostRolling, std::memory_order_relaxed);
     hostBpm_.store(synced ? bpm : 0.0, std::memory_order_relaxed);
 
     // Drain the UI command FIFO (audition/transport/selection).
@@ -510,6 +566,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         engine.setPatterns(snapshot.patterns.data(), (int)snapshot.patterns.size());
         engine.setChain(snapshot.chain.data(), snapshot.chainSize);
         engine.setDrumRhythm(snapshot.hasRhythm ? &snapshot.rhythm : nullptr);
+        engine.setSequenceAutomation(&snapshot.automation);
     }
 
     // 5-bus render, sample-accurate MIDI: render engine+FX up to each event's
@@ -573,6 +630,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     curStep_.store(engine.currentStep(), std::memory_order_relaxed);
     curPattern_.store(engine.currentPattern(), std::memory_order_relaxed);
     seqPlaying_.store(engine.isPlaying(), std::memory_order_relaxed);
+    automationSteps_.store(engine.sequenceAutomationSteps(), std::memory_order_relaxed);
     hitFlags_.fetch_or(engine.consumeHits(), std::memory_order_relaxed);
     vizA_.store(engine.vizA, std::memory_order_relaxed);
     vizB_.store(engine.vizB, std::memory_order_relaxed);
@@ -591,6 +649,7 @@ void DrumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         for (int i = 0; i < n; ++i)
             scopeBuf_[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
         scopeW_.store(w + n, std::memory_order_relaxed);
+        outputTap_->write(l0, r0, n);
     }
     // Fixed-window measurement of the actual final MAIN bus only (AUX excluded). No allocation or locking.
     const float* meterChannels[2] { mainBus.getNumChannels() > 0 ? mainBus.getReadPointer(0) : nullptr,
@@ -642,6 +701,8 @@ void DrumAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
         drum.setProperty("rhythmVersion", (int)rhythm_.v, nullptr);
         drum.setProperty("rhythm", encodeDrumRhythm(rhythm_), nullptr);
     }
+    if (!automation_.empty())
+        drum.setProperty("automation", juce::JSON::toString(fable::automationToVar(automation_), false, 17), nullptr);
     root.appendChild(drum, nullptr);
 
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
@@ -728,6 +789,14 @@ void DrumAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
         selectedPad_ = juce::jlimit(0, DR_NPADS - 1, (int)drum.getProperty("selectedPad", 0));
         editPattern_ = juce::jlimit(0, DR_NPATTERNS - 1, (int)drum.getProperty("editPattern", 0));
         pushCmd(CmdSelect, selectedPad_, 0);
+    }
+    // Sequence automation lanes (absent = none, also for legacy states).
+    automation_.clear();
+    automationHistory_.clear();
+    if (drum.isValid() && drum.hasProperty("automation")) {
+        std::vector<fable::AutoLane> restored;
+        if (fable::automationFromVar(juce::JSON::parse(drum.getProperty("automation").toString()), restored, fable::Machine::DR1))
+            automation_ = std::move(restored);
     }
     shareSeqState();
 

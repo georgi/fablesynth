@@ -1,3 +1,4 @@
+#include "../seq/SequenceRhythmCodec.h"
 #include "BassProcessor.h"
 #include "BassEditor.h"
 #include "../ui/ArpCodec.h"
@@ -187,6 +188,18 @@ void BassAudioProcessor::setChain(std::vector<int> c) {
     shareSeqState(false, true);
 }
 
+void BassAudioProcessor::setSequenceRhythm(const fable::SequenceRhythm& r) {
+    if (!fable::validSequenceRhythm(r)) return;
+    programDirty_.markEdited();
+    publishSequenceRhythm(r);
+}
+
+void BassAudioProcessor::publishSequenceRhythm(const fable::SequenceRhythm& r) {
+    seqRhythm_ = r;
+    std::lock_guard<std::mutex> lk(shareMutex_);
+    seqRhythmShared_ = r; rhythmDirty_ = true;
+}
+
 void BassAudioProcessor::setEditPattern(int p) {
     editPattern_ = juce::jlimit(0, BL_NPATTERNS - 1, p);
 }
@@ -225,6 +238,29 @@ void BassAudioProcessor::setCurrentProgram(int index) {
     pushCmd(CmdPanic, 0, 0);          // web loadPatchByValue panics the voice
     pushCmd(CmdSnapParams, 0, 0);     // Finding J1: a patch load is not an automation move
     shareSeqState(true, true);
+    publishSequenceRhythm({});        // factory patches carry no POLY (web patchToState default)
+}
+
+std::vector<float> BassAudioProcessor::captureParamValues() {
+    return fui::readAllParams(apvts, bassParamInfo());
+}
+
+void BassAudioProcessor::restoreSound(int program, const std::vector<float>& values, const std::vector<uint8_t>& patterns,
+                                      int chainBars, int editPattern, bool dirty) {
+    agentStateGeneration_.fetch_add(1);
+    if (program >= 0 && program < (int)bassFactoryPatches().size()) currentProgram_ = program;
+    {
+        fui::ProgramDirtyTracker::LoadScope loading(programDirty_);
+        fui::writeAllParams(apvts, bassParamInfo(), values);
+        if ((int)patterns.size() == BL_PATTERN_BYTES) std::copy(patterns.begin(), patterns.end(), patterns_.begin());
+        chain_.resize((size_t)juce::jlimit(1, BL_NPATTERNS, chainBars));
+        std::iota(chain_.begin(), chain_.end(), 0);
+        editPattern_ = juce::jlimit(0, BL_NPATTERNS - 1, editPattern);
+        pushCmd(CmdPanic, 0, 0);
+        pushCmd(CmdSnapParams, 0, 0);
+        shareSeqState(true, true);
+    }
+    programDirty_.setDirty(dirty);
 }
 
 const juce::String BassAudioProcessor::getProgramName(int index) {
@@ -262,6 +298,7 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     engine.setHostTransport(ppq, synced ? bpm : 120.0,
                             hostRolling && hasPpq && synced);
     hostSynced_.store(synced, std::memory_order_relaxed);
+    hostPlaying_.store(hostRolling, std::memory_order_relaxed);
     hostBpm_.store(synced ? bpm : 0.0, std::memory_order_relaxed);
 
     ArpSettings arpUpdate;
@@ -309,7 +346,9 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         if (chainDirty_) {
             engine.setChain(chainShared_.data(), (int)chainShared_.size());
             chainDirty_ = false;
+            applyArp(); // a chord track spans the sequence length
         }
+        if (rhythmDirty_) { engine.setSequenceRhythm(seqRhythmShared_); rhythmDirty_ = false; }
         shareMutex_.unlock();
     }
 
@@ -376,6 +415,7 @@ void BassAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         for (int i = 0; i < n; ++i)
             scopeBuf_[(size_t)((w + i) & (kScopeSize - 1))] = 0.5f * (l0[i] + r0[i]);
         scopeW_.store(w + n, std::memory_order_relaxed);
+        outputTap_->write(l0, r0, n);
     }
     // Fixed-window measurement of the actual final output. No allocation or locking.
     const float* meterChannels[2] { buffer.getNumChannels() > 0 ? buffer.getReadPointer(0) : nullptr,
@@ -409,6 +449,7 @@ void BassAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     for (int c : chain_) chainStr.add(juce::String(c));
     bass.setProperty("chain", chainStr.joinIntoString(","), nullptr);
     bass.setProperty("editPattern", editPattern_, nullptr);
+    bass.setProperty("sequenceRhythm", juce::JSON::toString(fable::sequenceRhythmToVar(seqRhythm_), true), nullptr);
     root.appendChild(bass, nullptr);
 
     if (auto xml = root.createXml()) copyXmlToBinary(*xml, destData);
@@ -449,6 +490,12 @@ void BassAudioProcessor::setStateInformation(const void* data, int sizeInBytes) 
         std::iota(chain_.begin(), chain_.end(), 0);
         editPattern_ = juce::jlimit(0, BL_NPATTERNS - 1,
                                     (int)bass.getProperty("editPattern", 0));
+    }
+    {   // melodic POLY (absent in older states = off)
+        fable::SequenceRhythm restored;
+        if (bass.isValid() && bass.hasProperty("sequenceRhythm"))
+            fable::sequenceRhythmFromVar(juce::JSON::parse(bass.getProperty("sequenceRhythm").toString()), restored);
+        publishSequenceRhythm(restored);
     }
     shareSeqState(true, true);
     pushCmd(CmdPanic, 0, 0);

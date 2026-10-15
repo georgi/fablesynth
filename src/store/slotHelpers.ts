@@ -23,11 +23,13 @@ export interface ActiveRoute {
   src: number;
   dst: number;
   amt: number;
+  pol: number; // MOD_POLARITY index
 }
 
 const srcOf = (p: ParamValues, n: number) => p[`mat${n}.src`] | 0;
 const dstOf = (p: ParamValues, n: number) => p[`mat${n}.dst`] | 0;
 const amtOf = (p: ParamValues, n: number) => p[`mat${n}.amt`] || 0;
+const polOf = (p: ParamValues, n: number) => p[`mat${n}.pol`] | 0;
 
 // First fully-empty slot (src==0 && dst==0), or 0 if the pool is full.
 export function findFreeSlot(p: ParamValues): number {
@@ -43,7 +45,7 @@ export function getActiveSlots(p: ParamValues): ActiveRoute[] {
   for (let n = 1; n <= MOD_MATRIX_SIZE; n++) {
     const src = srcOf(p, n);
     const dst = dstOf(p, n);
-    if (src !== 0 && dst !== 0) out.push({ slot: n, src, dst, amt: amtOf(p, n) });
+    if (src !== 0 && dst !== 0) out.push({ slot: n, src, dst, amt: amtOf(p, n), pol: polOf(p, n) });
   }
   return out;
 }
@@ -57,16 +59,20 @@ export function getModsByDest(p: ParamValues, dest: number): ActiveRoute[] {
 export function setMatSlot(
   p: ParamValues,
   slot: number,
-  patch: { src?: number; dst?: number; amt?: number },
+  patch: { src?: number; dst?: number; amt?: number; pol?: number; aux?: number },
 ): void {
   if (patch.src !== undefined) p[`mat${slot}.src`] = patch.src;
   if (patch.dst !== undefined) p[`mat${slot}.dst`] = patch.dst;
   if (patch.amt !== undefined) p[`mat${slot}.amt`] = patch.amt;
+  if (patch.pol !== undefined) p[`mat${slot}.pol`] = patch.pol;
+  if (patch.aux !== undefined) p[`mat${slot}.aux`] = patch.aux;
 }
 
-// Zero a slot's src, dst AND amt so it reads as fully empty again.
+// Zero a slot's src, dst, amt, pol AND aux so it reads as fully empty again.
 export function clearSlot(p: ParamValues, slot: number): void {
   p[`mat${slot}.src`] = 0;
   p[`mat${slot}.dst`] = 0;
   p[`mat${slot}.amt`] = 0;
+  p[`mat${slot}.pol`] = 0;
+  p[`mat${slot}.aux`] = 0;
 }

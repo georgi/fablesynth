@@ -33,6 +33,9 @@ const std::vector<ParamInfo>& seqParamInfo();
 // Session-bus-only controls. Their UI-facing ids deliberately omit the
 // `master.` storage prefix so the shared FX modules can address `fx.*`.
 const std::vector<ParamInfo>& masterFxParamInfo();
+// masterFxParamInfo().size(): EQ 0-20, OTT 21-25, COMP 26-30, limiter 31-32,
+// COMP side-chain 33 (SC_SOURCES) and 34 (KEY HP), appended.
+constexpr int MASTER_FX_PARAMS = 35;
 } // namespace fable
 // FableSynth SQ-4 (session launcher) processor. Hosts all four FableSynth
 // engines — DR-1 (DrumEngine), BL-1 (BassEngine), and two WT-1 (Engine) — in a
@@ -102,9 +105,26 @@ public:
     // JSON fails validation.
     bool applySessionJson(const juce::String& json);
     juce::String currentSessionJson() const;
+    /** currentSessionJson() plus the live master section, for SAVE. */
+    juce::String exportSessionJson() const;
     juce::RangedAudioParameter* masterFxParameter(const juce::String& uiId) const;
     fable::FxTelemetry masterFxTelemetry() const;
     std::array<float, 3> masterLimiterTelemetry() const;
+
+    // ---- analysis taps (message thread; lock-free, see dsp/AnalysisTap.h) ----
+    // Stereo sample streams for FFT/RMS analysis (ASSIST, auto-EQ):
+    //  trackTap(t)       track t after alignment, fader, mute and solo
+    //  masterInputTap()  the sum of those tracks, before master FX and gain
+    //  masterOutputTap() the final output after master FX, gain and limiters
+    const fable::ProgramTap& trackTap(int t) const { return taps_->track[(size_t)juce::jlimit(0, kTracks - 1, t)]; }
+    const fable::ProgramTap& masterInputTap() const { return taps_->masterIn; }
+    const fable::ProgramTap& masterOutputTap() const { return taps_->masterOut; }
+    // COMP detector traces (auto-comp). track -1 is the master compressor;
+    // track 0 (DR-1) takes pad >= 0 for a pad strip, else the group strip.
+    const fable::DetectorTrace& compTrace(int track, int pad = -1) const;
+    // DR-1 KIT MIX capture of the hosted drum track (DrumEngine::padCapture).
+    void setDrumPadCapture(bool on) { drum_.setPadCapture(on); }
+    const fable::PadCaptureTap& drumPadCapture(int pad) const { return drum_.padCapture(pad); }
 
     // ---- editing undo substrate (message thread) -----------------------------
     // Bounded (50) session-JSON snapshot stack over currentSessionJson()/
@@ -146,10 +166,21 @@ public:
     void setTrackInlineParams(int t, const std::unordered_map<std::string, float>& values);
     void setTrackFactoryPatch(int t, int program);
     int trackFactoryProgram(int t) const;
+    // Preset browser (message thread): the track's whole session patch, written back
+    // exactly (factory index, or inline params over a factory base), and the flat
+    // engine parameter values a patch resolves to.
+    fable::PatchRef trackPatch(int t) const;
+    void setTrackPatchRef(int t, fable::PatchRef patch);
+    std::vector<float> patchParamValues(int t, const fable::PatchRef& patch) const;
+    // Parameter ids and names of a track's device, in the order patchParamValues() uses.
+    const std::vector<fable::ParamInfo>& trackParamCatalog(int t) const;
 
     // Top-level factory library: each program is a complete SQ-4 session,
     // including clips, device patches, tempo, quantize, and mixer state.
     int currentSessionPreset() const;
+    // Message-thread serialized-document generation, independent of playback.
+    std::uint64_t sessionEditRevision() const;    // content + mixer (preset matching, dirty tracking)
+    std::uint64_t sessionContentRevision() const; // excludes fader moves (scene grid caches)
     void applySessionPreset(int index);
 
     // Clip-library load boundary used by the future browser. Both variants
@@ -223,6 +254,19 @@ public:
 
 private:
     friend struct SeqOutputTestAccess;
+    friend struct SeqSessionCacheTestAccess;
+    // Host program queries may overlap UI polling. This lock protects only
+    // reader memoization; SessionData edits retain their existing message-thread
+    // contract and must not run concurrently with document reads. No DSP lock.
+    mutable juce::CriticalSection sessionPresetCacheLock_;
+    std::uint64_t sessionEpoch_ = 0; // guarded by sessionPresetCacheLock_
+    void bumpSessionEpoch();         // call AFTER the session/conductor swap
+    mutable std::uint64_t observedSessionEpoch_ = 0, observedDocumentRevision_ = 0;
+    mutable std::uint64_t sessionEditRevision_ = 0;
+    mutable std::uint64_t observedContentEpoch_ = 0, observedContentRevision_ = 0, sessionContentRevision_ = 0;
+    mutable std::uint64_t cachedPresetRevision_ = 0, presetMatchEvaluations_ = 0;
+    mutable bool presetMatchValid_ = false;
+    mutable int cachedSessionPreset_ = -1;
     std::array<std::atomic<std::uint64_t>, 4> trackPatchRevision_ {};
     std::uint64_t agentEditRevision_ = 0;
     fable::AudioMeter agentOutputMeter_;
@@ -243,6 +287,8 @@ private:
         uint32_t gen = 0;                            // Reset: the new generation
         std::shared_ptr<std::vector<uint8_t>> bytes; // Clip / Update
         fable::ArpPattern arp;
+        fable::SequenceRhythm rhythm;
+        fable::ScaleMap scale; // SEQ-mode clips: written-note scale map (Scales.h)
         std::shared_ptr<const fable::AutoBank> autoBank;
         std::shared_ptr<fable::DrumRhythm> drumRhythm;
         std::shared_ptr<std::vector<float>>  params; // Patch (flat engine params)
@@ -319,7 +365,8 @@ private:
 
     // applySessionJson minus the history clear — the shared restore path used
     // by external loads AND by undo/redo (which must keep their stacks).
-    bool restoreSessionJson(const juce::String& json);
+    // `withMaster` restores a stored master section; undo/redo leave it alone.
+    bool restoreSessionJson(const juce::String& json, bool withMaster = false);
 
     // juce::Timer: the processor's own 30 Hz pump for drainAcks() (see the
     // threading note above) — private since only the processor drives it.
@@ -359,14 +406,18 @@ private:
     // message thread overwrites that slot on its next wrap of the FIFO — that
     // overwrite is where the byte vector is freed, always off the audio thread.
     juce::AbstractFifo cmdFifo_ { 256 };
-    std::array<Cmd, 256> cmdSlots_;
+    // Heap-held, allocated once at construction: a Cmd carries an ArpPattern
+    // (~2.8 KB), so 256 inline slots made the processor ~1.5 MB, too large for
+    // stack instances in tests and tool code.
+    std::unique_ptr<std::array<Cmd, 256>> cmdSlotStore_ = std::make_unique<std::array<Cmd, 256>>();
+    std::array<Cmd, 256>& cmdSlots_ = *cmdSlotStore_;
     juce::AbstractFifo ackFifo_ { 512 };
     std::array<Ack, 512> ackSlots_;
 
     double frame_ = 0;
     juce::SmoothedValue<float> trackGain_[4], masterGain_; // ~15 ms ramps
     std::atomic<float>* rawMaster_ = nullptr;
-    std::array<std::atomic<float>*, 33> rawMasterFx_ {};
+    std::array<std::atomic<float>*, fable::MASTER_FX_PARAMS> rawMasterFx_ {};
 
     struct MasterFx {
         fable::ParametricEq eq;
@@ -380,8 +431,10 @@ private:
             eq.prepare(sampleRate); ott.prepare(sampleRate); comp.prepare(sampleRate); meter.prepare(sampleRate);
         }
         void reset() { eq.reset(); ott.reset(); comp.reset(); meter.reset(); }
-        void setParams(const std::array<float, 33>& p);
-        void process(float* l, float* r, int n);
+        int keyChannel = -1; // COMP side-chain key-bus channel, -1 = off
+        void setParams(const std::array<float, fable::MASTER_FX_PARAMS>& p);
+        // key: the aligned mono key for these n samples, or null for silence.
+        void process(float* l, float* r, int n, const float* key = nullptr);
         fable::FxTelemetry telemetry() const { return meter.read(); }
         std::array<float, 3> limiterTelemetry() const {
             return { limiterInDb.load(std::memory_order_relaxed), limiterOutDb.load(std::memory_order_relaxed),
@@ -389,7 +442,32 @@ private:
         }
     } masterFx_;
 
-    void processMaster(float* l, float* r, int n);
+    void processMaster(float* l, float* r, int n, const float* key = nullptr);
+
+    // COMP side-chain key bus (src/seq/rig.ts wireKeyBus): channels 0-3 are
+    // the post-fader tracks, 4 the DR-1 kick (pad 01 dry, after the drum
+    // fader), each mono (L + R) / 2. The master reads it aligned with the
+    // mix. Devices read it exactly kKeyDelay samples late, as the web rig's
+    // one-quantum delay does; processBlock renders in chunks of at most
+    // kKeyDelay while a device key is in use so that frame is always written.
+    static constexpr int kKeyDelay = 128;
+    static constexpr int kKeyRing = 512; // power of two > kKeyDelay + chunk
+    std::array<std::array<float, kKeyRing>, fable::KEY_CHANNELS> keyRing_ {};
+    uint64_t keyFrame_ = 0; // frames written to keyRing_
+    std::array<std::array<float, kKeyDelay>, fable::KEY_CHANNELS> deviceKey_ {};
+    juce::AudioBuffer<float> keyBus_; // this chunk's key bus, sized in prepareToPlay
+    bool deviceKeys_ = false;          // this chunk renders with device keys
+    void readDeviceKeys(int n);
+    const float* deviceKey(int channel) const {
+        return deviceKeys_ && channel >= 0 ? deviceKey_[(size_t)channel].data() : nullptr;
+    }
+
+    // Heap-held analysis taps (about 1.5 MB), allocated with the processor.
+    struct Taps {
+        std::array<fable::ProgramTap, kTracks> track;
+        fable::ProgramTap masterIn, masterOut;
+    };
+    std::unique_ptr<Taps> taps_ = std::make_unique<Taps>();
     fable::LookaheadLimiter outputLimiter_; // unity makeup, after every master gain stage
 
     // Legacy master compressor — retained for existing session sound. The

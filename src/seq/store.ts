@@ -1,3 +1,4 @@
+import { copySequenceRhythm, defaultSequenceRhythm, validSequenceRhythm, type SequenceRhythm } from '../shared/sequenceRhythm';
 import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rhythm';
 // The SQ-4 conductor (docs/sq4-clips.md §9). Owns all musical decisions:
 // the owner/queue launcher state, quantize boundary scheduling against the
@@ -6,7 +7,9 @@ import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rh
 // their clipstart/clipstop acks so the grid shows what is audible.
 
 import { create } from 'zustand';
-import { compileClipArp, newClipArp, validClipArp, type ClipArp } from './clipArp';
+import { clipSeqMode, compileClipArp, compileClipScale, linkChordWrites, newClipArp, sceneChordWrites, validClipArp, type ClipArp, type SceneChords } from './clipArp';
+import { validChords } from '../chords';
+import type { SeqMode } from '../arp';
 import { compileClipAutomation, validateAutomation, type AutoLane } from './clipAutomation';
 import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
@@ -55,6 +58,8 @@ export interface SeqStore {
   anchor: number; // songStartFrame — beat zero of the shared timebase
   focus: { track: number; scene: number } | null;
   deviceMode: 'seq' | 'edit'; // focus-mode device view; resets to 'seq' on track change
+  /** Focus-mode sequencer tab; follows the focused clip's playing mode. */
+  seqPage: SeqMode;
   clipLoadRevision: number;
   tour: number | null; // active onboarding step index, null = tour hidden
   gridSel: GridSel | null; // session-grid cell selection (anchor/head rectangle)
@@ -69,8 +74,10 @@ export interface SeqStore {
   stopScene: (s: number) => void;
   togglePassThrough: (s: number, t: number) => void;
   updateDrumClipSequence: (s: number, t: number, bytes: Uint8Array, bars: number, rhythm: DrumRhythm | null) => string | null;
-  updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number) => void;
+  updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number, sequenceRhythm?: SequenceRhythm) => void;
   updateClipArp: (s: number, t: number, patch: Partial<ClipArp>) => void;
+  /** Loads a progression into every linked chord track of scene `s`. */
+  setSceneChords: (s: number, chords: SceneChords) => void;
   /** Replace a clip's automation lanes. A drag passes `history: false` after its first write. */
   updateClipAutomation: (s: number, t: number, lanes: AutoLane[], opts?: { history?: boolean; persist?: boolean }) => void;
   createClip: (s: number, t: number) => void;
@@ -98,6 +105,7 @@ export interface SeqStore {
   exitFocus: () => void;
   focusScene: (s: number) => void;
   setDeviceMode: (m: 'seq' | 'edit') => void;
+  setSeqPage: (p: SeqMode) => void;
   startTour: () => void;
   advanceTour: (d: number) => void;
   endTour: () => void;
@@ -240,7 +248,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
         if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm,
-          compileClipAutomation(w.clip, st.session.tracks[w.t].machine));
+          compileClipAutomation(w.clip, st.session.tracks[w.t].machine), w.clip.sequenceRhythm, compileClipScale(w.clip));
       }
     }
   };
@@ -269,7 +277,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const a = cur.scenes[s]?.clips[t] ?? null;
         const b = snapshot.scenes[s].clips[t];
         if (a === b) continue;
-        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp && a.automation === b.automation) continue;
+        if (a && b && a.pattern === b.pattern && a.bars === b.bars && a.name === b.name && a.arp === b.arp && a.automation === b.automation && a.drumRhythm === b.drumRhythm && a.sequenceRhythm === b.sequenceRhythm) continue;
         writes.push({ s, t, clip: b });
       }
     }
@@ -277,7 +285,8 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       ...cur,
       scenes: cur.scenes.map((sc, s) => (snapshot.scenes[s] ? { ...sc, clips: snapshot.scenes[s].clips } : sc)),
     };
-    set({ session: next });
+    set({ session: next, ...(writes.some(w => cur.scenes[w.s]?.clips[w.t]?.sequenceRhythm !== w.clip?.sequenceRhythm)
+      ? { clipLoadRevision: get().clipLoadRevision + 1 } : {}) });
     syncWrites(writes);
     persist();
   };
@@ -296,7 +305,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     solo: {},
     quant: initialSession.quant,
     trackVol: initialSession.tracks.map((t) => t.gain),
-    masterVol: 0.75,
+    masterVol: initialSession.masterVol ?? 0.75,
     masterFx: masterFxParams(initialSession.masterFx),
     masterFxOpen: false,
     drumFxOpen: false,
@@ -307,6 +316,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     anchor: 0,
     focus: null,
     deviceMode: 'seq',
+    seqPage: 'seq',
     clipLoadRevision: 0,
     tour: null,
     gridSel: null,
@@ -394,7 +404,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine));
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine), clip.sequenceRhythm, compileClipScale(clip));
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -452,8 +462,15 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       if (!clip || !machine || machine === 'DR1') return;
       const arp = { ...(clip.arp ?? newClipArp(machine)), ...patch };
       if (!validClipArp(arp)) return;
+      const { arp: next, others } = linkChordWrites(st.session, s, t, JSON.parse(JSON.stringify(arp)) as ClipArp);
       // The grid's existing history/runtime path preserves notes and queues.
-      applyGridWrites([{ s, t, clip: { ...clip, arp: JSON.parse(JSON.stringify(arp)) as ClipArp } }], 0);
+      applyGridWrites([{ s, t, clip: { ...clip, arp: next } }, ...others.map(o => ({ s, ...o }))], 0);
+    },
+
+    setSceneChords: (s, chords) => {
+      if (validChords(chords.chords) === null || !Number.isInteger(chords.key) || chords.key < 0 || chords.key > 11
+        || !Number.isInteger(chords.bars) || chords.bars < 1 || chords.bars > 4) return;
+      applyGridWrites(sceneChordWrites(get().session, s, chords).map(w => ({ s, ...w })), 0);
     },
 
     updateClipAutomation: (s, t, lanes, opts = {}) => {
@@ -493,18 +510,25 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       return null;
     },
 
-    updateClipBytes: (s, t, bytes, bars) => {
+    updateClipBytes: (s, t, bytes, bars, sequenceRhythm) => {
       const st = get();
       const clip = st.session.scenes[s]?.clips[t];
       if (!clip) return;
+      if (sequenceRhythm !== undefined && !validSequenceRhythm(sequenceRhythm)) return;
       if (st.session.tracks[t]?.machine === 'DR1') {
         get().updateDrumClipSequence(s, t, bytes, bars, clip.drumRhythm ?? null);
         return;
       }
+      // The hosted editors always report a rhythm; a default one on a clip that never had POLY is absence.
+      const rhythm = sequenceRhythm && (clip.sequenceRhythm || JSON.stringify(sequenceRhythm) !== JSON.stringify(defaultSequenceRhythm()))
+        ? copySequenceRhythm(sequenceRhythm) : undefined;
+      const nextClip = { ...clip, bars, pattern: bytesToB64(bytes), ...(rhythm ? { sequenceRhythm: rhythm } : {}) };
+      // Only a rhythm change is seq-store history; note edits stay with the device undo.
+      if (JSON.stringify(nextClip.sequenceRhythm) !== JSON.stringify(clip.sequenceRhythm)) pushHistory();
       const scenes = st.session.scenes.map((sc, i) => {
         if (i !== s) return sc;
         const clips = sc.clips.slice();
-        clips[t] = { ...clip, bars, pattern: bytesToB64(bytes) };
+        clips[t] = nextClip;
         return { ...sc, clips };
       });
       set({ session: { ...st.session, scenes } });
@@ -515,7 +539,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation({ ...clip, bars }, st.session.tracks[t].machine));
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation(nextClip, st.session.tracks[t].machine), nextClip.sequenceRhythm, compileClipScale(clip));
       }
     },
 
@@ -565,7 +589,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
-      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded), undefined, compileClipAutomation(loaded, st.session.tracks[t].machine));
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded), undefined, compileClipAutomation(loaded, st.session.tracks[t].machine), undefined, compileClipScale(loaded));
       return true;
     },
 
@@ -624,7 +648,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     },
 
     setMasterVol: (v) => {
-      set({ masterVol: v });
+      set((st) => ({ masterVol: v, session: { ...st.session, masterVol: v } }));
       get().rig?.setMasterGain(gainCurve(v));
     },
 
@@ -678,6 +702,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const anchor = st.rig ? st.rig.now() + 256 : 0;
       st.rig?.sendTempo(session.bpm, session.swing, anchor);
       st.rig?.setMasterFx?.(masterFxParams(session.masterFx));
+      st.rig?.setMasterGain(gainCurve(session.masterVol ?? 0.75));
       clipBytes.clear();
       // Pre-load snapshots would undo the doc but not the rig, desyncing
       // audible vs persisted state — so history resets here.
@@ -685,7 +710,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       redoStack.length = 0;
       set({
         session, masterFx: masterFxParams(session.masterFx), quant: session.quant, swing: session.swing,
-        trackVol: session.tracks.map((track) => track.gain),
+        trackVol: session.tracks.map((track) => track.gain), masterVol: session.masterVol ?? 0.75,
         playing: false, beat: 0, bar: 1, owner: {}, queue: {},
         pos: session.tracks.map(() => null), anchor, focus: null,
         clipLoadRevision: st.clipLoadRevision + 1,
@@ -708,9 +733,10 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     enterFocus: (t, s) => {
       advanceTourStep('devices');
       const st = get();
-      const scene = s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene;
+      const scene = clampScene(s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene);
       set({
-        focus: { track: t, scene: clampScene(scene) },
+        focus: { track: t, scene },
+        seqPage: clipSeqMode(st.session.scenes[scene]?.clips[t]),
         masterFxOpen: false,
         deviceMode: st.focus?.track === t ? st.deviceMode : 'seq',
         drumFxOpen: st.focus?.track === t ? st.drumFxOpen : false,
@@ -727,10 +753,13 @@ export const useSeqStore = create<SeqStore>((set, get) => {
 
     focusScene: (s) => {
       const f = get().focus;
-      if (f) set({ focus: { ...f, scene: clampScene(s) } });
+      if (!f) return;
+      const scene = clampScene(s);
+      set({ focus: { ...f, scene }, seqPage: clipSeqMode(get().session.scenes[scene]?.clips[f.track]) });
     },
 
     setDeviceMode: (m) => set({ deviceMode: m }),
+    setSeqPage: (p) => set({ seqPage: p }),
 
     // The tour anchors to session-grid elements, so it always exits focus
     // mode first; stepping past the last card ends it and marks it seen.
@@ -869,7 +898,7 @@ export function resetSeqStore(session: SessionDoc = defaultSession()): void {
     solo: {},
     quant: '1 BAR',
     trackVol: initialSession.tracks.map((t) => t.gain),
-    masterVol: 0.75,
+    masterVol: initialSession.masterVol ?? 0.75,
     masterFx: masterFxParams(session.masterFx),
     masterFxOpen: false,
     drumFxOpen: false,
@@ -880,6 +909,7 @@ export function resetSeqStore(session: SessionDoc = defaultSession()): void {
     anchor: 0,
     focus: null,
     deviceMode: 'seq',
+    seqPage: 'seq',
     clipLoadRevision: 0,
     tour: null,
     gridSel: null,

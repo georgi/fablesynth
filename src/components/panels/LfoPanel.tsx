@@ -3,7 +3,9 @@ import { Stepper } from '../Stepper';
 import { LFOView } from '../displays/LFOView';
 import { ModSourceChip } from '../ModSourceChip';
 import { ACCENTS } from '../../constants';
-import { LFO_DIV_F, SYNC_BPM } from '../../params';
+import type * as React from 'react';
+import { useState } from 'react';
+import { LFO_DIV_F, SYNC_BPM, lfoSource } from '../../params';
 import { useStore } from '../../store';
 
 function Toggle({ id, label }: { id: string; label: string }) {
@@ -16,7 +18,7 @@ function Toggle({ id, label }: { id: string; label: string }) {
   );
 }
 
-function LfoBlock({ id, src, title, accentKey }: { id: 'lfo1' | 'lfo2'; src: number; title: string; accentKey: 'a' | 'b' }) {
+function LfoBlock({ id, src, accentKey, picker }: { id: string; src: number; accentKey: 'a' | 'b'; picker: React.ReactNode }) {
   const shape = useStore((s) => s.params[`${id}.shape`]);
   const rate = useStore((s) => s.params[`${id}.rate`]);
   const sync = useStore((s) => s.params[`${id}.sync`]);
@@ -30,7 +32,8 @@ function LfoBlock({ id, src, title, accentKey }: { id: 'lfo1' | 'lfo2'; src: num
     <div className="lfo-block" data-accent={accentKey}>
       <div className="panel-head">
         <ModSourceChip src={src} compact />
-        <h2>{title}</h2>
+        <h2>LFO</h2>
+        {picker}
         <div className="lfo-toggles">
           <Toggle id={`${id}.sync`} label="SYNC" />
           <Toggle id={`${id}.retrig`} label="TRIG" />
@@ -49,11 +52,25 @@ function LfoBlock({ id, src, title, accentKey }: { id: 'lfo1' | 'lfo2'; src: num
   );
 }
 
+// Four LFOs in two slots: each slot shows one of two LFOs (left 1|3, right
+// 2|4), picked by the number buttons beside its title.
 export function LfoPanel() {
+  const [choice, setChoice] = useState([0, 0]);
   return (
     <section className="panel panel-lfos" style={{ gridArea: 'lfos' }}>
-      <LfoBlock id="lfo1" src={1} title="LFO 1" accentKey="a" />
-      <LfoBlock id="lfo2" src={2} title="LFO 2" accentKey="b" />
+      {[0, 1].map((slot) => {
+        const n = slot + 1 + choice[slot]! * 2;
+        const picker = (
+          <span className="lfo-pick" role="tablist" aria-label={`LFO slot ${slot + 1}`}>
+            {[0, 1].map((c) => (
+              <button key={c} type="button" role="tab" className="lfo-pick-btn" aria-selected={choice[slot] === c}
+                title={`show LFO ${slot + 1 + c * 2}`}
+                onClick={() => setChoice((cur) => cur.map((v, i) => (i === slot ? c : v)))}>{slot + 1 + c * 2}</button>
+            ))}
+          </span>
+        );
+        return <LfoBlock key={n} id={`lfo${n}`} src={lfoSource(n)} accentKey={slot ? 'b' : 'a'} picker={picker} />;
+      })}
     </section>
   );
 }

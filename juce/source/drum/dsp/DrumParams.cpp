@@ -24,6 +24,12 @@ const std::vector<std::string> DMOD_SOURCES      = {"—", "MOD ENV", "VELO", "R
 const std::vector<std::string> DMOD_DESTS        = {"—", "A POS", "SAMPLE START", "LEVEL", "CUTOFF", "PITCH", "A FINE", "SAMPLE FINE", "NOISE LVL", "RES"};
 const std::vector<std::string> CHOKE_NAMES       = {"—", "CHK 1", "CHK 2", "CHK 3", "CHK 4"};
 const std::vector<std::string> OUT_NAMES         = {"MAIN", "AUX 1", "AUX 2", "AUX 3", "AUX 4"};
+const std::vector<std::string> DRUM_SC_SOURCES = [] {
+    std::vector<std::string> out{"OFF"};
+    for (int i = 1; i <= DR_NPADS; ++i) out.push_back(std::string("PAD ") + (i < 10 ? "0" : "") + std::to_string(i));
+    for (int t = 2; t <= 4; ++t) out.push_back("TRACK " + std::to_string(t));
+    return out;
+}();
 
 const std::vector<std::string>& drumTableSlotNames() {
     static const std::vector<std::string> v = [] {
@@ -135,6 +141,8 @@ void addPad(std::vector<ParamInfo>& v, int i) {
         d.pid = p + d.pid;
         v.push_back(d);
     }
+    v.push_back({b + DP_FXCOMP_SC, p + "fx.comp.sc", "KEY", 0, (float)DRUM_SC_SOURCES.size() - 1, 0, Curve::Int, Kind::Enum, &DRUM_SC_SOURCES});
+    v.push_back({b + DP_FXCOMP_SCHP, p + "fx.comp.schp", "KEY HP", 20, 500, 20, Curve::Log, Kind::Float, nullptr});
 }
 
 // GLOBAL_DEFS (params.ts). The group strip uses the reference default: OTT,

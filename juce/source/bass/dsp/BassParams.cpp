@@ -80,6 +80,11 @@ std::vector<ParamInfo> build() {
         d.id = (int)v.size();
         v.push_back(d);
     }
+    for (const int id : {FXCOMP_SC, FXCOMP_SCHP}) {
+        auto d = paramInfo()[(size_t)id];
+        d.id = (int)v.size();
+        v.push_back(d);
+    }
     return v;
 }
 

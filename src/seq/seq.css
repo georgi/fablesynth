@@ -12,6 +12,9 @@
   to { transform: scaleX(1); opacity: 0.9; }
 }
 
+/* SQ-4 navigates in its logo accent, whatever the hosted devices re-theme. */
+:root { --nav: var(--ac-b); }
+
 #sq-rack {
   max-width: 1460px;
   min-width: 768px;
@@ -170,7 +173,7 @@
 .sq-master-fx-title p { margin: 0 0 0 auto; color: var(--text-dim); font: 7px var(--font-mono); letter-spacing: .17em; }
 .sq-master-fx-rack {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-areas: 'eq ott comp' 'limiter limiter limiter'; gap: 8px; padding: 9px;
+  grid-template-areas: 'assist assist assist' 'eq ott comp' 'limiter limiter limiter'; gap: 8px; padding: 9px;
 }
 .sq-master-fx-rack > .panel { min-width: 0; }
 .sq-master-fx-rack .dynamics-curve, .sq-master-fx-rack .sq-limiter-view { height: 144px; aspect-ratio: auto; }
@@ -186,7 +189,64 @@
 .sq-limiter-readout { display: flex; justify-content: space-between; gap: 8px; padding: 9px 2px 7px; color: var(--ac-n); font: 8px var(--font-mono); letter-spacing: .05em; }
 .sq-limiter-readout output { color: var(--text); font: 9px var(--font-mono); }
 .sq-limiter-controls { display: flex; justify-content: center; }
-@media (max-width: 1250px) { .sq-master-fx-rack { grid-template-columns: 1fr; grid-template-areas: 'eq' 'ott' 'comp' 'limiter'; } }
+/* Mix assistant */
+.sq-assist-panel { --ac: var(--ac-n); }
+.sq-assist-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr) minmax(0, 1.2fr); gap: 10px; align-items: start; }
+.sq-assist-scope svg { display: block; width: 100%; height: 150px; border: 1px solid var(--line); border-radius: 9px; background: #07090e; }
+.sq-assist-grid path { fill: none; stroke: var(--ac-n); stroke-opacity: .1; }
+.sq-assist-grid text { fill: var(--text-dim); font: 7px var(--font-mono); }
+.sq-assist-target { fill: var(--ac-n); fill-opacity: .1; stroke: var(--ac-n); stroke-opacity: .35; stroke-dasharray: 2 3; }
+.sq-assist-live { fill: color-mix(in srgb, var(--text) 9%, transparent); stroke: color-mix(in srgb, var(--text) 40%, transparent); stroke-width: 1; }
+.sq-assist-measured { fill: none; stroke: var(--text); stroke-width: 1.5; }
+.sq-assist-corrected { fill: none; stroke: var(--ac-n); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.sq-assist-legend { display: flex; gap: 12px; padding: 5px 2px 0; color: var(--text-dim); font: 7px var(--font-mono); letter-spacing: .1em; }
+.sq-assist-legend span::before { content: ''; display: inline-block; width: 12px; height: 2px; margin-right: 5px; vertical-align: middle; background: var(--text); }
+.sq-assist-legend .t::before { height: 6px; background: color-mix(in srgb, var(--ac-n) 25%, transparent); }
+.sq-assist-legend .c::before { background: var(--ac-n); }
+.sq-assist-legend .l::before { height: 6px; background: color-mix(in srgb, var(--text) 25%, transparent); }
+.sq-assist-side { display: grid; gap: 7px; }
+.sq-assist-meters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 0; }
+.sq-assist-meters > div { padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px; background: #0a0d14; }
+.sq-assist-meters dt { color: var(--text-dim); font: 7px var(--font-mono); letter-spacing: .12em; }
+.sq-assist-meters dd { margin: 2px 0 0; color: var(--text); font: 12px var(--font-mono); }
+.sq-assist-meters small { margin-left: 3px; color: var(--text-dim); font-size: 6px; }
+.sq-assist-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.sq-assist-seg button, .sq-assist-actions button {
+  padding: 5px 4px; border: 0; background: #0a0d14; color: var(--text-dim);
+  font: 8px var(--font-mono); letter-spacing: .1em; cursor: pointer;
+}
+.sq-assist-seg button + button { border-left: 1px solid var(--line); }
+.sq-assist-seg button.on { background: color-mix(in srgb, var(--ac-n) 18%, #0a0d14); color: var(--text); }
+.sq-assist-ref { padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px; background: #0a0d14; color: var(--text); font: 8px var(--font-mono); letter-spacing: .1em; }
+.sq-assist-amount { display: grid; grid-template-columns: auto 1fr 34px; align-items: center; gap: 8px; color: var(--text-dim); font: 8px var(--font-mono); letter-spacing: .1em; }
+.sq-assist-amount input { accent-color: var(--ac-n); }
+.sq-assist-amount output { color: var(--text); text-align: right; }
+.sq-assist-actions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 5px; }
+.sq-assist-actions button { border: 1px solid var(--line); border-radius: 7px; padding: 7px 4px; color: var(--text); }
+.sq-assist-actions button:disabled { opacity: .35; cursor: default; }
+.sq-assist-listen { background: linear-gradient(90deg, color-mix(in srgb, var(--ac-n) 30%, #0a0d14) calc(var(--p, 0) * 100%), #0a0d14 0) !important; }
+.sq-assist-listen.on { border-color: var(--ac-n) !important; }
+.sq-assist-moves { min-height: 150px; max-height: 190px; overflow: auto; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; background: #0a0d14; }
+.sq-assist-moves ul { margin: 0; padding: 0; list-style: none; }
+.sq-assist-moves li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 3px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); font: 8px var(--font-mono); letter-spacing: .05em; }
+.sq-assist-moves li span { color: var(--text-dim); }
+.sq-assist-moves li s { color: var(--text-dim); opacity: .6; }
+.sq-assist-moves li b { color: var(--ac-n); font-weight: normal; }
+.sq-assist-levels { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; background: #0a0d14; }
+.sq-assist-level { display: grid; grid-template-columns: 64px 84px 1fr 34px; align-items: center; gap: 8px; font: 8px var(--font-mono); letter-spacing: .05em; }
+.sq-assist-level .name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sq-assist-level select { min-width: 0; padding: 2px 3px; border: 1px solid var(--line); border-radius: 5px; background: #07090e; color: var(--text-dim); font: 7px var(--font-mono); letter-spacing: .08em; }
+.sq-assist-level select.set { color: var(--text); border-color: var(--ac-n); }
+.sq-assist-level .bar { position: relative; height: 10px; border-radius: 3px; background: #07090e; overflow: hidden; }
+.sq-assist-level .bar i { position: absolute; top: 0; bottom: 0; }
+.sq-assist-level .now { left: 0; background: color-mix(in srgb, var(--text) 45%, transparent); }
+.sq-assist-level .bar i.after { top: 3px; bottom: 3px; background: var(--ac-n); opacity: .75; }
+.sq-assist-level .target { width: 2px; margin-left: -1px; background: var(--ac-n); }
+.sq-assist-level b { color: var(--ac-n); font-weight: normal; text-align: right; }
+.sq-assist-level b.hold { color: var(--text-dim); }
+.sq-assist-moves p { margin: 6px 0 0; color: var(--text-dim); font: 8px/1.5 var(--font-mono); }
+@media (max-width: 1250px) { .sq-master-fx-rack { grid-template-columns: 1fr; grid-template-areas: 'assist' 'eq' 'ott' 'comp' 'limiter'; }
+  .sq-assist-body { grid-template-columns: 1fr; } }
 
 /* ============ small square buttons (M / S / ■) ============ */
 .sq-mini {
@@ -842,14 +902,10 @@
 /* SEQ/EDIT device modes: the hidden group is unmounted, so each rack's grid
    is re-declared per mode to let the visible group fill the vacated space.
    ID-scoped selectors deliberately outrank index.css's responsive overrides. */
-#bass-rack[data-mode='seq'] #bl-editrow { grid-template-columns: 1.7fr 0.7fr; }
 /* Mod row is edit-only now — SEQ mode's KEYS moved to its own bottom row. */
 #bass-rack[data-mode='edit'] #bl-modrow { grid-template-columns: 290px 1fr; }
-#rack[data-mode='seq'] .panels {
-  grid-template-areas:
-    'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
-    'seq seq seq seq seq seq seq seq seq seq seq seq';
-}
+/* Sound panels are edit-only: SEQ mode is the sequencer alone. */
+#rack[data-mode='seq'] .panels { grid-template-areas: 'seq seq seq seq seq seq seq seq seq seq seq seq'; }
 #rack[data-mode='edit'] .panels {
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
@@ -860,6 +916,7 @@
 }
 
 .sq-clipbar {
+  position: relative;
   display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap;
   padding: 8px 12px; border-bottom: 1px solid #1a2030;
   background: #0d1119;
@@ -886,6 +943,13 @@
   border-color: color-mix(in srgb, var(--tc) 65%, #303a50);
   outline: none;
 }
+.sq-device-patch button.sq-device-browse {
+  width: auto; margin-left: 6px; padding: 0 9px;
+  font: 600 8px var(--font-mono); letter-spacing: 0.14em;
+}
+.sq-device-patch button.sq-device-browse[aria-expanded='true'] { border-color: var(--tc); color: var(--tc); }
+/* Preset drawers open inside the device panel, which clips its overflow. */
+.sq-device .pbr { height: min(540px, calc(100vh - 370px)); min-height: 360px; }
 .sq-device-patch-dirty {
   margin-left: -1px; color: var(--tc); font: 700 13px var(--font-mono);
   line-height: 1;
@@ -911,15 +975,7 @@
   border-color: var(--tc); background: color-mix(in srgb, var(--tc) 14%, #11141c);
 }
 
-.sq-mode-toggle { display: inline-flex; border: 1px solid #303a50; border-radius: 5px; overflow: hidden; }
-.sq-mode-toggle button {
-  padding: 5px 10px; border: 0; background: #151c2a; color: #8791a5;
-  cursor: pointer; font: inherit; font-size: 10px; letter-spacing: .08em;
-}
-.sq-mode-toggle button + button { border-left: 1px solid #303a50; }
-.sq-mode-toggle button.on {
-  background: color-mix(in srgb, var(--tc) 22%, #151c2a); color: var(--tc);
-}
+.sq-clipbar .sq-device-tabs { height: 25px; margin-bottom: 0; }
 
 /* Focus-mode clip library. It floats over the device so browsing never
    disturbs the machine panel or the currently sounding clip. */
@@ -1165,8 +1221,37 @@
   .sq-hosted-rack .st-value { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
   .sq-device-patch button, .sq-device-patch select, .sq-drum-fx-toggle { min-height: 36px; }
   .sq-device-patch button { min-width: 36px; }
-  .sq-clipbar button, .sq-mode-toggle button { min-height: 36px; }
+  .sq-clipbar button { min-height: 36px; }
   .sq-hosted-rack .power-btn { width: 28px; height: 28px; }
   .sq-hosted-rack select { min-height: 36px; }
   .sq-hosted-rack .pad { min-height: 52px; }
 }
+
+/* ============ navigation accent ============
+   Back, view toggles, browser openers and exits share --nav. */
+.sq-launcher-back, .sq-sessions-open, .sq-master-fx-toggle, .sq-drum-fx-toggle,
+.sq-clipbar-library, .sq-tour-btn {
+  border-color: color-mix(in srgb, var(--nav) 40%, var(--line));
+  color: var(--nav);
+}
+.sq-launcher-back:hover, .sq-sessions-open:hover, .sq-master-fx-toggle:hover, .sq-master-fx-toggle.on,
+.sq-drum-fx-toggle:hover, .sq-drum-fx-toggle.on, .sq-clipbar-library:hover, .sq-tour-btn:hover {
+  border-color: var(--nav);
+  color: var(--nav);
+  background: color-mix(in srgb, var(--nav) 14%, #11141c);
+}
+.sq-lib > header button { color: var(--nav); }
+.sq-lib > header button:hover { color: var(--text); }
+
+/* Scene chords: the progression the scene's linked chord tracks share. */
+.sq-scene-chords { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 6px; padding: 3px 6px; min-width: 0;
+  border: 1px solid #ffffff14; border-radius: 4px; background: #0c121c; color: var(--text-dim); font: 8px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.08em; cursor: pointer; text-align: left; }
+.sq-scene-chords:hover { border-color: #4de8ff66; color: var(--text); }
+.sq-scene-chords:focus-visible { outline: 2px solid #4de8ff; outline-offset: 1px; }
+.sq-scene-chords-key { color: #4de8ff; font-weight: 600; }
+.sq-scene-chords-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sq-scene-chords-scrim { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: #000a; }
+.sq-scene-chords-dialog { position: relative; width: min(820px, calc(100vw - 32px)); height: min(560px, calc(100vh - 32px)); }
+
+

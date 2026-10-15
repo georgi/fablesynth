@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import shared from './ott-worklet.js?raw';
+import lab from './lab-worklet.js?raw';
 import bass from '../bass/engine/worklet-bass.js?raw';
 import drum from '../drum/engine/worklet-drum.js?raw';
 import { defaultBassParams } from '../bass/params';
@@ -9,7 +10,7 @@ import { EQ_BANDS, eqCoefficients, eqResponseDb, readEqBands } from './eqRespons
 interface Fx { setParams(p: unknown, fields?: number[]): void; process(l: Float32Array, r: Float32Array, n: number, live?: boolean): void }
 function makeFx(machine: 'bass' | 'drum', sr: number) {
   return new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor',
-    `${shared}\n${machine === 'bass' ? bass : drum}\nreturn new ${machine === 'bass' ? 'BassFx' : 'PadFx'}(sampleRate);`
+    `${shared}\n${lab}\n${machine === 'bass' ? bass : drum}\nreturn new ${machine === 'bass' ? 'BassFx' : 'PadFx'}(sampleRate);`
   )(sr, class {}, () => {}) as Fx;
 }
 

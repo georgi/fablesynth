@@ -1,6 +1,7 @@
 #include "SceneGridView.h"
 #include "../../ui/Controls.h"
 #include "../dsp/SeqModel.h"
+#include "../../ui/ProgressionBrowserView.h"
 
 #include <cmath>
 
@@ -22,7 +23,7 @@ float stopPulse() {
 }
 } // namespace
 
-SceneGridView::SceneGridView(SeqAudioProcessor& p) : proc(p) { startTimerHz(30); }
+SceneGridView::SceneGridView(SeqAudioProcessor& p) : proc(p) { startVisualTimer(*this, fui::kAnimationHz); }
 
 // ---- actions (also the test handles) ---------------------------------------
 
@@ -344,6 +345,7 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         if (!right) {
             if (backChipR.contains(pos)) { if (onExitFocus) onExitFocus(); return; }
             for (int s = 0; s < kScenes; ++s) {
+                if (sceneChordsR(s).contains(pos)) { sceneChordsClick(s); return; }
                 if (railTrigger[s].contains(pos)) { railTriggerClick(s); return; }
                 if (muteBtnR[s].contains(pos))    { sceneMute(s); return; }
                 if (stopBtnR[s].contains(pos))    { sceneStop(s); return; }
@@ -356,6 +358,7 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
     const auto& scenes = proc.conductor().session().scenes;
 
     for (int s = 0; s < kScenes; ++s) {
+        if (!right && sceneChordsR(s).contains(pos)) { sceneChordsClick(s); return; }
         if (launchBtn[s].contains(pos)) { sceneLaunch(s); return; }
         if (muteBtnR[s].contains(pos))  { sceneMute(s); return; }
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
@@ -453,11 +456,13 @@ void SceneGridView::resized() {
 }
 
 void SceneGridView::layoutRow(int s) {
-    const int y = s * 82;
+    // Rows stretch to fill the grid's height (9 px gaps), never below 73 px.
+    const int rowH = juce::jmax(73, (getHeight() + 9) / kScenes - 9);
+    const int y = s * (rowH + 9);
     constexpr int rowX = 0, sceneWidth = 218, cellWidth = 250;
-    sceneCardR[s] = { rowX, y, sceneWidth, 73 };
+    sceneCardR[s] = { rowX, y, sceneWidth, rowH };
     for (int t = 0; t < kTracks; ++t)
-        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 73 };
+        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, rowH };
 
     // scene card internals (web SceneRow.tsx, card-relative): launch 32x32 at
     // (11,9); id column (num+name / status, split by paintSceneCard) at
@@ -517,11 +522,10 @@ juce::uint32 SceneGridView::paintSignature(juce::RectangleList<int>& animate) co
     const auto& sess = cond.session();
 
     juce::uint32 sig = 17;
-    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
-    auto mixStr = [&mix](const std::string& s) {
-        mix((int)s.size());
-        for (char c : s) mix((int)(unsigned char)c);
-    };
+    auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)v + 2u; };
+    const auto revision = proc.sessionContentRevision();
+    mix((int)(revision & 0xffffffffu));
+    mix((int)(revision >> 32));
 
     mix(singleRow_ ? 1 : 0); mix(singleRowScene_); mix(focusTrack_);
     mix(hoverCellS_); mix(hoverCellT_);
@@ -548,28 +552,12 @@ juce::uint32 SceneGridView::paintSignature(juce::RectangleList<int>& animate) co
 
     for (int s = 0; s < nScenes; ++s) {
         const auto& sc = sess.scenes[(size_t)s];
-        mixStr(sc.name);
         mix(cond.sceneMuted(s) ? 1 : 0);
         bool cardPulse = false;
         for (int t = 0; t < nTracks; ++t) {
             const bool has = t < (int)sc.hasClip.size() && sc.hasClip[(size_t)t];
             mix(has ? 1 : 0);
             mix(isPassThrough(s, t) ? 1 : 0);
-            if (has) {
-                const auto& clip = sc.clips[(size_t)t];
-                mixStr(clip.name);
-                mix(clip.bars);
-                mix(clip.hasArp && clip.arp.enabled ? 1 : 0);
-                if (clip.hasArp && clip.arp.enabled) {
-                    const auto arp = fable::compileArp(clip.arp);
-                    for (int i = 0; i < 16; ++i) { mix(arp.notes[i]); mix(arp.hits[i] ? 1 : 0); }
-                }
-                // The step preview reads the clip's first bar only.
-                const int n = juce::jmin((int)clip.bytes.size(),
-                                         fable::sqBytesPerBar(sess.tracks[(size_t)t].machine));
-                mix(n);
-                for (int i = 0; i < n; ++i) mix((int)clip.bytes[(size_t)i]);
-            }
             const bool live = cond.ownerOf(t) == s;
             const bool queued = cond.queueOf(t) == s;
             if (queued) cardPulse = true;             // the card's launch icon pulses
@@ -595,12 +583,74 @@ void SceneGridView::timerCallback() {
 void SceneGridView::paint(juce::Graphics& g) {
     if (singleRow_) { paintFocusStrip(g); return; }
     for (int s = 0; s < kScenes; ++s) {
-        paintSceneCard(g, s);
-        for (int t = 0; t < kTracks; ++t) paintCell(g, s, t);
+        if (g.clipRegionIntersects(sceneCardR[s])) paintSceneCard(g, s);
+        for (int t = 0; t < kTracks; ++t)
+            if (g.clipRegionIntersects(cellR[s][t].expanded(4))) paintCell(g, s, t);
     }
 }
 
+// The document revision covers clip names, lengths, bytes, arp settings,
+// scene names, colours and machine changes without decoding notes each frame.
+// Launcher state remains separate because transport does not edit the document.
+std::array<int, 20> SceneGridView::cacheKey(int s, int t) const {
+    const auto& cond = proc.conductor();
+    const auto revision = proc.sessionContentRevision();
+    std::array<int, 20> key { (int)(revision & 0xffffffffu), (int)(revision >> 32),
+                              (int)cond.sceneMuted(s) };
+    size_t next = 3;
+    auto track = [&](int i) {
+        key[next++] = cond.ownerOf(i) == s;
+        key[next++] = cond.queueOf(i) == s;
+        key[next++] = cellStopping(s, i);
+        key[next++] = cellAudible(s, i);
+    };
+    if (t < 0) {
+        for (int i = 0; i < kTracks; ++i) track(i);
+    } else {
+        track(t);
+        key[next++] = hoverCellS_ == s && hoverCellT_ == t;
+    }
+    return key;
+}
+
+void SceneGridView::paintCached(juce::Graphics& g, PaintCache& cache,
+                               juce::Rectangle<int> bounds, int s, int t) {
+    const float physicalScale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float scale = std::isfinite(physicalScale) && physicalScale > 0.0f ? physicalScale : 1.0f;
+    auto key = cacheKey(s, t);
+    if (!cache.image.isValid() || cache.bounds != bounds || cache.scale != scale || cache.key != key) {
+        cache.key = std::move(key);
+        cache.bounds = bounds;
+        cache.scale = scale;
+        cache.image = juce::Image(juce::Image::ARGB, juce::jmax(1, (int)std::ceil(bounds.getWidth() * scale)),
+                                  juce::jmax(1, (int)std::ceil(bounds.getHeight() * scale)), true);
+        juce::Graphics layer(cache.image);
+        layer.addTransform(juce::AffineTransform::translation(-(float)bounds.getX(), -(float)bounds.getY()).scaled(scale));
+        cachePainting_ = true;
+        if (t < 0) paintSceneCardBody(layer, s);
+        else if (proc.conductor().session().scenes[(size_t)s].hasClip[(size_t)t]) paintFilledCell(layer, s, t);
+        else paintEmptyCell(layer, s, t);
+        cachePainting_ = false;
+        ++cacheBuildCount_;
+    }
+    juce::Graphics::ScopedSaveState save(g);
+    g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    g.setColour(juce::Colours::white);
+    g.drawImageTransformed(cache.image, juce::AffineTransform::scale(1.0f / scale).translated((float)bounds.getX(), (float)bounds.getY()));
+}
+
 void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
+    paintCached(g, cardCache_[s], sceneCardR[s], s, -1);
+    for (int t = 0; t < kTracks; ++t) {
+        if (proc.conductor().queueOf(t) == s) {
+            g.setColour(col::text.withAlpha(qpulse()));
+            g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
+            break;
+        }
+    }
+}
+
+void SceneGridView::paintSceneCardBody(juce::Graphics& g, int s) {
     const auto& cond = proc.conductor();
     const auto& scenes = cond.session().scenes;
     const auto& tracks = cond.session().tracks;
@@ -635,7 +685,7 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
     g.setColour(anyOwner ? juce::Colour(0xff4dff9e).withAlpha(0.6f) : juce::Colours::white.withAlpha(0.1f));
     g.drawRoundedRectangle(lb.reduced(0.5f), 8.0f, 1.0f);
     g.setColour(queued ? col::text.withAlpha(qpulse()) : anyOwner ? juce::Colour(0xff4dff9e) : col::acN);
-    g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
+    if (!queued) g.fillPath(iconPlay(launchBtn[s].toFloat().withSizeKeepingCentre(8.0f, 10.0f)));
 
     // num + name / status
     auto id = idArea[s];
@@ -692,16 +742,52 @@ void SceneGridView::paintSceneCard(juce::Graphics& g, int s) {
         g.setColour(lit ? tc : has ? tc.withAlpha(0.27f) : juce::Colour(0xff1a1f2a));
         g.fillEllipse(d.toFloat());
     }
+    // Scene chords chip (web SceneChordChip): it takes the clip count's place
+    // in the dots row, the only free line on a 73 px card. Key in the accent,
+    // then the library progression name or the chord names.
+    const auto chip = sceneChordsR(s);
+    if (!chip.isEmpty()) {
+        const auto chords = cond.sceneChordTracks(s);
+        const auto& a = sc.clips[(size_t)chords[0]].arp;
+        const auto cf = chip.toFloat();
+        g.setColour(juce::Colour(0xff0c121c)); g.fillRoundedRectangle(cf, 4.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.08f)); g.drawRoundedRectangle(cf.reduced(0.5f), 4.0f, 1.0f);
+        auto inner = chip.reduced(6, 0);
+        const auto keyText = ProgressionBrowserView::pitchName(a.chordKey);
+        g.setFont(monoFont(8.0f, true)); g.setColour(col::acA);
+        const int keyW = (int)std::ceil(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), keyText)) + 6;
+        g.drawText(keyText, inner.removeFromLeft(keyW), juce::Justification::centredLeft);
+        const int preset = fable::progressionIndex(a.chordList, a.chordCount, a.chordKey);
+        juce::String name;
+        if (preset >= 0) name = juce::String::fromUTF8(fable::progressions()[(size_t)preset].name);
+        else for (int i = 0; i < a.chordCount; ++i) name << (i ? " " : "") << ProgressionBrowserView::chordName(a.chordList[(size_t)i]);
+        g.setFont(monoFont(8.0f)); g.setColour(col::textDim);
+        g.drawText(name, inner, juce::Justification::centredLeft, true);
+        return;
+    }
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     juce::String cnt = juce::String(clipTracks) + (clipTracks == 1 ? " CLIP" : " CLIPS");
     g.drawText(cnt, dr, juce::Justification::centredRight);
 }
 
+juce::Rectangle<int> SceneGridView::sceneChordsR(int s) const {
+    if (s < 0 || s >= kScenes || s >= (int)proc.conductor().session().scenes.size()
+        || proc.conductor().sceneChordTracks(s).empty()) return {};
+    // Right of the four 9+6 px dots.
+    return dotsArea[s].withTrimmedLeft(kTracks * 15 + 4).reduced(0, 1);
+}
+
 void SceneGridView::paintCell(juce::Graphics& g, int s, int t) {
     const auto& scenes = proc.conductor().session().scenes;
-    if (scenes[(size_t)s].hasClip[(size_t)t]) paintFilledCell(g, s, t);
-    else paintEmptyCell(g, s, t);
+    // The 1.5px live border extends beyond the cell's half-pixel inset.
+    // Keep its antialiasing fringe inside the image without changing layout.
+    paintCached(g, cellCache_[s][t], cellR[s][t].expanded(1), s, t);
+    if (scenes[(size_t)s].hasClip[(size_t)t]) {
+        animationOnly_ = true;
+        paintFilledCell(g, s, t);
+        animationOnly_ = false;
+    }
 
     auto rf = cellR[s][t].toFloat().reduced(0.5f);
     // Compatible drop target during a drag: soft fill + violet ring.
@@ -782,28 +868,31 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     auto full = cellR[s][t];
     auto rf = full.toFloat().reduced(0.5f);
-    if (live && !stopping) {
-        g.setGradientFill(juce::ColourGradient(tc.withAlpha(0.09f), rf.getX(), rf.getY(),
-                                               juce::Colours::transparentBlack, rf.getX(), rf.getY() + rf.getHeight() * 0.46f, false));
+    if (!animationOnly_) {
+        if (live && !stopping) {
+            g.setGradientFill(juce::ColourGradient(tc.withAlpha(0.09f), rf.getX(), rf.getY(),
+                                                   juce::Colours::transparentBlack, rf.getX(), rf.getY() + rf.getHeight() * 0.46f, false));
+            g.fillRoundedRectangle(rf, 10.0f);
+        }
+        g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
+                                               col::panelLo, rf.getX(), rf.getBottom(), false));
         g.fillRoundedRectangle(rf, 10.0f);
     }
-    g.setGradientFill(juce::ColourGradient(col::panelHi, rf.getX(), rf.getY(),
-                                           col::panelLo, rf.getX(), rf.getBottom(), false));
-    g.fillRoundedRectangle(rf, 10.0f);
     // A playing clip should be unmistakable at a glance: a brighter track-color
     // border plus a soft, gently-breathing outer glow (web parity: .sq-cell.live
     // border 85% + sq-live-pulse). Stopping cells keep the plain border so the
     // amber stop ring reads instead.
-    if (live && !stopping) {
+    if (!cachePainting_ && live && !stopping) {
         const float pulse = 0.5f + 0.5f * qpulse(); // 0.6..1.0-ish, slow breathe
         for (int ring = 2; ring >= 1; --ring) {
             g.setColour(tc.withAlpha(0.10f * pulse / (float)ring));
             g.drawRoundedRectangle(rf.expanded((float)ring * 1.5f), 11.0f, 1.5f);
         }
     }
-    g.setColour(live ? tc.withAlpha(0.85f) : juce::Colours::white.withAlpha(0.08f));
-    g.drawRoundedRectangle(rf, 10.0f, live ? 1.5f : 1.0f);
-
+    if ((!animationOnly_ && (!live || stopping)) || (!cachePainting_ && live && !stopping)) {
+        g.setColour(live ? tc.withAlpha(0.85f) : juce::Colours::white.withAlpha(0.08f));
+        g.drawRoundedRectangle(rf, 10.0f, live ? 1.5f : 1.0f);
+    }
     const float bodyAlpha = muted ? 0.32f : live ? 1.0f : 0.72f;
 
     // Cell internals (web ClipCell, cell-relative): head row y 9..24, steps
@@ -812,7 +901,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
 
     // eq / idle icon
     auto iconArea = head.removeFromLeft(16);
-    if (live && !stopping) {
+    if (!cachePainting_ && live && !stopping) {
         const int step = proc.trackStep[t].load();
         const int phase = step >= 0 ? step % 4 : 0;
         static const int heights[4][3] = { {6, 10, 8}, {4, 7, 5}, {6, 4, 10}, {8, 10, 6} };
@@ -823,59 +912,64 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
             g.fillRect(juce::Rectangle<int>(x, iconArea.getBottom() - h[(size_t)i], 3, h[(size_t)i]));
             x += 4;
         }
-    } else if (stopping) {
+    } else if (!cachePainting_ && stopping) {
         g.setColour(col::acB.withAlpha(0.65f + stopPulse() * 0.35f));
         g.fillPath(iconStop(iconArea.toFloat().withSizeKeepingCentre(8.0f, 8.0f)));
-    } else {
+    } else if (!animationOnly_ && !live && !stopping) {
         g.setColour(juce::Colour(0xff4a5266).withAlpha(bodyAlpha));
         g.fillPath(iconPlay(iconArea.toFloat().withSizeKeepingCentre(7.0f, 9.0f)));
     }
     head.removeFromLeft(6);
 
-    // "{bars}B" chip on the right — a bordered pill like the web .sq-cell-len,
-    // not bare text.
-    {
-        const juce::String chipTxt = clip.hasArp && clip.arp.enabled ? "ARP" : juce::String(clip.bars) + "B";
-        const auto chipFont = monoFont(7.0f);
-        const int w = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 9;
-        auto chip = head.removeFromRight(w).withSizeKeepingCentre(w, 13);
-        g.setColour(juce::Colours::white.withAlpha(0.08f * bodyAlpha));
-        g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
-        g.setColour(col::textDim.withAlpha(bodyAlpha));
-        g.setFont(chipFont);
-        g.drawText(chipTxt, chip, juce::Justification::centred);
-    }
-    head.removeFromRight(6);
-
-    g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
-    g.setFont(monoFontMedium(9.5f));
-    g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
-
-    auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
-    if (!clip.bytes.empty()) {
-        auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
-        if (clip.hasArp && clip.arp.enabled) {
-            const auto arp = fable::compileArp(clip.arp);
-            for (int i = 0; i < 16; ++i)
-                steps[(size_t)i] = { juce::jlimit(4, 19, (int)std::lround(5 + (arp.notes[i] % 24) * .6)), arp.notes[i] >= 0 && arp.hits[i] };
+    if (!animationOnly_) {
+        // "{bars}B" chip on the right — a bordered pill like the web .sq-cell-len,
+        // not bare text.
+        {
+            const juce::String chipTxt = clip.hasArp && clip.arp.enabled ? "ARP" : juce::String(clip.bars) + "B";
+            const auto chipFont = monoFont(7.0f);
+            const int w = (int)std::ceil(juce::GlyphArrangement::getStringWidth(chipFont, chipTxt)) + 9;
+            auto chip = head.removeFromRight(w).withSizeKeepingCentre(w, 13);
+            g.setColour(juce::Colours::white.withAlpha(0.08f * bodyAlpha));
+            g.drawRoundedRectangle(chip.toFloat().reduced(0.5f), 3.0f, 1.0f);
+            g.setColour(col::textDim.withAlpha(bodyAlpha));
+            g.setFont(chipFont);
+            g.drawText(chipTxt, chip, juce::Justification::centred);
         }
-        const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
-        for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
-            const auto& sb = steps[(size_t)i];
-            // Off steps read as thin flat slots (web .sq-steps span), not bars.
-            const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) : 2.5f;
-            juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
-                                        static_cast<float>(stepsArea.getBottom()) - bh,
-                                        juce::jmax(1.0f, bw - 2.0f), bh);
-            g.setColour(sb.on ? tc.withAlpha(0.6f * bodyAlpha) : juce::Colours::white.withAlpha(0.08f * bodyAlpha));
-            g.fillRoundedRectangle(bar, 1.0f);
+        head.removeFromRight(6);
+
+        g.setColour((live ? tc : col::acN).withAlpha(bodyAlpha));
+        g.setFont(monoFontMedium(9.5f));
+        g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
+
+        // The step preview takes the height a stretched row adds (20 px at the 73 px minimum).
+        auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, full.getHeight() - 53);
+        const float barScale = (float)stepsArea.getHeight() / 20.0f;
+        if (!clip.bytes.empty()) {
+            auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
+            if (clip.hasArp && clip.arp.enabled) {
+                const auto arp = fable::compileClipArp(clip.arp);
+                for (int i = 0; i < 16; ++i)
+                    steps[(size_t)i] = { juce::jlimit(4, 19, (int)std::lround(5 + (arp.notes[i] % 24) * .6)), arp.notes[i] >= 0 && arp.hits[i] };
+            }
+            const float bw = static_cast<float>(stepsArea.getWidth()) / static_cast<float>(fable::SQ_STEPS_PER_BAR);
+            for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
+                const auto& sb = steps[(size_t)i];
+                // Off steps read as thin flat slots (web .sq-steps span), not bars.
+                const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) * barScale : 2.5f;
+                juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
+                                            static_cast<float>(stepsArea.getBottom()) - bh,
+                                            juce::jmax(1.0f, bw - 2.0f), bh);
+                g.setColour(sb.on ? tc.withAlpha(0.6f * bodyAlpha) : juce::Colours::white.withAlpha(0.08f * bodyAlpha));
+                g.fillRoundedRectangle(bar, 1.0f);
+            }
         }
     }
-
-    auto progress = juce::Rectangle<int>(full.getX() + 10, full.getY() + 57, full.getWidth() - 20, 4);
-    g.setColour(juce::Colours::white.withAlpha(0.06f));
-    g.fillRoundedRectangle(progress.toFloat(), 1.5f);
-    if (live && clip.bars > 0) {
+    auto progress = juce::Rectangle<int>(full.getX() + 10, full.getBottom() - 16, full.getWidth() - 20, 4);
+    if (!animationOnly_) {
+        g.setColour(juce::Colours::white.withAlpha(0.06f));
+        g.fillRoundedRectangle(progress.toFloat(), 1.5f);
+    }
+    if (!cachePainting_ && live && clip.bars > 0) {
         const int bar = proc.trackBar[t].load();
         const int step = proc.trackStep[t].load();
         if (bar >= 0 && step >= 0) {
@@ -892,19 +986,20 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         }
     }
 
-    // edit / delete chips — hover-revealed, like the web's .sq-cell-tools.
-    if (hoverCellS_ == s && hoverCellT_ == t) {
-        g.setColour(tc.withAlpha(0.90f));
-        g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
-        g.setColour(col::textDim);
-        g.fillPath(iconTrash(trashGlyph[s][t].toFloat().withSizeKeepingCentre(8.0f, 9.0f)));
+    if (!animationOnly_) {
+        // edit / delete chips — hover-revealed, like the web's .sq-cell-tools.
+        if (hoverCellS_ == s && hoverCellT_ == t) {
+            g.setColour(tc.withAlpha(0.90f));
+            g.fillPath(iconPencil(editGlyph[s][t].toFloat().withSizeKeepingCentre(9.0f, 9.0f)));
+            g.setColour(col::textDim);
+            g.fillPath(iconTrash(trashGlyph[s][t].toFloat().withSizeKeepingCentre(8.0f, 9.0f)));
+        }
     }
-
-    if (queued) {
+    if (!cachePainting_ && queued) {
         g.setColour(tc.withAlpha(qpulse()));
         g.drawRoundedRectangle(rf, 10.0f, 1.4f);
     }
-    if (stopping) {
+    if (!cachePainting_ && stopping) {
         const float pulse = stopPulse();
         const auto inset = rf.reduced(1.0f + pulse * 4.0f);
         juce::Path outline, dashed;
@@ -917,7 +1012,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         g.drawText("STOPPING", full.reduced(9, 7).removeFromBottom(12),
                    juce::Justification::centredRight);
     }
-    if (muted) {
+    if (!animationOnly_ && muted) {
         g.setColour(col::acB);
         g.setFont(monoFont(6.5f));
         drawSpaced(g, "MUTED", { full.getRight() - 60, full.getY() + 5, 40, 10 }, 1.4f, juce::Justification::right);
@@ -931,9 +1026,9 @@ void SceneGridView::paintFocusStrip(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff141824), rf.getX(), rf.getY(),
                                            juce::Colour(0xff0c0f16), rf.getX(), rf.getBottom(), false));
     g.fillRoundedRectangle(rf, 10.0f);
-    g.setColour(col::line);
+    g.setColour(navAccent().withAlpha(0.4f));
     g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(juce::Colour(0xffcfd6e4));
+    g.setColour(navAccent());
     g.setFont(dispFont(9.0f));
     drawSpaced(g, "< SESSION", backChipR.reduced(12, 0), 1.8f);
 
@@ -962,6 +1057,7 @@ void SceneGridView::paintRail(juce::Graphics& g) {
     for (int s = 0; s < kScenes; ++s) {
         // The same card the session grid draws — one painter, so the two
         // views cannot drift.
+        if (!g.clipRegionIntersects(sceneCardR[s])) continue;
         paintSceneCard(g, s);
 
         auto r = sceneCardR[s].toFloat();

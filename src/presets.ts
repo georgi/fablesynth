@@ -1391,6 +1391,8 @@ export function resolvePresetMods(
       merged[`mat${s}.src`] = m ? m.src | 0 : 0;
       merged[`mat${s}.dst`] = m ? m.dst | 0 : 0;
       merged[`mat${s}.amt`] = m ? m.amt || 0 : 0;
+      merged[`mat${s}.pol`] = m ? m.pol || 0 : 0;
+      merged[`mat${s}.aux`] = m ? m.aux || 0 : 0;
     }
   }
   return merged;

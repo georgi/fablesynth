@@ -73,7 +73,7 @@ SeqHeader::SeqHeader(SeqAudioProcessor& p) : proc(p) {
     library_.setLookAndFeel(&sessionComboLNF());
     addAndMakeVisible(library_);
     refreshLibrarySelection();
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 // ---- actions (also the test handles) ---------------------------------------
@@ -114,7 +114,7 @@ void SeqHeader::saveClick() {
         auto* self = safe.getComponent();
         auto file = fc.getResult();
         if (file == juce::File{}) return;
-        file.replaceWithText(self->proc.currentSessionJson());
+        file.replaceWithText(self->proc.exportSessionJson());
     });
 }
 
@@ -144,25 +144,21 @@ void SeqHeader::refreshLibrarySelection() {
         onLibrarySessionChanged();
 }
 
-juce::uint32 SeqHeader::paintSignature(bool scopeLive) const {
+juce::uint32 SeqHeader::paintSignature() const {
     const auto& cond = proc.conductor();
-    const auto pos = cond.songPos();
-
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
     mix(cond.playing() ? 1 : 0);
     mix((int)cond.quant());
-    mix(pos.bar);
-    mix(pos.beat);
-    mix((int)std::lround(cond.session().bpm));
     mix((int)std::lround(swingValue() * 10000.0f));
     mix((int)std::lround(volValue() * 10000.0f));
-    mix(scopeLive ? 1 : 0);   // the trace's last frame must land when it dies
     return sig;
 }
 
 void SeqHeader::timerCallback() {
-    refreshLibrarySelection();   // drives the library combo box, not the paint
+    // Drives the library combo box, not the paint. The match serializes the
+    // whole session, so keep it at ~5 Hz independently of animation cadence.
+    if (++libraryPollTick_ >= kAnimationHz / 5) { libraryPollTick_ = 0; refreshLibrarySelection(); }
 
     // paintScope reads the newest 512 scope samples; a silent window means the
     // trace is a flat line that does not need redrawing.
@@ -172,9 +168,35 @@ void SeqHeader::timerCallback() {
     for (float v : buf) peak = juce::jmax(peak, std::abs(v));
     const bool scopeLive = peak > 1.0e-4f;
 
-    const juce::uint32 sig = paintSignature(scopeLive);
+    const auto& cond = proc.conductor();
+    const auto pos = cond.songPos();
+    const auto clockState = std::make_tuple(cond.playing(), pos.bar, pos.beat,
+                                           (int)std::lround(cond.session().bpm));
+    const bool clockChanged = clockState != lastClockState_;
+    lastClockState_ = clockState;
+    const bool scopeChanged = scopeLive != lastScopeLive_;
+    lastScopeLive_ = scopeLive;
+    const juce::uint32 sig = paintSignature();
+    juce::Rectangle<int> clockDirty;
+    if (clockChanged) {
+        const auto nextDamage = clockDamage();
+        clockDirty = nextDamage.getUnion(lastClockDamage_);
+        lastClockDamage_ = nextDamage;
+    }
     if (sig != lastSig_) { lastSig_ = sig; repaint(); return; }
-    if (scopeLive) repaint(scopeArea);
+    if (clockChanged) repaint(clockDirty);
+    if (scopeLive || scopeChanged) repaint(scopeArea);
+}
+
+juce::Rectangle<int> SeqHeader::clockDamage() const {
+    // Include the dot glow and the actual text width (large bar/BPM values
+    // can extend beyond the nominal clock slot). This also erases old text.
+    const auto text = "BAR " + juce::String(proc.conductor().songPos().bar).paddedLeft('0', 2)
+        + juce::String::fromUTF8(" \xc2\xb7 ")
+        + juce::String((int)std::lround(proc.conductor().session().bpm)) + " BPM";
+    const int width = juce::jmax(clockLineArea.getWidth(),
+        (int)std::ceil(juce::GlyphArrangement::getStringWidth(monoFont(9.0f), text)) + 2);
+    return beatsArea.expanded(2).getUnion(clockLineArea.withWidth(width));
 }
 
 void SeqHeader::quantStep(int d) {
@@ -282,6 +304,11 @@ void SeqHeader::mouseDoubleClick(const juce::MouseEvent& e) {
 // the web-derived table (only y/height move, and the knob circles/logo
 // shrink to match the web's smaller right-side controls).
 void SeqHeader::resized() {
+    headerLayer_ = {};
+    headerForegroundLayer_ = {};
+    clockLayer_ = {};
+    composedHeaderLayer_ = {};
+    scopeLabelLayer_ = {};
     logoArea = { 17, 12, 175, 20 };
 
     playBtn = { 216, 9, 36, 26 };
@@ -324,6 +351,93 @@ void SeqHeader::resized() {
 // ---- paint -----------------------------------------------------------------
 
 void SeqHeader::paint(juce::Graphics& g) {
+    const float scale = juce::jmax(0.01f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int w = juce::roundToInt(getWidth() * scale), h = juce::roundToInt(getHeight() * scale);
+    if (w <= 0 || h <= 0) return;
+    const auto& cond = proc.conductor();
+    const auto state = std::make_tuple(cond.playing(), (int)cond.quant(), swingValue(), volValue());
+    const bool headerChanged = headerLayer_.getWidth() != w || headerLayer_.getHeight() != h
+        || headerScale_ != scale || cachedState_ != state || headerAccent_ != accentA();
+    if (headerChanged) {
+        ++cacheBuildCount_;
+        cachedState_ = state;
+        headerAccent_ = accentA();
+        headerScale_ = scale;
+        headerLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics hg(headerLayer_);
+        hg.addTransform(juce::AffineTransform::scale(scale));
+        paintHeader(hg);
+        headerForegroundLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics fg(headerForegroundLayer_);
+        fg.addTransform(juce::AffineTransform::scale(scale));
+        paintHeaderForeground(fg);
+    }
+    const auto pos = cond.songPos();
+    const auto clockState = std::make_tuple(cond.playing(), pos.bar, pos.beat,
+                                           (int)std::lround(cond.session().bpm));
+    const auto oldClockPixelBounds = clockPixelBounds_;
+    const bool clockChanged = !clockLayer_.isValid() || clockScale_ != scale || cachedClockState_ != clockState;
+    if (clockChanged) {
+        ++clockBuildCount_;
+        cachedClockState_ = clockState;
+        clockScale_ = scale;
+        // Crop on physical pixel boundaries, not logical ones: at fractional
+        // scale the clock keeps exactly the same raster phase as the panel.
+        const auto bounds = clockDamage().getIntersection(getLocalBounds());
+        const int left = (int)std::floor(bounds.getX() * scale);
+        const int top = (int)std::floor(bounds.getY() * scale);
+        const int right = (int)std::ceil(bounds.getRight() * scale);
+        const int bottom = (int)std::ceil(bounds.getBottom() * scale);
+        clockPixelBounds_ = { left, top, right - left, bottom - top };
+        clockLayer_ = juce::Image(juce::Image::ARGB, juce::jmax(1, right - left),
+                                  juce::jmax(1, bottom - top), true);
+        juce::Graphics cg(clockLayer_);
+        cg.addTransform(juce::AffineTransform::scale(scale).translated((float)-left, (float)-top));
+        cg.reduceClipRegion(getLocalBounds());
+        paintClock(cg);
+    }
+    if (headerChanged || clockChanged || !composedHeaderLayer_.isValid()) {
+        const bool rebuild = headerChanged || composedHeaderLayer_.getWidth() != w
+            || composedHeaderLayer_.getHeight() != h;
+        if (rebuild) composedHeaderLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        const auto damage = oldClockPixelBounds.getUnion(clockPixelBounds_);
+        if (!rebuild) composedHeaderLayer_.clear(damage, juce::Colours::transparentBlack);
+        juce::Graphics composed(composedHeaderLayer_);
+        if (!rebuild) composed.reduceClipRegion(damage);
+        composed.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        composed.setColour(juce::Colours::white);
+        // Replace clock damage with its stationary background, then restore
+        // the original clock-before-session/knobs order. All coordinates here
+        // are physical pixels, so no extra resampling changes the raster.
+        composed.drawImageAt(headerLayer_, 0, 0);
+        composed.drawImageAt(clockLayer_, clockPixelBounds_.getX(), clockPixelBounds_.getY());
+        composed.drawImageAt(headerForegroundLayer_, 0, 0);
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(composedHeaderLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
+    paintScope(g);
+    if (scopeLabelLayer_.getWidth() != w || scopeLabelLayer_.getHeight() != h
+        || scopeLabelScale_ != scale) {
+        ++scopeLabelBuildCount_;
+        scopeLabelScale_ = scale;
+        scopeLabelLayer_ = juce::Image(juce::Image::ARGB, w, h, true);
+        juce::Graphics lg(scopeLabelLayer_);
+        lg.addTransform(juce::AffineTransform::scale(scale));
+        paintScopeLabel(lg);
+    }
+    {
+        juce::Graphics::ScopedSaveState save(g);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.setColour(juce::Colours::white);
+        g.drawImageTransformed(scopeLabelLayer_, juce::AffineTransform::scale(1.0f / scale));
+    }
+}
+
+void SeqHeader::paintHeader(juce::Graphics& g) {
     drawPanel(g, getLocalBounds().toFloat());
 
     // logo: FABLE (white) SEQ (amber) SQ-4 (dim tag) -- web .sq-logo. FABLE+SEQ
@@ -354,9 +468,9 @@ void SeqHeader::paint(juce::Graphics& g) {
 
     paintButtons(g);
     paintQuant(g);
-    paintClock(g);
-    paintScope(g);
+}
 
+void SeqHeader::paintHeaderForeground(juce::Graphics& g) {
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SESSION", libraryLabelArea, 1.4f);
@@ -386,7 +500,17 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
     }
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
-    drawBtn(masterFxBtn, "MASTER FX", false);
+    {   // Navigation: the master FX view, in the nav accent.
+        const bool masterFxOpen = isMasterFxOpen && isMasterFxOpen();
+        auto rf = masterFxBtn.toFloat();
+        g.setColour(masterFxOpen ? juce::Colour(0xff11141c).overlaidWith(navAccent().withAlpha(0.14f)) : juce::Colour(0xff11141c));
+        g.fillRoundedRectangle(rf, 7.0f);
+        g.setColour(masterFxOpen ? navAccent() : navAccent().withAlpha(0.45f));
+        g.drawRoundedRectangle(rf.reduced(0.5f), 7.0f, 1.0f);
+        g.setColour(navAccent());
+        g.setFont(monoFont(10.0f));
+        g.drawText("MASTER FX", masterFxBtn, juce::Justification::centred);
+    }
 }
 
 void SeqHeader::paintQuant(juce::Graphics& g) {
@@ -476,6 +600,9 @@ void SeqHeader::paintScope(juce::Graphics& g) {
     g.setColour(accentA().withAlpha(0.9f));
     g.strokePath(path, juce::PathStrokeType(1.2f));
 
+}
+
+void SeqHeader::paintScopeLabel(juce::Graphics& g) {
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     drawSpaced(g, "SUM", scopeArea.reduced(6, 3).removeFromTop(10), 2.0f,

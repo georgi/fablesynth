@@ -1,28 +1,31 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../SeqProcessor.h"
 #include "../ClipClipboardCodec.h"
 #include "../../ui/Theme.h"
 
+#include <array>
 #include <functional>
 
 // SQ-4 launcher grid — port of src/seq/components/SceneRow.tsx + seq.css.
 // Six scene rows, each a scene card (launch/mute/stop, dots, status) followed
 // by one clip cell per track. Painted directly and hit-tested in mouseDown,
-// same scheme as TrackHeadsView -- the whole slot is a single 1254x478 strip
+// same scheme as TrackHeadsView -- the whole slot is a single 1254x477 strip
 // (SeqRack::applyLayout's session-mode scene-grid section).
 //
 // Local geometry (matches TrackHeadsView.cpp's column table): row r at
-// y = r*82, h=73; scene card x=0 w=218; clip cell for track t at
+// y = r*(h+9), h = rows stretched to the height (min 73); scene card x=0 w=218; clip cell for track t at
 // x=218+9+t*(250+9) w=250.
 namespace fui {
 
-class SceneGridView : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
+class SceneGridView : public juce::Component, public juce::DragAndDropTarget, private fui::VisualTimer {
 public:
     explicit SceneGridView(SeqAudioProcessor&);
     ~SceneGridView() override { stopTimer(); }
 
     void paint(juce::Graphics&) override;
+    int cacheBuildCountForTesting() const { return cacheBuildCount_; }
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -49,6 +52,12 @@ public:
     void hoverCell(int s, int t);
 
     std::function<void(int, int)> onEditClip;
+    // Scene chord chip (web SceneChordChip): opens the scene progression browser.
+    std::function<void(int)> onSceneChords;
+    // The chip's rectangle on scene s's card; empty when no clip links the
+    // scene's chord track. Also the click target (test handle: sceneChordsClick).
+    juce::Rectangle<int> sceneChordsR(int s) const;
+    void sceneChordsClick(int s) { if (onSceneChords && !sceneChordsR(s).isEmpty()) onSceneChords(s); }
 
     // Test hook: true when cell (s,t) is live (owned by s) and fully audible
     // (not muted/soloed-out/scene-muted) -- the same gate paintFilledCell
@@ -128,6 +137,18 @@ private:
     void layoutRow(int s);
     void layoutFocusStrip();
 
+    struct PaintCache {
+        juce::Image image;
+        std::array<int, 20> key {};
+        juce::Rectangle<int> bounds;
+        float scale = 0.0f;
+    };
+    PaintCache cardCache_[kScenes], cellCache_[kScenes][kTracks];
+    int cacheBuildCount_ = 0;
+    bool cachePainting_ = false, animationOnly_ = false;
+    std::array<int, 20> cacheKey(int s, int t) const;
+    void paintCached(juce::Graphics&, PaintCache&, juce::Rectangle<int>, int s, int t);
+    void paintSceneCardBody(juce::Graphics&, int s);
     void paintSceneCard(juce::Graphics&, int s);
     void paintCell(juce::Graphics&, int s, int t);
     void paintEmptyCell(juce::Graphics&, int s, int t);

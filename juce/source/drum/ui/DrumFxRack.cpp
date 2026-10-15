@@ -1,4 +1,5 @@
 #include "DrumFxRack.h"
+#include "../../ui/LeafControlCache.h"
 #include "../dsp/DrumEngine.h"
 #include <cmath>
 
@@ -79,6 +80,7 @@ DrumFxRack::~DrumFxRack() {
 
 void DrumFxRack::changeListenerCallback(juce::ChangeBroadcaster*) {
     rebuild();
+    refreshLeafControlCache(*this);
 }
 
 void DrumFxRack::rebuild() {

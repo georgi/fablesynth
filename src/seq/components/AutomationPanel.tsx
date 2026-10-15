@@ -154,7 +154,9 @@ export function AutomationPanel({ machine }: { machine: MachineId }) {
   return <AutomationEditor machine={machine} source={source} />;
 }
 
-export function AutomationEditor({ machine, source }: { machine: MachineId; source: AutoSource }) {
+// `onReveal` lets a tabbed device body switch to its automation page when a
+// control menu asks to show a lane.
+export function AutomationEditor({ machine, source, onReveal }: { machine: MachineId; source: AutoSource; onReveal?: () => void }) {
   const lanes = source.lanes;
   const params = PARAM_STORES[machine].use();
   const drumPad = useDrumStore(s => s.sel);
@@ -240,9 +242,19 @@ export function AutomationEditor({ machine, source }: { machine: MachineId; sour
       setSelected(index);
       setLearn(false);
       setOpen(true);
+      onReveal?.();
       requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: 'nearest' }));
     },
-  }), [machine, source]);
+    has: target => source.current().some(l => l.target === target),
+    remove: target => {
+      const now = source.current();
+      const index = now.findIndex(l => l.target === target);
+      if (index < 0) return;
+      source.write(now.filter((_, j) => j !== index));
+      setSelected(sel => Math.max(0, sel > index ? sel - 1 : Math.min(sel, now.length - 2)));
+      setLearn(false);
+    },
+  }), [machine, source, onReveal]);
 
   // LEARN: the next continuous knob moved on this device becomes the target.
   useEffect(() => {

@@ -28,11 +28,14 @@ constexpr int    DR_MAXUNI     = 7;
 constexpr int    DR_NBUSES     = 5;      // 0 = MAIN, 1..4 = AUX
 constexpr float  DR_ACCENT_VEL = 1.0f, DR_PLAIN_VEL = 0.72f;
 constexpr double DR_SWING_MAX  = 0.667;
-// Choke / retrigger fade time constant (Finding D9): 0.12 per sample at
-// 48 kHz expressed as a time, so the fade lasts the same milliseconds at any
-// rate. tau = -1 / (48000 * ln(0.88)) — the 48 kHz coefficient is unchanged.
-constexpr double DR_CHOKE_TAU  = 1.6295076e-4;
+// Choke / retrigger fade time constant (Finding D9, retuned with D2): 0.3 ms
+// is ~2.8 ms to -80 dB at any rate. The original 0.12-per-sample (0.163 ms)
+// fade still clicked on retrigger; this value matches worklet-drum.js.
+constexpr double DR_CHOKE_TAU  = 0.0003;
 constexpr double DR_DC_R       = 0.9998;
+// Declick slew on the choke / retrigger fade (s). Rounds the corner where the
+// fade starts; the hit's own attack transient stays untouched.
+constexpr double DR_CHOKE_SLEW = 0.0003;
 constexpr int    DR_MOD_LOG_D  = 5;      // CUTOFF mod: +/-5 octaves
 constexpr int    DR_BASE_NOTE  = 60;
 // Finding J1: how many per-pad fields carry an automation smoother, and the
@@ -65,6 +68,38 @@ public:
         result.reverbSerial = tail.serial; result.reverbSeconds = tail.seconds;
         return result;
     }
+    // ---- COMP side-chain (src/engine/sidechain.ts) ---------------------------
+    // SQ-4 key bus for the next render() call only: KEY_CHANNELS mono
+    // channels of n samples each (a null array or channel is silent). Pad and
+    // group strips keyed by TRACK 2..4 read channels 1..3. Standalone DR-1
+    // never sets it, so only pad keys work there.
+    void setSidechainInput(const float* const* channels) {
+        for (int c = 0; c < KEY_CHANNELS; ++c) extKey_[(size_t)c] = channels ? channels[c] : nullptr;
+    }
+    // Receives pad 01's dry signal, mono (L + R) / 2 before pad FX, times the
+    // kit output gain (master.volume^2 * 1.6), for the next render() call
+    // (n samples): the SQ-4 KICK key channel.
+    void setKickKeyOutput(float* dst) { kickKeyOut_ = dst; }
+    // True when a pad or group strip is keyed by an SQ-4 track.
+    bool wantsSidechainInput() const {
+        for (const auto& fx : padFx_) if (fx.keySource() > DR_NPADS) return true;
+        for (const auto& fx : groupFx_) if (fx.keySource() > DR_NPADS) return true;
+        return false;
+    }
+
+    // ---- analysis taps (message thread reads, see AnalysisTap.h) -----------
+    // KIT MIX capture: while on, every pad's post-FX insert output (mono,
+    // (L + R) / 2, before the shared reverb) is written each block, silent
+    // pads included, so all sixteen taps share one frame count.
+    void setPadCapture(bool on) { padCaptureOn_.store(on, std::memory_order_relaxed); }
+    bool padCaptureEnabled() const { return padCaptureOn_.load(std::memory_order_relaxed); }
+    const PadCaptureTap& padCapture(int pad) const { return (*padCapture_)[(size_t)std::clamp(pad, 0, DR_NPADS - 1)]; }
+    // Detector trace of a pad strip (pad >= 0) or of the group strip on bus.
+    const DetectorTrace& compTrace(int pad, int bus) const {
+        if (pad < 0) return groupFx_[(size_t)std::clamp(bus, 0, DR_NBUSES - 1)].compTrace();
+        return padFx_[(size_t)std::clamp(pad, 0, DR_NPADS - 1)].compTrace();
+    }
+
     int latencySamples() const {
         return padFxEnabled_ ? padFx_[0].latencySamples() + groupFx_[0].latencySamples()
                              + busOut_[0].latencySamples() : 0;
@@ -83,6 +118,17 @@ public:
     float automationValue(int id) const { return autoPlayer_.isHeld(id) ? p_[(size_t)id] : std::numeric_limits<float>::quiet_NaN(); }
     bool holdAutomatedParam(int id, float value) { return autoPlayer_.hold(id, value); }
     bool hasClipAutomation() const { return autoPlayer_.active(); }
+    // Standalone sequence automation (web DrumAutomation.tsx): lanes span the
+    // chain and play on the DR-1 transport (internal clock or host ppq). The
+    // bank is copied on the audio thread; prepare() owns the allocation.
+    void setSequenceAutomation(const AutoBank* bank) {
+        if (!sequenceAuto_) return;
+        if (bank) *sequenceAuto_ = *bank; else sequenceAuto_->count = 0;
+        if (sequenceAutoRunning_) autoPlayer_.update(sequenceAuto_.get(), false);
+    }
+    bool hasSequenceAutomation() const { return sequenceAuto_ && sequenceAuto_->count > 0; }
+    // Elapsed 1/16 steps of the standalone transport, or -1 while stopped.
+    double sequenceAutomationSteps() const { return sequenceAutoSteps_; }
     bool takeAutomationFxDirty() { const bool dirty = autoFxDirty_; autoFxDirty_ = false; return dirty; }
     void setAutomationTrace(AutoPlayer::Trace trace, void* context) { autoPlayer_.setTrace(trace, context); }
     size_t automationCapacity() const { return autoPlayer_.capacity(); }
@@ -216,7 +262,7 @@ private:
         double svf[8] = {0};       // 2 stages x 2 ch x (ic1, ic2)
         double cutSm = 0;
         double cutTarget = 0, cutPrev = -1;  // chunk cutoff ramp (Finding 7)
-        double satXL = 0, satXR = 0;   // ADAA drive: previous input per channel
+        DriveOs2 osL, osR;             // 2x drive oversampler + ADAA history
         double adaaMix = 0;            // dry -> ADAA transition state
         int    ftype = 0; bool twoPole = false;
         double k1 = 0;
@@ -252,6 +298,7 @@ private:
         double vel = 1, rand = 0;
         long   t = 0;              // samples since trigger
         double ampLevel = 0; bool choking = false;
+        double chokeSm = 0;        // slewed choke fade level (DR_CHOKE_SLEW)
         OscState oA;
         // Finding J2: the outgoing oscillator configuration after a table or
         // unison change. It keeps reading its old table for DR_SWITCH_FADE
@@ -267,7 +314,7 @@ private:
         double lgPrev = -1;        // level*vel gain ramp start (Finding 7)
 
         void trigger(double v, double rnd);
-        void choke() { if (active) choking = true; }
+        void choke() { if (active && !choking) { choking = true; chokeSm = ampLevel; } }
         void kill()  {
             active = false; choking = false; ampLevel = 0;
             oA.tableOwner.reset(); oAx.tableOwner.reset();
@@ -398,6 +445,17 @@ private:
         autoPlayer_.tick(hostFrame_, anchorFrame_, effectiveBpm(), sr_, p_,
             [&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_);
     }
+    std::unique_ptr<AutoBank> sequenceAuto_;
+    bool sequenceAutoRunning_ = false;
+    double sequenceAutoSteps_ = -1;
+    void tickSequenceAutomation(bool running, double frame, double bpm) {
+        if (running && !sequenceAutoRunning_) autoPlayer_.update(sequenceAuto_.get(), false);
+        if (!running && sequenceAutoRunning_)
+            autoPlayer_.stopPlaying([&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_);
+        sequenceAutoRunning_ = running;
+        sequenceAutoSteps_ = running ? frame * bpm / (15.0 * sr_) : -1.0;
+        if (running) autoPlayer_.tick(frame, 0, bpm, sr_, p_, [&](int id, float v) { writeAutomation(id, v); }, autoFxDirty_);
+    }
     DrumRhythm clipRhythm_{}, pendingClipRhythm_{};
     bool clipHasRhythm_ = false, pendingClipHasRhythm_ = false, clipRhythmHasNext_ = false;
     DrumRhythmScheduler clipRhythmScheduler_{};
@@ -435,6 +493,10 @@ private:
     // fades it out over DR_CHOKE_TAU while the new hit starts clean on the
     // main slot. Before, trigger() zeroed the running voice in one sample.
     PadVoice tails_[DR_NPADS];
+    // Second fade slot: a retrigger inside the tail's fade, while the tail is
+    // still louder, parks the quieter sounding hit here instead of restarting
+    // it in place. Idle unless two hits land inside one choke fade.
+    PadVoice fades_[DR_NPADS];
     double sr_ = 48000;
     double dcR_ = DR_DC_R;         // sr-derived DC pole (Finding 9)
     double chokeCoef_ = 0.12;      // sr-derived choke/retrigger fade (D9)
@@ -449,6 +511,15 @@ private:
     float xL_[128] = {0}, xR_[128] = {0};
     float yL_[128] = {0}, yR_[128] = {0};
     float padL_[128] = {0}, padR_[128] = {0};
+    // Every pad's dry render for one chunk, rendered before any pad FX so a
+    // strip keyed by a pad hears the same pre-FX signal whatever the order.
+    float padDryL_[DR_NPADS][128] = {{0}}, padDryR_[DR_NPADS][128] = {{0}};
+    std::array<const float*, KEY_CHANNELS> extKey_{};
+    float* kickKeyOut_ = nullptr;
+    void routeKey(DrumFx& fx, int pos);
+    std::atomic<bool> padCaptureOn_{false};
+    std::unique_ptr<std::array<PadCaptureTap, DR_NPADS>> padCapture_ =
+        std::make_unique<std::array<PadCaptureTap, DR_NPADS>>();
     std::array<DrumFx, DR_NPADS> padFx_;
     // One post-mix chain per physical output retains DR-1's separate MAIN/AUX
     // streams while all instances read the single global `fx.*` strip.

@@ -9,7 +9,7 @@ MasterLimiterView::MasterLimiterView(MasterFxUiModel& model)
     addAndMakeVisible(power_);
     addAndMakeVisible(ceiling_);
     ceiling_.setLabelText("CEILING");
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 
 void MasterLimiterView::resized() {
@@ -23,8 +23,9 @@ void MasterLimiterView::resized() {
 }
 
 void MasterLimiterView::timerCallback() {
+    if (!isVisibleInHierarchy(*this)) { history_.clear(); return; }
     history_.push_back(model_.limiterTelemetry());
-    while (history_.size() > 90)
+    while (history_.size() > 3 * kAnimationHz)
         history_.pop_front();
     repaint();
 }
@@ -34,7 +35,7 @@ void MasterLimiterView::paint(juce::Graphics& g) {
     g.setColour(col::text); g.setFont(dispFont(12));
     g.drawText("LIMITER", 34, 10, 130, 24, juce::Justification::centredLeft);
     g.setColour(col::textDim); g.setFont(monoFont(8));
-    g.drawText(power_.isOn() ? "LINKED STEREO · LIVE PEAK" : "BYPASS", getWidth() - 220, 10, 208, 24,
+    g.drawText(power_.isOn() ? juce::String::fromUTF8("LINKED STEREO · LIVE PEAK") : "BYPASS", getWidth() - 220, 10, 208, 24,
                juce::Justification::centredRight);
 
     drawDisplayBox(g, plot_.toFloat());
@@ -57,7 +58,7 @@ void MasterLimiterView::paint(juce::Graphics& g) {
                                       juce::Justification::right);
     if (history_.size() > 1) {
         const auto x = [this, left, right](size_t i) {
-            return right - (float)(history_.size() - 1 - i) / 89.0f * (right - left);
+            return right - (float)(history_.size() - 1 - i) / (3 * kAnimationHz - 1.0f) * (right - left);
         };
         for (int signal = 0; signal < 2; ++signal) {
             juce::Path path;
@@ -78,15 +79,16 @@ void MasterLimiterView::paint(juce::Graphics& g) {
         g.drawText(readings[i], readouts_.withX(readouts_.getX() + i * readouts_.getWidth() / 3)
                       .withWidth(readouts_.getWidth() / 3), juce::Justification::centred);
     g.setColour(col::acN); g.setFont(monoFont(8));
-    g.drawText("POST COMP · CEILING AFTER LEVEL MATCH", getLocalBounds().withTrimmedTop(getHeight() - 20),
+    g.drawText(juce::String::fromUTF8("POST COMP · CEILING AFTER LEVEL MATCH"), getLocalBounds().withTrimmedTop(getHeight() - 20),
                juce::Justification::centred);
 }
 
 MasterFxView::MasterFxView(SeqAudioProcessor& proc)
     : model_(proc), eq_(model_, FxModuleView::Eq, false), ott_(model_, FxModuleView::Ott, false),
-      comp_(model_, FxModuleView::Comp, false), limiter_(model_) {
+      comp_(model_, FxModuleView::Comp, false), limiter_(model_), assist_(proc) {
     for (auto* c : { static_cast<juce::Component*>(&eq_), static_cast<juce::Component*>(&ott_),
-                     static_cast<juce::Component*>(&comp_), static_cast<juce::Component*>(&limiter_) })
+                     static_cast<juce::Component*>(&comp_), static_cast<juce::Component*>(&limiter_),
+                     static_cast<juce::Component*>(&assist_) })
         addAndMakeVisible(c);
 }
 
@@ -94,20 +96,23 @@ void MasterFxView::paint(juce::Graphics& g) {
     g.setColour(col::text); g.setFont(dispFont(12));
     drawSpaced(g, "MASTER FX", { 2, 0, 180, 24 }, 2.0f);
     g.setColour(col::textDim); g.setFont(monoFont(8));
-    drawSpaced(g, "POST-FADER  ›  EQ  ›  OTT  ›  COMP  ›  LIMITER", { 190, 0, getWidth() - 192, 24 }, 1.0f,
+    drawSpaced(g, juce::String::fromUTF8("POST-FADER  ›  EQ  ›  OTT  ›  COMP  ›  LIMITER"), { 190, 0, getWidth() - 192, 24 }, 1.0f,
                juce::Justification::right);
 }
 
 void MasterFxView::resized() {
     auto r = getLocalBounds(); r.removeFromTop(28);
     constexpr int gap = 10;
-    auto top = r.removeFromTop((r.getHeight() - gap) * 3 / 5);
+    auto top = r.removeFromTop((r.getHeight() - gap) / 2);
     const int w = (top.getWidth() - 2 * gap) / 3;
     eq_.setBounds(top.removeFromLeft(w)); top.removeFromLeft(gap);
     ott_.setBounds(top.removeFromLeft(w)); top.removeFromLeft(gap);
     comp_.setBounds(top);
     r.removeFromTop(gap);
-    limiter_.setBounds(r.withSizeKeepingCentre(440, r.getHeight()));
+    // ASSIST beside the limiter (web: the first panel of the master rack).
+    limiter_.setBounds(r.removeFromRight(300));
+    r.removeFromRight(gap);
+    assist_.setBounds(r);
 }
 
 } // namespace fui

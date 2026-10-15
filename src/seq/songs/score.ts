@@ -1,5 +1,8 @@
 import { FACTORY_PRESETS, resolvePresetMods } from '../../presets';
 import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, wtNoteIdx, type ClipDoc, type PatchDoc } from '../protocol';
+import { assertDrumRhythm, type DrumLaneRhythm } from '../../drum/rhythm';
+import type { ChordQuality } from '../../chords';
+import { chordTrackArp, clipChordOctave } from '../clipArp';
 
 // Absolute sixteenth in a four-bar phrase, duration, pitch(es) relative to C3,
 // accent. Chords retain their written inversions; no pitch-class folding.
@@ -37,3 +40,35 @@ export function wtPatch(base: number, overrides: Record<string, number>): PatchD
   return { kind: 'inline', base, data: { params: { ...resolvePresetMods(preset.params, preset.mods), ...overrides } } };
 }
 
+// DR-1 POLY and micro-timing, scored per pad. A POLY lane loops the first
+// `steps` cells of the clip's bar one: GRID on the sixteenth clock, FIT
+// spread evenly over one or two bars. Offsets are milliseconds (+ = late).
+export const grid = (steps: number, rotation = 0): DrumLaneRhythm =>
+  ({ enabled: true, sourceBar: 0, steps, rotation, timing: { mode: 'grid' } });
+export const fit = (steps: number, cycleBeats: 4 | 8, rotation = 0): DrumLaneRhythm =>
+  ({ enabled: true, sourceBar: 0, steps, rotation, timing: { mode: 'fit', cycleBeats } });
+/** Micro-timing: a lane offset plus per-step offsets of one bar, repeated on all four bars. */
+export function feel(delayMs: number, bar: Record<number, number> = {}, lane?: DrumLaneRhythm): DrumLaneRhythm {
+  const steps = Array.from({ length: 16 }, (_, s) => bar[s] ?? 0);
+  return { ...(lane ?? { enabled: false, sourceBar: 0, steps: 16, rotation: 0, timing: { mode: 'grid' } }),
+    delayMs, ...(steps.some(Boolean) ? { stepDelayMs: [0, 1, 2, 3].flatMap(() => steps) } : {}) };
+}
+/** The clip with POLY and micro-timing lanes by pad. */
+export function rhythm(clip: ClipDoc, lanes: Record<number, DrumLaneRhythm>): ClipDoc {
+  const drumRhythm = { v: 1 as const, lanes: Array.from({ length: 16 }, (_, pad) => lanes[pad] ?? null) };
+  return { ...clip, drumRhythm: assertDrumRhythm(drumRhythm, clip.bars) };
+}
+
+// The harmony of a scene as [root pitch class, quality, beats], from beat one.
+export type Harmony = Array<[root: number, quality: ChordQuality, beats: number]>;
+/** The clip with its scene's harmony as a switched-off arp chord track, in the clip's register. */
+export function harmonize(machine: 'BL1' | 'WT1', clip: ClipDoc, key: number, harmony: Harmony): ClipDoc {
+  let start = 0;
+  const chords = harmony.map(([root, quality, beats]) => {
+    const c = { start, length: beats * 4, root, quality, inversion: 0 };
+    start += beats * 4;
+    return c;
+  });
+  if (start !== clip.bars * 16) throw new Error(`Harmony of ${clip.name} does not fill the clip`);
+  return { ...clip, arp: chordTrackArp(machine, chords, key, clipChordOctave(machine, clip)) };
+}

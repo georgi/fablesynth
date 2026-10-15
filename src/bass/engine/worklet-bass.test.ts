@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeBassProcessor, type BassHarness } from './bassHarness';
+import { scaleMask, scaleRemap } from '../../scales';
 import { generateTables } from '../../engine/wavetables';
 import { defaultBassParams } from '../params';
 import { makeEmptyPatterns, setStep, stepDurSamples } from '../seq';
@@ -330,5 +331,43 @@ describe('clip phase lock', () => {
     h.send({ t: 'clipupdate', data: next, bars: 1 });
     expect(p.clip!.data[0]).toBe(1);
     expect(p.clipStep).toBe(0); // pure data swap — the transport is untouched
+  });
+});
+
+describe('hosted POLY tempo/swing change', () => {
+  it('never re-fires an already fired step when swing changes', () => {
+    g.currentFrame = 0;
+    const h = makeBassProcessor();
+    h.send({ t: 'host', on: 1 });
+    // 112.5 BPM: a 1/16 step is 6400 frames, exactly 50 quanta.
+    h.send({ t: 'tempo', bpm: 112.5, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: new Uint8Array(48), bars: 1, atFrame: 0,
+      sequenceRhythm: { v: 1, enabled: true, mode: 'grid', steps: 16, rotation: 0, cycleBeats: 4 } });
+    runBlocks(h, 51); // steps 0 and 1 have fired
+    const p = h.proc as unknown as ClipState;
+    expect(p.clipStep).toBe(1);
+    h.send({ t: 'tempo', bpm: 112.5, swing: 1, anchor: 0 }); // moves step 1 later than "now"
+    expect(p.clipStep).toBe(1);
+    runBlocks(h, 120);
+    const steps = h.sent.filter((m) => m.t === 'pos').map((m) => m.step as number);
+    expect(steps.slice(0, 3)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('hosted clip scale mode', () => {
+  it('snaps the written semitone to the scale before it plays', () => {
+    const run = (scale?: number[][]) => {
+      g.currentFrame = 0;
+      const h = makeBassProcessor();
+      h.send({ t: 'host', on: 1 });
+      h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+      const data = new Uint8Array(48);
+      data[0] = 1 | (1 << 2); data[1] = 6; data[2] = 1; // step 0: F♯
+      h.send({ t: 'clip', data, bars: 1, atFrame: 0, scale });
+      runBlocks(h, 4);
+      return (h.proc as unknown as { semiTarget: number }).semiTarget;
+    };
+    expect(run()).toBe(6);
+    expect(run([scaleRemap(scaleMask(0, 'minor'))])).toBe(5);
   });
 });

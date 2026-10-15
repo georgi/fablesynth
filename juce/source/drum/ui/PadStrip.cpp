@@ -1,4 +1,5 @@
 #include "PadStrip.h"
+#include "../../ui/LeafControlCache.h"
 
 namespace fui {
 
@@ -22,6 +23,7 @@ void PadStrip::rebuild() {
     knobs.clear();
     for (const char* id : { "lvl", "pan", "v2l", "v2m" })
         addAndMakeVisible(knobs.add(new Knob(proc.parameters(), pre + id, Knob::Sm, Accent::A)));
+    refreshLeafControlCache(*this);
     resized();
     repaint();   // head shows the pad number
 }

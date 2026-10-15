@@ -1,16 +1,12 @@
+import { seqMode } from '../../arp';
 import { useStore } from '../../store';
-import { ArpModeSwitch as ModeSwitch, ArpPanel as Panel } from './ArpPanel';
+import { ArpPanel as Panel } from './ArpPanel';
 
-export function ArpModeSwitch() {
-  const mode = useStore(s => s.arpMode);
-  const setMode = useStore(s => s.setArpMode);
-  return <ModeSwitch mode={mode} setMode={setMode} />;
-}
-
-export function ArpPanel() {
+export function ArpPanel({ mode }: { mode: 'arp' | 'chords' }) {
   const a = useStore(s => s.arp);
   const keys = useStore(s => s.arpKeys);
   const update = useStore(s => s.updateArp);
+  const active = useStore(s => s.arpMode && seqMode(true, s.arp.style) === mode);
   const playing = useStore(s => s.seqPlaying);
   const current = useStore(s => s.curStep);
   const play = useStore(s => s.seqPlay);
@@ -19,6 +15,7 @@ export function ArpPanel() {
   const bpm = useStore(s => s.params['seq.bpm']);
   const swing = useStore(s => s.params['seq.swing']);
   const setParam = useStore(s => s.setParam);
-  const setMode = useStore(s => s.setArpMode);
-  return <Panel {...{ a, keys, update, playing, current, play, stop, clear, bpm, swing, setParam, setMode }} />;
+  const bars = useStore(s => s.chain.length);
+  const setBars = useStore(s => s.setSequenceLength);
+  return <Panel {...{ a, keys, update, playing, current, play, stop, clear, bpm, swing, setParam, bars, setBars, mode, active }} />;
 }

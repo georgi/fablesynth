@@ -11,6 +11,7 @@ namespace fui {
 double HostedBassModel::arpSwing() const { return proc_.conductor().swing(); }
 bool HostedBassModel::arpQueued() const { return hasTargetClip() && proc_.conductor().queueOf(1) == scene_; }
 void HostedBassModel::setArpSwing(double v) { proc_.conductor().setSwing(v); }
+int HostedBassModel::arpChordLinkPeers() const { return hasTargetClip() ? (int)proc_.conductor().linkedChordTracks(scene_, 1).size() : 0; }
 fable::ArpSettings HostedBassModel::arpSettings() const {
     if (!hasTargetClip()) return fable::bassArpDefaults();
     const auto& c = proc_.conductor().session().scenes[(size_t)scene_].clips[1];
@@ -21,6 +22,21 @@ void HostedBassModel::setArpSettings(const fable::ArpSettings& a) {
 }
 
 fable::FxTelemetry HostedBassModel::fxTelemetry(int pad, int bus) const { return proc_.fxTelemetry(1, pad, bus); }
+static std::vector<std::string> sessionTrackNames(SeqAudioProcessor& proc) {
+    std::vector<std::string> names;
+    if (proc.preparedSampleRate() <= 0) return names;   // no conductor before prepareToPlay
+    for (const auto& t : proc.conductor().session().tracks) names.push_back(t.name);
+    return names;
+}
+AutoEqSource HostedBassModel::autoEqSource(int) const { return { &proc_.trackTap(1), false, "bass", {} }; }
+AutoCompSource HostedBassModel::autoCompSource(int) const { return { &proc_.compTrace(1), "level", {} }; }
+SideChainInfo HostedBassModel::sideChain() const {
+    return { fable::SC_SOURCES, true, trackKeyLabels(sessionTrackNames(proc_)) };
+}
+std::optional<double> HostedBassModel::analysisTempo() const {
+    return proc_.preparedSampleRate() > 0 ? std::optional<double>(hostBpm()) : std::nullopt;
+}
+double HostedBassModel::analysisSampleRate() const { return proc_.preparedSampleRate() > 0 ? proc_.preparedSampleRate() : 48000; }
 
 namespace {
 
@@ -242,6 +258,24 @@ void HostedBassModel::reloadPatchFromSession() {
 
 bool HostedBassModel::validScene() const {
     return scene_ >= 0 && scene_ < (int)proc_.conductor().session().scenes.size();
+}
+
+SeqPolySettings HostedBassModel::sequencePoly() const {
+    SeqPolySettings out;
+    if (!hasTargetClip()) return out;
+    const auto& clip = proc_.conductor().session().scenes[(size_t)scene_].clips[(size_t)kTrack];
+    if (!clip.hasSequenceRhythm) return out;
+    const auto& r = clip.sequenceRhythm;
+    out.enabled = r.enabled; out.fit = r.fit; out.steps = r.steps;
+    out.rotation = r.rotation; out.cycleBeats = r.cycleBeats;
+    return out;
+}
+
+void HostedBassModel::setSequencePoly(const SeqPolySettings& p) {
+    if (!hasTargetClip()) return;
+    fable::SequenceRhythm r;
+    r.enabled = p.enabled; r.fit = p.fit; r.steps = p.steps; r.rotation = p.rotation; r.cycleBeats = p.cycleBeats;
+    proc_.conductor().updateClipRhythm(scene_, kTrack, r);
 }
 
 } // namespace fui

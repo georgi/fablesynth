@@ -1,8 +1,10 @@
 #pragma once
+#include "../../ui/VisualTimer.h"
 #include <functional>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DrumUiModel.h"
 #include "PolyLanePanel.h"
+#include "../../ui/BrowserButton.h"
 #include "../../ui/StepEditOps.h"
 #include "../../ui/Theme.h"
 
@@ -18,17 +20,26 @@ namespace fui {
 // "PAD NN" mini head, pad name, and a right-aligned factory patch stepper
 // (prev/next + name readout, kit-stepper styling from DrumHeader). Selecting
 // a pad resets the readout to "—" like the web store's selectPad.
-class SelBarView : public juce::Component, private juce::Timer {
+class SelBarView : public juce::Component, private fui::VisualTimer {
 public:
     explicit SelBarView(DrumUiModel&);
     ~SelBarView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
+    // BROWSE opens the pad patch drawer (standalone editor and SQ-4 EDIT mode).
+    std::function<void()> onBrowse;
+    void setBrowseOpen(bool open) { browseBtn_.setToggleState(open, juce::dontSendNotification); }
+    bool browseVisible() const { return browseBtn_.isVisible(); }
+    bool browseOpen() const { return browseBtn_.getToggleState(); }
+    // Factory patch shown in the readout (-1: none). The patch drawer reads and writes it.
+    int patchIndex() const { return patchIndex_; }
+    void setPatchIndex(int i) { patchIndex_ = i; repaint(); }
 private:
     void timerCallback() override;    // repaint on selection / pad-name change
     void stepPatch(int dir);          // cycle the factory bank onto the selected pad
     DrumUiModel& proc;
     juce::TextButton prevBtn{"<"}, nextBtn{">"};
+    BrowserButton browseBtn_{"BROWSE", BrowserButton::Browse};
     juce::Rectangle<int> patchNameArea;
     int patchIndex_ = -1;             // -1 = no patch selected -> "—"
     int lastSel_ = -1;
@@ -49,13 +60,20 @@ using DrStepSnapshot = DrumSequence;
 // useDrumGhostPaste). Shift-drag sweeps a rectangle; a drag from inside it moves
 // the whole block (Alt copies); the floating CUT/COPY/DUP/DEL menu drives ghost
 // paste; verbs mirror the web store. Standalone editing plus SQ-4 hosted clips.
-class StepSeqView : public juce::Component, private juce::Timer, private juce::ScrollBar::Listener {
+class StepSeqView : public juce::Component, private fui::VisualTimer, private juce::ScrollBar::Listener {
 public:
     explicit StepSeqView(DrumUiModel&);
     explicit StepSeqView(DrumAudioProcessor&); // standalone-test compatibility
     ~StepSeqView() override { stopTimer(); }
     void paint(juce::Graphics&) override;
     void resized() override;
+    void paintUncachedForTesting(juce::Graphics& g) { paintArtwork(g, true); }
+    int cacheBuildCountForTesting() const { return artworkBuilds_; }
+    int overlayBuildCountForTesting() const { return overlayBuilds_; }
+    // PATTERNS opens the pattern library drawer (standalone rack and SQ-4 EDIT mode).
+    std::function<void()> onPatterns;
+    void setPatternsOpen(bool open) { patternsBtn_.setToggleState(open, juce::dontSendNotification); }
+    BrowserButton& patternsButton() { return patternsBtn_; }
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -108,7 +126,6 @@ public:
     bool canRedo() const { return history_.canRedo(); }
 
     // Hit-test geometry (public for the host test).
-    juce::Rectangle<int> transportBounds() const;
     juce::Rectangle<int> patternBounds(int i) const;
     juce::Rectangle<int> sequenceLengthBounds() const;
     juce::Rectangle<int> randButtonBounds() const;
@@ -124,26 +141,34 @@ public:
     static int laneOfPad(int pad);
     int laneHeight() const;
     static int padOfLane(int lane);
+    // Micro-timing target: the selected pad's step a plain click last touched.
+    int timingStep() const { return timingStep_; }
 
 private:
     void setupPoly();
     void refreshTiming();
     void setMicroDelay(int value, bool step);
-    juce::TextButton timingDisclosure_{"TIMING v"};
     juce::ComboBox patternPreset_;
+    BrowserButton patternsBtn_{"PATTERNS", BrowserButton::Browse};
+    // MICRO TIMING inspector (web .dr-timing-panel): always shown beside or
+    // above POLY. Its four columns are context | LANE OFFSET | STEP NN |
+    // COMBINED OFFSET; timingColumn(i) returns them in view coordinates.
     juce::Component timingPanel_;
-    juce::Slider laneDelay_, stepDelay_;
+    SequenceNumberInput laneDelay_{"LANE OFFSET"}, stepDelay_{"STEP"};
     juce::Label laneDelayLabel_, stepDelayLabel_;
+    juce::Rectangle<int> timingColumn(int i) const;
     int timingStep_ = 0;
     bool refreshingTiming_ = false;
     bool timingGesture_ = false, timingGestureSaved_ = false;
     void syncHistoryContext();
     void scrollBarMoved(juce::ScrollBar*, double start) override { laneOffset_ = (int)start; repaint(); }
     int gridBottom() const;
+    int gridSpaceBottom() const;
     std::unique_ptr<PolyLanePanel> polyPanel_;
     juce::ScrollBar laneScroll_{true};
     int laneOffset_ = 0;
     std::array<int, 16> lastLanePositions_{};
+    void visualVisibilityChanged(bool showing) override { if (showing) timerCallback(); }
     void timerCallback() override;          // 30 Hz playhead / state watcher
 
     void cancelGesture();                   // Esc: drop any in-flight sweep/move/ghost uncommitted
@@ -166,7 +191,13 @@ private:
     DrumUiModel& proc;
     // Content signature — everything visible EXCEPT the playhead position, so a
     // plain step advance never triggers a full repaint.
-    juce::uint32 lastSig_ = 0xffffffffu;
+    juce::MemoryBlock lastContentKey_, artworkKey_;
+    juce::MemoryBlock contentKey() const;
+    void paintArtwork(juce::Graphics&, bool cursors, bool panel = true);
+    juce::Image artwork_, composed_, panelBackdrop_;
+    float artworkScale_ = 0;
+    int artworkBuilds_ = 0, overlayBuilds_ = 0;
+    std::array<int, 18> composedCursor_{};
     // Last painted playhead: the drawn cursor column (-1 = no cursor) and the
     // pattern the transport plays (it also lights a bar chip in the header).
     int lastCursorStep_ = -1, lastCursorPattern_ = -1;

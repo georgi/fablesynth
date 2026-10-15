@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/VisualTimer.h"
 
 #include "ui/WtUiModel.h"
 
@@ -8,7 +9,7 @@ class FableAudioProcessor;
 // Draws every frame of the selected table in perspective and highlights the
 // frame currently being played, tracking the modulated position the DSP thread
 // publishes (falls back to the POS knob when idle).
-class WavetableView : public juce::Component, private juce::Timer {
+class WavetableView : public juce::Component, private fui::VisualTimer {
 public:
     WavetableView(fui::WtUiModel&, int oscIndex, juce::Colour accent);
     WavetableView(FableAudioProcessor&, int oscIndex, juce::Colour accent);

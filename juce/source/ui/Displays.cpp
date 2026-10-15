@@ -15,7 +15,7 @@ static ParameterSource wtSource(juce::AudioProcessorValueTreeState& apvts) {
 EnvView::EnvView(juce::AudioProcessorValueTreeState& s, const juce::String& b, juce::Colour ac)
     : EnvView(wtSource(s), b, ac) {}
 EnvView::EnvView(ParameterSource source, const juce::String& b, juce::Colour ac)
-    : parameters(std::move(source)), base(b), accent(ac) { startTimerHz(20); }
+    : parameters(std::move(source)), base(b), accent(ac) { startVisualTimer(*this, fui::kAnimationHz); }
 float EnvView::p(const char* sfx) const {
     return parameters.effectiveValue(base + sfx);
 }
@@ -67,7 +67,7 @@ LfoView::LfoView(ParameterSource source, const juce::String& sh,
                  juce::Colour ac, std::function<HostTransport()> transportProvider)
     : parameters(std::move(source)), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
       transport(std::move(transportProvider)), t0(juce::Time::getMillisecondCounter()) {
-    startTimerHz(30);
+    startVisualTimer(*this, fui::kAnimationHz);
 }
 bool LfoView::synced() const {
     auto* syncP = parameters.parameter(syncId);
@@ -179,7 +179,7 @@ static double magFor(int type, double cutoff, double res, double f) {
 FilterView::FilterView(juce::AudioProcessorValueTreeState& s, juce::Colour ac)
     : FilterView(wtSource(s), ac) {}
 FilterView::FilterView(ParameterSource source, juce::Colour ac)
-    : parameters(std::move(source)), accent(ac) { startTimerHz(20); }
+    : parameters(std::move(source)), accent(ac) { startVisualTimer(*this, fui::kAnimationHz); }
 void FilterView::timerCallback() {
     auto get = [&](const char* id) { auto* p = parameters.parameter(id); return p ? p->convertTo0to1(parameters.effectiveValue(id)) : 0.0f; };
     float sum = get("filter.on") + get("filter.type") * 1.7f + get("filter.cutoff") * 3.1f + get("filter.res") * 2.3f
@@ -231,7 +231,7 @@ void FilterView::paint(juce::Graphics& g) {
 
 // ===================== ScopeView =====================
 ScopeView::ScopeView(std::function<void(float*, int)> reader, juce::Colour ac)
-    : readScope(std::move(reader)), accent(ac) { startTimerHz(30); }
+    : readScope(std::move(reader)), accent(ac) { startVisualTimer(*this, fui::kAnimationHz); }
 void ScopeView::timerCallback() {
     // Silent output draws the same flat line every frame: skip the repaint until
     // audio returns. One extra paint after the transition draws the final flat line.
@@ -275,7 +275,7 @@ void ScopeView::paint(juce::Graphics& g) {
 SpectrumView::SpectrumView(std::function<void(float*, int)> reader,
                            std::function<double()> sampleRateProvider,
                            juce::Colour ac)
-    : readScope(std::move(reader)), sampleRate(std::move(sampleRateProvider)), accent(ac) { startTimerHz(30); }
+    : readScope(std::move(reader)), sampleRate(std::move(sampleRateProvider)), accent(ac) { startVisualTimer(*this, fui::kAnimationHz); }
 void SpectrumView::timerCallback() {
     std::array<float, kFFT> buf;
     readScope(buf.data(), kFFT);
@@ -294,7 +294,9 @@ void SpectrumView::paint(juce::Graphics& g) {
     fft.performFrequencyOnlyForwardTransform(fftData.data());
 
     // byte spectrum with WebAudio-like smoothing (smoothingTimeConstant 0.82).
-    const float minDb = -100, maxDb = -30, smoothing = 0.82f;
+    // Preserve the former 30 Hz smoothing time at the animation cadence.
+    const float minDb = -100, maxDb = -30;
+    const float smoothing = std::pow(0.82f, 30.0f / kAnimationHz);
     std::array<float, kFFT / 2> bytes;
     float maxSm = 0;
     for (int i = 0; i < kFFT / 2; i++) {
