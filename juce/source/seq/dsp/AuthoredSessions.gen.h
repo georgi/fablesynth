@@ -7357,9 +7357,12 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
     result.push_back(authoredSession1());
     return result;
 }
-inline void applyChordTracks(std::vector<SessionPreset>& library) {
-    for (auto& p : library) {
-        if (p.name == "NEON TALE") {
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks0(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
@@ -7386,8 +7389,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "NEON CHASE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks1(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
@@ -7414,8 +7422,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "GLASS CIRCUIT") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks2(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
@@ -7442,8 +7455,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "AFTERGLOW") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks3(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
@@ -7470,8 +7488,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "WAREHOUSE RAW") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks4(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
@@ -7498,8 +7521,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "ACID FLASH") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks5(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
@@ -7526,8 +7554,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "STEEL PULSE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks6(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
@@ -7554,8 +7587,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "PEAK SIGNAL") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks7(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
@@ -7582,8 +7620,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "DEEP FOG") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks8(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
@@ -7610,8 +7653,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "GLASS BLOOM") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks9(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
@@ -7638,8 +7686,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "FROZEN BELL") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks10(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
@@ -7666,8 +7719,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "AIR TEMPLE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks11(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
@@ -7694,8 +7752,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "DUST HOUSE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks12(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
@@ -7722,8 +7785,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "MIDNIGHT FLOOR") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks13(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
@@ -7750,8 +7818,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "TAPE DISCO") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks14(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
@@ -7778,8 +7851,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "CLEAN CLUB") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks15(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
@@ -7806,8 +7884,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "VHS GARDEN") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks16(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
@@ -7834,8 +7917,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "POCKET DUST") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks17(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
@@ -7862,8 +7950,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "TOY PARADE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks18(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
@@ -7890,8 +7983,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "WORN SIGNAL") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks19(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
@@ -7918,8 +8016,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "CHROME CATHEDRAL") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks20(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
@@ -7946,8 +8049,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "MACHINE TENSION") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks21(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
@@ -7974,8 +8082,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "VOID MARCH") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks22(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
@@ -8002,8 +8115,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "FINAL HORIZON") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks23(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
@@ -8030,8 +8148,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "GRAY ROOM") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks24(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
@@ -8058,8 +8181,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "CLICK FIELD") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks25(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
@@ -8086,8 +8214,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "COLD ROTOR") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks26(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
@@ -8114,8 +8247,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "NIGHT GRID") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks27(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
@@ -8142,8 +8280,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "SUGAR RUSH") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks28(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
@@ -8170,8 +8313,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "PASTEL SKY") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks29(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
@@ -8198,8 +8346,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "STARBURST") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks30(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
@@ -8226,8 +8379,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "HEART WIRE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks31(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
@@ -8254,8 +8412,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "VELVET SMOKE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks32(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
@@ -8282,8 +8445,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "NIGHT BUS") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks33(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
@@ -8310,8 +8478,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "CRACKED LENS") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks34(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
@@ -8338,8 +8511,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "STONE GARDEN") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks35(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
@@ -8366,8 +8544,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "ECHO CHAMBER") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks36(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
@@ -8394,8 +8577,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "KING STEPPER") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks37(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
@@ -8422,8 +8610,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "ROOTS RADAR") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks38(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
@@ -8450,8 +8643,13 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
-        if (p.name == "ZION GATE") {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionChordTracks39(SessionPreset& p) {
             p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
@@ -8478,13 +8676,57 @@ inline void applyChordTracks(std::vector<SessionPreset>& library) {
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
-        }
+}
+inline void applyChordTracks(std::vector<SessionPreset>& library) {
+    for (auto& p : library) {
+        if (p.name == "NEON TALE") sessionChordTracks0(p);
+        if (p.name == "NEON CHASE") sessionChordTracks1(p);
+        if (p.name == "GLASS CIRCUIT") sessionChordTracks2(p);
+        if (p.name == "AFTERGLOW") sessionChordTracks3(p);
+        if (p.name == "WAREHOUSE RAW") sessionChordTracks4(p);
+        if (p.name == "ACID FLASH") sessionChordTracks5(p);
+        if (p.name == "STEEL PULSE") sessionChordTracks6(p);
+        if (p.name == "PEAK SIGNAL") sessionChordTracks7(p);
+        if (p.name == "DEEP FOG") sessionChordTracks8(p);
+        if (p.name == "GLASS BLOOM") sessionChordTracks9(p);
+        if (p.name == "FROZEN BELL") sessionChordTracks10(p);
+        if (p.name == "AIR TEMPLE") sessionChordTracks11(p);
+        if (p.name == "DUST HOUSE") sessionChordTracks12(p);
+        if (p.name == "MIDNIGHT FLOOR") sessionChordTracks13(p);
+        if (p.name == "TAPE DISCO") sessionChordTracks14(p);
+        if (p.name == "CLEAN CLUB") sessionChordTracks15(p);
+        if (p.name == "VHS GARDEN") sessionChordTracks16(p);
+        if (p.name == "POCKET DUST") sessionChordTracks17(p);
+        if (p.name == "TOY PARADE") sessionChordTracks18(p);
+        if (p.name == "WORN SIGNAL") sessionChordTracks19(p);
+        if (p.name == "CHROME CATHEDRAL") sessionChordTracks20(p);
+        if (p.name == "MACHINE TENSION") sessionChordTracks21(p);
+        if (p.name == "VOID MARCH") sessionChordTracks22(p);
+        if (p.name == "FINAL HORIZON") sessionChordTracks23(p);
+        if (p.name == "GRAY ROOM") sessionChordTracks24(p);
+        if (p.name == "CLICK FIELD") sessionChordTracks25(p);
+        if (p.name == "COLD ROTOR") sessionChordTracks26(p);
+        if (p.name == "NIGHT GRID") sessionChordTracks27(p);
+        if (p.name == "SUGAR RUSH") sessionChordTracks28(p);
+        if (p.name == "PASTEL SKY") sessionChordTracks29(p);
+        if (p.name == "STARBURST") sessionChordTracks30(p);
+        if (p.name == "HEART WIRE") sessionChordTracks31(p);
+        if (p.name == "VELVET SMOKE") sessionChordTracks32(p);
+        if (p.name == "NIGHT BUS") sessionChordTracks33(p);
+        if (p.name == "CRACKED LENS") sessionChordTracks34(p);
+        if (p.name == "STONE GARDEN") sessionChordTracks35(p);
+        if (p.name == "ECHO CHAMBER") sessionChordTracks36(p);
+        if (p.name == "KING STEPPER") sessionChordTracks37(p);
+        if (p.name == "ROOTS RADAR") sessionChordTracks38(p);
+        if (p.name == "ZION GATE") sessionChordTracks39(p);
     }
 }
-inline void applySessionGrooves(std::vector<SessionPreset>& library) {
-    for (auto& p : library) {
-        if (p.name == "DUST HOUSE") {
-        {
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove0_0_0(SessionPreset& p) {
             auto& scene = p.session.scenes[0];
             scene.clips[0] = { "DUST INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -8535,8 +8777,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[776] = 1;
             scene.clips[0].bytes[850] = 1;
             scene.clips[0].bytes[858] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove0_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "DUST BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -8630,8 +8877,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[870] = 2;
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[878] = 2;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove0_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "DUST DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -8724,8 +8976,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[870] = 2;
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[878] = 2;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove0_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "DUST DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -8820,8 +9077,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[870] = 2;
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[878] = 2;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove0_5_0(SessionPreset& p) {
             auto& scene = p.session.scenes[5];
             scene.clips[0] = { "DUST TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -8864,10 +9126,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[520] = 1;
             scene.clips[0].bytes[768] = 1;
             scene.clips[0].bytes[776] = 1;
-        }
-        }
-        if (p.name == "POCKET DUST") {
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove1_0_0(SessionPreset& p) {
             auto& scene = p.session.scenes[0];
             scene.clips[0] = { "POCKET INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -8922,8 +9187,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[851] = 1;
             scene.clips[0].bytes[856] = 1;
             scene.clips[0].bytes[862] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove1_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "POCKET BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9005,8 +9275,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[859] = 1;
             scene.clips[0].bytes[878] = 1;
             scene.clips[0].bytes[902] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove1_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "POCKET DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9091,8 +9366,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[902] = 1;
             scene.clips[0].bytes[911] = 1;
             scene.clips[0].bytes[925] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove1_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "POCKET DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9179,8 +9459,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[902] = 1;
             scene.clips[0].bytes[911] = 1;
             scene.clips[0].bytes[925] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove1_5_0(SessionPreset& p) {
             auto& scene = p.session.scenes[5];
             scene.clips[0] = { "POCKET TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9227,10 +9512,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[646] = 1;
             scene.clips[0].bytes[768] = 2;
             scene.clips[0].bytes[902] = 1;
-        }
-        }
-        if (p.name == "CLICK FIELD") {
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove2_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "CLICK BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9339,8 +9627,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[863] = 1;
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[903] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove2_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "CLICK DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9458,8 +9751,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[903] = 1;
             scene.clips[0].bytes[908] = 1;
             scene.clips[0].bytes[910] = 2;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove2_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "CLICK DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9579,10 +9877,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[903] = 1;
             scene.clips[0].bytes[908] = 1;
             scene.clips[0].bytes[910] = 2;
-        }
-        }
-        if (p.name == "COLD ROTOR") {
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove3_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "ROTOR BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9690,8 +9991,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[863] = 1;
             scene.clips[0].bytes[874] = 1;
             scene.clips[0].bytes[903] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove3_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "ROTOR DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9809,8 +10115,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[903] = 1;
             scene.clips[0].bytes[908] = 1;
             scene.clips[0].bytes[910] = 2;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove3_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "ROTOR DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9930,10 +10241,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[903] = 1;
             scene.clips[0].bytes[908] = 1;
             scene.clips[0].bytes[910] = 2;
-        }
-        }
-        if (p.name == "NIGHT BUS") {
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove4_0_0(SessionPreset& p) {
             auto& scene = p.session.scenes[0];
             scene.clips[0] = { "BUS INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -9972,8 +10286,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[768] = 2;
             scene.clips[0].bytes[852] = 1;
             scene.clips[0].bytes[858] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove4_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "BUS BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10043,8 +10362,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[862] = 1;
             scene.clips[0].bytes[871] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove4_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "BUS DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10118,8 +10442,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[862] = 1;
             scene.clips[0].bytes[871] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove4_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "BUS DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10196,8 +10525,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[862] = 2;
             scene.clips[0].bytes[871] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove4_5_0(SessionPreset& p) {
             auto& scene = p.session.scenes[5];
             scene.clips[0] = { "BUS TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10232,10 +10566,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[651] = 1;
             scene.clips[0].bytes[768] = 2;
             scene.clips[0].bytes[907] = 1;
-        }
-        }
-        if (p.name == "CRACKED LENS") {
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove5_0_0(SessionPreset& p) {
             auto& scene = p.session.scenes[0];
             scene.clips[0] = { "LENS INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10274,8 +10611,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[848] = 1;
             scene.clips[0].bytes[854] = 1;
             scene.clips[0].bytes[862] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove5_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "LENS BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10348,8 +10690,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[862] = 2;
             scene.clips[0].bytes[871] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove5_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "LENS DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10433,8 +10780,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[862] = 2;
             scene.clips[0].bytes[871] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove5_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "LENS DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10521,8 +10873,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[862] = 1;
             scene.clips[0].bytes[871] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove5_5_0(SessionPreset& p) {
             auto& scene = p.session.scenes[5];
             scene.clips[0] = { "LENS TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10553,10 +10910,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[768] = 2;
             scene.clips[0].bytes[811] = 1;
             scene.clips[0].bytes[907] = 1;
-        }
-        }
-        if (p.name == "KING STEPPER") {
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove6_0_0(SessionPreset& p) {
             auto& scene = p.session.scenes[0];
             scene.clips[0] = { "STEPPER INTRO · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10590,8 +10950,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[776] = 2;
             scene.clips[0].bytes[854] = 1;
             scene.clips[0].bytes[862] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove6_1_0(SessionPreset& p) {
             auto& scene = p.session.scenes[1];
             scene.clips[0] = { "STEPPER BUILD · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10653,8 +11018,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[876] = 1;
             scene.clips[0].bytes[915] = 1;
             scene.clips[0].bytes[923] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove6_2_0(SessionPreset& p) {
             auto& scene = p.session.scenes[2];
             scene.clips[0] = { "STEPPER DRIVE · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10718,8 +11088,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[909] = 1;
             scene.clips[0].bytes[915] = 1;
             scene.clips[0].bytes[923] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove6_3_0(SessionPreset& p) {
             auto& scene = p.session.scenes[3];
             scene.clips[0] = { "STEPPER DRIVE II · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10785,8 +11160,13 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[909] = 1;
             scene.clips[0].bytes[915] = 1;
             scene.clips[0].bytes[923] = 1;
-        }
-        {
+}
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+inline void sessionGroove6_5_0(SessionPreset& p) {
             auto& scene = p.session.scenes[5];
             scene.clips[0] = { "STEPPER TAIL · 4 BAR", 4, sqEmptyClip(Machine::DR1, 4) };
             scene.clips[0].hasDrumRhythm = true;
@@ -10820,7 +11200,53 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[776] = 2;
             scene.clips[0].bytes[915] = 1;
             scene.clips[0].bytes[923] = 1;
+}
+inline void applySessionGrooves(std::vector<SessionPreset>& library) {
+    for (auto& p : library) {
+        if (p.name == "DUST HOUSE") {
+            sessionGroove0_0_0(p);
+            sessionGroove0_1_0(p);
+            sessionGroove0_2_0(p);
+            sessionGroove0_3_0(p);
+            sessionGroove0_5_0(p);
         }
+        if (p.name == "POCKET DUST") {
+            sessionGroove1_0_0(p);
+            sessionGroove1_1_0(p);
+            sessionGroove1_2_0(p);
+            sessionGroove1_3_0(p);
+            sessionGroove1_5_0(p);
+        }
+        if (p.name == "CLICK FIELD") {
+            sessionGroove2_1_0(p);
+            sessionGroove2_2_0(p);
+            sessionGroove2_3_0(p);
+        }
+        if (p.name == "COLD ROTOR") {
+            sessionGroove3_1_0(p);
+            sessionGroove3_2_0(p);
+            sessionGroove3_3_0(p);
+        }
+        if (p.name == "NIGHT BUS") {
+            sessionGroove4_0_0(p);
+            sessionGroove4_1_0(p);
+            sessionGroove4_2_0(p);
+            sessionGroove4_3_0(p);
+            sessionGroove4_5_0(p);
+        }
+        if (p.name == "CRACKED LENS") {
+            sessionGroove5_0_0(p);
+            sessionGroove5_1_0(p);
+            sessionGroove5_2_0(p);
+            sessionGroove5_3_0(p);
+            sessionGroove5_5_0(p);
+        }
+        if (p.name == "KING STEPPER") {
+            sessionGroove6_0_0(p);
+            sessionGroove6_1_0(p);
+            sessionGroove6_2_0(p);
+            sessionGroove6_3_0(p);
+            sessionGroove6_5_0(p);
         }
     }
 }

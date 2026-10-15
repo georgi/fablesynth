@@ -94,11 +94,14 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
     });
     return text;
   };
+  // Keeps a block's clip temporaries in its own frame even under LTO. MSVC
+  // does not reuse stack slots between temporaries, so one large function
+  // overflows a Windows host thread's default 1 MB stack.
+  const noinline = ['#if defined(_MSC_VER)', '__declspec(noinline)',
+    '#elif defined(__GNUC__)', '__attribute__((noinline))', '#endif'];
   for (const [index, preset] of AUTHORED_SESSION_PRESETS.entries()) {
     const s = nativeSession(preset.session);
-    // Keep each song's clip temporaries in a separate frame even under LTO.
-    text.push('#if defined(_MSC_VER)', '__declspec(noinline)',
-      '#elif defined(__GNUC__)', '__attribute__((noinline))', '#endif',
+    text.push(...noinline,
       `inline SessionPreset authoredSession${index}() {`, '        SessionPreset p;',
       `        p.name = ${quote(preset.name)}; p.family = ${quote(preset.family)};`,
       `        p.variation = ${quote(preset.variation)}; p.energy = ${preset.energy};`,
@@ -138,27 +141,31 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
   // Generated sessions with scored POLY / micro-timing (src/seq/songs/grooves.ts):
   // their drum clips replace the ones SeqFactory.cpp composes.
   // Generated sessions: their note clips carry the song's chord track.
-  text.push('inline void applyChordTracks(std::vector<SessionPreset>& library) {', '    for (auto& p : library) {');
   const authored = new Set(AUTHORED_SESSION_PRESETS.map((p) => p.name));
-  for (const preset of FACTORY_SESSION_PRESETS.filter((p) => !authored.has(p.name))) {
+  const chordCalls = [];
+  for (const [index, preset] of FACTORY_SESSION_PRESETS.filter((p) => !authored.has(p.name)).entries()) {
     const s = nativeSession(preset.session), lines = [];
-    s.scenes.forEach((scene, index) => scene.clips.forEach((clip, t) => {
-      if (clip?.arp) lines.push(arpLine(`p.session.scenes[${index}].clips[${t}]`, clip.arp, s.tracks[t].machine));
+    s.scenes.forEach((scene, sceneIndex) => scene.clips.forEach((clip, t) => {
+      if (clip?.arp) lines.push(arpLine(`p.session.scenes[${sceneIndex}].clips[${t}]`, clip.arp, s.tracks[t].machine));
     }));
-    if (lines.length) text.push(`        if (p.name == ${quote(preset.name)}) {`, ...lines, '        }');
+    if (!lines.length) continue;
+    text.push(...noinline, `inline void sessionChordTracks${index}(SessionPreset& p) {`, ...lines, '}');
+    chordCalls.push(`        if (p.name == ${quote(preset.name)}) sessionChordTracks${index}(p);`);
   }
-  text.push('    }', '}');
-  text.push('inline void applySessionGrooves(std::vector<SessionPreset>& library) {', '    for (auto& p : library) {');
-  for (const preset of FACTORY_SESSION_PRESETS.filter((p) => SESSION_GROOVES[p.name])) {
-    const s = nativeSession(preset.session);
-    text.push(`        if (p.name == ${quote(preset.name)}) {`);
-    s.scenes.forEach((scene, index) => scene.clips.forEach((clip, t) => {
+  text.push('inline void applyChordTracks(std::vector<SessionPreset>& library) {', '    for (auto& p : library) {', ...chordCalls, '    }', '}');
+  const grooveCalls = [];
+  for (const [index, preset] of FACTORY_SESSION_PRESETS.filter((p) => SESSION_GROOVES[p.name]).entries()) {
+    const s = nativeSession(preset.session), calls = [];
+    s.scenes.forEach((scene, sceneIndex) => scene.clips.forEach((clip, t) => {
       if (!clip?.drumRhythm) return;
-      text.push('        {', `            auto& scene = p.session.scenes[${index}];`, ...clipLines(clip, t, s.tracks[t].machine), '        }');
+      const fn = `sessionGroove${index}_${sceneIndex}_${t}`;
+      text.push(...noinline, `inline void ${fn}(SessionPreset& p) {`,
+        `            auto& scene = p.session.scenes[${sceneIndex}];`, ...clipLines(clip, t, s.tracks[t].machine), '}');
+      calls.push(`            ${fn}(p);`);
     }));
-    text.push('        }');
+    grooveCalls.push(`        if (p.name == ${quote(preset.name)}) {`, ...calls, '        }');
   }
-  text.push('    }', '}');
+  text.push('inline void applySessionGrooves(std::vector<SessionPreset>& library) {', '    for (auto& p : library) {', ...grooveCalls, '    }', '}');
   // Generated comping sessions: pad sound overrides (src/seq/songs/comping.ts),
   // applied over the track's resolved factory patch by SeqFactory.cpp.
   text.push('template <typename Apply>', 'void applyCompSounds(std::vector<SessionPreset>& library, Apply&& apply) {', '    for (auto& p : library) {');
