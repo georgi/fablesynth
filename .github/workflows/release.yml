@@ -220,6 +220,7 @@ jobs:
           mkdir -p "$stage"
           cp -R "VST3/FableSynth WT-1.vst3" "$stage/"
           cp "Standalone/FableSynth WT-1"   "$stage/"
+          cp "Standalone/FableSerumImport"  "$stage/"
           zip -r "$GITHUB_WORKSPACE/FableSynth-Linux.zip" "$stage"
 
       - name: Package DR-1 (Linux)
@@ -261,6 +262,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item -Recurse "VST3/FableSynth WT-1.vst3" $stage/
           Copy-Item "Standalone/FableSynth WT-1.exe"     $stage/
+          Copy-Item "Standalone/FableSerumImport.exe"    $stage/
           Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-Windows.zip" -Force
 
       - name: Package DR-1 (Windows)

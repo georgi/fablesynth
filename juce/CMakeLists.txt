@@ -476,15 +476,21 @@ if(FABLE_BUILD_PLUGIN)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
-    # Ship the helper inside each WT-1 bundle (Contents/Resources); the browser's
+    # Ship the helper with each WT-1 build: inside the macOS bundle
+    # (Contents/Resources), elsewhere next to the plug-in binary. The browser's
     # IMPORT FROM SERUM... button launches it from there.
     foreach(fmt IN ITEMS VST3 AU Standalone)
         if(TARGET FableSynth_${fmt})
             add_dependencies(FableSynth_${fmt} FableSerumImport)
+            if(APPLE)
+                set(helper_dir "$<TARGET_BUNDLE_CONTENT_DIR:FableSynth_${fmt}>/Resources")
+            else()
+                set(helper_dir "$<TARGET_FILE_DIR:FableSynth_${fmt}>")
+            endif()
             add_custom_command(TARGET FableSynth_${fmt} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_CONTENT_DIR:FableSynth_${fmt}>/Resources"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${helper_dir}"
                 COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:FableSerumImport>"
-                        "$<TARGET_BUNDLE_CONTENT_DIR:FableSynth_${fmt}>/Resources/FableSerumImport"
+                        "${helper_dir}/$<TARGET_FILE_NAME:FableSerumImport>"
                 VERBATIM)
         endif()
     endforeach()
