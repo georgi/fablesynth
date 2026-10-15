@@ -4,6 +4,7 @@
 // app under src/drum/ (params.ts, worklet-drum.js, drumtables.ts, kits.ts).
 //
 // Exits non-zero if any check fails.
+#include <cstring>
 #include "../source/drum/dsp/DrumParams.h"
 #include "../source/drum/dsp/DrumTables.h"
 #include "../source/drum/dsp/SampledTables.gen.h"
@@ -1362,6 +1363,54 @@ int main() {
         check(base > 1e-5 && atHit < base * 4.0,
               "retrigger does not click (D2)",
               "step=" + std::to_string(atHit) + " baseline=" + std::to_string(base));
+    }
+    {
+        // Retrigger collision: hits 2 and 3 land inside one choke fade and the
+        // parked tail is still louder than hit 2. Hit 3 must fade hit 2 out,
+        // not restart it in place. The reference omits hit 3: an accepted
+        // retrigger whose own choke fade sets the step bound. Same scenario as
+        // worklet-drum.test.ts.
+        auto p = defaultDrumParams();
+        p[(size_t)dpid(0, DP_AENV_ATT)] = 0.001f;
+        p[(size_t)dpid(0, DP_AENV_HOLD)] = 0.25f;
+        p[(size_t)dpid(0, DP_AENV_DEC)] = 2.0f;
+        p[(size_t)dpid(0, DP_FLT_ON)] = 0;
+        p[(size_t)dpid(0, DP_OSCA_PHASE)] = 0.25f;
+        p[(size_t)dpid(0, DP_OSCA_TUNE)] = -24.0f;
+        auto collide = [&](bool third) {
+            DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+            e.trigger(0, 1.0f);
+            auto join = renderMain(e, 12000);            // 0.25 s: holding
+            join.erase(join.begin(), join.end() - 8);
+            e.trigger(0, 1.0f);                          // hit 2: hit 1 -> tail slot
+            auto gap = renderMain(e, 12);                // tail still louder than hit 2
+            if (third) e.trigger(0, 1.0f);               // hit 3: collides with the fade
+            auto after = renderMain(e, 4800);
+            join.insert(join.end(), gap.begin(), gap.end());
+            join.insert(join.end(), after.begin(), after.end());
+            return maxStep(join, 1, (int)join.size());
+        };
+        const double single = collide(false), atHit = collide(true);
+        check(single > 1e-5 && atHit <= single * 1.1,
+              "retrigger collision inside one fade does not click",
+              "step=" + std::to_string(atHit) + " reference=" + std::to_string(single));
+
+        // Normal retriggers (30 ms and 250 ms apart) never use the collision
+        // fade slot: FNV-1a over the float bits, pinned before it was added.
+        DrumEngine e; e.prepare(48000); e.setTables(allTables()); e.setParams(p);
+        uint32_t h = 0x811c9dc5u;
+        for (int n : {12000, 1440, 240}) {
+            e.trigger(0, 1.0f);
+            auto b = renderBuses(e, n);
+            for (int c = 0; c < 2; c++)
+                for (float x : b[(size_t)c]) {
+                    uint32_t u; std::memcpy(&u, &x, sizeof u);
+                    h = (h ^ u) * 0x01000193u;
+                }
+        }
+        char hex[16]; snprintf(hex, sizeof hex, "%08x", h);
+        check(h == 0x9a3886b1u, "normal retriggers bit-identical to pre-fix engine",
+              std::string("hash=") + hex);
     }
     {
         // D3: the amp envelope has to reach 0, not stop at e^-4.5 (-40 dB).

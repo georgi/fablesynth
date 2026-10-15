@@ -45,6 +45,40 @@ inline std::vector<int> changedIds(const std::vector<float>& a, const std::vecto
     return out;
 }
 
+// Cancel must stop the import helper even when it lands before or during the
+// child's start. A shell script that execs `sleep 30` stands in for the helper;
+// without the fix a cancel that beats start() leaves the thread blocked reading.
+inline void importCancelChecks(fui::BrowserAdapter& a, const CheckFn& check) {
+#if !JUCE_WINDOWS
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("fable-import-cancel", "");
+    dir.createDirectory();
+    const auto helper = dir.getChildFile("FakeImport");
+    helper.replaceWithText("#!/bin/sh\nexec sleep 30\n", false, false, "\n");
+    helper.setExecutePermission(true);
+    const auto prev = juce::SystemStats::getEnvironmentVariable("FABLE_SERUM_IMPORT", {});
+    setenv("FABLE_SERUM_IMPORT", helper.getFullPathName().toRawUTF8(), 1);
+    int slow = 0;
+    bool cancelledText = true;
+    for (int i = 0; i < 12; ++i) {
+        a.startImport();
+        if (i % 3 == 1) juce::Thread::sleep(5);        // cancel during start
+        else if (i % 3 == 2) juce::Thread::sleep(150); // cancel while reading
+        a.cancelImport();
+        const auto t0 = juce::Time::getMillisecondCounter();
+        while (a.importRunning() && juce::Time::getMillisecondCounter() - t0 < 3000) juce::Thread::sleep(5);
+        if (a.importRunning()) ++slow;
+        cancelledText = cancelledText && a.pollImport().contains("cancelled");
+    }
+    check(slow == 0, "a cancelled import stops the helper at once, even before it starts", slow);
+    check(cancelledText, "a cancelled import reports that it was cancelled", 0);
+    if (prev.isEmpty()) unsetenv("FABLE_SERUM_IMPORT");
+    else setenv("FABLE_SERUM_IMPORT", prev.toRawUTF8(), 1);
+    dir.deleteRecursively();
+#else
+    juce::ignoreUnused(a, check);
+#endif
+}
+
 inline void runChecks(fui::BrowserAdapter& a, fui::PresetBrowser& br, Probe& p, const CheckFn& check) {
     using fui::PresetBrowser;
     auto ck = [&](bool c, const char* m, double v = 0.0) { check(c, m, v); };
@@ -190,6 +224,7 @@ inline void runChecks(fui::BrowserAdapter& a, fui::PresetBrowser& br, Probe& p, 
     }
     br.close();
     ck(!br.isOpen(), name("CLOSE hides the drawer"));
+    if (a.importLabel().isNotEmpty()) importCancelChecks(a, check);
 }
 
 } // namespace browser_test

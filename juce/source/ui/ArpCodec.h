@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include "../dsp/Arp.h"
+#include "../dsp/Scales.h"
 
 namespace fable {
 inline juce::var arpToVar(const ArpSettings& a) {
@@ -16,16 +17,24 @@ inline juce::var arpToVar(const ArpSettings& a) {
     s->setProperty("order", orders[std::clamp(a.order, 0, 4)]); s->setProperty("rate", a.rate);
     s->setProperty("octaves", a.octaves); s->setProperty("gate", a.gate); s->setProperty("seed", (juce::int64)a.seed);
     s->setProperty("input", a.chords ? "chords" : a.keys ? "keys" : "stored"); s->setProperty("latch", a.latch);
-    juce::Array<juce::var> chords;
-    for (int i = 0; i < std::clamp(a.chordCount, 0, kMaxArpChords); ++i) {
-        const auto& c = a.chordList[(size_t)i]; auto* o = new juce::DynamicObject;
-        o->setProperty("start", (int)c.start); o->setProperty("length", (int)c.length); o->setProperty("root", (int)c.root);
-        o->setProperty("quality", chordQualities()[(size_t)std::min<int>(c.quality, kChordQualities - 1)].key);
-        o->setProperty("inversion", (int)c.inversion); chords.add(juce::var(o));
-    }
-    s->setProperty("chords", chords); s->setProperty("chordKey", a.chordKey); s->setProperty("chordOctave", a.chordOctave);
+    auto chordsVar = [](const std::array<ArpChord, kMaxArpChords>& list, int count) {
+        juce::Array<juce::var> chords;
+        for (int i = 0; i < std::clamp(count, 0, kMaxArpChords); ++i) {
+            const auto& c = list[(size_t)i]; auto* o = new juce::DynamicObject;
+            o->setProperty("start", (int)c.start); o->setProperty("length", (int)c.length); o->setProperty("root", (int)c.root);
+            o->setProperty("quality", chordQualities()[(size_t)std::min<int>(c.quality, kChordQualities - 1)].key);
+            o->setProperty("inversion", (int)c.inversion); chords.add(juce::var(o));
+        }
+        return chords;
+    };
+    s->setProperty("chords", chordsVar(a.chordList, a.chordCount)); s->setProperty("chordKey", a.chordKey); s->setProperty("chordOctave", a.chordOctave);
     if (a.chordBars != 4) s->setProperty("chordBars", a.chordBars);
     if (a.chordLink) s->setProperty("chordLink", true);
+    // Scale mode: absent = OFF / AUTO (web ArpState.scale / scaleType).
+    static const char* scales[] = {"off", "key", "chords", "follow"};
+    if (a.scaleMode >= 1 && a.scaleMode <= 3) s->setProperty("scale", scales[a.scaleMode]);
+    if (a.scaleType >= 0 && a.scaleType < kScaleCount) s->setProperty("scaleType", scaleDefs()[(size_t)a.scaleType].id);
+    if (a.followCount >= 0) s->setProperty("followChords", chordsVar(a.followList, a.followCount));
     juce::Array<juce::var> comp, ties;
     for (auto m : a.compMask) comp.add((int)m);
     for (auto t : a.ties) ties.add(t);
@@ -80,19 +89,29 @@ inline bool arpFromVar(const juce::var& v, ArpSettings& out, bool hosted = false
     if (!s["chordOctave"].isVoid() && !whole(s["chordOctave"], 0, 6, a.chordOctave)) return false;
     if (!s["chordBars"].isVoid() && !whole(s["chordBars"], 1, 4, a.chordBars)) return false;
     if (!s["chordLink"].isVoid()) { if (!s["chordLink"].isBool()) return false; a.chordLink = (bool)s["chordLink"]; }
-    if (!s["chords"].isVoid()) {
-        const auto* chords = s["chords"].getArray(); if (!chords || chords->size() > kMaxArpChords) return false;
-        a.chordCount = chords->size();
-        for (int i = 0; i < a.chordCount; ++i) {
+    if (!s["scale"].isVoid()) { a.scaleMode = juce::StringArray {"off", "key", "chords", "follow"}.indexOf(s["scale"].toString()); if (a.scaleMode < 0 || !s["scale"].isString()) return false; }
+    if (!s["scaleType"].isVoid()) {
+        const auto t = s["scaleType"].toString();
+        if (!s["scaleType"].isString()) return false;
+        a.scaleType = t == "auto" ? -1 : scaleIndex(t.toRawUTF8());
+        if (t != "auto" && a.scaleType < 0) return false;
+    }
+    auto chordList = [&](const juce::var& v, std::array<ArpChord, kMaxArpChords>& list, int& count) {
+        const auto* chords = v.getArray(); if (!chords || chords->size() > kMaxArpChords) return false;
+        count = chords->size();
+        for (int i = 0; i < count; ++i) {
             const auto& c = (*chords)[i]; int start, length, root, inversion;
             if (!whole(c["start"], 0, 63, start) || !whole(c["length"], 1, 64, length) || start + length > 64
                 || !whole(c["root"], 0, 11, root) || !whole(c["inversion"], 0, 5, inversion)) return false;
             const auto key = c["quality"].toString(); int quality = -1;
             for (int k = 0; k < kChordQualities; ++k) if (key == chordQualities()[(size_t)k].key) quality = k;
             if (quality < 0) return false;
-            a.chordList[(size_t)i] = {(uint8_t)start, (uint8_t)length, (uint8_t)root, (uint8_t)quality, (uint8_t)inversion};
+            list[(size_t)i] = {(uint8_t)start, (uint8_t)length, (uint8_t)root, (uint8_t)quality, (uint8_t)inversion};
         }
-    }
+        return true;
+    };
+    if (!s["chords"].isVoid() && !chordList(s["chords"], a.chordList, a.chordCount)) return false;
+    if (!s["followChords"].isVoid() && !chordList(s["followChords"], a.followList, a.followCount)) return false;
     // Comp fields are optional: older states keep the arp style.
     if (!s["style"].isVoid()) {
         const auto style = s["style"].toString(); if (style != "arp" && style != "comp") return false;

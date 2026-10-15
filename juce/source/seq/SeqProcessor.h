@@ -288,6 +288,7 @@ private:
         std::shared_ptr<std::vector<uint8_t>> bytes; // Clip / Update
         fable::ArpPattern arp;
         fable::SequenceRhythm rhythm;
+        fable::ScaleMap scale; // SEQ-mode clips: written-note scale map (Scales.h)
         std::shared_ptr<const fable::AutoBank> autoBank;
         std::shared_ptr<fable::DrumRhythm> drumRhythm;
         std::shared_ptr<std::vector<float>>  params; // Patch (flat engine params)
@@ -405,7 +406,11 @@ private:
     // message thread overwrites that slot on its next wrap of the FIFO — that
     // overwrite is where the byte vector is freed, always off the audio thread.
     juce::AbstractFifo cmdFifo_ { 256 };
-    std::array<Cmd, 256> cmdSlots_;
+    // Heap-held, allocated once at construction: a Cmd carries an ArpPattern
+    // (~2.8 KB), so 256 inline slots made the processor ~1.5 MB, too large for
+    // stack instances in tests and tool code.
+    std::unique_ptr<std::array<Cmd, 256>> cmdSlotStore_ = std::make_unique<std::array<Cmd, 256>>();
+    std::array<Cmd, 256>& cmdSlots_ = *cmdSlotStore_;
     juce::AbstractFifo ackFifo_ { 512 };
     std::array<Ack, 512> ackSlots_;
 

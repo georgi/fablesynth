@@ -21,11 +21,27 @@ public:
         automationPanel_=&panel; addChildComponent(panel); addAndMakeVisible(automationPage_); resized();
     }
     void showAutomationPage() { if (automationPanel_) selectPage(Page::automation); }
+    // SQ-4 scales the body to its width; the ARP page may then extend down to
+    // logical y (the visible bottom) instead of ending at the fixed y = 600.
+    // SQ-4 hosts DR-1/BL-1 on narrower logical canvases, so at the same
+    // on-screen width their tab rows render larger; this scales the tab row
+    // and voice controls (about their outer corners) to match.
+    void setHostedChromeScale(float k) {
+        if (k == chromeScale_) return;
+        chromeScale_ = k;
+        resized();
+    }
+    void setHostedPageBottom(int y) {
+        if (y == hostedPageBottom_) return;
+        hostedPageBottom_ = y;
+        const int h = std::max(LH, y + 14);
+        if (h != getHeight()) setSize(LW, h); else resized();
+    }
     std::function<void(int)> onEditTable;
     fui::NoteSeqView& noteSeq() { return seq; }
 
 private:
-    enum class Page { edit, fx, lab, sequencer, arp, automation };
+    enum class Page { edit, fx, lab, sequencer, arp, chords, automation };
 
     juce::Rectangle<int> colArea(int c0, int span, int y, int h) const;
     void selectPage(Page page);
@@ -40,12 +56,15 @@ private:
     fui::FxChain fx;
     fui::NoteSeqView seq;
     fui::ArpPanel arp;
+    int hostedPageBottom_ = 0;
+    float chromeScale_ = 1.0f;
     fui::LabPanel lab;
     juce::TextButton editPage_ { "EDIT" };
     juce::TextButton fxPage_ { "FX CHAIN" };
     juce::TextButton labPage_ { "LAB" };
     juce::TextButton sequencerPage_ { "SEQUENCER" };
     juce::TextButton arpPage_ { "ARP" };
+    juce::TextButton chordsPage_ { "CHORDS" };
     fui::PlaybackToggles playback_;
     juce::TextButton automationPage_{"AUTOMATION"};
     juce::Component* automationPanel_=nullptr;

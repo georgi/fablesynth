@@ -6,12 +6,13 @@ import { copySequenceRhythm } from '../shared/sequenceRhythm';
 import MIXDOWNS from '../../shared/session-mixdowns.json';
 import { resolvedPatchParams } from './sessionExport';
 import { factorySession } from './factory';
-import { chordTrackArp, clipChordOctave, copyClipArp } from './clipArp';
+import { chordTrackArp, clipChordOctave, copyClipArp, followClip } from './clipArp';
 import { copyAutomation } from './clipAutomation';
 import { TIDAL_MEMORY } from './songs/tidalMemory';
 import { PHASE_RUNNER } from './songs/phaseRunner';
 import { applyGroove } from './songs/grooves';
-import { COMPING_SCENES, SESSION_COMPING, compEntry, withComp } from './songs/comping';
+import { COMPING_SCENES, PAD_HOLD, PAD_HOLD_FEEL, SESSION_COMPING, SESSION_COMP_SOUNDS, compEntry, withComp } from './songs/comping';
+import { wtPatch } from './songs/score';
 import { bytesToB64, dr1Idx, emptyClipBytes, noteIdx, type ClipDoc, type SessionDoc, wtNoteIdx } from './protocol';
 import { masterFxParams } from './masterFx';
 import { cloneDrumRhythm } from '../drum/rhythm';
@@ -504,20 +505,26 @@ function buildSession(spec: Spec): SessionDoc {
     track.patch = { kind: 'factory', index: spec.programs[t] };
     track.gain = gains[t];
   });
+  const compSound = SESSION_COMP_SOUNDS[spec.name];
+  if (compSound) session.tracks[3]!.patch = wtPatch(spec.programs[3], compSound);
   const harmony = harmonyFor(spec);
   // Each note clip carries the song's progression as its arp chord track (ARP
   // off), in the clip's register. MINIMAL's drone pad keeps its bare fifths.
   const chordTrack = (machine: 'BL1' | 'WT1', clip: ClipDoc, drone = false): ClipDoc => ({ ...clip,
     arp: chordTrackArp(machine, harmony.roots.map((root, bar) => ({ start: bar * 16, length: 16, root,
       quality: drone ? 'five' : harmony.minor[bar] ? 'min' : 'maj', inversion: 0 })), harmony.roots[0]!, clipChordOctave(machine, clip), !drone) });
-  const bass = chordTrack('BL1', bassProgression(harmony, spec));
-  const lead = chordTrack('WT1', leadProgression(harmony, spec));
+  // Bass and lead FOLLOW the chord track, so a new scene progression moves them too.
+  const bass = followClip(chordTrack('BL1', bassProgression(harmony, spec)));
+  const lead = followClip(chordTrack('WT1', leadProgression(harmony, spec)));
   const chordPads = chordTrack('WT1', padProgression(harmony, spec), spec.family === 'MINIMAL');
-  // Some pads comp over the chord track between the intro and the tail (songs/comping.ts).
+  // Pads play the chord track in CHORDS mode: held chords, and in some
+  // sessions a comp groove between the intro and the tail (songs/comping.ts).
   const comping = SESSION_COMPING[spec.name] ? compEntry(SESSION_COMPING[spec.name]!) : null;
+  const held = { ...chordPads, arp: withComp(chordPads.arp!, compEntry(PAD_HOLD), true, PAD_HOLD_FEEL) };
+  const comped = comping && { ...chordPads, arp: withComp(chordPads.arp!, comping, true) };
   session.scenes.forEach((scene, s) => {
     const drums = drumProgression(spec, s);
-    const pads = comping ? { ...chordPads, arp: withComp(chordPads.arp!, comping, COMPING_SCENES.includes(s)) } : chordPads;
+    const pads = comped && COMPING_SCENES.includes(s) ? comped : held;
     // Arrange density intentionally; the three tonal parts retain the same
     // progression whenever they enter, so every scene belongs to one song.
     scene.clips = s === 0 ? [drums, null, null, pads]

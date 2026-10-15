@@ -567,8 +567,19 @@ void DeviceFocusView::timerCallback() {
     // Page switches can change the visible device extent without changing lanes.
     layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
     layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
-    layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
-    layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+    layoutWtBodies();
+}
+
+// Lets the WT-1 ARP page fill the visible height; an open automation panel keeps the fixed page.
+void DeviceFocusView::layoutWtBodies() {
+    const float scale=static_cast<float>(std::max(1,deviceCanvas_.getWidth()))/static_cast<float>(WtDeviceBody::LW);
+    const bool panelOpen=automation_.isVisible() && automation_.expanded();
+    for (auto* wt : {&wt2Body_, &wt3Body_}) {
+        wt->setHostedPageBottom(panelOpen ? 0 : (int)((float)deviceViewport_.getHeight()/scale) - 14);
+        // Match the DR-1/BL-1 tab rows, which render on ~1297 px logical canvases.
+        wt->setHostedChromeScale((float)WtDeviceBody::LW / (0.5f * (float)(kDrumWidth + kBassWidth)));
+        layoutBody(*wt, WtDeviceBody::LW, wt->getHeight());
+    }
 }
 
 void DeviceFocusView::layoutBody(juce::Component& body, int logicalWidth,
@@ -611,8 +622,7 @@ void DeviceFocusView::resized() {
     if (show && !expanded) { automation_.setVisible(true); automation_.setBounds(8,getHeight()-40,width-16,40); }
     layoutBody(drumBody_, kDrumWidth, kDrumHeight, 103);
     layoutBody(bassBody_, kBassWidth, kBassHeight, 103);
-    layoutBody(wt2Body_, WtDeviceBody::LW, WtDeviceBody::LH);
-    layoutBody(wt3Body_, WtDeviceBody::LW, WtDeviceBody::LH);
+    layoutWtBodies();
 
     constexpr int controlHeight = 28, patchWidth = 170, patchButtonWidth = 26;
     auto toolbar = juce::Rectangle<int>(12, 5, juce::jmax(0, getWidth() - 24), controlHeight);

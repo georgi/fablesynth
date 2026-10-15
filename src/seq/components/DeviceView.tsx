@@ -4,7 +4,7 @@ import { cloneDrumRhythm, type DrumRhythm } from '../../drum/rhythm';
 // engine to that machine's standalone store, keeps the target clip and the
 // track patch in sync with the session doc, and renders the device panels.
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type ComponentProps } from 'react';
 import type * as React from 'react';
 import { EnvPanel as BassEnvPanel } from '../../bass/components/EnvPanel';
 import { BassFxRack } from '../../bass/components/BassFxRack';
@@ -54,7 +54,7 @@ import { b64ToBytes, HOSTED_MAX_BARS, type MachineId, wtNoteIdx } from '../proto
 import { clipPattern, useSeqStore } from '../store';
 import { HostedClipBar, HostedLengthControl } from './HostedClipBar';
 import { AutomationPanel } from './AutomationPanel';
-import { HostedArpEditor, HostedArpModeSwitch } from './HostedArpPanel';
+import { HostedArpEditor, useHostedScale } from './HostedArpPanel';
 
 // One uniform handle per machine over the three (differently-typed) stores.
 interface HostedStore {
@@ -270,18 +270,20 @@ export function DeviceView() {
 function DrumPanels({ sequenceEditable }: { sequenceEditable: boolean }) {
   const mode = useSeqStore((s) => s.deviceMode);
   const drumFxOpen = useSeqStore((s) => s.drumFxOpen);
+  const groupFx = useSeqStore((s) => s.drumFxOpen && s.drumFxScope === 'group');
+  // EDIT and PAD FX show the pads; GROUP FX and SEQ take the full width.
+  const pads = mode === 'edit' && !groupFx;
   return (
     <div id="drum-rack" className="sq-hosted-rack" data-mode={mode}>
-      <div className={`dr-main${mode === 'seq' ? ' fit-pads' : ''}`}>
-        <div className="dr-left">
+      <div className={`dr-main${pads ? '' : ' no-pads'}`}>
+        {pads && <div className="dr-left">
           <div id="dr-pads"><PadGrid /></div>
-          {/* SEQ mode drops the pad strip only — the pads stay for playing. */}
-          {mode !== 'seq' && <div id="dr-padstrip"><PadStrip /></div>}
-        </div>
+          <div id="dr-padstrip"><PadStrip /></div>
+        </div>}
         <div className="dr-right">
           <div id="dr-selbar"><SelBar /></div>
           {mode === 'edit' && <PadEditTabs />}
-          {!(mode === 'edit' && drumFxOpen) && <div id="dr-oscrow">
+          {mode === 'edit' && !drumFxOpen && <div id="dr-oscrow">
             <OscSection osc="oscA" />
             <SampleSection />
             <NoiseSection />
@@ -308,19 +310,19 @@ function BassPanels({ bars }: { bars?: number }) {
   const trackFxOpen = useSeqStore((s) => s.trackFxOpen);
   return (
     <div id="bass-rack" className="sq-hosted-rack" data-mode={mode}>
-      <div id="bl-editrow">
+      {mode === 'edit' && <div id="bl-editrow">
         <BassOscSection />
         <SubSection />
-        {mode === 'edit' && <BassFilterSection />}
-        {mode === 'edit' && <BassEnvPanel />}
-      </div>
+        <BassFilterSection />
+        <BassEnvPanel />
+      </div>}
       {mode === 'edit' && (
         <div id="bl-modrow">
           <BassLfoPanel />
           <AccentPanel />
         </div>
       )}
-      {mode === 'seq' && <div id="bl-seq"><HostedArpEditor machine="BL1"><PitchSeq clipKey={clipKey} bars={bars} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="BL1" /></>} /></HostedArpEditor></div>}
+      {mode === 'seq' && <div id="bl-seq"><HostedArpEditor machine="BL1"><ScaledPitchSeq clipKey={clipKey} bars={bars} headerExtra={<HostedLengthControl machine="BL1" />} /></HostedArpEditor></div>}
       {mode === 'edit' && trackFxOpen && <div id="bl-fxrack"><BassFxRack /></div>}
       {/* Keyboard last, where a synth's keys belong. */}
       {mode === 'seq' && <div id="bl-keysrow"><KeysPanel /></div>}
@@ -462,11 +464,11 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
   return (
     <div id="rack" className="sq-hosted-rack" data-mode={mode}>
       <div className="panels">
-        <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
-        <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
-        <UtilPanel />
         {mode === 'edit' && (
           <>
+            <OscPanel prefix="oscA" accentKey="a" title="OSC A" gridArea="oscA" />
+            <OscPanel prefix="oscB" accentKey="b" title="OSC B" gridArea="oscB" />
+            <UtilPanel />
             <FilterPanel />
             <EnvPanel id="env1" title="AMP ENV" gridArea="env1" viewAccent="#e8edf7" knobAccent="n" />
             <EnvPanel id="env2" title="MOD ENV" gridArea="env2" viewAccent="#b18cff" knobAccent="f" modSource={3} />
@@ -484,11 +486,19 @@ function WtPanels({ clip }: { clip: { bars: number; pattern: string } | null }) 
           </>
         )}
         {mode === 'seq' && (
-          <HostedArpEditor machine="WT1"><SeqPanel clipKey={clipKey} bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<><HostedArpModeSwitch /><HostedLengthControl machine="WT1" /></>} /></HostedArpEditor>
+          <HostedArpEditor machine="WT1"><ScaledSeqPanel clipKey={clipKey} bars={clip?.bars} polySteps={polySteps} onToggleChordNote={toggleChordNote} onSetChordDuration={setChordDuration} rectOps={rectOps} onMoveChordNote={moveChordNote} headerExtra={<HostedLengthControl machine="WT1" />} /></HostedArpEditor>
         )}
       </div>
       {clip && clip.bars <= HOSTED_MAX_BARS && <AutomationPanel machine="WT1" />}
       {mode === 'seq' && <KeyboardBar />}
     </div>
   );
+}
+
+/** The hosted note sequencers with the focused clip's scale mode. */
+function ScaledPitchSeq(props: ComponentProps<typeof PitchSeq>) {
+  return <PitchSeq {...props} {...useHostedScale('BL1')} />;
+}
+function ScaledSeqPanel(props: ComponentProps<typeof SeqPanel>) {
+  return <SeqPanel {...props} {...useHostedScale('WT1')} />;
 }

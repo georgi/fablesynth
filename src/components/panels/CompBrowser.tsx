@@ -58,7 +58,7 @@ export function CompBrowser({ a, update, onClose }: { a: ArpState; update: (patc
       <h3>COMP PATTERNS <span>{shown.length} / {COMP_LIBRARY.length}</span></h3>
       <input autoFocus type="search" aria-label="Search comp patterns" placeholder="SEARCH STYLE OR NAME" value={query} onChange={e => setQuery(e.target.value)} />
       <button type="button" className="ns-btn" onClick={() => shown.length && load(shown[Math.floor(Math.random() * shown.length)].i)}>RANDOM</button>
-      <button type="button" className="ns-btn" onClick={onClose}>DONE</button>
+      <button type="button" className="ns-btn nav-btn" onClick={onClose}>DONE</button>
     </div>
     <div className="comp-browser-variations" aria-label="Variation filter">
       {['ALL', ...COMP_VARIATIONS.map(v => v.name)].map(v => <button key={v} type="button" aria-pressed={variation === v} onClick={() => setVariation(v)}>{v}</button>)}

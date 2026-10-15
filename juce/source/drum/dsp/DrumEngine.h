@@ -493,6 +493,10 @@ private:
     // fades it out over DR_CHOKE_TAU while the new hit starts clean on the
     // main slot. Before, trigger() zeroed the running voice in one sample.
     PadVoice tails_[DR_NPADS];
+    // Second fade slot: a retrigger inside the tail's fade, while the tail is
+    // still louder, parks the quieter sounding hit here instead of restarting
+    // it in place. Idle unless two hits land inside one choke fade.
+    PadVoice fades_[DR_NPADS];
     double sr_ = 48000;
     double dcR_ = DR_DC_R;         // sr-derived DC pole (Finding 9)
     double chokeCoef_ = 0.12;      // sr-derived choke/retrigger fade (D9)

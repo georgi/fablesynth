@@ -1,7 +1,8 @@
-import { arpCompile, newArp, type ArpState } from '../arp';
+import { arpCompile, newArp, seqMode, type ArpState, type SeqMode } from '../arp';
 import { validChords, type ArpChord } from '../chords';
 import { b64ToBytes, NOTE_STRIDE, type ClipDoc, type MachineId, type SessionDoc } from './protocol';
 import { COMP_VOICINGS, STRUM_DIRS, STRUM_MAX_MS } from '../comp';
+import { SCALE_MODES, SCALE_TYPES, scaleMap } from '../scales';
 
 export interface ClipArp { enabled: boolean; settings: ArpState }
 export interface ArpConfig {
@@ -14,10 +15,15 @@ export function copyClipArp(arp: ClipArp): ClipArp {
   const a = arp.settings;
   return { enabled: arp.enabled, settings: { ...a, notes: [...a.notes], hits: [...a.hits], accents: [...a.accents],
     ...(a.slides ? { slides: [...a.slides] } : {}), ...(a.comp ? { comp: [...a.comp] } : {}), ...(a.ties ? { ties: [...a.ties] } : {}),
-    ...(a.chords ? { chords: a.chords.map(c => ({ ...c })) } : {}) } };
+    ...(a.chords ? { chords: a.chords.map(c => ({ ...c })) } : {}),
+    ...(a.followChords ? { followChords: a.followChords.map(c => ({ ...c })) } : {}) } };
 }
 /** A clip's chord-track length in bars. */
 export const clipChordBars = (a: Pick<ArpState, 'chordBars'>) => a.chordBars ?? 4;
+/** The mode a clip plays: its written notes, or its arp in arpeggio or chord-comping style. */
+export function clipSeqMode(clip: { arp?: ClipArp } | null | undefined): SeqMode {
+  return seqMode(!!clip?.arp?.enabled, clip?.arp?.settings.style ?? 'arp');
+}
 export function newClipArp(machine: MachineId): ClipArp {
   return { enabled: false, settings: { ...newArp(),
     // BL-1 chord tracks sit in the bass register.
@@ -51,6 +57,11 @@ export function compileClipArp(clip: ClipDoc): ArpConfig | undefined {
   return { ...arpCompile(comp ? a : { ...a, style: 'arp' }, a.notes, bars), hits: [...a.hits], accents: [...a.accents],
     ...(a.slides ? { slides: [...a.slides] } : {}), rate: a.rate, gate: a.gate };
 }
+/** The scale map for a clip's written notes: only SEQ mode plays them. */
+export function compileClipScale(clip: ClipDoc): number[][] | undefined {
+  const a = clip.arp?.settings;
+  return a && !clip.arp!.enabled ? scaleMap(a, clipChordBars(a)) : undefined;
+}
 export function validClipArp(value: unknown): value is ClipArp {
   if (!value || typeof value !== 'object') return false;
   const { enabled, settings: a } = value as ClipArp;
@@ -71,6 +82,8 @@ export function validClipArp(value: unknown): value is ClipArp {
     (a.chordOctave === undefined || (Number.isInteger(a.chordOctave) && a.chordOctave >= 0 && a.chordOctave <= 6)) &&
     (a.chordBars === undefined || (Number.isInteger(a.chordBars) && a.chordBars >= 1 && a.chordBars <= 4)) &&
     (a.chordLink === undefined || typeof a.chordLink === 'boolean') &&
+    (a.followChords === undefined || validChords(a.followChords) !== null) &&
+    (a.scale === undefined || SCALE_MODES.includes(a.scale)) && (a.scaleType === undefined || SCALE_TYPES.includes(a.scaleType)) &&
     (a.input !== 'chords' || Array.isArray(a.chords));
 }
 
@@ -99,4 +112,34 @@ export function linkChordWrites(session: SessionDoc, s: number, t: number, arp: 
     const clip = session.scenes[s].clips[i]!;
     return { t: i, clip: { ...clip, arp: { ...clip.arp!, settings: { ...clip.arp!.settings, ...shared } } } };
   }) };
+}
+
+/** A scene's chord progression: the chord track its linked clips share. */
+export interface SceneChords { chords: ArpChord[]; key: number; bars: number }
+/** Tracks whose clip in scene `s` follows the scene progression (a linked chord track). */
+export function sceneChordTracks(session: SessionDoc, s: number): number[] {
+  return (session.scenes[s]?.clips ?? []).flatMap((c, t) => linked(c) ? [t] : []);
+}
+/** The progression of scene `s`, or null when no clip links its chord track. */
+export function sceneChords(session: SessionDoc, s: number): SceneChords | null {
+  const t = sceneChordTracks(session, s)[0];
+  if (t === undefined) return null;
+  const a = session.scenes[s].clips[t]!.arp!.settings;
+  return { chords: a.chords.map(c => ({ ...c })), key: a.chordKey, bars: clipChordBars(a) };
+}
+/** Clip writes that give every linked clip of scene `s` the progression `p`. */
+export function sceneChordWrites(session: SessionDoc, s: number, p: SceneChords): { t: number; clip: ClipDoc }[] {
+  return sceneChordTracks(session, s).map(t => {
+    const clip = session.scenes[s].clips[t]!;
+    return { t, clip: { ...clip, arp: { ...clip.arp!, settings: { ...clip.arp!.settings,
+      chords: p.chords.map(c => ({ ...c })), chordKey: p.key, chordBars: p.bars } } } };
+  });
+}
+
+/** A chord-track clip switched to FOLLOW: its notes keep their place against
+ *  its current chords, and move when the scene loads another progression. */
+export function followClip(clip: ClipDoc): ClipDoc {
+  const a = clip.arp?.settings;
+  if (!a || a.input !== 'chords') throw new Error(`${clip.name}: FOLLOW needs a chord track`);
+  return { ...clip, arp: { ...clip.arp!, settings: { ...a, scale: 'follow', followChords: a.chords.map(c => ({ ...c })) } } };
 }

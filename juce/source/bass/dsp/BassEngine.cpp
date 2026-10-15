@@ -357,8 +357,11 @@ void BassEngine::setSequenceRhythm(const SequenceRhythm& r) {
 // polyEmit: the source cell of bar one; its slide lookahead is the next
 // source cell, and a rest breaks a held slide.
 void BassEngine::polyEmit(long k, double dur) {
-    const BassStep st = readStep(pats_.data(), 0, polySource(seqRhythm_, k));
+    BassStep st = readStep(pats_.data(), 0, polySource(seqRhythm_, k));
     if (st.on && seqEnabled_) {
+        // Scale position: the step's sixteenth on the straight grid (worklet polyEmit).
+        const double beats = seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25;
+        st.semi = scaleNote(seqScale_, (long)std::floor((double)k * beats * 4 + .1), BL_ROOT_MIDI + st.semi) - BL_ROOT_MIDI;
         if (st.slide && gate_) glideTo(st.semi, st.acc);
         else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
         const BassStep next = readStep(pats_.data(), 0, polySource(seqRhythm_, k + 1));
@@ -446,8 +449,9 @@ void BassEngine::arpFire(const ArpPattern& a, int s, double interval) {
     } else { release(); samplesToGateOff_ = -1; }
 }
 void BassEngine::fireStepAt(int s, int pat, int patNext, double dur) {
-    const BassStep st = readStep(pats_.data(), pat, s);
+    BassStep st = readStep(pats_.data(), pat, s);
     if (st.on && seqEnabled_) {
+        st.semi = scaleNote(seqScale_, (long)chainPos_ * BL_STEPS + s, BL_ROOT_MIDI + st.semi) - BL_ROOT_MIDI;
         if (st.slide && gate_) glideTo(st.semi, st.acc);
         else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
         const int sN = (s + 1) % BL_STEPS;
@@ -472,8 +476,9 @@ void BassEngine::clipFireAt(int abs) {
     const bool poly = clipHost_.polyActive();
     const int total = std::max(1, clipHost_.clipBars() * BL_STEPS);
     const int s = abs % BL_STEPS;
-    const BassStep st = readStep(clip, abs / BL_STEPS, s);
+    BassStep st = readStep(clip, abs / BL_STEPS, s);
     if (st.on) {
+        st.semi = clipHost_.scaleNote(BL_ROOT_MIDI + st.semi) - BL_ROOT_MIDI;
         if (st.slide && gate_) glideTo(st.semi, st.acc);
         else                   noteOn(st.semi, st.acc, st.acc ? BL_ACCENT_VEL : BL_PLAIN_VEL);
         const int absN = poly ? clipHost_.polyNextSource() : (abs + 1) % total;

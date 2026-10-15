@@ -99,6 +99,17 @@ bool runArpProcessorChecks(const char* machine, bool bass) {
             check(proc->getArpSettings().enabled && arpLed->isOn() && !seqLed->isOn(), "ARP LED enables arp and disables the sequencer");
             click(*seqLed);
             check(!proc->getArpSettings().enabled && seqLed->isOn() && proc->isSeqEnabled(), "SEQ LED enables the sequencer and disables arp");
+            auto* chordsLed = findFxComponent<fui::PowerButton>(*editor, "Chord comping on/off");
+            check(bass ? chordsLed == nullptr : chordsLed != nullptr, "only WT-1 has a CHORDS tab LED");
+            if (chordsLed) {
+                click(*chordsLed);
+                check(proc->getArpSettings().enabled && proc->getArpSettings().comp && chordsLed->isOn() && !arpLed->isOn()
+                      && !seqLed->isOn() && !proc->isSeqEnabled(), "CHORDS LED enables comping and disables the other modes");
+                click(*arpLed);
+                check(proc->getArpSettings().enabled && !proc->getArpSettings().comp && arpLed->isOn() && !chordsLed->isOn(),
+                      "ARP LED switches comping to arpeggio");
+                click(*seqLed);
+            }
             click(*seqLed);
             check(!seqLed->isOn() && !arpLed->isOn() && !proc->isSeqEnabled(), "both modes can be off");
             juce::MemoryBlock offState; proc->getStateInformation(offState);

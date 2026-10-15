@@ -319,6 +319,9 @@ public:
     double sequenceAutomationSteps() const { return seqIsPlaying() ? seqSongPos_/((60/seqEffectiveBpm()/4)*sr_) : -1; }
     void seqPlay();                                 // worklet 'play' (yields to a rolling host)
     void setArp(const ArpPattern&);
+    // Standalone scale mode (worklet 'scale'): written notes snap to this map
+    // at chainPos * 16 + step; length 0 = OFF.
+    void setSeqScale(const ScaleMap& m) { seqScale_ = m; }
     // Standalone melodic POLY (worklet.js 'sequenceRhythm'): one clock plays the
     // first `steps` cells of bar one, on the swung 1/16 grid or FIT into
     // `cycleBeats` straight slots. A timing-mode change re-phases from the song
@@ -366,16 +369,16 @@ public:
         hostAnchor_ = anchorFrame; // beat zero of the shared timebase (synced-LFO phase)
         clipHost_.setTempo(bpm_, swing, sr_, anchorFrame);
     }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}) {
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
         autoPlayer_.schedule(automation);
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp, rhythm);
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp, rhythm, scale);
     }
     void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}) {
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
         if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp))
             || (clipHost_.isPlaying() && clipHost_.rhythmRephases(rhythm)))) seqGateOff();
         autoPlayer_.update(automation, clipHost_.hasPending());
-        clipHost_.updateClip(data, (size_t)bytes, bars, arp, rhythm);
+        clipHost_.updateClip(data, (size_t)bytes, bars, arp, rhythm, scale);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max` events, then erase ONLY the copied
@@ -544,6 +547,7 @@ private:
     // ---- note sequencer state (worklet fields) ----
     std::vector<uint8_t> seqPats_ = makeEmptySeqPatterns();
     ArpPattern arp_;
+    ScaleMap seqScale_;
     bool seqEnabled_ = true;
     std::vector<int> seqChain_ { 0 };
     int    seqChainPos_ = 0;

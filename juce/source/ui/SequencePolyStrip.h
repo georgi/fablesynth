@@ -116,10 +116,10 @@ public:
             drawSpaced(g, text, r, .6f, juce::Justification::centred);
         };
         const auto legend = [&](int x, const juce::String& text, int w) {
-            g.setColour(juce::Colour(0xffa9b3c6)); g.setFont(monoFont(9.0f));
+            g.setColour(juce::Colour(0xffa9b3c6)); g.setFont(seqFont(9.0f));
             drawSpaced(g, text, { x, bounds(grid).getY(), w, bounds(grid).getHeight() }, 1.0f);
         };
-        g.setFont(monoFont(10.0f));
+        g.setFont(seqFont(10.0f));
         // Disclosure: "POLY  <summary>  ▾/▴".
         {
             const auto r = bounds(disclosure);
@@ -135,7 +135,7 @@ public:
             g.drawText(juce::String::fromUTF8(open_ ? u8"▴" : u8"▾"), arrow, juce::Justification::centred);
         }
         if (!open_) return;
-        g.setFont(monoFont(10.0f));
+        g.setFont(seqFont(10.0f));
         chip(bounds(power), value_.enabled ? "ON" : "OFF", value_.enabled);
         legend(52, "MODE", 34);
         chip(bounds(grid), "GRID", !value_.fit); chip(bounds(fit), "FIT", value_.fit);
@@ -153,7 +153,7 @@ public:
         chip(bounds(undo), juce::String::fromUTF8(u8"↶"), false);
         chip(bounds(redo), juce::String::fromUTF8(u8"↷"), false);
         const int ex = bounds(redo).getRight() + 16;
-        g.setColour(juce::Colour(0xffa9b3c6)); g.setFont(monoFont(9.0f));
+        g.setColour(juce::Colour(0xffa9b3c6)); g.setFont(seqFont(9.0f));
         drawSpaced(g, juce::String::fromUTF8(u8"BAR 1 · FIRST ") + juce::String(value_.steps) + " CELLS · "
                        + (value_.fit ? juce::String::fromUTF8(u8"EQUAL SLOTS · STRAIGHT") : juce::String::fromUTF8(u8"1/16 GRID · SWING")),
                    { ex, bounds(grid).getY(), juce::jmax(0, getWidth() - ex), bounds(grid).getHeight() }, .4f);
@@ -167,12 +167,12 @@ private:
         const auto well = down.getUnion(up).toFloat();
         g.setColour(juce::Colour(0xff0d1017)); g.fillRoundedRectangle(well, 4.0f);
         g.setColour(border); g.drawRoundedRectangle(well.reduced(.5f), 4.0f, 1.0f);
-        g.setFont(monoFont(10.0f));
+        g.setFont(seqFont(10.0f));
         g.setColour(col::text.withMultipliedAlpha(canDown ? 1.0f : .4f));
         g.drawText(juce::String::fromUTF8(u8"◂"), down, juce::Justification::centred);
         g.setColour(col::text.withMultipliedAlpha(canUp ? 1.0f : .4f));
         g.drawText(juce::String::fromUTF8(u8"▸"), up, juce::Justification::centred);
-        g.setColour(col::acA); g.setFont(monoFont(11.0f, true));
+        g.setColour(col::acA); g.setFont(seqFont(11.0f, true));
         g.drawText(juce::String(v), juce::Rectangle<int>(down.getRight(), down.getY(), up.getX() - down.getRight(), down.getHeight()),
                    juce::Justification::centred);
     }

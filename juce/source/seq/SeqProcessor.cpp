@@ -887,8 +887,8 @@ void SeqAudioProcessor::drainCmds() {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
                         case 0: drum_.hostClip(d, nb, c.bars, c.at, c.tag, c.drumRhythm.get(), c.autoBank.get()); break;
-                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get(), c.rhythm); break;
-                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get(), c.rhythm); break;
+                        case 1: bass_.hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
+                        default: wt_[c.t - 2].hostClip(d, nb, c.bars, c.at, c.tag, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
                     }
                 } break;
                 case Cmd::K::Stop:
@@ -902,8 +902,8 @@ void SeqAudioProcessor::drainCmds() {
                     const uint8_t* d = c.bytes->data(); const int nb = (int)c.bytes->size();
                     switch (c.t) {
                         case 0: drum_.hostClipUpdate(d, nb, c.bars, c.drumRhythm.get(), c.autoBank.get()); break;
-                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get(), c.rhythm); break;
-                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get(), c.rhythm); break;
+                        case 1: bass_.hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
+                        default: wt_[c.t - 2].hostClipUpdate(d, nb, c.bars, c.arp, c.autoBank.get(), c.rhythm, c.scale); break;
                     }
                 } break;
                 case Cmd::K::Gain:
@@ -945,6 +945,7 @@ void SeqAudioProcessor::IO::ioScheduleArpClip(int t, const fable::ClipData& clip
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
     if (clip.hasArp) c.arp = fable::compileClipArp(clip.arp);
+    c.scale = fable::compileClipScale(clip.hasArp, clip.arp);
     if (clip.hasSequenceRhythm) c.rhythm = clip.sequenceRhythm;
     if (clip.hasAutomation || !clip.automation.empty()) {
         auto bank = std::make_shared<fable::AutoBank>();
@@ -959,6 +960,7 @@ void SeqAudioProcessor::IO::ioUpdateArpClip(int t, const fable::ClipData& clip) 
     c.bytes = std::make_shared<std::vector<uint8_t>>(clip.bytes);
     if (clip.hasDrumRhythm) c.drumRhythm = std::make_shared<fable::DrumRhythm>(clip.drumRhythm);
     if (clip.hasArp) c.arp = fable::compileClipArp(clip.arp);
+    c.scale = fable::compileClipScale(clip.hasArp, clip.arp);
     if (clip.hasSequenceRhythm) c.rhythm = clip.sequenceRhythm;
     if (clip.hasAutomation || !clip.automation.empty()) {
         auto bank = std::make_shared<fable::AutoBank>();

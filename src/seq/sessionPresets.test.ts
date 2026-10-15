@@ -5,6 +5,7 @@ import { DEFAULT_SESSION_NAME, defaultSession, BASE_GENERATED_SESSION_PRESETS as
 import MIXDOWNS from '../../shared/session-mixdowns.json';
 import { b64ToBytes, wtNoteIdx } from './protocol';
 import { FACTORY_CLIP_LIBRARY } from './clipLibrary.gen';
+import { compileClipScale } from './clipArp';
 
 describe('SQ-4 legacy generated session patch contract', () => {
   it('keeps the native session-library ordering and factory patch indices', () => {
@@ -21,9 +22,10 @@ describe('SQ-4 legacy generated session patch contract', () => {
       'VELVET SMOKE', 'NIGHT BUS', 'CRACKED LENS', 'STONE GARDEN',
       'ECHO CHAMBER', 'KING STEPPER', 'ROOTS RADAR', 'ZION GATE',
     ]);
-    expect(GENERATED_SESSION_PRESETS[0].session.tracks.map((track) => track.patch)).toEqual([
+    // NEON TALE comps, so its pad is an inline sound on FUTURE CHORD (songs/comping.ts).
+    expect(GENERATED_SESSION_PRESETS[0].session.tracks.map((track) => track.patch.kind === 'factory' ? track.patch : { base: track.patch.base })).toEqual([
       { kind: 'factory', index: 13 }, { kind: 'factory', index: 0 },
-      { kind: 'factory', index: 3 }, { kind: 'factory', index: 11 },
+      { kind: 'factory', index: 3 }, { base: 11 },
     ]);
     expect(GENERATED_SESSION_PRESETS[1].session.tracks.map((track) => track.patch)).toEqual([
       { kind: 'factory', index: 13 }, { kind: 'factory', index: 2 },
@@ -209,8 +211,27 @@ describe('SQ-4 factory session mixdowns', () => {
         expect(track.patch.kind).toBe('inline');
         const params = (track.patch as { data: { params: Record<string, number> } }).data.params;
         for (const [id, v] of Object.entries(mix.tracks[t].params)) expect(params[id]).toBe(v);
-        if (base) expect((track.patch as { base?: number }).base).toBe((base.session.tracks[t].patch as { index: number }).index);
+        if (!base) return;
+        const generated = base.session.tracks[t].patch;
+        expect((track.patch as { base?: number }).base).toBe(generated.kind === 'factory' ? generated.index : generated.base);
       });
+    }
+  });
+});
+
+describe('scene chords in the factory sessions', () => {
+  it('drive every tonal clip that carries the song harmony, without changing a note as written', () => {
+    for (const preset of FACTORY_SESSION_PRESETS) {
+      preset.session.scenes.forEach((scene, s) => scene.clips.forEach((clip, t) => {
+        if (!clip || preset.session.tracks[t].machine === 'DR1') return;
+        const a = clip.arp?.settings, where = `${preset.name} ${s}:${t}`;
+        expect(a?.input, where).toBe('chords');
+        // MINIMAL's drone pads keep their own fifths.
+        if (!a!.chordLink) { expect(a!.chords.every(c => c.quality === 'five'), where).toBe(true); return; }
+        if (clip.arp!.enabled) return; // ARP / CHORDS mode plays the chord track itself
+        expect(a!.scale, where).toBe('follow');
+        expect(compileClipScale(clip)!.flat().every(x => x === 0), where).toBe(true);
+      }));
     }
   });
 });

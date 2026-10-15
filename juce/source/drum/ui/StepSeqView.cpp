@@ -101,7 +101,7 @@ void SelBarView::paint(juce::Graphics& g) {
 
     // .dr-sel-name (cyan)
     g.setColour(col::acA);
-    g.setFont(monoFont(9.0f));
+    g.setFont(seqFont(9.0f));
     drawSpaced(g, proc.padName(sel), row.removeFromLeft(170), 0.9f);
 
     // Patch stepper (web .dr-patchbar): "PATCH" mini head left of the prev
@@ -120,7 +120,7 @@ void SelBarView::paint(juce::Graphics& g) {
         (patchIndex_ >= 0 && patchIndex_ < (int)bank.size())
             ? juce::String(bank[(size_t)patchIndex_].name) : juce::String::fromUTF8("\xe2\x80\x94");
     g.setColour(col::acA);
-    g.setFont(monoFont(9.0f));
+    g.setFont(seqFont(9.0f));
     drawSpaced(g, patchName, patchNameArea.reduced(8, 0), 0.8f,
                juce::Justification::centred);
 }
@@ -140,7 +140,7 @@ static constexpr float kGroupGap = 8.0f;
 static constexpr int kLaneMaxH = 42, kLaneGap = 1, kLaneNameW = 120, kLaneNameGap = 7;
 static constexpr int kRowBottomPad = 11;
 static constexpr int kTimingHeight = 64;   // .dr-timing-panel one-row height
-static constexpr int kInspectorGap = 4;
+static constexpr int kInspectorGap = 10;
 static constexpr float kStepGap = 2.0f;
 
 StepSeqView::StepSeqView(DrumUiModel& p) : proc(p) {
@@ -201,7 +201,7 @@ void StepSeqView::setupPoly() {
     stepDelay_.onChange = [this](int v) { if (!refreshingTiming_) setMicroDelay(v, true); };
     for (auto* label : { &laneDelayLabel_, &stepDelayLabel_ }) {
         timingPanel_.addAndMakeVisible(*label);
-        label->setFont(monoFont(9, true));
+        label->setFont(seqFont(9, true));
         label->setBorderSize({});
         label->setColour(juce::Label::textColourId, juce::Colour(0xff9ca9bd));
     }
@@ -209,12 +209,20 @@ void StepSeqView::setupPoly() {
     addAndMakeVisible(*polyPanel_); addAndMakeVisible(laneScroll_);
     polyPanel_->beforeEdit = [this] { pushHistoryEntry(); };
     polyPanel_->onUndo = [this] { undo(); }; polyPanel_->onRedo = [this] { redo(); };
+    polyPanel_->onLayoutChange = [this] { resized(); repaint(); };
     laneScroll_.addListener(this);
     refreshTiming();
 }
-int StepSeqView::gridBottom() const {
+int StepSeqView::gridSpaceBottom() const {
     if (!polyPanel_) return getHeight() - kRowBottomPad;
     return juce::jmin(timingPanel_.getY(), polyPanel_->getY()) - kInspectorGap;
+}
+// When the lanes scroll, the visible grid ends on a whole lane, not mid-row.
+int StepSeqView::gridBottom() const {
+    const int space = gridSpaceBottom() - kRowY, pitch = laneHeight() + kLaneGap;
+    const int total = pitch * fable::DR_NPADS - kLaneGap;
+    if (total <= space) return gridSpaceBottom();
+    return kRowY + juce::jmax(1, (space + kLaneGap) / pitch) * pitch - kLaneGap;
 }
 // .dr-timing-panel: 8 px padding, 8 px gaps, columns .7fr | 1fr | 1fr | .7fr;
 // narrow panels (< 520 px, the web's 730 px breakpoint) fold into a 2 × 2 grid.
@@ -240,11 +248,11 @@ void StepSeqView::resized() {
     const int half = (panelWidth - 8) / 2;
     const bool sideBySide = half >= 600;
     if (sideBySide) {
-        const int h = juce::jmax(kTimingHeight, PolyLanePanel::preferredHeight(half));
+        const int h = juce::jmax(kTimingHeight, polyPanel_->preferredHeight(panelWidth - half - 8));
         timingPanel_.setBounds(12, getHeight() - h - 4, half, h);
         polyPanel_->setBounds(12 + half + 8, getHeight() - h - 4, panelWidth - half - 8, h);
     } else {
-        const int h = PolyLanePanel::preferredHeight(panelWidth);
+        const int h = polyPanel_->preferredHeight(panelWidth);
         polyPanel_->setBounds(12, getHeight() - h - 4, panelWidth, h);
         const int timingHeight = panelWidth < 520 ? 2 * kTimingHeight - 8 : kTimingHeight;
         timingPanel_.setBounds(12, polyPanel_->getY() - kInspectorGap - timingHeight, panelWidth, timingHeight);
@@ -316,8 +324,12 @@ int StepSeqView::padOfLane(int lane) { return fable::DR_NPADS - 1 - lane; }
 // lane stack can use the full vertical canvas. Below the web's 24 px minimum
 // cell height the lanes stop shrinking and the stack scrolls instead.
 int StepSeqView::laneHeight() const {
-    const int usable = gridBottom() - kRowY - (fable::DR_NPADS - 1) * kLaneGap;
-    return juce::jlimit(24, kLaneMaxH, usable / fable::DR_NPADS); // .dr-lanes .step min-height
+    const int space = gridSpaceBottom() - kRowY;
+    const int usable = space - (fable::DR_NPADS - 1) * kLaneGap;
+    if (usable / fable::DR_NPADS >= 24) return juce::jmin(kLaneMaxH, usable / fable::DR_NPADS);
+    // Scrolling: as many 24 px (.dr-lanes .step min-height) rows as fit, stretched to fill the space.
+    const int rows = juce::jmax(1, (space + kLaneGap) / (24 + kLaneGap));
+    return juce::jlimit(24, kLaneMaxH, (space + kLaneGap) / rows - kLaneGap);
 }
 
 juce::Rectangle<int> StepSeqView::laneBounds(int pad) const {
@@ -979,7 +991,7 @@ static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::St
         g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
     }
     g.setColour(active || current ? col::acA : col::textDim);
-    g.setFont(monoFont(fontSize));
+    g.setFont(seqFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -1112,7 +1124,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
 
     // ---- head: editing-pad name (.dr-stepseq-target) ----
     g.setColour(col::acA);
-    g.setFont(monoFont(9.0f, true));
+    g.setFont(seqFont(9.0f, true));
     drawSpaced(g, proc.padName(sel),
                { kPadX + kTitleW + 8, kHeadY, kNameW, kHeadH }, 1.0f);
 
@@ -1146,7 +1158,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
         const auto hint = juce::Rectangle<int>(left, kHeadY, getWidth() - kPadX - left, kHeadH);
         if (hint.getWidth() >= 300) {
             g.setColour(juce::Colour(0xff93a0b8));
-            g.setFont(monoFont(7.0f));
+            g.setFont(seqFont(7.0f));
             drawSpaced(g, juce::String::fromUTF8(u8"TAP STEP · ON → ACCENT → OFF · SHIFT-DRAG TO SELECT"),
                        hint, 0.9f, juce::Justification::centredRight);
         }
@@ -1168,7 +1180,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
         g.setColour(col::text); g.setFont(dispFont(10));
         drawSpaced(g, "MICRO TIMING", context.removeFromTop(16), 1.0f);
         context.removeFromTop(4);
-        g.setColour(col::acA); g.setFont(monoFont(10, true));
+        g.setColour(col::acA); g.setFont(seqFont(10, true));
         drawSpaced(g, juce::String(sel + 1).paddedLeft('0', 2) + " " + proc.padName(sel), context, 1.0f);
         // Result: caption over the signed sum of lane + step offsets.
         const auto sequence = proc.sequence();
@@ -1176,10 +1188,10 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
         const int total = lane.delayMs + lane.stepDelayMs[(size_t)(edit * 16 + timingStep_)];
         auto result = timingColumn(3).withSizeKeepingCentre(timingColumn(3).getWidth(), 36);
         if (!grid2x2) result.removeFromLeft(8);
-        g.setColour(juce::Colour(0xff9ca9bd)); g.setFont(monoFont(9, true));
+        g.setColour(juce::Colour(0xff9ca9bd)); g.setFont(seqFont(9, true));
         drawSpaced(g, "COMBINED OFFSET", result.removeFromTop(14), 1.2f);
         result.removeFromTop(5);
-        g.setColour(col::acA); g.setFont(monoFont(16, true));
+        g.setColour(col::acA); g.setFont(seqFont(16, true));
         g.drawText((total > 0 ? "+" : "") + juce::String(total) + " ms", result, juce::Justification::centredLeft);
         if (!grid2x2) {
             g.setColour(col::line);
@@ -1220,12 +1232,12 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
         }
         auto text = nb.toNearestInt().reduced(5, 0);
         g.setColour(isSel ? col::acA : col::textDim);
-        g.setFont(monoFont(8.0f));
+        g.setFont(seqFont(8.0f));
         g.drawText(juce::String(pad + 1).paddedLeft('0', 2),
                    text.removeFromLeft(16), juce::Justification::centredLeft, false);
         if (poly) {
             auto badge = text.removeFromBottom(12);
-            g.setColour(col::acB); g.setFont(monoFont(9));
+            g.setColour(col::acB); g.setFont(seqFont(9));
             g.drawText(rhythm.mode == fable::DrumRhythmMode::grid ? "GRID " + juce::String(rhythm.steps)
                 : "FIT " + juce::String(rhythm.steps) + "/" + juce::String(rhythm.cycleBeats / 4) + "B", badge, juce::Justification::centredLeft);
             g.setColour(isSel ? col::acA : col::textDim);
@@ -1241,7 +1253,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
                 g.setColour(col::textDim.withAlpha(.35f));
                 g.drawVerticalLine(juce::roundToInt(x), (float)timeline.getY(), (float)timeline.getBottom());
                 if (beat % 4 == 0) {
-                    g.setColour(col::textDim); g.setFont(monoFont(8));
+                    g.setColour(col::textDim); g.setFont(seqFont(8));
                     g.drawText(juce::String(beat / 4 + 1), juce::roundToInt(x) - 9, timeline.getY(), 8, 10, juce::Justification::centredRight);
                 }
             }
@@ -1288,7 +1300,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
                     : col::panelLo.withAlpha(.82f));
                 g.fillRoundedRectangle(b, 2.0f);
                 if (rhythm.mode == fable::DrumRhythmMode::fit) {
-                    g.setColour(col::textDim); g.setFont(monoFont(9));
+                    g.setColour(col::textDim); g.setFont(seqFont(9));
                     g.drawText(juce::String(s + 1), b.toNearestInt(), juce::Justification::centred);
                 }
             }
@@ -1307,7 +1319,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
 
             if (fit) {
-                g.setColour(v ? col::panelLo : col::text); g.setFont(monoFont(9));
+                g.setColour(v ? col::panelLo : col::text); g.setFont(seqFont(9));
                 g.drawText(juce::String(s + 1), bounds, juce::Justification::centred);
             }
             if (polyPanel_ && pad == sel && s == timingStep_) {   // .step.timing-selected
@@ -1315,7 +1327,7 @@ void StepSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
             }
             const int delay = rhythm.stepDelayMs[(size_t)(edit * 16 + s)];
             if (delay != 0) {
-                g.setColour(v ? col::panelLo : col::acA); g.setFont(monoFont(10));
+                g.setColour(v ? col::panelLo : col::acA); g.setFont(seqFont(10));
                 g.drawText(delay > 0 ? "+" : "-", bounds.reduced(3), juce::Justification::topRight);
             }
             // Per-cell selection ring only where FIT reorders the columns;

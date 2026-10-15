@@ -69,6 +69,11 @@ public:
     void updateClipArp(int s, int t, const ArpSettings&);
     // Linked chord-track clips in scene s other than track t (web linkedClipTracks).
     std::vector<int> linkedChordTracks(int s, int t) const;
+    // Tracks whose clip in scene s follows the scene progression (web sceneChordTracks).
+    std::vector<int> sceneChordTracks(int s) const { return linkedChordTracks(s, -1); }
+    // Gives every linked clip of scene s the progression (web sceneChordWrites)
+    // through updateClipArp, so live clips hot-swap. False when none is linked.
+    bool setSceneChords(int s, const std::array<ArpChord, kMaxArpChords>& chords, int count, int key, int bars);
     void createClip(int s, int t);
     // Replace or create exactly one scene cell from a compatible library
     // entry. A live/pending target is updated in place (phase preserved).

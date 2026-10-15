@@ -11,9 +11,9 @@ function nativeSession(session) {
 }
 
 // Bundle in memory so generation needs neither a dev server nor a network port.
-const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessionPresets"; export * from "./src/seq/protocol"; export * from "./src/seq/songs/grooves"; export * from "./src/seq/clipArp"; export { CHORD_QUALITIES } from "./src/chords"; export { COMP_LIBRARY, compLibraryIndex } from "./src/compLibrary"; export { withComp } from "./src/seq/songs/comping";', resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'esm', write: false });
+const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessionPresets"; export * from "./src/seq/protocol"; export * from "./src/seq/songs/grooves"; export * from "./src/seq/clipArp"; export { CHORD_QUALITIES } from "./src/chords"; export { COMP_LIBRARY } from "./src/compLibrary"; export { withComp, SESSION_COMP_SOUNDS } from "./src/seq/songs/comping";', resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'esm', write: false });
 {
-  const { AUTHORED_SESSION_PRESETS, FACTORY_SESSION_PRESETS, SESSION_GROOVES, CHORD_QUALITIES, COMP_LIBRARY, compLibraryIndex, withComp, chordTrackArp, b64ToBytes, emptyClipBytes } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+  const { AUTHORED_SESSION_PRESETS, FACTORY_SESSION_PRESETS, SESSION_GROOVES, SESSION_COMP_SOUNDS, CHORD_QUALITIES, COMP_LIBRARY, withComp, chordTrackArp, b64ToBytes, emptyClipBytes } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
   const quote = JSON.stringify;
   const float = (value) => `${Number(value).toFixed(9)}f`;
   const text = [
@@ -27,6 +27,8 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
     '    for (const auto& c : chords) a.chordList[(size_t)a.chordCount++] = c;',
     '    return a;',
     '}',
+    '// FOLLOW: the written notes keep their place against the current chords (src/seq/clipArp.ts followClip).',
+    'inline void sqFollow(ArpSettings& a) { a.scaleMode = 3; a.followCount = a.chordCount; a.followList = a.chordList; }',
     '// COMP style with a library groove (src/seq/songs/comping.ts withComp).',
     'inline void sqComp(ArpSettings& a, std::array<uint8_t, 16> masks, std::array<bool, 16> ties, std::array<bool, 16> accents,',
     '                   double rate, double gate, int strum, int strumDir, int voicing) {',
@@ -39,13 +41,17 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
   const qualities = Object.keys(CHORD_QUALITIES);
   const arpLine = (ref, arp, machine) => {
     const a = arp.settings;
-    const plain = { ...chordTrackArp(machine, a.chords, a.chordKey, a.chordOctave, a.chordLink), enabled: arp.enabled };
-    // COMP clips carry one library groove (songs/comping.ts withComp).
-    const entry = a.style === 'comp' ? COMP_LIBRARY[compLibraryIndex(a)] : null;
-    const expect = entry ? withComp(plain, entry, arp.enabled) : plain;
+    const track = { ...chordTrackArp(machine, a.chords, a.chordKey, a.chordOctave, a.chordLink), enabled: arp.enabled };
+    const follow = a.scale === 'follow';
+    const plain = follow ? { ...track, settings: { ...track.settings, scale: 'follow', followChords: a.chords } } : track;
+    // COMP clips carry one library groove (songs/comping.ts withComp), with
+    // an optional change to its voicing or accents.
+    const entry = a.style === 'comp' ? COMP_LIBRARY.find((e) => e.comp.join() === a.comp.join() && e.ties.join() === a.ties.join() && e.rate === a.rate && e.gate === a.gate && e.strum === a.strum && e.strumDir === a.strumDir) : null;
+    const expect = entry ? withComp(plain, entry, arp.enabled, { voicing: a.voicing, accents: a.accents }) : plain;
     if (JSON.stringify(arp) !== JSON.stringify(expect)) throw new Error('Only chord-track and library comp arps are generated');
     const chords = a.chords.map((c) => `{ ${c.start}, ${c.length}, ${c.root}, ${qualities.indexOf(c.quality)}, ${c.inversion} }`).join(', ');
     const line = `            ${ref}.hasArp = true; ${ref}.arp = sqChordTrackArp(Machine::${machine}, ${arp.enabled}, ${a.chordKey}, ${a.chordOctave}, ${a.chordBars}, ${!!a.chordLink}, { ${chords} });`;
+    if (follow) return `${line}\n            sqFollow(${ref}.arp);`;
     if (!entry) return line;
     const bools = (v) => `{{ ${v.join(', ')} }}`;
     return `${line}\n            sqComp(${ref}.arp, {{ ${a.comp.join(', ')} }}, ${bools(a.ties)}, ${bools(a.accents)}, ${a.rate}, ${a.gate}, ${a.strum}, ${['up', 'down', 'alt'].indexOf(a.strumDir)}, ${['close', 'drop2', 'drop24', 'open'].indexOf(a.voicing)});`;
@@ -151,6 +157,15 @@ const bundled = await build({ stdin: { contents: 'export * from "./src/seq/sessi
       text.push('        {', `            auto& scene = p.session.scenes[${index}];`, ...clipLines(clip, t, s.tracks[t].machine), '        }');
     }));
     text.push('        }');
+  }
+  text.push('    }', '}');
+  // Generated comping sessions: pad sound overrides (src/seq/songs/comping.ts),
+  // applied over the track's resolved factory patch by SeqFactory.cpp.
+  text.push('template <typename Apply>', 'void applyCompSounds(std::vector<SessionPreset>& library, Apply&& apply) {', '    for (auto& p : library) {');
+  for (const [name, params] of Object.entries(SESSION_COMP_SOUNDS)) {
+    text.push(`        if (p.name == ${quote(name)}) apply(p.session.tracks[3], {`,
+      ...Object.entries(params).sort(([a], [b]) => a.localeCompare(b)).map(([id, value]) => `            { ${quote(id)}, ${float(value)} },`),
+      '        });');
   }
   text.push('    }', '}', '} // namespace fable', '');
   const outputs = [

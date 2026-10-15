@@ -1,3 +1,4 @@
+import { followClip } from '../clipArp';
 import { soft808DubKit } from './dubKit';
 // TIDAL MEMORY — authored dub techno, D minor, 118 BPM.
 // The helpers only encode the score. No family/energy rules choose its notes.
@@ -80,8 +81,9 @@ const tailDrums = drums('ROOM / SHORELINE', {
 const DM9: Harmony = [[2, 'm9', 16]];
 const REFRACTED: Harmony = [[10, 'maj9', 8], [2, 'm9', 8]];
 const RETURNED: Harmony = [[2, 'm9', 8], [10, 'maj9', 4], [2, 'm9', 4]];
+// Every tonal part FOLLOWs the scene chords, so a new progression moves it.
 const harmony = (clips: (ClipDoc | null)[], h: Harmony) =>
-  clips.map((c, t) => c && t ? harmonize(t === 1 ? 'BL1' : 'WT1', c, 2, h) : c);
+  clips.map((c, t) => c && t ? followClip(harmonize(t === 1 ? 'BL1' : 'WT1', c, 2, h)) : c);
 
 export const TIDAL_MEMORY: SessionPreset = {
   name: 'TIDAL MEMORY', family: 'DUB TECHNO', variation: 'AUTHORED', energy: 3,

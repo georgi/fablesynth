@@ -57,6 +57,22 @@ PitchSeqView::PitchSeqView(BassUiModel& p) : proc(p) {
     poly_.onUndo = [this] { undoEdit(); };
     poly_.onRedo = [this] { redoEdit(); };
     poly_.onOpenChanged = [this] { resized(); repaint(); };
+    // Scale mode for the written notes: edits go through the model's arp
+    // settings (hosted: the conductor's clip-arp path, so linking and undo hold).
+    addChildComponent(scale_);
+    scale_.settings = [this] { return proc.arpSettings(); };
+    scale_.commit = [this](const fable::ArpSettings& a) { proc.setArpSettings(a); repaint(); };
+    scale_.bars = [this] { return scaleBars(); };
+    scale_.setBars = [this](int n) { setScaleBars(n); };
+    scale_.linkPeers = [this] { return proc.arpChordLinkPeers(); };
+    scale_.playhead = [this] { return cursorColumn(); };
+    scale_.onBrowse = [this] { progressions_.setVisible(true); progressions_.toFront(true); };
+    scale_.onHeightChanged = [this] { resized(); repaint(); };
+    addChildComponent(progressions_);
+    progressions_.chordKey = [this] { return proc.arpSettings().chordKey; };
+    progressions_.current = [this] { return scale_.chords.currentPreset(); };
+    progressions_.load = [this](int i) { scale_.chords.loadPreset(i); };
+    progressions_.onClose = [this] { progressions_.setVisible(false); };
     startVisualTimer(*this, fui::kAnimationHz);
 }
 
@@ -65,6 +81,9 @@ void PitchSeqView::resized() {
     patternPreset_.setBounds(randBounds().getRight() + 8, kHeadY + 2, 148, 24);
     poly_.setVisible(proc.supportsSequencePoly());
     poly_.setBounds(kPadX, kBodyY0 - 4, getWidth() - 2 * kPadX, poly_.preferredHeight());
+    scale_.setVisible(proc.hasTargetClip());
+    scale_.setBounds(kPadX, scaleY(), getWidth() - 2 * kPadX, scale_.preferredHeight());
+    progressions_.setBounds(getLocalBounds().reduced(4));
     // Sideways scroll once the timeline is wider than the grid area.
     const int gx = kPadX + kLegendW + kLegendGap, view = gridViewWidth(), content = timelineWidth();
     hScroll_.setBounds(gx, getHeight() - kBottomPad + 1, view, 8);
@@ -85,8 +104,22 @@ int PitchSeqView::cursorColumn() const {
     return -1;
 }
 
+void PitchSeqView::setScaleBars(int bars) {
+    bars = juce::jlimit(1, 4, bars);
+    if (proc.capabilities().hosted) { auto a = proc.arpSettings(); a.chordBars = bars; proc.setArpSettings(a); return; }
+    std::vector<int> chain((size_t)bars);   // standalone: the chord track spans the sequence length
+    for (int i = 0; i < bars; ++i) chain[(size_t)i] = i;
+    proc.setChain(std::move(chain));
+}
+int PitchSeqView::scaleY() const {
+    return kBodyY0 - 4 + (poly_.isVisible() ? poly_.preferredHeight() + 6 : 0);
+}
+int PitchSeqView::scaleBars() const {
+    return proc.capabilities().hosted ? proc.arpSettings().chordBars : juce::jlimit(1, 4, (int)proc.chain().size());
+}
 int PitchSeqView::bodyY() const {
-    return kBodyY0 + (poly_.isVisible() ? poly_.preferredHeight() + 2 : 0);
+    return kBodyY0 + (poly_.isVisible() ? poly_.preferredHeight() + 2 : 0)
+         + (scale_.isVisible() ? scale_.getHeight() + 6 : 0);
 }
 
 // Note history snapshots carry the clip's POLY settings as a 6-byte tail
@@ -873,6 +906,8 @@ void PitchSeqView::timerCallback() {
         resized(); repaint();
     }
     if (proc.supportsSequencePoly()) poly_.setSettings(proc.sequencePoly(), srcId);
+    if (scale_.isVisible() != proc.hasTargetClip()) { resized(); repaint(); }
+    if (scale_.isVisible()) scale_.refresh();
 
 
     const auto key = contentKey();
@@ -924,7 +959,7 @@ static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::St
         g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
     }
     g.setColour(active || current ? green : col::textDim);
-    g.setFont(monoFont(fontSize));
+    g.setFont(seqFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -958,6 +993,10 @@ juce::MemoryBlock PitchSeqView::contentKey() const {
     add(barDragFrom_); add(barDragStarted_); add(barDragHover_);
     const auto poly = proc.supportsSequencePoly() ? proc.sequencePoly() : SeqPolySettings{};
     add(poly_.isVisible()); add(poly_.isOpen()); add(poly.enabled); add(poly.steps);
+    std::array<int, 64> masks {};   // scale dimming follows the scale map
+    if (scale_.isVisible() && fable::scaleStepMasks(proc.arpSettings(), scaleBars(), timelineSteps(), masks))
+        for (int i = 0; i < timelineSteps(); ++i) add(masks[(size_t)i]);
+    add(scale_.getHeight());
     return out.getMemoryBlock();
 }
 
@@ -1069,7 +1108,7 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
 
     // ---- head: hint, right-aligned (.bl-seq-hint) ----
     g.setColour(col::textHint);
-    g.setFont(monoFont(7.0f));
+    g.setFont(seqFont(7.0f));
     drawSpaced(g, "DRAG EMPTY = DRAW - EDGE = LENGTH",
                { getWidth() - kPadX - 320, kHeadY, 320, kHeadH }, 0.9f,
                juce::Justification::right);
@@ -1078,7 +1117,7 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
     {
         const juce::Rectangle<int> legend(kPadX, bodyY(), kLegendW, numY() + 10);
         g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
+        g.setFont(seqFont(7.0f));
         g.drawText("B",    legend.withHeight(10).translated(0, 2), juce::Justification::centredRight);
         g.drawText("NOTE", legend.withHeight(10).translated(0, (lanesH() - 10) / 2), juce::Justification::centredRight);
         g.drawText("C",    legend.withHeight(10).translated(0, lanesH() - 12), juce::Justification::centredRight);
@@ -1094,6 +1133,10 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
     const int cursorCol = cursors && playing ? cursorColumn() : -1;
     std::vector<BassSeqStep> steps((size_t)total);
     for (int s = 0; s < total; ++s) steps[(size_t)s] = stepAbs(s);
+    // Scale mode: the pitch classes each column allows. Lane 0 is C (BL_ROOT_MIDI).
+    std::array<int, 64> scaleMasks {};
+    const bool scaled = scale_.isVisible() && fable::scaleStepMasks(proc.arpSettings(), scaleBars(), total, scaleMasks);
+    auto inScale = [&](int s, int lane) { return !scaled || s >= 64 || ((scaleMasks[(size_t)s] >> (lane % 12)) & 1); };
     const int gridX = kPadX + kLegendW + kLegendGap;
     juce::Graphics::ScopedSaveState columnClip(g);
     g.reduceClipRegion(gridX - 3, 0, gridViewWidth() + 6, getHeight());
@@ -1122,6 +1165,11 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
             g.fillRoundedRectangle(b, 2.0f);
             g.setColour(active ? green.withAlpha(0.5f) : juce::Colours::white.withAlpha(0.045f));
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
+            // .bl-cell.off-scale: empty out-of-scale cells fade to 35 %.
+            if (!active && !inScale(s, note)) {
+                g.setColour(col::panelLo.withAlpha(0.65f));
+                g.fillRoundedRectangle(b, 2.0f);
+            }
         }
 
         // octave button (.bl-oct-btn) — a nonzero octave is highlighted with a
@@ -1136,7 +1184,7 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
             g.setColour(set ? col::acN.withAlpha(0.55f) : col::line);
             g.drawRoundedRectangle(b.reduced(0.5f), 4.0f, 1.0f);
             g.setColour(set ? col::acN : col::textDim);
-            g.setFont(monoFont(9.0f, set));
+            g.setFont(seqFont(9.0f, set));
             g.drawText(st.oct == 0 ? "0" : st.oct > 0 ? "+1" : "-1",
                        octBounds(s), juce::Justification::centred);
         }
@@ -1163,7 +1211,7 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
         // step number (.bl-step-num)
         const auto c = colBounds(s);
         g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
+        g.setFont(seqFont(7.0f));
         g.drawText(s % fable::BL_STEPS == 0 ? "BAR " + juce::String(s / fable::BL_STEPS + 1)
                                             : juce::String(s % fable::BL_STEPS + 1),
                    c.withY(c.getY() + numY()).withHeight(10).expanded(6, 0),
@@ -1194,6 +1242,13 @@ void PitchSeqView::paintArtwork(juce::Graphics& g, bool cursors, bool panel) {
         g.setColour(green.withAlpha(0.95f));
         g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
         g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
+        // .bl-cell.off-scale.on: an out-of-scale note snaps when it plays.
+        if (!inScale(s, st.note)) {
+            juce::Path outline; outline.addRoundedRectangle(start.toFloat().reduced(2.0f), 2.0f);
+            juce::Path dashed; const float dash[] { 3.0f, 2.0f };
+            juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dash, 2);
+            g.setColour(juce::Colour(0xccf2b45a)); g.fillPath(dashed);
+        }
     }
 
     // ---- slide connectors, drawn INTO a step from its predecessor ----

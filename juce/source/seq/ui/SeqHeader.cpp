@@ -500,7 +500,17 @@ void SeqHeader::paintButtons(juce::Graphics& g) {
     }
     drawBtn(loadBtn, "LOAD", false);
     drawBtn(saveBtn, "SAVE", false);
-    drawBtn(masterFxBtn, "MASTER FX", false);
+    {   // Navigation: the master FX view, in the nav accent.
+        const bool masterFxOpen = isMasterFxOpen && isMasterFxOpen();
+        auto rf = masterFxBtn.toFloat();
+        g.setColour(masterFxOpen ? juce::Colour(0xff11141c).overlaidWith(navAccent().withAlpha(0.14f)) : juce::Colour(0xff11141c));
+        g.fillRoundedRectangle(rf, 7.0f);
+        g.setColour(masterFxOpen ? navAccent() : navAccent().withAlpha(0.45f));
+        g.drawRoundedRectangle(rf.reduced(0.5f), 7.0f, 1.0f);
+        g.setColour(navAccent());
+        g.setFont(monoFont(10.0f));
+        g.drawText("MASTER FX", masterFxBtn, juce::Justification::centred);
+    }
 }
 
 void SeqHeader::paintQuant(juce::Graphics& g) {

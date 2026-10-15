@@ -15,6 +15,7 @@ import { PresetBrowser } from '../../components/presetBrowser/PresetBrowser';
 import { BassPatchBrowser } from '../../bass/components/BassPatchBrowser';
 import { KitBrowser } from '../../drum/components/browser/KitBrowser';
 import { useSessionPatchOps } from '../sessionPatchOps';
+import { HostedDeviceTabs } from './HostedArpPanel';
 
 const BAR_STORE = {
   DR1: {
@@ -51,7 +52,7 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
     ? useDrumStore.getState().setBrowser(open ? 'kit' : null) : setLocalBrowsing(open);
   const patchSelect = <HostedPatchSelect machine={machine} browsing={browsing} onBrowse={() => setBrowsing(!browsing)} />;
   const browser = browsing && <TrackPresetBrowser machine={machine} onClose={() => setBrowsing(false)} />;
-  const modeToggle = <DeviceModeToggle />;
+  const modeToggle = <HostedDeviceTabs machine={machine} />;
   const fxToggle = machine === 'DR1' ? <div className="sq-drum-fx-scope" role="group" aria-label="DR-1 FX scope"><button className={`sq-drum-fx-toggle${drumFxOpen && drumFxScope === 'pad' ? ' on' : ''}`} aria-pressed={drumFxOpen && drumFxScope === 'pad'} onClick={() => {
     const st = useSeqStore.getState();
     st.setDeviceMode('edit'); st.openDrumFx('pad');
@@ -64,7 +65,8 @@ export function HostedClipBar({ machine }: { machine: MachineId }) {
     if (!st.trackFxOpen) st.setDeviceMode('edit');
     st.toggleTrackFx();
   }}>TRACK FX</button> : null;
-  const masterFxToggle = <button className={`sq-master-fx-toggle${masterFxOpen ? ' on' : ''}`} aria-pressed={masterFxOpen} onClick={() => {
+  // DR-1 has no MASTER FX tab: its FX tabs are PAD FX and GROUP FX.
+  const masterFxToggle = machine === 'DR1' ? null : <button className={`sq-master-fx-toggle${masterFxOpen ? ' on' : ''}`} aria-pressed={masterFxOpen} onClick={() => {
     const st = useSeqStore.getState();
     if (!st.masterFxOpen) st.exitFocus();
     st.toggleMasterFx();
@@ -200,13 +202,3 @@ function HostedPatchSelect({ machine, browsing, onBrowse }: { machine: MachineId
   );
 }
 
-function DeviceModeToggle() {
-  const mode = useSeqStore((s) => s.deviceMode);
-  const setDeviceMode = useSeqStore.getState().setDeviceMode;
-  return (
-    <div className="sq-mode-toggle" role="group" aria-label="Device view mode">
-      <button type="button" className={mode === 'seq' ? 'on' : ''} aria-pressed={mode === 'seq'} onClick={() => setDeviceMode('seq')}>SEQ</button>
-      <button type="button" className={mode === 'edit' ? 'on' : ''} aria-pressed={mode === 'edit'} onClick={() => setDeviceMode('edit')}>EDIT</button>
-    </div>
-  );
-}

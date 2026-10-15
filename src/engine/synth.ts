@@ -288,17 +288,21 @@ export class SynthEngine {
   setTempo(bpm: number, swing: number, anchor: number): void {
     if (this.ready) this.node.port.postMessage({ t: 'tempo', bpm, swing, anchor });
   }
+  /** Standalone scale mode: the sequencer's scale map (src/scales.ts), or none. */
+  setScale(map?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'scale', map: map ?? null });
+  }
   setSequenceRhythm(rhythm?: SequenceRhythm): void {
     if (this.ready) this.node.port.postMessage({ t: 'sequenceRhythm', rhythm: rhythm ?? null });
   }
 
-  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm): void {
-    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp, sequenceRhythm });
+  scheduleClip(data: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm, scale?: number[][]): void {
+    if (this.ready) this.node.port.postMessage({ t: 'clip', data, bars, atFrame, arp, sequenceRhythm, scale });
   }
   scheduleStop(atFrame: number): void { if (this.ready) this.node.port.postMessage({ t: 'clipstop', atFrame }); }
   /** Hosted clip automation: absolute-value tables per parameter (SQ-4). */
   setClipAutomation(lanes: { k: string; table: Float32Array; len: number; fit: number; rot: number }[]): void {
     if (this.ready) this.node.port.postMessage({ t: 'auto', lanes });
   }
-  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp, sequenceRhythm }); }
+  updateClip(data: Uint8Array, bars: number, arp?: ArpConfig, sequenceRhythm?: SequenceRhythm, scale?: number[][]): void { if (this.ready) this.node.port.postMessage({ t: 'clipupdate', data, bars, arp, sequenceRhythm, scale }); }
 }

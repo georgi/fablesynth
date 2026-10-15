@@ -1,6 +1,7 @@
 #include "BassEditor.h"
 #include "../ui/LeafControlCache.h"
 #include "dsp/BassParams.h"
+#include "../ui/EditorSize.h"
 
 namespace {
 class StandaloneBassUiModel final : public fui::BassUiModel {
@@ -117,7 +118,8 @@ BassEditor::BassEditor(BassAudioProcessor& p)
         c->setFixedAspectRatio((double)BassRack::LW / BassRack::LH);
     setResizeLimits(840, (int)(840 * (double)BassRack::LH / BassRack::LW),
                     2100, (int)(2100 * (double)BassRack::LH / BassRack::LW));
-    setSize(1200, (int)(1200 * (double)BassRack::LH / BassRack::LW));
+    const int width = fui::defaultEditorWidth(1200, (double)BassRack::LH / BassRack::LW);
+    setSize(width, (int)(width * (double)BassRack::LH / BassRack::LW));
 }
 
 BassEditor::~BassEditor() { setLookAndFeel(nullptr); }

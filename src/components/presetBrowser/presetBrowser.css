@@ -107,6 +107,8 @@
 }
 .pbr .pbr-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text-dim); }
 .pbr .pbr-btn:disabled { opacity: 0.35; cursor: default; }
+.pbr .pbr-btn.close { color: var(--nav); border-color: color-mix(in srgb, var(--nav) 45%, transparent); }
+.pbr .pbr-btn.close:hover:not(:disabled) { color: var(--nav); border-color: var(--nav); }
 .pbr .pbr-btn.primary { background: var(--ac-a); border-color: var(--ac-a); color: #000; }
 .pbr .pbr-btn.vary { color: var(--ac-f); border-color: rgba(177, 140, 255, 0.5); }
 .pbr .pbr-btn[aria-pressed='true'] { color: var(--ac-b); border-color: var(--ac-b); }

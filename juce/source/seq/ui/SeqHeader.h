@@ -49,6 +49,7 @@ public:
 
     std::function<void()> onLibrarySessionChanged;
     std::function<void()> onMasterFxToggle;
+    std::function<bool()> isMasterFxOpen; // lights MASTER FX while its view shows
     juce::ComboBox& libraryForTest() { return library_; }
     void syncLibraryForTest() { refreshLibrarySelection(); }
     int cacheBuildCountForTesting() const { return cacheBuildCount_; }

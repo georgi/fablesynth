@@ -79,18 +79,31 @@ class WtBrowserAdapter::ImportRun final : public juce::Thread {
 public:
     explicit ImportRun(juce::File helper) : juce::Thread("FableSerumImport"), helper_(std::move(helper)) {}
     ~ImportRun() override { cancel(); stopThread(4000); }
-    void cancel() { cancelled_ = true; proc_.kill(); }
+    // start() and kill() share procLock_: juce::ChildProcess is not thread-safe,
+    // and a cancel that lands before start() must still stop the child.
+    void cancel() {
+        cancelled_ = true;
+        signalThreadShouldExit();
+        const juce::ScopedLock l(procLock_);
+        if (started_) proc_.kill();
+    }
     juce::String status() const { const juce::ScopedLock l(lock_); return status_; }
 
     void run() override {
-        if (!proc_.start(juce::StringArray{ helper_.getFullPathName() }, juce::ChildProcess::wantStdOut)) {
-            set("The import helper could not start.");
+        {
+            const juce::ScopedLock l(procLock_);
+            if (!cancelled_)
+                started_ = proc_.start(juce::StringArray{ helper_.getFullPathName() }, juce::ChildProcess::wantStdOut);
+        }
+        if (!started_) {
+            set(cancelled_ ? cancelledText() : juce::String("The import helper could not start."));
             return;
         }
         set("Starting Serum...");
         juce::String pending;
         char buf[1024];
-        for (;;) {
+        // A kill closes the child's end of the pipe, so the blocking read returns.
+        while (!threadShouldExit()) {
             const int n = proc_.readProcessOutput(buf, (int)sizeof(buf));
             if (n > 0) {
                 pending += juce::String::fromUTF8(buf, n);
@@ -101,10 +114,15 @@ public:
             if (!proc_.isRunning() || threadShouldExit()) break;
             wait(20);
         }
-        if (cancelled_) set("Import cancelled. Converted presets stay listed.");
+        { const juce::ScopedLock l(procLock_); started_ = false; } // a late cancel must not kill a reused pid
+        if (cancelled_) {
+            proc_.waitForProcessToFinish(1000); // reap the killed child
+            set(cancelledText());
+        }
     }
 
 private:
+    static juce::String cancelledText() { return "Import cancelled. Converted presets stay listed."; }
     void set(const juce::String& s) { const juce::ScopedLock l(lock_); status_ = s; }
     void line(const juce::String& l) {
         if (l.startsWith("TOTAL ")) total_ = l.substring(6).getIntValue();
@@ -120,7 +138,8 @@ private:
 
     juce::File helper_;
     juce::ChildProcess proc_;
-    juce::CriticalSection lock_;
+    juce::CriticalSection procLock_, lock_;
+    bool started_ = false; // guarded by procLock_
     juce::String status_;
     int total_ = 0;
     std::atomic<bool> cancelled_ { false };

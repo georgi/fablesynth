@@ -13,7 +13,9 @@ namespace fable {
 // length. Quality order and interval tables mirror CHORD_QUALITIES.
 struct ArpChord { uint8_t start = 0, length = 0, root = 0, quality = 0, inversion = 0; };
 struct ChordQualityDef { const char* key; const char* label; const char* name; int count; std::array<int, 6> iv; };
-constexpr int kChordQualities = 28, kMaxArpChords = 64, kMaxArpCycle = 128;
+constexpr int kChordQualities = 28, kMaxArpChords = 64, kMaxArpCycle = 192;
+// The longest valid cycle is 144 steps (rate 1/3 or 1/6 over 3 bars); comp
+// `lens` are uint8_t, so the cap must stay below 256.
 inline const std::array<ChordQualityDef, kChordQualities>& chordQualities() {
     static const std::array<ChordQualityDef, kChordQualities> q {{
         {"maj", "", "MAJOR", 3, {{0, 4, 7}}}, {"min", "m", "MINOR", 3, {{0, 3, 7}}},
@@ -235,7 +237,16 @@ struct ArpSettings {
     // clips share the progression (web store linkChordWrites).
     int chordBars = 4;
     bool chordLink = false;
+    // Scale mode for written notes (web src/scales.ts, Scales.h): 0 OFF, 1 KEY
+    // (one scale on chordKey), 2 CHORDS (a scale per chord), 3 FOLLOW (notes
+    // keep their place against followList). scaleType -1 is AUTO, else an
+    // index into scaleDefs().
+    int scaleMode = 0, scaleType = -1;
     std::array<ArpChord, kMaxArpChords> chordList {{{0, 16, 9, 1, 0}, {16, 16, 5, 0, 0}, {32, 16, 0, 0, 0}, {48, 16, 7, 0, 0}}};
+    // FOLLOW: the chords the written notes were written over (web
+    // ArpState.followChords); followCount -1 = absent (FOLLOW uses chordList).
+    int followCount = -1;
+    std::array<ArpChord, kMaxArpChords> followList {};
     // Comp style: `compMask` voices and `ties` replace the single arp note.
     bool comp = false;
     std::array<uint8_t, 16> compMask {};
@@ -263,7 +274,8 @@ inline bool validArpSettings(const ArpSettings& a, bool hosted = false) {
     if (a.count < 0 || a.count > 128 || a.order < 0 || a.order > 4 || a.octaves < 1 || a.octaves > 3
         || !std::isfinite(a.gate) || a.gate < .05 || a.gate > .95 || (hosted && (a.keys || a.latch))
         || a.chordBars < 1 || a.chordBars > 4 || a.chordCount < 0 || a.chordCount > kMaxArpChords || a.chordKey < 0 || a.chordKey > 11
-        || a.chordOctave < 0 || a.chordOctave > 6) return false;
+        || a.chordOctave < 0 || a.chordOctave > 6 || a.scaleMode < 0 || a.scaleMode > 3 || a.scaleType < -1 || a.scaleType > 18
+        || a.followCount < -1 || a.followCount > kMaxArpChords) return false;
     for (auto m : a.compMask) if (m > 15) return false;
     if (a.strum < 0 || a.strum > kStrumMaxMs || a.strumDir < 0 || a.strumDir > 2 || a.voicing < 0 || a.voicing > 3) return false;
     const std::array<double, 8> rates {{.125, .25, .5, 1, 1.0/3, 1.0/6, .375, .75}};

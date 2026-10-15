@@ -1,13 +1,10 @@
-.arp-panel,.arp-mode { --arp-live: #4de8ff; --arp-rgb: 77,232,255; }
-#bass-rack .arp-panel,#bass-rack .arp-mode { --arp-live: #46ff9c; --arp-rgb: 70,255,156; }
+.arp-panel { --arp-live: #4de8ff; --arp-rgb: 77,232,255; }
+#bass-rack .arp-panel { --arp-live: #46ff9c; --arp-rgb: 70,255,156; }
 .arp-panel { position:relative; display:flex; flex-direction:column; gap:10px; }
 
 /* Top bar: title, style switch, status, tempo. */
 .arp-top { display:flex; align-items:center; gap:16px; min-height:34px; }
 .arp-top h2 { margin:0; }
-.arp-mode { display:flex; padding:3px; border:1px solid #ffffff19; border-radius:5px; background:#080c13; gap:3px; }
-.arp-mode button { border:0; background:transparent; color:#93a3b9; font:600 10px 'IBM Plex Mono',monospace; letter-spacing:.12em; padding:6px 12px; border-radius:3px; cursor:pointer; }
-.arp-mode button[aria-pressed=true] { color:var(--arp-live); background:#17323b; box-shadow:inset 0 0 0 1px rgba(var(--arp-rgb),0.25); }
 .arp-status { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:9px; letter-spacing:.12em; color:#a2b2c8; }
 .arp-led { width:5px; height:5px; border-radius:50%; background:#516077; }.arp-led.on { background:var(--arp-live); box-shadow:0 0 8px rgba(var(--arp-rgb),0.44); }
 .arp-tempo { display:flex; align-items:center; gap:8px; color:#a2b2c8; font-size:9px; letter-spacing:.1em; }
@@ -48,6 +45,7 @@
 .chord-beat.bar { border-color:#ffffff26; }
 .chord-block { position:absolute; top:13px; bottom:4px; display:flex; align-items:center; overflow:hidden; padding:0 8px; border-radius:3px; cursor:grab;
   border:1px solid hsl(calc(var(--hue) * 1deg) 70% 62% / .5); background:hsl(calc(var(--hue) * 1deg) 60% 40% / .18); color:#dfe6f3; font-size:11px; font-weight:600; white-space:nowrap; }
+.chord-block .chord-scale { margin-left:7px; font-style:normal; font-weight:400; font-size:9px; letter-spacing:.06em; opacity:.72; }
 .chord-block sup { font-size:8px; opacity:.7; }
 .chord-block.selected { box-shadow:inset 0 0 0 1px var(--arp-live); border-color:var(--arp-live); }
 .chord-block.sounding { background:hsl(calc(var(--hue) * 1deg) 70% 50% / .38); }

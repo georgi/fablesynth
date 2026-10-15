@@ -18,6 +18,20 @@ function readSequenceRhythm(r) {
 // Out: {t:'step',s,pat,semi,acc,slide} per step while playing
 //      {t:'viz',pos,env,cut,gate,semi} every 2048 samples
 
+// Scale mode (src/scales.ts scaleMap): up to 64 sixteenths, each a remap table
+// of 12 semitone offsets by pitch class. The map loops; one table = a static scale.
+function readScaleMap(m) {
+  if (!Array.isArray(m) || !m.length || m.length > 64) return null;
+  const ok = m.every(t => Array.isArray(t) && t.length === 12 && t.every(x => Number.isInteger(x) && x > -12 && x < 12));
+  return ok ? m.map(t => t.slice()) : null;
+}
+// A step's semitone offset from ROOT_MIDI, moved into the scale at sixteenth `pos`.
+function scaleSemi(map, pos, semi) {
+  if (!map) return semi;
+  const t = map[((Math.floor(pos) % map.length) + map.length) % map.length];
+  const note = ROOT_MIDI + semi;
+  return Math.max(0, Math.min(127, note + t[((note % 12) + 12) % 12])) - ROOT_MIDI;
+}
 const MAXUNI = 7;
 const STEPS = 16;
 const NPATTERNS = 4;
@@ -1000,6 +1014,7 @@ class BassProcessor extends AudioWorkletProcessor {
     this.chain = [0]; this.chainPos = 0;
     this.playing = false;
     this.arp = null;
+    this.seqScale = null; // standalone scale map (message 'scale')
     this.step = -1;
     this.sequenceRhythm = null; this.polyK = 0;
     this.samplesToNext = 0;
@@ -1154,6 +1169,7 @@ class BassProcessor extends AudioWorkletProcessor {
         if (changedMode) { this.step = -1; this.chainPos = 0; this.samplesToNext = 0; }
         break;
       }
+      case 'scale': this.seqScale = readScaleMap(d.map); break;
       case 'chain':
         if (Array.isArray(d.list) && d.list.length) {
           this.chain = d.list.map((x) => x | 0);
@@ -1191,7 +1207,7 @@ class BassProcessor extends AudioWorkletProcessor {
         if (anchorMoved) this.polyClipArm(); else this.polyClipRetime();
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: this.readClipArp(d.arp), sequenceRhythm: readSequenceRhythm(d.sequenceRhythm) };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: this.readClipArp(d.arp), sequenceRhythm: readSequenceRhythm(d.sequenceRhythm), scale: readScaleMap(d.scale) };
         this.clipStopAt = -1;
         break;
       case 'clipstop':
@@ -1212,16 +1228,16 @@ class BassProcessor extends AudioWorkletProcessor {
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
         const arp = this.readClipArp(d.arp);
-        const sequenceRhythm = readSequenceRhythm(d.sequenceRhythm);
+        const sequenceRhythm = readSequenceRhythm(d.sequenceRhythm), scale = readScaleMap(d.scale);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at, arp, sequenceRhythm, auto: this.clipPend.auto };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp, sequenceRhythm, scale, auto: this.clipPend.auto };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars || this.clip.arp?.notes.length !== arp?.notes.length;
           const oldRhythm = this.clip.sequenceRhythm;
           const rephase = this.clip.arp?.rate !== arp?.rate || !!oldRhythm?.enabled !== !!sequenceRhythm?.enabled
             || (sequenceRhythm?.enabled && (oldRhythm?.mode !== sequenceRhythm.mode || oldRhythm?.cycleBeats !== sequenceRhythm.cycleBeats
               || (sequenceRhythm.mode === 'fit' && oldRhythm?.steps !== sequenceRhythm.steps)));
-          this.clip = { data, bars, arp, sequenceRhythm, auto: this.clip.auto };
+          this.clip = { data, bars, arp, sequenceRhythm, scale, auto: this.clip.auto };
           if (rephase) { this.release(); this.samplesToGateOff = -1; this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; this.polyClipArm(); }
           else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i % STEPS])) { this.release(); this.samplesToGateOff = -1; }
           // Re-derive the phase only on a bar-count change (plain modulo can
@@ -1293,7 +1309,8 @@ class BassProcessor extends AudioWorkletProcessor {
     const st = hosted ? this.clipRead(s) : this.readStep(0, s);
     let semi = -100;
     if (st.on) {
-      semi = st.semi;
+      const bpm = Math.max(60, Math.min(200, (hosted ? this.hostBpm : this.p['seq.bpm']) || 138));
+      semi = scaleSemi(hosted ? this.clip.scale : this.seqScale, this.polyFrame(r, k, dur, 0) / (60 / bpm / 4 * sampleRate) + .1, st.semi);
       if (st.slide && this.gate) this.glideTo(semi, st.acc);
       else this.noteOn(semi, st.acc);
       const nextS = this.polySource(r, k + 1);
@@ -1433,22 +1450,24 @@ class BassProcessor extends AudioWorkletProcessor {
     const abs = (this.clipStep + 1) % total;
     const s = abs % STEPS;
     const st = this.clipRead(abs);
+    const offNow = s % 2 === 1 ? swing * SWING_MAX * dur : 0;
+    // The anchor-grid sixteenth of this step: it also places the scale map.
+    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
 
     if (st.on) {
-      if (st.slide && this.gate) this.glideTo(st.semi, st.acc);
-      else this.noteOn(st.semi, st.acc);
+      const semi = scaleSemi(this.clip.scale, idx, st.semi);
+      if (st.slide && this.gate) this.glideTo(semi, st.acc);
+      else this.noteOn(semi, st.acc);
       const next = this.clipRead((abs + 1) % total);
       this.samplesToGateOff = next.on && next.slide ? -1 : st.duration * dur;
     }
 
     this.clipStep = abs;
-    const offNow = s % 2 === 1 ? swing * SWING_MAX * dur : 0;
     const sNext = (s + 1) % STEPS;
     const offNext = sNext % 2 === 1 ? swing * SWING_MAX * dur : 0;
     // Schedule the next step at its absolute anchor-grid time. A free-running
     // countdown (dur - offNow + offNext) drops the block-quantization residue
     // each fire and drifts late without bound against the shared timebase.
-    const idx = Math.round((currentFrame - this.hostAnchor - offNow) / dur);
     this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - currentFrame;
     this.port.postMessage({ t: 'pos', step: s, bar: (abs / STEPS) | 0 });
   }
@@ -1607,7 +1626,7 @@ class BassProcessor extends AudioWorkletProcessor {
 
     let semi = -100;
     if (st.on) {
-      semi = st.semi;
+      semi = scaleSemi(this.seqScale, this.chainPos * STEPS + s, st.semi);
       if (st.slide && this.gate) this.glideTo(semi, st.acc);
       else this.noteOn(semi, st.acc);
       const sN = (s + 1) % STEPS;

@@ -166,7 +166,7 @@ private:
     BrowserButton keepBtn_{ "KEEP", BrowserButton::Primary }, revertBtn_{ "REVERT", BrowserButton::Action },
                   abBtn_{ "A / B", BrowserButton::Action }, varyBtn_{ "VARY", BrowserButton::Vary },
                   phraseBtn_{ juce::String::fromUTF8("\xe2\x99\xaa phrase"), BrowserButton::Chip },
-                  closeBtn_{ "CLOSE", BrowserButton::Action };
+                  closeBtn_{ "CLOSE", BrowserButton::Nav };
     juce::ListBox list_;
 
     std::set<juce::String> roleFilter_, charFilter_, favorites_;

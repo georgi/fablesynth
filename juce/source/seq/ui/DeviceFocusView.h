@@ -108,6 +108,7 @@ private:
     juce::String activeProgramName(int index) const;
     void selectActiveProgram(int index);
     void layoutBody(juce::Component&, int logicalWidth, int logicalHeight, int contentTop = 0);
+    void layoutWtBodies();
     void layoutDrawers();
     void openDrawer(Drawer);
     void ensureDrawer(Drawer);

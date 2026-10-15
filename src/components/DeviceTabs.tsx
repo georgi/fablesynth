@@ -1,6 +1,6 @@
 // Page tabs for a device body, matching the JUCE editors: fixed-width tab
 // buttons in one row, with optional power LEDs at the right end of a tab
-// (the SEQUENCER / ARP playback toggles).
+// (the SEQUENCER / ARP / CHORDS playback toggles).
 
 import './deviceTabs.css';
 
@@ -16,11 +16,12 @@ interface DeviceTabsProps<P extends string> {
   page: P;
   onSelect: (page: P) => void;
   label: string;
+  className?: string;
 }
 
-export function DeviceTabs<P extends string>({ tabs, page, onSelect, label }: DeviceTabsProps<P>) {
+export function DeviceTabs<P extends string>({ tabs, page, onSelect, label, className = '' }: DeviceTabsProps<P>) {
   return (
-    <div className="device-tabs" role="tablist" aria-label={label}>
+    <div className={`device-tabs ${className}`} role="tablist" aria-label={label}>
       {tabs.map((t) => (
         <div key={t.id} className={`device-tab${t.led ? ' has-led' : ''}`} style={{ width: t.width }}>
           <button

@@ -232,6 +232,28 @@ template<class Check> void runArpEngineChecks(Check check) {
         c.chordList[1] = {16, 16, 5, 0, 0}; c.chordList[0].length = 16;
         check(compileArp(c, 2).length == 32 && compileArp(c, 2).notes[16] == 53, "chord track spans the sequence length");
         check(arpCycle(.375, 4) == 128 && arpCycle(1.0 / 6, 4) == 96 && arpCycle(.25, 3) == 48, "odd rates realign with the chord track");
+        // Web arpCycle (src/arp.ts) loops up to 1024; every valid rate x bars must match.
+        bool cycles = true;
+        for (const double rate : {.125, .25, .5, 1.0, 1.0 / 3, 1.0 / 6, .375, .75})
+            for (int bars = 1; bars <= 4; ++bars) {
+                const double total = bars * 16.0, r16 = rate * 4;
+                int len = 16;
+                while (len < 1024 && std::fabs(len * r16 / total - std::round(len * r16 / total)) > 1e-6) len += 16;
+                cycles = cycles && arpCycle(rate, bars) == len && len <= kMaxArpCycle;
+            }
+        check(cycles && arpCycle(1.0 / 3, 3) == 144 && arpCycle(1.0 / 6, 3) == 144, "every arp cycle matches the browser");
+        {
+            // Major chords on roots 0, 1, 2 have disjoint pitch classes, so each step names its chord.
+            ArpSettings t; t.chords = true; t.chordOctave = 3; t.chordCount = 3; t.rate = 1.0 / 3;
+            t.chordList[0] = {0, 16, 0, 0, 0}; t.chordList[1] = {16, 16, 1, 0, 0}; t.chordList[2] = {32, 16, 2, 0, 0};
+            const auto tp = compileArp(t, 3);
+            bool aligned = tp.length == 144 && std::fabs(arpStepPos(tp.rate, 3, tp.length)) < 1e-6;
+            for (int i = 0; i < tp.length && aligned; ++i) {
+                const int root = (int)((arpStepPos(tp.rate, 3, i) + 1e-6) / 16), pc = ((tp.notes[(size_t)i] - 48) % 12 + 12) % 12;
+                aligned = tp.notes[(size_t)i] >= 0 && (pc == root || pc == root + 4 || pc == root + 7);
+            }
+            check(aligned, "a 3-bar triplet arp plays all 144 steps in step with the chord track");
+        }
         std::array<int, 6> v {}; ArpChord inv {0, 4, 0, (uint8_t)chordQualityIndex("maj7"), 1};
         check(chordNotes(inv, 48, v) == 4 && v[0] == 52 && v[3] == 60, "inversions raise the lowest notes an octave");
         std::array<ArpChord, kMaxArpChords> list {}; int n = 1; list[0] = {0, 16, 0, 0, 0};

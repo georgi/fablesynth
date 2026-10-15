@@ -12,6 +12,9 @@
   to { transform: scaleX(1); opacity: 0.9; }
 }
 
+/* SQ-4 navigates in its logo accent, whatever the hosted devices re-theme. */
+:root { --nav: var(--ac-b); }
+
 #sq-rack {
   max-width: 1460px;
   min-width: 768px;
@@ -899,14 +902,10 @@
 /* SEQ/EDIT device modes: the hidden group is unmounted, so each rack's grid
    is re-declared per mode to let the visible group fill the vacated space.
    ID-scoped selectors deliberately outrank index.css's responsive overrides. */
-#bass-rack[data-mode='seq'] #bl-editrow { grid-template-columns: 1.7fr 0.7fr; }
 /* Mod row is edit-only now — SEQ mode's KEYS moved to its own bottom row. */
 #bass-rack[data-mode='edit'] #bl-modrow { grid-template-columns: 290px 1fr; }
-#rack[data-mode='seq'] .panels {
-  grid-template-areas:
-    'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
-    'seq seq seq seq seq seq seq seq seq seq seq seq';
-}
+/* Sound panels are edit-only: SEQ mode is the sequencer alone. */
+#rack[data-mode='seq'] .panels { grid-template-areas: 'seq seq seq seq seq seq seq seq seq seq seq seq'; }
 #rack[data-mode='edit'] .panels {
   grid-template-areas:
     'oscA oscA oscA oscA oscA oscB oscB oscB oscB oscB util util'
@@ -976,15 +975,7 @@
   border-color: var(--tc); background: color-mix(in srgb, var(--tc) 14%, #11141c);
 }
 
-.sq-mode-toggle { display: inline-flex; border: 1px solid #303a50; border-radius: 5px; overflow: hidden; }
-.sq-mode-toggle button {
-  padding: 5px 10px; border: 0; background: #151c2a; color: #8791a5;
-  cursor: pointer; font: inherit; font-size: 10px; letter-spacing: .08em;
-}
-.sq-mode-toggle button + button { border-left: 1px solid #303a50; }
-.sq-mode-toggle button.on {
-  background: color-mix(in srgb, var(--tc) 22%, #151c2a); color: var(--tc);
-}
+.sq-clipbar .sq-device-tabs { height: 25px; margin-bottom: 0; }
 
 /* Focus-mode clip library. It floats over the device so browsing never
    disturbs the machine panel or the currently sounding clip. */
@@ -1230,8 +1221,37 @@
   .sq-hosted-rack .st-value { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
   .sq-device-patch button, .sq-device-patch select, .sq-drum-fx-toggle { min-height: 36px; }
   .sq-device-patch button { min-width: 36px; }
-  .sq-clipbar button, .sq-mode-toggle button { min-height: 36px; }
+  .sq-clipbar button { min-height: 36px; }
   .sq-hosted-rack .power-btn { width: 28px; height: 28px; }
   .sq-hosted-rack select { min-height: 36px; }
   .sq-hosted-rack .pad { min-height: 52px; }
 }
+
+/* ============ navigation accent ============
+   Back, view toggles, browser openers and exits share --nav. */
+.sq-launcher-back, .sq-sessions-open, .sq-master-fx-toggle, .sq-drum-fx-toggle,
+.sq-clipbar-library, .sq-tour-btn {
+  border-color: color-mix(in srgb, var(--nav) 40%, var(--line));
+  color: var(--nav);
+}
+.sq-launcher-back:hover, .sq-sessions-open:hover, .sq-master-fx-toggle:hover, .sq-master-fx-toggle.on,
+.sq-drum-fx-toggle:hover, .sq-drum-fx-toggle.on, .sq-clipbar-library:hover, .sq-tour-btn:hover {
+  border-color: var(--nav);
+  color: var(--nav);
+  background: color-mix(in srgb, var(--nav) 14%, #11141c);
+}
+.sq-lib > header button { color: var(--nav); }
+.sq-lib > header button:hover { color: var(--text); }
+
+/* Scene chords: the progression the scene's linked chord tracks share. */
+.sq-scene-chords { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 6px; padding: 3px 6px; min-width: 0;
+  border: 1px solid #ffffff14; border-radius: 4px; background: #0c121c; color: var(--text-dim); font: 8px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.08em; cursor: pointer; text-align: left; }
+.sq-scene-chords:hover { border-color: #4de8ff66; color: var(--text); }
+.sq-scene-chords:focus-visible { outline: 2px solid #4de8ff; outline-offset: 1px; }
+.sq-scene-chords-key { color: #4de8ff; font-weight: 600; }
+.sq-scene-chords-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sq-scene-chords-scrim { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: #000a; }
+.sq-scene-chords-dialog { position: relative; width: min(820px, calc(100vw - 32px)); height: min(560px, calc(100vh - 32px)); }
+
+

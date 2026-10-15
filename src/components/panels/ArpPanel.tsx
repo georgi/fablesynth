@@ -7,13 +7,6 @@ import { CompBrowser, loadCompEntry, VOICING_NAMES } from './CompBrowser';
 import { ChordTrack, type ChordLink } from './ChordTrack';
 import './arp.css';
 
-export function ArpModeSwitch({ mode, setMode }: { mode: boolean; setMode: (on: boolean) => void }) {
-  return <div className="arp-mode" aria-label="Sequencer mode">
-    <button type="button" aria-pressed={!mode} onClick={() => setMode(false)}>SEQ</button>
-    <button type="button" aria-pressed={mode} onClick={() => setMode(true)}>ARP</button>
-  </div>;
-}
-
 /** A row of mutually exclusive buttons. */
 function Segmented<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: [T, string, string?][]; onChange: (v: T) => void }) {
   return <div className="arp-seg" role="group" aria-label={label}>
@@ -40,15 +33,15 @@ export interface ArpPanelProps {
   a: ArpState; keys: number[]; update: (patch: Partial<ArpState>) => void;
   playing: boolean; current: number; play: () => void; stop: () => void; clear: () => void;
   bpm: number; swing: number; setParam: (id: string, value: number) => void;
-  /** Omitted in the tabbed standalone bodies, where tab LEDs pick the mode. */
-  setMode?: (on: boolean) => void; bass?: boolean;
+  /** The tab this panel fills; the tab LEDs pick which mode plays. */
+  mode: 'arp' | 'chords'; active: boolean; bass?: boolean;
   hosted?: boolean; queued?: boolean;
   /** Sequence length in bars; the chord track spans it. */
   bars?: number; setBars?: (bars: number) => void;
   /** SQ-4: share the chord track with the scene's other linked clips. */
   chordLink?: ChordLink;
 }
-export function ArpPanel({ a, keys, update, playing, current, play, stop, clear, bpm, swing, setParam, setMode, bass = false, hosted = false, queued = false, bars = 1, setBars, chordLink }: ArpPanelProps) {
+export function ArpPanel({ a, keys, update, playing, current, play, stop, clear, bpm, swing, setParam, mode, active, bass = false, hosted = false, queued = false, bars = 1, setBars, chordLink }: ArpPanelProps) {
   const swingParam = bass ? 'master.swing' : 'seq.swing';
   const [editing, setEditing] = useState(false);
   const [browsing, setBrowsing] = useState(false);
@@ -56,13 +49,14 @@ export function ArpPanel({ a, keys, update, playing, current, play, stop, clear,
   const notes = a.input === 'keys' ? keys : a.notes;
   const chordMode = a.input === 'chords';
   // Comping is a WT-1 feature: BL-1 is monophonic.
-  const comp = a.style === 'comp' && !bass;
+  const comp = mode === 'chords' && !bass;
+  const running = playing && active;
   const source = chordMode ? a : { ...a, input: 'stored' as const };
   const compSeq = comp ? compSequence(source, notes, bars) : null;
   const cycle = compSeq ? compSeq.notes : arpSequence({ ...source, style: 'arp' }, notes, bars);
   // The worklet step runs over the whole chord cycle; the lanes repeat every 16.
-  const step = playing && current >= 0 ? current % 16 : -1;
-  const page = playing && current >= 0 ? Math.floor(current / 16) % (cycle.length / 16) : 0;
+  const step = running && current >= 0 ? current % 16 : -1;
+  const page = running && current >= 0 ? Math.floor(current / 16) % (cycle.length / 16) : 0;
   const preview = cycle.slice(page * 16, page * 16 + 16);
   const stacks = compSeq ? compSeq.stack.slice(page * 16, page * 16 + 16) : [];
   const preset = comp ? compLibraryIndex(a) : -1;
@@ -70,7 +64,7 @@ export function ArpPanel({ a, keys, update, playing, current, play, stop, clear,
   const ready = chordMode ? a.chords.length > 0 : notes.length > 0;
   const sounding = step >= 0 && (comp || a.hits[step]) ? preview[step] : -1;
   const toggleNote = (n: number) => update({ notes: a.notes.includes(n) ? a.notes.filter(k => k !== n) : [...a.notes, n] });
-  const status = queued ? 'QUEUED' : !ready ? chordMode ? 'DRAW CHORDS' : 'WAITING FOR NOTES' : playing ? 'RUNNING' : 'READY';
+  const status = !active ? 'OFF · SWITCH ON WITH THE TAB LED' : queued ? 'QUEUED' : !ready ? chordMode ? 'DRAW CHORDS' : 'WAITING FOR NOTES' : playing ? 'RUNNING' : 'READY';
   // The chord under each step of the shown page, named where it changes.
   const stepChords = chordMode ? preview.map((_, i) => {
     const pos = arpStepPos(a.rate, bars, page * 16 + i) + 1e-6;
@@ -138,10 +132,8 @@ export function ArpPanel({ a, keys, update, playing, current, play, stop, clear,
   return <section className={`panel ns-section arp-panel${bass ? ' arp-bass' : ''}`} style={{ gridArea: 'seq' }} data-accent="a">
     <div className="arp-top">
       {hosted && <button className={`pb-btn ns-transport${playing ? ' active' : ''}`} type="button" aria-label={playing || queued ? 'Stop arp clip' : 'Launch arp clip'} aria-pressed={playing} onClick={playing || queued ? stop : play}>{playing || queued ? '■' : '▶'}</button>}
-      {setMode ? <><h2>{bass ? 'PITCH SEQ' : 'NOTE SEQ'}</h2><ArpModeSwitch mode setMode={setMode} /></> : <h2>ARPEGGIATOR</h2>}
-      {!bass && <Segmented label="Arpeggiator style" value={a.style} onChange={style => update({ style })} options={[
-        ['arp', 'ARPEGGIO', 'Play the notes one at a time'], ['comp', 'CHORDS', 'Play chords in a rhythm pattern']]} />}
-      <span className="arp-status">{status}<span className={playing ? 'arp-led on' : 'arp-led'} /></span>
+      <h2>{comp ? 'CHORD COMPING' : 'ARPEGGIATOR'}</h2>
+      <span className="arp-status">{status}<span className={running ? 'arp-led on' : 'arp-led'} /></span>
       {hosted ? <span className="arp-tempo">SQ-4 CLOCK · {bpm} BPM</span> : <label className="arp-tempo">BPM <input aria-label="Arpeggiator tempo" type="number" min="60" max="200" value={bpm} onChange={e => setParam('seq.bpm', Math.max(60, Math.min(200, +e.target.value || 120)))} /></label>}
     </div>
 
@@ -152,7 +144,7 @@ export function ArpPanel({ a, keys, update, playing, current, play, stop, clear,
         ['chords', 'CHORD TRACK', 'Draw a chord progression']]} />
       <span className="arp-hint">{chordMode ? `${bars} BAR${bars > 1 ? 'S' : ''}, LOOPED` : a.input === 'keys' ? a.latch ? 'LATCHED' : 'HOLD KEYS TO PLAY' : ''}</span>
     </>}>
-      {chordMode ? <ChordTrack a={a} update={update} bars={bars} setBars={setBars} link={chordLink} pos={playing && current >= 0 ? arpStepPos(a.rate, bars, current) : -1} /> : <>
+      {chordMode ? <ChordTrack a={a} update={update} bars={bars} setBars={setBars} link={chordLink} pos={running && current >= 0 ? arpStepPos(a.rate, bars, current) : -1} /> : <>
         <div className="arp-source">
           <div className="arp-note-pool" aria-label="Arpeggiator notes">
             {notes.map(n => <span key={n} className={`arp-note${sounding === n || playingNotes.includes(n) ? ' sounding' : ''}`}>{noteName(n)}</span>)}

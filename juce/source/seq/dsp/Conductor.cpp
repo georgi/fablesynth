@@ -202,6 +202,17 @@ std::vector<int> Conductor::linkedChordTracks(int s, int t) const {
     return out;
 }
 
+bool Conductor::setSceneChords(int s, const std::array<ArpChord, kMaxArpChords>& chords, int count, int key, int bars) {
+    const auto tracks = sceneChordTracks(s);
+    if (tracks.empty()) return false;
+    // One write to a linked clip reaches the others (updateClipArp's link).
+    auto a = session_.scenes[(size_t)s].clips[(size_t)tracks[0]].arp;
+    a.chordList = chords; a.chordCount = std::clamp(count, 0, kMaxArpChords);
+    a.chordKey = ((key % 12) + 12) % 12; a.chordBars = std::clamp(bars, 1, 4);
+    updateClipArp(s, tracks[0], a);
+    return true;
+}
+
 void Conductor::createClip(int s, int t) {
     auto& sc = session_.scenes[(size_t)s];
     if (sc.hasClip[(size_t)t]) return;

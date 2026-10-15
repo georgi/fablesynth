@@ -1,4 +1,6 @@
 import { SequencePoly } from '../SequencePoly';
+import { scaleCellClass, ScaleStrip, type ScaleBinding } from '../ScaleStrip';
+import { scaleStepMasks } from '../../scales';
 // The WT-1 note sequencer: 12 note lanes per step (tap an empty cell = set
 // note, click a note = select it), draggable note lengths, octave / accent
 // rows, bars 1–4 + sequence length, RAND, transport and ROOT controls.
@@ -84,15 +86,29 @@ interface SeqPanelProps {
   onMoveChordNote?: (from: number, to: number, note: number, srcNote: number, copy: boolean, pattern: number) => void;
   /** Hosted-only: extra control rendered in the panel head (bar/length). */
   headerExtra?: ReactNode;
+  /** Hosted-only: the clip's scale settings and its playhead in sixteenths; standalone uses the device arp. */
+  scale?: ScaleBinding;
+  scaleStep?: number;
+}
+
+/** Standalone scale strip: highlights the chord under the playhead. */
+function StandaloneScaleStrip({ scale }: { scale: ScaleBinding }) {
+  const step = useStore((s) => s.seqPlaying && s.curStep >= 0 ? Math.max(0, s.chain.indexOf(s.curPat)) * STEPS + s.curStep : -1);
+  return <ScaleStrip scale={scale} step={step} />;
 }
 
 export function SeqPanel(props: SeqPanelProps = {}) {
   const arp = useStore(s => s.arpMode && !s.hosted);
-  return arp ? <ArpPanel /> : <NoteSeqPanel {...props} />;
+  const chords = useStore(s => s.arp.style === 'comp');
+  return arp ? <ArpPanel mode={chords ? 'chords' : 'arp'} /> : <NoteSeqPanel {...props} />;
 }
 
-export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra, clipKey }: SeqPanelProps = {}) {
+export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDuration, rectOps, onMoveChordNote, headerExtra, clipKey, scale, scaleStep }: SeqPanelProps = {}) {
   const hosted = useStore((s) => s.hosted);
+  const deviceArp = useStore((s) => s.arp);
+  const updateArp = useStore((s) => s.updateArp);
+  const setSequenceLength = useStore((s) => s.setSequenceLength);
+  const root = useStore((s) => s.params['seq.root'] ?? 48);
   const sequenceRhythm = useStore(s => s.sequenceRhythm);
   const updateSequenceRhythm = useStore(s => s.updateSequenceRhythm);
   // No `curStep` / `curPat` here on purpose: StepCursor and SeqLength read
@@ -183,6 +199,8 @@ export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDur
 
   const barCount = Math.max(1, Math.min(4, bars ?? (polySteps ? Math.ceil(polySteps.length / STEPS) : chain.length)));
   const totalSteps = barCount * STEPS;
+  const scaleBinding: ScaleBinding = scale ?? { a: deviceArp, update: updateArp, bars: chain.length, setBars: setSequenceLength };
+  const masks = scaleStepMasks(scaleBinding.a, scaleBinding.bars, totalSteps);
   const steps = Array.from({ length: totalSteps }, (_, absoluteStep) => {
     const bar = Math.floor(absoluteStep / STEPS);
     const step = absoluteStep % STEPS;
@@ -204,6 +222,8 @@ export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDur
       <SequencePoly rhythm={sequenceRhythm} clipKey={clipKey} onChange={updateSequenceRhythm}
         onUndo={useStore.getState().undoSeq}
         onRedo={useStore.getState().redoSeq} />
+
+      {scale ? <ScaleStrip scale={scale} step={scaleStep} /> : !hosted && <StandaloneScaleStrip scale={scaleBinding} />}
 
       <div className="ns-body">
         <div className="ns-legend">
@@ -250,7 +270,7 @@ export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDur
                             data-abs-step={absoluteStep}
                             data-note={note}
                             data-pattern={pattern}
-                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
+                            className={'ns-cell' + (note === 0 ? ' root' : (SHARP_LANE[note] ? ' sharp' : ' natural')) + scaleCellClass(masks?.[absoluteStep], root + note) + (active ? ' on' : '') + (dragSrc ? ' drag-src' : '') + (ghost ? (ghostAt(absoluteStep, note) ? ' ghost' : isCutSrc(absoluteStep, note) ? ' drag-src' : '') : '')}
                             aria-label={`bar ${bar + 1}, step ${step + 1}, note ${note}`}
                             aria-pressed={active}
                             onPointerDown={(event) => {

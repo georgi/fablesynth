@@ -17,6 +17,8 @@
   --ac-f: #b18cff;
   --ac-n: #9fb4d8;
   --ac: var(--ac-n);
+  /* Navigation: page tabs, back, view toggles, and browser exits. */
+  --nav: var(--ac-a);
   --font-disp: 'Michroma', 'Avenir Next', sans-serif;
   --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
 }
@@ -1858,4 +1860,16 @@ body::before {
   .panels[data-page='edit'] { grid-template-areas: 'oscA' 'oscB' 'util' 'filter' 'env1' 'env2' 'lfos' 'matrix'; }
   .panels[data-page='fx'] { grid-template-areas: 'eq' 'ott' 'comp' 'drive' 'chorus' 'echo' 'reverb'; }
   .wt-body .device-page { min-height: 0; }
+}
+
+/* ============ navigation ============
+   Controls that move between views share the app accent (--nav). */
+.nav-btn, .ns-btn.nav-btn {
+  border-color: color-mix(in srgb, var(--nav) 40%, var(--line));
+  color: var(--nav);
+}
+.nav-btn:hover, .ns-btn.nav-btn:hover {
+  border-color: var(--nav);
+  color: var(--nav);
+  background: color-mix(in srgb, var(--nav) 14%, #11141c);
 }

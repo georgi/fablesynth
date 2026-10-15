@@ -45,10 +45,7 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
     const auto configurePage = [this](juce::TextButton& button, Page page) {
         button.setClickingTogglesState(true);
         button.setRadioGroupId(717);
-        button.setColour(juce::TextButton::buttonColourId, fui::col::panelHi);
-        button.setColour(juce::TextButton::buttonOnColourId, fui::col::acA.withAlpha(0.18f));
-        button.setColour(juce::TextButton::textColourOffId, fui::col::textDim);
-        button.setColour(juce::TextButton::textColourOnId, fui::col::text);
+        fui::styleNavButton(button);
         button.onClick = [this, page] { selectPage(page); };
         addAndMakeVisible(button);
     };
@@ -57,11 +54,16 @@ WtDeviceBody::WtDeviceBody(fui::WtUiModel& model,
     configurePage(labPage_, Page::lab);
     configurePage(sequencerPage_, Page::sequencer);
     configurePage(arpPage_, Page::arp);
+    configurePage(chordsPage_, Page::chords);
     configurePage(automationPage_, Page::automation);
     automationPage_.setVisible(false);
     addAndMakeVisible(playback_.sequencer);
     addAndMakeVisible(playback_.arpeggiator);
-    selectPage(model_.arpSettings().enabled ? Page::arp : Page::edit);
+    addAndMakeVisible(playback_.chords);
+    {
+        const auto a = model_.arpSettings();
+        selectPage(!a.enabled ? Page::edit : a.comp ? Page::chords : Page::arp);
+    }
     oscA.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
     oscB.onEditTable = [this](int osc) { if (onEditTable) onEditTable(osc); };
 }
@@ -73,6 +75,8 @@ void WtDeviceBody::selectPage(Page page) {
     labPage_.setToggleState(page == Page::lab, juce::dontSendNotification);
     sequencerPage_.setToggleState(page == Page::sequencer, juce::dontSendNotification);
     arpPage_.setToggleState(page == Page::arp, juce::dontSendNotification);
+    chordsPage_.setToggleState(page == Page::chords, juce::dontSendNotification);
+    arp.setChordsView(page == Page::chords);
     automationPage_.setToggleState(page == Page::automation, juce::dontSendNotification);
     resized();
     fui::refreshVisibleControls(*this);
@@ -104,7 +108,8 @@ void WtDeviceBody::resized() {
     fxPage_.setBounds(tabs.removeFromLeft(106)); tabs.removeFromLeft(5);
     labPage_.setBounds(tabs.removeFromLeft(70)); tabs.removeFromLeft(5);
     sequencerPage_.setBounds(tabs.removeFromLeft(146)); tabs.removeFromLeft(5);
-    arpPage_.setBounds(tabs.removeFromLeft(92));
+    arpPage_.setBounds(tabs.removeFromLeft(92)); tabs.removeFromLeft(5);
+    chordsPage_.setBounds(tabs.removeFromLeft(118));
     tabs.removeFromLeft(5); automationPage_.setBounds(tabs.removeFromLeft(138));
     {
         auto voice = juce::Rectangle<int>(14, 2, LW - 28, 26);
@@ -113,11 +118,19 @@ void WtDeviceBody::resized() {
         glide_.setBounds(voice.removeFromRight(26));
         glideLabel_.setBounds(voice.removeFromRight(44));
     }
-    playback_.place(sequencerPage_, arpPage_);
+    playback_.place(sequencerPage_, arpPage_, &chordsPage_);
+    {
+        const auto left = juce::AffineTransform::scale(chromeScale_, chromeScale_, 14.0f, 2.0f);
+        const auto right = juce::AffineTransform::scale(chromeScale_, chromeScale_, (float)(LW - 14), 2.0f);
+        for (auto* c : std::initializer_list<juce::Component*>{ &editPage_, &fxPage_, &labPage_, &sequencerPage_, &arpPage_, &chordsPage_,
+                                                                &automationPage_, &playback_.sequencer, &playback_.arpeggiator, &playback_.chords })
+            c->setTransform(left);
+        for (auto* c : std::initializer_list<juce::Component*>{ &glide_, &glideLabel_, &mono_, &legato_ }) c->setTransform(right);
+    }
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::fx;
     const bool showSequencer = page_ == Page::sequencer;
-    const bool showArp = page_ == Page::arp;
+    const bool showArp = page_ == Page::arp || page_ == Page::chords;
     for (auto* c : std::initializer_list<juce::Component*>{&oscA,&oscB,&util,&filter,&env1,&env2,&lfos,&matrix}) c->setVisible(showEdit);
     fx.setVisible(showFx);
     lab.setVisible(page_ == Page::lab);
@@ -128,6 +141,6 @@ void WtDeviceBody::resized() {
     fx.setBounds(pageBounds);
     lab.setBounds(pageBounds);
     seq.setBounds(pageBounds);
-    arp.setBounds(pageBounds);
+    arp.setBounds(pageBounds.withBottom(std::max(pageBounds.getBottom(), hostedPageBottom_)));
     if (automationPanel_) { automationPanel_->setVisible(page_==Page::automation); automationPanel_->setBounds(pageBounds); }
 }

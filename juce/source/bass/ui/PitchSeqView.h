@@ -4,6 +4,8 @@
 #include "BassUiModel.h"
 #include "../../ui/PatternPresetCombo.h"
 #include "../../ui/SequencePolyStrip.h"
+#include "../../ui/ScaleStrip.h"
+#include "../../ui/ProgressionBrowserView.h"
 #include "../../ui/StepEditOps.h"
 #include "../../ui/Theme.h"
 #include <array>
@@ -111,6 +113,11 @@ private:
     juce::ScrollBar hScroll_{false};
     int scrollX_ = 0, lastTimelineSteps_ = -1;
     SequencePolyStrip poly_;
+    ScalePanel scale_ { juce::Colour(0xff4dff9e) };   // scale mode (ScaleStrip.tsx) under the POLY strip
+    ProgressionBrowserView progressions_ { juce::Colour(0xff4dff9e) };
+    void setScaleBars(int bars);
+    int scaleBars() const;                  // chord-track bars: the clip's, or the chain length
+    int scaleY() const;
     void loadPatternPreset(const fable::NotatedPreset&);
     int stepAt(int x) const;                // inverse of colBounds (clamped to the timeline)
     int noteAt(int y) const;                // inverse of cellBounds' lane math

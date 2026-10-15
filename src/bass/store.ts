@@ -5,6 +5,7 @@ import { copySequenceRhythm, updateSequenceRhythm, type SequenceRhythm } from '.
 import { create } from 'zustand';
 import { BASS_PATTERN_PRESETS, bassPresetSequence } from './patternPresets';
 import { arpSequence, loadArp, newArp, type ArpState } from '../arp';
+import { scaleMap } from '../scales';
 import { ROOT_MIDI } from './params';
 import type { ParamValues } from '../params';
 import { BassEngine } from './engine/bass-synth';
@@ -136,7 +137,9 @@ export const useBassStore = create<BassStore>((set, get) => {
   const snapshot = (): BassSeqSnapshot => ({ patterns: get().patterns, sequenceRhythm: copySequenceRhythm(get().sequenceRhythm) });
   const syncArp = () => {
     const { arp, arpMode, arpKeys, hosted } = get();
-    if (!hosted) bassEngine.setArp(arpMode ? { ...arp, notes: arpSequence(arp, arp.input === 'keys' ? arpKeys : arp.notes, get().chain.length) } : null);
+    if (hosted) return;
+    bassEngine.setArp(arpMode ? { ...arp, notes: arpSequence(arp, arp.input === 'keys' ? arpKeys : arp.notes, get().chain.length) } : null);
+    bassEngine.setScale(arpMode ? undefined : scaleMap(arp, get().chain.length));
   };
   return {
   arp: loadArp('bl1-arp-v1', { ...newArp(), notes: [36, 39, 43, 46], slides: Array(16).fill(false), chordOctave: 2 }),

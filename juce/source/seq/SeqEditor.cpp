@@ -1,27 +1,34 @@
 #include "SeqEditor.h"
 #include "../ui/Controls.h"
+#include "../ui/EditorSize.h"
+
+// SQ-4 navigates in its logo amber (the web's seq.css --nav: var(--ac-b)),
+// including inside the hosted devices.
+static const bool g_seqNavAccentInstalled = [] {
+    fui::navAccentOverride() = fui::col::acB;
+    return true;
+}();
 
 // Compact native layout, retaining the web's half-height header and vertical
-// rhythm while removing excess width from the four clip columns:
-//   rack              1290 x 722
+// rhythm while removing excess width from the four clip columns. Both views
+// share one 1290 x 722 rack, so opening a device never resizes the window:
 //   header            (18,  14) 1254 x 44
 //   track heads       (18,  67) 1254 x 60
-//   scene grid        (18, 136) 1254 x 491   (6 rows, 73 tall, 82 step)
-//   footer            (18, 627) 1254 x 65
-//   hint line          18, 700
-// JUCE's uniform 73px scene rows run to 136+5*82+73=619; the footer sits 8px
-// below that to clear row 6.
+//   scene grid        (18, 136) 1254 x 477   (6 rows stretched to fill: 73
+//                                             tall, 9 px gaps -- layoutRow)
+//   footer            (18, 621) 1254 x 65
+//   hint line          18, 694
 // Scene grid columns: scene col (18, 218), then 4 track cols of 250 each,
 // 9px gaps: x = 18 + 218 + 9 + i*(250 + 9).
 //
 // Focus mode (re-pitched 2026-07-21 to follow the web) keeps the header and
 // the heads row -- the heads double as the instrument switcher there, the
 // open device ringed -- and splits everything below y=136 into two columns:
-//   launcher column   (18, 136)  218 x 800   (SceneGridView's singleRow_ mode:
+//   launcher column   (18, 136)  218 x 550   (SceneGridView's singleRow_ mode:
 //                                             "< SESSION" + the same 6 scene
 //                                             cards the grid draws, stacked --
 //                                             see paintFocusStrip)
-//   device body      (245, 136) 1027 x 800
+//   device body      (245, 136) 1027 x 550
 // The footer hides. The launcher keeps the grid's 218 lead-column width, so
 // both views share one left edge and the scene cards are literally the same
 // painter. The switch between the session and focus geometries is instant
@@ -29,7 +36,7 @@
 
 // ---- SeqRack ----
 SeqRack::SeqRack(SeqAudioProcessor& p)
-    : header(p), trackHeads(p), sceneGrid(p), footer(p), deviceFocus(p), masterFx(p) {
+    : header(p), trackHeads(p), sceneGrid(p), footer(p), deviceFocus(p), masterFx(p), sceneChords(p) {
     addAndMakeVisible(header);
     addAndMakeVisible(trackHeads);
     addAndMakeVisible(sceneGrid);
@@ -37,6 +44,8 @@ SeqRack::SeqRack(SeqAudioProcessor& p)
     addAndMakeVisible(hint);
     addChildComponent(deviceFocus); // hidden until focus is entered
     addChildComponent(masterFx);
+    addChildComponent(sceneChords);
+    sceneGrid.onSceneChords = [this](int s) { sceneChords.open(s); };
 }
 
 void SeqRack::toggleMasterFx() {
@@ -52,11 +61,6 @@ void SeqRack::enterFocus(int track, int scene) {
     masterFxMode_ = false;
     masterFx.setVisible(false);
     focusMode_ = true;
-    // The rack's own logical extent (its coordinate space for applyLayout(),
-    // and the size the editor scales via its transform) switches to the
-    // focus height along with everything else — the whole mode change is
-    // one synchronous relayout.
-    setBounds(0, 0, LW, LHF);
     focusTrack_ = track;
     // The heads row stays up in focus and becomes the instrument switcher —
     // clicking another head opens that device, and the open one is ringed.
@@ -70,7 +74,6 @@ void SeqRack::enterFocus(int track, int scene) {
 
 void SeqRack::exitFocus() {
     focusMode_ = false;
-    setBounds(0, 0, LW, LH); // snap the outer canvas back to the session extent
     focusTrack_ = -1;
     trackHeads.setFocusTrack(-1);
     sceneGrid.clearSingleRow();
@@ -94,30 +97,30 @@ void SeqRack::resized() { applyLayout(); }
 // keeps header + heads and splits everything below them into a narrow
 // launcher rail and the device surface beside it.
 void SeqRack::applyLayout() {
-    constexpr int hintH = 14;
+    constexpr int hintH = 14, contentY = 136;
+    constexpr int hintY = LH - 14 /* bottom margin */ - hintH; // 722-14-14=694
+    constexpr int contentBottom = hintY - 8;                    // 686
+    constexpr int footerH = 65, footerY = contentBottom - footerH; // 621
+    sceneChords.setBounds(0, 0, LW, LH);
     header.setBounds(18, 14, 1254, 44);
     trackHeads.setBounds(18, 67, 1254, 60); // stays visible in focus
+    hint.setBounds(18, hintY, 1254, hintH);
     // Footer bounds are set unconditionally even though it's hidden in
     // focus mode — bounds on a hidden component are inert, so this stays
     // simple rather than branching twice.
-    footer.setBounds(18, 627, 1254, 65);
+    footer.setBounds(18, footerY, 1254, footerH);
     if (focusMode_) {
         // The launcher keeps the session grid's lead-column width so the two
         // views share one left edge (web: .sq-launcher width 218px, 9px gap).
-        constexpr int railW = 218, railGap = 9, contentY = 136;
-        constexpr int hintY = LHF - 14 /* bottom margin */ - hintH; // 972-14-14=944
-        const int contentH = (hintY - 8) - contentY;                // 936-136 = 800
+        constexpr int railW = 218, railGap = 9;
+        const int contentH = contentBottom - contentY;          // 550
         sceneGrid.setBounds(18, contentY, railW, contentH);
         deviceFocus.setBounds(18 + railW + railGap, contentY,
                               1254 - railW - railGap, contentH);
-        hint.setBounds(18, hintY, 1254, hintH);
+    } else if (masterFxMode_) {
+        masterFx.setBounds(18, contentY, 1254, contentBottom - contentY); // grid + footer area
     } else {
-        if (masterFxMode_) {
-            masterFx.setBounds(18, 136, 1254, 556);
-        } else {
-            sceneGrid.setBounds(18, 136, 1254, 491); // 491 = footerY(627) - 136
-        }
-        hint.setBounds(18, 700, 1254, hintH);
+        sceneGrid.setBounds(18, contentY, 1254, footerY - 8 - contentY);  // 477: six 73 px rows
     }
 }
 
@@ -143,7 +146,9 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
     header().onMasterFxToggle = [this] {
         if (focusTrack_ >= 0) exitFocus();
         rack.toggleMasterFx();
+        header().repaint();
     };
+    header().isMasterFxOpen = [this] { return rack.masterFxOpen(); };
 
     // Hint copy mirrors SeqApp.tsx's two .sq-hint strings.
     rack.getHint().setProvider([this]() -> juce::String {
@@ -164,7 +169,8 @@ SeqEditor::SeqEditor(SeqAudioProcessor& p)
         c->setFixedAspectRatio((double)SeqRack::LW / SeqRack::LH);
     setResizeLimits(840, (int)(840 * (double)SeqRack::LH / SeqRack::LW),
                     2100, (int)(2100 * (double)SeqRack::LH / SeqRack::LW));
-    setSize(1080, (int)(1080 * (double)SeqRack::LH / SeqRack::LW));
+    const int width = fui::defaultEditorWidth(1080, (double)SeqRack::LH / SeqRack::LW);
+    setSize(width, (int)(width * (double)SeqRack::LH / SeqRack::LW));
 }
 
 SeqEditor::~SeqEditor() { setLookAndFeel(nullptr); }
@@ -187,7 +193,6 @@ void SeqEditor::enterFocus(int t, int s) {
     focusTrack_ = t;
     focusScene_ = scene;
     rack.enterFocus(t, scene);
-    growToFocusSize();
     // Only grab focus when we're actually on screen: grabbing keyboard focus on
     // a component with no peer (headless render, or before the editor is shown)
     // is a no-op that trips JUCE's isShowing()/isOnDesktop() assert in
@@ -200,31 +205,6 @@ void SeqEditor::exitFocus() {
     if (focusTrack_ >= 0) lastFocusScene_ = focusScene_;
     focusTrack_ = focusScene_ = -1;
     rack.exitFocus();
-    shrinkToSessionSize();
-}
-
-// Focus mode grows the window taller so the native device body renders near
-// 1:1 (Matti: "vst window should be taller to make space for the focus
-// device view") -- the JUCE analogue of the web rack's viewport-height
-// auto-grow in focus mode. The width is left alone; only the height (and the
-// constrainer's aspect/limits) change. Hosts animate window resizes poorly,
-// so this snaps rather than easing like the internal SeqRack collapse does.
-// Both standalone (StandalonePluginHolder tracks the editor's size) and
-// hosted instances resize through the same setSize() call.
-void SeqEditor::growToFocusSize() {
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio((double)SeqRack::LW / (double)SeqRack::LHF);
-    setResizeLimits(840, (int)(840 * (double)SeqRack::LHF / SeqRack::LW),
-                    2100, (int)(2100 * (double)SeqRack::LHF / SeqRack::LW));
-    setSize(getWidth(), juce::roundToInt((float)getWidth() * (float)SeqRack::LHF / (float)SeqRack::LW));
-}
-
-void SeqEditor::shrinkToSessionSize() {
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio((double)SeqRack::LW / (double)SeqRack::LH);
-    setResizeLimits(840, (int)(840 * (double)SeqRack::LH / SeqRack::LW),
-                    2100, (int)(2100 * (double)SeqRack::LH / SeqRack::LW));
-    setSize(getWidth(), juce::roundToInt((float)getWidth() * (float)SeqRack::LH / (float)SeqRack::LW));
 }
 
 void SeqEditor::focusScene(int s) {
@@ -298,7 +278,7 @@ void SeqEditor::resized() {
     agentOverlay.setBounds(getLocalBounds());
     agentOverlay.toFront(false);
     // The rack's logical size is mode-dependent (session 1290x722, focus
-    // 1290xLHF -- SeqRack::logicalHeight()); the transform below just scales
+    // 1290xLH -- SeqRack::logicalHeight()); the transform below just scales
     // that logical canvas to whatever the window currently is.
     const int lh = rack.logicalHeight();
     const float sc = juce::jmin(static_cast<float>(getWidth()) / static_cast<float>(SeqRack::LW),

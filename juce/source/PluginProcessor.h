@@ -211,7 +211,7 @@ private:
     fable::ArpMailbox arpLiveMailbox_;
     mutable fable::ArpSettings arpLive_;
     mutable uint32_t arpLiveVersion_ = 0;
-    void applyArp() { engine.setArp(arpInput_.pattern(engine.seqChainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    void applyArp() { engine.setArp(arpInput_.pattern(engine.seqChainLength())); engine.setSeqScale(arpInput_.settings.enabled ? fable::ScaleMap {} : fable::scaleMap(arpInput_.settings, engine.seqChainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
     // Audio thread: a MIDI performance controller sets its source parameter.
     void setPerformanceParam(int pid, float v) {
         if (auto* raw = rawParams[(size_t)pid]) raw->store(v);

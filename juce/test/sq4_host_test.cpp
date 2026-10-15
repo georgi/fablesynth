@@ -550,13 +550,21 @@ int main(int argc, char** argv) {
     // ---- 8. Editor: correct logical size, paints without crashing, snapshot PNG. ----
     auto* ed = p.createEditor();
     check(ed != nullptr, "createEditor returns non-null");
-    ed->setSize(SeqRack::LW, SeqRack::LH); // 1290 x 722 compact native session rack
+    ed->setSize(SeqRack::LW, SeqRack::LH); // 1290 x 722 native rack (both views)
     juce::Image img(juce::Image::ARGB, SeqRack::LW, SeqRack::LH, true);
     { juce::Graphics g(img); ed->paintEntireComponent(g, true); }
+    {
+        auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+        dir.createDirectory();
+        if (auto out = dir.getChildFile("sq4-session.png").createOutputStream()) {
+            out->setPosition(0); out->truncate();
+            juce::PNGImageFormat().writeImageToStream(img, *out);
+        }
+    }
     // background pixel is the theme bg, not uninitialized black-with-alpha-0
-    // (4, 718): just inside the re-pitched 722-tall rack, below the footer.
-    check(img.getPixelAt(4, 718).getAlpha() == 255, "editor background pixel opaque",
-          img.getPixelAt(4, 718).getAlpha());
+    // (4, LH - 4): just inside the rack, below the footer.
+    check(img.getPixelAt(4, SeqRack::LH - 4).getAlpha() == 255, "editor background pixel opaque",
+          img.getPixelAt(4, SeqRack::LH - 4).getAlpha());
 
     // ---- 9. Header interactions drive the conductor. ----
     std::printf("\n== header ==\n");
@@ -1306,6 +1314,7 @@ int main(int argc, char** argv) {
                   "SQ arp rate edits preserve written pattern bytes", track);
             auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
             dir.createDirectory();
+            focusView.resized(); // the app's visual timer applies the page height
             if (auto out = dir.getChildFile("sq4-arp-track-" + juce::String(track) + ".png").createOutputStream()) {
                 out->setPosition(0); out->truncate();
                 juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
@@ -1340,6 +1349,7 @@ int main(int argc, char** argv) {
                     check(!child->getBounds().isEmpty() && arp->getLocalBounds().contains(child->getBounds()), "SQ chord-track arp controls fit", track);
             }
             auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals");
+            focusView.resized(); // the app's visual timer applies the page height
             if (auto out = dir.getChildFile("sq4-arp-chords-track-" + juce::String(track) + ".png").createOutputStream()) {
                 out->setPosition(0); out->truncate();
                 juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
@@ -1356,7 +1366,51 @@ int main(int argc, char** argv) {
                 if (browser) browser->setVisible(false);
             }
         }
-        c.pasteClip(2, 1, bassBefore); c.pasteClip(2, 2, leadBefore);
+        {
+            // Scene chord chip (web SceneChordChip): the scene browser writes every linked clip.
+            ed2->exitFocus();
+            auto& grid = ed2->grid();
+            auto& overlay = ed2->getRack().getSceneChords();
+            check(!grid.sceneChordsR(2).isEmpty(), "a scene with linked chord tracks shows the chords chip");
+            bool chipless = true;
+            for (int s = 0; s < (int)c.session().scenes.size(); ++s)
+                if (c.sceneChordTracks(s).empty()) chipless = chipless && grid.sceneChordsR(s).isEmpty();
+            check(chipless, "a scene without linked chord tracks shows no chip");
+            grid.sceneChordsClick(2);
+            auto& browser = overlay.getBrowser();
+            check(overlay.isOpen() && overlay.scene() == 2 && browser.titleText
+                  && browser.titleText().endsWith("3 LINKED TRACKS"), "the chip opens the scene progression browser");
+            const int index = 5;
+            browser.load(index);
+            std::array<fable::ArpChord, fable::kMaxArpChords> want {}; int count = 0;
+            const int bars = fable::progressionChords(fable::progressions()[(size_t)index], 4, want, count);
+            bool all = true;
+            for (int t : {1, 2, 3}) {
+                const auto& a = c.session().scenes[2].clips[(size_t)t].arp;
+                all = all && a.chordKey == 4 && a.chordBars == bars && a.chordCount == count
+                    && fable::progressionIndex(a.chordList, a.chordCount, a.chordKey) == index;
+            }
+            check(all, "loading a scene progression writes every linked clip in the scene key");
+            auto* keyBox = findFxComponent<juce::ComboBox>(browser, "Scene key");
+            check(keyBox && keyBox->isVisible() && keyBox->getSelectedId() == 5, "the scene browser shows the scene KEY");
+            if (keyBox) keyBox->setSelectedId(8, juce::sendNotificationSync);
+            bool moved = true;
+            for (int t : {1, 2, 3}) {
+                const auto& a = c.session().scenes[2].clips[(size_t)t].arp;
+                moved = moved && a.chordKey == 7 && a.chordList[0].root == (want[0].root + 3) % 12;
+            }
+            check(moved, "changing the scene key rotates the linked chord roots");
+            ed2->setSize(ed2->getWidth(), ed2->getHeight());
+            if (auto out = juce::File::getCurrentWorkingDirectory().getChildFile("build/fx-visuals/sq4-scene-chords.png").createOutputStream()) {
+                out->setPosition(0); out->truncate();
+                juce::PNGImageFormat().writeImageToStream(ed2->createComponentSnapshot(ed2->getLocalBounds()), *out);
+            }
+            overlay.close();
+            // Undo rebuilds the conductor: re-fetch it.
+            check(p.undo() && p.conductor().session().scenes[2].clips[2].arp.chordKey == 4,
+                  "one undo restores the scene chords from before the browser opened");
+        }
+        p.conductor().pasteClip(2, 1, bassBefore); p.conductor().pasteClip(2, 2, leadBefore);
     }
     ed2->exitFocus();
 

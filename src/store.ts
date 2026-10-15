@@ -8,6 +8,7 @@ import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } 
 import { create } from 'zustand';
 import { NOTE_PATTERN_PRESETS, notePresetSequence } from './patternPresets';
 import { arpCompile, loadArp, type ArpState } from './arp';
+import { scaleMap } from './scales';
 import { SynthEngine } from './engine/synth';
 import { feedModLive } from './engine/modLive';
 import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
@@ -189,6 +190,7 @@ export const useStore = create<SynthStore>((set, get) => {
     const { arp, arpMode, arpKeys, hosted } = get();
     if (hosted) return;
     engine.setArp(arpMode ? { ...arp, ...arpCompile(arp, arp.input === 'keys' ? arpKeys : arp.notes, get().chain.length) } : null);
+    engine.setScale(arpMode ? undefined : scaleMap(arp, get().chain.length));
   };
   const snapshot = (): SeqSnapshot => ({ sequenceRhythm: copySequenceRhythm(get().sequenceRhythm), patterns: get().patterns, chain: get().chain, automation: copyAutomation(get().automation) });
   const pushSeqHistory = () => seqHistory.push(snapshot());

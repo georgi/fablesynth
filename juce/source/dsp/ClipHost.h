@@ -8,6 +8,7 @@
 #include "../seq/dsp/SeqModel.h"
 #include "../seq/dsp/SeqProtocol.h"
 #include "Arp.h"
+#include "Scales.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -63,9 +64,9 @@ public:
     // before the boundary re-targets; docs §6 rule 1). `tag` is the clip's
     // launch identity (scene index), carried through to the Start ack so the
     // conductor attributes it correctly (Finding 1).
-    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0, ArpPattern arp = {}, SequenceRhythm rhythm = {}) {
+    void scheduleClip(const uint8_t* d, size_t n, int bars, double at, int tag = 0, ArpPattern arp = {}, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
         pend_.assign(d, d + n); pendBars_ = bars; pendAt_ = at; hasPend_ = true;
-        pendArp_ = arp; pendRhythm_ = rhythm;
+        pendArp_ = arp; pendRhythm_ = rhythm; pendScale_ = scale;
         pendTag_ = tag;
         hasStop_ = false;
     }
@@ -77,12 +78,12 @@ public:
     // Hot-swap bytes: pending slot when one exists, else the live clip.
     // Position is derived arithmetic, so the playhead never moves; a bars
     // change re-derives the entry under floor() (mid-flight resize).
-    void updateClip(const uint8_t* d, size_t n, int bars, ArpPattern arp = {}, SequenceRhythm rhythm = {}) {
-        if (hasPend_) { pend_.assign(d, d + n); pendBars_ = bars; pendArp_ = arp; pendRhythm_ = rhythm; return; }
+    void updateClip(const uint8_t* d, size_t n, int bars, ArpPattern arp = {}, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
+        if (hasPend_) { pend_.assign(d, d + n); pendBars_ = bars; pendArp_ = arp; pendRhythm_ = rhythm; pendScale_ = scale; return; }
         if (!playing_) return;
         const bool rephase = arp.enabled != arp_.enabled || (arp.enabled && arp.rate != arp_.rate) || rhythmRephases(rhythm);
         const bool resized = bars != clipBars_ || (arp.enabled && arp.length != arp_.length);
-        arp_ = arp; rhythm_ = rhythm;
+        arp_ = arp; rhythm_ = rhythm; scale_ = scale;
         clip_.assign(d, d + n);
         clipBars_ = bars;
         if (rephase) rephase_ = true;
@@ -114,6 +115,10 @@ public:
     int  clipBars() const { return clipBars_; }
     const uint8_t* clipData() const { return clip_.data(); }
     const ArpPattern& arp() const { return arp_; }
+    // Scale mode (Scales.h): the written note of the step being fired, moved
+    // into the scale the live clip's map holds at that anchor-grid sixteenth.
+    int scaleNote(int note) const { return fable::scaleNote(scale_, firePos16_, note); }
+    const ScaleMap& scaleMap() const { return scale_; }
     double stepInterval(int) const { return std::max(1.0, toNext_); }
     int  clipStep() const { return clipStep_; } // last fired absolute step
 
@@ -171,7 +176,7 @@ public:
             // clip_ and pend_ retain their reserved buffers — pend_ inherits
             // the outgoing clip's storage for the next scheduleClip's assign().
             std::swap(clip_, pend_); clipBars_ = pendBars_; clipTag_ = pendTag_;
-            arp_ = pendArp_; rhythm_ = pendRhythm_;
+            arp_ = pendArp_; rhythm_ = pendRhythm_; scale_ = pendScale_;
             playing_ = true;
             rephase_ = false;
             // Phase-locked entry: enter at the global grid position, -1 so
@@ -272,6 +277,8 @@ private:
         const long k = (long)clipStep_ + 1;
         const int s = polySource(k);
         clipStep_ = (int)k;
+        // Worklet polyEmit: the step's sixteenth on the straight grid.
+        firePos16_ = (long)std::floor((double)k * stepDuration() / (60.0 / clampBpm() / 4 * sr_) + .1);
         fire(s);
         toNext_ = anchor_ + polyFrame(k + 1) - frame;
         pushEvent({ HostEvent::T::Pos, frame, s, 0, clipTag_ });
@@ -298,6 +305,7 @@ private:
         const double offNext = (sNext % 2 == 1) ? sw * SQ_SWING_MAX * dur : 0.0;
         const long idx = (long)std::lround((frame - anchor_ - offNow) / dur);
         toNext_ = anchor_ + (double)(idx + 1) * dur + offNext - frame;
+        firePos16_ = idx; // the anchor-grid sixteenth of this step (worklet clipFire)
         fire(abs);
         pushEvent({ HostEvent::T::Pos, frame, s, abs / SQ_STEPS_PER_BAR, clipTag_ });
     }
@@ -306,6 +314,8 @@ private:
     std::vector<uint8_t> clip_, pend_;
     ArpPattern arp_, pendArp_;
     SequenceRhythm rhythm_, pendRhythm_;
+    ScaleMap scale_, pendScale_;
+    long firePos16_ = 0;
     int clipBars_ = 0, pendBars_ = 0;
     int clipTag_ = 0, pendTag_ = 0; // launch identity (scene) of live/pending clip
     double pendAt_ = -1, stopAt_ = -1, toNext_ = 0, lastFrame_ = 0, lastEnd_ = 0;

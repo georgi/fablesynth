@@ -1,3 +1,4 @@
+import { followClip } from '../clipArp';
 import { soft808DubKit } from './dubKit';
 // PHASE RUNNER — F minor, 126 BPM. Bass-led dub with interlocking echoes.
 import { FACTORY_PATCHES, patchToState } from '../../bass/patches';
@@ -84,8 +85,9 @@ const LOCKED: Harmony = [[5, 'm9', 8], [5, 'sus7', 4], [5, 'm9', 4]];
 const ACROSS: Harmony = [[5, 'm9', 4], [3, 'dom9', 4], [5, 'sus7', 4], [5, 'm9', 4]];
 const HANGING: Harmony = [[5, 'sus7', 8], [5, 'm9', 8]];
 const SHIFTED: Harmony = [[5, 'm9', 4], [5, 'sus7', 4], [5, 'm9', 8]];
+// Every tonal part FOLLOWs the scene chords, so a new progression moves it.
 const harmony = (clips: (ClipDoc | null)[], h: Harmony) =>
-  clips.map((c, t) => c && t ? harmonize(t === 1 ? 'BL1' : 'WT1', c, 5, h) : c);
+  clips.map((c, t) => c && t ? followClip(harmonize(t === 1 ? 'BL1' : 'WT1', c, 5, h)) : c);
 
 export const PHASE_RUNNER: SessionPreset = {
   name:'PHASE RUNNER', family:'DUB TECHNO', variation:'AUTHORED', energy:4,

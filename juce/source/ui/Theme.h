@@ -46,6 +46,21 @@ enum class Accent { A, B, F, N };
 // their cyan stays byte-identical.
 inline juce::Colour& accentA() { static juce::Colour c = col::acA; return c; }
 
+// Navigation accent (the web's --nav): page tabs, back, view toggles, and
+// browser exits. It follows accent A unless a binary overrides it; SQ-4 sets
+// its logo amber so hosted devices navigate in one colour.
+inline juce::Colour& navAccentOverride() { static juce::Colour c; return c; }
+inline juce::Colour navAccent() { const auto& o = navAccentOverride(); return o.isTransparent() ? accentA() : o; }
+// Marks a TextButton as navigation: the look-and-feel rings it in navAccent().
+inline void styleNavButton(juce::TextButton& b, float onFill = 0.18f) {
+    const auto nav = navAccent();
+    b.setColour(juce::TextButton::buttonColourId, col::panelHi);
+    b.setColour(juce::TextButton::buttonOnColourId, nav.withAlpha(onFill));
+    b.setColour(juce::TextButton::textColourOffId, nav.interpolatedWith(col::textDim, 0.45f));
+    b.setColour(juce::TextButton::textColourOnId, nav);
+    b.getProperties().set("nav", true);
+}
+
 inline juce::Colour accentColour(Accent a) {
     switch (a) { case Accent::A: return accentA(); case Accent::B: return col::acB;
                  case Accent::F: return col::acF; case Accent::N: return col::acN; }
@@ -211,6 +226,10 @@ inline juce::Font monoFontMedium(float h) {
         return juce::Font(juce::FontOptions(tf).withPointHeight(h));
     return monoFont(h);
 }
+// Sequencer, arp and chord views: dense grids of small labels, set about
+// 2 pt above the rack captions so step numbers and chord names stay legible.
+inline float seqText(float h) { return h < 12.0f ? h + 2.0f : h + 1.0f; }
+inline juce::Font seqFont(float h, bool bold = false) { return monoFont(seqText(h), bold); }
 inline juce::Font dispFont(float h) {
     if (auto tf = detail::michroma())
         return juce::Font(juce::FontOptions(tf).withPointHeight(h));

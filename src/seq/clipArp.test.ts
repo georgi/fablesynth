@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileClipArp, linkChordWrites, newClipArp, validClipArp, type ClipArp } from './clipArp';
+import { compileClipArp, compileClipScale, followClip, linkChordWrites, newClipArp, sceneChords, sceneChordWrites, validClipArp, type ClipArp } from './clipArp';
 import { PROGRESSIONS, progressionChords } from '../chords';
 import { factorySession } from './factory';
 import { copySession } from './sessionPresets';
@@ -63,4 +63,34 @@ describe('chord-track clips', () => {
     expect(others[0].clip.arp!.settings).toMatchObject({ chordKey: 7, chordBars: 2, chordOctave: 4 });
     expect(doc.scenes[1].clips[2]!.arp!.settings.chordKey).toBe(2);
   });
+  it('loads a scene progression into every linked clip of that scene only', () => {
+    const doc = factorySession();
+    for (const t of [1, 2, 3]) doc.scenes[1].clips[t] = { name: 'ARP', bars: 1, pattern: bytesToB64(emptyClipBytes(t === 1 ? 'BL1' : 'WT1', 1)) };
+    doc.scenes[1].clips[1]!.arp = chordArp({ chordLink: true, chordOctave: 1 });
+    doc.scenes[1].clips[2]!.arp = chordArp({ chordLink: true, chordOctave: 4 });
+    doc.scenes[1].clips[3]!.arp = chordArp({ chordLink: false });
+    expect(sceneChords(doc, 1)).toMatchObject({ key: 9, bars: 4 });
+    expect(sceneChords(doc, 0)).toBeNull();
+    const blues = progressionChords(PROGRESSIONS.find(p => p.mood === 'BLUES')!, 4).chords;
+    const writes = sceneChordWrites(doc, 1, { chords: blues, key: 4, bars: 4 });
+    expect(writes.map(w => w.t)).toEqual([1, 2]);
+    expect(writes[1].clip.arp!.settings).toMatchObject({ chords: blues, chordKey: 4, chordOctave: 4 });
+  });
 });
+
+describe('FOLLOW clips', () => {
+  it('play as written over their own chords and move with a new progression', () => {
+    const clip = factorySession().scenes[2].clips[1]!;
+    clip.arp = { enabled: false, settings: { ...newClipArp('BL1').settings, input: 'chords', chordKey: 2, chordBars: 1,
+      chords: [{ start: 0, length: 16, root: 2, quality: 'min', inversion: 0 }] } };
+    const follow = followClip(clip);
+    expect(validClipArp(follow.arp)).toBe(true);
+    expect(compileClipScale(follow)!.flat().every(x => x === 0)).toBe(true);
+    // The scene moves to G minor: every note moves up a fourth.
+    const moved = { ...follow, arp: { ...follow.arp!, settings: { ...follow.arp!.settings, chords: [{ start: 0, length: 16, root: 7, quality: 'min' as const, inversion: 0 }] } } };
+    const map = compileClipScale(moved)!;
+    expect(map[0][2]).toBe(5); // D → G
+    expect(map[0][9]).toBe(5); // A → D
+  });
+});
+

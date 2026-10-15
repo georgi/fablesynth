@@ -19,6 +19,7 @@ public:
     std::function<double()> playhead;     // sixteenths, or -1
     std::function<int()> linkPeers;       // SQ-4: other linked tracks in the scene; -1 hides LINK
     std::function<void()> onBrowse;
+    std::function<juce::String(int)> scaleOf;  // scale mode: the scale a chord sets (web scaleOf)
 
     explicit ChordTrackView(juce::Colour accent) : accent_(accent), picker("chord progression", accent) {
         picker.onStep = [this](int d) { stepPreset(d); };
@@ -112,7 +113,18 @@ public:
             g.fillRect(r.withLeft(r.getRight() - 7).reduced(0, 1));
             g.setColour(selected ? accent_ : arp::chordHue(c.root, .7f, .62f).withAlpha(.5f)); g.drawRoundedRectangle(r.reduced(.5f), 3, selected ? 1.5f : 1.0f);
             g.setColour(arp::c::value); g.setFont(arp::font(11, true));
-            g.drawText(chordName(c), r.reduced(8, 0).toNearestInt(), juce::Justification::centredLeft, true);
+            const auto scale = scaleOf ? scaleOf(i) : juce::String();
+            if (scale.isEmpty()) g.drawText(chordName(c), r.reduced(8, 0).toNearestInt(), juce::Justification::centredLeft, true);
+            else {
+                // Name, then its scale in a smaller, dimmer label: stacked when
+                // the block is tall enough, else on the same line.
+                auto t = r.reduced(8, 0).toNearestInt();
+                const bool stack = t.getHeight() >= 28;
+                const auto name = stack ? t.removeFromTop(t.getHeight() / 2 + 2) : t.removeFromLeft(juce::jmin(t.getWidth(), 10 + chordName(c).length() * 8));
+                g.drawText(chordName(c), name, stack ? juce::Justification::bottomLeft : juce::Justification::centredLeft, true);
+                g.setColour(arp::c::label); g.setFont(arp::font(8));
+                g.drawText(scale, t, stack ? juce::Justification::topLeft : juce::Justification::centredLeft, true);
+            }
         }
         if (pos >= 0) { g.setColour(accent_); g.fillRect(xAt(0) + (float)(pos / total) * grid_.getWidth() - 1, (float)grid_.getY(), 2.0f, (float)grid_.getHeight()); }
         g.setColour(juce::Colours::white.withAlpha(.075f)); g.drawRoundedRectangle(grid_.toFloat().reduced(.5f), 5, 1);

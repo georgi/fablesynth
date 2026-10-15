@@ -1,6 +1,7 @@
 // WT-1 device body: the JUCE page layout (juce/source/ui/WtDeviceBody.cpp).
 // EDIT holds the voice panels, FX CHAIN the effects, and LAB, SEQUENCER, ARP,
-// and AUTOMATION each fill the page. The automation editor stays mounted so a
+// CHORDS, and AUTOMATION each fill the page. The SEQUENCER, ARP, and CHORDS
+// LEDs are one radio group: exactly one of the three modes plays. The automation editor stays mounted so a
 // knob's control menu can open its lane from any page.
 
 import { useState } from 'react';
@@ -21,20 +22,33 @@ import { NoteSeqPanel } from './panels/SeqPanel';
 import { ArpPanel } from './panels/WtArpPanel';
 import { WtAutomation } from './WtAutomation';
 import { useStore } from '../store';
+import { modeStyle, seqMode, type SeqMode } from '../arp';
 
-type Page = 'edit' | 'fx' | 'lab' | 'seq' | 'arp' | 'auto';
+type Page = 'edit' | 'fx' | 'lab' | SeqMode | 'auto';
 
 export function WtDeviceBody() {
   const arpMode = useStore((s) => s.arpMode);
-  const setArpMode = useStore((s) => s.setArpMode);
-  const [page, setPage] = useState<Page>(() => (useStore.getState().arpMode ? 'arp' : 'edit'));
+  const style = useStore((s) => s.arp.style);
+  const mode = seqMode(arpMode, style);
+  const [page, setPage] = useState<Page>(() => {
+    const st = useStore.getState();
+    return st.arpMode ? seqMode(true, st.arp.style) : 'edit';
+  });
+  const enable = (next: SeqMode) => {
+    const st = useStore.getState();
+    if (next !== 'seq' && st.arp.style !== modeStyle(next)) st.updateArp({ style: modeStyle(next) });
+    st.setArpMode(next !== 'seq');
+  };
+  // An LED switches its mode on; switching ARP or CHORDS off returns to SEQUENCER.
+  const led = (m: SeqMode, label: string) => ({ on: mode === m, label: `${label} on/off`, toggle: () => enable(mode === m ? 'seq' : m) });
 
   const tabs: DeviceTab<Page>[] = [
     { id: 'edit', label: 'EDIT', width: 76 },
     { id: 'fx', label: 'FX CHAIN', width: 106 },
     { id: 'lab', label: 'LAB', width: 70 },
-    { id: 'seq', label: 'SEQUENCER', width: 146, led: { on: !arpMode, label: 'Sequencer on/off', toggle: () => setArpMode(false) } },
-    { id: 'arp', label: 'ARP', width: 92, led: { on: arpMode, label: 'Arpeggiator on/off', toggle: () => setArpMode(!arpMode) } },
+    { id: 'seq', label: 'SEQUENCER', width: 146, led: led('seq', 'Sequencer') },
+    { id: 'arp', label: 'ARP', width: 92, led: led('arp', 'Arpeggiator') },
+    { id: 'chords', label: 'CHORDS', width: 118, led: led('chords', 'Chord comping') },
     { id: 'auto', label: 'AUTOMATION', width: 138 },
   ];
 
@@ -66,7 +80,8 @@ export function WtDeviceBody() {
       )}
       {page === 'lab' && <div className="panels device-page" data-page="lab"><LabPanel /></div>}
       {page === 'seq' && <div className="panels device-page" data-page="seq"><NoteSeqPanel /></div>}
-      {page === 'arp' && <div className="panels device-page" data-page="seq"><ArpPanel /></div>}
+      {page === 'arp' && <div className="panels device-page" data-page="seq"><ArpPanel mode="arp" /></div>}
+      {page === 'chords' && <div className="panels device-page" data-page="seq"><ArpPanel mode="chords" /></div>}
       <div className="device-page wt-auto-page" hidden={page !== 'auto'}>
         <WtAutomation onReveal={() => setPage('auto')} />
       </div>

@@ -13,7 +13,9 @@ export function ProgressionGrid({ chords }: { chords: ArpChord[] }) {
   </svg>;
 }
 
-export function ProgressionBrowser({ chordKey, current, load, onClose }: { chordKey: number; current: number; load: (i: number) => void; onClose: () => void }) {
+/** `title` and `setKey` serve the SQ-4 scene browser: it names the scene and changes the key there. */
+export function ProgressionBrowser({ chordKey, current, load, onClose, title, setKey }: { chordKey: number; current: number; load: (i: number) => void; onClose: () => void;
+  title?: string; setKey?: (key: number) => void }) {
   const [family, setFamily] = useState('ALL');
   const [query, setQuery] = useState('');
   const list = useRef<HTMLDivElement>(null);
@@ -36,10 +38,13 @@ export function ProgressionBrowser({ chordKey, current, load, onClose }: { chord
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); step(e.key === 'ArrowDown' ? 1 : -1); }
     }}>
     <div className="comp-browser-head">
-      <h3>CHORD PROGRESSIONS <span>{shown.length} / {PROGRESSIONS.length} · IN {PITCH_NAMES[chordKey]}</span></h3>
+      <h3>{title ? `SCENE CHORDS · ${title}` : 'CHORD PROGRESSIONS'} <span>{shown.length} / {PROGRESSIONS.length} · IN {PITCH_NAMES[chordKey]}</span></h3>
+      {setKey && <label className="arp-field">KEY<select aria-label="Scene key" value={chordKey} onChange={e => setKey(+e.target.value)}>
+        {PITCH_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+      </select></label>}
       <input autoFocus type="search" aria-label="Search chord progressions" placeholder="SEARCH MOOD, NUMERALS OR CHORD" value={query} onChange={e => setQuery(e.target.value)} />
       <button type="button" className="ns-btn" onClick={() => shown.length && load(shown[Math.floor(Math.random() * shown.length)].i)}>RANDOM</button>
-      <button type="button" className="ns-btn" onClick={onClose}>DONE</button>
+      <button type="button" className="ns-btn nav-btn" onClick={onClose}>DONE</button>
     </div>
     <div className="comp-browser-body">
       <div className="comp-browser-families" aria-label="Progression family">
@@ -56,6 +61,6 @@ export function ProgressionBrowser({ chordKey, current, load, onClose }: { chord
         {!shown.length && <span className="arp-empty">No progression matches.</span>}
       </div>
     </div>
-    <div className="comp-browser-foot">CLICK TO LOAD · ↑ ↓ STEP THROUGH THE LIST · LOADING REPLACES THE CHORD TRACK · ENTER / ESC CLOSES</div>
+    <div className="comp-browser-foot">CLICK TO LOAD · ↑ ↓ STEP THROUGH THE LIST · {title ? 'LOADING REPLACES THE CHORDS OF EVERY LINKED TRACK' : 'LOADING REPLACES THE CHORD TRACK'} · ENTER / ESC CLOSES</div>
   </div>;
 }

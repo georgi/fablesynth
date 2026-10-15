@@ -22,7 +22,7 @@ public:
         addAndMakeVisible(search);
         random.setButtonText("RANDOM"); done.setButtonText("DONE");
         random.onClick = [this] { if (!shown.empty()) load(shown[(size_t)juce::Random::getSystemRandom().nextInt((int)shown.size())]); };
-        done.onClick = [this] { close(); };
+        fui::styleNavButton(done); done.onClick = [this] { close(); };
         addAndMakeVisible(random); addAndMakeVisible(done);
         for (int v = 0; v <= (int)fable::compVariations().size(); ++v) {
             auto* b = variations.add(new juce::TextButton(v == 0 ? "ALL" : fable::compVariations()[(size_t)v - 1]));

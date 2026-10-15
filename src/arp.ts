@@ -1,4 +1,5 @@
 import { chordNotes, PROGRESSIONS, progressionChords, validChords, type ArpChord } from './chords';
+import { SCALE_TYPES, type ScaleMode, type ScaleType } from './scales';
 import { COMP_VOICINGS, compSequence, parseCompSteps, STRUM_DIRS, STRUM_MAX_MS, type ArpStyle, type CompVoicing, type StrumDir } from './comp';
 
 export type ArpOrder = 'up' | 'down' | 'updown' | 'played' | 'random';
@@ -22,6 +23,12 @@ export interface ArpState {
    *  progression is shared with the scene's other linked clips. */
   chordBars?: number;
   chordLink?: boolean;
+  /** Scale mode for the written notes (src/scales.ts): KEY snaps them to one
+   *  scale on `chordKey`, CHORDS to each chord's scale. Absent = OFF / AUTO. */
+  scale?: ScaleMode;
+  scaleType?: ScaleType;
+  /** FOLLOW: the chords the written notes were written over. */
+  followChords?: ArpChord[];
   /** 'comp' plays a voicing per step (`comp` voice masks, `ties` hold) instead of one note. */
   style: ArpStyle;
   comp: number[];
@@ -32,6 +39,10 @@ export interface ArpState {
   voicing: CompVoicing;
 }
 export type ArpInput = 'stored' | 'keys' | 'chords';
+/** The one playback mode a sequencer runs: written notes, arpeggio, or chord comping. */
+export type SeqMode = 'seq' | 'arp' | 'chords';
+export const seqMode = (arpOn: boolean, style: ArpStyle): SeqMode => !arpOn ? 'seq' : style === 'comp' ? 'chords' : 'arp';
+export const modeStyle = (mode: Exclude<SeqMode, 'seq'>): ArpStyle => mode === 'chords' ? 'comp' : 'arp';
 export const newArp = (): ArpState => ({ notes: [50, 53, 57, 60], order: 'up', rate: .25,
   octaves: 1, gate: .65, hits: Array(16).fill(true), accents: Array.from({ length: 16 }, (_, i) => i % 4 === 0),
   seed: 1, input: 'stored', latch: false, chords: progressionChords(PROGRESSIONS[10], 9).chords, chordKey: 9, chordOctave: 3,
@@ -107,6 +118,9 @@ export function loadArp(storageKey = 'wt1-arp-v1', fresh = newArp()): ArpState {
       ties: fresh.ties.map((v, i) => typeof a.ties?.[i] === 'boolean' ? a.ties[i] : v),
       strum: Number.isInteger(a.strum) && a.strum >= 0 && a.strum <= STRUM_MAX_MS ? a.strum : fresh.strum,
       strumDir: STRUM_DIRS.includes(a.strumDir) ? a.strumDir : fresh.strumDir,
-      voicing: COMP_VOICINGS.includes(a.voicing) ? a.voicing : fresh.voicing };
+      voicing: COMP_VOICINGS.includes(a.voicing) ? a.voicing : fresh.voicing,
+      ...(a.scale === 'key' || a.scale === 'chords' || a.scale === 'follow' ? { scale: a.scale } : {}),
+      ...(SCALE_TYPES.includes(a.scaleType) ? { scaleType: a.scaleType } : {}),
+      ...(validChords(a.followChords) ? { followChords: validChords(a.followChords)! } : {}) };
   } catch { return fresh; }
 }

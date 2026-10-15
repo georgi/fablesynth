@@ -163,6 +163,7 @@ private:
     void syncHistoryContext();
     void scrollBarMoved(juce::ScrollBar*, double start) override { laneOffset_ = (int)start; repaint(); }
     int gridBottom() const;
+    int gridSpaceBottom() const;
     std::unique_ptr<PolyLanePanel> polyPanel_;
     juce::ScrollBar laneScroll_{true};
     int laneOffset_ = 0;

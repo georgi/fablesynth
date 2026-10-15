@@ -45,7 +45,10 @@ public:
         bool on = b.getToggleState();
         g.setColour(on ? b.findColour(juce::TextButton::buttonOnColourId) : juce::Colour(0xff11141c));
         g.fillRoundedRectangle(r, 6.0f);
-        g.setColour(on ? b.findColour(juce::TextButton::buttonOnColourId) : (over || down ? col::acA : col::line));
+        if (b.getProperties().contains("nav")) // navigation: ringed in the nav accent
+            g.setColour(on || over || down ? navAccent() : navAccent().withAlpha(0.3f));
+        else
+            g.setColour(on ? b.findColour(juce::TextButton::buttonOnColourId) : (over || down ? col::acA : col::line));
         g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 1.0f);
     }
     juce::Font getTextButtonFont(juce::TextButton&, int) override { return monoFont(11.0f); }

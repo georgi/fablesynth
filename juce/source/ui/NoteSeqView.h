@@ -7,6 +7,8 @@
 #include "StepEditOps.h"
 #include "PatternPresetCombo.h"
 #include "SequencePolyStrip.h"
+#include "ScaleStrip.h"
+#include "ProgressionBrowserView.h"
 #include "../dsp/NoteSeq.h"
 
 // The WT-1 16-step note sequencer panel — port of
@@ -118,6 +120,11 @@ private:
     juce::ScrollBar hScroll_{false};
     int scrollX_ = 0, lastTimelineSteps_ = -1;
     SequencePolyStrip poly_;
+    ScalePanel scale_ { col::acA };         // scale mode (ScaleStrip.tsx) under the POLY strip
+    ProgressionBrowserView progressions_ { col::acA };
+    void setScaleBars(int bars);
+    int scaleBars() const;                  // chord-track bars: the clip's, or the chain length
+    int scaleY() const;
     std::vector<uint8_t> snapshotAllPatterns() const;
     void applyAllPatterns(const std::vector<uint8_t>&);
     SeqSnapshot snapshot() const;

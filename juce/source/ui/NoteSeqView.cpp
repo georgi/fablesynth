@@ -56,6 +56,22 @@ NoteSeqView::NoteSeqView(WtUiModel& m)
     poly_.onUndo = [this] { undoEdit(); };
     poly_.onRedo = [this] { redoEdit(); };
     poly_.onOpenChanged = [this] { resized(); repaint(); };
+    // Scale mode for the written notes: edits go through the model's arp
+    // settings (hosted: the conductor's clip-arp path, so linking and undo hold).
+    addChildComponent(scale_);
+    scale_.settings = [this] { return model.arpSettings(); };
+    scale_.commit = [this](const fable::ArpSettings& a) { model.setArpSettings(a); lastSig_ = 0xffffffffu; repaint(); };
+    scale_.bars = [this] { return scaleBars(); };
+    scale_.setBars = [this](int n) { setScaleBars(n); };
+    scale_.linkPeers = [this] { return model.arpChordLinkPeers(); };
+    scale_.playhead = [this] { return cursorColumn(); };
+    scale_.onBrowse = [this] { progressions_.setVisible(true); progressions_.toFront(true); };
+    scale_.onHeightChanged = [this] { resized(); repaint(); };
+    addChildComponent(progressions_);
+    progressions_.chordKey = [this] { return model.arpSettings().chordKey; };
+    progressions_.current = [this] { return scale_.chords.currentPreset(); };
+    progressions_.load = [this](int i) { scale_.chords.loadPreset(i); };
+    progressions_.onClose = [this] { progressions_.setVisible(false); };
     // params.ts fmtNote: seq.root shows a note name (48 -> C3), not the number.
     root_.nameProvider = [](int v) {
         static const char* const names[12] =
@@ -69,6 +85,12 @@ NoteSeqView::NoteSeqView(WtUiModel& m)
 void NoteSeqView::resized() {
     poly_.setVisible(model.supportsSequencePoly());
     poly_.setBounds(kPadX, kBodyY0 - 4, getWidth() - 2 * kPadX - kClockW - kClockGap, poly_.preferredHeight());
+    scale_.setVisible(model.hasTargetClip());
+    {
+        const int w = getWidth() - 2 * kPadX - kClockW - kClockGap;
+        scale_.setBounds(kPadX, scaleY(), w, scale_.preferredHeight());
+    progressions_.setBounds(getLocalBounds().reduced(4));
+    }
     {   // sideways scroll once the timeline is wider than the grid area
         const int gx = kPadX + kLegendW + kLegendGap, view = gridViewWidth(), content = timelineWidth();
         hScroll_.setBounds(gx, juce::jmin(getHeight() - 9, bodyY() + stepNumberY() + 12), view, 8);
@@ -455,8 +477,22 @@ void NoteSeqView::restore(const SeqSnapshot& snap) {
     applyAllPatterns(snap.patterns);
 }
 
+void NoteSeqView::setScaleBars(int bars) {
+    bars = juce::jlimit(1, 4, bars);
+    if (model.capabilities().hosted) { auto a = model.arpSettings(); a.chordBars = bars; model.setArpSettings(a); return; }
+    std::vector<int> chain((size_t)bars);   // standalone: the chord track spans the sequence length
+    for (int i = 0; i < bars; ++i) chain[(size_t)i] = i;
+    model.setChain(std::move(chain));
+}
+int NoteSeqView::scaleY() const {
+    return kBodyY0 - 4 + (poly_.isVisible() ? poly_.preferredHeight() + 6 : 0);
+}
+int NoteSeqView::scaleBars() const {
+    return model.capabilities().hosted ? model.arpSettings().chordBars : juce::jlimit(1, 4, (int)model.chain().size());
+}
 int NoteSeqView::bodyY() const {
-    return kBodyY0 + (poly_.isVisible() ? poly_.preferredHeight() + 2 : 0);
+    return kBodyY0 + (poly_.isVisible() ? poly_.preferredHeight() + 2 : 0)
+         + (scale_.isVisible() ? scale_.getHeight() + 6 : 0);
 }
 
 void NoteSeqView::setSelection(const fable::RectSel& r) {
@@ -957,6 +993,8 @@ void NoteSeqView::timerCallback() {
         resized(); repaint();
     }
     if (model.supportsSequencePoly()) poly_.setSettings(model.sequencePoly(), model.clipIdentity());
+    if (scale_.isVisible() != model.hasTargetClip()) { resized(); repaint(); }
+    if (scale_.isVisible()) scale_.refresh();
 
     juce::uint32 sig = 17;
     auto mix = [&sig](int v) { sig = sig * 31u + (juce::uint32)(v + 2); };
@@ -972,6 +1010,12 @@ void NoteSeqView::timerCallback() {
     mix((int)chain.size());
     for (int p : chain) mix(p);
     mix(timelineSteps()); mix(scrollX_);
+    {   // Scale dimming follows the scale map and ROOT.
+        std::array<int, 64> masks {};
+        if (scale_.isVisible() && fable::scaleStepMasks(model.arpSettings(), scaleBars(), timelineSteps(), masks))
+            for (int s = 0; s < timelineSteps(); ++s) mix(masks[(size_t)s]);
+        mix((int)model.parameters().effectiveValue("seq.root", 48));
+    }
     for (int s = 0; s < timelineSteps(); ++s) {
         const NoteSeqStep st = stepAbs(s);
         mix((st.on ? 1 : 0) | (st.acc ? 2 : 0));
@@ -1025,7 +1069,7 @@ static void drawSeqBtn(juce::Graphics& g, juce::Rectangle<int> b, const juce::St
         g.fillRect(b.withY(b.getBottom() - 3).withHeight(3).reduced(2, 0));
     }
     g.setColour(active || current ? cyan : col::textDim);
-    g.setFont(monoFont(fontSize));
+    g.setFont(seqFont(fontSize));
     drawSpaced(g, text, b, tracking, juce::Justification::centred);
 }
 
@@ -1090,12 +1134,12 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.setColour(cyan.withAlpha(0.55f));
         g.drawRoundedRectangle(sb.toFloat().reduced(0.5f), 4.0f, 1.0f);
         g.setColour(cyan);
-        g.setFont(monoFont(7.0f));
+        g.setFont(seqFont(7.0f));
         drawSpaced(g, sync, sb, 0.7f, juce::Justification::centred);
         hintRight = sb.getX() - 10;
     }
     g.setColour(col::textHint);
-    g.setFont(monoFont(7.0f));
+    g.setFont(seqFont(7.0f));
     drawSpaced(g, "DRAG EMPTY = DRAW - EDGE = LENGTH",
                { hintRight - 360, kHeadY, 360, kHeadH }, 0.9f,
                juce::Justification::right);
@@ -1104,7 +1148,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
     {
         const juce::Rectangle<int> legend(kPadX, bodyY(), kLegendW, stepNumberY() + 10);
         g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
+        g.setFont(seqFont(7.0f));
         g.drawText("PITCH", legend.withHeight(10).translated(0, laneAreaHeight() / 2 - 5), juce::Justification::centredRight);
         g.setColour(cyan.withAlpha(0.75f));
         g.drawText("C+1", legend.withHeight(10).translated(0, 1), juce::Justification::centredRight);
@@ -1122,7 +1166,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.drawVerticalLine(cx, (float)bodyY(), (float)(bodyY() + stepNumberY() + 10));
         // ROOT label under the stepper (the web Stepper renders its own label)
         g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
+        g.setFont(seqFont(7.0f));
         g.drawText("ROOT", root_.getX(), root_.getBottom() + 2, root_.getWidth(), 10,
                    juce::Justification::centred);
     }
@@ -1132,6 +1176,11 @@ void NoteSeqView::paint(juce::Graphics& g) {
     const int cursorCol = cursorColumn();
     std::vector<NoteSeqStep> steps((size_t)total);
     for (int s = 0; s < total; ++s) steps[(size_t)s] = stepAbs(s);
+    // Scale mode: the pitch classes each column allows (-1 = OFF). Lane 0 is ROOT.
+    std::array<int, 64> scaleMasks {};
+    const bool scaled = scale_.isVisible() && fable::scaleStepMasks(model.arpSettings(), scaleBars(), total, scaleMasks);
+    const int seqRoot = (int)model.parameters().effectiveValue("seq.root", 48);
+    auto inScale = [&](int s, int lane) { return !scaled || s >= 64 || ((scaleMasks[(size_t)s] >> ((seqRoot + lane) % 12)) & 1); };
     juce::Graphics::ScopedSaveState columnClip(g);
     g.reduceClipRegion(kPadX + kLegendW + kLegendGap - 3, 0, gridViewWidth() + 6, getHeight());
 
@@ -1172,6 +1221,11 @@ void NoteSeqView::paint(juce::Graphics& g) {
                        : rootLane ? cyan.withAlpha(0.30f)
                                   : juce::Colours::white.withAlpha(0.045f));
             g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 1.0f);
+            // .ns-cell.off-scale: empty out-of-scale cells fade to 35 %.
+            if (!active && !inScale(s, note)) {
+                g.setColour(col::panelLo.withAlpha(0.65f));
+                g.fillRoundedRectangle(b, 2.0f);
+            }
         }
 
         // A stronger octave seam gives the 24 chromatic lanes a quick musical
@@ -1188,7 +1242,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
             g.setColour(col::line);
             g.drawRoundedRectangle(b.reduced(0.5f), 4.0f, 1.0f);
             g.setColour(st.oct != 0 ? col::acN : col::textDim);
-            g.setFont(monoFont(9.0f));
+            g.setFont(seqFont(9.0f));
             g.drawText(st.oct == 0 ? "0" : st.oct > 0 ? "+1" : "-1",
                        octBounds(s), juce::Justification::centred);
         }
@@ -1214,7 +1268,7 @@ void NoteSeqView::paint(juce::Graphics& g) {
         // lives on the note lanes, not this strip.
         const auto c = colBounds(s);
         g.setColour(col::textDim);
-        g.setFont(monoFont(7.0f));
+        g.setFont(seqFont(7.0f));
         g.drawText(s % fable::SEQ_STEPS == 0 ? "BAR " + juce::String(s / fable::SEQ_STEPS + 1)
                                              : juce::String(s % fable::SEQ_STEPS + 1),
                    c.withY(c.getY() + stepNumberY()).withHeight(10).expanded(6, 0),
@@ -1245,6 +1299,13 @@ void NoteSeqView::paint(juce::Graphics& g) {
         g.setColour(cyan.withAlpha(0.95f));
         g.drawRoundedRectangle(bf.reduced(0.5f), 3.0f, 1.0f);
         g.fillRect(block.removeFromRight(4).toFloat().reduced(0.0f, 2.0f));
+        // .ns-cell.off-scale.on: an out-of-scale note snaps when it plays.
+        if (!inScale(s, displayLane(st))) {
+            juce::Path outline; outline.addRoundedRectangle(start.toFloat().reduced(2.0f), 2.0f);
+            juce::Path dashed; const float dash[] { 3.0f, 2.0f };
+            juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dash, 2);
+            g.setColour(juce::Colour(0xccf2b45a)); g.fillPath(dashed);
+        }
     }
 
     // ---- melodic POLY: lanes outside the loop (bar 1, first N cells) fade

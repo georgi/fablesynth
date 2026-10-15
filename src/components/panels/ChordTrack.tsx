@@ -13,9 +13,11 @@ export interface ChordTrackProps {
   /** Playhead in sixteenths, or -1 when stopped. */
   pos: number;
   link?: ChordLink;
+  /** Scale mode CHORDS: the scale each chord gives the written notes. */
+  scaleOf?: (c: ArpChord) => string | undefined;
 }
 
-export function ChordTrack({ a, update, bars, setBars, pos, link }: ChordTrackProps) {
+export function ChordTrack({ a, update, bars, setBars, pos, link, scaleOf }: ChordTrackProps) {
   const total = bars * 16;
   const grid = useRef<HTMLDivElement>(null);
   const [sel, setSel] = useState(0);
@@ -114,6 +116,7 @@ export function ChordTrack({ a, update, bars, setBars, pos, link }: ChordTrackPr
           onKeyDown={e => { if ((e.key === 'Delete' || e.key === 'Backspace') && i >= 0) update({ chords: a.chords.filter((_, j) => j !== i) }); }}
           onPointerDown={e => { if (i < 0) return; setSel(i); begin(e, { mode: 'move', idx: i, from: cellAt(e), orig: c }); }}>
           <span>{chordName(c)}{c.inversion ? <sup>/{c.inversion}</sup> : null}</span>
+          {scaleOf && <em className="chord-scale">{scaleOf(c)}</em>}
           <i className="chord-handle" aria-hidden onPointerDown={e => { if (i < 0) return; setSel(i); begin(e, { mode: 'resize', idx: i, from: cellAt(e), orig: c }); }} />
         </div>;
       })}

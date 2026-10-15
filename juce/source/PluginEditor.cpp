@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "ui/LeafControlCache.h"
+#include "ui/EditorSize.h"
 
 // ---- standalone rack ----
 Rack::Rack(fui::WtUiModel& model, juce::AudioProcessorValueTreeState&, FableAudioProcessor& p)
@@ -55,7 +56,8 @@ FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
     if (auto* c = getConstrainer())
         c->setFixedAspectRatio((double)Rack::LW / Rack::LH);
     setResizeLimits(840, (int)(840 * (double)Rack::LH / Rack::LW), 2100, (int)(2100 * (double)Rack::LH / Rack::LW));
-    setSize(1200, (int)(1200 * (double)Rack::LH / Rack::LW));
+    const int width = fui::defaultEditorWidth(1200, (double)Rack::LH / Rack::LW);
+    setSize(width, (int)(width * (double)Rack::LH / Rack::LW));
 }
 
 FableAudioProcessorEditor::~FableAudioProcessorEditor() { setLookAndFeel(nullptr); }

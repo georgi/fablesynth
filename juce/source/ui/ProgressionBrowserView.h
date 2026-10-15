@@ -13,6 +13,10 @@ public:
     std::function<int()> current;           // library index on the chord track, or -1
     std::function<void(int)> load;
     std::function<void()> onClose;
+    // SQ-4 scene browser (web title / setKey): names the scene and changes
+    // its key. Empty title = the clip's own chord track.
+    std::function<juce::String()> titleText;
+    std::function<void(int)> setKey;
 
     explicit ProgressionBrowserView(juce::Colour accent) : live(accent) {
         search.setTextToShowWhenEmpty("SEARCH MOOD, NUMERALS OR CHORD", col::textDim);
@@ -23,7 +27,7 @@ public:
         addAndMakeVisible(search);
         for (auto* b : {&random, &done}) { b->live = live; addAndMakeVisible(b); }
         random.onClick = [this] { if (!shown.empty() && load) { load(shown[(size_t)juce::Random::getSystemRandom().nextInt((int)shown.size())]); refreshList(); } };
-        done.onClick = [this] { close(); };
+        done.nav = true; done.onClick = [this] { close(); };
         for (auto* lb : {&families, &list}) { lb->setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack); lb->setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack); }
         search.setColour(juce::TextEditor::backgroundColourId, arp::c::field); search.setColour(juce::TextEditor::outlineColourId, juce::Colours::white.withAlpha(.125f));
         search.setColour(juce::TextEditor::focusedOutlineColourId, live.withAlpha(.6f)); search.setFont(arp::font(11));
@@ -31,11 +35,22 @@ public:
         familyModel.owner = this;
         list.setModel(this); list.setRowHeight(34); list.setName("Chord progressions"); addAndMakeVisible(list);
         families.selectRow(0);
+        keyBox.setName("Scene key"); keyBox.setTooltip("Scene key");
+        for (int i = 0; i < 12; ++i) keyBox.addItem(pitchName(i), i + 1);
+        keyBox.onChange = [this] {
+            const int k = keyBox.getSelectedId() - 1;
+            if (k >= 0 && k != key() && setKey) { setKey(k); rebuild(); }
+        };
+        addChildComponent(keyBox);
         rebuild();
     }
     ~ProgressionBrowserView() override { list.setModel(nullptr); families.setModel(nullptr); }
 
-    void visibilityChanged() override { if (isVisible()) { rebuild(); search.grabKeyboardFocus(); } }
+    void visibilityChanged() override {
+        if (!isVisible()) return;
+        keyBox.setVisible((bool)setKey); keyBox.setSelectedId(key() + 1, juce::dontSendNotification);
+        resized(); rebuild(); search.grabKeyboardFocus();
+    }
     bool keyPressed(const juce::KeyPress& k) override {
         if (k == juce::KeyPress::escapeKey || k == juce::KeyPress::returnKey) { close(); return true; }
         if (k == juce::KeyPress::downKey || k == juce::KeyPress::upKey) { step(k == juce::KeyPress::downKey ? 1 : -1); return true; }
@@ -44,8 +59,11 @@ public:
     void resized() override {
         auto r = getLocalBounds().reduced(16, 14);
         auto head = r.removeFromTop(28);
-        title = head.removeFromLeft(300);
         done.setBounds(head.removeFromRight(64).reduced(2, 1)); random.setBounds(head.removeFromRight(80).reduced(2, 1));
+        // The scene title takes what it needs (plus the count), leaving the KEY and a short search.
+        const int need = heading().isNotEmpty() ? arp::labelWidth(titleString(), 11) + 8 + 112 : 300;
+        title = head.removeFromLeft(juce::jmax(300, juce::jmin(need, head.getWidth() - (setKey ? 110 : 0) - 70)));
+        if (setKey) { head.removeFromLeft(10); keyLabel = head.removeFromLeft(30); keyBox.setBounds(head.removeFromLeft(62).reduced(0, 2)); head.removeFromLeft(8); }
         search.setBounds(head.reduced(4, 0));
         r.removeFromTop(10);
         foot = r.removeFromBottom(16);
@@ -56,14 +74,18 @@ public:
     void paint(juce::Graphics& g) override {
         g.setColour(juce::Colour(0xf7080c13)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 8);
         g.setColour(live.withAlpha(.25f)); g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(.5f), 8, 1);
-        const int titleW = arp::labelWidth("CHORD PROGRESSIONS", 11);
-        arp::label(g, "CHORD PROGRESSIONS", title.withWidth(titleW), live, 11, true);
+        const auto text = titleString();
+        const int titleW = std::min(title.getWidth() - 90, arp::labelWidth(text, 11));
+        arp::label(g, text, title.withWidth(titleW), live, 11, true);
+        if (setKey) arp::label(g, "KEY", keyLabel, juce::Colour(0xff8394aa), 9, true);
         static const char* keys[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
         g.setColour(juce::Colour(0xff8394aa)); g.setFont(arp::font(11));
         g.drawText(juce::String((int)shown.size()) + " / " + juce::String((int)fable::progressions().size())
                    + juce::String::fromUTF8(" · IN ") + keys[std::clamp(key(), 0, 11)],
                    title.withTrimmedLeft(titleW + 8), juce::Justification::centredLeft);
-        arp::label(g, juce::String::fromUTF8("CLICK TO LOAD · ↑ ↓ STEP THROUGH THE LIST · LOADING REPLACES THE CHORD TRACK · ENTER / ESC CLOSES"),
+        arp::label(g, juce::String::fromUTF8(heading().isNotEmpty()
+                       ? "CLICK TO LOAD · ↑ ↓ STEP THROUGH THE LIST · LOADING REPLACES THE CHORDS OF EVERY LINKED TRACK · ENTER / ESC CLOSES"
+                       : "CLICK TO LOAD · ↑ ↓ STEP THROUGH THE LIST · LOADING REPLACES THE CHORD TRACK · ENTER / ESC CLOSES"),
                    foot, juce::Colour(0xff66778d), 8, false);
     }
 
@@ -121,9 +143,18 @@ private:
             g.drawText(chordName(c), block.reduced(4, 0).toNearestInt(), juce::Justification::centredLeft, true);
         }
     }
-    static juce::String chordName(const fable::ArpChord& c) {
+public:
+    static juce::String pitchName(int i) {
         static const char* n[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
-        return juce::String(n[c.root % 12]) + juce::String::fromUTF8(fable::chordQualities()[c.quality].label);
+        return n[((i % 12) + 12) % 12];
+    }
+    static juce::String chordName(const fable::ArpChord& c) {
+        return pitchName(c.root) + juce::String::fromUTF8(fable::chordQualities()[c.quality].label);
+    }
+private:
+    juce::String heading() const { return titleText ? titleText() : juce::String(); }
+    juce::String titleString() const {
+        return heading().isNotEmpty() ? juce::String::fromUTF8("SCENE CHORDS · ") + heading() : juce::String("CHORD PROGRESSIONS");
     }
     void listBoxItemClicked(int row, const juce::MouseEvent&) override { if (row >= 0 && row < (int)shown.size() && load) { load(shown[(size_t)row]); refreshList(); } }
     void listBoxItemDoubleClicked(int, const juce::MouseEvent&) override { close(); }
@@ -158,6 +189,7 @@ private:
             shown.push_back(i);
         }
         list.updateContent(); refreshList();
+        keyBox.setSelectedId(key() + 1, juce::dontSendNotification);
     }
     void close() { if (onClose) onClose(); }
 
@@ -168,6 +200,7 @@ private:
     juce::ListBox families, list;
     std::vector<int> shown;
     int family = -1;
-    juce::Rectangle<int> title, foot;
+    juce::ComboBox keyBox;
+    juce::Rectangle<int> title, foot, keyLabel;
 };
 }

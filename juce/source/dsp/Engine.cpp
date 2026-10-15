@@ -570,7 +570,9 @@ void Engine::polyEmit(long k, double dur) {
     if (!st.on || !seqEnabled_) return;
     int root = (int)p_[SEQ_ROOT];
     if (root == 0) root = 48;
-    const int n = root + st.semi;
+    // Scale position: the step's sixteenth on the straight grid (worklet polyEmit).
+    const double beats = seqRhythm_.fit ? (double)seqRhythm_.cycleBeats / seqRhythm_.steps : .25;
+    const int n = scaleNote(seqScale_, (long)std::floor((double)k * beats * 4 + .1), root + st.semi);
     noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
     seqScheduleOff(n, st.duration * dur);
 }
@@ -708,7 +710,7 @@ void Engine::seqFireAt(int s, int pat, int /*patNext*/, double dur) {
     if (st.on && seqEnabled_) {
         int root = (int)p_[SEQ_ROOT];
         if (root == 0) root = 48;
-        const int n = root + st.semi;
+        const int n = scaleNote(seqScale_, (long)seqChainPos_ * SEQ_STEPS + s, root + st.semi);
         const double vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
         noteOn(n, vel);
         seqScheduleOff(n, st.duration * dur);
@@ -742,7 +744,7 @@ void Engine::clipFireAt(int abs) {
         // Mono: the melody lives in the first active lane (worklet clipFire).
         const bool mono = p_[MASTER_MONO] > 0.5f;
         for (const auto& st : chord) if (st.on) {
-            const int n = root + st.semi;
+            const int n = clipHost_.scaleNote(root + st.semi);
             noteOn(n, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
             seqScheduleOff(n, st.duration * dur);
             if (mono) break;

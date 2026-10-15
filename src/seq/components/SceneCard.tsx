@@ -8,6 +8,7 @@ import { compileClipArp } from '../clipArp';
 import { isTrackAudible, pad2 } from '../model';
 import { STEPS_PER_BAR } from '../protocol';
 import { useSeqStore } from '../store';
+import { SceneChordChip } from './SceneChordChip';
 import { TransportGlyph } from './TransportGlyph';
 
 export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) {
@@ -105,6 +106,7 @@ export function SceneCard({ s, focus = false }: { s: number; focus?: boolean }) 
           {clipTracks.length} {clipTracks.length === 1 ? 'CLIP' : 'CLIPS'}
         </span>
       </div>
+      <SceneChordChip s={s} />
       {progress !== null && (
         <span className="sq-scene-progress" style={{ transform: `scaleX(${progress})` }} />
       )}

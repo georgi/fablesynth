@@ -19,9 +19,9 @@ export interface SeqDevice {
   init(ctx: AudioContext, output: AudioNode): Promise<void>;
   applyPatch(patch: PatchDoc): void;
   setTempo(bpm: number, swing: number, anchor: number): void;
-  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto?: AutoConfig[], sequenceRhythm?: SequenceRhythm): void;
+  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto?: AutoConfig[], sequenceRhythm?: SequenceRhythm, scale?: number[][]): void;
   scheduleStop(atFrame: number): void;
-  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto?: AutoConfig[], sequenceRhythm?: SequenceRhythm): void;
+  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto?: AutoConfig[], sequenceRhythm?: SequenceRhythm, scale?: number[][]): void;
   panic(): void;
   onClipStart: ((frame: number) => void) | null;
   onClipStop: ((frame: number) => void) | null;
@@ -62,9 +62,9 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
 
   // Automation follows its clip message: the worklet attaches it to the
   // pending clip (launch) or the active one (hot-swap).
-  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto: AutoConfig[] = [], sequenceRhythm?: SequenceRhythm): void {
+  scheduleClip(pattern: Uint8Array, bars: number, atFrame: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto: AutoConfig[] = [], sequenceRhythm?: SequenceRhythm, scale?: number[][]): void {
     if (this.engine instanceof DrumEngine) this.engine.scheduleClip(pattern, bars, atFrame, rhythm);
-    else this.engine.scheduleClip(pattern, bars, atFrame, arp, sequenceRhythm);
+    else this.engine.scheduleClip(pattern, bars, atFrame, arp, sequenceRhythm, scale);
     this.engine.setClipAutomation(auto);
   }
 
@@ -72,9 +72,9 @@ abstract class EngineDevice<E extends DrumEngine | BassEngine | SynthEngine> imp
     this.engine.scheduleStop(atFrame);
   }
 
-  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto: AutoConfig[] = [], sequenceRhythm?: SequenceRhythm): void {
+  updateClip(pattern: Uint8Array, bars: number, arp?: ArpConfig, rhythm?: DrumRhythm, auto: AutoConfig[] = [], sequenceRhythm?: SequenceRhythm, scale?: number[][]): void {
     if (this.engine instanceof DrumEngine) this.engine.updateClip(pattern, bars, rhythm);
-    else this.engine.updateClip(pattern, bars, arp, sequenceRhythm);
+    else this.engine.updateClip(pattern, bars, arp, sequenceRhythm, scale);
     this.engine.setClipAutomation(auto);
   }
 

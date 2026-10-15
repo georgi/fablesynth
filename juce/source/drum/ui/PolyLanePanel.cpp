@@ -138,11 +138,13 @@ void PolyLanePanel::refresh() {
     auto lane = s.rhythm.lanes[(size_t)p];
     if (!(s.configuredLanes & (1 << p))) lane = {};
     if (lastPad != p) { error.setText({}, juce::dontSendNotification); lastPad = p; }
+    const bool wasFit = fitMode;
     on = lane.enabled; fitMode = lane.mode == fable::DrumRhythmMode::fit;
     laneSteps = lane.steps; sourceBar = lane.sourceBar; cycleBeats = lane.cycleBeats; selectedPad = p;
     enabled.setButtonText(on ? "ON" : "OFF"); enabled.setToggleState(on, juce::dontSendNotification);
     grid.setToggleState(!fitMode, juce::dontSendNotification); fit.setToggleState(fitMode, juce::dontSendNotification);
     one.setVisible(fitMode); two.setVisible(fitMode);
+    if (wasFit != fitMode && onLayoutChange) onLayoutChange();
     one.setToggleState(cycleBeats == 4, juce::dontSendNotification); two.setToggleState(cycleBeats == 8, juce::dontSendNotification);
     steps.setValue(lane.steps, 16); rotation.setValue(lane.rotation, lane.steps - 1);
     for (auto* button : { &grid, &fit, &one, &two })
@@ -203,7 +205,7 @@ static int controlRows(int width, bool fitMode) {
     }
     return rows;
 }
-int PolyLanePanel::preferredHeight(int width) { return 118 + (controlRows(width, true) - 1) * 42; }
+int PolyLanePanel::preferredHeight(int width) const { return 118 + (controlRows(width, fitMode) - 1) * 42; }
 void PolyLanePanel::resized() {
     const int w = getWidth(), right = w - 12;
     titleBounds = {12, 11, 53, 30}; padBounds = {76, 11, 125, 30};

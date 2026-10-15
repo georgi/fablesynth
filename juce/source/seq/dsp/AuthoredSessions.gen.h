@@ -10,6 +10,8 @@ inline ArpSettings sqChordTrackArp(Machine machine, bool enabled, int key, int o
     for (const auto& c : chords) a.chordList[(size_t)a.chordCount++] = c;
     return a;
 }
+// FOLLOW: the written notes keep their place against the current chords (src/seq/clipArp.ts followClip).
+inline void sqFollow(ArpSettings& a) { a.scaleMode = 3; a.followCount = a.chordCount; a.followList = a.chordList; }
 // COMP style with a library groove (src/seq/songs/comping.ts withComp).
 inline void sqComp(ArpSettings& a, std::array<uint8_t, 16> masks, std::array<bool, 16> ties, std::array<bool, 16> accents,
                    double rate, double gate, int strum, int strumDir, int voicing) {
@@ -2842,6 +2844,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[854] = 1;
             scene.clips[2] = { "DISTANT CHORD", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[144] = 9;
             scene.clips[2].bytes[145] = 5;
             scene.clips[2].bytes[147] = 9;
@@ -2871,6 +2874,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1307] = 2;
             scene.clips[3] = { "SIGNAL / BEYOND THE WALL", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[1080] = 9;
             scene.clips[3].bytes[1081] = 9;
             scene.clips[3].bytes[1082] = 2;
@@ -2956,6 +2960,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[874] = 1;
             scene.clips[1] = { "SUB / FINDING THE POCKET", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[0] = 15;
             scene.clips[1].bytes[1] = 2;
             scene.clips[1].bytes[2] = 0;
@@ -2982,6 +2987,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "CHORD / FIRST TRACE", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -3123,6 +3129,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[909] = 1;
             scene.clips[1] = { "SUB / UNDERTOW", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[0] = 15;
             scene.clips[1].bytes[1] = 2;
             scene.clips[1].bytes[2] = 0;
@@ -3161,6 +3168,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "CHORD / TIDAL MOTIF", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -3235,6 +3243,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1475] = 2;
             scene.clips[3] = { "SIGNAL / TWO LIGHTS", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[312] = 5;
             scene.clips[3].bytes[313] = 9;
             scene.clips[3].bytes[314] = 2;
@@ -3331,6 +3340,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[874] = 1;
             scene.clips[1] = { "SUB / TURNING CURRENT", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 32, 10, 20, 0 }, { 32, 32, 2, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[0] = 19;
             scene.clips[1].bytes[1] = 10;
             scene.clips[1].bytes[2] = 0;
@@ -3366,6 +3376,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[188] = 0;
             scene.clips[2] = { "CHORD / REFRACTED", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 32, 10, 20, 0 }, { 32, 32, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -3429,6 +3440,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1499] = 2;
             scene.clips[3] = { "SIGNAL / FALLING IMAGE", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 32, 10, 20, 0 }, { 32, 32, 2, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[216] = 9;
             scene.clips[3].bytes[217] = 9;
             scene.clips[3].bytes[218] = 2;
@@ -3487,6 +3499,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[854] = 1;
             scene.clips[2] = { "CHORD / EXPOSED", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[144] = 25;
             scene.clips[2].bytes[145] = 5;
             scene.clips[2].bytes[147] = 25;
@@ -3507,6 +3520,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[923] = 2;
             scene.clips[3] = { "SIGNAL / WATERLINE", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[72] = 25;
             scene.clips[3].bytes[73] = 9;
             scene.clips[3].bytes[74] = 2;
@@ -3607,6 +3621,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[874] = 1;
             scene.clips[1] = { "SUB / HOME WITH A SCAR", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 32, 2, 21, 0 }, { 32, 16, 10, 20, 0 }, { 48, 16, 2, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[0] = 15;
             scene.clips[1].bytes[1] = 2;
             scene.clips[1].bytes[2] = 0;
@@ -3645,6 +3660,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "CHORD / WIDER RETURN", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 32, 2, 21, 0 }, { 32, 16, 10, 20, 0 }, { 48, 16, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[48] = 11;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 11;
@@ -3718,6 +3734,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1403] = 2;
             scene.clips[3] = { "SIGNAL / ANSWER", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 32, 2, 21, 0 }, { 32, 16, 10, 20, 0 }, { 48, 16, 2, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[312] = 9;
             scene.clips[3].bytes[313] = 4;
             scene.clips[3].bytes[314] = 2;
@@ -3785,6 +3802,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[0].bytes[602] = 1;
             scene.clips[2] = { "CHORD / LAST REFLECTION", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[48] = 13;
             scene.clips[2].bytes[49] = 5;
             scene.clips[2].bytes[51] = 13;
@@ -3814,6 +3832,7 @@ inline SessionPreset authoredSession0() {
             scene.clips[2].bytes[1115] = 2;
             scene.clips[3] = { "SIGNAL / RECEDED", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 64, 2, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[312] = 13;
             scene.clips[3].bytes[313] = 9;
             scene.clips[3].bytes[314] = 2;
@@ -6643,6 +6662,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[858] = 1;
             scene.clips[1] = { "MOTOR / TURNOVER", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 64, 5, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6679,6 +6699,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[188] = 0;
             scene.clips[2] = { "ECHO / FIRST SPARK", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 64, 5, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[288] = 5;
             scene.clips[2].bytes[291] = 5;
             scene.clips[2].bytes[292] = 3;
@@ -6762,6 +6783,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[905] = 1;
             scene.clips[1] = { "MOTOR / THREE AGAINST FOUR", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 32, 5, 21, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6809,6 +6831,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[188] = 0;
             scene.clips[2] = { "ECHO / LOCKSTEP", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 21, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[0] = 7;
             scene.clips[2].bytes[3] = 7;
             scene.clips[2].bytes[4] = 3;
@@ -6839,6 +6862,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1306] = 8;
             scene.clips[3] = { "RELAY / ANSWER", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 21, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[360] = 5;
             scene.clips[3].bytes[744] = 5;
             scene.clips[3].bytes[745] = 7;
@@ -6916,6 +6940,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[911] = 1;
             scene.clips[1] = { "MOTOR / SIDE ROAD", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 3, 19, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -6954,6 +6979,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[179] = 0;
             scene.clips[2] = { "ECHO / ACROSS THE BAR", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 3, 19, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[168] = 5;
             scene.clips[2].bytes[171] = 5;
             scene.clips[2].bytes[172] = 3;
@@ -6985,6 +7011,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1330] = 8;
             scene.clips[3] = { "RELAY / CROSS TALK", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 3, 19, 0 }, { 32, 16, 5, 16, 0 }, { 48, 16, 5, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[72] = 5;
             scene.clips[3].bytes[73] = 7;
             scene.clips[3].bytes[456] = 5;
@@ -7023,6 +7050,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[909] = 1;
             scene.clips[1] = { "MOTOR / IDLING", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 32, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[6] = 25;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -7036,6 +7064,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[176] = 0;
             scene.clips[2] = { "ECHO / HANGING WIRE", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[0] = 13;
             scene.clips[2].bytes[3] = 13;
             scene.clips[2].bytes[4] = 3;
@@ -7052,6 +7081,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[778] = 8;
             scene.clips[3] = { "RELAY / ALONE", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 32, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[264] = 9;
             scene.clips[3].bytes[648] = 9;
             scene.clips[3].bytes[649] = 3;
@@ -7134,6 +7164,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[911] = 1;
             scene.clips[1] = { "MOTOR / SECOND WIND", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[6] = 11;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -7178,6 +7209,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[182] = 0;
             scene.clips[2] = { "ECHO / SHIFTED RETURN", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[0] = 7;
             scene.clips[2].bytes[3] = 7;
             scene.clips[2].bytes[4] = 3;
@@ -7215,6 +7247,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1474] = 8;
             scene.clips[3] = { "RELAY / OPEN CIRCUIT", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[312] = 5;
             scene.clips[3].bytes[696] = 5;
             scene.clips[3].bytes[697] = 7;
@@ -7265,6 +7298,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[0].bytes[854] = 1;
             scene.clips[1] = { "MOTOR / COAST", 4, sqEmptyClip(Machine::BL1, 4) };
             scene.clips[1].hasArp = true; scene.clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[1].arp);
             scene.clips[1].bytes[6] = 9;
             scene.clips[1].bytes[7] = 5;
             scene.clips[1].bytes[8] = 0;
@@ -7284,6 +7318,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[1].bytes[152] = 0;
             scene.clips[2] = { "ECHO / AFTERIMAGE", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[2].hasArp = true; scene.clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[2].arp);
             scene.clips[2].bytes[0] = 5;
             scene.clips[2].bytes[3] = 5;
             scene.clips[2].bytes[4] = 3;
@@ -7307,6 +7342,7 @@ inline SessionPreset authoredSession1() {
             scene.clips[2].bytes[1066] = 8;
             scene.clips[3] = { "RELAY / FADING", 4, sqEmptyClip(Machine::WT1, 4) };
             scene.clips[3].hasArp = true; scene.clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 21, 0 }, { 16, 16, 5, 16, 0 }, { 32, 32, 5, 21, 0 } });
+            sqFollow(scene.clips[3].arp);
             scene.clips[3].bytes[360] = 5;
             scene.clips[3].bytes[361] = 7;
             scene.clips[3].bytes[936] = 5;
@@ -7324,664 +7360,1124 @@ inline std::vector<SessionPreset> authoredSessionLibrary() {
 inline void applyChordTracks(std::vector<SessionPreset>& library) {
     for (auto& p : library) {
         if (p.name == "NEON TALE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, true, true, false, true, true, false, true, true, true, false, true, true, false, true, true }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.6, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "NEON CHASE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 5, 1, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "GLASS CIRCUIT") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "AFTERGLOW") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 0, 1, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 0, 4, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 0, 3, 4, true, { { 0, 16, 0, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 5, 1, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "WAREHOUSE RAW") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, true, false, false, true, false, false, false, false, false, false, false, false, false }}, 0.25, 0.3, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "ACID FLASH") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 7, 1, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 9, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "STEEL PULSE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "PEAK SIGNAL") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 2, 1, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 2, 4, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 2, 3, 4, true, { { 0, 16, 2, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 7, 1, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "DEEP FOG") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "GLASS BLOOM") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 2, 1, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "FROZEN BELL") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "AIR TEMPLE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 9, 1, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 9, 4, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 9, 3, 4, true, { { 0, 16, 9, 1, 0 }, { 16, 16, 4, 0, 0 }, { 32, 16, 2, 1, 0 }, { 48, 16, 7, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "DUST HOUSE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "MIDNIGHT FLOOR") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false }}, {{ false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.4, 0, 1, 1);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 10, 1, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 0, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "TAPE DISCO") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 0, 14, 0, 0 }}, {{ false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.35, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 8, 0, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 10, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "CLEAN CLUB") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 5, 1, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 5, 4, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 5, 3, 4, true, { { 0, 16, 5, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 10, 1, 0 }, { 48, 16, 3, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "VHS GARDEN") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 3, 0, 0 }, { 32, 16, 10, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "POCKET DUST") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 0, 0 }}, {{ false, true, true, false, false, false, false, true, false, false, false, true, false, false, false, false }}, {{ true, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.7, 10, 0, 3);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 0, 1, 0 }, { 32, 16, 3, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "TOY PARADE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 5, 0, 0 }, { 48, 16, 0, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "WORN SIGNAL") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 7, 1, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 7, 4, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 7, 3, 4, true, { { 0, 16, 7, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 0, 1, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "CHROME CATHEDRAL") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 0, 0, 0 }, { 32, 16, 7, 0, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "MACHINE TENSION") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 9, 1, 0 }, { 32, 16, 0, 0, 0 }, { 48, 16, 11, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "VOID MARCH") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 7, 0, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 9, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "FINAL HORIZON") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 4, 1, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 4, 4, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 4, 3, 4, true, { { 0, 16, 4, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 9, 1, 0 }, { 48, 16, 2, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "GRAY ROOM") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 11, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 11, 6, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "CLICK FIELD") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 6, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 6, 6, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "COLD ROTOR") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 9, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 9, 6, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "NIGHT GRID") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 1, 1, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 1, 4, 4, true, { { 0, 16, 1, 1, 0 }, { 16, 16, 1, 1, 0 }, { 32, 16, 1, 1, 0 }, { 48, 16, 8, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 1, 3, 4, false, { { 0, 16, 1, 6, 0 }, { 16, 16, 1, 6, 0 }, { 32, 16, 1, 6, 0 }, { 48, 16, 8, 6, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "SUGAR RUSH") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 14, 0 }}, {{ false, false, false, true, false, false, false, true, false, false, false, true, false, false, false, true }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 2, 0, 0 }, { 32, 16, 9, 0, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "PASTEL SKY") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 11, 1, 0 }, { 32, 16, 2, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "STARBURST") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 14, 0, 0, 14, 0, 0, 0, 14, 0, 14, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ true, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false }}, 0.25, 0.45, 0, 1, 3);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 9, 0, 0 }, { 32, 16, 4, 0, 0 }, { 48, 16, 11, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "HEART WIRE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 6, 1, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 6, 4, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 6, 3, 4, true, { { 0, 16, 6, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 11, 1, 0 }, { 48, 16, 4, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "VELVET SMOKE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "NIGHT BUS") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 3, 1, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 5, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "CRACKED LENS") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 1, 0, 0 }, { 32, 16, 8, 0, 0 }, { 48, 16, 3, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "STONE GARDEN") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 10, 1, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 10, 4, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 10, 3, 4, true, { { 0, 16, 10, 1, 0 }, { 16, 16, 5, 0, 0 }, { 32, 16, 3, 1, 0 }, { 48, 16, 8, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "ECHO CHAMBER") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 11, 0, 0 }, { 32, 16, 6, 0, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "KING STEPPER") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0, 0, 12, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 8, 1, 0 }, { 32, 16, 11, 0, 0 }, { 48, 16, 10, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "ROOTS RADAR") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
-            sqComp(p.session.scenes[0].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
             p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
             sqComp(p.session.scenes[1].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
             p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
             sqComp(p.session.scenes[2].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
             p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
             sqComp(p.session.scenes[3].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
             p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
             sqComp(p.session.scenes[4].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
-            sqComp(p.session.scenes[5].clips[3].arp, {{ 0, 0, 0, 0, 12, 0, 12, 0, 0, 0, 0, 0, 12, 0, 12, 0 }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, {{ false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false }}, 0.25, 0.25, 8, 0, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 6, 0, 0 }, { 32, 16, 1, 0, 0 }, { 48, 16, 8, 1, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
         if (p.name == "ZION GATE") {
-            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            p.session.scenes[0].clips[3].hasArp = true; p.session.scenes[0].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[0].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[1].clips[1].hasArp = true; p.session.scenes[1].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[1].clips[1].arp);
+            p.session.scenes[1].clips[3].hasArp = true; p.session.scenes[1].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[1].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[2].clips[1].hasArp = true; p.session.scenes[2].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[1].arp);
             p.session.scenes[2].clips[2].hasArp = true; p.session.scenes[2].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[2].clips[2].arp);
+            p.session.scenes[2].clips[3].hasArp = true; p.session.scenes[2].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[2].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[3].clips[1].hasArp = true; p.session.scenes[3].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[1].arp);
             p.session.scenes[3].clips[2].hasArp = true; p.session.scenes[3].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[3].clips[2].arp);
+            p.session.scenes[3].clips[3].hasArp = true; p.session.scenes[3].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[3].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
             p.session.scenes[4].clips[1].hasArp = true; p.session.scenes[4].clips[1].arp = sqChordTrackArp(Machine::BL1, false, 3, 1, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[1].arp);
             p.session.scenes[4].clips[2].hasArp = true; p.session.scenes[4].clips[2].arp = sqChordTrackArp(Machine::WT1, false, 3, 4, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
-            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, false, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqFollow(p.session.scenes[4].clips[2].arp);
+            p.session.scenes[4].clips[3].hasArp = true; p.session.scenes[4].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[4].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
+            p.session.scenes[5].clips[3].hasArp = true; p.session.scenes[5].clips[3].arp = sqChordTrackArp(Machine::WT1, true, 3, 3, 4, true, { { 0, 16, 3, 1, 0 }, { 16, 16, 10, 0, 0 }, { 32, 16, 8, 1, 0 }, { 48, 16, 1, 0, 0 } });
+            sqComp(p.session.scenes[5].clips[3].arp, {{ 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }}, {{ false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true }}, {{ false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }}, 0.25, 0.95, 0, 1, 0);
         }
     }
 }
@@ -10326,6 +10822,111 @@ inline void applySessionGrooves(std::vector<SessionPreset>& library) {
             scene.clips[0].bytes[923] = 1;
         }
         }
+    }
+}
+template <typename Apply>
+void applyCompSounds(std::vector<SessionPreset>& library, Apply&& apply) {
+    for (auto& p : library) {
+        if (p.name == "MIDNIGHT FLOOR") apply(p.session.tracks[3], {
+            { "env1.a", 0.002000000f },
+            { "env1.d", 0.350000000f },
+            { "env1.r", 0.160000000f },
+            { "env1.s", 0.500000000f },
+            { "env2.a", 0.001000000f },
+            { "env2.d", 0.220000000f },
+            { "env2.r", 0.200000000f },
+            { "env2.s", 0.000000000f },
+            { "filter.cutoff", 1100.000000000f },
+            { "filter.env", 0.450000000f },
+            { "filter.res", 0.200000000f },
+            { "fx.delay.div", 3.000000000f },
+            { "fx.delay.fb", 0.320000000f },
+            { "fx.delay.mix", 0.200000000f },
+            { "fx.delay.on", 1.000000000f },
+            { "fx.delay.sync", 1.000000000f },
+            { "mat1.amt", 0.000000000f },
+            { "oscA.detune", 0.180000000f },
+            { "oscA.unison", 3.000000000f },
+        });
+        if (p.name == "TAPE DISCO") apply(p.session.tracks[3], {
+            { "env1.a", 0.003000000f },
+            { "env1.d", 0.400000000f },
+            { "env1.r", 0.180000000f },
+            { "env1.s", 0.450000000f },
+            { "env2.a", 0.002000000f },
+            { "env2.d", 0.250000000f },
+            { "env2.r", 0.200000000f },
+            { "env2.s", 0.200000000f },
+            { "filter.cutoff", 1500.000000000f },
+            { "filter.env", 0.550000000f },
+            { "fx.chorus.mix", 0.350000000f },
+        });
+        if (p.name == "POCKET DUST") apply(p.session.tracks[3], {
+            { "env1.a", 0.004000000f },
+            { "env1.d", 0.300000000f },
+            { "env1.r", 0.060000000f },
+            { "env1.s", 0.750000000f },
+            { "env2.a", 0.003000000f },
+            { "env2.d", 0.400000000f },
+            { "env2.r", 0.100000000f },
+            { "env2.s", 0.400000000f },
+            { "filter.cutoff", 1000.000000000f },
+            { "filter.env", 0.300000000f },
+        });
+        if (p.name == "NEON TALE") apply(p.session.tracks[3], {
+            { "env1.a", 0.004000000f },
+            { "env1.d", 0.350000000f },
+            { "env1.r", 0.200000000f },
+            { "env1.s", 0.600000000f },
+            { "filter.env", 0.350000000f },
+            { "fx.reverb.mix", 0.300000000f },
+        });
+        if (p.name == "SUGAR RUSH") apply(p.session.tracks[3], {
+            { "env1.a", 0.005000000f },
+            { "env1.d", 0.300000000f },
+            { "env1.r", 0.120000000f },
+            { "env1.s", 0.800000000f },
+            { "fx.reverb.mix", 0.320000000f },
+        });
+        if (p.name == "STARBURST") apply(p.session.tracks[3], {
+            { "env1.a", 0.002000000f },
+            { "env1.d", 0.280000000f },
+            { "env1.r", 0.140000000f },
+            { "env1.s", 0.500000000f },
+            { "env2.a", 0.001000000f },
+            { "env2.d", 0.180000000f },
+            { "env2.r", 0.150000000f },
+            { "env2.s", 0.100000000f },
+            { "filter.cutoff", 2200.000000000f },
+            { "filter.env", 0.400000000f },
+            { "fx.delay.div", 2.000000000f },
+            { "fx.delay.fb", 0.250000000f },
+            { "fx.delay.mix", 0.150000000f },
+            { "fx.delay.on", 1.000000000f },
+            { "fx.delay.sync", 1.000000000f },
+            { "mat1.amt", 0.000000000f },
+        });
+        if (p.name == "WAREHOUSE RAW") apply(p.session.tracks[3], {
+            { "env1.a", 0.001000000f },
+            { "env1.d", 0.200000000f },
+            { "env1.r", 0.100000000f },
+            { "env1.s", 0.300000000f },
+            { "env2.a", 0.001000000f },
+            { "env2.d", 0.140000000f },
+            { "env2.r", 0.120000000f },
+            { "env2.s", 0.000000000f },
+            { "filter.cutoff", 1600.000000000f },
+            { "filter.env", 0.550000000f },
+            { "filter.res", 0.300000000f },
+            { "fx.delay.div", 3.000000000f },
+            { "fx.delay.fb", 0.300000000f },
+            { "fx.delay.mix", 0.180000000f },
+            { "fx.delay.on", 1.000000000f },
+            { "fx.delay.sync", 1.000000000f },
+            { "fx.reverb.mix", 0.220000000f },
+            { "mat1.amt", 0.000000000f },
+            { "oscA.unison", 5.000000000f },
+        });
     }
 }
 } // namespace fable

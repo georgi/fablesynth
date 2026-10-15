@@ -16,10 +16,7 @@ DrumDeviceBody::DrumDeviceBody(fui::DrumUiModel& model)
     const auto configurePage = [this](juce::TextButton& button, Page page) {
         button.setClickingTogglesState(true);
         button.setRadioGroupId(716);
-        button.setColour(juce::TextButton::buttonColourId, fui::col::panelHi);
-        button.setColour(juce::TextButton::buttonOnColourId, fui::col::acA.withAlpha(0.18f));
-        button.setColour(juce::TextButton::textColourOffId, fui::col::textDim);
-        button.setColour(juce::TextButton::textColourOnId, fui::col::text);
+        fui::styleNavButton(button);
         button.onClick = [this, page] { selectPage(page); };
         addAndMakeVisible(button);
     };
@@ -117,19 +114,21 @@ void DrumDeviceBody::resized() {
     const bool showEdit = page_ == Page::edit;
     const bool showFx = page_ == Page::padFx || page_ == Page::groupFx;
     const bool showSequencer = page_ == Page::sequencer;
-    const bool showPadSidebar = !showSequencer;
+    // EDIT and PAD FX show the pads; the other pages take the full width.
+    const bool showPadSidebar = showEdit || page_ == Page::padFx;
+    const int pageX = showPadSidebar ? rightX : 18, pageW = showPadSidebar ? rightW : fullW;
     for (auto* c : std::initializer_list<juce::Component*>{&pads,&padStrip,&routing}) c->setVisible(showPadSidebar);
     for (auto* c : std::initializer_list<juce::Component*>{&selBar,&oscA,&oscB,&noise,&pitchEnv,&ampEnv,&filter,&mod}) c->setVisible(showEdit);
     fxRack.setVisible(showFx);
     stepSeq.setVisible(showSequencer);
     if (automationPanel_) {
         automationPanel_->setVisible(page_ == Page::automation);
-        automationPanel_->setBounds(rightX, 139, rightW, 605);
+        automationPanel_->setBounds(pageX, 139, pageW, 605);
     }
     selBar.setBounds(rightX, 139, rightW, 31);
     layRow({ { &oscA, 424 }, { &oscB, 425 }, { &noise, 196 } }, 179, 243);
     layRow({ { &pitchEnv, 225 }, { &ampEnv, 259 }, { &filter, 259 }, { &mod, 293 } }, 431, 209);
-    fxRack.setBounds(rightX,139,rightW,605);
+    fxRack.setBounds(pageX, 139, pageW, 605);
     // The sequencer owns a full workspace rather than permanently occupying
     // the lower third of sound and FX editing. Its own pad labels make the
     // sidebar redundant while it is open.

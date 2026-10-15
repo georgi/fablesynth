@@ -938,6 +938,14 @@ const std::vector<SessionPreset>& factorySessionLibrary() {
         // Scored POLY lanes and micro-timing for some generated sessions.
         applySessionGrooves(library);
         applyChordTracks(library);
+        // Comping pads get a sound written for their groove.
+        applyCompSounds(library, [](TrackData& track, std::initializer_list<std::pair<const char*, float>> edits) {
+            auto params = resolvedPatchParams(track.machine, track.patch);
+            for (const auto& [id, value] : edits) params[id] = value;
+            if (track.machine == Machine::WT1) params.erase("seq.gate");
+            track.patch.params = std::move(params);
+            track.patch.factory = false;
+        });
         for (auto& authored : authoredSessionLibrary())
             library.push_back(std::move(authored));
         applyMixdowns(library);

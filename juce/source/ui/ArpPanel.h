@@ -32,7 +32,7 @@ public:
         if (hosted) chordTrack.setBars = [this](int n) { change([n](auto& a) { a.chordBars = std::clamp(n, 1, 4); }); };
         else chordTrack.setBars = [&m](int n) { std::vector<int> c((size_t)std::clamp(n, 1, 4)); for (int i = 0; i < (int)c.size(); ++i) c[(size_t)i] = i; m.setChain(std::move(c)); };
         chordTrack.linkPeers = [this] { return model.arpChordLinkPeers(); };
-        chordTrack.playhead = [this] { return playing() && current() >= 0 ? fable::arpStepPos(model.arpSettings().rate, bars(), current()) : -1.0; };
+        chordTrack.playhead = [this] { return running() && current() >= 0 ? fable::arpStepPos(model.arpSettings().rate, bars(), current()) : -1.0; };
         chordTrack.onBrowse = [this] { progressions.setVisible(true); progressions.toFront(true); };
         addChildComponent(chordTrack);
         progressions.chordKey = [this] { return model.arpSettings().chordKey; };
@@ -41,11 +41,6 @@ public:
         progressions.onClose = [this] { progressions.setVisible(false); };
         addChildComponent(progressions);
         // Top bar.
-        style.setName("Arpeggiator style"); style.textSize = 10;
-        style.setOptions({{1, "ARPEGGIO", "Play the notes one at a time"}, {2, "CHORDS", "Play chords in a rhythm pattern"}}, live_);
-        // Comping is a WT-1 feature: BL-1 is monophonic.
-        style.onChange = [this](int id) { change([&](auto& a) { a.comp = id == 2; }); };
-        if (!bass_) addAndMakeVisible(style);
         transport.setName("Launch arp clip"); transport.onClick = [this] { play(!playing() && !model.arpQueued()); };
         addChildComponent(transport);
         tempo.setName("Tempo BPM"); tempo.setTooltip("Arpeggiator tempo"); tempo.setEditable(true);
@@ -156,18 +151,24 @@ public:
         progressions.setBounds(getLocalBounds().reduced(4));
         repaint();
     }
+    // The ARP and CHORDS tabs share this panel; each shows its own style.
+    void setChordsView(bool chords) {
+        if (chords == chordsView_) return;
+        chordsView_ = chords;
+        refresh();
+    }
     void paint(juce::Graphics& g) override {
         g.setColour(col::panelLo); g.fillRoundedRectangle(getLocalBounds().toFloat(), 8);
         const auto a = model.arpSettings(), liveArp = a.keys ? model.arpLiveSettings() : a;
         const bool hosted = model.capabilities().hosted;
         // Top bar.
-        g.setColour(col::text); g.setFont(fui::dispFont(13)); g.drawText("ARPEGGIATOR", title_, juce::Justification::centredLeft);
+        g.setColour(col::text); g.setFont(fui::dispFont(13)); g.drawText(compMode_ ? "CHORD COMPING" : "ARPEGGIATOR", title_, juce::Justification::centredLeft);
         const bool ready = chordMode_ ? a.chordCount > 0 : liveArp.count > 0;
-        const juce::String status = model.arpQueued() ? "QUEUED" : !ready ? (chordMode_ ? "DRAW CHORDS" : "WAITING FOR NOTES") : playing() ? "RUNNING" : "READY";
+        const juce::String status = !active() ? juce::String::fromUTF8("OFF · SWITCH ON WITH THE TAB LED") : model.arpQueued() ? "QUEUED" : !ready ? (chordMode_ ? "DRAW CHORDS" : "WAITING FOR NOTES") : running() ? "RUNNING" : "READY";
         auto st = status_;
         auto led = st.removeFromRight(10).withSizeKeepingCentre(5, 5).toFloat();
-        g.setColour(playing() ? live_ : juce::Colour(0xff516077)); g.fillEllipse(led);
-        if (playing()) { g.setColour(live_.withAlpha(.3f)); g.drawEllipse(led.expanded(2), 2); }
+        g.setColour(running() ? live_ : juce::Colour(0xff516077)); g.fillEllipse(led);
+        if (running()) { g.setColour(live_.withAlpha(.3f)); g.drawEllipse(led.expanded(2), 2); }
         arp::label(g, status, st.withTrimmedRight(8), arp::c::status, 9, false, juce::Justification::centredRight);
         if (hosted) arp::label(g, juce::String::fromUTF8("SQ-4 CLOCK · ") + juce::String((int)std::lround(model.arpTempo())) + " BPM", tempoLabel_, arp::c::status, 9, false, juce::Justification::centredRight);
         else arp::label(g, "BPM", tempoLabel_, arp::c::status, 9, false, juce::Justification::centredRight);
@@ -239,6 +240,7 @@ private:
         struct Row { Kind kind; juce::String label; int bit = 0; int height = 0; };
         std::vector<Row> rows;
         int height() const { int h = 0; for (const auto& r : rows) h += r.height + 3; return std::max(0, h - 3); }
+        int tallRows() const { int n = 0; for (const auto& r : rows) n += r.height > 15 ? 1 : 0; return std::max(1, n); }
         juce::Rectangle<float> cell(int y, int h, int i) const {
             const float x0 = 62.0f, w = (getWidth() - x0 + 3) / 16.0f;
             return {x0 + i * w, (float)y, w - 3, (float)h};
@@ -361,8 +363,7 @@ private:
         if (!measure) {
             auto t = top;
             if (hosted) { transport.setBounds(t.removeFromLeft(34).withSizeKeepingCentre(32, 30)); t.removeFromLeft(12); }
-            title_ = t.removeFromLeft(140);
-            if (!bass_) { style.setBounds(t.removeFromLeft(style.preferredWidth() + 8).reduced(0, 1)); }
+            title_ = t.removeFromLeft(190);
             if (!hosted) { tempo.setBounds(t.removeFromRight(56).reduced(0, 4)); tempoLabel_ = t.removeFromRight(36).withTrimmedRight(8); }
             else tempoLabel_ = t.removeFromRight(190);
             t.removeFromRight(16);
@@ -399,11 +400,17 @@ private:
         // 3 FEEL sits below PATTERN; measure it first so PATTERN can flex.
         const int card3H = P + H + P;
         // 2 PATTERN
-        rebuildRows(a);
-        const int lanesH = lanes.height();
+        // The phrase display stops at 130 px; spare height beyond that makes the lanes taller (up to +10 px each).
         const int minDisplay = compMode_ ? 0 : 60, maxDisplay = compMode_ ? 0 : 130;
-        const int fixed2 = P + H + (dense_ ? 6 : 10) + lanesH + (compMode_ ? 0 : 8) + P;
-        const int room = area.getHeight() - card3H - gap - fixed2;
+        int lanesH = 0, fixed2 = 0, room = 0;
+        auto measureCard2 = [&](int boost) {
+            rebuildRows(a, boost);
+            lanesH = lanes.height();
+            fixed2 = P + H + (dense_ ? 6 : 10) + lanesH + (compMode_ ? 0 : 8) + P;
+            room = area.getHeight() - card3H - gap - fixed2;
+        };
+        measureCard2(0);
+        if (!dense_ && room > maxDisplay) measureCard2(std::min(10, (room - maxDisplay) / (3 * lanes.tallRows())));
         const int display = compMode_ ? 0 : std::clamp(room, minDisplay, maxDisplay);
         card2_ = area.removeFromTop(fixed2 + display);
         if (!measure) {
@@ -436,9 +443,9 @@ private:
         }
         return card3_.getBottom() - top0;
     }
-    void rebuildRows(const fable::ArpSettings& a) {
+    void rebuildRows(const fable::ArpSettings& a, int boost = 0) {
         using K = Lanes::Kind;
-        const int voiceH = dense_ ? 17 : 24, laneH = dense_ ? 16 : 22;
+        const int voiceH = (dense_ ? 17 : 24) + boost, laneH = (dense_ ? 16 : 22) + boost;
         lanes.rows.clear();
         if (compMode_) {
             if (chordMode_) lanes.rows.push_back({K::Chords, "CHORD", 0, 15});
@@ -507,7 +514,9 @@ private:
     // The arp cycle and the 16-step page holding the playhead.
     void compilePage(const fable::ArpSettings& a, int cursor) {
         const auto liveArp = a.keys ? model.arpLiveSettings() : a;
-        cycle_ = fable::compileArp(chordMode_ ? liveArp : withoutChords(liveArp), bars());
+        auto shown = chordMode_ ? liveArp : withoutChords(liveArp);
+        shown.comp = compMode_; // the page shows its own tab's style, whichever mode plays
+        cycle_ = fable::compileArp(shown, bars());
         const int page = cursor >= 0 ? (cursor / 16) % std::max(1, cycle_.length / 16) : 0;
         page_ = cycle_;
         std::copy(cycle_.notes.begin() + page * 16, cycle_.notes.begin() + page * 16 + 16, page_.notes.begin());
@@ -533,7 +542,7 @@ private:
     void refresh() {
         const auto a = model.arpSettings(); const bool hosted = model.capabilities().hosted;
         bool relayout = false;
-        const bool chordMode = a.chords, compMode = a.comp && !bass_;
+        const bool chordMode = a.chords, compMode = chordsView_ && !bass_;
         if (chordMode != chordMode_) { chordMode_ = chordMode; chordTrack.setVisible(chordMode); relayout = true; }
         if (compMode != compMode_) {
             compMode_ = compMode;
@@ -554,7 +563,6 @@ private:
         editNotes.setButtonText(editing_ ? "DONE" : "EDIT NOTES"); editNotes.setToggleState(editing_, juce::dontSendNotification);
         latch.setToggleState(a.latch, juce::dontSendNotification);
         input.setSelectedId(a.chords ? 3 : a.keys ? 2 : 1, juce::dontSendNotification);
-        style.setSelectedId(a.comp ? 2 : 1, juce::dontSendNotification);
         order.setSelectedId(a.order + 1, juce::dontSendNotification);
         const auto it = std::find(rates.begin(), rates.end(), a.rate); rate.setSelectedId((int)(it - rates.begin()) + 1, juce::dontSendNotification);
         octaves.setSelectedId(a.octaves, juce::dontSendNotification);
@@ -580,7 +588,7 @@ private:
         // Repaint the generated views only when their inputs change: a blind
         // repaint at the animation rate redrew every lane.
         const auto sig = paintSignature(a);
-        const int cursor = playing() ? current() : -1;
+        const int cursor = running() ? current() : -1;
         if (sig != lastPaintSig_ || relayout) {
             lastPaintSig_ = sig; compilePage(a, cursor);
             repaint(); phrase.repaint(); lanes.repaint(); transport.repaint();
@@ -599,7 +607,7 @@ private:
         uint64_t h = 1469598103934665603ull;
         auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
         mix((uint64_t)a.keys); mix((uint64_t)a.chords); mix((uint64_t)a.comp); mix((uint64_t)a.latch); mix((uint64_t)editing_);
-        mix((uint64_t)playing()); mix((uint64_t)model.arpQueued()); mix((uint64_t)std::llround(model.arpTempo()));
+        mix((uint64_t)playing()); mix((uint64_t)active()); mix((uint64_t)compMode_); mix((uint64_t)model.arpQueued()); mix((uint64_t)std::llround(model.arpTempo()));
         for (int i = 0; i < 16; ++i) mix((uint64_t)a.compMask[(size_t)i] | (uint64_t)a.ties[(size_t)i] << 4);
         mix((uint64_t)a.voicing | (uint64_t)a.strumDir << 4); mix((uint64_t)bars()); mix((uint64_t)a.chordKey); mix((uint64_t)a.chordOctave);
         for (int i = 0; i < a.chordCount; ++i) { const auto& c = a.chordList[(size_t)i]; mix((uint64_t)c.start | (uint64_t)c.length << 8 | (uint64_t)c.root << 16 | (uint64_t)c.quality << 24 | (uint64_t)c.inversion << 32); }
@@ -616,7 +624,11 @@ private:
     struct CompRow { const char* name; int bit; };
     static constexpr CompRow compRows[4] {{"TOP", fable::kCompTop}, {"MID", fable::kCompMid}, {"LOW", fable::kCompLow}, {"BASS", fable::kCompBass}};
 
+    // The page plays only while its own mode is the one switched on.
+    bool active() const { const auto a = model.arpSettings(); return a.enabled && (bass_ || a.comp == chordsView_); }
+    bool running() const { return playing() && active(); }
     DeviceUiModel& model; bool bass_; int octave_;
+    bool chordsView_ = false;
     juce::Colour live_;
     std::function<bool()> playing; std::function<int()> current; std::function<void(bool)> play; std::function<int()> chainBars;
     const std::array<double, 8> rates {{1, .75, .5, 1.0/3, .375, .25, 1.0/6, .125}};
@@ -625,7 +637,6 @@ private:
     CompBrowserView browser;
     // Top bar.
     Transport transport;
-    arp::Segmented style;
     juce::Label tempo;
     // 1 NOTES
     arp::Segmented input;
@@ -657,23 +668,9 @@ private:
     bool chordMode_ = false, compMode_ = false, editing_ = false, dense_ = false;
 };
 
-class ArpModeBar final : public juce::Component, private fui::VisualTimer {
-public:
-    ArpModeBar(DeviceUiModel& m, juce::Component& seq, ArpPanel& arp) : model(m), seq_(seq), arp_(arp) {
-        addAndMakeVisible(sequence); addAndMakeVisible(arpeggiator);
-        sequence.setButtonText("SEQ"); arpeggiator.setButtonText("ARP");
-        sequence.onClick = [this] { select(false); }; arpeggiator.onClick = [this] { select(true); };
-        timerCallback(); startVisualTimer(*this, 15);
-    }
-    void resized() override { sequence.setBounds(0, 0, 65, getHeight()); arpeggiator.setBounds(70, 0, 65, getHeight()); timerCallback(); }
-private:
-    void select(bool on) { auto a = model.arpSettings(); a.enabled = on; model.setArpSettings(a); timerCallback(); }
-    void timerCallback() override { const bool on = model.arpSettings().enabled; sequence.setToggleState(!on, juce::dontSendNotification); arpeggiator.setToggleState(on, juce::dontSendNotification); seq_.setVisible(!on); arp_.setVisible(on); }
-    DeviceUiModel& model; juce::Component& seq_; ArpPanel& arp_; juce::TextButton sequence, arpeggiator;
-};
-
-// SEQUENCER / ARP tab LEDs. The modes are exclusive: switching one on
-// switches the other off. Both may be off, so played keys sound directly.
+// The SEQUENCER, ARP, and CHORDS tab LEDs: switching one mode on switches
+// the others off. All three may be off. ARP and CHORDS are the arp in its
+// arpeggio and comping styles; BL-1 is monophonic and shows no CHORDS LED.
 struct PlaybackToggles {
     explicit PlaybackToggles(DeviceUiModel& m)
         : sequencer([&m] { return m.seqEnabled() && !m.arpSettings().enabled; },
@@ -681,18 +678,26 @@ struct PlaybackToggles {
                         if (auto a = m.arpSettings(); on && a.enabled) { a.enabled = false; m.setArpSettings(a); }
                         m.setSeqEnabled(on);
                     }, Accent::A),
-          arpeggiator([&m] { return m.arpSettings().enabled; },
-                      [&m](bool on) {
-                          auto a = m.arpSettings(); a.enabled = on; m.setArpSettings(a);
-                          if (on) m.setSeqEnabled(false);
-                      }, Accent::A) {
-        sequencer.setName("Sequencer on/off"); arpeggiator.setName("Arpeggiator on/off");
+          arpeggiator([&m] { const auto a = m.arpSettings(); return a.enabled && !a.comp; }, arpMode(m, false), Accent::A),
+          chords([&m] { const auto a = m.arpSettings(); return a.enabled && a.comp; }, arpMode(m, true), Accent::A) {
+        sequencer.setName("Sequencer on/off"); arpeggiator.setName("Arpeggiator on/off"); chords.setName("Chord comping on/off");
     }
     // Places each LED inside the right end of its tab button.
-    void place(const juce::Component& seqTab, const juce::Component& arpTab) {
+    void place(const juce::Component& seqTab, const juce::Component& arpTab, const juce::Component* chordsTab = nullptr) {
         sequencer.setBounds(seqTab.getBounds().removeFromRight(24).withSizeKeepingCentre(22, 22));
         arpeggiator.setBounds(arpTab.getBounds().removeFromRight(24).withSizeKeepingCentre(22, 22));
+        if (chordsTab) chords.setBounds(chordsTab->getBounds().removeFromRight(24).withSizeKeepingCentre(22, 22));
     }
-    PowerButton sequencer, arpeggiator;
+    PowerButton sequencer, arpeggiator, chords;
+private:
+    static std::function<void(bool)> arpMode(DeviceUiModel& m, bool comp) {
+        return [&m, comp](bool on) {
+            auto a = m.arpSettings();
+            a.enabled = on;
+            if (on) a.comp = comp;
+            m.setArpSettings(a);
+            if (on) m.setSeqEnabled(false);
+        };
+    }
 };
 }

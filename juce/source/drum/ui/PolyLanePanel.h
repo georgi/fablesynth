@@ -43,9 +43,11 @@ public:
     void paint(juce::Graphics&) override;
     void updateFromModel() { refresh(); }
     bool keyPressed(const juce::KeyPress&) override { return true; }
-    // One control row when MODE · STEPS · CYCLE · ROTATE fit the width, else
-    // one more 42 px row per wrap (sized for FIT so the panel never jumps).
-    static int preferredHeight(int width);
+    // One control row when MODE · STEPS · (CYCLE) · ROTATE fit the width, else
+    // one more 42 px row per wrap. Sized for the current mode: onLayoutChange
+    // fires when FIT's extra CYCLE control changes the row count.
+    int preferredHeight(int width) const;
+    std::function<void()> onLayoutChange;
 private:
     void timerCallback() override;
     void refresh();

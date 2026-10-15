@@ -182,6 +182,9 @@ public:
         clipHost_.setTempo(effectiveBpm(), swing, sr_, anchorFrame);
     }
     void setArp(const ArpPattern&);
+    // Standalone scale mode (worklet 'scale'): written notes snap to this map
+    // at chainPos * 16 + step; length 0 = OFF.
+    void setSeqScale(const ScaleMap& m) { seqScale_ = m; }
     // Standalone melodic POLY (worklet-bass.js 'sequenceRhythm'): one clock
     // plays the first `steps` cells of bar one, on the swung 1/16 grid or FIT
     // into `cycleBeats` straight slots. A timing-mode change re-phases from the
@@ -189,16 +192,16 @@ public:
     void setSequenceRhythm(const SequenceRhythm&);
     // SEQUENCER tab LED: off keeps the clock but fires no pattern notes.
     void setSeqEnabled(bool on) { if (!on && seqEnabled_ && !arp_.enabled) { release(); samplesToGateOff_ = -1; } seqEnabled_ = on; }
-    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}) {
+    void hostClip(const uint8_t* data, int bytes, int bars, double atFrame, int tag = 0, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
         autoPlayer_.schedule(automation);
-        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp, rhythm);
+        clipHost_.scheduleClip(data, (size_t)bytes, bars, atFrame, tag, arp, rhythm, scale);
     }
     void hostClipStop(double atFrame) { autoPlayer_.schedule(nullptr); clipHost_.scheduleStop(atFrame); }
-    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}) {
+    void hostClipUpdate(const uint8_t* data, int bytes, int bars, ArpPattern arp = {}, const AutoBank* automation = nullptr, SequenceRhythm rhythm = {}, const ScaleMap& scale = {}) {
         if (!clipHost_.hasPending() && (clipHost_.arp().enabled != arp.enabled || (arp.enabled && !arpHasNotes(arp))
             || (clipHost_.isPlaying() && clipHost_.rhythmRephases(rhythm)))) { release(); samplesToGateOff_ = -1; }
         autoPlayer_.update(automation, clipHost_.hasPending());
-        clipHost_.updateClip(data, (size_t)bytes, bars, arp, rhythm);
+        clipHost_.updateClip(data, (size_t)bytes, bars, arp, rhythm, scale);
     }
     void hostSetFrame(double blockStartFrame) { hostFrame_ = blockStartFrame; } // SQ-4 processor calls before render() each block
     // Lossless drain: copy up to `max`, erase only the copied prefix, keep the
@@ -238,6 +241,7 @@ private:
     void noteOn(int semi, bool acc, float vel);
     void arpFire(const ArpPattern&, int step, double interval);
     ArpPattern arp_;
+    ScaleMap seqScale_;
     bool seqEnabled_ = true;
     void glideTo(int semi, bool acc);
     void release();

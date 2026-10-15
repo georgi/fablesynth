@@ -16,6 +16,7 @@
 #include "../source/seq/dsp/SeqProtocol.h"
 #include "../source/seq/dsp/SnapshotHistory.h"
 #include "ArpEngineChecks.h"
+#include "ScaleChecks.h"
 #if FABLE_SQ4_TEST_JUCE
 #include "../source/seq/SessionCodec.h"
 #include "../source/seq/ClipClipboardCodec.h"
@@ -1638,6 +1639,9 @@ int main() {
     testAutomation();
     runArpEngineChecks([](bool ok, const char* name) {
         if (!ok) { std::printf("FAIL arp: %s\n", name); ++failures; }
+    });
+    scale_checks::runScaleChecks([](bool ok, const char* name) {
+        if (!ok) { std::printf("FAIL scale: %s\n", name); ++failures; }
     });
     testClipLibrarySchema();
     testProtocol();

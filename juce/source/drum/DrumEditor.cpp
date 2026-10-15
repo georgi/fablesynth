@@ -1,6 +1,7 @@
 #include "DrumEditor.h"
 #include "../ui/LeafControlCache.h"
 #include "dsp/DrumParams.h"
+#include "../ui/EditorSize.h"
 
 namespace fui {
 class StandaloneDrumUiModel final : public DrumUiModel {
@@ -196,7 +197,7 @@ void DrumEditor::fitWindowToPage() {
     const double ratio = (double)logicalHeight / DrumRack::LW;
     // Keep the user's width and control scale when changing pages; only the
     // height needed by the visible content changes.
-    const int width = getWidth() > 0 ? getWidth() : 1200;
+    const int width = getWidth() > 0 ? getWidth() : fui::defaultEditorWidth(1200, ratio);
     rack.setSize(DrumRack::LW, logicalHeight);
     if (auto* c = getConstrainer()) c->setFixedAspectRatio(1.0 / ratio);
     setResizeLimits(840, juce::roundToInt(840 * ratio), 2100, juce::roundToInt(2100 * ratio));

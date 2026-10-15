@@ -1181,7 +1181,10 @@ class DrumProcessor extends AudioWorkletProcessor {
     // One fading tail slot per pad: a retrigger moves the sounding hit here
     // and fades it, instead of cutting it to zero in one sample (review D2).
     this.tails = [];
-    for (let i = 0; i < NPADS; i++) { this.voices.push(new PadVoice()); this.tails.push(new PadVoice()); }
+    this.fades = []; // second fade slot, used only by a retrigger collision
+    for (let i = 0; i < NPADS; i++) {
+      this.voices.push(new PadVoice()); this.tails.push(new PadVoice()); this.fades.push(new PadVoice());
+    }
     this.pats = new Uint8Array(NPATTERNS * NPADS * STEPS);
     this.chain = [0]; this.chainPos = 0;
     this.playing = false;
@@ -1368,6 +1371,7 @@ class DrumProcessor extends AudioWorkletProcessor {
         this.reverbEnergy.fill(0); this.reverbSamples = 0;
         for (const v of this.voices) v.kill();
         for (const v of this.tails) v.kill();
+        for (const v of this.fades) v.kill();
         if (!d.preserveTransport) {
           this.clip = null; this.clipPend = null; this.clipStopAt = -1; this.clipStep = -1;
         }
@@ -1746,13 +1750,17 @@ class DrumProcessor extends AudioWorkletProcessor {
         if (j !== padI && (pv[this.padIds[j][P_CHOKE]] | 0) === g) {
           this.voices[j].choke();
           this.tails[j].choke();
+          this.fades[j].choke();
         }
       }
     }
     // Retrigger: park the sounding hit on the tail slot with a choke fade and
     // start the new one on the freed slot. Two hits inside one fade (~3 ms)
-    // would collide; keep whichever tail is louder (a quiet tail replacing a
-    // loud one would cut it, which clicks). Same policy as DrumEngine::trigger.
+    // collide: the tail slot is still busy. Keep whichever tail is louder (a
+    // quiet tail replacing a loud one would cut it, which clicks) and park the
+    // quieter sounding hit on the second fade slot instead of restarting it in
+    // place. Only a third hit inside one fade still cuts its quietest voice.
+    // Same policy as DrumEngine::trigger.
     const cur = this.voices[padI];
     if (cur.active && cur.ampLevel > 1e-4) {
       const tail = this.tails[padI];
@@ -1761,6 +1769,14 @@ class DrumProcessor extends AudioWorkletProcessor {
         this.tails[padI] = cur;
         cur.choke();
         this.voices[padI] = tail;
+      } else {
+        const fade = this.fades[padI];
+        if (!fade.active || fade.ampLevel <= cur.ampLevel) {
+          fade.kill();
+          this.fades[padI] = cur;
+          cur.choke();
+          this.voices[padI] = fade;
+        }
       }
     }
     const v = this.voices[padI];
@@ -2452,6 +2468,8 @@ class DrumProcessor extends AudioWorkletProcessor {
         if (v.active) this.renderPad(v, i, padL[i], padR[i], pos, run);
         const tail = this.tails[i];
         if (tail.active) this.renderPad(tail, i, padL[i], padR[i], pos, run);
+        const fade = this.fades[i];
+        if (fade.active) this.renderPad(fade, i, padL[i], padR[i], pos, run);
       }
       if (standalone) this.samplesToNext -= run;
       if (legacyClip && this.clip) this.clipToNext -= run;
@@ -2551,7 +2569,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < NPADS; i++) {
       const fx = this.padFx[i];
       fx.meterSelected = this.metering || this.echoMetering ? i === this.meterPad : false;
-      const live = this.voices[i].active || this.tails[i].active;
+      const live = this.voices[i].active || this.tails[i].active || this.fades[i].active;
       this.routeKey(fx, n);
       if (!fx.process(this.padL[i], this.padR[i], n, live)) continue;
       if (this.padCapture) this.capturePad(i, n);

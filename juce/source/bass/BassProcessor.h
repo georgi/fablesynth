@@ -139,7 +139,7 @@ private:
     fable::ArpMailbox arpLiveMailbox_;
     mutable fable::ArpSettings arpLive_ = fable::bassArpDefaults();
     mutable uint32_t arpLiveVersion_ = 0;
-    void applyArp() { engine.setArp(arpInput_.pattern(engine.chainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
+    void applyArp() { engine.setArp(arpInput_.pattern(engine.chainLength())); engine.setSeqScale(arpInput_.settings.enabled ? fable::ScaleMap {} : fable::scaleMap(arpInput_.settings, engine.chainLength())); arpLiveMailbox_.publish(arpInput_.snapshot()); }
     fable::BassFx fx;
     std::vector<fable::TablePtr> tables_;
 

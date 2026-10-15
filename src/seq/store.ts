@@ -7,7 +7,9 @@ import { cloneDrumRhythm, drumSourceConflict, type DrumRhythm } from '../drum/rh
 // their clipstart/clipstop acks so the grid shows what is audible.
 
 import { create } from 'zustand';
-import { compileClipArp, linkChordWrites, newClipArp, validClipArp, type ClipArp } from './clipArp';
+import { clipSeqMode, compileClipArp, compileClipScale, linkChordWrites, newClipArp, sceneChordWrites, validClipArp, type ClipArp, type SceneChords } from './clipArp';
+import { validChords } from '../chords';
+import type { SeqMode } from '../arp';
 import { compileClipAutomation, validateAutomation, type AutoLane } from './clipAutomation';
 import { isTrackOpen, type OwnerMap, type Quant, QUANTS, type QueueMap, STOP } from './model';
 import {
@@ -56,6 +58,8 @@ export interface SeqStore {
   anchor: number; // songStartFrame — beat zero of the shared timebase
   focus: { track: number; scene: number } | null;
   deviceMode: 'seq' | 'edit'; // focus-mode device view; resets to 'seq' on track change
+  /** Focus-mode sequencer tab; follows the focused clip's playing mode. */
+  seqPage: SeqMode;
   clipLoadRevision: number;
   tour: number | null; // active onboarding step index, null = tour hidden
   gridSel: GridSel | null; // session-grid cell selection (anchor/head rectangle)
@@ -72,6 +76,8 @@ export interface SeqStore {
   updateDrumClipSequence: (s: number, t: number, bytes: Uint8Array, bars: number, rhythm: DrumRhythm | null) => string | null;
   updateClipBytes: (s: number, t: number, bytes: Uint8Array, bars: number, sequenceRhythm?: SequenceRhythm) => void;
   updateClipArp: (s: number, t: number, patch: Partial<ClipArp>) => void;
+  /** Loads a progression into every linked chord track of scene `s`. */
+  setSceneChords: (s: number, chords: SceneChords) => void;
   /** Replace a clip's automation lanes. A drag passes `history: false` after its first write. */
   updateClipAutomation: (s: number, t: number, lanes: AutoLane[], opts?: { history?: boolean; persist?: boolean }) => void;
   createClip: (s: number, t: number) => void;
@@ -99,6 +105,7 @@ export interface SeqStore {
   exitFocus: () => void;
   focusScene: (s: number) => void;
   setDeviceMode: (m: 'seq' | 'edit') => void;
+  setSeqPage: (p: SeqMode) => void;
   startTour: () => void;
   advanceTour: (d: number) => void;
   endTour: () => void;
@@ -241,7 +248,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         const q = st.queue[w.t];
         const target = q != null && q !== STOP ? q : st.owner[w.t];
         if (st.rig && target === w.s) st.rig.devices[w.t].updateClip(bytes, w.clip.bars, compileClipArp(w.clip), w.clip.drumRhythm,
-          compileClipAutomation(w.clip, st.session.tracks[w.t].machine), w.clip.sequenceRhythm);
+          compileClipAutomation(w.clip, st.session.tracks[w.t].machine), w.clip.sequenceRhythm, compileClipScale(w.clip));
       }
     }
   };
@@ -309,6 +316,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     anchor: 0,
     focus: null,
     deviceMode: 'seq',
+    seqPage: 'seq',
     clipLoadRevision: 0,
     tour: null,
     gridSel: null,
@@ -396,7 +404,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
         st = get();
       }
       lastScheduled[t] = s;
-      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine), clip.sequenceRhythm);
+      rig.devices[t].scheduleClip(bytes, clip.bars, boundary(), compileClipArp(clip), clip.drumRhythm, compileClipAutomation(clip, st.session.tracks[t].machine), clip.sequenceRhythm, compileClipScale(clip));
       set((cur) => ({ queue: { ...cur.queue, [t]: s } }));
     },
 
@@ -457,6 +465,12 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const { arp: next, others } = linkChordWrites(st.session, s, t, JSON.parse(JSON.stringify(arp)) as ClipArp);
       // The grid's existing history/runtime path preserves notes and queues.
       applyGridWrites([{ s, t, clip: { ...clip, arp: next } }, ...others.map(o => ({ s, ...o }))], 0);
+    },
+
+    setSceneChords: (s, chords) => {
+      if (validChords(chords.chords) === null || !Number.isInteger(chords.key) || chords.key < 0 || chords.key > 11
+        || !Number.isInteger(chords.bars) || chords.bars < 1 || chords.bars > 4) return;
+      applyGridWrites(sceneChordWrites(get().session, s, chords).map(w => ({ s, ...w })), 0);
     },
 
     updateClipAutomation: (s, t, lanes, opts = {}) => {
@@ -525,7 +539,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
       if (st.rig && target === s) {
-        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation(nextClip, st.session.tracks[t].machine), nextClip.sequenceRhythm);
+        st.rig.devices[t].updateClip(bytes, bars, compileClipArp(clip), clip.drumRhythm, compileClipAutomation(nextClip, st.session.tracks[t].machine), nextClip.sequenceRhythm, compileClipScale(clip));
       }
     },
 
@@ -575,7 +589,7 @@ export const useSeqStore = create<SeqStore>((set, get) => {
       persist();
       const q = st.queue[t];
       const target = q != null && q !== STOP ? q : st.owner[t];
-      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded), undefined, compileClipAutomation(loaded, st.session.tracks[t].machine));
+      if (st.rig && target === s) st.rig.devices[t].updateClip(bytes, loaded.bars, compileClipArp(loaded), undefined, compileClipAutomation(loaded, st.session.tracks[t].machine), undefined, compileClipScale(loaded));
       return true;
     },
 
@@ -719,9 +733,10 @@ export const useSeqStore = create<SeqStore>((set, get) => {
     enterFocus: (t, s) => {
       advanceTourStep('devices');
       const st = get();
-      const scene = s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene;
+      const scene = clampScene(s ?? st.owner[t] ?? st.focus?.scene ?? lastFocusScene);
       set({
-        focus: { track: t, scene: clampScene(scene) },
+        focus: { track: t, scene },
+        seqPage: clipSeqMode(st.session.scenes[scene]?.clips[t]),
         masterFxOpen: false,
         deviceMode: st.focus?.track === t ? st.deviceMode : 'seq',
         drumFxOpen: st.focus?.track === t ? st.drumFxOpen : false,
@@ -738,10 +753,13 @@ export const useSeqStore = create<SeqStore>((set, get) => {
 
     focusScene: (s) => {
       const f = get().focus;
-      if (f) set({ focus: { ...f, scene: clampScene(s) } });
+      if (!f) return;
+      const scene = clampScene(s);
+      set({ focus: { ...f, scene }, seqPage: clipSeqMode(get().session.scenes[scene]?.clips[f.track]) });
     },
 
     setDeviceMode: (m) => set({ deviceMode: m }),
+    setSeqPage: (p) => set({ seqPage: p }),
 
     // The tour anchors to session-grid elements, so it always exits focus
     // mode first; stepping past the last card ends it and marks it seen.
@@ -891,6 +909,7 @@ export function resetSeqStore(session: SessionDoc = defaultSession()): void {
     anchor: 0,
     focus: null,
     deviceMode: 'seq',
+    seqPage: 'seq',
     clipLoadRevision: 0,
     tour: null,
     gridSel: null,

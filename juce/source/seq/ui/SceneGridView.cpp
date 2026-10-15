@@ -1,6 +1,7 @@
 #include "SceneGridView.h"
 #include "../../ui/Controls.h"
 #include "../dsp/SeqModel.h"
+#include "../../ui/ProgressionBrowserView.h"
 
 #include <cmath>
 
@@ -344,6 +345,7 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
         if (!right) {
             if (backChipR.contains(pos)) { if (onExitFocus) onExitFocus(); return; }
             for (int s = 0; s < kScenes; ++s) {
+                if (sceneChordsR(s).contains(pos)) { sceneChordsClick(s); return; }
                 if (railTrigger[s].contains(pos)) { railTriggerClick(s); return; }
                 if (muteBtnR[s].contains(pos))    { sceneMute(s); return; }
                 if (stopBtnR[s].contains(pos))    { sceneStop(s); return; }
@@ -356,6 +358,7 @@ void SceneGridView::mouseDown(const juce::MouseEvent& e) {
     const auto& scenes = proc.conductor().session().scenes;
 
     for (int s = 0; s < kScenes; ++s) {
+        if (!right && sceneChordsR(s).contains(pos)) { sceneChordsClick(s); return; }
         if (launchBtn[s].contains(pos)) { sceneLaunch(s); return; }
         if (muteBtnR[s].contains(pos))  { sceneMute(s); return; }
         if (stopBtnR[s].contains(pos))  { sceneStop(s); return; }
@@ -453,11 +456,13 @@ void SceneGridView::resized() {
 }
 
 void SceneGridView::layoutRow(int s) {
-    const int y = s * 82;
+    // Rows stretch to fill the grid's height (9 px gaps), never below 73 px.
+    const int rowH = juce::jmax(73, (getHeight() + 9) / kScenes - 9);
+    const int y = s * (rowH + 9);
     constexpr int rowX = 0, sceneWidth = 218, cellWidth = 250;
-    sceneCardR[s] = { rowX, y, sceneWidth, 73 };
+    sceneCardR[s] = { rowX, y, sceneWidth, rowH };
     for (int t = 0; t < kTracks; ++t)
-        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, 73 };
+        cellR[s][t] = { rowX + sceneWidth + 9 + t * (cellWidth + 9), y, cellWidth, rowH };
 
     // scene card internals (web SceneRow.tsx, card-relative): launch 32x32 at
     // (11,9); id column (num+name / status, split by paintSceneCard) at
@@ -737,10 +742,40 @@ void SceneGridView::paintSceneCardBody(juce::Graphics& g, int s) {
         g.setColour(lit ? tc : has ? tc.withAlpha(0.27f) : juce::Colour(0xff1a1f2a));
         g.fillEllipse(d.toFloat());
     }
+    // Scene chords chip (web SceneChordChip): it takes the clip count's place
+    // in the dots row, the only free line on a 73 px card. Key in the accent,
+    // then the library progression name or the chord names.
+    const auto chip = sceneChordsR(s);
+    if (!chip.isEmpty()) {
+        const auto chords = cond.sceneChordTracks(s);
+        const auto& a = sc.clips[(size_t)chords[0]].arp;
+        const auto cf = chip.toFloat();
+        g.setColour(juce::Colour(0xff0c121c)); g.fillRoundedRectangle(cf, 4.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.08f)); g.drawRoundedRectangle(cf.reduced(0.5f), 4.0f, 1.0f);
+        auto inner = chip.reduced(6, 0);
+        const auto keyText = ProgressionBrowserView::pitchName(a.chordKey);
+        g.setFont(monoFont(8.0f, true)); g.setColour(col::acA);
+        const int keyW = (int)std::ceil(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), keyText)) + 6;
+        g.drawText(keyText, inner.removeFromLeft(keyW), juce::Justification::centredLeft);
+        const int preset = fable::progressionIndex(a.chordList, a.chordCount, a.chordKey);
+        juce::String name;
+        if (preset >= 0) name = juce::String::fromUTF8(fable::progressions()[(size_t)preset].name);
+        else for (int i = 0; i < a.chordCount; ++i) name << (i ? " " : "") << ProgressionBrowserView::chordName(a.chordList[(size_t)i]);
+        g.setFont(monoFont(8.0f)); g.setColour(col::textDim);
+        g.drawText(name, inner, juce::Justification::centredLeft, true);
+        return;
+    }
     g.setColour(col::textDim);
     g.setFont(monoFont(7.0f));
     juce::String cnt = juce::String(clipTracks) + (clipTracks == 1 ? " CLIP" : " CLIPS");
     g.drawText(cnt, dr, juce::Justification::centredRight);
+}
+
+juce::Rectangle<int> SceneGridView::sceneChordsR(int s) const {
+    if (s < 0 || s >= kScenes || s >= (int)proc.conductor().session().scenes.size()
+        || proc.conductor().sceneChordTracks(s).empty()) return {};
+    // Right of the four 9+6 px dots.
+    return dotsArea[s].withTrimmedLeft(kTracks * 15 + 4).reduced(0, 1);
 }
 
 void SceneGridView::paintCell(juce::Graphics& g, int s, int t) {
@@ -906,7 +941,9 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
         g.setFont(monoFontMedium(9.5f));
         g.drawText(juce::String(clip.name), head, juce::Justification::centredLeft);
 
-        auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, 20);
+        // The step preview takes the height a stretched row adds (20 px at the 73 px minimum).
+        auto stepsArea = juce::Rectangle<int>(full.getX() + 10, full.getY() + 31, full.getWidth() - 20, full.getHeight() - 53);
+        const float barScale = (float)stepsArea.getHeight() / 20.0f;
         if (!clip.bytes.empty()) {
             auto steps = fable::sqPreviewSteps(tracks[(size_t)t].machine, clip.bytes.data());
             if (clip.hasArp && clip.arp.enabled) {
@@ -918,7 +955,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
             for (int i = 0; i < fable::SQ_STEPS_PER_BAR; ++i) {
                 const auto& sb = steps[(size_t)i];
                 // Off steps read as thin flat slots (web .sq-steps span), not bars.
-                const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) : 2.5f;
+                const float bh = sb.on ? (float)juce::jlimit(2, 20, sb.h) * barScale : 2.5f;
                 juce::Rectangle<float> bar(static_cast<float>(stepsArea.getX()) + static_cast<float>(i) * bw + 1.0f,
                                             static_cast<float>(stepsArea.getBottom()) - bh,
                                             juce::jmax(1.0f, bw - 2.0f), bh);
@@ -927,7 +964,7 @@ void SceneGridView::paintFilledCell(juce::Graphics& g, int s, int t) {
             }
         }
     }
-    auto progress = juce::Rectangle<int>(full.getX() + 10, full.getY() + 57, full.getWidth() - 20, 4);
+    auto progress = juce::Rectangle<int>(full.getX() + 10, full.getBottom() - 16, full.getWidth() - 20, 4);
     if (!animationOnly_) {
         g.setColour(juce::Colours::white.withAlpha(0.06f));
         g.fillRoundedRectangle(progress.toFloat(), 1.5f);
@@ -989,9 +1026,9 @@ void SceneGridView::paintFocusStrip(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff141824), rf.getX(), rf.getY(),
                                            juce::Colour(0xff0c0f16), rf.getX(), rf.getBottom(), false));
     g.fillRoundedRectangle(rf, 10.0f);
-    g.setColour(col::line);
+    g.setColour(navAccent().withAlpha(0.4f));
     g.drawRoundedRectangle(rf.reduced(0.5f), 10.0f, 1.0f);
-    g.setColour(juce::Colour(0xffcfd6e4));
+    g.setColour(navAccent());
     g.setFont(dispFont(9.0f));
     drawSpaced(g, "< SESSION", backChipR.reduced(12, 0), 1.8f);
 

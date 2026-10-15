@@ -13,10 +13,7 @@ BassDeviceBody::BassDeviceBody(fui::BassUiModel& model)
     const auto configurePage = [this](juce::TextButton& button, Page page) {
         button.setClickingTogglesState(true);
         button.setRadioGroupId(718);
-        button.setColour(juce::TextButton::buttonColourId, fui::col::panelHi);
-        button.setColour(juce::TextButton::buttonOnColourId, fui::accentA().withAlpha(0.18f));
-        button.setColour(juce::TextButton::textColourOffId, fui::col::textDim);
-        button.setColour(juce::TextButton::textColourOnId, fui::col::text);
+        fui::styleNavButton(button);
         button.onClick = [this, page] { selectPage(page); };
         addAndMakeVisible(button);
     };

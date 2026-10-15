@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { bootWt, type WtHarness } from './workletHarness';
+import { scaleMask, scaleRemap } from '../scales';
 
 const g = globalThis as unknown as { currentFrame: number };
 const peak = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
@@ -187,5 +188,33 @@ describe('mono without legato (Serum MONO)', () => {
     h.send({ t: 'on', n: 64, v: 1 });
     h.render(1);
     expect(gated(h)[0]!.ampEnv.state).toBe(3);
+  });
+});
+
+describe('hosted clip scale mode', () => {
+  const clip = (semis: number[]) => {
+    const data = new Uint8Array(16 * 8 * 3);
+    semis.forEach((semi, step) => { const o = step * 8 * 3; data[o] = 1 | (1 << 2); data[o + 1] = semi; data[o + 2] = 1; });
+    return data;
+  };
+  const play = (scale?: number[][]) => {
+    g.currentFrame = 0;
+    const h = bootWt();
+    h.send({ t: 'host', on: 1 });
+    h.send({ t: 'tempo', bpm: 120, swing: 0, anchor: 0 });
+    h.send({ t: 'clip', data: clip([6, 6]).buffer, bars: 1, atFrame: 0, scale });
+    h.render(4);
+    const first = gated(h).map(v => v.note);
+    h.render(47); // 6000-frame steps: step 1 fires inside this span
+    return [first, gated(h).map(v => v.note)];
+  };
+  it('plays written notes unchanged without a map', () => {
+    expect(play()).toEqual([[54], [54]]);
+  });
+  it('snaps notes to the scale the map holds at each sixteenth', () => {
+    const cMajor = scaleRemap(scaleMask(0, 'major'));
+    const gMajor = scaleRemap(scaleMask(7, 'major'));
+    expect(play([cMajor])).toEqual([[53], [53]]); // F♯ → F
+    expect(play([cMajor, gMajor])).toEqual([[53], [54]]); // the second sixteenth allows F♯
   });
 });

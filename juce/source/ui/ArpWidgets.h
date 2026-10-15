@@ -21,7 +21,7 @@ namespace c {
     const juce::Colour accent   {0xffffa14d};
     const juce::Colour help     {0xff5f6f86};
 }
-inline juce::Font font(float h, bool bold = false) { return bold ? fui::monoFont(h, true) : fui::monoFont(h); }
+inline juce::Font font(float h, bool bold = false) { return fui::seqFont(h, bold); }
 inline juce::Colour chordHue(int root, float s, float l) { return juce::Colour::fromHSL(root / 12.0f, s, l, 1.0f); }
 
 // Letter-spaced uppercase label (web letter-spacing .1em).
@@ -54,6 +54,7 @@ public:
     Kind kind;
     juce::Colour live {fui::col::acA};
     bool sharp = false;  // Key: black key
+    bool nav = false;    // Ghost: navigation (a browser exit), in the nav accent
     float textSize = 9.0f;
     void paintButton(juce::Graphics& g, bool over, bool down) override {
         auto r = getLocalBounds().toFloat();
@@ -67,9 +68,10 @@ public:
                 break;
             case Kind::Ghost:
                 g.setColour(down ? c::cellNow : c::field); g.fillRoundedRectangle(r.reduced(.5f), 4);
-                g.setColour(on ? live.withAlpha(.53f) : over ? juce::Colours::white.withAlpha(.2f) : juce::Colours::white.withAlpha(.11f));
+                if (nav) g.setColour(over ? fui::navAccent() : fui::navAccent().withAlpha(.45f));
+                else g.setColour(on ? live.withAlpha(.53f) : over ? juce::Colours::white.withAlpha(.2f) : juce::Colours::white.withAlpha(.11f));
                 g.drawRoundedRectangle(r.reduced(.5f), 4, 1);
-                text = on ? live : c::value;
+                text = nav ? fui::navAccent() : on ? live : c::value;
                 break;
             case Kind::Step:
                 g.setColour(juce::Colour(0xff111c29)); g.fillRoundedRectangle(r.reduced(.5f), 3);

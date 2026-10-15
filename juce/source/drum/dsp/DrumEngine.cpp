@@ -261,6 +261,7 @@ void DrumEngine::prepare(double sampleRate) {
 void DrumEngine::panic() {
     for (auto& v : voices_) v.kill();
     for (auto& v : tails_) v.kill();
+    for (auto& v : fades_) v.kill();
 }
 
 void DrumEngine::selectPad(int i) {
@@ -319,6 +320,7 @@ void DrumEngine::trigger(int padI, float vel) {
             if (j != padI && (int)param(dpid(j, DP_CHOKE)) == g) {
                 voices_[(size_t)j].choke();
                 tails_[(size_t)j].choke();
+                fades_[(size_t)j].choke();
             }
     }
     PadVoice& v = voices_[(size_t)padI];
@@ -326,12 +328,21 @@ void DrumEngine::trigger(int padI, float vel) {
     // so any decay longer than the step spacing clicked on every hit. Move the
     // old voice to the pad's tail slot and let it run the same choke fade while
     // the new hit starts clean on the main slot. Two hits inside one fade
-    // (~3 ms) would collide; keep whichever tail is louder (a quiet tail
-    // replacing a loud one would cut it, which clicks). Same policy as js.
-    if (v.active && v.ampLevel > 1e-4 && (!tails_[(size_t)padI].active
-                     || tails_[(size_t)padI].ampLevel <= v.ampLevel)) {
-        tails_[(size_t)padI] = v;
-        tails_[(size_t)padI].choke();
+    // (~3 ms) collide: the tail slot is still busy. Keep whichever tail is
+    // louder (a quiet tail replacing a loud one would cut it, which clicks)
+    // and park the quieter sounding hit on the second fade slot instead of
+    // restarting it in place. Only a third hit inside one fade still cuts its
+    // quietest voice. Same policy as js.
+    if (v.active && v.ampLevel > 1e-4) {
+        PadVoice& tl = tails_[(size_t)padI];
+        PadVoice& fd = fades_[(size_t)padI];
+        if (!tl.active || tl.ampLevel <= v.ampLevel) {
+            tl = v;
+            tl.choke();
+        } else if (!fd.active || fd.ampLevel <= v.ampLevel) {
+            fd = v;
+            fd.choke();
+        }
     }
     double vv = std::isfinite(vel) ? (double)vel : 1.0;
     v.trigger(clampd(vv, 0.0, 1.0), rng_.next() * 2.0 - 1.0);
@@ -1520,9 +1531,11 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
             for (int i = 0; i < DR_NPADS; i++) {
                 PadVoice& v = voices_[(size_t)i];
                 PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
-                if (!v.active && !tl.active) continue;
+                PadVoice& fd = fades_[(size_t)i];   // retrigger collision fade-out
+                if (!v.active && !tl.active && !fd.active) continue;
                 const int out = std::max(0, std::min(DR_NBUSES - 1, (int)param(dpid(i, DP_OUT))));
                 if (tl.active) renderPad(tl, i, outs[out][0], outs[out][1], pos, run);
+                if (fd.active) renderPad(fd, i, outs[out][0], outs[out][1], pos, run);
                 if (v.active) renderPad(v, i, outs[out][0], outs[out][1], pos, run);
             }
             if (kickKeyOut_) std::fill(kickKeyOut_ + pos, kickKeyOut_ + pos + run, 0.0f);
@@ -1531,9 +1544,11 @@ void DrumEngine::render(float* outs[DR_NBUSES][2], int n) {
         for (int i = 0; padFxEnabled_ && i < DR_NPADS; i++) {
             PadVoice& v = voices_[(size_t)i];
             PadVoice& tl = tails_[(size_t)i];   // Finding D2: retrigger fade-out
+            PadVoice& fd = fades_[(size_t)i];   // retrigger collision fade-out
             std::fill(padDryL_[i], padDryL_[i] + run, 0.0f);
             std::fill(padDryR_[i], padDryR_[i] + run, 0.0f);
             if (tl.active) renderPad(tl, i, padDryL_[i], padDryR_[i], 0, run);
+            if (fd.active) renderPad(fd, i, padDryL_[i], padDryR_[i], 0, run);
             if (v.active) renderPad(v, i, padDryL_[i], padDryR_[i], 0, run);
         }
         // Web renderFx: the kit's output gain (master.volume^2 * 1.6) makes a

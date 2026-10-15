@@ -51,6 +51,18 @@ function readCompStack(a) {
   const lens = a.lens.map(l => Number.isInteger(l) && l >= 0 && l <= n ? l : 1);
   return { stack, lens, strum: Number.isFinite(a.strum) ? Math.max(0, Math.min(60, a.strum)) : 0 };
 }
+// Scale mode (src/scales.ts scaleMap): up to 64 sixteenths, each a remap table
+// of 12 semitone offsets by pitch class. The map loops; one table = a static scale.
+function readScaleMap(m) {
+  if (!Array.isArray(m) || !m.length || m.length > 64) return null;
+  const ok = m.every(t => Array.isArray(t) && t.length === 12 && t.every(x => Number.isInteger(x) && x > -12 && x < 12));
+  return ok ? m.map(t => t.slice()) : null;
+}
+function scaleNote(map, pos, note) {
+  if (!map) return note;
+  const t = map[((Math.floor(pos) % map.length) + map.length) % map.length];
+  return Math.max(0, Math.min(127, note + t[note % 12]));
+}
 const MAXUNI = 16;
 // Fixed modulation pool: mat1..mat16, each {src,dst,amt}. Mirrors MOD_MATRIX_SIZE
 // in the params/slot helpers and the VST's MOD_MATRIX_SIZE.
@@ -1578,6 +1590,7 @@ class FableProcessor extends AudioWorkletProcessor {
     this.seqAuto = [];
     this.seqAnchor = 0;
     this.arp = null;
+    this.seqScale = null; // standalone scale map (message 'scale')
     this.seqStep = -1;
     this.sequenceRhythm = null; this.polyK = 0;
     this.seqPats = new Uint8Array(SEQ_NPATTERNS * SEQ_STEPS * SEQ_STRIDE);
@@ -1733,6 +1746,7 @@ class FableProcessor extends AudioWorkletProcessor {
         if (changedMode) { this.seqStep = -1; this.seqChainPos = 0; this.seqToNext = 0; }
         break;
       }
+      case 'scale': this.seqScale = readScaleMap(d.map); break;
       case 'chain':
         if (Array.isArray(d.list) && d.list.length) {
           this.seqChain = d.list.map((x) => x | 0);
@@ -1778,7 +1792,7 @@ class FableProcessor extends AudioWorkletProcessor {
         if (anchorMoved) { this.frameNow = currentFrame; this.polyClipArm(); } else this.polyClipRetime();
         break;
       case 'clip':
-        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp), sequenceRhythm: readSequenceRhythm(d.sequenceRhythm) };
+        this.clipPend = { data: new Uint8Array(d.data), bars: Math.max(1, d.bars | 0), at: +d.atFrame || 0, arp: readClipArp(d.arp), sequenceRhythm: readSequenceRhythm(d.sequenceRhythm), scale: readScaleMap(d.scale) };
         this.clipStopAt = -1; // a new launch supersedes a pending stop
         break;
       case 'seqauto': this.seqAuto = this.autoRead(d.lanes); break;
@@ -1800,16 +1814,16 @@ class FableProcessor extends AudioWorkletProcessor {
         const data = new Uint8Array(d.data);
         const bars = Math.max(1, d.bars | 0);
         const arp = readClipArp(d.arp);
-        const sequenceRhythm = readSequenceRhythm(d.sequenceRhythm);
+        const sequenceRhythm = readSequenceRhythm(d.sequenceRhythm), scale = readScaleMap(d.scale);
         if (this.clipPend) {
-          this.clipPend = { data, bars, at: this.clipPend.at, arp, sequenceRhythm, auto: this.clipPend.auto };
+          this.clipPend = { data, bars, at: this.clipPend.at, arp, sequenceRhythm, scale, auto: this.clipPend.auto };
         } else if (this.clip) {
           const resized = bars !== this.clip.bars || this.clip.arp?.notes.length !== arp?.notes.length;
           const oldRhythm = this.clip.sequenceRhythm;
           const rephase = this.clip.arp?.rate !== arp?.rate || !!oldRhythm?.enabled !== !!sequenceRhythm?.enabled
             || (sequenceRhythm?.enabled && (oldRhythm?.mode !== sequenceRhythm.mode || oldRhythm?.cycleBeats !== sequenceRhythm.cycleBeats
               || (sequenceRhythm.mode === 'fit' && oldRhythm?.steps !== sequenceRhythm.steps)));
-          this.clip = { data, bars, arp, sequenceRhythm, auto: this.clip.auto };
+          this.clip = { data, bars, arp, sequenceRhythm, scale, auto: this.clip.auto };
           if (rephase) { this.seqGateOff(); this.clipStep = this.clipPhase(Math.round) - 1; this.clipToNext = 0; this.polyClipArm(); }
           else if (arp && !arp.notes.some((n, i) => n >= 0 && arp.hits[i % 16])) this.seqGateOff();
           // Re-derive the phase only on a bar-count change (plain modulo can
@@ -1973,8 +1987,10 @@ class FableProcessor extends AudioWorkletProcessor {
       : [this.seqRead(0, s)].filter(st => st.on);
     if (this.p[MASTER_MONO] && chord.length > 1) chord.length = 1;
     const root = (this.p[SEQ_ROOT] | 0) || 48;
+    const bpm = Math.max(60, Math.min(200, (hosted ? this.hostBpm : this.p[SEQ_BPM]) || 120));
+    const pos = this.polyFrame(r, k, dur, 0) / (60 / bpm / 4 * sampleRate) + .1;
     for (const st of chord) {
-      const note = root + st.semi;
+      const note = scaleNote(hosted ? this.clip.scale : this.seqScale, pos, root + st.semi);
       this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
       this.seqScheduleOff(note, st.duration * dur);
     }
@@ -2057,23 +2073,24 @@ class FableProcessor extends AudioWorkletProcessor {
     // step would just steal the line note for note.
     if (this.p[MASTER_MONO] && chord.length > 1) chord.length = 1;
 
+    const offNow = s % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
+    // The anchor-grid sixteenth of this step: it also places the scale map.
+    const idx = Math.round((this.frameNow - this.hostAnchor - offNow) / dur);
     if (chord.length) {
       const root = (this.p[SEQ_ROOT] | 0) || 48;
       for (const st of chord) {
-        const note = root + st.semi;
+        const note = scaleNote(this.clip.scale, idx, root + st.semi);
         this.noteOn(note, st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL);
         this.seqScheduleOff(note, st.duration * dur);
       }
     }
 
     this.clipStep = abs;
-    const offNow = s % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
     const sNext = (s + 1) % SEQ_STEPS;
     const offNext = sNext % 2 === 1 ? swing * SEQ_SWING_MAX * dur : 0;
     // Schedule the next step at its absolute anchor-grid time. A free-running
     // countdown (dur - offNow + offNext) drops the block-quantization residue
     // each fire and drifts late without bound against the shared timebase.
-    const idx = Math.round((this.frameNow - this.hostAnchor - offNow) / dur);
     this.clipToNext = this.hostAnchor + (idx + 1) * dur + offNext - this.frameNow;
     this.port.postMessage({ t: 'pos', step: s, bar: (abs / SEQ_STEPS) | 0 });
   }
@@ -2150,7 +2167,7 @@ class FableProcessor extends AudioWorkletProcessor {
 
     if (st.on) {
       const root = (this.p[SEQ_ROOT] | 0) || 48;
-      const n = root + st.semi;
+      const n = scaleNote(this.seqScale, this.seqChainPos * SEQ_STEPS + s, root + st.semi);
       const vel = st.acc ? SEQ_ACCENT_VEL : SEQ_PLAIN_VEL;
       this.noteOn(n, vel);
       this.seqScheduleOff(n, st.duration * dur);

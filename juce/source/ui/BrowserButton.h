@@ -19,7 +19,7 @@ inline juce::Path browserHeartPath(juce::Rectangle<float> r) {
 
 class BrowserButton : public juce::Button {
 public:
-    enum Style { Chip, Fav, Action, Primary, Vary, Browse };
+    enum Style { Chip, Fav, Action, Primary, Vary, Browse, Nav };
     BrowserButton(const juce::String& text, Style s) : juce::Button(text), style_(s) {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
@@ -51,6 +51,9 @@ inline void BrowserButton::paintButton(juce::Graphics& g, bool over, bool /*down
             else if (over && en) { text = col::text; border = col::textDim; }
             break;
         case Primary: fill = border = accentColour(); text = juce::Colours::black; break;
+        case Nav: // leaves the browser: the navigation accent
+            text = navAccent(); border = over && en ? navAccent() : navAccent().withAlpha(0.45f);
+            break;
         case Vary: text = col::acF; border = col::acF.withAlpha(0.5f); break;
         case Browse:
             fill = juce::Colour(0xff11141c); border = col::line; text = col::text;

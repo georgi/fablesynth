@@ -1,5 +1,5 @@
 // DR-1 device body: the JUCE page layout (juce/source/drum/DrumDeviceBody.cpp).
-// The pad sidebar stays on EDIT, PAD FX, and GROUP FX; SEQUENCER takes the
+// The pad sidebar stays on EDIT and PAD FX; GROUP FX and SEQUENCER take the
 // full width. The tabs sit at the top of the editor column on every page.
 
 import { useState } from 'react';
@@ -49,11 +49,11 @@ export function DrumDeviceBody() {
   }
   return (
     <div className="device-body dr-body" data-page={page}>
-      <div className="dr-main">
-        <div className="dr-left">
+      <div className={`dr-main${page === 'groupFx' ? ' no-pads' : ''}`}>
+        {page !== 'groupFx' && <div className="dr-left">
           <div id="dr-pads"><PadGrid /></div>
           <div id="dr-padstrip"><PadStrip /></div>
-        </div>
+        </div>}
         <div className="dr-right">
           {tabs}
           {page === 'edit' ? (
