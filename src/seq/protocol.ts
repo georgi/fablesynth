@@ -160,20 +160,24 @@ export const barSeconds = (bpm: number): number => 240 / bpm;
 
 /** Returns null when valid, else a human-readable reason. */
 export function validateSession(doc: SessionDoc): string | null {
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return 'session is not an object';
   if (doc.v !== 1) return `unknown session version ${String(doc.v)}`;
   if (!(doc.bpm >= 60 && doc.bpm <= 200)) return 'bpm out of range';
   if (!Array.isArray(doc.tracks) || !doc.tracks.length) return 'no tracks';
   if (!Array.isArray(doc.scenes)) return 'no scenes';
   if (doc.masterVol !== undefined && !(doc.masterVol >= 0 && doc.masterVol <= 1)) return 'masterVol out of range';
   for (let t = 0; t < doc.tracks.length; t++) {
+    if (!doc.tracks[t] || typeof doc.tracks[t] !== 'object') return `track ${t}: not an object`;
     if (!['DR1', 'BL1', 'WT1'].includes(doc.tracks[t].machine)) return `track ${t}: unknown machine`;
   }
   for (let s = 0; s < doc.scenes.length; s++) {
     const sc = doc.scenes[s];
+    if (!sc || typeof sc !== 'object' || !Array.isArray(sc.clips)) return `scene ${s}: invalid clips`;
     if (sc.clips.length !== doc.tracks.length) return `scene ${s}: clip count != track count`;
     for (let t = 0; t < sc.clips.length; t++) {
       const c = sc.clips[t];
-      if (!c) continue;
+      if (c === null) continue;
+      if (!c || typeof c !== 'object') return `scene ${s} track ${t}: invalid clip`;
       if (c.arp !== undefined && (doc.tracks[t].machine === 'DR1' || !validClipArp(c.arp))) return `scene ${s} track ${t}: invalid arpeggiator`;
       if (c.sequenceRhythm !== undefined && (doc.tracks[t].machine === 'DR1' || !validSequenceRhythm(c.sequenceRhythm))) return `scene ${s} track ${t}: invalid melodic rhythm`;
       if (c.drumRhythm !== undefined) {
@@ -185,7 +189,12 @@ export function validateSession(doc: SessionDoc): string | null {
         const autoError = validateAutomation(c.automation, doc.tracks[t].machine);
         if (autoError) return `scene ${s} track ${t}: ${autoError}`;
       }
-      if (!(c.bars >= 1 && c.bars <= MAX_BARS)) return `scene ${s} track ${t}: bars out of range`;
+      if (!Number.isInteger(c.bars) || !(c.bars >= 1 && c.bars <= MAX_BARS)) return `scene ${s} track ${t}: bars out of range`;
+      // Accept padded and unpadded base64, but never let the permissive codec
+      // turn corrupt characters or misplaced padding into different notes.
+      if (typeof c.pattern !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(c.pattern)) {
+        return `scene ${s} track ${t}: invalid pattern base64`;
+      }
       const bytes = b64ToBytes(c.pattern);
       const want = c.bars * bytesPerBar(doc.tracks[t].machine);
       if (bytes.length !== want) return `scene ${s} track ${t}: pattern is ${bytes.length} bytes, expected ${want}`;

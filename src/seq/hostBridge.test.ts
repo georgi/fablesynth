@@ -2,10 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { makeEmptyPatterns as drumEmpty } from '../drum/seq';
 import { makeEmptyPatterns as bassEmpty } from '../bass/seq';
 import { makeEmptyPatterns as wtEmpty } from '../noteseq';
-import { bytesPerBar, emptyClipBytes, wtNoteIdx } from './protocol';
+import { bytesPerBar, emptyClipBytes, MAX_BARS, noteIdx, wtNoteIdx } from './protocol';
 import { clipToPatterns, patternsToClip } from './hostBridge';
 
 describe('clip ↔ pattern codec', () => {
+  it('previews long WT1 clips within the hosted buffer without altering the source', () => {
+    const clip = emptyClipBytes('WT1', MAX_BARS);
+    clip.set([3, 7, 2], wtNoteIdx(3, 15, 0));
+    clip.set([1, 4, 1], wtNoteIdx(4, 0, 0));
+    const original = clip.slice();
+    const empty = wtEmpty();
+    const pats = clipToPatterns('WT1', clip, empty);
+    expect(pats.length).toBe(empty.length);
+    expect(pats.slice(noteIdx(3, 15), noteIdx(3, 15) + 3)).toEqual(Uint8Array.from([3, 7, 2]));
+    expect(pats.slice(0, 3)).toEqual(original.slice(0, 3));
+    expect(empty).toEqual(wtEmpty());
+    expect(clip).toEqual(original);
+  });
+
   it('round-trips DR1 bytes through the pattern buffer', () => {
     const clip = emptyClipBytes('DR1', 2);
     clip[0] = 1; // bar 0, pad 0, step 0

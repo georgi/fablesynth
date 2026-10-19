@@ -158,7 +158,9 @@ export function evalLane(points: AutoPoint[], len: number, x: number): number | 
   if (a.hold) return a.v;
   const wraps = i === pts.length - 1;
   const b = wraps ? pts[0] : pts[i + 1];
-  const t1 = wraps ? b.t + len : b.t;
+  // Before the first point, t0 is already in the previous cycle, so its
+  // destination is this cycle's first point rather than the next cycle's.
+  const t1 = wraps && x >= a.t ? b.t + len : b.t;
   if (t1 - t0 <= 1e-9) return b.v;
   return a.v + (b.v - a.v) * bend((x - t0) / (t1 - t0), a.c);
 }

@@ -133,7 +133,7 @@ interface SynthStore {
   drawNote: (step: number, note: number, duration: number, pattern: number) => void;
   cycleStepOct: (step: number, pattern?: number) => void;
   toggleStepAcc: (step: number, pattern?: number) => void;
-  setStepDuration: (step: number, duration: number, pattern?: number) => void;
+  setStepDuration: (step: number, duration: number, pattern?: number, gesture?: symbol) => void;
   randomizeSeq: () => void;
   setEditPattern: (i: number) => void;
   setSequenceLength: (length: number) => void;
@@ -193,7 +193,11 @@ export const useStore = create<SynthStore>((set, get) => {
     engine.setScale(arpMode ? undefined : scaleMap(arp, get().chain.length));
   };
   const snapshot = (): SeqSnapshot => ({ sequenceRhythm: copySequenceRhythm(get().sequenceRhythm), patterns: get().patterns, chain: get().chain, automation: copyAutomation(get().automation) });
-  const pushSeqHistory = () => seqHistory.push(snapshot());
+  let durationGesture: symbol | undefined;
+  const pushSeqHistory = () => {
+    durationGesture = undefined;
+    seqHistory.push(snapshot());
+  };
   const syncAutomation = () => {
     if (!get().hosted) engine.setSequenceAutomation(compileAutomation(get().automation, get().chain.length, undefined, 'WT1'));
   };
@@ -440,6 +444,7 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   toggleCell: (step, note, pattern) => {
+    pushSeqHistory();
     const { patterns, editPattern } = get();
     const pat = pattern ?? editPattern;
     const cur = getStep(patterns, pat, step);
@@ -453,6 +458,7 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   cycleStepOct: (step, pattern) => {
+    pushSeqHistory();
     const { patterns, editPattern } = get();
     const pat = pattern ?? editPattern;
     const cur = getStep(patterns, pat, step);
@@ -464,18 +470,26 @@ export const useStore = create<SynthStore>((set, get) => {
     const pat = pattern ?? editPattern;
     const cur = getStep(patterns, pat, step);
     if (!cur.on) return;
+    pushSeqHistory();
     get()._setPatterns(setStep(patterns, pat, step, { acc: !cur.acc }));
   },
 
-  setStepDuration: (step, duration, pattern) => {
+  setStepDuration: (step, duration, pattern, gesture) => {
     const { patterns, editPattern } = get();
     const pat = pattern ?? editPattern;
     const cur = getStep(patterns, pat, step);
     if (!cur.on) return;
-    get()._setPatterns(setStep(patterns, pat, step, { duration }));
+    const next = setStep(patterns, pat, step, { duration });
+    if (getStep(next, pat, step).duration === cur.duration) return;
+    // Only consecutive updates from the same pointer gesture coalesce.
+    // Keyboard nudges omit the token and each receive their own undo entry.
+    if (!gesture || durationGesture !== gesture) pushSeqHistory();
+    durationGesture = gesture;
+    get()._setPatterns(next);
   },
 
   randomizeSeq: () => {
+    pushSeqHistory();
     const { patterns, editPattern } = get();
     get()._setPatterns(writePattern(patterns, editPattern, randomPattern()));
   },
@@ -664,6 +678,7 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   undoSeq: () => {
+    durationGesture = undefined;
     const prev = seqHistory.undo(snapshot());
     if (!prev) return;
     set({ patterns: prev.patterns, sequenceRhythm: copySequenceRhythm(prev.sequenceRhythm), chain: prev.chain, automation: copyAutomation(prev.automation) });
@@ -676,6 +691,7 @@ export const useStore = create<SynthStore>((set, get) => {
   },
 
   redoSeq: () => {
+    durationGesture = undefined;
     const next = seqHistory.redo(snapshot());
     if (!next) return;
     set({ patterns: next.patterns, sequenceRhythm: copySequenceRhythm(next.sequenceRhythm), chain: next.chain, automation: copyAutomation(next.automation) });
@@ -687,7 +703,7 @@ export const useStore = create<SynthStore>((set, get) => {
     if (!get().hosted) saveSeqState(next.patterns, next.chain, get().sequenceRhythm);
   },
 
-  _clearSeqHistory: () => seqHistory.clear(),
+  _clearSeqHistory: () => { durationGesture = undefined; seqHistory.clear(); },
 
   setAutomation: (lanes, opts = {}) => {
     if (get().hosted || validateAutomation(lanes, 'WT1')) return;

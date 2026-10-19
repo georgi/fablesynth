@@ -312,9 +312,9 @@ export function NoteSeqPanel({ polySteps, bars, onToggleChordNote, onSetChordDur
                               totalSteps={totalSteps}
                               duration={voice.duration}
                               muted={dragSrc}
-                              onChange={(duration) => onSetChordDuration
+                              onChange={(duration, gesture) => onSetChordDuration
                                 ? onSetChordDuration(absoluteStep, note, duration)
-                                : setStepDuration(step, duration, pattern)}
+                                : setStepDuration(step, duration, pattern, gesture)}
                             />
                           )}
                           {drawing?.absoluteStep === absoluteStep && drawing.note === note && (

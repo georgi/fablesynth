@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useBassStore } from './store';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { bassEngine, useBassStore } from './store';
 import { getStep, LAYOUT, makeEmptyPatterns, NOTE_LANES, STEPS } from './seq';
 import { copyRect } from '../shared/seqEdit';
 import { defaultBassParams } from './params';
 import { FACTORY_PATCHES } from './patches';
+import { arpSequence, newArp } from '../arp';
 import { BASS_PATTERN_PRESETS, bassPresetSequence } from './patternPresets';
 
 if (typeof localStorage === 'undefined') {
@@ -23,12 +24,17 @@ if (typeof localStorage === 'undefined') {
 describe('bass store', () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.restoreAllMocks();
+    useBassStore.getState()._clearHistory();
     useBassStore.setState({
       params: defaultBassParams(),
       patterns: makeEmptyPatterns(),
       chain: [0],
       editPattern: 0,
       playing: false,
+      hosted: false,
+      arpMode: false,
+      arp: newArp(),
       heldSemis: [],
       curSemi: -100,
       patchValue: 'f0',
@@ -123,6 +129,46 @@ describe('bass store', () => {
     expect(state.patchValue).toBe('f1');
     expect(state.params['flt.cut']).toBe(FACTORY_PATCHES[1].params['flt.cut']);
     expect(getStep(state.patterns, 0, 0)).toMatchObject({ on: true, note: 0, acc: true });
+  });
+
+  it('recompiles a chord arpeggio when a patch changes the sequence length', () => {
+    const state = useBassStore.getState();
+    const arp = { ...newArp(), input: 'chords' as const, rate: .375 };
+    useBassStore.setState({ arp, arpMode: true });
+    state.setSequenceLength(4);
+    const sendArp = vi.spyOn(bassEngine, 'setArp');
+    state.loadPatchByValue('f0'); // the factory patch has a one-bar chain
+    expect(sendArp).toHaveBeenLastCalledWith({ ...arp, notes: arpSequence(arp, arp.notes, 1) });
+  });
+
+  it('undoes and redoes the complete catalog pattern including playback length', () => {
+    const state = useBassStore.getState();
+    state.toggleCell(2, 5);
+    const before = useBassStore.getState().patterns;
+    const sendChain = vi.spyOn(bassEngine, 'setChain');
+    state.loadPatternPreset(1);
+    const loaded = useBassStore.getState().patterns;
+    expect(useBassStore.getState().chain).toEqual([0, 1, 2, 3]);
+    state.undo();
+    expect(useBassStore.getState().patterns).toEqual(before);
+    expect(useBassStore.getState().chain).toEqual([0]);
+    expect(sendChain).toHaveBeenLastCalledWith([0]);
+    state.redo();
+    expect(useBassStore.getState().patterns).toEqual(loaded);
+    expect(useBassStore.getState().chain).toEqual([0, 1, 2, 3]);
+    expect(sendChain).toHaveBeenLastCalledWith([0, 1, 2, 3]);
+  });
+
+  it('undoes duplicate-bar notes and sequence extension together', () => {
+    const state = useBassStore.getState();
+    state.toggleCell(0, 2);
+    state.duplicateSelection();
+    state.undo();
+    expect(useBassStore.getState().chain).toEqual([0]);
+    expect(getStep(useBassStore.getState().patterns, 1, 0).on).toBe(false);
+    state.redo();
+    expect(useBassStore.getState().chain).toEqual([0, 1]);
+    expect(getStep(useBassStore.getState().patterns, 1, 0)).toMatchObject({ on: true, note: 2 });
   });
 
   it('savePatch stores and selects the user patch', () => {

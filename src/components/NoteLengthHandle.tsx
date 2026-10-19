@@ -7,13 +7,15 @@ interface NoteLengthHandleProps {
   absoluteStep: number;
   totalSteps: number;
   duration: number;
-  onChange: (duration: number) => void;
+  /** A pointer gesture shares a token; keyboard nudges omit it. */
+  onChange: (duration: number, gesture?: symbol) => void;
   /** Dim the painted body while the note is being dragged away. */
   muted?: boolean;
 }
 
 export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, onChange, muted }: NoteLengthHandleProps) {
   const last = useRef(duration);
+  const gesture = useRef<symbol>();
   const max = Math.min(63, totalSteps - absoluteStep);
   const length = Math.min(max, Math.max(1, duration));
 
@@ -26,7 +28,7 @@ export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, o
     const next = Math.min(max, Math.max(1, Math.ceil((event.clientX - rect.left + COLUMN_GAP / 2) / pitch) - absoluteStep));
     if (next === last.current) return;
     last.current = next;
-    onChange(next);
+    onChange(next, gesture.current);
   };
 
   const nudge = (delta: number) => {
@@ -52,6 +54,7 @@ export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, o
           event.preventDefault();
           event.stopPropagation();
           last.current = length;
+          gesture.current = Symbol('note-length');
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={resize}
@@ -59,7 +62,10 @@ export function NoteLengthHandle({ prefix, absoluteStep, totalSteps, duration, o
           resize(event);
           event.stopPropagation();
           event.currentTarget.releasePointerCapture(event.pointerId);
+          gesture.current = undefined;
         }}
+        onPointerCancel={() => { gesture.current = undefined; }}
+        onLostPointerCapture={() => { gesture.current = undefined; }}
         onKeyDown={(event) => {
           if (event.key === 'ArrowLeft') { event.preventDefault(); nudge(-1); }
           if (event.key === 'ArrowRight') { event.preventDefault(); nudge(1); }

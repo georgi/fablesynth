@@ -84,6 +84,32 @@ describe('complete DR-1 sequence transactions', () => {
     st().duplicateSelection(); expect(st().chain).toHaveLength(2);
     st().undo(); expect(st().chain).toHaveLength(1); expect(st().patterns[patIdx(1, 0, 3)]).toBe(0);
   });
+  it('keeps hosted edits inside the clip after shortening its length', () => {
+    useDrumStore.setState({ hosted: true, chain: [0, 1, 2, 3], editPattern: 3 });
+    st().setSequenceLength(2);
+    expect(st().editPattern).toBe(1);
+    st().toggleStep(5, 2);
+    expect(st().patterns[patIdx(1, 2, 5)]).toBe(1);
+    expect(st().patterns[patIdx(3, 2, 5)]).toBe(0);
+  });
+  it('keeps hosted edits inside the clip after undoing bar duplication', () => {
+    useDrumStore.setState({ hosted: true, editPattern: 0, rectSel: null });
+    st().duplicateSelection();
+    expect(st().editPattern).toBe(1);
+    st().undo();
+    expect(st().chain).toEqual([0]);
+    expect(st().editPattern).toBe(0);
+    st().toggleStep(7, 1);
+    expect(st().patterns[patIdx(0, 1, 7)]).toBe(1);
+    expect(st().patterns[patIdx(1, 1, 7)]).toBe(0);
+  });
+  it('keeps standalone access to stored bars outside the playback chain', () => {
+    st().setEditPattern(3);
+    st().setSequenceLength(1);
+    expect(st().editPattern).toBe(3);
+    st().toggleStep(5, 2);
+    expect(st().patterns[patIdx(3, 2, 5)]).toBe(1);
+  });
 });
 
 it('keeps micro timing independent of POLY and carries it through move, paste, bar copy, and undo', () => {

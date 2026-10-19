@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { factorySession } from './factory';
 import { previewSteps } from './model';
+import { importSessionJson } from './sessionLibrary';
 import {
   b64ToBytes, barFrames, boundaryFrame, bytesPerBar, bytesToB64, dr1Idx,
   emptyClipBytes, noteIdx, samplesPerBeat, songPosition, validateSession, WT_POLY_LANES, wtNoteIdx,
@@ -13,6 +14,43 @@ describe('base64 codec', () => {
       for (let i = 0; i < len; i++) u8[i] = (i * 37 + 11) & 0xff;
       expect(b64ToBytes(bytesToB64(u8))).toEqual(u8);
     }
+  });
+});
+
+describe('session import validation', () => {
+  it.each([null, [], { v: 1, bpm: 120, tracks: [null], scenes: [] }, {
+    ...factorySession(), scenes: [null],
+  }, {
+    ...factorySession(), scenes: [{ name: 'BROKEN', clips: null }],
+  }])('returns an import error for malformed document structures', (doc) => {
+    expect(importSessionJson(JSON.stringify(doc))).toHaveProperty('error');
+  });
+
+  it.each(['invalid characters', 'misplaced padding', 'non-string pattern'])('rejects %s instead of decoding corrupt notes', (kind) => {
+    const doc = structuredClone(factorySession());
+    const clip = doc.scenes[0].clips[0]!;
+    clip.pattern = kind === 'invalid characters' ? '!'.repeat(clip.pattern.length - 2) + '=='
+      : kind === 'misplaced padding' ? '=' + clip.pattern.slice(1)
+        : null as unknown as string;
+    expect(importSessionJson(JSON.stringify(doc))).toHaveProperty('error');
+  });
+
+  it.each([1, 2, 3])('accepts padded and unpadded base64 for a %i-bar drum clip', (bars) => {
+    const doc = structuredClone(factorySession());
+    const clip = doc.scenes[0].clips[0]!;
+    clip.bars = bars;
+    clip.pattern = bytesToB64(emptyClipBytes('DR1', bars));
+    expect(importSessionJson(JSON.stringify(doc))).toHaveProperty('session');
+    clip.pattern = clip.pattern.replace(/=+$/, '');
+    expect(importSessionJson(JSON.stringify(doc))).toHaveProperty('session');
+  });
+
+  it('rejects fractional clip lengths even when their byte count matches', () => {
+    const doc = structuredClone(factorySession());
+    const clip = doc.scenes[0].clips[0]!;
+    clip.bars = 1.5;
+    clip.pattern = bytesToB64(new Uint8Array(1.5 * bytesPerBar('DR1')));
+    expect(importSessionJson(JSON.stringify(doc))).toHaveProperty('error');
   });
 });
 

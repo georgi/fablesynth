@@ -21,6 +21,24 @@ describe('portable session exports', () => {
     const patch = embedSessionPatches(session).tracks[1].patch;
     expect(patch).toMatchObject({ kind: 'inline', data: { params: { 'flt.cut': 123, 'master.volume': expect.any(Number) } } });
   });
+
+  it('retains factory patch identity after a portable export', () => {
+    const session = factorySession();
+    const exported = embedSessionPatches(session);
+    session.tracks.forEach((track, i) => {
+      if (track.patch.kind === 'factory') {
+        expect(exported.tracks[i].patch).toMatchObject({ kind: 'inline', base: track.patch.index });
+      }
+    });
+  });
+
+  it('detaches master processing from the source session', () => {
+    const session = factorySession();
+    session.masterFx = { 'master.fx.comp.thr': -16 };
+    const exported = embedSessionPatches(session);
+    exported.masterFx!['master.fx.comp.thr'] = -24;
+    expect(session.masterFx['master.fx.comp.thr']).toBe(-16);
+  });
 });
 
 

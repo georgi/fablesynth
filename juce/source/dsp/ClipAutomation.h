@@ -81,7 +81,8 @@ inline double evalLane(const std::vector<AutoPoint>& points, int len, double x) 
     for (size_t j = 0; j < count && points[j].t <= x; ++j) { i = j; t0 = points[j].t; }
     const auto& a = points[i]; const auto& b = points[(i + 1) % count];
     if (a.hold) return a.v;
-    const double t1 = b.t + (i == count - 1 ? len : 0);
+    // Before the first point, t0 belongs to the previous cycle already.
+    const double t1 = b.t + (i == count - 1 && x >= a.t ? len : 0);
     if (t1 - t0 <= 1e-9) return b.v;
     return a.v + (b.v - a.v) * bend((x - t0) / (t1 - t0), a.c);
 }

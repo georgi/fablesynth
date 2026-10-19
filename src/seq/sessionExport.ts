@@ -34,13 +34,14 @@ export function resolvedPatchParams(machine: SessionDoc['tracks'][number]['machi
 
 function embeddedPatch(machine: SessionDoc['tracks'][number]['machine'], patch: PatchDoc): PatchDoc {
   const params = resolvedPatchParams(machine, patch);
-  return patch.kind === 'inline' ? { kind: 'inline', data: { params }, base: patch.base } : { kind: 'inline', data: { params } };
+  return { kind: 'inline', data: { params }, ...(patch.kind === 'factory' ? { base: patch.index } : patch.base !== undefined ? { base: patch.base } : {}) };
 }
 
 /** A self-contained copy suitable for disk/session interchange. */
 export function embedSessionPatches(session: SessionDoc): SessionDoc {
   return {
     ...session,
+    ...(session.masterFx ? { masterFx: { ...session.masterFx } } : {}),
     tracks: session.tracks.map((track) => ({ ...track, patch: embeddedPatch(track.machine, track.patch) })),
     scenes: session.scenes.map((scene) => ({ ...scene, pass: scene.pass ? [...scene.pass] : undefined, clips: scene.clips.map((clip) => clip && { ...clip,
       ...(clip.sequenceRhythm ? { sequenceRhythm: copySequenceRhythm(clip.sequenceRhythm) } : {}),

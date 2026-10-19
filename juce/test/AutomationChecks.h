@@ -8,6 +8,13 @@
 
 static void testAutomation() {
     using namespace fable;
+    const std::vector<AutoPoint> wrapPoints {{4, 0}, {12, 1}};
+    CHECK(std::abs(evalLane(wrapPoints, 16, 14) - .75) < 1e-12);
+    CHECK(std::abs(evalLane(wrapPoints, 16, 0) - .5) < 1e-12);
+    CHECK(std::abs(evalLane(wrapPoints, 16, 2) - .25) < 1e-12);
+    CHECK(std::abs(evalLane(wrapPoints, 16, 3.999)) < .001);
+    CHECK(std::abs(evalLane(wrapPoints, 16, -2) - .75) < 1e-12);
+    CHECK(std::abs(evalLane(wrapPoints, 16, 18) - .25) < 1e-12);
     const std::vector<AutoLane> lanes {{ "filter.cutoff", true, { AutoTime::Grid, 4, 4 }, {{0, .2, 0, true}, {2, .8, 0, true}} }};
     CHECK(validateAutomation(lanes, Machine::WT1));
     auto bad = lanes; bad[0].target = "filter.type"; CHECK(!validateAutomation(bad, Machine::WT1));

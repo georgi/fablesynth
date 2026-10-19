@@ -23,6 +23,16 @@ describe('clip automation curves', () => {
     expect(evalLane(pts, 16, 7.999)!).toBeCloseTo(1, 2);
   });
 
+  it('uses one continuous wrap segment when the first point is after step zero', () => {
+    const pts = [{ t: 4, v: 0 }, { t: 12, v: 1 }];
+    expect(evalLane(pts, 16, 14)).toBeCloseTo(0.75);
+    expect(evalLane(pts, 16, 0)).toBeCloseTo(0.5);
+    expect(evalLane(pts, 16, 2)).toBeCloseTo(0.25);
+    expect(evalLane(pts, 16, 3.999)).toBeCloseTo(0, 3);
+    expect(evalLane(pts, 16, -2)).toBeCloseTo(0.75);
+    expect(evalLane(pts, 16, 18)).toBeCloseTo(0.25);
+  });
+
   it('paints held cells and keeps the rest of the curve', () => {
     const ramp = [{ t: 0, v: 0 }, { t: 15, v: 1 }];
     const pts = paintCell(ramp, 16, 4.6, 0.9, 1);
@@ -84,6 +94,14 @@ describe('automation documents', () => {
     const [config] = compileClipAutomation(clip([lane]), 'WT1');
     expect(config.len).toBe(16);
     expect(config.table[0]).toBeCloseTo(Math.sqrt(20 * 20000), 3);
+  });
+
+  it('compiles the wrap segment before the first automation point', () => {
+    const lane = { ...newAutoLane('oscA.pos'), points: [{ t: 4, v: 0 }, { t: 12, v: 1 }] };
+    const [config] = compileClipAutomation(clip([lane]), 'WT1');
+    expect(config.table[0]).toBeCloseTo(0.5);
+    expect(config.table[2 * 16]).toBeCloseTo(0.25);
+    expect(config.table[4 * 16 - 1]).toBeCloseTo(1 / 128);
   });
 
   it('skips disabled, empty, and shadowed lanes', () => {

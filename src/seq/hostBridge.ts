@@ -9,9 +9,13 @@ import { bytesPerBar, emptyClipBytes, type MachineId, noteIdx, STEPS_PER_BAR, wt
 export function clipToPatterns(machine: MachineId, bytes: Uint8Array, empty: Uint8Array): Uint8Array {
   const out = empty.slice();
   if (machine !== 'WT1') out.set(bytes.subarray(0, Math.min(bytes.length, out.length)), 0);
-  else for (let bar = 0; bar < bytes.length / bytesPerBar('WT1'); bar++) for (let step = 0; step < STEPS_PER_BAR; step++) {
-    const from = wtNoteIdx(bar, step, 0), to = noteIdx(bar, step);
-    out.set(bytes.subarray(from, from + 3), to);
+  else {
+    // Long session clips still need a read-only preview in the four-bar editor.
+    const bars = Math.min(bytes.length / bytesPerBar('WT1'), out.length / bytesPerBar('BL1'));
+    for (let bar = 0; bar < bars; bar++) for (let step = 0; step < STEPS_PER_BAR; step++) {
+      const from = wtNoteIdx(bar, step, 0), to = noteIdx(bar, step);
+      out.set(bytes.subarray(from, from + 3), to);
+    }
   }
   return out;
 }

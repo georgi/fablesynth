@@ -1,7 +1,7 @@
 import { newAutoLane } from './seq/clipAutomation';
 // WT-1 step-sequencer editing verbs: selection, clipboard, undo/redo, DnD
 // (docs/editing-concept.md). Mirrors src/bass/store.test.ts / src/drum/store.test.ts.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore } from './store';
 import { defaultParams } from './params';
 import { getStep, makeEmptyPatterns, NOTE_LANES, STEPS, WT1_LAYOUT } from './noteseq';
@@ -43,6 +43,93 @@ describe('WT-1 step-sequencer editing', () => {
       clipboard: null,
       hosted: false,
     });
+  });
+
+  it.each(['toggle', 'octave', 'accent', 'randomize'] as const)('%s is one undoable edit', (action) => {
+    const state = useStore.getState();
+    state.drawNote(2, 5, 3, 0);
+    state._clearSeqHistory();
+    const before = useStore.getState().patterns.slice();
+    if (action === 'toggle') state.toggleCell(2, 5, 0);
+    if (action === 'octave') state.cycleStepOct(2, 0);
+    if (action === 'accent') state.toggleStepAcc(2, 0);
+    if (action === 'randomize') {
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0.25);
+      try { state.randomizeSeq(); } finally { random.mockRestore(); }
+    }
+    const after = useStore.getState().patterns.slice();
+    expect(after).not.toEqual(before);
+    state.undoSeq();
+    expect(useStore.getState().patterns).toEqual(before);
+    state.redoSeq();
+    expect(useStore.getState().patterns).toEqual(after);
+    state.undoSeq();
+    state.undoSeq();
+    expect(useStore.getState().patterns).toEqual(before);
+  });
+
+  it('a click after undo replaces the redo branch instead of losing the new note', () => {
+    const state = useStore.getState();
+    state.drawNote(2, 5, 3, 0);
+    state.undoSeq();
+    state.toggleCell(7, 9, 0);
+    const edited = useStore.getState().patterns.slice();
+    state.redoSeq();
+    expect(useStore.getState().patterns).toEqual(edited);
+    state.undoSeq();
+    expect(useStore.getState().patterns).toEqual(makeEmptyPatterns());
+  });
+
+  it('groups a duration drag, keeps separate drags, and clears redo on a new drag', () => {
+    const state = useStore.getState();
+    state.drawNote(2, 5, 1, 0);
+    state._clearSeqHistory();
+    const duration = () => getStep(useStore.getState().patterns, 0, 2).duration;
+    const first = Symbol('drag');
+    state.setStepDuration(2, 2, 0, first);
+    state.setStepDuration(2, 5, 0, first);
+    state.setStepDuration(2, 7, 0, first);
+    state.undoSeq();
+    expect(duration()).toBe(1);
+    state.redoSeq();
+    expect(duration()).toBe(7);
+    const second = Symbol('drag');
+    state.setStepDuration(2, 9, 0, second);
+    state.setStepDuration(2, 12, 0, second);
+    state.undoSeq();
+    expect(duration()).toBe(7);
+    state.setStepDuration(2, 8, 0, Symbol('new drag'));
+    state.redoSeq();
+    expect(duration()).toBe(8);
+    state.undoSeq();
+    expect(duration()).toBe(7);
+    state.undoSeq();
+    expect(duration()).toBe(1);
+  });
+
+  it('duration keyboard nudges are discrete and an interrupted drag starts fresh history', () => {
+    const state = useStore.getState();
+    state.drawNote(2, 5, 1, 0);
+    state._clearSeqHistory();
+    const duration = () => getStep(useStore.getState().patterns, 0, 2).duration;
+    state.setStepDuration(2, 2, 0);
+    state.setStepDuration(2, 3, 0);
+    state.undoSeq();
+    expect(duration()).toBe(2);
+    state.undoSeq();
+    expect(duration()).toBe(1);
+    const gesture = Symbol('drag');
+    state.setStepDuration(2, 4, 0, gesture);
+    state.undoSeq();
+    state.setStepDuration(2, 5, 0, gesture);
+    state.undoSeq();
+    expect(duration()).toBe(1);
+    state.setStepDuration(2, 4, 0, gesture);
+    state.toggleStepAcc(2, 0);
+    state.setStepDuration(2, 6, 0, gesture);
+    state.undoSeq();
+    expect(duration()).toBe(4);
+    expect(getStep(useStore.getState().patterns, 0, 2).acc).toBe(true);
   });
 
   it('draws a whole note in one undo step and preserves other notes', () => {

@@ -275,7 +275,11 @@ export const useDrumStore = create<DrumStore>((set, get) => ({
       if (conflict) throw new Error(conflict);
       const next = cloneDrumSequence(value, get().hosted ? value.chain.length : 4);
       if (history) get()._pushHistory();
-      set({ ...next, kitDirty: true, sequenceError: null });
+      // Hosted clips serialize only their active bars. Keep the editor inside
+      // that range when shortening or undoing an extension, so new hits are
+      // not written into an excluded bar. Standalone retains all four bars.
+      set({ ...next, editPattern: Math.min(get().editPattern, get().hosted ? next.chain.length - 1 : NPATTERNS - 1),
+        kitDirty: true, sequenceError: null });
       if (!get().hosted) {
         drumEngine.setSequence(next.patterns, next.chain, next.drumRhythm);
         sendAutomation(get());

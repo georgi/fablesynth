@@ -33,7 +33,7 @@ export type SeqClipboard =
 // Module-level undo/redo stack over the full patterns buffer, pushed by every
 // mutation that goes through `_setPatterns`. Not store state — mirrors
 // `bassEngine` living outside the reactive slice.
-interface BassSeqSnapshot { patterns: Patterns; sequenceRhythm: SequenceRhythm }
+interface BassSeqSnapshot { patterns: Patterns; chain: number[]; sequenceRhythm: SequenceRhythm }
 const history = makeHistory<BassSeqSnapshot>();
 
 // Continuous note-length drags fire setStepDuration once per column crossed;
@@ -134,7 +134,7 @@ export interface BassStore {
 }
 
 export const useBassStore = create<BassStore>((set, get) => {
-  const snapshot = (): BassSeqSnapshot => ({ patterns: get().patterns, sequenceRhythm: copySequenceRhythm(get().sequenceRhythm) });
+  const snapshot = (): BassSeqSnapshot => ({ patterns: get().patterns, chain: [...get().chain], sequenceRhythm: copySequenceRhythm(get().sequenceRhythm) });
   const syncArp = () => {
     const { arp, arpMode, arpKeys, hosted } = get();
     if (hosted) return;
@@ -473,8 +473,10 @@ export const useBassStore = create<BassStore>((set, get) => {
     durationGestureKey = null;
     const prev = history.undo(snapshot());
     if (!prev) return;
-    set({ patterns: prev.patterns, sequenceRhythm: copySequenceRhythm(prev.sequenceRhythm), dirty: true });
+    set({ patterns: prev.patterns, chain: [...prev.chain], sequenceRhythm: copySequenceRhythm(prev.sequenceRhythm), dirty: true });
     bassEngine.setPatterns(prev.patterns);
+    bassEngine.setChain(get().chain);
+    syncArp();
     if (!get().hosted) bassEngine.setSequenceRhythm(get().sequenceRhythm);
   },
 
@@ -482,8 +484,10 @@ export const useBassStore = create<BassStore>((set, get) => {
     durationGestureKey = null;
     const next = history.redo(snapshot());
     if (!next) return;
-    set({ patterns: next.patterns, sequenceRhythm: copySequenceRhythm(next.sequenceRhythm), dirty: true });
+    set({ patterns: next.patterns, chain: [...next.chain], sequenceRhythm: copySequenceRhythm(next.sequenceRhythm), dirty: true });
     bassEngine.setPatterns(next.patterns);
+    bassEngine.setChain(get().chain);
+    syncArp();
     if (!get().hosted) bassEngine.setSequenceRhythm(get().sequenceRhythm);
   },
 
@@ -596,6 +600,7 @@ export const useBassStore = create<BassStore>((set, get) => {
       patchValue: value,
       dirty: false,
     });
+    syncArp();
   },
 
   captureSound: () => {
