@@ -27,7 +27,7 @@ jobs:
             name: macOS
             # Universal binary: runs natively on Apple Silicon and Intel.
             cmake_args: "-DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"
-            build_parallel: ""
+            build_parallel: "2"
           - os: ubuntu-22.04
             name: Linux
             cmake_args: ""
@@ -37,7 +37,7 @@ jobs:
           - os: windows-2022
             name: Windows
             cmake_args: ""
-            build_parallel: ""
+            build_parallel: "2"
 
     steps:
       - uses: actions/checkout@v4
@@ -112,6 +112,16 @@ jobs:
           )
 
           for bundle in "${bundles[@]}"; do
+            # WT-1 embeds a separate executable. Sign it before sealing the
+            # enclosing bundle; signing the bundle does not sign Resources.
+            helper="$bundle/Contents/Resources/FableSerumImport"
+            if [[ "$bundle" == */FableSynth_artefacts/* ]]; then
+              test -f "$helper"
+              codesign --force --options runtime --timestamp \
+                --entitlements juce/serum-import.entitlements \
+                --keychain "$keychain" --sign "$identity" "$helper"
+              codesign --verify --strict --verbose=2 "$helper"
+            fi
             codesign --force --options runtime --timestamp \
               --keychain "$keychain" --sign "$identity" "$bundle"
             codesign --verify --deep --strict --verbose=2 "$bundle"
@@ -185,9 +195,25 @@ jobs:
             "$GITHUB_WORKSPACE/FableSynth-SQ4-macOS.zip"
           )
           for archive in "${archives[@]}"; do
-            xcrun notarytool submit "$archive" --wait \
+            result="$RUNNER_TEMP/$(basename "$archive").notary.json"
+            submit_exit=0
+            xcrun notarytool submit "$archive" --wait --output-format json \
               --key "$api_key" --key-id "$APPLE_API_KEY_ID" \
-              --issuer "$APPLE_API_ISSUER_ID"
+              --issuer "$APPLE_API_ISSUER_ID" > "$result" || submit_exit=$?
+            cat "$result"
+            submission_id="$(jq -r '.id // empty' "$result")"
+            status="$(jq -r '.status // empty' "$result")"
+            # notarytool can exit successfully for an Invalid submission.
+            # Fetch Apple's explanation before failing, never try to staple it.
+            if [[ "$submit_exit" -ne 0 || "$status" != "Accepted" ]]; then
+              if [[ -n "$submission_id" ]]; then
+                xcrun notarytool log "$submission_id" \
+                  --key "$api_key" --key-id "$APPLE_API_KEY_ID" \
+                  --issuer "$APPLE_API_ISSUER_ID" || true
+              fi
+              echo "::error::Notarization failed for $(basename "$archive"): ${status:-unknown} (exit $submit_exit)"
+              exit 1
+            fi
           done
 
           stages=(
