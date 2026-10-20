@@ -66,7 +66,8 @@
 .sq-transport { display: flex; align-items: center; gap: 6px; }
 .sq-session-preset { display: flex; align-items: center; gap: 6px; flex: 1 1 230px; max-width: 280px; min-width: 120px; }
 .sq-session-preset > span { font-size: 7px; letter-spacing: 0.2em; color: var(--text-dim); }
-.sq-session-preset select { height: 24px; border: 1px solid var(--line); border-radius: 4px; background: #11141c; color: var(--ac-b); font: 8px var(--font-mono); letter-spacing: 0.07em; padding: 0 5px; flex: 1; min-width: 0; text-overflow: ellipsis; }
+.sq-session-preset select { height: 24px; border: 1px solid var(--line); border-radius: 4px; background: #11141c; color: var(--ac-b); font: 10px var(--font-mono); letter-spacing: 0.07em; padding: 0 5px; flex: 1; min-width: 0; text-overflow: ellipsis; }
+.sq-session-preset option { font-size: 12px; background: #11141c; color: var(--text); }
 
 .sq-glyph { display: block; }
 .sq-play {
