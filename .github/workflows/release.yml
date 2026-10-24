@@ -57,7 +57,7 @@ jobs:
 
       - name: Build plugin
         working-directory: juce
-        run: cmake --build build --config Release --target FableSynth_All FableDrum_All FableBass_All FableSeq_All --parallel ${{ matrix.build_parallel }}
+        run: cmake --build build --config Release --target FableSynth_All FableDrum_All FableBass_All FableSeq_All FableVstHost --parallel ${{ matrix.build_parallel }}
 
       # Local macOS builds remain ad-hoc signed by CMake so hardened DAW
       # scanners accept them. Release artifacts need a real Developer ID
@@ -127,6 +127,14 @@ jobs:
             codesign --verify --deep --strict --verbose=2 "$bundle"
           done
 
+          # NodeTool's VST host loads plug-ins signed by other teams, like the
+          # Serum importer, so it carries the same entitlement.
+          host="juce/build/FableVstHost_artefacts/Release/FableVstHost"
+          codesign --force --options runtime --timestamp \
+            --entitlements juce/serum-import.entitlements \
+            --keychain "$keychain" --sign "$identity" "$host"
+          codesign --verify --strict --verbose=2 "$host"
+
       # ---- Package (one zip per platform: VST3 + Standalone, plus AU on macOS) ----
 
       - name: Package (macOS)
@@ -173,6 +181,11 @@ jobs:
           ditto "Standalone/FableSynth SQ-4.app" "$stage/FableSynth SQ-4.app"
           ditto -c -k --keepParent "$stage" "$GITHUB_WORKSPACE/FableSynth-SQ4-macOS.zip"
 
+      - name: Package VST host (macOS)
+        if: runner.os == 'macOS'
+        working-directory: juce/build/FableVstHost_artefacts/Release
+        run: ditto -c -k FableVstHost "$GITHUB_WORKSPACE/FableVstHost-macOS.zip"
+
       - name: Notarize and staple macOS bundles
         if: runner.os == 'macOS'
         env:
@@ -194,7 +207,9 @@ jobs:
             "$GITHUB_WORKSPACE/FableSynth-BL1-macOS.zip"
             "$GITHUB_WORKSPACE/FableSynth-SQ4-macOS.zip"
           )
-          for archive in "${archives[@]}"; do
+          # A bare executable cannot be stapled; Gatekeeper checks its
+          # notarization online. Submit it on its own, outside the restaple loop.
+          for archive in "${archives[@]}" "$GITHUB_WORKSPACE/FableVstHost-macOS.zip"; do
             result="$RUNNER_TEMP/$(basename "$archive").notary.json"
             submit_exit=0
             xcrun notarytool submit "$archive" --wait --output-format json \
@@ -279,6 +294,11 @@ jobs:
           cp "Standalone/FableSynth SQ-4"   "$stage/"
           zip -r "$GITHUB_WORKSPACE/FableSynth-SQ4-Linux.zip" "$stage"
 
+      - name: Package VST host (Linux)
+        if: runner.os == 'Linux'
+        working-directory: juce/build/FableVstHost_artefacts/Release
+        run: zip "$GITHUB_WORKSPACE/FableVstHost-Linux.zip" FableVstHost
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -324,11 +344,19 @@ jobs:
           Copy-Item "Standalone/FableSynth SQ-4.exe"     $stage/
           Compress-Archive -Path $stage -DestinationPath "$env:GITHUB_WORKSPACE/FableSynth-SQ4-Windows.zip" -Force
 
+      - name: Package VST host (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: juce/build/FableVstHost_artefacts/Release
+        run: Compress-Archive -Path FableVstHost.exe -DestinationPath "$env:GITHUB_WORKSPACE/FableVstHost-Windows.zip" -Force
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: FableSynth-${{ matrix.name }}
-          path: FableSynth-*.zip
+          path: |
+            FableSynth-*.zip
+            FableVstHost-*.zip
           if-no-files-found: error
 
   release:
@@ -356,6 +384,9 @@ jobs:
             - **DR-1** — 16-pad wavetable drum machine with 5-bus multi-out (`FableSynth-DR1-<platform>.zip`)
             - **BL-1** — acid bassline synth with 16-step pitch sequencer (`FableSynth-BL1-<platform>.zip`)
             - **SQ-4** — session clip launcher hosting the WT-1/DR-1/BL-1 engines (`FableSynth-SQ4-<platform>.zip`)
+
+            `FableVstHost-<platform>.zip` is the VST3 host NodeTool's timeline uses
+            to play third-party instruments. It is not a plug-in.
 
             **Download the zip(s) for your platform below, then install:**
 

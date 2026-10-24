@@ -495,6 +495,34 @@ if(FABLE_BUILD_PLUGIN)
         endif()
     endforeach()
 
+    # ---- VST3 instrument host for NodeTool's timeline (docs/vst-host.md) ----
+    set(FABLE_VSTHOST_DEFS
+        JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+        FABLE_VSTHOST_VERSION="${PROJECT_VERSION}")
+    juce_add_console_app(FableVstHost PRODUCT_NAME "FableVstHost")
+    target_sources(FableVstHost PRIVATE
+        source/vsthost/VstHostMain.cpp
+        source/vsthost/VstHost.cpp)
+    target_compile_definitions(FableVstHost PRIVATE ${FABLE_VSTHOST_DEFS})
+    target_link_libraries(FableVstHost PRIVATE
+        juce::juce_audio_processors
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+
+    # Loads the WT-1 VST3 this build produces through the host and renders it.
+    juce_add_console_app(vst_host_test PRODUCT_NAME "vst_host_test")
+    target_sources(vst_host_test PRIVATE
+        test/vst_host_test.cpp
+        source/vsthost/VstHost.cpp)
+    target_compile_definitions(vst_host_test PRIVATE ${FABLE_VSTHOST_DEFS})
+    target_link_libraries(vst_host_test PRIVATE
+        juce::juce_audio_processors
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_dependencies(vst_host_test FableSynth_VST3)
+    add_test(NAME vst_host_test
+        COMMAND vst_host_test "${CMAKE_BINARY_DIR}/FableSynth_artefacts/$<CONFIG>/VST3/FableSynth WT-1.vst3")
+
     # Converter tests on synthetic .fxp data (no Serum needed, no Serum content).
     juce_add_console_app(serum_import_test PRODUCT_NAME "serum_import_test")
     target_sources(serum_import_test PRIVATE
