@@ -252,6 +252,9 @@ private:
         int    f0 = 0;
         // Previous sub-block targets for the intra-block ramps (Finding 7).
         double pIncs[DR_MAXUNI] = {0};
+        // Sub-block START increments: the ramp origin when there is no valid
+        // previous target (first sub-block after a trigger or a switch).
+        double incs0[DR_MAXUNI] = {0};
         float  pGl[DR_MAXUNI] = {0}, pGr[DR_MAXUNI] = {0};
         double pPosF = 0;
         const float* pData = nullptr;
@@ -309,9 +312,13 @@ private:
         SampleState sample;
         FilterState f;
         double noiseY = 0;
+        // Per-hit noise generator, seeded from the engine Rng at the trigger.
+        // A shared generator made every later noise hit depend on how many
+        // samples each earlier voice rendered before it was killed, which
+        // depends on the render chunking (worklet-drum.js does the same).
+        Rng    noiseRng;
         double ringPhase = 0.25;
         double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
-        double lgPrev = -1;        // level*vel gain ramp start (Finding 7)
 
         void trigger(double v, double rnd);
         void choke() { if (active && !choking) { choking = true; chokeSm = ampLevel; } }
@@ -327,13 +334,19 @@ private:
         double fineA = 0, fineB = 0, noise = 0, res = 0;
     };
 
-    Mod  padMod(int padI, const PadVoice& v) const;
-    bool setupOsc(OscState& o, int base, double pitchEnv,
-                  double mPos, double mFine, double mPitch, int n);
+    // Modulation at voice time t (samples). renderPad evaluates it at both
+    // block edges and interpolates per sub-block, like the web worklet.
+    Mod  padMod(int padI, const PadVoice& v, double t) const;
+    static Mod lerpMod(const Mod& a, const Mod& b, double u);
+    // pitch0/pitch1 are the semitone offsets (pitch env + mod pitch + mod fine
+    // in semitones) at the first and last sample of the sub-block.
+    bool setupOsc(OscState& o, int base, double pitch0, double pitch1,
+                  double mPos0, double mPos1, int n);
     static void renderOsc(OscState& o, float* tmpL, float* tmpR, int off, int n);
     // J2: render one 16-sample sub-block of the oscillator layer, crossfading
     // the outgoing configuration into the incoming one when a switch is live.
-    void renderOscLayer(PadVoice& v, int padI, double pitchEnv, const Mod& m,
+    void renderOscLayer(PadVoice& v, int padI, double pitch0, double pitch1,
+                        double mPos0, double mPos1,
                         float* tmpL, float* tmpR, int at, int count);
     void renderSample(SampleState& state, int padI, double pitchEnv,
                       double modStart, double modFine, double modPitch,

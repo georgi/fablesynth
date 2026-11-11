@@ -94,7 +94,17 @@ private:
     bool chorusOff_ = false, chorusGated_ = false;
 
     // delay
-    Smooth dlTime_, dlFb_, dlWet_, dlDry_;
+    // The echo time glides in double precision, like the web worklet. A float
+    // glide stalls up to ~0.7 samples off its target and drifts with rounding,
+    // which moved every echo of a later hit by a fraction of a sample.
+    struct SmoothD {
+        double cur = 0, target = 0, coef = 0.01;
+        void   setTime(double tau, double sr) { coef = 1.0 - std::exp(-1.0 / (tau * sr)); }
+        inline double next() { cur += (target - cur) * coef; return cur; }
+        void   snap(double v) { cur = target = v; }
+    };
+    SmoothD dlTime_;
+    Smooth dlFb_, dlWet_, dlDry_;
     DelayLine dlL_, dlR_;
     Biquad dlDamp_;
     bool delayOff_ = false, delayGated_ = false;
@@ -146,6 +156,7 @@ private:
     double sr_ = 48000;
     PeakGuard inputGuard_;
     Smooth masterGain_;
+    bool   gainPrimed_ = false;   // first setParams snaps masterGain_
     Biquad dcL_, dcR_;
     LookaheadLimiter lim_; // WebAudio-spec makeup applied inside, computed in prepare()
 };

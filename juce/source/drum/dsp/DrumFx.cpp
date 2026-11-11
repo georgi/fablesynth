@@ -459,6 +459,7 @@ void DrumReverb::process(float* inL, float* inR, float* outL, float* outR, int n
 // per-pad version it replaced, so a single sounding pad keeps its old loudness.
 void DrumBusOut::prepare(double sampleRate) {
     sr_ = sampleRate;
+    gainPrimed_ = false;
     inputGuard_.prepare(sr_);
     masterGain_.setTime(0.02, sr_);
     dcL_.highpass(8, 0.707, sr_);
@@ -483,6 +484,9 @@ void DrumBusOut::reset() {
 void DrumBusOut::setParams(const DrumParamArray& p) {
     const float vol = p[DG_MASTER_VOLUME];
     masterGain_.target = vol * vol * 1.6f;
+    // The first parameters after prepare() snap the gain, like the web
+    // worklet: the master volume does not fade in from 0 on load.
+    if (!gainPrimed_) { masterGain_.snap(masterGain_.target); gainPrimed_ = true; }
 }
 
 void DrumBusOut::process(float* L, float* R, int n) {

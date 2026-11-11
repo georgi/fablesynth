@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { bootWt } from './workletHarness';
+import { bootWtWasm } from './wtWasmHarness';
+import { makeBassWasmProcessor } from '../bass/engine/bassWasmHarness';
+import { makeDrumWasmProcessor } from '../drum/engine/drumWasmHarness';
 import { makeBassProcessor } from '../bass/engine/bassHarness';
 import { makeDrumProcessor } from '../drum/engine/workletHarness';
 import { defaultBassParams } from '../bass/params';
@@ -49,6 +52,18 @@ const factories = {
   DR1: () => {
     const h = makeDrumProcessor();
     h.send({ t: 'init', params: defaultDrumParams() });
+    return h;
+  },
+  // The C++ engines as WebAssembly (docs/wasm-sq4.md): the same contract.
+  'WT1 wasm': () => bootWtWasm(),
+  'BL1 wasm': () => {
+    const h = makeBassWasmProcessor();
+    h.sendInit(defaultBassParams());
+    return h;
+  },
+  'DR1 wasm': () => {
+    const h = makeDrumWasmProcessor();
+    h.sendInit(defaultDrumParams());
     return h;
   },
 };

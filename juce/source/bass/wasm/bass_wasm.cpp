@@ -10,6 +10,7 @@
 #include "../dsp/BassEngine.h"
 #include "../dsp/BassFx.h"
 #include "../dsp/BassParams.h"
+#include "../../dsp/wasm/HostedWasm.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -41,12 +42,31 @@ float telemetry[kTelemetryValues];
 uint32_t telemetrySerial = 0;
 
 std::vector<std::shared_ptr<GeneratedTable>> staging;
+wasm::Hosted hosted;
+bool hostOn = false;
+
+// The arp held in arpNotes/arpFlags (written by the worklet before the call).
+ArpPattern readArp(int enabled, double rate, double gate, int length) {
+    ArpPattern a;
+    a.enabled = enabled != 0;
+    if (a.enabled) {
+        a.rate = rate; a.gate = gate;
+        a.length = std::clamp(length, 16, kMaxArpCycle);
+        std::copy(arpNotes, arpNotes + a.length, a.notes.begin());
+        for (int i = 0; i < 16; ++i) {
+            a.hits[(size_t)i] = arpFlags[i] != 0;
+            a.accents[(size_t)i] = arpFlags[16 + i] != 0;
+            a.slides[(size_t)i] = arpFlags[32 + i] != 0;
+        }
+    }
+    return a;
+}
 
 } // namespace
 
 // ---- lifecycle ----
 BL_EXPORT void bl_create() {
-    if (!engine) { engine = new BassEngine(); fx = new BassFx(); }
+    if (!engine) { engine = new BassEngine(); fx = new BassFx(); hosted.create(); }
 }
 BL_EXPORT void bl_prepare(double sampleRate) {
     engine->prepare(sampleRate);
@@ -120,46 +140,64 @@ BL_EXPORT int* bl_arp_notes_ptr() { return arpNotes; }
 BL_EXPORT uint8_t* bl_arp_flags_ptr() { return arpFlags; }
 BL_EXPORT int bl_arp_max() { return kMaxArpCycle; }
 BL_EXPORT void bl_set_arp(int enabled, double rate, double gate, int length) {
-    ArpPattern a;
-    a.enabled = enabled != 0;
-    if (a.enabled) {
-        a.rate = rate; a.gate = gate;
-        a.length = std::clamp(length, 16, kMaxArpCycle);
-        std::copy(arpNotes, arpNotes + a.length, a.notes.begin());
-        for (int i = 0; i < 16; ++i) {
-            a.hits[(size_t)i] = arpFlags[i] != 0;
-            a.accents[(size_t)i] = arpFlags[16 + i] != 0;
-            a.slides[(size_t)i] = arpFlags[32 + i] != 0;
-        }
-    }
-    engine->setArp(a);
+    engine->setArp(readArp(enabled, rate, gate, length));
 }
 BL_EXPORT int8_t* bl_scale_ptr() { return scaleTable; }
-BL_EXPORT void bl_set_scale(int length) {
-    ScaleMap m;
-    m.length = std::clamp(length, 0, 64);
-    for (int t = 0; t < m.length; ++t)
-        for (int k = 0; k < 12; ++k) m.table[(size_t)t][(size_t)k] = scaleTable[t * 12 + k];
-    engine->setSeqScale(m);
-}
+BL_EXPORT void bl_set_scale(int length) { engine->setSeqScale(wasm::scaleMap(scaleTable, length)); }
 BL_EXPORT void bl_set_rhythm(int enabled, int fit, int steps, int rotation, int cycleBeats) {
-    SequenceRhythm r;
-    r.enabled = enabled != 0; r.fit = fit != 0;
-    r.steps = steps; r.rotation = rotation; r.cycleBeats = cycleBeats;
-    engine->setSequenceRhythm(r);
+    engine->setSequenceRhythm(wasm::sequenceRhythm(enabled, fit, steps, rotation, cycleBeats));
 }
+
+// ---- SQ-4 hosted clips (docs/wasm-sq4.md): the BassEngine calls SeqProcessor uses ----
+BL_EXPORT void bl_host(int on) {
+    hostOn = on != 0;
+    engine->setHostClipMode(hostOn, kBlock);
+}
+// Full panic: drop the playing and pending clip (and its automation).
+BL_EXPORT void bl_host_clear() {
+    engine->setHostClipMode(false);
+    if (hostOn) engine->setHostClipMode(true, kBlock);
+}
+BL_EXPORT void bl_host_tempo(double bpm, double swing, double anchor) { engine->hostTempo(bpm, swing, anchor); }
+BL_EXPORT uint8_t* bl_clip_ptr() { return hosted.clip; }
+BL_EXPORT int bl_clip_max() { return wasm::kClipBytes; }
+BL_EXPORT float* bl_auto_lane(int index, int paramId, int len, int fit, int rot, int isFx) {
+    return hosted.lane(index, paramId, BL_NUM_PARAMS, len, fit, rot, isFx);
+}
+BL_EXPORT int bl_auto_max_lanes() { return AUTO_MAX_LANES; }
+// Clip bytes in bl_clip_ptr, the arp in the arp buffers, the scale in
+// bl_scale_ptr, the automation in the staged lanes (autoCount < 0: none).
+// update != 0 hot-swaps the pending or playing clip (atFrame, tag unused).
+BL_EXPORT void bl_host_clip(int update, int bytes, int bars, double atFrame, int tag,
+                            int arpOn, double rate, double gate, int length,
+                            int rOn, int rFit, int rSteps, int rRot, int rCycle,
+                            int scaleLen, int autoCount) {
+    bytes = std::clamp(bytes, 0, wasm::kClipBytes);
+    const ArpPattern arp = readArp(arpOn, rate, gate, length);
+    const SequenceRhythm rhythm = wasm::sequenceRhythm(rOn, rFit, rSteps, rRot, rCycle);
+    const ScaleMap scale = wasm::scaleMap(scaleTable, scaleLen);
+    const AutoBank* automation = hosted.automation(autoCount);
+    if (update) engine->hostClipUpdate(hosted.clip, bytes, bars, arp, automation, rhythm, scale);
+    else engine->hostClip(hosted.clip, bytes, bars, atFrame, tag, arp, automation, rhythm, scale);
+}
+BL_EXPORT void bl_host_stop(double atFrame) { engine->hostClipStop(atFrame); }
+BL_EXPORT double* bl_events_ptr() { return hosted.events; }
+BL_EXPORT int bl_events_take() { return hosted.take(*engine); }
 
 // ---- render: one quantum into the static L/R buffers ----
 BL_EXPORT float* bl_out_l() { return outL; }
 BL_EXPORT float* bl_out_r() { return outR; }
-BL_EXPORT void bl_render(int n) {
+// frame: the block's first context frame (the SQ-4 shared timebase).
+BL_EXPORT void bl_render(int n, double frame) {
     n = std::clamp(n, 0, kBlock);
+    engine->hostSetFrame(frame);
     if (fxDirty) {
         fx->setParams(engine->params());
         if (fxSnap) { fx->snapRamps(); fxSnap = false; }
         fxDirty = false;
     }
     engine->render(outL, outR, n);
+    if (engine->takeAutomationFxDirty()) fx->setParams(engine->params()); // SeqProcessor::renderBass
     fx->process(outL, outR, n);
 }
 

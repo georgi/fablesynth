@@ -26,6 +26,8 @@
     "patterns:generate": "node scripts/generate-pattern-library.mjs",
     "patterns:check": "node scripts/generate-pattern-library.mjs --check",
     "wasm:bass": "bash scripts/build-bass-wasm.sh",
+    "wasm:wt": "bash scripts/build-wt-wasm.sh",
+    "wasm:drum": "bash scripts/build-drum-wasm.sh",
     "kits:levels": "KIT_LEVELS=write vitest run src/drum/kitLevels.generate.test.ts",
     "kits:levels:check": "KIT_LEVELS=check vitest run src/drum/kitLevels.generate.test.ts"
   },

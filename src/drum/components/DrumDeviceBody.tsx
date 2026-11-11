@@ -1,6 +1,7 @@
 // DR-1 device body: the JUCE page layout (juce/source/drum/DrumDeviceBody.cpp).
 // The pad sidebar stays on EDIT and PAD FX; GROUP FX and SEQUENCER take the
-// full width. The tabs sit at the top of the editor column on every page.
+// full width. The tabs keep the same position on every page, so a page switch
+// does not move them.
 
 import { useState } from 'react';
 import { DeviceTabs, type DeviceTab } from '../../components/DeviceTabs';
@@ -39,21 +40,23 @@ export function DrumDeviceBody() {
   };
   const tabs = <DeviceTabs tabs={TABS} page={page} onSelect={select} label="DR-1 pages" />;
 
-  if (page === 'seq') {
+  if (page === 'seq' || page === 'groupFx') {
     return (
-      <div className="device-body dr-body" data-page="seq">
+      <div className="device-body dr-body" data-page={page}>
         <div className="dr-main"><div />{tabs}</div>
-        <div id="dr-stepseq"><StepSeq /></div>
+        {page === 'seq'
+          ? <div id="dr-stepseq"><StepSeq /></div>
+          : <div id="dr-fxrack"><FxRack scopeSwitch={false} /></div>}
       </div>
     );
   }
   return (
     <div className="device-body dr-body" data-page={page}>
-      <div className={`dr-main${page === 'groupFx' ? ' no-pads' : ''}`}>
-        {page !== 'groupFx' && <div className="dr-left">
+      <div className="dr-main">
+        <div className="dr-left">
           <div id="dr-pads"><PadGrid /></div>
           <div id="dr-padstrip"><PadStrip /></div>
-        </div>}
+        </div>
         <div className="dr-right">
           {tabs}
           {page === 'edit' ? (

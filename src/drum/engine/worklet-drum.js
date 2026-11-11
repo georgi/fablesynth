@@ -1136,7 +1136,7 @@ class PadVoice {
     this.ampLevel = 0; this.choking = false; this.chokeSm = 0;
     this.oA = makeOscState(); this.sample = makeSampleState();
     this.f = makeFilterState();
-    this.noiseY = 0;
+    this.noiseY = 0; this.noiseRng = new Rng(0x9e3779b9);
     this.ringPhase = 0.25;
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
   }
@@ -1781,6 +1781,10 @@ class DrumProcessor extends AudioWorkletProcessor {
     }
     const v = this.voices[padI];
     v.trigger(Math.max(0, Math.min(1, Number.isFinite(vel) ? vel : 1)), this.rng.uni());
+    // Per-hit noise generator (DrumEngine::trigger does the same): with one
+    // shared generator, every later noise hit depended on how many samples
+    // earlier voices rendered before their kill, i.e. on the render chunking.
+    v.noiseRng.s = this.rng.next() || 0x9e3779b9;
     const f = this.padIds[padI];
     const phaseA = (Math.max(0, Math.min(1, pv[f[OSC_A + A_PHASE]])) * 2048) % 2048;
     for (let i = 0; i < MAXUNI; i++) v.oA.phases[i] = phaseA;
@@ -2168,7 +2172,7 @@ class DrumProcessor extends AudioWorkletProcessor {
     if (noiseGain > 1e-6) {
       const color = Math.min(1, Math.max(-1, pv[f[P_NOISE_COLOR]]));
       const a = mapPole(0.02 + (color + 1) * 0.49, sampleRate);
-      const rng = this.rng;
+      const rng = v.noiseRng;
       let y = v.noiseY;
       for (let i = 0; i < n; i++) {
         y += (rng.uni() - y) * a;
@@ -2548,7 +2552,14 @@ class DrumProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < NPADS; i++) this.padFx[i].setParams(this.pv, this.padIds[i]);
       for (let b = 0; b < BUSES; b++) this.groupFx[b].setParams(this.pv, this.groupFxIds);
       const vol = this.pv[G_VOL];
-      for (const b of this.busOut) b.gain.target = vol * vol * 1.6;
+      // The first parameters snap the master gain: a gated bus does not run
+      // its smoother, so a ramp from 0 would fade in the first hit after any
+      // silence. The native DrumBusOut snaps on its first setParams too.
+      for (const b of this.busOut) {
+        b.gain.target = vol * vol * 1.6;
+        if (!this.busGainPrimed) b.gain.snap(b.gain.target);
+      }
+      this.busGainPrimed = true;
     }
     const busL = this.busL, busR = this.busR, vinL = this.verbInL, vinR = this.verbInR;
     for (let b = 0; b < BUSES; b++) {

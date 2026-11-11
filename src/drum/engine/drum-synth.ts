@@ -9,6 +9,8 @@ import { generateDrumTables } from './drumtables';
 import { generateSampledDrumTables } from './sampledtables.gen';
 import { loadDrumOneShots, type DrumOneShot } from './oneshots.gen';
 import workletUrl from './worklet-drum.js?url';
+import wasmWorkletUrl from './worklet-drum-wasm.js?url';
+import dr1WasmUrl from './wasm/dr1.wasm?url';
 import labWorkletUrl from '../../engine/lab-worklet.js?url';
 import ottWorkletUrl from '../../engine/ott-worklet.js?url';
 import type { DynamicsMessage } from '../../engine/dynamics';
@@ -155,6 +157,12 @@ export class DrumEngine {
     this.latencySamples = 0;
   }
 
+  // Proof of concept (docs/wasm-dr1.md): /drum/?engine=wasm runs the C++
+  // engine compiled to WebAssembly. Without the flag nothing changes.
+  static useWasm(): boolean {
+    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('engine') === 'wasm';
+  }
+
   async init(opts: EngineInitOpts = {}): Promise<void> {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
@@ -162,13 +170,15 @@ export class DrumEngine {
     this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(ottWorkletUrl);
     await ctx.audioWorklet.addModule(labWorkletUrl);
-    await ctx.audioWorklet.addModule(workletUrl);
+    const wasm = DrumEngine.useWasm();
+    const wasmBytes = wasm ? await (await fetch(dr1WasmUrl)).arrayBuffer() : null;
+    await ctx.audioWorklet.addModule(wasm ? wasmWorkletUrl : workletUrl);
 
     this.builtInTables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()];
     this.samples = await loadDrumOneShots();
     this.refreshViz();
 
-    this.node = new AudioWorkletNode(ctx, 'fable-dr', {
+    this.node = new AudioWorkletNode(ctx, wasm ? 'fable-dr-wasm' : 'fable-dr', {
       // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
       numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
       // One stereo output per bus, plus a mono KICK key (pad 01) at BUS_COUNT.
@@ -193,7 +203,7 @@ export class DrumEngine {
       if (e.data.t === 'echo' && (e.data.pad === undefined || e.data.pad === this.meterPad)) this.echoListeners.forEach(listener => listener(e.data as EchoMessage));
       if (e.data.t === 'reverb' && (e.data.pad === undefined || e.data.pad === this.meterPad) && (e.data.bus === undefined || e.data.bus === this.meterBus)) this.reverbListeners.forEach(listener => listener(e.data as ReverbMessage));
     };
-    this.node.port.postMessage({ t: 'init', params: this.params });
+    this.node.port.postMessage(wasmBytes ? { t: 'init', params: this.params, wasm: wasmBytes } : { t: 'init', params: this.params }, wasmBytes ? [wasmBytes] : []);
     this.ready = true;
     guardAudioNavigation(ctx);
     if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
