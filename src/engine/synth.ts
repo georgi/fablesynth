@@ -17,6 +17,8 @@ import { defaultParams, type ParamValues } from '../params';
 import workletUrl from './worklet.js?url';
 import ottWorkletUrl from './ott-worklet.js?url';
 import labWorkletUrl from './lab-worklet.js?url';
+import wasmWorkletUrl from './worklet-wasm.js?url';
+import wt1WasmUrl from './wasm/wt1.wasm?url';
 import type { DynamicsMessage } from './dynamics';
 import type { EchoMessage } from './echo';
 import type { ReverbMessage } from './reverb';
@@ -146,6 +148,12 @@ export class SynthEngine {
     return this.ready ? this.latencySamples / this.ctx.sampleRate : 0;
   }
 
+  // docs/wasm-wt1.md: ?engine=wasm runs the C++ engine compiled to
+  // WebAssembly. Without the flag nothing changes.
+  static useWasm(): boolean {
+    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('engine') === 'wasm';
+  }
+
   async init(opts: EngineInitOpts = {}): Promise<void> {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
@@ -153,12 +161,14 @@ export class SynthEngine {
     this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(ottWorkletUrl);
     await ctx.audioWorklet.addModule(labWorkletUrl);
-    await ctx.audioWorklet.addModule(workletUrl);
+    const wasm = SynthEngine.useWasm();
+    const wasmBytes = wasm ? await (await fetch(wt1WasmUrl)).arrayBuffer() : null;
+    await ctx.audioWorklet.addModule(wasm ? wasmWorkletUrl : workletUrl);
 
     this.procTables = generateTables();
     this.refreshViz();
 
-    this.node = new AudioWorkletNode(ctx, 'fable-wt', {
+    this.node = new AudioWorkletNode(ctx, wasm ? 'fable-wt-wasm' : 'fable-wt', {
       // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
       numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
       numberOfOutputs: 1,
@@ -177,7 +187,7 @@ export class SynthEngine {
       else if (e.data.t === 'echo') this.echoListeners.forEach(listener => listener(e.data as EchoMessage));
       else if (e.data.t === 'reverb') this.reverbListeners.forEach(listener => listener(e.data as ReverbMessage));
     };
-    this.node.port.postMessage({ t: 'init', params: this.params });
+    this.node.port.postMessage(wasmBytes ? { t: 'init', params: this.params, wasm: wasmBytes } : { t: 'init', params: this.params }, wasmBytes ? [wasmBytes] : []);
     this.ready = true;
     guardAudioNavigation(ctx);
     if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });

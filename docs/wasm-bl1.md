@@ -92,8 +92,8 @@ peak output RMS was -4.4 dBFS. There were no console errors.
 
 ## Not implemented
 
-- The hosted SQ-4 messages `host`, `tempo`, `clip`, `clipstop`, `clipupdate` and
-  `auto` are ignored. The worklet sends no `clipstart`, `clipstop` or `pos`.
+- The hosted SQ-4 messages are implemented. See `docs/wasm-sq4.md` for the
+  remaining hosted differences.
 - The side-chain key input is not connected to `BassFx::process`.
 - `comp.trace` in `dynamics` is always empty. `echo.input` is always -90 dB
   because the native meter does not measure the delay input.
@@ -118,6 +118,5 @@ Before you start each engine:
 
 1. Fix or accept the JS/C++ differences that the parity test finds. NEON
    SQUELCH shows that the two engines do not sound identical now.
-2. Implement the hosted SQ-4 protocol in the wrapper. This is the largest
-   missing piece, because SQ-4 hosts every device.
+2. Done: the wrapper implements the hosted SQ-4 protocol (`docs/wasm-sq4.md`).
 3. Make wasm the default only after a listening comparison.
