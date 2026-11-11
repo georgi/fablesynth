@@ -246,6 +246,8 @@ describe('drum voice', () => {
   it('normal retriggers render bit-identical to the pre-collision-fix engine', () => {
     // FNV-1a over the float bits; pinned before the collision fade slot was
     // added. Spacings 30 ms and 250 ms never put two hits inside one fade.
+    // Re-pinned when the bus gain began to snap on the first parameters
+    // instead of fading in from 0 (docs/wasm-dr1.md); voices are unchanged.
     const hr = boot(holdParams());
     const parts: Float32Array[] = [];
     for (const blocks of [500, 60, 10]) {
@@ -256,7 +258,7 @@ describe('drum voice', () => {
     const bits = new Uint32Array(cat(...parts).buffer);
     let hsh = 0x811c9dc5;
     for (const b of bits) { hsh ^= b; hsh = Math.imul(hsh, 0x01000193) >>> 0; }
-    expect(hsh.toString(16)).toBe('8c54ac34');
+    expect(hsh.toString(16)).toBe('86db4609');
   });
 });
 
