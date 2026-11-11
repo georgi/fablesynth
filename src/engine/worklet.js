@@ -295,6 +295,10 @@ const LP24_K_MIN = 0.002; // Q = 500 damping floor
 // Declick slew on the amp env (s). Rounds the corners of a fast attack,
 // release or steal fade without audibly softening the transient.
 const AMP_SLEW_SEC = 0.0003;
+// Velocity gain slew (s). A mono retrigger with a new velocity steps the
+// gain of a sounding voice; 4 ms removes that click. A note from silence
+// (or after a steal fade) starts at its own gain.
+const VEL_SLEW_SEC = 0.004;
 
 // Longest tuned-comb delay. Match native's sample-rate-aware capacity so the
 // 20 Hz lower cutoff remains representable at 96 kHz and above.
@@ -722,6 +726,7 @@ class Voice {
     this.f1 = makeFilterState(); this.f2 = makeFilterState();
     this.dcxL = 0; this.dcxR = 0; this.dcyL = 0; this.dcyR = 0;
     this.ampSm = 0; // declick-slewed amp env level (AMP_SLEW_SEC)
+    this.velSm = -1; // slewed velGain (VEL_SLEW_SEC); -1 = note from silence
   }
   // A voice sounds until its slewed amp level is silent too.
   get active() { return this.ampEnv.state !== 0 || this.ampSm > 1e-4; }
@@ -731,7 +736,7 @@ class Voice {
   noteOn(note, vel, startPitch, age, rng, phaseRandA, phaseRandB, modRng) {
     this.note = note; this.vel = vel; this.gate = true; this.age = age;
     this.pitch = startPitch;
-    this.velGain = 0.25 + 0.75 * vel * vel;
+    this.velGain = 0.25 + 0.75 * vel * vel; this.velSm = -1;
     this.ampEnv.trigger(); this.modEnv.trigger(); this.modEnv2.trigger();
     this.lfo1.reset(rng); this.lfo2.reset(rng);
     this.lfo3.reset(modRng); this.lfo4.reset(modRng); this.rand = modRng.next();
@@ -759,7 +764,7 @@ class Voice {
     this.lfo3.reset(modRng); this.lfo4.reset(modRng); this.rand = modRng.next();
   }
   noteOff() { this.gate = false; this.ampEnv.release(); this.modEnv.release(); this.modEnv2.release(); }
-  kill() { this.gate = false; this.pending = null; this.ampEnv.kill(); this.modEnv.kill(); this.modEnv2.kill(); this.ampSm = 0; }
+  kill() { this.gate = false; this.pending = null; this.ampEnv.kill(); this.modEnv.kill(); this.modEnv2.kill(); this.ampSm = 0; this.velSm = -1; }
 }
 
 // ---------- FX chain (finding W6) ----------
@@ -2856,6 +2861,8 @@ class FableProcessor extends AudioWorkletProcessor {
     const dAf = (ampFactor - af0) / n;
     const dcR = this.dcR;
     const slewK = 1 - Math.exp(-1 / (AMP_SLEW_SEC * sampleRate));
+    const velK = 1 - Math.exp(-1 / (VEL_SLEW_SEC * sampleRate));
+    if (v.velSm < 0) v.velSm = v.velGain;
     for (let i = 0; i < n; i++) {
       const sl = oL[i], sr = oR[i];
       // Per-voice DC blocker (1-pole highpass, ~3.5 Hz) — removes DC before
@@ -2865,7 +2872,8 @@ class FableProcessor extends AudioWorkletProcessor {
       v.dcxL = sl; v.dcyL = yL;
       v.dcxR = sr; v.dcyR = yR;
       v.ampSm += (v.ampEnv.process() - v.ampSm) * slewK;
-      const amp = v.ampSm * v.velGain * (af0 + dAf * i);
+      v.velSm += (v.velGain - v.velSm) * velK;
+      const amp = v.ampSm * v.velSm * (af0 + dAf * i);
       L[lo + i] += yL * amp;
       R[lo + i] += yR * amp;
     }

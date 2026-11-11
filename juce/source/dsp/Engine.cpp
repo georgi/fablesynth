@@ -68,6 +68,10 @@ static constexpr double STEAL_FADE_SEC = 0.004;
 // Declick slew on the amp env (s). Rounds the corners of a fast attack,
 // release or steal fade without audibly softening the transient.
 static constexpr double AMP_SLEW_SEC = 0.0003;
+// Velocity gain slew (s). A mono retrigger with a new velocity steps the
+// gain of a sounding voice; 4 ms removes that click. A note from silence
+// (or after a steal fade) starts at its own gain.
+static constexpr double VEL_SLEW_SEC = 0.004;
 
 // ---------------- Env ----------------
 void Env::set(double a, double d, double sus, double r, double sr) {
@@ -201,7 +205,7 @@ void FilterState::reset() {
 // ---------------- Voice ----------------
 void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng) {
     note = n; vel = v; gate = true; age = a; pitch = startPitch;
-    velGain = 0.25 + 0.75 * v * v;
+    velGain = 0.25 + 0.75 * v * v; velSm = -1;
     ampEnv.trigger(); modEnv.trigger(); modEnv2.trigger();
     lfo1.rng = &rng; lfo2.rng = &rng;
     lfo1.reset(); lfo2.reset();
@@ -1573,6 +1577,8 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     double af0 = v.ampFacPrev >= 0 ? v.ampFacPrev : ampFactor;
     double dAf = (ampFactor - af0) / n;
     const double slewK = 1 - std::exp(-1.0 / (AMP_SLEW_SEC * sr_));
+    const double velK = 1 - std::exp(-1.0 / (VEL_SLEW_SEC * sr_));
+    if (v.velSm < 0) v.velSm = v.velGain;
     for (int i = 0; i < n; i++) {
         double sl = oL[i], sr = oR[i];
         double yL = sl - v.dcxL + dcR_ * v.dcyL;
@@ -1580,7 +1586,8 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         v.dcxL = sl; v.dcyL = yL;
         v.dcxR = sr; v.dcyR = yR;
         v.ampSm += (v.ampEnv.process() - v.ampSm) * slewK;
-        double amp = v.ampSm * v.velGain * (af0 + dAf * i);
+        v.velSm += (v.velGain - v.velSm) * velK;
+        double amp = v.ampSm * v.velSm * (af0 + dAf * i);
         L[i] += (float)(yL * amp);
         R[i] += (float)(yR * amp);
     }

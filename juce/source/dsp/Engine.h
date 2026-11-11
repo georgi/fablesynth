@@ -187,6 +187,7 @@ public:
     double dcxL = 0, dcxR = 0, dcyL = 0, dcyR = 0;
     double ampFacPrev = -1;            // AMP-mod factor ramp start (Finding 7)
     double ampSm = 0;                  // declick-slewed amp env level (AMP_SLEW_SEC)
+    double velSm = -1;                 // slewed velGain (VEL_SLEW_SEC); -1 = note from silence
 
     // ---- discrete-switch crossfades (finding J2) ----
     // Filter section: the topology actually rendered last chunk, the frozen
@@ -218,7 +219,7 @@ public:
         lfo1.reset(); lfo2.reset(); lfo3.reset(); lfo4.reset(); rand = modRng.next();
     }
     void   noteOff() { gate = false; ampEnv.release(); modEnv.release(); modEnv2.release(); }
-    void   kill()    { gate = false; hasPending = false; ampEnv.kill(); modEnv.kill(); modEnv2.kill(); ampSm = 0; }
+    void   kill()    { gate = false; hasPending = false; ampEnv.kill(); modEnv.kill(); modEnv2.kill(); ampSm = 0; velSm = -1; }
 };
 
 // Engine table view — mirrors the worklet's {frames,mips,size,mask,data}.

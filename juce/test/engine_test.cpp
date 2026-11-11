@@ -2289,5 +2289,43 @@ int main(int argc, char** argv) {
               "mono without legato retriggers the envelope");
     }
 
+    printf("\n== WT-1 mono velocity retrigger has no HF burst ==\n");
+    {
+        // A sine sub with full sustain and both filters off: a mono retrigger
+        // at the same pitch changes only the velocity gain. Energy above
+        // ~1.5 kHz is the click: -17 dB unslewed, -47 dB with a 1 ms slew,
+        // -59 dB with the 4 ms slew.
+        auto e = std::make_unique<Engine>(); e->prepare(48000); e->setTables(tables);
+        ParamArray p = defaultParams();
+        p[MASTER_MONO] = 1; p[MASTER_LEGATO] = 0;
+        p[paramIndex(OSCA_BASE, OSC_ON)] = 0; p[paramIndex(OSCB_BASE, OSC_ON)] = 0;
+        p[SUB_ON] = 1; p[SUB_SHAPE] = 0; p[SUB_LEVEL] = 1; p[NOISE_ON] = 0;
+        p[paramIndex(FILTER1_BASE, FLT_ON)] = 0; p[paramIndex(FILTER2_BASE, FLT_ON)] = 0;
+        p[ENV1_BASE] = 0; p[ENV1_BASE + 2] = 1;
+        e->setParams(p);
+        std::vector<float> x(19200), R(19200);
+        e->noteOn(48, 1.0);
+        for (int at = 0; at < 9600; at += 128) e->render(x.data() + at, R.data() + at, 128);
+        e->noteOn(48, 0.25);                  // same pitch, about 12 dB quieter
+        for (int at = 9600; at < 19200; at += 128) e->render(x.data() + at, R.data() + at, 128);
+        double level = 0;
+        for (int i = 4800; i < 9600; i++) level = std::max(level, (double)std::abs(x[(size_t)i]));
+        // Four cascaded one-pole high-passes at 1.5 kHz.
+        const double c = std::exp(-2 * M_PI * 1500.0 / 48000.0);
+        std::vector<double> y(x.begin(), x.end());
+        for (int s = 0; s < 4; s++) {
+            double px = 0, py = 0;
+            for (auto& v : y) { const double o = c * (py + v - px); px = v; py = o; v = o; }
+        }
+        double steady = 0, burst = 0;
+        for (int i = 4800; i < 9600; i++) steady = std::max(steady, std::abs(y[(size_t)i]));
+        for (int i = 9600; i < 9600 + 960; i++) burst = std::max(burst, std::abs(y[(size_t)i]));
+        const double db = 20 * std::log10(std::max(burst, 1e-12) / std::max(level, 1e-12));
+        check(level > 0.05 && db < -54, "velocity gain ramps on a mono retrigger",
+              "burst " + std::to_string(db) + " dB, steady " +
+              std::to_string(20 * std::log10(std::max(steady, 1e-12) / std::max(level, 1e-12))) +
+              " dB, level " + std::to_string(level));
+    }
+
     return g_fail == 0 ? 0 : 1;
 }
