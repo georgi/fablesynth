@@ -13,6 +13,8 @@ import { generateTables, type GeneratedTable } from '../../engine/wavetables';
 import { type ParamValues } from '../../params';
 import { defaultBassParams } from '../params';
 import workletUrl from './worklet-bass.js?url';
+import wasmWorkletUrl from './worklet-bass-wasm.js?url';
+import bl1WasmUrl from './wasm/bl1.wasm?url';
 import ottWorkletUrl from '../../engine/ott-worklet.js?url';
 import type { DynamicsMessage } from '../../engine/dynamics';
 import type { EchoMessage } from '../../engine/echo';
@@ -113,18 +115,26 @@ export class BassEngine {
     this.output = null;
   }
 
+  // Proof of concept (docs/wasm-bl1.md): /bass/?engine=wasm runs the C++
+  // engine compiled to WebAssembly. Without the flag nothing changes.
+  static useWasm(): boolean {
+    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('engine') === 'wasm';
+  }
+
   async init(opts: EngineInitOpts = {}): Promise<void> {
     const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = opts.ctx ?? new Ctor({ latencyHint: 'interactive' });
     this.ctx = ctx;
     this.output = opts.output ?? null;
     await ctx.audioWorklet.addModule(ottWorkletUrl);
-    await ctx.audioWorklet.addModule(workletUrl);
+    const wasm = BassEngine.useWasm();
+    const wasmBytes = wasm ? await (await fetch(bl1WasmUrl)).arrayBuffer() : null;
+    await ctx.audioWorklet.addModule(wasm ? wasmWorkletUrl : workletUrl);
 
     this.builtInTables = generateTables();
     this.tables = this.builtInTables.map((t) => ({ name: t.name, frames: t.frames, viz: t.viz }));
 
-    this.node = new AudioWorkletNode(ctx, 'fable-bl', {
+    this.node = new AudioWorkletNode(ctx, wasm ? 'fable-bl-wasm' : 'fable-bl', {
       // Side-chain key bus (src/engine/sidechain.ts); unconnected when standalone.
       numberOfInputs: 1, channelCount: KEY_CHANNELS, channelCountMode: 'explicit', channelInterpretation: 'discrete',
       numberOfOutputs: 1,
@@ -140,7 +150,7 @@ export class BassEngine {
       if (e.data.t === 'echo') this.echoListeners.forEach(listener => listener(e.data as EchoMessage));
       if (e.data.t === 'reverb') this.reverbListeners.forEach(listener => listener(e.data as ReverbMessage));
     };
-    this.node.port.postMessage({ t: 'init', params: this.params });
+    this.node.port.postMessage(wasmBytes ? { t: 'init', params: this.params, wasm: wasmBytes } : { t: 'init', params: this.params }, wasmBytes ? [wasmBytes] : []);
     this.ready = true;
     guardAudioNavigation(ctx);
     if (this.dynamicsListeners.size) this.node.port.postMessage({ t: 'dynamics', on: true });
