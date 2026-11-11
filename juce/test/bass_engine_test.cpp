@@ -285,6 +285,42 @@ int main() {
               num(jump) + " at level " + num(level));
     }
 
+    printf("\n== velocity retrigger on a sounding voice has no HF burst ==\n");
+    {
+        // A sine sub at C2 with full sustain and no filter env: a retrigger
+        // changes only the gain. Any energy above ~1.5 kHz is the click that
+        // the gain ramp spreads. The audible 1 ms ramp reaches -58 dB here;
+        // the 4 ms ramp reaches -70 dB.
+        BassEngine e;
+        e.prepare(SR);
+        e.setTables(tables);
+        auto& p = e.params();
+        p[BL_OSC_LEVEL] = 0; p[BL_SUB_LEVEL] = 1; p[BL_SUB_SHAPE] = 0;
+        p[BL_AENV_ATT] = 0; p[BL_AENV_SUS] = 1; p[BL_FLT_ENV] = 0;
+        e.snapParams();
+        e.keyOn(0, 1.0f);
+        auto a = render(e, 9600);
+        const double level = rms(a, 4800, 9600) * std::sqrt(2.0);
+        e.keyOff(0);
+        e.keyOn(0, 0.25f);                    // same pitch, 12 dB quieter
+        auto b = render(e, 4800);
+        // Four cascaded one-pole high-passes at 1.5 kHz over the joined render.
+        std::vector<float> x(a);
+        x.insert(x.end(), b.begin(), b.end());
+        const double c = std::exp(-2 * M_PI * 1500.0 / SR);
+        std::vector<double> y(x.begin(), x.end());
+        for (int s = 0; s < 4; s++) {
+            double px = 0, py = 0;
+            for (auto& v : y) { const double o = c * (py + v - px); px = v; py = o; v = o; }
+        }
+        double burst = 0, steady = 0;
+        for (int i = 4800; i < 9600; i++) steady = std::max(steady, std::abs(y[(size_t)i]));
+        for (int i = 9600; i < 9600 + 960; i++) burst = std::max(burst, std::abs(y[(size_t)i]));
+        const double db = 20 * std::log10(std::max(burst, 1e-12) / level);
+        check(db < -63, "gain ramp keeps the retrigger burst below -63 dB",
+              num(db) + " dB (steady " + num(20 * std::log10(std::max(steady, 1e-12) / level)) + " dB)");
+    }
+
     printf("\n== legato slide (last-note priority) ==\n");
     {
         BassEngine e;

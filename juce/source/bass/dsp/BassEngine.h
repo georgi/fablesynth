@@ -37,7 +37,9 @@ constexpr double BL_DC_R        = 0.9998;
 constexpr double BL_AMP_SLEW    = 0.0003;
 // Accent/velocity gain slew (s): time-based, so a gain change never depends
 // on how the host block splits the render.
-constexpr double BL_GAIN_SLEW   = 0.001;
+// 4 ms: a retrigger that changes accent or velocity on a sounding voice
+// clicked at 1 ms. A note from silence still starts at its own gain.
+constexpr double BL_GAIN_SLEW   = 0.004;
 // Filter env sweep span (octaves at flt.env = +/-100%) and LFO span (octaves
 // at depth = 100%). Accent multiplies the env peak and shortens its decay.
 constexpr double BL_FENV_OCT    = 5;

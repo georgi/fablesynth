@@ -52,7 +52,9 @@ const ACC_GAIN = 0.7;
 const AMP_SLEW = 0.0003;
 // Accent/velocity gain slew (s): time-based, so a gain change never depends
 // on how the render is split into chunks.
-const GAIN_SLEW = 0.001;
+// 4 ms: a retrigger that changes accent or velocity on a sounding voice
+// clicked at 1 ms. A note from silence still starts at its own gain.
+const GAIN_SLEW = 0.004;
 const ACC_DEC_SHORTEN = 0.35;
 const KEYTRACK_REF = 60;
 // DC blocker pole at the 48 kHz reference rate; remapped to the device rate in
