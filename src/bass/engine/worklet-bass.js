@@ -42,6 +42,12 @@ const PLAIN_VEL = 0.72;
 const GATE_FRAC = 0.55;
 const SWING_MAX = 0.667;
 const ROOT_MIDI = 36;
+// Shared DSP primitives (ott-worklet.js, loaded first).
+const {
+  ADAA_FADE_WIDTH, DRIVE_OS_RAMP_SEC, lcosh, adaaInput, makeDriveOs, resetDriveOs, copyDriveOs,
+  driveOsStep, rdH, subSquareTable, subSquareMip, subSquareRead, besselI0, LfoClock, Biquad,
+  DelayLine, LookaheadLimiter, FvComb, FvAllpass, mixGate,
+} = globalThis.FableDsp;
 // Filter env sweep span (octaves at flt.env = ±100%) and LFO span (octaves at
 // depth = 100%). Accent multiplies the env peak and shortens its decay.
 const FENV_OCT = 5;
@@ -73,153 +79,16 @@ const CUT_TAU = 128 / (48000 * Math.LN2);
 const ACC_TAU = 0.008;
 // Match the native ADAA transition: the drive amount is a linear blend over
 // the full 100 ms control range, rather than a block-size-dependent one-pole.
-const ADAA_FADE_WIDTH = 0.1;
-const ADAA_INPUT_LIMIT = 16;
 // Cutoff coefficient update rate inside a chunk (samples).
 const FLT_SUB = 32;
 // Cycles per beat for each lfo.rate index — mirrors LFO_DIV_F in src/params.ts.
 const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
-
-function lcosh(z) {
-  const a = Math.abs(z);
-  return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
-}
-
-function adaaInput(x) {
-  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
-}
-
-// 2x oversampler for the in-voice drive saturator. Only the nonlinearity runs
-// at 2x (interpolate -> ADAA tanh at the high rate -> decimate); the SVF stays
-// at the base rate. Both converters are the polyphase IIR half-band that
-// juce/source/dsp/DriveOs.h documents: allpass branches A0 = {c0, c2, c4} and
-// A1 = {c1, c3}. While the saturator is idle and the stage has faded out, the
-// input is returned unchanged (bit-identical to a voice without the stage); the
-// stage fades in and out over DRIVE_OS_RAMP_SEC with a linear crossfade.
-const DRIVE_OS_COEF = new Float64Array([
-  0.058131122888383423, 0.21191463147606193, 0.4170395803350932,
-  0.63844438482644794, 0.87095859811277021]);
-const DRIVE_OS_RAMP_SEC = 0.004;
-// Allpass state, (x1, y1) pairs: u0 at 0,2,4; u1 at 6,8; d0 at 10,12,14; d1 at 16,18.
-function makeDriveOs() {
-  return {
-    s: new Float64Array(20), dprev: 0,
-    xp: 0,   // previous high-rate ADAA input
-    F: 0,    // kF * lcosh(dg * xp), valid while the saturator is active
-    w: 0,    // stage weight: 0 = bypass, 1 = stage
-  };
-}
-function resetDriveOs(o) { o.s.fill(0); o.dprev = 0; o.xp = 0; o.F = 0; o.w = 0; }
-function copyDriveOs(d, s) { d.s.set(s.s); d.dprev = s.dprev; d.xp = s.xp; d.F = s.F; d.w = s.w; }
-function driveOsAp(s, i, a, x) {
-  const y = a * (x - s[i + 1]) + s[i];
-  s[i] = x; s[i + 1] = y;
-  return y;
-}
-function driveOsSat(o, a, xpv, dg, dcomp, kF) {
-  const dx = a - xpv;
-  const F = kF * lcosh(dg * a);
-  // |dx| tiny -> ADAA is numerically unstable; fall back to midpoint tanh.
-  const r = dx > 1e-5 || dx < -1e-5 ? (F - o.F) / dx : dcomp * Math.tanh(dg * 0.5 * (a + xpv));
-  o.F = F;
-  return r;
-}
-// One base-rate sample. engage: the stage belongs in the path; satOn: the
-// saturator runs with dry/wet mix m.
-function driveOsStep(o, x, engage, satOn, m, wStep, dg, dcomp, kF) {
-  const target = engage ? 1 : 0;
-  if (o.w < target) o.w = Math.min(target, o.w + wStep);
-  else if (o.w > target) o.w = Math.max(target, o.w - wStep);
-  if (o.w <= 0 && !engage) { o.xp = adaaInput(x); return x; }
-  const s = o.s, C = DRIVE_OS_COEF;
-  const u0 = driveOsAp(s, 4, C[4], driveOsAp(s, 2, C[2], driveOsAp(s, 0, C[0], x)));
-  const u1 = driveOsAp(s, 8, C[3], driveOsAp(s, 6, C[1], x));
-  const a0 = adaaInput(u0), a1 = adaaInput(u1);
-  let o0 = a0, o1 = a1;
-  if (satOn) {
-    o0 = a0 + m * (driveOsSat(o, a0, o.xp, dg, dcomp, kF) - a0);
-    o1 = a1 + m * (driveOsSat(o, a1, a0, dg, dcomp, kF) - a1);
-  }
-  o.xp = a1;
-  const da = driveOsAp(s, 14, C[4], driveOsAp(s, 12, C[2], driveOsAp(s, 10, C[0], o0)));
-  const db = driveOsAp(s, 18, C[3], driveOsAp(s, 16, C[1], o1));
-  const y = 0.5 * (da + o.dprev);
-  o.dprev = db;
-  return o.w >= 1 ? y : x + o.w * (y - x);
-}
 
 // One-pole coefficient for n samples at time constant tauSr (in samples).
 function smoothCoef(n, tauSr) {
   return 1 - Math.exp(-n / tauSr);
 }
 
-// Cubic Hermite (Catmull-Rom) table read, indices pre-wrapped. Mirrors rdH in
-// juce/source/bass/dsp/BassEngine.cpp — 10-20 dB less interpolation image than
-// the linear read it replaces.
-function rdH(d, off, im1, i0, i1, i2, f) {
-  const ym1 = d[off + im1], y0 = d[off + i0], y1 = d[off + i1], y2 = d[off + i2];
-  const c1 = 0.5 * (y1 - ym1);
-  const c2 = ym1 - 2.5 * y0 + 2 * y1 - 0.5 * y2;
-  const c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
-  return ((c3 * f + c2) * f + c1) * f + y0;
-}
-
-// Band-limited square for the SUB oscillator. Mirrors subSquareTable() /
-// subSquareMip() / subSquareRead() in juce/source/dsp/Wavetables.{h,cpp}: odd
-// harmonics 1/k, coarsest mip first (mip m keeps harmonics 1..(1024>>m)), a
-// 4096-point cycle with 1 wrapped guard sample before and 2 after, read with
-// the same mip rule and cubic Hermite as the wavetable oscillators. Built once
-// per worklet scope (constructors call it), never on the audio thread.
-const SUBSQ_SIZE = 4096, SUBSQ_STRIDE = SUBSQ_SIZE + 3, SUBSQ_MIPS = 11;
-let subSquareTbl = null;
-function subSquareTable() {
-  if (subSquareTbl) return subSquareTbl;
-  const lut = new Float64Array(SUBSQ_SIZE), acc = new Float64Array(SUBSQ_SIZE);
-  for (let j = 0; j < SUBSQ_SIZE; j++) lut[j] = Math.sin(2 * Math.PI * j / SUBSQ_SIZE);
-  const out = new Float32Array(SUBSQ_MIPS * SUBSQ_STRIDE);
-  const coef = 4 / Math.PI;
-  let k = 1;
-  for (let m = SUBSQ_MIPS - 1; m >= 0; m--) {
-    const maxHarm = 1024 >> m;
-    for (; k <= maxHarm; k += 2) {
-      const inv = 1 / k;
-      for (let i = 0; i < SUBSQ_SIZE; i++) acc[i] += lut[(k * i) & (SUBSQ_SIZE - 1)] * inv;
-    }
-    const base = m * SUBSQ_STRIDE;
-    for (let i = -1; i < SUBSQ_SIZE + 2; i++)
-      out[base + i + 1] = acc[(i + SUBSQ_SIZE) & (SUBSQ_SIZE - 1)] * coef;
-  }
-  return (subSquareTbl = out);
-}
-// Mip for phase increment `inc` into the reusable `r` {off, offFine, blend}.
-function subSquareMip(r, inc) {
-  const mipF = Math.log2((inc * 1024) / 0.475);
-  let mip = 0; r.blend = 0;
-  if (mipF > 0) {
-    mip = Math.min(SUBSQ_MIPS - 1, Math.ceil(mipF));
-    const over = mipF - (mip - 1);
-    if (over < 0.07) r.blend = 1 - over / 0.07;
-  }
-  r.off = mip * SUBSQ_STRIDE;
-  r.offFine = (mip > 0 ? mip - 1 : 0) * SUBSQ_STRIDE;
-  return r;
-}
-function subSquareReadMip(t, off, ph) {
-  const p = ph * SUBSQ_SIZE;
-  const idx = p | 0;
-  const f = p - idx;
-  const q = off + idx;
-  const ym1 = t[q], y0 = t[q + 1], y1 = t[q + 2], y2 = t[q + 3];
-  const c1 = 0.5 * (y1 - ym1);
-  const c2 = ym1 - 2.5 * y0 + 2 * y1 - 0.5 * y2;
-  const c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
-  return ((c3 * f + c2) * f + c1) * f + y0;
-}
-function subSquareRead(t, m, ph) {
-  const sc = subSquareReadMip(t, m.off, ph);
-  if (m.blend < 0.001) return sc;
-  return sc + m.blend * (subSquareReadMip(t, m.offFine, ph) - sc);
-}
 const SUBSQ_MIP = { off: 0, offFine: 0, blend: 0 };
 
 // ---------------------------------------------------------------------------
@@ -242,22 +111,11 @@ const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 35
 // DynamicsCompressorNode this replaces, kept only to reproduce its makeup gain.
 const LIM_THR = 0.501;
 const LIM_RATIO = 14;
-const LIM_CEILING = 0.8912509381337456; // -1 dBFS
 // Freeverb tuning (classic constants, scaled to the device rate).
 const COMB_TUNE = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
 const AP_TUNE = [556, 441, 341, 225];
 const STEREO_SPREAD = 23;
 const FX_COEF_CHUNK = 32;
-
-function besselI0(x) {
-  let sum = 1, term = 1;
-  for (let k = 1; k < 64; k++) {
-    term *= (x * x) / (4 * k * k);
-    sum += term;
-    if (term < 1e-16 * sum) break;
-  }
-  return sum;
-}
 
 // Kaiser-windowed odd-length half-band FIR (cutoff = rate/4), polyphase.
 // Every tap at an even offset from the centre is structurally zero and the
@@ -266,20 +124,6 @@ function besselI0(x) {
 // base sample through the 4x drive path instead of 324 (review finding J4).
 // pe[j] = h[2j], po[j] = h[2j+1]; [A,B] is each phase's non-zero index range.
 // Same decomposition as HalfBandFir in juce/source/dsp/Fx.cpp.
-class LfoClock {
-  constructor() { this.ready = false; }
-  reset() { this.ready = false; }
-  update(position, rate) {
-    if (!this.ready || position < this.position) {
-      this.cycles = position * rate;
-      this.ready = true;
-    } else this.cycles += (position - this.position) * this.rate;
-    this.position = position; this.rate = rate;
-    return this.cycles;
-  }
-  phase(position, rate) { const c = this.update(position, rate); return c - Math.floor(c); }
-}
-
 class HalfBand {
   constructor(taps, beta) {
     const h = new Float64Array(taps);
@@ -441,139 +285,6 @@ class ChunkRamp {
     return true;
   }
   snapToTarget() { this.cur = this.target; this.left = 0; this.step = 0; }
-}
-
-// RBJ cookbook biquad, transposed direct form II.
-class Biquad {
-  constructor() { this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.z1 = 0; this.z2 = 0; }
-  lowpass(freq, q, sr) {
-    const w0 = (2 * Math.PI * Math.min(freq, sr * 0.49)) / sr;
-    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
-    this.b0 = (1 - cw) / 2 / a0; this.b1 = (1 - cw) / a0; this.b2 = this.b0;
-    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
-  }
-  highpass(freq, q, sr) {
-    const w0 = (2 * Math.PI * Math.min(freq, sr * 0.49)) / sr;
-    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
-    this.b0 = (1 + cw) / 2 / a0; this.b1 = -(1 + cw) / a0; this.b2 = this.b0;
-    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
-  }
-  process(x) {
-    const y = this.b0 * x + this.z1;
-    this.z1 = this.b1 * x - this.a1 * y + this.z2;
-    this.z2 = this.b2 * x - this.a2 * y;
-    return y;
-  }
-  reset() { this.z1 = 0; this.z2 = 0; }
-}
-
-// Fractional-read delay line. float32 storage, as in the plugin.
-class DelayLine {
-  constructor(n) { this.b = new Float32Array(Math.max(4, n | 0)); this.w = 0; }
-  reset() { this.b.fill(0); this.w = 0; }
-  write(x) { this.b[this.w] = x; if (++this.w >= this.b.length) this.w = 0; }
-  read(d) {
-    const sz = this.b.length;
-    let rd = this.w - d;
-    while (rd < 0) rd += sz;
-    const i0 = rd | 0, frac = rd - i0;
-    const i1 = i0 + 1 < sz ? i0 + 1 : 0;
-    return this.b[i0] + frac * (this.b[i1] - this.b[i0]);
-  }
-  // 4-point Catmull-Rom, for the modulated reads (chorus, echo).
-  readH(d) {
-    const b = this.b, sz = b.length;
-    let rd = this.w - d;
-    while (rd < 0) rd += sz;
-    const i1 = rd | 0, t = rd - i1;
-    const i0 = i1 > 0 ? i1 - 1 : sz - 1;
-    const i2 = i1 + 1 < sz ? i1 + 1 : 0;
-    const i3 = i2 + 1 < sz ? i2 + 1 : 0;
-    const y0 = b[i0], y1 = b[i1], y2 = b[i2], y3 = b[i3];
-    const c1 = 0.5 * (y2 - y0);
-    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
-    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-    return ((c3 * t + c2) * t + c1) * t + y1;
-  }
-}
-
-// Freeverb building blocks.
-class FvComb {
-  constructor(n) { this.buf = new Float32Array(Math.max(1, n | 0)); this.idx = 0; this.filt = 0; this.damp1 = 0.2; this.damp2 = 0.8; this.feedback = 0.84; }
-  reset() { this.buf.fill(0); this.filt = 0; }
-  process(x) {
-    const out = this.buf[this.idx];
-    this.filt = out * this.damp2 + this.filt * this.damp1;
-    this.buf[this.idx] = x + this.filt * this.feedback;
-    if (++this.idx >= this.buf.length) this.idx = 0;
-    return out;
-  }
-}
-class FvAllpass {
-  constructor(n) { this.buf = new Float32Array(Math.max(1, n | 0)); this.idx = 0; this.feedback = 0.5; }
-  reset() { this.buf.fill(0); }
-  process(x) {
-    const bufout = this.buf[this.idx];
-    const out = -x + bufout;
-    this.buf[this.idx] = x + bufout * this.feedback;
-    if (++this.idx >= this.buf.length) this.idx = 0;
-    return out;
-  }
-}
-
-// Lookahead brickwall limiter: fixed makeup gain feeding a delayed signal
-// path, linked-stereo sliding-window-minimum gain that fully develops inside
-// the ~1.5 ms lookahead, ~200 ms release, hard -1 dBFS sample-peak ceiling.
-// The DynamicsCompressorNode this replaces had no ceiling at all.
-class LookaheadLimiter {
-  constructor(sr, makeup) {
-    this.la = Math.max(8, Math.round(0.0015 * sr));
-    this.qcap = this.la + 2;
-    this.dlL = new Float32Array(this.la);
-    this.dlR = new Float32Array(this.la);
-    this.qv = new Float64Array(this.qcap).fill(1);
-    this.qi = new Float64Array(this.qcap);
-    this.atk = 1 - Math.exp(-4 / this.la);
-    this.rel = 1 - Math.exp(-1 / (0.2 * sr));
-    this.makeup = makeup;
-    this.w = 0; this.qh = 0; this.qt = 0; this.t = 0; this.env = 1;
-    this.outL = 0; this.outR = 0;
-  }
-  reset() {
-    this.dlL.fill(0); this.dlR.fill(0);
-    this.qh = 0; this.qt = 0; this.w = 0; this.t = 0; this.env = 1;
-  }
-  process(l, r) {
-    const cap = this.qcap, qv = this.qv, qi = this.qi;
-    const xl = l * this.makeup, xr = r * this.makeup;
-    const pk = Math.max(Math.abs(xl), Math.abs(xr));
-    const g = pk > LIM_CEILING ? LIM_CEILING / pk : 1;
-    // monotonic ring queue: minimum required gain over the last la+1 samples
-    while (this.qh !== this.qt) {
-      const prev = this.qt > 0 ? this.qt - 1 : cap - 1;
-      if (qv[prev] < g) break;
-      this.qt = prev;
-    }
-    qv[this.qt] = g; qi[this.qt] = this.t;
-    this.qt = this.qt + 1 < cap ? this.qt + 1 : 0;
-    if (qi[this.qh] < this.t - this.la) this.qh = this.qh + 1 < cap ? this.qh + 1 : 0;
-    const wmin = qv[this.qh];
-    this.env += (wmin - this.env) * (wmin < this.env ? this.atk : this.rel);
-    const dl = this.dlL[this.w], dr = this.dlR[this.w];
-    this.dlL[this.w] = xl; this.dlR[this.w] = xr;
-    if (++this.w >= this.la) this.w = 0;
-    this.t++;
-    let gg = this.env;
-    const pd = Math.max(Math.abs(dl), Math.abs(dr));
-    if (gg * pd > LIM_CEILING) gg = LIM_CEILING / pd; // catch smoothing residue
-    this.outL = dl * gg; this.outR = dr * gg;
-  }
-}
-
-// Equal-power wet/dry, gated to hard bypass when the stage is OFF.
-function mixGate(on, amount, wet) {
-  if (wet) return on ? Math.sin((amount * Math.PI) / 2) : 0;
-  return on ? Math.cos((amount * Math.PI) / 2) : 1;
 }
 
 class BassFx {
@@ -932,8 +643,8 @@ class BassFx {
           const depth = 0.0008 + this.chDepth * 0.0045;
           const mono = 0.5 * (l + r);
           this.chDl1.write(mono); this.chDl2.write(mono);
-          const c1 = this.chDl1.readH((0.012 + depth * lfo) * sr);
-          const c2 = this.chDl2.readH((0.017 - depth * 0.8 * lfo) * sr);
+          const c1 = this.chDl1.readHermite((0.012 + depth * lfo) * sr);
+          const c2 = this.chDl2.readHermite((0.017 - depth * 0.8 * lfo) * sr);
           const wet = this.chWet.next(), dry = this.chDry.next();
           l = dry * l + wet * c1;
           r = dry * r + wet * c2;
@@ -945,8 +656,8 @@ class BassFx {
         if (!this.delayGated) {
           const dt = this.dlTime.next() * sr;
           const fb = this.dlFb.next();
-          const dLv = dlL.readH(dt);
-          const dRv = dlR.readH(dt);
+          const dLv = dlL.readHermite(dt);
+          const dRv = dlR.readHermite(dt);
           if (this.echoMetering) this.echoEnergy[0] += 0.5 * (l * l + r * r);
           const mono = 0.5 * (l + r);
           const feedbackL = mono + fb * dRv;

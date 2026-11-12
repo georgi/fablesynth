@@ -1,39 +1,23 @@
 import { useControlMenu } from './ControlMenu';
-// SVG rotary knob. Drag vertically (shift = fine), scroll wheel, double-click
-// to reset, arrow keys when focused. Bipolar params sweep from 12 o'clock.
+// WT-1 rotary knob. Gestures and geometry come from knobKit; double-click
+// resets. Bipolar params sweep from 12 o'clock.
 //
 // Knobs that map to a modulation destination double as Serum-style mod targets:
 // drop a source chip on one to assign it, then drag the colored ring it grows to
 // set the depth (right-click the ring to remove it).
 
-import type * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { PARAMS, DEST_OF_PARAM, SOURCE_COLORS, normToValue, valueToNorm, routeBipolar, routeLabel } from '../params';
 import { useStore } from '../store';
 import { useModsByDest } from '../hooks/useModsByDest';
 import { modLive, modNormOffset, subscribeModLive } from '../engine/modLive';
 import { useAutoLive } from '../seq/autoLive';
+import { A0, KNOB_TRACK, arcPath, clamp01, degOf, polar, useKnobDrag } from './knobKit';
+import type { ParamKnobSize } from './ParamKnob';
 
-const A0 = -135, A1 = 135;
-
-function polar(cx: number, cy: number, r: number, deg: number): [number, number] {
-  const a = ((deg - 90) * Math.PI) / 180;
-  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-}
-function arcPath(cx: number, cy: number, r: number, from: number, to: number): string {
-  if (Math.abs(to - from) < 0.01) to = from + 0.01;
-  const [x0, y0] = polar(cx, cy, r, from);
-  const [x1, y1] = polar(cx, cy, r, to);
-  const large = Math.abs(to - from) > 180 ? 1 : 0;
-  const sweep = to > from ? 1 : 0;
-  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} ${sweep} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
-}
-
-const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 const clampAmt = (n: number) => Math.min(1, Math.max(-1, n));
-const degOf = (n: number) => A0 + (A1 - A0) * clamp01(n);
 
-export type KnobSize = 'lg' | 'md' | 'sm' | 'xs';
+export type KnobSize = ParamKnobSize;
 
 // One modulation ring: an arc from the current value to where this route would
 // push it (both ways when bipolar), in its source color. Vertical drag sets the
@@ -107,9 +91,7 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
   const norm = clamp01(valueToNorm(def, value));
 
   const autoLive = useAutoLive('WT1', paramId, norm);
-  const elRef = useRef<HTMLDivElement>(null);
-  const normRef = useRef(norm);
-  const draggingRef = useRef(false);
+  const { elRef, handlers } = useKnobDrag(norm, (n) => setParam(paramId, normToValue(def, n)));
 
   // Live modulation dot: rides the shared modLive rAF pump and writes SVG
   // attributes directly — telemetry never touches React state (16 modulated
@@ -132,65 +114,8 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
     });
   }, [hasMods, dest, def]);
 
-  // Keep the working norm in sync with external changes (presets, etc.)
-  useEffect(() => {
-    if (!draggingRef.current) normRef.current = norm;
-  }, [norm]);
-
-  const nudge = (deltaNorm: number) => {
-    normRef.current = clamp01(normRef.current + deltaNorm);
-    setParam(paramId, normToValue(def, normRef.current));
-  };
-
-  // Non-passive wheel so preventDefault works.
-  useEffect(() => {
-    const el = elRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      nudge((e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 0.005 : 0.03));
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const lastYRef = useRef(0);
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    draggingRef.current = true;
-    lastYRef.current = e.clientY;
-    elRef.current?.setPointerCapture(e.pointerId);
-    elRef.current?.classList.add('dragging');
-    e.preventDefault();
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    const dy = lastYRef.current - e.clientY;
-    lastYRef.current = e.clientY;
-    nudge(dy * (e.shiftKey ? 0.0008 : 0.005));
-  };
-  const onPointerEnd = (e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    elRef.current?.classList.remove('dragging');
-    try { elRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-  };
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 0.005 : 0.02;
-    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { nudge(step); e.preventDefault(); }
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { nudge(-step); e.preventDefault(); }
-  };
-
-  const deg = A0 + (A1 - A0) * norm;
-  let arcD: string;
-  if (bipolar) {
-    const mid = valueToNorm(def, 0);
-    const midDeg = A0 + (A1 - A0) * mid;
-    arcD = arcPath(40, 40, 33, midDeg, deg);
-  } else {
-    arcD = arcPath(40, 40, 33, A0, deg);
-  }
+  const deg = degOf(norm);
+  const arcD = arcPath(40, 40, 33, bipolar ? degOf(valueToNorm(def, 0)) : A0, deg);
   const valueText = def.fmt ? def.fmt(value) : value.toFixed(2);
   const ringBi = ring ? routeBipolar(ring.src, ring.pol) : false;
   const text = ring ? routeLabel(ring.src, ring.amt, ringBi) : valueText;
@@ -209,12 +134,8 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
       aria-valuemax={def.max}
       aria-valuenow={value}
       aria-valuetext={valueText}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerEnd}
-      onPointerCancel={onPointerEnd}
+      {...handlers}
       onDoubleClick={() => setParam(paramId, def.def)}
-      onKeyDown={onKeyDown}
       onDragOver={dest ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } : undefined}
       onDrop={dest ? (e) => {
         e.preventDefault();
@@ -224,7 +145,7 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
     >
       <svg viewBox="0 0 80 80">
         <circle className="k-body" cx="40" cy="40" r="26" />
-        <path className="k-track" d={arcPath(40, 40, 33, A0, A1)} />
+        <path className="k-track" d={KNOB_TRACK} />
         <path className="k-arc" d={arcD} />
         {myMods.map((m, k) => (
           <ModRing key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} bi={routeBipolar(m.src, m.pol)}

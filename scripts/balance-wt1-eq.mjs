@@ -185,6 +185,7 @@ const ctx = vm.createContext({
   registerProcessor: (_n, Ctor) => (ctx.Ctor = Ctor),
 });
 new vm.Script(await readFile(new URL('../src/engine/ott-worklet.js', import.meta.url), 'utf8')).runInContext(ctx);
+new vm.Script(await readFile(new URL('../src/engine/lab-worklet.js', import.meta.url), 'utf8')).runInContext(ctx);
 new vm.Script(await readFile(new URL('../src/engine/worklet.js', import.meta.url), 'utf8')).runInContext(ctx);
 const tables = generateTables().map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, mask: t.size - 1, data: t.data }));
 

@@ -1,8 +1,8 @@
 // FableSynth DR-1 DSP core — AudioWorklet thread. Self-contained (no imports).
 // 16 one-shot pad voices, a per-pad FX rack, five output buses and a
 // sample-accurate step sequencer. See worklet.js for the reference
-// implementations of the shared primitives (mip playback, SVF, ADAA drive) —
-// copied here because worklets can't import.
+// implementations of mip playback and the SVF. ADAA drive, the biquad, delay
+// line and limiter come from globalThis.FableDsp in ott-worklet.js.
 //
 // Fidelity contract (docs/audio-engine-review.md §4): Hermite table reads,
 // intra-block ramps for every increment, sample-rate-derived smoothing and
@@ -29,6 +29,11 @@ const PLAIN_VEL = 0.72;
 const SWING_MAX = 0.667;
 const MOD_LOG_D = 5;
 const BASE_NOTE = 60;
+// Shared DSP primitives (ott-worklet.js, loaded first).
+const {
+  ADAA_FADE_WIDTH, DRIVE_OS_RAMP_SEC, lcosh, adaaInput, makeDriveOs, resetDriveOs, copyDriveOs,
+  driveOsStep, besselI0, Biquad, DelayLine, LookaheadLimiter, mixGate,
+} = globalThis.FableDsp;
 const positiveModulo = (v, n) => ((v % n) + n) % n;
 function normalizeRhythm(value) {
   if (!value || !Array.isArray(value.lanes) || value.lanes.length !== NPADS) return null;
@@ -105,8 +110,6 @@ const SINC_TABLE = (() => {
   return t;
 })();
 const TYPE_XFADE = 0.003; // seconds of crossfade on a filter-type switch
-const ADAA_FADE_WIDTH = 0.1;
-const ADAA_INPUT_LIMIT = 16;
 const E45 = Math.exp(-4.5);
 const INV_E45 = 1 / (1 - E45);
 
@@ -115,73 +118,6 @@ const smoothCoef = (n, tauSamples) => 1 - Math.exp(-n / Math.max(1e-9, tauSample
 
 // Re-map a one-pole coefficient authored at 48 kHz onto the running rate.
 const mapPole = (a48, sr) => 1 - Math.pow(1 - a48, NOISE_SR / sr);
-
-function lcosh(z) {
-  const a = Math.abs(z);
-  return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
-}
-function adaaInput(x) {
-  return Number.isFinite(x) ? Math.max(-ADAA_INPUT_LIMIT, Math.min(ADAA_INPUT_LIMIT, x)) : 0;
-}
-
-// 2x oversampler for the in-voice drive saturator. Only the nonlinearity runs
-// at 2x (interpolate -> ADAA tanh at the high rate -> decimate); the SVF stays
-// at the base rate. Both converters are the polyphase IIR half-band that
-// juce/source/dsp/DriveOs.h documents: allpass branches A0 = {c0, c2, c4} and
-// A1 = {c1, c3}. While the saturator is idle and the stage has faded out, the
-// input is returned unchanged (bit-identical to a voice without the stage); the
-// stage fades in and out over DRIVE_OS_RAMP_SEC with a linear crossfade.
-const DRIVE_OS_COEF = new Float64Array([
-  0.058131122888383423, 0.21191463147606193, 0.4170395803350932,
-  0.63844438482644794, 0.87095859811277021]);
-const DRIVE_OS_RAMP_SEC = 0.004;
-// Allpass state, (x1, y1) pairs: u0 at 0,2,4; u1 at 6,8; d0 at 10,12,14; d1 at 16,18.
-function makeDriveOs() {
-  return {
-    s: new Float64Array(20), dprev: 0,
-    xp: 0,   // previous high-rate ADAA input
-    F: 0,    // kF * lcosh(dg * xp), valid while the saturator is active
-    w: 0,    // stage weight: 0 = bypass, 1 = stage
-  };
-}
-function resetDriveOs(o) { o.s.fill(0); o.dprev = 0; o.xp = 0; o.F = 0; o.w = 0; }
-function copyDriveOs(d, s) { d.s.set(s.s); d.dprev = s.dprev; d.xp = s.xp; d.F = s.F; d.w = s.w; }
-function driveOsAp(s, i, a, x) {
-  const y = a * (x - s[i + 1]) + s[i];
-  s[i] = x; s[i + 1] = y;
-  return y;
-}
-function driveOsSat(o, a, xpv, dg, dcomp, kF) {
-  const dx = a - xpv;
-  const F = kF * lcosh(dg * a);
-  // |dx| tiny -> ADAA is numerically unstable; fall back to midpoint tanh.
-  const r = dx > 1e-5 || dx < -1e-5 ? (F - o.F) / dx : dcomp * Math.tanh(dg * 0.5 * (a + xpv));
-  o.F = F;
-  return r;
-}
-// One base-rate sample. engage: the stage belongs in the path; satOn: the
-// saturator runs with dry/wet mix m.
-function driveOsStep(o, x, engage, satOn, m, wStep, dg, dcomp, kF) {
-  const target = engage ? 1 : 0;
-  if (o.w < target) o.w = Math.min(target, o.w + wStep);
-  else if (o.w > target) o.w = Math.max(target, o.w - wStep);
-  if (o.w <= 0 && !engage) { o.xp = adaaInput(x); return x; }
-  const s = o.s, C = DRIVE_OS_COEF;
-  const u0 = driveOsAp(s, 4, C[4], driveOsAp(s, 2, C[2], driveOsAp(s, 0, C[0], x)));
-  const u1 = driveOsAp(s, 8, C[3], driveOsAp(s, 6, C[1], x));
-  const a0 = adaaInput(u0), a1 = adaaInput(u1);
-  let o0 = a0, o1 = a1;
-  if (satOn) {
-    o0 = a0 + m * (driveOsSat(o, a0, o.xp, dg, dcomp, kF) - a0);
-    o1 = a1 + m * (driveOsSat(o, a1, a0, dg, dcomp, kF) - a1);
-  }
-  o.xp = a1;
-  const da = driveOsAp(s, 14, C[4], driveOsAp(s, 12, C[2], driveOsAp(s, 10, C[0], o0)));
-  const db = driveOsAp(s, 18, C[3], driveOsAp(s, 16, C[1], o1));
-  const y = 0.5 * (da + o.dprev);
-  o.dprev = db;
-  return o.w >= 1 ? y : x + o.w * (y - x);
-}
 
 // 4-point cubic Hermite, the read JUCE uses. Linear reads left 10–20 dB more
 // interpolation image below C6 (review §1).
@@ -234,7 +170,6 @@ const HB1_TAPS = 63, HB2_TAPS = 17, HB_BETA = 6;
 // 4x drive oversampler group delay in base samples: (63-1)/2 + (17-1)/4.
 const DRIVE_LATENCY = (HB1_TAPS - 1) / 2 + (HB2_TAPS - 1) / 4; // 35
 const LIM_THR = 0.398, LIM_RATIO = 14;
-const LIM_CEILING = 0.8912509381337456; // -1 dBFS
 
 
 const COMB_TUNE = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
@@ -256,10 +191,6 @@ const StereoPeakGuard = globalThis.FablePeakGuard;
 
 // Compressor dynamics are shared with WT-1 and BL-1 in ott-worklet.js.
 
-const mixGate = (on, amount, wet) => (wet
-  ? (on ? Math.sin((amount * Math.PI) / 2) : 0)
-  : (on ? Math.cos((amount * Math.PI) / 2) : 1));
-
 // One-pole smoother toward a target (setTargetAtTime equivalent).
 class Smooth {
   constructor(sr, tau) {
@@ -271,50 +202,6 @@ class Smooth {
   nextN(n) { this.cur += (this.target - this.cur) * (1 - Math.pow(1 - this.coef, n)); return this.cur; }
   snap(v) { this.cur = v; this.target = v; }
   settled() { return this.cur === this.target; }
-}
-
-class Biquad {
-  constructor() { this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.z1 = 0; this.z2 = 0; }
-  lowpass(freq, q, sr) {
-    const w0 = (2 * Math.PI * Math.min(freq, sr * 0.49)) / sr;
-    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
-    this.b0 = (1 - cw) / 2 / a0; this.b1 = (1 - cw) / a0; this.b2 = this.b0;
-    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
-  }
-  highpass(freq, q, sr) {
-    const w0 = (2 * Math.PI * Math.min(freq, sr * 0.49)) / sr;
-    const cw = Math.cos(w0), alpha = Math.sin(w0) / (2 * q), a0 = 1 + alpha;
-    this.b0 = (1 + cw) / 2 / a0; this.b1 = -(1 + cw) / a0; this.b2 = this.b0;
-    this.a1 = (-2 * cw) / a0; this.a2 = (1 - alpha) / a0;
-  }
-  process(x) {
-    const y = this.b0 * x + this.z1;
-    this.z1 = this.b1 * x - this.a1 * y + this.z2;
-    this.z2 = this.b2 * x - this.a2 * y;
-    return y;
-  }
-  reset() { this.z1 = 0; this.z2 = 0; }
-}
-
-class DelayLine {
-  constructor(n) { this.buf = new Float32Array(Math.max(4, n | 0)); this.w = 0; }
-  reset() { this.buf.fill(0); this.w = 0; }
-  write(x) { this.buf[this.w] = x; if (++this.w >= this.buf.length) this.w = 0; }
-  // 4-point Catmull-Rom, for the modulated reads (chorus, echo).
-  readHermite(d) {
-    const sz = this.buf.length, b = this.buf;
-    let rd = this.w - d;
-    while (rd < 0) rd += sz;
-    const i1 = rd | 0, t = rd - i1;
-    const i0 = i1 > 0 ? i1 - 1 : sz - 1;
-    const i2 = i1 + 1 < sz ? i1 + 1 : 0;
-    const i3 = i2 + 1 < sz ? i2 + 1 : 0;
-    const y0 = b[i0], y1 = b[i1], y2 = b[i2], y3 = b[i3];
-    const c1 = 0.5 * (y2 - y0);
-    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
-    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-    return ((c3 * t + c2) * t + c1) * t + y1;
-  }
 }
 
 // Fixed integer delay, block at a time: the drive's dry path needs exactly
@@ -336,16 +223,6 @@ class IntDelay {
     }
   }
   copyFrom(o) { this.h.set(o.h); }
-}
-
-function besselI0(x) {
-  let sum = 1, term = 1;
-  for (let k = 1; k < 64; k++) {
-    term *= (x * x) / (4 * k * k);
-    sum += term;
-    if (term < 1e-16 * sum) break;
-  }
-  return sum;
 }
 
 // Kaiser-windowed half-band FIR, split into its two polyphase phases. Every tap
@@ -470,58 +347,6 @@ function osScratch(n) {
   OS_X2 = new Float64Array(2 * n);
   OS_X4 = new Float64Array(4 * n);
   OS_Y2 = new Float64Array(2 * n);
-}
-
-// Lookahead brickwall limiter: fixed makeup gain feeding a delayed signal path,
-// linked-stereo sliding-window-minimum gain that fully develops inside the
-// ~1.5 ms lookahead, ~200 ms release, hard -1 dBFS sample-peak ceiling.
-class LookaheadLimiter {
-  constructor(sr, makeup) {
-    this.la = Math.max(8, Math.round(0.0015 * sr));
-    this.qcap = this.la + 2;
-    this.dlL = new Float32Array(this.la);
-    this.dlR = new Float32Array(this.la);
-    this.qv = new Float64Array(this.qcap);
-    this.qi = new Float64Array(this.qcap);
-    this.atk = 1 - Math.exp(-4 / this.la);
-    this.rel = 1 - Math.exp(-1 / (0.2 * sr));
-    this.makeup = makeup;
-    this.w = 0; this.qh = 0; this.qt = 0; this.t = 0; this.env = 1;
-  }
-  reset() {
-    this.dlL.fill(0); this.dlR.fill(0); this.qv.fill(1); this.qi.fill(0);
-    this.w = 0; this.qh = 0; this.qt = 0; this.t = 0; this.env = 1;
-  }
-  process(L, R, n) {
-    const la = this.la, qcap = this.qcap, qv = this.qv, qi = this.qi;
-    const dlL = this.dlL, dlR = this.dlR, mk = this.makeup;
-    let w = this.w, qh = this.qh, qt = this.qt, t = this.t, env = this.env;
-    for (let i = 0; i < n; i++) {
-      const xl = L[i] * mk, xr = R[i] * mk;
-      const pk = Math.max(Math.abs(xl), Math.abs(xr));
-      const g = pk > LIM_CEILING ? LIM_CEILING / pk : 1;
-      // monotonic ring queue: minimum required gain over the last la+1 samples
-      for (;;) {
-        if (qh === qt) break;
-        const prev = qt > 0 ? qt - 1 : qcap - 1;
-        if (qv[prev] < g) break;
-        qt = prev;
-      }
-      qv[qt] = g; qi[qt] = t; qt = qt + 1 < qcap ? qt + 1 : 0;
-      if (qi[qh] < t - la) qh = qh + 1 < qcap ? qh + 1 : 0;
-      const wmin = qv[qh];
-      env += (wmin - env) * (wmin < env ? this.atk : this.rel);
-      const dl = dlL[w], dr = dlR[w];
-      dlL[w] = xl; dlR[w] = xr;
-      if (++w >= la) w = 0;
-      t++;
-      let gg = env;
-      const pd = Math.max(Math.abs(dl), Math.abs(dr));
-      if (gg * pd > LIM_CEILING) gg = LIM_CEILING / pd; // catch smoothing residue
-      L[i] = dl * gg; R[i] = dr * gg;
-    }
-    this.w = w; this.qh = qh; this.qt = qt; this.t = t; this.env = env;
-  }
 }
 
 // Freeverb, sample-rate scaled, tuned by SIZE. One instance per output bus,
@@ -997,7 +822,7 @@ class BusOut {
       L[i] = this.dcL.process(L[i] * g);
       R[i] = this.dcR.process(R[i] * g);
     }
-    this.lim.process(L, R, n);
+    this.lim.processBlock(L, R, n);
     let outPk = 0;
     for (let i = 0; i < n; i++) {
       const a = L[i] < 0 ? -L[i] : L[i], b = R[i] < 0 ? -R[i] : R[i];
