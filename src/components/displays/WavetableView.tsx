@@ -5,6 +5,24 @@
 import { useEffect, useRef } from 'react';
 import { setupCanvas } from './canvas';
 import type { VizTable } from '../../engine/synth';
+import { warpSample } from '../../engine/warp';
+
+/** Oscillator warp for the highlighted frame; `mod` is the FM/AM/RM modulator. */
+export interface WarpView {
+  mode: number;
+  amount: number;
+  mod: VizTable | null;
+  modPos: number;
+  ratio: number;
+}
+
+/** Periodic linear read of one viz frame at a phase in cycles. */
+function readFrame(viz: Float32Array, start: number, n: number, q: number): number {
+  const x = (q - Math.floor(q)) * n;
+  const i = Math.floor(x) % n;
+  const a = viz[start + i]!;
+  return a + (viz[start + ((i + 1) % n)]! - a) * (x - Math.floor(x));
+}
 
 interface WavetableViewProps {
   table: VizTable | null;
@@ -12,12 +30,13 @@ interface WavetableViewProps {
   modPos: number; // live modulated position from DSP (-1 = idle)
   accent: string;
   className?: string;
+  warp?: WarpView | null;
 }
 
-export function WavetableView({ table, pos, modPos, accent, className }: WavetableViewProps) {
+export function WavetableView({ table, pos, modPos, accent, className, warp = null }: WavetableViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const propsRef = useRef({ table, pos, modPos, accent });
-  propsRef.current = { table, pos, modPos, accent };
+  const propsRef = useRef({ table, pos, modPos, accent, warp });
+  propsRef.current = { table, pos, modPos, accent, warp };
   const stRef = useRef({ dirty: true, lastDrawnMod: -2 });
   const redrawRef = useRef<(() => void) | null>(null);
 
@@ -26,7 +45,7 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
   useEffect(() => {
     stRef.current.dirty = true;
     redrawRef.current?.();
-  }, [table, pos]);
+  }, [table, pos, warp?.mode, warp?.amount, warp?.mod, warp?.modPos, warp?.ratio]);
 
   useEffect(() => {
     const onResize = () => { stRef.current.dirty = true; };
@@ -44,7 +63,7 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
     };
     const draw = (canvas: HTMLCanvasElement) => {
       const st = stRef.current;
-      const { table, pos, modPos, accent } = propsRef.current;
+      const { table, pos, modPos, accent, warp } = propsRef.current;
       const show = modPos >= 0 ? modPos : pos;
       if (!st.dirty && Math.abs(show - st.lastDrawnMod) < 0.004) return;
       st.dirty = false;
@@ -67,10 +86,20 @@ export function WavetableView({ table, pos, modPos, accent, className }: Wavetab
         const ox = x0 + d * depthX;
         const oy = y0 - d * depthY;
         const near = Math.max(0, 1 - Math.abs(f - posF));
+        // The frames at the play position show the warped waveform.
+        const warped = warp && near > 0.02 ? warp : null;
+        const mod = warped?.mod;
+        const modN = mod ? mod.viz.length / mod.frames : 0;
+        const modStart = mod ? Math.round(warped!.modPos * (mod.frames - 1)) * modN : 0;
         ctx.beginPath();
         for (let i = 0; i < N; i++) {
           const x = ox + (i / (N - 1)) * waveW;
-          const y = oy - viz[f * N + i] * waveAmp;
+          const p = i / N;
+          const v = warped
+            ? warpSample(warped.mode, warped.amount, p, (q) => readFrame(viz, f * N, N, q),
+              mod ? readFrame(mod.viz, modStart, modN, p * warped.ratio) : 0)
+            : viz[f * N + i];
+          const y = oy - v * waveAmp;
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         if (near > 0.02) {

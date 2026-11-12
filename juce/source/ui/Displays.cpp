@@ -66,8 +66,91 @@ LfoView::LfoView(ParameterSource source, const juce::String& sh,
                  const juce::String& ra, const juce::String& sy, const juce::String& sr,
                  juce::Colour ac, std::function<HostTransport()> transportProvider)
     : parameters(std::move(source)), shapeId(sh), rateId(ra), syncId(sy), syncRateId(sr), accent(ac),
-      transport(std::move(transportProvider)), t0(juce::Time::getMillisecondCounter()) {
+      transport(std::move(transportProvider)), t0(juce::Time::getMillisecondCounter()),
+      shapeParams_(parameters, sh.upToLastOccurrenceOf(".", false, false)) {
+    oneshot_ = parameters.parameter(sh.upToLastOccurrenceOf(".", false, false) + ".oneshot");
     startVisualTimer(*this, fui::kAnimationHz);
+}
+bool LfoView::isCustom() const {
+    return parameters.parameter(shapeId) && (int)parameters.effectiveValue(shapeId) == fable::LFO_CUSTOM;
+}
+
+// ---- drawn-shape editing (CUSTOM only); mirrors src/components/displays/LFOView.tsx ----
+static constexpr float kLfoPad = 5, kLfoHit = 9;
+static constexpr int kLfoSteps = 16, kLfoSnap = 32;
+LfoView::At LfoView::locate(juce::Point<float> p) const {
+    const float W = (float)getWidth() - kLfoPad * 2, mid = (float)getHeight() / 2, amp = (mid - kLfoPad) * 0.9f;
+    return {juce::jlimit(0.0, 1.0, (double)((p.x - kLfoPad) / W)),
+            juce::jlimit(0.0, 1.0, (double)(((mid - p.y) / amp + 1) / 2)), p.x, p.y};
+}
+int LfoView::hitPoint(const lfoshape::Points& points, juce::Point<float> p) const {
+    const float W = (float)getWidth() - kLfoPad * 2, mid = (float)getHeight() / 2, amp = (mid - kLfoPad) * 0.9f;
+    int best = -1; float bestD = kLfoHit;
+    for (int i = 0; i < (int)points.size(); ++i) {
+        const auto& pt = points[(size_t)i];
+        const float d = p.getDistanceFrom({kLfoPad + (float)(pt.t / lfoshape::kLane) * W, mid - (float)(pt.v * 2 - 1) * amp});
+        if (d < bestD) { best = i; bestD = d; }
+    }
+    return best;
+}
+void LfoView::mouseDown(const juce::MouseEvent& e) {
+    drag_ = Drag::None;
+    if (!isCustom() || !shapeParams_.valid()) return;
+    if (e.mods.isPopupMenu()) { removeAt(e.position); return; }
+    const auto points = lfoshape::read(shapeParams_);
+    const At at = locate(e.position);
+    auto snap = [&](double x) { return e.mods.isShiftDown() ? x : std::round(x * kLfoSnap) / kLfoSnap; };
+    if (paintMode_) {
+        lfoshape::write(shapeParams_, lfoshape::paintStep(points, juce::jmin(at.x, 0.999), at.y, kLfoSteps));
+        drag_ = Drag::Paint; paintX_ = at.x; paintY_ = at.y;
+        return;
+    }
+    const int hit = hitPoint(points, e.position);
+    if (e.mods.isAltDown() && points.size() > 1) {
+        dragIndex_ = lfoshape::segmentAt(points, at.x);
+        const auto& a = points[(size_t)dragIndex_];
+        const auto& b = points[(size_t)((dragIndex_ + 1) % (int)points.size())];
+        dragC0_ = a.hold ? 0 : a.c; dragDir_ = b.v < a.v ? -1 : 1;
+        dragBase_ = points; drag_ = Drag::Bend;
+    } else if (hit >= 0) {
+        dragIndex_ = hit; dragBase_ = points; drag_ = Drag::Move;
+    } else {
+        auto added = lfoshape::addPoint(points, snap(at.x), at.y);
+        if (added.second < 0) return; // the shape is full
+        lfoshape::write(shapeParams_, added.first);
+        dragIndex_ = added.second; dragBase_ = added.first; drag_ = Drag::Move;
+    }
+}
+void LfoView::mouseDrag(const juce::MouseEvent& e) {
+    if (drag_ == Drag::None) return;
+    const At at = locate(e.position);
+    if (drag_ == Drag::Paint) {
+        // Fill every cell between the previous and the current pointer sample.
+        auto points = lfoshape::read(shapeParams_);
+        const int cells = juce::jmax(1, (int)std::ceil(std::abs(at.x - paintX_) * kLfoSteps));
+        for (int k = 1; k <= cells; ++k) {
+            const double f = (double)k / cells;
+            points = lfoshape::paintStep(points, juce::jmin(0.999, paintX_ + (at.x - paintX_) * f), paintY_ + (at.y - paintY_) * f, kLfoSteps);
+        }
+        lfoshape::write(shapeParams_, points);
+        paintX_ = at.x; paintY_ = at.y;
+    } else if (drag_ == Drag::Move) {
+        const double x = e.mods.isShiftDown() ? at.x : std::round(at.x * kLfoSnap) / kLfoSnap;
+        lfoshape::write(shapeParams_, lfoshape::movePoint(dragBase_, dragIndex_, x, at.y));
+    } else {
+        const double dy = (double)(e.getMouseDownY() - e.y) / 40.0;
+        lfoshape::write(shapeParams_, lfoshape::bendSegment(dragBase_, dragIndex_, dragC0_ - dy * dragDir_));
+    }
+    repaint();
+}
+void LfoView::mouseUp(const juce::MouseEvent&) { drag_ = Drag::None; }
+void LfoView::mouseDoubleClick(const juce::MouseEvent& e) { if (isCustom()) removeAt(e.position); }
+void LfoView::removeAt(juce::Point<float> p) {
+    const auto points = lfoshape::read(shapeParams_);
+    const int hit = hitPoint(points, p);
+    if (hit < 0) return;
+    lfoshape::write(shapeParams_, lfoshape::removePoint(points, hit));
+    repaint();
 }
 bool LfoView::synced() const {
     auto* syncP = parameters.parameter(syncId);
@@ -108,8 +191,32 @@ void LfoView::paint(juce::Graphics& g) {
     const float w = (float)getWidth(), h = (float)getHeight();
     const float pad = 5, W = w - pad * 2, mid = h / 2, amp = h / 2 - pad;
 
+    // CUSTOM: the drawn shape, its beat grid and its point handles.
+    const bool custom = shape == fable::LFO_CUSTOM;
+    const lfoshape::Points points = custom ? lfoshape::read(shapeParams_) : lfoshape::Points{};
+    if (custom) {
+        for (int s = 1; s < kLfoSteps; ++s) {
+            g.setColour(juce::Colour(0xff8893a8).withAlpha(s % 4 ? 0.07f : 0.2f));
+            const float x = pad + (float)s / kLfoSteps * W;
+            g.drawLine(x, pad, x, h - pad, 1.0f);
+        }
+        g.setColour(juce::Colour(0xff8893a8).withAlpha(0.14f));
+        g.drawLine(pad, mid, w - pad, mid, 1.0f);
+    }
+    const auto valueAt = [&](float p) {
+        return custom ? (float)lfoshape::value(points, p) : shape == 4 ? shVal((int)std::floor(p * 8)) : lfoFn(shape, p);
+    };
+
     juce::Path path;
-    if (shape == 4) {
+    if (custom) {
+        // A drawn shape can step: sample finely so the steps stay vertical.
+        const int n = juce::jmax(96, (int)W);
+        for (int i = 0; i <= n; i++) {
+            const float pp = juce::jmin((float)i / (float)n, 0.999999f);
+            const float x = pad + (float)i / (float)n * W, y = mid - valueAt(pp) * amp * 0.9f;
+            if (i == 0) path.startNewSubPath(x, y); else path.lineTo(x, y);
+        }
+    } else if (shape == 4) {
         const int steps = 8;
         for (int s = 0; s < steps; s++) {
             float y = mid - shVal(s) * amp * 0.9f;
@@ -127,6 +234,23 @@ void LfoView::paint(juce::Graphics& g) {
     g.setColour(accent.withAlpha(0.9f));
     g.strokePath(path, juce::PathStrokeType(1.5f));
 
+    if (custom) {
+        // Point handles: round for a ramp, square for a held step.
+        for (const auto& pt : points) {
+            const float x = pad + (float)(pt.t / lfoshape::kLane) * W, y = mid - (float)(pt.v * 2 - 1) * amp * 0.9f;
+            const juce::Rectangle<float> box(x - 3, y - 3, 6, 6);
+            g.setColour(juce::Colour(0xff07090e));
+            if (pt.hold) g.fillRect(box.reduced(0.5f)); else g.fillEllipse(box);
+            g.setColour(accent);
+            if (pt.hold) g.drawRect(box.reduced(0.5f), 1.2f); else g.drawEllipse(box, 1.2f);
+        }
+        if (points.empty()) {
+            g.setColour(juce::Colour(0xff8893a8).withAlpha(0.8f));
+            g.setFont(monoFont(8.0f));
+            g.drawText("CLICK TO PLACE POINTS - ALT-DRAG TO BEND", getLocalBounds(), juce::Justification::centred);
+        }
+    }
+
     // Phase dot: when synced and the host is playing, lock to the transport
     // position so the dot sits on the beat grid (matching the audio downbeat);
     // otherwise free-run at the effective rate.
@@ -135,10 +259,13 @@ void LfoView::paint(juce::Graphics& g) {
     const double position = locked ? tr.ppq
         : (double)(juce::Time::getMillisecondCounter() - t0) / 1000.0;
     const double speed = locked ? fable::lfoDivFactor((int)parameters.effectiveValue(syncRateId)) : rate;
-    const float phase = (float)phaseClock_.phase(position, speed);
-    float y;
-    if (shape == 4) y = mid - shVal((int)std::floor(phase * 8)) * amp * 0.9f;
-    else            y = mid - lfoFn(shape, phase) * amp * 0.9f;
+    float phase = (float)phaseClock_.phase(position, speed);
+    if (oneshot_ && oneshot_->getValue() > 0.5f && !locked) {
+        // A one-shot stops at the end of its cycle: one cycle of motion, one of rest.
+        const double lap = std::fmod(position * speed, 2.0);
+        phase = lap < 1.0 ? (float)lap : 0.999999f;
+    }
+    const float y = mid - valueAt(phase) * amp * 0.9f;
     float dx = pad + phase * W;
     g.setColour(accent.withAlpha(0.5f));
     g.fillEllipse(dx - 4, y - 4, 8, 8);

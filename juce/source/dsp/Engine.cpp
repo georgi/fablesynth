@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "LfoShape.h"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -161,7 +162,7 @@ double Env::process() {
 }
 
 // ---------------- Lfo ----------------
-double Lfo::valueOff(int shape, double off) const {
+double Lfo::valueOff(int shape, double off, const float* shapeBlock) const {
     double p = phase + off;
     p -= std::floor(p);
     switch (shape) {
@@ -169,14 +170,20 @@ double Lfo::valueOff(int shape, double off) const {
         case 1: return 1 - 4 * std::abs(p - 0.5);
         case 2: return 1 - 2 * p;
         case 3: return p < 0.5 ? 1 : -1;
+        case LFO_CUSTOM:
+            return lfoShapeValue(shapeBlock + LFOX_POINTS,
+                                 std::max(0, std::min(LFO_MAX_POINTS, (int)shapeBlock[LFOX_COUNT])), p);
         default: return hold;
     }
 }
-void Lfo::advance(double rate, int n, double sr) {
+// A one-shot LFO stops just before the end of its cycle and holds that value.
+static constexpr double LFO_ONESHOT_END = 1 - 1e-9;
+void Lfo::advance(double rate, int n, double sr, bool oneshot) {
     elapsed += n;
     // NaN guard (mirrors the web LFO): a non-finite rate must not latch a sticky
     // NaN phase that would never recover.
     double d = (rate * n) / sr;
+    if (oneshot) { if (std::isfinite(d)) phase = std::min(LFO_ONESHOT_END, phase + d); return; }
     if (std::isfinite(d)) phase += d;
     if (phase >= 1) { phase -= std::floor(phase); hold = rng->next() * 2 - 1; }
 }
@@ -203,7 +210,7 @@ void FilterState::reset() {
 }
 
 // ---------------- Voice ----------------
-void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng) {
+void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng, bool randA, bool randB) {
     note = n; vel = v; gate = true; age = a; pitch = startPitch;
     velGain = 0.25 + 0.75 * v * v; velSm = -1;
     ampEnv.trigger(); modEnv.trigger(); modEnv2.trigger();
@@ -214,7 +221,12 @@ void Voice::noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& mo
     rand = modRng.next();
     // Start phase is in SAMPLES (0..SIZE): scale the random draw to a full
     // cycle so unison voices (and osc A vs B) decorrelate at note start.
-    for (int i = 0; i < MAXUNI; i++) { oA.phases[i] = rng.next() * SIZE; oB.phases[i] = rng.next() * SIZE; }
+    for (int i = 0; i < MAXUNI; i++) {
+        oA.phases[i] = randA ? rng.next() * SIZE : 0.0;
+        oB.phases[i] = randB ? rng.next() * SIZE : 0.0;
+    }
+    oA.mph = oB.mph = 0; oA.pCinc = oB.pCinc = -1;
+    oA.warpSel = oB.warpSel = -1;
     oA.posSm = -1; oB.posSm = -1;
     oA.havePrev = false; oB.havePrev = false;
     oA.tableOwner.reset(); oB.tableOwner.reset();
@@ -297,14 +309,14 @@ double Engine::lfoHz(int base) const {
 // starts on the downbeat; subsequent rate edits preserve phase. When
 // unsynced — or synced but stopped — it free-runs at its Hz so movement
 // continues. (Retrig LFOs are per-voice / note-aligned and skip this.)
-void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n) {
+void Engine::updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n, double rateMul) {
     if (!exactlyZero(p_[slot(base + LFO_SYNC)]) && playing_) {
         double ph = g.clock.phase(ppqChunk, lfoDivFactor((int)p_[slot(base + LFO_SYNCRATE)]));
         if (ph < g.phase) g.hold = g.rng->next() * 2 - 1; // grid wrap -> new S&H value
         g.phase = ph;
     } else {
         g.clock.reset();
-        g.advance(lfoHz(base), n, sr_);
+        g.advance(lfoHz(base) * rateMul, n, sr_);
     }
 }
 
@@ -376,7 +388,9 @@ static const std::array<uint8_t, NUM_PARAMS>& paramRampKind() {
             // The sequencer clock is timing, not tone: gliding BPM or swing
             // would drag the grid instead of removing a zipper.
             const bool clock = i == SEQ_BPM || i == SEQ_SWING || i == SEQ_GATE || i == SEQ_ROOT;
-            if (d.kind != Kind::Float || d.curve == Curve::Int || clock) a[(size_t)i] = 0;
+            // Hidden params are editor data (drawn LFO points): an edit can move
+            // a point to another slot, and a glide between slots is not a shape.
+            if (d.kind != Kind::Float || d.curve == Curve::Int || clock || d.hidden) a[(size_t)i] = 0;
             else a[(size_t)i] = d.curve == Curve::Log ? 2 : 1;
         }
         return a;
@@ -497,7 +511,8 @@ void Engine::polyNoteOn(int n, double vel) {
         voice->gate = false;
         voice->ampEnv.state = 5;
     } else {
-        voice->noteOn(n, vel, start, clock_++, rng_, modRng_);
+        voice->noteOn(n, vel, start, clock_++, rng_, modRng_,
+                      phaseRand(OSCA_WARP, OSCA_BASE), phaseRand(OSCB_WARP, OSCB_BASE));
     }
 }
 
@@ -850,7 +865,27 @@ void Engine::seqFireHostStep(long k) {
 // Configure one oscillator's per-block render state. Returns true if audible.
 // Reads the modulated snapshot pm for the per-param dests (pos/level/pan/detune/
 // spread); pitch and the pan global offset stay as direct additive terms.
-bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n) {
+// Hard sync: crossfade length at the reset (samples), the mip headroom that
+// keeps the crossfade's sidebands below Nyquist, and the slave pitch ceiling
+// in cycles per sample. FM depth at full amount is in carrier cycles. The mip
+// factor cap is 4 octaves of table band-limit. Mirrors worklet.js.
+static constexpr double SYNC_FADE = 4, SYNC_HEADROOM = 1.5, SYNC_MAX_CPS = 0.25;
+static constexpr double FM_MAX_CYCLES = 2, SYNCWIN_GAIN = 1.63, WARP_MIP_MAX = 16;
+
+// Oscillator start phase: random, except for a single-voice FM/AM/RM carrier.
+// That one starts at phase 0 with its modulator, so every note has the same
+// carrier/modulator phase relation and therefore the same timbre.
+bool Engine::phaseRand(int wbase, int base) const {
+    return !((int)p_[slot(wbase)] >= WARP_FM && (int)p_[slot(base + OSC_UNISON)] <= 1);
+}
+
+// `wbase` is the oscillator's warp block and `obase` the other oscillator.
+// `wantMod` keeps a silent oscillator's table state alive, because the other
+// oscillator reads it as an FM/AM/RM modulator (o.modOk).
+bool Engine::setupOsc(OscState& o, int base, int wbase, int obase, Voice& v, const double* pm,
+                      double mPitch, double mPan, int n, bool wantMod) {
+    o.modOk = false;
+    if (!wantMod) o.pCinc = -1;
     if (p_[slot(base + OSC_ON)] < 0.5) return false;
     int ti = (int)p_[slot(base + OSC_TABLE)];
     if (ti < 0 || ti >= (int)curTables_->size()) return false;
@@ -865,7 +900,47 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
 
     double level = std::min(1.2, std::max(0.0, pm[base + OSC_LEVEL]));
     level *= level;
-    if (level < 1e-5) return false;
+    const bool audible = level >= 1e-5; // false for NaN too
+    if (!audible && !wantMod) return false;
+
+    // Warp: map the amount to the mode's parameter `w` and to `wf`, the
+    // fastest read speed relative to the oscillator (for the mip choice).
+    int mode = (int)p_[slot(wbase)];
+    double w = 0, wf = 1;
+    double amt = pm[wbase + 1];
+    amt = std::isfinite(amt) ? std::min(1.0, std::max(0.0, amt)) : 0.0;
+    switch (mode) {
+        case WARP_SYNC: case WARP_SYNCWIN:
+            // Slave ratio 1..16, held below sr/4 so the slave itself cannot fold.
+            w = std::min(std::pow(2.0, amt * 4), std::max(1.0, SYNC_MAX_CPS / (freq / sr_)));
+            // Hard sync keeps half an octave of headroom for the reset crossfade.
+            wf = mode == WARP_SYNC ? w * SYNC_HEADROOM : w;
+            break;
+        case WARP_BEND: case WARP_ASYM: w = std::pow(2.0, (amt - 0.5) * 6); wf = w > 1 ? w : 1 / w; break;
+        case WARP_PWM: w = 1 - 0.9 * amt; wf = 1 / w; break;            // width of the squeezed cycle
+        case WARP_MIRROR: w = 0.5 + 0.4 * amt; wf = 1 / (1 - w); break; // turn point
+        case WARP_QUANT: w = std::pow(2.0, 1 + 7 * (1 - amt)); break;   // steps per cycle, 256..2
+        case WARP_FM: case WARP_AM: case WARP_RM: {
+            // The modulator is the other oscillator; without it the warp is off.
+            const int oti = (int)p_[slot(obase + OSC_TABLE)];
+            if (p_[slot(obase + OSC_ON)] < 0.5 || oti < 0 || oti >= (int)curTables_->size()
+                || !(*curTables_)[(size_t)oti]->data) { mode = 0; break; }
+            if (mode == WARP_FM) {
+                w = amt * amt * FM_MAX_CYCLES;
+                // Peak deviation of a sine modulator: 2*pi*w*fm, relative to the carrier.
+                const double semis = (p_[slot(obase + OSC_OCT)] - p_[slot(base + OSC_OCT)]) * 12
+                    + p_[slot(obase + OSC_SEMI)] - p_[slot(base + OSC_SEMI)]
+                    + (p_[slot(obase + OSC_FINE)] - p_[slot(base + OSC_FINE)]) / 100.0;
+                wf = 1 + 2 * PI * w * std::pow(2.0, semis / 12);
+            } else { w = amt; wf = 1 + std::min(1.0, amt * 4); }
+            break;
+        }
+        default: mode = 0;
+    }
+    if (!(wf <= WARP_MIP_MAX)) wf = WARP_MIP_MAX; // NaN-safe
+    // The chunk ramps from the previous parameter, so cover the faster of the two.
+    const double wfMip = o.havePrev && o.pWarp == mode ? std::max(wf, o.pWf) : wf;
+    o.warp = mode; o.warpW = w; o.wf = wf;
 
     int uni = std::max(1, std::min(MAXUNI, (int)p_[slot(base + OSC_UNISON)]));
     // DETUNE is a linear 0..1 parameter. Unlike the UI-controlled base
@@ -893,7 +968,7 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     double maxRatio = std::pow(2.0, (std::abs(det) * 50) / 1200);
 
     const double W = 0.07;
-    double mipF = std::log2((cps * maxRatio * 1024) / 0.475);
+    double mipF = std::log2((cps * maxRatio * wfMip * 1024) / 0.475);
     int mip = 0; double mipBlend = 0;
     if (mipF > 0) {
         mip = std::min(table.mips - 1, (int)std::ceil(mipF));
@@ -942,7 +1017,134 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
     // Predicate matches the web's `sumW2 || 1` exactly (swaps to 1 only at 0),
     // so the two engines stay in lockstep at low blend.
     o.gain = (level * 0.32) / std::sqrt(o.sumW2 > 0.0 ? o.sumW2 : 1.0);
-    return true;
+    o.cinc = cps * table.size;
+    o.modOk = true;
+    return audible;
+}
+
+// Render the oscillator's modulator signal for the other oscillator's FM/AM/RM
+// warp: one undetuned, unwarped voice of its current table frame.
+void Engine::renderMod(OscState& o, float* out, int n) {
+    const float* data = o.data; const int mask = o.mask, size = o.size;
+    const int off0 = o.off0, off1 = o.off1; const double ft = o.ft;
+    const double inc1 = o.cinc;
+    const double inc0 = o.pCinc > 0 ? o.pCinc : inc1;
+    const double dInc = (inc1 - inc0) / n;
+    double ph = wrapOscPhase(o.mph, size);
+    for (int i = 0; i < n; i++) {
+        int idx = (int)ph & mask;
+        double frac = ph - idx;
+        int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+        double s0 = rdH(data, off0, im1, idx, i2, i3, frac);
+        out[i] = (float)(s0 + ft * (rdH(data, off1, im1, idx, i2, i3, frac) - s0));
+        ph = wrapOscPhase(ph + inc0 + dInc * i, size);
+    }
+    o.mph = ph;
+    o.pCinc = inc1;
+}
+
+// One interpolated read of the oscillator's current frame pair at `ph`
+// samples, with the mip crossfade. For the few reads outside the main loops.
+static inline double readFrame(const OscState& o, double ph, double ft) {
+    const float* data = o.data; const int mask = o.mask;
+    const int ii = (int)ph, idx = ii & mask; const double f = ph - ii;
+    const int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+    const double c0 = rdH(data, o.off0, im1, idx, i2, i3, f);
+    double s = c0 + ft * (rdH(data, o.off1, im1, idx, i2, i3, f) - c0);
+    if (o.mipBlend >= 0.001) {
+        const double f0 = rdH(data, o.off0b, im1, idx, i2, i3, f);
+        s += o.mipBlend * (f0 + ft * (rdH(data, o.off1b, im1, idx, i2, i3, f) - f0) - s);
+    }
+    return s;
+}
+
+// Warped oscillator read. `pn` is the oscillator phase in cycles; each mode
+// maps it to the read phase `q` (SYNC..QUANTIZE, FM) or to a gain (SYNC WIN,
+// AM, RM). The map parameter ramps across the chunk like the increments do.
+// `mod` is the other oscillator's signal for FM/AM/RM. Mirrors renderOscWarp
+// in worklet.js.
+void Engine::renderOscWarp(OscState& o, float* tmpL, float* tmpR, int n, const float* mod) {
+    static const float kNoMod[128] = {0};
+    if (!mod) mod = kNoMod;
+    const float* data = o.data; const int mask = o.mask, size = o.size;
+    const double invN = 1.0 / n, invSize = 1.0 / size;
+    const bool rp = o.havePrev && o.pUni == o.uni;
+    const double ft1 = o.ft;
+    const double ft0 = (rp && o.pOff0 == o.off0) ? o.pFt : ft1;
+    const double dFt = (ft1 - ft0) * invN;
+    const double g = o.gain;
+    const int off0 = o.off0, off1 = o.off1, off0b = o.off0b, off1b = o.off1b;
+    const double blend = o.mipBlend; const bool fine = blend >= 0.001;
+    const int mode = o.warp;
+    const double w1 = o.warpW;
+    const double w0 = (rp && o.pWarp == mode) ? o.pWarpW : w1;
+    const double dW = (w1 - w0) * invN;
+    for (int u = 0; u < o.uni; u++) {
+        double ph = wrapOscPhase(o.phases[u], size);
+        const double inc1 = o.incs[u];
+        const double inc0 = rp ? o.pIncs[u] : inc1;
+        const double dInc = (inc1 - inc0) * invN;
+        const double gl1 = o.gl[u] * g, gr1 = o.gr[u] * g;
+        const double gl0 = rp ? (double)o.pGl[u] : gl1, gr0 = rp ? (double)o.pGr[u] : gr1;
+        const double dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
+        for (int i = 0; i < n; i++) {
+            const double w = w0 + dW * i;
+            const double inc = inc0 + dInc * i;
+            const double pn = ph * invSize;
+            double q = pn, amp = 1, edge = 0, xq = 0;
+            switch (mode) {
+                case WARP_SYNC: {
+                    q = pn * w;
+                    // Reset zone: SYNC_FADE samples centred on the master wrap,
+                    // where the outgoing and the incoming slave crossfade. `xq`
+                    // is the other slave's phase (the next one before the wrap,
+                    // the previous one after it) and `edge` its share. The next
+                    // slave starts before table phase 0, so a table's own step
+                    // at phase 0 keeps its band-limited shape. At ratio 1 both
+                    // slaves are the same.
+                    const double h = std::min(0.25, SYNC_FADE * 0.5 * inc * invSize);
+                    if (pn > 1 - h) { xq = q - w; edge = 0.5 - 0.5 * std::cos(PI * (pn - 1 + h) / (2 * h)); }
+                    else if (pn < h) { xq = q + w; edge = 0.5 + 0.5 * std::cos(PI * (pn + h) / (2 * h)); }
+                    break;
+                }
+                case WARP_SYNCWIN: q = pn * w; amp = SYNCWIN_GAIN * (0.5 - 0.5 * std::cos(2 * PI * pn)); break;
+                case WARP_BEND:
+                    // Each half-cycle runs through x/(x + w(1-x)): w > 1 pulls the
+                    // waveform to the centre, w < 1 pushes it to the cycle edges.
+                    if (pn < 0.5) { const double x = 2 * pn; q = (0.5 * x) / (x + w * (1 - x)); }
+                    else { const double x = 2 - 2 * pn; q = 1 - (0.5 * x) / (x + w * (1 - x)); }
+                    break;
+                case WARP_ASYM: q = pn / (pn + w * (1 - pn)); break;
+                case WARP_PWM: q = pn < w ? pn / w : 1; break;
+                case WARP_MIRROR: q = pn < w ? pn / w : (1 - pn) / (1 - w); break;
+                case WARP_QUANT: q = std::floor(pn * w) / w; break;
+                case WARP_FM: q = pn + w * mod[i]; break;
+                case WARP_AM: amp = 1 - 0.5 * w + 0.5 * w * mod[i]; break;
+                default: amp = 1 - w + w * mod[i]; // WARP_RM
+            }
+            const double rph = (q - std::floor(q)) * size;
+            const int ii = (int)rph, idx = ii & mask; const double frac = rph - ii;
+            const int im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+            const double ftN = ft0 + dFt * i;
+            const double sc0 = rdH(data, off0, im1, idx, i2, i3, frac);
+            double s = sc0 + ftN * (rdH(data, off1, im1, idx, i2, i3, frac) - sc0);
+            if (fine) {
+                const double sf0 = rdH(data, off0b, im1, idx, i2, i3, frac);
+                s += blend * (sf0 + ftN * (rdH(data, off1b, im1, idx, i2, i3, frac) - sf0) - s);
+            }
+            if (edge > 0) s += (readFrame(o, (xq - std::floor(xq)) * size, ftN) - s) * edge;
+            s *= amp;
+            tmpL[i] += (float)(s * (gl0 + dGl * i));
+            tmpR[i] += (float)(s * (gr0 + dGr * i));
+            ph = wrapOscPhase(ph + inc, size);
+        }
+        o.phases[u] = ph;
+        o.pIncs[u] = inc1;
+        o.pGl[u] = (float)gl1; o.pGr[u] = (float)gr1;
+    }
+    o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.pWarp = mode; o.pWarpW = w1; o.pWf = o.wf;
+    o.havePrev = true;
 }
 
 // Finding 7: phase increments, morph fraction and pan/level gain products ramp
@@ -952,7 +1154,8 @@ bool Engine::setupOsc(OscState& o, int base, Voice& v, const double* pm, double 
 // change, and (for the morph fraction) when the frame pair switched — ft is a
 // fraction WITHIN a pair, so ramping it across a pair change would sweep the
 // wrong way. Table reads are cubic Hermite (Finding 10).
-void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
+void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n, const float* mod) {
+    if (o.warp) { renderOscWarp(o, tmpL, tmpR, n, mod); return; }
     const float* data = o.data; int mask = o.mask, size = o.size;
     const double invN = 1.0 / n;
     const bool rp = o.havePrev && o.pUni == o.uni;
@@ -1006,6 +1209,7 @@ void Engine::renderOsc(OscState& o, float* tmpL, float* tmpR, int n) {
         o.pGl[u] = (float)gl1; o.pGr[u] = (float)gr1;
     }
     o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.pWarp = 0; o.pWf = 1;
     o.havePrev = true;
 }
 
@@ -1273,76 +1477,135 @@ void Engine::runFilterSection(Voice& v, FilterCore& c1, FilterCore& c2,
 double Engine::lfoShapeValue(int idx, const Lfo& l, int base) const {
     const int shape = (int)p_[slot(base + LFO_SHAPE)];
     const double off = p_[slot(base + LFO_PHASE)];
-    const double vNew = l.valueOff(shape, off);
+    const float* block = p_.data() + lfoxBase(idx + 1);
+    const double vNew = l.valueOff(shape, off, block);
     if (lfoXfRemain_[idx] <= 0 || lfoShapePrev_[idx] < 0) return vNew;
-    const double vOld = l.valueOff(lfoShapePrev_[idx], off);
+    const double vOld = l.valueOff(lfoShapePrev_[idx], off, block);
     const double t = 1.0 - (double)lfoXfRemain_[idx] / (double)lfoXfLen_[idx];
     return vOld + (vNew - vOld) * t;
 }
 
-void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
-    v.ampEnv.set(p_[ENV1_BASE + 0], p_[ENV1_BASE + 1], p_[ENV1_BASE + 2], p_[ENV1_BASE + 3], sr_);
-    v.modEnv.set(p_[ENV2_BASE + 0], p_[ENV2_BASE + 1], p_[ENV2_BASE + 2], p_[ENV2_BASE + 3], sr_);
-    v.modEnv2.set(p_[ENV3_BASE + 0], p_[ENV3_BASE + 1], p_[ENV3_BASE + 2], p_[ENV3_BASE + 3], sr_);
-    {
-        Env* envs[3] = { &v.ampEnv, &v.modEnv, &v.modEnv2 };
-        const int bases[3] = { ENV1_BASE, ENV2_BASE, ENV3_BASE };
-        for (int k = 0; k < 3; ++k) {
-            const int x = envxBase(k + 1);
-            envs[k]->setModel((int)p_[slot(x + ENVX_MODEL)], p_[slot(bases[k])], p_[slot(bases[k] + 1)], p_[slot(bases[k] + 3)],
-                              p_[slot(x + ENVX_HOLD)], p_[slot(x + ENVX_AC)], p_[slot(x + ENVX_DC)], p_[slot(x + ENVX_RC)], sr_);
-        }
-    }
+// One route's source value after polarity and response curve; `aux` receives
+// the aux scale (the caller multiplies value, amount, aux).
+double Engine::routeSource(int s, int src, const double* srcs, double& aux) const {
+    const int pol = (int)p_[slot(MATPOL1 + s - 1)];
+    const int auxSrc = (int)p_[slot(MATAUX1 + s - 1)];
+    aux = auxSrc > 0 && auxSrc < NUM_MOD_SOURCES ? auxScale(srcs[auxSrc], auxSrc) : 1.0;
+    return routeCurve(polarize(srcs[src], src, pol), p_[slot(MATCRV1 + s - 1)], routeBipolar(src, pol));
+}
 
-    double gl = p_[MASTER_GLIDE];
-    if (gl > 0.001) {
-        double c = 1 - std::exp(-(double)n / (gl * 0.3 * sr_ + 1));
-        v.pitch += (v.note - v.pitch) * c;
-    } else v.pitch = v.note;
-
-    bool   rt1 = !exactlyZero(p_[(size_t)paramIndex(LFO1_BASE, LFO_RETRIG)]),
-           rt2 = !exactlyZero(p_[(size_t)paramIndex(LFO2_BASE, LFO_RETRIG)]);
-    double l1 = lfoShapeValue(0, rt1 ? v.lfo1 : gLfo1_, LFO1_BASE)
-                * v.lfo1.riseGain(p_[(size_t)paramIndex(LFO1_BASE, LFO_RISE)], sr_);
-    double l2 = lfoShapeValue(1, rt2 ? v.lfo2 : gLfo2_, LFO2_BASE)
-                * v.lfo2.riseGain(p_[(size_t)paramIndex(LFO2_BASE, LFO_RISE)], sr_);
-    bool   rt3 = !exactlyZero(p_[(size_t)paramIndex(LFO3_BASE, LFO_RETRIG)]),
-           rt4 = !exactlyZero(p_[(size_t)paramIndex(LFO4_BASE, LFO_RETRIG)]);
-    double l3 = lfoShapeValue(2, rt3 ? v.lfo3 : gLfo3_, LFO3_BASE)
-                * v.lfo3.riseGain(p_[(size_t)paramIndex(LFO3_BASE, LFO_RISE)], sr_);
-    double l4 = lfoShapeValue(3, rt4 ? v.lfo4 : gLfo4_, LFO4_BASE)
-                * v.lfo4.riseGain(p_[(size_t)paramIndex(LFO4_BASE, LFO_RISE)], sr_);
-    double e2 = v.modEnv.level;
-    const double srcs[NUM_MOD_SOURCES] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0,
-        l3, l4, v.modEnv2.level,
-        p_[slot(MACRO1)], p_[slot(MACRO2)], p_[slot(MACRO3)], p_[slot(MACRO4)],
-        p_[slot(PERF_MODWHEEL)], p_[slot(PERF_AFTERTOUCH)], v.rand};
-
-    // Accumulate routes: globals (pitch/amp/pan) stay as direct offsets with their
-    // existing math; per-param dests sum into modAccum[targetPid] and are folded
-    // into the pm_ snapshot below via the curve rules.
-    double mPitch = 0, mAmp = 0, mPan = 0;
-    double* modAccum = modAccum_;
+// Run the mod matrix on one set of source values. Globals (pitch/amp/pan)
+// stay as direct offsets with their existing math; per-param dests sum into
+// modAccum_[targetPid], which renderVoice folds into pm_ via the curve rules.
+// Mirrors evalRoutes in worklet.js.
+void Engine::evalRoutes(const double* srcs) {
     std::fill(modAccum_, modAccum_ + NUM_PARAMS, 0.0);
+    double mPitch = 0, mAmp = 0, mPan = 0;
     modAnyRoute_ = false;
+    bool anyAmt = false;
+    // First the routes that modulate another route's amount ("MOD n AMT").
+    // They use their own stored amount, so the slot order does not matter.
+    for (int s = 1; s <= MOD_MATRIX_SIZE; s++) {
+        const int b = matBase(s);
+        const int target = dstRouteSlot((int)p_[slot(b + MAT_DST)]);
+        const int src = (int)p_[slot(b + MAT_SRC)];
+        if (!target || !src || src >= NUM_MOD_SOURCES) continue;
+        if (!anyAmt) { std::fill(amtMod_, amtMod_ + MOD_MATRIX_SIZE, 0.0); anyAmt = true; }
+        double ax = 1;
+        const double sv = routeSource(s, src, srcs, ax);
+        amtMod_[target - 1] += sv * p_[slot(b + MAT_AMT)] * ax;
+    }
     for (int s = 1; s <= MOD_MATRIX_SIZE; s++) {
         int b = matBase(s);
         int src = (int)p_[slot(b + MAT_SRC)];
         int dst = (int)p_[slot(b + MAT_DST)];
-        if (!src || !dst || src >= NUM_MOD_SOURCES) continue;
-        const int pol = (int)p_[slot(MATPOL1 + s - 1)];
-        const int aux = (int)p_[slot(MATAUX1 + s - 1)];
-        const double ax = aux > 0 && aux < NUM_MOD_SOURCES ? auxScale(srcs[aux], aux) : 1.0;
-        double x = polarize(srcs[src], src, pol) * p_[slot(b + MAT_AMT)] * ax;
+        if (!src || !dst || src >= NUM_MOD_SOURCES || dstRouteSlot(dst)) continue;
+        double amt = p_[slot(b + MAT_AMT)];
+        // A full-depth route moves the amount over its whole range, like any Lin param.
+        if (anyAmt && !exactlyZero(amtMod_[s - 1])) amt = std::max(-1.0, std::min(1.0, amt + amtMod_[s - 1] * 2));
+        double ax = 1;
+        const double sv = routeSource(s, src, srcs, ax);
+        double x = sv * amt * ax;
         int target = dstTarget(dst);
         switch (target) {
             case DST_NONE:  break;
             case DST_PITCH: mPitch += x; break;
             case DST_AMP:   mAmp += x; break;
             case DST_PAN:   mPan += x; break;
-            default:        modAccum[target] += x; modAnyRoute_ = true; break;
+            default:        modAccum_[target] += x; modAnyRoute_ = true; break;
         }
     }
+    mPitch_ = mPitch; mAmp_ = mAmp; mPan_ = mPan;
+}
+
+// Destinations outside the voice: the FX controls and the rates of the
+// free-running LFOs. With a voice they take the route sums of the viz voice,
+// the same ones the knob dots show. With no voice the routes run on the last
+// note's sources with the live macros, wheel, aftertouch and free-running
+// LFOs, so a macro still moves a ringing tail. Mirrors updateGlobalMods in
+// worklet.js.
+static constexpr int kFxModPids[6] = {FXDRIVE_AMT, FXDRIVE_MIX, FXCHORUS_MIX, FXDELAY_FB, FXDELAY_MIX, FXREVERB_MIX};
+static constexpr int kFxModDests[6] = {43, 44, 45, 46, 47, 48};
+void Engine::updateGlobalMods(int act) {
+    static const int lfoBase[4] = {LFO1_BASE, LFO2_BASE, LFO3_BASE, LFO4_BASE};
+    bool any = false;
+    for (int s = 1; s <= MOD_MATRIX_SIZE && !any; s++) {
+        const int dst = (int)p_[slot(matBase(s) + MAT_DST)];
+        any = (int)p_[slot(matBase(s) + MAT_SRC)] > 0 && dst >= 30 && dst <= 48 && !(dst >= 34 && dst <= 42);
+    }
+    if (!any) { fxMod_.fill(0.0); for (double& g : gRate_) g = 1; return; }
+    if (!act) {
+        double* srcs = vizSrcs_;
+        srcs[9] = p_[slot(MACRO1)]; srcs[10] = p_[slot(MACRO2)]; srcs[11] = p_[slot(MACRO3)]; srcs[12] = p_[slot(MACRO4)];
+        srcs[13] = p_[slot(PERF_MODWHEEL)]; srcs[14] = p_[slot(PERF_AFTERTOUCH)];
+        const Lfo* globals[4] = {&gLfo1_, &gLfo2_, &gLfo3_, &gLfo4_};
+        const int srcIndex[4] = {1, 2, 6, 7};
+        for (int i = 0; i < 4; i++)
+            if (exactlyZero(p_[slot(lfoBase[i] + LFO_RETRIG)]) && p_[slot(lfoxBase(i + 1) + LFOX_ONESHOT)] < 0.5f)
+                srcs[srcIndex[i]] = lfoShapeValue(i, *globals[i], lfoBase[i]);
+        evalRoutes(srcs);
+    }
+    for (size_t i = 0; i < 6; i++) fxMod_[i] = act ? vizMod[kFxModDests[i]] : modAccum_[kFxModPids[i]];
+    for (int i = 0; i < 4; i++) {
+        const double x = act ? vizMod[30 + i] : modAccum_[lfoBase[i] + LFO_RATE];
+        gRate_[i] = exactlyZero(x) ? 1.0 : std::pow(2.0, x * 5.0);
+    }
+}
+
+void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
+    double gl = p_[MASTER_GLIDE];
+    if (gl > 0.001) {
+        double c = 1 - std::exp(-(double)n / (gl * 0.3 * sr_ + 1));
+        v.pitch += (v.note - v.pitch) * c;
+    } else v.pitch = v.note;
+
+    // A one-shot LFO starts with its note, so it is always per-voice.
+    const bool os1 = p_[slot(lfoxBase(1) + LFOX_ONESHOT)] > 0.5f, os2 = p_[slot(lfoxBase(2) + LFOX_ONESHOT)] > 0.5f,
+               os3 = p_[slot(lfoxBase(3) + LFOX_ONESHOT)] > 0.5f, os4 = p_[slot(lfoxBase(4) + LFOX_ONESHOT)] > 0.5f;
+    bool   rt1 = os1 || !exactlyZero(p_[(size_t)paramIndex(LFO1_BASE, LFO_RETRIG)]),
+           rt2 = os2 || !exactlyZero(p_[(size_t)paramIndex(LFO2_BASE, LFO_RETRIG)]);
+    double l1 = lfoShapeValue(0, rt1 ? v.lfo1 : gLfo1_, LFO1_BASE)
+                * v.lfo1.riseGain(p_[(size_t)paramIndex(LFO1_BASE, LFO_RISE)], sr_);
+    double l2 = lfoShapeValue(1, rt2 ? v.lfo2 : gLfo2_, LFO2_BASE)
+                * v.lfo2.riseGain(p_[(size_t)paramIndex(LFO2_BASE, LFO_RISE)], sr_);
+    bool   rt3 = os3 || !exactlyZero(p_[(size_t)paramIndex(LFO3_BASE, LFO_RETRIG)]),
+           rt4 = os4 || !exactlyZero(p_[(size_t)paramIndex(LFO4_BASE, LFO_RETRIG)]);
+    double l3 = lfoShapeValue(2, rt3 ? v.lfo3 : gLfo3_, LFO3_BASE)
+                * v.lfo3.riseGain(p_[(size_t)paramIndex(LFO3_BASE, LFO_RISE)], sr_);
+    double l4 = lfoShapeValue(3, rt4 ? v.lfo4 : gLfo4_, LFO4_BASE)
+                * v.lfo4.riseGain(p_[(size_t)paramIndex(LFO4_BASE, LFO_RISE)], sr_);
+    double e2 = v.modEnv.level;
+    const double voiceSrcs[NUM_MOD_SOURCES] = {0, l1, l2, e2, v.vel, (v.note - 60) / 24.0,
+        l3, l4, v.modEnv2.level,
+        p_[slot(MACRO1)], p_[slot(MACRO2)], p_[slot(MACRO3)], p_[slot(MACRO4)],
+        p_[slot(PERF_MODWHEEL)], p_[slot(PERF_AFTERTOUCH)], v.rand};
+    std::copy(voiceSrcs, voiceSrcs + NUM_MOD_SOURCES, srcs_);
+
+    // Accumulate routes (evalRoutes): globals stay as direct offsets; per-param
+    // dests sum into modAccum_ and are folded into the pm_ snapshot below.
+    evalRoutes(srcs_);
+    const double mPitch = mPitch_, mAmp = mAmp_, mPan = mPan_;
+    double* modAccum = modAccum_;
 
     // Build the per-voice modulated snapshot: copy p_ then apply each targeted
     // param's curve rule. Lin Float: pm = p + x*(hi-lo) (reproduces POS/LEVEL/RES
@@ -1363,6 +1626,24 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         else if (d.curve == Curve::Lin) pm_[P] = (double)p_[(size_t)P] + x * ((double)d.max - (double)d.min);
     }
 
+    // Envelope times follow their routes, inside the knob range. The read is
+    // p_ itself for a time with no route.
+    {
+        Env* envs[3] = { &v.ampEnv, &v.modEnv, &v.modEnv2 };
+        const int bases[3] = { ENV1_BASE, ENV2_BASE, ENV3_BASE };
+        auto timeOf = [&](int id) {
+            const ParamInfo& d = info[(size_t)id];
+            return std::max((double)d.min, std::min((double)d.max, pm_[id]));
+        };
+        for (int k = 0; k < 3; ++k) {
+            const int x = envxBase(k + 1);
+            const double a = timeOf(bases[k]), d = timeOf(bases[k] + 1), r = timeOf(bases[k] + 3);
+            envs[k]->set(a, d, p_[slot(bases[k] + 2)], r, sr_);
+            envs[k]->setModel((int)p_[slot(x + ENVX_MODEL)], a, d, r,
+                              p_[slot(x + ENVX_HOLD)], p_[slot(x + ENVX_AC)], p_[slot(x + ENVX_DC)], p_[slot(x + ENVX_RC)], sr_);
+        }
+    }
+
     int route = (int)p_[FILTER_ROUTE];
     bool split = route == 2;
 
@@ -1374,12 +1655,13 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     // phase and jump the level. Freeze the whole OscState instead — it keeps
     // the old table's pointers, offsets and phases — and let it keep playing
     // for one short fade while the new one fades in.
-    auto oscSwitch = [&](OscState& o, OscState& frozen, int& rem, int& len, int base) {
+    auto oscSwitch = [&](OscState& o, OscState& frozen, int& rem, int& len, int base, int wbase) {
         const int ti = (int)p_[slot(base + OSC_TABLE)];
         const bool on = p_[slot(base + OSC_ON)] >= 0.5;
+        const int wsel = (int)p_[slot(wbase)]; // a warp mode change fades too
         const float* nextData = ti >= 0 && ti < (int)curTables_->size()
             ? (*curTables_)[(size_t)ti]->data : nullptr;
-        if (o.tableIdx >= 0 && (ti != o.tableIdx || on != o.wasOn
+        if (o.tableIdx >= 0 && (ti != o.tableIdx || on != o.wasOn || wsel != o.warpSel
                                || (on && o.data != nextData))) {
             frozen = o;                           // keeps the old table pointers
             // A silent old side (the oscillator was off) still starts a fade:
@@ -1390,20 +1672,32 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
             }
             rem = len = xfSamples();
         }
-        o.tableIdx = ti; o.wasOn = on;
+        o.tableIdx = ti; o.wasOn = on; o.warpSel = wsel;
     };
-    oscSwitch(v.oA, v.oldA, v.aXfRemain, v.aXfLen, OSCA_BASE);
-    oscSwitch(v.oB, v.oldB, v.bXfRemain, v.bXfLen, OSCB_BASE);
+    oscSwitch(v.oA, v.oldA, v.aXfRemain, v.aXfLen, OSCA_BASE, OSCA_WARP);
+    oscSwitch(v.oB, v.oldB, v.bXfRemain, v.bXfLen, OSCB_BASE, OSCB_WARP);
 
-    bool aOn = setupOsc(v.oA, OSCA_BASE, v, pm_, mPitch, mPan, n);
-    bool bOn = setupOsc(v.oB, OSCB_BASE, v, pm_, mPitch, mPan, n);
+    bool aOn = setupOsc(v.oA, OSCA_BASE, OSCA_WARP, OSCB_BASE, v, pm_, mPitch, mPan, n,
+                        (int)p_[slot(OSCB_WARP)] >= WARP_FM);
+    bool bOn = setupOsc(v.oB, OSCB_BASE, OSCB_WARP, OSCA_BASE, v, pm_, mPitch, mPan, n,
+                        (int)p_[slot(OSCA_WARP)] >= WARP_FM);
+    // FM/AM/RM: each carrier reads the other oscillator's modulator signal.
+    // Both are rendered before either carrier, so mutual modulation is not a
+    // feedback loop.
+    const float* modA = nullptr; const float* modB = nullptr;
+    if (aOn && v.oA.warp >= WARP_FM) {
+        if (v.oB.modOk) { renderMod(v.oB, modForA_, n); modA = modForA_; } else v.oA.warp = 0;
+    }
+    if (bOn && v.oB.warp >= WARP_FM) {
+        if (v.oA.modOk) { renderMod(v.oA, modForB_, n); modB = modForB_; } else v.oB.warp = 0;
+    }
 
     // Both sides of an oscillator fade render into a scratch pair and are added
     // to the voice mix under their own equal-power ramp, so each keeps its own
     // continuous pan/level ramp (renderOsc interpolates from pGl/pGr) and the
     // fade only scales the result.
     auto fadeMix = [&](OscState& o, OscState& frozen, bool on, int& rem, int len,
-                       float* dstL, float* dstR) {
+                       float* dstL, float* dstR, const float* mod) {
         const double t0 = 1.0 - (double)rem / (double)len;
         const double t1 = std::min(1.0, 1.0 - (double)std::max(0, rem - n) / (double)len);
         auto addRamp = [&](double a0, double a1) {
@@ -1416,23 +1710,26 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
         };
         if (on) {
             std::fill(xL_, xL_ + n, 0.0f); std::fill(xR_, xR_ + n, 0.0f);
-            renderOsc(o, xL_, xR_, n);
+            renderOsc(o, xL_, xR_, n, mod);
             addRamp(std::sin(t0 * PI * 0.5), std::sin(t1 * PI * 0.5));
         } else o.havePrev = false;
         if (frozen.data) {
             std::fill(xL_, xL_ + n, 0.0f); std::fill(xR_, xR_ + n, 0.0f);
-            renderOsc(frozen, xL_, xR_, n);
+            // The frozen side keeps its warp; without a modulator signal this
+            // chunk, an FM/AM/RM side fades out unmodulated.
+            if (frozen.warp >= WARP_FM && !mod) frozen.warp = 0;
+            renderOsc(frozen, xL_, xR_, n, mod);
             addRamp(std::cos(t0 * PI * 0.5), std::cos(t1 * PI * 0.5));
         }
         rem = std::max(0, rem - n);
         if (rem == 0) { frozen.data = nullptr; frozen.tableOwner.reset(); }
     };
 
-    if (v.aXfRemain > 0) fadeMix(v.oA, v.oldA, aOn, v.aXfRemain, v.aXfLen, tmpL_, tmpR_);
-    else if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n); else v.oA.havePrev = false;
+    if (v.aXfRemain > 0) fadeMix(v.oA, v.oldA, aOn, v.aXfRemain, v.aXfLen, tmpL_, tmpR_, modA);
+    else if (aOn) renderOsc(v.oA, tmpL_, tmpR_, n, modA); else v.oA.havePrev = false;
     if (v.bXfRemain > 0)
-        fadeMix(v.oB, v.oldB, bOn, v.bXfRemain, v.bXfLen, split ? bL_ : tmpL_, split ? bR_ : tmpR_);
-    else if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n);
+        fadeMix(v.oB, v.oldB, bOn, v.bXfRemain, v.bXfLen, split ? bL_ : tmpL_, split ? bR_ : tmpR_, modB);
+    else if (bOn) renderOsc(v.oB, split ? bL_ : tmpL_, split ? bR_ : tmpR_, n, modB);
     else v.oB.havePrev = false;
     if (!aOn) { v.oA.data = nullptr; v.oA.tableOwner.reset(); }
     if (!bOn) { v.oB.data = nullptr; v.oB.tableOwner.reset(); }
@@ -1593,10 +1890,15 @@ void Engine::renderVoice(Voice& v, float* L, float* R, int n) {
     }
     v.ampFacPrev = ampFactor;
 
-    v.lfo1.advance(lfoHz(LFO1_BASE), n, sr_);
-    v.lfo2.advance(lfoHz(LFO2_BASE), n, sr_);
-    v.lfo3.advance(lfoHz(LFO3_BASE), n, sr_);
-    v.lfo4.advance(lfoHz(LFO4_BASE), n, sr_);
+    // LFO RATE routes scale the rate (free or synced) by 2^(x*D), like any Log param.
+    auto rateMul = [&](int base) {
+        const double x = modAccum_[base + LFO_RATE];
+        return exactlyZero(x) ? 1.0 : std::pow(2.0, x * 5.0);
+    };
+    v.lfo1.advance(lfoHz(LFO1_BASE) * rateMul(LFO1_BASE), n, sr_, os1);
+    v.lfo2.advance(lfoHz(LFO2_BASE) * rateMul(LFO2_BASE), n, sr_, os2);
+    v.lfo3.advance(lfoHz(LFO3_BASE) * rateMul(LFO3_BASE), n, sr_, os3);
+    v.lfo4.advance(lfoHz(LFO4_BASE) * rateMul(LFO4_BASE), n, sr_, os4);
     v.modEnv.processBlock(n);
     v.modEnv2.processBlock(n);
 }
@@ -1606,10 +1908,11 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     std::fill(R, R + n, 0.0f);
 
     // Update the global (free-run / transport-locked) LFOs before voices read them.
-    updateGlobalLfo(gLfo1_, LFO1_BASE, ppqChunk, n);
-    updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n);
-    updateGlobalLfo(gLfo3_, LFO3_BASE, ppqChunk, n);
-    updateGlobalLfo(gLfo4_, LFO4_BASE, ppqChunk, n);
+    // gRate_: the LFO RATE route of each free-running LFO (updateGlobalMods).
+    updateGlobalLfo(gLfo1_, LFO1_BASE, ppqChunk, n, gRate_[0]);
+    updateGlobalLfo(gLfo2_, LFO2_BASE, ppqChunk, n, gRate_[1]);
+    updateGlobalLfo(gLfo3_, LFO3_BASE, ppqChunk, n, gRate_[2]);
+    updateGlobalLfo(gLfo4_, LFO4_BASE, ppqChunk, n, gRate_[3]);
 
     // Finding J2: an LFO SHAPE change jumps the modulation value. Start a fade
     // so lfoShapeValue() glides from the old shape to the new one instead.
@@ -1628,7 +1931,8 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
     for (auto& v : voices_) {
         if (!v.active() && v.hasPending) {
             v.hasPending = false;
-            v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_, modRng_);
+            v.noteOn(v.pendNote, v.pendVel, v.pendStart, clock_++, rng_, modRng_,
+                     phaseRand(OSCA_WARP, OSCA_BASE), phaseRand(OSCB_WARP, OSCB_BASE));
         }
         if (!v.active()) {
             v.oA.tableOwner.reset(); v.oB.tableOwner.reset();
@@ -1645,6 +1949,7 @@ void Engine::renderBlock(float* L, float* R, int n, double ppqChunk) {
         act++;
     }
     vizActive = act;
+    updateGlobalMods(act);
     if (act == 0) { vizCut[0] = vizCut[1] = -1; vizA = -1; vizB = -1; vizModAny = false; } // idle -> hide indicators
     for (int i = 0; i < 4; i++) {
         if (lfoXfRemain_[i] <= 0) continue;
@@ -1663,6 +1968,7 @@ void Engine::snapshotVizMod() {
         vizMod[d] = t >= 0 ? modAccum_[t] : 0.0;
     }
     vizModAny = modAnyRoute_;
+    std::copy(srcs_, srcs_ + NUM_MOD_SOURCES, vizSrcs_); // the sources of the same voice, for updateGlobalMods
 }
 
 void Engine::render(float* L, float* R, int n) {

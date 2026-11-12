@@ -14,6 +14,10 @@ public:
         setColour(juce::PopupMenu::highlightedBackgroundColourId, col::acA.withAlpha(0.18f));
         setColour(juce::PopupMenu::highlightedTextColourId, col::acA);
         setColour(juce::ComboBox::textColourId, col::text);
+        // Tooltips (the editors own a juce::TooltipWindow each).
+        setColour(juce::TooltipWindow::backgroundColourId, juce::Colour(0xff0c0f16));
+        setColour(juce::TooltipWindow::textColourId, col::text);
+        setColour(juce::TooltipWindow::outlineColourId, col::line);
     }
 
     void drawComboBox(juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox& box) override {

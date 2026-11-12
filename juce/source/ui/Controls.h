@@ -125,6 +125,8 @@ public:
     // nameProvider formats the raw value instead (e.g. seq.root -> note name).
     std::function<int()>               countProvider;
     std::function<juce::String(int)>   nameProvider;
+    // Called after a choice step with the new index.
+    std::function<void(int)>           onStep;
 private:
     void timerCallback() override;
     void step(int d);

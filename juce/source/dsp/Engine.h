@@ -91,11 +91,14 @@ public:
     long   elapsed = 0;                 // samples since reset (for rise/fade-in)
     Rng*   rng = nullptr;
     void   reset() { clock.reset(); phase = 0; hold = rng->next() * 2 - 1; elapsed = 0; }
-    double valueOff(int shape, double off) const;       // reads frac(phase + off)
+    // Reads frac(phase + off). `shapeBlock` is the LFO's drawn-shape params
+    // (LfoXField: count, then points) for the CUSTOM shape.
+    double valueOff(int shape, double off, const float* shapeBlock) const;
     double riseGain(double riseSec, double sr) const {
         return riseSec <= 0 ? 1.0 : std::min(1.0, (double)elapsed / (riseSec * sr));
     }
-    void   advance(double rate, int n, double sr);
+    // `oneshot` runs a single cycle from the note start, then holds its end.
+    void   advance(double rate, int n, double sr, bool oneshot = false);
 };
 
 // Everything one filter run needs EXCEPT the comb delay lines. Split out for
@@ -166,6 +169,16 @@ struct OscState {
     double pFt = 0;
     int    pOff0 = -1, pUni = -1;
     bool   havePrev = false;
+    // Warp: mode, map parameter and mip factor for this chunk, the previous
+    // chunk's values for the per-sample ramp, and the mode the state was last
+    // configured for (a change crossfades like a table switch).
+    int    warp = 0, pWarp = 0, warpSel = -1;
+    double warpW = 0, wf = 1, pWarpW = 0, pWf = 1;
+    // Modulator role (the other oscillator's FM/AM/RM): a clean centre voice
+    // with its own phase. cinc is the undetuned increment; modOk marks the
+    // table state as valid for this chunk.
+    double cinc = 0, pCinc = -1, mph = 0;
+    bool   modOk = false;
 };
 
 class Voice {
@@ -208,7 +221,10 @@ public:
     bool   active() const { return ampEnv.state != 0 || ampSm > 1e-4; }
     // modRng feeds LFO 3/4 and RANDOM, separate from rng so the appended
     // modulators leave every existing patch's random draws unchanged.
-    void   noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng);
+    // randA/randB: random oscillator start phases (false = phase 0, for a
+    // single-voice FM/AM/RM carrier; see Engine::phaseRand).
+    void   noteOn(int n, double v, double startPitch, long a, Rng& rng, Rng& modRng,
+                  bool randA = true, bool randB = true);
     // Mono note change without legato: restart envelopes, per-note LFOs and
     // RANDOM; keep oscillator phase and filter state (worklet Voice.retrigger).
     void   retrigger(int n, double v, Rng& modRng) {
@@ -423,6 +439,10 @@ public:
     // 128-sample block cadence so block-rate modulation matches the web engine
     // regardless of the host buffer size.
     void render(float* L, float* R, int n);
+    // Route sums for the FX destinations, in the order DRIVE AMT, DRIVE MIX,
+    // CHORUS MIX, DELAY FDBK, DELAY MIX, REVERB MIX (MOD_DESTS 43..48). They
+    // follow the viz voice; the processor hands them to Fx::setMod each block.
+    const std::array<double, 6>& fxMod() const { return fxMod_; }
 
     // Live visualization feedback (modulated wt positions + active voice count).
     double vizCut[2] = {-1, -1};
@@ -443,8 +463,12 @@ private:
     // Crossfade length for a discrete switch (finding J2): 3 ms, sample-rate
     // derived, matching the DR-1 engine's filter-type fade.
     int  xfSamples() const { return std::max(8, (int)(0.003 * sr_)); }
-    bool setupOsc(OscState& o, int base, Voice& v, const double* pm, double mPitch, double mPan, int n);
-    void renderOsc(OscState& o, float* tmpL, float* tmpR, int n);
+    bool setupOsc(OscState& o, int base, int wbase, int obase, Voice& v, const double* pm,
+                  double mPitch, double mPan, int n, bool wantMod);
+    void renderOsc(OscState& o, float* tmpL, float* tmpR, int n, const float* mod = nullptr);
+    void renderOscWarp(OscState& o, float* tmpL, float* tmpR, int n, const float* mod);
+    void renderMod(OscState& o, float* out, int n);
+    bool phaseRand(int wbase, int base) const;
     void setupFilter(FilterCore& fc, int base, Voice& v, double e2, double mCut, const double* pm, int n);
     void runFilter(FilterState& fs, FilterCore& c, bool writeComb,
                    const float* inL, const float* inR, float* outL, float* outR, int n);
@@ -462,7 +486,7 @@ private:
     void renderBlock(float* L, float* R, int n, double ppqChunk); // n <= 128
     void snapshotVizMod();             // copy the just-rendered voice's route sums
     double lfoHz(int base) const;
-    void updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n);
+    void updateGlobalLfo(Lfo& g, int base, double ppqChunk, int n, double rateMul = 1);
 
     // ---- note sequencer internals ----
     void seqGateOff();                       // worklet seqGateOff (gate off all)
@@ -606,10 +630,26 @@ private:
     // trick as pm_). modAnyRoute_ = that voice saw >= 1 active per-param route.
     double modAccum_[NUM_PARAMS] = {0};
     bool   modAnyRoute_ = false;
+    // evalRoutes() runs the mod matrix on one set of source values: it fills
+    // modAccum_ and the global sums below. srcs_ are the sources of the voice
+    // in hand, vizSrcs_ those of the viz voice (for updateGlobalMods), and
+    // amtMod_ the amount offsets from "MOD n AMT" routes.
+    double srcs_[NUM_MOD_SOURCES] = {0}, vizSrcs_[NUM_MOD_SOURCES] = {0};
+    double mPitch_ = 0, mAmp_ = 0, mPan_ = 0;
+    double amtMod_[MOD_MATRIX_SIZE] = {0};
+    double routeSource(int s, int src, const double* srcs, double& aux) const;
+    void   evalRoutes(const double* srcs);
+    // Destinations outside the voice: the FX controls (fxMod_, read by the
+    // processor into Fx::setMod) and the rate of each free-running LFO.
+    void   updateGlobalMods(int act);
+    std::array<double, 6> fxMod_{};
+    double gRate_[4] = {1, 1, 1, 1};
 
     // per-block scratch (128)
     float tmpL_[128], tmpR_[128];
     float bL_[128], bR_[128];
+    // FM/AM/RM modulator signals: the one osc A reads (from B) and vice versa.
+    float modForA_[128], modForB_[128];
     float f1L_[128], f1R_[128], f2L_[128], f2R_[128];
     // Second scratch pair set: the frozen pre-switch filter section runs into
     // these while the live one runs into f1_/f2_ (finding J2).

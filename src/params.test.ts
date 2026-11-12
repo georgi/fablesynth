@@ -34,13 +34,35 @@ const EXPECTED: Array<[number, string, ReturnType<typeof dstTarget>]> = [
   [25, 'NOISE LVL', 'noise.level'],
   [26, 'A BLEND', 'oscA.blend'],
   [27, 'B BLEND', 'oscB.blend'],
+  [28, 'A WARP', 'oscA.warpamt'],
+  [29, 'B WARP', 'oscB.warpamt'],
+  [30, 'LFO1 RATE', 'lfo1.rate'],
+  [31, 'LFO2 RATE', 'lfo2.rate'],
+  [32, 'LFO3 RATE', 'lfo3.rate'],
+  [33, 'LFO4 RATE', 'lfo4.rate'],
+  [34, 'AMP ATK', 'env1.a'],
+  [35, 'AMP DEC', 'env1.d'],
+  [36, 'AMP REL', 'env1.r'],
+  [37, 'MENV ATK', 'env2.a'],
+  [38, 'MENV DEC', 'env2.d'],
+  [39, 'MENV REL', 'env2.r'],
+  [40, 'MENV2 ATK', 'env3.a'],
+  [41, 'MENV2 DEC', 'env3.d'],
+  [42, 'MENV2 REL', 'env3.r'],
+  [43, 'DRIVE AMT', 'fx.drive.amt'],
+  [44, 'DRIVE MIX', 'fx.drive.mix'],
+  [45, 'CHORUS MIX', 'fx.chorus.mix'],
+  [46, 'DELAY FDBK', 'fx.delay.fb'],
+  [47, 'DELAY MIX', 'fx.delay.mix'],
+  [48, 'REVERB MIX', 'fx.reverb.mix'],
+  ...Array.from({ length: 16 }, (_, i): [number, string, string] => [49 + i, `MOD ${i + 1} AMT`, `mat${i + 1}.amt`]),
 ];
 
 const GLOBALS: GlobalDst[] = ['none', 'pitch', 'amp', 'pan'];
 
 describe('MOD_DESTS', () => {
-  it('has exactly 28 entries (0..27) with the contract labels', () => {
-    expect(MOD_DESTS).toHaveLength(28);
+  it('has exactly 65 entries (0..64) with the contract labels', () => {
+    expect(MOD_DESTS).toHaveLength(65);
     expect(MOD_DESTS).toEqual(EXPECTED.map(([, label]) => label));
   });
 
@@ -59,7 +81,7 @@ describe('dstTarget', () => {
   });
 
   it('treats out-of-range / negative indices as "none"', () => {
-    expect(dstTarget(28)).toBe('none');
+    expect(dstTarget(65)).toBe('none');
     expect(dstTarget(-1)).toBe('none');
     expect(dstTarget(999)).toBe('none');
   });

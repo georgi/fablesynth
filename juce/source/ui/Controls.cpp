@@ -217,17 +217,22 @@ void Knob::nudge(float d) {
 // arc (r 33) so they never cover the base value. Matches the web r = 38 + k·3.4.
 namespace {
 struct KnobGeom { float cx, cy, bodyR, ringGap, ringThk; };
-KnobGeom knobGeom(int w, int h, bool showLabel, int sizePx) {
+// Drawing scale of the knob's 80-unit space. Each mod ring after the first
+// lies outside that space, so the space grows by one ring width per extra
+// ring: the knob shrinks a little and every ring stays inside the component
+// (web Knob ringViewBox).
+float knobScale(float dia, int rings) { return dia / (80.0f + 2.0f * 3.4f * (float)juce::jmax(0, rings - 1)); }
+KnobGeom knobGeom(int w, int h, bool showLabel, int sizePx, int rings) {
     const float avail = (float)juce::jmin(w, h - (showLabel ? 13 : 0));
     const float dia = juce::jmin(avail, (float)sizePx);
-    const float scale = dia / 80.0f;
+    const float scale = knobScale(dia, rings);
     return { w * 0.5f, dia * 0.5f + 1.0f, 26.0f * scale, 10.3f * scale, 3.4f * scale };
 }
 }
 
 int Knob::ringAt(juce::Point<float> pos) const {
     if (modDest_ <= 0 || rings_.empty()) return -1;
-    auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
+    auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size), (int)rings_.size());
     const float dist = pos.getDistanceFrom({ gm.cx, gm.cy });
     const float inner = gm.bodyR + gm.ringGap;
     if (dist < inner || dist > inner + (float)rings_.size() * gm.ringThk) return -1;
@@ -340,7 +345,8 @@ void Knob::paint(juce::Graphics& g) {
     const float avail = (float)juce::jmin(getWidth(), getHeight() - (showLabel ? 13 : 0));
     const float dia = juce::jmin(avail, (float)svgPx(size));
     const float cx = static_cast<float>(getWidth()) * 0.5f, cy = dia * 0.5f + 1.0f;
-    const float scale = dia / 80.0f;
+    const int ringCount = modDest_ > 0 ? (int)rings_.size() : 0;
+    const float scale = knobScale(dia, ringCount);
     const float bodyR = 26 * scale, arcR = 33 * scale, ptrLen = 23 * scale;
     const float n = clamp01(norm());
 
@@ -380,7 +386,7 @@ void Knob::paint(juce::Graphics& g) {
     // modulation rings: one arc per active slot whose dst == modDest, from the
     // current value angle to the angle at clamp(currentNorm + amt) (bipolar),
     // stacked at increasing radii outside the value arc. Source-colored.
-    const auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size));
+    const auto gm = knobGeom(getWidth(), getHeight(), showLabel, svgPx(size), ringCount);
     if (modDest_ > 0) {
         const float ringGap = gm.ringGap, ringThk = gm.ringThk;
         const int focus = highlightedModSource();
@@ -517,6 +523,7 @@ void Stepper::step(int d) {
         int idx = ((choice->getIndex() % n) + d + n) % n;
         choice->setValueNotifyingHost(choice->convertTo0to1((float)idx));
         repaint();
+        if (onStep) onStep(idx);
         return;
     }
     if (ranged) {

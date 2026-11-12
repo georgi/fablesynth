@@ -18,6 +18,7 @@
 #include "LabFx.h"
 #include "ActivityGate.h"
 #include "AnalysisTap.h"
+#include "PlateReverb.h"
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -408,6 +409,9 @@ public:
     int keyChannel() const { return keyChannel_; }
     const DetectorTrace& compTrace() const { return comp_.trace(); }
     void reset();
+    // Route sums for the FX destinations (Engine::fxMod(): DRIVE AMT, DRIVE
+    // MIX, CHORUS MIX, DELAY FDBK, DELAY MIX, REVERB MIX), added to the knobs.
+    void setMod(const std::array<double, 6>& sums);
     // Host beat position for the LAB's tempo-synced GLITCH (optional).
     void setTransport(double ppq, bool playing) { lab_.setTransport(ppq, playing); }
     // Session tempo for the LAB only (SQ-4); the echo keeps its patch tempo.
@@ -485,6 +489,17 @@ private:
     Smooth verbWet_, verbDry_;
     float roomSize_ = 0.84f;
     bool verbOff_ = false, verbGated_ = false;
+    // Modulatable controls: knob values, stage switches and route sums.
+    std::array<float, 6> modBase_{};
+    std::array<bool, 6>  modOn_{};
+    std::array<double, 6> mod_{};
+    void  applyMod();
+    // PLATE algorithm (fx.reverb.type 1); only the selected network runs.
+    PlateReverb plate_;
+    int   verbType_ = 0;
+    float verbDamp_ = 0.5f;
+    bool  plateDirty_ = true; // DAMP changed: update the tank at the next coefficient step
+    void  resetVerb();        // clear both reverb networks
 
     // shared web dynamics: OTT -> leveling compressor
     OttCompressor ott_;

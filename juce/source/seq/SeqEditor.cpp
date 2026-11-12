@@ -128,6 +128,7 @@ void SeqRack::applyLayout() {
 SeqEditor::SeqEditor(SeqAudioProcessor& p)
     : juce::AudioProcessorEditor(p), proc_(p), rack(p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
+    tooltips.setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     addAndMakeVisible(agentOverlay);
     agentOverlay.beforeStateRead = [this] { deviceFocus().flushPendingPatches(); };

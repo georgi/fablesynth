@@ -19,7 +19,13 @@ export const TABLE_NAMES = ['PRIME', 'BLOOM', 'PULSE', 'VOX', 'CHIME', 'GLITCH']
 // SVF types keep indices 0..4; comb + vowel are appended so existing presets stay valid.
 export const FILTER_TYPES = ['LP 12', 'LP 24', 'BP 12', 'HP 12', 'NOTCH', 'COMB', 'VOWEL'];
 export const FILTER_ROUTES = ['SERIAL', 'PARALLEL', 'SPLIT'];
-export const LFO_SHAPES = ['SINE', 'TRI', 'SAW', 'SQR', 'S&H'];
+// CUSTOM (appended) plays the drawn shape in the `lfoN.p*` point params.
+export const LFO_SHAPES = ['SINE', 'TRI', 'SAW', 'SQR', 'S&H', 'CUSTOM'];
+export const LFO_CUSTOM = 5;
+/** Points of a drawn LFO shape. Each has x (cycle position), y and c. */
+export const LFO_MAX_POINTS = 16;
+/** `c` value of a point that holds its y until the next point (a step). */
+export const LFO_HOLD = 2;
 export const LFO_DIVS = ['1/1', '1/2', '1/4', '1/4.', '1/4T', '1/8', '1/8.', '1/8T', '1/16', '1/16T', '1/32'];
 // Cycles per beat (beat = quarter note) for each LFO_DIVS entry. Mirrors
 // LFO_DIV_F in engine/worklet.js — keep the two in sync.
@@ -28,6 +34,17 @@ export const LFO_DIV_F = [0.25, 0.5, 1, 2 / 3, 1.5, 2, 4 / 3, 3, 4, 6, 8];
 // displays) lock to this tempo. Mirrors the worklet's default bpm.
 export const SYNC_BPM = 120;
 export const SUB_SHAPES = ['SINE', 'SQR'];
+// Oscillator warp modes (append-only). SYNC..QUANTIZE remap the read phase of
+// the oscillator's own table; FM/AM/RM take the other oscillator as modulator.
+// Mirrors WARP_MODES in juce/source/dsp/Params.h and the WARP_* ids in worklet.js.
+export const WARP_MODES = ['OFF', 'SYNC', 'SYNC WIN', 'BEND', 'ASYM', 'PWM', 'MIRROR', 'QUANTIZE', 'FM', 'AM', 'RM'];
+/** First warp mode that reads the other oscillator. */
+export const WARP_CROSS = 8;
+/** Amount at which a warp mode leaves the waveform unchanged (BEND and ASYM are bipolar). */
+export const warpNeutral = (mode: number) => (mode === 3 || mode === 4 ? 0.5 : 0);
+// Reverb algorithms (append-only). ROOM is the original comb network; PLATE is
+// the dense allpass-loop tank (smoother tail, modulated).
+export const REVERB_TYPES = ['ROOM', 'PLATE'];
 export const NOISE_TYPES = ['WHITE', 'PINK'];
 // Append-only: saved routes store the index. 6.. are the Serum-parity sources.
 // MOD WHL and AFTERTCH read the perf.* params; RANDOM is a per-note value.
@@ -52,7 +69,23 @@ export const MOD_DESTS = [
   'F1 RES', 'F1 DRIVE', 'F1 ENV', 'F1 KEY', 'F2 DRIVE', 'F2 ENV', 'F2 KEY',
   'SUB LVL', 'NOISE LVL',
   'A BLEND', 'B BLEND',
+  'A WARP', 'B WARP',
+  // 30..: LFO rates, envelope times, FX controls and the amount of another
+  // route. The FX run after the voices, so they follow the newest held note.
+  'LFO1 RATE', 'LFO2 RATE', 'LFO3 RATE', 'LFO4 RATE',
+  'AMP ATK', 'AMP DEC', 'AMP REL', 'MENV ATK', 'MENV DEC', 'MENV REL', 'MENV2 ATK', 'MENV2 DEC', 'MENV2 REL',
+  'DRIVE AMT', 'DRIVE MIX', 'CHORUS MIX', 'DELAY FDBK', 'DELAY MIX', 'REVERB MIX',
+  ...Array.from({ length: 16 }, (_, i) => `MOD ${i + 1} AMT`),
 ];
+/** Targets of MOD_DESTS 30 and up, in order (see dstTarget). */
+const EXTRA_DST_TARGETS: ParamId[] = [
+  'lfo1.rate', 'lfo2.rate', 'lfo3.rate', 'lfo4.rate',
+  'env1.a', 'env1.d', 'env1.r', 'env2.a', 'env2.d', 'env2.r', 'env3.a', 'env3.d', 'env3.r',
+  'fx.drive.amt', 'fx.drive.mix', 'fx.chorus.mix', 'fx.delay.fb', 'fx.delay.mix', 'fx.reverb.mix',
+  ...Array.from({ length: 16 }, (_, i) => `mat${i + 1}.amt`),
+];
+/** First MOD_DESTS index of the "MOD n AMT" block (the amount of route n). */
+export const DST_ROUTE_AMT = 49;
 
 // Global modulation tokens (no single owning control — assignable only from the
 // matrix list). Per-param dests resolve to a paramId string instead. Mirrors the
@@ -91,7 +124,9 @@ export function dstTarget(dst: number): ParamId | GlobalDst {
     case 25: return 'noise.level';
     case 26: return 'oscA.blend';
     case 27: return 'oscB.blend';
-    default: return 'none';
+    case 28: return 'oscA.warpamt';
+    case 29: return 'oscB.warpamt';
+    default: return EXTRA_DST_TARGETS[(dst | 0) - 30] ?? 'none';
   }
 }
 
@@ -104,6 +139,7 @@ export interface ModConnection {
   amt: number;
   pol?: number; // MOD_POLARITY index, 0 = source native
   aux?: number; // MOD_SOURCES index of the aux scale, 0 = none
+  crv?: number; // response curve, -1..1, 0 = linear
 }
 
 // Per-route polarity. SRC keeps the source's native range (LFOs and NOTE are
@@ -126,6 +162,19 @@ export function routeLabel(src: number, amt: number, bipolar: boolean): string {
 /** Aux-source scale for a route: the aux's unipolar value, or 1 with no aux. */
 export function auxScale(x: number, aux: number): number {
   return aux ? (SOURCE_BIPOLAR[aux] ? (x + 1) * 0.5 : x) : 1;
+}
+/**
+ * Response curve of a route: bends the source value before the amount. c > 0
+ * starts slow (small source values do less), c < 0 starts fast, 0 is linear.
+ * A bipolar value keeps its sign and bends its size. The bend is the clip
+ * automation one. Mirrors routeCurve in worklet.js and Params.h.
+ */
+export function routeCurve(x: number, c: number, bipolar: boolean): number {
+  if (Math.abs(c) < 1e-3) return x;
+  const k = Math.max(-1, Math.min(1, c)) * 6;
+  const f = Math.min(1, bipolar ? Math.abs(x) : Math.max(0, x));
+  const y = (Math.exp(k * f) - 1) / (Math.exp(k) - 1);
+  return bipolar && x < 0 ? -y : y;
 }
 export function polarize(x: number, src: number, pol: number): number {
   const native = SOURCE_BIPOLAR[src] ?? false;
@@ -167,6 +216,11 @@ export const DEST_OF_PARAM: Record<string, number> = {
   'noise.level': 25,
   'oscA.blend': 26,
   'oscB.blend': 27,
+  'oscA.warpamt': 28,
+  'oscB.warpamt': 29,
+  // LFO rates, envelope times, FX controls and route amounts (30..). A route
+  // amount has no knob with rings; it is picked in the matrix list.
+  ...Object.fromEntries(EXTRA_DST_TARGETS.map((id, i) => [id, 30 + i])),
 };
 
 export type Curve = 'lin' | 'log' | 'int';
@@ -182,6 +236,8 @@ export interface ParamDef {
   fmt?: (v: number) => string;
   type?: ParamType;
   options?: string[];
+  /** Data of an editor, not a control: no automation lane, no agent access. */
+  hidden?: boolean;
 }
 
 export type ParamId = string;
@@ -407,6 +463,30 @@ export const PARAM_DEFS: ParamDef[] = [
   // COMP side-chain (src/engine/sidechain.ts), appended to keep positions.
   { id: 'fx.comp.sc', type: 'enum', options: SC_SOURCES, def: 0 },
   { id: 'fx.comp.schp', ...SC_HP_DEF },
+  // Oscillator warp (appended): a mode and an amount per oscillator.
+  ...(['oscA', 'oscB'] as const).flatMap((osc): ParamDef[] => [
+    { id: `${osc}.warp`, type: 'enum', options: WARP_MODES, def: 0 },
+    { id: `${osc}.warpamt`, label: 'WARP', min: 0, max: 1, def: 0, curve: 'lin', fmt: fmtPct },
+  ]),
+  // Reverb algorithm and PLATE high-frequency damping (appended).
+  { id: 'fx.reverb.type', type: 'enum', options: REVERB_TYPES, def: 0 },
+  { id: 'fx.reverb.damp', label: 'DAMP', min: 0, max: 1, def: 0.5, curve: 'lin', fmt: fmtPct },
+  // Response curve per route (appended), see routeCurve().
+  ...Array.from({ length: 16 }, (_, i): ParamDef =>
+    ({ id: `mat${i + 1}.crv`, label: 'CURVE', min: -1, max: 1, def: 0, curve: 'lin', fmt: fmtBi })),
+  // Drawn LFO shapes (appended): a one-shot switch, a point count and
+  // LFO_MAX_POINTS points per LFO. A point is x (0..1 of the cycle), y (0..1,
+  // played as -1..+1) and c, the bend of the segment that leaves it (-1..1,
+  // or LFO_HOLD for a step). Points are sorted by x. src/lfoShape.ts edits them.
+  ...[1, 2, 3, 4].flatMap((n): ParamDef[] => [
+    { id: `lfo${n}.oneshot`, type: 'bool', def: 0 },
+    { id: `lfo${n}.pn`, label: 'POINTS', min: 0, max: LFO_MAX_POINTS, def: 0, curve: 'int', hidden: true },
+    ...Array.from({ length: LFO_MAX_POINTS }, (_, k): ParamDef[] => [
+      { id: `lfo${n}.p${k + 1}.x`, label: 'X', min: 0, max: 1, def: 0, curve: 'lin', hidden: true },
+      { id: `lfo${n}.p${k + 1}.y`, label: 'Y', min: 0, max: 1, def: 0.5, curve: 'lin', hidden: true },
+      { id: `lfo${n}.p${k + 1}.c`, label: 'CURVE', min: -1, max: LFO_HOLD, def: 0, curve: 'lin', hidden: true },
+    ]).flat(),
+  ]),
 ];
 
 export const PARAMS: Record<string, ParamDef> = Object.fromEntries(PARAM_DEFS.map((d) => [d.id, d]));

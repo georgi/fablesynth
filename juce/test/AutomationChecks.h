@@ -18,6 +18,9 @@ static void testAutomation() {
     const std::vector<AutoLane> lanes {{ "filter.cutoff", true, { AutoTime::Grid, 4, 4 }, {{0, .2, 0, true}, {2, .8, 0, true}} }};
     CHECK(validateAutomation(lanes, Machine::WT1));
     auto bad = lanes; bad[0].target = "filter.type"; CHECK(!validateAutomation(bad, Machine::WT1));
+    // Drawn LFO points are editor data (ParamInfo::hidden), not lane targets.
+    bad = lanes; bad[0].target = "lfo1.p1.y"; CHECK(!validateAutomation(bad, Machine::WT1));
+    CHECK(autoParamDef(Machine::WT1, "lfo1.pn") == nullptr && autoParamDef(Machine::WT1, "lfo1.rate") != nullptr);
     bad = lanes; bad.resize(9, lanes[0]); CHECK(!validateAutomation(bad, Machine::WT1));
     bad = lanes; bad[0].time.mode = AutoTime::Pad; CHECK(!validateAutomation(bad, Machine::WT1));
     bad[0].target = "fx.delay.mix"; CHECK(!validateAutomation(bad, Machine::DR1));

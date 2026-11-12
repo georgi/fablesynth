@@ -59,11 +59,20 @@ static std::unique_ptr<juce::ParameterAttachment> attachCombo(
 OscPanel::OscPanel(WtUiModel& model, int osc, juce::String pre, Accent ac, juce::String t)
     : oscIndex(osc), title(t), prefix(pre), accent(ac),
       power(model.parameters(), pre + ".on", ac), tableStep(model.parameters(), pre + ".table", ac),
-      unisonStep(model.parameters(), pre + ".unison", ac), wt(model, osc, accentColour(ac)),
+      unisonStep(model.parameters(), pre + ".unison", ac), warpStep(model.parameters(), pre + ".warp", ac),
+      wt(model, osc, accentColour(ac)),
       // POS slider is a mod target: dest 1 (oscA POS) / 2 (oscB POS).
       pos(model.parameters(), pre + ".pos", ac, [&model, osc] { return model.vizPosition(osc); }, osc == 0 ? 1 : 2) {
     addAndMakeVisible(power); addAndMakeVisible(tableStep); addAndMakeVisible(unisonStep);
-    addAndMakeVisible(wt); addAndMakeVisible(pos);
+    addAndMakeVisible(warpStep); addAndMakeVisible(wt); addAndMakeVisible(pos);
+    // A new warp mode starts at its neutral amount (web OscPanel onStep).
+    warpStep.onStep = [source = model.parameters(), pre](int mode) {
+        if (auto* amount = source.parameter(pre + ".warpamt")) {
+            amount->beginChangeGesture();
+            amount->setValueNotifyingHost(amount->convertTo0to1(fable::warpNeutral(mode)));
+            amount->endChangeGesture();
+        }
+    };
     // The table stepper cycles only over the procedural + live user tables and
     // shows each table's live name (the param itself reserves fixed USER slots).
     tableStep.countProvider = [&model] { return model.numTables(); };
@@ -75,22 +84,24 @@ OscPanel::OscPanel(WtUiModel& model, int osc, juce::String pre, Accent ac, juce:
     editBtn.onClick = [this] { if (onEditTable) onEditTable(oscIndex); };
     addAndMakeVisible(editBtn);
     editBtn.setVisible(model.capabilities().supportsUserTables);
-    const char* ids[] = {".oct", ".semi", ".fine", ".detune", ".spread", ".blend", ".level", ".pan"};
+    const char* ids[] = {".oct", ".semi", ".fine", ".detune", ".spread", ".blend", ".warpamt", ".level", ".pan"};
     // Continuous knobs are mod targets (A/B per osc): DETUNE (3) → 11/14,
-    // SPREAD (4) → 12/15, BLEND (5) → 26/27, LEVEL (6) → 7/8, PAN (7) → 13/16.
+    // SPREAD (4) → 12/15, BLEND (5) → 26/27, WARP (6) → 28/29, LEVEL (7) → 7/8,
+    // PAN (8) → 13/16.
     // OCT/SEMI/FINE are discrete steppers → not modulatable (modDest 0);
     // UNISON is the compact stepper in the knob row between FINE and DETUNE
     // (unisonStep — same cell the web UI uses; laid out in resized()).
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 9; ++i) {
         int modDest = 0;
         switch (i) {
             case 3: modDest = osc == 0 ? 11 : 14; break; // DETUNE → A/B DETUNE
             case 4: modDest = osc == 0 ? 12 : 15; break; // SPREAD → A/B SPREAD
             case 5: modDest = osc == 0 ? 26 : 27; break; // BLEND  → A/B BLEND
-            case 6: modDest = osc == 0 ?  7 :  8; break; // LEVEL  → A/B LVL
-            case 7: modDest = osc == 0 ? 13 : 16; break; // PAN    → A/B PAN
+            case 6: modDest = osc == 0 ? 28 : 29; break; // WARP   → A/B WARP
+            case 7: modDest = osc == 0 ?  7 :  8; break; // LEVEL  → A/B LVL
+            case 8: modDest = osc == 0 ? 13 : 16; break; // PAN    → A/B PAN
         }
-        auto* k = new Knob(model.parameters(), pre + ids[i], i == 6 ? Knob::Md : Knob::Sm, ac, true, modDest);
+        auto* k = new Knob(model.parameters(), pre + ids[i], i == 7 ? Knob::Md : Knob::Sm, ac, true, modDest);
         knobs.add(k); addAndMakeVisible(k);
     }
 }
@@ -102,6 +113,7 @@ void OscPanel::paint(juce::Graphics& g) {
     g.setColour(col::textDim);
     g.setFont(monoFont(8.0f));
     drawSpaced(g, "UNI", uniLabelArea, 1.2f, juce::Justification::centred);
+    drawSpaced(g, "WARP", warpLabelArea, 1.2f, juce::Justification::centredRight);
 }
 void OscPanel::resized() {
     auto r = getLocalBounds().reduced(11, 9);
@@ -112,6 +124,11 @@ void OscPanel::resized() {
     tableStep.setBounds(right.removeFromRight(100).withSizeKeepingCentre(100, 18));
     right.removeFromRight(4);
     editBtn.setBounds(right.removeFromRight(18).withSizeKeepingCentre(18, 18));
+    // WARP caption + mode stepper, between the title and the table selector.
+    head.removeFromRight(8);
+    warpStep.setBounds(head.removeFromRight(96).withSizeKeepingCentre(96, 18));
+    head.removeFromRight(4);
+    warpLabelArea = head.removeFromRight(30);
     titleArea = head;
     r.removeFromTop(8);
     auto knobRow = r.removeFromBottom(62);
@@ -122,8 +139,8 @@ void OscPanel::resized() {
     r.removeFromRight(8);
     wt.setBounds(r);
     pos.setBounds(posCol);
-    // 9 cells mirroring the web knob row: OCT SEMI FINE UNI DETUNE SPREAD BLEND
-    // LEVEL PAN — the unison stepper takes the cell between FINE and DETUNE.
+    // 10 cells mirroring the web knob row: OCT SEMI FINE UNI DETUNE SPREAD BLEND
+    // WARP LEVEL PAN — the unison stepper takes the cell between FINE and DETUNE.
     auto row = ptrs(knobs);
     row.insert(3, &unisonStep);
     layoutKnobRow(knobRow, row);
@@ -381,7 +398,10 @@ EnvPanel::EnvPanel(ParameterSource s, juce::String base, juce::String t, juce::C
         auto& page = pages[pg];
         page.view = std::make_unique<EnvView>(s, bases[pg], viewAccent);
         addChildComponent(*page.view);
-        for (int i = 0; i < 4; ++i) page.knobs.add(new Knob(s, bases[pg] + ids[i], Knob::Sm, knobAccent));
+        // ATK, DEC and REL are mod targets (dests 34..42); SUS is not.
+        for (int i = 0; i < 4; ++i)
+            page.knobs.add(new Knob(s, bases[pg] + ids[i], Knob::Sm, knobAccent, true,
+                                    fable::destOfParam(fable::idFromString((bases[pg] + ids[i]).toStdString()))));
         for (auto* k : page.knobs) addChildComponent(k);
         if (srcs[pg] > 0) {
             page.srcChip = std::make_unique<ModSourceChip>(srcs[pg], juce::String(fable::MOD_SOURCES[(size_t)srcs[pg]]), true);
@@ -445,14 +465,26 @@ LfoPanel::Block::Block(ParameterSource s, juce::String id, juce::String t, Accen
       shape(s, id + ".shape", Accent::N),
       view(s, id + ".shape", id + ".rate", id + ".sync", id + ".syncrate", accentColour(ac), std::move(transportProvider)),
       syncBtn("SYNC", PillButton::Tag, accentColour(ac)), retrigBtn("TRIG", PillButton::Tag, accentColour(ac)),
+      oneBtn("1SHOT", PillButton::Tag, accentColour(ac)), stepBtn("STEP", PillButton::Tag, accentColour(ac)),
       syncRate(s, id + ".syncrate", ac),
-      rate(s, id + ".rate", Knob::Sm, ac),
+      // RATE is a mod target (LFO1..4 RATE, dests 30..33).
+      rate(s, id + ".rate", Knob::Sm, ac, true, fable::destOfParam(fable::idFromString((id + ".rate").toStdString()))),
       rise(s, id + ".rise", Knob::Sm, ac),
       phase(s, id + ".phase", Knob::Sm, ac) {
     syncBtn.setClickingTogglesState(true);
     retrigBtn.setClickingTogglesState(true);
     syncAtt   = attachButton(s, id + ".sync", syncBtn);
     retrigAtt = attachButton(s, id + ".retrig", retrigBtn);
+    oneBtn.setClickingTogglesState(true);
+    oneBtn.setTooltip("One-shot: run one cycle from the note start, then hold the end of the shape");
+    oneAtt = attachButton(s, id + ".oneshot", oneBtn);
+    stepBtn.setClickingTogglesState(true);
+    stepBtn.setTooltip("STEP: drag in the CUSTOM shape to paint sixteen held steps");
+    stepBtn.onClick = [this] { view.setPaintMode(stepBtn.getToggleState()); };
+    // A first visit to CUSTOM starts from the shape the LFO played before.
+    shape.onStep = [this](int next) {
+        if (next == fable::LFO_CUSTOM && view.pointCount() == 0) view.seedFrom(shownShape);
+    };
 }
 
 void LfoPanel::Block::applySync(bool sync) {
@@ -476,6 +508,9 @@ void LfoPanel::Block::layout(juce::Rectangle<int> r) {
     view.setBounds(r.removeFromTop(62));
     r.removeFromTop(8);
     auto row = r.removeFromTop(60);
+    auto modes = row.removeFromRight(36).withSizeKeepingCentre(34, 36);
+    oneBtn.setBounds(modes.removeFromTop(16));
+    stepBtn.setBounds(modes.removeFromBottom(16));
     int w = row.getWidth() / 3;
     slot0 = row.removeFromLeft(w);
     rate.setBounds(slot0);
@@ -499,6 +534,8 @@ LfoPanel::LfoPanel(ParameterSource s, std::function<HostTransport()> transportPr
         addChildComponent(b->view);
         addChildComponent(b->syncBtn);
         addChildComponent(b->retrigBtn);
+        addChildComponent(b->oneBtn);
+        addChildComponent(b->stepBtn);
         addChildComponent(b->syncRate);
         addChildComponent(b->rate);
         addChildComponent(b->rise);
@@ -529,7 +566,8 @@ void LfoPanel::showLfo(int slot, int c) {
         auto* b = pair[i];
         const bool on = i == c;
         for (auto* comp : std::initializer_list<juce::Component*>{ &b->srcChip, &b->shape, &b->view, &b->syncBtn,
-                                                                   &b->retrigBtn, &b->rise, &b->phase })
+                                                                   &b->retrigBtn, &b->oneBtn, &b->stepBtn,
+                                                                   &b->rise, &b->phase })
             comp->setVisible(on);
         b->rate.setVisible(false); b->syncRate.setVisible(false);
         pick[slot][i]->setToggleState(on, juce::dontSendNotification);
@@ -546,6 +584,11 @@ void LfoPanel::timerCallback() {
         const int n = slot + 1 + choice[slot] * 2;
         const bool sync = parameters.parameter("lfo" + juce::String(n) + ".sync")->getValue() != 0.0f;
         if (sync != shown(slot)->lastSync) shown(slot)->applySync(sync);
+        // STEP painting applies to the CUSTOM shape only.
+        auto* b = shown(slot);
+        b->shownShape = (int)parameters.effectiveValue("lfo" + juce::String(n) + ".shape");
+        const bool custom = b->shownShape == fable::LFO_CUSTOM;
+        if (b->stepBtn.isEnabled() != custom) { b->stepBtn.setEnabled(custom); b->stepBtn.setAlpha(custom ? 1.0f : 0.35f); }
     }
 }
 
@@ -573,7 +616,49 @@ void LfoPanel::resized() {
 }
 
 // ===================== MatrixPanel =====================
-MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl), parameters(s) {
+MatrixPanel::Row::CurveBox::CurveBox(ParameterSource s, int sl) : parameters(s), slot(sl) {
+    param = s.parameter("mat" + juce::String(sl) + ".crv");
+    setTooltip("response curve: drag to bend, double-click for linear");
+    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+}
+float MatrixPanel::Row::CurveBox::value() const { return param ? param->convertFrom0to1(param->getValue()) : 0.0f; }
+void MatrixPanel::Row::CurveBox::paint(juce::Graphics& g) {
+    const auto r = getLocalBounds().toFloat().reduced(0.5f);
+    g.setColour(juce::Colour(0xff0a0d13)); g.fillRoundedRectangle(r, 4.0f);
+    g.setColour(col::line); g.drawRoundedRectangle(r, 4.0f, 1.0f);
+    const bool bi = fui::routeBipolar(parameters, slot);
+    const float c = value();
+    shown = c; shownBi = bi;
+    const auto box = r.reduced(2.0f);
+    juce::Path path;
+    for (int i = 0; i <= 24; ++i) {
+        const double t = i / 24.0, x = bi ? t * 2 - 1 : t;
+        const double y = fable::routeCurve(x, c, bi);
+        const float px = box.getX() + (float)t * box.getWidth();
+        const float py = box.getBottom() - (float)(bi ? (y + 1) / 2 : y) * box.getHeight();
+        if (i == 0) path.startNewSubPath(px, py); else path.lineTo(px, py);
+    }
+    g.setColour(col::acN);
+    g.strokePath(path, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+void MatrixPanel::Row::CurveBox::mouseDown(const juce::MouseEvent&) {
+    if (!param) return;
+    dragStart = value(); param->beginChangeGesture();
+}
+void MatrixPanel::Row::CurveBox::mouseDrag(const juce::MouseEvent& e) {
+    if (!param) return;
+    const float step = e.mods.isShiftDown() ? 0.002f : 0.01f;
+    param->setValueNotifyingHost(param->convertTo0to1(juce::jlimit(-1.0f, 1.0f, dragStart - (float)e.getDistanceFromDragStartY() * step)));
+    repaint();
+}
+void MatrixPanel::Row::CurveBox::mouseUp(const juce::MouseEvent&) { if (param) param->endChangeGesture(); }
+void MatrixPanel::Row::CurveBox::mouseDoubleClick(const juce::MouseEvent&) {
+    if (!param) return;
+    param->beginChangeGesture(); param->setValueNotifyingHost(param->convertTo0to1(0.0f)); param->endChangeGesture();
+    repaint();
+}
+
+MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl), curve(s, sl), parameters(s) {
     juce::String base = "mat" + juce::String(slot);
     for (size_t i = 0; i < fable::MOD_SOURCES.size(); ++i) src.addItem(fable::MOD_SOURCES[i], static_cast<int>(i) + 1);
     for (size_t i = 0; i < fable::MOD_DESTS.size(); ++i) dst.addItem(fable::MOD_DESTS[i], static_cast<int>(i) + 1);
@@ -593,11 +678,15 @@ MatrixPanel::Row::Row(ParameterSource s, int sl) : slot(sl), parameters(s) {
     polarity.setTooltip("route polarity: UNI pushes one way, BI swings both ways");
     polarity.onClick = [this] { fui::setRouteBipolar(parameters, slot, !fui::routeBipolar(parameters, slot)); refreshPolarity(); };
     addAndMakeVisible(src); addAndMakeVisible(dst); addAndMakeVisible(aux); addAndMakeVisible(*amt); addAndMakeVisible(remove); addAndMakeVisible(polarity);
+    addAndMakeVisible(curve);
     refreshPolarity();
 }
 void MatrixPanel::Row::refreshPolarity() {
-    const juce::String text = fui::routeBipolar(parameters, slot) ? "BI" : "UNI";
+    const bool bi = fui::routeBipolar(parameters, slot);
+    const juce::String text = bi ? "BI" : "UNI";
     if (polarity.getButtonText() != text) polarity.setButtonText(text);
+    // The curve graph follows the polarity and an outside change of the value.
+    if (bi != curve.shownBi || std::abs(curve.value() - curve.shown) > 1e-4f) curve.repaint();
 }
 void MatrixPanel::Row::resized() {
     auto rr = getLocalBounds();
@@ -607,6 +696,8 @@ void MatrixPanel::Row::resized() {
     remove.setBounds(rr.removeFromRight(18).withSizeKeepingCentre(18, juce::jmin(18, rowH)));
     rr.removeFromRight(4);
     polarity.setBounds(rr.removeFromRight(30).withSizeKeepingCentre(30, juce::jmin(18, rowH)));
+    rr.removeFromRight(4);
+    curve.setBounds(rr.removeFromRight(26).withSizeKeepingCentre(26, juce::jmin(18, rowH)));
     rr.removeFromRight(4);
     int third = (rr.getWidth() - 28) / 3;
     src.setBounds(rr.removeFromLeft(third).withSizeKeepingCentre(third, juce::jmin(22, rowH)));

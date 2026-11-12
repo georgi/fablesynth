@@ -360,6 +360,51 @@ static const int COMB_TUNE[8]   = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 161
 static const int AP_TUNE[4]     = {556, 441, 341, 225};
 static const int STEREO_SPREAD  = 23;
 
+// PLATE wet trim, so a type switch keeps the wet level. At SIZE 0.8 the tank
+// is 2.6 dB louder than the ROOM network under a held sound and 4.6 dB louder
+// in the tail; the trim sits between the two. Mirrors worklet.js.
+static constexpr float kPlateGain = 0.66f;
+
+void Fx::resetVerb() {
+    for (auto& c : combL_) c.reset();
+    for (auto& c : combR_) c.reset();
+    for (auto& a : apL_) a.reset();
+    for (auto& a : apR_) a.reset();
+    plate_.reset();
+}
+
+// Equal-power wet/dry gain for an FX stage's mix knob.
+static inline float mixGate(bool on, float amount, bool wet) {
+    if (wet) return on ? (float)std::sin(amount * PI / 2) : 0.0f;
+    return on ? (float)std::cos(amount * PI / 2) : 1.0f;
+}
+
+// Route sums for the FX destinations (Engine::fxMod()), added to the knob
+// values: drive amount, drive / chorus mix, delay feedback and mix, reverb mix.
+void Fx::setMod(const std::array<double, 6>& sums) {
+    if (sums == mod_) return;
+    mod_ = sums;
+    applyMod();
+}
+// Targets of the six modulatable controls: knob value plus route sum over the
+// control's range (the Lin curve rule), inside that range.
+void Fx::applyMod() {
+    static constexpr float span[6] = {1, 1, 1, 0.92f, 1, 1};
+    float v[6];
+    for (size_t i = 0; i < 6; i++)
+        v[i] = std::max(0.0f, std::min(span[i], modBase_[i] + (float)mod_[i] * span[i]));
+    driveAmt_.setTarget(v[0]);
+    driveWet_.target = mixGate(modOn_[1], v[1], true);
+    driveDry_.target = mixGate(modOn_[1], v[1], false);
+    chWet_.target = mixGate(modOn_[2], v[2] * 0.8f, true);
+    chDry_.target = mixGate(modOn_[2], v[2] * 0.8f, false);
+    dlFb_.target = v[3];
+    dlWet_.target = mixGate(modOn_[4], v[4] * 0.85f, true);
+    dlDry_.target = mixGate(modOn_[4], v[4] * 0.85f, false);
+    verbWet_.target = mixGate(modOn_[5], v[5] * 0.9f, true);
+    verbDry_.target = mixGate(modOn_[5], v[5] * 0.9f, false);
+}
+
 void Fx::prepare(double sampleRate) {
     meter_.prepare(sampleRate);
     sr_ = sampleRate;
@@ -414,6 +459,7 @@ void Fx::prepare(double sampleRate) {
     headroomComp_.prepare(sr_); headroomDrive_.prepare(sr_); headroomChorus_.prepare(sr_);
     lab_.prepare(sr_); headroomLab_.prepare(sr_);
     headroomDelay_.prepare(sr_); headroomReverb_.prepare(sr_); delayFeedbackGuard_.prepare(sr_);
+    plate_.prepare(sr_);
 
     // WebAudio's DynamicsCompressor applies spec-defined makeup gain
     // ((1/c(1))^0.6, c = static curve at 0 dBFS). The web app's limiter IS that
@@ -433,6 +479,7 @@ void Fx::reset() {
     for (auto& c : combR_) c.reset();
     for (auto& a : apL_) a.reset();
     for (auto& a : apR_) a.reset();
+    plate_.reset();
     dcL_.reset(); dcR_.reset(); dlDamp_.reset(); dlDampR_.reset(); dlHpL_.reset(); dlHpR_.reset();
     eqLoL_.reset(); eqLoR_.reset(); eqMidL_.reset(); eqMidR_.reset();
     eqMid2L_.reset(); eqMid2R_.reset(); eqHiL_.reset(); eqHiR_.reset();
@@ -463,11 +510,6 @@ void Fx::reset() {
     chRateT_.snapToTarget(); chDepthT_.snapToTarget(); verbSize_.snapToTarget();
     eqExtDirty_ = true; forceCoefs_ = true;
     coefSamples_ = 0;
-}
-
-static inline float mixGate(bool on, float amount, bool wet) {
-    if (wet) return on ? (float)std::sin(amount * PI / 2) : 0.0f;
-    return on ? (float)std::cos(amount * PI / 2) : 1.0f;
 }
 
 void Fx::setParams(const ParamArray& p, double tempoBpm) {
@@ -513,19 +555,15 @@ void Fx::setParams(const ParamArray& p, double tempoBpm) {
     eqMid2On_ = p[FXEQM2ON] > 0.5f; eqHiOn_ = p[FXEQHON] > 0.5f;
     eqExtDirty_ = true;
 
-    // drive
-    driveAmt_.setTarget(p[FXDRIVE_AMT]);
-    bool dOn = p[FXDRIVE_ON] > 0.5f;
-    driveWet_.target = mixGate(dOn, p[FXDRIVE_MIX], true);
-    driveDry_.target = mixGate(dOn, p[FXDRIVE_MIX], false);
+    // drive. The six modulatable controls (amount and the stage mixes) keep
+    // their knob values here; applyMod() adds the route sums and sets the targets.
+    modBase_ = {p[FXDRIVE_AMT], p[FXDRIVE_MIX], p[FXCHORUS_MIX], p[FXDELAY_FB], p[FXDELAY_MIX], p[FXREVERB_MIX]};
+    modOn_ = {true, p[FXDRIVE_ON] > 0.5f, p[FXCHORUS_ON] > 0.5f, true, p[FXDELAY_ON] > 0.5f, p[FXREVERB_ON] > 0.5f};
 
     // chorus
     chRateT_.setTarget(p[FXCHORUS_RATE]);
     chDepthT_.setTarget(p[FXCHORUS_DEPTH]);
-    bool cOn = p[FXCHORUS_ON] > 0.5f;
-    chorusOff_ = !cOn;
-    chWet_.target = mixGate(cOn, p[FXCHORUS_MIX] * 0.8f, true);
-    chDry_.target = mixGate(cOn, p[FXCHORUS_MIX] * 0.8f, false);
+    chorusOff_ = p[FXCHORUS_ON] <= 0.5f;
 
     // Tape delay. Sync divisions are quarter-note cycles, matching the web.
     static constexpr double divs[] = {1.0, 1.5, 0.5, 0.75, 1.0 / 3.0, 0.25};
@@ -536,24 +574,23 @@ void Fx::setParams(const ParamArray& p, double tempoBpm) {
     dlTime_.target = (float)std::max(0.02, std::min(1.5,
         p[FXDELAY_SYNC] > 0.5f ? 60.0 / bpm * divs[div] : (double)p[FXDELAY_TIME]));
     if (!delayInitialized_) { dlTime_.snap(dlTime_.target); delayInitialized_ = true; }
-    dlFb_.target = std::max(0.0f, std::min(0.92f, p[FXDELAY_FB]));
     dlToneTarget_ = std::max(400.0f, std::min(12000.0f, p[FXDELAY_TONE] > 0 ? p[FXDELAY_TONE] : 4500.0f));
     dlSat_.target = std::max(0.0f, std::min(1.0f, p[FXDELAY_SAT]));
     dlWow_.target = std::max(0.0f, std::min(1.0f, p[FXDELAY_WOW]));
     dlFlutter_.target = std::max(0.0f, std::min(1.0f, p[FXDELAY_FLUTTER]));
     dlWidth_.target = std::max(0.0f, std::min(1.0f, p[FXDELAY_WIDTH]));
     dlMode_.target = p[FXDELAY_MODE] > 0.5f ? 1.0f : 0.0f;
-    bool delOn = p[FXDELAY_ON] > 0.5f;
-    delayOff_ = !delOn;
-    dlWet_.target = mixGate(delOn, p[FXDELAY_MIX] * 0.85f, true);
-    dlDry_.target = mixGate(delOn, p[FXDELAY_MIX] * 0.85f, false);
+    delayOff_ = p[FXDELAY_ON] <= 0.5f;
 
     // reverb — SIZE maps to roomsize/decay (longer & brighter tail with size)
     verbSize_.setTarget(p[FXREVERB_SIZE]);
-    bool rOn = p[FXREVERB_ON] > 0.5f;
-    verbOff_ = !rOn;
-    verbWet_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, true);
-    verbDry_.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9f, false);
+    // PLATE reads SIZE as the same decay time and adds DAMP. A type change
+    // starts the selected network from silence, so no stale tail comes back.
+    const int verbType = p[FXREVERB_TYPE] > 0.5f ? 1 : 0;
+    if (verbType != verbType_) { verbType_ = verbType; resetVerb(); }
+    if (std::abs(p[FXREVERB_DAMP] - verbDamp_) > 0.0f) { verbDamp_ = p[FXREVERB_DAMP]; plateDirty_ = true; }
+    verbOff_ = p[FXREVERB_ON] <= 0.5f;
+    applyMod();
 
     compOff_ = p[FXCOMP_ON] <= 0.5f;
     driveColorL_.setParams(p[FXDRIVE_TYPE], p[FXDRIVE_TONE]);
@@ -616,7 +653,7 @@ void Fx::advanceCoefs(bool force) {
     bool cr = chRateT_.next(), cd = chDepthT_.next();
     if (force || cr || cd) { chRate_ = chRateT_.cur; chDepth_ = chDepthT_.cur; }
 
-    if (verbSize_.next() || force) {
+    if (verbSize_.next() || force || plateDirty_) {
         float size = verbSize_.cur;
         roomSize_ = 0.7f + size * 0.28f;
         float damp = 0.4f - size * 0.2f;
@@ -625,6 +662,8 @@ void Fx::advanceCoefs(bool force) {
             combL_[i].damp1 = combR_[i].damp1 = damp;
             combL_[i].damp2 = combR_[i].damp2 = 1 - damp;
         }
+        plate_.setParams(size, verbDamp_);
+        plateDirty_ = false;
     }
 }
 
@@ -706,10 +745,7 @@ void Fx::process(float* L, float* R, int n, const float* key) {
     }
     if (verbGate && !verbGated_) {
         verbWet_.snap(0); verbDry_.snap(1);
-        for (auto& c : combL_) { std::fill(c.buf.begin(), c.buf.end(), 0.0f); c.filt = 0.0f; }
-        for (auto& c : combR_) { std::fill(c.buf.begin(), c.buf.end(), 0.0f); c.filt = 0.0f; }
-        for (auto& a : apL_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
-        for (auto& a : apR_) std::fill(a.buf.begin(), a.buf.end(), 0.0f);
+        resetVerb();
     }
 
     driveSilent_ = driveSilent;
@@ -837,12 +873,17 @@ void Fx::process(float* L, float* R, int n, const float* key) {
             }
             double gDelay = headroomDelay_.gainFor(l, r); l *= (float)gDelay; r *= (float)gDelay;
 
-            // ---- reverb (Freeverb) ----
+            // ---- reverb: ROOM (Freeverb) or PLATE ----
             if (!verbGated_) {
-                float input = (l + r) * 0.015f; // fixed input gain (Freeverb convention)
                 float outL = 0, outR = 0;
-                for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
-                for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+                if (verbType_) {
+                    plate_.process((l + r) * 0.5);
+                    outL = (float)plate_.outL * kPlateGain; outR = (float)plate_.outR * kPlateGain;
+                } else {
+                    float input = (l + r) * 0.015f; // fixed input gain (Freeverb convention)
+                    for (size_t c = 0; c < 8; c++) { outL += combL_[c].process(input); outR += combR_[c].process(input); }
+                    for (size_t a = 0; a < 4; a++) { outL = apL_[a].process(outL); outR = apR_[a].process(outR); }
+                }
                 // Idle criterion sees the tank itself, so a tail hidden behind mix 0 is never frozen.
                 tailPk = std::max(tailPk, std::max(std::abs(outL), std::abs(outR)));
                 float wet = verbWet_.next(), dry = verbDry_.next();

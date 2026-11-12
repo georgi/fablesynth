@@ -729,6 +729,169 @@ class FvAllpass {
   }
 }
 
+// ---------- PLATE reverb ----------
+// A dense allpass-loop tank after Dattorro ("Effect Design, Part 1", JAES
+// 1997): six input diffusers feed a figure-eight of two branches, each a
+// modulated allpass, a delay, a damping low-pass, a second allpass and a
+// delay. The output sums fourteen taps of the tank. Every element is an
+// allpass or a pure delay, so the tail has no comb coloration, and the slow
+// delay modulation breaks up the remaining modes. Lengths are the paper's, in
+// samples at its 29761 Hz rate. Line-for-line the same as PlateReverb.h.
+const PLATE_FS = 29761;
+// Input diffusers: the paper's four, then two longer ones. The extra pair
+// raises the echo density of the first 150 ms above the ROOM network's.
+const PLATE_IN_AP = [142, 107, 379, 277, 613, 491];
+const PLATE_IN_G = [0.75, 0.75, 0.625, 0.625, 0.6, 0.6];
+const PLATE_EXCURSION = 16;       // modulation depth of the tank allpasses
+const PLATE_MOD_HZ = [0.5, 0.31]; // one slow rate per branch
+const PLATE_DIFFUSION1 = 0.7;
+// Output taps as [line, position]. Lines: 0/1 delays and 2 allpass of the
+// left branch (4453, 3720, 1800), 3/4 delays and 5 allpass of the right
+// branch (4217, 3163, 2656). The sign is the paper's.
+const PLATE_TAPS_L = [[3, 266, 1], [3, 2974, 1], [5, 1913, -1], [4, 1996, 1], [0, 1990, -1], [2, 187, -1], [1, 1066, -1]];
+const PLATE_TAPS_R = [[0, 353, 1], [0, 3627, 1], [2, 1228, -1], [1, 2673, 1], [3, 2111, -1], [5, 335, -1], [4, 121, -1]];
+// One half of the tank holds the signal for this long (seconds, mean of the
+// two branches), and passes it through DECAY twice.
+const PLATE_BRANCH_SEC = (672 + 4453 + 1800 + 3720 + 908 + 4217 + 2656 + 3163) / 2 / PLATE_FS;
+// SIZE -> RT60, the same law as the ROOM comb network: its eight combs have a
+// mean delay of 31.2 ms and a feedback of 0.7 + 0.28 * size.
+function plateDecay(size) {
+  const rt60 = (-3 * 0.0312) / Math.log10(0.7 + 0.28 * Math.min(1, Math.max(0, size)));
+  return Math.pow(10, (-3 * PLATE_BRANCH_SEC) / (2 * rt60));
+}
+// DAMP -> the tank low-pass corner: 16 kHz at 0, 4 kHz at 0.5, 1 kHz at 1.
+function plateDampHz(damp) { return 16000 * Math.pow(2, -4 * Math.min(1, Math.max(0, damp))); }
+
+class PlateLine {
+  constructor(len) { this.len = Math.max(2, len | 0); this.n = this.len + 4; this.buf = new Float32Array(this.n); this.w = 0; }
+  reset() { this.buf.fill(0); }
+  // Sample written `d` writes ago (1 = the newest).
+  tap(d) { let i = this.w - d; if (i < 0) i += this.n; return this.buf[i]; }
+  tapFrac(d) {
+    const i = Math.floor(d), f = d - i;
+    const a = this.tap(i);
+    return a + (this.tap(i + 1) - a) * f;
+  }
+  write(x) { this.buf[this.w] = x; if (++this.w >= this.n) this.w = 0; }
+}
+
+class PlateReverb {
+  constructor(sr) {
+    this.sr = sr;
+    const k = sr / PLATE_FS;
+    const len = (n) => Math.max(2, Math.round(n * k));
+    this.inAp = PLATE_IN_AP.map((n) => new PlateLine(len(n)));
+    this.exc = PLATE_EXCURSION * k;
+    // Modulated allpasses carry the excursion as extra length.
+    this.modAp = [new PlateLine(len(672) + Math.ceil(this.exc) + 2), new PlateLine(len(908) + Math.ceil(this.exc) + 2)];
+    this.modLen = [len(672), len(908)];
+    // Index order matches PLATE_TAPS_*: left delay 1, left delay 2, left
+    // allpass, right delay 1, right delay 2, right allpass.
+    this.lines = [4453, 3720, 1800, 4217, 3163, 2656].map((n) => new PlateLine(len(n)));
+    const taps = (list) => list.map(([line, pos, sign]) => [this.lines[line], Math.min(this.lines[line].len, Math.max(1, Math.round(pos * k))), sign]);
+    this.tapsL = taps(PLATE_TAPS_L); this.tapsR = taps(PLATE_TAPS_R);
+    this.modInc = PLATE_MOD_HZ.map((hz) => (2 * Math.PI * hz) / sr);
+    this.hpK = 1 - Math.exp((-2 * Math.PI * 120) / sr); // input low cut, 120 Hz
+    this.decay = 0.5; this.diffusion2 = 0.5; this.damp = 0;
+    this.outL = 0; this.outR = 0;
+    this.setParams(0.5, 0.5);
+    this.reset();
+  }
+  reset() {
+    for (const l of this.inAp) l.reset();
+    for (const l of this.modAp) l.reset();
+    for (const l of this.lines) l.reset();
+    this.hp = 0; this.lpL = 0; this.lpR = 0; this.ph0 = 0; this.ph1 = Math.PI / 2;
+    this.outL = this.outR = 0;
+  }
+  setParams(size, damp) {
+    this.decay = plateDecay(size);
+    this.diffusion2 = Math.min(0.5, Math.max(0.25, this.decay + 0.15));
+    this.damp = Math.exp((-2 * Math.PI * plateDampHz(damp)) / this.sr);
+  }
+  // One mono input sample; the stereo result is in outL / outR.
+  process(x) {
+    this.hp += this.hpK * (x - this.hp);
+    x -= this.hp;
+    for (let i = 0; i < this.inAp.length; i++) {
+      const line = this.inAp[i], g = PLATE_IN_G[i];
+      const d = line.tap(line.len);
+      const v = x - g * d;
+      line.write(v);
+      x = d + g * v;
+    }
+    const ln = this.lines, decay = this.decay, g2 = this.diffusion2, damp = this.damp;
+    const endL = ln[1].tap(ln[1].len), endR = ln[4].tap(ln[4].len);
+    this.ph0 += this.modInc[0]; if (this.ph0 > 2 * Math.PI) this.ph0 -= 2 * Math.PI;
+    this.ph1 += this.modInc[1]; if (this.ph1 > 2 * Math.PI) this.ph1 -= 2 * Math.PI;
+
+    // Left branch, fed by the input and the end of the right branch.
+    let a = x + decay * endR;
+    let d = this.modAp[0].tapFrac(this.modLen[0] + this.exc * Math.sin(this.ph0));
+    let v = a + PLATE_DIFFUSION1 * d;
+    this.modAp[0].write(v);
+    a = d - PLATE_DIFFUSION1 * v;
+    d = ln[0].tap(ln[0].len); ln[0].write(a);
+    this.lpL = d + damp * (this.lpL - d);
+    a = this.lpL * decay;
+    d = ln[2].tap(ln[2].len);
+    v = a - g2 * d;
+    ln[2].write(v);
+    ln[1].write(d + g2 * v);
+
+    // Right branch, fed by the input and the end of the left branch.
+    a = x + decay * endL;
+    d = this.modAp[1].tapFrac(this.modLen[1] + this.exc * Math.sin(this.ph1));
+    v = a + PLATE_DIFFUSION1 * d;
+    this.modAp[1].write(v);
+    a = d - PLATE_DIFFUSION1 * v;
+    d = ln[3].tap(ln[3].len); ln[3].write(a);
+    this.lpR = d + damp * (this.lpR - d);
+    a = this.lpR * decay;
+    d = ln[5].tap(ln[5].len);
+    v = a - g2 * d;
+    ln[5].write(v);
+    ln[4].write(d + g2 * v);
+
+    let l = 0, r = 0;
+    for (let i = 0; i < 7; i++) {
+      const tl = this.tapsL[i], tr = this.tapsR[i];
+      l += tl[2] * tl[0].tap(tl[1]);
+      r += tr[2] * tr[0].tap(tr[1]);
+    }
+    this.outL = 0.6 * l; this.outR = 0.6 * r;
+  }
+}
+
+// ---------- drawn LFO shape ----------
+// Value in -1..+1 of a drawn LFO shape at phase `ph` (0..1). The shape is `n`
+// points in the flat parameter store from index `b`: x (cycle position), y
+// (0..1) and c per point, sorted by x. c is the bend of the segment that
+// leaves the point (-1..1); above 1.5 the point holds its y (a step). The
+// last point runs on to the first one, a cycle later. Mirrors evalLane in
+// src/seq/clipAutomation.ts (through src/lfoShape.ts) and LfoShape.h.
+function lfoShapeValue(p, b, n, ph) {
+  if (n < 1) return 0;
+  let i = -1;
+  for (let k = 0; k < n; k++) { if (p[b + 3 * k] <= ph) i = k; else break; }
+  let x0;
+  if (i < 0) { i = n - 1; x0 = p[b + 3 * i] - 1; } else x0 = p[b + 3 * i];
+  const ya = p[b + 3 * i + 1], c = p[b + 3 * i + 2];
+  if (c > 1.5) return 2 * ya - 1;
+  const wraps = i === n - 1;
+  const j = wraps ? 0 : i + 1;
+  const x1 = wraps && ph >= p[b + 3 * i] ? p[b + 3 * j] + 1 : p[b + 3 * j];
+  const yb = p[b + 3 * j + 1];
+  if (!(x1 - x0 > 1e-9)) return 2 * yb - 1;
+  let f = (ph - x0) / (x1 - x0);
+  if (Math.abs(c) >= 1e-3) {
+    // Exponential bend: c > 0 starts slow, c < 0 starts fast.
+    const k = Math.max(-1, Math.min(1, c)) * 6;
+    f = (Math.exp(k * f) - 1) / (Math.exp(k) - 1);
+  }
+  return 2 * (ya + (yb - ya) * f) - 1;
+}
+
 // Equal-power wet/dry gain for an FX stage's mix knob.
 function mixGate(on, amount, wet) {
   if (wet) return on ? Math.sin(amount * Math.PI / 2) : 0;
@@ -739,6 +902,6 @@ globalThis.FableDsp = {
   ADAA_FADE_WIDTH, DRIVE_OS_RAMP_SEC, LIM_CEILING,
   lcosh, adaaInput, makeDriveOs, resetDriveOs, copyDriveOs, driveOsStep,
   rdH, subSquareTable, subSquareMip, subSquareRead,
-  besselI0, LfoClock, Biquad, DelayLine, LookaheadLimiter, FvComb, FvAllpass, mixGate,
+  besselI0, LfoClock, Biquad, DelayLine, LookaheadLimiter, FvComb, FvAllpass, PlateReverb, plateDecay, lfoShapeValue, mixGate,
 };
 })();

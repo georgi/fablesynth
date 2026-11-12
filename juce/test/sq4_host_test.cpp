@@ -2026,9 +2026,14 @@ int main(int argc, char** argv) {
         std::printf("\n== agent parameter boundary ==\n");
         SeqAudioProcessor p;
         auto& agent = p.getAgent();
+        // Every control; editor data (ParamInfo::hidden, the drawn LFO points) is left out.
+        const size_t wtControls = (size_t)std::count_if(fable::paramInfo().begin(), fable::paramInfo().end(),
+                                                        [](const fable::ParamInfo& d) { return !d.hidden; });
         check(agent.snapshot().parameters.size() == fable::seqParamInfo().size()
                   + fable::drumParamInfo().size() + fable::bassParamInfo().size()
-                  + 2 * fable::paramInfo().size(), "agent discovers every SQ and hosted parameter before prepare");
+                  + 2 * wtControls, "agent discovers every SQ and hosted parameter before prepare");
+        check(wtControls + 4 * (1 + 3 * fable::LFO_MAX_POINTS) == fable::paramInfo().size(),
+              "the hidden WT-1 params are the drawn LFO shape data", (double)wtControls);
         const auto references = agent.snapshot().references;
         const auto catalog = codeact::get(references, "presetCatalog");
         const auto techniqueLibrary = codeact::get(references, "techniqueLibrary");

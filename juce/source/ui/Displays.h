@@ -6,6 +6,7 @@
 #include "../dsp/LfoClock.h"
 #include "ParameterSource.h"
 #include "DeviceUiModel.h"
+#include "LfoShapeEdit.h"
 
 // Visualization views — ports of the canvas displays in src/components/displays:
 //   EnvView.tsx, LFOView.tsx, FilterView.tsx, ScopeView.tsx, SpectrumView.tsx
@@ -39,10 +40,27 @@ public:
             const juce::String& syncRateId, juce::Colour accent,
             std::function<HostTransport()> transportProvider);
     void paint(juce::Graphics&) override;
+    // With the CUSTOM shape the view is the editor of the drawn shape. The
+    // gestures are the clip automation lane's: click to place a point, drag to
+    // move, Alt-drag to bend a segment, double-click or right-click to remove.
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+    // STEP mode: a drag paints sixteen held cells.
+    void setPaintMode(bool on) { paintMode_ = on; }
+    bool isCustom() const;
+    int  pointCount() const { return (int)lfoshape::read(shapeParams_).size(); }
+    // Start the drawn shape from a standard one (LFO_SHAPES index).
+    void seedFrom(int shape) { lfoshape::write(shapeParams_, lfoshape::seed(shape)); }
 private:
     void timerCallback() override { repaint(); }
     float currentRate(const HostTransport&) const;   // effective Hz (free or synced)
     bool  synced() const;
+    struct At { double x, y; float px, py; };
+    At   locate(juce::Point<float>) const;
+    int  hitPoint(const lfoshape::Points&, juce::Point<float>) const;
+    void removeAt(juce::Point<float>);
     ParameterSource parameters;
     juce::String shapeId, rateId, syncId, syncRateId;
     juce::Colour accent;
@@ -50,6 +68,12 @@ private:
     fable::LfoClock phaseClock_;
     bool wasSynced_ = false;
     juce::uint32 t0;
+    lfoshape::Params shapeParams_;
+    juce::RangedAudioParameter* oneshot_ = nullptr;
+    bool paintMode_ = false;
+    enum class Drag { None, Move, Bend, Paint } drag_ = Drag::None;
+    int dragIndex_ = -1; double dragC0_ = 0, dragDir_ = 1, paintX_ = 0, paintY_ = 0;
+    lfoshape::Points dragBase_;
 };
 
 // Combined filter response for the two per-voice filters + routing.

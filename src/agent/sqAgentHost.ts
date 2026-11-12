@@ -62,8 +62,9 @@ function presetCatalog(currentSession: string): Record<string, unknown> {
   };
 }
 
+const WT_AGENT_DEFS = PARAM_DEFS.filter(def => !def.hidden); // no drawn LFO points
 const defsFor = (machine: MachineId): ParamDef[] =>
-  machine === 'DR1' ? DRUM_PARAM_DEFS : machine === 'BL1' ? BASS_PARAM_DEFS : PARAM_DEFS;
+  machine === 'DR1' ? DRUM_PARAM_DEFS : machine === 'BL1' ? BASS_PARAM_DEFS : WT_AGENT_DEFS;
 
 function paramsFor(machine: MachineId, patch: PatchDoc): Values {
   const index = patch.kind === 'factory' ? patch.index : patch.base ?? 0;

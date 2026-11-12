@@ -12,6 +12,11 @@
 #include "../source/dsp/UserTables.h"
 #include "../source/dsp/FrameOps.h"
 #include "LabFxChecks.h"
+#include "WarpChecks.h"
+#include "PlateChecks.h"
+#include "LfoShapeChecks.h"
+#include "RouteCurveChecks.h"
+#include "ModDestChecks.h"
 #include "drive_os_check.h"
 
 #include <array>
@@ -2028,10 +2033,25 @@ int main(int argc, char** argv) {
     printf("\n== 21. LAB fidelity: tuning, sidebands, aliasing, splices, images ==\n");
     labcheck::runFidelityChecks([](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
 
+    printf("\n== 22. Oscillator warp: sync, phase maps, FM/AM/RM ==\n");
+    warpcheck::runChecks(tables, [](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
+
+    printf("\n== 23. PLATE reverb: density, decay, level ==\n");
+    platecheck::runChecks([](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
+
+    printf("\n== 24. Drawn LFO shapes and ONE-SHOT ==\n");
+    lfocheck::runChecks(tables, [](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
+
+    printf("\n== 25. Response curve per modulation route ==\n");
+    routecurvecheck::runChecks(tables, [](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
+
+    printf("\n== 26. Modulation destinations: LFO rate, envelope times, FX, route amounts ==\n");
+    moddestcheck::runChecks(tables, [](bool ok, const std::string& name, const std::string& detail) { check(ok, name, detail); });
+
     printf("\n== COMP side-chain params and analysis taps ==\n");
     {
         check(paramInfo()[FXCOMP_SC].pid == "fx.comp.sc" && paramInfo()[FXCOMP_SCHP].pid == "fx.comp.schp"
-              && FXCOMP_SCHP == NUM_PARAMS - 1, "side-chain params are appended to WT-1");
+              && FXCOMP_SCHP + 1 == OSCA_WARP, "side-chain params keep their appended position in WT-1");
         auto p = defaultParams();
         Fx fx; fx.prepare(48000);
         const int expected[] = {-1, KICK_CHANNEL, 0, 1, 2, 3};

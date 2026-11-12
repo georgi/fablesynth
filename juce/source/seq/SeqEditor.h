@@ -124,6 +124,9 @@ private:
     int clampScene(int s) const;
 
     fui::DarkLNF lnf;
+    // Shows the setTooltip() text of every control in this editor. A child of
+    // the editor (not a desktop window), declared after lnf so it goes first.
+    juce::TooltipWindow tooltips{this, 600};
     SeqAudioProcessor& proc_;
     SeqRack rack;
 

@@ -161,12 +161,19 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
                     : juce::StringArray{"time", "fb", "mix"};
         break;
     case Reverb:
-        keys = {"size", "mix"};
+        // WT-1 has the algorithm choice: a TYPE switch and the PLATE DAMP knob.
+        hasVerbType_ = source_.parameter(prefix_ + "fx.reverb.type") != nullptr;
+        keys = hasVerbType_ ? juce::StringArray{"size", "damp", "mix"} : juce::StringArray{"size", "mix"};
         break;
     }
-    for (const auto &key : keys)
-        addAndMakeVisible(
-            knobs_.add(new Knob(source_, prefix_ + "fx." + effect_ + "." + key, Knob::Sm, Accent::N)));
+    // WT-1 (the source with a mod matrix): the drive amount and the stage
+    // mixes are mod targets (dests 43..48), like the web FX knobs.
+    const bool modTargets = prefix_.isEmpty() && source_.parameter("mat1.src") != nullptr;
+    for (const auto &key : keys) {
+        const juce::String id = prefix_ + "fx." + effect_ + "." + key;
+        const int dest = modTargets ? fable::destOfParam(fable::idFromString(id.toStdString())) : 0;
+        addAndMakeVisible(knobs_.add(new Knob(source_, id, Knob::Sm, Accent::N, true, dest)));
+    }
     if (kind == Eq) {
         setWantsKeyboardFocus(true);
         for (int i = 0; i < 4; ++i) {
@@ -199,6 +206,24 @@ FxModuleView::FxModuleView(DeviceUiModel &model, Kind kind, bool tape, juce::Str
                 write(prefix_ + "fx.drive.type", (float)i);
                 for (int j = 0; j < 3; ++j)
                     driveTypes_[(size_t)j].setToggleState(i == j, juce::dontSendNotification);
+            };
+            addAndMakeVisible(button);
+        }
+    }
+    if (hasVerbType_) {
+        for (int i = 0; i < 2; ++i) {
+            auto& button = verbTypes_[(size_t)i];
+            button.setButtonText(fable::REVERB_TYPES[(size_t)i]);
+            button.setName(fable::REVERB_TYPES[(size_t)i]);
+            button.setTitle(i ? "PLATE: dense allpass tank, smooth modulated tail" : "ROOM: comb network");
+            button.setClickingTogglesState(true);
+            button.setConnectedEdges(i ? juce::Button::ConnectedOnLeft : juce::Button::ConnectedOnRight);
+            button.setColour(juce::TextButton::buttonOnColourId, col::acN.withAlpha(.18f));
+            button.setToggleState(((int)value(prefix_ + "fx.reverb.type") > 0) == (i == 1), juce::dontSendNotification);
+            button.onClick = [this, i] {
+                write(prefix_ + "fx.reverb.type", (float)i);
+                for (int j = 0; j < 2; ++j)
+                    verbTypes_[(size_t)j].setToggleState(i == j, juce::dontSendNotification);
             };
             addAndMakeVisible(button);
         }
@@ -390,6 +415,11 @@ void FxModuleView::timerCallback() {
     if (kind_ == Drive)
         for (int i = 0; i < 3; ++i)
             driveTypes_[(size_t)i].setToggleState((int)value(prefix_ + "fx.drive.type") == i, juce::dontSendNotification);
+    if (hasVerbType_) {
+        const bool plate = value(prefix_ + "fx.reverb.type") > 0.5f;
+        for (int i = 0; i < 2; ++i)
+            verbTypes_[(size_t)i].setToggleState(plate == (i == 1), juce::dontSendNotification);
+    }
     if (kind_ == Echo && tape_) {
         const bool sync = value("fx.delay.sync") > 0.5f;
         mode_.setSelectedId((int)value("fx.delay.mode") + 1, juce::dontSendNotification);
@@ -402,6 +432,9 @@ void FxModuleView::timerCallback() {
     for (int i = 0; i < knobs_.size(); ++i)
         if (!(kind_ == Echo && tape_ && i == 0))
             knobs_[i]->setAlpha(power_.isOn() ? 1.f : .55f);
+    // DAMP (the second reverb knob) applies to PLATE only.
+    if (hasVerbType_ && value(prefix_ + "fx.reverb.type") < 0.5f)
+        knobs_[1]->setAlpha(.3f);
     if (keyHp_)
         keyHp_->setAlpha(power_.isOn() ? 1.f : .55f);
     // EQ, drive and chorus are parameter previews, not animated telemetry.
@@ -450,6 +483,11 @@ void FxModuleView::resized() {
         auto_.setBounds(head.removeFromRight(44).withSizeKeepingCentre(44, 18));
         head.removeFromRight(6);
         caption_ = head.withTrimmedLeft(80);
+    }
+    if (hasVerbType_) {
+        auto types = head.withTrimmedLeft(84).removeFromLeft(100).withSizeKeepingCentre(100, 18);
+        for (auto& button : verbTypes_) button.setBounds(types.removeFromLeft(50));
+        caption_ = head.withTrimmedLeft(190);
     }
     if (kind_ == Echo && tape_) {
         division_.setBounds(head.removeFromRight(72));

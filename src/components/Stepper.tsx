@@ -7,9 +7,11 @@ interface StepperProps {
   paramId: string;
   label?: string;
   accent?: string;
+  /** Called after an enum step with the new index. */
+  onStep?: (index: number) => void;
 }
 
-export function Stepper({ paramId, label, accent }: StepperProps) {
+export function Stepper({ paramId, label, accent, onStep }: StepperProps) {
   const def = PARAMS[paramId];
   const value = useStore((s) => s.params[paramId]);
   const setParam = useStore((s) => s.setParam);
@@ -41,7 +43,9 @@ export function Stepper({ paramId, label, accent }: StepperProps) {
 
   const step = (d: number) => {
     const n = options.length;
-    setParam(paramId, (index + d + n) % n);
+    const next = (index + d + n) % n;
+    setParam(paramId, next);
+    onStep?.(next);
   };
 
   return (

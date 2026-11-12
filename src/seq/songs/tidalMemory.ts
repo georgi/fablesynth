@@ -108,7 +108,8 @@ export const TIDAL_MEMORY: SessionPreset = {
         'mat3.src': 4, 'mat3.dst': 3, 'mat3.amt': 0.04,
         // The dotted-eighth repeats carry the rhythm between the dry stabs.
         'fx.delay.time': 45 / 118, 'fx.delay.fb': 0.58, 'fx.delay.mix': 0.64,
-        'fx.reverb.size': 0.84, 'fx.reverb.mix': 0.48, 'fx.eq.low': -6, 'fx.eq.high': -6,
+        // PLATE: the dense tank keeps the chord tails smooth (same size and mix).
+        'fx.reverb.type': 1, 'fx.reverb.size': 0.84, 'fx.reverb.mix': 0.48, 'fx.eq.low': -6, 'fx.eq.high': -6,
       }) },
       { machine: 'WT1', name: 'SIGNAL', color: '#b18cff', gain: 0.80, patch: wtPatch(45, {
         // Warm fundamental in the written octave, with just a trace of bell.
@@ -122,7 +123,7 @@ export const TIDAL_MEMORY: SessionPreset = {
         'env1.a': 0.025, 'env1.d': 0.55, 'env1.s': 0, 'env1.r': 1.1,
         'fx.delay.on': 1, 'fx.delay.time': 45 / 118,
         'fx.delay.fb': 0.6, 'fx.delay.mix': 0.66,
-        'fx.reverb.on': 1, 'fx.reverb.size': 0.86, 'fx.reverb.mix': 0.52,
+        'fx.reverb.on': 1, 'fx.reverb.type': 1, 'fx.reverb.size': 0.86, 'fx.reverb.mix': 0.52,
         'fx.eq.on': 1, 'fx.eq.low': -9, 'fx.eq.mid': -2, 'fx.eq.mfreq': 1800, 'fx.eq.high': -9,
       }) },
     ],

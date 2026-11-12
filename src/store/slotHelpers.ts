@@ -59,20 +59,22 @@ export function getModsByDest(p: ParamValues, dest: number): ActiveRoute[] {
 export function setMatSlot(
   p: ParamValues,
   slot: number,
-  patch: { src?: number; dst?: number; amt?: number; pol?: number; aux?: number },
+  patch: { src?: number; dst?: number; amt?: number; pol?: number; aux?: number; crv?: number },
 ): void {
   if (patch.src !== undefined) p[`mat${slot}.src`] = patch.src;
   if (patch.dst !== undefined) p[`mat${slot}.dst`] = patch.dst;
   if (patch.amt !== undefined) p[`mat${slot}.amt`] = patch.amt;
   if (patch.pol !== undefined) p[`mat${slot}.pol`] = patch.pol;
   if (patch.aux !== undefined) p[`mat${slot}.aux`] = patch.aux;
+  if (patch.crv !== undefined) p[`mat${slot}.crv`] = patch.crv;
 }
 
-// Zero a slot's src, dst, amt, pol AND aux so it reads as fully empty again.
+// Zero a slot's src, dst, amt, pol, aux AND curve so it reads as fully empty again.
 export function clearSlot(p: ParamValues, slot: number): void {
   p[`mat${slot}.src`] = 0;
   p[`mat${slot}.dst`] = 0;
   p[`mat${slot}.amt`] = 0;
   p[`mat${slot}.pol`] = 0;
   p[`mat${slot}.aux`] = 0;
+  p[`mat${slot}.crv`] = 0;
 }

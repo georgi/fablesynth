@@ -57,6 +57,9 @@ public:
 
 private:
     fui::DarkLNF lnf;
+    // Shows the setTooltip() text of every control in this editor. A child of
+    // the editor (not a desktop window), declared after lnf so it goes first.
+    juce::TooltipWindow tooltips{this, 600};
     std::unique_ptr<fui::WtUiModel> model;
     Rack rack;
     fui::WavetableEditor wtEditor;

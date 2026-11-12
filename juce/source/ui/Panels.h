@@ -26,10 +26,11 @@ public:
 private:
     int oscIndex;
     juce::String title, prefix; Accent accent;
-    PowerButton power; juce::TextButton editBtn{"E"}; Stepper tableStep, unisonStep; WavetableView wt; VSlider pos;
+    PowerButton power; juce::TextButton editBtn{"E"}; Stepper tableStep, unisonStep, warpStep; WavetableView wt; VSlider pos;
     juce::OwnedArray<Knob> knobs;
     juce::Rectangle<int> titleArea;
     juce::Rectangle<int> uniLabelArea;   // UNI caption above the unison stepper
+    juce::Rectangle<int> warpLabelArea;  // WARP caption left of the mode stepper
 };
 
 class UtilPanel : public juce::Component {
@@ -140,7 +141,11 @@ private:
         Stepper shape;
         LfoView view;
         PillButton syncBtn, retrigBtn;
-        std::unique_ptr<juce::ParameterAttachment> syncAtt, retrigAtt;
+        // ONE-SHOT (a param) and STEP (the editor's paint mode, CUSTOM only),
+        // stacked at the end of the knob row.
+        PillButton oneBtn, stepBtn;
+        std::unique_ptr<juce::ParameterAttachment> syncAtt, retrigAtt, oneAtt;
+        int shownShape = 0;                       // shape before a stepper click
         Stepper syncRate;
         Knob rate, rise, phase;
         bool lastSync = false;
@@ -182,6 +187,20 @@ private:
         std::unique_ptr<Knob> amt;
         juce::TextButton remove{juce::String::fromUTF8("\xc3\x97")}; // ×
         juce::TextButton polarity{"UNI"};  // toggles the route between UNI and BI
+        // Response curve of the route: a small graph of source value -> route
+        // value. Drag up or down to bend it, double-click for linear.
+        struct CurveBox : public juce::Component, public juce::SettableTooltipClient {
+            CurveBox(ParameterSource, int slot);
+            void paint(juce::Graphics&) override;
+            void mouseDown(const juce::MouseEvent&) override;
+            void mouseDrag(const juce::MouseEvent&) override;
+            void mouseUp(const juce::MouseEvent&) override;
+            void mouseDoubleClick(const juce::MouseEvent&) override;
+            float value() const;
+            ParameterSource parameters; int slot;
+            juce::RangedAudioParameter* param = nullptr;
+            float dragStart = 0, shown = 2; bool shownBi = false;
+        } curve;
         ParameterSource parameters;
         void refreshPolarity();
     };

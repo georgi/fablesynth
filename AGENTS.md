@@ -52,6 +52,11 @@
 - **PHASE RUNNER:** program 42 (index 41), DUB TECHNO, 126 BPM, F minor,
   six scenes. A driving bass hook, dark chord stabs with dotted-eighth echoes,
   and a low wooden response with quarter-note echoes. Avoid a bright lead.
+- Both dub tracks use the WT-1 **PLATE** reverb (`fx.reverb.type: 1`) on their
+  two WT-1 parts since 2026-11-12, with the earlier SIZE and MIX values and the
+  default DAMP. PLATE keeps the ROOM decay time and wet level, so only the tail
+  texture changes. Await listening feedback; to go back, remove the
+  `fx.reverb.type` entries. LATE CHECKOUT and all other presets stay on ROOM.
 - `src/seq/songs/dubKit.ts` contains the shared sounds. `dubKit()` supplies the
   soft clap; `soft808DubKit()` adds the hats. Both songs use `soft808DubKit()`.
 - DR-1 pad numbers and sample indices are different namespaces: pad 3 is CLAP,
@@ -79,6 +84,11 @@
   `juce/source/seq/dsp/AuthoredSessions.gen.h` and refreshes
   `juce/test/fixtures/web-session-presets.json`. Do not manually duplicate the
   composition in C++ or edit the generated header as the source of truth.
+- WT-1 parameters are append-only in `src/params.ts`, the worklet `PARAM_IDS`
+  and `juce/source/dsp/Params.h`. A new parameter changes every embedded inline
+  patch, so run `npm run songs:generate` after one and confirm the session diff
+  holds only the new keys at their defaults. Drawn LFO points are `hidden`
+  parameters: editor data with no host automation, lane, or agent access.
 - Embed complete inline patch parameters using the machine's default/factory
   resolution helpers. Retain `base` for patch identification. Recalled sessions
   must deep-copy inline patch data so edits cannot mutate factory presets.

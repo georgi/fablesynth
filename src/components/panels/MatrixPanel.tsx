@@ -5,7 +5,7 @@
 
 import type * as React from 'react';
 import { useMemo, useRef } from 'react';
-import { MOD_SOURCES, MOD_DESTS, SOURCE_COLORS, MACRO_COUNT, fmtBi, routeBipolar, polarityFor, macroSource } from '../../params';
+import { MOD_SOURCES, MOD_DESTS, SOURCE_COLORS, MACRO_COUNT, fmtBi, routeBipolar, routeCurve, polarityFor, macroSource } from '../../params';
 import { useStore } from '../../store';
 import { MOD_MATRIX_SIZE } from '../../store/slotHelpers';
 import { ModSourceChip } from '../ModSourceChip';
@@ -91,6 +91,54 @@ function AmtKnob({ amt, color, label, onChange }: { amt: number; color: string; 
   );
 }
 
+// Response curve of a route: a small graph of source value -> route value.
+// Drag up or down to bend it (up starts slow), double-click for linear.
+function CurveBox({ crv, bi, color, label, onChange }: { crv: number; bi: boolean; color: string; label: string; onChange: (c: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; crv: number } | null>(null);
+  const W = 26, H = 18, PADC = 2;
+  let d = '';
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24, x = bi ? t * 2 - 1 : t;
+    const y = routeCurve(x, crv, bi);
+    const px = PADC + t * (W - 2 * PADC), py = H - PADC - (bi ? (y + 1) / 2 : y) * (H - 2 * PADC);
+    d += `${i ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`;
+  }
+  const text = Math.abs(crv) < 1e-3 ? 'LINEAR' : fmtBi(crv);
+  return (
+    <div
+      ref={ref}
+      className="mx-crv"
+      tabIndex={0}
+      role="slider"
+      aria-label={label}
+      aria-valuemin={-1}
+      aria-valuemax={1}
+      aria-valuenow={crv}
+      aria-valuetext={text}
+      title={`response curve: ${text} (drag, double-click for linear)`}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        drag.current = { y: e.clientY, crv };
+        ref.current?.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        onChange(clampAmt(drag.current.crv + (drag.current.y - e.clientY) * (e.shiftKey ? 0.002 : 0.01)));
+      }}
+      onPointerUp={(e) => { drag.current = null; try { ref.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ } }}
+      onDoubleClick={() => onChange(0)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 0.01 : 0.05;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); onChange(clampAmt(crv + step)); }
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); onChange(clampAmt(crv - step)); }
+      }}
+    >
+      <svg viewBox={`0 0 ${W} ${H}`}><path d={d} style={{ stroke: color }} /></svg>
+    </div>
+  );
+}
+
 function ModSelect({ value, options, label, onChange }: { value: number; options: string[]; label: string; onChange: (v: number) => void }) {
   return (
     <select className="mx-select" aria-label={label} value={value} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange(parseInt(e.target.value, 10))}>
@@ -111,12 +159,12 @@ export function MatrixPanel() {
   // source OR a destination set (rowVisible), keyed by its absolute slot number
   // so editing one slot never disturbs another's React state.
   const rows = useMemo(() => {
-    const out: { slot: number; src: number; dst: number; amt: number; bi: boolean; aux: number }[] = [];
+    const out: { slot: number; src: number; dst: number; amt: number; bi: boolean; aux: number; crv: number }[] = [];
     for (let s = 1; s <= MOD_MATRIX_SIZE; s++) {
       const src = params[`mat${s}.src`] | 0;
       const dst = params[`mat${s}.dst`] | 0;
       if (src !== 0 || dst !== 0) {
-        out.push({ slot: s, src, dst, amt: params[`mat${s}.amt`] || 0, bi: routeBipolar(src, params[`mat${s}.pol`] | 0), aux: params[`mat${s}.aux`] | 0 });
+        out.push({ slot: s, src, dst, amt: params[`mat${s}.amt`] || 0, bi: routeBipolar(src, params[`mat${s}.pol`] | 0), aux: params[`mat${s}.aux`] | 0, crv: params[`mat${s}.crv`] || 0 });
       }
     }
     return out;
@@ -154,6 +202,8 @@ export function MatrixPanel() {
             <ModSelect value={r.dst} options={MOD_DESTS} label={`Route ${r.slot} destination`} onChange={(v) => updateSlot(r.slot, { dst: v })} />
             <span className="mx-arrow" aria-hidden="true">×</span>
             <ModSelect value={r.aux} options={AUX_OPTIONS} label={`Route ${r.slot} aux source`} onChange={(v) => updateSlot(r.slot, { aux: v })} />
+            <CurveBox crv={r.crv} bi={r.bi} color={SOURCE_COLORS[r.src] || '#9fb4d8'} label={`Route ${r.slot} response curve`}
+              onChange={(c) => updateSlot(r.slot, { crv: c })} />
             <button className={`mx-pol${r.bi ? ' on' : ''}`} aria-pressed={r.bi}
               aria-label={`Route ${r.slot} polarity`} title="UNI pushes one way, BI swings both ways"
               onClick={() => updateSlot(r.slot, { pol: polarityFor(r.src, !r.bi) })}>{r.bi ? 'BI' : 'UNI'}</button>
