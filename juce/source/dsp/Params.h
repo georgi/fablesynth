@@ -7,7 +7,9 @@
 // APVTS and to seed defaults — exactly mirroring the web app's params.ts.
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -36,7 +38,13 @@ inline const std::vector<std::string>& tableSlotNames() {
 
 inline const std::vector<std::string> FILTER_TYPES  = {"LP 12", "LP 24", "BP 12", "HP 12", "NOTCH", "COMB", "VOWEL"};
 inline const std::vector<std::string> FILTER_ROUTES = {"SERIAL", "PARALLEL", "SPLIT"};
-inline const std::vector<std::string> LFO_SHAPES    = {"SINE", "TRI", "SAW", "SQR", "S&H"};
+// CUSTOM (appended) plays the drawn shape in the `lfoN.p*` point params.
+inline const std::vector<std::string> LFO_SHAPES    = {"SINE", "TRI", "SAW", "SQR", "S&H", "CUSTOM"};
+constexpr int LFO_CUSTOM = 5;
+// Points of a drawn LFO shape; each is x (cycle position), y and c.
+constexpr int LFO_MAX_POINTS = 16;
+// `c` value of a point that holds its y until the next point (a step).
+constexpr float LFO_HOLD = 2.0f;
 inline const std::vector<std::string> LFO_DIVS      = {"1/1", "1/2", "1/4", "1/4.", "1/4T", "1/8", "1/8.", "1/8T", "1/16", "1/16T", "1/32"};
 
 // Cycles per beat (beat = quarter note) for each LFO_DIVS entry. Clamped.
@@ -46,6 +54,16 @@ inline double lfoDivFactor(int i) {
     return f[i < 0 ? 0 : (i >= n ? n - 1 : i)];
 }
 inline const std::vector<std::string> SUB_SHAPES    = {"SINE", "SQR"};
+// Oscillator warp modes (append-only; mirrors params.ts WARP_MODES). SYNC..
+// QUANTIZE remap the read phase of the oscillator's own table; FM/AM/RM take
+// the other oscillator as modulator.
+inline const std::vector<std::string> WARP_MODES    = {"OFF", "SYNC", "SYNC WIN", "BEND", "ASYM", "PWM", "MIRROR", "QUANTIZE", "FM", "AM", "RM"};
+enum WarpMode : int { WARP_OFF, WARP_SYNC, WARP_SYNCWIN, WARP_BEND, WARP_ASYM, WARP_PWM,
+                      WARP_MIRROR, WARP_QUANT, WARP_FM, WARP_AM, WARP_RM };
+// Amount at which a warp mode leaves the waveform unchanged (params.ts warpNeutral).
+inline constexpr float warpNeutral(int mode) { return mode == WARP_BEND || mode == WARP_ASYM ? 0.5f : 0.0f; }
+// Reverb algorithms (append-only; mirrors params.ts REVERB_TYPES).
+inline const std::vector<std::string> REVERB_TYPES  = {"ROOM", "PLATE"};
 inline const std::vector<std::string> NOISE_TYPES   = {"WHITE", "PINK"};
 // Append-only (saved routes store the index); mirrors params.ts MOD_SOURCES.
 inline const std::vector<std::string> MOD_SOURCES   = {"—", "LFO 1", "LFO 2", "MOD ENV", "VELO", "NOTE",
@@ -75,6 +93,16 @@ inline constexpr double polarize(double x, int src, int pol) {
 inline constexpr double auxScale(double x, int aux) {
     return aux ? (sourceBipolar(aux) ? (x + 1.0) * 0.5 : x) : 1.0;
 }
+// Mirrors params.ts routeCurve(): the response curve of a route bends the
+// source value before the amount. c > 0 starts slow, c < 0 starts fast, 0 is
+// linear; a bipolar value keeps its sign and bends its size.
+inline double routeCurve(double x, double c, bool bipolar) {
+    if (std::abs(c) < 1e-3) return x;
+    const double k = (c < -1 ? -1 : c > 1 ? 1 : c) * 6;
+    const double f = std::min(1.0, bipolar ? std::abs(x) : std::max(0.0, x));
+    const double y = (std::exp(k * f) - 1) / (std::exp(k) - 1);
+    return bipolar && x < 0 ? -y : y;
+}
 // Same cases as the 'route polarity' tests in params.test.ts.
 static_assert(polarize(-0.5, 1, 0) == -0.5 && polarize(-1.0, 1, 1) == 0.0 && polarize(0.0, 4, 2) == -1.0,
               "route polarity must match params.ts polarize()");
@@ -85,10 +113,23 @@ inline const std::vector<std::string> MOD_DESTS     = {
     "—", "A POS", "B POS", "F1 CUT", "PITCH", "AMP", "PAN", "A LVL", "B LVL", "F2 CUT", "F2 RES",
     "A DETUNE", "A SPREAD", "A PAN", "B DETUNE", "B SPREAD", "B PAN",
     "F1 RES", "F1 DRIVE", "F1 ENV", "F1 KEY", "F2 DRIVE", "F2 ENV", "F2 KEY",
-    "SUB LVL", "NOISE LVL", "A BLEND", "B BLEND"};
+    "SUB LVL", "NOISE LVL", "A BLEND", "B BLEND", "A WARP", "B WARP",
+    // 30..: LFO rates, envelope times, FX controls and the amount of another
+    // route. The FX run after the voices, so they follow the newest held note.
+    "LFO1 RATE", "LFO2 RATE", "LFO3 RATE", "LFO4 RATE",
+    "AMP ATK", "AMP DEC", "AMP REL", "MENV ATK", "MENV DEC", "MENV REL", "MENV2 ATK", "MENV2 DEC", "MENV2 REL",
+    "DRIVE AMT", "DRIVE MIX", "CHORUS MIX", "DELAY FDBK", "DELAY MIX", "REVERB MIX",
+    "MOD 1 AMT", "MOD 2 AMT", "MOD 3 AMT", "MOD 4 AMT", "MOD 5 AMT", "MOD 6 AMT", "MOD 7 AMT", "MOD 8 AMT",
+    "MOD 9 AMT", "MOD 10 AMT", "MOD 11 AMT", "MOD 12 AMT", "MOD 13 AMT", "MOD 14 AMT", "MOD 15 AMT", "MOD 16 AMT"};
 // MOD_DESTS.size() as a compile-time constant (array sizing for the live-mod
 // viz snapshot). engine_test asserts the two stay in sync.
-constexpr int NUM_MOD_DESTS = 28;
+constexpr int NUM_MOD_DESTS = 65;
+// First MOD_DESTS index of the "MOD n AMT" block (the amount of route n).
+constexpr int DST_ROUTE_AMT = 49;
+// The route (1..16) whose amount `dst` modulates, or 0.
+inline constexpr int dstRouteSlot(int dst) {
+    return dst >= DST_ROUTE_AMT && dst < DST_ROUTE_AMT + 16 ? dst - DST_ROUTE_AMT + 1 : 0;
+}
 
 // ---- field offsets within a repeated block ----
 enum OscField  { OSC_ON, OSC_TABLE, OSC_POS, OSC_OCT, OSC_SEMI, OSC_FINE,
@@ -178,12 +219,26 @@ enum Pid : int {
     MASTER_MONO, MASTER_LEGATO,
     // COMP side-chain (params.ts fx.comp.sc / fx.comp.schp), appended.
     FXCOMP_SC, FXCOMP_SCHP,
+    // Oscillator warp (params.ts oscA.warp / oscA.warpamt, then osc B), appended.
+    OSCA_WARP, OSCA_WARPAMT, OSCB_WARP, OSCB_WARPAMT,
+    // Reverb algorithm and PLATE damping (params.ts), appended.
+    FXREVERB_TYPE, FXREVERB_DAMP,
+    // Response curve per route (mat1.crv .. mat16.crv), see routeCurve().
+    MATCRV1, MATCRV_LAST = MATCRV1 + MOD_MATRIX_SIZE - 1,
+    // Drawn LFO shapes (params.ts): per LFO a one-shot switch, a point count
+    // and LFO_MAX_POINTS points of x/y/c. See LfoXField and LfoShape.h.
+    LFOX1_BASE, LFOX_LAST = LFOX1_BASE + 4 * (2 + 3 * LFO_MAX_POINTS) - 1,
     NUM_PARAMS
 };
 
 inline constexpr int oscBase(int i)  { return i == 0 ? OSCA_BASE : OSCB_BASE; }
+// Warp block of an oscillator: mode at +0, amount at +1.
+inline constexpr int warpBase(int i) { return i == 0 ? OSCA_WARP : OSCB_WARP; }
 inline constexpr int fltBase(int i)  { return i == 0 ? FILTER1_BASE : FILTER2_BASE; }
 inline constexpr int matBase(int s)  { return MAT1_BASE + (s - 1) * MAT_NFIELDS; } // s = 1..16
+// Drawn-shape block of LFO n (1..4): one-shot, point count, then the points.
+enum LfoXField { LFOX_ONESHOT, LFOX_COUNT, LFOX_POINTS, LFOX_NFIELDS = LFOX_POINTS + 3 * LFO_MAX_POINTS };
+inline constexpr int lfoxBase(int n) { return LFOX1_BASE + (n - 1) * LFOX_NFIELDS; } // n = 1..4
 enum EnvXField { ENVX_MODEL, ENVX_HOLD, ENVX_AC, ENVX_DC, ENVX_RC, ENVX_NFIELDS };
 inline constexpr int envxBase(int n) { return ENVX1_BASE + (n - 1) * ENVX_NFIELDS; } // n = 1..3
 
@@ -238,8 +293,37 @@ inline constexpr int dstTarget(int dst) {
         case 25: return NOISE_LEVEL;
         case 26: return paramIndex(OSCA_BASE, OSC_BLEND);
         case 27: return paramIndex(OSCB_BASE, OSC_BLEND);
-        default: return DST_NONE;
+        case 28: return OSCA_WARPAMT;
+        case 29: return OSCB_WARPAMT;
+        case 30: return paramIndex(LFO1_BASE, LFO_RATE);
+        case 31: return paramIndex(LFO2_BASE, LFO_RATE);
+        case 32: return paramIndex(LFO3_BASE, LFO_RATE);
+        case 33: return paramIndex(LFO4_BASE, LFO_RATE);
+        case 34: return ENV1_BASE;       // attack, decay, release: +0, +1, +3
+        case 35: return ENV1_BASE + 1;
+        case 36: return ENV1_BASE + 3;
+        case 37: return ENV2_BASE;
+        case 38: return ENV2_BASE + 1;
+        case 39: return ENV2_BASE + 3;
+        case 40: return ENV3_BASE;
+        case 41: return ENV3_BASE + 1;
+        case 42: return ENV3_BASE + 3;
+        case 43: return FXDRIVE_AMT;
+        case 44: return FXDRIVE_MIX;
+        case 45: return FXCHORUS_MIX;
+        case 46: return FXDELAY_FB;
+        case 47: return FXDELAY_MIX;
+        case 48: return FXREVERB_MIX;
+        default: return dstRouteSlot(dst) ? matBase(dstRouteSlot(dst)) + MAT_AMT : static_cast<int>(DST_NONE);
     }
+}
+
+// The destination that modulates param `pid` (the reverse of dstTarget, the
+// web's DEST_OF_PARAM), or 0 when the param is not a destination.
+inline constexpr int destOfParam(int pid) {
+    for (int d = 1; d < NUM_MOD_DESTS; ++d)
+        if (pid >= 0 && dstTarget(d) == pid) return d;
+    return 0;
 }
 
 using ParamArray = std::array<float, NUM_PARAMS>;
@@ -258,6 +342,9 @@ struct ParamInfo {
     Curve       curve;
     Kind        kind;
     const std::vector<std::string>* options; // for Enum
+    // Data of an editor, not a control (params.ts `hidden`): no host
+    // automation, no automation lane, no agent access, no smoothing.
+    bool        hidden = false;
 };
 
 // The full ordered descriptor table (built once). Order matches the Pid enum.

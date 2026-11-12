@@ -37,8 +37,8 @@ describe('worklet MOD_PARAM_INFO parity', () => {
 
   const info = parseModParamInfo();
 
-  it('parses all 24 modulatable param entries', () => {
-    expect(Object.keys(info)).toHaveLength(24);
+  it('parses all 61 modulatable param entries', () => {
+    expect(Object.keys(info)).toHaveLength(61);
   });
 
   it('every entry matches PARAMS[id] {curve, min, max}', () => {

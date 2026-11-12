@@ -46,6 +46,7 @@ FableAudioProcessorEditor::FableAudioProcessorEditor(FableAudioProcessor& p)
     : juce::AudioProcessorEditor(p),
       model(std::make_unique<StandaloneWtUiModel>(p)), rack(*model, p.apvts, p), wtEditor(*model), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
+    tooltips.setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     fui::enableLeafControlCache(rack);
     addAndMakeVisible(agentOverlay);

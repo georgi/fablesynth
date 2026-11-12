@@ -111,7 +111,8 @@ export const PHASE_RUNNER: SessionPreset = {
         'mat2.src':1, 'mat2.dst':3, 'mat2.amt':0.09,
         'mat3.src':4, 'mat3.dst':3, 'mat3.amt':0.04,
         'fx.delay.time':45/126, 'fx.delay.fb':0.79, 'fx.delay.mix':0.78,
-        'fx.reverb.size':0.82, 'fx.reverb.mix':0.44,
+        // PLATE: the dense tank keeps the stab tails smooth (same size and mix).
+        'fx.reverb.type':1, 'fx.reverb.size':0.82, 'fx.reverb.mix':0.44,
         'fx.eq.low':-7, 'fx.eq.high':-7,
       }) },
       { machine:'WT1', name:'RELAY', color:'#b18cff', gain:0.63, patch:wtPatch(59, {
@@ -119,7 +120,7 @@ export const PHASE_RUNNER: SessionPreset = {
         'filter.type':1, 'filter.cutoff':820, 'filter.res':0.1, 'filter.env':0.1,
         'env1.a':0.014, 'env1.d':0.18, 'env1.r':0.35,
         'mat1.amt':0.08, 'fx.delay.time':60/126, 'fx.delay.fb':0.74, 'fx.delay.mix':0.75,
-        'fx.reverb.size':0.76, 'fx.reverb.mix':0.42, 'fx.eq.low':-6, 'fx.eq.high':-8,
+        'fx.reverb.type':1, 'fx.reverb.size':0.76, 'fx.reverb.mix':0.42, 'fx.eq.low':-6, 'fx.eq.high':-8,
       }) },
     ],
     scenes: [

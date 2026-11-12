@@ -9,6 +9,7 @@
 #include "LiveSpectrumChecks.h"
 #include "AgentProcessorChecks.h"
 #include "NoteDrawChecks.h"
+#include "WarpLfoUiChecks.h"
 #include "ArpProcessorChecks.h"
 #include "BrowserChecks.h"
 #include "../source/ui/WtBrowserAdapter.h"
@@ -1155,6 +1156,16 @@ int main(int argc, char** argv) {
         }
         setenv("FABLE_IMPORTED_DIR", noImports.getFullPathName().toRawUTF8(), 1);
         dir.deleteRecursively();
+    }
+    printf("\n== Warp controls, reverb type and the drawn LFO shape editor ==\n");
+    {
+        FableAudioProcessor uiProc;
+        uiProc.prepareToPlay(sr, block);
+        warplfoui::run(uiProc, {Rack::LW, Rack::LH},
+            [&](bool ok, const char* message) { check(ok, message, 0); },
+            [&](juce::Component& editor, const char* name) {
+                writePng(editor.createComponentSnapshot(editor.getLocalBounds()), dir.getChildFile(name));
+            });
     }
     if (!runAgentProcessorChecks<FableAudioProcessor>("wt", fable::paramInfo().data(), fable::paramInfo().size(), "filter.cutoff", "oscA.oct")) ++fail;
     return fail == 0 ? 0 : 1;

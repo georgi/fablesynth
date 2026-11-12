@@ -4,22 +4,40 @@ import { LFOView } from '../displays/LFOView';
 import { ModSourceChip } from '../ModSourceChip';
 import { ACCENTS } from '../../constants';
 import type * as React from 'react';
-import { useState } from 'react';
-import { LFO_DIV_F, SYNC_BPM, lfoSource } from '../../params';
+import { useMemo, useState } from 'react';
+import { LFO_CUSTOM, LFO_DIV_F, SYNC_BPM, lfoSource } from '../../params';
+import { readLfoShape, seedLfoShape } from '../../lfoShape';
 import { useStore } from '../../store';
 
-function Toggle({ id, label }: { id: string; label: string }) {
+function Toggle({ id, label, title }: { id: string; label: string; title?: string }) {
   const v = useStore((s) => s.params[id]);
   const setParam = useStore((s) => s.setParam);
   return (
-    <button className={`lfo-tg${v ? ' on' : ''}`} aria-pressed={!!v} onClick={() => setParam(id, v ? 0 : 1)}>
+    <button className={`lfo-tg${v ? ' on' : ''}`} aria-pressed={!!v} title={title} onClick={() => setParam(id, v ? 0 : 1)}>
       {label}
     </button>
   );
 }
 
-function LfoBlock({ id, src, accentKey, picker }: { id: string; src: number; accentKey: 'a' | 'b'; picker: React.ReactNode }) {
+// The drawn shape of one LFO. The key changes only when one of its point
+// params changes, so the points array is stable between unrelated edits.
+function useLfoShape(lfo: number) {
+  const key = useStore((s) => {
+    const n = s.params[`lfo${lfo}.pn`] | 0;
+    let k = String(n);
+    for (let i = 1; i <= n; i++) k += `|${s.params[`lfo${lfo}.p${i}.x`]},${s.params[`lfo${lfo}.p${i}.y`]},${s.params[`lfo${lfo}.p${i}.c`]}`;
+    return k;
+  });
+  return useMemo(() => readLfoShape(useStore.getState().params, lfo), [key, lfo]);
+}
+
+function LfoBlock({ id, lfo, src, accentKey, picker }: { id: string; lfo: number; src: number; accentKey: 'a' | 'b'; picker: React.ReactNode }) {
   const shape = useStore((s) => s.params[`${id}.shape`]);
+  const oneshot = useStore((s) => s.params[`${id}.oneshot`]);
+  const setLfoShape = useStore((s) => s.setLfoShape);
+  const points = useLfoShape(lfo);
+  const [paint, setPaint] = useState(false);
+  const custom = (shape | 0) === LFO_CUSTOM;
   const rate = useStore((s) => s.params[`${id}.rate`]);
   const sync = useStore((s) => s.params[`${id}.sync`]);
   const syncrate = useStore((s) => s.params[`${id}.syncrate`]);
@@ -38,15 +56,24 @@ function LfoBlock({ id, src, accentKey, picker }: { id: string; src: number; acc
           <Toggle id={`${id}.sync`} label="SYNC" />
           <Toggle id={`${id}.retrig`} label="TRIG" />
         </div>
-        <span className="ph-stepper"><Stepper paramId={`${id}.shape`} /></span>
+        {/* A first visit to CUSTOM starts from the shape the LFO played before. */}
+        <span className="ph-stepper"><Stepper paramId={`${id}.shape`}
+          onStep={(next) => { if (next === LFO_CUSTOM && !points.length) setLfoShape(lfo, seedLfoShape(shape | 0)); }} /></span>
       </div>
-      <LFOView className="lfo-curve" shape={shape} rate={dispRate} accent={ACCENTS[accentKey]} />
+      <LFOView className="lfo-curve" shape={shape} rate={dispRate} accent={ACCENTS[accentKey]}
+        points={points} onPoints={(next) => setLfoShape(lfo, next)} paint={paint} oneshot={!!oneshot} />
       <div className="knob-row lfo-knobs">
         {sync
           ? <span className="lfo-div"><Stepper paramId={`${id}.syncrate`} accent={accentKey} /></span>
           : <Knob paramId={`${id}.rate`} size="sm" accent={accentKey} />}
         <Knob paramId={`${id}.rise`} size="sm" accent={accentKey} />
         <Knob paramId={`${id}.phase`} size="sm" accent={accentKey} />
+        <div className="lfo-modes">
+          <Toggle id={`${id}.oneshot`} label="1SHOT" title="One-shot: run one cycle from the note start, then hold the end of the shape" />
+          <button className={`lfo-tg${paint ? ' on' : ''}`} aria-pressed={paint} disabled={!custom}
+            title={custom ? 'STEP: drag in the shape to paint sixteen held steps' : 'STEP painting applies to the CUSTOM shape'}
+            onClick={() => setPaint((v) => !v)}>STEP</button>
+        </div>
       </div>
     </div>
   );
@@ -69,7 +96,7 @@ export function LfoPanel() {
             ))}
           </span>
         );
-        return <LfoBlock key={n} id={`lfo${n}`} src={lfoSource(n)} accentKey={slot ? 'b' : 'a'} picker={picker} />;
+        return <LfoBlock key={n} id={`lfo${n}`} lfo={n} src={lfoSource(n)} accentKey={slot ? 'b' : 'a'} picker={picker} />;
       })}
     </section>
   );

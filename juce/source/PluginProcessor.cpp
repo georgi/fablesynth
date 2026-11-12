@@ -44,7 +44,7 @@ FableAudioProcessor::FableAudioProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     for (const auto& d : paramInfo()) {
-        const int version = d.id >= FXCOMP_ATT ? 3 : d.id >= FXOTT_ON ? 2 : 1;
+        const int version = d.id >= OSCA_WARP ? 4 : d.id >= FXCOMP_ATT ? 3 : d.id >= FXOTT_ON ? 2 : 1;
         juce::ParameterID pid(d.pid, version);
         // Host-facing name MUST be unique: repeated blocks share short labels
         // (both LFOs are "SHAPE"/"RATE", both oscs "POS", etc.). A DAW that keys
@@ -66,7 +66,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout FableAudioProcessor::createL
                 [info](float, float, float n) { return normToValue(info, n); },
                 [info](float, float, float v) { return valueToNorm(info, v); });
             if (d.curve == Curve::Int) range.interval = 1.0f;
-            layout.add(std::make_unique<juce::AudioParameterFloat>(pid, name, range, d.def));
+            // Editor data (drawn LFO points) stays out of the host's automation list.
+            layout.add(std::make_unique<juce::AudioParameterFloat>(pid, name, range, d.def,
+                juce::AudioParameterFloatAttributes().withAutomatable(!d.hidden)));
         }
     }
     return layout;
@@ -386,6 +388,7 @@ void FableAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
             float* r = stereo ? R + pos : R; // mono: scratch reused per chunk
             engine.render(l, r, len); // summed (pre-FX) voice mix
             if (engine.hasSequenceAutomation() || engine.takeAutomationFxDirty()) fx.setParams(engine.params(),fxBpm);
+            fx.setMod(engine.fxMod()); // routes to the FX destinations
             fx.process(l, r, len);
             if (!stereo) { // mono out: downmix (engine is stereo)
                 juce::FloatVectorOperations::add(l, r, len);

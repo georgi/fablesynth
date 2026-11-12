@@ -17,6 +17,14 @@ import type { ParamKnobSize } from './ParamKnob';
 
 const clampAmt = (n: number) => Math.min(1, Math.max(-1, n));
 
+/** Radius step between stacked mod rings, in the knob's 80-unit space. */
+const RING_STEP = 3.4;
+/** The knob's SVG view for a ring count: 80 units, plus room for the outer rings. */
+export function ringViewBox(rings: number): string {
+  const pad = Math.max(0, rings - 1) * RING_STEP;
+  return `${-pad} ${-pad} ${80 + 2 * pad} ${80 + 2 * pad}`;
+}
+
 export type KnobSize = ParamKnobSize;
 
 // One modulation ring: an arc from the current value to where this route would
@@ -143,13 +151,16 @@ export function Knob({ paramId, size = 'md', accent, label }: KnobProps) {
         if (src) addRoute(src, dest);
       } : undefined}
     >
-      <svg viewBox="0 0 80 80">
+      {/* Each ring after the first lies outside the 80-unit box, so the view
+          grows by one ring width per extra ring: the knob shrinks a little and
+          every ring stays inside the knob's own bounds. */}
+      <svg viewBox={ringViewBox(myMods.length)}>
         <circle className="k-body" cx="40" cy="40" r="26" />
         <path className="k-track" d={KNOB_TRACK} />
         <path className="k-arc" d={arcD} />
         {myMods.map((m, k) => (
           <ModRing key={m.slot} slotNum={m.slot} amt={m.amt} src={m.src} bi={routeBipolar(m.src, m.pol)}
-            baseNorm={norm} r={38 + k * 3.4} focus={modFocus} onActive={setActiveRing} />
+            baseNorm={norm} r={38 + k * RING_STEP} focus={modFocus} onActive={setActiveRing} />
         ))}
         <path ref={autoLive.ring} className="k-auto" d="" style={{ opacity: 0 }} />
         <circle ref={autoLive.dot} className="k-auto-dot" r="3.2" style={{ opacity: 0 }} />

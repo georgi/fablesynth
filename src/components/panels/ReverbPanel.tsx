@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { engine as wtEngine, useStore } from '../../store';
 import { idleReverb, type ReverbMessage } from '../../engine/reverb';
+import { REVERB_TYPES } from '../../params';
 import { Knob } from '../Knob';
 import { PowerButton } from '../PowerButton';
 import { setupCanvas } from '../displays/canvas';
@@ -19,6 +20,9 @@ export function ReverbPanel({ adapter }: { adapter?: FxPanelAdapter } = {}) {
   const on = params[id('on')] > 0.5, activeEngine = adapter?.engine ?? wtEngine;
   const knob = adapter?.renderKnob ?? ((paramId: string) => <Knob paramId={paramId} size="sm" accent="n" />);
   const power = adapter?.renderPower ?? ((paramId: string) => <PowerButton paramId={paramId} />);
+  // Machines with the algorithm choice (WT-1) show the TYPE switch and DAMP.
+  const hasType = id('type') in params, plate = hasType && params[id('type')] > 0.5;
+  const setParam = adapter?.setParam ?? useStore.getState().setParam;
   const canvas = useRef<HTMLCanvasElement>(null), readings = useRef<HTMLDivElement>(null);
   const correlation = useRef<HTMLDivElement>(null), enabled = useRef(on);
   const redraw = useRef<() => void>(() => {});
@@ -118,13 +122,22 @@ export function ReverbPanel({ adapter }: { adapter?: FxPanelAdapter } = {}) {
   useEffect(() => { redraw.current(); }, [on]);
 
   return <section className={`panel panel-reverb${on ? '' : ' reverb-bypassed'}`} style={{ gridArea: 'reverb' }} aria-label={`Visual stereo reverb${adapter?.context ? `, ${adapter.context}` : ''}`}>
-    <div className="panel-head">{power(id('on'))}<h2>REVERB</h2><span className="reverb-state">{source ? (on ? 'PAD SEND' : 'SEND OFF') : (on ? 'STEREO' : 'BYPASS')}</span></div>
+    <div className="panel-head">{power(id('on'))}<h2>REVERB</h2>
+      {hasType && <span className="reverb-type" role="radiogroup" aria-label="Reverb algorithm">
+        {REVERB_TYPES.map((name, i) => (
+          <button key={name} type="button" role="radio" aria-checked={plate === (i === 1)}
+            title={i ? 'PLATE: dense allpass tank, smooth modulated tail' : 'ROOM: comb network'}
+            onClick={() => setParam(id('type'), i)}>{name}</button>
+        ))}
+      </span>}
+      <span className="reverb-state">{source ? (on ? 'PAD SEND' : 'SEND OFF') : (on ? 'STEREO' : 'BYPASS')}</span></div>
     <canvas className="reverb-field" ref={canvas} role="img" aria-label="Stereo reverb tail" />
     <div className="reverb-readouts" ref={readings}>
       <div><span>L RETURN</span><output>−∞ dB</output></div><div><span>R RETURN</span><output>−∞ dB</output></div>
     </div>
     <div className="reverb-controls">
       {knob(id('size'), 'size')}
+      {hasType && <span className={plate ? 'reverb-damp' : 'reverb-damp reverb-damp-off'} title={plate ? 'High-frequency damping of the tail' : 'DAMP applies to PLATE'}>{knob(id('damp'), 'damp')}</span>}
       {knob(id('mix'), 'mix')}
       <div className="reverb-correlation" ref={correlation} role="img" aria-label="Stereo correlation unavailable in silence" data-silent="true" title="Wet L/R correlation: +1 is mono, 0 is decorrelated, −1 is opposite polarity">
         <span>CORRELATION</span><output>—</output>

@@ -167,7 +167,7 @@ fable::FableAgent& SeqAudioProcessor::getAgent() {
             const auto prefix = "track" + juce::String(track) + ".";
             auto append = [&](const auto& info) {
                 for (const auto& d : info)
-                    state.snapshot.parameters.push_back(agentParameter(d, values[(size_t)d.id], prefix));
+                    if (!d.hidden) state.snapshot.parameters.push_back(agentParameter(d, values[(size_t)d.id], prefix));
             };
             if (track == 0) append(drumParamInfo());
             else if (track == 1) append(bassParamInfo());
@@ -1142,6 +1142,7 @@ void SeqAudioProcessor::renderWt(int i, float* L, float* R, int n) {
         wtLiveMod_[(size_t)i][(size_t)d].store((float)wt_[i].vizMod[d], std::memory_order_relaxed);
     wtLiveModAny_[i].store(wt_[i].vizModAny, std::memory_order_relaxed);
     if (wt_[i].takeAutomationFxDirty()) wtFx_[i].setParams(wt_[i].params());
+    wtFx_[i].setMod(wt_[i].fxMod()); // routes to the FX destinations
     if (audioTempoReady_ && preparedSampleRate_ > 0) {
         // LAB stages lock to the session clock; the echo keeps its patch tempo.
         wtFx_[i].setLabTempo(audioBpm_);

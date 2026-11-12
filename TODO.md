@@ -5,20 +5,41 @@
 Done: LFO 3/4, MOD ENV 2, macros 1–4, MOD WHL, AFTERTCH, RANDOM, per-route
 aux source (2026-10-08, web + JUCE). Also: base controls never move, outer mod rings, inner automation arc,
 per-source remove items, drag readouts, per-route bipolar mode, and source
-highlighting. The items below remain, in priority order.
+highlighting.
 
-- **Response curve per route.** The aux source is done (`mat{n}.aux`, scales
-  the route by the aux's unipolar value). A per-route response curve remains.
-- **More mod destinations.** Add LFO rate, envelope times, FX mix and send
-  controls, and the depth of another route (mod of mod). Today there are 27
-  oscillator, filter, and mixer targets.
-- **Drawable LFO shapes.** Draw the shape with points and curves (reuse the
-  automation lane editor geometry). Add a one-shot envelope mode.
-- **Multiple rings at the knob top.** With more than one route on a
-  parameter, the knob bounds clip the top of the outer rings (web and JUCE).
-  Reserve space above the knob or shrink the body when rings exist.
-- **JUCE tooltips.** No editor creates a `juce::TooltipWindow`, so every
-  `setTooltip()` text is invisible. Ring info shows in the knob label instead.
+Done 2026-11-12 (web + JUCE): response curve per route (`mat{n}.crv`), more
+mod destinations (warp amount, LFO rates, envelope times, six FX controls, the
+amount of another route), drawn LFO shapes with a one-shot mode (`lfoN.p*`,
+`lfoN.oneshot`), stacked rings inside the knob bounds, and JUCE tooltips. The
+items below remain.
+
 - **Automation offset drag (optional).** Lanes replace the base value. If
   wanted, an Alt-drag on the inner automation arc could move the whole lane
   up or down.
+- **Larger LFO shape editor.** The CUSTOM shape is drawn in the 62 px LFO
+  display. A pop-out editor with a finer grid would make detailed shapes
+  easier.
+- **Envelope sustain and more FX controls as destinations.** The envelope
+  destinations are the times; the FX ones are drive amount, the stage mixes and
+  delay feedback.
+
+## WT-1 oscillators
+
+Done 2026-11-12 (web + JUCE): warp modes SYNC, SYNC WIN, BEND, ASYM, PWM,
+MIRROR, QUANTIZE, and FM / AM / RM from the other oscillator.
+
+- **Serum import of warp and LFO shapes.** The importer still maps neither
+  (`juce/source/serumimport/SerumPatch.cpp`, `tools/serum1/convert.py`). Measure
+  the Serum warp curves and LFO point data, then map them to `oscX.warp` and
+  the `lfoN.p*` points.
+- **FM from the sub or the noise oscillator, and the modulator's own warp.**
+  The FM / AM / RM modulator is the other oscillator's unwarped table.
+
+## FX
+
+Done 2026-11-12 (web + JUCE): PLATE reverb (`fx.reverb.type`, `fx.reverb.damp`)
+beside the ROOM comb network.
+
+- **PLATE for DR-1 and BL-1.** Their reverbs are still the comb network. The
+  tank is a shared primitive (`PlateReverb` in `ott-worklet.js`,
+  `juce/source/dsp/PlateReverb.h`).

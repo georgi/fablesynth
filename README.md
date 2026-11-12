@@ -49,6 +49,13 @@ Silicon + Intel), Developer ID signed, and notarized by Apple.
   ![The wavetable import / draw editor (here targeting OSC A)](docs/wavetable_editor.png)
 - **Unison** up to 7 voices per oscillator with detune + stereo spread,
   octave/semi/fine tuning, level and pan per oscillator.
+- **Warp** per oscillator, a mode and an amount (also a mod destination):
+  **SYNC** (hard sync, slave ratio 1–16, with a band-limited reset) and **SYNC
+  WIN** (windowed), the phase-distortion maps **BEND**, **ASYM**, **PWM**,
+  **MIRROR** and **QUANTIZE**, and **FM**, **AM** and **RM** from the other
+  oscillator (it must be on; its level can be 0, and its OCT/SEMI/FINE set the
+  ratio). The read speed picks the mip level, so a warped table stays
+  band-limited, and the wavetable view draws the warped waveform.
 - **Sub oscillator** (sine / polyblep square, −1/−2 oct) and **noise** (white/pink).
 - **Dual per-voice filter** — two independent filters, each offering the Simper
   (Cytomic) zero-delay state-variable types (LP12, LP24, BP, HP, Notch) plus a
@@ -64,11 +71,19 @@ Silicon + Intel), Developer ID signed, and notarized by Apple.
   ring it grows to set the depth. Each control can carry several routes, and the
   mod matrix lists every connection (including the global pitch / amp / pan
   targets) for direct editing. Destinations: wavetable position, F1/F2 cutoff, F2
-  resonance, pitch, amp, pan, osc levels.
+  resonance, pitch, amp, pan, osc levels, warp amount, LFO rates, envelope
+  times, FX controls (drive, chorus / delay / reverb mix, delay feedback) and
+  the amount of another route. Each route has a **response curve**.
+- **Drawn LFO shapes** — the **CUSTOM** shape is drawn in the LFO display: click
+  to place up to 16 points, drag to move, Alt-drag to bend a segment,
+  double-click to remove, or paint sixteen steps in **STEP** mode. **1SHOT**
+  runs any shape once per note and holds its end, as an extra envelope.
 - **8-voice polyphony** with smart voice stealing, glide, pitch-bend, and a
   per-voice DC blocker so saturation stages never see offset.
 - **FX chain** — tanh drive, stereo chorus, ping-pong delay, reverb, safety
-  limiter.
+  limiter. The reverb has two algorithms: **ROOM** (comb network) and **PLATE**
+  (a dense, modulated allpass tank with a DAMP control). SIZE gives both the
+  same decay time.
 - Live **3D wavetable views** show the actual modulated frame position streamed
   back from the DSP thread, plus oscilloscope, spectrum analyser and filter
   response displays.

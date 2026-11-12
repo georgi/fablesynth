@@ -52,7 +52,7 @@ const EXCLUDED = new Set(['seq.bpm', 'master.swing']);
 
 export function autoParamDef(machine: MachineId, id: string): ParamDef | null {
   const def = DEFS[machine][id];
-  if (!def || def.type || EXCLUDED.has(id)) return null;
+  if (!def || def.type || def.hidden || EXCLUDED.has(id)) return null;
   return def.curve === 'lin' || def.curve === 'log' ? def : null;
 }
 

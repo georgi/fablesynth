@@ -109,6 +109,7 @@ void BassRack::resized() {
 BassEditor::BassEditor(BassAudioProcessor& p)
     : juce::AudioProcessorEditor(p), model(std::make_unique<StandaloneBassUiModel>(p)), rack(*model, p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
+    tooltips.setLookAndFeel(&lnf);
     addAndMakeVisible(rack);
     addAndMakeVisible(agentOverlay);
     rack.setBounds(0, 0, BassRack::LW, BassRack::LH);

@@ -381,6 +381,7 @@ codeact::Parameter agentParameter(const ParamInfo& d, float value, const juce::S
 void appendAgentApvts(codeact::Snapshot& snapshot, juce::AudioProcessorValueTreeState& apvts,
                       const ParamInfo* info, std::size_t size) {
     for (std::size_t i = 0; i < size; ++i) {
+        if (info[i].hidden) continue; // editor data (drawn LFO points) is not a control
         const auto* raw = apvts.getRawParameterValue(info[i].pid);
         if (!raw) codeact::fail("Missing declared parameter: " + juce::String(info[i].pid));
         snapshot.parameters.push_back(agentParameter(info[i], raw->load()));

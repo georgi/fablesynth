@@ -98,6 +98,9 @@ class FxModuleView : public juce::Component, private fui::VisualTimer {
     juce::OwnedArray<Knob> knobs_;
     std::array<juce::TextButton, 4> bands_;
     std::array<juce::TextButton, 3> driveTypes_;
+    // Reverb algorithm switch (ROOM / PLATE), for machines with fx.reverb.type.
+    std::array<juce::TextButton, 2> verbTypes_;
+    bool hasVerbType_ = false;
     juce::TextButton bandOn_{"BAND 2"}, reset_{"RESET"}, sync_{"SYNC"};
     juce::ComboBox shape_, mode_, division_;
     juce::Rectangle<int> plot_, readouts_, controls_, footer_, caption_;

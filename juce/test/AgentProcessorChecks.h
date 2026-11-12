@@ -16,7 +16,10 @@ bool runAgentProcessorChecks(const char* label, const fable::ParamInfo* catalog,
     auto& agent = processor.getAgent();
     const auto original = agent.capture();
     expect(!static_cast<bool>(codeact::get(original.snapshot.audio, "available")), "audio unavailable before rendering");
-    expect(original.snapshot.parameters.size() == count, "complete canonical catalog");
+    // The agent sees every control; editor data (ParamInfo::hidden) is left out.
+    std::vector<const fable::ParamInfo*> visible;
+    for (std::size_t i = 0; i < count; ++i) if (!catalog[i].hidden) visible.push_back(&catalog[i]);
+    expect(original.snapshot.parameters.size() == visible.size(), "complete canonical catalog");
     const auto presetCatalog = codeact::get(original.snapshot.references, "presetCatalog");
     const auto techniqueLibrary = codeact::get(original.snapshot.references, "techniqueLibrary");
     expect(static_cast<bool>(codeact::get(original.snapshot.references, "available"))
@@ -25,8 +28,8 @@ bool runAgentProcessorChecks(const char* label, const fable::ParamInfo* catalog,
                && static_cast<bool>(codeact::get(techniqueLibrary, "readOnly"))
                && codeact::get(techniqueLibrary, "entries").size() > 0,
            "read-only factory preset and sound-design orientation catalogs");
-    for (std::size_t i = 0; i < count && i < original.snapshot.parameters.size(); ++i) {
-        const auto& p = original.snapshot.parameters[i]; const auto& d = catalog[i];
+    for (std::size_t i = 0; i < visible.size() && i < original.snapshot.parameters.size(); ++i) {
+        const auto& p = original.snapshot.parameters[i]; const auto& d = *visible[i];
         expect(p.id == juce::String(d.pid) && p.minimum == d.min && p.maximum == d.max,
                "canonical identity and physical range");
         if (d.kind == fable::Kind::Enum) expect(p.choices.size() == d.options->size(), "enumerated choices");

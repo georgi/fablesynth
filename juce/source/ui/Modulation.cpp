@@ -47,6 +47,7 @@ void clearSlot(const ParameterSource& s, int slot) {
     setMatReal(s, slot, ".amt", 0.0f);
     setMatReal(s, slot, ".pol", 0.0f);
     setMatReal(s, slot, ".aux", 0.0f);
+    setMatReal(s, slot, ".crv", 0.0f);
 }
 
 bool routeBipolar(const ParameterSource& s, int slot) {

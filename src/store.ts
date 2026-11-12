@@ -1,5 +1,5 @@
 import { copySequenceRhythm, updateSequenceRhythm, type SequenceRhythm } from './shared/sequenceRhythm';
-import { compileAutomation, copyAutomation, validateAutomation, type AutoLane } from './seq/clipAutomation';
+import { compileAutomation, copyAutomation, validateAutomation, type AutoLane, type AutoPoint } from './seq/clipAutomation';
 // Zustand store — single source of truth for parameter values and transport
 // state. Mirrors the imperative `engine.params` + control-registry wiring of the
 // original vanilla build: every control reads its value from here and writes
@@ -12,6 +12,7 @@ import { scaleMap } from './scales';
 import { SynthEngine } from './engine/synth';
 import { feedModLive } from './engine/modLive';
 import { defaultParams, TABLE_NAMES, type ModConnection, type ParamValues } from './params';
+import { lfoShapeParams } from './lfoShape';
 import { FACTORY_PRESETS, loadUserPresets, resolvePresetMods, saveUserPreset, type Preset } from './presets';
 import { findFreeSlot, setMatSlot, clearSlot as clearSlotIn, MOD_DEFAULT_AMT } from './store/slotHelpers';
 import {
@@ -99,6 +100,8 @@ interface SynthStore {
   clipboard: SeqClipboard;
 
   setParam: (id: string, v: number) => void;
+  /** Store a drawn LFO shape (src/lfoShape.ts) in the LFO's point params. */
+  setLfoShape: (lfo: number, points: AutoPoint[]) => void;
   // Modulation routing over the 16 fixed `mat{n}` slots (params-as-truth):
   // addRoute allocates the next free slot; updateSlot/clearSlot edit a slot by
   // its absolute number (1..16). All route through setParam so the engine stays
@@ -264,6 +267,11 @@ export const useStore = create<SynthStore>((set, get) => {
     set((s) => ({ params: { ...s.params, [id]: v }, dirty: true }));
   },
 
+  setLfoShape: (lfo, points) => {
+    const next = lfoShapeParams(lfo, points), current = get().params;
+    for (const id in next) if (current[id] !== next[id]) get().setParam(id, next[id]!);
+  },
+
   // Allocate the next fully-empty slot and write the route into it. The matrix
   // ADD ROUTE button passes dst=0 to claim a slot that is editable but inactive
   // until a destination is chosen.
@@ -283,6 +291,7 @@ export const useStore = create<SynthStore>((set, get) => {
     if (patch.amt !== undefined) get().setParam(`mat${slot}.amt`, patch.amt);
     if (patch.pol !== undefined) get().setParam(`mat${slot}.pol`, patch.pol);
     if (patch.aux !== undefined) get().setParam(`mat${slot}.aux`, patch.aux);
+    if (patch.crv !== undefined) get().setParam(`mat${slot}.crv`, patch.crv);
   },
 
   clearSlot: (slot) => {
@@ -293,6 +302,7 @@ export const useStore = create<SynthStore>((set, get) => {
     get().setParam(`mat${slot}.amt`, next[`mat${slot}.amt`]);
     get().setParam(`mat${slot}.pol`, next[`mat${slot}.pol`]);
     get().setParam(`mat${slot}.aux`, next[`mat${slot}.aux`]);
+    get().setParam(`mat${slot}.crv`, next[`mat${slot}.crv`]);
   },
 
   setModDrag: (src) => set({ modDrag: src }),

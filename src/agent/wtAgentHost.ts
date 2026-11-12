@@ -88,7 +88,8 @@ export function makeSingleParamAgentHost(options: SingleParamAgentHostOptions): 
       const output = outputMeasurement(options.outputAnalyser(), options.unavailableReason);
       return {
         plugin: options.plugin,
-        parameters: options.definitions.map(def => parameter(def, values)),
+        // Editor data (drawn LFO points) is not a control the agent sets.
+        parameters: options.definitions.filter(def => !def.hidden).map(def => parameter(def, values)),
         audio: output,
         meters: { available: Boolean(output.available), output, fx: { available: false, reason: 'WT-1 web FX telemetry is not exposed to the agent yet.' } },
         references: options.presetReferences?.(),

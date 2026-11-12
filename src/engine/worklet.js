@@ -81,7 +81,7 @@ const SEQ_SWING_MAX = 0.667;
 const {
   ADAA_FADE_WIDTH, DRIVE_OS_RAMP_SEC, lcosh, adaaInput, makeDriveOs, resetDriveOs, copyDriveOs,
   driveOsStep, rdH, subSquareTable, subSquareMip, subSquareRead, besselI0, LfoClock, Biquad,
-  DelayLine, LookaheadLimiter, FvComb, FvAllpass, mixGate,
+  DelayLine, LookaheadLimiter, FvComb, FvAllpass, PlateReverb, lfoShapeValue, mixGate,
 } = globalThis.FableDsp;
 
 // Generic modulation log-curve depth: a full route swings a Log param ×2^(x·D),
@@ -125,6 +125,43 @@ const DST_TARGET = [
   'noise.level',   // 25 NOISE LVL
   'oscA.blend',    // 26 A BLEND
   'oscB.blend',    // 27 B BLEND
+  'oscA.warpamt',  // 28 A WARP
+  'oscB.warpamt',  // 29 B WARP
+  'lfo1.rate',     // 30 LFO1 RATE
+  'lfo2.rate',     // 31 LFO2 RATE
+  'lfo3.rate',     // 32 LFO3 RATE
+  'lfo4.rate',     // 33 LFO4 RATE
+  'env1.a',        // 34 AMP ATK
+  'env1.d',        // 35 AMP DEC
+  'env1.r',        // 36 AMP REL
+  'env2.a',        // 37 MENV ATK
+  'env2.d',        // 38 MENV DEC
+  'env2.r',        // 39 MENV REL
+  'env3.a',        // 40 MENV2 ATK
+  'env3.d',        // 41 MENV2 DEC
+  'env3.r',        // 42 MENV2 REL
+  'fx.drive.amt',  // 43 DRIVE AMT
+  'fx.drive.mix',  // 44 DRIVE MIX
+  'fx.chorus.mix', // 45 CHORUS MIX
+  'fx.delay.fb',   // 46 DELAY FDBK
+  'fx.delay.mix',  // 47 DELAY MIX
+  'fx.reverb.mix', // 48 REVERB MIX
+  'mat1.amt',      // 49 MOD 1 AMT
+  'mat2.amt',      // 50 MOD 2 AMT
+  'mat3.amt',      // 51 MOD 3 AMT
+  'mat4.amt',      // 52 MOD 4 AMT
+  'mat5.amt',      // 53 MOD 5 AMT
+  'mat6.amt',      // 54 MOD 6 AMT
+  'mat7.amt',      // 55 MOD 7 AMT
+  'mat8.amt',      // 56 MOD 8 AMT
+  'mat9.amt',      // 57 MOD 9 AMT
+  'mat10.amt',     // 58 MOD 10 AMT
+  'mat11.amt',     // 59 MOD 11 AMT
+  'mat12.amt',     // 60 MOD 12 AMT
+  'mat13.amt',     // 61 MOD 13 AMT
+  'mat14.amt',     // 62 MOD 14 AMT
+  'mat15.amt',     // 63 MOD 15 AMT
+  'mat16.amt',     // 64 MOD 16 AMT
 ];
 
 // Per-param curve + range for every modulatable target, mirroring PARAM_DEFS in
@@ -157,6 +194,43 @@ const MOD_PARAM_INFO = {
   'filter2.key':    { curve: 'lin', lo: 0, hi: 1 },
   'sub.level':      { curve: 'lin', lo: 0, hi: 1 },
   'noise.level':    { curve: 'lin', lo: 0, hi: 1 },
+  'oscA.warpamt':   { curve: 'lin', lo: 0, hi: 1 },
+  'oscB.warpamt':   { curve: 'lin', lo: 0, hi: 1 },
+  'lfo1.rate':      { curve: 'log', lo: 0.02, hi: 30 },
+  'lfo2.rate':      { curve: 'log', lo: 0.02, hi: 30 },
+  'lfo3.rate':      { curve: 'log', lo: 0.02, hi: 30 },
+  'lfo4.rate':      { curve: 'log', lo: 0.02, hi: 30 },
+  'env1.a':         { curve: 'log', lo: 0.001, hi: 8 },
+  'env1.d':         { curve: 'log', lo: 0.005, hi: 10 },
+  'env1.r':         { curve: 'log', lo: 0.005, hi: 12 },
+  'env2.a':         { curve: 'log', lo: 0.001, hi: 8 },
+  'env2.d':         { curve: 'log', lo: 0.005, hi: 10 },
+  'env2.r':         { curve: 'log', lo: 0.005, hi: 12 },
+  'env3.a':         { curve: 'log', lo: 0.001, hi: 8 },
+  'env3.d':         { curve: 'log', lo: 0.005, hi: 10 },
+  'env3.r':         { curve: 'log', lo: 0.005, hi: 12 },
+  'fx.drive.amt':   { curve: 'lin', lo: 0, hi: 1 },
+  'fx.drive.mix':   { curve: 'lin', lo: 0, hi: 1 },
+  'fx.chorus.mix':  { curve: 'lin', lo: 0, hi: 1 },
+  'fx.delay.fb':    { curve: 'lin', lo: 0, hi: 0.92 },
+  'fx.delay.mix':   { curve: 'lin', lo: 0, hi: 1 },
+  'fx.reverb.mix':  { curve: 'lin', lo: 0, hi: 1 },
+  'mat1.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat2.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat3.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat4.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat5.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat6.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat7.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat8.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat9.amt':       { curve: 'lin', lo: -1, hi: 1 },
+  'mat10.amt':      { curve: 'lin', lo: -1, hi: 1 },
+  'mat11.amt':      { curve: 'lin', lo: -1, hi: 1 },
+  'mat12.amt':      { curve: 'lin', lo: -1, hi: 1 },
+  'mat13.amt':      { curve: 'lin', lo: -1, hi: 1 },
+  'mat14.amt':      { curve: 'lin', lo: -1, hi: 1 },
+  'mat15.amt':      { curve: 'lin', lo: -1, hi: 1 },
+  'mat16.amt':      { curve: 'lin', lo: -1, hi: 1 },
 };
 // ---------- flat parameter store (mirrors juce/source/dsp/Params.h) ----------
 // The render thread must never build a string key (finding W2): every parameter
@@ -212,6 +286,17 @@ for (let i = 1; i <= MOD_MATRIX_SIZE; i++) PARAM_IDS.push('mat' + i + '.aux');
 for (let n = 1; n <= 3; n++) PARAM_IDS.push(`env${n}.model`, `env${n}.h`, `env${n}.ac`, `env${n}.dc`, `env${n}.rc`);
 PARAM_IDS.push('master.legato');
 PARAM_IDS.push('fx.comp.sc', 'fx.comp.schp');
+// Oscillator warp and the reverb algorithm (params.ts), appended.
+PARAM_IDS.push('oscA.warp', 'oscA.warpamt', 'oscB.warp', 'oscB.warpamt');
+PARAM_IDS.push('fx.reverb.type', 'fx.reverb.damp');
+// Response curve per route (params.ts routeCurve).
+for (let i = 1; i <= MOD_MATRIX_SIZE; i++) PARAM_IDS.push('mat' + i + '.crv');
+// Drawn LFO shapes (params.ts): one-shot, point count, then x/y/c per point.
+const LFO_MAX_POINTS = 16;
+for (let n = 1; n <= 4; n++) {
+  PARAM_IDS.push(`lfo${n}.oneshot`, `lfo${n}.pn`);
+  for (let k = 1; k <= LFO_MAX_POINTS; k++) PARAM_IDS.push(`lfo${n}.p${k}.x`, `lfo${n}.p${k}.y`, `lfo${n}.p${k}.c`);
+}
 const NUM_PARAMS = PARAM_IDS.length;
 const PID = Object.create(null);
 for (let i = 0; i < NUM_PARAMS; i++) PID[PARAM_IDS[i]] = i;
@@ -231,11 +316,33 @@ const L_SHAPE = 0, L_RATE = 1, L_SYNC = 2, L_SYNCRATE = 3, L_RISE = 4, L_PHASE =
 const M_SRC = 0, M_DST = 1, M_AMT = 2, M_STRIDE = 3;
 
 const OSCA = PID['oscA.on'], OSCB = PID['oscB.on'];
+// Warp block per oscillator: mode at +0, amount at +1.
+const WARPA = PID['oscA.warp'], WARPB = PID['oscB.warp'];
+// Warp modes (params.ts WARP_MODES). Modes from WARP_FM up read the other
+// oscillator as a modulator. Mirrors the WarpMode enum in Engine.h.
+const WARP_SYNC = 1, WARP_SYNCWIN = 2, WARP_BEND = 3, WARP_ASYM = 4, WARP_PWM = 5,
+      WARP_MIRROR = 6, WARP_QUANT = 7, WARP_FM = 8, WARP_AM = 9, WARP_RM = 10;
+// FM depth at full amount, in carrier cycles (2 cycles = 4*pi radians).
+const FM_MAX_CYCLES = 2;
+// Level trim that keeps the Hann-windowed sync near the plain oscillator's RMS.
+const SYNCWIN_GAIN = 1.63;
+// Hard sync: crossfade length at the reset (samples), the mip headroom that
+// keeps the crossfade's sidebands below Nyquist, and the slave pitch ceiling
+// in cycles per sample.
+const SYNC_FADE = 4, SYNC_HEADROOM = 1.5, SYNC_MAX_CPS = 0.25;
+// The warped read can run faster than the oscillator, so the mip is chosen for
+// the fastest read. This caps the factor (4 octaves of table band-limit).
+const WARP_MIP_MAX = 16;
 const FLT1 = PID['filter.on'], FLT2 = PID['filter2.on'];
 const F1_CUT = FLT1 + F_CUT, F2_CUT = FLT2 + F_CUT;
 const FILTER_ROUTE = PID['filter.route'];
 const LFO1 = PID['lfo1.shape'], LFO2 = PID['lfo2.shape'], LFO3 = PID['lfo3.shape'], LFO4 = PID['lfo4.shape'];
-const MAT1 = PID['mat1.src'], MATPOL1 = PID['mat1.pol'], MATAUX1 = PID['mat1.aux'];
+// Drawn-shape block per LFO: one-shot at +0, point count at +1, points from +2.
+const LFOX1 = PID['lfo1.oneshot'], LFOX2 = PID['lfo2.oneshot'], LFOX3 = PID['lfo3.oneshot'], LFOX4 = PID['lfo4.oneshot'];
+const LFO_CUSTOM = 5;
+// A one-shot LFO stops just before the end of its cycle and holds that value.
+const LFO_ONESHOT_END = 1 - 1e-9;
+const MAT1 = PID['mat1.src'], MATPOL1 = PID['mat1.pol'], MATAUX1 = PID['mat1.aux'], MATCRV1 = PID['mat1.crv'];
 const MACRO1 = PID['macro1'], PERF_MW = PID['perf.modwheel'], PERF_AT = PID['perf.aftertouch'];
 // Native source polarity per MOD_SOURCES index (params.ts SOURCE_BIPOLAR).
 const SOURCE_BIPOLAR = [false, true, true, false, false, true, true, true, false, false, false, false, false, false, false, false];
@@ -259,6 +366,11 @@ const FXDELAY_TONE = PID['fx.delay.tone'], FXDELAY_SAT = PID['fx.delay.sat'],
       FXDELAY_SYNC = PID['fx.delay.sync'], FXDELAY_DIV = PID['fx.delay.div'];
 const ECHO_DIVISIONS = [1, 1.5, 0.5, 0.75, 1 / 3, 0.25];
 const FXREVERB_ON = PID['fx.reverb.on'], FXREVERB_SIZE = PID['fx.reverb.size'], FXREVERB_MIX = PID['fx.reverb.mix'];
+const FXREVERB_TYPE = PID['fx.reverb.type'], FXREVERB_DAMP = PID['fx.reverb.damp'];
+// PLATE wet trim, so a type switch keeps the wet level. At SIZE 0.8 the tank
+// is 2.6 dB louder than the ROOM network under a held sound and 4.6 dB louder
+// in the tail; the trim sits between the two. Mirrors Fx.cpp.
+const PLATE_GAIN = 0.66;
 const FXCOMP_ON = PID['fx.comp.on'], FXCOMP_THR = PID['fx.comp.thr'], FXCOMP_GAIN = PID['fx.comp.gain'];
 const FXOTT_ON = PID['fx.ott.on'], FXOTT_DEPTH = PID['fx.ott.depth'], FXOTT_TIME = PID['fx.ott.time'],
       FXOTT_UP = PID['fx.ott.up'], FXOTT_DOWN = PID['fx.ott.down'];
@@ -277,14 +389,30 @@ for (let i = 1; i < DST_TARGET.length; i++) {
   else if (t === DST_PAN) DST_PIDX[i] = D_PAN;
   else if (typeof t === 'string' && PID[t] !== undefined) { DST_PIDX[i] = PID[t]; PIDX_DST[PID[t]] = i; }
 }
-// param index -> mod curve (0 none, 1 lin, 2 log) + Lin span (hi-lo).
+// param index -> mod curve (0 none, 1 lin, 2 log) + Lin span (hi-lo) + range.
 const MOD_CURVE = new Uint8Array(NUM_PARAMS);
 const MOD_SPAN = new Float64Array(NUM_PARAMS);
+const MOD_LO = new Float64Array(NUM_PARAMS), MOD_HI = new Float64Array(NUM_PARAMS);
 for (const id in MOD_PARAM_INFO) {
   const inf = MOD_PARAM_INFO[id], i = PID[id];
   MOD_CURVE[i] = inf.curve === 'log' ? 2 : 1;
   MOD_SPAN[i] = inf.hi - inf.lo;
+  MOD_LO[i] = inf.lo; MOD_HI[i] = inf.hi;
 }
+// dst index -> route (0-based) whose amount it modulates ("MOD n AMT"), or -1.
+const DST_AMT_SLOT = new Int8Array(DST_TARGET.length).fill(-1);
+for (let i = 1; i < DST_TARGET.length; i++) {
+  const m = /^mat(\d+)\.amt$/.exec(DST_TARGET[i] || '');
+  if (m) DST_AMT_SLOT[i] = +m[1] - 1;
+}
+// Destinations outside the voice: the FX controls and the LFO rates of the
+// free-running LFOs. They follow the newest held note (the viz voice).
+const FX_MOD_PIDS = [FXDRIVE_AMT, FXDRIVE_MIX, FXCHORUS_MIX, FXDELAY_FB, FXDELAY_MIX, FXREVERB_MIX];
+const LFO_RATE_PIDS = [LFO1 + L_RATE, LFO2 + L_RATE, LFO3 + L_RATE, LFO4 + L_RATE];
+const GLOBAL_DST = new Uint8Array(NUM_PARAMS);
+for (const pid of FX_MOD_PIDS) GLOBAL_DST[pid] = 1;
+for (const pid of LFO_RATE_PIDS) GLOBAL_DST[pid] = 1;
+const clampTo = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 // LP24 resonance taper (finding B3). The cascade used to run two stages at the
 // SAME damping k, so the peak at fc was (1/k)^2 — two coincident resonances —
@@ -474,23 +602,28 @@ class LFO {
   constructor() { this.clock = new LfoClock(); this.phase = 0; this.hold = 0; this.elapsed = 0; }
   reset(rng) { this.clock.reset(); this.phase = 0; this.hold = rng.next() * 2 - 1; this.elapsed = 0; }
   // Read the shape at a wrapped phase offset (for the start-phase control).
-  valueOff(shape, off) {
+  // `store` and `x` locate the LFO's drawn shape: the flat parameter store
+  // and the index of its one-shot param (count at +1, points from +2).
+  valueOff(shape, off, store, x) {
     let p = this.phase + off; p -= Math.floor(p);
     switch (shape | 0) {
       case 0: return Math.sin(2 * Math.PI * p);
       case 1: return 1 - 4 * Math.abs(p - 0.5);
       case 2: return 1 - 2 * p;
       case 3: return p < 0.5 ? 1 : -1;
+      case LFO_CUSTOM: return lfoShapeValue(store, x + 2, Math.min(LFO_MAX_POINTS, store[x + 1] | 0), p);
       default: return this.hold;
     }
   }
   // Fade-in gain, per-voice, keyed off note-on (samples since reset).
   riseGain(riseSec) { return riseSec <= 0 ? 1 : Math.min(1, this.elapsed / (riseSec * sampleRate)); }
-  advance(rate, n, rng) {
+  // `oneshot` runs a single cycle from the note start, then holds its end.
+  advance(rate, n, rng, oneshot) {
     this.elapsed += n;
     // NaN guard: a non-finite rate (e.g. params not yet initialised when the
     // free-running global LFO advances) would latch phase to a sticky NaN.
     const d = (rate * n) / sampleRate;
+    if (oneshot) { if (Number.isFinite(d)) this.phase = Math.min(LFO_ONESHOT_END, this.phase + d); return; }
     if (Number.isFinite(d)) this.phase += d;
     if (this.phase >= 1) { this.phase -= Math.floor(this.phase); this.hold = rng.next() * 2 - 1; }
   }
@@ -560,6 +693,13 @@ function makeOscState() {
     pGl: new Float64Array(MAXUNI),
     pGr: new Float64Array(MAXUNI),
     pFt: 0, pOff0: -1, pUni: 0, havePrev: false,
+    // Warp: mode, map parameter and mip factor for this chunk, and the
+    // previous chunk's values for the per-sample ramp.
+    warp: 0, warpW: 0, wf: 1, pWarp: 0, pWarpW: 0, pWf: 1,
+    // Modulator role (the other oscillator's FM/AM/RM): a clean center voice
+    // with its own phase. cinc is the undetuned increment; modOk marks the
+    // table state as valid for this chunk.
+    cinc: 0, pCinc: -1, mph: 0, modOk: false,
   };
 }
 
@@ -597,6 +737,7 @@ class Voice {
       this.oA.phases[i] = phaseRandA ? rng.next() * 2048 : 0;
       this.oB.phases[i] = phaseRandB ? rng.next() * 2048 : 0;
     }
+    this.oA.mph = this.oB.mph = 0; this.oA.pCinc = this.oB.pCinc = -1;
     this.oA.posSm = -1; this.oB.posSm = -1;
     // A fresh note has no previous chunk to ramp from.
     this.oA.havePrev = false; this.oB.havePrev = false;
@@ -811,6 +952,9 @@ class Fx {
       this.apL.push(new FvAllpass((FV_AP_TUNE[i] * scale) | 0));
       this.apR.push(new FvAllpass(((FV_AP_TUNE[i] + FV_SPREAD) * scale) | 0));
     }
+    // PLATE algorithm (fx.reverb.type 1); only the selected network runs.
+    this.plate = new PlateReverb(sampleRate);
+    this.verbType = 0;
 
     this.eq = new globalThis.FableParametricEq(sampleRate);
     // Kept as an inspection surface for the EQ response tests.
@@ -891,6 +1035,7 @@ class Fx {
     for (const c of this.combR) c.reset();
     for (const a of this.apL) a.reset();
     for (const a of this.apR) a.reset();
+    this.plate.reset();
     this.dcL.reset(); this.dcR.reset(); this.dlDamp.reset();
     this.dlDampR.reset(); this.dlHpL.reset(); this.dlHpR.reset();
     this.tapeClock = 0; this.dlDriftL = this.dlDriftR = 0; this.delayInitialized = false;
@@ -907,6 +1052,15 @@ class Fx {
     this.monoRun = false;
     this.driveSilenced = this.chorusGated = this.delayGated = this.verbGated = false;
     this.lab.reset();
+  }
+
+  // Clear both reverb networks.
+  resetVerb() {
+    for (const c of this.combL) c.reset();
+    for (const c of this.combR) c.reset();
+    for (const a of this.apL) a.reset();
+    for (const a of this.apR) a.reset();
+    this.plate.reset();
   }
 
   setParams(p, bpm = 120) {
@@ -957,6 +1111,14 @@ class Fx {
       this.combL[i].damp1 = this.combR[i].damp1 = damp;
       this.combL[i].damp2 = this.combR[i].damp2 = 1 - damp;
     }
+    // PLATE reads SIZE as the same decay time and adds DAMP. A type change
+    // starts the selected network from silence, so no stale tail comes back.
+    const verbType = p[FXREVERB_TYPE] > 0.5 ? 1 : 0;
+    if (verbType !== this.verbType) {
+      this.verbType = verbType;
+      this.resetVerb();
+    }
+    this.plate.setParams(size, p[FXREVERB_DAMP]);
     const rOn = p[FXREVERB_ON] > 0.5;
     this.verbOff = !rOn;
     this.verbWet.target = mixGate(rOn, p[FXREVERB_MIX] * 0.9, true);
@@ -1040,10 +1202,7 @@ class Fx {
     }
     if (verbGate && !this.verbGated) {
       this.verbWet.snap(0); this.verbDry.snap(1);
-      for (const c of this.combL) c.reset();
-      for (const c of this.combR) c.reset();
-      for (const a of this.apL) a.reset();
-      for (const a of this.apR) a.reset();
+      this.resetVerb();
     }
     this.chorusGated = chorusGate;
     this.delayGated = delayGate; this.verbGated = verbGate;
@@ -1180,12 +1339,18 @@ class Fx {
       if (this.echoMetering) this.echoSamples++;
       guard('delay');
 
-      // ---- reverb (Freeverb) ----
+      // ---- reverb: ROOM (Freeverb) or PLATE ----
       if (!verbGate) {
-        const input = (l + r) * 0.015; // fixed input gain (Freeverb convention)
         let outL = 0, outR = 0;
-        for (let c = 0; c < 8; c++) { outL += combL[c].process(input); outR += combR[c].process(input); }
-        for (let a = 0; a < 4; a++) { outL = apL[a].process(outL); outR = apR[a].process(outR); }
+        if (this.verbType) {
+          const plate = this.plate;
+          plate.process((l + r) * 0.5);
+          outL = plate.outL * PLATE_GAIN; outR = plate.outR * PLATE_GAIN;
+        } else {
+          const input = (l + r) * 0.015; // fixed input gain (Freeverb convention)
+          for (let c = 0; c < 8; c++) { outL += combL[c].process(input); outR += combR[c].process(input); }
+          for (let a = 0; a < 4; a++) { outL = apL[a].process(outL); outR = apR[a].process(outR); }
+        }
         const wet = this.verbWet.next(), dry = this.verbDry.next();
         if (this.reverbMetering) {
           const wetL = wet * outL, wetR = wet * outR;
@@ -1287,6 +1452,10 @@ class FableProcessor extends AudioWorkletProcessor {
     this.vizCount = 0;
     this.tmpL = new Float32Array(128);
     this.tmpR = new Float32Array(128);
+    // FM/AM/RM modulator signals: the one osc A reads (from B) and vice versa.
+    this.modForA = new Float32Array(128);
+    this.modForB = new Float32Array(128);
+    this.noMod = new Float32Array(128); // silence, for a carrier without a modulator
     // filter routing scratch: osc-B split source + each filter's output
     this.bL = new Float32Array(128);
     this.bR = new Float32Array(128);
@@ -1300,6 +1469,16 @@ class FableProcessor extends AudioWorkletProcessor {
     this._modAccum = new Float64Array(NUM_PARAMS);
     this._pm = new Float64Array(NUM_PARAMS);
     this._srcs = new Float64Array(NUM_SOURCES);
+    // evalRoutes results and scratch: global sums, the aux scale of the route
+    // in hand, and the amount offsets from "MOD n AMT" routes.
+    this._mPitch = 0; this._mAmp = 0; this._mPan = 0; this._routeAux = 1;
+    this._amtMod = new Float64Array(MOD_MATRIX_SIZE);
+    // updateGlobalMods: the viz voice's sources, the FX parameter copy with
+    // the FX routes applied, and the rate factors of the free-running LFOs.
+    this._vizSrcs = new Float64Array(NUM_SOURCES);
+    this._fxp = new Float64Array(NUM_PARAMS);
+    this.fxParams = null;
+    this.gRate = new Float64Array(4).fill(1);
     // Live-mod telemetry: the viz voice's route sums per MOD_DESTS index,
     // re-snapshotted every block, sent at the viz cadence. modIdleSent starts
     // true — the UI's default state is already "idle", no terminator needed.
@@ -1925,7 +2104,7 @@ class FableProcessor extends AudioWorkletProcessor {
       voice.gate = false;
       voice.ampEnv.state = 5;
     } else {
-      voice.noteOn(n, vel, start, this.clock++, this.rng, 1, 1, this.modRng);
+      voice.noteOn(n, vel, start, this.clock++, this.rng, this.phaseRand(WARPA, OSCA), this.phaseRand(WARPB, OSCB), this.modRng);
     }
   }
 
@@ -1942,11 +2121,23 @@ class FableProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // Oscillator start phase: random, except for a single-voice FM/AM/RM carrier.
+  // That one starts at phase 0 with its modulator, so every note has the same
+  // carrier/modulator phase relation and therefore the same timbre.
+  phaseRand(wbase, base) {
+    return !((this.p[wbase] | 0) >= WARP_FM && (this.p[base + O_UNI] | 0) <= 1);
+  }
+
   // Configure one oscillator's per-block render state. Returns true if audible.
   // Reads the modulated snapshot `pm` for the per-param dests (pos/level/pan/detune/
   // spread); pitch and the pan global offset stay as direct additive terms.
-  setupOsc(o, base, voice, pm, mPitch, mPan, n) {
+  // `wbase` is the oscillator's warp block and `obase` the other oscillator.
+  // `wantMod` keeps a silent oscillator's table state alive, because the other
+  // oscillator reads it as an FM/AM/RM modulator (o.modOk).
+  setupOsc(o, base, wbase, obase, voice, pm, mPitch, mPan, n, wantMod) {
     const p = this.p;
+    o.modOk = false;
+    if (!wantMod) o.pCinc = -1;
     if (!p[base + O_ON]) return false;
     const table = this.tables[p[base + O_TABLE] | 0];
     if (!table) return false;
@@ -1957,7 +2148,41 @@ class FableProcessor extends AudioWorkletProcessor {
 
     let level = Math.min(1.2, Math.max(0, pm[base + O_LEVEL]));
     level *= level;
-    if (!(level >= 1e-5)) return false; // inverted: NaN-safe
+    const audible = level >= 1e-5; // false for NaN too
+    if (!audible && !wantMod) return false;
+
+    // Warp: map the amount to the mode's parameter `w` and to `wf`, the
+    // fastest read speed relative to the oscillator (for the mip choice).
+    let mode = p[wbase] | 0, w = 0, wf = 1;
+    const amt = Math.min(1, Math.max(0, pm[wbase + 1] || 0));
+    switch (mode) {
+      case WARP_SYNC: case WARP_SYNCWIN:
+        // Slave ratio 1..16, held below sr/4 so the slave itself cannot fold.
+        w = Math.min(Math.pow(2, amt * 4), Math.max(1, SYNC_MAX_CPS / (freq / sampleRate)));
+        // Hard sync keeps half an octave of headroom for the reset crossfade.
+        wf = mode === WARP_SYNC ? w * SYNC_HEADROOM : w;
+        break;
+      case WARP_BEND: case WARP_ASYM: w = Math.pow(2, (amt - 0.5) * 6); wf = w > 1 ? w : 1 / w; break;
+      case WARP_PWM: w = 1 - 0.9 * amt; wf = 1 / w; break;    // width of the squeezed cycle
+      case WARP_MIRROR: w = 0.5 + 0.4 * amt; wf = 1 / (1 - w); break; // turn point
+      case WARP_QUANT: w = Math.pow(2, 1 + 7 * (1 - amt)); break;     // steps per cycle, 256..2
+      case WARP_FM: case WARP_AM: case WARP_RM:
+        // The modulator is the other oscillator; without it the warp is off.
+        if (!p[obase + O_ON] || !this.tables[p[obase + O_TABLE] | 0]) { mode = 0; break; }
+        if (mode === WARP_FM) {
+          w = amt * amt * FM_MAX_CYCLES;
+          // Peak deviation of a sine modulator: 2*pi*w*fm, relative to the carrier.
+          const semis = (p[obase + O_OCT] - p[base + O_OCT]) * 12 + p[obase + O_SEMI] - p[base + O_SEMI]
+            + (p[obase + O_FINE] - p[base + O_FINE]) / 100;
+          wf = 1 + TWO_PI * w * Math.pow(2, semis / 12);
+        } else { w = amt; wf = 1 + Math.min(1, amt * 4); }
+        break;
+      default: mode = 0;
+    }
+    if (!(wf <= WARP_MIP_MAX)) wf = WARP_MIP_MAX; // NaN-safe
+    // The chunk ramps from the previous parameter, so cover the faster of the two.
+    const wfMip = o.havePrev && o.pWarp === mode ? Math.max(wf, o.pWf) : wf;
+    o.warp = mode; o.warpW = w; o.wf = wf;
 
     const uni = Math.max(1, Math.min(MAXUNI, p[base + O_UNI] | 0));
     const det = pm[base + O_DET];
@@ -1987,7 +2212,7 @@ class FableProcessor extends AudioWorkletProcessor {
     // is 0.5*sr (0.5/0.475 = 2^0.074 of headroom). Result: glides and bends
     // never step in brightness, and static pitches never fold.
     const W = 0.07;
-    const mipF = Math.log2((cps * maxRatio * 1024) / 0.475);
+    const mipF = Math.log2((cps * maxRatio * wfMip * 1024) / 0.475);
     let mip = 0, mipBlend = 0;
     if (mipF > 0) {
       mip = Math.min(table.mips - 1, Math.ceil(mipF));
@@ -2026,7 +2251,133 @@ class FableProcessor extends AudioWorkletProcessor {
     // `|| 1` guards uni=2,blend=0 (both endpoints -> sumW2=0). Matches the JUCE
     // `sumW2 > 0 ? sumW2 : 1` predicate exactly, so the engines stay in lockstep.
     o.gain = (level * 0.32) / Math.sqrt(sumW2 || 1);
-    return true;
+    o.cinc = cps * table.size;
+    o.modOk = true;
+    return audible;
+  }
+
+  // Render the oscillator's modulator signal for the other oscillator's
+  // FM/AM/RM warp: one undetuned, unwarped voice of its current table frame.
+  renderMod(o, out, n) {
+    const data = o.data, mask = o.mask, size = o.size;
+    const off0 = o.off0, off1 = o.off1, ft = o.ft;
+    const inc1 = o.cinc;
+    const inc0 = o.pCinc > 0 ? o.pCinc : inc1;
+    const dInc = (inc1 - inc0) / n;
+    let ph = wrapOscPhase(o.mph, size);
+    for (let i = 0; i < n; i++) {
+      const idx = ph | 0;
+      const f = ph - idx;
+      const im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+      const s0 = rdH(data, off0, im1, idx, i2, i3, f);
+      out[i] = s0 + ft * (rdH(data, off1, im1, idx, i2, i3, f) - s0);
+      ph += inc0 + dInc * i;
+      if (ph >= size) ph -= size;
+    }
+    o.mph = wrapOscPhase(ph, size);
+    o.pCinc = inc1;
+  }
+
+  // One interpolated read of the oscillator's current frame pair at `ph`
+  // samples, with the mip crossfade. For the few reads outside the main loops.
+  readFrame(o, ph, ft) {
+    const data = o.data, mask = o.mask;
+    const ii = ph | 0, idx = ii & mask, f = ph - ii;
+    const im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+    const c0 = rdH(data, o.off0, im1, idx, i2, i3, f);
+    let s = c0 + ft * (rdH(data, o.off1, im1, idx, i2, i3, f) - c0);
+    if (o.mipBlend >= 0.001) {
+      const f0 = rdH(data, o.off0b, im1, idx, i2, i3, f);
+      s += o.mipBlend * (f0 + ft * (rdH(data, o.off1b, im1, idx, i2, i3, f) - f0) - s);
+    }
+    return s;
+  }
+
+  // Warped oscillator read. `pn` is the oscillator phase in cycles; each mode
+  // maps it to the read phase `q` (SYNC..QUANTIZE, FM) or to a gain (SYNC WIN,
+  // AM, RM). The map parameter ramps across the chunk like the increments do.
+  // `mod` is the other oscillator's signal for FM/AM/RM. Mirrors
+  // Engine::renderOscWarp.
+  renderOscWarp(o, tmpL, tmpR, n, mod) {
+    const data = o.data, mask = o.mask, size = o.size, g = o.gain;
+    const invN = 1 / n, invSize = 1 / size;
+    const rp = o.havePrev && o.pUni === o.uni;
+    const ft1 = o.ft;
+    const ft0 = rp && o.pOff0 === o.off0 ? o.pFt : ft1;
+    const dFt = (ft1 - ft0) * invN;
+    const off0 = o.off0, off1 = o.off1, off0b = o.off0b, off1b = o.off1b;
+    const blend = o.mipBlend, fine = blend >= 0.001;
+    const mode = o.warp;
+    if (!mod) mod = this.noMod;
+    const w1 = o.warpW;
+    const w0 = rp && o.pWarp === mode ? o.pWarpW : w1;
+    const dW = (w1 - w0) * invN;
+    for (let u = 0; u < o.uni; u++) {
+      let ph = wrapOscPhase(o.phases[u], size);
+      const inc1 = o.incs[u];
+      const inc0 = rp ? o.pIncs[u] : inc1;
+      const dInc = (inc1 - inc0) * invN;
+      const gl1 = o.gl[u] * g, gr1 = o.gr[u] * g;
+      const gl0 = rp ? o.pGl[u] : gl1, gr0 = rp ? o.pGr[u] : gr1;
+      const dGl = (gl1 - gl0) * invN, dGr = (gr1 - gr0) * invN;
+      for (let i = 0; i < n; i++) {
+        const w = w0 + dW * i;
+        const inc = inc0 + dInc * i;
+        const pn = ph * invSize;
+        let q = pn, amp = 1, edge = 0, xq = 0;
+        switch (mode) {
+          case WARP_SYNC: {
+            q = pn * w;
+            // Reset zone: SYNC_FADE samples centred on the master wrap, where
+            // the outgoing and the incoming slave crossfade. `xq` is the
+            // other slave's phase (the next one before the wrap, the previous
+            // one after it) and `edge` its share. The next slave starts
+            // before table phase 0, so a table's own step at phase 0 keeps
+            // its band-limited shape. At ratio 1 both slaves are the same.
+            const h = Math.min(0.25, SYNC_FADE * 0.5 * inc * invSize);
+            if (pn > 1 - h) { xq = q - w; edge = 0.5 - 0.5 * Math.cos(Math.PI * (pn - 1 + h) / (2 * h)); }
+            else if (pn < h) { xq = q + w; edge = 0.5 + 0.5 * Math.cos(Math.PI * (pn + h) / (2 * h)); }
+            break;
+          }
+          case WARP_SYNCWIN: q = pn * w; amp = SYNCWIN_GAIN * (0.5 - 0.5 * Math.cos(TWO_PI * pn)); break;
+          case WARP_BEND:
+            // Each half-cycle runs through x/(x + w(1-x)): w > 1 pulls the
+            // waveform to the centre, w < 1 pushes it to the cycle edges.
+            if (pn < 0.5) { const x = 2 * pn; q = (0.5 * x) / (x + w * (1 - x)); }
+            else { const x = 2 - 2 * pn; q = 1 - (0.5 * x) / (x + w * (1 - x)); }
+            break;
+          case WARP_ASYM: q = pn / (pn + w * (1 - pn)); break;
+          case WARP_PWM: q = pn < w ? pn / w : 1; break;
+          case WARP_MIRROR: q = pn < w ? pn / w : (1 - pn) / (1 - w); break;
+          case WARP_QUANT: q = Math.floor(pn * w) / w; break;
+          case WARP_FM: q = pn + w * mod[i]; break;
+          case WARP_AM: amp = 1 - 0.5 * w + 0.5 * w * mod[i]; break;
+          default: amp = 1 - w + w * mod[i]; // WARP_RM
+        }
+        const rph = (q - Math.floor(q)) * size;
+        const ii = rph | 0, idx = ii & mask, f = rph - ii;
+        const im1 = (idx - 1) & mask, i2 = (idx + 1) & mask, i3 = (idx + 2) & mask;
+        const ftN = ft0 + dFt * i;
+        const sc0 = rdH(data, off0, im1, idx, i2, i3, f);
+        let s = sc0 + ftN * (rdH(data, off1, im1, idx, i2, i3, f) - sc0);
+        if (fine) {
+          const sf0 = rdH(data, off0b, im1, idx, i2, i3, f);
+          s += blend * (sf0 + ftN * (rdH(data, off1b, im1, idx, i2, i3, f) - sf0) - s);
+        }
+        if (edge > 0) s += (this.readFrame(o, (xq - Math.floor(xq)) * size, ftN) - s) * edge;
+        s *= amp;
+        tmpL[i] += s * (gl0 + dGl * i);
+        tmpR[i] += s * (gr0 + dGr * i);
+        ph += inc;
+        if (ph >= size) ph -= size;
+      }
+      o.phases[u] = wrapOscPhase(ph, size);
+      o.pIncs[u] = inc1;
+      o.pGl[u] = gl1; o.pGr[u] = gr1;
+    }
+    o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.pWarp = mode; o.pWarpW = w1; o.pWf = o.wf;
+    o.havePrev = true;
   }
 
   // Finding W1: phase increments, the morph fraction and the pan/level gain
@@ -2036,7 +2387,8 @@ class FableProcessor extends AudioWorkletProcessor {
   // unison-count change, and (for the morph fraction) when the frame pair
   // switched — ft is a fraction WITHIN a pair. Table reads are cubic Hermite.
   // Mirrors Engine::renderOsc.
-  renderOsc(o, tmpL, tmpR, n) {
+  renderOsc(o, tmpL, tmpR, n, mod) {
+    if (o.warp) { this.renderOscWarp(o, tmpL, tmpR, n, mod); return; }
     const data = o.data, mask = o.mask, size = o.size, g = o.gain;
     const invN = 1 / n;
     const rp = o.havePrev && o.pUni === o.uni;
@@ -2097,6 +2449,7 @@ class FableProcessor extends AudioWorkletProcessor {
       o.pGl[u] = gl1; o.pGr[u] = gr1;
     }
     o.pFt = ft1; o.pOff0 = o.off0; o.pUni = o.uni;
+    o.pWarp = 0; o.pWf = 1;
     o.havePrev = true;
   }
 
@@ -2303,7 +2656,7 @@ class FableProcessor extends AudioWorkletProcessor {
   // synced LFO starts on the downbeat; rate edits then preserve phase.
   // Unsynced LFOs free-run at their Hz.
   // (Retrig LFOs are per-voice and note-aligned, so they bypass this.)
-  updateGlobalLfo(g, base, ppq, n, rng = this.rng) {
+  updateGlobalLfo(g, base, ppq, n, rng = this.rng, rateMul = 1) {
     if (this.p[base + L_SYNC]) {
       const i = Math.min(LFO_DIV_F.length - 1, Math.max(0, this.p[base + L_SYNCRATE] | 0));
       const ph = g.clock.phase(ppq, LFO_DIV_F[i]);
@@ -2311,7 +2664,103 @@ class FableProcessor extends AudioWorkletProcessor {
       g.phase = ph;
     } else {
       g.clock.reset();
-      g.advance(this.p[base + L_RATE], n, rng);
+      g.advance(this.p[base + L_RATE] * rateMul, n, rng);
+    }
+  }
+
+  // One route's source value after polarity and response curve. The aux scale
+  // is left in this._routeAux (the caller multiplies value, amount, aux).
+  routeSource(s, src, srcs) {
+    const p = this.p;
+    // Polarity: SRC keeps the native range; UNI/BI convert it (params.ts polarize).
+    const pol = p[MATPOL1 + s] | 0, native = SOURCE_BIPOLAR[src];
+    const bi = pol === 1 ? false : pol === 2 ? true : native;
+    let sv = bi === native ? srcs[src] : bi ? srcs[src] * 2 - 1 : (srcs[src] + 1) * 0.5;
+    // Response curve: bend the value's size before the amount (params.ts routeCurve).
+    const crv = p[MATCRV1 + s];
+    if (Math.abs(crv) >= 1e-3) {
+      const k = Math.max(-1, Math.min(1, crv)) * 6;
+      const f = Math.min(1, bi ? Math.abs(sv) : Math.max(0, sv));
+      const y = (Math.exp(k * f) - 1) / (Math.exp(k) - 1);
+      sv = bi && sv < 0 ? -y : y;
+    }
+    // Aux source: scale by its unipolar value (params.ts auxScale).
+    const aux = p[MATAUX1 + s] | 0;
+    this._routeAux = aux > 0 && aux < NUM_SOURCES ? (SOURCE_BIPOLAR[aux] ? (srcs[aux] + 1) * 0.5 : srcs[aux]) : 1;
+    return sv;
+  }
+
+  // Run the mod matrix on one set of source values. The 16 fixed slots live in
+  // the flat store at MAT1 + s*M_STRIDE. Fills this._modAccum (route sum per
+  // target param) and this._mPitch / _mAmp / _mPan, and returns whether a
+  // per-param route is active. Mirrors Engine::evalRoutes.
+  evalRoutes(srcs) {
+    const p = this.p, accum = this._modAccum, amtMod = this._amtMod;
+    accum.fill(0);
+    let mPitch = 0, mAmp = 0, mPan = 0, anyRoute = false, anyAmt = false;
+    // First the routes that modulate another route's amount ("MOD n AMT").
+    // They use their own stored amount, so the slot order does not matter.
+    for (let s = 0, b = MAT1; s < MOD_MATRIX_SIZE; s++, b += M_STRIDE) {
+      const dst = p[b + M_DST] | 0;
+      if (dst <= 0 || dst >= DST_AMT_SLOT.length || DST_AMT_SLOT[dst] < 0) continue;
+      const src = p[b + M_SRC] | 0;
+      if (!src || src >= NUM_SOURCES) continue;
+      if (!anyAmt) { amtMod.fill(0); anyAmt = true; }
+      amtMod[DST_AMT_SLOT[dst]] += this.routeSource(s, src, srcs) * (p[b + M_AMT] || 0) * this._routeAux;
+    }
+    for (let s = 0, b = MAT1; s < MOD_MATRIX_SIZE; s++, b += M_STRIDE) {
+      const src = p[b + M_SRC] | 0;
+      const dst = p[b + M_DST] | 0;
+      if (!src || !dst || src >= NUM_SOURCES || dst >= DST_PIDX.length || DST_AMT_SLOT[dst] >= 0) continue;
+      let amt = p[b + M_AMT] || 0;
+      // A full-depth route moves the amount over its whole range, like any Lin param.
+      if (anyAmt && amtMod[s] !== 0) amt = clampTo(amt + amtMod[s] * 2, -1, 1);
+      const x = this.routeSource(s, src, srcs) * amt * this._routeAux;
+      const target = DST_PIDX[dst];
+      if (target === D_PITCH) mPitch += x;
+      else if (target === D_AMP) mAmp += x;
+      else if (target === D_PAN) mPan += x;
+      else if (target >= 0) { accum[target] += x; anyRoute = true; }
+    }
+    this._mPitch = mPitch; this._mAmp = mAmp; this._mPan = mPan;
+    return anyRoute;
+  }
+
+  // Destinations outside the voice: the FX controls and the rates of the
+  // free-running LFOs. With a voice they take the route sums of the viz voice,
+  // the same ones the knob rings show. With no voice the routes run on the
+  // last note's sources with the live macros, wheel, aftertouch and
+  // free-running LFOs, so a macro still moves a ringing tail.
+  updateGlobalMods(act) {
+    const p = this.p;
+    let any = false;
+    for (let s = 0, b = MAT1; s < MOD_MATRIX_SIZE && !any; s++, b += M_STRIDE) {
+      const t = DST_PIDX[p[b + M_DST] | 0];
+      any = (p[b + M_SRC] | 0) > 0 && t >= 0 && GLOBAL_DST[t] === 1;
+    }
+    this.fxParams = p;
+    if (!any) { this.gRate.fill(1); return; }
+    if (!act) {
+      const srcs = this._vizSrcs;
+      srcs[9] = p[MACRO1]; srcs[10] = p[MACRO1 + 1]; srcs[11] = p[MACRO1 + 2]; srcs[12] = p[MACRO1 + 3];
+      srcs[13] = p[PERF_MW]; srcs[14] = p[PERF_AT];
+      if (!p[LFO1 + L_RETRIG] && !p[LFOX1]) srcs[1] = this.gLfo1.valueOff(p[LFO1 + L_SHAPE], p[LFO1 + L_PHASE], p, LFOX1);
+      if (!p[LFO2 + L_RETRIG] && !p[LFOX2]) srcs[2] = this.gLfo2.valueOff(p[LFO2 + L_SHAPE], p[LFO2 + L_PHASE], p, LFOX2);
+      if (!p[LFO3 + L_RETRIG] && !p[LFOX3]) srcs[6] = this.gLfo3.valueOff(p[LFO3 + L_SHAPE], p[LFO3 + L_PHASE], p, LFOX3);
+      if (!p[LFO4 + L_RETRIG] && !p[LFOX4]) srcs[7] = this.gLfo4.valueOff(p[LFO4 + L_SHAPE], p[LFO4 + L_PHASE], p, LFOX4);
+      this.evalRoutes(srcs);
+    }
+    const accum = this._modAccum, viz = this.modViz;
+    const fxp = this._fxp;
+    fxp.set(p);
+    for (let i = 0; i < FX_MOD_PIDS.length; i++) {
+      const pid = FX_MOD_PIDS[i], x = act ? viz[PIDX_DST[pid]] : accum[pid];
+      if (x) fxp[pid] = clampTo(p[pid] + x * MOD_SPAN[pid], MOD_LO[pid], MOD_HI[pid]);
+    }
+    this.fxParams = fxp;
+    for (let i = 0; i < 4; i++) {
+      const pid = LFO_RATE_PIDS[i], x = act ? viz[PIDX_DST[pid]] : accum[pid];
+      this.gRate[i] = x ? Math.pow(2, x * MOD_LOG_D) : 1;
     }
   }
 
@@ -2321,13 +2770,6 @@ class FableProcessor extends AudioWorkletProcessor {
   renderVoice(v, L, R, lo, n) {
     const p = this.p;
 
-    v.ampEnv.set(p[ENV1_A], p[ENV1_A + 1], p[ENV1_A + 2], p[ENV1_A + 3]);
-    v.modEnv.set(p[ENV2_A], p[ENV2_A + 1], p[ENV2_A + 2], p[ENV2_A + 3]);
-    v.modEnv2.set(p[ENV3_A], p[ENV3_A + 1], p[ENV3_A + 2], p[ENV3_A + 3]);
-    v.ampEnv.setModel(p[ENVX1], p[ENV1_A], p[ENV1_A + 1], p[ENV1_A + 3], p[ENVX1 + 1], p[ENVX1 + 2], p[ENVX1 + 3], p[ENVX1 + 4]);
-    v.modEnv.setModel(p[ENVX2], p[ENV2_A], p[ENV2_A + 1], p[ENV2_A + 3], p[ENVX2 + 1], p[ENVX2 + 2], p[ENVX2 + 3], p[ENVX2 + 4]);
-    v.modEnv2.setModel(p[ENVX3], p[ENV3_A], p[ENV3_A + 1], p[ENV3_A + 3], p[ENVX3 + 1], p[ENVX3 + 2], p[ENVX3 + 3], p[ENVX3 + 4]);
-
     // glide
     const gl = p[MASTER_GLIDE] || 0;
     if (gl > 0.001) {
@@ -2336,12 +2778,14 @@ class FableProcessor extends AudioWorkletProcessor {
     } else v.pitch = v.note;
 
     // mod sources (chunk rate)
-    const rt1 = !!p[LFO1 + L_RETRIG], rt2 = !!p[LFO2 + L_RETRIG];
-    const l1 = (rt1 ? v.lfo1 : this.gLfo1).valueOff(p[LFO1 + L_SHAPE], p[LFO1 + L_PHASE]) * v.lfo1.riseGain(p[LFO1 + L_RISE]);
-    const l2 = (rt2 ? v.lfo2 : this.gLfo2).valueOff(p[LFO2 + L_SHAPE], p[LFO2 + L_PHASE]) * v.lfo2.riseGain(p[LFO2 + L_RISE]);
-    const rt3 = !!p[LFO3 + L_RETRIG], rt4 = !!p[LFO4 + L_RETRIG];
-    const l3 = (rt3 ? v.lfo3 : this.gLfo3).valueOff(p[LFO3 + L_SHAPE], p[LFO3 + L_PHASE]) * v.lfo3.riseGain(p[LFO3 + L_RISE]);
-    const l4 = (rt4 ? v.lfo4 : this.gLfo4).valueOff(p[LFO4 + L_SHAPE], p[LFO4 + L_PHASE]) * v.lfo4.riseGain(p[LFO4 + L_RISE]);
+    // A one-shot LFO starts with its note, so it is always per-voice.
+    const os1 = !!p[LFOX1], os2 = !!p[LFOX2], os3 = !!p[LFOX3], os4 = !!p[LFOX4];
+    const rt1 = os1 || !!p[LFO1 + L_RETRIG], rt2 = os2 || !!p[LFO2 + L_RETRIG];
+    const l1 = (rt1 ? v.lfo1 : this.gLfo1).valueOff(p[LFO1 + L_SHAPE], p[LFO1 + L_PHASE], p, LFOX1) * v.lfo1.riseGain(p[LFO1 + L_RISE]);
+    const l2 = (rt2 ? v.lfo2 : this.gLfo2).valueOff(p[LFO2 + L_SHAPE], p[LFO2 + L_PHASE], p, LFOX2) * v.lfo2.riseGain(p[LFO2 + L_RISE]);
+    const rt3 = os3 || !!p[LFO3 + L_RETRIG], rt4 = os4 || !!p[LFO4 + L_RETRIG];
+    const l3 = (rt3 ? v.lfo3 : this.gLfo3).valueOff(p[LFO3 + L_SHAPE], p[LFO3 + L_PHASE], p, LFOX3) * v.lfo3.riseGain(p[LFO3 + L_RISE]);
+    const l4 = (rt4 ? v.lfo4 : this.gLfo4).valueOff(p[LFO4 + L_SHAPE], p[LFO4 + L_PHASE], p, LFOX4) * v.lfo4.riseGain(p[LFO4 + L_RISE]);
     const e2 = v.modEnv.level;
     const srcs = this._srcs;
     srcs[1] = l1; srcs[2] = l2; srcs[3] = e2; srcs[4] = v.vel; srcs[5] = (v.note - 60) / 24;
@@ -2349,34 +2793,14 @@ class FableProcessor extends AudioWorkletProcessor {
     srcs[9] = p[MACRO1]; srcs[10] = p[MACRO1 + 1]; srcs[11] = p[MACRO1 + 2]; srcs[12] = p[MACRO1 + 3];
     srcs[13] = p[PERF_MW]; srcs[14] = p[PERF_AT]; srcs[15] = v.rand;
 
-    // modulation destinations — sum every active slot assigned to each target.
-    // The 16 fixed slots live in the flat store at MAT1 + (s-1)*M_STRIDE.
-    // Globals (pitch/amp/pan) keep their legacy additive math; per-param dests
-    // accumulate a route sum indexed by param id, then fold into a per-voice
-    // modulated snapshot `pm` via the Lin/Log curve rule. This mirrors the VST
-    // engine exactly, so both engines sound identical (existing dests included).
-    let mPitch = 0, mAmp = 0, mPan = 0;
+    // modulation destinations — sum every active slot assigned to each target
+    // (evalRoutes). Globals (pitch/amp/pan) keep their legacy additive math;
+    // per-param dests accumulate a route sum indexed by param id, then fold
+    // into a per-voice modulated snapshot `pm` via the Lin/Log curve rule. This
+    // mirrors the VST engine exactly, so both engines sound identical.
+    const anyRoute = this.evalRoutes(srcs);
+    const mPitch = this._mPitch, mAmp = this._mAmp, mPan = this._mPan;
     const accum = this._modAccum;
-    accum.fill(0);
-    let anyRoute = false;
-    for (let s = 0, b = MAT1; s < MOD_MATRIX_SIZE; s++, b += M_STRIDE) {
-      const src = p[b + M_SRC] | 0;
-      const dst = p[b + M_DST] | 0;
-      if (!src || !dst || src >= NUM_SOURCES || dst >= DST_PIDX.length) continue;
-      // Polarity: SRC keeps the native range; UNI/BI convert it (params.ts polarize).
-      const pol = p[MATPOL1 + s] | 0, native = SOURCE_BIPOLAR[src];
-      const bi = pol === 1 ? false : pol === 2 ? true : native;
-      const sv = bi === native ? srcs[src] : bi ? srcs[src] * 2 - 1 : (srcs[src] + 1) * 0.5;
-      // Aux source: scale by its unipolar value (params.ts auxScale).
-      const aux = p[MATAUX1 + s] | 0;
-      const ax = aux > 0 && aux < NUM_SOURCES ? (SOURCE_BIPOLAR[aux] ? (srcs[aux] + 1) * 0.5 : srcs[aux]) : 1;
-      const x = sv * (p[b + M_AMT] || 0) * ax;
-      const target = DST_PIDX[dst];
-      if (target === D_PITCH) mPitch += x;
-      else if (target === D_AMP) mAmp += x;
-      else if (target === D_PAN) mPan += x;
-      else if (target >= 0) { accum[target] += x; anyRoute = true; }
-    }
 
     // Build the per-voice modulated snapshot: copy p then apply each targeted
     // param's curve rule. Lin: pm = p + x·(hi−lo); Log: pm = p · 2^(x·D), D=5.
@@ -2398,6 +2822,17 @@ class FableProcessor extends AudioWorkletProcessor {
       }
     }
 
+    // Envelope times follow their routes, inside the knob range. The read is
+    // p itself for a time with no route.
+    for (let e = 0; e < 3; e++) {
+      const env = e === 0 ? v.ampEnv : e === 1 ? v.modEnv : v.modEnv2;
+      const b = e === 0 ? ENV1_A : e === 1 ? ENV2_A : ENV3_A, x = e === 0 ? ENVX1 : e === 1 ? ENVX2 : ENVX3;
+      const a = clampTo(pm[b], MOD_LO[b], MOD_HI[b]), d = clampTo(pm[b + 1], MOD_LO[b + 1], MOD_HI[b + 1]);
+      const r = clampTo(pm[b + 3], MOD_LO[b + 3], MOD_HI[b + 3]);
+      env.set(a, d, p[b + 2], r);
+      env.setModel(p[x], a, d, r, p[x + 1], p[x + 2], p[x + 3], p[x + 4]);
+    }
+
     // SPLIT routing sends osc A through filter 1 and osc B through filter 2, so
     // they need separate source buffers; every other routing sums into one path.
     const route = p[FILTER_ROUTE] | 0;
@@ -2408,10 +2843,20 @@ class FableProcessor extends AudioWorkletProcessor {
     const bL = this.bL, bR = this.bR;
     if (split) { bL.fill(0, 0, n); bR.fill(0, 0, n); }
 
-    const aOn = this.setupOsc(v.oA, OSCA, v, pm, mPitch, mPan, n);
-    const bOn = this.setupOsc(v.oB, OSCB, v, pm, mPitch, mPan, n);
-    if (aOn) this.renderOsc(v.oA, tmpL, tmpR, n); else v.oA.havePrev = false;
-    if (bOn) this.renderOsc(v.oB, split ? bL : tmpL, split ? bR : tmpR, n); else v.oB.havePrev = false;
+    const aOn = this.setupOsc(v.oA, OSCA, WARPA, OSCB, v, pm, mPitch, mPan, n, (p[WARPB] | 0) >= WARP_FM);
+    const bOn = this.setupOsc(v.oB, OSCB, WARPB, OSCA, v, pm, mPitch, mPan, n, (p[WARPA] | 0) >= WARP_FM);
+    // FM/AM/RM: each carrier reads the other oscillator's modulator signal.
+    // Both are rendered before either carrier, so mutual modulation is not a
+    // feedback loop.
+    let modA = null, modB = null;
+    if (aOn && v.oA.warp >= WARP_FM) {
+      if (v.oB.modOk) { this.renderMod(v.oB, this.modForA, n); modA = this.modForA; } else v.oA.warp = 0;
+    }
+    if (bOn && v.oB.warp >= WARP_FM) {
+      if (v.oA.modOk) { this.renderMod(v.oA, this.modForB, n); modB = this.modForB; } else v.oB.warp = 0;
+    }
+    if (aOn) this.renderOsc(v.oA, tmpL, tmpR, n, modA); else v.oA.havePrev = false;
+    if (bOn) this.renderOsc(v.oB, split ? bL : tmpL, split ? bR : tmpR, n, modB); else v.oB.havePrev = false;
 
     // sub oscillator (band-limited table square or sine)
     if (p[SUB_ON]) {
@@ -2542,10 +2987,12 @@ class FableProcessor extends AudioWorkletProcessor {
     v.ampFacPrev = ampFactor;
 
     // advance chunk-rate modulators
-    v.lfo1.advance(this.lfoHz(LFO1), n, this.rng);
-    v.lfo2.advance(this.lfoHz(LFO2), n, this.rng);
-    v.lfo3.advance(this.lfoHz(LFO3), n, this.modRng);
-    v.lfo4.advance(this.lfoHz(LFO4), n, this.modRng);
+    // LFO RATE routes scale the rate (free or synced) by 2^(x*D), like any Log param.
+    const rateMul = (pid) => (accum[pid] ? Math.pow(2, accum[pid] * MOD_LOG_D) : 1);
+    v.lfo1.advance(this.lfoHz(LFO1) * rateMul(LFO1 + L_RATE), n, this.rng, os1);
+    v.lfo2.advance(this.lfoHz(LFO2) * rateMul(LFO2 + L_RATE), n, this.rng, os2);
+    v.lfo3.advance(this.lfoHz(LFO3) * rateMul(LFO3 + L_RATE), n, this.modRng, os3);
+    v.lfo4.advance(this.lfoHz(LFO4) * rateMul(LFO4 + L_RATE), n, this.modRng, os4);
     v.modEnv.processBlock(n);
     v.modEnv2.processBlock(n);
 
@@ -2566,6 +3013,7 @@ class FableProcessor extends AudioWorkletProcessor {
       if (di) mv[di] = accum[i];
     }
     this.modVizAny = this._modAny;
+    this._vizSrcs.set(this._srcs); // the sources of the same voice, for updateGlobalMods
   }
 
   // Finding W3: split the host block at every sequencer event so a step, its
@@ -2612,7 +3060,7 @@ class FableProcessor extends AudioWorkletProcessor {
       this.renderChunk(L, R, off, run, ppq);
       // FX consume the automation value for this chunk, on the same clock as
       // the voices. Process in place without allocating channel subarrays.
-      this.fx.setParams(this.p, this.bpm);
+      this.fx.setParams(this.fxParams, this.bpm); // p, or p with the FX routes applied
       this.fx.lab.setTransport(ppq, true); // the GLITCH grid follows this chunk's beat
       this.fx.process(L, R, run, off);
       this.transportBeats += (run / sampleRate) * (this.bpm / 60);
@@ -2697,10 +3145,11 @@ class FableProcessor extends AudioWorkletProcessor {
     // (SQ-4), the conductor's anchor is beat zero of the shared timebase, so
     // every device's synced LFO lands on the same downbeat regardless of when
     // it joined the song.
-    this.updateGlobalLfo(this.gLfo1, LFO1, ppq, n);
-    this.updateGlobalLfo(this.gLfo2, LFO2, ppq, n);
-    this.updateGlobalLfo(this.gLfo3, LFO3, ppq, n, this.modRng);
-    this.updateGlobalLfo(this.gLfo4, LFO4, ppq, n, this.modRng);
+    // gRate: the LFO RATE route of each free-running LFO (updateGlobalMods).
+    this.updateGlobalLfo(this.gLfo1, LFO1, ppq, n, this.rng, this.gRate[0]);
+    this.updateGlobalLfo(this.gLfo2, LFO2, ppq, n, this.rng, this.gRate[1]);
+    this.updateGlobalLfo(this.gLfo3, LFO3, ppq, n, this.modRng, this.gRate[2]);
+    this.updateGlobalLfo(this.gLfo4, LFO4, ppq, n, this.modRng, this.gRate[3]);
 
     let act = 0;
     let viz = null;
@@ -2709,7 +3158,7 @@ class FableProcessor extends AudioWorkletProcessor {
       if (!v.active && v.pending) {
         const pd = v.pending;
         v.pending = null;
-        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, this.rng, 1, 1, this.modRng);
+        v.noteOn(pd.n, pd.vel, pd.start, this.clock++, this.rng, this.phaseRand(WARPA, OSCA), this.phaseRand(WARPB, OSCB), this.modRng);
       }
       if (!v.active) continue;
       const r = this.renderVoice(v, L, R, off, n);
@@ -2719,6 +3168,7 @@ class FableProcessor extends AudioWorkletProcessor {
       if (v.gate || !viz) { viz = r; this.snapshotModViz(); }
       act++;
     }
+    this.updateGlobalMods(act);
 
     this.vizCount += n;
     if (this.vizCount >= 2048) {

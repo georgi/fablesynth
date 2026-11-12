@@ -182,6 +182,7 @@ void DrumRack::resized() {
 DrumEditor::DrumEditor(DrumAudioProcessor& p)
     : juce::AudioProcessorEditor(p), model(fui::makeStandaloneDrumUiModel(p)), rack(*model, p), agentOverlay([&p]() -> fable::FableAgent& { return p.getAgent(); }) {
     setLookAndFeel(&lnf);
+    tooltips.setLookAndFeel(&lnf);
     setWantsKeyboardFocus(true); // QWERTY pad map (PadGrid key-listens on us)
     addAndMakeVisible(rack);
     addAndMakeVisible(agentOverlay);

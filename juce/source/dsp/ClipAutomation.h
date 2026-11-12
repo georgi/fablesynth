@@ -26,7 +26,7 @@ inline const ParamInfo* autoParamDef(Machine machine, const std::string& target)
     int id = machine == Machine::WT1 ? idFromString(target) : machine == Machine::BL1 ? bassIdFromString(target) : drumIdFromString(target);
     if (id < 0) return nullptr;
     const auto& d = machine == Machine::WT1 ? paramInfo()[(size_t)id] : machine == Machine::BL1 ? bassParamInfo()[(size_t)id] : drumParamInfo()[(size_t)id];
-    return d.kind == Kind::Float && (d.curve == Curve::Lin || d.curve == Curve::Log) ? &d : nullptr;
+    return d.kind == Kind::Float && !d.hidden && (d.curve == Curve::Lin || d.curve == Curve::Log) ? &d : nullptr;
 }
 inline int autoPadOf(const std::string& target) {
     if (target.compare(0, 3, "pad") != 0) return -1;

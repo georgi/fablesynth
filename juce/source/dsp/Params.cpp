@@ -219,6 +219,28 @@ std::array<ParamInfo, NUM_PARAMS> build() {
     v.push_back({MASTER_LEGATO, "master.legato", "LEGATO", 0, 1, 1, Curve::Int, Kind::Bool, nullptr});
     v.push_back({FXCOMP_SC,   "fx.comp.sc",   "KEY",    0, (float)SC_SOURCES.size() - 1, 0, Curve::Int, Kind::Enum, &SC_SOURCES});
     v.push_back({FXCOMP_SCHP, "fx.comp.schp", "KEY HP", 20, 500, 20, Curve::Log, Kind::Float, nullptr});
+    for (int i = 0; i < 2; ++i) {
+        const std::string o = i == 0 ? "oscA" : "oscB";
+        v.push_back({warpBase(i),     o + ".warp",    "WARP MODE", 0, (float)WARP_MODES.size() - 1, 0, Curve::Int, Kind::Enum, &WARP_MODES});
+        v.push_back({warpBase(i) + 1, o + ".warpamt", "WARP",      0, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    }
+    v.push_back({FXREVERB_TYPE, "fx.reverb.type", "TYPE", 0, (float)REVERB_TYPES.size() - 1, 0, Curve::Int, Kind::Enum, &REVERB_TYPES});
+    v.push_back({FXREVERB_DAMP, "fx.reverb.damp", "DAMP", 0, 1, 0.5f, Curve::Lin, Kind::Float, nullptr});
+    for (int n = 1; n <= MOD_MATRIX_SIZE; ++n)
+        v.push_back({MATCRV1 + n - 1, "mat" + std::to_string(n) + ".crv", "CURVE", -1, 1, 0, Curve::Lin, Kind::Float, nullptr});
+    for (int n = 1; n <= 4; ++n) {
+        const std::string l = "lfo" + std::to_string(n);
+        const int b = lfoxBase(n);
+        v.push_back({b + LFOX_ONESHOT, l + ".oneshot", "ONE-SHOT", 0, 1, 0, Curve::Int, Kind::Bool, nullptr});
+        v.push_back({b + LFOX_COUNT, l + ".pn", "POINTS", 0, (float)LFO_MAX_POINTS, 0, Curve::Int, Kind::Float, nullptr, true});
+        for (int k = 0; k < LFO_MAX_POINTS; ++k) {
+            const std::string pt = l + ".p" + std::to_string(k + 1);
+            const int at = b + LFOX_POINTS + 3 * k;
+            v.push_back({at,     pt + ".x", "X",     0, 1, 0,    Curve::Lin, Kind::Float, nullptr, true});
+            v.push_back({at + 1, pt + ".y", "Y",     0, 1, 0.5f, Curve::Lin, Kind::Float, nullptr, true});
+            v.push_back({at + 2, pt + ".c", "CURVE", -1, LFO_HOLD, 0, Curve::Lin, Kind::Float, nullptr, true});
+        }
+    }
 
     std::array<ParamInfo, NUM_PARAMS> out{};
     for (auto& info : v) out[(size_t)info.id] = info; // place by id so [Pid] indexing is exact
