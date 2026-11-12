@@ -58,42 +58,9 @@ class LegacyOutputCompressor {
   }
 }
 
-// Linked-stereo lookahead limiter. The delay is after every gain-changing
-// stage, so the advertised ceiling is the actual worklet output ceiling.
-class LookaheadLimiter {
-  constructor(sr) {
-    this.la = Math.max(8, Math.round(.0015 * sr));
-    this.cap = this.la + 2;
-    this.dlL = new Float32Array(this.la); this.dlR = new Float32Array(this.la);
-    this.qv = new Float64Array(this.cap).fill(1); this.qi = new Float64Array(this.cap);
-    this.atk = 1 - Math.exp(-4 / this.la);
-    this.rel = 1 - Math.exp(-1 / (.2 * sr));
-    this.w = 0; this.qh = 0; this.qt = 0; this.t = 0; this.env = 1;
-  }
-  process(l, r, ceiling = SAFETY_CEILING) {
-    const cap = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : SAFETY_CEILING;
-    const peak = Math.max(Math.abs(l), Math.abs(r));
-    const required = peak > cap ? cap / peak : 1;
-    while (this.qh !== this.qt) {
-      const previous = this.qt > 0 ? this.qt - 1 : this.cap - 1;
-      if (this.qv[previous] < required) break;
-      this.qt = previous;
-    }
-    this.qv[this.qt] = required; this.qi[this.qt] = this.t;
-    this.qt = this.qt + 1 < this.cap ? this.qt + 1 : 0;
-    if (this.qi[this.qh] < this.t - this.la) this.qh = this.qh + 1 < this.cap ? this.qh + 1 : 0;
-    const wanted = this.qv[this.qh];
-    this.env += (wanted - this.env) * (wanted < this.env ? this.atk : this.rel);
-    const dl = this.dlL[this.w], dr = this.dlR[this.w];
-    this.dlL[this.w] = l; this.dlR[this.w] = r;
-    if (++this.w >= this.la) this.w = 0;
-    this.t++;
-    const delayedPeak = Math.max(Math.abs(dl), Math.abs(dr));
-    let gain = this.env;
-    if (gain * delayedPeak > cap) gain = cap / delayedPeak;
-    this.l = dl * gain; this.r = dr * gain;
-  }
-}
+// The shared lookahead limiter (ott-worklet.js) runs last, after every
+// gain-changing stage, so the advertised ceiling is the actual output ceiling.
+const { LookaheadLimiter } = globalThis.FableDsp;
 
 class MasterProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -161,9 +128,10 @@ class MasterProcessor extends AudioWorkletProcessor {
       // control smoother catches up.
       const finalCeiling = this.ceilingMix.target > 0.5
         ? this.ceiling.target : SAFETY_CEILING;
-      this.safety.process(this.legacy.l, this.legacy.r, finalCeiling);
-      left[i] = Number.isFinite(this.safety.l) ? this.safety.l : 0;
-      right[i] = Number.isFinite(this.safety.r) ? this.safety.r : 0;
+      this.safety.process(this.legacy.l, this.legacy.r,
+        Number.isFinite(finalCeiling) && finalCeiling > 0 ? finalCeiling : SAFETY_CEILING);
+      left[i] = Number.isFinite(this.safety.outL) ? this.safety.outL : 0;
+      right[i] = Number.isFinite(this.safety.outR) ? this.safety.outR : 0;
     }
     return true;
   }

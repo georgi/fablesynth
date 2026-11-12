@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 // import-free (loaded into the AudioWorklet via ?url), so we verify its hand-copied
 // tables against params.ts by parsing this text.
 import WORKLET_SRC from './worklet.js?raw';
+import SHARED_SRC from './ott-worklet.js?raw';
 import { MOD_DESTS, dstTarget, PARAM_DEFS, PARAMS } from '../params';
 import { makeWtProcessor } from './workletHarness';
 import {
@@ -133,11 +134,12 @@ describe('worklet SEQ_* parity', () => {
 describe('worklet PARAM_IDS parity', () => {
   function workletParamIds(): string[] {
     // makeWtProcessor evaluates worklet.js; re-evaluate it here with a shim
-    // that hands the module's PARAM_IDS back out.
+    // that hands the module's PARAM_IDS back out. The shared module goes first,
+    // as in every loader, because worklet.js reads globalThis.FableDsp.
     let ids: string[] = [];
     const AWP = class { port = { onmessage: null, postMessage: () => {} }; };
     new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', 'out',
-      WORKLET_SRC + '\nout.ids = PARAM_IDS;')(
+      SHARED_SRC + '\n' + WORKLET_SRC + '\nout.ids = PARAM_IDS;')(
       48000, AWP, () => {}, { set ids(v: string[]) { ids = v; } } as { ids: string[] },
     );
     return ids;
