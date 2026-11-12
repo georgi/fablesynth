@@ -20,6 +20,7 @@ if (samples.length !== 52 || samples.some((sample) => sample.data.length < 2)) {
 }
 const context = vm.createContext({ Float32Array, Float64Array, Uint8Array, Math, sampleRate: sr, currentFrame: 0, AudioWorkletProcessor: class { constructor() { this.port = { onmessage: null, postMessage() {} }; } }, registerProcessor: (_name, Ctor) => { context.Ctor = Ctor; } });
 new vm.Script(await readFile(new URL('../src/engine/ott-worklet.js', import.meta.url), 'utf8')).runInContext(context);
+new vm.Script(await readFile(new URL('../src/engine/lab-worklet.js', import.meta.url), 'utf8')).runInContext(context);
 new vm.Script(await readFile(new URL('../src/drum/engine/worklet-drum.js', import.meta.url), 'utf8')).runInContext(context);
 const tables = [...generateDrumTables(), ...generateTables(), ...generateSampledDrumTables()].map((t) => ({ frames: t.frames, mips: t.mips, size: t.size, mask: t.size - 1, data: t.data }));
 function loudnessDb(audio) { let sum = 0; for (const sample of audio) sum += sample * sample; return -0.691 + 10 * Math.log10(sum / audio.length); }
